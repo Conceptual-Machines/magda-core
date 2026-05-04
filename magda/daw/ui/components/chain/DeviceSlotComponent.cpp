@@ -1126,6 +1126,10 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
         aiPanel_->setDevicePath(nodePath_);
         aiPanel_->setDevicePluginId(device_.pluginId);
     }
+    // Same story for FaustUI: createCustomUI ran before nodePath_ was
+    // valid, so the load flow couldn't fire notifyTrackDevicesChanged.
+    if (faustUI_)
+        faustUI_->setDevicePath(nodePath_);
 
     // Initial compute for the controller indicator dots — listeners only fire
     // on change, so a slot built after the binding was added wouldn't otherwise

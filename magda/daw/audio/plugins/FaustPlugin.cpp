@@ -205,18 +205,30 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compile(const juce::String
 std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compileAndRebind(const juce::String& source,
                                                                        juce::String& errorOut) {
     auto state = compile(source, currentSampleRate_, errorOut);
-    if (!state)
+    if (!state) {
+        DBG("[FaustPlugin] compileAndRebind: compile FAILED: " << errorOut);
         return nullptr;
+    }
 
     UIHarvester harvester;
     state->dsp->buildUserInterface(&harvester);
+    DBG("[FaustPlugin] compileAndRebind: harvested " << static_cast<int>(harvester.harvested.size())
+                                                     << " controls from DSP");
+    for (size_t i = 0; i < harvester.harvested.size(); ++i) {
+        const auto& h = harvester.harvested[i];
+        DBG("  [" << static_cast<int>(i) << "] kind=" << (int)h.kind << " label='" << h.label
+                  << "' min=" << h.minValue << " max=" << h.maxValue
+                  << " idx=" << h.metadata.slotIndex << " menu=" << (int)h.metadata.isMenuStyle);
+    }
 
     auto report = pool_.rebindFromHarvest(harvester.harvested);
     state->activeBindings = std::move(report.activeBindings);
     lastDiagnostics_ = std::move(report.diagnostics);
 
+    DBG("[FaustPlugin] compileAndRebind: pool active="
+        << pool_.activeCount() << " bindings=" << static_cast<int>(state->activeBindings.size()));
     for (const auto& d : lastDiagnostics_)
-        DBG("FaustPlugin: " << d);
+        DBG("  diagnostic: " << d);
 
     return state;
 }

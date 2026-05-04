@@ -617,9 +617,13 @@ FaustProcessor::FaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
 
 int FaustProcessor::getParameterCount() const {
     auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin_.get());
-    if (faust == nullptr)
+    if (faust == nullptr) {
+        DBG("[FaustProcessor] getParameterCount: plugin cast NULL");
         return 0;
-    return faust->getPool().activeCount();
+    }
+    const int count = faust->getPool().activeCount();
+    DBG("[FaustProcessor] getParameterCount → " << count);
+    return count;
 }
 
 ParameterInfo FaustProcessor::getParameterInfo(int index) const {
@@ -632,17 +636,25 @@ ParameterInfo FaustProcessor::getParameterInfo(int index) const {
 void FaustProcessor::populateParameters(DeviceInfo& info) const {
     info.parameters.clear();
     auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin_.get());
-    if (faust == nullptr)
+    if (faust == nullptr) {
+        DBG("[FaustProcessor] populateParameters: plugin cast NULL");
         return;
+    }
     // Only push active slots so the standard ParamGridComponent shows
     // populated cells only. Each ParameterInfo carries its real slot
     // index in `paramIndex`, so links / automation / MIDI Learn still
     // bind to the stable pool slot — display order ≠ slot identity.
+    int active = 0;
     for (int i = 0; i < daw::audio::FaustParamPool::kSize; ++i) {
         const auto& slot = faust->getPool().slot(i);
-        if (slot.active)
+        if (slot.active) {
             info.parameters.push_back(daw::audio::paramInfoFromSlot(slot));
+            DBG("[FaustProcessor] populateParameters: slot " << i << " '" << slot.label
+                                                             << "' kind=" << (int)slot.kind);
+            ++active;
+        }
     }
+    DBG("[FaustProcessor] populateParameters: pushed " << active << " active params");
 }
 
 void FaustProcessor::setParameterByIndex(int paramIndex, float value) {

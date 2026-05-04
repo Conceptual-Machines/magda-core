@@ -49,14 +49,7 @@ class FaustUI : public juce::Component {
     /// flow to fire a track-devices-changed notification, which
     /// makes the standard paramGrid_ rebuild against the new pool
     /// state.
-    void setDevicePath(const ChainNodePath& path) {
-        devicePath_ = path;
-    }
-
-    /// Fires after a successful loadDspSource (Load button picked a
-    /// new starter or file, or Edit window's Compile succeeded).
-    /// Host wires this to refresh the standard parameter grid.
-    std::function<void()> onDspChanged;
+    void setDevicePath(const ChainNodePath& path);
 
     void paint(juce::Graphics& g) override;
     void resized() override;

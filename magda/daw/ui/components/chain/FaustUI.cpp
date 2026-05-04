@@ -51,8 +51,16 @@ FaustUI::FaustUI() {
 
 FaustUI::~FaustUI() = default;
 
+void FaustUI::setDevicePath(const ChainNodePath& path) {
+    devicePath_ = path;
+    DBG("[FaustUI] setDevicePath trackId=" << path.trackId
+                                           << " topLevelDevice=" << (int)path.topLevelDeviceId
+                                           << " steps=" << static_cast<int>(path.steps.size()));
+}
+
 void FaustUI::setPlugin(magda::daw::audio::FaustPlugin* plugin) {
     plugin_ = plugin;
+    DBG("[FaustUI] setPlugin: " << (plugin ? "ok" : "NULL"));
     refreshNameLabel();
 }
 
@@ -66,13 +74,18 @@ void FaustUI::refreshNameLabel() {
 }
 
 bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
-    if (plugin_ == nullptr)
+    DBG("[FaustUI] tryLoad name='" << name << "' src.len=" << source.length());
+    if (plugin_ == nullptr) {
+        DBG("[FaustUI] tryLoad: plugin_ is NULL — bailing");
         return false;
+    }
     juce::String err;
     if (!plugin_->loadDspSource(name, source, err)) {
+        DBG("[FaustUI] tryLoad: loadDspSource FAILED: " << err);
         errorLabel_.setText(err, juce::dontSendNotification);
         return false;
     }
+    DBG("[FaustUI] tryLoad: loadDspSource OK, pool active=" << plugin_->getPool().activeCount());
     errorLabel_.setText({}, juce::dontSendNotification);
     refreshNameLabel();
 
@@ -89,17 +102,33 @@ bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
     // runtime. Then notify so the chain UI rebuilds against the new
     // DeviceInfo.
     auto& tm = TrackManager::getInstance();
-    if (auto* dev = tm.getDeviceInChainByPath(devicePath_)) {
+    auto* dev = tm.getDeviceInChainByPath(devicePath_);
+    DBG("[FaustUI] tryLoad: device-by-path lookup " << (dev ? "ok" : "NULL")
+                                                    << " trackId=" << devicePath_.trackId);
+    if (dev) {
         if (auto* engine = tm.getAudioEngine()) {
-            if (auto* bridge = engine->getAudioBridge())
+            if (auto* bridge = engine->getAudioBridge()) {
+                DBG("[FaustUI] tryLoad: calling refreshDeviceParameters for id=" << (int)dev->id);
                 bridge->getPluginManager().refreshDeviceParameters(dev->id);
+            } else {
+                DBG("[FaustUI] tryLoad: AudioBridge is NULL");
+            }
+        } else {
+            DBG("[FaustUI] tryLoad: AudioEngine is NULL");
         }
     }
-    if (devicePath_.trackId != INVALID_TRACK_ID)
-        tm.notifyTrackDevicesChanged(devicePath_.trackId);
 
-    if (onDspChanged)
-        onDspChanged();
+    // notifyTrackDevicesChanged tears down the DeviceSlotComponent that
+    // owns this FaustUI — calling it inline destroys `this` mid-method
+    // and the rest of tryLoad runs on freed memory. Defer to the next
+    // message-thread tick so the modal-callback frame can unwind first.
+    // Lambda captures trackId by value, so it doesn't touch `this`.
+    if (devicePath_.trackId != INVALID_TRACK_ID) {
+        const auto trackId = devicePath_.trackId;
+        DBG("[FaustUI] tryLoad: queuing notifyTrackDevicesChanged trackId=" << trackId);
+        juce::MessageManager::callAsync(
+            [trackId]() { TrackManager::getInstance().notifyTrackDevicesChanged(trackId); });
+    }
     return true;
 }
 
@@ -174,10 +203,14 @@ void FaustUI::showCodeEditor() {
                         bridge->getPluginManager().refreshDeviceParameters(dev->id);
                 }
             }
-            if (devicePath_.trackId != INVALID_TRACK_ID)
-                tm.notifyTrackDevicesChanged(devicePath_.trackId);
-            if (onDspChanged)
-                onDspChanged();
+            // Same deferred-notify rule as tryLoad — the rebuild
+            // destroys `this` synchronously.
+            if (devicePath_.trackId != INVALID_TRACK_ID) {
+                const auto trackId = devicePath_.trackId;
+                juce::MessageManager::callAsync([trackId]() {
+                    TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+                });
+            }
             return true;
         });
 }
