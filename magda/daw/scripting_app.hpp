@@ -44,14 +44,25 @@ LuaScriptPorts luaScriptPorts(const juce::String& scriptName);
 /** Update the MIDI assignment for a script filename and persist it. */
 void setLuaScriptPorts(const juce::String& scriptName, const LuaScriptPorts& ports);
 
-/** True if the per-user scripts folder contains at least one .lua file.
- *  Disambiguates "no scripts present" from "load failed" after a Reload —
- *  LuaController::loadScript clears the active name on any failure, so the
- *  dialog can't tell those two cases apart from activeLuaScriptName alone. */
+/** True if there is at least one script available to load (any enabled
+ *  factory script, or any user-imported script). Disambiguates "no scripts
+ *  present" from "load failed" after a Reload — LuaController::loadScript
+ *  clears the active name on any failure, so the dialog can't tell those
+ *  two cases apart from activeLuaScriptName alone. */
 bool hasAnyLuaScripts();
 
-/** Lists every .lua file in the per-user scripts folder, sorted alphabetically. */
+/** Lists user-imported scripts plus factory scripts the user has explicitly
+ *  enabled (Config::enabledFactoryLuaScripts), sorted alphabetically. */
 std::vector<juce::File> enumerateLuaScripts();
+
+/** Lists factory scripts NOT yet enabled — what the "Add Script" picker
+ *  should offer. Sorted alphabetically. */
+std::vector<juce::File> enumerateAvailableFactoryLuaScripts();
+
+/** True iff `file` lives in the bundled (factory) scripts directory. Used
+ *  by the dialog to decide whether a row's "remove" should drop the entry
+ *  from the enabled-factory list versus deleting the user-dir file. */
+bool isFactoryLuaScript(const juce::File& file);
 
 /** Per-user controller scripts folder. Created on demand. */
 juce::File luaScriptsFolder();

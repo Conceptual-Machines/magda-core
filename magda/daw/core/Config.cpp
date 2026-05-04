@@ -211,6 +211,12 @@ void Config::save() {
         root->setProperty("luaScripts", luaScripts_);
     if (!activeLuaScript_.empty())
         root->setProperty("activeLuaScript", toJuceString(activeLuaScript_));
+    if (!enabledFactoryLuaScripts_.empty()) {
+        juce::Array<juce::var> arr;
+        for (const auto& name : enabledFactoryLuaScripts_)
+            arr.add(toJuceString(name));
+        root->setProperty("enabledFactoryLuaScripts", arr);
+    }
 
     // Global bindings
     if (!globalBindings_.isVoid())
@@ -528,6 +534,14 @@ void Config::load() {
     if (obj->hasProperty("luaScripts"))
         luaScripts_ = obj->getProperty("luaScripts");
     activeLuaScript_ = getString("activeLuaScript", activeLuaScript_);
+    enabledFactoryLuaScripts_.clear();
+    if (obj->hasProperty("enabledFactoryLuaScripts")) {
+        auto v = obj->getProperty("enabledFactoryLuaScripts");
+        if (v.isArray()) {
+            for (const auto& item : *v.getArray())
+                enabledFactoryLuaScripts_.push_back(item.toString().toStdString());
+        }
+    }
 
     // Global bindings
     if (obj->hasProperty("globalBindings"))

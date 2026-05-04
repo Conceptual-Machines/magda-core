@@ -450,9 +450,26 @@ bool MagdaDAWApplication::reloadActiveLuaScript() {
         const auto persisted = magda::Config::getInstance().getActiveLuaScript();
         activeName = juce::String::fromUTF8(persisted.c_str(), static_cast<int>(persisted.size()));
     }
-    magda::scripting::LuaScriptStore store;
-    store.ensureExists();
-    auto scripts = store.enumerate();
+
+    // Migration: an existing config with activeLuaScript pointing at a bundled
+    // factory script means the user was running it under the pre-gate auto-
+    // discovery model. Promote it into enabledFactoryLuaScripts so this
+    // reload, and every future enumerate, still includes it.
+    if (activeName.isNotEmpty()) {
+        auto bundledDir = magda::scripting::LuaScriptStore::findBundledScriptsDirectory();
+        if (bundledDir.isDirectory() && bundledDir.getChildFile(activeName).existsAsFile()) {
+            auto& cfg = magda::Config::getInstance();
+            auto enabled = cfg.getEnabledFactoryLuaScripts();
+            const auto persistedName = activeName.toStdString();
+            if (std::find(enabled.begin(), enabled.end(), persistedName) == enabled.end()) {
+                enabled.push_back(persistedName);
+                cfg.setEnabledFactoryLuaScripts(std::move(enabled));
+                cfg.save();
+            }
+        }
+    }
+
+    auto scripts = magda::scripting_app::enumerateLuaScripts();
     juce::Logger::writeToLog("[lua-debug] reloadActiveLuaScript: scripts.size=" +
                              juce::String(static_cast<int>(scripts.size())) + " activeName='" +
                              activeName + "'");
@@ -579,19 +596,56 @@ std::vector<juce::File> enumerateLuaScripts() {
     for (const auto& f : userScripts)
         userFilenames.add(f.getFileName());
 
+    juce::StringArray enabledFactory;
+    for (const auto& name : magda::Config::getInstance().getEnabledFactoryLuaScripts())
+        enabledFactory.add(juce::String(name));
+
     std::vector<juce::File> merged = userScripts;
     auto bundled =
         bundledDir.findChildFiles(juce::File::findFiles, /*searchRecursively*/ false, "*.lua");
     for (auto& f : bundled) {
         // User pool wins on filename collision (matches profile precedence).
-        if (!userFilenames.contains(f.getFileName()))
-            merged.push_back(f);
+        // Factory scripts only appear once explicitly enabled in the dialog.
+        if (userFilenames.contains(f.getFileName()))
+            continue;
+        if (!enabledFactory.contains(f.getFileName()))
+            continue;
+        merged.push_back(f);
     }
 
     std::sort(merged.begin(), merged.end(), [](const juce::File& a, const juce::File& b) {
         return a.getFileName().compareIgnoreCase(b.getFileName()) < 0;
     });
     return merged;
+}
+
+std::vector<juce::File> enumerateAvailableFactoryLuaScripts() {
+    auto bundledDir = magda::scripting::LuaScriptStore::findBundledScriptsDirectory();
+    std::vector<juce::File> out;
+    if (!bundledDir.isDirectory())
+        return out;
+
+    juce::StringArray enabledFactory;
+    for (const auto& name : magda::Config::getInstance().getEnabledFactoryLuaScripts())
+        enabledFactory.add(juce::String(name));
+
+    auto bundled =
+        bundledDir.findChildFiles(juce::File::findFiles, /*searchRecursively*/ false, "*.lua");
+    for (auto& f : bundled) {
+        if (!enabledFactory.contains(f.getFileName()))
+            out.push_back(f);
+    }
+    std::sort(out.begin(), out.end(), [](const juce::File& a, const juce::File& b) {
+        return a.getFileName().compareIgnoreCase(b.getFileName()) < 0;
+    });
+    return out;
+}
+
+bool isFactoryLuaScript(const juce::File& file) {
+    auto bundledDir = magda::scripting::LuaScriptStore::findBundledScriptsDirectory();
+    if (!bundledDir.isDirectory())
+        return false;
+    return file.getParentDirectory() == bundledDir;
 }
 
 juce::File luaScriptsFolder() {

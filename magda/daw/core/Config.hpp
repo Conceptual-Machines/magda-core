@@ -680,6 +680,17 @@ class Config {
         activeLuaScript_ = scriptName;
     }
 
+    // Filenames of bundled (factory) Lua scripts the user has explicitly
+    // enabled in the Controllers dialog. Bundled scripts not in this list
+    // stay hidden from the active scripts list and the auto-load picker;
+    // user-imported scripts are unaffected.
+    std::vector<std::string> getEnabledFactoryLuaScripts() const {
+        return enabledFactoryLuaScripts_;
+    }
+    void setEnabledFactoryLuaScripts(std::vector<std::string> filenames) {
+        enabledFactoryLuaScripts_ = std::move(filenames);
+    }
+
     // Global bindings (serialized to/from config.json "globalBindings" key)
     juce::var getGlobalBindings() const {
         return globalBindings_;
@@ -863,6 +874,7 @@ class Config {
     // Lua controller scripts (opaque JSON blob, managed by scripting_app)
     juce::var luaScripts_;
     std::string activeLuaScript_;
+    std::vector<std::string> enabledFactoryLuaScripts_;
 
     // Global bindings (opaque JSON blob, managed by BindingRegistry)
     juce::var globalBindings_;
