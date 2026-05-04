@@ -996,14 +996,15 @@ void ClipInspector::initClipPropertiesSection() {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(), newPhaseBeats));
         } else {
-            // Audio phase: convert beats to seconds and set offset
-            double bpm = 120.0;
-            if (timelineController_)
-                bpm = timelineController_->getState().tempo.bpm;
-            double newPhaseSeconds = magda::TimelineUtils::beatsToSeconds(newPhaseBeats, bpm);
-            double newOffset = clip->loopStart + newPhaseSeconds;
+            // Audio phase is source-relative, so convert with source BPM, not project BPM.
+            double loopBpm = clip->audio().interpretation.bpm;
+            if (loopBpm <= 0.0 && timelineController_)
+                loopBpm = timelineController_->getState().tempo.bpm;
+            if (loopBpm <= 0.0)
+                loopBpm = 120.0;
+            double newPhaseSeconds = magda::TimelineUtils::beatsToSeconds(newPhaseBeats, loopBpm);
             magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(), newOffset));
+                std::make_unique<magda::SetClipLoopPhaseCommand>(primaryClipId(), newPhaseSeconds));
         }
     };
     clipPropsContainer_.addChildComponent(*clipLoopPhaseValue_);

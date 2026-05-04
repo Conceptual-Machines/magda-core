@@ -42,6 +42,44 @@ void ClipInspector::updateAudioSourceValueDisplays(const magda::ClipInfo& clip) 
     }
 }
 
+void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double projectBPM,
+                                            int beatsPerBar) {
+    if (!clipLoopStartValue_ || !clipLoopEndValue_ || !clipLoopPhaseValue_)
+        return;
+
+    clipLoopStartValue_->setBeatsPerBar(beatsPerBar);
+    clipLoopEndValue_->setBeatsPerBar(beatsPerBar);
+    clipLoopPhaseValue_->setBeatsPerBar(beatsPerBar);
+
+    double loopBpm = projectBPM;
+    if (clip.isAudio() && clip.audio().interpretation.bpm > 0.0)
+        loopBpm = clip.audio().interpretation.bpm;
+    if (loopBpm <= 0.0)
+        loopBpm = 120.0;
+
+    const double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip.loopStart, loopBpm);
+    clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);
+
+    double loopLengthDisplayBeats = 0.0;
+    if (clip.autoTempo && clip.loopLengthBeats > 0.0) {
+        loopLengthDisplayBeats = clip.loopLengthBeats;
+    } else {
+        const double sourceLength =
+            clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
+        loopLengthDisplayBeats = magda::TimelineUtils::secondsToBeats(sourceLength, loopBpm);
+    }
+    clipLoopEndValue_->setValue(loopStartBeats + loopLengthDisplayBeats,
+                                juce::dontSendNotification);
+
+    if (clip.isMidi()) {
+        clipLoopPhaseValue_->setValue(clip.midiOffset, juce::dontSendNotification);
+    } else {
+        const double phaseSeconds = clip.offset - clip.loopStart;
+        const double phaseBeats = magda::TimelineUtils::secondsToBeats(phaseSeconds, loopBpm);
+        clipLoopPhaseValue_->setValue(phaseBeats, juce::dontSendNotification);
+    }
+}
+
 void ClipInspector::updateFromSelectedClip() {
     auto pid = primaryClipId();
     if (pid == magda::INVALID_CLIP_ID) {
@@ -293,46 +331,19 @@ void ClipInspector::updateFromSelectedClip() {
             // Show loop row: lstart | lend | phase
             clipLoopStartLabel_.setVisible(true);
             clipLoopStartValue_->setVisible(true);
-            clipLoopStartValue_->setBeatsPerBar(beatsPerBar);
-            // For audio clips, loop start/end are source-file positions — use source interpretation
-            // BPM
-            double loopBpm = (clip->isAudio() && clip->audio().interpretation.bpm > 0.0)
-                                 ? clip->audio().interpretation.bpm
-                                 : bpm;
-            double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, loopBpm);
-            clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);
+            updateLoopValueDisplays(*clip, bpm, beatsPerBar);
             clipLoopStartValue_->setEnabled(true);
             clipLoopStartValue_->setAlpha(1.0f);
             clipLoopStartLabel_.setAlpha(1.0f);
 
-            // Display loop end (loopStart + loopLength) in beats
-            double loopLengthDisplayBeats;
-            if (clip->autoTempo && clip->loopLengthBeats > 0.0) {
-                loopLengthDisplayBeats = clip->loopLengthBeats;
-            } else {
-                double sourceLength =
-                    clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
-                loopLengthDisplayBeats =
-                    magda::TimelineUtils::secondsToBeats(sourceLength, loopBpm);
-            }
-            double loopEndBeats = loopStartBeats + loopLengthDisplayBeats;
             clipLoopEndLabel_.setVisible(true);
             clipLoopEndValue_->setVisible(true);
-            clipLoopEndValue_->setValue(loopEndBeats, juce::dontSendNotification);
             clipLoopEndValue_->setEnabled(true);
             clipLoopEndValue_->setAlpha(1.0f);
             clipLoopEndLabel_.setAlpha(1.0f);
 
             clipLoopPhaseLabel_.setVisible(true);
             clipLoopPhaseValue_->setVisible(true);
-            clipLoopPhaseValue_->setBeatsPerBar(beatsPerBar);
-            if (clip->isMidi()) {
-                clipLoopPhaseValue_->setValue(clip->midiOffset, juce::dontSendNotification);
-            } else {
-                double phaseSeconds = clip->offset - clip->loopStart;
-                double phaseBeats = magda::TimelineUtils::secondsToBeats(phaseSeconds, loopBpm);
-                clipLoopPhaseValue_->setValue(phaseBeats, juce::dontSendNotification);
-            }
             clipLoopPhaseValue_->setEnabled(true);
             clipLoopPhaseValue_->setAlpha(1.0f);
             clipLoopPhaseLabel_.setAlpha(1.0f);

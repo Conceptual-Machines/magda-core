@@ -929,6 +929,20 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
     if (update.startBeats)
         clip->setPlacementBeats(juce::jmax(0.0, *update.startBeats), clip->placement.lengthBeats);
 
+    // If the source interpretation changed, preserve the selected source region in seconds.
+    // loopStartBeats/loopLengthBeats/offsetBeats are derived from source seconds unless the
+    // current update explicitly edits those beat-domain fields.
+    if ((update.interpretationBpm || update.interpretationTotalBeats) &&
+        clip->audio().interpretation.bpm > 0.0) {
+        double sourceBpm = clip->audio().interpretation.bpm;
+        if (!update.loopStartBeats)
+            clip->loopStartBeats = clip->loopStart * sourceBpm / 60.0;
+        if (!update.loopLengthBeats && clip->loopLength > 0.0)
+            clip->loopLengthBeats = clip->loopLength * sourceBpm / 60.0;
+        if (!update.offsetBeats)
+            clip->offsetBeats = clip->offset * sourceBpm / 60.0;
+    }
+
     // (3) Recompute the seconds cache from beats atomically.
     refreshDerivedSeconds(clipId, projectBPM);
 

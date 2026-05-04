@@ -392,18 +392,44 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             if (tileFullDuration <= 0.0001)
                 break;
             double cycleEnd = juce::jmin(timePos + tileFullDuration, clipDisplayLength);
-            int drawX = waveformArea.getX() + static_cast<int>(timePos * pixelsPerSecond + 0.5);
-            int drawRight =
-                waveformArea.getX() + static_cast<int>(cycleEnd * pixelsPerSecond + 0.5);
-            auto drawRect = juce::Rectangle<int>(drawX, waveformArea.getY(), drawRight - drawX,
-                                                 waveformArea.getHeight());
-            double tileDuration = cycleEnd - timePos;
-            double tileFileEnd = tileFileStart + timelineDeltaToPreviewSource(tileDuration);
-            tileFileEnd = juce::jmin(tileFileEnd, fileEnd);
-            if (clipToVisible(drawRect, tileFileStart, tileFileEnd))
-                thumbnailManager.drawWaveform(g, drawRect, clip.audio().source.filePath,
-                                              tileFileStart, tileFileEnd, waveColour, gainLinear,
-                                              true, selected);
+            double remainingTileDuration = cycleEnd - timePos;
+            double segmentTime = timePos;
+            double segmentSourceStart = tileFileStart;
+            int safety = 0;
+            while (remainingTileDuration > 0.0001 && safety++ < 128) {
+                if (segmentSourceStart >= fileEnd - 0.0001)
+                    segmentSourceStart = fileStart;
+
+                double remainingSource = fileEnd - segmentSourceStart;
+                double fullSegmentDuration = sourceDeltaToPreviewTimeline(remainingSource);
+                if (remainingSource <= 0.0001 || fullSegmentDuration <= 0.0001)
+                    break;
+
+                double segmentDuration = juce::jmin(remainingTileDuration, fullSegmentDuration);
+                double segmentEnd = segmentTime + segmentDuration;
+                int segmentX =
+                    waveformArea.getX() + static_cast<int>(segmentTime * pixelsPerSecond + 0.5);
+                int segmentRight =
+                    waveformArea.getX() + static_cast<int>(segmentEnd * pixelsPerSecond + 0.5);
+                auto segmentRect =
+                    juce::Rectangle<int>(segmentX, waveformArea.getY(), segmentRight - segmentX,
+                                         waveformArea.getHeight());
+
+                double segmentSourceEnd =
+                    segmentSourceStart + timelineDeltaToPreviewSource(segmentDuration);
+                segmentSourceEnd = juce::jmin(segmentSourceEnd, fileEnd);
+                if (clipToVisible(segmentRect, segmentSourceStart, segmentSourceEnd))
+                    thumbnailManager.drawWaveform(g, segmentRect, clip.audio().source.filePath,
+                                                  segmentSourceStart, segmentSourceEnd, waveColour,
+                                                  gainLinear, true, selected);
+
+                segmentTime = segmentEnd;
+                remainingTileDuration -= segmentDuration;
+                if (segmentDuration >= fullSegmentDuration - 0.0001)
+                    segmentSourceStart = fileStart;
+                else
+                    segmentSourceStart = segmentSourceEnd;
+            }
             timePos += tileFullDuration;
         }
     } else {
