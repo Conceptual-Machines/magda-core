@@ -107,7 +107,6 @@ TEST_CASE("applyAudioClipBeats - beat-length edit preserves detected BPM",
     SECTION("Stretching to 8 beats does not change source interpretation BPM") {
         ClipManager::AudioClipBeatsUpdate u;
         u.lengthBeats = 8.0;
-        u.loopLengthBeats = 8.0;
         ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
 
         const auto* c = ClipManager::getInstance().getClip(seed.id);
@@ -121,7 +120,6 @@ TEST_CASE("applyAudioClipBeats - beat-length edit preserves detected BPM",
     SECTION("Halving target length does not change source interpretation BPM") {
         ClipManager::AudioClipBeatsUpdate u;
         u.lengthBeats = 2.0;
-        u.loopLengthBeats = 2.0;
         ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
 
         const auto* c = ClipManager::getInstance().getClip(seed.id);
@@ -129,6 +127,43 @@ TEST_CASE("applyAudioClipBeats - beat-length edit preserves detected BPM",
         REQUIRE(c->length == Approx(1.0));
         REQUIRE(c->audio().interpretation.bpm == Approx(DETECTED_BPM));
         REQUIRE(c->audio().interpretation.totalBeats == Approx(DETECTED_NUM_BEATS));
+    }
+}
+
+TEST_CASE("loop-length edit drives source total beats until manual override",
+          "[clip][bpm][issue-1157]") {
+    ClipManager::getInstance().shutdown();
+
+    auto seed = makeSessionAutoTempoClip();
+    ClipManager::getInstance().restoreClip(seed);
+
+    SECTION("Unlocked total beats follows loop length beats") {
+        ClipManager::AudioClipBeatsUpdate u;
+        u.loopLengthBeats = 8.0;
+        ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
+
+        const auto* c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c != nullptr);
+        REQUIRE(c->loopLengthBeats == Approx(8.0));
+        REQUIRE(c->audio().interpretation.totalBeats == Approx(8.0));
+        REQUIRE_FALSE(c->audio().interpretation.totalBeatsLocked);
+    }
+
+    SECTION("Manual total beats override locks future loop edits out") {
+        ClipManager::AudioClipBeatsUpdate manual;
+        manual.interpretationTotalBeats = 13.0;
+        manual.lockInterpretationTotalBeats = true;
+        ClipManager::getInstance().applyAudioClipBeats(seed.id, manual, PROJECT_BPM);
+
+        ClipManager::AudioClipBeatsUpdate loopEdit;
+        loopEdit.loopLengthBeats = 8.0;
+        ClipManager::getInstance().applyAudioClipBeats(seed.id, loopEdit, PROJECT_BPM);
+
+        const auto* c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c != nullptr);
+        REQUIRE(c->loopLengthBeats == Approx(8.0));
+        REQUIRE(c->audio().interpretation.totalBeats == Approx(13.0));
+        REQUIRE(c->audio().interpretation.totalBeatsLocked);
     }
 }
 

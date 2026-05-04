@@ -337,6 +337,7 @@ void AudioClipPropertiesContent::createControls() {
 
         magda::ClipManager::AudioClipBeatsUpdate u;
         u.interpretationTotalBeats = newSourceBeats;
+        u.lockInterpretationTotalBeats = true;
         if (durationSeconds > 0.0 && clip->audio().source.durationSeconds <= 0.0)
             u.sourceDurationSeconds = durationSeconds;
 

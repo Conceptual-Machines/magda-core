@@ -246,6 +246,7 @@ class ClipManager {
         std::optional<double> sourceDurationSeconds;
         std::optional<double> interpretationBpm;
         std::optional<double> interpretationTotalBeats;
+        bool lockInterpretationTotalBeats = false;
         std::optional<double> lengthBeats;
         std::optional<double> loopStartBeats;
         std::optional<double> loopLengthBeats;

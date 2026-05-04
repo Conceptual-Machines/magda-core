@@ -99,6 +99,7 @@ struct AudioSourceFacts {
 struct AudioSourceInterpretation {
     double bpm = 0.0;
     double totalBeats = 0.0;
+    bool totalBeatsLocked = false;
 };
 
 struct AudioClipModel {

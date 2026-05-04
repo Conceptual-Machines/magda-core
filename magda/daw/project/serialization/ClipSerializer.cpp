@@ -90,6 +90,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         auto* interpretationObj = new juce::DynamicObject();
         interpretationObj->setProperty("bpm", clip.audio().interpretation.bpm);
         interpretationObj->setProperty("totalBeats", clip.audio().interpretation.totalBeats);
+        interpretationObj->setProperty("totalBeatsLocked",
+                                       clip.audio().interpretation.totalBeatsLocked);
         audioObj->setProperty("interpretation", juce::var(interpretationObj));
 
         auto* playbackObj = new juce::DynamicObject();
@@ -274,6 +276,8 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         outClip.audio().source.durationSeconds = sourceObj->getProperty("durationSeconds");
         outClip.audio().interpretation.bpm = interpretationObj->getProperty("bpm");
         outClip.audio().interpretation.totalBeats = interpretationObj->getProperty("totalBeats");
+        outClip.audio().interpretation.totalBeatsLocked =
+            static_cast<bool>(interpretationObj->getProperty("totalBeatsLocked"));
 
         outClip.offset = playbackObj->getProperty("offsetSeconds");
         outClip.offsetBeats = playbackObj->getProperty("offsetBeats");

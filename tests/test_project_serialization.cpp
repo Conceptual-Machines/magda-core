@@ -163,6 +163,7 @@ TEST_CASE("Audio clip serialization separates source facts from interpretation",
     clip.audio().source.durationSeconds = 2.7907;
     clip.audio().interpretation.bpm = 172.0;
     clip.audio().interpretation.totalBeats = 8.0;
+    clip.audio().interpretation.totalBeatsLocked = true;
     clip.autoTempo = true;
     clip.loopEnabled = true;
     clip.loopStartBeats = 0.0;
@@ -198,6 +199,7 @@ TEST_CASE("Audio clip serialization separates source facts from interpretation",
     REQUIRE(placementObj != nullptr);
     REQUIRE(static_cast<double>(sourceObj->getProperty("durationSeconds")) == Approx(2.7907));
     REQUIRE(static_cast<double>(interpretationObj->getProperty("totalBeats")) == Approx(8.0));
+    REQUIRE(static_cast<bool>(interpretationObj->getProperty("totalBeatsLocked")));
     REQUIRE(static_cast<double>(playbackObj->getProperty("loopLengthBeats")) == Approx(8.0));
     REQUIRE(static_cast<double>(placementObj->getProperty("lengthBeats")) == Approx(16.0));
 
@@ -209,6 +211,7 @@ TEST_CASE("Audio clip serialization separates source facts from interpretation",
     REQUIRE(restored->placement.lengthBeats == Approx(16.0));
     REQUIRE(restored->audio().source.durationSeconds == Approx(2.7907));
     REQUIRE(restored->audio().interpretation.totalBeats == Approx(8.0));
+    REQUIRE(restored->audio().interpretation.totalBeatsLocked);
     REQUIRE(restored->loopLengthBeats == Approx(8.0));
 }
 

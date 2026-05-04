@@ -46,6 +46,22 @@ static te::LaunchQType toTELaunchQType(LaunchQuantize q) {
     return te::LaunchQType::none;
 }
 
+static void syncAudioSourceInterpretationToLoopInfo(te::WaveAudioClip& audioClip,
+                                                    const ClipInfo& clip) {
+    auto waveInfo = audioClip.getWaveInfo();
+    auto& li = audioClip.getLoopInfo();
+
+    if (clip.audio().interpretation.bpm > 0.0 &&
+        std::abs(li.getBpm(waveInfo) - clip.audio().interpretation.bpm) > 0.1) {
+        li.setBpm(clip.audio().interpretation.bpm, waveInfo);
+    }
+
+    if (clip.audio().interpretation.totalBeats > 0.0 &&
+        std::abs(li.getNumBeats() - clip.audio().interpretation.totalBeats) > 0.001) {
+        li.setNumBeats(clip.audio().interpretation.totalBeats);
+    }
+}
+
 ClipSynchronizer::ClipSynchronizer(te::Edit& edit, TrackController& trackController,
                                    WarpMarkerManager& warpMarkerManager)
     : edit_(edit), trackController_(trackController), warpMarkerManager_(warpMarkerManager) {
@@ -916,12 +932,9 @@ te::Clip* ClipSynchronizer::getSessionTeClip(ClipId clipId) {
 
 void ClipSynchronizer::configureSessionAutoTempo(te::WaveAudioClip* audioClip,
                                                  const ClipInfo* clip) {
-    // Sync source interpretation BPM to TE's loopInfo
-    if (clip->audio().interpretation.bpm > 0.0) {
-        auto waveInfo = audioClip->getWaveInfo();
-        auto& li = audioClip->getLoopInfo();
-        li.setBpm(clip->audio().interpretation.bpm, waveInfo);
-    }
+    // Sync source interpretation to TE's loopInfo. AutoTempo playback uses both BPM and
+    // source beat count to map source time to timeline beats.
+    syncAudioSourceInterpretationToLoopInfo(*audioClip, *clip);
 
     // Ensure valid stretch mode (autoTempo requires time-stretching)
     if (audioClip->getTimeStretchMode() == te::TimeStretcher::disabled)
@@ -1619,11 +1632,12 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             // Get tempo for beat calculations
             double bpm = edit_.tempoSequence.getTempo(0)->getBpm();
 
-            // Override TE's loopInfo BPM to match our calibrated source interpretation BPM.
+            // Override TE's loopInfo to match our calibrated source interpretation.
             // setAutoTempo calibrates source interpretation BPM = projectBPM / speedRatio so that
-            // enabling autoTempo doesn't change playback speed.  TE uses loopInfo
-            // to map source beats ↔ source time, so the two must agree.
-            if (clip->audio().interpretation.bpm > 0.0) {
+            // enabling autoTempo doesn't change playback speed. TE uses loopInfo to map source
+            // beats to source time, so BPM and source beat count must both agree.
+            if (clip->audio().interpretation.bpm > 0.0 ||
+                clip->audio().interpretation.totalBeats > 0.0) {
                 auto waveInfo = audioClipPtr->getWaveInfo();
                 auto& li = audioClipPtr->getLoopInfo();
                 double currentLoopInfoBpm = li.getBpm(waveInfo);
@@ -1632,9 +1646,7 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
                     << " teLoopInfo.numBeats=" << li.getNumBeats() << " model.interpretation.bpm="
                     << clip->audio().interpretation.bpm << " model.interpretation.totalBeats="
                     << clip->audio().interpretation.totalBeats);
-                if (std::abs(currentLoopInfoBpm - clip->audio().interpretation.bpm) > 0.1) {
-                    li.setBpm(clip->audio().interpretation.bpm, waveInfo);
-                }
+                syncAudioSourceInterpretationToLoopInfo(*audioClipPtr, *clip);
                 DBG("[ClipLengthTrace] syncAudioClipToEngine:loopInfoAfter id="
                     << clipId << " teLoopInfo.bpm=" << li.getBpm(waveInfo)
                     << " teLoopInfo.numBeats=" << li.getNumBeats()
