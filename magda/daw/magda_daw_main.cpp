@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 
@@ -598,7 +599,7 @@ std::vector<juce::File> enumerateLuaScripts() {
 
     juce::StringArray enabledFactory;
     for (const auto& name : magda::Config::getInstance().getEnabledFactoryLuaScripts())
-        enabledFactory.add(juce::String(name));
+        enabledFactory.add(juce::String::fromUTF8(name.c_str(), static_cast<int>(name.size())));
 
     std::vector<juce::File> merged = userScripts;
     auto bundled =
@@ -627,7 +628,7 @@ std::vector<juce::File> enumerateAvailableFactoryLuaScripts() {
 
     juce::StringArray enabledFactory;
     for (const auto& name : magda::Config::getInstance().getEnabledFactoryLuaScripts())
-        enabledFactory.add(juce::String(name));
+        enabledFactory.add(juce::String::fromUTF8(name.c_str(), static_cast<int>(name.size())));
 
     auto bundled =
         bundledDir.findChildFiles(juce::File::findFiles, /*searchRecursively*/ false, "*.lua");

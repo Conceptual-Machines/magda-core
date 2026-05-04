@@ -1,5 +1,6 @@
 #include "ControllersDialog.hpp"
 
+#include <algorithm>
 #include <map>
 
 #include "../themes/DarkTheme.hpp"
