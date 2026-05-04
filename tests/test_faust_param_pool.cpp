@@ -245,6 +245,30 @@ TEST_CASE("FaustParamPool - clearActive deactivates everything", "[faust][pool]"
     REQUIRE(pool.activeCount() == 0);
 }
 
+TEST_CASE("FaustParamPool - discrete descriptor carries sorted real values", "[faust][pool]") {
+    FaustParamPool pool;
+    auto h = makeContinuous("Mode", 0.0f, 2.0f);
+    h.metadata.isMenuStyle = true;
+    h.metadata.menuChoices = {{2.0f, "High"}, {0.0f, "Off"}, {1.0f, "Low"}};
+
+    auto report = pool.rebindFromHarvest({h});
+    REQUIRE(report.activeBindings.size() == 1);
+    const auto& d = report.activeBindings[0];
+    REQUIRE(d.kind == FaustParamSlot::Kind::Discrete);
+    REQUIRE(d.discreteValues.size() == 3);
+    REQUIRE(d.discreteValues[0] == 0.0f);
+    REQUIRE(d.discreteValues[1] == 1.0f);
+    REQUIRE(d.discreteValues[2] == 2.0f);
+}
+
+TEST_CASE("FaustParamPool - non-discrete descriptors have empty discreteValues", "[faust][pool]") {
+    FaustParamPool pool;
+    pool.rebindFromHarvest({makeContinuous("Drive"), makeBoolean("On")});
+    auto report = pool.rebindFromHarvest({makeContinuous("Drive"), makeBoolean("On")});
+    REQUIRE(report.activeBindings[0].discreteValues.empty());
+    REQUIRE(report.activeBindings[1].discreteValues.empty());
+}
+
 TEST_CASE("FaustParamPool - rebind report descriptors match slot data", "[faust][pool]") {
     FaustParamPool pool;
     auto h = makeContinuous("Freq", 20.0f, 20000.0f);

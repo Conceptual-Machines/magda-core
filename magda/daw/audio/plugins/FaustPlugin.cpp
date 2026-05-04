@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
+#include <map>
 
+#include "FaustMetadataParser.hpp"
 #include "FaustResources.hpp"
 #include "faust/dsp/dsp.h"
 #include "faust/dsp/interpreter-dsp.h"
@@ -23,54 +26,137 @@ declare name "Passthrough";
 process = _, _;
 )FAUST";
 
-juce::String slugifyForParamId(const juce::String& label) {
-    juce::String out;
-    for (auto c : label) {
-        if (juce::CharacterFunctions::isLetterOrDigit(c))
-            out += juce::CharacterFunctions::toLowerCase(c);
+// Faust UI subclass that walks the live DSP's control tree and produces
+// HarvestedControls with already-cleaned labels and merged metadata.
+//
+// Faust's metadata model: declare(zone, key, value) calls precede the
+// add* call for that zone. When zone is null the declare is at group
+// scope (between the surrounding open*Box / closeBox). Group labels can
+// also carry annotations directly.
+struct UIHarvester : public ::UI {
+    std::vector<HarvestedControl> harvested;
+
+    // Stack of group-scope ControlMetadata, one frame per open box.
+    std::vector<ControlMetadata> groupStack;
+    // Pending control-level declares for the next addXxx, keyed by zone.
+    std::map<FAUSTFLOAT*, ControlMetadata> pendingByZone;
+
+    void pushGroup(const char* label) {
+        auto parsed = parseFaustLabel(juce::String::fromUTF8(label != nullptr ? label : ""));
+        groupStack.push_back(parsed.metadata);
     }
-    if (out.isEmpty())
-        out = "param";
-    return out;
-}
 
-struct SliderEntry {
-    juce::String label;
-    FAUSTFLOAT* zone;
-    FAUSTFLOAT init;
-    FAUSTFLOAT min;
-    FAUSTFLOAT max;
-    FAUSTFLOAT step;
-};
+    ControlMetadata mergedFor(FAUSTFLOAT* zone) {
+        ControlMetadata merged;
+        for (const auto& g : groupStack)
+            mergeFaustMetadata(merged, g);
+        if (auto it = pendingByZone.find(zone); it != pendingByZone.end()) {
+            mergeFaustMetadata(merged, it->second);
+            pendingByZone.erase(it);
+        }
+        return merged;
+    }
 
-struct ParamHarvestingUI : public UI {
-    std::vector<SliderEntry> sliders;
+    void emitControl(FaustParamSlot::Kind kind, const char* rawLabel, FAUSTFLOAT* zone,
+                     FAUSTFLOAT init, FAUSTFLOAT min, FAUSTFLOAT max, FAUSTFLOAT step) {
+        auto parsed = parseFaustLabel(juce::String::fromUTF8(rawLabel != nullptr ? rawLabel : ""));
+        ControlMetadata merged = mergedFor(zone);
+        mergeFaustMetadata(merged, parsed.metadata);
 
-    void openTabBox(const char*) override {}
-    void openHorizontalBox(const char*) override {}
-    void openVerticalBox(const char*) override {}
-    void closeBox() override {}
+        HarvestedControl h;
+        h.kind = kind;
+        h.label = parsed.cleanLabel;
+        h.minValue = static_cast<float>(min);
+        h.maxValue = static_cast<float>(max);
+        h.stepValue = static_cast<float>(step);
+        h.defaultValue = static_cast<float>(init);
+        h.zone = zone;
+        h.metadata = std::move(merged);
+        harvested.push_back(std::move(h));
+    }
 
-    void addButton(const char*, FAUSTFLOAT*) override {}
-    void addCheckButton(const char*, FAUSTFLOAT*) override {}
+    // Layout
+    void openTabBox(const char* label) override {
+        pushGroup(label);
+    }
+    void openHorizontalBox(const char* label) override {
+        pushGroup(label);
+    }
+    void openVerticalBox(const char* label) override {
+        pushGroup(label);
+    }
+    void closeBox() override {
+        if (!groupStack.empty())
+            groupStack.pop_back();
+    }
 
+    // Active widgets
+    void addButton(const char* label, FAUSTFLOAT* zone) override {
+        emitControl(FaustParamSlot::Kind::Boolean, label, zone, 0, 0, 1, 1);
+    }
+    void addCheckButton(const char* label, FAUSTFLOAT* zone) override {
+        emitControl(FaustParamSlot::Kind::Boolean, label, zone, 0, 0, 1, 1);
+    }
     void addVerticalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min,
                            FAUSTFLOAT max, FAUSTFLOAT step) override {
-        sliders.push_back({juce::String(label), zone, init, min, max, step});
+        emitControl(FaustParamSlot::Kind::Continuous, label, zone, init, min, max, step);
     }
     void addHorizontalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min,
                              FAUSTFLOAT max, FAUSTFLOAT step) override {
-        sliders.push_back({juce::String(label), zone, init, min, max, step});
+        emitControl(FaustParamSlot::Kind::Continuous, label, zone, init, min, max, step);
     }
     void addNumEntry(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min,
                      FAUSTFLOAT max, FAUSTFLOAT step) override {
-        sliders.push_back({juce::String(label), zone, init, min, max, step});
+        emitControl(FaustParamSlot::Kind::Continuous, label, zone, init, min, max, step);
     }
 
+    // Passive — bargraphs and soundfiles are out of scope; ignored.
     void addHorizontalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
     void addVerticalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
     void addSoundfile(const char*, const char*, Soundfile**) override {}
+
+    // Metadata
+    void declare(FAUSTFLOAT* zone, const char* key, const char* value) override {
+        const auto k = juce::String::fromUTF8(key != nullptr ? key : "").toLowerCase();
+        const auto v = juce::String::fromUTF8(value != nullptr ? value : "");
+        ControlMetadata m;
+        applyFaustAnnotation(k, v, m);
+        if (zone == nullptr) {
+            if (!groupStack.empty())
+                mergeFaustMetadata(groupStack.back(), m);
+        } else {
+            mergeFaustMetadata(pendingByZone[zone], m);
+        }
+    }
 };
+
+// Map a normalized 0..1 value from the AutomatableParameter back to
+// the real units the live zone expects, using the binding's frozen
+// metadata. Audio-thread hot path — no allocation.
+float denormalizeForBinding(const FaustParamPool::ActiveBindingDescriptor& b, float normalized) {
+    const float n = juce::jlimit(0.0f, 1.0f, normalized);
+    switch (b.kind) {
+        case FaustParamSlot::Kind::Boolean:
+            return n >= 0.5f ? 1.0f : 0.0f;
+        case FaustParamSlot::Kind::Discrete: {
+            if (b.discreteValues.empty())
+                return 0.0f;
+            const int count = static_cast<int>(b.discreteValues.size());
+            const int idx =
+                juce::jlimit(0, count - 1, static_cast<int>(std::round(n * (count - 1))));
+            return b.discreteValues[static_cast<size_t>(idx)];
+        }
+        case FaustParamSlot::Kind::Continuous:
+            if (b.logScale && b.minValue > 0.0f && b.maxValue > b.minValue)
+                return b.minValue * std::pow(b.maxValue / b.minValue, n);
+            return b.minValue + n * (b.maxValue - b.minValue);
+    }
+    return 0.0f;
+}
+
+juce::String poolParamId(int index) {
+    return juce::String("param_") + juce::String(index + 1).paddedLeft('0', 2);
+}
 
 }  // namespace
 
@@ -116,59 +202,51 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compile(const juce::String
     return state;
 }
 
-void FaustPlugin::rebuildParameters(const std::shared_ptr<FaustState>& state) {
-    for (auto& b : bindings_) {
-        if (b->param)
-            b->param->detachFromCurrentValue();
-    }
-    bindings_.clear();
-    // Drop the previous DSP's AutomatableParameters from the plugin's
-    // parameter list. Without this, params accumulate across DSP swaps and
-    // the UI shows the union of every DSP loaded since plugin construction.
-    clearParameterList();
-    state->zones.clear();
+std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compileAndRebind(const juce::String& source,
+                                                                       juce::String& errorOut) {
+    auto state = compile(source, currentSampleRate_, errorOut);
+    if (!state)
+        return nullptr;
 
-    if (!state->dsp)
-        return;
-
-    ParamHarvestingUI harvester;
+    UIHarvester harvester;
     state->dsp->buildUserInterface(&harvester);
 
-    auto* um = getUndoManager();
-    for (const auto& s : harvester.sliders) {
-        auto binding = std::make_unique<ParamBinding>();
-        binding->id = slugifyForParamId(s.label);
-        binding->label = s.label;
-        binding->zone = s.zone;
+    auto report = pool_.rebindFromHarvest(harvester.harvested);
+    state->activeBindings = std::move(report.activeBindings);
+    lastDiagnostics_ = std::move(report.diagnostics);
 
-        juce::NormalisableRange<float> range{static_cast<float>(s.min), static_cast<float>(s.max),
-                                             static_cast<float>(s.step)};
-        binding->cached.referTo(this->state, juce::Identifier(binding->id), um,
-                                static_cast<float>(s.init));
-        binding->param = addParam(binding->id, binding->label, range);
-        binding->param->attachToCurrentValue(binding->cached);
+    for (const auto& d : lastDiagnostics_)
+        DBG("FaustPlugin: " << d);
 
-        state->zones.push_back(s.zone);
-        bindings_.push_back(std::move(binding));
-    }
+    return state;
 }
 
 FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) {
+    // Pre-create the lifetime-stable pool of AutomatableParameters. Each
+    // slot's parameter is normalized 0..1; the audio thread denormalizes
+    // per active binding's frozen metadata when writing to zones.
+    poolParams_.resize(FaustParamPool::kSize);
+    auto* um = getUndoManager();
+    juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
+    for (int i = 0; i < FaustParamPool::kSize; ++i) {
+        const auto id = poolParamId(i);
+        poolCached_[static_cast<size_t>(i)].referTo(this->state, juce::Identifier(id), um, 0.0f);
+        poolParams_[static_cast<size_t>(i)] = addParam(id, id, normalisedRange);
+        poolParams_[static_cast<size_t>(i)]->attachToCurrentValue(
+            poolCached_[static_cast<size_t>(i)]);
+    }
+
     const auto savedSource = state.getProperty("dspSource", juce::String()).toString();
     const auto savedName = state.getProperty("dspName", juce::String()).toString();
 
     juce::String err;
-    auto compiled =
-        compile(savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource),
-                currentSampleRate_, err);
+    auto compiled = compileAndRebind(
+        savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource), err);
     if (!compiled) {
-        // Saved source no longer compiles (libraries moved, syntax change,
-        // …) — fall back to the default so the plugin always loads.
         DBG("FaustPlugin: failed to compile saved source: " << err << " — using default");
-        compiled = compile(kDefaultDspSource, currentSampleRate_, err);
+        compiled = compileAndRebind(kDefaultDspSource, err);
     }
 
-    rebuildParameters(compiled);
     std::atomic_store(&active_, compiled);
 
     dspSource_ = savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource);
@@ -180,15 +258,15 @@ FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) 
 
     DBG("FaustPlugin ctor: name=" << dspName_ << " in=" << (compiled ? compiled->dspIn : -1)
                                   << " out=" << (compiled ? compiled->dspOut : -1)
-                                  << " params=" << static_cast<int>(bindings_.size()));
+                                  << " active=" << pool_.activeCount());
 }
 
 FaustPlugin::~FaustPlugin() {
     notifyListenersOfDeletion();
     retireTimer_.stopTimer();
-    for (auto& b : bindings_) {
-        if (b->param)
-            b->param->detachFromCurrentValue();
+    for (auto& p : poolParams_) {
+        if (p)
+            p->detachFromCurrentValue();
     }
     // Drop the active state and any retired ones synchronously here on the
     // message thread; ~Plugin guarantees the audio thread has stopped calling
@@ -206,9 +284,6 @@ void FaustPlugin::drainRetired() {
     {
         const juce::ScopedLock lk(retiredLock_);
         for (auto it = retired_.begin(); it != retired_.end();) {
-            // 200ms is well over any reasonable audio buffer (~10ms at 44.1k),
-            // so by now any audio-thread snapshot of this state has been
-            // dropped. Final ref drop and dtor run here on the message thread.
             if (now - it->retiredAtMs >= 200) {
                 toDelete.push_back(std::move(*it));
                 it = retired_.erase(it);
@@ -222,35 +297,12 @@ void FaustPlugin::drainRetired() {
 
 bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& source,
                                 juce::String& errorOut) {
-    auto compiled = compile(source, currentSampleRate_, errorOut);
+    auto compiled = compileAndRebind(source, errorOut);
     if (!compiled)
         return false;
 
-    // Snapshot the outgoing DSP's slider values so a later return to the same
-    // .dsp source restores the user's tweaks. Keyed by source so two starters
-    // with the same display name can't clash.
-    if (dspSource_.isNotEmpty()) {
-        auto& entry = savedValuesBySource_[dspSource_];
-        for (auto& b : bindings_) {
-            if (b->param)
-                entry[b->id] = b->param->getCurrentValue();
-        }
-    }
-
     auto previous = std::atomic_load(&active_);
-    rebuildParameters(compiled);
     std::atomic_store(&active_, compiled);
-
-    // Re-apply previously-seen slider values for this source, if any.
-    if (auto it = savedValuesBySource_.find(source); it != savedValuesBySource_.end()) {
-        for (auto& b : bindings_) {
-            if (auto v = it->second.find(b->id); v != it->second.end()) {
-                b->cached = v->second;
-                if (b->param)
-                    b->param->updateFromAttachedValue();
-            }
-        }
-    }
 
     if (previous) {
         const juce::ScopedLock lk(retiredLock_);
@@ -264,16 +316,13 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
 
     DBG("FaustPlugin::loadDspSource ok name=" << name << " in=" << compiled->dspIn
                                               << " out=" << compiled->dspOut
-                                              << " params=" << static_cast<int>(bindings_.size()));
+                                              << " active=" << pool_.activeCount());
     return true;
 }
 
 void FaustPlugin::initialise(const te::PluginInitialisationInfo& info) {
     currentSampleRate_ = static_cast<int>(info.sampleRate);
 
-    // Re-init the live dsp at the host sample rate. Hot-swapping the active
-    // shared_ptr is unnecessary — the dsp's internal state is the only thing
-    // that depends on SR.
     if (auto state = std::atomic_load(&active_)) {
         if (state->dsp)
             state->dsp->instanceInit(currentSampleRate_);
@@ -304,17 +353,20 @@ void FaustPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (!active || !active->dsp)
         return;
 
-    // Push current automatable values into the live dsp's slider zones.
-    // bindings_ is owned by the message thread; the audio thread reads
-    // ->zone (a stable pointer into the live dsp's memory) and ->param
-    // (lock-free getCurrentValue). Safe: bindings_ vector is only mutated
-    // under loadDspSource on the message thread, and the active state was
-    // installed atomically together with its zones — bindings_ entries
-    // referring to the *previous* dsp's zones become stale only after a
-    // load, which is allowed to glitch a single block.
-    for (auto& b : bindings_) {
-        if (b->param && b->zone)
-            *b->zone = static_cast<FAUSTFLOAT>(b->param->getCurrentValue());
+    // Audio-thread contract: read pool param values (TE wait-free) and
+    // each binding's frozen metadata (immutable for the state's
+    // lifetime). Never read the pool's slot table here — that's
+    // mutated on the message thread by `loadDspSource`.
+    for (const auto& b : active->activeBindings) {
+        if (!b.zone)
+            continue;
+        if (b.slotIndex < 0 || b.slotIndex >= FaustParamPool::kSize)
+            continue;
+        const auto& param = poolParams_[static_cast<size_t>(b.slotIndex)];
+        if (!param)
+            continue;
+        const float normalized = param->getCurrentValue();
+        *b.zone = static_cast<FAUSTFLOAT>(denormalizeForBinding(b, normalized));
     }
 
     const int hostChannels = fc.destBuffer->getNumChannels();
@@ -363,15 +415,21 @@ void FaustPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
         }
     }
 
-    for (auto& b : bindings_) {
-        if (auto p = v.getPropertyPointer(b->cached.getPropertyID()))
-            b->cached = static_cast<float>(*p);
+    // Pool param values are bound to the plugin's state ValueTree under
+    // stable IDs (param_01 … param_64), so restoring those properties
+    // automatically refreshes each AutomatableParameter via
+    // updateFromAttachedValue below.
+    for (size_t i = 0; i < poolCached_.size(); ++i) {
+        const auto id = poolParamId(static_cast<int>(i));
+        if (auto p = v.getPropertyPointer(juce::Identifier(id)))
+            poolCached_[i] = static_cast<float>(*p);
         else
-            b->cached.resetToDefault();
+            poolCached_[i].resetToDefault();
     }
-
-    for (auto p : getAutomatableParameters())
-        p->updateFromAttachedValue();
+    for (auto& p : poolParams_) {
+        if (p)
+            p->updateFromAttachedValue();
+    }
 }
 
 }  // namespace magda::daw::audio

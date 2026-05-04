@@ -73,6 +73,11 @@ class FaustParamPool {
         float maxValue = 1.0f;
         float stepValue = 0.0f;
         bool logScale = false;
+        /// For Kind::Discrete only: real-unit values indexed by sorted
+        /// choice order. The audio thread maps `round(normalized *
+        /// (size-1))` to an index here, then writes the result to
+        /// `zone`. Empty for Continuous / Boolean.
+        std::vector<float> discreteValues;
     };
 
     struct RebindReport {

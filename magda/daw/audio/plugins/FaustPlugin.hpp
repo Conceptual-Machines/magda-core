@@ -2,10 +2,12 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <array>
 #include <atomic>
-#include <map>
 #include <memory>
 #include <vector>
+
+#include "FaustParamPool.hpp"
 
 // libfaust types are forward-declared here so consumers don't need the Faust
 // runtime headers on their include path. Implementation pulls them in.
@@ -16,10 +18,17 @@ namespace magda::daw::audio {
 
 namespace te = tracktion::engine;
 
-// Stage 2: hosts a libfaust interpreter-compiled DSP. The .dsp source is held
-// in plugin state and (re)compiled at construction / on user load. Parameters
-// are harvested from buildUserInterface() and registered as
-// AutomatableParameters so the stock UI auto-renders sliders.
+// Hosts a libfaust interpreter-compiled DSP. The .dsp source is held in
+// plugin state and (re)compiled at construction / on user load.
+//
+// Parameters live in a fixed pool of FaustParamPool::kSize stable
+// AutomatableParameters created at construction time. Each slot's
+// AutomatableParameter is normalized 0..1 and persists for the
+// plugin's lifetime; on a DSP swap the live controls are routed into
+// slots and the audio thread denormalizes per-slot to real units when
+// writing the zone. This keeps macro / mod / MIDI Learn / automation
+// links pinned to slot indices that survive a recompile — see
+// docs/FAUST_POOL_REFACTOR.md.
 class FaustPlugin : public te::Plugin {
   public:
     FaustPlugin(const te::PluginCreationInfo& info);
@@ -67,61 +76,73 @@ class FaustPlugin : public te::Plugin {
 
     void restorePluginStateFromValueTree(const juce::ValueTree&) override;
 
-    // Compile `source` with the interpreter backend, swap in the new DSP, and
-    // persist source+name to plugin state. Returns true on success; on failure
-    // `errorOut` carries the libfaust error message and the previously loaded
-    // DSP (if any) is left in place. Safe to call from the message thread
-    // while the audio thread is processing — the swap is atomic.
+    // Compile `source` with the interpreter backend, swap in the new DSP,
+    // and persist source+name to plugin state. Returns true on success;
+    // on failure `errorOut` carries the libfaust error message and the
+    // previously-loaded DSP (if any) is left in place. Safe to call from
+    // the message thread while the audio thread is processing — the
+    // FaustState swap is atomic.
     bool loadDspSource(const juce::String& name, const juce::String& source,
                        juce::String& errorOut);
 
-  private:
-    // One per Faust slider. `zone` points into the active dsp's member storage
-    // — never freed here; lifetime is tied to the FaustState that owns the dsp.
-    struct ParamBinding {
-        juce::String id;
-        juce::String label;
-        juce::CachedValue<float> cached;
-        te::AutomatableParameter::Ptr param;
-        float* zone = nullptr;
-    };
+    // Read access for the UI / parameter-info bridge (Phase 4b). The
+    // pool's slot table is mutated only by `loadDspSource` on the
+    // message thread.
+    const FaustParamPool& getPool() const {
+        return pool_;
+    }
 
-    // Bundle of state owned together: factory, dsp instance, and the slider
-    // zones (whose pointers belong to the dsp instance). Held via
-    // shared_ptr so the audio thread can take an atomic snapshot and use it
-    // for the duration of a buffer; UI-thread loadDspSource() atomically
-    // replaces it. ~FaustState may run on the audio thread when the snapshot
-    // drops its last ref — acceptable POC limitation; production would defer.
+    // Diagnostics from the most recent rebind (overflow / duplicate idx
+    // / out-of-range). UI surfaces these in the FaustUI error label.
+    // Read on the message thread.
+    const std::vector<juce::String>& getLastRebindDiagnostics() const {
+        return lastDiagnostics_;
+    }
+
+  private:
+    // Per-state DSP bundle, atomically swapped on every successful
+    // load. The audio thread takes a snapshot at the top of
+    // `applyToBuffer`; everything inside the bundle is immutable for
+    // the snapshot's lifetime.
     struct FaustState {
         std::unique_ptr<::dsp> dsp;
         interpreter_dsp_factory* factory = nullptr;
-        std::vector<float*> zones;  // parallel to bindings_; one per slider
         int dspIn = 0;
         int dspOut = 0;
+        // Audio-thread view of the active slots: which pool slot →
+        // which zone, plus the denormalization metadata frozen at
+        // compile time. Built by `compileAndRebind` and never
+        // mutated after the state is published.
+        std::vector<FaustParamPool::ActiveBindingDescriptor> activeBindings;
         ~FaustState();
     };
 
-    // Compile `source` into a fresh FaustState. Returns nullptr on failure
-    // and writes the libfaust error to `errorOut`.
     static std::shared_ptr<FaustState> compile(const juce::String& source, int sampleRate,
                                                juce::String& errorOut);
+    // Compile + harvest + pool rebind, returning the fresh state.
+    // Stores diagnostics on `lastDiagnostics_`. Message-thread only.
+    std::shared_ptr<FaustState> compileAndRebind(const juce::String& source,
+                                                 juce::String& errorOut);
 
-    // Rebuild the AutomatableParameter set + ParamBinding list to match the
-    // sliders in `state->dsp`. Called after a successful compile, on the
-    // message thread. Detaches old bindings before installing new ones.
-    void rebuildParameters(const std::shared_ptr<FaustState>& state);
-
-    // Active dsp + factory bundle. Read/written exclusively via
+    // Active dsp + factory + binding bundle. Read/written exclusively via
     // std::atomic_load / std::atomic_store free functions on shared_ptr —
     // libc++ does not yet implement std::atomic<std::shared_ptr<T>>.
     std::shared_ptr<FaustState> active_;
-    std::vector<std::unique_ptr<ParamBinding>> bindings_;
 
-    // Retired states pending destruction on the message thread. After a swap,
-    // the audio thread may briefly still hold a snapshot of the old state; we
-    // park it here and let RetireTimer drop it after a delay long enough for
-    // any in-flight audio buffer to finish. Without this, dropping the last
-    // ref on the audio thread runs the dsp/factory dtor there.
+    // Lifetime-stable parameter pool. Slot table is mutated on the
+    // message thread; AutomatableParameter values are read wait-free
+    // from the audio thread via `getCurrentValue()`.
+    FaustParamPool pool_;
+    // CachedValue is non-copyable/non-movable — kept in a std::array
+    // (fixed-size, in-place) rather than a vector. AutomatableParameter
+    // pointers are reference-counted, vector is fine.
+    std::vector<te::AutomatableParameter::Ptr> poolParams_;
+    std::array<juce::CachedValue<float>, FaustParamPool::kSize> poolCached_;
+
+    // Retired states pending destruction on the message thread. After a
+    // swap, the audio thread may briefly still hold a snapshot of the
+    // old state; we park it here and let RetireTimer drop it after a
+    // delay long enough for any in-flight audio buffer to finish.
     struct RetiredItem {
         std::shared_ptr<FaustState> state;
         juce::uint32 retiredAtMs = 0;
@@ -142,21 +163,15 @@ class FaustPlugin : public te::Plugin {
 
     juce::String dspName_;
     juce::String dspSource_;
-
-    // Slider values seen for each DSP source we've loaded this session, so
-    // a swap chain like Drive→Tremolo→Drive restores Drive's tweaks instead
-    // of resetting to defaults. Snapshot is captured on every swap-out and
-    // re-applied on swap-in. Not persisted across project loads — those go
-    // through the per-plugin ValueTree like before.
-    std::map<juce::String, std::map<juce::String, float>> savedValuesBySource_;
+    std::vector<juce::String> lastDiagnostics_;
 
     // Sample rate captured from initialise(); used when recompiling at
     // runtime (constructor uses 44100 as a provisional value).
     int currentSampleRate_ = 44100;
 
     // Scratch buffer for Faust inputs. Faust's compute() does not permit
-    // aliasing inputs/outputs unless the .dsp is compiled with -inpl, so we
-    // copy the incoming audio into a separate scratch before calling compute().
+    // aliasing inputs/outputs unless the .dsp is compiled with -inpl, so
+    // we copy the incoming audio into a separate scratch before calling.
     juce::AudioBuffer<float> scratchIn_;
     std::vector<float*> inPtrs_;
     std::vector<float*> outPtrs_;

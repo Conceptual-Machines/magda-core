@@ -1,5 +1,7 @@
 #include "FaustParamPool.hpp"
 
+#include <algorithm>
+
 namespace magda::daw::audio {
 
 namespace {
@@ -41,6 +43,18 @@ FaustParamPool::ActiveBindingDescriptor descriptorFor(const FaustParamSlot& slot
     d.maxValue = slot.maxValue;
     d.stepValue = slot.stepValue;
     d.logScale = slot.logScale;
+    if (slot.kind == FaustParamSlot::Kind::Discrete) {
+        // Sort by underlying value so the dropdown index → real-value
+        // lookup matches the order users see (and matches what
+        // paramInfoFromSlot produces for ParameterInfo::choices).
+        auto sorted = slot.choices;
+        std::sort(sorted.begin(), sorted.end(),
+                  [](const std::pair<float, juce::String>& a,
+                     const std::pair<float, juce::String>& b) { return a.first < b.first; });
+        d.discreteValues.reserve(sorted.size());
+        for (const auto& c : sorted)
+            d.discreteValues.push_back(c.first);
+    }
     return d;
 }
 
