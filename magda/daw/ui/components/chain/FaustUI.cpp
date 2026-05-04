@@ -15,8 +15,8 @@ namespace magda::daw::ui {
 namespace te = tracktion::engine;
 
 FaustUI::FaustUI() {
-    logo_ = juce::Drawable::createFromImageData(BinaryData::faustlogo_svg,
-                                                BinaryData::faustlogo_svgSize);
+    logo_ = juce::Drawable::createFromImageData(BinaryData::fausttextlogo_svg,
+                                                BinaryData::fausttextlogo_svgSize);
     if (logo_)
         logo_->replaceColour(juce::Colour(0xFFD9D9D9), DarkTheme::getSecondaryTextColour());
 
