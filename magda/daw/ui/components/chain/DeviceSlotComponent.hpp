@@ -219,6 +219,7 @@ class DeviceSlotComponent : public NodeComponent,
     bool isChordEngine_ = false;
     bool isArpeggiator_ = false;
     bool isStepSequencer_ = false;
+    bool isFaust_ = false;
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 

@@ -1,10 +1,12 @@
 #include "FaustUI.hpp"
 
+#include <BinaryData.h>
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "FaustCodeEditorWindow.hpp"
 #include "audio/FaustResources.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -13,9 +15,14 @@ namespace magda::daw::ui {
 namespace te = tracktion::engine;
 
 FaustUI::FaustUI() {
+    logo_ = juce::Drawable::createFromImageData(BinaryData::faustlogo_svg,
+                                                BinaryData::faustlogo_svgSize);
+    if (logo_)
+        logo_->replaceColour(juce::Colour(0xFFD9D9D9), DarkTheme::getSecondaryTextColour());
+
     nameLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    nameLabel_.setJustificationType(juce::Justification::centredLeft);
+    nameLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(nameLabel_);
 
     errorLabel_.setFont(FontManager::getInstance().getMonoFont(10.0f));
@@ -23,11 +30,19 @@ FaustUI::FaustUI() {
     errorLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(errorLabel_);
 
-    loadButton_.onClick = [this] { showLoadMenu(); };
-    addAndMakeVisible(loadButton_);
+    loadButton_ = std::make_unique<magda::SvgButton>("Load DSP", BinaryData::folderopen_svg,
+                                                     BinaryData::folderopen_svgSize);
+    loadButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    loadButton_->setIconPadding(2.0f);
+    loadButton_->onClick = [this] { showLoadMenu(); };
+    addAndMakeVisible(*loadButton_);
 
-    editButton_.onClick = [this] { showCodeEditor(); };
-    addAndMakeVisible(editButton_);
+    editButton_ = std::make_unique<magda::SvgButton>("Edit DSP", BinaryData::script_svg,
+                                                     BinaryData::script_svgSize);
+    editButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    editButton_->setIconPadding(2.0f);
+    editButton_->onClick = [this] { showCodeEditor(); };
+    addAndMakeVisible(*editButton_);
 
     startTimerHz(30);
 }
@@ -110,7 +125,7 @@ void FaustUI::showLoadMenu() {
     const int fromFileId = id;
     menu.addItem(fromFileId, "From file...");
 
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&loadButton_),
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(loadButton_.get()),
                        [this, starters, fromFileId](int result) {
                            if (result <= 0)
                                return;
@@ -148,8 +163,8 @@ void FaustUI::showCodeEditor() {
         editorWindow_->toFront(true);
         return;
     }
-    const auto title =
-        "Faust DSP — " + plugin_->state.getProperty("dspName", juce::String()).toString();
+    const auto title = juce::String::fromUTF8("Faust DSP \xe2\x80\x94 ") +
+                       plugin_->state.getProperty("dspName", juce::String()).toString();
     const auto source = plugin_->state.getProperty("dspSource", juce::String()).toString();
     editorWindow_ = std::make_unique<FaustCodeEditorWindow>(
         title, source, [this](const juce::String& src, juce::String& err) -> bool {
@@ -182,16 +197,38 @@ void FaustUI::paint(juce::Graphics& g) {
     g.drawRect(getLocalBounds(), 1);
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds().reduced(1));
+
+    if (logo_) {
+        logo_->drawWithin(g, logoBounds_,
+                          juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid, 0.7f);
+    }
+
+    if (!nameBorderBounds_.isEmpty()) {
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRoundedRectangle(nameBorderBounds_, 3.0f, 1.0f);
+    }
+
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawHorizontalLine(headerBottomY_, static_cast<float>(getLocalBounds().getX() + 1),
+                         static_cast<float>(getLocalBounds().getRight() - 1));
 }
 
 void FaustUI::resized() {
     auto area = getLocalBounds().reduced(6);
 
-    auto header = area.removeFromTop(20);
-    editButton_.setBounds(header.removeFromRight(50));
+    auto header = area.removeFromTop(24);
+    headerBottomY_ = header.getBottom() + 2;
+    logoBounds_ = header.removeFromLeft(72).toFloat();
+    header.removeFromLeft(6);
+    constexpr int iconSize = 22;
+    editButton_->setBounds(
+        header.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
     header.removeFromRight(4);
-    loadButton_.setBounds(header.removeFromRight(60));
-    nameLabel_.setBounds(header.reduced(4, 0));
+    loadButton_->setBounds(
+        header.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+    header.removeFromRight(6);
+    nameBorderBounds_ = header.toFloat().reduced(0.0f, 1.0f);
+    nameLabel_.setBounds(header.reduced(8, 2));
 
     if (errorLabel_.getText().isNotEmpty())
         errorLabel_.setBounds(area.removeFromBottom(28));

@@ -5,10 +5,18 @@
 #include <memory>
 #include <vector>
 
-namespace tracktion { inline namespace engine { class AutomatableParameter; }}
+namespace tracktion {
+inline namespace engine {
+class AutomatableParameter;
+}
+}  // namespace tracktion
 
 namespace magda::daw::audio {
 class FaustPlugin;
+}
+
+namespace magda {
+class SvgButton;
 }
 
 namespace magda::daw::ui {
@@ -43,10 +51,14 @@ class FaustUI : public juce::Component, private juce::Timer {
 
     magda::daw::audio::FaustPlugin* plugin_ = nullptr;
     std::vector<std::unique_ptr<ParamSlot>> slots_;
+    std::unique_ptr<juce::Drawable> logo_;
+    juce::Rectangle<float> logoBounds_;
+    juce::Rectangle<float> nameBorderBounds_;
+    int headerBottomY_ = 0;
     juce::Label nameLabel_;
     juce::Label errorLabel_;
-    juce::TextButton loadButton_{"Load"};
-    juce::TextButton editButton_{"Edit"};
+    std::unique_ptr<magda::SvgButton> loadButton_;
+    std::unique_ptr<magda::SvgButton> editButton_;
     std::unique_ptr<juce::FileChooser> fileChooser_;
     std::unique_ptr<class FaustCodeEditorWindow> editorWindow_;
 

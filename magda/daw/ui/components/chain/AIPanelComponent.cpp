@@ -12,9 +12,9 @@ namespace magda::daw::ui {
 
 class AIPanelComponent::GenerateThread : public juce::Thread {
   public:
-    GenerateThread(AIPanelComponent& owner, std::unique_ptr<SoundDesignAgent> agent,
+    GenerateThread(AIPanelComponent& owner, std::unique_ptr<DeviceAIAgent> agent,
                    juce::String prompt, ChainNodePath path)
-        : juce::Thread("MAGDA-SoundDesignAgent"),
+        : juce::Thread("MAGDA-DeviceAIAgent"),
           owner_(owner),
           agent_(std::move(agent)),
           prompt_(std::move(prompt)),
@@ -60,7 +60,7 @@ class AIPanelComponent::GenerateThread : public juce::Thread {
     }
 
     AIPanelComponent& owner_;
-    std::unique_ptr<SoundDesignAgent> agent_;
+    std::unique_ptr<DeviceAIAgent> agent_;
     juce::String prompt_;
     ChainNodePath path_;
 };
@@ -198,14 +198,20 @@ void AIPanelComponent::setDevicePluginId(const juce::String& pluginId) {
     if (pluginId == pluginId_)
         return;
     pluginId_ = pluginId;
-    const bool supported = isSoundDesignSupported(pluginId_);
+    const bool soundSupported = isSoundDesignSupported(pluginId_);
+    const bool coderSupported = isCoderSupported(pluginId_);
+    const bool supported = soundSupported || coderSupported;
     input_.setEnabled(supported);
-    if (supported) {
+    if (coderSupported) {
+        input_.setTextToShowWhenEmpty(
+            "describe an effect or instrument...",
+            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.4f));
+    } else if (soundSupported) {
         input_.setTextToShowWhenEmpty(
             "describe the sound...", DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.4f));
     } else {
         input_.setTextToShowWhenEmpty(
-            "AI design not supported for this device",
+            "AI not supported for this device",
             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.4f));
     }
 }
@@ -241,7 +247,7 @@ void AIPanelComponent::submitPrompt() {
     auto prompt = input_.getText().trim();
     if (prompt.isEmpty())
         return;
-    if (!isSoundDesignSupported(pluginId_)) {
+    if (!isDeviceAISupported(pluginId_)) {
         appendOutput("unsupported device");
         return;
     }
@@ -257,7 +263,7 @@ void AIPanelComponent::submitPrompt() {
     appendOutput(juce::String::charToString(0x25CF) + " " + prompt);
     input_.clear();
 
-    auto agent = createSoundDesignAgentFor(pluginId_);
+    auto agent = createDeviceAIAgentFor(pluginId_);
     if (!agent) {
         appendOutput("no agent for " + pluginId_);
         return;

@@ -2,6 +2,7 @@
 
 #include <BinaryData.h>
 
+#include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/sound_design_agent.hpp"
 #include "AIPanelComponent.hpp"
 #include "DeviceSlotHeaderLayout.hpp"
@@ -134,8 +135,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     isArpeggiator_ = device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName);
     isStepSequencer_ =
         device.pluginId.containsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName);
-    isTracktionDevice_ = isInternalDevice() && !isDrumGrid_ && !isChordEngine_ && !isArpeggiator_ &&
-                         !isStepSequencer_;
+    isFaust_ = device.pluginId.containsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName);
+    isTracktionDevice_ = magda::isTracktionEngineStockPlugin(device.pluginId);
     if (isTracktionDevice_) {
         tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
                                                              BinaryData::fadlogotracktion_svgSize);
@@ -1936,17 +1937,20 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
     // Draw separator line to the left of the meter/note strip (below content header)
     if (!collapsed_) {
         int lineX = contentArea.getRight() - METER_STRIP_WIDTH - 4;
-        int meterTop = contentArea.getY() + CONTENT_HEADER_HEIGHT;
+        int meterTop = contentArea.getY() + (isFaust_ ? 0 : CONTENT_HEADER_HEIGHT);
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawVerticalLine(lineX, static_cast<float>(meterTop + 2),
                            static_cast<float>(contentArea.getBottom() - 2));
 
-        // Separator under content header (all devices) — spans full width
+        // Separator under content header (all devices except Faust, which has
+        // no content header) — spans full width
         float left = static_cast<float>(contentArea.getX() + 2);
         float right = static_cast<float>(contentArea.getRight() - 2);
         int headerBottom = contentArea.getY() + CONTENT_HEADER_HEIGHT;
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawHorizontalLine(headerBottom, left, right);
+        if (!isFaust_) {
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.drawHorizontalLine(headerBottom, left, right);
+        }
 
         // Additional line below pagination row (for external plugin param grid only)
         if (!isInternalDevice() ||
@@ -1975,8 +1979,9 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
         return;
     }
 
-    // Content header subtitle row for all devices
-    {
+    // Content header subtitle row for all devices (Faust draws its own
+    // header inside the FaustUI panel, so skip the slot-level one).
+    if (!isFaust_) {
         auto headerArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
         auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
                                        : DarkTheme::getSecondaryTextColour();
@@ -2033,18 +2038,24 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // with an empty rect — so we must not touch meter visibility when collapsed.
     if (!collapsed_) {
         // Carve the FULL-width second header first so the presets button can
-        // sit flush against the right edge of the panel.
-        auto secondHeaderArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
-        if (presetsButton_) {
-            const bool eligible = !isChordEngine_ && !isArpeggiator_ && !isStepSequencer_;
-            const bool show = eligible && hasPluginPresetsAvailable();
-            if (show) {
-                const int btnWidth = juce::jmin(140, secondHeaderArea.getWidth() / 2);
-                presetsButton_->setBounds(secondHeaderArea.removeFromRight(btnWidth).reduced(2, 3));
-                presetsButton_->setVisible(true);
-            } else {
-                presetsButton_->setVisible(false);
+        // sit flush against the right edge of the panel. Faust draws its own
+        // header inside the FaustUI panel, so it skips this strip entirely.
+        if (!isFaust_) {
+            auto secondHeaderArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
+            if (presetsButton_) {
+                const bool eligible = !isChordEngine_ && !isArpeggiator_ && !isStepSequencer_;
+                const bool show = eligible && hasPluginPresetsAvailable();
+                if (show) {
+                    const int btnWidth = juce::jmin(140, secondHeaderArea.getWidth() / 2);
+                    presetsButton_->setBounds(
+                        secondHeaderArea.removeFromRight(btnWidth).reduced(2, 3));
+                    presetsButton_->setVisible(true);
+                } else {
+                    presetsButton_->setVisible(false);
+                }
             }
+        } else if (presetsButton_) {
+            presetsButton_->setVisible(false);
         }
 
         // Then the meter strip lives in the area BELOW the second header.
@@ -2277,7 +2288,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 
     // Left side: macro, mod, AI (AI only when this device has a registered
     // SoundDesignAgent — currently 4OSC; extends with the registry).
-    const bool aiSupported = magda::isSoundDesignSupported(device_.pluginId);
+    const bool aiSupported = magda::isDeviceAISupported(device_.pluginId);
     auto placeAIButton = [&]() {
         if (aiSupported) {
             aiButton_->setVisible(true);

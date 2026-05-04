@@ -4,6 +4,8 @@
 
 #include <memory>
 
+#include "../../../../agents/coder_agent.hpp"
+#include "../../../../agents/device_ai_agent.hpp"
 #include "../../../../agents/sound_design_agent.hpp"
 #include "core/ChainNodePath.hpp"
 
@@ -81,7 +83,7 @@ class AIPanelComponent : public juce::Component {
     // /design slash command flow in AIChatConsoleContent.
     class GenerateThread;
     std::unique_ptr<GenerateThread> thread_;
-    std::unique_ptr<SoundDesignAgent> agent_;
+    std::unique_ptr<DeviceAIAgent> agent_;
 
     JUCE_DECLARE_WEAK_REFERENCEABLE(AIPanelComponent)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AIPanelComponent)
