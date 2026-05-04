@@ -691,17 +691,6 @@ class Config {
         enabledFactoryLuaScripts_ = std::move(filenames);
     }
 
-    // Profile ids of bundled (factory) controller profiles the user has
-    // explicitly enabled. The Add Profile picker only offers visible profiles
-    // (user-imported + enabled factory). Existing controller instances keep
-    // working regardless of this list — it's view-only.
-    std::vector<std::string> getEnabledFactoryProfileIds() const {
-        return enabledFactoryProfileIds_;
-    }
-    void setEnabledFactoryProfileIds(std::vector<std::string> ids) {
-        enabledFactoryProfileIds_ = std::move(ids);
-    }
-
     // Global bindings (serialized to/from config.json "globalBindings" key)
     juce::var getGlobalBindings() const {
         return globalBindings_;
@@ -886,7 +875,6 @@ class Config {
     juce::var luaScripts_;
     std::string activeLuaScript_;
     std::vector<std::string> enabledFactoryLuaScripts_;
-    std::vector<std::string> enabledFactoryProfileIds_;
 
     // Global bindings (opaque JSON blob, managed by BindingRegistry)
     juce::var globalBindings_;
