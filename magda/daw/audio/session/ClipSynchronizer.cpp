@@ -450,13 +450,13 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
     // TE's free functions insertWaveClip(ClipOwner&, ...) and insertMIDIClip(ClipOwner&, ...)
     // accept ClipSlot as a ClipOwner, creating the clip's ValueTree directly in the slot.
     if (clip->isAudio()) {
-        if (clip->audioFilePath.isEmpty())
+        if (clip->audio().source.filePath.isEmpty())
             return false;
 
-        juce::File audioFile(clip->audioFilePath);
+        juce::File audioFile(clip->audio().source.filePath);
         if (!audioFile.existsAsFile()) {
             DBG("ClipSynchronizer::syncSessionClipToSlot: Audio file not found: "
-                << clip->audioFilePath);
+                << clip->audio().source.filePath);
             return false;
         }
 
@@ -473,20 +473,17 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
         auto* audioClipPtr = clipRef.get();
 
-        // Populate source file metadata from TE's loopInfo. Issue #1157:
-        // when this is the first time metadata lands on an autoTempo clip,
-        // setSourceMetadata also snaps lengthBeats/loopLengthBeats to the
-        // file's natural beat count (instead of the project-tempo guess seeded
-        // by createAudioClip Session). Refresh the seconds cache from the new
-        // beat values so renderers reading clip->length see the right number.
+        // Populate source file metadata from TE's loopInfo. This is source-domain data only;
+        // clip placement and source loop region are never changed by metadata arrival.
         {
             auto& loopInfoRef = audioClipPtr->getLoopInfo();
             auto waveInfo = audioClipPtr->getWaveInfo();
             if (auto* mutableClip = cm.getClip(clipId)) {
-                bool sourceBpmWasUnset = mutableClip->sourceBPM <= 0.0;
+                bool sourceInterpretationBpmWasUnset =
+                    mutableClip->audio().interpretation.bpm <= 0.0;
                 mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
-                if (sourceBpmWasUnset && mutableClip->autoTempo) {
+                if (sourceInterpretationBpmWasUnset && mutableClip->autoTempo) {
                     double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
                     cm.refreshDerivedSeconds(clipId, projectBpm);
                     cm.forceNotifyClipPropertyChanged(clipId);
@@ -919,11 +916,11 @@ te::Clip* ClipSynchronizer::getSessionTeClip(ClipId clipId) {
 
 void ClipSynchronizer::configureSessionAutoTempo(te::WaveAudioClip* audioClip,
                                                  const ClipInfo* clip) {
-    // Sync sourceBPM to TE's loopInfo
-    if (clip->sourceBPM > 0.0) {
+    // Sync source interpretation BPM to TE's loopInfo
+    if (clip->audio().interpretation.bpm > 0.0) {
         auto waveInfo = audioClip->getWaveInfo();
         auto& li = audioClip->getLoopInfo();
-        li.setBpm(clip->sourceBPM, waveInfo);
+        li.setBpm(clip->audio().interpretation.bpm, waveInfo);
     }
 
     // Ensure valid stretch mode (autoTempo requires time-stretching)
@@ -1380,13 +1377,13 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
     // 3. CREATE new clip if doesn't exist
     if (!audioClipPtr) {
-        if (clip->audioFilePath.isEmpty()) {
+        if (clip->audio().source.filePath.isEmpty()) {
             DBG("ClipSynchronizer: No audio file for clip " << clipId);
             return;
         }
-        juce::File audioFile(clip->audioFilePath);
+        juce::File audioFile(clip->audio().source.filePath);
         if (!audioFile.existsAsFile()) {
-            DBG("ClipSynchronizer: Audio file not found: " << clip->audioFilePath);
+            DBG("ClipSynchronizer: Audio file not found: " << clip->audio().source.filePath);
             return;
         }
 
@@ -1424,18 +1421,18 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         }
         audioClipPtr->setUsesProxy(false);
 
-        // Populate source file metadata from TE's loopInfo. Issue #1157: see
-        // matching block in the session-clip path above — when metadata first
-        // lands on an autoTempo clip, refresh seconds + notify.
+        // Populate source file metadata from TE's loopInfo. See the matching
+        // session-clip path above.
         {
             auto& loopInfoRef = audioClipPtr->getLoopInfo();
             auto waveInfo = audioClipPtr->getWaveInfo();
             auto& cm = ClipManager::getInstance();
             if (auto* mutableClip = cm.getClip(clipId)) {
-                bool sourceBpmWasUnset = mutableClip->sourceBPM <= 0.0;
+                bool sourceInterpretationBpmWasUnset =
+                    mutableClip->audio().interpretation.bpm <= 0.0;
                 mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
-                if (sourceBpmWasUnset && mutableClip->autoTempo) {
+                if (sourceInterpretationBpmWasUnset && mutableClip->autoTempo) {
                     double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
                     cm.refreshDerivedSeconds(clipId, projectBpm);
                     cm.forceNotifyClipPropertyChanged(clipId);
@@ -1611,16 +1608,16 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             // Get tempo for beat calculations
             double bpm = edit_.tempoSequence.getTempo(0)->getBpm();
 
-            // Override TE's loopInfo BPM to match our calibrated sourceBPM.
-            // setAutoTempo calibrates sourceBPM = projectBPM / speedRatio so that
+            // Override TE's loopInfo BPM to match our calibrated source interpretation BPM.
+            // setAutoTempo calibrates source interpretation BPM = projectBPM / speedRatio so that
             // enabling autoTempo doesn't change playback speed.  TE uses loopInfo
             // to map source beats ↔ source time, so the two must agree.
-            if (clip->sourceBPM > 0.0) {
+            if (clip->audio().interpretation.bpm > 0.0) {
                 auto waveInfo = audioClipPtr->getWaveInfo();
                 auto& li = audioClipPtr->getLoopInfo();
                 double currentLoopInfoBpm = li.getBpm(waveInfo);
-                if (std::abs(currentLoopInfoBpm - clip->sourceBPM) > 0.1) {
-                    li.setBpm(clip->sourceBPM, waveInfo);
+                if (std::abs(currentLoopInfoBpm - clip->audio().interpretation.bpm) > 0.1) {
+                    li.setBpm(clip->audio().interpretation.bpm, waveInfo);
                 }
             }
 

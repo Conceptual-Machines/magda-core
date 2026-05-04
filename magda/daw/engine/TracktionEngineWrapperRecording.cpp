@@ -96,13 +96,13 @@ void TracktionEngineWrapper::recordingFinished(
             ClipId clipId = clipManager.createAudioClip(trackId, startSeconds, lengthSeconds,
                                                         audioFilePath, ClipView::Arrangement);
 
-            // Set sourceBPM to the project tempo — we know the exact BPM the clip was
-            // recorded at, so skip unreliable auto-detection in syncClipToEngine.
+            // Set source interpretation BPM to the project tempo — we know the exact BPM the clip
+            // was recorded at, so skip unreliable auto-detection in syncClipToEngine.
             if (auto* newClip = clipManager.getClip(clipId)) {
                 double projectBPM = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
                 if (projectBPM > 0.0) {
-                    newClip->sourceBPM = projectBPM;
-                    newClip->sourceNumBeats = lengthSeconds * projectBPM / 60.0;
+                    newClip->audio().interpretation.bpm = projectBPM;
+                    newClip->audio().interpretation.totalBeats = lengthSeconds * projectBPM / 60.0;
                 }
             }
 

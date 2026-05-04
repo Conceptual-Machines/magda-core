@@ -369,29 +369,34 @@ void ClipInspector::initClipPropertiesSection() {
         double bpm = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
 
         // Issue #1157: BPM edit is a CORRECTION of the detected file metadata,
-        // not a stretch control. We write only sourceBPM (and recompute
-        // sourceNumBeats from the file's true duration). Timeline length and
+        // not a stretch control. We write only source interpretation BPM (and recompute
+        // source interpretation total beats from the file's true duration). Timeline length and
         // loop region are user-intent and untouched — TE will adapt the
-        // playback stretch ratio to the new sourceBPM at the next sync.
+        // playback stretch ratio to the new source interpretation BPM at the next sync.
         if (clip->autoTempo) {
             magda::ClipManager::AudioClipBeatsUpdate u;
-            u.sourceBPM = newBPM;
-            if (auto* thumb =
-                    magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath)) {
+            u.interpretationBpm = newBPM;
+            if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                    clip->audio().source.filePath)) {
                 double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0)
-                    u.sourceNumBeats = fileDuration * newBPM / 60.0;
+                if (fileDuration > 0.0) {
+                    u.sourceDurationSeconds = fileDuration;
+                    u.interpretationTotalBeats = fileDuration * newBPM / 60.0;
+                }
             }
             magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u, bpm);
         } else {
-            // Non-autoTempo audio: sourceBPM is just stored metadata, no
+            // Non-autoTempo audio: source interpretation BPM is just stored metadata, no
             // dependent fields to recompute. Direct write is fine.
-            clip->sourceBPM = newBPM;
-            if (auto* thumb =
-                    magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath)) {
+            clip->audio().interpretation.bpm = newBPM;
+            if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                    clip->audio().source.filePath)) {
                 double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0)
-                    clip->sourceNumBeats = fileDuration * newBPM / 60.0;
+                if (fileDuration > 0.0) {
+                    if (clip->audio().source.durationSeconds <= 0.0)
+                        clip->audio().source.durationSeconds = fileDuration;
+                    clip->audio().interpretation.totalBeats = fileDuration * newBPM / 60.0;
+                }
             }
             magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(primaryClipId());
         }
@@ -643,55 +648,62 @@ void ClipInspector::initClipPropertiesSection() {
             bpm = timelineController_->getState().tempo.bpm;
         }
 
-        // When enabling, seed sourceBPM/sourceNumBeats from detected BPM
-        // (AudioThumbnailManager) since the clip model may have stale metadata
-        // from TE's default loopInfo. Cached value is applied immediately
-        // (pre-setAutoTempo, before the canonical path is open); cache miss
-        // kicks off background detection and the callback funnels through
-        // applyAudioClipBeats once autoTempo is on.
-        const bool sourceBpmLooksDefaulted =
-            clip->sourceBPM <= 0.0 || (bpm > 0.0 && std::abs(clip->sourceBPM - bpm) < 0.1);
-        if (enable && clip->isAudio() && sourceBpmLooksDefaulted) {
+        // When enabling, seed source interpretation BPM/source interpretation total beats from
+        // detected BPM (AudioThumbnailManager) since the clip model may have stale metadata from
+        // TE's default loopInfo. Cached value is applied immediately (pre-setAutoTempo, before the
+        // canonical path is open); cache miss kicks off background detection and the callback
+        // funnels through applyAudioClipBeats once autoTempo is on.
+        const bool sourceInterpretationBpmLooksDefaulted =
+            clip->audio().interpretation.bpm <= 0.0 ||
+            (bpm > 0.0 && std::abs(clip->audio().interpretation.bpm - bpm) < 0.1);
+        if (enable && clip->isAudio() && sourceInterpretationBpmLooksDefaulted) {
             // Issue #1157: only seed from AudioThumbnailManager when the file
             // didn't carry tempo metadata. setSourceMetadata (from TE's
             // loopInfo) is authoritative when present; TempoDetect can be
             // wrong by ~1.3x on syncopated loops.
             auto& thumbs = magda::AudioThumbnailManager::getInstance();
-            double cached = thumbs.getCachedBPM(clip->audioFilePath);
+            double cached = thumbs.getCachedBPM(clip->audio().source.filePath);
             if (cached > 0.0) {
-                clip->sourceBPM = cached;
-                if (auto* thumb = thumbs.getThumbnail(clip->audioFilePath)) {
+                clip->audio().interpretation.bpm = cached;
+                if (auto* thumb = thumbs.getThumbnail(clip->audio().source.filePath)) {
                     double fileDuration = thumb->getTotalLength();
-                    if (fileDuration > 0.0)
-                        clip->sourceNumBeats = fileDuration * cached / 60.0;
+                    if (fileDuration > 0.0) {
+                        if (clip->audio().source.durationSeconds <= 0.0)
+                            clip->audio().source.durationSeconds = fileDuration;
+                        clip->audio().interpretation.totalBeats = fileDuration * cached / 60.0;
+                    }
                 }
             } else {
                 auto cid = primaryClipId();
-                thumbs.requestBPMDetection(clip->audioFilePath, [cid](double detectedBPM) {
-                    if (detectedBPM <= 0.0)
-                        return;
-                    auto& mgr = magda::ClipManager::getInstance();
-                    auto* c = mgr.getClip(cid);
-                    if (!c)
-                        return;
-                    // Issue #1157: file metadata wins over audio analysis.
-                    // TempoDetect can be wrong by ~1.3x on syncopated loops.
-                    double live =
-                        magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-                    bool existingLooksDefaulted =
-                        c->sourceBPM > 0.0 && live > 0.0 && std::abs(c->sourceBPM - live) < 0.1;
-                    if (c->sourceBPM > 0.0 && !existingLooksDefaulted)
-                        return;
-                    magda::ClipManager::AudioClipBeatsUpdate u;
-                    u.sourceBPM = detectedBPM;
-                    if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                            c->audioFilePath)) {
-                        double fileDuration = thumb->getTotalLength();
-                        if (fileDuration > 0.0)
-                            u.sourceNumBeats = fileDuration * detectedBPM / 60.0;
-                    }
-                    mgr.applyAudioClipBeats(cid, u, live);
-                });
+                thumbs.requestBPMDetection(
+                    clip->audio().source.filePath, [cid](double detectedBPM) {
+                        if (detectedBPM <= 0.0)
+                            return;
+                        auto& mgr = magda::ClipManager::getInstance();
+                        auto* c = mgr.getClip(cid);
+                        if (!c)
+                            return;
+                        // Issue #1157: file metadata wins over audio analysis.
+                        // TempoDetect can be wrong by ~1.3x on syncopated loops.
+                        double live =
+                            magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+                        bool existingLooksDefaulted =
+                            c->audio().interpretation.bpm > 0.0 && live > 0.0 &&
+                            std::abs(c->audio().interpretation.bpm - live) < 0.1;
+                        if (c->audio().interpretation.bpm > 0.0 && !existingLooksDefaulted)
+                            return;
+                        magda::ClipManager::AudioClipBeatsUpdate u;
+                        u.interpretationBpm = detectedBPM;
+                        if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                                c->audio().source.filePath)) {
+                            double fileDuration = thumb->getTotalLength();
+                            if (fileDuration > 0.0) {
+                                u.sourceDurationSeconds = fileDuration;
+                                u.interpretationTotalBeats = fileDuration * detectedBPM / 60.0;
+                            }
+                        }
+                        mgr.applyAudioClipBeats(cid, u, live);
+                    });
             }
         }
 
@@ -807,8 +819,10 @@ void ClipInspector::initClipPropertiesSection() {
             bpm = timelineController_->getState().tempo.bpm;
         }
         // Preserve current phase when moving loop start
-        // Use sourceBPM for audio source-file positions
-        double loopBpm = (clip->isAudio() && clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
+        // Use source interpretation BPM for audio source-file positions
+        double loopBpm = (clip->isAudio() && clip->audio().interpretation.bpm > 0.0)
+                             ? clip->audio().interpretation.bpm
+                             : bpm;
         double currentPhase = clip->offset - clip->loopStart;
         double newLoopStartBeats = clipLoopStartValue_->getValue();
         double newLoopStartSeconds =
@@ -849,8 +863,10 @@ void ClipInspector::initClipPropertiesSection() {
         }
 
         // Compute new loop length from loop end - loop start
-        // Use sourceBPM for audio source-file positions
-        double loopBpm = (clip->isAudio() && clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
+        // Use source interpretation BPM for audio source-file positions
+        double loopBpm = (clip->isAudio() && clip->audio().interpretation.bpm > 0.0)
+                             ? clip->audio().interpretation.bpm
+                             : bpm;
         double newLoopEndBeats = clipLoopEndValue_->getValue();
         double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, loopBpm);
         double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
@@ -858,8 +874,8 @@ void ClipInspector::initClipPropertiesSection() {
             newLoopLengthBeats = 0.25;
 
         double newLoopLengthSeconds;
-        if (clip->autoTempo && clip->sourceBPM > 0.0) {
-            newLoopLengthSeconds = (newLoopLengthBeats * 60.0) / clip->sourceBPM;
+        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0) {
+            newLoopLengthSeconds = (newLoopLengthBeats * 60.0) / clip->audio().interpretation.bpm;
         } else {
             newLoopLengthSeconds =
                 magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, loopBpm);

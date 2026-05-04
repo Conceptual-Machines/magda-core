@@ -194,7 +194,7 @@ void ClipComponent::paint(juce::Graphics& g) {
 size_t ClipComponent::computeWaveformHash(const ClipInfo& clip) {
     size_t h = 0;
     auto combine = [&](size_t v) { h ^= v + 0x9e3779b9 + (h << 6) + (h >> 2); };
-    combine(std::hash<juce::String>{}(clip.audioFilePath));
+    combine(std::hash<juce::String>{}(clip.audio().source.filePath));
     combine(std::hash<double>{}(clip.length));
     combine(std::hash<double>{}(clip.offset));
     combine(std::hash<double>{}(clip.speedRatio));
@@ -276,7 +276,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
     float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
 
     double fileDuration = 0.0;
-    auto* thumbnail = thumbnailManager.getThumbnail(clip.audioFilePath);
+    auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
     if (thumbnail)
         fileDuration = thumbnail->getTotalLength();
 
@@ -331,8 +331,9 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             double finalSrcEnd = fileDuration > 0.0 ? juce::jmin(srcEnd, fileDuration) : srcEnd;
             if (finalSrcEnd > finalSrcStart &&
                 clipToVisible(drawRect, finalSrcStart, finalSrcEnd)) {
-                thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, finalSrcStart,
-                                              finalSrcEnd, waveColour, gainLinear, true, selected);
+                thumbnailManager.drawWaveform(g, drawRect, clip.audio().source.filePath,
+                                              finalSrcStart, finalSrcEnd, waveColour, gainLinear,
+                                              true, selected);
             }
         }
     } else if (di.isLooped()) {
@@ -372,8 +373,9 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
                 tileFileEnd = tileFileStart + tileSourceLen * fraction;
             }
             if (clipToVisible(drawRect, tileFileStart, tileFileEnd))
-                thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, tileFileStart,
-                                              tileFileEnd, waveColour, gainLinear, true, selected);
+                thumbnailManager.drawWaveform(g, drawRect, clip.audio().source.filePath,
+                                              tileFileStart, tileFileEnd, waveColour, gainLinear,
+                                              true, selected);
             timePos += tileFullDuration;
         }
     } else {
@@ -387,8 +389,8 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
         auto drawRect = juce::Rectangle<int>(waveformArea.getX(), waveformArea.getY(), drawWidth,
                                              waveformArea.getHeight());
         if (clipToVisible(drawRect, fileStart, fileEnd))
-            thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart, fileEnd,
-                                          waveColour, gainLinear, true, selected);
+            thumbnailManager.drawWaveform(g, drawRect, clip.audio().source.filePath, fileStart,
+                                          fileEnd, waveColour, gainLinear, true, selected);
     }
 
     if (clip.isReversed)
@@ -410,8 +412,9 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     }
 
     // Poll until thumbnail is loaded
-    if (clip.audioFilePath.isNotEmpty()) {
-        auto* thumb = AudioThumbnailManager::getInstance().getThumbnail(clip.audioFilePath);
+    if (clip.audio().source.filePath.isNotEmpty()) {
+        auto* thumb =
+            AudioThumbnailManager::getInstance().getThumbnail(clip.audio().source.filePath);
         if (thumb == nullptr || !thumb->isFullyLoaded()) {
             if (!isTimerRunning())
                 startTimer(100);
@@ -424,7 +427,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     g.setColour(bgColour);
     g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
 
-    if (clip.audioFilePath.isNotEmpty())
+    if (clip.audio().source.filePath.isNotEmpty())
         paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength);
 
     g.setColour(clip.colour.withAlpha(0.45f));
@@ -960,8 +963,9 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
 
     // Cache file duration for resize clamping
     dragStartFileDuration_ = 0.0;
-    if (clip->isAudio() && clip->audioFilePath.isNotEmpty()) {
-        auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
+    if (clip->isAudio() && clip->audio().source.filePath.isNotEmpty()) {
+        auto* thumbnail =
+            AudioThumbnailManager::getInstance().getThumbnail(clip->audio().source.filePath);
         if (thumbnail)
             dragStartFileDuration_ = thumbnail->getTotalLength();
     }
@@ -1057,7 +1061,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // Shift+edge = stretch mode (time-stretches audio source or scales MIDI notes)
     if (isOnLeftEdge(e.x)) {
         if (e.mods.isShiftDown() &&
-            ((clip->isAudio() && clip->audioFilePath.isNotEmpty()) || clip->isMidi())) {
+            ((clip->isAudio() && clip->audio().source.filePath.isNotEmpty()) || clip->isMidi())) {
             dragMode_ = DragMode::StretchLeft;
             dragStartSpeedRatio_ = clip->speedRatio;
             dragStartClipSnapshot_ = *clip;
@@ -1068,7 +1072,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         }
     } else if (isOnRightEdge(e.x)) {
         if (e.mods.isShiftDown() &&
-            ((clip->isAudio() && clip->audioFilePath.isNotEmpty()) || clip->isMidi())) {
+            ((clip->isAudio() && clip->audio().source.filePath.isNotEmpty()) || clip->isMidi())) {
             dragMode_ = DragMode::StretchRight;
             dragStartSpeedRatio_ = clip->speedRatio;
             dragStartClipSnapshot_ = *clip;
@@ -1077,6 +1081,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             dragStartClipSnapshot_ = *clip;
             // Capture original lengths of other selected clips for multi-resize
             dragStartSelectedLengths_.clear();
+            dragStartSelectedClipSnapshots_.clear();
             multiResizeMaxDelta_ = std::numeric_limits<double>::max();
             const auto& selected = SelectionManager::getInstance().getSelectedClips();
             if (selected.size() > 1 && selected.count(clipId_)) {
@@ -1085,8 +1090,10 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
                     const auto* c = cm.getClip(cid);
                     if (!c)
                         continue;
-                    if (cid != clipId_)
+                    if (cid != clipId_) {
                         dragStartSelectedLengths_[cid] = c->length;
+                        dragStartSelectedClipSnapshots_[cid] = *c;
+                    }
 
                     // Find max resize before hitting next non-selected clip
                     auto trackClips = cm.getClipsOnTrack(c->trackId);
@@ -1302,6 +1309,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                     mutableClip->loopStart = resizePreviewClip_.loopStart;
                     mutableClip->startBeats = resizePreviewClip_.startBeats;
                     mutableClip->lengthBeats = resizePreviewClip_.lengthBeats;
+                    mutableClip->placement = resizePreviewClip_.placement;
                     mutableClip->midiOffset = resizePreviewClip_.midiOffset;
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
@@ -1699,6 +1707,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         c->midiTrimOffset = dragStartClipSnapshot_.midiTrimOffset;
                         c->startBeats = dragStartClipSnapshot_.startBeats;
                         c->lengthBeats = dragStartClipSnapshot_.lengthBeats;
+                        c->placement = dragStartClipSnapshot_.placement;
                     }
                 }
 
@@ -1726,10 +1735,19 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                     auto& cm = ClipManager::getInstance();
                     if (auto* c = cm.getClip(clipId_)) {
                         c->length = dragStartLength_;
+                        c->startBeats = dragStartClipSnapshot_.startBeats;
+                        c->lengthBeats = dragStartClipSnapshot_.lengthBeats;
+                        c->placement = dragStartClipSnapshot_.placement;
                     }
                     for (auto& [cid, origLen] : dragStartSelectedLengths_) {
                         if (auto* c = cm.getClip(cid)) {
                             c->length = origLen;
+                            if (auto it = dragStartSelectedClipSnapshots_.find(cid);
+                                it != dragStartSelectedClipSnapshots_.end()) {
+                                c->startBeats = it->second.startBeats;
+                                c->lengthBeats = it->second.lengthBeats;
+                                c->placement = it->second.placement;
+                            }
                         }
                     }
                 }
@@ -1738,6 +1756,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                     onClipResized(clipId_, finalLength, false);
                 }
                 dragStartSelectedLengths_.clear();
+                dragStartSelectedClipSnapshots_.clear();
                 break;
             }
 

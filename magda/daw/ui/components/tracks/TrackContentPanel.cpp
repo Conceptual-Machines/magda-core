@@ -1944,8 +1944,8 @@ void TrackContentPanel::updateClipComponentPositions() {
         // floating point drift that causes position to shift with zoom.
         double startBeats =
             (clip->startBeats >= 0.0) ? clip->startBeats : clip->startTime * tempoBPM / 60.0;
-        double clipBeats =
-            (clip->lengthBeats > 0.0) ? clip->lengthBeats : clip->length * tempoBPM / 60.0;
+        double clipBeats = (clip->placement.lengthBeats > 0.0) ? clip->placement.lengthBeats
+                                                               : clip->length * tempoBPM / 60.0;
         int clipX = beatsToPixel(startBeats);
         int clipWidth = static_cast<int>(std::round(clipBeats * currentZoom));
 

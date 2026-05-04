@@ -1,5 +1,6 @@
 #include <juce_core/juce_core.h>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/core/AutomationManager.hpp"
@@ -9,6 +10,7 @@
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
 
 using namespace magda;
+using Catch::Approx;
 
 namespace {
 
@@ -143,6 +145,71 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE(loaded.loopStartBeats == info.loopStartBeats);
         REQUIRE(loaded.loopEndBeats == info.loopEndBeats);
     }
+}
+
+TEST_CASE("Audio clip serialization separates source facts from interpretation",
+          "[project][serialization][audio]") {
+    ProjectTestFixture fixture;
+
+    auto trackId = TrackManager::getInstance().createTrack("Audio", TrackType::Audio);
+
+    ClipInfo clip;
+    clip.id = 42;
+    clip.trackId = trackId;
+    clip.name = "Loop";
+    clip.setAudioContent();
+    clip.setPlacementBeats(4.0, 16.0);
+    clip.audio().source.filePath = "/tmp/loop.wav";
+    clip.audio().source.durationSeconds = 2.7907;
+    clip.audio().interpretation.bpm = 172.0;
+    clip.audio().interpretation.totalBeats = 8.0;
+    clip.autoTempo = true;
+    clip.loopEnabled = true;
+    clip.loopStartBeats = 0.0;
+    clip.loopLengthBeats = 8.0;
+    clip.loopLength = 8.0 * 60.0 / 172.0;
+    ClipManager::getInstance().restoreClip(clip);
+
+    ProjectInfo info;
+    info.name = "Audio Source Model";
+    info.tempo = 120.0;
+
+    auto json = ProjectSerializer::serializeProject(info);
+    auto* rootObj = json.getDynamicObject();
+    REQUIRE(rootObj != nullptr);
+
+    auto* clips = rootObj->getProperty("clips").getArray();
+    REQUIRE(clips != nullptr);
+    REQUIRE(clips->size() == 1);
+
+    auto* clipObj = clips->getReference(0).getDynamicObject();
+    REQUIRE(clipObj != nullptr);
+    REQUIRE(clipObj->getProperty("audioSource").isVoid());
+
+    auto* audioObj = clipObj->getProperty("audio").getDynamicObject();
+    REQUIRE(audioObj != nullptr);
+    auto* sourceObj = audioObj->getProperty("source").getDynamicObject();
+    auto* interpretationObj = audioObj->getProperty("interpretation").getDynamicObject();
+    auto* playbackObj = audioObj->getProperty("playback").getDynamicObject();
+    REQUIRE(sourceObj != nullptr);
+    REQUIRE(interpretationObj != nullptr);
+    REQUIRE(playbackObj != nullptr);
+    auto* placementObj = clipObj->getProperty("placement").getDynamicObject();
+    REQUIRE(placementObj != nullptr);
+    REQUIRE(static_cast<double>(sourceObj->getProperty("durationSeconds")) == Approx(2.7907));
+    REQUIRE(static_cast<double>(interpretationObj->getProperty("totalBeats")) == Approx(8.0));
+    REQUIRE(static_cast<double>(playbackObj->getProperty("loopLengthBeats")) == Approx(8.0));
+    REQUIRE(static_cast<double>(placementObj->getProperty("lengthBeats")) == Approx(16.0));
+
+    ProjectInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+    auto* restored = ClipManager::getInstance().getClip(clip.id);
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->isAudio());
+    REQUIRE(restored->placement.lengthBeats == Approx(16.0));
+    REQUIRE(restored->audio().source.durationSeconds == Approx(2.7907));
+    REQUIRE(restored->audio().interpretation.totalBeats == Approx(8.0));
+    REQUIRE(restored->loopLengthBeats == Approx(8.0));
 }
 
 TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {

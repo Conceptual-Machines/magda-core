@@ -136,6 +136,8 @@ class ClipComponent : public juce::Component, public ClipManagerListener, privat
     ClipInfo resizePreviewClip_;      // Preview clip state during resize-left drag
     std::unordered_map<ClipId, double>
         dragStartSelectedLengths_;  // Original lengths of other selected clips
+    std::unordered_map<ClipId, ClipInfo>
+        dragStartSelectedClipSnapshots_;  // Original full state for multi-resize preview restore
     double multiResizeMaxDelta_ =
         std::numeric_limits<double>::max();  // Max length increase before collision
     DragThrottle stretchThrottle_{50};

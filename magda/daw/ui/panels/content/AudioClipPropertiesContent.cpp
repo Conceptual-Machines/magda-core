@@ -146,47 +146,55 @@ void AudioClipPropertiesContent::createControls() {
         if (auto* tc = magda::TimelineController::getCurrent())
             bpm = tc->getState().tempo.bpm;
 
-        const bool sourceBpmLooksDefaulted =
-            clip->sourceBPM <= 0.0 || (bpm > 0.0 && std::abs(clip->sourceBPM - bpm) < 0.1);
-        if (enable && clip->isAudio() && sourceBpmLooksDefaulted) {
+        const bool sourceInterpretationBpmLooksDefaulted =
+            clip->audio().interpretation.bpm <= 0.0 ||
+            (bpm > 0.0 && std::abs(clip->audio().interpretation.bpm - bpm) < 0.1);
+        if (enable && clip->isAudio() && sourceInterpretationBpmLooksDefaulted) {
             // Issue #1157: only seed from AudioThumbnailManager when the
             // file didn't carry tempo metadata. setSourceMetadata (from TE's
             // loopInfo) is authoritative when present.
             auto& thumbs = magda::AudioThumbnailManager::getInstance();
-            double cached = thumbs.getCachedBPM(clip->audioFilePath);
+            double cached = thumbs.getCachedBPM(clip->audio().source.filePath);
             if (cached > 0.0) {
-                clip->sourceBPM = cached;
-                if (auto* thumb = thumbs.getThumbnail(clip->audioFilePath)) {
+                clip->audio().interpretation.bpm = cached;
+                if (auto* thumb = thumbs.getThumbnail(clip->audio().source.filePath)) {
                     double fileDuration = thumb->getTotalLength();
-                    if (fileDuration > 0.0)
-                        clip->sourceNumBeats = fileDuration * cached / 60.0;
+                    if (fileDuration > 0.0) {
+                        if (clip->audio().source.durationSeconds <= 0.0)
+                            clip->audio().source.durationSeconds = fileDuration;
+                        clip->audio().interpretation.totalBeats = fileDuration * cached / 60.0;
+                    }
                 }
             } else {
                 auto cid = clipId_;
-                thumbs.requestBPMDetection(clip->audioFilePath, [cid](double detectedBPM) {
-                    if (detectedBPM <= 0.0)
-                        return;
-                    auto& mgr = magda::ClipManager::getInstance();
-                    auto* c = mgr.getClip(cid);
-                    if (!c)
-                        return;
-                    // Issue #1157: file metadata wins over audio analysis.
-                    double live =
-                        magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-                    bool existingLooksDefaulted =
-                        c->sourceBPM > 0.0 && live > 0.0 && std::abs(c->sourceBPM - live) < 0.1;
-                    if (c->sourceBPM > 0.0 && !existingLooksDefaulted)
-                        return;
-                    magda::ClipManager::AudioClipBeatsUpdate u;
-                    u.sourceBPM = detectedBPM;
-                    if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                            c->audioFilePath)) {
-                        double fileDuration = thumb->getTotalLength();
-                        if (fileDuration > 0.0)
-                            u.sourceNumBeats = fileDuration * detectedBPM / 60.0;
-                    }
-                    mgr.applyAudioClipBeats(cid, u, live);
-                });
+                thumbs.requestBPMDetection(
+                    clip->audio().source.filePath, [cid](double detectedBPM) {
+                        if (detectedBPM <= 0.0)
+                            return;
+                        auto& mgr = magda::ClipManager::getInstance();
+                        auto* c = mgr.getClip(cid);
+                        if (!c)
+                            return;
+                        // Issue #1157: file metadata wins over audio analysis.
+                        double live =
+                            magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+                        bool existingLooksDefaulted =
+                            c->audio().interpretation.bpm > 0.0 && live > 0.0 &&
+                            std::abs(c->audio().interpretation.bpm - live) < 0.1;
+                        if (c->audio().interpretation.bpm > 0.0 && !existingLooksDefaulted)
+                            return;
+                        magda::ClipManager::AudioClipBeatsUpdate u;
+                        u.interpretationBpm = detectedBPM;
+                        if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                                c->audio().source.filePath)) {
+                            double fileDuration = thumb->getTotalLength();
+                            if (fileDuration > 0.0) {
+                                u.sourceDurationSeconds = fileDuration;
+                                u.interpretationTotalBeats = fileDuration * detectedBPM / 60.0;
+                            }
+                        }
+                        mgr.applyAudioClipBeats(cid, u, live);
+                    });
             }
         }
 
@@ -269,28 +277,33 @@ void AudioClipPropertiesContent::createControls() {
         // not a stretch control. Mirror ClipInspectorSections — for autoTempo
         // clips, route through the canonical setter so length/loopLengthBeats
         // are not clobbered. Use the file's actual duration (not the loop
-        // region) to derive sourceNumBeats.
+        // region) to derive source interpretation total beats.
         if (clip->autoTempo) {
             double bpm = 120.0;
             if (auto* tc = magda::TimelineController::getCurrent())
                 bpm = tc->getState().tempo.bpm;
             magda::ClipManager::AudioClipBeatsUpdate u;
-            u.sourceBPM = newBPM;
-            if (auto* thumb =
-                    magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath)) {
+            u.interpretationBpm = newBPM;
+            if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                    clip->audio().source.filePath)) {
                 double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0)
-                    u.sourceNumBeats = fileDuration * newBPM / 60.0;
+                if (fileDuration > 0.0) {
+                    u.sourceDurationSeconds = fileDuration;
+                    u.interpretationTotalBeats = fileDuration * newBPM / 60.0;
+                }
             }
             magda::ClipManager::getInstance().applyAudioClipBeats(clipId_, u, bpm);
         } else {
-            // Non-autoTempo audio: sourceBPM is just stored metadata.
-            clip->sourceBPM = newBPM;
-            if (auto* thumb =
-                    magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath)) {
+            // Non-autoTempo audio: source interpretation BPM is just stored metadata.
+            clip->audio().interpretation.bpm = newBPM;
+            if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                    clip->audio().source.filePath)) {
                 double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0)
-                    clip->sourceNumBeats = fileDuration * newBPM / 60.0;
+                if (fileDuration > 0.0) {
+                    if (clip->audio().source.durationSeconds <= 0.0)
+                        clip->audio().source.durationSeconds = fileDuration;
+                    clip->audio().interpretation.totalBeats = fileDuration * newBPM / 60.0;
+                }
             }
             magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
         }
@@ -453,9 +466,10 @@ void AudioClipPropertiesContent::updateFromClip() {
     if (hasClip) {
         stretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
         stretchModeCombo_->setSelectedId(clip->timeStretchMode + 1, juce::dontSendNotification);
-        bpmValue_->setValue(clip->sourceBPM > 0.0 ? clip->sourceBPM : 120.0,
-                            juce::dontSendNotification);
-        beatsValue_->setValue(clip->lengthBeats > 0.0 ? clip->lengthBeats : 4.0,
+        bpmValue_->setValue(
+            clip->audio().interpretation.bpm > 0.0 ? clip->audio().interpretation.bpm : 120.0,
+            juce::dontSendNotification);
+        beatsValue_->setValue(clip->placement.lengthBeats > 0.0 ? clip->placement.lengthBeats : 4.0,
                               juce::dontSendNotification);
         pitchValue_->setValue(static_cast<double>(clip->pitchChange), juce::dontSendNotification);
         volumeValue_->setValue(static_cast<double>(clip->volumeDB), juce::dontSendNotification);

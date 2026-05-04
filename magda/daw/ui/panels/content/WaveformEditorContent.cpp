@@ -832,9 +832,9 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
         }
 
         // Check if cached transients were invalidated (e.g. sensitivity changed)
-        if (transientsCached_ && clip->isAudio() && !clip->audioFilePath.isEmpty()) {
+        if (transientsCached_ && clip->isAudio() && !clip->audio().source.filePath.isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
-                clip->audioFilePath);
+                clip->audio().source.filePath);
             if (!cached) {
                 // Cache was cleared — restart polling for new transients
                 transientsCached_ = false;
@@ -1008,9 +1008,9 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
         }
 
         // Check for cached transients or start polling
-        if (clip && clip->isAudio() && !clip->audioFilePath.isEmpty()) {
+        if (clip && clip->isAudio() && !clip->audio().source.filePath.isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
-                clip->audioFilePath);
+                clip->audio().source.filePath);
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
                 transientsCached_ = true;
@@ -1103,9 +1103,9 @@ void WaveformEditorContent::updateGridSize() {
             if (relativeTimeMode_) {
                 // In relative mode, ruler spans the full source file duration
                 double fileDuration = 0.0;
-                if (clip->audioFilePath.isNotEmpty()) {
+                if (clip->audio().source.filePath.isNotEmpty()) {
                     auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                        clip->audioFilePath);
+                        clip->audio().source.filePath);
                     if (thumbnail) {
                         fileDuration = thumbnail->getTotalLength();
                     }
@@ -1166,9 +1166,9 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
 
     // Get file duration for source extent calculation
     double fileDuration = 0.0;
-    if (clip.audioFilePath.isNotEmpty()) {
+    if (clip.audio().source.filePath.isNotEmpty()) {
         auto* thumbnail =
-            magda::AudioThumbnailManager::getInstance().getThumbnail(clip.audioFilePath);
+            magda::AudioThumbnailManager::getInstance().getThumbnail(clip.audio().source.filePath);
         if (thumbnail) {
             fileDuration = thumbnail->getTotalLength();
         }
@@ -1313,9 +1313,9 @@ void WaveformEditorContent::timerCallback() {
 
     if (bridge->getTransientTimes(editingClipId_)) {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-        if (clip && !clip->audioFilePath.isEmpty()) {
+        if (clip && !clip->audio().source.filePath.isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
-                clip->audioFilePath);
+                clip->audio().source.filePath);
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
             }
