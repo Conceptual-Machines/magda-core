@@ -204,6 +204,8 @@ size_t ClipComponent::computeWaveformHash(const ClipInfo& clip) {
     combine(std::hash<bool>{}(clip.loopEnabled));
     combine(std::hash<double>{}(clip.loopStart));
     combine(std::hash<double>{}(clip.loopLength));
+    combine(std::hash<double>{}(clip.loopLengthBeats));
+    combine(std::hash<double>{}(clip.audio().interpretation.totalBeats));
     combine(std::hash<bool>{}(clip.warpEnabled));
     combine(std::hash<bool>{}(clip.autoTempo));
     combine(std::hash<double>{}(clip.fadeIn));
@@ -337,7 +339,35 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             }
         }
     } else if (di.isLooped()) {
+        double sourceDurationForBeats = clip.audio().source.durationSeconds;
+        if (sourceDurationForBeats <= 0.0 && fileDuration > 0.0)
+            sourceDurationForBeats = fileDuration;
+        if (sourceDurationForBeats <= 0.0)
+            sourceDurationForBeats = di.sourceLength;
+
+        auto timelineDeltaToPreviewSource = [&](double timelineDelta) {
+            if (clip.autoTempo && clip.audio().interpretation.totalBeats > 0.0 &&
+                sourceDurationForBeats > 0.0 && tempo > 0.0) {
+                double projectBeats = timelineDelta * tempo / 60.0;
+                return projectBeats * sourceDurationForBeats /
+                       clip.audio().interpretation.totalBeats;
+            }
+            return di.timelineToSource(timelineDelta);
+        };
+
+        auto sourceDeltaToPreviewTimeline = [&](double sourceDelta) {
+            if (clip.autoTempo && clip.audio().interpretation.totalBeats > 0.0 &&
+                sourceDurationForBeats > 0.0 && tempo > 0.0) {
+                double sourceBeats =
+                    sourceDelta * clip.audio().interpretation.totalBeats / sourceDurationForBeats;
+                return sourceBeats * 60.0 / tempo;
+            }
+            return di.sourceToTimeline(sourceDelta);
+        };
+
         double loopCycle = di.loopLengthSeconds;
+        if (clip.autoTempo && clip.loopLengthBeats > 0.0 && tempo > 0.0)
+            loopCycle = clip.loopLengthBeats * 60.0 / tempo;
         double fileStart = di.loopStart;
         double fileEnd = di.loopStart + di.sourceLength;
         if (fileDuration > 0.0 && fileEnd > fileDuration)
@@ -347,7 +377,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             phaseSource = wrapPhase(resizePreviewClip_.offset - resizePreviewClip_.loopStart,
                                     di.sourceLength);
         }
-        double phaseTimeline = di.sourceToTimeline(phaseSource);
+        double phaseTimeline = sourceDeltaToPreviewTimeline(phaseSource);
         bool isFirstTile = (phaseTimeline > 0.001);
 
         double timePos = 0.0;
@@ -356,9 +386,11 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             double tileFullDuration = loopCycle;
             if (isFirstTile) {
                 tileFileStart = fileStart + phaseSource;
-                tileFullDuration = loopCycle - phaseTimeline;
+                tileFullDuration = sourceDeltaToPreviewTimeline(fileEnd - tileFileStart);
                 isFirstTile = false;
             }
+            if (tileFullDuration <= 0.0001)
+                break;
             double cycleEnd = juce::jmin(timePos + tileFullDuration, clipDisplayLength);
             int drawX = waveformArea.getX() + static_cast<int>(timePos * pixelsPerSecond + 0.5);
             int drawRight =
@@ -366,12 +398,8 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             auto drawRect = juce::Rectangle<int>(drawX, waveformArea.getY(), drawRight - drawX,
                                                  waveformArea.getHeight());
             double tileDuration = cycleEnd - timePos;
-            double tileSourceLen = fileEnd - tileFileStart;
-            double tileFileEnd = tileFileStart + tileSourceLen;
-            if (tileDuration < tileFullDuration - 0.0001) {
-                double fraction = tileDuration / tileFullDuration;
-                tileFileEnd = tileFileStart + tileSourceLen * fraction;
-            }
+            double tileFileEnd = tileFileStart + timelineDeltaToPreviewSource(tileDuration);
+            tileFileEnd = juce::jmin(tileFileEnd, fileEnd);
             if (clipToVisible(drawRect, tileFileStart, tileFileEnd))
                 thumbnailManager.drawWaveform(g, drawRect, clip.audio().source.filePath,
                                               tileFileStart, tileFileEnd, waveColour, gainLinear,

@@ -273,19 +273,26 @@ void AudioClipPropertiesContent::createControls() {
 
         double newBPM = bpmValue_->getValue();
 
-        // BPM and source beats are independent user-editable interpretation fields.
-        // A BPM correction must not silently rewrite the source beat count.
+        // BPM and Beats are two editable views of the same fixed-duration source
+        // interpretation. Editing either one must keep the other coherent.
         if (clip->autoTempo) {
             double bpm = 120.0;
             if (auto* tc = magda::TimelineController::getCurrent())
                 bpm = tc->getState().tempo.bpm;
             magda::ClipManager::AudioClipBeatsUpdate u;
             u.interpretationBpm = newBPM;
+            double durationSeconds = clip->audio().source.durationSeconds;
             if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
                     clip->audio().source.filePath)) {
                 double fileDuration = thumb->getTotalLength();
+                if (fileDuration > 0.0)
+                    durationSeconds = fileDuration;
                 if (fileDuration > 0.0 && clip->audio().source.durationSeconds <= 0.0)
                     u.sourceDurationSeconds = fileDuration;
+            }
+            if (durationSeconds > 0.0) {
+                u.interpretationTotalBeats = durationSeconds * newBPM / 60.0;
+                u.lockInterpretationTotalBeats = true;
             }
             magda::ClipManager::getInstance().applyAudioClipBeats(clipId_, u, bpm);
         } else {
@@ -338,6 +345,8 @@ void AudioClipPropertiesContent::createControls() {
         magda::ClipManager::AudioClipBeatsUpdate u;
         u.interpretationTotalBeats = newSourceBeats;
         u.lockInterpretationTotalBeats = true;
+        if (durationSeconds > 0.0)
+            u.interpretationBpm = newSourceBeats * 60.0 / durationSeconds;
         if (durationSeconds > 0.0 && clip->audio().source.durationSeconds <= 0.0)
             u.sourceDurationSeconds = durationSeconds;
 

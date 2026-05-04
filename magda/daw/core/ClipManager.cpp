@@ -67,15 +67,6 @@ bool seedSourceMetadataFromCachedDetection(ClipInfo& clip, double projectBPM) {
     return true;
 }
 
-void syncUnlockedSourceTotalBeatsToLoopLength(ClipInfo& clip) {
-    if (!clip.isAudio() || clip.audio().interpretation.totalBeatsLocked ||
-        clip.loopLengthBeats <= 0.0) {
-        return;
-    }
-
-    clip.audio().interpretation.totalBeats = clip.loopLengthBeats;
-}
-
 }  // namespace
 
 ClipManager& ClipManager::getInstance() {
@@ -823,7 +814,6 @@ void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
                                      ? clip->audio().interpretation.bpm
                                      : bpm;
                 clip->loopLengthBeats = (clip->loopLength * convBpm) / 60.0;
-                syncUnlockedSourceTotalBeatsToLoopLength(*clip);
             }
             sanitizeAudioClip(*clip);
         }
@@ -852,7 +842,6 @@ void ClipManager::setLoopStartAndLength(ClipId clipId, double loopStart, double 
                                      : bpm;
                 clip->loopStartBeats = (clip->loopStart * convBpm) / 60.0;
                 clip->loopLengthBeats = (clip->loopLength * convBpm) / 60.0;
-                syncUnlockedSourceTotalBeatsToLoopLength(*clip);
                 if (loopStartMoved && clip->audio().interpretation.bpm > 0.0)
                     clip->offsetBeats = clip->offset * clip->audio().interpretation.bpm / 60.0;
             }
@@ -906,8 +895,8 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
         << " lockInterpretationTotalBeats=" << static_cast<int>(update.lockInterpretationTotalBeats)
         << " projectBPM=" << projectBPM);
 
-    // (1) Detected metadata — write-only role. Inspector "BPM" corrections
-    // and BPM-detection callbacks land here. Never touched by the beat slider.
+    // (1) Source interpretation metadata. BPM and total beats describe the
+    // same fixed-duration source, so inspector edits may update both together.
     if (update.interpretationBpm)
         clip->audio().interpretation.bpm = juce::jmax(0.0, *update.interpretationBpm);
     if (update.interpretationTotalBeats) {
@@ -934,7 +923,6 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
         clip->loopStartBeats = juce::jmax(0.0, *update.loopStartBeats);
     if (update.loopLengthBeats) {
         clip->loopLengthBeats = juce::jmax(0.0, *update.loopLengthBeats);
-        syncUnlockedSourceTotalBeatsToLoopLength(*clip);
     }
     if (update.offsetBeats)
         clip->offsetBeats = juce::jmax(0.0, *update.offsetBeats);

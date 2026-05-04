@@ -123,12 +123,27 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         // playhead falls within this clip's time range.
         double clipEnd = clip->startTime + clip->length;
 
-        auto arrangementToSourceX = [&](double arrangementTime) -> int {
-            // Map arrangement time to position within source file
-            double relTime = arrangementTime - clip->startTime;
-            double sourcePos = di.offsetPositionSeconds + relTime;
-            return static_cast<int>(sourcePos * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
+        auto timelineDeltaToSourceDelta = [&](double timelineDelta) {
+            double projectBpm = owner_.timeRuler_ ? owner_.timeRuler_->getTempo() : 120.0;
+            double sourceDuration = clip->audio().source.durationSeconds;
+            if (clip->autoTempo && clip->audio().interpretation.totalBeats > 0.0 &&
+                sourceDuration > 0.0 && projectBpm > 0.0) {
+                double projectBeats = timelineDelta * projectBpm / 60.0;
+                return projectBeats * sourceDuration / clip->audio().interpretation.totalBeats;
+            }
+            return di.timelineToSource(timelineDelta);
+        };
+
+        auto sourcePositionToX = [&](double sourcePos) -> int {
+            double displayPos = di.sourceToTimeline(sourcePos);
+            return static_cast<int>(displayPos * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
                    scrollX;
+        };
+
+        auto arrangementToSourceX = [&](double arrangementTime) -> int {
+            double relTime = arrangementTime - clip->startTime;
+            double sourcePos = clip->offset + timelineDeltaToSourceDelta(relTime);
+            return sourcePositionToX(sourcePos);
         };
 
         // Draw edit cursor (triangle at top) — only when inside clip range
@@ -153,14 +168,14 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
             if (sessionPos >= 0.0) {
                 {
                     double relPos = sessionPos;
-                    if (clip->loopEnabled && di.loopLengthSeconds > 0.0) {
-                        double phaseShift = di.offsetPositionSeconds - di.loopStartPositionSeconds;
-                        double wrapped = std::fmod(phaseShift + relPos, di.loopLengthSeconds);
+                    if (clip->loopEnabled && clip->loopLength > 0.0) {
+                        double phaseShift = clip->offset - clip->loopStart;
+                        double sourceDelta = timelineDeltaToSourceDelta(relPos);
+                        double wrapped = std::fmod(phaseShift + sourceDelta, clip->loopLength);
                         if (wrapped < 0.0)
-                            wrapped += di.loopLengthSeconds;
-                        double displayPos = di.loopStartPositionSeconds + wrapped;
-                        int playX = static_cast<int>(displayPos * owner_.horizontalZoom_) +
-                                    GRID_LEFT_PADDING - scrollX;
+                            wrapped += clip->loopLength;
+                        double sourcePos = clip->loopStart + wrapped;
+                        int playX = sourcePositionToX(sourcePos);
                         if (playX >= 0 && playX < getWidth()) {
                             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
                             g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
@@ -168,9 +183,8 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                         }
                     } else {
                         // Non-looping session clip
-                        double sourcePos = di.offsetPositionSeconds + relPos;
-                        int playX = static_cast<int>(sourcePos * owner_.horizontalZoom_) +
-                                    GRID_LEFT_PADDING - scrollX;
+                        double sourcePos = clip->offset + timelineDeltaToSourceDelta(relPos);
+                        int playX = sourcePositionToX(sourcePos);
                         if (playX >= 0 && playX < getWidth()) {
                             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
                             g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
@@ -190,15 +204,15 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                 return;
 
             // Wrap playhead inside loop region when looping is enabled
-            if (clip->loopEnabled && di.loopLengthSeconds > 0.0) {
+            if (clip->loopEnabled && clip->loopLength > 0.0) {
                 double relPos = playPos - clip->startTime;
-                double phaseShift = di.offsetPositionSeconds - di.loopStartPositionSeconds;
-                double wrapped = std::fmod(phaseShift + relPos, di.loopLengthSeconds);
+                double phaseShift = clip->offset - clip->loopStart;
+                double sourceDelta = timelineDeltaToSourceDelta(relPos);
+                double wrapped = std::fmod(phaseShift + sourceDelta, clip->loopLength);
                 if (wrapped < 0.0)
-                    wrapped += di.loopLengthSeconds;
-                double displayPos = di.loopStartPositionSeconds + wrapped;
-                int playX = static_cast<int>(displayPos * owner_.horizontalZoom_) +
-                            GRID_LEFT_PADDING - scrollX;
+                    wrapped += clip->loopLength;
+                double sourcePos = clip->loopStart + wrapped;
+                int playX = sourcePositionToX(sourcePos);
                 if (playX >= 0 && playX < getWidth()) {
                     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
                     g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
