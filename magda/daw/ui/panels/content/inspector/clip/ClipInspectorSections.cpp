@@ -360,7 +360,7 @@ void ClipInspector::initClipPropertiesSection() {
         if (!clip || !clip->isAudio())
             return;
 
-        // Parse BPM from text (strip " BPM" suffix if present)
+        // Parse BPM from text. Older builds stored the unit in the text, so strip it defensively.
         juce::String text = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
         double newBPM = text.getDoubleValue();
         DBG("[InspectorTrace] clipInspector:bpmEdit id="
@@ -416,16 +416,21 @@ void ClipInspector::initClipPropertiesSection() {
                 << " after.loopLengthBeats=" << clip->loopLengthBeats);
         }
 
-        // Re-display with suffix
-        clipBpmValue_.setText(juce::String(newBPM, 1) + " BPM", juce::dontSendNotification);
+        clipBpmValue_.setText(juce::String(newBPM, 1), juce::dontSendNotification);
         updateFromSelectedClip();
     };
     clipPropsContainer_.addChildComponent(clipBpmValue_);
 
+    clipBpmUnitLabel_.setText("BPM", juce::dontSendNotification);
+    clipBpmUnitLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipBpmUnitLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipBpmUnitLabel_.setJustificationType(juce::Justification::centredLeft);
+    clipPropsContainer_.addChildComponent(clipBpmUnitLabel_);
+
     // Source interpretation total beats (shown next to source BPM when auto-tempo is enabled)
     clipBeatsLengthValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     clipBeatsLengthValue_->setRange(0.25, 4096.0, 4.0);
-    clipBeatsLengthValue_->setSuffix(" source beats");
+    clipBeatsLengthValue_->setSuffix("");
     clipBeatsLengthValue_->setDecimalPlaces(2);
     clipBeatsLengthValue_->setSnapToInteger(true);
     clipBeatsLengthValue_->setDrawBackground(false);
@@ -479,6 +484,12 @@ void ClipInspector::initClipPropertiesSection() {
         }
     };
     clipPropsContainer_.addChildComponent(*clipBeatsLengthValue_);
+
+    clipBeatsUnitLabel_.setText("Beats", juce::dontSendNotification);
+    clipBeatsUnitLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipBeatsUnitLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipBeatsUnitLabel_.setJustificationType(juce::Justification::centredLeft);
+    clipPropsContainer_.addChildComponent(clipBeatsUnitLabel_);
 
     // Position icon (static, non-interactive)
     clipPositionIcon_ = std::make_unique<magda::SvgButton>("Position", BinaryData::position_svg,

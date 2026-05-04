@@ -114,7 +114,9 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     std::unique_ptr<magda::DraggableValueLabel> clipStretchValue_;
     juce::ComboBox stretchModeCombo_;
     juce::Label clipBpmValue_;
+    juce::Label clipBpmUnitLabel_;
     std::unique_ptr<magda::DraggableValueLabel> clipBeatsLengthValue_;
+    juce::Label clipBeatsUnitLabel_;
 
     // Pitch section (audio + MIDI)
     juce::Label pitchSectionLabel_;

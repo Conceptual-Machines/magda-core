@@ -304,11 +304,11 @@ void AudioClipPropertiesContent::createControls() {
     };
     addAndMakeVisible(*bpmValue_);
 
-    beatsLabel_ = makeLabel("Source Beats");
+    beatsLabel_ = makeLabel("Beats");
     beatsValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     beatsValue_->setRange(0.25, 4096.0, 4.0);
     beatsValue_->setDecimalPlaces(2);
-    beatsValue_->setSuffix(" source beats");
+    beatsValue_->setSuffix("");
     beatsValue_->setSnapToInteger(true);
     beatsValue_->setDrawBackground(false);
     beatsValue_->setDrawBorder(true);

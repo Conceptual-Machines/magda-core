@@ -159,9 +159,9 @@ void ClipInspector::updateFromSelectedClip() {
                 }
             }
             clipBpmValue_.setVisible(true);
+            clipBpmUnitLabel_.setVisible(true);
             if (displayBPM > 0.0) {
-                clipBpmValue_.setText(juce::String(displayBPM, 1) + " BPM",
-                                      juce::dontSendNotification);
+                clipBpmValue_.setText(juce::String(displayBPM, 1), juce::dontSendNotification);
             } else {
                 clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"),  // em dash
                                       juce::dontSendNotification);
@@ -175,12 +175,14 @@ void ClipInspector::updateFromSelectedClip() {
                 << " loopLengthBeats=" << clip->loopLengthBeats);
         } else {
             clipBpmValue_.setVisible(false);
+            clipBpmUnitLabel_.setVisible(false);
         }
 
         // Show source interpretation total beats for audio clips with auto-tempo enabled.
         // Clip placement length is already represented by start/end and by the clip body itself.
         if (showAudioProps && clip->autoTempo && !isMulti) {
             clipBeatsLengthValue_->setVisible(true);
+            clipBeatsUnitLabel_.setVisible(true);
             clipBeatsLengthValue_->setEnabled(true);
             clipBeatsLengthValue_->setAlpha(1.0f);
             clipBeatsLengthValue_->setValue(clip->audio().interpretation.totalBeats > 0.0
@@ -196,6 +198,7 @@ void ClipInspector::updateFromSelectedClip() {
                 << " loopLengthBeats=" << clip->loopLengthBeats);
         } else {
             clipBeatsLengthValue_->setVisible(false);
+            clipBeatsUnitLabel_.setVisible(false);
         }
 
         // Get tempo from TimelineController, fallback to 120 BPM if not available
@@ -529,7 +532,9 @@ void ClipInspector::showClipControls(bool show) {
         audioPropsCollapseToggle_.setVisible(false);
         audioPropsLabel_.setVisible(false);
         clipBpmValue_.setVisible(false);
+        clipBpmUnitLabel_.setVisible(false);
         clipBeatsLengthValue_->setVisible(false);
+        clipBeatsUnitLabel_.setVisible(false);
         clipPositionIcon_->setVisible(false);
         clipStartLabel_.setVisible(false);
         clipStartValue_->setVisible(false);

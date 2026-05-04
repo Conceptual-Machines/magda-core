@@ -153,7 +153,7 @@ void ClipInspector::resized() {
             }
         }
 
-        // Row 2: [BPM] centered | [speed OR beats]
+        // Row 2: [BPM value + label] centered | [speed OR beats value + label]
         if (clipBpmValue_.isVisible() || (clipStretchValue_ && clipStretchValue_->isVisible()) ||
             clipBeatsLengthValue_->isVisible()) {
             addSpace(4);
@@ -165,13 +165,18 @@ void ClipInspector::resized() {
             if (clipBpmValue_.isVisible()) {
                 int bpmWidth = 96;  // matches WARP(46) + gap(4) + BEAT(46)
                 int bpmOffset = (left.getWidth() - bpmWidth) / 2;
-                clipBpmValue_.setBounds(left.withX(left.getX() + bpmOffset).withWidth(bpmWidth));
+                auto bpmArea = left.withX(left.getX() + bpmOffset).withWidth(bpmWidth);
+                clipBpmValue_.setBounds(bpmArea.removeFromLeft(62).reduced(0, 1));
+                clipBpmUnitLabel_.setBounds(bpmArea.reduced(4, 1));
             }
             if (clipStretchValue_ && clipStretchValue_->isVisible()) {
                 clipStretchValue_->setBounds(right.reduced(0, 1));
             }
             if (clipBeatsLengthValue_->isVisible()) {
-                clipBeatsLengthValue_->setBounds(right.reduced(0, 1));
+                auto beatsArea = right.reduced(0, 1);
+                clipBeatsLengthValue_->setBounds(
+                    beatsArea.removeFromLeft(juce::jmax(46, beatsArea.getWidth() - 42)));
+                clipBeatsUnitLabel_.setBounds(beatsArea.reduced(4, 0));
             }
         }
     }
