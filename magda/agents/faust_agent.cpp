@@ -24,11 +24,21 @@ SOURCE RULES — VERY IMPORTANT:
   2 outputs (stereo in / stereo out). Use _,_ for an unprocessed channel.
 - For an INSTRUMENT/SYNTH, define: process = ... ;  with 0 inputs and 2
   outputs. Avoid this unless the user clearly asks for a synth.
-- Expose user-facing controls with hslider("Label", init, min, max, step) or
-  vslider(...). Keep it to AT MOST 6 sliders. Sliders must use unique
-  human-readable labels — these become the parameter names in MAGDA.
-- Do NOT use buttons, checkboxes, or bargraphs (the host UI ignores them).
-- Do NOT use soundfile() or any external sample loading.
+- Expose user-facing controls. Pick the right control kind:
+  * Continuous values: hslider("Label", init, min, max, step) or vslider(...)
+    or nentry(...). Add [scale:log] for cutoffs / time / freqs:
+      cutoff = hslider("Cutoff [unit:Hz][scale:log]", 800, 20, 20000, 0.1);
+  * On / off toggles:  checkbox("Bypass")  — produces 0/1.
+  * Discrete picker (dropdown): a slider with [style:menu{...}]:
+      mode = hslider("Mode [style:menu{'Off':0;'Soft':1;'Hard':2}]", 0, 0, 2, 1);
+- Pin every control to a stable slot index with [idx:N], 0..63 inclusive.
+  Use the SAME idx for the SAME control across regenerations so the user's
+  macro / mod / MIDI Learn links survive an edit:
+      drive = hslider("Drive [idx:0][unit:dB]", 0, 0, 24, 0.1);
+      mix   = hslider("Mix   [idx:1]",          1, 0, 1,  0.01);
+- Up to 64 controls. Keep it musically tasteful; 4–8 is usually plenty.
+- Do NOT use buttons (momentary), bargraphs (display-only), or soundfile()
+  (no external sample loading).
 - Use only functions from stdfaust.lib (the standard library is bundled).
   Common picks: fi.lowpass / fi.highpass / fi.peak_eq, ef.cubicnl,
   re.zita_rev1_stereo, de.delay, os.osc, en.adsr, ba.beat.
@@ -49,14 +59,14 @@ User: "warm tape saturator with subtle wow"
 {
   "name": "Tape Warmth",
   "description": "Soft tape-style saturator with gentle wow modulation.",
-  "source": "import(\"stdfaust.lib\");\ndrive = hslider(\"Drive\", 3, 0, 10, 0.01);\nwow = hslider(\"Wow\", 0.3, 0, 1, 0.01);\nmix = hslider(\"Mix\", 0.8, 0, 1, 0.01);\nlfo = os.osc(0.6) * 0.002 * wow;\nsat(x) = ef.cubicnl(drive/10, 0) : *(0.7);\nch = _ <: *(1.0 + lfo) : sat : _ * mix + _ * (1.0 - mix);\nprocess = ch, ch;"
+  "source": "import(\"stdfaust.lib\");\ndrive = hslider(\"Drive [idx:0]\", 3, 0, 10, 0.01);\nwow = hslider(\"Wow [idx:1]\", 0.3, 0, 1, 0.01);\nmix = hslider(\"Mix [idx:2]\", 0.8, 0, 1, 0.01);\nlfo = os.osc(0.6) * 0.002 * wow;\nsat(x) = ef.cubicnl(drive/10, 0) : *(0.7);\nch = _ <: *(1.0 + lfo) : sat : _ * mix + _ * (1.0 - mix);\nprocess = ch, ch;"
 }
 
-User: "gentle plate reverb"
+User: "gentle plate reverb with mode switch"
 {
   "name": "Plate Lite",
-  "description": "Short, dark plate reverb.",
-  "source": "import(\"stdfaust.lib\");\nsize = hslider(\"Size\", 0.5, 0, 1, 0.01);\ndamp = hslider(\"Damp\", 0.6, 0, 1, 0.01);\nmix = hslider(\"Mix\", 0.35, 0, 1, 0.01);\nwet = re.zita_rev1_stereo(0, 200, 6000, size*4 + 0.2, damp, 44100);\nprocess = _,_ <: (wet : *(mix), *(mix)), (*(1.0-mix), *(1.0-mix)) :> _,_;"
+  "description": "Short, dark plate reverb with a Plate / Hall mode.",
+  "source": "import(\"stdfaust.lib\");\nsize = hslider(\"Size [idx:0]\", 0.5, 0, 1, 0.01);\ndamp = hslider(\"Damp [idx:1]\", 0.6, 0, 1, 0.01);\nmix  = hslider(\"Mix  [idx:2]\", 0.35, 0, 1, 0.01);\nmode = hslider(\"Mode [idx:3][style:menu{'Plate':0;'Hall':1}]\", 0, 0, 1, 1);\nfreeze = checkbox(\"Freeze [idx:4]\");\nwetSize = size * 4 + 0.2 + mode * 1.5;\nwet = re.zita_rev1_stereo(0, 200, 6000, wetSize, damp, 44100);\nprocess = _,_ <: (wet : *(mix), *(mix)), (*(1.0-mix), *(1.0-mix)) :> _,_;"
 }
 )PROMPT";
 }
