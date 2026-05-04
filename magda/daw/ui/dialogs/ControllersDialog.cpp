@@ -608,20 +608,19 @@ class LuaScriptsPage : public juce::Component {
         auto bounds = getLocalBounds().reduced(16);
         const int rowH = 28;
         const int btnGap = 6;
-        const int addW = 110;
-        const int openW = 170;
-        const int importW = 140;
-        const int reloadW = 100;
+        const int rowGap = 4;
 
-        // Left-to-right: Add Script | Open Folder | Import | Reload.
-        auto buttonRow = bounds.removeFromTop(rowH);
-        addScriptButton_.setBounds(buttonRow.removeFromLeft(addW));
-        buttonRow.removeFromLeft(btnGap);
-        openScriptsFolderButton_.setBounds(buttonRow.removeFromLeft(openW));
-        buttonRow.removeFromLeft(btnGap);
-        importButton_.setBounds(buttonRow.removeFromLeft(importW));
-        buttonRow.removeFromLeft(btnGap);
-        reloadLuaButton_.setBounds(buttonRow.removeFromLeft(reloadW));
+        auto layoutRow = [&](juce::Button& left, juce::Button& right) {
+            auto row = bounds.removeFromTop(rowH);
+            const int half = (row.getWidth() - btnGap) / 2;
+            left.setBounds(row.removeFromLeft(half));
+            row.removeFromLeft(btnGap);
+            right.setBounds(row.removeFromLeft(half));
+        };
+
+        layoutRow(addScriptButton_, importButton_);
+        bounds.removeFromTop(rowGap);
+        layoutRow(openScriptsFolderButton_, reloadLuaButton_);
         bounds.removeFromTop(8);
 
         list_->setBounds(bounds);
@@ -965,7 +964,7 @@ ControllersDialog::ControllersDialog() {
     tabbedComponent_.addTab(tr("controllers.tab.scripts"), tabBg, scriptsPage_.get(), false);
     addAndMakeVisible(tabbedComponent_);
 
-    setSize(560, 480);
+    setSize(560, 512);
 }
 
 ControllersDialog::~ControllersDialog() {
