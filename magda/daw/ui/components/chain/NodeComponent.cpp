@@ -159,6 +159,16 @@ void NodeComponent::paint(juce::Graphics& g) {
             paintExtraLeftPanel(g, extraArea);
         }
 
+        // AI panel - after mod editor, before main content
+        if (aiPanelVisible_) {
+            auto aiArea = bounds.removeFromLeft(getAIPanelWidth());
+            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.fillRect(aiArea);
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.drawRect(aiArea);
+            paintAIPanel(g, aiArea);
+        }
+
         // === RIGHT SIDE PANEL (even when collapsed) ===
         if (gainPanelVisible_) {
             auto gainArea = bounds.removeFromRight(getGainPanelWidth());
@@ -372,6 +382,14 @@ void NodeComponent::resized() {
         if (extraWidthCollapsed > 0) {
             auto extraArea = bounds.removeFromLeft(extraWidthCollapsed);
             resizedExtraLeftPanel(extraArea);
+        }
+
+        // AI panel - after mod editor, before main content
+        if (aiPanelVisible_) {
+            auto aiArea = bounds.removeFromLeft(getAIPanelWidth());
+            resizedAIPanel(aiArea);
+        } else if (aiPanel_) {
+            aiPanel_->setVisible(false);
         }
 
         // === RIGHT SIDE PANEL (even when collapsed) ===

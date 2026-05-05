@@ -2432,6 +2432,17 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
         area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
     modButton_->setVisible(showMod);
 
+    // AI button (4OSC sound design) belongs in the collapsed vertical icon stack.
+    const bool showAI = magda::isSoundDesignSupported(device_.pluginId);
+    if (showAI) {
+        area.removeFromTop(4);
+        aiButton_->setBounds(
+            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+        aiButton_->setVisible(true);
+    } else {
+        aiButton_->setVisible(false);
+    }
+
     // Multi-out button (only if plugin is multi-out)
     if (device_.multiOut.isMultiOut && multiOutButton_) {
         area.removeFromTop(4);
