@@ -14,6 +14,11 @@ namespace magda {
 
 namespace {
 
+void syncPlacementFromTimelineSeconds(ClipInfo& clip, double tempoBPM) {
+    if (tempoBPM > 0.0)
+        clip.setPlacementBeats(clip.startTime * tempoBPM / 60.0, clip.length * tempoBPM / 60.0);
+}
+
 bool sourceInterpretationBpmLooksDefaulted(const ClipInfo& clip, double projectBPM) {
     if (clip.audio().interpretation.bpm <= 0.0)
         return true;
@@ -157,7 +162,11 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
         clip.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(clips_.size())));
     }
     clip.audio().source.filePath = audioFilePath;
-    clip.audio().source.durationSeconds = juce::jmax(0.0, length);
+    // Don't seed source.durationSeconds from the clip's timeline length —
+    // they're different quantities. ClipSynchronizer's setSourceMetadata
+    // populates this from TE's loopInfo once the engine clip exists; readers
+    // (thumbnail renderer, inspector panels) fall back to the
+    // AudioThumbnailManager when the field is still zero.
     clip.offset = 0.0;
     clip.speedRatio = 1.0;
 
@@ -1997,22 +2006,26 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
                 continue;
         }
 
-        // Check overlap
-        double clipEnd = clip.startTime + clip.length;
-        if (clip.startTime >= endTime || clipEnd <= startTime)
+        // Check overlap against beat-authoritative timeline placement. The seconds fields are
+        // transitional caches and can be stale after beat-mode edits or BPM changes.
+        double clipStart = clip.getTimelineStart(tempoBPM);
+        double clipLength = clip.getTimelineLength(tempoBPM);
+        double clipEnd = clipStart + clipLength;
+        if (clipStart >= endTime || clipEnd <= startTime)
             continue;
 
-        double overlapStart = std::max(clip.startTime, startTime);
+        double overlapStart = std::max(clipStart, startTime);
         double overlapEnd = std::min(clipEnd, endTime);
 
         ClipInfo trimmed = clip;
         trimmed.length = overlapEnd - overlapStart;
         trimmed.startTime = overlapStart;
+        syncPlacementFromTimelineSeconds(trimmed, tempoBPM);
 
         if (clip.isAudio()) {
             traceBeatCopyState("copyTimeRangeToClipboard:source", clip);
             // Adjust offset for the trimmed start position
-            double trimFromLeft = overlapStart - clip.startTime;
+            double trimFromLeft = overlapStart - clipStart;
             if (clip.isBeatsAuthoritative() && clip.audio().interpretation.bpm > 0.0 &&
                 tempoBPM > 0.0) {
                 // autoTempo: work in beats, derive seconds
@@ -2129,7 +2142,11 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                     newClip->autoTempo = clipData.autoTempo;
                     newClip->loopStartBeats = clipData.loopStartBeats;
                     newClip->loopLengthBeats = clipData.loopLengthBeats;
-                    newClip->lengthBeats = clipData.lengthBeats;
+                    const double pastedLengthBeats = clipData.placement.lengthBeats > 0.0
+                                                         ? clipData.placement.lengthBeats
+                                                         : clipData.lengthBeats;
+                    if (pastedLengthBeats > 0.0)
+                        newClip->setPlacementBeats(newClip->placement.startBeat, pastedLengthBeats);
                     // Don't overwrite startBeats — createMidiClip/createAudioClip already
                     // computed the correct value from newStartTime
                 }
@@ -2225,6 +2242,9 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
             newClips.push_back(newClipId);
         }
     }
+
+    if (!newClips.empty())
+        notifyClipsChanged();
 
     return newClips;
 }
