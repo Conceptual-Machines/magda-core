@@ -199,17 +199,17 @@ void ParamGridComponent::setSlotSelected(int slotIndex, bool selected) {
 void ParamGridComponent::layoutContent(const juce::Font& labelFont, const juce::Font& valueFont) {
     auto area = getLocalBounds();
 
-    // Pagination row at top
-    area.removeFromTop(2);
-    auto paginationArea = area.removeFromTop(PAGINATION_HEIGHT);
-    area.removeFromTop(2);
+    const bool showPagination = shouldShowPagination();
+    setPaginationVisible(showPagination);
+    if (showPagination) {
+        area.removeFromTop(2);
+        auto paginationArea = area.removeFromTop(PAGINATION_HEIGHT);
+        area.removeFromTop(4);
 
-    placeNavArrow(*prevPageButton_, paginationArea, true);
-    placeNavArrow(*nextPageButton_, paginationArea, false);
-    pageLabel_->setBounds(paginationArea);
-
-    // Small gap
-    area.removeFromTop(2);
+        placeNavArrow(*prevPageButton_, paginationArea, true);
+        placeNavArrow(*nextPageButton_, paginationArea, false);
+        pageLabel_->setBounds(paginationArea);
+    }
 
     // Slots grid — spread evenly across remaining area
     area = area.reduced(2, 0);
@@ -228,8 +228,6 @@ void ParamGridComponent::layoutContent(const juce::Font& labelFont, const juce::
         paramSlots_[i]->setBounds(x, y, cellWidth - 4, cellHeight - 4);
         paramSlots_[i]->setVisible(true);
     }
-
-    setPaginationVisible(true);
 }
 
 void ParamGridComponent::resized() {
