@@ -1958,17 +1958,14 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
             g.drawHorizontalLine(headerBottom, left, right);
         }
 
-        // Additional line below pagination row (only when pagination is visible).
-        const bool showsParamPagination = paramGrid_ && paramGrid_->shouldShowPagination();
+        // Additional line below pagination row (for external plugin param grid only)
         if (!isInternalDevice() || isFaust_ ||
             !(toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ ||
               compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
               pitchShiftUI_ || impulseResponseUI_ || utilityUI_ || chordEngineUI_ ||
               arpeggiatorUI_ || stepSequencerUI_)) {
-            if (showsParamPagination) {
-                int paginationBottom = headerBottom + PAGINATION_HEIGHT + 4;
-                g.drawHorizontalLine(paginationBottom, left, right);
-            }
+            int paginationBottom = headerBottom + PAGINATION_HEIGHT + 4;
+            g.drawHorizontalLine(paginationBottom, left, right);
         }
     }
 

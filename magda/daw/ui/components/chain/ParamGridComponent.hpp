@@ -59,9 +59,6 @@ class ParamGridComponent : public juce::Component {
     int getTotalPages() const {
         return totalPages_;
     }
-    bool shouldShowPagination() const {
-        return totalPages_ > 1;
-    }
 
     // Visibility helpers (called from DeviceSlotComponent::resizedContent)
     void setGridVisible(bool visible);
