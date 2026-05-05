@@ -318,6 +318,60 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
         REQUIRE(di.sessionPlayheadToDisplayPosition(6.0) == Catch::Approx(0.0));
         REQUIRE(di.sessionPlayheadToDisplayPosition(8.5) == Catch::Approx(2.5));
     }
+
+    SECTION("Auto-tempo playhead mapping ignores stale source seconds caches") {
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.autoTempo = true;
+        clip.startTime = 99.0;  // stale cache; placement is authoritative
+        clip.length = 99.0;     // stale cache; placement is authoritative
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = true;
+        clip.audio().interpretation.bpm = 172.0;
+        clip.audio().interpretation.totalBeats = 16.0;
+        clip.audio().source.durationSeconds = 16.0 * 60.0 / 172.0;
+        clip.setPlacementBeats(0.0, 16.0);
+        clip.loopStart = 99.0;   // stale cache; loopStartBeats is authoritative
+        clip.loopLength = 99.0;  // stale cache; loopLengthBeats is authoritative
+        clip.offset = 99.0;      // stale cache; offsetBeats is authoritative
+        clip.loopStartBeats = 4.0;
+        clip.loopLengthBeats = 8.0;
+        clip.offsetBeats = 6.0;
+
+        const auto di = ClipDisplayInfo::from(clip, 120.0, clip.audio().source.durationSeconds);
+
+        REQUIRE(di.loopStartPositionSeconds == Catch::Approx(2.0));
+        REQUIRE(di.loopLengthSeconds == Catch::Approx(4.0));
+        REQUIRE(di.offsetPositionSeconds == Catch::Approx(3.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(0.0) == Catch::Approx(3.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(3.0) == Catch::Approx(2.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(5.5) == Catch::Approx(4.5));
+    }
+
+    SECTION("Auto-tempo display source conversion follows source BPM after Beats edit") {
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.autoTempo = true;
+        clip.loopEnabled = true;
+        clip.speedRatio = 1.0;
+        clip.audio().interpretation.bpm = 129.0;
+        clip.audio().interpretation.totalBeats = 12.0;
+        clip.audio().source.durationSeconds = 12.0 * 60.0 / 129.0;
+        clip.setPlacementBeats(0.0, 12.0);
+        clip.loopStartBeats = 0.0;
+        clip.loopLengthBeats = 12.0;
+        clip.offsetBeats = 3.0;
+        clip.loopStart = 99.0;
+        clip.loopLength = 99.0;
+        clip.offset = 99.0;
+
+        const auto di = ClipDisplayInfo::from(clip, 120.0, clip.audio().source.durationSeconds);
+
+        REQUIRE(di.fullSourceExtentSeconds == Catch::Approx(6.0));
+        REQUIRE(di.loopLengthSeconds == Catch::Approx(6.0));
+        REQUIRE(di.offsetPositionSeconds == Catch::Approx(1.5));
+        REQUIRE(di.displayPositionToSourceTime(1.5) == Catch::Approx(1.5 * 120.0 / 129.0));
+    }
 }
 
 // ============================================================================

@@ -5,6 +5,7 @@
 
 // TE internal test utilities (not exposed via module public headers)
 #include "SharedTestEngine.hpp"
+#include "magda/daw/audio/AudioThumbnailManager.hpp"
 #include "magda/daw/audio/TrackController.hpp"
 #include "magda/daw/audio/WarpMarkerManager.hpp"
 #include "magda/daw/audio/session/ClipSynchronizer.hpp"
@@ -59,6 +60,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
     void runTest() override {
         testCreateAndSyncAudioClip();
+        testSessionImportUsesCachedDetectorFallback();
+        testSessionSyncPreservesDetectedSourceInterpretation();
         testMoveClip();
         testResizeFromRight();
         testResizeFromLeft();
@@ -156,6 +159,73 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // Source file should match
         auto sourceFile = teClip->getCurrentSourceFile();
         expect(sourceFile == f.sinFile->getFile(), "Source file should match");
+    }
+
+    void testSessionImportUsesCachedDetectorFallback() {
+        beginTest("Session import uses cached detector fallback for defaulted source metadata");
+
+        Fixture f;
+        auto& thumbs = AudioThumbnailManager::getInstance();
+        thumbs.clearCache();
+
+        constexpr double detectedBpm = 172.0;
+        const double sourceDuration = 5.0;
+        const double expectedSourceBeats = sourceDuration * detectedBpm / 60.0;
+        thumbs.cacheBPM(f.audioPath(), detectedBpm);
+
+        auto clipId = ClipManager::getInstance().createAudioClip(
+            f.trackId, 0.0, sourceDuration, f.audioPath(), ClipView::Session, 120.0);
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        expect(clip != nullptr, "Session clip should exist");
+        if (clip == nullptr)
+            return;
+        expect(clip->view == ClipView::Session, "Clip should be a session clip");
+        expect(clip->autoTempo, "Session audio clips should default to beat mode");
+        expectWithinAbsoluteError(clip->audio().interpretation.bpm, detectedBpm, 0.01);
+        expectWithinAbsoluteError(clip->audio().interpretation.totalBeats, expectedSourceBeats,
+                                  0.01);
+        expectWithinAbsoluteError(clip->loopLengthBeats, expectedSourceBeats, 0.01);
+
+        thumbs.clearCache();
+    }
+
+    void testSessionSyncPreservesDetectedSourceInterpretation() {
+        beginTest("Session sync preserves detector metadata when TE loopInfo is project-default");
+
+        Fixture f;
+        auto& thumbs = AudioThumbnailManager::getInstance();
+        thumbs.clearCache();
+
+        constexpr double detectedBpm = 172.0;
+        const double sourceDuration = 5.0;
+        const double expectedSourceBeats = sourceDuration * detectedBpm / 60.0;
+        thumbs.cacheBPM(f.audioPath(), detectedBpm);
+
+        auto clipId = ClipManager::getInstance().createAudioClip(
+            f.trackId, 0.0, sourceDuration, f.audioPath(), ClipView::Session, 120.0);
+        ClipManager::getInstance().setClipSceneIndex(clipId, 0);
+        if (f.clipSync->getSessionTeClip(clipId) == nullptr)
+            f.clipSync->syncSessionClipToSlot(clipId);
+
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        expect(clip != nullptr, "Session clip should still exist after sync");
+        if (clip == nullptr)
+            return;
+        expectWithinAbsoluteError(clip->audio().interpretation.bpm, detectedBpm, 0.01);
+        expectWithinAbsoluteError(clip->audio().interpretation.totalBeats, expectedSourceBeats,
+                                  0.01);
+        expectWithinAbsoluteError(clip->loopLengthBeats, expectedSourceBeats, 0.01);
+
+        auto* teClip = dynamic_cast<te::WaveAudioClip*>(f.clipSync->getSessionTeClip(clipId));
+        expect(teClip != nullptr, "Tracktion session clip should exist");
+        if (teClip != nullptr) {
+            auto waveInfo = teClip->getWaveInfo();
+            auto& loopInfo = teClip->getLoopInfo();
+            expectWithinAbsoluteError(loopInfo.getBpm(waveInfo), detectedBpm, 0.01);
+            expectWithinAbsoluteError(loopInfo.getNumBeats(), expectedSourceBeats, 0.01);
+        }
+
+        thumbs.clearCache();
     }
 
     void testMoveClip() {

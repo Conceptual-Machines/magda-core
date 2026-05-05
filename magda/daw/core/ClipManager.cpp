@@ -17,7 +17,15 @@ namespace {
 bool sourceInterpretationBpmLooksDefaulted(const ClipInfo& clip, double projectBPM) {
     if (clip.audio().interpretation.bpm <= 0.0)
         return true;
-    return projectBPM > 0.0 && std::abs(clip.audio().interpretation.bpm - projectBPM) < 0.1;
+    if (projectBPM <= 0.0 || std::abs(clip.audio().interpretation.bpm - projectBPM) >= 0.1)
+        return false;
+
+    const double sourceDuration = clip.getSourceLength();
+    if (sourceDuration <= 0.0 || clip.audio().interpretation.totalBeats <= 0.0)
+        return true;
+
+    const double projectDefaultBeats = sourceDuration * projectBPM / 60.0;
+    return std::abs(clip.audio().interpretation.totalBeats - projectDefaultBeats) < 0.01;
 }
 
 void traceAudioClipLengthState(const char* label, const ClipInfo& clip, double projectBPM) {
@@ -122,7 +130,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
         clip.loopEnabled = true;
         clip.autoTempo = true;
         // Source loop beats live in the source-beat domain. Use 0 as "full
-        // source" until metadata detection populates source interpretation total beats.
+        // source" until Tracktion loopInfo populates source interpretation metadata.
         clip.loopLengthBeats = 0.0;
         clips_[clip.id] = clip;
     }
@@ -130,53 +138,55 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     addToSessionSlotIndex(clips_[clip.id]);
     notifyClipsChanged();
 
-    // Issue #1157: kick off BPM detection at creation time for session audio
-    // clips. The detection callback funnels through applyAudioClipBeats so
-    // source interpretation BPM/source interpretation total beats land on the canonical update
-    // path. Cached results fire synchronously on the message thread; cache misses run on a
-    // background thread and patch the clip when the scan completes. Skip when the file doesn't
-    // exist on disk — tests pass synthetic paths and don't run a MessageManager loop, so the
-    // detection pool would leak.
+    // Tracktion loopInfo is authoritative when it carries real file metadata,
+    // but it can also report project-default values for freshly inserted clips.
+    // Run audio analysis as a fallback and let it replace only unset/defaulted
+    // source interpretation values.
     if (view == ClipView::Session && audioFilePath.isNotEmpty() &&
         juce::File(audioFilePath).existsAsFile()) {
         ClipId cid = clip.id;
-        AudioThumbnailManager::getInstance().requestBPMDetection(
-            audioFilePath, [cid](double detectedBPM) {
+        const double creationProjectBPM = bpm;
+        auto applyDetectedBPM = [cid, creationProjectBPM](double detectedBPM) {
+            if (detectedBPM <= 0.0)
+                return;
+
+            auto& mgr = ClipManager::getInstance();
+            auto* c = mgr.getClip(cid);
+            if (!c || !sourceInterpretationBpmLooksDefaulted(*c, creationProjectBPM))
+                return;
+
+            double fileDuration = c->audio().source.durationSeconds;
+            if (auto* thumb =
+                    AudioThumbnailManager::getInstance().getThumbnail(c->audio().source.filePath)) {
+                if (thumb->getTotalLength() > 0.0)
+                    fileDuration = thumb->getTotalLength();
+            }
+
+            AudioClipBeatsUpdate u;
+            u.interpretationBpm = detectedBPM;
+            if (fileDuration > 0.0) {
+                u.sourceDurationSeconds = fileDuration;
+                const double srcBeats = fileDuration * detectedBPM / 60.0;
+                u.interpretationTotalBeats = srcBeats;
+                if (c->autoTempo && c->loopLengthBeats <= 0.0)
+                    u.loopLengthBeats = srcBeats;
+            }
+
+            double live = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+            mgr.applyAudioClipBeats(cid, u, live);
+        };
+
+        auto& thumbs = AudioThumbnailManager::getInstance();
+        const double cachedBPM = thumbs.getCachedBPM(audioFilePath);
+        if (cachedBPM > 0.0) {
+            applyDetectedBPM(cachedBPM);
+        } else {
+            thumbs.requestBPMDetection(audioFilePath, [applyDetectedBPM](double detectedBPM) {
                 if (detectedBPM <= 0.0)
                     return;
-                auto& mgr = ClipManager::getInstance();
-                auto* c = mgr.getClip(cid);
-                if (!c)
-                    return;
-                // Issue #1157: file metadata (via TE's loopInfo →
-                // setSourceMetadata) is authoritative when present. Audio
-                // analysis (tracktion::TempoDetect) is a fallback used only
-                // when the file carries no tempo tag — it sometimes
-                // misdetects (half-time / double-time / outright wrong, e.g.
-                // 80→107 on the user's drum loop). Skip applying the result
-                // if source interpretation BPM is already populated.
-                if (c->audio().interpretation.bpm > 0.0)
-                    return;
-                AudioClipBeatsUpdate u;
-                u.interpretationBpm = detectedBPM;
-                if (auto* thumb = AudioThumbnailManager::getInstance().getThumbnail(
-                        c->audio().source.filePath)) {
-                    double fileDuration = thumb->getTotalLength();
-                    if (fileDuration > 0.0) {
-                        u.sourceDurationSeconds = fileDuration;
-                        double srcBeats = fileDuration * detectedBPM / 60.0;
-                        u.interpretationTotalBeats = srcBeats;
-                        // First-time detection on a freshly-dropped clip:
-                        // initialise the loop region to the full source.
-                        // loopLengthBeats == 0 is the sentinel set by
-                        // createAudioClip (see issue #1157).
-                        if (c->loopLengthBeats <= 0.0)
-                            u.loopLengthBeats = srcBeats;
-                    }
-                }
-                double live = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-                mgr.applyAudioClipBeats(cid, u, live);
+                applyDetectedBPM(detectedBPM);
             });
+        }
     }
 
     return clip.id;

@@ -446,6 +446,37 @@ TEST_CASE("setAutoTempo adopts cached detected BPM when clip BPM is project defa
     AudioThumbnailManager::getInstance().clearCache();
 }
 
+TEST_CASE("session audio import uses detector when loopInfo is still defaulted",
+          "[clip][bpm][session][issue-1157]") {
+    ClipManager::getInstance().shutdown();
+    AudioThumbnailManager::getInstance().clearCache();
+
+    constexpr double cachedDetectorBPM = 99.0;
+    constexpr double sourceDuration = 5.58141;
+    auto path = juce::File::getCurrentWorkingDirectory().getChildFile(
+        "magda-session-import-cached-bpm.wav");
+    REQUIRE(path.replaceWithText("placeholder"));
+
+    AudioThumbnailManager::getInstance().cacheBPM(path.getFullPathName(), cachedDetectorBPM);
+
+    ClipId clipId = ClipManager::getInstance().createAudioClip(
+        1, 0.0, sourceDuration, path.getFullPathName(), ClipView::Session, PROJECT_BPM);
+
+    const auto* c = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(c != nullptr);
+    REQUIRE(c->view == ClipView::Session);
+    REQUIRE(c->autoTempo);
+    REQUIRE(c->loopEnabled);
+    REQUIRE(c->audio().interpretation.bpm == Approx(cachedDetectorBPM));
+    REQUIRE(c->audio().interpretation.totalBeats ==
+            Approx(sourceDuration * cachedDetectorBPM / 60.0));
+    REQUIRE(c->loopLength == Approx(sourceDuration));
+    REQUIRE(c->loopLengthBeats == Approx(sourceDuration * cachedDetectorBPM / 60.0));
+
+    AudioThumbnailManager::getInstance().clearCache();
+    path.deleteFile();
+}
+
 // ============================================================================
 // BPM-change invariants — the core regression suite for issue #1157.
 //

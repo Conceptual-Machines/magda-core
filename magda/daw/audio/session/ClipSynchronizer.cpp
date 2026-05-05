@@ -62,6 +62,27 @@ static void syncAudioSourceInterpretationToLoopInfo(te::WaveAudioClip& audioClip
     }
 }
 
+static void initialiseSourceLoopBeatsFromMetadata(ClipInfo& clip) {
+    if (!clip.isAudio() || !clip.autoTempo || clip.loopLengthBeats > 0.0)
+        return;
+
+    const double sourceBpm = clip.audio().interpretation.bpm;
+    if (sourceBpm <= 0.0)
+        return;
+
+    const double sourceTotalBeats = clip.audio().interpretation.totalBeats;
+    clip.loopStartBeats = juce::jmax(0.0, clip.loopStart * sourceBpm / 60.0);
+
+    double loopBeats =
+        clip.loopLength > 0.0 ? clip.loopLength * sourceBpm / 60.0 : sourceTotalBeats;
+    if (sourceTotalBeats > 0.0) {
+        clip.loopStartBeats = juce::jmin(clip.loopStartBeats, sourceTotalBeats);
+        loopBeats = juce::jmin(loopBeats, sourceTotalBeats - clip.loopStartBeats);
+    }
+
+    clip.loopLengthBeats = juce::jmax(0.0, loopBeats);
+}
+
 ClipSynchronizer::ClipSynchronizer(te::Edit& edit, TrackController& trackController,
                                    WarpMarkerManager& warpMarkerManager)
     : edit_(edit), trackController_(trackController), warpMarkerManager_(warpMarkerManager) {
@@ -489,8 +510,10 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
         auto* audioClipPtr = clipRef.get();
 
-        // Populate source file metadata from TE's loopInfo. This is source-domain data only;
-        // clip placement and source loop region are never changed by metadata arrival.
+        // Populate source file metadata from TE's loopInfo. For a freshly
+        // imported session clip, loopLengthBeats starts as a sentinel and is
+        // initialised from the already-stored source loop seconds once the
+        // source beat domain is known.
         {
             auto& loopInfoRef = audioClipPtr->getLoopInfo();
             auto waveInfo = audioClipPtr->getWaveInfo();
@@ -499,6 +522,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
                     mutableClip->audio().interpretation.bpm <= 0.0;
                 mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
+                initialiseSourceLoopBeatsFromMetadata(*mutableClip);
                 if (sourceInterpretationBpmWasUnset && mutableClip->autoTempo) {
                     double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
                     cm.refreshDerivedSeconds(clipId, projectBpm);
@@ -1452,6 +1476,7 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
                     mutableClip->audio().interpretation.bpm <= 0.0;
                 mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
+                initialiseSourceLoopBeatsFromMetadata(*mutableClip);
                 if (sourceInterpretationBpmWasUnset && mutableClip->autoTempo) {
                     double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
                     cm.refreshDerivedSeconds(clipId, projectBpm);
