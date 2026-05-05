@@ -204,10 +204,10 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
     ClipId newClipId = INVALID_CLIP_ID;
 
     if (sessionClip->isAudio()) {
-        if (sessionClip->audioFilePath.isNotEmpty()) {
-            newClipId =
-                clipManager.createAudioClip(rec.trackId, rec.arrangementStartTime, duration,
-                                            sessionClip->audioFilePath, ClipView::Arrangement);
+        if (sessionClip->audio().source.filePath.isNotEmpty()) {
+            newClipId = clipManager.createAudioClip(rec.trackId, rec.arrangementStartTime, duration,
+                                                    sessionClip->audio().source.filePath,
+                                                    ClipView::Arrangement);
         }
     } else {
         newClipId = clipManager.createMidiClip(rec.trackId, rec.arrangementStartTime, duration,
@@ -233,8 +233,8 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
 
         // Copy beat-mode / auto-tempo properties so the arrangement clip
         // stays in the same time-stretch mode as the session clip.
-        newClip->sourceBPM = sessionClip->sourceBPM;
-        newClip->sourceNumBeats = sessionClip->sourceNumBeats;
+        newClip->audio().interpretation.bpm = sessionClip->audio().interpretation.bpm;
+        newClip->audio().interpretation.totalBeats = sessionClip->audio().interpretation.totalBeats;
         newClip->timeStretchMode = sessionClip->timeStretchMode;
         newClip->loopStartBeats = sessionClip->loopStartBeats;
         newClip->loopLengthBeats = sessionClip->loopLengthBeats;

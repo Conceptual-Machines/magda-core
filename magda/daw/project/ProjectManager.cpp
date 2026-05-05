@@ -500,10 +500,12 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
     auto& clipManager = ClipManager::getInstance();
     auto updateClipPaths = [&](const std::vector<ClipInfo>& clips) {
         for (const auto& clipInfo : clips) {
-            if (clipInfo.audioFilePath.isNotEmpty() && clipInfo.audioFilePath.startsWith(oldPath)) {
+            if (clipInfo.isAudio() && clipInfo.audio().source.filePath.isNotEmpty() &&
+                clipInfo.audio().source.filePath.startsWith(oldPath)) {
                 auto* clip = clipManager.getClip(clipInfo.id);
                 if (clip) {
-                    clip->audioFilePath = clip->audioFilePath.replace(oldPath, newPath, false);
+                    clip->audio().source.filePath =
+                        clip->audio().source.filePath.replace(oldPath, newPath, false);
                 }
             }
         }

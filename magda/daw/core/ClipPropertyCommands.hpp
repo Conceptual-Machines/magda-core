@@ -68,6 +68,53 @@ class SetClipOffsetCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for setting audio loop phase (source-time seconds relative to loop start).
+ */
+class SetClipLoopPhaseCommand : public UndoableCommand {
+  public:
+    SetClipLoopPhaseCommand(ClipId clipId, double newPhase) : clipId_(clipId), newPhase_(newPhase) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldPhase_ = (clip->isMidi()) ? clip->midiOffset : clip->getLoopPhase();
+    }
+
+    void execute() override {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId_)) {
+            if (clip->isMidi()) {
+                ClipManager::getInstance().setOffset(clipId_, newPhase_);
+            } else {
+                ClipManager::getInstance().setLoopPhase(clipId_, newPhase_);
+            }
+        }
+    }
+    void undo() override {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId_)) {
+            if (clip->isMidi()) {
+                ClipManager::getInstance().setOffset(clipId_, oldPhase_);
+            } else {
+                ClipManager::getInstance().setLoopPhase(clipId_, oldPhase_);
+            }
+        }
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Loop Phase";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetClipLoopPhaseCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newPhase_ = static_cast<const SetClipLoopPhaseCommand*>(other)->newPhase_;
+    }
+
+  private:
+    ClipId clipId_;
+    double oldPhase_ = 0.0, newPhase_;
+};
+
+/**
  * @brief Command for setting a clip's loop start (source-time seconds).
  *
  * Used for inspector edits where the caller separately handles offset/phase

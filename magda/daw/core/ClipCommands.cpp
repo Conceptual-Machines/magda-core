@@ -333,10 +333,24 @@ ResizeClipCommand::ResizeClipCommand(ClipId clipId, double newLength, bool fromS
 
 ClipInfo ResizeClipCommand::captureState() {
     auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (clip && clip->isAudio()) {
+        DBG("[ClipLengthTrace] ResizeClipCommand::captureState id="
+            << clipId_ << " placement.lengthBeats=" << clip->placement.lengthBeats
+            << " mirror.lengthBeats=" << clip->lengthBeats << " loopLengthBeats="
+            << clip->loopLengthBeats << " interpretation.bpm=" << clip->audio().interpretation.bpm
+            << " interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
+    }
     return clip ? *clip : ClipInfo{};
 }
 
 void ResizeClipCommand::restoreState(const ClipInfo& state) {
+    if (state.isAudio()) {
+        DBG("[ClipLengthTrace] ResizeClipCommand::restoreState id="
+            << clipId_ << " placement.lengthBeats=" << state.placement.lengthBeats
+            << " mirror.lengthBeats=" << state.lengthBeats << " loopLengthBeats="
+            << state.loopLengthBeats << " interpretation.bpm=" << state.audio().interpretation.bpm
+            << " interpretation.totalBeats=" << state.audio().interpretation.totalBeats);
+    }
     auto& clipManager = ClipManager::getInstance();
     if (auto* clip = clipManager.getClip(clipId_)) {
         *clip = state;
@@ -851,7 +865,7 @@ void RenderClipCommand::execute() {
     }
 
     // Determine output file path — always use the project's renders directory
-    juce::File sourceFile(clip->audioFilePath);
+    juce::File sourceFile(clip->audio().source.filePath);
     auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
     if (rendersDir == juce::File())
         rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
@@ -1072,7 +1086,7 @@ void RenderTimeSelectionCommand::execute() {
 
         // Determine output file path from first overlapping clip's source
         auto* firstClip = clipManager.getClip(overlappingIds[0]);
-        juce::File sourceFile(firstClip->audioFilePath);
+        juce::File sourceFile(firstClip->audio().source.filePath);
         auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
         if (rendersDir == juce::File())
             rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
@@ -1984,7 +1998,7 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
         return;  // Only boundary markers
 
     // Disable warp before splitting — splitClip uses a linear formula
-    // (tempo/sourceBPM or speedRatio) to compute source offsets, but warp
+    // (tempo/source interpretation BPM or speedRatio) to compute source offsets, but warp
     // markers define a non-linear mapping.  With warp off the linear formula
     // is correct, so we convert marker sourceTime values to the linear
     // timeline domain.
@@ -2004,8 +2018,8 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     for (size_t i = 1; i + 1 < markers.size(); ++i) {
         double sourceDelta = markers[i].sourceTime - clipOffset;
         double splitTime;
-        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0) {
-            splitTime = clipStart + sourceDelta * clip->sourceBPM / tempo;
+        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0 && tempo > 0.0) {
+            splitTime = clipStart + sourceDelta * clip->audio().interpretation.bpm / tempo;
         } else {
             splitTime = clipStart + sourceDelta / clip->speedRatio;
         }
@@ -2179,14 +2193,14 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || !clip->isAudio() || clip->audioFilePath.isEmpty())
+    if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty())
         return;
 
     auto markers = bridge->getWarpMarkers(clipId);
     if (markers.size() <= 2)
         return;
 
-    juce::File audioFile(clip->audioFilePath);
+    juce::File audioFile(clip->audio().source.filePath);
     if (!audioFile.existsAsFile())
         return;
 
@@ -2216,8 +2230,8 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
 
     auto sourceToTimeline = [&](double sourceTime) -> double {
         double sourceDelta = sourceTime - clipOffset;
-        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0)
-            return clipStart + sourceDelta * clip->sourceBPM / tempo;
+        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0 && tempo > 0.0)
+            return clipStart + sourceDelta * clip->audio().interpretation.bpm / tempo;
         else
             return clipStart + sourceDelta / clip->speedRatio;
     };
@@ -2241,10 +2255,10 @@ void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, Aud
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || !clip->isAudio() || clip->audioFilePath.isEmpty())
+    if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty())
         return;
 
-    juce::File audioFile(clip->audioFilePath);
+    juce::File audioFile(clip->audio().source.filePath);
     if (!audioFile.existsAsFile())
         return;
 
@@ -2255,8 +2269,8 @@ void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, Aud
     // Convert timeline grid lines to source-file boundaries
     auto timelineToSource = [&](double timelinePos) -> double {
         double delta = timelinePos - clipStart;
-        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0)
-            return clipOffset + delta * tempo / clip->sourceBPM;
+        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0 && tempo > 0.0)
+            return clipOffset + delta * tempo / clip->audio().interpretation.bpm;
         else
             return clipOffset + delta * clip->speedRatio;
     };

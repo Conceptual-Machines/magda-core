@@ -63,6 +63,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     void initFadesSection();
     void initChannelsSection();
     void initViewport();
+    void updateAudioSourceValueDisplays(const magda::ClipInfo& clip);
 
     // Current selection (supports single and multi-clip)
     std::unordered_set<magda::ClipId> selectedClipIds_;
@@ -114,7 +115,9 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     std::unique_ptr<magda::DraggableValueLabel> clipStretchValue_;
     juce::ComboBox stretchModeCombo_;
     juce::Label clipBpmValue_;
+    juce::Label clipBpmUnitLabel_;
     std::unique_ptr<magda::DraggableValueLabel> clipBeatsLengthValue_;
+    juce::Label clipBeatsUnitLabel_;
 
     // Pitch section (audio + MIDI)
     juce::Label pitchSectionLabel_;
@@ -207,6 +210,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
 
     // Update methods
     void updateFromSelectedClip();
+    void updateLoopValueDisplays(const magda::ClipInfo& clip, double projectBPM, int beatsPerBar);
     void showClipControls(bool show);
     void computeClipRange();
     void refreshClipRangeDisplay();

@@ -141,6 +141,18 @@ target_sources(magda_juce_tests PRIVATE
     # test_export_no_assertion_juce.cpp  # Disabled - see issue #611 (generator device export)
     test_midi_recording_juce.cpp
     test_clip_sync_integration_juce.cpp
+    test_clip_inspector_juce.cpp
+    ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
+    ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorSections.cpp
+    ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorLifecycle.cpp
+    ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorLayout.cpp
+    ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorSelection.cpp
+    ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorState.cpp
+    ../magda/daw/ui/panels/content/inspector/clip/sections/ClipFadesSection.cpp
+    ../magda/daw/ui/components/common/BarsBeatsTicksLabel.cpp
+    ../magda/daw/ui/components/common/DraggableValueLabel.cpp
+    ../magda/daw/ui/components/common/SvgButton.cpp
+    ../magda/daw/ui/themes/FontManager.cpp
     test_automation_modes_juce.cpp
 )
 
@@ -159,4 +171,13 @@ target_link_libraries(magda_juce_tests
 target_include_directories(magda_juce_tests
     PRIVATE
     ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/themes
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/panels
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/panels/state
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/panels/content
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/state
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/components
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/components/common
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/components/common/curve
 )

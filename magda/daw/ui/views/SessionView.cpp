@@ -3569,7 +3569,6 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
             UndoManager::getInstance().executeCommand(std::make_unique<SetClipNameCommand>(
                 newClipId, audioFile.getFileNameWithoutExtension()));
             clipManager.setClipLoopEnabled(newClipId, true, bpm);
-            clipManager.setLoopLength(newClipId, fileDuration);
             clipManager.setClipSceneIndex(newClipId, sceneSlot);
         }
     };

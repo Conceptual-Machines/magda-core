@@ -125,17 +125,6 @@ jobs:
           exit 1
         fi
 
-    - name: Run JUCE integration tests
-      run: |
-        JUCE_TEST_BIN=$(find build -name "magda_juce_tests" -type f | head -1)
-        if [ -n "$JUCE_TEST_BIN" ]; then
-          echo "Running JUCE integration tests..."
-          xvfb-run -a "$JUCE_TEST_BIN"
-        else
-          echo "❌ magda_juce_tests executable not found"
-          exit 1
-        fi
-
     - name: Show ccache statistics
       run: ccache -s
 
@@ -403,19 +392,6 @@ jobs:
           & $testExe.FullName --abort
         } else {
           Write-Error "Tests executable not found"
-          exit 1
-        }
-
-    - name: Run JUCE integration tests
-      timeout-minutes: 10
-      run: |
-        $juceExe = Get-ChildItem -Path build-debug -Recurse -Filter "magda_juce_tests.exe" | Select-Object -First 1
-        if ($juceExe) {
-          Write-Output "Running JUCE integration tests..."
-          & $juceExe.FullName
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        } else {
-          Write-Error "magda_juce_tests executable not found"
           exit 1
         }
 

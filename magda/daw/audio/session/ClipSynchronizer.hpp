@@ -302,7 +302,7 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      * @param clip The ClipInfo model data
      *
      * Shared by syncSessionClipToSlot() and clipPropertyChanged().
-     * Syncs sourceBPM, stretch mode, speedRatio, autoTempo flag,
+     * Syncs source interpretation BPM, stretch mode, speedRatio, autoTempo flag,
      * offset, and beat-based loop range.
      */
     void configureSessionAutoTempo(te::WaveAudioClip* audioClip, const ClipInfo* clip);
