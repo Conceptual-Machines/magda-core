@@ -322,6 +322,28 @@ TEST_CASE("setAutoTempo - disable preserves source seconds", "[clip][auto-tempo]
     }
 }
 
+TEST_CASE("setAutoTempo - re-enable preserves trimmed placement length", "[clip][auto-tempo]") {
+    auto clip = makeAmenClip();
+    clip.audio().source.durationSeconds = AMEN_DURATION;
+    clip.loopEnabled = true;
+
+    ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
+    REQUIRE(clip.placement.lengthBeats == Approx(AMEN_SOURCE_BEATS));
+
+    constexpr double trimmedLengthBeats = 0.5;
+    clip.setPlacementBeats(clip.placement.startBeat, trimmedLengthBeats);
+    clip.deriveTimesFromBeats(PROJECT_BPM);
+
+    ClipOperations::setAutoTempo(clip, false, PROJECT_BPM);
+    REQUIRE_FALSE(clip.autoTempo);
+    REQUIRE(clip.placement.lengthBeats == Approx(trimmedLengthBeats));
+
+    ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
+    REQUIRE(clip.autoTempo);
+    REQUIRE(clip.placement.lengthBeats == Approx(trimmedLengthBeats));
+    REQUIRE(clip.length == Approx(trimmedLengthBeats * 60.0 / PROJECT_BPM));
+}
+
 TEST_CASE("setAutoTempo - no-op when already in target state", "[clip][auto-tempo]") {
     auto clip = makeAmenClip();
 

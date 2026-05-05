@@ -23,6 +23,15 @@ namespace te = tracktion;
 namespace {
 
 /** Generate a mono sine WAV file and return it as a TemporaryFile. */
+juce::File testScratchDirectory() {
+    auto envTmp = juce::SystemStats::getEnvironmentVariable("TMPDIR", {});
+    auto root = envTmp.isNotEmpty() ? juce::File(envTmp)
+                                    : juce::File::getSpecialLocation(juce::File::tempDirectory);
+    root = root.getChildFile("magda_juce_tests");
+    root.createDirectory();
+    return root;
+}
+
 std::unique_ptr<juce::TemporaryFile> createSineWavFile(double sampleRate, double durationSeconds,
                                                        float frequency = 220.0f) {
     int numSamples = static_cast<int>(sampleRate * durationSeconds);
@@ -35,7 +44,8 @@ std::unique_ptr<juce::TemporaryFile> createSineWavFile(double sampleRate, double
         phase += phaseInc;
     }
 
-    auto f = std::make_unique<juce::TemporaryFile>(".wav");
+    auto targetFile = testScratchDirectory().getNonexistentChildFile("clip_sync_sine", ".wav");
+    auto f = std::make_unique<juce::TemporaryFile>(targetFile);
     juce::WavAudioFormat wavFormat;
     JUCE_BEGIN_IGNORE_WARNINGS_MSVC(4996)
     JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wdeprecated-declarations")
@@ -72,6 +82,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testTrimAudioFromRight();
         testSpeedRatio();
         testLoopEnableDisable();
+        testBeatModeRoundTripPreservesTrimmedLength();
         testLoopTimeBased();
         testLoopTimeBasedWarpEnabled();
         testSplitAudioClip();
@@ -458,6 +469,60 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         f.clipSync->syncClipToEngine(clipId);
 
         expect(!teClip->isLooping(), "TE clip should not be looping after disable");
+    }
+
+    void testBeatModeRoundTripPreservesTrimmedLength() {
+        beginTest("Beat-mode round trip preserves trimmed clip length");
+
+        Fixture f;
+        constexpr double projectBpm = 120.0;
+        constexpr double sourceBpm = 172.0;
+        constexpr double sourceBeats = 16.0;
+        const double sourceDuration = sourceBeats * 60.0 / sourceBpm;
+        constexpr double trimmedBeats = 0.5;
+
+        auto trimmedId = ClipManager::getInstance().createAudioClip(
+            f.trackId, 0.0, sourceDuration, f.audioPath(), ClipView::Arrangement, projectBpm);
+        auto* trimmed = ClipManager::getInstance().getClip(trimmedId);
+        expect(trimmed != nullptr, "Trimmed clip should exist");
+        if (trimmed == nullptr)
+            return;
+
+        configureBeatModeLoop(*trimmed, projectBpm, sourceBpm, sourceDuration, 0.0, sourceBeats,
+                              trimmedBeats);
+
+        ClipManager::getInstance().setAutoTempo(trimmedId, false, projectBpm);
+        trimmed = ClipManager::getInstance().getClip(trimmedId);
+        expect(trimmed != nullptr, "Trimmed clip should survive disabling beat mode");
+        if (trimmed == nullptr)
+            return;
+        expect(!trimmed->autoTempo, "Trimmed clip should be time-based after disabling beat mode");
+        expectWithinAbsoluteError(trimmed->placement.lengthBeats, trimmedBeats, 0.001);
+
+        ClipManager::getInstance().setAutoTempo(trimmedId, true, projectBpm);
+        trimmed = ClipManager::getInstance().getClip(trimmedId);
+        expect(trimmed != nullptr, "Trimmed clip should survive re-enabling beat mode");
+        if (trimmed == nullptr)
+            return;
+        expect(trimmed->autoTempo, "Trimmed clip should be beat-based after re-enabling beat mode");
+        expectWithinAbsoluteError(trimmed->placement.lengthBeats, trimmedBeats, 0.001);
+        expectWithinAbsoluteError(trimmed->length, trimmedBeats * 60.0 / projectBpm, 0.001);
+
+        auto fullId = ClipManager::getInstance().createAudioClip(
+            f.trackId, 4.0, sourceDuration, f.audioPath(), ClipView::Arrangement, projectBpm);
+        auto* full = ClipManager::getInstance().getClip(fullId);
+        expect(full != nullptr, "Full source clip should exist");
+        if (full == nullptr)
+            return;
+
+        full->audio().interpretation.bpm = sourceBpm;
+        full->audio().interpretation.totalBeats = sourceBeats;
+        ClipManager::getInstance().setAutoTempo(fullId, true, projectBpm);
+        full = ClipManager::getInstance().getClip(fullId);
+        expect(full != nullptr, "Full source clip should survive enabling beat mode");
+        if (full == nullptr)
+            return;
+        expectWithinAbsoluteError(full->placement.lengthBeats, sourceBeats, 0.001);
     }
 
     void testLoopTimeBased() {

@@ -537,12 +537,18 @@ class ClipOperations {
                 clip.setLoopLengthFromTimeline(clip.length);
             }
 
-            // Issue #1157: when the file carries source interpretation beats,
-            // default placement length to that musical extent so a
-            // freshly-dropped loop becomes exactly its natural length on
-            // toggling BEAT. For files without interpretation data, fall back
-            // to the timeline length converted at project BPM.
-            if (clip.audio().interpretation.totalBeats > 0.0)
+            // Issue #1157: when a full, untrimmed source file carries source
+            // interpretation beats, default placement length to that musical
+            // extent so a freshly-dropped loop becomes exactly its natural
+            // length on toggling BEAT. If the user has already trimmed the
+            // clip, preserve the edited timeline span instead of expanding
+            // back to the full source loop.
+            const auto sourceDuration = clip.audio().source.durationSeconds;
+            const auto sourceSpan = clip.timelineToSource(clip.length);
+            const bool coversFullSource = sourceDuration > 0.0 && currentSourceOffset <= 0.001 &&
+                                          std::abs(sourceSpan - sourceDuration) <= 0.001;
+
+            if (coversFullSource && clip.audio().interpretation.totalBeats > 0.0)
                 clip.setPlacementBeats(clip.placement.startBeat,
                                        clip.audio().interpretation.totalBeats);
             else
