@@ -175,6 +175,9 @@ struct ClipInfo {
     /// This is source-domain data only; it must never edit clip placement or
     /// source loop region state.
     void setSourceMetadata(double numBeats, double bpm) {
+        if (!isAudio())
+            return;
+
         auto& source = audio();
         if (numBeats > 0.0 && source.interpretation.totalBeats <= 0.0)
             source.interpretation.totalBeats = numBeats;

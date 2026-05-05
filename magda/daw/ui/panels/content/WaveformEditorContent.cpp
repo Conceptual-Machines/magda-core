@@ -191,14 +191,13 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                 return;
 
             // Wrap playhead inside loop region when looping is enabled
-            if (clip->loopEnabled && clip->loopLength > 0.0) {
+            if (di.loopEnabled && di.loopLengthSeconds > 0.0 && di.sourceLength > 0.0) {
                 double relPos = playPos - clip->startTime;
-                double phaseShift = clip->offset - clip->loopStart;
                 double sourceDelta = timelineDeltaToSourceDelta(relPos);
-                double wrapped = std::fmod(phaseShift + sourceDelta, clip->loopLength);
+                double wrapped = std::fmod(di.loopOffset + sourceDelta, di.sourceLength);
                 if (wrapped < 0.0)
-                    wrapped += clip->loopLength;
-                double sourcePos = clip->loopStart + wrapped;
+                    wrapped += di.sourceLength;
+                double sourcePos = di.loopStart + wrapped;
                 int playX = sourcePositionToX(sourcePos);
                 if (playX >= 0 && playX < getWidth()) {
                     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));

@@ -186,11 +186,21 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.trackId = obj->getProperty("trackId");
     outClip.name = obj->getProperty("name").toString();
     outClip.colour = stringToColour(obj->getProperty("colour").toString());
-    auto clipType = static_cast<ClipType>(static_cast<int>(obj->getProperty("type")));
-    if (clipType == ClipType::Audio)
+    const auto typeVar = obj->getProperty("type");
+    if (typeVar.isVoid()) {
+        lastError_ = "Clip is missing type";
+        return false;
+    }
+
+    const int rawClipType = static_cast<int>(typeVar);
+    if (rawClipType == static_cast<int>(ClipType::Audio)) {
         outClip.setAudioContent();
-    else
+    } else if (rawClipType == static_cast<int>(ClipType::MIDI)) {
         outClip.setMidiContent();
+    } else {
+        lastError_ = "Unknown clip type: " + juce::String(rawClipType);
+        return false;
+    }
     outClip.view = static_cast<ClipView>(static_cast<int>(obj->getProperty("view")));
 
     auto* placementObj = obj->getProperty("placement").getDynamicObject();
@@ -262,7 +272,15 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.grooveStrength =
         static_cast<float>(static_cast<double>(obj->getProperty("grooveStrength")));
 
-    if (auto* audioObj = obj->getProperty("audio").getDynamicObject()) {
+    auto* audioObj = obj->getProperty("audio").getDynamicObject();
+    auto* legacyAudioSourceObj = obj->getProperty("audioSource").getDynamicObject();
+
+    if ((audioObj != nullptr || legacyAudioSourceObj != nullptr) && !outClip.isAudio()) {
+        lastError_ = "MIDI clip contains audio source data";
+        return false;
+    }
+
+    if (outClip.isAudio() && audioObj != nullptr) {
         auto* sourceObj = audioObj->getProperty("source").getDynamicObject();
         auto* interpretationObj = audioObj->getProperty("interpretation").getDynamicObject();
         auto* playbackObj = audioObj->getProperty("playback").getDynamicObject();
@@ -294,6 +312,44 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
 
         // Warp markers
         auto warpMarkersVar = audioObj->getProperty("warpMarkers");
+        if (warpMarkersVar.isArray()) {
+            auto* arr = warpMarkersVar.getArray();
+            for (const auto& wmVar : *arr) {
+                if (auto* wmObj = wmVar.getDynamicObject()) {
+                    ClipInfo::WarpMarker wm;
+                    wm.sourceTime = wmObj->getProperty("sourceTime");
+                    wm.warpTime = wmObj->getProperty("warpTime");
+                    outClip.warpMarkers.push_back(wm);
+                }
+            }
+        }
+    } else if (outClip.isAudio() && legacyAudioSourceObj != nullptr) {
+        outClip.audio().source.filePath = legacyAudioSourceObj->getProperty("filePath").toString();
+        outClip.offset = legacyAudioSourceObj->getProperty("offsetSeconds");
+        outClip.offsetBeats = legacyAudioSourceObj->getProperty("offsetBeats");
+        outClip.loopStart = legacyAudioSourceObj->getProperty("loopStartSeconds");
+        outClip.loopLength = legacyAudioSourceObj->getProperty("loopLengthSeconds");
+        outClip.loopStartBeats = legacyAudioSourceObj->getProperty("loopStartBeats");
+        outClip.loopLengthBeats = legacyAudioSourceObj->getProperty("loopLengthBeats");
+        outClip.speedRatio = legacyAudioSourceObj->getProperty("speedRatio");
+        if (outClip.speedRatio <= 0.0)
+            outClip.speedRatio = 1.0;
+
+        outClip.audio().interpretation.totalBeats =
+            legacyAudioSourceObj->getProperty("sourceNumBeats");
+        outClip.audio().interpretation.bpm = legacyAudioSourceObj->getProperty("sourceBPM");
+        if (outClip.audio().source.durationSeconds <= 0.0 &&
+            outClip.audio().interpretation.totalBeats > 0.0 &&
+            outClip.audio().interpretation.bpm > 0.0) {
+            outClip.audio().source.durationSeconds = outClip.audio().interpretation.totalBeats *
+                                                     60.0 / outClip.audio().interpretation.bpm;
+        }
+
+        outClip.warpEnabled = static_cast<bool>(legacyAudioSourceObj->getProperty("warpEnabled"));
+        outClip.analogPitch = static_cast<bool>(legacyAudioSourceObj->getProperty("analogPitch"));
+        outClip.timeStretchMode = legacyAudioSourceObj->getProperty("timeStretchMode");
+
+        auto warpMarkersVar = legacyAudioSourceObj->getProperty("warpMarkers");
         if (warpMarkersVar.isArray()) {
             auto* arr = warpMarkersVar.getArray();
             for (const auto& wmVar : *arr) {

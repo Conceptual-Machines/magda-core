@@ -6,6 +6,9 @@ on:
     tags-ignore: [ '**' ]
     paths-ignore:
       - 'lang/**'
+  pull_request:
+    paths-ignore:
+      - 'lang/**'
   workflow_dispatch:
 
 concurrency:
