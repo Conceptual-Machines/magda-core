@@ -15,14 +15,11 @@ namespace magda {
 
 void ClipSynchronizer::reallocateAndNotify() {
     if (auto* ctx = edit_.getCurrentPlaybackContext()) {
-        DBG("[BeatCopyTrace] reallocateAndNotify: begin hasPlaybackContext=1");
         edit_.getTransport().editHasChanged();
         ctx->reallocate();
-        DBG("[BeatCopyTrace] reallocateAndNotify: end");
         if (onGraphReallocated)
             onGraphReallocated();
     } else {
-        DBG("[BeatCopyTrace] reallocateAndNotify: skipped hasPlaybackContext=0");
     }
 }
 
@@ -126,8 +123,6 @@ void ClipSynchronizer::clipsChanged() {
 
     // Only sync arrangement clips - session clips are managed by SessionClipScheduler
     const auto& arrangementClips = clipManager.getArrangementClips();
-    DBG("[BeatCopyTrace] clipsChanged: arrangementCount="
-        << static_cast<int>(arrangementClips.size()));
 
     // Build set of current arrangement clip IDs for fast lookup
     std::unordered_set<ClipId> currentClipIds;
@@ -153,17 +148,11 @@ void ClipSynchronizer::clipsChanged() {
 
     bool arrangementTopologyChanged = !clipsToRemove.empty();
     if (!clipsToRemove.empty()) {
-        DBG("[BeatCopyTrace] clipsChanged: clipsToRemove="
-            << static_cast<int>(clipsToRemove.size()));
     }
     {
         juce::ScopedLock lock(clipLock_);
         for (const auto& clip : arrangementClips) {
             if (clipIdToEngineId_.find(clip.id) == clipIdToEngineId_.end()) {
-                DBG("[BeatCopyTrace] clipsChanged: newArrangementClip id="
-                    << clip.id << " startTime=" << clip.startTime << " length=" << clip.length
-                    << " offsetBeats=" << clip.offsetBeats << " loopStartBeats="
-                    << clip.loopStartBeats << " loopLengthBeats=" << clip.loopLengthBeats);
                 arrangementTopologyChanged = true;
                 break;
             }
@@ -190,9 +179,6 @@ void ClipSynchronizer::clipsChanged() {
     // edit but stay silent until the graph is rebuilt.
     if (arrangementTopologyChanged || sessionClipsSynced)
         reallocateAndNotify();
-    else
-        DBG("[BeatCopyTrace] clipsChanged: noTopologyReallocation arrangementTopologyChanged=0 "
-            "sessionClipsSynced=0");
 }
 
 void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
@@ -1405,16 +1391,6 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
 void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     namespace te = tracktion;
 
-    DBG("[ClipLengthTrace] syncAudioClipToEngine:entry id="
-        << clipId << " placement.lengthBeats=" << clip->placement.lengthBeats
-        << " mirror.lengthBeats=" << clip->lengthBeats << " timeline.startTime=" << clip->startTime
-        << " timeline.lengthSeconds=" << clip->length << " offsetBeats=" << clip->offsetBeats
-        << " offsetSeconds=" << clip->offset << " loopStartBeats=" << clip->loopStartBeats
-        << " loopLengthBeats=" << clip->loopLengthBeats << " loopStartSeconds=" << clip->loopStart
-        << " loopLengthSeconds=" << clip->loopLength
-        << " interpretation.bpm=" << clip->audio().interpretation.bpm
-        << " interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
-
     // 1. Get Tracktion track
     auto* audioTrack = trackController_.getAudioTrack(clip->trackId);
     if (!audioTrack) {
@@ -1526,28 +1502,6 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         }
 
         DBG("ClipSynchronizer: Created WaveAudioClip (engine ID: " << engineClipId << ")");
-        DBG("[BeatCopyTrace] syncAudioClipToEngine:create id="
-            << clipId << " engineId=" << engineClipId
-            << " sourceFile=" << clip->audio().source.filePath
-            << " teStart=" << audioClipPtr->getPosition().getStart().inSeconds()
-            << " teEnd=" << audioClipPtr->getPosition().getEnd().inSeconds()
-            << " teOffset=" << audioClipPtr->getPosition().getOffset().inSeconds());
-    }
-
-    {
-        const auto tePos = audioClipPtr->getPosition();
-        const auto teBeatRange = audioClipPtr->getEditBeatRange();
-        const auto teLoopRange = audioClipPtr->getLoopRangeBeats();
-        DBG("[BeatCopyTrace] syncAudioClipToEngine:tePreSync id="
-            << clipId << " engineId=" << audioClipPtr->itemID.toString() << " teStart="
-            << tePos.getStart().inSeconds() << " teEnd=" << tePos.getEnd().inSeconds()
-            << " teOffsetSeconds=" << tePos.getOffset().inSeconds() << " teStartBeat="
-            << teBeatRange.getStart().inBeats() << " teEndBeat=" << teBeatRange.getEnd().inBeats()
-            << " teOffsetBeats=" << audioClipPtr->getOffsetInBeats().inBeats()
-            << " teLoopStartBeats=" << teLoopRange.getStart().inBeats()
-            << " teLoopLengthBeats=" << teLoopRange.getLength().inBeats()
-            << " teAutoTempo=" << static_cast<int>(audioClipPtr->getAutoTempo())
-            << " teLooping=" << static_cast<int>(audioClipPtr->isLooping()));
     }
 
     // 3b. REVERSE — must be handled before position/loop/offset sync.
@@ -1603,10 +1557,6 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         std::abs(currentStart - engineStart) > 0.001 || std::abs(currentEnd - engineEnd) > 0.001;
 
     if (needsPositionUpdate) {
-        DBG("[ClipLengthTrace] syncAudioClipToEngine:setPosition id="
-            << clipId << " engineStart=" << engineStart << " engineEnd=" << engineEnd
-            << " placement.lengthBeats=" << clip->placement.lengthBeats
-            << " interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
         auto newTimeRange = te::TimeRange(te::TimePosition::fromSeconds(engineStart),
                                           te::TimePosition::fromSeconds(engineEnd));
         audioClipPtr->setPosition(te::ClipPosition{newTimeRange, currentPos.getOffset()});
@@ -1719,33 +1669,12 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             // beats to source time, so BPM and source beat count must both agree.
             if (clip->audio().interpretation.bpm > 0.0 ||
                 clip->audio().interpretation.totalBeats > 0.0) {
-                auto waveInfo = audioClipPtr->getWaveInfo();
-                auto& li = audioClipPtr->getLoopInfo();
-                double currentLoopInfoBpm = li.getBpm(waveInfo);
-                DBG("[ClipLengthTrace] syncAudioClipToEngine:loopInfoBefore id="
-                    << clipId << " teLoopInfo.bpm=" << currentLoopInfoBpm
-                    << " teLoopInfo.numBeats=" << li.getNumBeats() << " model.interpretation.bpm="
-                    << clip->audio().interpretation.bpm << " model.interpretation.totalBeats="
-                    << clip->audio().interpretation.totalBeats);
                 syncAudioSourceInterpretationToLoopInfo(*audioClipPtr, *clip);
-                DBG("[ClipLengthTrace] syncAudioClipToEngine:loopInfoAfter id="
-                    << clipId << " teLoopInfo.bpm=" << li.getBpm(waveInfo)
-                    << " teLoopInfo.numBeats=" << li.getNumBeats()
-                    << " model.interpretation.totalBeats="
-                    << clip->audio().interpretation.totalBeats);
             }
 
             auto [loopStartBeats, loopLengthBeats] =
                 ClipOperations::getAutoTempoBeatRange(*clip, bpm);
 
-            DBG("[ClipLengthTrace] syncAudioClipToEngine:setLoopRangeBeats id="
-                << clipId << " loopStartBeats=" << loopStartBeats << " loopLengthBeats="
-                << loopLengthBeats << " placement.lengthBeats=" << clip->placement.lengthBeats
-                << " model.offsetBeats=" << clip->offsetBeats << " model.teOffset="
-                << clip->getTeOffset(clip->loopEnabled,
-                                     edit_.tempoSequence.getBpmAt(te::TimePosition()))
-                << " model.loopLengthBeats=" << clip->loopLengthBeats
-                << " model.interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
             auto loopRange = te::BeatRange(te::BeatPosition::fromBeats(loopStartBeats),
                                            te::BeatDuration::fromBeats(loopLengthBeats));
             audioClipPtr->setLoopRangeBeats(loopRange);
@@ -1773,26 +1702,6 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         auto currentOffset = audioClipPtr->getPosition().getOffset().inSeconds();
         if (std::abs(currentOffset - teOffset) > 0.001) {
             audioClipPtr->setOffset(te::TimeDuration::fromSeconds(teOffset));
-        }
-        const auto tePos = audioClipPtr->getPosition();
-        const auto teBeatRange = audioClipPtr->getEditBeatRange();
-        DBG("[BeatCopyTrace] syncAudioClipToEngine:offsetApplied id="
-            << clipId << " projectBpm=" << projectBpm << " requestedTeOffset=" << teOffset
-            << " previousTeOffset=" << currentOffset << " actualTeOffset="
-            << tePos.getOffset().inSeconds() << " teStart=" << tePos.getStart().inSeconds()
-            << " teEnd=" << tePos.getEnd().inSeconds() << " teStartBeat="
-            << teBeatRange.getStart().inBeats() << " teEndBeat=" << teBeatRange.getEnd().inBeats()
-            << " teOffsetBeats=" << audioClipPtr->getOffsetInBeats().inBeats() << " modelStartBeat="
-            << clip->placement.startBeat << " modelEndBeat=" << clip->placement.endBeat()
-            << " modelOffsetBeats=" << clip->offsetBeats
-            << " teLooping=" << static_cast<int>(audioClipPtr->isLooping())
-            << " teAutoTempo=" << static_cast<int>(audioClipPtr->getAutoTempo())
-            << " teSpeedRatio=" << audioClipPtr->getSpeedRatio());
-        if (audioClipPtr->isLooping()) {
-            const auto loopRange = audioClipPtr->getLoopRangeBeats();
-            DBG("[BeatCopyTrace] syncAudioClipToEngine:teLoopRange id="
-                << clipId << " startBeats=" << loopRange.getStart().inBeats()
-                << " lengthBeats=" << loopRange.getLength().inBeats());
         }
     }
 

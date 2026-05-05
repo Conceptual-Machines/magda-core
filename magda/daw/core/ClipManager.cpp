@@ -33,74 +33,6 @@ bool sourceInterpretationBpmLooksDefaulted(const ClipInfo& clip, double projectB
     return std::abs(clip.audio().interpretation.totalBeats - projectDefaultBeats) < 0.01;
 }
 
-void traceAudioClipLengthState(const char* label, const ClipInfo& clip, double projectBPM) {
-    if (!clip.isAudio())
-        return;
-
-    DBG("[ClipLengthTrace] "
-        << label << " id=" << clip.id << " projectBPM=" << projectBPM << " autoTempo="
-        << static_cast<int>(clip.autoTempo) << " loopEnabled=" << static_cast<int>(clip.loopEnabled)
-        << " placement.startBeat=" << clip.placement.startBeat
-        << " placement.lengthBeats=" << clip.placement.lengthBeats
-        << " mirror.startBeats=" << clip.startBeats << " mirror.lengthBeats=" << clip.lengthBeats
-        << " timeline.startTime=" << clip.startTime << " timeline.lengthSeconds=" << clip.length
-        << " offsetBeats=" << clip.offsetBeats << " offsetSeconds=" << clip.offset
-        << " loopStartBeats=" << clip.loopStartBeats << " loopLengthBeats=" << clip.loopLengthBeats
-        << " loopStartSeconds=" << clip.loopStart << " loopLengthSeconds=" << clip.loopLength
-        << " source.durationSeconds=" << clip.audio().source.durationSeconds
-        << " interpretation.bpm=" << clip.audio().interpretation.bpm
-        << " interpretation.totalBeats=" << clip.audio().interpretation.totalBeats);
-}
-
-void traceBeatCopyState(const char* label, const ClipInfo& clip) {
-    if (!clip.isAudio())
-        return;
-
-    DBG("[BeatCopyTrace] "
-        << label << " id=" << clip.id << " name=\"" << clip.name << "\" trackId=" << clip.trackId
-        << " view=" << (clip.view == ClipView::Arrangement ? "arrangement" : "session")
-        << " startTime=" << clip.startTime << " length=" << clip.length << " placement.startBeat="
-        << clip.placement.startBeat << " placement.lengthBeats=" << clip.placement.lengthBeats
-        << " autoTempo=" << static_cast<int>(clip.autoTempo)
-        << " loopEnabled=" << static_cast<int>(clip.loopEnabled)
-        << " offsetBeats=" << clip.offsetBeats << " offsetSeconds=" << clip.offset
-        << " loopStartBeats=" << clip.loopStartBeats << " loopLengthBeats=" << clip.loopLengthBeats
-        << " loopStartSeconds=" << clip.loopStart << " loopLengthSeconds=" << clip.loopLength
-        << " teOffsetAt60=" << clip.getTeOffset(clip.loopEnabled, 60.0)
-        << " sourceBpm=" << clip.audio().interpretation.bpm
-        << " totalBeats=" << clip.audio().interpretation.totalBeats);
-}
-
-void traceBeatCopyComparison(const char* label, const ClipInfo& original, const ClipInfo& copy) {
-    if (!original.isAudio() || !copy.isAudio())
-        return;
-
-    DBG("[BeatCopyTrace] "
-        << label << " originalId=" << original.id << " copyId=" << copy.id
-        << " originalStartTime=" << original.startTime << " copyStartTime=" << copy.startTime
-        << " originalPlacementStartBeat=" << original.placement.startBeat
-        << " copyPlacementStartBeat=" << copy.placement.startBeat
-        << " placementStartDeltaBeats=" << (copy.placement.startBeat - original.placement.startBeat)
-        << " originalLengthBeats=" << original.placement.lengthBeats << " copyLengthBeats="
-        << copy.placement.lengthBeats << " originalOffsetBeats=" << original.offsetBeats
-        << " copyOffsetBeats=" << copy.offsetBeats
-        << " offsetBeatsDelta=" << (copy.offsetBeats - original.offsetBeats)
-        << " originalLoopStartBeats=" << original.loopStartBeats
-        << " copyLoopStartBeats=" << copy.loopStartBeats
-        << " loopStartBeatsDelta=" << (copy.loopStartBeats - original.loopStartBeats)
-        << " originalLoopLengthBeats=" << original.loopLengthBeats
-        << " copyLoopLengthBeats=" << copy.loopLengthBeats
-        << " loopLengthBeatsDelta=" << (copy.loopLengthBeats - original.loopLengthBeats)
-        << " originalOffsetSeconds=" << original.offset << " copyOffsetSeconds=" << copy.offset
-        << " originalLoopStartSeconds=" << original.loopStart << " copyLoopStartSeconds="
-        << copy.loopStart << " originalLoopLengthSeconds=" << original.loopLength
-        << " copyLoopLengthSeconds=" << copy.loopLength
-        << " originalSourceBpm=" << original.audio().interpretation.bpm
-        << " copySourceBpm=" << copy.audio().interpretation.bpm
-        << " originalTotalBeats=" << original.audio().interpretation.totalBeats
-        << " copyTotalBeats=" << copy.audio().interpretation.totalBeats);
-}
-
 bool seedSourceMetadataFromCachedDetection(ClipInfo& clip, double projectBPM) {
     if (!clip.isAudio() || clip.audio().source.filePath.isEmpty() ||
         !sourceInterpretationBpmLooksDefaulted(clip, projectBPM)) {
@@ -375,7 +307,6 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
     if (!original) {
         return INVALID_CLIP_ID;
     }
-    traceBeatCopyState("duplicateClip:original", *original);
 
     ClipInfo newClip = *original;
     newClip.id = nextClipId_++;
@@ -395,14 +326,12 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
             newClip.deriveTimesFromBeats(bpm);
         else
             newClip.startTime = original->startTime + original->length;
-        traceBeatCopyComparison("duplicateClip:copyComparison", *original, newClip);
     } else {
         // Session clips always loop
         newClip.startTime = 0.0;
         newClip.loopEnabled = true;
         newClip.sceneIndex = -1;
     }
-    traceBeatCopyState("duplicateClip:newClipBeforeStore", newClip);
     clips_[newClip.id] = newClip;
     addToSessionSlotIndex(clips_[newClip.id]);
 
@@ -419,7 +348,6 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
     if (!original) {
         return INVALID_CLIP_ID;
     }
-    traceBeatCopyState("duplicateClipAt:original", *original);
 
     ClipInfo newClip = *original;
     newClip.id = nextClipId_++;
@@ -437,15 +365,12 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
         } else {
             newClip.startTime = startTime;
         }
-        traceBeatCopyComparison("duplicateClipAt:copyComparison", *original, newClip);
-        traceBeatCopyState("duplicateClipAt:newClipBeforeStore", newClip);
         clips_[newClip.id] = newClip;
     } else {
         // Session clips always loop
         newClip.startTime = 0.0;
         newClip.loopEnabled = true;
         newClip.sceneIndex = -1;
-        traceBeatCopyState("duplicateClipAt:newSessionClipBeforeStore", newClip);
         clips_[newClip.id] = newClip;
     }
     addToSessionSlotIndex(clips_[newClip.id]);
@@ -511,10 +436,6 @@ void ClipManager::moveClipToTrack(ClipId clipId, TrackId newTrackId) {
 
 void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, double tempo) {
     if (auto* clip = getClip(clipId)) {
-        traceAudioClipLengthState("resizeClip:before", *clip, tempo);
-        DBG("[ClipLengthTrace] resizeClip request id="
-            << clipId << " newLengthSeconds=" << newLength
-            << " fromStart=" << static_cast<int>(fromStart) << " projectBPM=" << tempo);
         if (fromStart) {
             ClipOperations::resizeContainerFromLeft(*clip, newLength, tempo);
             // Non-loop mode: keep loopStart synced to offset
@@ -533,7 +454,6 @@ void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, do
                 }
             }
         }
-        traceAudioClipLengthState("resizeClip:after", *clip, tempo);
         if (clip->view == ClipView::Arrangement)
             resolveOverlaps(clipId);
         notifyClipPropertyChanged(clipId);
@@ -545,13 +465,9 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     if (!clip) {
         return INVALID_CLIP_ID;
     }
-    traceBeatCopyState("splitClip:sourceBefore", *clip);
 
     // Validate split position is within clip
     if (splitTime <= clip->startTime || splitTime >= clip->getEndTime()) {
-        DBG("[BeatCopyTrace] splitClip:invalidPosition id=" << clipId << " splitTime=" << splitTime
-                                                            << " startTime=" << clip->startTime
-                                                            << " endTime=" << clip->getEndTime());
         return INVALID_CLIP_ID;
     }
 
@@ -574,15 +490,8 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
             double deltaBeats = leftLength * tempo / 60.0;
             rightClip.offsetBeats += deltaBeats;
             rightClip.offset = rightClip.offsetBeats * 60.0 / clip->audio().interpretation.bpm;
-            DBG("[BeatCopyTrace] splitClip:rightOffsetAdjusted id="
-                << rightClip.id << " deltaBeats=" << deltaBeats
-                << " offsetBeats=" << rightClip.offsetBeats << " offsetSeconds=" << rightClip.offset
-                << " tempo=" << tempo << " sourceBpm=" << clip->audio().interpretation.bpm);
         } else {
             rightClip.offset += leftLength * clip->speedRatio;
-            DBG("[BeatCopyTrace] splitClip:rightOffsetAdjustedTime id="
-                << rightClip.id << " leftLength=" << leftLength
-                << " speedRatio=" << clip->speedRatio << " offsetSeconds=" << rightClip.offset);
         }
     }
 
@@ -643,10 +552,6 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
             clip->isAudio() && clip->autoTempo && clip->audio().interpretation.bpm > 0.0;
 
         if (autoTempoAudio) {
-            DBG("[BeatCopyTrace] splitClip:autoTempoLoopPath sourceId="
-                << clip->id << " rightId=" << rightClip.id << " splitTime=" << splitTime
-                << " leftLength=" << leftLength << " rightLength=" << rightLength
-                << " tempo=" << tempo);
             // TE auto-tempo arranger clips need the source loop range to stay in
             // the original source-beat domain. The right split's offsetBeats
             // carries the playback phase; truncating loopStartBeats to the
@@ -656,8 +561,6 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
             clip->loopLength = clip->loopLengthBeats * 60.0 / srcBpm;
             rightClip.loopStart = rightClip.loopStartBeats * 60.0 / srcBpm;
             rightClip.loopLength = rightClip.loopLengthBeats * 60.0 / srcBpm;
-            traceBeatCopyState("splitClip:leftAfterAutoTempoLoop", *clip);
-            traceBeatCopyState("splitClip:rightAfterAutoTempoLoop", rightClip);
         } else {
             // Looped clip: if the loop region is longer than the new clip length,
             // truncate it so each half only loops over its own portion.
@@ -737,9 +640,6 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
         clip->fadeOut = kSplitFadeSeconds;
         rightClip.fadeIn = kSplitFadeSeconds;
     }
-
-    traceBeatCopyState("splitClip:leftBeforeStore", *clip);
-    traceBeatCopyState("splitClip:rightBeforeStore", rightClip);
 
     // Add right clip to the clip pool
     clips_[rightClip.id] = rightClip;
@@ -995,10 +895,6 @@ void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
     if (!clip || !clip->isAudio() || !clip->autoTempo || bpm <= 0.0)
         return;
 
-    traceAudioClipLengthState("setLengthBeats:before", *clip, bpm);
-    DBG("[ClipLengthTrace] setLengthBeats request id=" << clipId << " newPlacementLengthBeats="
-                                                       << newBeats << " projectBPM=" << bpm);
-
     // Issue #1157: the beat-length slider edits USER INTENT only — how many
     // timeline beats the clip occupies. Source-file metadata (source interpretation BPM /
     // source interpretation total beats) is NOT touched here. Stretch is determined by TE from
@@ -1015,21 +911,6 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
     auto* clip = getClip(clipId);
     if (!clip || !clip->isAudio() || !clip->autoTempo)
         return;
-
-    traceAudioClipLengthState("applyAudioClipBeats:before", *clip, projectBPM);
-    DBG("[ClipLengthTrace] applyAudioClipBeats request id="
-        << clipId << " hasLengthBeats=" << static_cast<int>(update.lengthBeats.has_value())
-        << " lengthBeats=" << (update.lengthBeats ? *update.lengthBeats : -1.0)
-        << " hasLoopLengthBeats=" << static_cast<int>(update.loopLengthBeats.has_value())
-        << " loopLengthBeats=" << (update.loopLengthBeats ? *update.loopLengthBeats : -1.0)
-        << " hasInterpretationBpm=" << static_cast<int>(update.interpretationBpm.has_value())
-        << " interpretationBpm=" << (update.interpretationBpm ? *update.interpretationBpm : -1.0)
-        << " hasInterpretationTotalBeats="
-        << static_cast<int>(update.interpretationTotalBeats.has_value())
-        << " interpretationTotalBeats="
-        << (update.interpretationTotalBeats ? *update.interpretationTotalBeats : -1.0)
-        << " lockInterpretationTotalBeats=" << static_cast<int>(update.lockInterpretationTotalBeats)
-        << " projectBPM=" << projectBPM);
 
     // (1) Source interpretation metadata. BPM and total beats describe the
     // same fixed-duration source, so inspector edits may update both together.
@@ -1082,7 +963,6 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
     // (3) Recompute the seconds cache from beats atomically.
     refreshDerivedSeconds(clipId, projectBPM);
 
-    traceAudioClipLengthState("applyAudioClipBeats:after", *clip, projectBPM);
     notifyClipPropertyChanged(clipId);
 }
 
@@ -1090,8 +970,6 @@ void ClipManager::refreshDerivedSeconds(ClipId clipId, double projectBPM) {
     auto* clip = getClip(clipId);
     if (!clip)
         return;
-
-    traceAudioClipLengthState("refreshDerivedSeconds:before", *clip, projectBPM);
 
     // TE requires speedRatio == 1.0 in autoTempo mode.
     if (clip->autoTempo)
@@ -1120,8 +998,6 @@ void ClipManager::refreshDerivedSeconds(ClipId clipId, double projectBPM) {
     } else if (clip->isMidi() && projectBPM > 0.0 && clip->loopLengthBeats > 0.0) {
         clip->loopLength = clip->loopLengthBeats * 60.0 / projectBPM;
     }
-
-    traceAudioClipLengthState("refreshDerivedSeconds:after", *clip, projectBPM);
 }
 
 void ClipManager::setSpeedRatio(ClipId clipId, double speedRatio) {
@@ -2013,7 +1889,6 @@ void ClipManager::copyToClipboard(const std::unordered_set<ClipId>& clipIds) {
     for (auto clipId : clipIds) {
         const auto* clip = getClip(clipId);
         if (clip) {
-            traceBeatCopyState("copyToClipboard:clip", *clip);
             clipboard_.push_back(*clip);
         }
     }
@@ -2055,7 +1930,6 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
         syncPlacementFromTimelineSeconds(trimmed, tempoBPM);
 
         if (clip.isAudio()) {
-            traceBeatCopyState("copyTimeRangeToClipboard:source", clip);
             // Adjust offset for the trimmed start position
             double trimFromLeft = overlapStart - clipStart;
             if (clip.isBeatsAuthoritative() && clip.audio().interpretation.bpm > 0.0 &&
@@ -2067,10 +1941,6 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
             } else {
                 trimmed.offset = clip.offset + trimFromLeft * clip.speedRatio;
             }
-            DBG("[BeatCopyTrace] copyTimeRangeToClipboard:trimmedOffset id="
-                << trimmed.id << " overlapStart=" << overlapStart << " overlapEnd=" << overlapEnd
-                << " trimFromLeft=" << trimFromLeft << " tempoBPM=" << tempoBPM
-                << " offsetBeats=" << trimmed.offsetBeats << " offsetSeconds=" << trimmed.offset);
             // Sync loop fields for non-looped clips
             if (!trimmed.loopEnabled) {
                 if (trimmed.autoTempo && trimmed.audio().interpretation.bpm > 0.0) {
@@ -2082,7 +1952,6 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
                 }
                 trimmed.loopLength = trimmed.timelineToSource(trimmed.length);
             }
-            traceBeatCopyState("copyTimeRangeToClipboard:trimmed", trimmed);
         } else if (clip.isMidi() && !clip.midiNotes.empty()) {
             // Filter MIDI notes to those within the overlap range
             double bps = tempoBPM / 60.0;
@@ -2120,7 +1989,6 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
     std::unordered_map<TrackId, int> trackSceneMap;
 
     for (const auto& clipData : clipboard_) {
-        traceBeatCopyState("pasteFromClipboard:clipData", clipData);
         // Calculate new start time maintaining relative position
         double newStartTime = clipData.startTime + timeOffset;
 
@@ -2143,7 +2011,6 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
             // Copy properties
             auto* newClip = getClip(newClipId);
             if (newClip) {
-                traceBeatCopyState("pasteFromClipboard:newClipAfterCreate", *newClip);
                 newClip->name = clipData.name + " (copy)";
                 newClip->colour = clipData.colour;
                 newClip->loopEnabled = clipData.loopEnabled;
@@ -2194,9 +2061,6 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                     if (clipData.audio().interpretation.totalBeats > 0.0)
                         newClip->audio().interpretation.totalBeats =
                             clipData.audio().interpretation.totalBeats;
-                    traceBeatCopyComparison("pasteFromClipboard:copyComparison", clipData,
-                                            *newClip);
-                    traceBeatCopyState("pasteFromClipboard:newClipAfterAudioCopy", *newClip);
                 }
 
                 // Pitch
@@ -2270,7 +2134,6 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                 if (newClip->view == ClipView::Arrangement)
                     resolveOverlaps(newClipId);
                 forceNotifyClipPropertyChanged(newClipId);
-                traceBeatCopyState("pasteFromClipboard:newClipBeforeReturn", *newClip);
             }
 
             newClips.push_back(newClipId);
