@@ -333,24 +333,10 @@ ResizeClipCommand::ResizeClipCommand(ClipId clipId, double newLength, bool fromS
 
 ClipInfo ResizeClipCommand::captureState() {
     auto* clip = ClipManager::getInstance().getClip(clipId_);
-    if (clip && clip->isAudio()) {
-        DBG("[ClipLengthTrace] ResizeClipCommand::captureState id="
-            << clipId_ << " placement.lengthBeats=" << clip->placement.lengthBeats
-            << " mirror.lengthBeats=" << clip->lengthBeats << " loopLengthBeats="
-            << clip->loopLengthBeats << " interpretation.bpm=" << clip->audio().interpretation.bpm
-            << " interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
-    }
     return clip ? *clip : ClipInfo{};
 }
 
 void ResizeClipCommand::restoreState(const ClipInfo& state) {
-    if (state.isAudio()) {
-        DBG("[ClipLengthTrace] ResizeClipCommand::restoreState id="
-            << clipId_ << " placement.lengthBeats=" << state.placement.lengthBeats
-            << " mirror.lengthBeats=" << state.lengthBeats << " loopLengthBeats="
-            << state.loopLengthBeats << " interpretation.bpm=" << state.audio().interpretation.bpm
-            << " interpretation.totalBeats=" << state.audio().interpretation.totalBeats);
-    }
     auto& clipManager = ClipManager::getInstance();
     if (auto* clip = clipManager.getClip(clipId_)) {
         *clip = state;
