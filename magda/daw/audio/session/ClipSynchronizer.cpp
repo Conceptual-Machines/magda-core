@@ -144,6 +144,17 @@ void ClipSynchronizer::clipsChanged() {
         removeClipFromEngine(clipId);
     }
 
+    bool arrangementTopologyChanged = !clipsToRemove.empty();
+    {
+        juce::ScopedLock lock(clipLock_);
+        for (const auto& clip : arrangementClips) {
+            if (clipIdToEngineId_.find(clip.id) == clipIdToEngineId_.end()) {
+                arrangementTopologyChanged = true;
+                break;
+            }
+        }
+    }
+
     // Sync remaining arrangement clips to engine (add new ones, update existing)
     for (const auto& clip : arrangementClips) {
         syncClipToEngine(clip.id);
@@ -158,12 +169,12 @@ void ClipSynchronizer::clipsChanged() {
         }
     }
 
-    // Force graph rebuild if new session clips were moved into slots,
-    // so SlotControlNode instances are created in the audio graph
-    if (sessionClipsSynced) {
-        // Track playback modes are managed by SessionClipScheduler::syncTrackPlaybackModes()
+    // Force graph rebuild when clip topology changes. Tracktion's live
+    // playback context doesn't automatically pick up newly inserted
+    // arrangement WaveAudioClips, so split/duplicate copies can exist in the
+    // edit but stay silent until the graph is rebuilt.
+    if (arrangementTopologyChanged || sessionClipsSynced)
         reallocateAndNotify();
-    }
 }
 
 void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
