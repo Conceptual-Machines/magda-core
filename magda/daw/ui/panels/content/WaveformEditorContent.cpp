@@ -140,6 +140,11 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                    scrollX;
         };
 
+        auto displayPositionToX = [&](double displayPos) -> int {
+            return static_cast<int>(displayPos * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
+                   scrollX;
+        };
+
         auto arrangementToSourceX = [&](double arrangementTime) -> int {
             double relTime = arrangementTime - clip->startTime;
             double sourcePos = clip->offset + timelineDeltaToSourceDelta(relTime);
@@ -166,31 +171,23 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
             double sessionPos = clip->sessionPlayheadPos;
 
             if (sessionPos >= 0.0) {
-                {
-                    double relPos = sessionPos;
-                    if (clip->loopEnabled && clip->loopLength > 0.0) {
-                        double phaseShift = clip->offset - clip->loopStart;
-                        double sourceDelta = timelineDeltaToSourceDelta(relPos);
-                        double wrapped = std::fmod(phaseShift + sourceDelta, clip->loopLength);
-                        if (wrapped < 0.0)
-                            wrapped += clip->loopLength;
-                        double sourcePos = clip->loopStart + wrapped;
-                        int playX = sourcePositionToX(sourcePos);
-                        if (playX >= 0 && playX < getWidth()) {
-                            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
-                            g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
-                                       static_cast<float>(getHeight()), 1.5f);
-                        }
-                    } else {
-                        // Non-looping session clip
-                        double sourcePos = clip->offset + timelineDeltaToSourceDelta(relPos);
-                        int playX = sourcePositionToX(sourcePos);
-                        if (playX >= 0 && playX < getWidth()) {
-                            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
-                            g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
-                                       static_cast<float>(getHeight()), 1.5f);
-                        }
-                    }
+                int playX = 0;
+                if (clip->loopEnabled && di.loopLengthSeconds > 0.0) {
+                    const double phaseDisplay =
+                        di.loopPhasePositionSeconds - di.loopStartPositionSeconds;
+                    double wrappedDisplay =
+                        std::fmod(phaseDisplay + sessionPos, di.loopLengthSeconds);
+                    if (wrappedDisplay < 0.0)
+                        wrappedDisplay += di.loopLengthSeconds;
+                    playX = displayPositionToX(di.loopStartPositionSeconds + wrappedDisplay);
+                } else {
+                    playX = displayPositionToX(di.offsetPositionSeconds + sessionPos);
+                }
+
+                if (playX >= 0 && playX < getWidth()) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                    g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
+                               static_cast<float>(getHeight()), 1.5f);
                 }
                 // Either way, don't fall through to arrangement mode
                 return;
