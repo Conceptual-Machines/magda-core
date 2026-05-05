@@ -317,7 +317,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     }
                 }
                 const auto* targetClip = clipManager.getClip(targetClipId);
-                if (targetClip && targetClip->type == ClipType::MIDI) {
+                if (targetClip && targetClip->isMidi()) {
                     // Determine paste position: use edit cursor if available, else original
                     // position
                     double pasteOffset = clipManager.getNoteClipboardMinBeat();
@@ -443,7 +443,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             const auto& noteSel = selectionManager.getNoteSelection();
             if (noteSel.isValid()) {
                 const auto* clip = clipManager.getClip(noteSel.clipId);
-                if (clip && clip->type == ClipType::MIDI) {
+                if (clip && clip->isMidi()) {
                     // Read selected notes and compute offset (place duplicates right after
                     // originals)
                     double minStart = std::numeric_limits<double>::max();
@@ -603,7 +603,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (selectionManager.hasNoteSelection()) {
                 auto clipId = selectionManager.getNoteSelection().clipId;
                 const auto* clip = clipManager.getClip(clipId);
-                if (clip && clip->type == ClipType::MIDI) {
+                if (clip && clip->isMidi()) {
                     std::vector<size_t> allIndices;
                     for (size_t i = 0; i < clip->midiNotes.size(); ++i)
                         allIndices.push_back(i);
@@ -792,7 +792,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             std::vector<ClipId> audioClips;
             for (auto cid : selectedClips) {
                 auto* c = clipManager.getClip(cid);
-                if (c && c->type == ClipType::Audio)
+                if (c && c->isAudio())
                     audioClips.push_back(cid);
             }
 

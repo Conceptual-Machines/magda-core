@@ -5,6 +5,7 @@
 
 // TE internal test utilities (not exposed via module public headers)
 #include "SharedTestEngine.hpp"
+#include "magda/daw/audio/AudioThumbnailManager.hpp"
 #include "magda/daw/audio/TrackController.hpp"
 #include "magda/daw/audio/WarpMarkerManager.hpp"
 #include "magda/daw/audio/session/ClipSynchronizer.hpp"
@@ -59,6 +60,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
     void runTest() override {
         testCreateAndSyncAudioClip();
+        testSessionImportUsesCachedDetectorFallback();
+        testSessionSyncPreservesDetectedSourceInterpretation();
         testMoveClip();
         testResizeFromRight();
         testResizeFromLeft();
@@ -156,6 +159,73 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // Source file should match
         auto sourceFile = teClip->getCurrentSourceFile();
         expect(sourceFile == f.sinFile->getFile(), "Source file should match");
+    }
+
+    void testSessionImportUsesCachedDetectorFallback() {
+        beginTest("Session import uses cached detector fallback for defaulted source metadata");
+
+        Fixture f;
+        auto& thumbs = AudioThumbnailManager::getInstance();
+        thumbs.clearCache();
+
+        constexpr double detectedBpm = 172.0;
+        const double sourceDuration = 5.0;
+        const double expectedSourceBeats = sourceDuration * detectedBpm / 60.0;
+        thumbs.cacheBPM(f.audioPath(), detectedBpm);
+
+        auto clipId = ClipManager::getInstance().createAudioClip(
+            f.trackId, 0.0, sourceDuration, f.audioPath(), ClipView::Session, 120.0);
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        expect(clip != nullptr, "Session clip should exist");
+        if (clip == nullptr)
+            return;
+        expect(clip->view == ClipView::Session, "Clip should be a session clip");
+        expect(clip->autoTempo, "Session audio clips should default to beat mode");
+        expectWithinAbsoluteError(clip->audio().interpretation.bpm, detectedBpm, 0.01);
+        expectWithinAbsoluteError(clip->audio().interpretation.totalBeats, expectedSourceBeats,
+                                  0.01);
+        expectWithinAbsoluteError(clip->loopLengthBeats, expectedSourceBeats, 0.01);
+
+        thumbs.clearCache();
+    }
+
+    void testSessionSyncPreservesDetectedSourceInterpretation() {
+        beginTest("Session sync preserves detector metadata when TE loopInfo is project-default");
+
+        Fixture f;
+        auto& thumbs = AudioThumbnailManager::getInstance();
+        thumbs.clearCache();
+
+        constexpr double detectedBpm = 172.0;
+        const double sourceDuration = 5.0;
+        const double expectedSourceBeats = sourceDuration * detectedBpm / 60.0;
+        thumbs.cacheBPM(f.audioPath(), detectedBpm);
+
+        auto clipId = ClipManager::getInstance().createAudioClip(
+            f.trackId, 0.0, sourceDuration, f.audioPath(), ClipView::Session, 120.0);
+        ClipManager::getInstance().setClipSceneIndex(clipId, 0);
+        if (f.clipSync->getSessionTeClip(clipId) == nullptr)
+            f.clipSync->syncSessionClipToSlot(clipId);
+
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        expect(clip != nullptr, "Session clip should still exist after sync");
+        if (clip == nullptr)
+            return;
+        expectWithinAbsoluteError(clip->audio().interpretation.bpm, detectedBpm, 0.01);
+        expectWithinAbsoluteError(clip->audio().interpretation.totalBeats, expectedSourceBeats,
+                                  0.01);
+        expectWithinAbsoluteError(clip->loopLengthBeats, expectedSourceBeats, 0.01);
+
+        auto* teClip = dynamic_cast<te::WaveAudioClip*>(f.clipSync->getSessionTeClip(clipId));
+        expect(teClip != nullptr, "Tracktion session clip should exist");
+        if (teClip != nullptr) {
+            auto waveInfo = teClip->getWaveInfo();
+            auto& loopInfo = teClip->getLoopInfo();
+            expectWithinAbsoluteError(loopInfo.getBpm(waveInfo), detectedBpm, 0.01);
+            expectWithinAbsoluteError(loopInfo.getNumBeats(), expectedSourceBeats, 0.01);
+        }
+
+        thumbs.clearCache();
     }
 
     void testMoveClip() {
@@ -324,13 +394,13 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // Auto-tempo + beat-domain loop region (clips are beat-authoritative).
         auto* clip = ClipManager::getInstance().getClip(clipId);
         clip->autoTempo = true;
-        clip->sourceBPM = 60.0;
-        clip->sourceNumBeats = 5.0;  // 5s sine WAV at 60 BPM
+        clip->audio().interpretation.bpm = 60.0;
+        clip->audio().interpretation.totalBeats = 5.0;  // 5s sine WAV at 60 BPM
         clip->loopEnabled = true;
         clip->loopStartBeats = 0.0;
         clip->loopLengthBeats = 2.0;
-        clip->loopStart = clip->loopStartBeats * 60.0 / clip->sourceBPM;
-        clip->loopLength = clip->loopLengthBeats * 60.0 / clip->sourceBPM;
+        clip->loopStart = clip->loopStartBeats * 60.0 / clip->audio().interpretation.bpm;
+        clip->loopLength = clip->loopLengthBeats * 60.0 / clip->audio().interpretation.bpm;
         f.clipSync->syncClipToEngine(clipId);
 
         expect(teClip->isLooping(), "TE clip should be looping");
@@ -346,7 +416,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
     }
 
     void testLoopTimeBased() {
-        beginTest("Loop with container longer than region (non-integer multiple): partial second cycle plays");
+        beginTest("Loop with container longer than region (non-integer multiple): partial second "
+                  "cycle plays");
 
         // Reproduces the bug from the screenshot:
         //   120 BPM, clip = 3 bars, loop region = 2 bars.
@@ -371,8 +442,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // (1.5× the loop region) via setPlacementBeats; deriveTimesFromBeats
         // refreshes the seconds cache so the renderer agrees with TE.
         clip->autoTempo = true;
-        clip->sourceBPM = 60.0;
-        clip->sourceNumBeats = 5.0;
+        clip->audio().interpretation.bpm = 60.0;
+        clip->audio().interpretation.totalBeats = 5.0;
         clip->loopEnabled = true;
         clip->loopStartBeats = 0.0;
         clip->loopLengthBeats = 2.0;

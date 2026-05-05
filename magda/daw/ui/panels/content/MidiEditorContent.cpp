@@ -169,7 +169,7 @@ MidiEditorContent::MidiEditorContent() {
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClip);
-        if (clip && clip->type == magda::ClipType::MIDI) {
+        if (clip && clip->isMidi()) {
             editingClipId_ = selectedClip;
         }
     }

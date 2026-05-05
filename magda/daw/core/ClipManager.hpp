@@ -231,21 +231,22 @@ class ClipManager {
     // Session audio-clip canonical update path (issue #1157)
     //
     // For session/autoTempo audio clips, ClipInfo holds two roles:
-    //   - DETECTED METADATA — sourceBPM, sourceNumBeats. Properties of the
-    //     audio file. Only ever written via this struct. Inspector "BPM"
-    //     edits write here (a correction, not a stretch).
+    //   - SOURCE INTERPRETATION — AudioClipModel::interpretation. The file's
+    //     musical reading, user-correctable and never clip placement.
     //   - USER INTENT — lengthBeats (timeline beats the clip occupies on
     //     the session/timeline), loopStartBeats / loopLengthBeats (sub-loop
     //     region in source-beat domain), offsetBeats, startBeats. The beat
-    //     slider edits lengthBeats and never touches sourceBPM.
+    //     slider edits lengthBeats and never touches source interpretation.
     //
     // Time-domain fields (length, startTime, offset, loopStart, loopLength)
     // are DERIVED inside applyAudioClipBeats and must not be set directly
     // by callers in this path. speedRatio is forced to 1.0.
     // =====================================================================
     struct AudioClipBeatsUpdate {
-        std::optional<double> sourceBPM;
-        std::optional<double> sourceNumBeats;
+        std::optional<double> sourceDurationSeconds;
+        std::optional<double> interpretationBpm;
+        std::optional<double> interpretationTotalBeats;
+        bool lockInterpretationTotalBeats = false;
         std::optional<double> lengthBeats;
         std::optional<double> loopStartBeats;
         std::optional<double> loopLengthBeats;

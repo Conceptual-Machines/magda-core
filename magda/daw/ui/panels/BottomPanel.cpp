@@ -766,7 +766,7 @@ void BottomPanel::updateContentBasedOnSelection() {
             return;
         }
         if (clip) {
-            if (clip->type == ClipType::MIDI) {
+            if (clip->isMidi()) {
                 needsTabs = true;
 
                 // Auto-default to Drum Grid for DrumGrid tracks (on first selection)
@@ -781,7 +781,7 @@ void BottomPanel::updateContentBasedOnSelection() {
                 targetContent = (lastEditorTabChoice_ == 1)
                                     ? daw::ui::PanelContentType::DrumGridClipView
                                     : daw::ui::PanelContentType::PianoRoll;
-            } else if (clip->type == ClipType::Audio) {
+            } else if (clip->isAudio()) {
                 targetContent = daw::ui::PanelContentType::WaveformEditor;
             }
         }

@@ -46,6 +46,43 @@ static te::LaunchQType toTELaunchQType(LaunchQuantize q) {
     return te::LaunchQType::none;
 }
 
+static void syncAudioSourceInterpretationToLoopInfo(te::WaveAudioClip& audioClip,
+                                                    const ClipInfo& clip) {
+    auto waveInfo = audioClip.getWaveInfo();
+    auto& li = audioClip.getLoopInfo();
+
+    if (clip.audio().interpretation.bpm > 0.0 &&
+        std::abs(li.getBpm(waveInfo) - clip.audio().interpretation.bpm) > 0.1) {
+        li.setBpm(clip.audio().interpretation.bpm, waveInfo);
+    }
+
+    if (clip.audio().interpretation.totalBeats > 0.0 &&
+        std::abs(li.getNumBeats() - clip.audio().interpretation.totalBeats) > 0.001) {
+        li.setNumBeats(clip.audio().interpretation.totalBeats);
+    }
+}
+
+static void initialiseSourceLoopBeatsFromMetadata(ClipInfo& clip) {
+    if (!clip.isAudio() || !clip.autoTempo || clip.loopLengthBeats > 0.0)
+        return;
+
+    const double sourceBpm = clip.audio().interpretation.bpm;
+    if (sourceBpm <= 0.0)
+        return;
+
+    const double sourceTotalBeats = clip.audio().interpretation.totalBeats;
+    clip.loopStartBeats = juce::jmax(0.0, clip.loopStart * sourceBpm / 60.0);
+
+    double loopBeats =
+        clip.loopLength > 0.0 ? clip.loopLength * sourceBpm / 60.0 : sourceTotalBeats;
+    if (sourceTotalBeats > 0.0) {
+        clip.loopStartBeats = juce::jmin(clip.loopStartBeats, sourceTotalBeats);
+        loopBeats = juce::jmin(loopBeats, sourceTotalBeats - clip.loopStartBeats);
+    }
+
+    clip.loopLengthBeats = juce::jmax(0.0, loopBeats);
+}
+
 ClipSynchronizer::ClipSynchronizer(te::Edit& edit, TrackController& trackController,
                                    WarpMarkerManager& warpMarkerManager)
     : edit_(edit), trackController_(trackController), warpMarkerManager_(warpMarkerManager) {
@@ -174,7 +211,7 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                     }
 
                     // AutoTempo handling for audio clips
-                    bool isAutoTempoAudio = clip->type == ClipType::Audio && clip->autoTempo;
+                    bool isAutoTempoAudio = clip->isAudio() && clip->autoTempo;
 
                     if (isAutoTempoAudio) {
                         auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip);
@@ -199,7 +236,7 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                         // Neutralize embedded tempo metadata: set source BPM =
                         // project BPM so the auto-enabled autoTempo doesn't cause
                         // unwanted speed changes.
-                        if (clip->type == ClipType::Audio) {
+                        if (clip->isAudio()) {
                             if (auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip)) {
                                 double projectBpm =
                                     edit_.tempoSequence.getBpmAt(te::TimePosition());
@@ -237,7 +274,7 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                     }
 
                     // Sync session-applicable audio clip properties
-                    if (clip->type == ClipType::Audio) {
+                    if (clip->isAudio()) {
                         auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip);
                         if (audioClip) {
                             // Pitch
@@ -272,7 +309,7 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                     }
 
                     // Re-sync MIDI notes from ClipManager to the TE MidiClip
-                    if (clip->type == ClipType::MIDI) {
+                    if (clip->isMidi()) {
                         if (auto* midiClip = dynamic_cast<te::MidiClip*>(teClip)) {
                             auto& sequence = midiClip->getSequence();
                             sequence.clear(nullptr);
@@ -302,8 +339,8 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                     }
 
                 }  // if (teClip)
-            }  // else (already synced)
-        }  // if (sceneIndex >= 0)
+            }      // else (already synced)
+        }          // if (sceneIndex >= 0)
         return;
     }
 
@@ -333,9 +370,9 @@ void ClipSynchronizer::syncClipToEngine(ClipId clipId) {
     }
 
     // Route to appropriate sync method by type
-    if (clip->type == ClipType::MIDI) {
+    if (clip->isMidi()) {
         syncMidiClipToEngine(clipId, clip);
-    } else if (clip->type == ClipType::Audio) {
+    } else if (clip->isAudio()) {
         syncAudioClipToEngine(clipId, clip);
     } else {
         DBG("syncClipToEngine: Unknown clip type for clip " << clipId);
@@ -449,14 +486,14 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
     // Create the TE clip directly in the slot (NOT on the track then moved).
     // TE's free functions insertWaveClip(ClipOwner&, ...) and insertMIDIClip(ClipOwner&, ...)
     // accept ClipSlot as a ClipOwner, creating the clip's ValueTree directly in the slot.
-    if (clip->type == ClipType::Audio) {
-        if (clip->audioFilePath.isEmpty())
+    if (clip->isAudio()) {
+        if (clip->audio().source.filePath.isEmpty())
             return false;
 
-        juce::File audioFile(clip->audioFilePath);
+        juce::File audioFile(clip->audio().source.filePath);
         if (!audioFile.existsAsFile()) {
             DBG("ClipSynchronizer::syncSessionClipToSlot: Audio file not found: "
-                << clip->audioFilePath);
+                << clip->audio().source.filePath);
             return false;
         }
 
@@ -473,20 +510,20 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
         auto* audioClipPtr = clipRef.get();
 
-        // Populate source file metadata from TE's loopInfo. Issue #1157:
-        // when this is the first time metadata lands on an autoTempo clip,
-        // setSourceMetadata also snaps lengthBeats/loopLengthBeats to the
-        // file's natural beat count (instead of the project-tempo guess seeded
-        // by createAudioClip Session). Refresh the seconds cache from the new
-        // beat values so renderers reading clip->length see the right number.
+        // Populate source file metadata from TE's loopInfo. For a freshly
+        // imported session clip, loopLengthBeats starts as a sentinel and is
+        // initialised from the already-stored source loop seconds once the
+        // source beat domain is known.
         {
             auto& loopInfoRef = audioClipPtr->getLoopInfo();
             auto waveInfo = audioClipPtr->getWaveInfo();
             if (auto* mutableClip = cm.getClip(clipId)) {
-                bool sourceBpmWasUnset = mutableClip->sourceBPM <= 0.0;
+                bool sourceInterpretationBpmWasUnset =
+                    mutableClip->audio().interpretation.bpm <= 0.0;
                 mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
-                if (sourceBpmWasUnset && mutableClip->autoTempo) {
+                initialiseSourceLoopBeatsFromMetadata(*mutableClip);
+                if (sourceInterpretationBpmWasUnset && mutableClip->autoTempo) {
                     double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
                     cm.refreshDerivedSeconds(clipId, projectBpm);
                     cm.forceNotifyClipPropertyChanged(clipId);
@@ -609,7 +646,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
         return true;
 
-    } else if (clip->type == ClipType::MIDI) {
+    } else if (clip->isMidi()) {
         // Create MIDI clip directly in the slot
         double clipDuration = clip->length;
         auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
@@ -715,14 +752,14 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
     if (clip) {
         if (clip->loopEnabled) {
             double srcLength = clip->getSourceLength();
-            if (clip->type == ClipType::Audio && clip->autoTempo) {
+            if (clip->isAudio() && clip->autoTempo) {
                 double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
                 auto [loopStartBeats, loopLengthBeats] =
                     ClipOperations::getAutoTempoBeatRange(*clip, bpm);
                 if (loopLengthBeats > 0.0) {
                     launchHandle->setLooping(te::BeatDuration::fromBeats(loopLengthBeats));
                 }
-            } else if (clip->type == ClipType::Audio && srcLength > 0.0) {
+            } else if (clip->isAudio() && srcLength > 0.0) {
                 double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
                 double loopDurationBeats = (srcLength / clip->speedRatio) * (bpm / 60.0);
                 launchHandle->setLooping(te::BeatDuration::fromBeats(loopDurationBeats));
@@ -849,7 +886,7 @@ void ClipSynchronizer::stopSessionClipQueued(ClipId clipId, LaunchQuantize quant
     if (!clip)
         return;
 
-    if (clip->type == ClipType::MIDI) {
+    if (clip->isMidi()) {
         auto* audioTrack = trackController_.getAudioTrack(clip->trackId);
         if (audioTrack) {
             for (auto* plugin : audioTrack->pluginList) {
@@ -878,7 +915,7 @@ void ClipSynchronizer::stopSessionClip(ClipId clipId) {
     if (!clip)
         return;
 
-    if (clip->type == ClipType::MIDI) {
+    if (clip->isMidi()) {
         auto* audioTrack = trackController_.getAudioTrack(clip->trackId);
         if (audioTrack) {
             for (auto* plugin : audioTrack->pluginList) {
@@ -919,12 +956,9 @@ te::Clip* ClipSynchronizer::getSessionTeClip(ClipId clipId) {
 
 void ClipSynchronizer::configureSessionAutoTempo(te::WaveAudioClip* audioClip,
                                                  const ClipInfo* clip) {
-    // Sync sourceBPM to TE's loopInfo
-    if (clip->sourceBPM > 0.0) {
-        auto waveInfo = audioClip->getWaveInfo();
-        auto& li = audioClip->getLoopInfo();
-        li.setBpm(clip->sourceBPM, waveInfo);
-    }
+    // Sync source interpretation to TE's loopInfo. AutoTempo playback uses both BPM and
+    // source beat count to map source time to timeline beats.
+    syncAudioSourceInterpretationToLoopInfo(*audioClip, *clip);
 
     // Ensure valid stretch mode (autoTempo requires time-stretching)
     if (audioClip->getTimeStretchMode() == te::TimeStretcher::disabled)
@@ -1342,6 +1376,13 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
 void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     namespace te = tracktion;
 
+    DBG("[ClipLengthTrace] syncAudioClipToEngine:entry id="
+        << clipId << " placement.lengthBeats=" << clip->placement.lengthBeats
+        << " mirror.lengthBeats=" << clip->lengthBeats << " timeline.lengthSeconds=" << clip->length
+        << " loopLengthBeats=" << clip->loopLengthBeats << " loopLengthSeconds=" << clip->loopLength
+        << " interpretation.bpm=" << clip->audio().interpretation.bpm
+        << " interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
+
     // 1. Get Tracktion track
     auto* audioTrack = trackController_.getAudioTrack(clip->trackId);
     if (!audioTrack) {
@@ -1380,13 +1421,13 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
     // 3. CREATE new clip if doesn't exist
     if (!audioClipPtr) {
-        if (clip->audioFilePath.isEmpty()) {
+        if (clip->audio().source.filePath.isEmpty()) {
             DBG("ClipSynchronizer: No audio file for clip " << clipId);
             return;
         }
-        juce::File audioFile(clip->audioFilePath);
+        juce::File audioFile(clip->audio().source.filePath);
         if (!audioFile.existsAsFile()) {
-            DBG("ClipSynchronizer: Audio file not found: " << clip->audioFilePath);
+            DBG("ClipSynchronizer: Audio file not found: " << clip->audio().source.filePath);
             return;
         }
 
@@ -1424,18 +1465,19 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         }
         audioClipPtr->setUsesProxy(false);
 
-        // Populate source file metadata from TE's loopInfo. Issue #1157: see
-        // matching block in the session-clip path above — when metadata first
-        // lands on an autoTempo clip, refresh seconds + notify.
+        // Populate source file metadata from TE's loopInfo. See the matching
+        // session-clip path above.
         {
             auto& loopInfoRef = audioClipPtr->getLoopInfo();
             auto waveInfo = audioClipPtr->getWaveInfo();
             auto& cm = ClipManager::getInstance();
             if (auto* mutableClip = cm.getClip(clipId)) {
-                bool sourceBpmWasUnset = mutableClip->sourceBPM <= 0.0;
+                bool sourceInterpretationBpmWasUnset =
+                    mutableClip->audio().interpretation.bpm <= 0.0;
                 mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
-                if (sourceBpmWasUnset && mutableClip->autoTempo) {
+                initialiseSourceLoopBeatsFromMetadata(*mutableClip);
+                if (sourceInterpretationBpmWasUnset && mutableClip->autoTempo) {
                     double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
                     cm.refreshDerivedSeconds(clipId, projectBpm);
                     cm.forceNotifyClipPropertyChanged(clipId);
@@ -1507,6 +1549,10 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         std::abs(currentStart - engineStart) > 0.001 || std::abs(currentEnd - engineEnd) > 0.001;
 
     if (needsPositionUpdate) {
+        DBG("[ClipLengthTrace] syncAudioClipToEngine:setPosition id="
+            << clipId << " engineStart=" << engineStart << " engineEnd=" << engineEnd
+            << " placement.lengthBeats=" << clip->placement.lengthBeats
+            << " interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
         auto newTimeRange = te::TimeRange(te::TimePosition::fromSeconds(engineStart),
                                           te::TimePosition::fromSeconds(engineEnd));
         audioClipPtr->setPosition(te::ClipPosition{newTimeRange, currentPos.getOffset()});
@@ -1611,22 +1657,36 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             // Get tempo for beat calculations
             double bpm = edit_.tempoSequence.getTempo(0)->getBpm();
 
-            // Override TE's loopInfo BPM to match our calibrated sourceBPM.
-            // setAutoTempo calibrates sourceBPM = projectBPM / speedRatio so that
-            // enabling autoTempo doesn't change playback speed.  TE uses loopInfo
-            // to map source beats ↔ source time, so the two must agree.
-            if (clip->sourceBPM > 0.0) {
+            // Override TE's loopInfo to match our calibrated source interpretation.
+            // setAutoTempo calibrates source interpretation BPM = projectBPM / speedRatio so that
+            // enabling autoTempo doesn't change playback speed. TE uses loopInfo to map source
+            // beats to source time, so BPM and source beat count must both agree.
+            if (clip->audio().interpretation.bpm > 0.0 ||
+                clip->audio().interpretation.totalBeats > 0.0) {
                 auto waveInfo = audioClipPtr->getWaveInfo();
                 auto& li = audioClipPtr->getLoopInfo();
                 double currentLoopInfoBpm = li.getBpm(waveInfo);
-                if (std::abs(currentLoopInfoBpm - clip->sourceBPM) > 0.1) {
-                    li.setBpm(clip->sourceBPM, waveInfo);
-                }
+                DBG("[ClipLengthTrace] syncAudioClipToEngine:loopInfoBefore id="
+                    << clipId << " teLoopInfo.bpm=" << currentLoopInfoBpm
+                    << " teLoopInfo.numBeats=" << li.getNumBeats() << " model.interpretation.bpm="
+                    << clip->audio().interpretation.bpm << " model.interpretation.totalBeats="
+                    << clip->audio().interpretation.totalBeats);
+                syncAudioSourceInterpretationToLoopInfo(*audioClipPtr, *clip);
+                DBG("[ClipLengthTrace] syncAudioClipToEngine:loopInfoAfter id="
+                    << clipId << " teLoopInfo.bpm=" << li.getBpm(waveInfo)
+                    << " teLoopInfo.numBeats=" << li.getNumBeats()
+                    << " model.interpretation.totalBeats="
+                    << clip->audio().interpretation.totalBeats);
             }
 
             auto [loopStartBeats, loopLengthBeats] =
                 ClipOperations::getAutoTempoBeatRange(*clip, bpm);
 
+            DBG("[ClipLengthTrace] syncAudioClipToEngine:setLoopRangeBeats id="
+                << clipId << " loopStartBeats=" << loopStartBeats << " loopLengthBeats="
+                << loopLengthBeats << " placement.lengthBeats=" << clip->placement.lengthBeats
+                << " model.loopLengthBeats=" << clip->loopLengthBeats
+                << " model.interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
             auto loopRange = te::BeatRange(te::BeatPosition::fromBeats(loopStartBeats),
                                            te::BeatDuration::fromBeats(loopLengthBeats));
             audioClipPtr->setLoopRangeBeats(loopRange);

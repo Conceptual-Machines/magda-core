@@ -10,7 +10,7 @@
  * These tests verify:
  * - setSourceMetadata only populates unset fields
  * - setAutoTempo uses source beats when detected BPM differs from project BPM
- * - setAutoTempo calibrates sourceBPM when it matches project BPM (defaulted BPM case)
+ * - setAutoTempo calibrates source interpretation BPM when it matches project BPM
  * - getAutoTempoBeatRange produces correct source beats for TE
  * - Clip length is correct after enabling musical mode
  * - getEndBeats returns consistent values
@@ -32,28 +32,28 @@ static constexpr double PROJECT_BPM = 69.0;
 
 static ClipInfo makeAmenClip(double startTime = 0.0) {
     ClipInfo clip;
-    clip.type = ClipType::Audio;
-    clip.audioFilePath = "amen_break.wav";
+    clip.setAudioContent();
+    clip.audio().source.filePath = "amen_break.wav";
     clip.startTime = startTime;
     clip.length = AMEN_DURATION;  // original duration before stretching
     clip.offset = 0.0;
     clip.speedRatio = 1.0;
-    clip.sourceBPM = AMEN_ORIGINAL_BPM;
-    clip.sourceNumBeats = AMEN_SOURCE_BEATS;
+    clip.audio().interpretation.bpm = AMEN_ORIGINAL_BPM;
+    clip.audio().interpretation.totalBeats = AMEN_SOURCE_BEATS;
     return clip;
 }
 
-// Helper: make a clip where sourceBPM matches projectBPM (defaulted/calibrated case)
+// Helper: make a clip where source interpretation BPM matches project BPM
 static ClipInfo makeCalibratedClip(double projectBPM = 120.0) {
     ClipInfo clip;
-    clip.type = ClipType::Audio;
-    clip.audioFilePath = "sample.wav";
+    clip.setAudioContent();
+    clip.audio().source.filePath = "sample.wav";
     clip.startTime = 0.0;
     clip.length = 2.0;
     clip.offset = 0.0;
     clip.speedRatio = 1.0;
-    clip.sourceBPM = projectBPM;  // matches project → calibration applies
-    clip.sourceNumBeats = 4.0;
+    clip.audio().interpretation.bpm = projectBPM;  // matches project → calibration applies
+    clip.audio().interpretation.totalBeats = 4.0;
     return clip;
 }
 
@@ -63,58 +63,59 @@ static ClipInfo makeCalibratedClip(double projectBPM = 120.0) {
 
 TEST_CASE("ClipInfo::setSourceMetadata - populates unset fields", "[clip][auto-tempo][metadata]") {
     ClipInfo clip;
+    clip.setAudioContent();
 
     SECTION("Sets both fields when unset") {
         clip.setSourceMetadata(4.0, 120.0);
-        REQUIRE(clip.sourceNumBeats == 4.0);
-        REQUIRE(clip.sourceBPM == 120.0);
+        REQUIRE(clip.audio().interpretation.totalBeats == 4.0);
+        REQUIRE(clip.audio().interpretation.bpm == 120.0);
     }
 
     SECTION("Does not overwrite existing values") {
-        clip.sourceNumBeats = 8.0;
-        clip.sourceBPM = 140.0;
+        clip.audio().interpretation.totalBeats = 8.0;
+        clip.audio().interpretation.bpm = 140.0;
         clip.setSourceMetadata(4.0, 120.0);
-        REQUIRE(clip.sourceNumBeats == 8.0);
-        REQUIRE(clip.sourceBPM == 140.0);
+        REQUIRE(clip.audio().interpretation.totalBeats == 8.0);
+        REQUIRE(clip.audio().interpretation.bpm == 140.0);
     }
 
     SECTION("Ignores zero/negative input") {
         clip.setSourceMetadata(0.0, -5.0);
-        REQUIRE(clip.sourceNumBeats == 0.0);
-        REQUIRE(clip.sourceBPM == 0.0);
+        REQUIRE(clip.audio().interpretation.totalBeats == 0.0);
+        REQUIRE(clip.audio().interpretation.bpm == 0.0);
     }
 
     SECTION("Sets one field independently of the other") {
-        clip.sourceBPM = 140.0;  // already set
+        clip.audio().interpretation.bpm = 140.0;  // already set
         clip.setSourceMetadata(4.0, 120.0);
-        REQUIRE(clip.sourceNumBeats == 4.0);  // was unset, gets populated
-        REQUIRE(clip.sourceBPM == 140.0);     // was set, not overwritten
+        REQUIRE(clip.audio().interpretation.totalBeats == 4.0);  // was unset, gets populated
+        REQUIRE(clip.audio().interpretation.bpm == 140.0);       // was set, not overwritten
     }
 }
 
 // ─────────────────────────────────────────────────────────────
 // ClipOperations::setAutoTempo — with real detected BPM
-// When sourceBPM differs from projectBPM, it's a real detected
+// When source interpretation BPM differs from project BPM, it's a real detected
 // BPM and should NOT be calibrated. lengthBeats preserves the
 // clip's current timeline length (not source beats).
 // ─────────────────────────────────────────────────────────────
 
-// Issue #1157: when the file carries tempo metadata (sourceBPM/sourceNumBeats),
-// setAutoTempo defaults lengthBeats to sourceNumBeats so a freshly-dropped loop
+// Issue #1157: when the file carries source interpretation data,
+// setAutoTempo defaults placement length to that beat extent so a freshly-dropped loop
 // becomes its natural musical length, not (length × projectBPM / 60).
 static constexpr double AMEN_EXPECTED_LENGTH_BEATS = AMEN_SOURCE_BEATS;
 
 TEST_CASE("setAutoTempo - preserves real detected BPM", "[clip][auto-tempo]") {
     auto clip = makeAmenClip();
 
-    SECTION("sourceBPM preserved when it differs from project BPM") {
+    SECTION("source interpretation BPM preserved when it differs from project BPM") {
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
-        REQUIRE(clip.sourceBPM == Approx(AMEN_ORIGINAL_BPM));
+        REQUIRE(clip.audio().interpretation.bpm == Approx(AMEN_ORIGINAL_BPM));
     }
 
-    SECTION("sourceNumBeats preserved when sourceBPM differs from project BPM") {
+    SECTION("source interpretation total beats preserved when BPM differs from project BPM") {
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
-        REQUIRE(clip.sourceNumBeats == Approx(AMEN_SOURCE_BEATS));
+        REQUIRE(clip.audio().interpretation.totalBeats == Approx(AMEN_SOURCE_BEATS));
     }
 
     SECTION("lengthBeats preserves timeline length in project beats") {
@@ -151,37 +152,32 @@ TEST_CASE("setAutoTempo - preserves real detected BPM", "[clip][auto-tempo]") {
 }
 
 // ─────────────────────────────────────────────────────────────
-// sourceBPM calibration — only when sourceBPM ≈ projectBPM
-// (i.e. sourceBPM was defaulted from project, not detected)
+// Source interpretation calibration — only when BPM approximately matches project BPM
+// (i.e. interpretation BPM was defaulted from project, not detected)
 // ─────────────────────────────────────────────────────────────
 
-TEST_CASE("setAutoTempo - calibrates when sourceBPM matches project", "[clip][auto-tempo]") {
-    SECTION("sourceBPM stays at projectBPM when they match") {
+TEST_CASE("setAutoTempo - calibrates when source interpretation BPM matches project",
+          "[clip][auto-tempo]") {
+    SECTION("source interpretation BPM stays at project BPM when they match") {
         auto clip = makeCalibratedClip(120.0);
         ClipOperations::setAutoTempo(clip, true, 120.0);
-        REQUIRE(clip.sourceBPM == Approx(120.0));
+        REQUIRE(clip.audio().interpretation.bpm == Approx(120.0));
     }
 
-    SECTION("sourceBPM = projectBPM / speedRatio when they match and speedRatio != 1") {
+    SECTION("source interpretation BPM equals project BPM / speedRatio when appropriate") {
         auto clip = makeCalibratedClip(120.0);
         clip.speedRatio = 2.0;
-        // effectiveBPM = 120/2 = 60, but sourceBPM = 120 ≠ 60 → no calibration
+        // effectiveBPM = 120/2 = 60, but interpretation BPM = 120, so no calibration
         // Actually this is the "differs" case so calibration is skipped
         ClipOperations::setAutoTempo(clip, true, 120.0);
-        REQUIRE(clip.sourceBPM == Approx(120.0));  // preserved
+        REQUIRE(clip.audio().interpretation.bpm == Approx(120.0));  // preserved
     }
 
-    SECTION("Calibration when sourceBPM was unknown (zero)") {
+    SECTION("Calibration when source interpretation BPM was unknown (zero)") {
         auto clip = makeAmenClip();
-        clip.sourceBPM = 0.0;
+        clip.audio().interpretation.bpm = 0.0;
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
-        // sourceBPM was 0, effectiveBPM = 69. |0 - 69| > 0.1, so no calibration.
-        // But sourceBPM was 0 and the code sets effectiveBPM only when they're close.
-        // Actually with sourceBPM=0, the code doesn't enter the calibration branch at all.
-        // sourceBPM stays 0? No — the code has: if (std::abs(clip.sourceBPM - effectiveBPM) < 0.1)
-        // 0 ≠ 69 so calibration is skipped. sourceBPM stays 0.
-        // But we still need a valid sourceBPM for TE. Let's just check it's set.
-        // Actually sourceBPM=0 means unknown, and the fallback compute path will be used.
+        // Unknown interpretation BPM stays unknown; the fallback compute path is used.
     }
 }
 
@@ -200,7 +196,7 @@ TEST_CASE("getAutoTempoBeatRange - source beat range", "[clip][auto-tempo][te-sy
 
     SECTION("Beat range maps to file's natural beat count") {
         // Issue #1157: in beat mode, beats are beats. The loop range returned
-        // here is the source's musical extent — sourceNumBeats for a fresh
+        // here is the source's musical extent for a fresh
         // clip with the whole file as the loop region. Margin allows for
         // AMEN_DURATION/AMEN_ORIGINAL_BPM rounding (~4.0008 vs 4.0).
         auto clip = makeAmenClip();
@@ -275,10 +271,10 @@ TEST_CASE("setAutoTempo - respects existing loop region", "[clip][auto-tempo][lo
         REQUIRE(clip.loopLength == Approx(0.8));
     }
 
-    SECTION("loopLengthBeats is in beats — derived from sourceBPM") {
+    SECTION("loopLengthBeats is in source beats") {
         // Issue #1157: beats are beats. loopLengthBeats describes the loop
         // region's musical extent in beats, regardless of project tempo. For
-        // a 0.8-second loop in a file recorded at sourceBPM=158.6, that's
+        // a 0.8-second loop in a file interpreted at 158.6 BPM, that's
         // 0.8 × 158.6 / 60 ≈ 2.115 beats.
         double expectedLoopBeats = 0.8 * AMEN_ORIGINAL_BPM / 60.0;
         REQUIRE(clip.loopLengthBeats == Approx(expectedLoopBeats));
@@ -351,35 +347,36 @@ TEST_CASE("setAutoTempo - no-op when already in target state", "[clip][auto-temp
 
 // ─────────────────────────────────────────────────────────────
 // Calibration at different project BPMs — only applies when
-// sourceBPM matches projectBPM (defaulted, not detected)
+// Source interpretation BPM matches project BPM (defaulted, not detected)
 // ─────────────────────────────────────────────────────────────
 
-TEST_CASE("setAutoTempo - calibration with matching sourceBPM", "[clip][auto-tempo]") {
-    SECTION("At 120 BPM, sourceBPM preserved when it matches project") {
+TEST_CASE("setAutoTempo - calibration with matching source interpretation BPM",
+          "[clip][auto-tempo]") {
+    SECTION("At 120 BPM, source interpretation BPM preserved when it matches project") {
         auto clip = makeCalibratedClip(120.0);
         ClipOperations::setAutoTempo(clip, true, 120.0);
 
-        REQUIRE(clip.sourceBPM == Approx(120.0));
+        REQUIRE(clip.audio().interpretation.bpm == Approx(120.0));
         REQUIRE(clip.length == Approx(2.0));
         REQUIRE(clip.lengthBeats == Approx(4.0));
         REQUIRE(clip.loopLengthBeats == Approx(4.0));
     }
 
-    SECTION("At 60 BPM with matching sourceBPM, calibrates to 60") {
+    SECTION("At 60 BPM with matching source interpretation BPM, calibrates to 60") {
         auto clip = makeCalibratedClip(60.0);
         clip.length = 4.0;  // 4 beats at 60 BPM
 
         ClipOperations::setAutoTempo(clip, true, 60.0);
 
-        REQUIRE(clip.sourceBPM == Approx(60.0));
-        REQUIRE(60.0 / clip.sourceBPM == Approx(1.0));
+        REQUIRE(clip.audio().interpretation.bpm == Approx(60.0));
+        REQUIRE(60.0 / clip.audio().interpretation.bpm == Approx(1.0));
     }
 
     SECTION("Real detected BPM (158.6) preserved at any project tempo") {
         auto clip = makeAmenClip();
         ClipOperations::setAutoTempo(clip, true, 200.0);
 
-        REQUIRE(clip.sourceBPM == Approx(AMEN_ORIGINAL_BPM));
+        REQUIRE(clip.audio().interpretation.bpm == Approx(AMEN_ORIGINAL_BPM));
     }
 }
 
@@ -394,13 +391,13 @@ TEST_CASE("Regression: loop wrapping past file end", "[clip][auto-tempo][regress
     static constexpr double FILE_BEATS = FILE_DURATION * FILE_BPM / 60.0;  // 13.8 beats
 
     ClipInfo clip;
-    clip.type = ClipType::Audio;
-    clip.audioFilePath = "long_loop.wav";
+    clip.setAudioContent();
+    clip.audio().source.filePath = "long_loop.wav";
     clip.length = FILE_DURATION;
     clip.offset = 5.0;  // near end of file
     clip.speedRatio = 1.0;
-    clip.sourceBPM = FILE_BPM;
-    clip.sourceNumBeats = FILE_BEATS;
+    clip.audio().interpretation.bpm = FILE_BPM;
+    clip.audio().interpretation.totalBeats = FILE_BEATS;
 
     ClipOperations::setAutoTempo(clip, true, 69.0);
 
@@ -412,29 +409,32 @@ TEST_CASE("Regression: loop wrapping past file end", "[clip][auto-tempo][regress
 }
 
 // ─────────────────────────────────────────────────────────────
-// stretchAutoTempoBeats — adjusts sourceBPM for tempo change
+// setAutoTempoPlacementLengthBeats — edits timeline placement only
 // ─────────────────────────────────────────────────────────────
 
-TEST_CASE("stretchAutoTempoBeats - halves tempo when doubling beats", "[clip][auto-tempo]") {
+TEST_CASE("setAutoTempoPlacementLengthBeats - extends placement without rewriting source",
+          "[clip][auto-tempo]") {
     auto clip = makeAmenClip();
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
-    double originalSourceBPM = clip.sourceBPM;
+    double originalSourceInterpretationBpm = clip.audio().interpretation.bpm;
+    double originalSourceBeats = clip.audio().interpretation.totalBeats;
     double originalLoopLengthBeats = clip.loopLengthBeats;
 
-    // Double the beat count (like stretching to 2x length)
-    ClipOperations::stretchAutoTempoBeats(clip, originalLoopLengthBeats * 2.0, PROJECT_BPM);
+    ClipOperations::setAutoTempoPlacementLengthBeats(clip, originalLoopLengthBeats * 2.0,
+                                                     PROJECT_BPM);
 
-    SECTION("sourceBPM scales by stretch ratio") {
-        // newSourceBPM = newLoopBeats * 60 / sourceSeconds
-        // where newLoopBeats = originalLoopLengthBeats * 2
-        double expectedBPM = (originalLoopLengthBeats * 2.0) * 60.0 / AMEN_DURATION;
-        REQUIRE(clip.sourceBPM == Approx(expectedBPM).margin(0.1));
+    SECTION("source interpretation is unchanged") {
+        REQUIRE(clip.audio().interpretation.bpm ==
+                Approx(originalSourceInterpretationBpm).margin(0.1));
+        REQUIRE(clip.audio().interpretation.totalBeats == Approx(originalSourceBeats).margin(0.01));
     }
 
-    SECTION("loopLengthBeats doubles") {
-        // Slight tolerance — stretchAutoTempoBeats scales by lengthBeats vs
-        // loopLengthBeats ratio which can differ by FP rounding.
-        REQUIRE(clip.loopLengthBeats == Approx(originalLoopLengthBeats * 2.0).margin(0.01));
+    SECTION("loop region stays in source beats") {
+        REQUIRE(clip.loopLengthBeats == Approx(originalLoopLengthBeats).margin(0.01));
+    }
+
+    SECTION("placement length doubles") {
+        REQUIRE(clip.placement.lengthBeats == Approx(originalLoopLengthBeats * 2.0).margin(0.01));
     }
 }

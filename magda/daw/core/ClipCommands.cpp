@@ -638,7 +638,7 @@ bool JoinClipsCommand::canExecute() const {
     // Must be same track, same type
     if (left->trackId != right->trackId)
         return false;
-    if (left->type != right->type)
+    if (left->getType() != right->getType())
         return false;
 
     // Must be adjacent (left ends where right starts)
@@ -687,7 +687,7 @@ void JoinClipsCommand::performAction() {
     if (!left || !right)
         return;
 
-    if (left->type == ClipType::MIDI) {
+    if (left->isMidi()) {
         // MIDI join: copy right clip's notes into left, adjusting beat positions
         const double beatsPerSecond = tempo_ / 60.0;
         double beatOffset = (right->startTime - left->startTime) * beatsPerSecond;
@@ -697,7 +697,7 @@ void JoinClipsCommand::performAction() {
             adjustedNote.startBeat += beatOffset;
             left->midiNotes.push_back(adjustedNote);
         }
-    } else if (left->type == ClipType::Audio) {
+    } else if (left->isAudio()) {
         // Audio join: extend left clip length to cover both clips
         // (offset and speedRatio remain from left clip)
     }
@@ -828,7 +828,7 @@ RenderClipCommand::RenderClipCommand(ClipId clipId, TracktionEngineWrapper* engi
 void RenderClipCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::Audio || !engine_) {
+    if (!clip || !clip->isAudio() || !engine_) {
         DBG("RenderClipCommand: invalid clip or engine");
         return;
     }
@@ -851,7 +851,7 @@ void RenderClipCommand::execute() {
     }
 
     // Determine output file path — always use the project's renders directory
-    juce::File sourceFile(clip->audioFilePath);
+    juce::File sourceFile(clip->audio().source.filePath);
     auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
     if (rendersDir == juce::File())
         rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
@@ -1053,7 +1053,7 @@ void RenderTimeSelectionCommand::execute() {
         bool allAudio = true;
         for (auto cid : overlappingIds) {
             auto* c = clipManager.getClip(cid);
-            if (!c || c->type != ClipType::Audio) {
+            if (!c || !c->isAudio()) {
                 allAudio = false;
                 break;
             }
@@ -1072,7 +1072,7 @@ void RenderTimeSelectionCommand::execute() {
 
         // Determine output file path from first overlapping clip's source
         auto* firstClip = clipManager.getClip(overlappingIds[0]);
-        juce::File sourceFile(firstClip->audioFilePath);
+        juce::File sourceFile(firstClip->audio().source.filePath);
         auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
         if (rendersDir == juce::File())
             rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
@@ -1235,7 +1235,7 @@ static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, doubl
         liveClip->length -= trimAmount;
 
         // Adjust midiOffset (phase) for the trimmed portion
-        if (clip.type == ClipType::MIDI && clip.loopLength > 0.0) {
+        if (clip.isMidi() && clip.loopLength > 0.0) {
             double bpm = 120.0;
             if (auto* controller = magda::TimelineController::getCurrent()) {
                 bpm = controller->getState().tempo.bpm;
@@ -1498,7 +1498,7 @@ BounceInPlaceCommand::BounceInPlaceCommand(ClipId clipId, TracktionEngineWrapper
 void BounceInPlaceCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || !engine_) {
+    if (!clip || !clip->isMidi() || !engine_) {
         DBG("BounceInPlaceCommand: invalid clip (must be MIDI) or engine");
         return;
     }
@@ -1880,7 +1880,7 @@ FlattenMidiClipCommand::FlattenMidiClipCommand(ClipId clipId) : clipId_(clipId) 
 void FlattenMidiClipCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     beforeSnapshot_ = *clip;
@@ -1976,7 +1976,7 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio)
+    if (!clip || !clip->isAudio())
         return;
 
     auto markers = bridge->getWarpMarkers(clipId);
@@ -1984,7 +1984,7 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
         return;  // Only boundary markers
 
     // Disable warp before splitting — splitClip uses a linear formula
-    // (tempo/sourceBPM or speedRatio) to compute source offsets, but warp
+    // (tempo/source interpretation BPM or speedRatio) to compute source offsets, but warp
     // markers define a non-linear mapping.  With warp off the linear formula
     // is correct, so we convert marker sourceTime values to the linear
     // timeline domain.
@@ -2004,8 +2004,8 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     for (size_t i = 1; i + 1 < markers.size(); ++i) {
         double sourceDelta = markers[i].sourceTime - clipOffset;
         double splitTime;
-        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0) {
-            splitTime = clipStart + sourceDelta * clip->sourceBPM / tempo;
+        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0 && tempo > 0.0) {
+            splitTime = clipStart + sourceDelta * clip->audio().interpretation.bpm / tempo;
         } else {
             splitTime = clipStart + sourceDelta / clip->speedRatio;
         }
@@ -2179,14 +2179,14 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty())
+    if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty())
         return;
 
     auto markers = bridge->getWarpMarkers(clipId);
     if (markers.size() <= 2)
         return;
 
-    juce::File audioFile(clip->audioFilePath);
+    juce::File audioFile(clip->audio().source.filePath);
     if (!audioFile.existsAsFile())
         return;
 
@@ -2216,8 +2216,8 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
 
     auto sourceToTimeline = [&](double sourceTime) -> double {
         double sourceDelta = sourceTime - clipOffset;
-        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0)
-            return clipStart + sourceDelta * clip->sourceBPM / tempo;
+        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0 && tempo > 0.0)
+            return clipStart + sourceDelta * clip->audio().interpretation.bpm / tempo;
         else
             return clipStart + sourceDelta / clip->speedRatio;
     };
@@ -2241,10 +2241,10 @@ void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, Aud
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty())
+    if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty())
         return;
 
-    juce::File audioFile(clip->audioFilePath);
+    juce::File audioFile(clip->audio().source.filePath);
     if (!audioFile.existsAsFile())
         return;
 
@@ -2255,8 +2255,8 @@ void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, Aud
     // Convert timeline grid lines to source-file boundaries
     auto timelineToSource = [&](double timelinePos) -> double {
         double delta = timelinePos - clipStart;
-        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0)
-            return clipOffset + delta * tempo / clip->sourceBPM;
+        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0 && tempo > 0.0)
+            return clipOffset + delta * tempo / clip->audio().interpretation.bpm;
         else
             return clipOffset + delta * clip->speedRatio;
     };

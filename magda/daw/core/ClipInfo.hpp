@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
 
+#include <variant>
 #include <vector>
 
 #include "ClipTypes.hpp"
@@ -90,6 +91,26 @@ struct ClipPlacement {
     }
 };
 
+struct AudioSourceFacts {
+    juce::String filePath;
+    double durationSeconds = 0.0;
+};
+
+struct AudioSourceInterpretation {
+    double bpm = 0.0;
+    double totalBeats = 0.0;
+    bool totalBeatsLocked = false;
+};
+
+struct AudioClipModel {
+    AudioSourceFacts source;
+    AudioSourceInterpretation interpretation;
+};
+
+struct MidiClipModel {};
+
+using ClipContent = std::variant<MidiClipModel, AudioClipModel>;
+
 /**
  * @brief Clip data structure containing all clip properties
  */
@@ -98,11 +119,47 @@ struct ClipInfo {
     TrackId trackId = INVALID_TRACK_ID;
     juce::String name;
     juce::Colour colour;
-    ClipType type = ClipType::MIDI;
     ClipView view = ClipView::Arrangement;  // Which view this clip belongs to
+    ClipContent content = MidiClipModel{};
 
     // Timeline position. This is the canonical placement model for every clip type.
     ClipPlacement placement;
+
+    ClipType getType() const {
+        return std::holds_alternative<AudioClipModel>(content) ? ClipType::Audio : ClipType::MIDI;
+    }
+
+    bool isAudio() const {
+        return std::holds_alternative<AudioClipModel>(content);
+    }
+
+    bool isMidi() const {
+        return std::holds_alternative<MidiClipModel>(content);
+    }
+
+    AudioClipModel& audio() {
+        return std::get<AudioClipModel>(content);
+    }
+
+    const AudioClipModel& audio() const {
+        return std::get<AudioClipModel>(content);
+    }
+
+    MidiClipModel& midi() {
+        return std::get<MidiClipModel>(content);
+    }
+
+    const MidiClipModel& midi() const {
+        return std::get<MidiClipModel>(content);
+    }
+
+    void setAudioContent() {
+        content = AudioClipModel{};
+    }
+
+    void setMidiContent() {
+        content = MidiClipModel{};
+    }
 
     // Derived timeline seconds cache. Kept only for bridge/UI call sites that
     // have not moved to beats yet; do not treat these as model authority.
@@ -114,29 +171,22 @@ struct ClipInfo {
     // removes direct field access.
     double startBeats = 0.0;
 
-    // Audio-specific properties (flat model: one clip = one file reference)
-    juce::String audioFilePath;   // Path to audio file
-    double sourceNumBeats = 0.0;  // Beat count from source file metadata (TE loopInfo)
-    double sourceBPM = 0.0;       // Source file BPM (from TE loopInfo, 0 = unknown)
-
     /// Populate source metadata from engine (only sets if not already populated).
-    ///
-    /// Issue #1157: when the file's tempo metadata first lands on an autoTempo
-    /// clip, also snap the beat-domain canonicals to the file's natural beat
-    /// count. createAudioClip(Session) seeded lengthBeats from project tempo
-    /// as a best-guess (no metadata yet); metadata wins. After this call, the
-    /// caller should refreshDerivedSeconds and notify so renderers re-read.
+    /// This is source-domain data only; it must never edit clip placement or
+    /// source loop region state.
     void setSourceMetadata(double numBeats, double bpm) {
-        bool wasUnset = sourceNumBeats <= 0.0 && sourceBPM <= 0.0;
-        if (numBeats > 0.0 && sourceNumBeats <= 0.0)
-            sourceNumBeats = numBeats;
-        if (bpm > 0.0 && sourceBPM <= 0.0)
-            sourceBPM = bpm;
+        if (!isAudio())
+            return;
 
-        if (wasUnset && autoTempo && sourceNumBeats > 0.0) {
-            lengthBeats = sourceNumBeats;
-            if (loopLengthBeats <= 0.0)
-                loopLengthBeats = sourceNumBeats;
+        auto& source = audio();
+        if (numBeats > 0.0 && source.interpretation.totalBeats <= 0.0)
+            source.interpretation.totalBeats = numBeats;
+        if (bpm > 0.0 && source.interpretation.bpm <= 0.0)
+            source.interpretation.bpm = bpm;
+        if (source.source.durationSeconds <= 0.0 && source.interpretation.totalBeats > 0.0 &&
+            source.interpretation.bpm > 0.0) {
+            source.source.durationSeconds =
+                source.interpretation.totalBeats * 60.0 / source.interpretation.bpm;
         }
     }
 
@@ -149,7 +199,8 @@ struct ClipInfo {
     double offset = 0.0;  // Start position in source file (source-time seconds)
 
     // Beat-based offset (authoritative for autoTempo clips)
-    // Source beats from file start. offset (seconds) is derived: offsetBeats * 60/sourceBPM
+    // Source beats from file start. offset (seconds) is derived: offsetBeats * 60/source
+    // interpretation BPM
     double offsetBeats = 0.0;
 
     // Looping - defines the region that loops
@@ -442,7 +493,7 @@ struct ClipInfo {
     //
     // For autoTempo audio clips and MIDI clips, beats are AUTHORITATIVE — the
     // seconds fields (length, startTime, offset, loopStart, loopLength) are
-    // derived caches that go stale every time projectBPM or sourceBPM changes.
+    // derived caches that go stale every time projectBPM or source interpretation BPM changes.
     // Renderers, sync code, and inspector readouts that go through these
     // accessors compute the live value from beats and never depend on cache
     // freshness. The cached fields are still maintained (so non-migrated
@@ -471,27 +522,27 @@ struct ClipInfo {
     }
 
     /// Source-domain seconds for the loop start. For autoTempo clips, computed
-    /// live from loopStartBeats × 60 / sourceBPM. For non-autoTempo clips,
+    /// live from loopStartBeats × 60 / source interpretation BPM. For non-autoTempo clips,
     /// returns the stored field.
     double getSourceLoopStart() const {
-        if (autoTempo && sourceBPM > 0.0) {
-            return loopStartBeats * 60.0 / sourceBPM;
+        if (autoTempo && audio().interpretation.bpm > 0.0) {
+            return loopStartBeats * 60.0 / audio().interpretation.bpm;
         }
         return loopStart;
     }
 
     /// Source-domain seconds for the loop length.
     double getSourceLoopLength() const {
-        if (autoTempo && sourceBPM > 0.0 && loopLengthBeats > 0.0) {
-            return loopLengthBeats * 60.0 / sourceBPM;
+        if (autoTempo && audio().interpretation.bpm > 0.0 && loopLengthBeats > 0.0) {
+            return loopLengthBeats * 60.0 / audio().interpretation.bpm;
         }
         return loopLength;
     }
 
     /// Source-domain seconds for the read-position offset.
     double getSourceOffset() const {
-        if (autoTempo && sourceBPM > 0.0) {
-            return offsetBeats * 60.0 / sourceBPM;
+        if (autoTempo && audio().interpretation.bpm > 0.0) {
+            return offsetBeats * 60.0 / audio().interpretation.bpm;
         }
         return offset;
     }

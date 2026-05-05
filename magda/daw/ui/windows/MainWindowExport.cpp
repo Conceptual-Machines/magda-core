@@ -440,7 +440,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
 
     // Find the extent of all MIDI clips
     for (const auto& clip : clips) {
-        if (clip.type == ClipType::MIDI) {
+        if (clip.isMidi()) {
             double end = clip.startTime + clip.length;
             if (end > rangeEnd)
                 rangeEnd = end;
@@ -481,7 +481,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     std::map<TrackId, TrackMidiData> trackData;
 
     for (const auto& clip : clips) {
-        if (clip.type != ClipType::MIDI)
+        if (!clip.isMidi())
             continue;
         if (clip.midiNotes.empty() && clip.midiCCData.empty() && clip.midiPitchBendData.empty())
             continue;

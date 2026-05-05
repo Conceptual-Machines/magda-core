@@ -38,7 +38,6 @@ juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String&
     // Validate file exists
     juce::File audioFile(audioFilePath);
     if (!audioFile.existsAsFile()) {
-        DBG("AudioThumbnailManager: File not found: " << audioFilePath);
         return nullptr;
     }
 
@@ -53,7 +52,6 @@ juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String&
     // Load the audio file into the thumbnail
     auto* reader = formatManager_.createReaderFor(audioFile);
     if (reader == nullptr) {
-        DBG("AudioThumbnailManager: Could not create reader for: " << audioFilePath);
         return nullptr;
     }
 
@@ -64,10 +62,7 @@ juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String&
     // Store in cache
     auto* thumbnailPtr = thumbnail.get();
     thumbnails_[audioFilePath] = std::move(thumbnail);
-
-    DBG("AudioThumbnailManager: Created thumbnail for "
-        << audioFilePath << " (channels: " << thumbnailPtr->getNumChannels()
-        << ", length: " << thumbnailPtr->getTotalLength() << "s)");
+    juce::ignoreUnused(thumbnailPtr);
 
     // First time we've seen this file in this session — load (or compute and
     // persist) its high-resolution peak cache off the message thread. The
@@ -113,18 +108,10 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
             // ~8192 samples/pixel ≈ 186 ms/pixel at 44.1k — keeps the smooth
             // path active at most realistic arrangement-view zooms; only true
             // multi-minute overviews drop to the thumbnail.
-            // Log mode transitions per-file so the dev console reflects when
-            // zoom crosses the smooth/thumbnail boundary — without spamming
-            // every paint frame.
             static std::unordered_map<juce::String, bool> lastWasLowResByFile;
             bool& last = lastWasLowResByFile[audioFilePath];
             if (samplesPerPixel < 8192.0) {
-                if (last) {
-                    DBG("AudioThumbnailManager: smooth (samples) for "
-                        << audioFilePath << " — samplesPerPixel=" << samplesPerPixel
-                        << " (threshold 8192, " << bounds.getWidth() << "px wide)");
-                    last = false;
-                }
+                last = false;
                 const WaveformPeakCache* peakCache = nullptr;
                 auto pcIt = peakCaches_.find(audioFilePath);
                 if (pcIt != peakCaches_.end())
@@ -134,12 +121,7 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
                                         verticalZoom, thick);
                 return;
             }
-            if (!last) {
-                DBG("AudioThumbnailManager: low-res (thumbnail) for "
-                    << audioFilePath << " — samplesPerPixel=" << samplesPerPixel
-                    << " (threshold 8192, " << bounds.getWidth() << "px wide)");
-                last = true;
-            }
+            last = true;
         }
     }
 
@@ -195,7 +177,6 @@ double AudioThumbnailManager::detectBPM(const juce::String& filePath) {
 
     double result = runBpmDetection(filePath);
     bpmCache_[filePath] = result;
-    DBG("AudioThumbnailManager: Detected BPM for " << filePath << ": " << result);
     return result;
 }
 
@@ -238,7 +219,6 @@ void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
 
     getOrCreateBackgroundPool().addJob([filePath]() {
         const double result = runBpmDetection(filePath);
-        DBG("AudioThumbnailManager: Detected BPM for " << filePath << ": " << result);
 
         juce::MessageManager::callAsync([filePath, result]() {
             auto& self = AudioThumbnailManager::getInstance();
@@ -518,7 +498,6 @@ void AudioThumbnailManager::clearCache() {
     readerLru_.clear();
     peakCaches_.clear();
     pendingPeakComputes_.clear();
-    DBG("AudioThumbnailManager: Cache cleared");
 }
 
 juce::ThreadPool& AudioThumbnailManager::getOrCreateBackgroundPool() {

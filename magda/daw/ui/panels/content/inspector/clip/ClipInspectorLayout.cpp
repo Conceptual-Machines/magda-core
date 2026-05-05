@@ -61,17 +61,26 @@ void ClipInspector::resized() {
     const int gap = 3;
     const int labelHeight = 14;
     const int valueHeight = 22;
-    int fieldWidth = juce::jmax(1, (containerWidth - iconSize - gap * 3) / 3);
+    const bool hideSecondaryTimingFields = containerWidth < 270;
+    const bool hideAudioUnitLabels = containerWidth < 240;
+    const int timingFieldCount = hideSecondaryTimingFields ? 2 : 3;
+    int fieldWidth =
+        juce::jmax(1, (containerWidth - iconSize - gap * timingFieldCount) / timingFieldCount);
 
     // Position row: position icon — start, end, offset (arrangement clips only)
     if (clipPositionIcon_->isVisible()) {
+        clipOffsetLabel_.setVisible(!hideSecondaryTimingFields);
+        clipContentOffsetValue_->setVisible(!hideSecondaryTimingFields);
+
         auto labelRow = addRow(labelHeight);
         labelRow.removeFromLeft(iconSize + gap);
         clipStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
         labelRow.removeFromLeft(gap);
         clipEndLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-        labelRow.removeFromLeft(gap);
-        clipOffsetLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+        if (!hideSecondaryTimingFields) {
+            labelRow.removeFromLeft(gap);
+            clipOffsetLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+        }
 
         auto valueRow = addRow(valueHeight);
         clipPositionIcon_->setBounds(valueRow.removeFromLeft(iconSize));
@@ -79,8 +88,10 @@ void ClipInspector::resized() {
         clipStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
         valueRow.removeFromLeft(gap);
         clipEndValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-        valueRow.removeFromLeft(gap);
-        clipContentOffsetValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+        if (!hideSecondaryTimingFields) {
+            valueRow.removeFromLeft(gap);
+            clipContentOffsetValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+        }
 
         addSeparator();
     }
@@ -93,13 +104,18 @@ void ClipInspector::resized() {
 
     // Loop row: loop toggle + lstart | lend | phase (always shown; greyed when off)
     if (clipLoopToggle_->isVisible()) {
+        clipLoopPhaseLabel_.setVisible(!hideSecondaryTimingFields);
+        clipLoopPhaseValue_->setVisible(!hideSecondaryTimingFields);
+
         auto labelRow = addRow(labelHeight);
         labelRow.removeFromLeft(iconSize + gap);
         clipLoopStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
         labelRow.removeFromLeft(gap);
         clipLoopEndLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-        labelRow.removeFromLeft(gap);
-        clipLoopPhaseLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+        if (!hideSecondaryTimingFields) {
+            labelRow.removeFromLeft(gap);
+            clipLoopPhaseLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+        }
 
         auto valueRow = addRow(valueHeight);
         clipLoopToggle_->setBounds(
@@ -108,8 +124,10 @@ void ClipInspector::resized() {
         clipLoopStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
         valueRow.removeFromLeft(gap);
         clipLoopEndValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-        valueRow.removeFromLeft(gap);
-        clipLoopPhaseValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+        if (!hideSecondaryTimingFields) {
+            valueRow.removeFromLeft(gap);
+            clipLoopPhaseValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+        }
     }
     addSeparator();
 
@@ -153,7 +171,7 @@ void ClipInspector::resized() {
             }
         }
 
-        // Row 2: [BPM] centered | [speed OR beats]
+        // Row 2: [BPM value + label] centered | [speed OR beats value + label]
         if (clipBpmValue_.isVisible() || (clipStretchValue_ && clipStretchValue_->isVisible()) ||
             clipBeatsLengthValue_->isVisible()) {
             addSpace(4);
@@ -165,13 +183,30 @@ void ClipInspector::resized() {
             if (clipBpmValue_.isVisible()) {
                 int bpmWidth = 96;  // matches WARP(46) + gap(4) + BEAT(46)
                 int bpmOffset = (left.getWidth() - bpmWidth) / 2;
-                clipBpmValue_.setBounds(left.withX(left.getX() + bpmOffset).withWidth(bpmWidth));
+                auto bpmArea = left.withX(left.getX() + bpmOffset).withWidth(bpmWidth);
+                if (hideAudioUnitLabels) {
+                    clipBpmUnitLabel_.setVisible(false);
+                    clipBpmValue_.setBounds(bpmArea.reduced(0, 1));
+                } else {
+                    clipBpmUnitLabel_.setVisible(true);
+                    clipBpmValue_.setBounds(bpmArea.removeFromLeft(62).reduced(0, 1));
+                    clipBpmUnitLabel_.setBounds(bpmArea.reduced(4, 1));
+                }
             }
             if (clipStretchValue_ && clipStretchValue_->isVisible()) {
                 clipStretchValue_->setBounds(right.reduced(0, 1));
             }
             if (clipBeatsLengthValue_->isVisible()) {
-                clipBeatsLengthValue_->setBounds(right.reduced(0, 1));
+                auto beatsArea = right.reduced(0, 1);
+                if (hideAudioUnitLabels) {
+                    clipBeatsUnitLabel_.setVisible(false);
+                    clipBeatsLengthValue_->setBounds(beatsArea);
+                } else {
+                    clipBeatsUnitLabel_.setVisible(true);
+                    clipBeatsLengthValue_->setBounds(
+                        beatsArea.removeFromLeft(juce::jmax(46, beatsArea.getWidth() - 42)));
+                    clipBeatsUnitLabel_.setBounds(beatsArea.reduced(4, 0));
+                }
             }
         }
     }

@@ -40,7 +40,7 @@ class SetClipOffsetCommand : public UndoableCommand {
     SetClipOffsetCommand(ClipId clipId, double newOffset) : clipId_(clipId), newOffset_(newOffset) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldOffset_ = (clip->type == ClipType::MIDI) ? clip->midiOffset : clip->offset;
+            oldOffset_ = (clip->isMidi()) ? clip->midiOffset : clip->offset;
     }
 
     void execute() override {
@@ -65,6 +65,53 @@ class SetClipOffsetCommand : public UndoableCommand {
   private:
     ClipId clipId_;
     double oldOffset_ = 0.0, newOffset_;
+};
+
+/**
+ * @brief Command for setting audio loop phase (source-time seconds relative to loop start).
+ */
+class SetClipLoopPhaseCommand : public UndoableCommand {
+  public:
+    SetClipLoopPhaseCommand(ClipId clipId, double newPhase) : clipId_(clipId), newPhase_(newPhase) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldPhase_ = (clip->isMidi()) ? clip->midiOffset : clip->getLoopPhase();
+    }
+
+    void execute() override {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId_)) {
+            if (clip->isMidi()) {
+                ClipManager::getInstance().setOffset(clipId_, newPhase_);
+            } else {
+                ClipManager::getInstance().setLoopPhase(clipId_, newPhase_);
+            }
+        }
+    }
+    void undo() override {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId_)) {
+            if (clip->isMidi()) {
+                ClipManager::getInstance().setOffset(clipId_, oldPhase_);
+            } else {
+                ClipManager::getInstance().setLoopPhase(clipId_, oldPhase_);
+            }
+        }
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Loop Phase";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetClipLoopPhaseCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newPhase_ = static_cast<const SetClipLoopPhaseCommand*>(other)->newPhase_;
+    }
+
+  private:
+    ClipId clipId_;
+    double oldPhase_ = 0.0, newPhase_;
 };
 
 /**
@@ -162,7 +209,7 @@ class SetClipLoopRangeCommand : public UndoableCommand {
         if (auto* clip = ClipManager::getInstance().getClip(clipId)) {
             oldLoopStart_ = clip->loopStart;
             oldLoopLength_ = clip->loopLength;
-            oldOffset_ = (clip->type == ClipType::MIDI) ? clip->midiOffset : clip->offset;
+            oldOffset_ = (clip->isMidi()) ? clip->midiOffset : clip->offset;
         }
     }
 

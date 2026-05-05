@@ -117,7 +117,7 @@ int VelocityLaneComponent::yToVelocity(int y) const {
 
 size_t VelocityLaneComponent::findNoteAtX(int x) const {
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return SIZE_MAX;
     }
 
@@ -170,7 +170,7 @@ std::vector<std::pair<size_t, int>> VelocityLaneComponent::computeRampVelocities
     }
 
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return result;
     }
 
@@ -213,7 +213,7 @@ void VelocityLaneComponent::updateCurveHandle() {
     }
 
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         isCurveHandleVisible_ = false;
         return;
     }
@@ -323,7 +323,7 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
 
     for (ClipId renderClipId : clipsToRender) {
         const auto* clip = clipManager.getClip(renderClipId);
-        if (!clip || clip->type != ClipType::MIDI) {
+        if (!clip || !clip->isMidi()) {
             continue;
         }
 
@@ -415,7 +415,7 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
     if ((isRampDragging_ || isCurveHandleVisible_) && sortedSelectedIndices_.size() >= 2 &&
         clipId_ != INVALID_CLIP_ID) {
         const auto* curveClip = clipManager.getClip(clipId_);
-        if (curveClip && curveClip->type == ClipType::MIDI) {
+        if (curveClip && curveClip->isMidi()) {
             // Compute absolute offset for beat->pixel
             double clipAbsOffset = 0.0;
             if (!relativeMode_) {
@@ -496,7 +496,7 @@ void VelocityLaneComponent::mouseDown(const juce::MouseEvent& e) {
     // Alt+click with 2+ selected notes: start ramp drag
     if (e.mods.isAltDown() && selectedNoteIndices_.size() >= 2) {
         const auto* clip = ClipManager::getInstance().getClip(clipId_);
-        if (clip && clip->type == ClipType::MIDI) {
+        if (clip && clip->isMidi()) {
             // Filter out stale indices and sort by beat position
             sortedSelectedIndices_.clear();
             for (size_t idx : selectedNoteIndices_) {

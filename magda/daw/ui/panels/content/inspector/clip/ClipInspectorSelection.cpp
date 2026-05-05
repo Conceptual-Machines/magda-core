@@ -1,3 +1,4 @@
+#include "../../../../state/TimelineController.hpp"
 #include "../ClipInspector.hpp"
 
 namespace magda::daw::ui {
@@ -42,10 +43,22 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
                        (beatSensitivityValue_ && beatSensitivityValue_->isDragging()) ||
                        (transientSensitivityValue_ && transientSensitivityValue_->isDragging());
     if (anyDragging) {
-        // Still update stretch mode combo during drag — pitchChange affects effective mode
+        // Still update dependent readouts during drag without relayout. Source Beats/BPM edits can
+        // move the displayed loop end, so the loop row must follow live.
         auto pid = primaryClipId();
         const auto* clip = magda::ClipManager::getInstance().getClip(pid);
-        if (clip && clip->type == magda::ClipType::Audio) {
+        if (clip && clip->isAudio()) {
+            updateAudioSourceValueDisplays(*clip);
+            double projectBPM = 120.0;
+            int beatsPerBar = 4;
+            if (timelineController_) {
+                const auto& state = timelineController_->getState();
+                projectBPM = state.tempo.bpm;
+                beatsPerBar = state.tempo.timeSignatureNumerator;
+            }
+            updateLoopValueDisplays(*clip, projectBPM, beatsPerBar);
+
+            // PitchChange affects effective mode.
             int effectiveMode = clip->timeStretchMode;
             bool isAnalog = clip->isAnalogPitchActive();
             if (!isAnalog && effectiveMode == 0 &&

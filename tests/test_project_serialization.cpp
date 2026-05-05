@@ -1,5 +1,6 @@
 #include <juce_core/juce_core.h>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/core/AutomationManager.hpp"
@@ -9,6 +10,7 @@
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
 
 using namespace magda;
+using Catch::Approx;
 
 namespace {
 
@@ -142,6 +144,186 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE(loaded.loopEnabled == info.loopEnabled);
         REQUIRE(loaded.loopStartBeats == info.loopStartBeats);
         REQUIRE(loaded.loopEndBeats == info.loopEndBeats);
+    }
+}
+
+TEST_CASE("Audio clip serialization separates source facts from interpretation",
+          "[project][serialization][audio]") {
+    ProjectTestFixture fixture;
+
+    auto trackId = TrackManager::getInstance().createTrack("Audio", TrackType::Audio);
+
+    ClipInfo clip;
+    clip.id = 42;
+    clip.trackId = trackId;
+    clip.name = "Loop";
+    clip.setAudioContent();
+    clip.setPlacementBeats(4.0, 16.0);
+    clip.audio().source.filePath = "/tmp/loop.wav";
+    clip.audio().source.durationSeconds = 2.7907;
+    clip.audio().interpretation.bpm = 172.0;
+    clip.audio().interpretation.totalBeats = 8.0;
+    clip.audio().interpretation.totalBeatsLocked = true;
+    clip.autoTempo = true;
+    clip.loopEnabled = true;
+    clip.loopStartBeats = 0.0;
+    clip.loopLengthBeats = 8.0;
+    clip.loopLength = 8.0 * 60.0 / 172.0;
+    ClipManager::getInstance().restoreClip(clip);
+
+    ProjectInfo info;
+    info.name = "Audio Source Model";
+    info.tempo = 120.0;
+
+    auto json = ProjectSerializer::serializeProject(info);
+    auto* rootObj = json.getDynamicObject();
+    REQUIRE(rootObj != nullptr);
+
+    auto* clips = rootObj->getProperty("clips").getArray();
+    REQUIRE(clips != nullptr);
+    REQUIRE(clips->size() == 1);
+
+    auto* clipObj = clips->getReference(0).getDynamicObject();
+    REQUIRE(clipObj != nullptr);
+    REQUIRE(clipObj->getProperty("audioSource").isVoid());
+
+    auto* audioObj = clipObj->getProperty("audio").getDynamicObject();
+    REQUIRE(audioObj != nullptr);
+    auto* sourceObj = audioObj->getProperty("source").getDynamicObject();
+    auto* interpretationObj = audioObj->getProperty("interpretation").getDynamicObject();
+    auto* playbackObj = audioObj->getProperty("playback").getDynamicObject();
+    REQUIRE(sourceObj != nullptr);
+    REQUIRE(interpretationObj != nullptr);
+    REQUIRE(playbackObj != nullptr);
+    auto* placementObj = clipObj->getProperty("placement").getDynamicObject();
+    REQUIRE(placementObj != nullptr);
+    REQUIRE(static_cast<double>(sourceObj->getProperty("durationSeconds")) == Approx(2.7907));
+    REQUIRE(static_cast<double>(interpretationObj->getProperty("totalBeats")) == Approx(8.0));
+    REQUIRE(static_cast<bool>(interpretationObj->getProperty("totalBeatsLocked")));
+    REQUIRE(static_cast<double>(playbackObj->getProperty("loopLengthBeats")) == Approx(8.0));
+    REQUIRE(static_cast<double>(placementObj->getProperty("lengthBeats")) == Approx(16.0));
+
+    ProjectInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+    auto* restored = ClipManager::getInstance().getClip(clip.id);
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->isAudio());
+    REQUIRE(restored->placement.lengthBeats == Approx(16.0));
+    REQUIRE(restored->audio().source.durationSeconds == Approx(2.7907));
+    REQUIRE(restored->audio().interpretation.totalBeats == Approx(8.0));
+    REQUIRE(restored->audio().interpretation.totalBeatsLocked);
+    REQUIRE(restored->loopLengthBeats == Approx(8.0));
+}
+
+TEST_CASE("Clip serialization validates type and audio schema", "[project][serialization][audio]") {
+    ProjectTestFixture fixture;
+
+    auto trackId = TrackManager::getInstance().createTrack("Track", TrackType::Audio);
+
+    ClipInfo clip;
+    clip.id = 7;
+    clip.trackId = trackId;
+    clip.name = "Schema";
+    clip.setAudioContent();
+    clip.setPlacementBeats(0.0, 16.0);
+    clip.audio().source.filePath = "/tmp/schema.wav";
+    clip.audio().source.durationSeconds = 4.0;
+    clip.audio().interpretation.bpm = 120.0;
+    clip.audio().interpretation.totalBeats = 8.0;
+    clip.autoTempo = true;
+    clip.loopEnabled = true;
+    clip.loopLengthBeats = 8.0;
+    clip.loopLength = 4.0;
+    ClipManager::getInstance().restoreClip(clip);
+
+    ProjectInfo info;
+    info.name = "Schema Validation";
+    info.tempo = 120.0;
+
+    SECTION("Unknown clip type is rejected") {
+        auto json = ProjectSerializer::serializeProject(info);
+        auto* rootObj = json.getDynamicObject();
+        REQUIRE(rootObj != nullptr);
+        auto* clips = rootObj->getProperty("clips").getArray();
+        REQUIRE(clips != nullptr);
+        auto* clipObj = clips->getReference(0).getDynamicObject();
+        REQUIRE(clipObj != nullptr);
+
+        clipObj->setProperty("type", 999);
+
+        ProjectInfo loaded;
+        REQUIRE_FALSE(ProjectSerializer::deserializeProject(json, loaded));
+        REQUIRE(ProjectSerializer::getLastError().contains("Unknown clip type"));
+    }
+
+    SECTION("MIDI clip with audio payload is rejected") {
+        auto json = ProjectSerializer::serializeProject(info);
+        auto* rootObj = json.getDynamicObject();
+        REQUIRE(rootObj != nullptr);
+        auto* clips = rootObj->getProperty("clips").getArray();
+        REQUIRE(clips != nullptr);
+        auto* clipObj = clips->getReference(0).getDynamicObject();
+        REQUIRE(clipObj != nullptr);
+
+        clipObj->setProperty("type", static_cast<int>(ClipType::MIDI));
+
+        ProjectInfo loaded;
+        REQUIRE_FALSE(ProjectSerializer::deserializeProject(json, loaded));
+        REQUIRE(ProjectSerializer::getLastError().contains("MIDI clip contains audio source data"));
+    }
+
+    SECTION("Legacy audioSource payload migrates to the audio model") {
+        auto json = ProjectSerializer::serializeProject(info);
+        auto* rootObj = json.getDynamicObject();
+        REQUIRE(rootObj != nullptr);
+        auto* clips = rootObj->getProperty("clips").getArray();
+        REQUIRE(clips != nullptr);
+        auto* clipObj = clips->getReference(0).getDynamicObject();
+        REQUIRE(clipObj != nullptr);
+
+        clipObj->removeProperty("audio");
+        auto* sourceObj = new juce::DynamicObject();
+        sourceObj->setProperty("filePath", "/tmp/legacy.wav");
+        sourceObj->setProperty("offsetSeconds", 0.5);
+        sourceObj->setProperty("offsetBeats", 1.0);
+        sourceObj->setProperty("loopStartSeconds", 0.25);
+        sourceObj->setProperty("loopLengthSeconds", 4.0);
+        sourceObj->setProperty("loopStartBeats", 0.5);
+        sourceObj->setProperty("loopLengthBeats", 8.0);
+        sourceObj->setProperty("speedRatio", 1.25);
+        sourceObj->setProperty("sourceNumBeats", 8.0);
+        sourceObj->setProperty("sourceBPM", 120.0);
+        sourceObj->setProperty("warpEnabled", true);
+        auto* warpObj = new juce::DynamicObject();
+        warpObj->setProperty("sourceTime", 1.0);
+        warpObj->setProperty("warpTime", 1.25);
+        juce::Array<juce::var> warpMarkers;
+        warpMarkers.add(juce::var(warpObj));
+        sourceObj->setProperty("warpMarkers", warpMarkers);
+        clipObj->setProperty("audioSource", juce::var(sourceObj));
+
+        ClipManager::getInstance().clearAllClips();
+
+        ProjectInfo loaded;
+        REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+        auto* restored = ClipManager::getInstance().getClip(clip.id);
+        REQUIRE(restored != nullptr);
+        REQUIRE(restored->isAudio());
+        REQUIRE(restored->audio().source.filePath == "/tmp/legacy.wav");
+        REQUIRE(restored->audio().source.durationSeconds == Approx(4.0));
+        REQUIRE(restored->audio().interpretation.totalBeats == Approx(8.0));
+        REQUIRE(restored->audio().interpretation.bpm == Approx(120.0));
+        REQUIRE(restored->offset == Approx(0.5));
+        REQUIRE(restored->offsetBeats == Approx(1.0));
+        REQUIRE(restored->loopStart == Approx(0.25));
+        REQUIRE(restored->loopLength == Approx(4.0));
+        REQUIRE(restored->loopStartBeats == Approx(0.5));
+        REQUIRE(restored->loopLengthBeats == Approx(8.0));
+        REQUIRE(restored->speedRatio == Approx(1.25));
+        REQUIRE(restored->warpEnabled);
+        REQUIRE(restored->warpMarkers.size() == 1);
+        REQUIRE(restored->warpMarkers.front().sourceTime == Approx(1.0));
+        REQUIRE(restored->warpMarkers.front().warpTime == Approx(1.25));
     }
 }
 
@@ -391,7 +573,7 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         const auto& clips = clipManager.getClips();
         REQUIRE(clips.size() == 1);
         REQUIRE(clips[0].name == "MIDI 1");  // Default name from createMidiClip
-        REQUIRE(clips[0].type == ClipType::MIDI);
+        REQUIRE(clips[0].getType() == ClipType::MIDI);
         REQUIRE(clips[0].midiNotes.size() == 2);
         REQUIRE(clips[0].midiNotes[0].noteNumber == 60);
         REQUIRE(clips[0].midiNotes[1].noteNumber == 64);

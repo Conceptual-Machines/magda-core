@@ -233,7 +233,7 @@ void CCLaneComponent::updatePointsCache() const {
     cachedPoints_.clear();
 
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         pointsCacheDirty_ = false;
         return;
     }
