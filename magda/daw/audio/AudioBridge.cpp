@@ -588,8 +588,13 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
                     tePlugin->setEnabled(!device->bypassed);
             }
 
-            // Push gain to the audio-graph atomic so DeviceGainNode picks it up
-            deviceMetering_.setGain(deviceId, device->gainValue);
+            // Push gain to the audio-graph atomic so DeviceGainNode picks it up.
+            // DeviceGainNode sits OUTSIDE the plugin in the TE graph (between the plugin and
+            // the level meter), so it stays active even when the plugin is bypassed. Force
+            // unity while bypassed so the slider stops attenuating signal that isn't going
+            // through the plugin (#1189). The user's gainValue is preserved on DeviceInfo
+            // and gets re-pushed when the device is re-enabled.
+            deviceMetering_.setGain(deviceId, device->bypassed ? 1.0f : device->gainValue);
 
             // When bypass changes, resync modifiers so they are removed/restored
             pluginManager_.resyncDeviceModifiers(track.id);
