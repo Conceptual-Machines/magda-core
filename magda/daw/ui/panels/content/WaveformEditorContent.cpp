@@ -171,18 +171,8 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
             double sessionPos = clip->sessionPlayheadPos;
 
             if (sessionPos >= 0.0) {
-                int playX = 0;
-                if (clip->loopEnabled && di.loopLengthSeconds > 0.0) {
-                    const double phaseDisplay =
-                        di.loopPhasePositionSeconds - di.loopStartPositionSeconds;
-                    double wrappedDisplay =
-                        std::fmod(phaseDisplay + sessionPos, di.loopLengthSeconds);
-                    if (wrappedDisplay < 0.0)
-                        wrappedDisplay += di.loopLengthSeconds;
-                    playX = displayPositionToX(di.loopStartPositionSeconds + wrappedDisplay);
-                } else {
-                    playX = displayPositionToX(di.offsetPositionSeconds + sessionPos);
-                }
+                const int playX =
+                    displayPositionToX(di.sessionPlayheadToDisplayPosition(sessionPos));
 
                 if (playX >= 0 && playX < getWidth()) {
                     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));

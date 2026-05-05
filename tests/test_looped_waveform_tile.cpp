@@ -233,6 +233,93 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
     }
 }
 
+TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display time",
+          "[clip][display][loop][session-playhead]") {
+    using namespace magda;
+
+    SECTION("Non-looped clips start from the source offset display position") {
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.startTime = 0.0;
+        clip.length = 8.0;
+        clip.offset = 1.5;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = false;
+
+        syncPlacement(clip);
+        const auto di = ClipDisplayInfo::from(clip, 120.0);
+
+        REQUIRE(di.sessionPlayheadToDisplayPosition(-0.001) == Catch::Approx(-1.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(0.0) == Catch::Approx(1.5));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(2.25) == Catch::Approx(3.75));
+    }
+
+    SECTION("Looped clips at zero phase wrap inside the loop display range") {
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.startTime = 0.0;
+        clip.length = 12.0;
+        clip.offset = 1.0;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = true;
+        clip.loopStart = 1.0;
+        clip.loopLength = 4.0;
+
+        syncPlacement(clip);
+        const auto di = ClipDisplayInfo::from(clip, 120.0);
+
+        REQUIRE(di.sessionPlayheadToDisplayPosition(0.0) == Catch::Approx(1.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(1.5) == Catch::Approx(2.5));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(4.0) == Catch::Approx(1.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(5.25) == Catch::Approx(2.25));
+    }
+
+    SECTION("Looped clips preserve phase offset when wrapping") {
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.startTime = 0.0;
+        clip.length = 12.0;
+        clip.offset = 2.0;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = true;
+        clip.loopStart = 1.0;
+        clip.loopLength = 4.0;
+
+        syncPlacement(clip);
+        const auto di = ClipDisplayInfo::from(clip, 120.0);
+
+        REQUIRE(di.sessionPlayheadToDisplayPosition(0.0) == Catch::Approx(2.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(2.5) == Catch::Approx(4.5));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(3.0) == Catch::Approx(1.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(4.5) == Catch::Approx(2.5));
+    }
+
+    SECTION("Auto-tempo source BPM maps session playhead in display-time seconds") {
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.autoTempo = true;
+        clip.startTime = 0.0;
+        clip.length = 8.0;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = true;
+        clip.audio().interpretation.bpm = 172.0;
+        clip.audio().interpretation.totalBeats = 16.0;
+        clip.audio().source.durationSeconds = 16.0 * 60.0 / 172.0;
+        clip.setPlacementBeats(0.0, 16.0);
+        clip.loopStartBeats = 0.0;
+        clip.loopLengthBeats = 16.0;
+        clip.offsetBeats = 4.0;
+
+        const auto di = ClipDisplayInfo::from(clip, 120.0, clip.audio().source.durationSeconds);
+
+        REQUIRE(di.loopLengthSeconds == Catch::Approx(8.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(0.0) == Catch::Approx(2.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(1.0) == Catch::Approx(3.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(6.0) == Catch::Approx(0.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(8.5) == Catch::Approx(2.5));
+    }
+}
+
 // ============================================================================
 // Partial tile source range calculation
 // ============================================================================

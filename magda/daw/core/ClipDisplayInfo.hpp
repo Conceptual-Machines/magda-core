@@ -98,6 +98,22 @@ struct ClipDisplayInfo {
         return loopEnabled && sourceLength > 0.0;
     }
 
+    double sessionPlayheadToDisplayPosition(double sessionPlayheadSeconds) const {
+        if (sessionPlayheadSeconds < 0.0)
+            return -1.0;
+
+        if (isLooped() && loopLengthSeconds > 0.0) {
+            const double phaseDisplay = loopPhasePositionSeconds - loopStartPositionSeconds;
+            double wrappedDisplay =
+                std::fmod(phaseDisplay + sessionPlayheadSeconds, loopLengthSeconds);
+            if (wrappedDisplay < 0.0)
+                wrappedDisplay += loopLengthSeconds;
+            return loopStartPositionSeconds + wrappedDisplay;
+        }
+
+        return offsetPositionSeconds + sessionPlayheadSeconds;
+    }
+
     // Convert a timeline position (relative to display anchor = file start) to absolute source file
     // time
     double displayPositionToSourceTime(double timelinePos) const {
