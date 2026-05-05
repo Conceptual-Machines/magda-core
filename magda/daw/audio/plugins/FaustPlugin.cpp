@@ -154,6 +154,61 @@ float denormalizeForBinding(const FaustParamPool::ActiveBindingDescriptor& b, fl
     return 0.0f;
 }
 
+float normaliseDefaultForSlot(const FaustParamSlot& slot) {
+    switch (slot.kind) {
+        case FaustParamSlot::Kind::Boolean:
+            return slot.defaultValue >= 0.5f ? 1.0f : 0.0f;
+        case FaustParamSlot::Kind::Discrete: {
+            if (slot.choices.empty())
+                return 0.0f;
+            auto sorted = slot.choices;
+            std::sort(sorted.begin(), sorted.end(),
+                      [](const std::pair<float, juce::String>& a,
+                         const std::pair<float, juce::String>& b) { return a.first < b.first; });
+            int best = 0;
+            float bestDistance = std::abs(sorted.front().first - slot.defaultValue);
+            for (size_t i = 1; i < sorted.size(); ++i) {
+                const float distance = std::abs(sorted[i].first - slot.defaultValue);
+                if (distance < bestDistance) {
+                    best = static_cast<int>(i);
+                    bestDistance = distance;
+                }
+            }
+            return sorted.size() > 1
+                       ? static_cast<float>(best) / static_cast<float>(sorted.size() - 1)
+                       : 0.0f;
+        }
+        case FaustParamSlot::Kind::Continuous:
+            if (slot.logScale && slot.minValue > 0.0f && slot.maxValue > slot.minValue &&
+                slot.defaultValue > 0.0f) {
+                return juce::jlimit(0.0f, 1.0f,
+                                    std::log(slot.defaultValue / slot.minValue) /
+                                        std::log(slot.maxValue / slot.minValue));
+            }
+            if (slot.maxValue != slot.minValue)
+                return juce::jlimit(0.0f, 1.0f,
+                                    (slot.defaultValue - slot.minValue) /
+                                        (slot.maxValue - slot.minValue));
+            return 0.0f;
+    }
+    return 0.0f;
+}
+
+bool nearlyEqual(float a, float b) {
+    return std::abs(a - b) <= 1.0e-5f;
+}
+
+bool sameControlIdentity(const FaustParamSlot& previous, const FaustParamSlot& current) {
+    if (!previous.active || !current.active)
+        return false;
+
+    return previous.label == current.label && previous.unit == current.unit &&
+           previous.kind == current.kind && nearlyEqual(previous.minValue, current.minValue) &&
+           nearlyEqual(previous.maxValue, current.maxValue) &&
+           nearlyEqual(previous.stepValue, current.stepValue) &&
+           previous.logScale == current.logScale && previous.choices == current.choices;
+}
+
 juce::String poolParamId(int index) {
     return juce::String("param_") + juce::String(index + 1).paddedLeft('0', 2);
 }
@@ -210,6 +265,10 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compileAndRebind(const juc
         return nullptr;
     }
 
+    std::array<FaustParamSlot, FaustParamPool::kSize> previousSlots{};
+    for (int i = 0; i < FaustParamPool::kSize; ++i)
+        previousSlots[static_cast<size_t>(i)] = pool_.slot(i);
+
     UIHarvester harvester;
     state->dsp->buildUserInterface(&harvester);
     DBG("[FaustPlugin] compileAndRebind: harvested " << static_cast<int>(harvester.harvested.size())
@@ -224,6 +283,7 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compileAndRebind(const juc
     auto report = pool_.rebindFromHarvest(harvester.harvested);
     state->activeBindings = std::move(report.activeBindings);
     lastDiagnostics_ = std::move(report.diagnostics);
+    initialiseUnsetPoolValues(state->activeBindings, previousSlots);
 
     DBG("[FaustPlugin] compileAndRebind: pool active="
         << pool_.activeCount() << " bindings=" << static_cast<int>(state->activeBindings.size()));
@@ -231,6 +291,32 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compileAndRebind(const juc
         DBG("  diagnostic: " << d);
 
     return state;
+}
+
+void FaustPlugin::initialiseUnsetPoolValues(
+    const std::vector<FaustParamPool::ActiveBindingDescriptor>& bindings,
+    const std::array<FaustParamSlot, FaustParamPool::kSize>& previousSlots) {
+    auto* um = getUndoManager();
+    for (const auto& binding : bindings) {
+        const int slotIndex = binding.slotIndex;
+        if (slotIndex < 0 || slotIndex >= FaustParamPool::kSize)
+            continue;
+
+        const auto& previous = previousSlots[static_cast<size_t>(slotIndex)];
+        const bool sameControl = sameControlIdentity(previous, pool_.slot(slotIndex));
+        const bool restoredBeforeFirstBind =
+            !previous.active && poolValueWasRestored_[static_cast<size_t>(slotIndex)];
+        if (sameControl || restoredBeforeFirstBind)
+            continue;
+
+        const float normalisedDefault = normaliseDefaultForSlot(pool_.slot(slotIndex));
+        auto& cached = poolCached_[static_cast<size_t>(slotIndex)];
+        cached.setValue(normalisedDefault, um);
+
+        auto& param = poolParams_[static_cast<size_t>(slotIndex)];
+        if (param)
+            param->updateFromAttachedValue();
+    }
 }
 
 FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) {
@@ -242,6 +328,7 @@ FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) 
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     for (int i = 0; i < FaustParamPool::kSize; ++i) {
         const auto id = poolParamId(i);
+        poolValueWasRestored_[static_cast<size_t>(i)] = state.hasProperty(juce::Identifier(id));
         poolCached_[static_cast<size_t>(i)].referTo(this->state, juce::Identifier(id), um, 0.0f);
         poolParams_[static_cast<size_t>(i)] = addParam(id, id, normalisedRange);
         poolParams_[static_cast<size_t>(i)]->attachToCurrentValue(
@@ -259,10 +346,11 @@ FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) 
         compiled = compileAndRebind(kDefaultDspSource, err);
     }
 
-    std::atomic_store(&active_, compiled);
-
     dspSource_ = savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource);
     dspName_ = savedName.isNotEmpty() ? savedName : juce::String("Passthrough");
+
+    std::atomic_store(&active_, compiled);
+
     state.setProperty("dspSource", dspSource_, nullptr);
     state.setProperty("dspName", dspName_, nullptr);
 

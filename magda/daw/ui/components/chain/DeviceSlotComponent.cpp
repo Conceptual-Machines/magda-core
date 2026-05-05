@@ -2,6 +2,8 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
+
 #include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/sound_design_agent.hpp"
 #include "AIPanelComponent.hpp"
@@ -2758,9 +2760,17 @@ void DeviceSlotComponent::updateParameterSlots() {
             if (!self->nodePath_.isValid())
                 return;
             // Update local cache immediately for responsive UI
-            if (paramIndex >= 0 && paramIndex < static_cast<int>(self->device_.parameters.size())) {
-                self->device_.parameters[static_cast<size_t>(paramIndex)].currentValue =
-                    static_cast<float>(value);
+            auto paramIt =
+                std::find_if(self->device_.parameters.begin(), self->device_.parameters.end(),
+                             [paramIndex](const magda::ParameterInfo& param) {
+                                 return param.paramIndex == paramIndex;
+                             });
+            if (paramIt == self->device_.parameters.end() && paramIndex >= 0 &&
+                paramIndex < static_cast<int>(self->device_.parameters.size())) {
+                paramIt = self->device_.parameters.begin() + paramIndex;
+            }
+            if (paramIt != self->device_.parameters.end()) {
+                paramIt->currentValue = static_cast<float>(value);
             }
             magda::TrackManager::getInstance().setDeviceParameterValue(self->nodePath_, paramIndex,
                                                                        static_cast<float>(value));

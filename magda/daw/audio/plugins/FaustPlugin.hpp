@@ -123,6 +123,9 @@ class FaustPlugin : public te::Plugin {
     // Stores diagnostics on `lastDiagnostics_`. Message-thread only.
     std::shared_ptr<FaustState> compileAndRebind(const juce::String& source,
                                                  juce::String& errorOut);
+    void initialiseUnsetPoolValues(
+        const std::vector<FaustParamPool::ActiveBindingDescriptor>& bindings,
+        const std::array<FaustParamSlot, FaustParamPool::kSize>& previousSlots);
 
     // Active dsp + factory + binding bundle. Read/written exclusively via
     // std::atomic_load / std::atomic_store free functions on shared_ptr —
@@ -138,6 +141,7 @@ class FaustPlugin : public te::Plugin {
     // pointers are reference-counted, vector is fine.
     std::vector<te::AutomatableParameter::Ptr> poolParams_;
     std::array<juce::CachedValue<float>, FaustParamPool::kSize> poolCached_;
+    std::array<bool, FaustParamPool::kSize> poolValueWasRestored_{};
 
     // Retired states pending destruction on the message thread. After a
     // swap, the audio thread may briefly still hold a snapshot of the

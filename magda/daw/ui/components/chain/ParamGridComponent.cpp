@@ -60,7 +60,8 @@ void ParamGridComponent::updateParameterSlots(
 
             if (paramIndex >= 0 && paramIndex < static_cast<int>(device.parameters.size())) {
                 const auto& param = device.parameters[static_cast<size_t>(paramIndex)];
-                paramSlots_[i]->setParamIndex(paramIndex);
+                const int targetParamIndex = param.paramIndex >= 0 ? param.paramIndex : paramIndex;
+                paramSlots_[i]->setParamIndex(targetParamIndex);
                 paramSlots_[i]->setParamName(param.name);
                 paramSlots_[i]->setParameterInfo(param);
                 paramSlots_[i]->setParamValue(param.currentValue);
@@ -69,8 +70,9 @@ void ParamGridComponent::updateParameterSlots(
                 paramSlots_[i]->setVisible(true);
 
                 if (onValueChanged) {
-                    paramSlots_[i]->onValueChanged = [onValueChanged, paramIndex](double value) {
-                        onValueChanged(paramIndex, value);
+                    paramSlots_[i]->onValueChanged = [onValueChanged,
+                                                      targetParamIndex](double value) {
+                        onValueChanged(targetParamIndex, value);
                     };
                 } else {
                     paramSlots_[i]->onValueChanged = nullptr;
