@@ -222,6 +222,14 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
                 if (thumb->getTotalLength() > 0.0)
                     fileDuration = thumb->getTotalLength();
             }
+            // Fall back to the clip's own source extent (loopLength, set by
+            // createAudioClip from the user-passed length parameter, or the
+            // timeline-derived length for non-looped clips). This mirrors
+            // seedSourceMetadataFromCachedDetection's behaviour for the
+            // arrangement path and matches the contract createAudioClip used
+            // to satisfy by writing source.durationSeconds = length directly.
+            if (fileDuration <= 0.0)
+                fileDuration = c->getSourceLength();
 
             AudioClipBeatsUpdate u;
             u.interpretationBpm = detectedBPM;
