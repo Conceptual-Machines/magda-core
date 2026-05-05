@@ -195,6 +195,8 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     }
 
     addToSessionSlotIndex(clips_[clip.id]);
+    if (view == ClipView::Arrangement)
+        resolveOverlaps(clip.id);
     notifyClipsChanged();
 
     // Tracktion loopInfo is authoritative when it carries real file metadata,
@@ -287,6 +289,8 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
     }
 
     addToSessionSlotIndex(clips_[clip.id]);
+    if (view == ClipView::Arrangement)
+        resolveOverlaps(clip.id);
     notifyClipsChanged();
 
     return clip.id;
@@ -394,6 +398,8 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
     clips_[newClip.id] = newClip;
     addToSessionSlotIndex(clips_[newClip.id]);
 
+    if (newClip.view == ClipView::Arrangement)
+        resolveOverlaps(newClip.id);
     notifyClipsChanged();
 
     return newClip.id;
@@ -436,6 +442,8 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
     }
     addToSessionSlotIndex(clips_[newClip.id]);
 
+    if (newClip.view == ClipView::Arrangement)
+        resolveOverlaps(newClip.id);
     notifyClipsChanged();
 
     return newClip.id;
@@ -474,6 +482,8 @@ void ClipManager::moveClip(ClipId clipId, double newStartTime, double tempo) {
             clip->setPlacementBeats(clip->startTime * bpm / 60.0, clip->placement.lengthBeats);
         // Notes maintain their relative position within the clip (startBeat unchanged)
         // so they move with the clip on the timeline
+        if (clip->view == ClipView::Arrangement)
+            resolveOverlaps(clipId);
         notifyClipPropertyChanged(clipId);
     }
 }
@@ -484,6 +494,8 @@ void ClipManager::moveClipToTrack(ClipId clipId, TrackId newTrackId) {
             removeFromSessionSlotIndex(*clip);
             clip->trackId = newTrackId;
             addToSessionSlotIndex(*clip);
+            if (clip->view == ClipView::Arrangement)
+                resolveOverlaps(clipId);
             notifyClipsChanged();  // Track assignment change affects layout
         }
     }
@@ -514,6 +526,8 @@ void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, do
             }
         }
         traceAudioClipLengthState("resizeClip:after", *clip, tempo);
+        if (clip->view == ClipView::Arrangement)
+            resolveOverlaps(clipId);
         notifyClipPropertyChanged(clipId);
     }
 }
@@ -736,6 +750,8 @@ void ClipManager::trimClip(ClipId clipId, double newStartTime, double newLength,
             clip->setPlacementBeats(newStartTime * tempo / 60.0, newLength * tempo / 60.0);
             clip->deriveTimesFromBeats(tempo);
         }
+        if (clip->view == ClipView::Arrangement)
+            resolveOverlaps(clipId);
         notifyClipPropertyChanged(clipId);
     }
 }
@@ -1749,16 +1765,19 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
         return;
     }
 
-    double dStart = dominant->startTime;
-    double dEnd = dominant->getEndTime();
-    TrackId trackId = dominant->trackId;
+    const double dStartB = dominant->placement.startBeat;
+    const double dEndB = dStartB + dominant->placement.lengthBeats;
+    if (!(dEndB > dStartB))
+        return;
+    const TrackId trackId = dominant->trackId;
+    const double bpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
 
     // Collect IDs to delete and clips to resize (avoid iterator invalidation)
     std::vector<ClipId> toDelete;
 
     struct ResizeOp {
         ClipId id;
-        double newLength;
+        double newLengthBeats;
         bool fromLeft;  // true = trim left edge (move start forward)
     };
     std::vector<ResizeOp> toResize;
@@ -1769,41 +1788,46 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
             continue;
         }
 
-        double cStart = clip.startTime;
-        double cEnd = clip.getEndTime();
+        const double cStartB = clip.placement.startBeat;
+        const double cEndB = cStartB + clip.placement.lengthBeats;
 
-        // Check for overlap
-        if (cStart >= dEnd || cEnd <= dStart) {
-            continue;  // No overlap
+        // Check for overlap (beat-domain — the seconds mirrors can be stale after
+        // BPM changes or beat-mode edits, so never use them here).
+        if (cStartB >= dEndB || cEndB <= dStartB) {
+            continue;
         }
 
-        if (cStart >= dStart && cEnd <= dEnd) {
-            // Case 1: C fully covered by D → delete
+        if (cStartB >= dStartB && cEndB <= dEndB) {
+            // C fully covered by D → delete
             toDelete.push_back(clip.id);
-        } else if (cStart < dStart && cEnd > dStart && cEnd <= dEnd) {
-            // Case 2: C overlaps from left → trim right edge to dStart
-            toResize.push_back({clip.id, dStart - cStart, false});
-        } else if (cStart >= dStart && cStart < dEnd && cEnd > dEnd) {
-            // Case 3: C overlaps from right → trim left edge to dEnd
-            toResize.push_back({clip.id, cEnd - dEnd, true});
-        } else if (cStart < dStart && cEnd > dEnd) {
-            // Case 4: C fully contains D → trim right edge to dStart (keep left portion)
-            toResize.push_back({clip.id, dStart - cStart, false});
+        } else if (cStartB < dStartB && cEndB <= dEndB) {
+            // C overlaps from left → trim right edge to dStartB
+            toResize.push_back({clip.id, dStartB - cStartB, false});
+        } else if (cStartB >= dStartB && cEndB > dEndB) {
+            // C overlaps from right → trim left edge to dEndB
+            toResize.push_back({clip.id, cEndB - dEndB, true});
+        } else if (cStartB < dStartB && cEndB > dEndB) {
+            // C fully contains D → keep left portion, trim right edge to dStartB
+            toResize.push_back({clip.id, dStartB - cStartB, false});
         }
     }
 
-    // Apply deletions
     for (auto id : toDelete) {
         deleteClip(id);
     }
 
-    // Apply resizes
     for (const auto& op : toResize) {
         if (auto* clip = getClip(op.id)) {
+            // ClipOperations::resizeContainerFromLeft/Right take seconds + bpm
+            // and re-derive the beat placement internally. Convert from the
+            // beat-domain target length here so the seconds boundary stays
+            // confined to the resize helpers.
+            const double newLengthSeconds =
+                bpm > 0.0 ? op.newLengthBeats * 60.0 / bpm : clip->length;
             if (op.fromLeft) {
-                ClipOperations::resizeContainerFromLeft(*clip, op.newLength);
+                ClipOperations::resizeContainerFromLeft(*clip, newLengthSeconds, bpm);
             } else {
-                ClipOperations::resizeContainerFromRight(*clip, op.newLength);
+                ClipOperations::resizeContainerFromRight(*clip, newLengthSeconds, bpm);
             }
             notifyClipPropertyChanged(op.id);
         }
@@ -2235,6 +2259,8 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                     }
                 }
 
+                if (newClip->view == ClipView::Arrangement)
+                    resolveOverlaps(newClipId);
                 forceNotifyClipPropertyChanged(newClipId);
                 traceBeatCopyState("pasteFromClipboard:newClipBeforeReturn", *newClip);
             }

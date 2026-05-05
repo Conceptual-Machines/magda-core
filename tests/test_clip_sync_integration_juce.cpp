@@ -96,6 +96,14 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testGainAndPan();
         testPitchChange();
         testRenderVerification();
+        testCreateAudioClipDeletesFullyOverlappedNeighbour();
+        testMoveAudioClipTrimsNeighbourFromRight();
+        testMoveAudioClipTrimsNeighbourFromLeft();
+        testDuplicateAudioClipResolvesOverlap();
+        testPasteAudioClipResolvesOverlap();
+        testCreateMidiClipResolvesOverlap();
+        testMoveClipNoOverlapDoesNotMutateNeighbours();
+        testMoveClipToTrackResolvesOverlapOnDestination();
     }
 
   private:
@@ -1124,6 +1132,226 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
                 expect(rms < 0.01f,
                        "Should be silence after clip (3.1s+), RMS=" + juce::String(rms));
             }
+        }
+    }
+
+    // =========================================================================
+    // Overlap resolution
+    // =========================================================================
+
+    void testCreateAudioClipDeletesFullyOverlappedNeighbour() {
+        beginTest("createAudioClip deletes a fully-covered arrangement neighbour");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        // Existing clip: bars 1-3 (= 8 beats at 60 BPM = 8s)
+        auto existing =
+            cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        expect(existing != INVALID_CLIP_ID);
+
+        // New clip fully covers it: 0-12 beats
+        auto incoming =
+            cm.createAudioClip(f.trackId, 0.0, 12.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        expect(incoming != INVALID_CLIP_ID);
+
+        expect(cm.getClip(existing) == nullptr, "Fully-covered neighbour should have been deleted");
+        expect(cm.getClip(incoming) != nullptr, "Incoming clip should remain");
+    }
+
+    void testMoveAudioClipTrimsNeighbourFromRight() {
+        beginTest("moveClip trims neighbour's right edge when overlapping from the left");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        // Static neighbour at 0-8s, mover starts further right.
+        auto stationary =
+            cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto mover =
+            cm.createAudioClip(f.trackId, 16.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        expect(stationary != INVALID_CLIP_ID);
+        expect(mover != INVALID_CLIP_ID);
+
+        // Move the mover left so it overlaps the right half of stationary.
+        cm.moveClip(mover, 4.0, 60.0);
+
+        const auto* s = cm.getClip(stationary);
+        const auto* m = cm.getClip(mover);
+        expect(s != nullptr && m != nullptr);
+        if (!s || !m)
+            return;
+
+        // Stationary's right edge should be trimmed back to mover's start beat.
+        expectWithinAbsoluteError(s->placement.startBeat, 0.0, 0.01);
+        expectWithinAbsoluteError(s->placement.lengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(m->placement.startBeat, 4.0, 0.01);
+        expectWithinAbsoluteError(m->placement.lengthBeats, 4.0, 0.01);
+    }
+
+    void testMoveAudioClipTrimsNeighbourFromLeft() {
+        beginTest("moveClip trims neighbour's left edge when overlapping from the right");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        // stationary: beats 8-16. mover: 0-8 length 8, then move startTime=4
+        // → mover spans beats 4-12, covering stationary's left half (beats
+        // 8-12). resolveOverlaps should trim stationary's left edge to 12.
+        auto stationary =
+            cm.createAudioClip(f.trackId, 8.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto mover =
+            cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+
+        cm.moveClip(mover, 4.0, 60.0);
+
+        const auto* s = cm.getClip(stationary);
+        const auto* m = cm.getClip(mover);
+        expect(s != nullptr && m != nullptr);
+        if (!s || !m)
+            return;
+
+        expectWithinAbsoluteError(m->placement.startBeat, 4.0, 0.01);
+        expectWithinAbsoluteError(m->placement.lengthBeats, 8.0, 0.01);
+        expectWithinAbsoluteError(s->placement.startBeat, 12.0, 0.01);
+        expectWithinAbsoluteError(s->placement.lengthBeats, 4.0, 0.01);
+    }
+
+    void testDuplicateAudioClipResolvesOverlap() {
+        beginTest("duplicateClipAt resolves overlap with existing clip on same track");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        // Source at 0-4s, victim at 8-12s. Duplicate source to 6s — that lands
+        // at 6-10s and partially covers the victim's left half.
+        auto source =
+            cm.createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto victim =
+            cm.createAudioClip(f.trackId, 8.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+
+        auto copy = cm.duplicateClipAt(source, 6.0, f.trackId, 60.0);
+        expect(copy != INVALID_CLIP_ID);
+
+        const auto* v = cm.getClip(victim);
+        const auto* c = cm.getClip(copy);
+        expect(v != nullptr && c != nullptr);
+        if (!v || !c)
+            return;
+
+        // Victim should now start at beat 10 and be 2 beats long.
+        expectWithinAbsoluteError(c->placement.startBeat, 6.0, 0.01);
+        expectWithinAbsoluteError(c->placement.lengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(v->placement.startBeat, 10.0, 0.01);
+        expectWithinAbsoluteError(v->placement.lengthBeats, 2.0, 0.01);
+    }
+
+    void testPasteAudioClipResolvesOverlap() {
+        beginTest("pasteFromClipboard resolves overlap with existing clip");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto source =
+            cm.createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto victim =
+            cm.createAudioClip(f.trackId, 6.0, 6.0, f.audioPath(), ClipView::Arrangement, 60.0);
+
+        cm.copyToClipboard(std::unordered_set<ClipId>{source});
+        auto pastedIds = cm.pasteFromClipboard(8.0, f.trackId, ClipView::Arrangement);
+        expectEquals(static_cast<int>(pastedIds.size()), 1);
+        if (pastedIds.empty())
+            return;
+
+        const auto* v = cm.getClip(victim);
+        const auto* p = cm.getClip(pastedIds.front());
+        expect(v != nullptr && p != nullptr);
+        if (!v || !p)
+            return;
+
+        expectWithinAbsoluteError(p->placement.startBeat, 8.0, 0.01);
+        expectWithinAbsoluteError(p->placement.lengthBeats, 4.0, 0.01);
+        // Victim originally 6-12. Paste lands 8-12 → fully covers victim's right half,
+        // so victim's right edge trims back to beat 8.
+        expectWithinAbsoluteError(v->placement.startBeat, 6.0, 0.01);
+        expectWithinAbsoluteError(v->placement.lengthBeats, 2.0, 0.01);
+    }
+
+    void testCreateMidiClipResolvesOverlap() {
+        beginTest("createMidiClip resolves overlap (MIDI uses the same code path)");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto stationary = cm.createMidiClip(f.trackId, 0.0, 8.0, ClipView::Arrangement);
+        auto incoming = cm.createMidiClip(f.trackId, 4.0, 8.0, ClipView::Arrangement);
+        expect(stationary != INVALID_CLIP_ID && incoming != INVALID_CLIP_ID);
+
+        const auto* s = cm.getClip(stationary);
+        const auto* i = cm.getClip(incoming);
+        expect(s != nullptr && i != nullptr);
+        if (!s || !i)
+            return;
+
+        // Incoming covers stationary's right half (beats 4-8). Stationary's right
+        // edge should trim to beat 4.
+        expectWithinAbsoluteError(s->placement.startBeat, 0.0, 0.01);
+        expectWithinAbsoluteError(s->placement.lengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(i->placement.startBeat, 4.0, 0.01);
+        expectWithinAbsoluteError(i->placement.lengthBeats, 8.0, 0.01);
+    }
+
+    void testMoveClipNoOverlapDoesNotMutateNeighbours() {
+        beginTest("moveClip without overlap leaves neighbours untouched");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto a =
+            cm.createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto b =
+            cm.createAudioClip(f.trackId, 16.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+
+        // Move b further right — no overlap with a.
+        cm.moveClip(b, 32.0, 60.0);
+
+        const auto* aClip = cm.getClip(a);
+        const auto* bClip = cm.getClip(b);
+        expect(aClip != nullptr && bClip != nullptr);
+        if (!aClip || !bClip)
+            return;
+        expectWithinAbsoluteError(aClip->placement.startBeat, 0.0, 0.01);
+        expectWithinAbsoluteError(aClip->placement.lengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(bClip->placement.startBeat, 32.0, 0.01);
+        expectWithinAbsoluteError(bClip->placement.lengthBeats, 4.0, 0.01);
+    }
+
+    void testMoveClipToTrackResolvesOverlapOnDestination() {
+        beginTest("moveClipToTrack resolves overlap on the destination track");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        constexpr TrackId secondTrackId = 2;
+        f.trackController->ensureTrackMapping(secondTrackId, "Track 2");
+
+        auto sitter =
+            cm.createAudioClip(secondTrackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto mover =
+            cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        expect(sitter != INVALID_CLIP_ID && mover != INVALID_CLIP_ID);
+
+        cm.moveClipToTrack(mover, secondTrackId);
+
+        // Mover ends up on track 2 fully covering sitter → sitter deleted.
+        expect(cm.getClip(sitter) == nullptr,
+               "Fully-covered clip on destination track should be deleted");
+        const auto* m = cm.getClip(mover);
+        expect(m != nullptr);
+        if (m) {
+            expect(m->trackId == secondTrackId);
+            expectWithinAbsoluteError(m->placement.startBeat, 0.0, 0.01);
+            expectWithinAbsoluteError(m->placement.lengthBeats, 8.0, 0.01);
         }
     }
 };
