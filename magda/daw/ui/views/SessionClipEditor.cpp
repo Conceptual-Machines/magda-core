@@ -31,7 +31,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
 
         // Get clip info
         const auto* clip = ClipManager::getInstance().getClip(clipId_);
-        if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty()) {
+        if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty()) {
             // No waveform to show
             g.setColour(DarkTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(14.0f));
@@ -43,7 +43,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
 
         // Get waveform from cache
         auto* thumbnail =
-            magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
+            magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audio().source.filePath);
         if (thumbnail && thumbnail->getTotalLength() > 0.0) {
             // Build display info using project BPM
             double bpm = 120.0;
@@ -317,7 +317,7 @@ void SessionClipEditor::updateControls() {
     lengthLabel_->setText(juce::String(clip->length, 2) + " beats", juce::dontSendNotification);
 
     // Update offset slider
-    if (clip->audioFilePath.isNotEmpty()) {
+    if (clip->audio().source.filePath.isNotEmpty()) {
         offsetSlider_->setValue(clip->offset, juce::dontSendNotification);
     }
 

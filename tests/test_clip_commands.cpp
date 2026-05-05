@@ -82,7 +82,7 @@ TEST_CASE("DuplicateClipCommand - basic duplicate", "[clip][command][duplicate]"
         REQUIRE(dup->startTime == Catch::Approx(orig->startTime + orig->length));
         REQUIRE(dup->length == Catch::Approx(orig->length));
         REQUIRE(dup->trackId == orig->trackId);
-        REQUIRE(dup->type == orig->type);
+        REQUIRE(dup->getType() == orig->getType());
 
         // MIDI notes copied
         REQUIRE(dup->midiNotes.size() == orig->midiNotes.size());
@@ -174,7 +174,7 @@ TEST_CASE("DuplicateClipCommand - audio clip", "[clip][command][duplicate]") {
 
     auto* dup = ClipManager::getInstance().getClip(cmd.getDuplicatedClipId());
     REQUIRE(dup != nullptr);
-    REQUIRE(dup->type == ClipType::Audio);
+    REQUIRE(dup->isAudio());
     REQUIRE(dup->startTime == Catch::Approx(4.0));  // 1.0 + 3.0
     REQUIRE(dup->length == Catch::Approx(3.0));
 }
@@ -718,7 +718,7 @@ TEST_CASE("CreateClipCommand - create MIDI clip", "[clip][command][create]") {
 
     auto* clip = ClipManager::getInstance().getClip(created);
     REQUIRE(clip != nullptr);
-    REQUIRE(clip->type == ClipType::MIDI);
+    REQUIRE(clip->isMidi());
     REQUIRE(clip->startTime == Catch::Approx(1.0));
     REQUIRE(clip->length == Catch::Approx(3.0));
     REQUIRE(clip->trackId == track);

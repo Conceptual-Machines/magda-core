@@ -848,7 +848,7 @@ class DrumGridClipGrid : public juce::Component,
                 delta *= 12;
 
             const auto* clip = magda::ClipManager::getInstance().getClip(noteSel.clipId);
-            if (!clip || clip->type != magda::ClipType::MIDI)
+            if (!clip || !clip->isMidi())
                 return false;
 
             for (size_t idx : noteSel.noteIndices) {
@@ -1026,7 +1026,7 @@ class DrumGridClipGrid : public juce::Component,
 
     void createNoteComponents() {
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
-        if (!clip || clip->type != magda::ClipType::MIDI || !padRows_)
+        if (!clip || !clip->isMidi() || !padRows_)
             return;
 
         auto noteColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
@@ -1539,7 +1539,7 @@ DrumGridClipContent::DrumGridClipContent() {
             return;
 
         const auto* clip = clipManager.getClip(clipId);
-        if (!clip || clip->type != magda::ClipType::MIDI)
+        if (!clip || !clip->isMidi())
             return;
 
         double pasteOffset = clipManager.getNoteClipboardMinBeat();
@@ -1569,7 +1569,7 @@ DrumGridClipContent::DrumGridClipContent() {
                                               std::vector<size_t> noteIndices) {
         auto& clipManager = magda::ClipManager::getInstance();
         const auto* clip = clipManager.getClip(clipId);
-        if (!clip || clip->type != magda::ClipType::MIDI)
+        if (!clip || !clip->isMidi())
             return;
 
         double minStart = std::numeric_limits<double>::max();
@@ -1769,7 +1769,7 @@ void DrumGridClipContent::onActivated() {
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClip);
-        if (clip && clip->type == magda::ClipType::MIDI) {
+        if (clip && clip->isMidi()) {
             setClip(selectedClip);
         }
     }
@@ -1811,7 +1811,7 @@ void DrumGridClipContent::clipSelectionChanged(magda::ClipId clipId) {
     }
 
     const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
-    if (clip && clip->type == magda::ClipType::MIDI) {
+    if (clip && clip->isMidi()) {
         setClip(clipId);
     }
 }

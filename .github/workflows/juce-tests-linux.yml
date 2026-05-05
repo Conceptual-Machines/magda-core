@@ -1,0 +1,83 @@
+name: JUCE Tests (Linux)
+
+on:
+  push:
+    branches: [ '**' ]
+    tags-ignore: [ '**' ]
+    paths-ignore:
+      - 'lang/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  juce-tests-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        lfs: true
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          pkg-config \
+          libgtk-3-dev \
+          libasound2-dev \
+          libjack-jackd2-dev \
+          ladspa-sdk \
+          libcurl4-openssl-dev \
+          libfreetype6-dev \
+          libx11-dev \
+          libxcomposite-dev \
+          libxcursor-dev \
+          libxext-dev \
+          libxinerama-dev \
+          libxrandr-dev \
+          libxrender-dev \
+          libwebkit2gtk-4.1-dev \
+          libglu1-mesa-dev \
+          mesa-common-dev \
+          xvfb
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ runner.os }}-juce-ccache-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-juce-ccache-
+          ${{ runner.os }}-ccache-
+
+    - name: Configure CMake
+      run: |
+        cmake -B build-juce -G Ninja \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+          -DMAGDA_BUILD_TESTS=ON \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+    - name: Build JUCE tests
+      run: cmake --build build-juce --target magda_juce_tests --config Debug -j$(nproc)
+
+    - name: Run JUCE tests
+      run: |
+        JUCE_TEST_BIN=$(find build-juce -name "magda_juce_tests" -type f | head -1)
+        if [ -z "$JUCE_TEST_BIN" ]; then
+          echo "magda_juce_tests executable not found"
+          exit 1
+        fi
+
+        xvfb-run -a "$JUCE_TEST_BIN"
+
+    - name: Show ccache statistics
+      run: ccache -s

@@ -98,6 +98,22 @@ struct ClipDisplayInfo {
         return loopEnabled && sourceLength > 0.0;
     }
 
+    double sessionPlayheadToDisplayPosition(double sessionPlayheadSeconds) const {
+        if (sessionPlayheadSeconds < 0.0)
+            return -1.0;
+
+        if (isLooped() && loopLengthSeconds > 0.0) {
+            const double phaseDisplay = loopPhasePositionSeconds - loopStartPositionSeconds;
+            double wrappedDisplay =
+                std::fmod(phaseDisplay + sessionPlayheadSeconds, loopLengthSeconds);
+            if (wrappedDisplay < 0.0)
+                wrappedDisplay += loopLengthSeconds;
+            return loopStartPositionSeconds + wrappedDisplay;
+        }
+
+        return offsetPositionSeconds + sessionPlayheadSeconds;
+    }
+
     // Convert a timeline position (relative to display anchor = file start) to absolute source file
     // time
     double displayPositionToSourceTime(double timelinePos) const {
@@ -130,7 +146,7 @@ struct ClipDisplayInfo {
 
         // Auto-tempo display info (using centralized ClipInfo methods)
         d.autoTempo = clip.autoTempo;
-        d.lengthBeats = clip.lengthBeats;
+        d.lengthBeats = clip.placement.lengthBeats;
         d.loopLengthBeats = clip.loopLengthBeats;
         d.startBeats = clip.getStartBeats(bpm);
         d.endBeats = clip.getEndBeats(bpm);
@@ -162,16 +178,16 @@ struct ClipDisplayInfo {
         //
         // AutoTempo invariant: TE stretches the source so 1 source beat == 1
         // timeline beat. Therefore
-        //     timelineSeconds = sourceSeconds × (sourceBPM / projectBPM)
+        //     timelineSeconds = sourceSeconds × (source interpretation BPM / projectBPM)
         // The earlier branch I added used the inverted ratio (projectBPM /
-        // sourceBPM), which is what made the green loop bracket span ~9
+        // source interpretation BPM), which is what made the green loop bracket span ~9
         // bars in the user's screenshot when lengthBeats said 4 bars.
         // Issue #1157.
         //
         // For manual stretch: timelineSeconds = sourceSeconds / speedRatio.
         auto srcToTimeline = [&](double sourceDelta) -> double {
-            if (clip.autoTempo && clip.sourceBPM > 0.0 && bpm > 0.0) {
-                return sourceDelta * clip.sourceBPM / bpm;
+            if (clip.autoTempo && clip.audio().interpretation.bpm > 0.0 && bpm > 0.0) {
+                return sourceDelta * clip.audio().interpretation.bpm / bpm;
             }
             if (clip.autoTempo && clipLoopLength > 0.0 && clip.loopLengthBeats > 0.0 && bpm > 0.0) {
                 return sourceDelta * (clip.loopLengthBeats * 60.0 / bpm) / clipLoopLength;

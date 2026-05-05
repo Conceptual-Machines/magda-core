@@ -20,7 +20,8 @@ TEST_CASE("Audio clip - Stretch factor basics", "[audio][clip][stretch]") {
 
     SECTION("Default stretch factor is 1.0") {
         ClipInfo clip;
-        clip.audioFilePath = "test.wav";
+        clip.setAudioContent();
+        clip.audio().source.filePath = "test.wav";
         clip.length = 4.0;
         clip.speedRatio = 1.0;
 
@@ -31,7 +32,8 @@ TEST_CASE("Audio clip - Stretch factor basics", "[audio][clip][stretch]") {
 
     SECTION("Stretch factor affects file time window") {
         ClipInfo clip;
-        clip.audioFilePath = "test.wav";
+        clip.setAudioContent();
+        clip.audio().source.filePath = "test.wav";
         clip.offset = 0.0;
         clip.length = 4.0;
         clip.speedRatio = 2.0;  // 2x faster
@@ -45,7 +47,8 @@ TEST_CASE("Audio clip - Stretch factor basics", "[audio][clip][stretch]") {
 
     SECTION("Stretch factor 0.5 = 2x slower") {
         ClipInfo clip;
-        clip.audioFilePath = "test.wav";
+        clip.setAudioContent();
+        clip.audio().source.filePath = "test.wav";
         clip.offset = 0.0;
         clip.length = 8.0;
         clip.speedRatio = 0.5;  // 2x slower
@@ -70,7 +73,7 @@ TEST_CASE("ClipManager - setSpeedRatio clamping", "[audio][clip][stretch]") {
 
         const auto* clip = ClipManager::getInstance().getClip(clipId);
         REQUIRE(clip != nullptr);
-        REQUIRE(clip->audioFilePath == "test.wav");
+        REQUIRE(clip->audio().source.filePath == "test.wav");
 
         // Test minimum clamp
         ClipManager::getInstance().setSpeedRatio(clipId, 0.1);
@@ -281,8 +284,8 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
 
     SECTION("Multiple stretch events maintain fixed right edge") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
-        clip.audioFilePath = "test.wav";
+        clip.setAudioContent();
+        clip.audio().source.filePath = "test.wav";
         clip.offset = 0.0;
         clip.startTime = 10.0;
         clip.length = 5.0;
@@ -336,8 +339,8 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
 
     SECTION("Stretch factor clamping doesn't break right edge anchoring") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
-        clip.audioFilePath = "test.wav";
+        clip.setAudioContent();
+        clip.audio().source.filePath = "test.wav";
         clip.offset = 0.0;
         clip.startTime = 5.0;
         clip.length = 2.0;
@@ -364,8 +367,8 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
 
     SECTION("Stretch with pre-stretched audio maintains correct calculations") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
-        clip.audioFilePath = "test.wav";
+        clip.setAudioContent();
+        clip.audio().source.filePath = "test.wav";
         clip.offset = 0.0;
         clip.startTime = 20.0;
         clip.length = 10.0;

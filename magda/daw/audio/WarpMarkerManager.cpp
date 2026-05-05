@@ -40,7 +40,7 @@ void WarpMarkerManager::setTransientSensitivity(
     te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId, ClipId clipId,
     float sensitivity) {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty())
+    if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty())
         return;
 
     te::WaveAudioClip* audioClipPtr = findWaveAudioClip(edit, clipIdToEngineId, clipId);
@@ -53,10 +53,11 @@ void WarpMarkerManager::setTransientSensitivity(
 
     // Clear cache so the next poll picks up fresh results.
     // Keep clipId in detectionStarted_ since detectTransients() already started the job.
-    AudioThumbnailManager::getInstance().clearCachedTransients(clip->audioFilePath);
+    AudioThumbnailManager::getInstance().clearCachedTransients(clip->audio().source.filePath);
     detectionStarted_.insert(clipId);
 
-    DBG("WarpMarkerManager: set sensitivity=" << sensitivity << " for " << clip->audioFilePath);
+    DBG("WarpMarkerManager: set sensitivity=" << sensitivity << " for "
+                                              << clip->audio().source.filePath);
 }
 
 bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
@@ -64,13 +65,13 @@ bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
                                           ClipId clipId) {
     // Get clip info for file path
     const auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty()) {
+    if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty()) {
         return false;
     }
 
     // Check cache first
     auto& thumbnailManager = AudioThumbnailManager::getInstance();
-    if (thumbnailManager.getCachedTransients(clip->audioFilePath) != nullptr) {
+    if (thumbnailManager.getCachedTransients(clip->audio().source.filePath) != nullptr) {
         return true;
     }
 
@@ -103,9 +104,9 @@ bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
             times.add(tp.inSeconds());
         }
 
-        thumbnailManager.cacheTransients(clip->audioFilePath, times);
+        thumbnailManager.cacheTransients(clip->audio().source.filePath, times);
         DBG("WarpMarkerManager: Cached " << times.size() << " transients for "
-                                         << clip->audioFilePath);
+                                         << clip->audio().source.filePath);
         return true;
     }
 
@@ -134,10 +135,10 @@ void WarpMarkerManager::enableWarp(te::Edit& edit,
 
     // Get cached transients from AudioThumbnailManager
     auto* cachedTransients =
-        AudioThumbnailManager::getInstance().getCachedTransients(clip->audioFilePath);
+        AudioThumbnailManager::getInstance().getCachedTransients(clip->audio().source.filePath);
     DBG("WarpMarkerManager::enableWarp cachedTransients="
         << (cachedTransients ? juce::String(cachedTransients->size()) : "null")
-        << " file=" << clip->audioFilePath << " offset=" << clipOffset);
+        << " file=" << clip->audio().source.filePath << " offset=" << clipOffset);
     if (cachedTransients) {
         // Insert identity-mapped markers at each transient position within the visible range
         double visibleEnd = clipOffset + clip->length * clip->speedRatio;

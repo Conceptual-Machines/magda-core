@@ -19,7 +19,7 @@ TEST_CASE("MidiOffset - Basic offset behavior", "[midi][offset]") {
 
     SECTION("Offset shifts visible note window") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;
         clip.length = 4.0;  // 4 seconds = 8 beats at 120 BPM
         clip.midiOffset = 0.0;
@@ -61,7 +61,7 @@ TEST_CASE("MidiOffset - Basic offset behavior", "[midi][offset]") {
 
     SECTION("Offset doesn't modify note data") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.midiOffset = 0.0;
@@ -140,7 +140,7 @@ TEST_CASE("MidiOffset - Display position calculation", "[midi][offset][display]"
 
     SECTION("Notes shift left by offset amount in display") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 10.0;  // Timeline position
         clip.length = 4.0;
         clip.midiOffset = 2.0;  // Skip first 2 beats
@@ -164,7 +164,7 @@ TEST_CASE("MidiOffset - Display position calculation", "[midi][offset][display]"
 
     SECTION("Note before offset should be identified") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.midiOffset = 3.0;
@@ -197,7 +197,7 @@ TEST_CASE("MidiOffset - Arrangement preview with offset", "[midi][offset][previe
 
     SECTION("Preview shows only visible notes within offset range") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;
         clip.length = 2.0;  // 2 seconds = 4 beats at 120 BPM
         clip.midiOffset = 2.0;
@@ -240,7 +240,7 @@ TEST_CASE("MidiOffset - Arrangement preview with offset", "[midi][offset][previe
     SECTION("Split clips show different content in preview") {
         // Simulate split scenario: L, C, R clips from same source
         ClipInfo sourceClip;
-        sourceClip.type = ClipType::MIDI;
+        sourceClip.setMidiContent();
         sourceClip.startTime = 0.0;
         sourceClip.length = 6.0;  // 6 seconds = 12 beats
         sourceClip.midiOffset = 0.0;
@@ -327,7 +327,7 @@ TEST_CASE("MidiOffset - Edge cases", "[midi][offset][edge]") {
 
     SECTION("Offset equals clip length shows no notes") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;
         clip.length = 2.0;      // 4 beats
         clip.midiOffset = 4.0;  // Same as clip length in beats
@@ -371,7 +371,7 @@ TEST_CASE("MidiOffset - Edge cases", "[midi][offset][edge]") {
 
     SECTION("Partial note visibility at offset boundary") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;
         clip.length = 2.0;  // 4 beats
         clip.midiOffset = 2.0;

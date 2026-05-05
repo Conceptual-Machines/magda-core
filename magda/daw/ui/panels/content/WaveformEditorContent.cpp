@@ -123,12 +123,32 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         // playhead falls within this clip's time range.
         double clipEnd = clip->startTime + clip->length;
 
-        auto arrangementToSourceX = [&](double arrangementTime) -> int {
-            // Map arrangement time to position within source file
-            double relTime = arrangementTime - clip->startTime;
-            double sourcePos = di.offsetPositionSeconds + relTime;
-            return static_cast<int>(sourcePos * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
+        auto timelineDeltaToSourceDelta = [&](double timelineDelta) {
+            double projectBpm = owner_.timeRuler_ ? owner_.timeRuler_->getTempo() : 120.0;
+            double sourceDuration = clip->audio().source.durationSeconds;
+            if (clip->autoTempo && clip->audio().interpretation.totalBeats > 0.0 &&
+                sourceDuration > 0.0 && projectBpm > 0.0) {
+                double projectBeats = timelineDelta * projectBpm / 60.0;
+                return projectBeats * sourceDuration / clip->audio().interpretation.totalBeats;
+            }
+            return di.timelineToSource(timelineDelta);
+        };
+
+        auto sourcePositionToX = [&](double sourcePos) -> int {
+            double displayPos = di.sourceToTimeline(sourcePos);
+            return static_cast<int>(displayPos * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
                    scrollX;
+        };
+
+        auto displayPositionToX = [&](double displayPos) -> int {
+            return static_cast<int>(displayPos * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
+                   scrollX;
+        };
+
+        auto arrangementToSourceX = [&](double arrangementTime) -> int {
+            double relTime = arrangementTime - clip->startTime;
+            double sourcePos = clip->offset + timelineDeltaToSourceDelta(relTime);
+            return sourcePositionToX(sourcePos);
         };
 
         // Draw edit cursor (triangle at top) — only when inside clip range
@@ -151,32 +171,13 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
             double sessionPos = clip->sessionPlayheadPos;
 
             if (sessionPos >= 0.0) {
-                {
-                    double relPos = sessionPos;
-                    if (clip->loopEnabled && di.loopLengthSeconds > 0.0) {
-                        double phaseShift = di.offsetPositionSeconds - di.loopStartPositionSeconds;
-                        double wrapped = std::fmod(phaseShift + relPos, di.loopLengthSeconds);
-                        if (wrapped < 0.0)
-                            wrapped += di.loopLengthSeconds;
-                        double displayPos = di.loopStartPositionSeconds + wrapped;
-                        int playX = static_cast<int>(displayPos * owner_.horizontalZoom_) +
-                                    GRID_LEFT_PADDING - scrollX;
-                        if (playX >= 0 && playX < getWidth()) {
-                            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
-                            g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
-                                       static_cast<float>(getHeight()), 1.5f);
-                        }
-                    } else {
-                        // Non-looping session clip
-                        double sourcePos = di.offsetPositionSeconds + relPos;
-                        int playX = static_cast<int>(sourcePos * owner_.horizontalZoom_) +
-                                    GRID_LEFT_PADDING - scrollX;
-                        if (playX >= 0 && playX < getWidth()) {
-                            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
-                            g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
-                                       static_cast<float>(getHeight()), 1.5f);
-                        }
-                    }
+                const int playX =
+                    displayPositionToX(di.sessionPlayheadToDisplayPosition(sessionPos));
+
+                if (playX >= 0 && playX < getWidth()) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                    g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
+                               static_cast<float>(getHeight()), 1.5f);
                 }
                 // Either way, don't fall through to arrangement mode
                 return;
@@ -190,15 +191,14 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                 return;
 
             // Wrap playhead inside loop region when looping is enabled
-            if (clip->loopEnabled && di.loopLengthSeconds > 0.0) {
+            if (di.loopEnabled && di.loopLengthSeconds > 0.0 && di.sourceLength > 0.0) {
                 double relPos = playPos - clip->startTime;
-                double phaseShift = di.offsetPositionSeconds - di.loopStartPositionSeconds;
-                double wrapped = std::fmod(phaseShift + relPos, di.loopLengthSeconds);
+                double sourceDelta = timelineDeltaToSourceDelta(relPos);
+                double wrapped = std::fmod(di.loopOffset + sourceDelta, di.sourceLength);
                 if (wrapped < 0.0)
-                    wrapped += di.loopLengthSeconds;
-                double displayPos = di.loopStartPositionSeconds + wrapped;
-                int playX = static_cast<int>(displayPos * owner_.horizontalZoom_) +
-                            GRID_LEFT_PADDING - scrollX;
+                    wrapped += di.sourceLength;
+                double sourcePos = di.loopStart + wrapped;
+                int playX = sourcePositionToX(sourcePos);
                 if (playX >= 0 && playX < getWidth()) {
                     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
                     g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
@@ -559,7 +559,7 @@ WaveformEditorContent::WaveformEditorContent() {
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClip);
-        if (clip && clip->type == magda::ClipType::Audio) {
+        if (clip && clip->isAudio()) {
             setClip(selectedClip);
         }
     }
@@ -648,7 +648,7 @@ void WaveformEditorContent::onActivated() {
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClip);
-        if (clip && clip->type == magda::ClipType::Audio) {
+        if (clip && clip->isAudio()) {
             setClip(selectedClip);
         }
     }
@@ -832,10 +832,9 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
         }
 
         // Check if cached transients were invalidated (e.g. sensitivity changed)
-        if (transientsCached_ && clip->type == magda::ClipType::Audio &&
-            !clip->audioFilePath.isEmpty()) {
+        if (transientsCached_ && clip->isAudio() && !clip->audio().source.filePath.isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
-                clip->audioFilePath);
+                clip->audio().source.filePath);
             if (!cached) {
                 // Cache was cleared — restart polling for new transients
                 transientsCached_ = false;
@@ -855,7 +854,7 @@ void WaveformEditorContent::clipSelectionChanged(magda::ClipId clipId) {
     // Auto-switch to the selected clip if it's an audio clip
     if (clipId != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
-        if (clip && clip->type == magda::ClipType::Audio) {
+        if (clip && clip->isAudio()) {
             setClip(clipId);
         }
     }
@@ -1009,9 +1008,9 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
         }
 
         // Check for cached transients or start polling
-        if (clip && clip->type == magda::ClipType::Audio && !clip->audioFilePath.isEmpty()) {
+        if (clip && clip->isAudio() && !clip->audio().source.filePath.isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
-                clip->audioFilePath);
+                clip->audio().source.filePath);
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
                 transientsCached_ = true;
@@ -1104,9 +1103,9 @@ void WaveformEditorContent::updateGridSize() {
             if (relativeTimeMode_) {
                 // In relative mode, ruler spans the full source file duration
                 double fileDuration = 0.0;
-                if (clip->audioFilePath.isNotEmpty()) {
+                if (clip->audio().source.filePath.isNotEmpty()) {
                     auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                        clip->audioFilePath);
+                        clip->audio().source.filePath);
                     if (thumbnail) {
                         fileDuration = thumbnail->getTotalLength();
                     }
@@ -1167,9 +1166,9 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
 
     // Get file duration for source extent calculation
     double fileDuration = 0.0;
-    if (clip.audioFilePath.isNotEmpty()) {
+    if (clip.audio().source.filePath.isNotEmpty()) {
         auto* thumbnail =
-            magda::AudioThumbnailManager::getInstance().getThumbnail(clip.audioFilePath);
+            magda::AudioThumbnailManager::getInstance().getThumbnail(clip.audio().source.filePath);
         if (thumbnail) {
             fileDuration = thumbnail->getTotalLength();
         }
@@ -1314,9 +1313,9 @@ void WaveformEditorContent::timerCallback() {
 
     if (bridge->getTransientTimes(editingClipId_)) {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-        if (clip && !clip->audioFilePath.isEmpty()) {
+        if (clip && !clip->audio().source.filePath.isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
-                clip->audioFilePath);
+                clip->audio().source.filePath);
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
             }

@@ -6,10 +6,10 @@
 #include "magda/daw/core/ClipManager.hpp"
 
 // Issue #1157: session/autoTempo audio clips have a single canonical update
-// path (ClipManager::applyAudioClipBeats) that separates DETECTED metadata
-// (sourceBPM, sourceNumBeats) from USER INTENT (lengthBeats, loop region).
+// path (ClipManager::applyAudioClipBeats) that separates audio source facts,
+// source interpretation, and user clip placement.
 // These tests pin the contract:
-//   - BPM corrections never resize the clip on the timeline.
+//   - BPM corrections never resize the clip on the timeline or move the source region in seconds.
 //   - Beat-length edits never touch detected BPM.
 //   - lengthBeats / length / loopLengthBeats / loopLength are atomically
 //     consistent after every call.
@@ -27,16 +27,17 @@ ClipInfo makeSessionAutoTempoClip(ClipId id = 1) {
     ClipInfo clip;
     clip.id = id;
     clip.trackId = 1;
-    clip.type = ClipType::Audio;
+    clip.setAudioContent();
     clip.view = ClipView::Session;
-    clip.audioFilePath = "fake.wav";
+    clip.audio().source.filePath = "fake.wav";
+    clip.audio().source.durationSeconds = FILE_DURATION;
     clip.autoTempo = true;
     clip.loopEnabled = true;
     clip.speedRatio = 1.0;
 
     // Pretend detection has already populated source metadata.
-    clip.sourceBPM = DETECTED_BPM;
-    clip.sourceNumBeats = DETECTED_NUM_BEATS;
+    clip.audio().interpretation.bpm = DETECTED_BPM;
+    clip.audio().interpretation.totalBeats = DETECTED_NUM_BEATS;
 
     // User intent: clip occupies 4 timeline beats, loop covers the full file.
     clip.lengthBeats = 4.0;
@@ -46,14 +47,34 @@ ClipInfo makeSessionAutoTempoClip(ClipId id = 1) {
     // Time-domain values consistent with the above (canonical setter would
     // recompute these; we seed them so reads-without-call still succeed).
     clip.length = clip.lengthBeats * 60.0 / PROJECT_BPM;
-    clip.loopLength = clip.loopLengthBeats * 60.0 / clip.sourceBPM;
+    clip.loopLength = clip.loopLengthBeats * 60.0 / clip.audio().interpretation.bpm;
     clip.loopStart = 0.0;
     clip.startTime = 0.0;
     return clip;
 }
+
+double inspectorLoopEndReadoutBeats(const ClipInfo& clip, double fallbackBPM) {
+    double loopBpm = fallbackBPM;
+    if (clip.isAudio() && clip.audio().interpretation.bpm > 0.0)
+        loopBpm = clip.audio().interpretation.bpm;
+    if (loopBpm <= 0.0)
+        loopBpm = 120.0;
+
+    const double loopStartBeats = clip.loopStart * loopBpm / 60.0;
+    double loopLengthDisplayBeats = 0.0;
+    if (clip.autoTempo && clip.loopLengthBeats > 0.0) {
+        loopLengthDisplayBeats = clip.loopLengthBeats;
+    } else {
+        const double sourceLength =
+            clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
+        loopLengthDisplayBeats = sourceLength * loopBpm / 60.0;
+    }
+    return loopStartBeats + loopLengthDisplayBeats;
+}
 }  // namespace
 
-TEST_CASE("applyAudioClipBeats - BPM correction is metadata-only", "[clip][bpm][issue-1157]") {
+TEST_CASE("applyAudioClipBeats - BPM correction preserves source region seconds",
+          "[clip][bpm][issue-1157]") {
     ClipManager::getInstance().shutdown();
 
     auto seed = makeSessionAutoTempoClip();
@@ -61,34 +82,34 @@ TEST_CASE("applyAudioClipBeats - BPM correction is metadata-only", "[clip][bpm][
 
     SECTION("Doubling BPM keeps timeline length and lengthBeats unchanged") {
         ClipManager::AudioClipBeatsUpdate u;
-        u.sourceBPM = 240.0;
-        u.sourceNumBeats = FILE_DURATION * 240.0 / 60.0;  // 8 beats at 240 BPM
+        u.interpretationBpm = 240.0;
+        u.interpretationTotalBeats = FILE_DURATION * 240.0 / 60.0;  // 8 beats at 240 BPM
         ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
 
         const auto* c = ClipManager::getInstance().getClip(seed.id);
         REQUIRE(c != nullptr);
-        // Detected metadata updated.
-        REQUIRE(c->sourceBPM == Approx(240.0));
-        REQUIRE(c->sourceNumBeats == Approx(8.0));
-        // User intent untouched.
+        // Source fact preserved; interpretation updated.
+        REQUIRE(c->audio().source.durationSeconds == Approx(FILE_DURATION));
+        REQUIRE(c->audio().interpretation.bpm == Approx(240.0));
+        REQUIRE(c->audio().interpretation.totalBeats == Approx(8.0));
+        // User timeline intent untouched.
         REQUIRE(c->lengthBeats == Approx(4.0));
-        REQUIRE(c->loopLengthBeats == Approx(4.0));
+        // Source region in seconds is untouched, so its source-beat value changes with BPM.
+        REQUIRE(c->loopLengthBeats == Approx(8.0));
         // Timeline length untouched (still 4 project beats = 2.0 s at 120 BPM).
         REQUIRE(c->length == Approx(2.0));
-        // Source-domain loop length DID update (4 source beats at 240 BPM = 1.0 s
-        // of source audio, half what it was). This is correct: TE will play the
-        // shorter region twice across the same timeline span.
-        REQUIRE(c->loopLength == Approx(1.0));
+        REQUIRE(c->loopLength == Approx(FILE_DURATION));
     }
 
     SECTION("Halving BPM keeps timeline length unchanged") {
         ClipManager::AudioClipBeatsUpdate u;
-        u.sourceBPM = 60.0;
-        u.sourceNumBeats = FILE_DURATION * 60.0 / 60.0;  // 2 beats at 60 BPM
+        u.interpretationBpm = 60.0;
+        u.interpretationTotalBeats = FILE_DURATION * 60.0 / 60.0;  // 2 beats at 60 BPM
         ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
 
         const auto* c = ClipManager::getInstance().getClip(seed.id);
-        REQUIRE(c->sourceBPM == Approx(60.0));
+        REQUIRE(c->audio().source.durationSeconds == Approx(FILE_DURATION));
+        REQUIRE(c->audio().interpretation.bpm == Approx(60.0));
         REQUIRE(c->lengthBeats == Approx(4.0));
         REQUIRE(c->length == Approx(2.0));
     }
@@ -101,32 +122,189 @@ TEST_CASE("applyAudioClipBeats - beat-length edit preserves detected BPM",
     auto seed = makeSessionAutoTempoClip();
     ClipManager::getInstance().restoreClip(seed);
 
-    SECTION("Stretching to 8 beats does not change sourceBPM") {
+    SECTION("Stretching to 8 beats does not change source interpretation BPM") {
         ClipManager::AudioClipBeatsUpdate u;
         u.lengthBeats = 8.0;
-        u.loopLengthBeats = 8.0;
         ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
 
         const auto* c = ClipManager::getInstance().getClip(seed.id);
         REQUIRE(c->lengthBeats == Approx(8.0));
         REQUIRE(c->length == Approx(4.0));  // 8 beats at 120 BPM
         // Detected metadata MUST NOT have changed.
-        REQUIRE(c->sourceBPM == Approx(DETECTED_BPM));
-        REQUIRE(c->sourceNumBeats == Approx(DETECTED_NUM_BEATS));
+        REQUIRE(c->audio().interpretation.bpm == Approx(DETECTED_BPM));
+        REQUIRE(c->audio().interpretation.totalBeats == Approx(DETECTED_NUM_BEATS));
     }
 
-    SECTION("Halving target length does not change sourceBPM") {
+    SECTION("Halving target length does not change source interpretation BPM") {
         ClipManager::AudioClipBeatsUpdate u;
         u.lengthBeats = 2.0;
-        u.loopLengthBeats = 2.0;
         ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
 
         const auto* c = ClipManager::getInstance().getClip(seed.id);
         REQUIRE(c->lengthBeats == Approx(2.0));
         REQUIRE(c->length == Approx(1.0));
-        REQUIRE(c->sourceBPM == Approx(DETECTED_BPM));
-        REQUIRE(c->sourceNumBeats == Approx(DETECTED_NUM_BEATS));
+        REQUIRE(c->audio().interpretation.bpm == Approx(DETECTED_BPM));
+        REQUIRE(c->audio().interpretation.totalBeats == Approx(DETECTED_NUM_BEATS));
     }
+}
+
+TEST_CASE("loop-length edit does not rewrite source total beats", "[clip][bpm][issue-1157]") {
+    ClipManager::getInstance().shutdown();
+
+    auto seed = makeSessionAutoTempoClip();
+    ClipManager::getInstance().restoreClip(seed);
+
+    SECTION("Total beats is source interpretation, not loop length") {
+        ClipManager::AudioClipBeatsUpdate u;
+        u.loopLengthBeats = 8.0;
+        ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
+
+        const auto* c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c != nullptr);
+        REQUIRE(c->loopLengthBeats == Approx(8.0));
+        REQUIRE(c->audio().interpretation.totalBeats == Approx(DETECTED_NUM_BEATS));
+        REQUIRE_FALSE(c->audio().interpretation.totalBeatsLocked);
+    }
+
+    SECTION("Manual total beats override remains independent from future loop edits") {
+        ClipManager::AudioClipBeatsUpdate manual;
+        manual.interpretationTotalBeats = 13.0;
+        manual.lockInterpretationTotalBeats = true;
+        ClipManager::getInstance().applyAudioClipBeats(seed.id, manual, PROJECT_BPM);
+
+        ClipManager::AudioClipBeatsUpdate loopEdit;
+        loopEdit.loopLengthBeats = 8.0;
+        ClipManager::getInstance().applyAudioClipBeats(seed.id, loopEdit, PROJECT_BPM);
+
+        const auto* c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c != nullptr);
+        REQUIRE(c->loopLengthBeats == Approx(8.0));
+        REQUIRE(c->audio().interpretation.totalBeats == Approx(13.0));
+        REQUIRE(c->audio().interpretation.totalBeatsLocked);
+    }
+}
+
+TEST_CASE("source beats edits update inspector loop end readout",
+          "[clip][bpm][inspector][issue-1157]") {
+    ClipManager::getInstance().shutdown();
+
+    constexpr double sourceBPM = 172.0;
+    constexpr double sourceBeats = 16.0;
+    constexpr double sourceDuration = sourceBeats * 60.0 / sourceBPM;
+
+    auto seed = makeSessionAutoTempoClip();
+    seed.audio().source.durationSeconds = sourceDuration;
+    seed.audio().interpretation.bpm = sourceBPM;
+    seed.audio().interpretation.totalBeats = sourceBeats;
+    seed.setPlacementBeats(0.0, 16.0);
+    seed.length = 16.0 * 60.0 / PROJECT_BPM;
+    seed.loopStart = 0.0;
+    seed.loopStartBeats = 0.0;
+    seed.loopLength = sourceDuration;
+    seed.loopLengthBeats = sourceBeats;
+    ClipManager::getInstance().restoreClip(seed);
+
+    auto applySourceBeats = [&](double beats) {
+        ClipManager::AudioClipBeatsUpdate u;
+        u.interpretationTotalBeats = beats;
+        u.interpretationBpm = beats * 60.0 / sourceDuration;
+        u.lockInterpretationTotalBeats = true;
+        ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
+    };
+
+    SECTION("16 beats displays a four-bar loop end") {
+        const auto* c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c != nullptr);
+        REQUIRE(c->loopLengthBeats == Approx(16.0));
+        REQUIRE(inspectorLoopEndReadoutBeats(*c, PROJECT_BPM) == Approx(16.0));
+    }
+
+    SECTION("12 then 8 beats updates the loop end without changing source region seconds") {
+        applySourceBeats(12.0);
+        const auto* c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c != nullptr);
+        REQUIRE(c->audio().interpretation.totalBeats == Approx(12.0));
+        REQUIRE(c->loopLength == Approx(sourceDuration));
+        REQUIRE(c->loopLengthBeats == Approx(12.0));
+        REQUIRE(inspectorLoopEndReadoutBeats(*c, PROJECT_BPM) == Approx(12.0));
+
+        applySourceBeats(8.0);
+        c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c != nullptr);
+        REQUIRE(c->audio().interpretation.totalBeats == Approx(8.0));
+        REQUIRE(c->loopLength == Approx(sourceDuration));
+        REQUIRE(c->loopLengthBeats == Approx(8.0));
+        REQUIRE(inspectorLoopEndReadoutBeats(*c, PROJECT_BPM) == Approx(8.0));
+    }
+}
+
+TEST_CASE("setLengthBeats extends placement without growing source loop or interpretation",
+          "[clip][bpm][issue-1157]") {
+    ClipManager::getInstance().shutdown();
+
+    auto seed = makeSessionAutoTempoClip();
+    ClipManager::getInstance().restoreClip(seed);
+
+    ClipManager::getInstance().setLengthBeats(seed.id, 8.0, PROJECT_BPM);
+
+    const auto* c = ClipManager::getInstance().getClip(seed.id);
+    REQUIRE(c != nullptr);
+    REQUIRE(c->lengthBeats == Approx(8.0));
+    REQUIRE(c->placement.lengthBeats == Approx(8.0));
+    REQUIRE(c->length == Approx(4.0));
+
+    REQUIRE(c->loopLengthBeats == Approx(4.0));
+    REQUIRE(c->loopLength == Approx(2.0));
+    REQUIRE(c->audio().interpretation.bpm == Approx(DETECTED_BPM));
+    REQUIRE(c->audio().interpretation.totalBeats == Approx(DETECTED_NUM_BEATS));
+    REQUIRE(c->audio().source.durationSeconds == Approx(FILE_DURATION));
+}
+
+TEST_CASE("late source metadata does not overwrite extended clip placement",
+          "[clip][bpm][issue-1157]") {
+    ClipManager::getInstance().shutdown();
+
+    auto clip = makeSessionAutoTempoClip();
+    clip.audio().interpretation.bpm = 0.0;
+    clip.audio().interpretation.totalBeats = 0.0;
+    clip.audio().source.durationSeconds = 0.0;
+    clip.setPlacementBeats(0.0, 356.0);  // 89 bars at 4/4
+    clip.length = 356.0 * 60.0 / PROJECT_BPM;
+    clip.loopLengthBeats = 8.0;
+    clip.loopLength = 8.0 * 60.0 / 172.0;
+
+    clip.setSourceMetadata(8.0, 172.0);
+
+    REQUIRE(clip.placement.lengthBeats == Approx(356.0));
+    REQUIRE(clip.lengthBeats == Approx(356.0));
+    REQUIRE(clip.loopLengthBeats == Approx(8.0));
+    REQUIRE(clip.audio().interpretation.bpm == Approx(172.0));
+    REQUIRE(clip.audio().interpretation.totalBeats == Approx(8.0));
+}
+
+TEST_CASE("resizeClip extends looped beat-mode clip placement only", "[clip][bpm][issue-1157]") {
+    ClipManager::getInstance().shutdown();
+
+    auto seed = makeSessionAutoTempoClip();
+    seed.audio().interpretation.bpm = 172.0;
+    seed.audio().interpretation.totalBeats = 8.0;
+    seed.audio().source.durationSeconds = 8.0 * 60.0 / 172.0;
+    seed.setPlacementBeats(0.0, 8.0);
+    seed.length = 8.0 * 60.0 / PROJECT_BPM;
+    seed.loopLengthBeats = 8.0;
+    seed.loopLength = 8.0 * 60.0 / 172.0;
+    ClipManager::getInstance().restoreClip(seed);
+
+    ClipManager::getInstance().resizeClip(seed.id, 356.0 * 60.0 / PROJECT_BPM, false, PROJECT_BPM);
+
+    const auto* c = ClipManager::getInstance().getClip(seed.id);
+    REQUIRE(c != nullptr);
+    REQUIRE(c->placement.lengthBeats == Approx(356.0));
+    REQUIRE(c->lengthBeats == Approx(356.0));
+    REQUIRE(c->loopLengthBeats == Approx(8.0));
+    REQUIRE(c->audio().interpretation.bpm == Approx(172.0));
+    REQUIRE(c->audio().interpretation.totalBeats == Approx(8.0));
+    REQUIRE(c->audio().source.durationSeconds == Approx(8.0 * 60.0 / 172.0));
 }
 
 TEST_CASE("applyAudioClipBeats - all derived fields agree after edit", "[clip][bpm][issue-1157]") {
@@ -139,8 +317,8 @@ TEST_CASE("applyAudioClipBeats - all derived fields agree after edit", "[clip][b
     // the inspector and waveform display read length, lengthBeats, loopLength,
     // and loopLengthBeats. They must be consistent after one call.
     ClipManager::AudioClipBeatsUpdate u;
-    u.sourceBPM = 100.0;
-    u.sourceNumBeats = FILE_DURATION * 100.0 / 60.0;
+    u.interpretationBpm = 100.0;
+    u.interpretationTotalBeats = FILE_DURATION * 100.0 / 60.0;
     u.lengthBeats = 6.0;
     u.loopLengthBeats = 6.0;
     ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
@@ -148,10 +326,37 @@ TEST_CASE("applyAudioClipBeats - all derived fields agree after edit", "[clip][b
     const auto* c = ClipManager::getInstance().getClip(seed.id);
     // Timeline-domain pair: length must equal lengthBeats * 60 / projectBPM.
     REQUIRE(c->length == Approx(c->lengthBeats * 60.0 / PROJECT_BPM));
-    // Source-domain pair: loopLength must equal loopLengthBeats * 60 / sourceBPM.
-    REQUIRE(c->loopLength == Approx(c->loopLengthBeats * 60.0 / c->sourceBPM));
+    // Source-domain pair: loopLength must equal loopLengthBeats * 60 / source interpretation BPM.
+    REQUIRE(c->loopLength == Approx(c->loopLengthBeats * 60.0 / c->audio().interpretation.bpm));
     // speedRatio is forced to 1.0.
     REQUIRE(c->speedRatio == Approx(1.0));
+}
+
+TEST_CASE("beat-mode phase edits do not mutate loop length", "[clip][bpm][phase]") {
+    ClipManager::getInstance().shutdown();
+
+    auto seed = makeSessionAutoTempoClip();
+    seed.loopEnabled = false;  // BEAT mode owns the active source loop.
+    seed.loopStart = 0.0;
+    seed.loopStartBeats = 0.0;
+    seed.offset = 0.0;
+    seed.offsetBeats = 0.0;
+    seed.loopLengthBeats = 4.0;
+    seed.loopLength = FILE_DURATION;
+    ClipManager::getInstance().restoreClip(seed);
+
+    const double phaseBeats = 1.0;
+    const double phaseSeconds = phaseBeats * 60.0 / DETECTED_BPM;
+    ClipManager::getInstance().setLoopPhase(seed.id, phaseSeconds);
+
+    const auto* c = ClipManager::getInstance().getClip(seed.id);
+    REQUIRE(c != nullptr);
+    REQUIRE(c->offset == Approx(phaseSeconds));
+    REQUIRE(c->offsetBeats == Approx(phaseBeats));
+    REQUIRE(c->loopStart == Approx(0.0));
+    REQUIRE(c->loopStartBeats == Approx(0.0));
+    REQUIRE(c->loopLength == Approx(FILE_DURATION));
+    REQUIRE(c->loopLengthBeats == Approx(4.0));
 }
 
 TEST_CASE("applyAudioClipBeats - no-op for non-autoTempo clips", "[clip][bpm][issue-1157]") {
@@ -173,13 +378,13 @@ TEST_CASE("applyAudioClipBeats - no-op for non-autoTempo clips", "[clip][bpm][is
     REQUIRE(c->length == Approx(1.0));
 }
 
-TEST_CASE("applyAudioClipBeats - sourceBPM unknown leaves source-seconds intact",
+TEST_CASE("applyAudioClipBeats - source interpretation BPM unknown leaves source-seconds intact",
           "[clip][bpm][issue-1157]") {
     ClipManager::getInstance().shutdown();
 
     auto seed = makeSessionAutoTempoClip();
-    seed.sourceBPM = 0.0;       // detection has not yet completed
-    seed.sourceNumBeats = 0.0;  // ditto
+    seed.audio().interpretation.bpm = 0.0;         // detection has not yet completed
+    seed.audio().interpretation.totalBeats = 0.0;  // ditto
     seed.loopLength = 0.0;
     seed.loopStart = 0.0;
     ClipManager::getInstance().restoreClip(seed);
@@ -191,7 +396,7 @@ TEST_CASE("applyAudioClipBeats - sourceBPM unknown leaves source-seconds intact"
     const auto* c = ClipManager::getInstance().getClip(seed.id);
     REQUIRE(c->lengthBeats == Approx(8.0));
     REQUIRE(c->length == Approx(4.0));  // 8 beats at 120 BPM
-    // loopLength stays 0 — we only touch source-domain seconds when sourceBPM
+    // loopLength stays 0 — we only touch source-domain seconds when source interpretation BPM
     // is known. ClipDisplayInfo and TE have fallback paths for the pre-detection
     // window.
     REQUIRE(c->loopLength == Approx(0.0));
@@ -210,9 +415,9 @@ TEST_CASE("setAutoTempo adopts cached detected BPM when clip BPM is project defa
     ClipInfo seed;
     seed.id = 77;
     seed.trackId = 1;
-    seed.type = ClipType::Audio;
+    seed.setAudioContent();
     seed.view = ClipView::Arrangement;
-    seed.audioFilePath = path;
+    seed.audio().source.filePath = path;
     seed.loopEnabled = false;
     seed.autoTempo = false;
     seed.speedRatio = 1.0;
@@ -220,8 +425,8 @@ TEST_CASE("setAutoTempo adopts cached detected BPM when clip BPM is project defa
     seed.length = sourceDuration;
     seed.loopStart = 0.0;
     seed.loopLength = sourceDuration;
-    seed.sourceBPM = PROJECT_BPM;  // defaulted placeholder, not trusted metadata
-    seed.sourceNumBeats = 0.0;
+    seed.audio().interpretation.bpm = PROJECT_BPM;  // defaulted placeholder, not trusted metadata
+    seed.audio().interpretation.totalBeats = 0.0;
     seed.setPlacementBeats(0.0, sourceDuration * PROJECT_BPM / 60.0);
 
     ClipManager::getInstance().restoreClip(seed);
@@ -232,13 +437,44 @@ TEST_CASE("setAutoTempo adopts cached detected BPM when clip BPM is project defa
     const auto* c = ClipManager::getInstance().getClip(seed.id);
     REQUIRE(c != nullptr);
     REQUIRE(c->autoTempo);
-    REQUIRE(c->sourceBPM == Approx(detectedBPM));
-    REQUIRE(c->sourceNumBeats == Approx(expectedSourceBeats));
+    REQUIRE(c->audio().interpretation.bpm == Approx(detectedBPM));
+    REQUIRE(c->audio().interpretation.totalBeats == Approx(expectedSourceBeats));
     REQUIRE(c->lengthBeats == Approx(expectedSourceBeats));
     REQUIRE(c->placement.lengthBeats == Approx(expectedSourceBeats));
     REQUIRE(c->length == Approx(expectedSourceBeats * 60.0 / PROJECT_BPM));
 
     AudioThumbnailManager::getInstance().clearCache();
+}
+
+TEST_CASE("session audio import uses detector when loopInfo is still defaulted",
+          "[clip][bpm][session][issue-1157]") {
+    ClipManager::getInstance().shutdown();
+    AudioThumbnailManager::getInstance().clearCache();
+
+    constexpr double cachedDetectorBPM = 99.0;
+    constexpr double sourceDuration = 5.58141;
+    auto path = juce::File::getCurrentWorkingDirectory().getChildFile(
+        "magda-session-import-cached-bpm.wav");
+    REQUIRE(path.replaceWithText("placeholder"));
+
+    AudioThumbnailManager::getInstance().cacheBPM(path.getFullPathName(), cachedDetectorBPM);
+
+    ClipId clipId = ClipManager::getInstance().createAudioClip(
+        1, 0.0, sourceDuration, path.getFullPathName(), ClipView::Session, PROJECT_BPM);
+
+    const auto* c = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(c != nullptr);
+    REQUIRE(c->view == ClipView::Session);
+    REQUIRE(c->autoTempo);
+    REQUIRE(c->loopEnabled);
+    REQUIRE(c->audio().interpretation.bpm == Approx(cachedDetectorBPM));
+    REQUIRE(c->audio().interpretation.totalBeats ==
+            Approx(sourceDuration * cachedDetectorBPM / 60.0));
+    REQUIRE(c->loopLength == Approx(sourceDuration));
+    REQUIRE(c->loopLengthBeats == Approx(sourceDuration * cachedDetectorBPM / 60.0));
+
+    AudioThumbnailManager::getInstance().clearCache();
+    path.deleteFile();
 }
 
 // ============================================================================
@@ -251,9 +487,9 @@ TEST_CASE("setAutoTempo adopts cached detected BPM when clip BPM is project defa
 //   - project BPM up → autoTempo clip's lengthBeats unchanged, length
 //     contracts proportionally.
 //   - project BPM down → length expands, beats unchanged.
-//   - sourceBPM correction → lengthBeats AND length unchanged on the
-//     timeline (BPM is just metadata); only the source-domain loop seconds
-//     change because the source's beat-to-seconds ratio shifted.
+//   - source interpretation BPM correction → lengthBeats AND length unchanged on the
+//     timeline; source-region seconds stay fixed, and their source-beat readouts
+//     follow the new interpretation.
 //   - accessor consistency: getTimelineLength matches the cached length
 //     after every operation.
 // ============================================================================
@@ -301,54 +537,55 @@ TEST_CASE("Project-BPM change preserves autoTempo lengthBeats", "[clip][bpm][iss
     }
 }
 
-TEST_CASE("sourceBPM correction does not move the clip on the timeline",
+TEST_CASE("source interpretation BPM correction does not move the clip on the timeline",
           "[clip][bpm][issue-1157]") {
     ClipManager::getInstance().shutdown();
 
     auto seed = makeSessionAutoTempoClip();
     ClipManager::getInstance().restoreClip(seed);
 
-    // Initial state: clip is 24 timeline beats long, file detected at 120 BPM,
-    // loop covers all 16 source beats (loopLengthBeats matches sourceNumBeats).
+    // Initial state: clip is 24 timeline beats long, file interpreted at 120 BPM,
+    // loop covers an 8-second source region. Its beat readout is 16 beats at 120 BPM.
     seed.lengthBeats = 24.0;
     seed.loopLengthBeats = 16.0;
-    seed.sourceBPM = 120.0;
-    seed.sourceNumBeats = 16.0;
+    seed.audio().interpretation.bpm = 120.0;
+    seed.audio().interpretation.totalBeats = 16.0;
     ClipManager::getInstance().restoreClip(
         seed);  // no-op (already there) — values applied directly
     ClipManager::AudioClipBeatsUpdate prime;
     prime.lengthBeats = 24.0;
     prime.loopLengthBeats = 16.0;
-    prime.sourceBPM = 120.0;
-    prime.sourceNumBeats = 16.0;
+    prime.interpretationBpm = 120.0;
+    prime.interpretationTotalBeats = 16.0;
     ClipManager::getInstance().applyAudioClipBeats(seed.id, prime, PROJECT_BPM);
 
     const auto* c = ClipManager::getInstance().getClip(seed.id);
     REQUIRE(c->length == Approx(12.0));  // 24 × 60 / 120
 
-    SECTION("Doubling sourceBPM: timeline length unchanged, source seconds halve") {
+    SECTION("Doubling source interpretation BPM: timeline length unchanged, loop beats follow") {
         ClipManager::AudioClipBeatsUpdate u;
-        u.sourceBPM = 240.0;
-        u.sourceNumBeats = 32.0;
+        u.interpretationBpm = 240.0;
+        u.interpretationTotalBeats = 32.0;
         ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
 
         c = ClipManager::getInstance().getClip(seed.id);
         REQUIRE(c->lengthBeats == Approx(24.0));
         REQUIRE(c->length == Approx(12.0));
-        REQUIRE(c->loopLengthBeats == Approx(16.0));
-        REQUIRE(c->loopLength == Approx(4.0));  // 16 × 60/240
+        REQUIRE(c->loopLength == Approx(8.0));
+        REQUIRE(c->loopLengthBeats == Approx(32.0));  // 8s × 240/60
     }
 
-    SECTION("Halving sourceBPM: timeline length unchanged, source seconds double") {
+    SECTION("Halving source interpretation BPM: timeline length unchanged, loop beats follow") {
         ClipManager::AudioClipBeatsUpdate u;
-        u.sourceBPM = 60.0;
-        u.sourceNumBeats = 8.0;
+        u.interpretationBpm = 60.0;
+        u.interpretationTotalBeats = 8.0;
         ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
 
         c = ClipManager::getInstance().getClip(seed.id);
         REQUIRE(c->lengthBeats == Approx(24.0));
         REQUIRE(c->length == Approx(12.0));
-        REQUIRE(c->loopLength == Approx(16.0));  // 16 × 60/60
+        REQUIRE(c->loopLength == Approx(8.0));
+        REQUIRE(c->loopLengthBeats == Approx(8.0));  // 8s × 60/60
     }
 }
 
