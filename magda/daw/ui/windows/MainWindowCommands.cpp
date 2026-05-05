@@ -742,28 +742,29 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                             SetEditCursorEvent{trimEnd * state.tempo.bpm / 60.0});
                     }
                 } else {
-                    // NO TIME SELECTION → Split at edit cursor
-                    // If clips are selected, split those; otherwise split the clip
-                    // under the cursor on the selected track
+                    // NO TIME SELECTION → Split at edit cursor.
+                    // Prefer selected clips that contain the cursor; if the
+                    // selection is elsewhere, split clips under the cursor.
                     double splitTime = state.editCursorPosition;
                     if (splitTime >= 0) {
                         const auto& selectedClips = selectionManager.getSelectedClips();
                         std::vector<ClipId> clipsToSplit;
 
-                        if (!selectedClips.empty()) {
-                            for (auto cid : selectedClips) {
-                                const auto* clip = clipManager.getClip(cid);
-                                if (clip && splitTime > clip->startTime &&
-                                    splitTime < clip->startTime + clip->length) {
-                                    clipsToSplit.push_back(cid);
+                        for (auto cid : selectedClips) {
+                            const auto* clip = clipManager.getClip(cid);
+                            if (clip && splitTime > clip->startTime &&
+                                splitTime < clip->startTime + clip->length) {
+                                clipsToSplit.push_back(cid);
+                            }
+                        }
+
+                        if (clipsToSplit.empty()) {
+                            for (const auto& clip : clipManager.getArrangementClips()) {
+                                if (splitTime > clip.startTime &&
+                                    splitTime < clip.startTime + clip.length) {
+                                    clipsToSplit.push_back(clip.id);
                                 }
                             }
-                        } else {
-                            // No clip selection — split clip under cursor on selected track
-                            TrackId selectedTrack = selectionManager.getSelectedTrack();
-                            ClipId cid = clipManager.getClipAtPosition(selectedTrack, splitTime);
-                            if (cid != INVALID_CLIP_ID)
-                                clipsToSplit.push_back(cid);
                         }
 
                         if (!clipsToSplit.empty()) {

@@ -293,6 +293,150 @@ TEST_CASE("copyTimeRangeToClipboard + paste - preserves internal clip spacing",
     juce::ignoreUnused(a, b);
 }
 
+TEST_CASE("copyTimeRangeToClipboard + paste - trimmed audio keeps beat placement in sync",
+          "[clip][duplicate][time-selection][ui-placement]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(90.0);
+
+    TrackId track = createTrack("Audio Track", TrackType::Audio);
+    ClipId sourceId = createAudio(track, 1.0, 8.0);
+
+    auto& cm = ClipManager::getInstance();
+    auto* source = cm.getClip(sourceId);
+    REQUIRE(source != nullptr);
+    REQUIRE(source->startBeats == Catch::Approx(1.5));
+    REQUIRE(source->lengthBeats == Catch::Approx(12.0));
+
+    // Selection cuts a 4s slice out of the middle. The clipboard entry must
+    // carry that 4s / 6-beat placement, not the original 8s / 12-beat width.
+    cm.copyTimeRangeToClipboard(2.0, 6.0, {track}, /*tempoBPM=*/90.0);
+
+    PasteClipCommand paste(/*pasteTime=*/6.0);
+    paste.execute();
+
+    auto pastedIds = paste.getPastedClipIds();
+    REQUIRE(pastedIds.size() == 1);
+
+    auto* pasted = cm.getClip(pastedIds.front());
+    REQUIRE(pasted != nullptr);
+    REQUIRE(pasted->startTime == Catch::Approx(6.0));
+    REQUIRE(pasted->length == Catch::Approx(4.0));
+    REQUIRE(pasted->startBeats == Catch::Approx(9.0));
+    REQUIRE(pasted->lengthBeats == Catch::Approx(6.0));
+    REQUIRE(pasted->placement.startBeat == Catch::Approx(9.0));
+    REQUIRE(pasted->placement.lengthBeats == Catch::Approx(6.0));
+
+    proj.setTempo(originalTempo);
+}
+
+TEST_CASE(
+    "copyTimeRangeToClipboard + paste - trims from beat placement when seconds cache is stale",
+    "[clip][duplicate][time-selection][ui-placement][beat-cache]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(120.0);
+
+    TrackId track = createTrack("Audio Track", TrackType::Audio);
+    ClipId sourceId = createAudio(track, 1.0, 2.0);
+
+    auto& cm = ClipManager::getInstance();
+    auto* source = cm.getClip(sourceId);
+    REQUIRE(source != nullptr);
+    source->autoTempo = true;
+    source->loopEnabled = true;
+    source->audio().interpretation.bpm = 172.0;
+    source->audio().interpretation.totalBeats = 16.0;
+    source->audio().source.durationSeconds = 16.0 * 60.0 / 172.0;
+    source->loopStartBeats = 0.0;
+    source->loopLengthBeats = 16.0;
+    source->offsetBeats = 0.0;
+    source->setPlacementBeats(2.0, 4.0);  // actual timeline: 1s..3s at 120 BPM
+    source->startTime = 99.0;             // stale transitional cache
+    source->length = 99.0;
+
+    cm.copyTimeRangeToClipboard(1.5, 2.0, {track}, /*tempoBPM=*/120.0);
+
+    PasteClipCommand paste(/*pasteTime=*/3.0);
+    paste.execute();
+
+    auto pastedIds = paste.getPastedClipIds();
+    REQUIRE(pastedIds.size() == 1);
+
+    auto* pasted = cm.getClip(pastedIds.front());
+    REQUIRE(pasted != nullptr);
+    REQUIRE(pasted->startTime == Catch::Approx(3.0));
+    REQUIRE(pasted->length == Catch::Approx(0.5));
+    REQUIRE(pasted->placement.startBeat == Catch::Approx(6.0));
+    REQUIRE(pasted->placement.lengthBeats == Catch::Approx(1.0));
+    REQUIRE(pasted->offsetBeats == Catch::Approx(1.0));
+
+    proj.setTempo(originalTempo);
+}
+
+TEST_CASE("copyTimeRangeToClipboard + paste - exact beat slice keeps waveform identity",
+          "[clip][duplicate][time-selection][ui-placement][waveform]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(120.0);
+
+    TrackId track = createTrack("Audio Track", TrackType::Audio);
+    ClipId sourceId = createAudio(track, 0.5, 0.5);
+
+    auto& cm = ClipManager::getInstance();
+    auto* source = cm.getClip(sourceId);
+    REQUIRE(source != nullptr);
+    source->autoTempo = true;
+    source->loopEnabled = true;
+    source->audio().interpretation.bpm = 172.0;
+    source->audio().interpretation.totalBeats = 16.0;
+    source->audio().source.durationSeconds = 16.0 * 60.0 / 172.0;
+    source->loopStartBeats = 0.0;
+    source->loopLengthBeats = 16.0;
+    source->offsetBeats = 3.0;
+    source->offset = source->offsetBeats * 60.0 / source->audio().interpretation.bpm;
+    source->loopStart = 0.0;
+    source->loopLength = source->audio().source.durationSeconds;
+    source->setPlacementBeats(1.0, 1.0);
+    source->deriveTimesFromBeats(120.0);
+
+    cm.copyTimeRangeToClipboard(source->getTimelineStart(120.0), source->getTimelineEnd(120.0),
+                                {track}, /*tempoBPM=*/120.0);
+
+    PasteClipCommand paste(/*pasteTime=*/2.0);
+    paste.execute();
+
+    auto pastedIds = paste.getPastedClipIds();
+    REQUIRE(pastedIds.size() == 1);
+
+    auto* pasted = cm.getClip(pastedIds.front());
+    REQUIRE(pasted != nullptr);
+
+    // A copied slice should present the same waveform source identity as A.
+    REQUIRE(pasted->audio().source.filePath == source->audio().source.filePath);
+    REQUIRE(pasted->autoTempo == source->autoTempo);
+    REQUIRE(pasted->loopEnabled == source->loopEnabled);
+    REQUIRE(pasted->offsetBeats == Catch::Approx(source->offsetBeats));
+    REQUIRE(pasted->offset == Catch::Approx(source->offset));
+    REQUIRE(pasted->loopStartBeats == Catch::Approx(source->loopStartBeats));
+    REQUIRE(pasted->loopLengthBeats == Catch::Approx(source->loopLengthBeats));
+    REQUIRE(pasted->loopStart == Catch::Approx(source->loopStart));
+    REQUIRE(pasted->loopLength == Catch::Approx(source->loopLength));
+    REQUIRE(pasted->audio().interpretation.bpm ==
+            Catch::Approx(source->audio().interpretation.bpm));
+    REQUIRE(pasted->audio().interpretation.totalBeats ==
+            Catch::Approx(source->audio().interpretation.totalBeats));
+    REQUIRE(pasted->placement.lengthBeats == Catch::Approx(source->placement.lengthBeats));
+
+    REQUIRE(pasted->placement.startBeat != Catch::Approx(source->placement.startBeat));
+    REQUIRE(pasted->placement.startBeat == Catch::Approx(4.0));
+
+    proj.setTempo(originalTempo);
+}
+
 // ============================================================================
 // JoinClipsCommand
 // ============================================================================
@@ -699,6 +843,56 @@ TEST_CASE("ResizeClipCommand - merge consecutive resizes", "[clip][command][resi
     REQUIRE(cmd1.canMergeWith(&cmd2));
     // Same clip, different direction: cannot merge
     REQUIRE_FALSE(cmd1.canMergeWith(&cmdFromLeft));
+}
+
+TEST_CASE("DeleteTimeSelectionCommand - trim keeps beat placement in sync",
+          "[clip][command][time-selection][delete]") {
+    resetState();
+    TrackId track = createTrack();
+    ClipId clipId = createAudio(track, 0.0, 4.0);
+
+    DeleteTimeSelectionCommand cmd(2.0, 6.0, {track}, 120.0);
+    cmd.execute();
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->startTime == Catch::Approx(0.0));
+    REQUIRE(clip->length == Catch::Approx(2.0));
+    REQUIRE(clip->placement.startBeat == Catch::Approx(0.0));
+    REQUIRE(clip->placement.lengthBeats == Catch::Approx(4.0));
+    REQUIRE(clip->startBeats == Catch::Approx(0.0));
+    REQUIRE(clip->lengthBeats == Catch::Approx(4.0));
+
+    cmd.undo();
+
+    clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->length == Catch::Approx(4.0));
+    REQUIRE(clip->placement.lengthBeats == Catch::Approx(8.0));
+}
+
+TEST_CASE("DeleteTimeSelectionCommand - looped trim keeps beat placement in sync",
+          "[clip][command][time-selection][delete][loop]") {
+    resetState();
+    TrackId track = createTrack();
+    ClipId clipId = createAudio(track, 2.0, 4.0);
+
+    auto* before = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(before != nullptr);
+    before->loopEnabled = true;
+    before->loopLength = 4.0;
+
+    DeleteTimeSelectionCommand cmd(0.0, 3.0, {track}, 120.0);
+    cmd.execute();
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->startTime == Catch::Approx(3.0));
+    REQUIRE(clip->length == Catch::Approx(3.0));
+    REQUIRE(clip->placement.startBeat == Catch::Approx(6.0));
+    REQUIRE(clip->placement.lengthBeats == Catch::Approx(6.0));
+    REQUIRE(clip->startBeats == Catch::Approx(6.0));
+    REQUIRE(clip->lengthBeats == Catch::Approx(6.0));
 }
 
 // ============================================================================

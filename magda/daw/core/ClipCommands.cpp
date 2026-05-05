@@ -1204,9 +1204,14 @@ void RenderTimeSelectionCommand::undo() {
 // For looped clips, time selection operations just adjust the container
 // (startTime, length, midiOffset) — the notes repeat and don't need modification.
 // Returns true if the clip was handled as a looped clip.
+static void syncClipPlacementFromSeconds(ClipInfo& clip, double tempo) {
+    if (tempo > 0.0)
+        clip.setPlacementBeats(clip.startTime * tempo / 60.0, clip.length * tempo / 60.0);
+}
+
 static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, double selStart,
                            double selEnd, bool ripple, double duration,
-                           std::vector<ClipId>& clipsToDelete) {
+                           std::vector<ClipId>& clipsToDelete, double tempo) {
     if (!clip.loopEnabled)
         return false;
 
@@ -1225,14 +1230,17 @@ static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, doubl
         }
         // Ripple: reduce length by duration, gap gets closed
         liveClip->length -= duration;
+        syncClipPlacementFromSeconds(*liveClip, tempo);
     } else if (startsBeforeSel) {
         // Spans left boundary: trim right edge
         liveClip->length = selStart - clip.startTime;
+        syncClipPlacementFromSeconds(*liveClip, tempo);
     } else if (endsAfterSel) {
         // Spans right boundary: trim left edge, adjust phase
         double trimAmount = selEnd - clip.startTime;
         liveClip->startTime = ripple ? selStart : selEnd;
         liveClip->length -= trimAmount;
+        syncClipPlacementFromSeconds(*liveClip, tempo);
 
         // Adjust midiOffset (phase) for the trimmed portion
         if (clip.isMidi() && clip.loopLength > 0.0) {
@@ -1299,7 +1307,8 @@ void RippleDeleteTimeSelectionCommand::execute() {
             continue;
 
         // Looped clips: just adjust boundaries, don't split/delete notes
-        if (trimLoopedClip(clipManager, clip, startTime_, endTime_, true, duration, clipsToDelete))
+        if (trimLoopedClip(clipManager, clip, startTime_, endTime_, true, duration, clipsToDelete,
+                           tempo_))
             continue;
 
         bool startsBeforeSel = clip.startTime < startTime_;
@@ -1317,16 +1326,20 @@ void RippleDeleteTimeSelectionCommand::execute() {
                 // The tail (after endTime_) needs to be shifted left by duration
                 if (tailId != INVALID_CLIP_ID) {
                     auto* tailClip = clipManager.getClip(tailId);
-                    if (tailClip)
+                    if (tailClip) {
                         tailClip->startTime = startTime_;  // Shift left to fill gap
+                        syncClipPlacementFromSeconds(*tailClip, tempo_);
+                    }
                 }
             }
         } else if (startsBeforeSel) {
             // Clip spans left boundary only: trim right edge to startTime_
             double newLength = startTime_ - clip.startTime;
             auto* liveClip = clipManager.getClip(clip.id);
-            if (liveClip)
+            if (liveClip) {
                 liveClip->length = newLength;
+                syncClipPlacementFromSeconds(*liveClip, tempo_);
+            }
         } else if (endsAfterSel) {
             // Clip spans right boundary only: split at endTime_, shift right portion left
             ClipId tailId = clipManager.splitClip(clip.id, endTime_, tempo_);
@@ -1335,8 +1348,10 @@ void RippleDeleteTimeSelectionCommand::execute() {
             // Shift the tail left to fill the gap
             if (tailId != INVALID_CLIP_ID) {
                 auto* tailClip = clipManager.getClip(tailId);
-                if (tailClip)
+                if (tailClip) {
                     tailClip->startTime = startTime_;
+                    syncClipPlacementFromSeconds(*tailClip, tempo_);
+                }
             }
         } else {
             // Fully inside selection: delete
@@ -1358,6 +1373,7 @@ void RippleDeleteTimeSelectionCommand::execute() {
         auto* liveClip = clipManager.getClip(clip.id);
         if (liveClip && liveClip->startTime >= endTime_) {
             liveClip->startTime -= duration;
+            syncClipPlacementFromSeconds(*liveClip, tempo_);
         }
     }
 
@@ -1425,7 +1441,8 @@ void DeleteTimeSelectionCommand::execute() {
             continue;
 
         // Looped clips: just adjust boundaries, don't split/delete notes
-        if (trimLoopedClip(clipManager, clip, startTime_, endTime_, false, duration, clipsToDelete))
+        if (trimLoopedClip(clipManager, clip, startTime_, endTime_, false, duration, clipsToDelete,
+                           tempo_))
             continue;
 
         bool startsBeforeSel = clip.startTime < startTime_;
@@ -1445,8 +1462,10 @@ void DeleteTimeSelectionCommand::execute() {
             // Clip spans left boundary: trim right edge to startTime_
             double newLength = startTime_ - clip.startTime;
             auto* liveClip = clipManager.getClip(clip.id);
-            if (liveClip)
+            if (liveClip) {
                 liveClip->length = newLength;
+                syncClipPlacementFromSeconds(*liveClip, tempo_);
+            }
         } else if (endsAfterSel) {
             // Clip spans right boundary: split at endTime_, delete left portion
             ClipId tailId = clipManager.splitClip(clip.id, endTime_, tempo_);
