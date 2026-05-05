@@ -29,6 +29,7 @@ set(TEST_SOURCES
     test_known_plugin_list_duplicates.cpp
     test_device_parameter_pagination.cpp
     test_waveform_editor_absolute_mode.cpp
+    test_clip_batch_edit.cpp
     test_clip_commands.cpp
     test_clip_resize_operations.cpp
     test_midi_clip_resize_left.cpp

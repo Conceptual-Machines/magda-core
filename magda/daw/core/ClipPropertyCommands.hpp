@@ -1,6 +1,10 @@
 #pragma once
 
+#include <functional>
+#include <utility>
+
 #include "ClipManager.hpp"
+#include "CommandPattern.hpp"
 #include "UndoManager.hpp"
 
 namespace magda {
@@ -30,6 +34,49 @@ class SetClipNameCommand : public UndoableCommand {
   private:
     ClipId clipId_;
     juce::String oldName_, newName_;
+};
+
+/**
+ * Snapshot-backed command for ClipManager setters that may update several
+ * fields at once. This is intended for inspector property edits where undo
+ * must restore the full clip state, not just the visible control value.
+ */
+class SetClipPropertyCommand : public SnapshotCommand<ClipInfo> {
+  public:
+    using ApplyFn = std::function<void(ClipManager&, ClipId)>;
+
+    SetClipPropertyCommand(ClipId clipId, juce::String description, ApplyFn apply)
+        : clipId_(clipId), description_(std::move(description)), apply_(std::move(apply)) {}
+
+    juce::String getDescription() const override {
+        return description_;
+    }
+
+    bool canExecute() const override {
+        return ClipManager::getInstance().getClip(clipId_) != nullptr && static_cast<bool>(apply_);
+    }
+
+  protected:
+    ClipInfo captureState() override {
+        auto* clip = ClipManager::getInstance().getClip(clipId_);
+        return clip ? *clip : ClipInfo{};
+    }
+
+    void restoreState(const ClipInfo& state) override {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId_)) {
+            *clip = state;
+            ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+        }
+    }
+
+    void performAction() override {
+        apply_(ClipManager::getInstance(), clipId_);
+    }
+
+  private:
+    ClipId clipId_;
+    juce::String description_;
+    ApplyFn apply_;
 };
 
 /**

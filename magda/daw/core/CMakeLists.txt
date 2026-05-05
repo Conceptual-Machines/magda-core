@@ -72,6 +72,7 @@ target_sources(magda_daw PRIVATE
     TrackViewSettings.hpp
     ClipTypes.hpp
     ClipInfo.hpp
+    ClipBatchEdit.hpp
     ClipManager.hpp
     SessionLaunchService.hpp
     MidiFileWriter.hpp
