@@ -1964,7 +1964,12 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
               compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
               pitchShiftUI_ || impulseResponseUI_ || utilityUI_ || chordEngineUI_ ||
               arpeggiatorUI_ || stepSequencerUI_)) {
-            int paginationBottom = headerBottom + PAGINATION_HEIGHT + 4;
+            constexpr int paginationTopPadding = 2;
+            constexpr int paginationBottomPadding = 4;
+            const int paramGridTop =
+                contentArea.getY() + (isFaust_ ? FaustUI::kHeaderHeight : CONTENT_HEADER_HEIGHT);
+            int paginationBottom =
+                paramGridTop + paginationTopPadding + PAGINATION_HEIGHT + paginationBottomPadding;
             g.drawHorizontalLine(paginationBottom, left, right);
         }
     }
