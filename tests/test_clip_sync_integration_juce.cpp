@@ -3,6 +3,8 @@
 #include <juce_events/juce_events.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <unordered_set>
+
 // TE internal test utilities (not exposed via module public headers)
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioThumbnailManager.hpp"
@@ -12,6 +14,7 @@
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
+#include "magda/daw/project/ProjectManager.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 using namespace magda;
@@ -72,6 +75,11 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testLoopTimeBased();
         testLoopTimeBasedWarpEnabled();
         testSplitAudioClip();
+        testBeatModeSplitRendersRightSide();
+        testBeatModeSplitWrapsLoopPhaseAtBoundary();
+        testBeatModeDuplicateRendersCopy();
+        testBeatModeClipboardPastePreservesRightSplitPhase();
+        testBeatModeTimeRangePastePreservesTrimmedLoopPhase();
         testFadeInOut();
         testLaunchFadeSamples();
         testGainAndPan();
@@ -91,10 +99,13 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         std::unique_ptr<ClipSynchronizer> clipSync;
         std::unique_ptr<juce::TemporaryFile> sinFile;
         TrackId trackId = 1;
+        double originalProjectTempo = 120.0;
 
         Fixture() {
             // Reset ClipManager singleton
             ClipManager::getInstance().clearAllClips();
+            originalProjectTempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+            ProjectManager::getInstance().setTempo(60.0);
 
             auto& engineWrapper = magda::test::getSharedEngine();
             auto* engine = engineWrapper.getEngine();
@@ -123,6 +134,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             trackController.reset();
             edit.reset();
             ClipManager::getInstance().clearAllClips();
+            ProjectManager::getInstance().setTempo(originalProjectTempo);
         }
 
         juce::String audioPath() const {
@@ -134,6 +146,39 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return dynamic_cast<te::WaveAudioClip*>(teClip);
         }
     };
+
+    static void configureBeatModeLoop(ClipInfo& clip, double projectBpm, double sourceBpm,
+                                      double sourceDurationSeconds, double loopStartBeats,
+                                      double loopLengthBeats, double placementLengthBeats) {
+        clip.autoTempo = true;
+        clip.loopEnabled = true;
+        clip.audio().interpretation.bpm = sourceBpm;
+        clip.audio().interpretation.totalBeats = sourceDurationSeconds * sourceBpm / 60.0;
+        clip.loopStartBeats = loopStartBeats;
+        clip.loopLengthBeats = loopLengthBeats;
+        clip.offsetBeats = loopStartBeats;
+        clip.loopStart = loopStartBeats * 60.0 / sourceBpm;
+        clip.loopLength = loopLengthBeats * 60.0 / sourceBpm;
+        clip.offset = clip.offsetBeats * 60.0 / sourceBpm;
+        clip.setPlacementBeats(0.0, placementLengthBeats);
+        clip.deriveTimesFromBeats(projectBpm);
+    }
+
+    bool expectAudioInRange(const juce::AudioBuffer<float>& buf, double sampleRate,
+                            double startSeconds, double durationSeconds,
+                            const juce::String& label) {
+        const int startSample = static_cast<int>(startSeconds * sampleRate);
+        const int numSamples = static_cast<int>(durationSeconds * sampleRate);
+        const bool rangeAvailable =
+            startSample >= 0 && numSamples > 0 && startSample + numSamples <= buf.getNumSamples();
+        expect(rangeAvailable, "Buffer should include " + label);
+        if (!rangeAvailable)
+            return false;
+
+        const float rms = buf.getRMSLevel(0, startSample, numSamples);
+        expect(rms > 0.01f, label + " should render audio, RMS=" + juce::String(rms));
+        return rms > 0.01f;
+    }
 
     // =========================================================================
     // Test Cases
@@ -641,6 +686,236 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(rightPos.getOffset().inSeconds(),
                                   rightClip->getTeOffset(rightClip->loopEnabled), 0.01);
         expect(rightClip->offset > 0.0, "Right clip offset should be > 0 after split");
+    }
+
+    void testBeatModeSplitRendersRightSide() {
+        beginTest("Beat-mode split renders right-side audio");
+
+        Fixture f;
+
+        auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(),
+                                                                 ClipView::Arrangement, 60.0);
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        expect(clip != nullptr, "Source clip should exist");
+        if (clip == nullptr)
+            return;
+
+        clip->autoTempo = true;
+        clip->loopEnabled = true;
+        clip->audio().interpretation.bpm = 172.0;
+        clip->audio().interpretation.totalBeats = 5.0 * 172.0 / 60.0;
+        clip->loopStartBeats = 0.0;
+        clip->loopLengthBeats = clip->audio().interpretation.totalBeats;
+        clip->loopStart = 0.0;
+        clip->loopLength = 5.0;
+        clip->setPlacementBeats(0.0, clip->audio().interpretation.totalBeats);
+        clip->deriveTimesFromBeats(60.0);
+
+        f.clipSync->syncClipToEngine(clipId);
+
+        constexpr double splitTime = 8.0;
+        auto rightClipId = ClipManager::getInstance().splitClip(clipId, splitTime, 60.0);
+        expect(rightClipId != INVALID_CLIP_ID, "Split should create right clip");
+
+        f.clipSync->syncClipToEngine(clipId);
+        f.clipSync->syncClipToEngine(rightClipId);
+        f.edit->restartPlayback();
+
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expect(result.buffer.getNumSamples() > 0, "Rendered buffer should not be empty");
+
+        auto& buf = result.buffer;
+        const double sr = result.sampleRate;
+        {
+            const int startSample = static_cast<int>(0.2 * sr);
+            const int numSamples = static_cast<int>(1.0 * sr);
+            const float rms = buf.getRMSLevel(0, startSample, numSamples);
+            expect(rms > 0.01f, "Left side should render audio, RMS=" + juce::String(rms));
+        }
+        {
+            const int startSample = static_cast<int>((splitTime + 0.2) * sr);
+            const int numSamples = static_cast<int>(1.0 * sr);
+            expect(startSample + numSamples <= buf.getNumSamples(),
+                   "Buffer should include right-side split region");
+            if (startSample + numSamples <= buf.getNumSamples()) {
+                const float rms = buf.getRMSLevel(0, startSample, numSamples);
+                expect(rms > 0.01f, "Right side should render audio, RMS=" + juce::String(rms));
+            }
+        }
+    }
+
+    void testBeatModeSplitWrapsLoopPhaseAtBoundary() {
+        beginTest("Beat-mode split at loop boundary wraps right-side phase");
+
+        Fixture f;
+        auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(),
+                                                                 ClipView::Arrangement, 60.0);
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        expect(clip != nullptr, "Source clip should exist");
+        if (clip == nullptr)
+            return;
+
+        configureBeatModeLoop(*clip, 60.0, 120.0, 5.0, 0.0, 4.0, 12.0);
+        f.clipSync->syncClipToEngine(clipId);
+
+        auto rightClipId = ClipManager::getInstance().splitClip(clipId, 4.0, 60.0);
+        expect(rightClipId != INVALID_CLIP_ID, "Boundary split should create right clip");
+        auto* rightClip = ClipManager::getInstance().getClip(rightClipId);
+        expect(rightClip != nullptr, "Right clip should exist");
+        if (rightClip == nullptr)
+            return;
+
+        expectWithinAbsoluteError(rightClip->loopStartBeats, 0.0, 0.01);
+        expectWithinAbsoluteError(rightClip->loopLengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(rightClip->offsetBeats, 4.0, 0.01);
+
+        f.clipSync->syncClipToEngine(clipId);
+        f.clipSync->syncClipToEngine(rightClipId);
+        f.edit->restartPlayback();
+
+        auto* rightTeClip = f.getTeAudioClip(rightClipId);
+        expect(rightTeClip != nullptr, "Right TE clip should exist");
+        if (rightTeClip != nullptr) {
+            auto rightLoop = rightTeClip->getLoopRangeBeats();
+            expectWithinAbsoluteError(rightLoop.getStart().inBeats(), 0.0, 0.01);
+            expectWithinAbsoluteError(rightLoop.getLength().inBeats(), 4.0, 0.01);
+            expectWithinAbsoluteError(rightTeClip->getPosition().getOffset().inSeconds(), 4.0,
+                                      0.01);
+        }
+
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expectAudioInRange(result.buffer, result.sampleRate, 4.2, 0.7,
+                           "right side after boundary split");
+    }
+
+    void testBeatModeDuplicateRendersCopy() {
+        beginTest("Beat-mode duplicate renders copied audio");
+
+        Fixture f;
+        auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(),
+                                                                 ClipView::Arrangement, 60.0);
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        expect(clip != nullptr, "Source clip should exist");
+        if (clip == nullptr)
+            return;
+
+        configureBeatModeLoop(*clip, 60.0, 172.0, 5.0, 0.0, 5.0 * 172.0 / 60.0, 5.0 * 172.0 / 60.0);
+        f.clipSync->syncClipToEngine(clipId);
+
+        const double duplicateStart = clip->getEndTime();
+        auto duplicateId =
+            ClipManager::getInstance().duplicateClipAt(clipId, duplicateStart, f.trackId, 60.0);
+        expect(duplicateId != INVALID_CLIP_ID, "Duplicate should create copied clip");
+        auto* duplicate = ClipManager::getInstance().getClip(duplicateId);
+        expect(duplicate != nullptr, "Duplicate model clip should exist");
+        if (duplicate == nullptr)
+            return;
+
+        expectWithinAbsoluteError(
+            wrapPhase(duplicate->offsetBeats - duplicate->loopStartBeats,
+                      duplicate->loopLengthBeats),
+            wrapPhase(clip->offsetBeats - clip->loopStartBeats, clip->loopLengthBeats), 0.01);
+        expectWithinAbsoluteError(duplicate->offsetBeats, duplicate->placement.startBeat, 0.01);
+        expectWithinAbsoluteError(duplicate->loopStartBeats, clip->loopStartBeats, 0.01);
+        expectWithinAbsoluteError(duplicate->loopLengthBeats, clip->loopLengthBeats, 0.01);
+
+        f.clipSync->syncClipToEngine(clipId);
+        f.clipSync->syncClipToEngine(duplicateId);
+        f.edit->restartPlayback();
+
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expectAudioInRange(result.buffer, result.sampleRate, duplicateStart + 0.2, 1.0,
+                           "duplicated beat-mode clip");
+    }
+
+    void testBeatModeClipboardPastePreservesRightSplitPhase() {
+        beginTest("Beat-mode clipboard paste preserves right split phase");
+
+        Fixture f;
+        auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(),
+                                                                 ClipView::Arrangement, 60.0);
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        expect(clip != nullptr, "Source clip should exist");
+        if (clip == nullptr)
+            return;
+
+        configureBeatModeLoop(*clip, 60.0, 172.0, 5.0, 0.0, 5.0 * 172.0 / 60.0, 5.0 * 172.0 / 60.0);
+        auto rightClipId = ClipManager::getInstance().splitClip(clipId, 8.0, 60.0);
+        auto* rightClip = ClipManager::getInstance().getClip(rightClipId);
+        expect(rightClip != nullptr, "Right split clip should exist");
+        if (rightClip == nullptr)
+            return;
+
+        std::unordered_set<ClipId> copiedIds{rightClipId};
+        ClipManager::getInstance().copyToClipboard(copiedIds);
+        auto pastedIds =
+            ClipManager::getInstance().pasteFromClipboard(12.0, f.trackId, ClipView::Arrangement);
+        expectEquals(static_cast<int>(pastedIds.size()), 1);
+        if (pastedIds.empty())
+            return;
+
+        auto pastedId = pastedIds.front();
+        auto* pastedClip = ClipManager::getInstance().getClip(pastedId);
+        expect(pastedClip != nullptr, "Pasted clip should exist");
+        if (pastedClip == nullptr)
+            return;
+
+        const double copiedPhase = rightClip->offsetBeats - rightClip->placement.startBeat;
+        const double pastedPhase = pastedClip->offsetBeats - pastedClip->placement.startBeat;
+        expectWithinAbsoluteError(pastedPhase, copiedPhase, 0.01);
+        expectWithinAbsoluteError(pastedClip->loopStartBeats, rightClip->loopStartBeats, 0.01);
+        expectWithinAbsoluteError(pastedClip->loopLengthBeats, rightClip->loopLengthBeats, 0.01);
+
+        f.clipSync->syncClipToEngine(pastedId);
+        f.edit->restartPlayback();
+
+        auto* pastedTeClip = f.getTeAudioClip(pastedId);
+        expect(pastedTeClip != nullptr, "Pasted TE clip should exist");
+        if (pastedTeClip != nullptr) {
+            expectWithinAbsoluteError(pastedTeClip->getPosition().getOffset().inSeconds(), 20.0,
+                                      0.01);
+        }
+
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expectAudioInRange(result.buffer, result.sampleRate, 12.2, 1.0, "pasted right split clip");
+    }
+
+    void testBeatModeTimeRangePastePreservesTrimmedLoopPhase() {
+        beginTest("Beat-mode time-range paste preserves trimmed loop phase");
+
+        Fixture f;
+        auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(),
+                                                                 ClipView::Arrangement, 60.0);
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        expect(clip != nullptr, "Source clip should exist");
+        if (clip == nullptr)
+            return;
+
+        configureBeatModeLoop(*clip, 60.0, 120.0, 5.0, 2.0, 4.0, 12.0);
+        ClipManager::getInstance().copyTimeRangeToClipboard(5.5, 7.5, {f.trackId}, 60.0);
+        auto pastedIds =
+            ClipManager::getInstance().pasteFromClipboard(10.0, f.trackId, ClipView::Arrangement);
+        expectEquals(static_cast<int>(pastedIds.size()), 1);
+        if (pastedIds.empty())
+            return;
+
+        auto pastedId = pastedIds.front();
+        auto* pastedClip = ClipManager::getInstance().getClip(pastedId);
+        expect(pastedClip != nullptr, "Pasted trimmed clip should exist");
+        if (pastedClip == nullptr)
+            return;
+
+        expectWithinAbsoluteError(pastedClip->loopStartBeats, 2.0, 0.01);
+        expectWithinAbsoluteError(pastedClip->loopLengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(pastedClip->offsetBeats, 13.5, 0.01);
+        expectWithinAbsoluteError(pastedClip->getTeOffset(true, 60.0), 11.5, 0.01);
+
+        f.clipSync->syncClipToEngine(pastedId);
+        f.edit->restartPlayback();
+
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expectAudioInRange(result.buffer, result.sampleRate, 10.2, 1.0,
+                           "time-range pasted beat-mode clip");
     }
 
     void testFadeInOut() {
