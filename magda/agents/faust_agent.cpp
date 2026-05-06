@@ -3,6 +3,7 @@
 #include "../daw/core/Config.hpp"
 #include "llm_client_factory.hpp"
 #include "llm_presets.hpp"
+#include "mcp/MCPServerManager.hpp"
 
 namespace magda {
 
@@ -158,6 +159,8 @@ FaustAgent::Result FaustAgent::generate(const std::string& message) {
     }
 
     result = parseJson(response.text.trim());
+    if (!result.hasError)
+        result = validateWithMCP(std::move(result));
     logFaustAgentResult(result);
     return result;
 }
@@ -204,7 +207,27 @@ FaustAgent::Result FaustAgent::generateStreaming(const std::string& message,
     }
 
     result = parseJson(response.text.trim());
+    if (!result.hasError)
+        result = validateWithMCP(std::move(result));
     logFaustAgentResult(result);
+    return result;
+}
+
+FaustAgent::Result FaustAgent::validateWithMCP(Result result) {
+    auto* mcp = MCPServerManager::getInstance().getServer("faust-mcp");
+    if (mcp == nullptr)
+        return result;
+
+    auto* args = new juce::DynamicObject();
+    args->setProperty("code", juce::String(result.source));
+    args->setProperty("name", juce::String(result.name));
+
+    auto mcpResult = mcp->callTool("compile_faust", juce::var(args));
+    if (!mcpResult.success) {
+        DBG("MCPClient compile_faust error: " + mcpResult.error);
+        result.error = "Faust compilation failed: " + mcpResult.error.toStdString();
+        result.hasError = true;
+    }
     return result;
 }
 
