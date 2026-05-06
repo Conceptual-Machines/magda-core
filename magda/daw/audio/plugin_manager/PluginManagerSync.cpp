@@ -16,6 +16,7 @@
 #include "plugins/ArpeggiatorPlugin.hpp"
 #include "plugins/AudioSidechainMonitorPlugin.hpp"
 #include "plugins/DrumGridPlugin.hpp"
+#include "plugins/FaustPlugin.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
@@ -1473,6 +1474,8 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             juce::ValueTree ps(te::IDs::PLUGIN);
             ps.setProperty(te::IDs::type, daw::audio::ArpeggiatorPlugin::xmlTypeName, nullptr);
             plugin = edit_.getPluginCache().createNewPlugin(ps);
+        } else if (device.pluginId.containsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
+            plugin = createInternalPlugin(daw::audio::FaustPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase(
                        daw::audio::StepSequencerPlugin::xmlTypeName)) {
             juce::ValueTree ps(te::IDs::PLUGIN);
@@ -1601,6 +1604,8 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
         processor = std::make_unique<ToneGeneratorProcessor>(deviceId, plugin);
     } else if (dynamic_cast<te::VolumeAndPanPlugin*>(plugin.get())) {
         processor = std::make_unique<UtilityProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<daw::audio::FaustPlugin*>(plugin.get())) {
+        processor = std::make_unique<FaustProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
         processor = std::make_unique<MagdaSamplerProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
@@ -1623,6 +1628,33 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
         DBG("PluginManager::registerRackPluginProcessor: Registered processor for device "
             << deviceId);
     }
+}
+
+void PluginManager::refreshDeviceParameters(DeviceId deviceId) {
+    DBG("[PluginManager] refreshDeviceParameters id=" << (int)deviceId);
+    DeviceProcessor* processor = nullptr;
+    {
+        juce::ScopedLock lock(pluginLock_);
+        auto it = syncedDevices_.find(deviceId);
+        if (it == syncedDevices_.end()) {
+            DBG("[PluginManager] refreshDeviceParameters: id=" << (int)deviceId
+                                                               << " NOT in syncedDevices_");
+            return;
+        }
+        if (it->second.processor == nullptr) {
+            DBG("[PluginManager] refreshDeviceParameters: id=" << (int)deviceId
+                                                               << " has no processor");
+            return;
+        }
+        processor = it->second.processor.get();
+    }
+    DeviceInfo tempInfo;
+    processor->populateParameters(tempInfo);
+    DBG("[PluginManager] refreshDeviceParameters: id="
+        << (int)deviceId << " populateParameters → " << static_cast<int>(tempInfo.parameters.size())
+        << " params");
+    TrackManager::getInstance().updateDeviceParameters(deviceId, tempInfo.parameters);
+    AutoAliasGenerator::regenerateForDevice(deviceId);
 }
 
 // =============================================================================
@@ -1702,6 +1734,12 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<ArpeggiatorProcessor>(device.id, plugin);
             }
+        } else if (device.pluginId.containsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
+            plugin = createInternalPlugin(daw::audio::FaustPlugin::xmlTypeName, device.pluginState);
+            if (plugin) {
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
+                processor = std::make_unique<FaustProcessor>(device.id, plugin);
+            }
         } else if (device.pluginId.containsIgnoreCase(
                        daw::audio::StepSequencerPlugin::xmlTypeName)) {
             plugin = createInternalPlugin(daw::audio::StepSequencerPlugin::xmlTypeName,
@@ -1770,6 +1808,13 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<UtilityProcessor>(device.id, plugin);
+            }
+        } else if (device.pluginId.containsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
+            plugin = createInternalPlugin(daw::audio::FaustPlugin::xmlTypeName, device.pluginState);
+            if (plugin) {
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
+                // Stage 1 POC: no DeviceProcessor yet — parameter access happens
+                // through the plugin's AutomatableParameters directly.
             }
         }
     } else {

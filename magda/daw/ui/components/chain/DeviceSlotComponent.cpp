@@ -2,6 +2,9 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
+
+#include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/sound_design_agent.hpp"
 #include "AIPanelComponent.hpp"
 #include "DeviceSlotHeaderLayout.hpp"
@@ -14,6 +17,7 @@
 #include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/transport/StepClock.hpp"
@@ -133,8 +137,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     isArpeggiator_ = device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName);
     isStepSequencer_ =
         device.pluginId.containsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName);
-    isTracktionDevice_ = isInternalDevice() && !isDrumGrid_ && !isChordEngine_ && !isArpeggiator_ &&
-                         !isStepSequencer_;
+    isFaust_ = device.pluginId.containsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName);
+    isTracktionDevice_ = magda::isTracktionEngineStockPlugin(device.pluginId);
     if (isTracktionDevice_) {
         tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
                                                              BinaryData::fadlogotracktion_svgSize);
@@ -1124,6 +1128,10 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
         aiPanel_->setDevicePath(nodePath_);
         aiPanel_->setDevicePluginId(device_.pluginId);
     }
+    // Same story for FaustUI: createCustomUI ran before nodePath_ was
+    // valid, so the load flow couldn't fire notifyTrackDevicesChanged.
+    if (faustUI_)
+        faustUI_->setDevicePath(nodePath_);
 
     // Initial compute for the controller indicator dots — listeners only fire
     // on change, so a slot built after the binding was added wouldn't otherwise
@@ -1776,7 +1784,8 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Create custom UI if this is an internal device and we don't have one yet
     if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_ &&
         !eqUI_ && !compressorUI_ && !reverbUI_ && !delayUI_ && !chorusUI_ && !phaserUI_ &&
-        !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_ && !utilityUI_ && !chordEngineUI_) {
+        !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_ && !utilityUI_ && !faustUI_ &&
+        !chordEngineUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
@@ -1784,7 +1793,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Update custom UI if available
     if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
         reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-        impulseResponseUI_ || utilityUI_ || chordEngineUI_) {
+        impulseResponseUI_ || utilityUI_ || faustUI_ || chordEngineUI_) {
         updateCustomUI();
     }
 
@@ -1934,25 +1943,33 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
     // Draw separator line to the left of the meter/note strip (below content header)
     if (!collapsed_) {
         int lineX = contentArea.getRight() - METER_STRIP_WIDTH - 4;
-        int meterTop = contentArea.getY() + CONTENT_HEADER_HEIGHT;
+        int meterTop = contentArea.getY() + (isFaust_ ? 0 : CONTENT_HEADER_HEIGHT);
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawVerticalLine(lineX, static_cast<float>(meterTop + 2),
                            static_cast<float>(contentArea.getBottom() - 2));
 
-        // Separator under content header (all devices) — spans full width
+        // Separator under content header (all devices except Faust, which has
+        // no content header) — spans full width
         float left = static_cast<float>(contentArea.getX() + 2);
         float right = static_cast<float>(contentArea.getRight() - 2);
         int headerBottom = contentArea.getY() + CONTENT_HEADER_HEIGHT;
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawHorizontalLine(headerBottom, left, right);
+        if (!isFaust_) {
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.drawHorizontalLine(headerBottom, left, right);
+        }
 
         // Additional line below pagination row (for external plugin param grid only)
-        if (!isInternalDevice() ||
+        if (!isInternalDevice() || isFaust_ ||
             !(toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ ||
               compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
               pitchShiftUI_ || impulseResponseUI_ || utilityUI_ || chordEngineUI_ ||
               arpeggiatorUI_ || stepSequencerUI_)) {
-            int paginationBottom = headerBottom + PAGINATION_HEIGHT + 4;
+            constexpr int paginationTopPadding = 2;
+            constexpr int paginationBottomPadding = 4;
+            const int paramGridTop =
+                contentArea.getY() + (isFaust_ ? FaustUI::kHeaderHeight : CONTENT_HEADER_HEIGHT);
+            int paginationBottom =
+                paramGridTop + paginationTopPadding + PAGINATION_HEIGHT + paginationBottomPadding;
             g.drawHorizontalLine(paginationBottom, left, right);
         }
     }
@@ -1973,8 +1990,9 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
         return;
     }
 
-    // Content header subtitle row for all devices
-    {
+    // Content header subtitle row for all devices (Faust draws its own
+    // header inside the FaustUI panel, so skip the slot-level one).
+    if (!isFaust_) {
         auto headerArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
         auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
                                        : DarkTheme::getSecondaryTextColour();
@@ -2031,18 +2049,24 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // with an empty rect — so we must not touch meter visibility when collapsed.
     if (!collapsed_) {
         // Carve the FULL-width second header first so the presets button can
-        // sit flush against the right edge of the panel.
-        auto secondHeaderArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
-        if (presetsButton_) {
-            const bool eligible = !isChordEngine_ && !isArpeggiator_ && !isStepSequencer_;
-            const bool show = eligible && hasPluginPresetsAvailable();
-            if (show) {
-                const int btnWidth = juce::jmin(140, secondHeaderArea.getWidth() / 2);
-                presetsButton_->setBounds(secondHeaderArea.removeFromRight(btnWidth).reduced(2, 3));
-                presetsButton_->setVisible(true);
-            } else {
-                presetsButton_->setVisible(false);
+        // sit flush against the right edge of the panel. Faust draws its own
+        // header inside the FaustUI panel, so it skips this strip entirely.
+        if (!isFaust_) {
+            auto secondHeaderArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
+            if (presetsButton_) {
+                const bool eligible = !isChordEngine_ && !isArpeggiator_ && !isStepSequencer_;
+                const bool show = eligible && hasPluginPresetsAvailable();
+                if (show) {
+                    const int btnWidth = juce::jmin(140, secondHeaderArea.getWidth() / 2);
+                    presetsButton_->setBounds(
+                        secondHeaderArea.removeFromRight(btnWidth).reduced(2, 3));
+                    presetsButton_->setVisible(true);
+                } else {
+                    presetsButton_->setVisible(false);
+                }
             }
+        } else if (presetsButton_) {
+            presetsButton_->setVisible(false);
         }
 
         // Then the meter strip lives in the area BELOW the second header.
@@ -2127,6 +2151,43 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
     // (Second header carve + programs combo placement happen in the
     //  `if (!collapsed_)` block above so the dropdown can sit flush right.)
+
+    // Faust uses a hybrid layout: the bespoke header strip (logo /
+    // Load / Edit / DSP name) sits at the top, and the standard
+    // paramGrid_ renders the body — same drag-and-drop / mod / macro
+    // / MIDI Learn / automation behaviour as every other device,
+    // driven by FaustProcessor's per-slot ParameterInfo.
+    if (isFaust_ && faustUI_) {
+        // Top: Faust-specific header strip (logo / name / load / edit).
+        auto faustUIArea = contentArea.removeFromTop(FaustUI::kHeaderHeight);
+        faustUI_->setBounds(faustUIArea);
+        faustUI_->setVisible(true);
+
+        // Bottom: per-DSP custom view (if any) anchored to the bottom
+        // edge so it grows into whatever vertical slack the user gives
+        // the device slot. Capped at half the remaining body so a tall
+        // device row doesn't starve the param grid; gated by a minimum
+        // of the view's preferred height so it stays readable when the
+        // row is short.
+        if (faustCustomView_) {
+            const int bodyHeight = juce::jmax(0, contentArea.getHeight());
+            const int preferred = faustCustomView_->getPreferredHeight();
+            const int customHeight = juce::jlimit(juce::jmin(preferred, bodyHeight), bodyHeight,
+                                                  juce::jmax(preferred, bodyHeight / 2));
+            auto customArea = contentArea.removeFromBottom(customHeight);
+            faustCustomView_->setBounds(customArea);
+            faustCustomView_->setVisible(true);
+        }
+
+        auto labelFont = FontManager::getInstance().getUIFont(
+            DebugSettings::getInstance().getParamLabelFontSize());
+        auto valueFont = FontManager::getInstance().getUIFont(
+            DebugSettings::getInstance().getParamValueFontSize());
+        paramGrid_->setBounds(contentArea);
+        paramGrid_->setVisible(true);
+        paramGrid_->layoutContent(labelFont, valueFont);
+        return;
+    }
 
     // Check if this is an internal device with custom UI
     if (isInternalDevice() &&
@@ -2269,7 +2330,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 
     // Left side: macro, mod, AI (AI only when this device has a registered
     // SoundDesignAgent — currently 4OSC; extends with the registry).
-    const bool aiSupported = magda::isSoundDesignSupported(device_.pluginId);
+    const bool aiSupported = magda::isDeviceAISupported(device_.pluginId);
     auto placeAIButton = [&]() {
         if (aiSupported) {
             aiButton_->setVisible(true);
@@ -2721,9 +2782,17 @@ void DeviceSlotComponent::updateParameterSlots() {
             if (!self->nodePath_.isValid())
                 return;
             // Update local cache immediately for responsive UI
-            if (paramIndex >= 0 && paramIndex < static_cast<int>(self->device_.parameters.size())) {
-                self->device_.parameters[static_cast<size_t>(paramIndex)].currentValue =
-                    static_cast<float>(value);
+            auto paramIt =
+                std::find_if(self->device_.parameters.begin(), self->device_.parameters.end(),
+                             [paramIndex](const magda::ParameterInfo& param) {
+                                 return param.paramIndex == paramIndex;
+                             });
+            if (paramIt == self->device_.parameters.end() && paramIndex >= 0 &&
+                paramIndex < static_cast<int>(self->device_.parameters.size())) {
+                paramIt = self->device_.parameters.begin() + paramIndex;
+            }
+            if (paramIt != self->device_.parameters.end()) {
+                paramIt->currentValue = static_cast<float>(value);
             }
             magda::TrackManager::getInstance().setDeviceParameterValue(self->nodePath_, paramIndex,
                                                                        static_cast<float>(value));
@@ -3842,6 +3911,31 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*utilityUI_);
         updateCustomUI();
+    } else if (device_.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
+        faustUI_ = std::make_unique<FaustUI>();
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                auto* fp = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get());
+                if (fp) {
+                    faustUI_->setPlugin(fp);
+                    // Per-DSP custom view (e.g. the MagdaDrive transfer
+                    // curve). Lives at the bottom of the device slot so
+                    // it can grow into whatever vertical slack the user
+                    // gives the row; the standard param grid keeps its
+                    // top position.
+                    faustCustomView_ =
+                        FaustCustomUIRegistry::getInstance().create(fp->getCustomViewKind(), *fp);
+                    if (faustCustomView_)
+                        addAndMakeVisible(*faustCustomView_);
+                }
+            }
+        }
+        // Bind device path so a successful DSP load can fire the
+        // track-devices-changed notification that rebuilds the slot
+        // and re-fetches DeviceInfo.parameters from the new pool.
+        faustUI_->setDevicePath(nodePath_);
+        addAndMakeVisible(*faustUI_);
     } else if (device_.pluginId.containsIgnoreCase(
                    daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
         chordEngineUI_ = std::make_unique<ChordPanelContent>();

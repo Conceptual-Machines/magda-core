@@ -6,6 +6,7 @@ target_sources(magda_daw PRIVATE
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
+    FaustResources.cpp
     processors/DeviceProcessor.cpp
     MidiBridge.cpp
     midi/MidiDeviceMatch.cpp
@@ -44,6 +45,10 @@ target_sources(magda_daw PRIVATE
     plugins/ArpeggiatorPlugin.cpp
     plugins/InstrumentMeterTapPlugin.cpp
     plugins/MidiDevicePlugin.cpp
+    plugins/FaustPlugin.cpp
+    plugins/FaustMetadataParser.cpp
+    plugins/FaustParamPool.cpp
+    plugins/FaustParamInfo.cpp
     transport/StepClock.cpp
     plugins/StepSequencerPlugin.cpp
     # Controller routing (issue #1050 -- Phase C)
@@ -51,6 +56,7 @@ target_sources(magda_daw PRIVATE
     controllers/ControllerRouter.cpp
     # Headers (listed for IDE visibility)
     AudioBridge.hpp
+    FaustResources.hpp
     session/SessionClipScheduler.hpp
     session/SessionClipAudioMonitor.hpp
     session/SessionClipCommandQueue.hpp
@@ -80,6 +86,12 @@ target_sources(magda_daw PRIVATE
     plugins/ArpeggiatorPlugin.hpp
     plugins/InstrumentMeterTapPlugin.hpp
     plugins/MidiDevicePlugin.hpp
+    plugins/FaustPlugin.hpp
+    plugins/FaustCustomViewKind.hpp
+    plugins/FaustParamSlot.hpp
+    plugins/FaustMetadataParser.hpp
+    plugins/FaustParamPool.hpp
+    plugins/FaustParamInfo.hpp
     transport/StepClock.hpp
     plugins/StepSequencerPlugin.hpp
 )

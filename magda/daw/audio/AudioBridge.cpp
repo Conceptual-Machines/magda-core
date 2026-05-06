@@ -551,6 +551,8 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
         irProc->setParameterByIndex(paramIndex, newValue);
     } else if (auto* utilityProc = dynamic_cast<UtilityProcessor*>(processor)) {
         utilityProc->setParameterByIndex(paramIndex, newValue);
+    } else if (auto* faustProc = dynamic_cast<FaustProcessor*>(processor)) {
+        faustProc->setParameterByIndex(paramIndex, newValue);
     }
 
     // Forward to automation recording engine

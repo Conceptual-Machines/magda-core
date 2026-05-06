@@ -3,8 +3,12 @@
 #include <cmath>
 #include <utility>
 
+#include "../../core/ParameterUtils.hpp"
 #include "../../core/TrackManager.hpp"
 #include "plugins/ArpeggiatorPlugin.hpp"
+#include "plugins/FaustParamInfo.hpp"
+#include "plugins/FaustParamPool.hpp"
+#include "plugins/FaustPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 
 namespace magda {
@@ -602,6 +606,83 @@ float FourOscProcessor::getParameterByIndex(int paramIndex) const {
     auto params = plugin_->getAutomatableParameters();
     if (paramIndex >= 0 && paramIndex < params.size())
         return params[paramIndex]->getCurrentValue();
+    return 0.0f;
+}
+
+// =============================================================================
+// FaustProcessor
+// =============================================================================
+
+FaustProcessor::FaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+int FaustProcessor::getParameterCount() const {
+    auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin_.get());
+    if (faust == nullptr) {
+        DBG("[FaustProcessor] getParameterCount: plugin cast NULL");
+        return 0;
+    }
+    const int count = faust->getPool().activeCount();
+    DBG("[FaustProcessor] getParameterCount → " << count);
+    return count;
+}
+
+ParameterInfo FaustProcessor::getParameterInfo(int index) const {
+    auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin_.get());
+    if (faust == nullptr || index < 0 || index >= daw::audio::FaustParamPool::kSize)
+        return {};
+    return daw::audio::paramInfoFromSlot(faust->getPool().slot(index));
+}
+
+void FaustProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin_.get());
+    if (faust == nullptr) {
+        DBG("[FaustProcessor] populateParameters: plugin cast NULL");
+        return;
+    }
+    // Only push active slots so the standard ParamGridComponent shows
+    // populated cells only. Each ParameterInfo carries its real slot
+    // index in `paramIndex`, so links / automation / MIDI Learn still
+    // bind to the stable pool slot — display order ≠ slot identity.
+    int active = 0;
+    auto params = plugin_->getAutomatableParameters();
+    for (int i = 0; i < daw::audio::FaustParamPool::kSize; ++i) {
+        const auto& slot = faust->getPool().slot(i);
+        if (slot.active) {
+            auto paramInfo = daw::audio::paramInfoFromSlot(slot);
+            if (i >= 0 && i < params.size() && params[i]) {
+                paramInfo.currentValue =
+                    ParameterUtils::normalizedToReal(params[i]->getCurrentValue(), paramInfo);
+            }
+            info.parameters.push_back(std::move(paramInfo));
+            DBG("[FaustProcessor] populateParameters: slot " << i << " '" << slot.label
+                                                             << "' kind=" << (int)slot.kind);
+            ++active;
+        }
+    }
+    DBG("[FaustProcessor] populateParameters: pushed " << active << " active params");
+}
+
+void FaustProcessor::setParameterByIndex(int paramIndex, float value) {
+    if (!plugin_)
+        return;
+    auto params = plugin_->getAutomatableParameters();
+    if (paramIndex >= 0 && paramIndex < params.size()) {
+        const auto info = getParameterInfo(paramIndex);
+        const float normalised = ParameterUtils::realToNormalized(value, info);
+        params[paramIndex]->setParameterFromHost(normalised, juce::sendNotificationSync);
+    }
+}
+
+float FaustProcessor::getParameterByIndex(int paramIndex) const {
+    if (!plugin_)
+        return 0.0f;
+    auto params = plugin_->getAutomatableParameters();
+    if (paramIndex >= 0 && paramIndex < params.size()) {
+        const auto info = getParameterInfo(paramIndex);
+        return ParameterUtils::normalizedToReal(params[paramIndex]->getCurrentValue(), info);
+    }
     return 0.0f;
 }
 

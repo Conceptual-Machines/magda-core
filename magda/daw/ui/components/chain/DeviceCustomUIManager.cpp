@@ -2,6 +2,7 @@
 
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/SelectionManager.hpp"
@@ -45,6 +46,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return impulseResponseUI_.get();
     if (utilityUI_)
         return utilityUI_.get();
+    if (faustUI_)
+        return faustUI_.get();
     if (chordEngineUI_)
         return chordEngineUI_.get();
     if (arpeggiatorUI_)
@@ -91,7 +94,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 bool DeviceCustomUIManager::hasAnyUI() const {
     return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
            reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-           impulseResponseUI_ || utilityUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_;
+           impulseResponseUI_ || utilityUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ ||
+           stepSequencerUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {

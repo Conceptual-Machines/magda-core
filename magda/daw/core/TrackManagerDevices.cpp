@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <map>
 
 #include "../audio/AudioBridge.hpp"
@@ -19,6 +20,19 @@ struct PresetIdRemap {
 
 bool targetPointsAtDevice(const ControlTarget& target, DeviceId deviceId) {
     return deviceId != INVALID_DEVICE_ID && target.devicePath.getDeviceId() == deviceId;
+}
+
+int findStoredParameterIndex(const DeviceInfo& device, int paramIndex) {
+    auto byIdentity = std::find_if(
+        device.parameters.begin(), device.parameters.end(),
+        [paramIndex](const ParameterInfo& param) { return param.paramIndex == paramIndex; });
+    if (byIdentity != device.parameters.end())
+        return static_cast<int>(std::distance(device.parameters.begin(), byIdentity));
+
+    if (paramIndex >= 0 && paramIndex < static_cast<int>(device.parameters.size()))
+        return paramIndex;
+
+    return -1;
 }
 
 void retargetPresetLink(ControlTarget& target, DeviceId presetDeviceId,
@@ -675,8 +689,9 @@ void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
 void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex,
                                            float value) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (paramIndex >= 0 && paramIndex < static_cast<int>(device->parameters.size())) {
-            device->parameters[static_cast<size_t>(paramIndex)].currentValue = value;
+        const int storedIndex = findStoredParameterIndex(*device, paramIndex);
+        if (storedIndex >= 0) {
+            device->parameters[static_cast<size_t>(storedIndex)].currentValue = value;
             // Use granular notification - only sync this one parameter, not all 543
             notifyDeviceParameterChanged(device->id, paramIndex, value);
         }
@@ -848,8 +863,9 @@ void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& device
     // Instead, we notify UI listeners directly about the parameter change.
 
     if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (paramIndex >= 0 && paramIndex < static_cast<int>(device->parameters.size())) {
-            device->parameters[static_cast<size_t>(paramIndex)].currentValue = value;
+        const int storedIndex = findStoredParameterIndex(*device, paramIndex);
+        if (storedIndex >= 0) {
+            device->parameters[static_cast<size_t>(storedIndex)].currentValue = value;
 
             // Notify listeners about parameter change (for UI updates)
             notifyDeviceParameterChanged(device->id, paramIndex, value);

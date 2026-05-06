@@ -60,7 +60,8 @@ void ParamGridComponent::updateParameterSlots(
 
             if (paramIndex >= 0 && paramIndex < static_cast<int>(device.parameters.size())) {
                 const auto& param = device.parameters[static_cast<size_t>(paramIndex)];
-                paramSlots_[i]->setParamIndex(paramIndex);
+                const int targetParamIndex = param.paramIndex >= 0 ? param.paramIndex : paramIndex;
+                paramSlots_[i]->setParamIndex(targetParamIndex);
                 paramSlots_[i]->setParamName(param.name);
                 paramSlots_[i]->setParameterInfo(param);
                 paramSlots_[i]->setParamValue(param.currentValue);
@@ -69,8 +70,9 @@ void ParamGridComponent::updateParameterSlots(
                 paramSlots_[i]->setVisible(true);
 
                 if (onValueChanged) {
-                    paramSlots_[i]->onValueChanged = [onValueChanged, paramIndex](double value) {
-                        onValueChanged(paramIndex, value);
+                    paramSlots_[i]->onValueChanged = [onValueChanged,
+                                                      targetParamIndex](double value) {
+                        onValueChanged(targetParamIndex, value);
                     };
                 } else {
                     paramSlots_[i]->onValueChanged = nullptr;
@@ -197,17 +199,13 @@ void ParamGridComponent::setSlotSelected(int slotIndex, bool selected) {
 void ParamGridComponent::layoutContent(const juce::Font& labelFont, const juce::Font& valueFont) {
     auto area = getLocalBounds();
 
-    // Pagination row at top
     area.removeFromTop(2);
     auto paginationArea = area.removeFromTop(PAGINATION_HEIGHT);
-    area.removeFromTop(2);
+    area.removeFromTop(4);
 
     placeNavArrow(*prevPageButton_, paginationArea, true);
     placeNavArrow(*nextPageButton_, paginationArea, false);
     pageLabel_->setBounds(paginationArea);
-
-    // Small gap
-    area.removeFromTop(2);
 
     // Slots grid — spread evenly across remaining area
     area = area.reduced(2, 0);

@@ -38,6 +38,17 @@ enum class InternalPlugin {
     FourOsc,
     MagdaSampler,
     DrumGrid,
+    Arpeggiator,
+    MidiChordEngine,
+    StepSequencer,
+    Faust,
+};
+
+/// Vendor of an internal plugin. TracktionEngine = stock TE plugin (gets TE
+/// branding in the UI). Magda = MAGDA-native plugin we wrote ourselves.
+enum class InternalPluginVendor {
+    TracktionEngine,
+    Magda,
 };
 
 struct InternalPluginInfo {
@@ -45,29 +56,57 @@ struct InternalPluginInfo {
     juce::String pluginId;
     DeviceType deviceType;
     InternalPlugin id = InternalPlugin::None;
+    InternalPluginVendor vendor = InternalPluginVendor::TracktionEngine;
 };
 
 /// Built-in MAGDA + Tracktion plugins exposed to the agent layer + autocomplete.
 inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
+    using V = InternalPluginVendor;
     static const std::vector<InternalPluginInfo> kPlugins = {
-        // Effects
-        {"Equaliser", "eq", DeviceType::Effect, InternalPlugin::Equaliser},
-        {"Compressor", "compressor", DeviceType::Effect, InternalPlugin::Compressor},
-        {"Reverb", "reverb", DeviceType::Effect, InternalPlugin::Reverb},
-        {"Delay", "delay", DeviceType::Effect, InternalPlugin::Delay},
-        {"Chorus", "chorus", DeviceType::Effect, InternalPlugin::Chorus},
-        {"Phaser", "phaser", DeviceType::Effect, InternalPlugin::Phaser},
-        {"Filter", "lowpass", DeviceType::Effect, InternalPlugin::Filter},
-        {"Utility", "utility", DeviceType::Effect, InternalPlugin::Utility},
-        {"Pitch Shift", "pitchshift", DeviceType::Effect, InternalPlugin::PitchShift},
-        {"IR Reverb", "impulseresponse", DeviceType::Effect, InternalPlugin::ImpulseResponse},
-        {"Test Tone", "tone", DeviceType::Effect, InternalPlugin::TestTone},
-        // Instruments
-        {"4OSC Synth", "4osc", DeviceType::Instrument, InternalPlugin::FourOsc},
-        {"MAGDA Sampler", "magdasampler", DeviceType::Instrument, InternalPlugin::MagdaSampler},
-        {"Drum Grid", "drumgrid", DeviceType::Instrument, InternalPlugin::DrumGrid},
+        // Effects (TE stock)
+        {"Equaliser", "eq", DeviceType::Effect, InternalPlugin::Equaliser, V::TracktionEngine},
+        {"Compressor", "compressor", DeviceType::Effect, InternalPlugin::Compressor,
+         V::TracktionEngine},
+        {"Reverb", "reverb", DeviceType::Effect, InternalPlugin::Reverb, V::TracktionEngine},
+        {"Delay", "delay", DeviceType::Effect, InternalPlugin::Delay, V::TracktionEngine},
+        {"Chorus", "chorus", DeviceType::Effect, InternalPlugin::Chorus, V::TracktionEngine},
+        {"Phaser", "phaser", DeviceType::Effect, InternalPlugin::Phaser, V::TracktionEngine},
+        {"Filter", "lowpass", DeviceType::Effect, InternalPlugin::Filter, V::TracktionEngine},
+        {"Utility", "utility", DeviceType::Effect, InternalPlugin::Utility, V::TracktionEngine},
+        {"Pitch Shift", "pitchshift", DeviceType::Effect, InternalPlugin::PitchShift,
+         V::TracktionEngine},
+        {"IR Reverb", "impulseresponse", DeviceType::Effect, InternalPlugin::ImpulseResponse,
+         V::TracktionEngine},
+        {"Test Tone", "tone", DeviceType::Effect, InternalPlugin::TestTone, V::TracktionEngine},
+        // Effects (MAGDA-native)
+        {"Faust", "faust", DeviceType::Effect, InternalPlugin::Faust, V::Magda},
+        // Instruments (TE stock)
+        {"4OSC Synth", "4osc", DeviceType::Instrument, InternalPlugin::FourOsc, V::TracktionEngine},
+        // Instruments (MAGDA-native)
+        {"MAGDA Sampler", "magdasampler", DeviceType::Instrument, InternalPlugin::MagdaSampler,
+         V::Magda},
+        {"Drum Grid", "drumgrid", DeviceType::Instrument, InternalPlugin::DrumGrid, V::Magda},
+        // MIDI processors (MAGDA-native)
+        {"Arpeggiator", "arpeggiator", DeviceType::Effect, InternalPlugin::Arpeggiator, V::Magda},
+        {"Chord Engine", "midichordengine", DeviceType::Effect, InternalPlugin::MidiChordEngine,
+         V::Magda},
+        {"Step Sequencer", "stepsequencer", DeviceType::Effect, InternalPlugin::StepSequencer,
+         V::Magda},
     };
     return kPlugins;
+}
+
+/// True iff `pluginId` matches a stock Tracktion Engine plugin (the kind that
+/// should display the TE brand mark). Returns false for MAGDA-native built-ins
+/// (DrumGrid, MAGDA Sampler, Faust, …) and for external VST/AU plugins.
+inline bool isTracktionEngineStockPlugin(const juce::String& pluginId) {
+    if (pluginId.isEmpty())
+        return false;
+    for (const auto& entry : getInternalPlugins()) {
+        if (entry.pluginId.equalsIgnoreCase(pluginId))
+            return entry.vendor == InternalPluginVendor::TracktionEngine;
+    }
+    return false;
 }
 
 /**

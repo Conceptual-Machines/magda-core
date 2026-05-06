@@ -75,10 +75,6 @@ ResolveResult TargetResolver::resolve(const Target& target) const {
                 r.target = *result;
                 r.sourceLabel = "resolver:" + t.kind;
                 r.resolved = true;
-                DBG("[AUTOMAP] TargetResolver(ResolverRef): kind="
-                    << t.kind << " -> paramIndex=" << r.target.paramIndex << " controlKind="
-                    << (r.target.kind == ControlTarget::Kind::DeviceMacro ? "DeviceMacro"
-                                                                          : "PluginParam"));
                 return r;
             }
         },

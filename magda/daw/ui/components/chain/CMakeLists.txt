@@ -18,6 +18,10 @@ target_sources(magda_daw_app PRIVATE
     PitchShiftUI.cpp
     ImpulseResponseUI.cpp
     UtilityUI.cpp
+    FaustUI.cpp
+    FaustCodeEditorWindow.cpp
+    FaustCustomUIRegistry.cpp
+    MagdaDriveCurveView.cpp
     FourOscUI.cpp
     ArpeggiatorUI.cpp
     StepSequencerUI.cpp
@@ -58,6 +62,10 @@ target_sources(magda_daw_app PRIVATE
     PitchShiftUI.hpp
     ImpulseResponseUI.hpp
     UtilityUI.hpp
+    FaustUI.hpp
+    FaustCodeEditorWindow.hpp
+    FaustCustomUIRegistry.hpp
+    MagdaDriveCurveView.hpp
     FourOscUI.hpp
     ArpeggiatorUI.hpp
     StepSequencerUI.hpp

@@ -132,6 +132,69 @@ if(MSVC)
     set_target_properties(llama PROPERTIES CXX_STANDARD 17)
 endif()
 
+# Faust — runtime DSP compilation. Free tier uses the interpreter backend (no
+# LLVM, smaller binary, ~5–10× slower DSP execution); pro tier (later) flips
+# MAGDA_FAUST_BACKEND=llvm to pull in the LLVM JIT backend at full speed.
+set(MAGDA_FAUST_BACKEND "interp" CACHE STRING "Faust backend: interp or llvm")
+set_property(CACHE MAGDA_FAUST_BACKEND PROPERTY STRINGS "interp" "llvm")
+
+set(INCLUDE_EXECUTABLE OFF CACHE BOOL "" FORCE)
+set(INCLUDE_STATIC ON CACHE BOOL "" FORCE)
+set(INCLUDE_DYNAMIC OFF CACHE BOOL "" FORCE)
+set(INCLUDE_OSC OFF CACHE BOOL "" FORCE)
+set(INCLUDE_HTTP OFF CACHE BOOL "" FORCE)
+set(INCLUDE_ITP OFF CACHE BOOL "" FORCE)
+set(INCLUDE_EMCC OFF CACHE BOOL "" FORCE)
+set(INCLUDE_WASM_GLUE OFF CACHE BOOL "" FORCE)
+set(INCLUDE_WASMTIME OFF CACHE BOOL "" FORCE)
+# Default all backends OFF; flip the one we want below.
+set(C_BACKEND       OFF CACHE STRING "" FORCE)
+set(CPP_BACKEND     OFF CACHE STRING "" FORCE)
+set(CMAJOR_BACKEND  OFF CACHE STRING "" FORCE)
+set(CSHARP_BACKEND  OFF CACHE STRING "" FORCE)
+set(DLANG_BACKEND   OFF CACHE STRING "" FORCE)
+set(FIR_BACKEND     OFF CACHE STRING "" FORCE)
+set(JAVA_BACKEND    OFF CACHE STRING "" FORCE)
+set(JAX_BACKEND     OFF CACHE STRING "" FORCE)
+set(JULIA_BACKEND   OFF CACHE STRING "" FORCE)
+set(JSFX_BACKEND    OFF CACHE STRING "" FORCE)
+set(OLDCPP_BACKEND  OFF CACHE STRING "" FORCE)
+set(RUST_BACKEND    OFF CACHE STRING "" FORCE)
+set(TEMPLATE_BACKEND OFF CACHE STRING "" FORCE)
+set(VHDL_BACKEND    OFF CACHE STRING "" FORCE)
+set(WASM_BACKEND    OFF CACHE STRING "" FORCE)
+set(INTERP_BACKEND  OFF CACHE STRING "" FORCE)
+
+if(MAGDA_FAUST_BACKEND STREQUAL "llvm")
+    set(LLVM_BACKEND "STATIC" CACHE STRING "" FORCE)
+    set(INTERP_COMP_BACKEND OFF CACHE STRING "" FORCE)
+else()
+    set(LLVM_BACKEND OFF CACHE STRING "" FORCE)
+    # INTERP_COMP includes both interpreter VM + compile-from-source path —
+    # what createInterpreterDSPFactoryFromString() needs.
+    set(INTERP_COMP_BACKEND "STATIC" CACHE STRING "" FORCE)
+endif()
+add_subdirectory(third_party/faust/build third_party/faust EXCLUDE_FROM_ALL)
+# Faust's static lib target is named `staticlib`. Re-expose under a clearer
+# alias so call sites read sensibly.
+add_library(faust::libfaust ALIAS staticlib)
+
+# Faust's compiler/tlib/compatibility.cpp picks one of two implementations
+# of `chdir` / `mkdir` / `getcwd` / `getFaustPathname` via:
+#   #if defined(_MBCS) || __MINGW32__   // narrow:  char  buffers + CreateDirectoryA
+#   #else                               // wide:    wchar buffers + CreateDirectory macro
+#
+# When the build defines neither `_MBCS` nor `UNICODE` (CMake's MSVC
+# default with `CharacterSet=NotSet`) the file picks the wide branch,
+# but the Win32 `CreateDirectory` macro resolves to `CreateDirectoryA`
+# (the char* version) — a wchar_t* / char* mismatch and a C2664 build
+# error. Define `_MBCS` for Faust's staticlib only so it takes the
+# narrow branch upstream Faust expects on Windows; other targets are
+# untouched.
+if(MSVC AND TARGET staticlib)
+    target_compile_definitions(staticlib PRIVATE _MBCS)
+endif()
+
 # Catch2 for testing
 if(MAGDA_BUILD_TESTS)
     FetchContent_Declare(
