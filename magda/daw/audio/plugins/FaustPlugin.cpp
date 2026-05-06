@@ -468,11 +468,32 @@ void FaustPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             continue;
         if (b.slotIndex < 0 || b.slotIndex >= FaustParamPool::kSize)
             continue;
+        // Non-User roles (e.g. ProjectTempo) have their zones written
+        // by the host below — don't overwrite them with the unused
+        // CachedValue stored on the AutomatableParameter.
+        if (b.role != FaustControlRole::User)
+            continue;
         const auto& param = poolParams_[static_cast<size_t>(b.slotIndex)];
         if (!param)
             continue;
         const float normalized = param->getCurrentValue();
         *b.zone = static_cast<FAUSTFLOAT>(denormalizeForBinding(b, normalized));
+    }
+
+    // Host-supplied controls. Currently just ProjectTempo — sample the
+    // edit's tempo sequence at this block's start once and write the
+    // BPM into every binding tagged ProjectTempo. (Multiple tempo
+    // slots in one DSP would be unusual but cost nothing to support.)
+    {
+        double cachedBpm = -1.0;
+        for (const auto& b : active->activeBindings) {
+            if (!b.zone || b.role != FaustControlRole::ProjectTempo)
+                continue;
+            if (cachedBpm < 0.0) {
+                cachedBpm = edit.tempoSequence.getBpmAt(fc.editTime.getStart());
+            }
+            *b.zone = static_cast<FAUSTFLOAT>(cachedBpm);
+        }
     }
 
     const int hostChannels = fc.destBuffer->getNumChannels();

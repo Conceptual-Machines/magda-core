@@ -79,6 +79,11 @@ class ParamGridComponent : public juce::Component {
     std::function<void()> onPrevPage;
     std::function<void()> onNextPage;
 
+    // Re-evaluate gate conditions and apply setEnabled() to the cells on
+    // the current page. Call after any parameter value change that might
+    // affect gate states (e.g. toggling a sync/mode switch).
+    void refreshEnabledStates(const magda::DeviceInfo& device, int currentPage);
+
     // Parameter learn mode
     void setLearnMode(bool active);
     bool isLearnMode() const {

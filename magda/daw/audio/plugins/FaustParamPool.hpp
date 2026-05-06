@@ -73,11 +73,20 @@ class FaustParamPool {
         float maxValue = 1.0f;
         float stepValue = 0.0f;
         bool logScale = false;
+        /// MAGDA role for this binding. The audio-thread param loop
+        /// only writes its `param->getCurrentValue()` for role==User
+        /// bindings; non-User roles (e.g. ProjectTempo) are filled in
+        /// by the host directly each block.
+        FaustControlRole role = FaustControlRole::User;
         /// For Kind::Discrete only: real-unit values indexed by sorted
         /// choice order. The audio thread maps `round(normalized *
         /// (size-1))` to an index here, then writes the result to
         /// `zone`. Empty for Continuous / Boolean.
         std::vector<float> discreteValues;
+        /// Gate condition mirrored from the slot. -1 = no gate.
+        int gateSlotIndex = -1;
+        /// True iff the gate condition is negated (`[gate:!N]`).
+        bool gateNegated = false;
     };
 
     struct RebindReport {
@@ -104,6 +113,14 @@ class FaustParamPool {
         return slots_[static_cast<size_t>(index)];
     }
     int activeCount() const;
+
+    /// Returns the live-DSP zone of the active slot tagged
+    /// `[role:projectTempo]`, or `nullptr` if no such slot exists in
+    /// the current binding. The host writes the project BPM here every
+    /// audio block. Lifetime is bounded by the matching FaustState —
+    /// callers must take a snapshot via FaustState::ActiveBinding
+    /// rather than re-querying this from the audio thread.
+    FAUSTFLOAT* getProjectTempoZone() const;
 
   private:
     std::array<FaustParamSlot, kSize> slots_;

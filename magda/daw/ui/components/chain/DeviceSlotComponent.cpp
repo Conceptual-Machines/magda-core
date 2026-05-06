@@ -2796,6 +2796,11 @@ void DeviceSlotComponent::updateParameterSlots() {
             }
             magda::TrackManager::getInstance().setDeviceParameterValue(self->nodePath_, paramIndex,
                                                                        static_cast<float>(value));
+            // Re-evaluate gate conditions now that the local cache is updated.
+            // This makes gated cells (e.g. Time / Division when Sync toggles)
+            // respond immediately without waiting for the next full repaint.
+            self->paramGrid_->refreshEnabledStates(self->device_,
+                                                   self->paramGrid_->getCurrentPage());
         });
 }
 

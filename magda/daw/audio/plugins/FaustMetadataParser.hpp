@@ -8,6 +8,26 @@
 namespace magda::daw::audio {
 
 /**
+ * @brief Faust control roles MAGDA recognises.
+ *
+ * Roles are MAGDA-specific extensions surfaced through the
+ * `[role:<value>]` annotation. They're orthogonal to slot index /
+ * unit / scale: a role tells the host *what to do* with the control's
+ * zone (e.g. write the project tempo into it every block) rather than
+ * how to display it.
+ */
+enum class FaustControlRole {
+    /// Default — user-visible parameter the player drives.
+    User,
+    /// Host writes the live project tempo (BPM) to this slot's zone
+    /// every audio block. The DSP reads it as a regular control. Used
+    /// for tempo-synced delay times, grain rates, LFO frequencies,
+    /// etc. Pair with `[hidden:1]` so it doesn't clutter the param
+    /// grid.
+    ProjectTempo,
+};
+
+/**
  * @brief Parsed output of a Faust label like
  *        "Cutoff [unit:Hz] [scale:log] [idx:7]".
  *
@@ -39,6 +59,24 @@ struct ControlMetadata {
     /// declared" from "empty menu" — defensive; Faust shouldn't emit
     /// the latter).
     bool isMenuStyle = false;
+
+    /// MAGDA role tag from `[role:<value>]`. Defaults to User.
+    FaustControlRole role = FaustControlRole::User;
+
+    /// True iff `[hidden:1]`. Hidden controls are omitted from the
+    /// inspector's parameter grid but still occupy a pool slot — the
+    /// host writes to their zones (e.g. ProjectTempo).
+    bool hidden = false;
+
+    /// Gate slot from `[gate:N]` or `[gate:!N]`. When >= 0, this param
+    /// is only enabled (interactive) in the UI when the referenced slot's
+    /// current value satisfies the condition. `[gate:N]` means "enabled
+    /// when slot N >= 0.5"; `[gate:!N]` means "enabled when slot N < 0.5"
+    /// (i.e. negated). -1 means no gate — param is always enabled.
+    int gateSlotIndex = -1;
+
+    /// True iff the gate condition is negated (declared as `[gate:!N]`).
+    bool gateNegated = false;
 };
 
 /**

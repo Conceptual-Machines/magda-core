@@ -92,6 +92,10 @@ void ParamGridComponent::updateParameterSlots(
             paramSlots_[i]->onValueChanged = nullptr;
         }
     }
+
+    // Apply gate-driven enabled states after the per-slot setEnabled(true) above.
+    // This covers the initial load as well as page turns.
+    refreshEnabledStates(device, currentPage);
 }
 
 void ParamGridComponent::updateParameterValues(const magda::DeviceInfo& device, int currentPage) {
@@ -117,6 +121,59 @@ void ParamGridComponent::updateParameterValues(const magda::DeviceInfo& device, 
                 paramSlots_[i]->setParamValue(param.currentValue);
             }
         }
+    }
+
+    // Re-evaluate gate conditions after values are updated. A parameter value
+    // change (e.g. toggling Sync) may flip which cells are enabled.
+    refreshEnabledStates(device, currentPage);
+}
+
+void ParamGridComponent::refreshEnabledStates(const magda::DeviceInfo& device, int currentPage) {
+    const int paramsPerPage = getParamsPerPage();
+    const int pageOffset = currentPage * paramsPerPage;
+    const bool useVisibilityFilter = !device.visibleParameters.empty();
+    const int visibleCount = useVisibilityFilter ? static_cast<int>(device.visibleParameters.size())
+                                                 : static_cast<int>(device.parameters.size());
+
+    for (int i = 0; i < NUM_PARAMS; ++i) {
+        const int slotIndex = pageOffset + i;
+
+        if (slotIndex >= visibleCount)
+            continue;
+
+        int paramIndex;
+        if (useVisibilityFilter) {
+            paramIndex = device.visibleParameters[static_cast<size_t>(slotIndex)];
+        } else {
+            paramIndex = slotIndex;
+        }
+
+        if (paramIndex < 0 || paramIndex >= static_cast<int>(device.parameters.size()))
+            continue;
+
+        const auto& param = device.parameters[static_cast<size_t>(paramIndex)];
+
+        // Skip params with no gate — their enabled state is already set by
+        // updateParameterSlots (true for active params, false for placeholders).
+        if (param.gateSlotIndex < 0)
+            continue;
+
+        // Look up the gate slot's current value from the full parameter list.
+        // The gate slot index addresses device.parameters directly by paramIndex
+        // (not the visible-filter position), mirroring how [idx:N] is declared.
+        const int gateIdx = param.gateSlotIndex;
+        if (gateIdx < 0 || gateIdx >= static_cast<int>(device.parameters.size()))
+            continue;
+
+        const float gateValue = device.parameters[static_cast<size_t>(gateIdx)].currentValue;
+        const bool gateTruth = (gateValue >= 0.5f);
+        // `[gate:N]`  → active when gate slot is ON (gateTruth == true).
+        // `[gate:!N]` → active when gate slot is OFF (gateTruth == false).
+        const bool active = param.gateNegated ? !gateTruth : gateTruth;
+
+        // Apply AFTER the existing setEnabled(true) that updateParameterSlots
+        // already called, so the gate can override it for active slots.
+        paramSlots_[i]->setEnabled(active);
     }
 }
 

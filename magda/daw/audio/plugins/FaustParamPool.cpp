@@ -32,6 +32,10 @@ void fillSlot(FaustParamSlot& slot, int index, const HarvestedControl& h) {
     slot.logScale = h.metadata.logScale;
     slot.choices = h.metadata.menuChoices;
     slot.zone = h.zone;
+    slot.role = h.metadata.role;
+    slot.hidden = h.metadata.hidden;
+    slot.gateSlotIndex = h.metadata.gateSlotIndex;
+    slot.gateNegated = h.metadata.gateNegated;
 }
 
 FaustParamPool::ActiveBindingDescriptor descriptorFor(const FaustParamSlot& slot) {
@@ -43,6 +47,9 @@ FaustParamPool::ActiveBindingDescriptor descriptorFor(const FaustParamSlot& slot
     d.maxValue = slot.maxValue;
     d.stepValue = slot.stepValue;
     d.logScale = slot.logScale;
+    d.role = slot.role;
+    d.gateSlotIndex = slot.gateSlotIndex;
+    d.gateNegated = slot.gateNegated;
     if (slot.kind == FaustParamSlot::Kind::Discrete) {
         // Sort by underlying value so the dropdown index → real-value
         // lookup matches the order users see (and matches what
@@ -78,6 +85,14 @@ int FaustParamPool::activeCount() const {
         if (s.active)
             ++n;
     return n;
+}
+
+FAUSTFLOAT* FaustParamPool::getProjectTempoZone() const {
+    for (const auto& s : slots_) {
+        if (s.active && s.role == FaustControlRole::ProjectTempo)
+            return s.zone;
+    }
+    return nullptr;
 }
 
 FaustParamPool::RebindReport FaustParamPool::rebindFromHarvest(
