@@ -223,11 +223,13 @@ FaustAgent::Result FaustAgent::validateWithMCP(Result result) {
     args->setProperty("name", juce::String(result.name));
 
     auto mcpResult = mcp->callTool("compile_faust", juce::var(args));
-    if (!mcpResult.success) {
-        DBG("MCPClient compile_faust error: " + mcpResult.error);
-        result.error = "Faust compilation failed: " + mcpResult.error.toStdString();
-        result.hasError = true;
-    }
+    if (mcpResult.success)
+        return result;
+
+    DBG("MCPClient compile_faust error: " + mcpResult.error);
+    result.error = "Faust compilation failed:\n" + mcpResult.error.toStdString() +
+                   "\n\nWould you like me to try fixing it?";
+    result.hasError = true;
     return result;
 }
 
