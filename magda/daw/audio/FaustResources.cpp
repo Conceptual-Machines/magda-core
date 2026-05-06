@@ -37,6 +37,7 @@ std::vector<StarterDsp> getBundledStarterDsps() {
     } kStarters[] = {
         {"Drive", "magda_drive.dsp", "magda_drive_dsp", FaustCustomViewKind::MagdaDrive},
         {"Tremolo", "magda_tremolo.dsp", "magda_tremolo_dsp", FaustCustomViewKind::None},
+        {"Delay", "magda_delay.dsp", "magda_delay_dsp", FaustCustomViewKind::None},
     };
 
     std::vector<StarterDsp> out;
