@@ -179,6 +179,17 @@ add_subdirectory(third_party/faust/build third_party/faust EXCLUDE_FROM_ALL)
 # alias so call sites read sensibly.
 add_library(faust::libfaust ALIAS staticlib)
 
+# Faust's compiler/tlib/compatibility.cpp explicitly calls the ANSI win32
+# APIs (CreateDirectoryA / GetCurrentDirectoryA / GetModuleFileNameA) but
+# uses TCHAR-typed buffers. Under MSVC with UNICODE/_UNICODE defined those
+# resolve to wchar_t and the build fails with C2664. The CI Windows job
+# inherits UNICODE from somewhere upstream (juce / tracktion_engine), so
+# scope-undefine the macros for Faust's static lib only — leaves every
+# other target (juce, magda_daw, etc.) untouched.
+if(MSVC AND TARGET staticlib)
+    target_compile_options(staticlib PRIVATE /UUNICODE /U_UNICODE)
+endif()
+
 # Catch2 for testing
 if(MAGDA_BUILD_TESTS)
     FetchContent_Declare(
