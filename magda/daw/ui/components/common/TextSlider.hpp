@@ -82,22 +82,26 @@ class TextSlider : public juce::Component,
     void setParameterInfo(const magda::ParameterInfo& info) {
         setRange(static_cast<double>(info.minValue), static_cast<double>(info.maxValue));
 
-        // Map scaleAnchor into TextSlider's linear-ratio skew so the drag
-        // behaviour lines up with ParameterUtils' anchor handling. Exact
-        // display/parse still goes through ParameterUtils below, so the
-        // slider and the automation lane cannot disagree on values.
+        // Map scaleAnchor into TextSlider's drag-skew so the slider
+        // matches ParameterUtils' anchor handling. The actual
+        // projection (linear vs log) is selected by `useLogProjection_`
+        // below — without it, scale=Logarithmic + scaleAnchor would
+        // compute a log anchor-ratio and then project linearly, which
+        // lands the anchor at the wrong pixel position.
+        useLogProjection_ =
+            (info.scale == magda::ParameterScale::Logarithmic && info.minValue > 0.0f);
         skewFactor_ = 1.0;
         if (info.scaleAnchor > info.minValue && info.scaleAnchor < info.maxValue &&
             info.maxValue > info.minValue) {
-            // Use log-space anchor ratio for logarithmic params to match
-            // ParameterUtils::normalizedToReal/realToNormalized.
-            double anchorRatio;
-            if (info.scale == magda::ParameterScale::Logarithmic && info.minValue > 0.0f) {
-                anchorRatio = std::log(static_cast<double>(info.scaleAnchor) / info.minValue) /
-                              std::log(static_cast<double>(info.maxValue) / info.minValue);
-            } else {
-                anchorRatio = (info.scaleAnchor - info.minValue) / (info.maxValue - info.minValue);
-            }
+            // The skew is solved so that pow(0.5, 1/skew) = anchorRatio,
+            // i.e. the slider's pixel midpoint maps to the anchor's
+            // position in whichever projected space (linear or log) the
+            // drag handler then uses.
+            const double anchorRatio =
+                useLogProjection_
+                    ? (std::log(static_cast<double>(info.scaleAnchor) / info.minValue) /
+                       std::log(static_cast<double>(info.maxValue) / info.minValue))
+                    : (info.scaleAnchor - info.minValue) / (info.maxValue - info.minValue);
             if (anchorRatio > 0.0 && anchorRatio < 1.0)
                 skewFactor_ = std::log(0.5) / std::log(anchorRatio);
         }
@@ -503,7 +507,25 @@ class TextSlider : public juce::Component,
                 }
 
                 double newValue;
-                if (skewFactor_ != 1.0) {
+                if (useLogProjection_) {
+                    // Log slider: drag operates in log-normalised space
+                    // [0,1] = log(val/min) / log(max/min). Equal pixel
+                    // movements give equal RATIO changes on the value;
+                    // an optional skew keeps an anchor at the midpoint.
+                    const double logRange = std::log(maxValue_ / minValue_);
+                    const double startNorm = std::log(dragStartValue_ / minValue_) / logRange;
+                    if (skewFactor_ != 1.0) {
+                        const double startSkewed = std::pow(startNorm, skewFactor_);
+                        const double skewedNorm =
+                            juce::jlimit(0.0, 1.0, startSkewed + pixelDelta / pixelRange);
+                        const double unskewed = std::pow(skewedNorm, 1.0 / skewFactor_);
+                        newValue = minValue_ * std::exp(unskewed * logRange);
+                    } else {
+                        const double newNorm =
+                            juce::jlimit(0.0, 1.0, startNorm + pixelDelta / pixelRange);
+                        newValue = minValue_ * std::exp(newNorm * logRange);
+                    }
+                } else if (skewFactor_ != 1.0) {
                     // Skewed drag: work in normalised (0-1) space with skew applied
                     double startNorm = (dragStartValue_ - minValue_) / (maxValue_ - minValue_);
                     double startSkewed = std::pow(startNorm, skewFactor_);
@@ -614,6 +636,7 @@ class TextSlider : public juce::Component,
     double maxValue_ = 1.0;
     double interval_ = 0.01;
     double skewFactor_ = 1.0;
+    bool useLogProjection_ = false;
     double dragStartValue_ = 0.0;
     int dragStartX_ = 0;
     int dragStartY_ = 0;
