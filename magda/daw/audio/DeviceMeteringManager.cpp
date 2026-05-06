@@ -11,8 +11,13 @@ juce::CriticalSection DeviceMeteringManager::editMapLock_;
 te::LevelMeasurer& DeviceMeteringManager::getOrCreateMeasurer(DeviceId deviceId) {
     juce::ScopedLock sl(lock_);
     auto it = entries_.find(deviceId);
-    if (it != entries_.end())
+    if (it != entries_.end()) {
+        if (!it->second->clientRegistered) {
+            it->second->measurer.addClient(it->second->client);
+            it->second->clientRegistered = true;
+        }
         return it->second->measurer;
+    }
 
     auto entry = std::make_unique<Entry>();
     entry->measurer.addClient(entry->client);
@@ -42,8 +47,17 @@ DeviceId DeviceMeteringManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
 void DeviceMeteringManager::updateAllClients() {
     juce::ScopedLock sl(lock_);
     for (auto& [deviceId, entry] : entries_) {
-        if (!entry->clientRegistered)
+        if (!entry->clientRegistered) {
+            if (entry->realtimeTap) {
+                entry->peakL.store(
+                    entry->realtimeTap->peakL.exchange(0.0f, std::memory_order_relaxed),
+                    std::memory_order_relaxed);
+                entry->peakR.store(
+                    entry->realtimeTap->peakR.exchange(0.0f, std::memory_order_relaxed),
+                    std::memory_order_relaxed);
+            }
             continue;
+        }
 
         auto levelL = entry->client.getAndClearAudioLevel(0);
         auto levelR = entry->client.getAndClearAudioLevel(1);
@@ -70,8 +84,11 @@ bool DeviceMeteringManager::getLatestLevels(DeviceId deviceId, DeviceMeterData& 
 void DeviceMeteringManager::setGain(DeviceId deviceId, float gain) {
     juce::ScopedLock sl(lock_);
     auto it = entries_.find(deviceId);
-    if (it != entries_.end())
+    if (it != entries_.end()) {
         it->second->gainLinear.store(gain, std::memory_order_relaxed);
+        if (it->second->realtimeTap)
+            it->second->realtimeTap->gainLinear.store(gain, std::memory_order_relaxed);
+    }
 }
 
 std::atomic<float>* DeviceMeteringManager::getGainAtomic(DeviceId deviceId) {
@@ -96,6 +113,22 @@ void DeviceMeteringManager::ensureEntry(DeviceId deviceId) {
     if (entries_.find(deviceId) == entries_.end()) {
         entries_[deviceId] = std::make_unique<Entry>();
     }
+}
+
+DeviceMeteringManager::RealtimeTap DeviceMeteringManager::getRealtimeTap(DeviceId deviceId) {
+    juce::ScopedLock sl(lock_);
+    auto& entry = entries_[deviceId];
+    if (!entry)
+        entry = std::make_unique<Entry>();
+
+    if (!entry->realtimeTap) {
+        entry->realtimeTap = std::make_shared<RealtimeTapStorage>();
+        entry->realtimeTap->gainLinear.store(entry->gainLinear.load(std::memory_order_relaxed),
+                                             std::memory_order_relaxed);
+    }
+
+    auto storage = entry->realtimeTap;
+    return {storage, &storage->peakL, &storage->peakR, &storage->gainLinear};
 }
 
 void DeviceMeteringManager::setRackDirectLevels(RackId rackId, float peakL, float peakR) {

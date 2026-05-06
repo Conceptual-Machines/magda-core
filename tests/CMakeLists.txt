@@ -142,6 +142,7 @@ target_sources(magda_juce_tests PRIVATE
     # test_export_no_assertion_juce.cpp  # Disabled - see issue #611 (generator device export)
     test_midi_recording_juce.cpp
     test_clip_sync_integration_juce.cpp
+    test_midi_signal_routing_juce.cpp
     test_clip_inspector_juce.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorSections.cpp

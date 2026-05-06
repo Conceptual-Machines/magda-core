@@ -172,13 +172,6 @@ void PianoRollContent::setupGridCallbacks() {
         if (!sourceClip || noteIndex >= sourceClip->midiNotes.size())
             return;
 
-        double oldBeat = sourceClip->midiNotes[noteIndex].startBeat;
-
-        DBG("=== NOTE MOVE ===");
-        DBG("  Clip " << clipId);
-        DBG("  FROM content-beat " << oldBeat << " TO content-beat " << newBeat);
-        DBG("  Note index: " << noteIndex);
-
         // Normal movement within same clip (only executed if no cross-clip transfer occurred)
         auto cmd =
             std::make_unique<magda::MoveMidiNoteCommand>(clipId, noteIndex, newBeat, newNoteNumber);
@@ -1074,7 +1067,6 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
 
             // Get all selected clips
             const auto& selectedClipsSet = selectionManager.getSelectedClips();
-            DBG("PianoRoll: Total selected clips: " << selectedClipsSet.size());
 
             std::vector<magda::ClipId> selectedMidiClips;
 
@@ -1083,17 +1075,13 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
                 auto* c = clipManager.getClip(id);
                 if (c && c->isMidi() && c->trackId == trackId) {
                     selectedMidiClips.push_back(id);
-                    DBG("  - Selected MIDI clip on track: " << id);
                 }
             }
 
             // If no selected clips or selected clips are on different track, use just the primary
             if (selectedMidiClips.empty()) {
                 selectedMidiClips.push_back(clipId);
-                DBG("  - No multi-selection, using primary clip: " << clipId);
             }
-
-            DBG("PianoRoll: Selected MIDI clips count: " << selectedMidiClips.size());
 
             if (relativeTimeMode_) {
                 // Relative mode: show only selected clips
@@ -1111,7 +1099,6 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
                     }
                 }
 
-                DBG("PianoRoll: Total MIDI clips on track: " << allMidiClips.size());
                 gridComponent_->setClips(trackId, selectedMidiClips, allMidiClips);
             }
 

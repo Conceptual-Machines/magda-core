@@ -1329,8 +1329,6 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
         }
     }
 
-    DBG("Applied parameter config for " << uniqueId << " - " << device.visibleParameters.size()
-                                        << " visible params");
     return true;
 }
 

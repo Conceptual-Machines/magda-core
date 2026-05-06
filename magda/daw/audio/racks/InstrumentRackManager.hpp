@@ -20,9 +20,9 @@ namespace te = tracktion;
  * and synth output are audible on the same track.
  *
  * Rack wiring:
- *   MIDI:            rack I/O pin 0 --> synth pin 0
+ *   MIDI:             rack I/O pin 0 --> synth pin 0 (no MIDI output passthrough)
  *   Audio passthrough: rack I/O pin 1 --> rack out pin 1, pin 2 --> rack out pin 2
- *   Synth output:    synth pin 1 --> rack out pin 1, synth pin 2 --> rack out pin 2
+ *   Synth output:      synth pin 1/2 --> meter tap pin 1/2 --> rack out pin 1/2
  *   (Multiple connections to same output pin are summed by TE automatically)
  */
 class InstrumentRackManager {
@@ -92,6 +92,11 @@ class InstrumentRackManager {
     te::Plugin* getRackInstance(DeviceId deviceId) const;
 
     /**
+     * @brief Get the explicit meter tap plugin inside a wrapped instrument rack
+     */
+    te::Plugin* getMeterTapPlugin(DeviceId deviceId) const;
+
+    /**
      * @brief Get the RackType wrapping an instrument (for modifier/macro support)
      * @param deviceId The MAGDA device ID
      * @return The RackType, or nullptr if not wrapped
@@ -124,12 +129,14 @@ class InstrumentRackManager {
         te::RackType::Ptr rackType;
         te::Plugin::Ptr innerPlugin;   // The actual synth
         te::Plugin::Ptr rackInstance;  // The RackInstance on the main track
+        te::Plugin::Ptr meterTapPlugin;
         bool isMultiOut = false;
         int numOutputChannels = 2;
         std::map<int, te::Plugin::Ptr> outputInstances;  // pairIndex → RackInstance
     };
 
     std::map<DeviceId, WrappedInstrument> wrapped_;
+    std::map<te::EditItemID, te::Plugin::Ptr> pendingMeterTapsByRack_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InstrumentRackManager)
 };

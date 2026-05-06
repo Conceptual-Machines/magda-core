@@ -16,16 +16,16 @@ class PluginManager;
 /**
  * @brief Manages per-device LevelMeasurer instances for peak metering
  *
- * Each device in the chain gets a LevelMeasurer + Client pair. During TE graph
- * building, createNodeForPlugin() wraps each PluginNode with a LevelMeasuringNode
- * that feeds audio through the measurer. AudioBridge polls all clients on its
- * 30 FPS timer and stores peaks in atomics. DeviceSlotComponent reads the atomics
- * lock-free for UI painting.
+ * Track-level plugins use LevelMeasurer + Client pairs fed by the TE graph hook.
+ * Wrapped instruments use a MAGDA-owned InstrumentMeterTapPlugin inside the rack,
+ * which writes block peaks to realtime accumulators that updateAllClients()
+ * consumes and clears on the message thread.
  *
  * Thread Safety:
  * - getOrCreateMeasurer(): called from message thread during graph building
+ * - getRealtimeTap(): called from message thread when wiring a tap plugin
  * - updateAllClients(): called from message thread (timer)
- * - getLatestLevels(): called from message thread (UI) — reads atomics (lock-free)
+ * - getLatestLevels(): called from message thread (UI)
  * - Static editMap_: protected by editMapLock_
  */
 class DeviceMeteringManager {
@@ -108,6 +108,33 @@ class DeviceMeteringManager {
      */
     void ensureEntry(DeviceId deviceId);
 
+    struct RealtimeTapStorage {
+        std::atomic<float> peakL{0.f};
+        std::atomic<float> peakR{0.f};
+        std::atomic<float> gainLinear{1.0f};
+    };
+
+    struct RealtimeTap {
+        std::shared_ptr<RealtimeTapStorage> storage;
+        std::atomic<float>* peakL = nullptr;
+        std::atomic<float>* peakR = nullptr;
+        std::atomic<float>* gainLinear = nullptr;
+
+        bool isValid() const {
+            return storage != nullptr && peakL != nullptr && peakR != nullptr &&
+                   gainLinear != nullptr;
+        }
+    };
+
+    /**
+     * @brief Get stable atomic endpoints for audio-thread owned metering.
+     *
+     * The returned pointers are backed by storage shared with the tap plugin, so
+     * removeMeasurer() and clear() can drop manager entries without invalidating
+     * an already-wired audio-thread tap.
+     */
+    RealtimeTap getRealtimeTap(DeviceId deviceId);
+
     /**
      * @brief Directly set peak levels for a rack (bypasses LevelMeasurer)
      */
@@ -140,6 +167,7 @@ class DeviceMeteringManager {
         std::atomic<float> peakL{0.f};
         std::atomic<float> peakR{0.f};
         std::atomic<float> gainLinear{1.0f};
+        std::shared_ptr<RealtimeTapStorage> realtimeTap;
         bool clientRegistered = false;
     };
 

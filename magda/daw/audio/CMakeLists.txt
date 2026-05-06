@@ -42,6 +42,7 @@ target_sources(magda_daw PRIVATE
     plugins/DrumGridPlugin.cpp
     plugins/MidiChordEnginePlugin.cpp
     plugins/ArpeggiatorPlugin.cpp
+    plugins/InstrumentMeterTapPlugin.cpp
     plugins/MidiDevicePlugin.cpp
     transport/StepClock.cpp
     plugins/StepSequencerPlugin.cpp
@@ -77,6 +78,7 @@ target_sources(magda_daw PRIVATE
     plugins/DrumGridPlugin.hpp
     plugins/MidiChordEnginePlugin.hpp
     plugins/ArpeggiatorPlugin.hpp
+    plugins/InstrumentMeterTapPlugin.hpp
     plugins/MidiDevicePlugin.hpp
     transport/StepClock.hpp
     plugins/StepSequencerPlugin.hpp
