@@ -460,19 +460,31 @@ void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
     if (boolToggle_)
         boolToggle_->setVisible(false);
 
+    // Boolean/Discrete configurators std::move-capture the callback at
+    // config time. updateParameterSlots calls setParameterInfo BEFORE
+    // assigning onValueChanged, so passing the slot's member directly
+    // would freeze a stale (likely null) function in the toggle/combo's
+    // click handler — and clicks would silently no-op. Pass a thin
+    // lambda that reads the slot's current onValueChanged lazily,
+    // matching what the continuous TextSlider does in the constructor.
+    auto deferToSlot = [this](double v) {
+        if (onValueChanged)
+            onValueChanged(v);
+    };
+
     if (info.scale == magda::ParameterScale::Boolean) {
         if (!boolToggle_) {
             boolToggle_ = std::make_unique<juce::ToggleButton>();
             addAndMakeVisible(*boolToggle_);
         }
-        configureBoolToggle(*boolToggle_, info, onValueChanged);
+        configureBoolToggle(*boolToggle_, info, deferToSlot);
         boolToggle_->setVisible(true);
     } else if (info.scale == magda::ParameterScale::Discrete && !info.choices.empty()) {
         if (!discreteCombo_) {
             discreteCombo_ = std::make_unique<juce::ComboBox>();
             addAndMakeVisible(*discreteCombo_);
         }
-        configureDiscreteCombo(*discreteCombo_, info, onValueChanged);
+        configureDiscreteCombo(*discreteCombo_, info, deferToSlot);
         discreteCombo_->setVisible(true);
     } else {
         valueSlider_.setVisible(true);
