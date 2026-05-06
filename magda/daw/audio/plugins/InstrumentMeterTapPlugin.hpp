@@ -3,12 +3,11 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <atomic>
+#include <memory>
+#include <vector>
 
 #include "../../core/TypeIds.hpp"
-
-namespace magda {
-class DeviceMeteringManager;
-}
+#include "../DeviceMeteringManager.hpp"
 
 namespace magda::daw::audio {
 
@@ -79,6 +78,8 @@ class InstrumentMeterTapPlugin : public te::Plugin {
     std::atomic<std::atomic<float>*> peakL_{nullptr};
     std::atomic<std::atomic<float>*> peakR_{nullptr};
     std::atomic<std::atomic<float>*> gainLinear_{nullptr};
+    std::shared_ptr<DeviceMeteringManager::RealtimeTapStorage> tapStorage_;
+    std::vector<std::shared_ptr<DeviceMeteringManager::RealtimeTapStorage>> retiredTapStorage_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InstrumentMeterTapPlugin)
 };

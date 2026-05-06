@@ -46,6 +46,12 @@ void InstrumentMeterTapPlugin::setDeviceId(DeviceId deviceId) {
 }
 
 void InstrumentMeterTapPlugin::bindRealtimeTap() {
+    peakL_.store(nullptr, std::memory_order_release);
+    peakR_.store(nullptr, std::memory_order_release);
+    gainLinear_.store(nullptr, std::memory_order_release);
+    if (tapStorage_)
+        retiredTapStorage_.push_back(std::move(tapStorage_));
+
     const auto deviceId = deviceId_.load(std::memory_order_relaxed);
     if (deviceId == INVALID_DEVICE_ID)
         return;
@@ -53,6 +59,7 @@ void InstrumentMeterTapPlugin::bindRealtimeTap() {
     if (auto* manager = DeviceMeteringManager::getInstanceForEdit(edit)) {
         auto tap = manager->getRealtimeTap(deviceId);
         if (tap.isValid()) {
+            tapStorage_ = tap.storage;
             peakL_.store(tap.peakL, std::memory_order_release);
             peakR_.store(tap.peakR, std::memory_order_release);
             gainLinear_.store(tap.gainLinear, std::memory_order_release);
@@ -67,9 +74,10 @@ void InstrumentMeterTapPlugin::applyToBuffer(const te::PluginRenderContext& fc) 
     auto* peakL = peakL_.load(std::memory_order_acquire);
     auto* peakR = peakR_.load(std::memory_order_acquire);
     auto* gainLinear = gainLinear_.load(std::memory_order_acquire);
-    jassert(peakL != nullptr && peakR != nullptr && gainLinear != nullptr);
+    if (!peakL || !peakR || !gainLinear)
+        return;
 
-    const float gain = gainLinear ? gainLinear->load(std::memory_order_relaxed) : 1.0f;
+    const float gain = gainLinear->load(std::memory_order_relaxed);
     if (gain != 1.0f)
         fc.destBuffer->applyGain(fc.bufferStartSample, fc.bufferNumSamples, gain);
 

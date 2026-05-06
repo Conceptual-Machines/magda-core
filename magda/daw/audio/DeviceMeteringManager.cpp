@@ -48,10 +48,14 @@ void DeviceMeteringManager::updateAllClients() {
     juce::ScopedLock sl(lock_);
     for (auto& [deviceId, entry] : entries_) {
         if (!entry->clientRegistered) {
-            entry->peakL.store(entry->realtimePeakL.exchange(0.0f, std::memory_order_relaxed),
-                               std::memory_order_relaxed);
-            entry->peakR.store(entry->realtimePeakR.exchange(0.0f, std::memory_order_relaxed),
-                               std::memory_order_relaxed);
+            if (entry->realtimeTap) {
+                entry->peakL.store(
+                    entry->realtimeTap->peakL.exchange(0.0f, std::memory_order_relaxed),
+                    std::memory_order_relaxed);
+                entry->peakR.store(
+                    entry->realtimeTap->peakR.exchange(0.0f, std::memory_order_relaxed),
+                    std::memory_order_relaxed);
+            }
             continue;
         }
 
@@ -80,8 +84,11 @@ bool DeviceMeteringManager::getLatestLevels(DeviceId deviceId, DeviceMeterData& 
 void DeviceMeteringManager::setGain(DeviceId deviceId, float gain) {
     juce::ScopedLock sl(lock_);
     auto it = entries_.find(deviceId);
-    if (it != entries_.end())
+    if (it != entries_.end()) {
         it->second->gainLinear.store(gain, std::memory_order_relaxed);
+        if (it->second->realtimeTap)
+            it->second->realtimeTap->gainLinear.store(gain, std::memory_order_relaxed);
+    }
 }
 
 std::atomic<float>* DeviceMeteringManager::getGainAtomic(DeviceId deviceId) {
@@ -114,7 +121,14 @@ DeviceMeteringManager::RealtimeTap DeviceMeteringManager::getRealtimeTap(DeviceI
     if (!entry)
         entry = std::make_unique<Entry>();
 
-    return {&entry->realtimePeakL, &entry->realtimePeakR, &entry->gainLinear};
+    if (!entry->realtimeTap) {
+        entry->realtimeTap = std::make_shared<RealtimeTapStorage>();
+        entry->realtimeTap->gainLinear.store(entry->gainLinear.load(std::memory_order_relaxed),
+                                             std::memory_order_relaxed);
+    }
+
+    auto storage = entry->realtimeTap;
+    return {storage, &storage->peakL, &storage->peakR, &storage->gainLinear};
 }
 
 void DeviceMeteringManager::setRackDirectLevels(RackId rackId, float peakL, float peakR) {

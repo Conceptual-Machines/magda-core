@@ -13,6 +13,18 @@ te::Plugin::Ptr createMeterTapPlugin(te::Edit& edit) {
     return edit.getPluginCache().createNewPlugin(pluginState);
 }
 
+te::Plugin::Ptr findMeterTapPlugin(te::RackType::Ptr rackType) {
+    if (!rackType)
+        return nullptr;
+
+    for (auto* plugin : rackType->getPlugins()) {
+        if (dynamic_cast<daw::audio::InstrumentMeterTapPlugin*>(plugin))
+            return plugin;
+    }
+
+    return nullptr;
+}
+
 }  // namespace
 
 InstrumentRackManager::InstrumentRackManager(te::Edit& edit) : edit_(edit) {}
@@ -287,8 +299,16 @@ void InstrumentRackManager::recordWrapping(DeviceId deviceId, te::RackType::Ptr 
         pendingMeterTapsByRack_.erase(pendingIt);
     }
 
-    if (auto* tap = dynamic_cast<daw::audio::InstrumentMeterTapPlugin*>(meterTap.get()))
+    if (!meterTap)
+        meterTap = findMeterTapPlugin(rackType);
+
+    if (auto* tap = dynamic_cast<daw::audio::InstrumentMeterTapPlugin*>(meterTap.get())) {
         tap->setDeviceId(deviceId);
+    } else {
+        jassertfalse;
+        DBG("InstrumentRackManager: Missing meter tap while recording wrapper for device "
+            << deviceId);
+    }
 
     wrapped_[deviceId] = {rackType,          innerPlugin, rackInstance, meterTap, isMultiOut,
                           numOutputChannels, {}};

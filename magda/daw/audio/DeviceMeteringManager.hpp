@@ -108,21 +108,30 @@ class DeviceMeteringManager {
      */
     void ensureEntry(DeviceId deviceId);
 
+    struct RealtimeTapStorage {
+        std::atomic<float> peakL{0.f};
+        std::atomic<float> peakR{0.f};
+        std::atomic<float> gainLinear{1.0f};
+    };
+
     struct RealtimeTap {
+        std::shared_ptr<RealtimeTapStorage> storage;
         std::atomic<float>* peakL = nullptr;
         std::atomic<float>* peakR = nullptr;
         std::atomic<float>* gainLinear = nullptr;
 
         bool isValid() const {
-            return peakL != nullptr && peakR != nullptr && gainLinear != nullptr;
+            return storage != nullptr && peakL != nullptr && peakR != nullptr &&
+                   gainLinear != nullptr;
         }
     };
 
     /**
      * @brief Get stable atomic endpoints for audio-thread owned metering.
      *
-     * The returned pointers remain valid until removeMeasurer() or clear().
-     * Call this from the message thread when wiring a device-specific tap.
+     * The returned pointers are backed by storage shared with the tap plugin, so
+     * removeMeasurer() and clear() can drop manager entries without invalidating
+     * an already-wired audio-thread tap.
      */
     RealtimeTap getRealtimeTap(DeviceId deviceId);
 
@@ -157,9 +166,8 @@ class DeviceMeteringManager {
         te::LevelMeasurer::Client client;
         std::atomic<float> peakL{0.f};
         std::atomic<float> peakR{0.f};
-        std::atomic<float> realtimePeakL{0.f};
-        std::atomic<float> realtimePeakR{0.f};
         std::atomic<float> gainLinear{1.0f};
+        std::shared_ptr<RealtimeTapStorage> realtimeTap;
         bool clientRegistered = false;
     };
 

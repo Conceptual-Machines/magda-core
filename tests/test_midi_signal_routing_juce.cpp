@@ -145,6 +145,26 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         expectWithinAbsoluteError(levels.peakR, 0.125f, 0.0001f,
                                   "Meter tap should publish post-gain right peak");
 
+        buffer.clear();
+        buffer.setSample(0, 0, 0.5f);
+        buffer.setSample(1, 0, -0.25f);
+        metering.clear();
+        typedTap->applyToBuffer(rc);
+        expectWithinAbsoluteError(buffer.getSample(0, 0), 0.25f, 0.0001f,
+                                  "Meter tap storage should survive manager entry removal");
+        expectWithinAbsoluteError(buffer.getSample(1, 0), -0.125f, 0.0001f,
+                                  "Meter tap storage should survive manager clear");
+
+        typedTap->setDeviceId(magda::INVALID_DEVICE_ID);
+        buffer.clear();
+        buffer.setSample(0, 0, 0.5f);
+        buffer.setSample(1, 0, -0.25f);
+        typedTap->applyToBuffer(rc);
+        expectWithinAbsoluteError(buffer.getSample(0, 0), 0.5f, 0.0001f,
+                                  "Unbound meter tap should pass audio through unchanged");
+        expectWithinAbsoluteError(buffer.getSample(1, 0), -0.25f, 0.0001f,
+                                  "Unbound meter tap should pass audio through unchanged");
+
         magda::DeviceMeteringManager::unregisterForEdit(*edit);
     }
 
