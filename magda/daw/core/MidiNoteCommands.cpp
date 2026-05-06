@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ClipOperations.hpp"
 #include "audio/transport/StepClock.hpp"
 
 namespace magda {
@@ -34,11 +35,11 @@ void AddMidiNoteCommand::execute() {
         return;
     }
 
-    // Add note via ClipManager API
-    clipManager.addMidiNote(clipId_, note_);
+    size_t oldSize = clip->midiNotes.size();
+    if (!clipManager.addMidiNote(clipId_, note_) || clip->midiNotes.size() <= oldSize)
+        return;
 
-    // The note was added at the end, so its index is size - 1
-    insertedIndex_ = clip->midiNotes.size() - 1;
+    insertedIndex_ = oldSize;
     executed_ = true;
 }
 
@@ -77,8 +78,13 @@ void MoveMidiNoteCommand::execute() {
         return;
     }
 
-    clip->midiNotes[noteIndex_].startBeat = newStartBeat_;
-    clip->midiNotes[noteIndex_].noteNumber = newNoteNumber_;
+    auto movedNote = clip->midiNotes[noteIndex_];
+    movedNote.startBeat = newStartBeat_;
+    movedNote.noteNumber = newNoteNumber_;
+    if (!ClipOperations::constrainMidiNoteToVisibleRange(*clip, movedNote))
+        return;
+
+    clip->midiNotes[noteIndex_] = movedNote;
 
     clipManager.forceNotifyClipPropertyChanged(clipId_);
     executed_ = true;
@@ -136,7 +142,12 @@ void ResizeMidiNoteCommand::execute() {
         return;
     }
 
-    clip->midiNotes[noteIndex_].lengthBeats = newLengthBeats_;
+    auto resizedNote = clip->midiNotes[noteIndex_];
+    resizedNote.lengthBeats = newLengthBeats_;
+    if (!ClipOperations::constrainMidiNoteToVisibleRange(*clip, resizedNote))
+        return;
+
+    clip->midiNotes[noteIndex_] = resizedNote;
 
     clipManager.forceNotifyClipPropertyChanged(clipId_);
     executed_ = true;
@@ -359,8 +370,11 @@ void MoveMultipleMidiNotesCommand::execute() {
     // Apply moves
     for (const auto& move : moves_) {
         if (move.noteIndex < clip->midiNotes.size()) {
-            clip->midiNotes[move.noteIndex].startBeat = move.newStartBeat;
-            clip->midiNotes[move.noteIndex].noteNumber = move.newNoteNumber;
+            auto movedNote = clip->midiNotes[move.noteIndex];
+            movedNote.startBeat = move.newStartBeat;
+            movedNote.noteNumber = move.newNoteNumber;
+            if (ClipOperations::constrainMidiNoteToVisibleRange(*clip, movedNote))
+                clip->midiNotes[move.noteIndex] = movedNote;
         }
     }
 
@@ -422,7 +436,10 @@ void ResizeMultipleMidiNotesCommand::execute() {
     // Apply new lengths
     for (const auto& [index, newLen] : newLengths_) {
         if (index < clip->midiNotes.size()) {
-            clip->midiNotes[index].lengthBeats = newLen;
+            auto resizedNote = clip->midiNotes[index];
+            resizedNote.lengthBeats = newLen;
+            if (ClipOperations::constrainMidiNoteToVisibleRange(*clip, resizedNote))
+                clip->midiNotes[index] = resizedNote;
         }
     }
 
@@ -498,13 +515,17 @@ void MoveMidiNoteBetweenClipsCommand::execute() {
     MidiNote newNote = movedNote_;
     newNote.startBeat = newStartBeat_;
     newNote.noteNumber = newNoteNumber_;
+    if (!ClipOperations::constrainMidiNoteToVisibleRange(*destClip, newNote))
+        return;
 
     // Remove from source clip
     clipManager.removeMidiNote(sourceClipId_, static_cast<int>(sourceNoteIndex_));
     DBG("  Source clip has " << sourceClip->midiNotes.size() << " notes after removal");
 
     // Add to destination clip
-    clipManager.addMidiNote(destClipId_, newNote);
+    size_t oldDestSize = destClip->midiNotes.size();
+    if (!clipManager.addMidiNote(destClipId_, newNote) || destClip->midiNotes.size() <= oldDestSize)
+        return;
     destNoteIndex_ = destClip->midiNotes.size() - 1;
     DBG("  Dest clip now has " << destClip->midiNotes.size() << " notes");
 
@@ -693,10 +714,17 @@ void AddMultipleMidiNotesCommand::execute() {
 
     insertedIndices_.clear();
     for (const auto& note : notes_) {
+        auto clippedNote = note;
+        if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, clippedNote))
+            continue;
+
         size_t idx = clip->midiNotes.size();
-        clip->midiNotes.push_back(note);
+        clip->midiNotes.push_back(clippedNote);
         insertedIndices_.push_back(idx);
     }
+
+    if (insertedIndices_.empty())
+        return;
 
     clipManager.forceNotifyClipPropertyChanged(clipId_);
     executed_ = true;

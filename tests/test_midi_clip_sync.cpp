@@ -3,6 +3,7 @@
 
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/ClipOperations.hpp"
 #include "magda/daw/core/MidiNoteCommands.hpp"
 #include "magda/daw/core/UndoManager.hpp"
 
@@ -317,4 +318,66 @@ TEST_CASE("MidiClip - Real-world scenario", "[midi][clip][integration]") {
         // Clip start unchanged
         REQUIRE(clip.startTime == 0.0);
     }
+}
+
+TEST_CASE("ClipOperations - MIDI visible range clips stale notes", "[midi][clip][boundary]") {
+    using namespace magda;
+
+    ClipInfo clip;
+    clip.setMidiContent();
+    clip.setPlacementBeats(0.0, 4.0);
+    clip.deriveTimesFromBeats(120.0);
+
+    MidiNote outside;
+    outside.startBeat = 4.0;
+    outside.lengthBeats = 1.0;
+    REQUIRE_FALSE(ClipOperations::clipMidiNoteToVisibleRange(clip, outside));
+
+    MidiNote partial;
+    partial.startBeat = 3.5;
+    partial.lengthBeats = 1.0;
+    REQUIRE(ClipOperations::clipMidiNoteToVisibleRange(clip, partial));
+    REQUIRE(partial.startBeat == Catch::Approx(3.5));
+    REQUIRE(partial.lengthBeats == Catch::Approx(0.5));
+
+    clip.midiTrimOffset = 2.0;
+    MidiNote trimmedOut;
+    trimmedOut.startBeat = 1.0;
+    trimmedOut.lengthBeats = 0.5;
+    REQUIRE_FALSE(ClipOperations::clipMidiNoteToVisibleRange(clip, trimmedOut));
+
+    MidiNote trimmedIn;
+    trimmedIn.startBeat = 2.0;
+    trimmedIn.lengthBeats = 1.0;
+    REQUIRE(ClipOperations::clipMidiNoteToVisibleRange(clip, trimmedIn));
+    REQUIRE(trimmedIn.startBeat == Catch::Approx(2.0));
+    REQUIRE(trimmedIn.lengthBeats == Catch::Approx(1.0));
+}
+
+TEST_CASE("ClipManager - addMidiNote rejects notes beyond MIDI clip extent",
+          "[midi][clip][boundary][manager]") {
+    using namespace magda;
+
+    ClipManager::getInstance().clearAllClips();
+    ClipId clipId = ClipManager::getInstance().createMidiClipBeats(1, 0.0, 4.0);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+
+    MidiNote outside;
+    outside.startBeat = 4.0;
+    outside.lengthBeats = 1.0;
+    outside.noteNumber = 60;
+    REQUIRE_FALSE(ClipManager::getInstance().addMidiNote(clipId, outside));
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes.empty());
+
+    MidiNote partial;
+    partial.startBeat = 3.5;
+    partial.lengthBeats = 1.0;
+    partial.noteNumber = 62;
+    REQUIRE(ClipManager::getInstance().addMidiNote(clipId, partial));
+    REQUIRE(clip->midiNotes.size() == 1);
+    REQUIRE(clip->midiNotes[0].startBeat == Catch::Approx(3.5));
+    REQUIRE(clip->midiNotes[0].lengthBeats == Catch::Approx(0.5));
 }

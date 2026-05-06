@@ -1323,50 +1323,23 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     auto& sequence = midiClipPtr->getSequence();
     sequence.clear(nullptr);
 
-    // Calculate the beat range visible in this clip
-    double clipLengthBeats = clip->lengthBeats;
-    double contentLengthBeats = (clip->loopEnabled && clip->loopLengthBeats > 0.0)
-                                    ? clip->loopLengthBeats
-                                    : clipLengthBeats;
-    // For non-looped clips, midiTrimOffset shifts the visible window (left-resize trim)
-    double effectiveOffset = (clip->loopEnabled) ? 0.0 : clip->midiTrimOffset;
-    double visibleStart = effectiveOffset;
-    double visibleEnd = effectiveOffset + contentLengthBeats;
+    const auto visibleRange = ClipOperations::getMidiVisibleRange(*clip);
+    const double contentLengthBeats = visibleRange.lengthBeats;
+    const double effectiveOffset = visibleRange.startBeat;
+    const double visibleStart = visibleRange.startBeat;
+    const double visibleEnd = visibleRange.endBeat();
 
     // Add notes to TE sequence — notes stay at original positions,
     // TE offset + looping handles phase wrapping natively
     for (const auto& note : clip->midiNotes) {
-        double noteStart = note.startBeat;
-        double noteEnd = noteStart + note.lengthBeats;
-
-        // Skip notes completely outside the visible range
-        if (noteEnd <= visibleStart || noteStart >= visibleEnd)
+        auto visibleNote = note;
+        if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, visibleNote))
             continue;
 
-        double adjustedLength = note.lengthBeats;
-
-        // Truncate notes at content boundary to prevent stuck notes
-        if (noteStart >= contentLengthBeats)
-            continue;
-        if (noteEnd > contentLengthBeats)
-            adjustedLength = contentLengthBeats - noteStart;
-
-        // For non-looped clips with midiOffset, shift note positions
-        double adjustedStart = noteStart - effectiveOffset;
-
-        // Truncate note if it starts before the visible range
-        if (adjustedStart < 0.0) {
-            adjustedLength = noteEnd - visibleStart;
-            adjustedStart = 0.0;
-        }
-
-        // Truncate note if it extends past the content boundary
-        if (adjustedStart + adjustedLength > contentLengthBeats)
-            adjustedLength = contentLengthBeats - adjustedStart;
-
-        if (adjustedLength > 0.0) {
+        const double adjustedStart = visibleNote.startBeat - effectiveOffset;
+        if (visibleNote.lengthBeats > 0.0 && adjustedStart < contentLengthBeats) {
             sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(adjustedStart),
-                             te::BeatDuration::fromBeats(adjustedLength), note.velocity, 0,
+                             te::BeatDuration::fromBeats(visibleNote.lengthBeats), note.velocity, 0,
                              nullptr);
         }
     }
