@@ -20,38 +20,9 @@
 // ---------------------------------------------------------------------------
 namespace {
 
-void setupSlider(juce::Component& owner, juce::Slider& slider, juce::Label& label,
-                 const juce::String& labelText, double min, double max, double interval,
-                 const juce::String& suffix = "") {
-    label.setText(labelText, juce::dontSendNotification);
-    label.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
-    label.setColour(juce::Label::textColourId,
-                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
-    label.setJustificationType(juce::Justification::centredLeft);
-    owner.addAndMakeVisible(label);
-
-    slider.setRange(min, max, interval);
-    slider.setSliderStyle(juce::Slider::LinearHorizontal);
-    slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
-    slider.setTextValueSuffix(suffix);
-    slider.setColour(juce::Slider::backgroundColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::SURFACE));
-    slider.setColour(juce::Slider::thumbColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_BLUE));
-    slider.setColour(juce::Slider::trackColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_BLUE).darker(0.3f));
-    slider.setColour(juce::Slider::textBoxTextColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
-    slider.setColour(juce::Slider::textBoxBackgroundColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::SURFACE));
-    slider.setColour(juce::Slider::textBoxOutlineColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::BORDER));
-    owner.addAndMakeVisible(slider);
-}
-
 void setupTextSlider(juce::Component& owner, magda::daw::ui::TextSlider& slider, juce::Label& label,
                      const juce::String& labelText, double min, double max, double interval,
-                     int decimals = 0) {
+                     int decimals = 0, const juce::String& suffix = {}) {
     label.setText(labelText, juce::dontSendNotification);
     label.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
     label.setColour(juce::Label::textColourId,
@@ -61,7 +32,14 @@ void setupTextSlider(juce::Component& owner, magda::daw::ui::TextSlider& slider,
 
     slider.setRange(min, max, interval);
     slider.setOrientation(magda::daw::ui::TextSlider::Orientation::Horizontal);
-    slider.setValueFormatter([decimals](double value) { return juce::String(value, decimals); });
+    slider.setValueFormatter(
+        [decimals, suffix](double value) { return juce::String(value, decimals) + suffix; });
+    slider.setValueParser([suffix](const juce::String& text) {
+        auto trimmed = text.trim();
+        if (suffix.isNotEmpty() && trimmed.endsWithIgnoreCase(suffix))
+            trimmed = trimmed.dropLastCharacters(suffix.length()).trim();
+        return trimmed.getDoubleValue();
+    });
     owner.addAndMakeVisible(slider);
 }
 
@@ -122,11 +100,11 @@ class GeneralPage : public juce::Component {
                         tr("preferences.slider.zoom_shift_sensitivity"), 1.0, 50.0, 0.5, 1);
 
         setupSectionHeader(*this, timelineHeader, tr("preferences.section.timeline"));
-        setupSlider(*this, timelineLengthSlider, timelineLengthLabel,
-                    tr("preferences.slider.default_length"), 16.0, 4096.0, 1.0, " bars");
-        timelineLengthSlider.setSkewFactorFromMidPoint(256.0);
-        setupSlider(*this, viewDurationSlider, viewDurationLabel,
-                    tr("preferences.slider.default_view"), 4.0, 128.0, 1.0, " bars");
+        setupTextSlider(*this, timelineLengthSlider, timelineLengthLabel,
+                        tr("preferences.slider.default_length"), 16.0, 4096.0, 1.0, 0, " bars");
+        timelineLengthSlider.setSkewForCentre(256.0);
+        setupTextSlider(*this, viewDurationSlider, viewDurationLabel,
+                        tr("preferences.slider.default_view"), 4.0, 128.0, 1.0, 0, " bars");
 
         setupSectionHeader(*this, transportHeader, tr("preferences.section.transport"));
         setupToggle(*this, stopUpdatesPlayheadToggle,
@@ -134,8 +112,8 @@ class GeneralPage : public juce::Component {
 
         setupSectionHeader(*this, autoSaveHeader, tr("preferences.section.autosave"));
         setupToggle(*this, autoSaveToggle, tr("preferences.toggle.enable_autosave"));
-        setupSlider(*this, autoSaveIntervalSlider, autoSaveIntervalLabel,
-                    tr("preferences.slider.interval"), 10.0, 300.0, 10.0, " sec");
+        setupTextSlider(*this, autoSaveIntervalSlider, autoSaveIntervalLabel,
+                        tr("preferences.slider.interval"), 10.0, 300.0, 10.0, 0, " sec");
 
         setupSectionHeader(*this, layoutHeader, tr("preferences.section.layout"));
         setupToggle(*this, headersOnRightToggle, tr("preferences.toggle.headers_on_right"));
@@ -224,9 +202,9 @@ class GeneralPage : public juce::Component {
         // Timeline
         timelineHeader.setBounds(left.removeFromTop(headerH));
         left.removeFromTop(4);
-        layoutSliderRow(left, timelineLengthLabel, timelineLengthSlider, rowH, labelW, sliderH);
+        layoutTextSliderRow(left, timelineLengthLabel, timelineLengthSlider, rowH, labelW, sliderH);
         left.removeFromTop(4);
-        layoutSliderRow(left, viewDurationLabel, viewDurationSlider, rowH, labelW, sliderH);
+        layoutTextSliderRow(left, viewDurationLabel, viewDurationSlider, rowH, labelW, sliderH);
         left.removeFromTop(secGap);
 
         // Transport
@@ -240,7 +218,8 @@ class GeneralPage : public juce::Component {
         left.removeFromTop(4);
         autoSaveToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
         left.removeFromTop(4);
-        layoutSliderRow(left, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, labelW, sliderH);
+        layoutTextSliderRow(left, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, labelW,
+                            sliderH);
 
         // Layout
         layoutHeader.setBounds(right.removeFromTop(headerH));
@@ -436,11 +415,11 @@ class GeneralPage : public juce::Component {
     magda::daw::ui::TextSlider zoomInSensitivitySlider, zoomOutSensitivitySlider,
         zoomShiftSensitivitySlider;
     juce::Label zoomInLabel, zoomOutLabel, zoomShiftLabel;
-    juce::Slider timelineLengthSlider, viewDurationSlider;
+    magda::daw::ui::TextSlider timelineLengthSlider, viewDurationSlider;
     juce::Label timelineLengthLabel, viewDurationLabel;
     juce::ToggleButton stopUpdatesPlayheadToggle;
     juce::ToggleButton autoSaveToggle;
-    juce::Slider autoSaveIntervalSlider;
+    magda::daw::ui::TextSlider autoSaveIntervalSlider;
     juce::Label autoSaveIntervalLabel;
     juce::Label layoutHeader, behaviorHeader, languageHeader, scaleHeader;
     juce::ToggleButton headersOnRightToggle;
