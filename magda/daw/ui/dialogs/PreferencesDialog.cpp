@@ -161,95 +161,84 @@ class GeneralPage : public juce::Component {
         constexpr int rowH = 32;
         constexpr int headerH = 28;
         constexpr int secGap = 12;
-        constexpr int toggleH = 24;
 
-        const int leftHeight = padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 +
-                               (rowH * 2) + 4 + secGap + headerH + 4 + rowH + secGap + headerH + 4 +
-                               rowH + 4 + rowH + padding;
-        const int rightHeight = padding + headerH + 4 + (toggleH + 8) + secGap + headerH + 4 +
-                                ((toggleH + 8) * 4) + 12 + secGap + headerH + 4 + (toggleH + 8) +
-                                18 + secGap + headerH + 4 + (toggleH + 8) + padding;
+        const int height = padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 +
+                           (rowH * 2) + 4 + secGap + headerH + 4 + rowH + secGap + headerH + 4 +
+                           rowH + 4 + rowH + secGap + headerH + 4 + rowH + secGap + headerH + 4 +
+                           (rowH * 4) + 12 + secGap + headerH + 4 + rowH + 18 + secGap + headerH +
+                           4 + rowH + padding;
 
-        return juce::jmax(juce::jmax(leftHeight, rightHeight), width < 520 ? 520 : 0);
+        return juce::jmax(height, width < 520 ? 760 : 0);
     }
 
     void resized() override {
         auto bounds = getLocalBounds().reduced(16);
         const int rowH = 32;
-        const int labelW = 180;
         const int sliderH = 24;
         const int headerH = 28;
         const int secGap = 12;
-        const int colGap = 28;
-        const int toggleH = 24;
-
-        const int colW = (bounds.getWidth() - colGap) / 2;
-        auto left = bounds.removeFromLeft(colW);
-        bounds.removeFromLeft(colGap);
-        auto right = bounds;
 
         // Zoom
-        zoomHeader.setBounds(left.removeFromTop(headerH));
-        left.removeFromTop(4);
-        layoutTextSliderRow(left, zoomInLabel, zoomInSensitivitySlider, rowH, labelW, sliderH);
-        left.removeFromTop(4);
-        layoutTextSliderRow(left, zoomOutLabel, zoomOutSensitivitySlider, rowH, labelW, sliderH);
-        left.removeFromTop(4);
-        layoutTextSliderRow(left, zoomShiftLabel, zoomShiftSensitivitySlider, rowH, labelW,
-                            sliderH);
-        left.removeFromTop(secGap);
+        zoomHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, zoomInLabel, zoomInSensitivitySlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, zoomOutLabel, zoomOutSensitivitySlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, zoomShiftLabel, zoomShiftSensitivitySlider, rowH, sliderH);
+        bounds.removeFromTop(secGap);
 
         // Timeline
-        timelineHeader.setBounds(left.removeFromTop(headerH));
-        left.removeFromTop(4);
-        layoutTextSliderRow(left, timelineLengthLabel, timelineLengthSlider, rowH, labelW, sliderH);
-        left.removeFromTop(4);
-        layoutTextSliderRow(left, viewDurationLabel, viewDurationSlider, rowH, labelW, sliderH);
-        left.removeFromTop(secGap);
+        timelineHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, timelineLengthLabel, timelineLengthSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, viewDurationLabel, viewDurationSlider, rowH, sliderH);
+        bounds.removeFromTop(secGap);
 
         // Transport
-        transportHeader.setBounds(left.removeFromTop(headerH));
-        left.removeFromTop(4);
-        stopUpdatesPlayheadToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
-        left.removeFromTop(secGap);
+        transportHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        stopUpdatesPlayheadToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(secGap);
 
         // Auto-Save
-        autoSaveHeader.setBounds(left.removeFromTop(headerH));
-        left.removeFromTop(4);
-        autoSaveToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
-        left.removeFromTop(4);
-        layoutTextSliderRow(left, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, labelW,
-                            sliderH);
+        autoSaveHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        autoSaveToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, sliderH);
+        bounds.removeFromTop(secGap);
 
         // Layout
-        layoutHeader.setBounds(right.removeFromTop(headerH));
-        right.removeFromTop(4);
-        headersOnRightToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
-        right.removeFromTop(secGap);
+        layoutHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        headersOnRightToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(secGap);
 
         // Behaviour
-        behaviorHeader.setBounds(right.removeFromTop(headerH));
-        right.removeFromTop(4);
-        confirmTrackDeleteToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
-        right.removeFromTop(4);
-        autoMonitorToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
-        right.removeFromTop(4);
-        openMacrosOnSelectToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
-        right.removeFromTop(4);
-        showTooltipsToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
-        right.removeFromTop(secGap);
+        behaviorHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        confirmTrackDeleteToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        autoMonitorToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        openMacrosOnSelectToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        showTooltipsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(secGap);
 
         // Language
-        languageHeader.setBounds(right.removeFromTop(headerH));
-        right.removeFromTop(4);
-        layoutComboRow(right, languageLabel, languageCombo, toggleH + 8);
-        restartHint.setBounds(right.removeFromTop(18));
-        right.removeFromTop(secGap);
+        languageHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, languageLabel, languageCombo, rowH);
+        restartHint.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(secGap);
 
         // UI scale
-        scaleHeader.setBounds(right.removeFromTop(headerH));
-        right.removeFromTop(4);
-        layoutComboRow(right, scaleLabel, scaleCombo, toggleH + 8);
+        scaleHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, scaleLabel, scaleCombo, rowH);
     }
 
     void loadSettings(Config& config) {
@@ -354,28 +343,26 @@ class GeneralPage : public juce::Component {
         combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
     }
 
-    static void layoutSliderRow(juce::Rectangle<int>& bounds, juce::Label& label,
-                                juce::Slider& slider, int rowH, int labelW, int sliderH) {
-        auto row = bounds.removeFromTop(rowH);
-        label.setBounds(row.removeFromLeft(labelW));
-        slider.setBounds(row.reduced(0, (rowH - sliderH) / 2));
-    }
-
     static void layoutTextSliderRow(juce::Rectangle<int>& bounds, juce::Label& label,
-                                    magda::daw::ui::TextSlider& slider, int rowH, int labelW,
-                                    int sliderH) {
-        constexpr int sliderW = 76;
+                                    magda::daw::ui::TextSlider& slider, int rowH, int sliderH) {
+        constexpr int sliderW = 96;
+        constexpr int gap = 12;
         auto row = bounds.removeFromTop(rowH);
-        label.setBounds(row.removeFromLeft(labelW));
-        slider.setBounds(row.removeFromLeft(sliderW).reduced(0, (rowH - sliderH) / 2));
+        auto sliderArea = row.removeFromRight(sliderW);
+        row.removeFromRight(gap);
+        label.setBounds(row);
+        slider.setBounds(sliderArea.reduced(0, (rowH - sliderH) / 2));
     }
 
     static void layoutComboRow(juce::Rectangle<int>& bounds, juce::Label& label,
                                juce::ComboBox& combo, int rowH) {
-        const int labelW = juce::jlimit(95, 135, bounds.getWidth() / 3);
+        const int comboW = juce::jlimit(160, 240, bounds.getWidth() / 2);
+        constexpr int gap = 12;
         auto row = bounds.removeFromTop(rowH);
-        label.setBounds(row.removeFromLeft(labelW));
-        combo.setBounds(row.reduced(0, 4));
+        auto comboArea = row.removeFromRight(comboW);
+        row.removeFromRight(gap);
+        label.setBounds(row);
+        combo.setBounds(comboArea.reduced(0, 4));
     }
 
     static int scaleIdForValue(double v) {
