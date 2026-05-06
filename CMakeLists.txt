@@ -179,15 +179,20 @@ add_subdirectory(third_party/faust/build third_party/faust EXCLUDE_FROM_ALL)
 # alias so call sites read sensibly.
 add_library(faust::libfaust ALIAS staticlib)
 
-# Faust's compiler/tlib/compatibility.cpp explicitly calls the ANSI win32
-# APIs (CreateDirectoryA / GetCurrentDirectoryA / GetModuleFileNameA) but
-# uses TCHAR-typed buffers. Under MSVC with UNICODE/_UNICODE defined those
-# resolve to wchar_t and the build fails with C2664. The CI Windows job
-# inherits UNICODE from somewhere upstream (juce / tracktion_engine), so
-# scope-undefine the macros for Faust's static lib only — leaves every
-# other target (juce, magda_daw, etc.) untouched.
+# Faust's compiler/tlib/compatibility.cpp picks one of two implementations
+# of `chdir` / `mkdir` / `getcwd` / `getFaustPathname` via:
+#   #if defined(_MBCS) || __MINGW32__   // narrow:  char  buffers + CreateDirectoryA
+#   #else                               // wide:    wchar buffers + CreateDirectory macro
+#
+# When the build defines neither `_MBCS` nor `UNICODE` (CMake's MSVC
+# default with `CharacterSet=NotSet`) the file picks the wide branch,
+# but the Win32 `CreateDirectory` macro resolves to `CreateDirectoryA`
+# (the char* version) — a wchar_t* / char* mismatch and a C2664 build
+# error. Define `_MBCS` for Faust's staticlib only so it takes the
+# narrow branch upstream Faust expects on Windows; other targets are
+# untouched.
 if(MSVC AND TARGET staticlib)
-    target_compile_options(staticlib PRIVATE /UUNICODE /U_UNICODE)
+    target_compile_definitions(staticlib PRIVATE _MBCS)
 endif()
 
 # Catch2 for testing
