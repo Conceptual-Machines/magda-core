@@ -81,15 +81,16 @@ void ClipComponent::paint(juce::Graphics& g) {
     // Draw header (name, loop indicator)
     paintClipHeader(g, *clip, bounds);
 
+    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+
     // Draw loop boundary corner cuts (after header so they cut through everything)
     double srcLength = clip->loopLength;
     if (clip->loopEnabled && srcLength > 0.0) {
         auto clipBounds = getLocalBounds();
-        double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
         double beatsPerSecond = tempo / 60.0;
         // During resize drag, use preview length so boundaries stay fixed
         double displayLength =
-            (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip->length;
+            (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip->getTimelineLength(tempo);
         double clipLengthInBeats = displayLength * beatsPerSecond;
         // Loop length in beats: use authoritative beat value for autoTempo,
         // otherwise derive from source length and speedRatio
@@ -455,7 +456,8 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                                    juce::Rectangle<int> bounds) {
     auto waveformArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
 
-    double clipDisplayLength = clip.length;
+    double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+    double clipDisplayLength = clip.getTimelineLength(tempo);
     if (isDragging_) {
         bool isResizeMode =
             (dragMode_ == DragMode::ResizeLeft || dragMode_ == DragMode::ResizeRight);
@@ -489,8 +491,9 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
 
     // Fade overlays
     if (clip.fadeIn > 0.0 || clip.fadeOut > 0.0) {
-        double pps =
-            (clip.length > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clip.length : 0.0;
+        double pps = (clipDisplayLength > 0.0)
+                         ? static_cast<double>(waveformArea.getWidth()) / clipDisplayLength
+                         : 0.0;
         if (pps > 0.0)
             paintFadeOverlays(g, clip, waveformArea, pps);
     }
@@ -518,7 +521,8 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
 
     double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
     double beatsPerSecond = tempo / 60.0;
-    double displayLength = (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip.length;
+    double displayLength =
+        (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip.getTimelineLength(tempo);
     double clipLengthInBeats = displayLength * beatsPerSecond;
 
     int minNote = 127, maxNote = 0;
@@ -533,7 +537,8 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
     int noteRange = juce::jmax(12, maxNote - minNote);
     double beatRange = juce::jmax(1.0, clipLengthInBeats);
 
-    double midiSrcLength = clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
+    double midiSrcLength =
+        clip.loopLength > 0.0 ? clip.loopLength : displayLength * clip.speedRatio;
     double loopLengthBeats = midiSrcLength > 0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats;
 
     double midiOffset;
@@ -784,7 +789,8 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
     if (waveformArea.getWidth() <= 0 || waveformArea.getHeight() <= 0)
         return;
 
-    double clipDisplayLength = clip.length;
+    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+    double clipDisplayLength = clip.getTimelineLength(tempo);
     double pixelsPerSecond = (clipDisplayLength > 0.0)
                                  ? static_cast<double>(waveformArea.getWidth()) / clipDisplayLength
                                  : 0.0;
@@ -975,7 +981,10 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             }
 
             // Verify split time is within clip bounds
-            if (splitTime > clip->startTime && splitTime < clip->startTime + clip->length) {
+            const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+            const double clipStart = clip->getTimelineStart(tempo);
+            const double clipEnd = clipStart + clip->getTimelineLength(tempo);
+            if (splitTime > clipStart && splitTime < clipEnd) {
                 if (onClipSplit) {
                     onClipSplit(clipId_, splitTime);
                 }
@@ -1010,8 +1019,11 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         dragStartPos_ = e.getPosition();
     }
     dragStartBoundsPos_ = getBounds().getPosition();
-    dragStartTime_ = clip->startTime;
-    dragStartLength_ = clip->length;
+    {
+        const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+        dragStartTime_ = clip->getTimelineStart(tempo);
+        dragStartLength_ = clip->getTimelineLength(tempo);
+    }
     dragStartTrackId_ = clip->trackId;
     dragStartAudioOffset_ = clip->offset;
 
@@ -1025,8 +1037,8 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     }
 
     // Initialize preview state
-    previewStartTime_ = clip->startTime;
-    previewLength_ = clip->length;
+    previewStartTime_ = dragStartTime_;
+    previewLength_ = dragStartLength_;
     isDragging_ = false;
 
     // Determine drag mode based on click position
@@ -2198,8 +2210,10 @@ bool ClipComponent::isOnFadeInHandle(int x, int y) const {
     if (y < waveformArea.getY() || y > waveformArea.getY() + FADE_HANDLE_HIT_WIDTH)
         return false;
 
+    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+    const double clipLength = clip->getTimelineLength(tempo);
     double pps =
-        (clip->length > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clip->length : 0.0;
+        (clipLength > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clipLength : 0.0;
     if (pps <= 0.0)
         return false;
 
@@ -2220,8 +2234,10 @@ bool ClipComponent::isOnFadeOutHandle(int x, int y) const {
     if (y < waveformArea.getY() || y > waveformArea.getY() + FADE_HANDLE_HIT_WIDTH)
         return false;
 
+    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+    const double clipLength = clip->getTimelineLength(tempo);
     double pps =
-        (clip->length > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clip->length : 0.0;
+        (clipLength > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clipLength : 0.0;
     if (pps <= 0.0)
         return false;
 
@@ -2558,7 +2574,9 @@ void ClipComponent::showContextMenu() {
                         for (auto clipId : selectedClips) {
                             const auto* clip = clipManager.getClip(clipId);
                             if (clip) {
-                                pasteTime = std::max(pasteTime, clip->startTime + clip->length);
+                                double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                                pasteTime = std::max(pasteTime, clip->getTimelineStart(tempo) +
+                                                                    clip->getTimelineLength(tempo));
                             }
                         }
                     }

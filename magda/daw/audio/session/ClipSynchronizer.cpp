@@ -15,9 +15,11 @@ namespace magda {
 
 void ClipSynchronizer::reallocateAndNotify() {
     if (auto* ctx = edit_.getCurrentPlaybackContext()) {
+        edit_.getTransport().editHasChanged();
         ctx->reallocate();
         if (onGraphReallocated)
             onGraphReallocated();
+    } else {
     }
 }
 
@@ -144,6 +146,19 @@ void ClipSynchronizer::clipsChanged() {
         removeClipFromEngine(clipId);
     }
 
+    bool arrangementTopologyChanged = !clipsToRemove.empty();
+    if (!clipsToRemove.empty()) {
+    }
+    {
+        juce::ScopedLock lock(clipLock_);
+        for (const auto& clip : arrangementClips) {
+            if (clipIdToEngineId_.find(clip.id) == clipIdToEngineId_.end()) {
+                arrangementTopologyChanged = true;
+                break;
+            }
+        }
+    }
+
     // Sync remaining arrangement clips to engine (add new ones, update existing)
     for (const auto& clip : arrangementClips) {
         syncClipToEngine(clip.id);
@@ -158,12 +173,12 @@ void ClipSynchronizer::clipsChanged() {
         }
     }
 
-    // Force graph rebuild if new session clips were moved into slots,
-    // so SlotControlNode instances are created in the audio graph
-    if (sessionClipsSynced) {
-        // Track playback modes are managed by SessionClipScheduler::syncTrackPlaybackModes()
+    // Force graph rebuild when clip topology changes. Tracktion's live
+    // playback context doesn't automatically pick up newly inserted
+    // arrangement WaveAudioClips, so split/duplicate copies can exist in the
+    // edit but stay silent until the graph is rebuilt.
+    if (arrangementTopologyChanged || sessionClipsSynced)
         reallocateAndNotify();
-    }
 }
 
 void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
@@ -1308,50 +1323,23 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     auto& sequence = midiClipPtr->getSequence();
     sequence.clear(nullptr);
 
-    // Calculate the beat range visible in this clip
-    double clipLengthBeats = clip->lengthBeats;
-    double contentLengthBeats = (clip->loopEnabled && clip->loopLengthBeats > 0.0)
-                                    ? clip->loopLengthBeats
-                                    : clipLengthBeats;
-    // For non-looped clips, midiTrimOffset shifts the visible window (left-resize trim)
-    double effectiveOffset = (clip->loopEnabled) ? 0.0 : clip->midiTrimOffset;
-    double visibleStart = effectiveOffset;
-    double visibleEnd = effectiveOffset + contentLengthBeats;
+    const auto visibleRange = ClipOperations::getMidiVisibleRange(*clip);
+    const double contentLengthBeats = visibleRange.lengthBeats;
+    const double effectiveOffset = visibleRange.startBeat;
+    const double visibleStart = visibleRange.startBeat;
+    const double visibleEnd = visibleRange.endBeat();
 
     // Add notes to TE sequence — notes stay at original positions,
     // TE offset + looping handles phase wrapping natively
     for (const auto& note : clip->midiNotes) {
-        double noteStart = note.startBeat;
-        double noteEnd = noteStart + note.lengthBeats;
-
-        // Skip notes completely outside the visible range
-        if (noteEnd <= visibleStart || noteStart >= visibleEnd)
+        auto visibleNote = note;
+        if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, visibleNote))
             continue;
 
-        double adjustedLength = note.lengthBeats;
-
-        // Truncate notes at content boundary to prevent stuck notes
-        if (noteStart >= contentLengthBeats)
-            continue;
-        if (noteEnd > contentLengthBeats)
-            adjustedLength = contentLengthBeats - noteStart;
-
-        // For non-looped clips with midiOffset, shift note positions
-        double adjustedStart = noteStart - effectiveOffset;
-
-        // Truncate note if it starts before the visible range
-        if (adjustedStart < 0.0) {
-            adjustedLength = noteEnd - visibleStart;
-            adjustedStart = 0.0;
-        }
-
-        // Truncate note if it extends past the content boundary
-        if (adjustedStart + adjustedLength > contentLengthBeats)
-            adjustedLength = contentLengthBeats - adjustedStart;
-
-        if (adjustedLength > 0.0) {
+        const double adjustedStart = visibleNote.startBeat - effectiveOffset;
+        if (visibleNote.lengthBeats > 0.0 && adjustedStart < contentLengthBeats) {
             sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(adjustedStart),
-                             te::BeatDuration::fromBeats(adjustedLength), note.velocity, 0,
+                             te::BeatDuration::fromBeats(visibleNote.lengthBeats), note.velocity, 0,
                              nullptr);
         }
     }
@@ -1375,13 +1363,6 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
 
 void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     namespace te = tracktion;
-
-    DBG("[ClipLengthTrace] syncAudioClipToEngine:entry id="
-        << clipId << " placement.lengthBeats=" << clip->placement.lengthBeats
-        << " mirror.lengthBeats=" << clip->lengthBeats << " timeline.lengthSeconds=" << clip->length
-        << " loopLengthBeats=" << clip->loopLengthBeats << " loopLengthSeconds=" << clip->loopLength
-        << " interpretation.bpm=" << clip->audio().interpretation.bpm
-        << " interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
 
     // 1. Get Tracktion track
     auto* audioTrack = trackController_.getAudioTrack(clip->trackId);
@@ -1549,18 +1530,16 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         std::abs(currentStart - engineStart) > 0.001 || std::abs(currentEnd - engineEnd) > 0.001;
 
     if (needsPositionUpdate) {
-        DBG("[ClipLengthTrace] syncAudioClipToEngine:setPosition id="
-            << clipId << " engineStart=" << engineStart << " engineEnd=" << engineEnd
-            << " placement.lengthBeats=" << clip->placement.lengthBeats
-            << " interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
         auto newTimeRange = te::TimeRange(te::TimePosition::fromSeconds(engineStart),
                                           te::TimePosition::fromSeconds(engineEnd));
         audioClipPtr->setPosition(te::ClipPosition{newTimeRange, currentPos.getOffset()});
     }
 
     // 5. UPDATE speed ratio and auto-tempo mode
-    // Handle auto-tempo (musical mode) vs time-based mode
-    if (clip->isBeatsAuthoritative()) {
+    // Timeline placement is always stored in project beats, but TE should only
+    // use source-beat audio processing when MAGDA beat/warp mode requires it.
+    const bool useSourceBeatProcessing = clip->autoTempo || clip->warpEnabled;
+    if (useSourceBeatProcessing) {
         // ========================================================================
         // AUTO-TEMPO MODE (Beat-based length, maintains musical time)
         // Warp also uses this path — TE only passes warpMap to WaveNodeRealTime
@@ -1648,8 +1627,8 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     }
 
     // 6. UPDATE loop properties (BEFORE offset — setLoopRangeBeats can reset offset)
-    // Use beat-based loop range in auto-tempo/warp mode, time-based otherwise
-    if (clip->isBeatsAuthoritative()) {
+    // Use beat-based loop range in auto-tempo/warp mode, time-based otherwise.
+    if (useSourceBeatProcessing) {
         // Auto-tempo mode: ALWAYS set beat-based loop range
         // The loop range defines the clip's musical extent (not just the loop region)
 
@@ -1663,30 +1642,12 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             // beats to source time, so BPM and source beat count must both agree.
             if (clip->audio().interpretation.bpm > 0.0 ||
                 clip->audio().interpretation.totalBeats > 0.0) {
-                auto waveInfo = audioClipPtr->getWaveInfo();
-                auto& li = audioClipPtr->getLoopInfo();
-                double currentLoopInfoBpm = li.getBpm(waveInfo);
-                DBG("[ClipLengthTrace] syncAudioClipToEngine:loopInfoBefore id="
-                    << clipId << " teLoopInfo.bpm=" << currentLoopInfoBpm
-                    << " teLoopInfo.numBeats=" << li.getNumBeats() << " model.interpretation.bpm="
-                    << clip->audio().interpretation.bpm << " model.interpretation.totalBeats="
-                    << clip->audio().interpretation.totalBeats);
                 syncAudioSourceInterpretationToLoopInfo(*audioClipPtr, *clip);
-                DBG("[ClipLengthTrace] syncAudioClipToEngine:loopInfoAfter id="
-                    << clipId << " teLoopInfo.bpm=" << li.getBpm(waveInfo)
-                    << " teLoopInfo.numBeats=" << li.getNumBeats()
-                    << " model.interpretation.totalBeats="
-                    << clip->audio().interpretation.totalBeats);
             }
 
             auto [loopStartBeats, loopLengthBeats] =
                 ClipOperations::getAutoTempoBeatRange(*clip, bpm);
 
-            DBG("[ClipLengthTrace] syncAudioClipToEngine:setLoopRangeBeats id="
-                << clipId << " loopStartBeats=" << loopStartBeats << " loopLengthBeats="
-                << loopLengthBeats << " placement.lengthBeats=" << clip->placement.lengthBeats
-                << " model.loopLengthBeats=" << clip->loopLengthBeats
-                << " model.interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
             auto loopRange = te::BeatRange(te::BeatPosition::fromBeats(loopStartBeats),
                                            te::BeatDuration::fromBeats(loopLengthBeats));
             audioClipPtr->setLoopRangeBeats(loopRange);

@@ -36,10 +36,72 @@ class ClipOperations {
     static constexpr double MIN_SOURCE_LENGTH = 0.01;
     static constexpr double MIN_SPEED_RATIO = 0.25;
     static constexpr double MAX_SPEED_RATIO = 4.0;
+    static constexpr double MIN_MIDI_NOTE_LENGTH_BEATS = 1.0 / 16.0;
+
+    struct MidiNoteRange {
+        double startBeat = 0.0;
+        double lengthBeats = 0.0;
+
+        double endBeat() const {
+            return startBeat + lengthBeats;
+        }
+    };
 
     // ========================================================================
-    // Helper: Wrap phase within [0, period)
+    // MIDI range helpers
     // ========================================================================
+
+    static inline MidiNoteRange getMidiVisibleRange(const ClipInfo& clip) {
+        if (!clip.isMidi())
+            return {};
+
+        const double lengthBeats =
+            (clip.loopEnabled && clip.loopLengthBeats > 0.0)
+                ? clip.loopLengthBeats
+                : (clip.placement.lengthBeats > 0.0 ? clip.placement.lengthBeats
+                                                    : clip.lengthBeats);
+        const double startBeat = clip.loopEnabled ? 0.0 : juce::jmax(0.0, clip.midiTrimOffset);
+        return {startBeat, juce::jmax(0.0, lengthBeats)};
+    }
+
+    static inline bool clipMidiNoteToVisibleRange(const ClipInfo& clip, MidiNote& note) {
+        auto range = getMidiVisibleRange(clip);
+        if (range.lengthBeats <= 0.0 || note.lengthBeats <= 0.0)
+            return false;
+
+        double noteStart = note.startBeat;
+        double noteEnd = note.startBeat + note.lengthBeats;
+        if (noteEnd <= range.startBeat || noteStart >= range.endBeat())
+            return false;
+
+        if (noteStart < range.startBeat)
+            noteStart = range.startBeat;
+        if (noteEnd > range.endBeat())
+            noteEnd = range.endBeat();
+
+        if (noteEnd <= noteStart)
+            return false;
+
+        note.startBeat = noteStart;
+        note.lengthBeats = noteEnd - noteStart;
+        return true;
+    }
+
+    static inline bool constrainMidiNoteToVisibleRange(const ClipInfo& clip, MidiNote& note) {
+        auto range = getMidiVisibleRange(clip);
+        if (range.lengthBeats < MIN_MIDI_NOTE_LENGTH_BEATS)
+            return false;
+
+        note.lengthBeats = juce::jmax(MIN_MIDI_NOTE_LENGTH_BEATS, note.lengthBeats);
+
+        const double latestStart = range.endBeat() - MIN_MIDI_NOTE_LENGTH_BEATS;
+        note.startBeat = juce::jlimit(range.startBeat, latestStart, note.startBeat);
+
+        if (note.startBeat + note.lengthBeats > range.endBeat())
+            note.lengthBeats = range.endBeat() - note.startBeat;
+
+        return note.lengthBeats > 0.0;
+    }
 
     // ========================================================================
     // Container Operations (clip-level only)
@@ -537,12 +599,34 @@ class ClipOperations {
                 clip.setLoopLengthFromTimeline(clip.length);
             }
 
-            // Issue #1157: when the file carries source interpretation beats,
-            // default placement length to that musical extent so a
-            // freshly-dropped loop becomes exactly its natural length on
-            // toggling BEAT. For files without interpretation data, fall back
-            // to the timeline length converted at project BPM.
-            if (clip.audio().interpretation.totalBeats > 0.0)
+            // Issue #1157: when a full, untrimmed source file carries source
+            // interpretation beats, default placement length to that musical
+            // extent so a freshly-dropped loop becomes exactly its natural
+            // length on toggling BEAT. If the user has already trimmed the
+            // clip, preserve the edited timeline span instead of expanding
+            // back to the full source loop.
+            //
+            // Prefer interpretation-derived duration (totalBeats × 60 /
+            // sourceBpm) — interpretation is the calibrated musical view of
+            // the file, while source.durationSeconds may have been written by
+            // ClipSynchronizer's setSourceMetadata from TE's auto-detected
+            // loopInfo (often a project-default fallback) before the user or
+            // a later detection pass refined the interpretation. Falling back
+            // to durationSeconds only when interpretation is incomplete.
+            double naturalSourceDuration = 0.0;
+            if (clip.audio().interpretation.bpm > 0.0 &&
+                clip.audio().interpretation.totalBeats > 0.0) {
+                naturalSourceDuration =
+                    clip.audio().interpretation.totalBeats * 60.0 / clip.audio().interpretation.bpm;
+            } else if (clip.audio().source.durationSeconds > 0.0) {
+                naturalSourceDuration = clip.audio().source.durationSeconds;
+            }
+            const auto sourceSpan = clip.timelineToSource(clip.length);
+            const bool coversFullSource = naturalSourceDuration > 0.0 &&
+                                          currentSourceOffset <= 0.001 &&
+                                          std::abs(sourceSpan - naturalSourceDuration) <= 0.001;
+
+            if (coversFullSource && clip.audio().interpretation.totalBeats > 0.0)
                 clip.setPlacementBeats(clip.placement.startBeat,
                                        clip.audio().interpretation.totalBeats);
             else

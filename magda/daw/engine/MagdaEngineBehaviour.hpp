@@ -5,6 +5,7 @@
 #include "../audio/plugins/AudioSidechainMonitorPlugin.hpp"
 #include "../audio/plugins/DrumGridPlugin.hpp"
 #include "../audio/plugins/FaustPlugin.hpp"
+#include "../audio/plugins/InstrumentMeterTapPlugin.hpp"
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
 #include "../audio/plugins/MidiChordEnginePlugin.hpp"
 #include "../audio/plugins/MidiReceivePlugin.hpp"
@@ -107,6 +108,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         }
         if (type == daw::audio::StepSequencerPlugin::xmlTypeName) {
             return new daw::audio::StepSequencerPlugin(info);
+        }
+        if (type == daw::audio::InstrumentMeterTapPlugin::xmlTypeName) {
+            return new daw::audio::InstrumentMeterTapPlugin(info);
         }
         if (type == tracktion::ImpulseResponsePlugin::xmlTypeName) {
             return new tracktion::ImpulseResponsePlugin(info);

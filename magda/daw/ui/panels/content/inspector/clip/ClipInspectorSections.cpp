@@ -11,6 +11,8 @@
 #include "../ClipInspector.hpp"
 #include "BinaryData.h"
 #include "audio/AudioBridge.hpp"
+#include "core/ClipBatchEdit.hpp"
+#include "core/ClipCommands.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/Config.hpp"
@@ -281,13 +283,14 @@ void ClipInspector::initClipPropertiesSection() {
             if (result == 1) {
                 // "None"
                 swatch->clearColour();
+                magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
                 for (auto cid : selectedClipIds_) {
-                    magda::UndoManager::getInstance().executeCommand(
-                        std::make_unique<magda::SetClipColourCommand>(cid,
-                                                                      juce::Colour(0xFF444444)));
+                    batch.execute(std::make_unique<magda::SetClipColourCommand>(
+                        cid, juce::Colour(0xFF444444)));
                 }
             } else if (result == 2) {
                 // Inherit from track
+                magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
                 for (auto cid : selectedClipIds_) {
                     const auto* clip = magda::ClipManager::getInstance().getClip(cid);
                     if (clip) {
@@ -296,7 +299,7 @@ void ClipInspector::initClipPropertiesSection() {
                         if (track) {
                             if (cid == pid)
                                 swatch->setColour(track->colour);
-                            magda::UndoManager::getInstance().executeCommand(
+                            batch.execute(
                                 std::make_unique<magda::SetClipColourCommand>(cid, track->colour));
                         }
                     }
@@ -304,18 +307,18 @@ void ClipInspector::initClipPropertiesSection() {
             } else if (result >= 3 && result < customOff) {
                 auto colour = juce::Colour(magda::Config::getDefaultColour(result - 3));
                 swatch->setColour(colour);
+                magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
                 for (auto cid : selectedClipIds_) {
-                    magda::UndoManager::getInstance().executeCommand(
-                        std::make_unique<magda::SetClipColourCommand>(cid, colour));
+                    batch.execute(std::make_unique<magda::SetClipColourCommand>(cid, colour));
                 }
             } else {
                 auto idx = static_cast<size_t>(result - customOff);
                 if (idx < customPalette.size()) {
                     auto colour = juce::Colour(customPalette[idx].colour);
                     swatch->setColour(colour);
+                    magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
                     for (auto cid : selectedClipIds_) {
-                        magda::UndoManager::getInstance().executeCommand(
-                            std::make_unique<magda::SetClipColourCommand>(cid, colour));
+                        batch.execute(std::make_unique<magda::SetClipColourCommand>(cid, colour));
                     }
                 }
             }
@@ -540,11 +543,12 @@ void ClipInspector::initClipPropertiesSection() {
         double currentValue = clipStartValue_->getValue();
         double deltaBeats = currentValue - multiStartDragStart_;
         double deltaSeconds = magda::TimelineUtils::beatsToSeconds(deltaBeats, bpm);
+        magda::ClipBatchEdit batch("Move Clips", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->view != magda::ClipView::Session) {
                 double newStart = juce::jmax(0.0, c->startTime + deltaSeconds);
-                magda::ClipManager::getInstance().moveClip(cid, newStart, bpm);
+                batch.execute(std::make_unique<magda::MoveClipCommand>(cid, newStart));
             }
         }
         multiStartDragStart_ = currentValue;
@@ -570,11 +574,13 @@ void ClipInspector::initClipPropertiesSection() {
         double currentValue = clipEndValue_->getValue();
         double deltaBeats = currentValue - multiEndDragStart_;
         double deltaSeconds = magda::TimelineUtils::beatsToSeconds(deltaBeats, bpm);
+        magda::ClipBatchEdit batch("Resize Clips", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->view != magda::ClipView::Session) {
                 double newLength = juce::jmax(0.0, c->length + deltaSeconds);
-                magda::ClipManager::getInstance().resizeClip(cid, newLength, false, bpm);
+                batch.execute(
+                    std::make_unique<magda::ResizeClipCommand>(cid, newLength, false, bpm));
             }
         }
         multiEndDragStart_ = currentValue;
@@ -599,7 +605,12 @@ void ClipInspector::initClipPropertiesSection() {
 
         if (clip->isMidi()) {
             double newOffsetBeats = clipContentOffsetValue_->getValue();
-            magda::ClipManager::getInstance().setClipMidiOffset(primaryClipId(), newOffsetBeats);
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetClipPropertyCommand>(
+                    primaryClipId(), "Set Clip MIDI Offset",
+                    [newOffsetBeats](auto& manager, magda::ClipId id) {
+                        manager.setClipMidiOffset(id, newOffsetBeats);
+                    }));
         } else if (clip->isAudio()) {
             double bpm = 120.0;
             if (timelineController_) {
@@ -636,8 +647,12 @@ void ClipInspector::initClipPropertiesSection() {
         if (timelineController_) {
             bpm = timelineController_->getState().tempo.bpm;
         }
+        magda::ClipBatchEdit batch("Set Clip Loop", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setClipLoopEnabled(cid, newState, bpm);
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Loop", [newState, bpm](auto& manager, magda::ClipId id) {
+                    manager.setClipLoopEnabled(id, newState, bpm);
+                }));
         }
     };
     clipPropsContainer_.addChildComponent(*clipLoopToggle_);
@@ -686,8 +701,12 @@ void ClipInspector::initClipPropertiesSection() {
             return;
         bool newState = !clipWarpToggle_.getToggleState();
         clipWarpToggle_.setToggleState(newState, juce::dontSendNotification);
+        magda::ClipBatchEdit batch("Set Clip Warp", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setClipWarpEnabled(cid, newState);
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Warp", [newState](auto& manager, magda::ClipId id) {
+                    manager.setClipWarpEnabled(id, newState);
+                }));
         }
     };
     clipPropsContainer_.addChildComponent(clipWarpToggle_);
@@ -707,110 +726,148 @@ void ClipInspector::initClipPropertiesSection() {
         "Lock clip to musical time (bars/beats) instead of absolute time.\n"
         "Clip length changes with tempo to maintain fixed beat length.");
 
-    // Helper lambda: apply auto-tempo state change and sync
-    auto applyAutoTempo = [this](bool enable) {
-        auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-        if (!clip)
-            return;
-
-        double bpm = 120.0;
-        if (timelineController_) {
-            bpm = timelineController_->getState().tempo.bpm;
+    auto getSelectedAudioClipIds = [this]() {
+        std::vector<magda::ClipId> clipIds;
+        for (auto cid : selectedClipIds_) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(cid);
+            if (clip && clip->isAudio())
+                clipIds.push_back(cid);
         }
+        return clipIds;
+    };
 
+    auto seedSourceInterpretation = [](magda::ClipId cid, auto& clip, double bpm) {
         // When enabling, seed source interpretation BPM/source interpretation total beats from
         // detected BPM (AudioThumbnailManager) since the clip model may have stale metadata from
         // TE's default loopInfo. Cached value is applied immediately (pre-setAutoTempo, before the
         // canonical path is open); cache miss kicks off background detection and the callback
         // funnels through applyAudioClipBeats once autoTempo is on.
         const bool sourceInterpretationBpmLooksDefaulted =
-            clip->audio().interpretation.bpm <= 0.0 ||
-            (bpm > 0.0 && std::abs(clip->audio().interpretation.bpm - bpm) < 0.1);
-        if (enable && clip->isAudio() && sourceInterpretationBpmLooksDefaulted) {
-            // Issue #1157: only seed from AudioThumbnailManager when the file
-            // didn't carry tempo metadata. setSourceMetadata (from TE's
-            // loopInfo) is authoritative when present; TempoDetect can be
-            // wrong by ~1.3x on syncopated loops.
-            auto& thumbs = magda::AudioThumbnailManager::getInstance();
-            double cached = thumbs.getCachedBPM(clip->audio().source.filePath);
-            if (cached > 0.0) {
-                clip->audio().interpretation.bpm = cached;
-                if (auto* thumb = thumbs.getThumbnail(clip->audio().source.filePath)) {
+            clip.audio().interpretation.bpm <= 0.0 ||
+            (bpm > 0.0 && std::abs(clip.audio().interpretation.bpm - bpm) < 0.1);
+        if (!sourceInterpretationBpmLooksDefaulted)
+            return;
+
+        // Issue #1157: only seed from AudioThumbnailManager when the file
+        // didn't carry tempo metadata. setSourceMetadata (from TE's
+        // loopInfo) is authoritative when present; TempoDetect can be
+        // wrong by ~1.3x on syncopated loops.
+        auto& thumbs = magda::AudioThumbnailManager::getInstance();
+        double cached = thumbs.getCachedBPM(clip.audio().source.filePath);
+        if (cached > 0.0) {
+            clip.audio().interpretation.bpm = cached;
+            if (auto* thumb = thumbs.getThumbnail(clip.audio().source.filePath)) {
+                double fileDuration = thumb->getTotalLength();
+                if (fileDuration > 0.0) {
+                    if (clip.audio().source.durationSeconds <= 0.0)
+                        clip.audio().source.durationSeconds = fileDuration;
+                    clip.audio().interpretation.totalBeats = fileDuration * cached / 60.0;
+                }
+            }
+        } else {
+            thumbs.requestBPMDetection(clip.audio().source.filePath, [cid](double detectedBPM) {
+                if (detectedBPM <= 0.0)
+                    return;
+                auto& mgr = magda::ClipManager::getInstance();
+                auto* c = mgr.getClip(cid);
+                if (!c)
+                    return;
+                // Issue #1157: file metadata wins over audio analysis.
+                // TempoDetect can be wrong by ~1.3x on syncopated loops.
+                double live = magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+                bool existingLooksDefaulted = c->audio().interpretation.bpm > 0.0 && live > 0.0 &&
+                                              std::abs(c->audio().interpretation.bpm - live) < 0.1;
+                if (c->audio().interpretation.bpm > 0.0 && !existingLooksDefaulted)
+                    return;
+                magda::ClipManager::AudioClipBeatsUpdate u;
+                u.interpretationBpm = detectedBPM;
+                if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                        c->audio().source.filePath)) {
                     double fileDuration = thumb->getTotalLength();
                     if (fileDuration > 0.0) {
-                        if (clip->audio().source.durationSeconds <= 0.0)
-                            clip->audio().source.durationSeconds = fileDuration;
-                        clip->audio().interpretation.totalBeats = fileDuration * cached / 60.0;
+                        u.sourceDurationSeconds = fileDuration;
+                        u.interpretationTotalBeats = fileDuration * detectedBPM / 60.0;
                     }
                 }
-            } else {
-                auto cid = primaryClipId();
-                thumbs.requestBPMDetection(
-                    clip->audio().source.filePath, [cid](double detectedBPM) {
-                        if (detectedBPM <= 0.0)
-                            return;
-                        auto& mgr = magda::ClipManager::getInstance();
-                        auto* c = mgr.getClip(cid);
-                        if (!c)
-                            return;
-                        // Issue #1157: file metadata wins over audio analysis.
-                        // TempoDetect can be wrong by ~1.3x on syncopated loops.
-                        double live =
-                            magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-                        bool existingLooksDefaulted =
-                            c->audio().interpretation.bpm > 0.0 && live > 0.0 &&
-                            std::abs(c->audio().interpretation.bpm - live) < 0.1;
-                        if (c->audio().interpretation.bpm > 0.0 && !existingLooksDefaulted)
-                            return;
-                        magda::ClipManager::AudioClipBeatsUpdate u;
-                        u.interpretationBpm = detectedBPM;
-                        if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                                c->audio().source.filePath)) {
-                            double fileDuration = thumb->getTotalLength();
-                            if (fileDuration > 0.0) {
-                                u.sourceDurationSeconds = fileDuration;
-                                u.interpretationTotalBeats = fileDuration * detectedBPM / 60.0;
-                            }
-                        }
-                        mgr.applyAudioClipBeats(cid, u, live);
-                    });
-            }
+                mgr.applyAudioClipBeats(cid, u, live);
+            });
         }
-
-        magda::ClipManager::getInstance().setAutoTempo(primaryClipId(), enable, bpm);
-        updateFromSelectedClip();
     };
 
-    clipAutoTempoToggle_.onClick = [this, applyAutoTempo]() {
+    // Helper lambda: apply auto-tempo state change and sync
+    auto applyAutoTempo =
+        [this, seedSourceInterpretation](bool enable, const std::vector<magda::ClipId>& clipIds) {
+            double bpm = 120.0;
+            if (timelineController_) {
+                bpm = timelineController_->getState().tempo.bpm;
+            }
+
+            magda::ClipBatchEdit batch("Set Clip Beat Mode", clipIds.size());
+            for (auto cid : clipIds) {
+                auto* clip = magda::ClipManager::getInstance().getClip(cid);
+                if (!clip || !clip->isAudio())
+                    continue;
+                batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                    cid, "Set Clip Beat Mode",
+                    [enable, bpm, seedSourceInterpretation](auto& manager, magda::ClipId id) {
+                        auto* targetClip = manager.getClip(id);
+                        if (!targetClip || !targetClip->isAudio())
+                            return;
+                        if (enable)
+                            seedSourceInterpretation(id, *targetClip, bpm);
+                        manager.setAutoTempo(id, enable, bpm);
+                    }));
+            }
+            updateFromSelectedClip();
+        };
+
+    clipAutoTempoToggle_.onClick = [this, getSelectedAudioClipIds, applyAutoTempo]() {
         if (primaryClipId() == magda::INVALID_CLIP_ID)
             return;
         auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-        if (!clip)
+        if (!clip || !clip->isAudio())
+            return;
+
+        auto targetClipIds = getSelectedAudioClipIds();
+        if (targetClipIds.empty())
             return;
 
         bool newState = !clip->autoTempo;
 
-        if (newState && std::abs(clip->speedRatio - 1.0) > 0.001) {
+        int clipsNeedingStretchReset = 0;
+        for (auto cid : targetClipIds) {
+            const auto* selectedClip = magda::ClipManager::getInstance().getClip(cid);
+            if (selectedClip && std::abs(selectedClip->speedRatio - 1.0) > 0.001)
+                ++clipsNeedingStretchReset;
+        }
+
+        if (newState && clipsNeedingStretchReset > 0) {
             // Show async warning — avoid re-entrancy from synchronous modal loop
-            auto clipId = primaryClipId();
+            juce::String message = "Auto-tempo mode requires speed ratio 1.0.\n";
+            if (clipsNeedingStretchReset == 1 && targetClipIds.size() == 1) {
+                message << "Current stretch (" << juce::String(clip->speedRatio, 2)
+                        << "x) will be reset.\n\nContinue?";
+            } else {
+                message << juce::String(clipsNeedingStretchReset)
+                        << (clipsNeedingStretchReset == 1
+                                ? " selected clip will have stretch reset.\n\nContinue?"
+                                : " selected clips will have stretch reset.\n\nContinue?");
+            }
             juce::NativeMessageBox::showAsync(
                 juce::MessageBoxOptions()
                     .withIconType(juce::MessageBoxIconType::WarningIcon)
                     .withTitle("Reset Time Stretch")
-                    .withMessage("Auto-tempo mode requires speed ratio 1.0.\nCurrent stretch (" +
-                                 juce::String(clip->speedRatio, 2) +
-                                 "x) will be reset.\n\nContinue?")
+                    .withMessage(message)
                     .withButton("OK")
                     .withButton("Cancel"),
-                [this, clipId, applyAutoTempo](int result) {
-                    if (result == 0 && primaryClipId() == clipId) {
-                        applyAutoTempo(true);
-                    }
+                [applyAutoTempo, targetClipIds](int result) {
+                    if (result == 0)
+                        applyAutoTempo(true, targetClipIds);
                 });
             return;
         }
 
-        applyAutoTempo(newState);
+        applyAutoTempo(newState, targetClipIds);
     };
     clipPropsContainer_.addChildComponent(clipAutoTempoToggle_);
 
@@ -826,12 +883,12 @@ void ClipInspector::initClipPropertiesSection() {
             return;
         double currentValue = clipStretchValue_->getValue();
         double delta = currentValue - multiSpeedRatioDragStart_;
+        magda::ClipBatchEdit batch("Set Clip Speed", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->isAudio()) {
                 double newVal = juce::jlimit(0.25, 4.0, c->speedRatio + delta);
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipSpeedRatioCommand>(cid, newVal));
+                batch.execute(std::make_unique<magda::SetClipSpeedRatioCommand>(cid, newVal));
             }
         }
         multiSpeedRatioDragStart_ = currentValue;
@@ -855,9 +912,9 @@ void ClipInspector::initClipPropertiesSection() {
         if (selectedClipIds_.empty())
             return;
         int mode = stretchModeCombo_.getSelectedId() - 1;
+        magda::ClipBatchEdit batch("Set Clip Stretch Mode", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetClipStretchModeCommand>(cid, mode));
+            batch.execute(std::make_unique<magda::SetClipStretchModeCommand>(cid, mode));
         }
     };
     clipPropsContainer_.addChildComponent(stretchModeCombo_);
@@ -951,6 +1008,9 @@ void ClipInspector::initClipPropertiesSection() {
                 magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, loopBpm);
         }
 
+        bool shouldResizeClip = false;
+        double resizeLengthSeconds = 0.0;
+
         if (clip->view == magda::ClipView::Session) {
             double clipEndSeconds = clip->length;
             double currentSourceEnd = clip->loopStart + clip->loopLength;
@@ -958,8 +1018,8 @@ void ClipInspector::initClipPropertiesSection() {
             double newSourceEnd = clip->loopStart + newLoopLengthSeconds;
 
             if (sourceEndMatchedClipEnd && newSourceEnd > clipEndSeconds) {
-                magda::ClipManager::getInstance().resizeClip(primaryClipId(), newSourceEnd, false,
-                                                             bpm);
+                shouldResizeClip = true;
+                resizeLengthSeconds = newSourceEnd;
             } else {
                 if (newSourceEnd > clipEndSeconds) {
                     newLoopLengthSeconds = clipEndSeconds - clip->loopStart;
@@ -967,9 +1027,14 @@ void ClipInspector::initClipPropertiesSection() {
             }
         }
 
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetClipLoopLengthCommand>(primaryClipId(), newLoopLengthSeconds,
-                                                              bpm));
+        magda::ClipBatchEdit batch("Set Clip Loop End", shouldResizeClip ? 2u : 1u);
+        if (shouldResizeClip) {
+            batch.execute(std::make_unique<magda::ResizeClipCommand>(
+                primaryClipId(), resizeLengthSeconds, false, bpm));
+        }
+
+        batch.execute(std::make_unique<magda::SetClipLoopLengthCommand>(primaryClipId(),
+                                                                        newLoopLengthSeconds, bpm));
     };
     clipPropsContainer_.addChildComponent(*clipLoopEndValue_);
 
@@ -1031,8 +1096,11 @@ void ClipInspector::initSessionLaunchSection() {
         if (selectedClipIds_.empty())
             return;
         auto mode = static_cast<magda::LaunchMode>(launchModeCombo_.getSelectedId() - 1);
+        magda::ClipBatchEdit batch("Set Clip Launch Mode", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setClipLaunchMode(cid, mode);
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Launch Mode",
+                [mode](auto& manager, magda::ClipId id) { manager.setClipLaunchMode(id, mode); }));
         }
     };
     clipPropsContainer_.addChildComponent(launchModeCombo_);
@@ -1061,8 +1129,12 @@ void ClipInspector::initSessionLaunchSection() {
             return;
         auto quantize =
             static_cast<magda::LaunchQuantize>(launchQuantizeCombo_.getSelectedId() - 1);
+        magda::ClipBatchEdit batch("Set Clip Launch Quantize", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setClipLaunchQuantize(cid, quantize);
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Launch Quantize", [quantize](auto& manager, magda::ClipId id) {
+                    manager.setClipLaunchQuantize(id, quantize);
+                }));
         }
     };
     clipPropsContainer_.addChildComponent(launchQuantizeCombo_);
@@ -1103,8 +1175,12 @@ void ClipInspector::initPitchSection() {
         if (!clip)
             return;
         bool newState = !clip->autoPitch;
+        magda::ClipBatchEdit batch("Set Clip Auto Pitch", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setAutoPitch(cid, newState);
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Auto Pitch", [newState](auto& manager, magda::ClipId id) {
+                    manager.setAutoPitch(id, newState);
+                }));
         }
     };
     clipPropsContainer_.addChildComponent(autoPitchToggle_);
@@ -1128,8 +1204,12 @@ void ClipInspector::initPitchSection() {
         if (!clip)
             return;
         bool newState = !clip->analogPitch;
+        magda::ClipBatchEdit batch("Set Clip Analog Pitch", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setAnalogPitch(cid, newState);
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Analog Pitch", [newState](auto& manager, magda::ClipId id) {
+                    manager.setAnalogPitch(id, newState);
+                }));
         }
     };
     clipPropsContainer_.addChildComponent(analogPitchToggle_);
@@ -1147,8 +1227,11 @@ void ClipInspector::initPitchSection() {
         if (selectedClipIds_.empty())
             return;
         int mode = autoPitchModeCombo_.getSelectedId() - 1;
+        magda::ClipBatchEdit batch("Set Clip Auto Pitch Mode", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setAutoPitchMode(cid, mode);
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Auto Pitch Mode",
+                [mode](auto& manager, magda::ClipId id) { manager.setAutoPitchMode(id, mode); }));
         }
     };
     clipPropsContainer_.addChildComponent(autoPitchModeCombo_);
@@ -1158,17 +1241,13 @@ void ClipInspector::initPitchSection() {
         if (selectedClipIds_.empty())
             return;
         int semitones = direction * (shift ? 12 : 1);
-        if (selectedClipIds_.size() > 1)
-            magda::UndoManager::getInstance().beginCompoundOperation("Transpose MIDI Clips");
+        magda::ClipBatchEdit batch("Transpose MIDI Clips", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->isMidi()) {
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::TransposeMidiClipCommand>(cid, semitones));
+                batch.execute(std::make_unique<magda::TransposeMidiClipCommand>(cid, semitones));
             }
         }
-        if (selectedClipIds_.size() > 1)
-            magda::UndoManager::getInstance().endCompoundOperation();
     };
 
     midiTransposeLabel_.setText("Transpose", juce::dontSendNotification);
@@ -1210,13 +1289,13 @@ void ClipInspector::initPitchSection() {
             return;
         double currentValue = pitchChangeValue_->getValue();
         double delta = currentValue - multiPitchChangeDragStart_;
+        magda::ClipBatchEdit batch("Set Clip Pitch", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->isAudio()) {
                 float newVal =
                     juce::jlimit(-48.0f, 48.0f, c->pitchChange + static_cast<float>(delta));
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipPitchCommand>(cid, newVal));
+                batch.execute(std::make_unique<magda::SetClipPitchCommand>(cid, newVal));
             }
         }
         multiPitchChangeDragStart_ = currentValue;
@@ -1260,10 +1339,11 @@ void ClipInspector::initGrooveSection() {
         if (selectedClipIds_.empty())
             return;
         float newStrength = static_cast<float>(grooveStrengthValue_->getValue());
+        magda::ClipBatchEdit batch("Set Clip Groove Strength", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->isMidi()) {
-                magda::UndoManager::getInstance().executeCommand(
+                batch.execute(
                     std::make_unique<magda::SetClipGrooveStrengthCommand>(cid, newStrength));
             }
         }
@@ -1342,11 +1422,11 @@ void ClipInspector::showGroovePicker() {
 void ClipInspector::onGrooveTemplateSelected(const juce::String& templateName) {
     juce::String name = (templateName == "None") ? juce::String() : templateName;
 
+    magda::ClipBatchEdit batch("Set Clip Groove Template", selectedClipIds_.size());
     for (auto cid : selectedClipIds_) {
         const auto* c = magda::ClipManager::getInstance().getClip(cid);
         if (c && c->isMidi()) {
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetClipGrooveTemplateCommand>(cid, name));
+            batch.execute(std::make_unique<magda::SetClipGrooveTemplateCommand>(cid, name));
         }
     }
 
@@ -1370,12 +1450,12 @@ void ClipInspector::initMixSection() {
             return;
         double currentValue = clipVolumeValue_->getValue();
         double delta = currentValue - multiVolumeDragStart_;
+        magda::ClipBatchEdit batch("Set Clip Volume", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->isAudio()) {
                 float newVal = juce::jlimit(-100.0f, 0.0f, c->volumeDB + static_cast<float>(delta));
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipVolumeDBCommand>(cid, newVal));
+                batch.execute(std::make_unique<magda::SetClipVolumeDBCommand>(cid, newVal));
             }
         }
         multiVolumeDragStart_ = currentValue;
@@ -1391,12 +1471,12 @@ void ClipInspector::initMixSection() {
             return;
         double currentValue = clipPanValue_->getValue();
         double delta = currentValue - multiPanDragStart_;
+        magda::ClipBatchEdit batch("Set Clip Pan", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->isAudio()) {
                 float newVal = juce::jlimit(-1.0f, 1.0f, c->pan + static_cast<float>(delta));
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipPanCommand>(cid, newVal));
+                batch.execute(std::make_unique<magda::SetClipPanCommand>(cid, newVal));
             }
         }
         multiPanDragStart_ = currentValue;
@@ -1413,12 +1493,12 @@ void ClipInspector::initMixSection() {
             return;
         double currentValue = clipGainValue_->getValue();
         double delta = currentValue - multiGainDragStart_;
+        magda::ClipBatchEdit batch("Set Clip Gain", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->isAudio()) {
                 float newVal = juce::jlimit(0.0f, 24.0f, c->gainDB + static_cast<float>(delta));
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipGainDBCommand>(cid, newVal));
+                batch.execute(std::make_unique<magda::SetClipGainDBCommand>(cid, newVal));
             }
         }
         multiGainDragStart_ = currentValue;
@@ -1455,9 +1535,9 @@ void ClipInspector::initPlaybackSection() {
         if (!clip)
             return;
         bool newState = !clip->isReversed;
+        magda::ClipBatchEdit batch("Set Clip Reverse", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetClipReversedCommand>(cid, newState));
+            batch.execute(std::make_unique<magda::SetClipReversedCommand>(cid, newState));
         }
     };
     clipPropsContainer_.addChildComponent(reverseToggle_);
@@ -1478,8 +1558,12 @@ void ClipInspector::initPlaybackSection() {
         if (!clip)
             return;
         bool newState = !clip->autoDetectBeats;
+        magda::ClipBatchEdit batch("Set Clip Auto Detect Beats", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setAutoDetectBeats(cid, newState);
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Auto Detect Beats", [newState](auto& manager, magda::ClipId id) {
+                    manager.setAutoDetectBeats(id, newState);
+                }));
         }
     };
     clipPropsContainer_.addChildComponent(autoDetectBeatsToggle_);
@@ -1488,9 +1572,20 @@ void ClipInspector::initPlaybackSection() {
         std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Percentage);
     beatSensitivityValue_->setRange(0.0, 1.0, 0.5);
     beatSensitivityValue_->onValueChange = [this]() {
-        if (primaryClipId() != magda::INVALID_CLIP_ID)
-            magda::ClipManager::getInstance().setBeatSensitivity(
-                primaryClipId(), static_cast<float>(beatSensitivityValue_->getValue()));
+        if (selectedClipIds_.empty())
+            return;
+        float sensitivity = static_cast<float>(beatSensitivityValue_->getValue());
+        magda::ClipBatchEdit batch("Set Clip Beat Sensitivity", selectedClipIds_.size());
+        for (auto cid : selectedClipIds_) {
+            const auto* c = magda::ClipManager::getInstance().getClip(cid);
+            if (c && c->isAudio()) {
+                batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                    cid, "Set Clip Beat Sensitivity",
+                    [sensitivity](auto& manager, magda::ClipId id) {
+                        manager.setBeatSensitivity(id, sensitivity);
+                    }));
+            }
+        }
     };
     clipPropsContainer_.addChildComponent(*beatSensitivityValue_);
 
@@ -1564,8 +1659,12 @@ void ClipInspector::initChannelsSection() {
         if (!clip)
             return;
         bool newState = !clip->leftChannelActive;
+        magda::ClipBatchEdit batch("Set Clip Left Channel", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setLeftChannelActive(cid, newState);
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Left Channel", [newState](auto& manager, magda::ClipId id) {
+                    manager.setLeftChannelActive(id, newState);
+                }));
         }
     };
     clipPropsContainer_.addChildComponent(leftChannelToggle_);
@@ -1586,8 +1685,12 @@ void ClipInspector::initChannelsSection() {
         if (!clip)
             return;
         bool newState = !clip->rightChannelActive;
+        magda::ClipBatchEdit batch("Set Clip Right Channel", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setRightChannelActive(cid, newState);
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Right Channel", [newState](auto& manager, magda::ClipId id) {
+                    manager.setRightChannelActive(id, newState);
+                }));
         }
     };
     clipPropsContainer_.addChildComponent(rightChannelToggle_);

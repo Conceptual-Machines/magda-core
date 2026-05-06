@@ -387,7 +387,7 @@ StepSequencerUI::StepSequencerUI() {
     midiThruButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
     midiThruButton_->setTooltip("MIDI thru: pass input to downstream instruments");
     midiThruButton_->setToggleable(true);
-    midiThruButton_->setActive(true);
+    midiThruButton_->setActive(false);
     midiThruButton_->onClick = [this] {
         if (plugin_) {
             bool newState = !midiThruButton_->isActive();

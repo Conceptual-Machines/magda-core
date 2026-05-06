@@ -43,6 +43,7 @@ target_sources(magda_daw PRIVATE
     plugins/DrumGridPlugin.cpp
     plugins/MidiChordEnginePlugin.cpp
     plugins/ArpeggiatorPlugin.cpp
+    plugins/InstrumentMeterTapPlugin.cpp
     plugins/MidiDevicePlugin.cpp
     plugins/FaustPlugin.cpp
     plugins/FaustMetadataParser.cpp
@@ -83,6 +84,7 @@ target_sources(magda_daw PRIVATE
     plugins/DrumGridPlugin.hpp
     plugins/MidiChordEnginePlugin.hpp
     plugins/ArpeggiatorPlugin.hpp
+    plugins/InstrumentMeterTapPlugin.hpp
     plugins/MidiDevicePlugin.hpp
     plugins/FaustPlugin.hpp
     plugins/FaustParamSlot.hpp

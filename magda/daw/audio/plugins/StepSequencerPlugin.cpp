@@ -45,7 +45,7 @@ StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
     normalVelocity.referTo(state, SeqIDs::normalVelocity, um, 90);
     ramp.referTo(state, SeqIDs::ramp, um, 0.0f);
     skew.referTo(state, SeqIDs::skew, um, 0.0f);
-    midiThru.referTo(state, SeqIDs::midiThru, um, true);
+    midiThru.referTo(state, SeqIDs::midiThru, um, false);
     rampCycles.referTo(state, SeqIDs::rampCycles, um, 1);
     hardAngle.referTo(state, SeqIDs::hardAngle, um, false);
     quantize.referTo(state, SeqIDs::quantize, um, 0.0f);
@@ -142,8 +142,8 @@ void StepSequencerPlugin::flushPluginStateToValueTree() {
 
 void StepSequencerPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
     tracktion::copyPropertiesToCachedValues(v, numSteps, rate, direction, swing, gateLength,
-                                            accentVelocity, normalVelocity, ramp, skew, hardAngle,
-                                            quantize, quantizeSub);
+                                            accentVelocity, normalVelocity, ramp, skew, midiThru,
+                                            hardAngle, quantize, quantizeSub);
 
     // Copy step children from the incoming tree into our state
     // (copyPropertiesToCachedValues only copies properties, not children)

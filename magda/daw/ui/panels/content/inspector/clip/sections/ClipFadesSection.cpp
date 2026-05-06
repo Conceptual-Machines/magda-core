@@ -4,6 +4,7 @@
 #include "../../../../../themes/FontManager.hpp"
 #include "../../../../../themes/SmallButtonLookAndFeel.hpp"
 #include "BinaryData.h"
+#include "core/ClipBatchEdit.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 
@@ -52,12 +53,12 @@ void ClipFadesSection::initControls() {
     fadeInValue_->onValueChange = [this]() {
         double current = fadeInValue_->getValue();
         double delta = current - multiFadeInDragStart_;
+        magda::ClipBatchEdit batch("Set Clip Fade In", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->isAudio() && c->view != magda::ClipView::Session) {
                 double newVal = juce::jmax(0.0, c->fadeIn + delta);
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeInCommand>(cid, newVal));
+                batch.execute(std::make_unique<magda::SetClipFadeInCommand>(cid, newVal));
             }
         }
         multiFadeInDragStart_ = current;
@@ -76,12 +77,12 @@ void ClipFadesSection::initControls() {
     fadeOutValue_->onValueChange = [this]() {
         double current = fadeOutValue_->getValue();
         double delta = current - multiFadeOutDragStart_;
+        magda::ClipBatchEdit batch("Set Clip Fade Out", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->isAudio() && c->view != magda::ClipView::Session) {
                 double newVal = juce::jmax(0.0, c->fadeOut + delta);
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeOutCommand>(cid, newVal));
+                batch.execute(std::make_unique<magda::SetClipFadeOutCommand>(cid, newVal));
             }
         }
         multiFadeOutDragStart_ = current;
@@ -117,17 +118,17 @@ void ClipFadesSection::initControls() {
         setupTypeBtn(fadeInTypeButtons_[i], fadeTypeIcons[i]);
         int fadeType = i + 1;
         fadeInTypeButtons_[i]->onClick = [this, i, fadeType]() {
+            magda::ClipBatchEdit batch("Set Clip Fade In Type", selectedClipIds_.size());
             for (auto cid : selectedClipIds_)
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeInTypeCommand>(cid, fadeType));
+                batch.execute(std::make_unique<magda::SetClipFadeInTypeCommand>(cid, fadeType));
             for (int j = 0; j < 4; ++j)
                 fadeInTypeButtons_[j]->setActive(j == i);
         };
         setupTypeBtn(fadeOutTypeButtons_[i], fadeTypeIcons[i]);
         fadeOutTypeButtons_[i]->onClick = [this, i, fadeType]() {
+            magda::ClipBatchEdit batch("Set Clip Fade Out Type", selectedClipIds_.size());
             for (auto cid : selectedClipIds_)
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeOutTypeCommand>(cid, fadeType));
+                batch.execute(std::make_unique<magda::SetClipFadeOutTypeCommand>(cid, fadeType));
             for (int j = 0; j < 4; ++j)
                 fadeOutTypeButtons_[j]->setActive(j == i);
         };
@@ -161,17 +162,17 @@ void ClipFadesSection::initControls() {
     for (int i = 0; i < 2; ++i) {
         setupBehaviourBtn(fadeInBehaviourButtons_[i], fadeBehaviourIcons[i]);
         fadeInBehaviourButtons_[i]->onClick = [this, i]() {
+            magda::ClipBatchEdit batch("Set Clip Fade In Behaviour", selectedClipIds_.size());
             for (auto cid : selectedClipIds_)
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeInBehaviourCommand>(cid, i));
+                batch.execute(std::make_unique<magda::SetClipFadeInBehaviourCommand>(cid, i));
             for (int j = 0; j < 2; ++j)
                 fadeInBehaviourButtons_[j]->setActive(j == i);
         };
         setupBehaviourBtn(fadeOutBehaviourButtons_[i], fadeBehaviourIcons[i]);
         fadeOutBehaviourButtons_[i]->onClick = [this, i]() {
+            magda::ClipBatchEdit batch("Set Clip Fade Out Behaviour", selectedClipIds_.size());
             for (auto cid : selectedClipIds_)
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeOutBehaviourCommand>(cid, i));
+                batch.execute(std::make_unique<magda::SetClipFadeOutBehaviourCommand>(cid, i));
             for (int j = 0; j < 2; ++j)
                 fadeOutBehaviourButtons_[j]->setActive(j == i);
         };
@@ -194,8 +195,12 @@ void ClipFadesSection::initControls() {
         if (!clip)
             return;
         bool newState = !clip->autoCrossfade;
+        magda::ClipBatchEdit batch("Set Clip Auto Crossfade", selectedClipIds_.size());
         for (auto cid : selectedClipIds_)
-            magda::ClipManager::getInstance().setAutoCrossfade(cid, newState);
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Auto Crossfade", [newState](auto& manager, magda::ClipId id) {
+                    manager.setAutoCrossfade(id, newState);
+                }));
     };
     addChildComponent(autoCrossfadeToggle_);
 
@@ -218,10 +223,11 @@ void ClipFadesSection::initControls() {
     launchFadeValue_->setTooltip("Launch fade smoothing (0 = preserve transient)");
     launchFadeValue_->onValueChange = [this]() {
         int samples = msToSamples(launchFadeValue_->getValue());
+        magda::ClipBatchEdit batch("Set Clip Launch Fade", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->isAudio() && c->view == magda::ClipView::Session)
-                magda::UndoManager::getInstance().executeCommand(
+                batch.execute(
                     std::make_unique<magda::SetClipLaunchFadeSamplesCommand>(cid, samples));
         }
     };

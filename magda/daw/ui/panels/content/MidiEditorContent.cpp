@@ -396,12 +396,6 @@ void MidiEditorContent::scrollToClipStartForTimeMode() {
     viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
     lastScrolledPlacementStartBeat_ =
         clip ? clip->placement.startBeat : std::numeric_limits<double>::quiet_NaN();
-
-    DBG("MidiEditorContent::scrollToClipStartForTimeMode"
-        << " relative=" << static_cast<int>(relativeTimeMode_)
-        << " clipId=" << static_cast<int>(editingClipId_)
-        << " placementStartBeat=" << (clip ? clip->placement.startBeat : -1.0)
-        << " scrollX=" << scrollX << " zoomPPB=" << horizontalZoom_);
 }
 
 // ============================================================================

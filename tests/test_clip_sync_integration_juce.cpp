@@ -3,6 +3,8 @@
 #include <juce_events/juce_events.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <unordered_set>
+
 // TE internal test utilities (not exposed via module public headers)
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioThumbnailManager.hpp"
@@ -12,6 +14,7 @@
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
+#include "magda/daw/project/ProjectManager.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 using namespace magda;
@@ -20,6 +23,15 @@ namespace te = tracktion;
 namespace {
 
 /** Generate a mono sine WAV file and return it as a TemporaryFile. */
+juce::File testScratchDirectory() {
+    auto envTmp = juce::SystemStats::getEnvironmentVariable("TMPDIR", {});
+    auto root = envTmp.isNotEmpty() ? juce::File(envTmp)
+                                    : juce::File::getSpecialLocation(juce::File::tempDirectory);
+    root = root.getChildFile("magda_juce_tests");
+    root.createDirectory();
+    return root;
+}
+
 std::unique_ptr<juce::TemporaryFile> createSineWavFile(double sampleRate, double durationSeconds,
                                                        float frequency = 220.0f) {
     int numSamples = static_cast<int>(sampleRate * durationSeconds);
@@ -32,7 +44,8 @@ std::unique_ptr<juce::TemporaryFile> createSineWavFile(double sampleRate, double
         phase += phaseInc;
     }
 
-    auto f = std::make_unique<juce::TemporaryFile>(".wav");
+    auto targetFile = testScratchDirectory().getNonexistentChildFile("clip_sync_sine", ".wav");
+    auto f = std::make_unique<juce::TemporaryFile>(targetFile);
     juce::WavAudioFormat wavFormat;
     JUCE_BEGIN_IGNORE_WARNINGS_MSVC(4996)
     JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wdeprecated-declarations")
@@ -69,14 +82,29 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testTrimAudioFromRight();
         testSpeedRatio();
         testLoopEnableDisable();
+        testBeatModeRoundTripPreservesTrimmedLength();
         testLoopTimeBased();
         testLoopTimeBasedWarpEnabled();
         testSplitAudioClip();
+        testBeatModeSplitRendersRightSide();
+        testBeatModeSplitWrapsLoopPhaseAtBoundary();
+        testBeatModeDuplicateRendersCopy();
+        testBeatModeClipboardPastePreservesRightSplitPhase();
+        testBeatModeTimeRangePastePreservesTrimmedLoopPhase();
         testFadeInOut();
         testLaunchFadeSamples();
         testGainAndPan();
         testPitchChange();
         testRenderVerification();
+        testCreateAudioClipDeletesFullyOverlappedNeighbour();
+        testMoveAudioClipTrimsNeighbourFromRight();
+        testMoveAudioClipTrimsNeighbourFromLeft();
+        testDuplicateAudioClipResolvesOverlap();
+        testPasteAudioClipResolvesOverlap();
+        testCreateMidiClipResolvesOverlap();
+        testMidiSyncClipsNotesToVisibleRangeAfterResize();
+        testMoveClipNoOverlapDoesNotMutateNeighbours();
+        testMoveClipToTrackResolvesOverlapOnDestination();
     }
 
   private:
@@ -91,10 +119,13 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         std::unique_ptr<ClipSynchronizer> clipSync;
         std::unique_ptr<juce::TemporaryFile> sinFile;
         TrackId trackId = 1;
+        double originalProjectTempo = 120.0;
 
         Fixture() {
             // Reset ClipManager singleton
             ClipManager::getInstance().clearAllClips();
+            originalProjectTempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+            ProjectManager::getInstance().setTempo(60.0);
 
             auto& engineWrapper = magda::test::getSharedEngine();
             auto* engine = engineWrapper.getEngine();
@@ -123,6 +154,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             trackController.reset();
             edit.reset();
             ClipManager::getInstance().clearAllClips();
+            ProjectManager::getInstance().setTempo(originalProjectTempo);
         }
 
         juce::String audioPath() const {
@@ -133,7 +165,45 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             auto* teClip = clipSync->getArrangementTeClip(clipId);
             return dynamic_cast<te::WaveAudioClip*>(teClip);
         }
+
+        te::MidiClip* getTeMidiClip(ClipId clipId) const {
+            auto* teClip = clipSync->getArrangementTeClip(clipId);
+            return dynamic_cast<te::MidiClip*>(teClip);
+        }
     };
+
+    static void configureBeatModeLoop(ClipInfo& clip, double projectBpm, double sourceBpm,
+                                      double sourceDurationSeconds, double loopStartBeats,
+                                      double loopLengthBeats, double placementLengthBeats) {
+        clip.autoTempo = true;
+        clip.loopEnabled = true;
+        clip.audio().interpretation.bpm = sourceBpm;
+        clip.audio().interpretation.totalBeats = sourceDurationSeconds * sourceBpm / 60.0;
+        clip.loopStartBeats = loopStartBeats;
+        clip.loopLengthBeats = loopLengthBeats;
+        clip.offsetBeats = loopStartBeats;
+        clip.loopStart = loopStartBeats * 60.0 / sourceBpm;
+        clip.loopLength = loopLengthBeats * 60.0 / sourceBpm;
+        clip.offset = clip.offsetBeats * 60.0 / sourceBpm;
+        clip.setPlacementBeats(0.0, placementLengthBeats);
+        clip.deriveTimesFromBeats(projectBpm);
+    }
+
+    bool expectAudioInRange(const juce::AudioBuffer<float>& buf, double sampleRate,
+                            double startSeconds, double durationSeconds,
+                            const juce::String& label) {
+        const int startSample = static_cast<int>(startSeconds * sampleRate);
+        const int numSamples = static_cast<int>(durationSeconds * sampleRate);
+        const bool rangeAvailable =
+            startSample >= 0 && numSamples > 0 && startSample + numSamples <= buf.getNumSamples();
+        expect(rangeAvailable, "Buffer should include " + label);
+        if (!rangeAvailable)
+            return false;
+
+        const float rms = buf.getRMSLevel(0, startSample, numSamples);
+        expect(rms > 0.01f, label + " should render audio, RMS=" + juce::String(rms));
+        return rms > 0.01f;
+    }
 
     // =========================================================================
     // Test Cases
@@ -360,24 +430,62 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
     }
 
     void testSpeedRatio() {
-        beginTest("Speed ratio is pinned to 1.0 (auto-tempo invariant)");
+        beginTest("Speed ratio: TE follows model in time-based, model pins 1.0 in autoTempo");
 
-        // Audio clips are beat-authoritative; TE's auto-tempo path requires
-        // speedRatio = 1.0. Even when the model says otherwise, sync must
-        // pin TE to 1.0.
+        // The actual invariant lives in MAGDA's model:
+        //  - In time-based mode, ClipSynchronizer writes the model's speedRatio
+        //    to TE; getSpeedRatio() reflects it.
+        //  - In autoTempo, MAGDA's clip->speedRatio is pinned to 1.0 (TE's
+        //    autoTempo path requires it). TE's stored speedRatio may keep its
+        //    pre-autoTempo value because AudioClipBase::setSpeedRatio is a
+        //    no-op when autoTempo is on; TE doesn't use it for playback in
+        //    that mode anyway (source-vs-project tempo governs the stretch).
+        //  - When autoTempo flips back off, TE follows the model again.
         Fixture f;
-        auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(),
-                                                                 ClipView::Arrangement, 60.0);
+        auto& cm = ClipManager::getInstance();
+
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(), ClipView::Arrangement, 60.0);
         f.clipSync->syncClipToEngine(clipId);
 
         auto* teClip = f.getTeAudioClip(clipId);
         expect(teClip != nullptr);
-        expectWithinAbsoluteError(teClip->getSpeedRatio(), 1.0, 0.01);
+        if (teClip == nullptr)
+            return;
 
-        ClipManager::getInstance().setSpeedRatio(clipId, 2.0);
+        // 1) Time-based clip with speedRatio=2.0 → TE matches the model.
+        cm.setSpeedRatio(clipId, 2.0);
         f.clipSync->syncClipToEngine(clipId);
+        expectWithinAbsoluteError(teClip->getSpeedRatio(), 2.0, 0.01);
 
-        expectWithinAbsoluteError(teClip->getSpeedRatio(), 1.0, 0.01);
+        // 2) Flip on autoTempo via the proper API. ClipOperations::setAutoTempo
+        //    pins clip->speedRatio to 1.0 (TE's autoTempo path requires it).
+        //    TE's getSpeedRatio() is undefined in this mode — TE silently
+        //    rejects setSpeedRatio when autoTempo is on — so we don't assert
+        //    TE's stored value here.
+        {
+            auto* clip = cm.getClip(clipId);
+            if (clip == nullptr)
+                return;
+            clip->audio().interpretation.bpm = 60.0;
+            clip->audio().interpretation.totalBeats = 2.0;
+        }
+        cm.setAutoTempo(clipId, true, 60.0);
+        f.clipSync->syncClipToEngine(clipId);
+        {
+            const auto* clip = cm.getClip(clipId);
+            if (clip == nullptr)
+                return;
+            expect(teClip->getAutoTempo(), "TE clip should be in autoTempo mode");
+            expectWithinAbsoluteError(clip->speedRatio, 1.0, 0.01);
+        }
+
+        // 3) Disable autoTempo, then change model speedRatio to 0.5 → TE
+        //    follows the model again.
+        cm.setAutoTempo(clipId, false, 60.0);
+        cm.setSpeedRatio(clipId, 0.5);
+        f.clipSync->syncClipToEngine(clipId);
+        expectWithinAbsoluteError(teClip->getSpeedRatio(), 0.5, 0.01);
     }
 
     void testLoopEnableDisable() {
@@ -413,6 +521,60 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         f.clipSync->syncClipToEngine(clipId);
 
         expect(!teClip->isLooping(), "TE clip should not be looping after disable");
+    }
+
+    void testBeatModeRoundTripPreservesTrimmedLength() {
+        beginTest("Beat-mode round trip preserves trimmed clip length");
+
+        Fixture f;
+        constexpr double projectBpm = 120.0;
+        constexpr double sourceBpm = 172.0;
+        constexpr double sourceBeats = 16.0;
+        const double sourceDuration = sourceBeats * 60.0 / sourceBpm;
+        constexpr double trimmedBeats = 0.5;
+
+        auto trimmedId = ClipManager::getInstance().createAudioClip(
+            f.trackId, 0.0, sourceDuration, f.audioPath(), ClipView::Arrangement, projectBpm);
+        auto* trimmed = ClipManager::getInstance().getClip(trimmedId);
+        expect(trimmed != nullptr, "Trimmed clip should exist");
+        if (trimmed == nullptr)
+            return;
+
+        configureBeatModeLoop(*trimmed, projectBpm, sourceBpm, sourceDuration, 0.0, sourceBeats,
+                              trimmedBeats);
+
+        ClipManager::getInstance().setAutoTempo(trimmedId, false, projectBpm);
+        trimmed = ClipManager::getInstance().getClip(trimmedId);
+        expect(trimmed != nullptr, "Trimmed clip should survive disabling beat mode");
+        if (trimmed == nullptr)
+            return;
+        expect(!trimmed->autoTempo, "Trimmed clip should be time-based after disabling beat mode");
+        expectWithinAbsoluteError(trimmed->placement.lengthBeats, trimmedBeats, 0.001);
+
+        ClipManager::getInstance().setAutoTempo(trimmedId, true, projectBpm);
+        trimmed = ClipManager::getInstance().getClip(trimmedId);
+        expect(trimmed != nullptr, "Trimmed clip should survive re-enabling beat mode");
+        if (trimmed == nullptr)
+            return;
+        expect(trimmed->autoTempo, "Trimmed clip should be beat-based after re-enabling beat mode");
+        expectWithinAbsoluteError(trimmed->placement.lengthBeats, trimmedBeats, 0.001);
+        expectWithinAbsoluteError(trimmed->length, trimmedBeats * 60.0 / projectBpm, 0.001);
+
+        auto fullId = ClipManager::getInstance().createAudioClip(
+            f.trackId, 4.0, sourceDuration, f.audioPath(), ClipView::Arrangement, projectBpm);
+        auto* full = ClipManager::getInstance().getClip(fullId);
+        expect(full != nullptr, "Full source clip should exist");
+        if (full == nullptr)
+            return;
+
+        full->audio().interpretation.bpm = sourceBpm;
+        full->audio().interpretation.totalBeats = sourceBeats;
+        ClipManager::getInstance().setAutoTempo(fullId, true, projectBpm);
+        full = ClipManager::getInstance().getClip(fullId);
+        expect(full != nullptr, "Full source clip should survive enabling beat mode");
+        if (full == nullptr)
+            return;
+        expectWithinAbsoluteError(full->placement.lengthBeats, sourceBeats, 0.001);
     }
 
     void testLoopTimeBased() {
@@ -643,6 +805,292 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expect(rightClip->offset > 0.0, "Right clip offset should be > 0 after split");
     }
 
+    void testBeatModeSplitRendersRightSide() {
+        beginTest("Beat-mode split renders right-side audio");
+
+        Fixture f;
+
+        auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(),
+                                                                 ClipView::Arrangement, 60.0);
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        expect(clip != nullptr, "Source clip should exist");
+        if (clip == nullptr)
+            return;
+
+        clip->autoTempo = true;
+        clip->loopEnabled = true;
+        clip->audio().interpretation.bpm = 172.0;
+        clip->audio().interpretation.totalBeats = 5.0 * 172.0 / 60.0;
+        clip->loopStartBeats = 0.0;
+        clip->loopLengthBeats = clip->audio().interpretation.totalBeats;
+        clip->loopStart = 0.0;
+        clip->loopLength = 5.0;
+        clip->setPlacementBeats(0.0, clip->audio().interpretation.totalBeats);
+        clip->deriveTimesFromBeats(60.0);
+
+        f.clipSync->syncClipToEngine(clipId);
+
+        constexpr double splitTime = 8.0;
+        auto rightClipId = ClipManager::getInstance().splitClip(clipId, splitTime, 60.0);
+        expect(rightClipId != INVALID_CLIP_ID, "Split should create right clip");
+
+        f.clipSync->syncClipToEngine(clipId);
+        f.clipSync->syncClipToEngine(rightClipId);
+        f.edit->restartPlayback();
+
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expect(result.buffer.getNumSamples() > 0, "Rendered buffer should not be empty");
+
+        auto& buf = result.buffer;
+        const double sr = result.sampleRate;
+        {
+            const int startSample = static_cast<int>(0.2 * sr);
+            const int numSamples = static_cast<int>(1.0 * sr);
+            const float rms = buf.getRMSLevel(0, startSample, numSamples);
+            expect(rms > 0.01f, "Left side should render audio, RMS=" + juce::String(rms));
+        }
+        {
+            const int startSample = static_cast<int>((splitTime + 0.2) * sr);
+            const int numSamples = static_cast<int>(1.0 * sr);
+            expect(startSample + numSamples <= buf.getNumSamples(),
+                   "Buffer should include right-side split region");
+            if (startSample + numSamples <= buf.getNumSamples()) {
+                const float rms = buf.getRMSLevel(0, startSample, numSamples);
+                expect(rms > 0.01f, "Right side should render audio, RMS=" + juce::String(rms));
+            }
+        }
+    }
+
+    void testBeatModeSplitWrapsLoopPhaseAtBoundary() {
+        beginTest("Beat-mode split at loop boundary wraps right-side phase");
+
+        Fixture f;
+        auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(),
+                                                                 ClipView::Arrangement, 60.0);
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        expect(clip != nullptr, "Source clip should exist");
+        if (clip == nullptr)
+            return;
+
+        configureBeatModeLoop(*clip, 60.0, 120.0, 5.0, 0.0, 4.0, 12.0);
+        f.clipSync->syncClipToEngine(clipId);
+
+        auto rightClipId = ClipManager::getInstance().splitClip(clipId, 4.0, 60.0);
+        expect(rightClipId != INVALID_CLIP_ID, "Boundary split should create right clip");
+        auto* rightClip = ClipManager::getInstance().getClip(rightClipId);
+        expect(rightClip != nullptr, "Right clip should exist");
+        if (rightClip == nullptr)
+            return;
+
+        expectWithinAbsoluteError(rightClip->loopStartBeats, 0.0, 0.01);
+        expectWithinAbsoluteError(rightClip->loopLengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(rightClip->offsetBeats, 4.0, 0.01);
+
+        f.clipSync->syncClipToEngine(clipId);
+        f.clipSync->syncClipToEngine(rightClipId);
+        f.edit->restartPlayback();
+
+        auto* rightTeClip = f.getTeAudioClip(rightClipId);
+        expect(rightTeClip != nullptr, "Right TE clip should exist");
+        if (rightTeClip != nullptr) {
+            auto rightLoop = rightTeClip->getLoopRangeBeats();
+            expectWithinAbsoluteError(rightLoop.getStart().inBeats(), 0.0, 0.01);
+            expectWithinAbsoluteError(rightLoop.getLength().inBeats(), 4.0, 0.01);
+            expectWithinAbsoluteError(rightTeClip->getPosition().getOffset().inSeconds(), 4.0,
+                                      0.01);
+        }
+
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expectAudioInRange(result.buffer, result.sampleRate, 4.2, 0.7,
+                           "right side after boundary split");
+    }
+
+    void testBeatModeDuplicateRendersCopy() {
+        beginTest("Beat-mode duplicate renders copied audio");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr, "Source clip should exist");
+        if (clip == nullptr)
+            return;
+
+        configureBeatModeLoop(*clip, 60.0, 172.0, 5.0, 0.0, 5.0 * 172.0 / 60.0, 5.0 * 172.0 / 60.0);
+        f.clipSync->syncClipToEngine(clipId);
+
+        const double originalOffsetBeats = clip->offsetBeats;
+        const double originalLoopStartBeats = clip->loopStartBeats;
+        const double originalLoopLengthBeats = clip->loopLengthBeats;
+
+        const double duplicateStart = clip->getEndTime();
+        auto duplicateId = cm.duplicateClipAt(clipId, duplicateStart, f.trackId, 60.0);
+        expect(duplicateId != INVALID_CLIP_ID, "Duplicate should create copied clip");
+        auto* duplicate = cm.getClip(duplicateId);
+        expect(duplicate != nullptr, "Duplicate model clip should exist");
+        if (duplicate == nullptr)
+            return;
+
+        // Source-domain phase is preserved verbatim — duplicating must not
+        // change which audio plays. Compare in the source domain only.
+        expectWithinAbsoluteError(duplicate->offsetBeats, originalOffsetBeats, 0.01);
+        expectWithinAbsoluteError(duplicate->loopStartBeats, originalLoopStartBeats, 0.01);
+        expectWithinAbsoluteError(duplicate->loopLengthBeats, originalLoopLengthBeats, 0.01);
+        // Loop phase modulo the loop length: another way to express "same audio plays".
+        expectWithinAbsoluteError(
+            wrapPhase(duplicate->offsetBeats - duplicate->loopStartBeats,
+                      duplicate->loopLengthBeats),
+            wrapPhase(originalOffsetBeats - originalLoopStartBeats, originalLoopLengthBeats), 0.01);
+
+        // Timeline placement moved to duplicateStart (separate domain — independent of phase).
+        expectWithinAbsoluteError(duplicate->placement.startBeat, duplicateStart, 0.01);
+
+        f.clipSync->syncClipToEngine(clipId);
+        f.clipSync->syncClipToEngine(duplicateId);
+        f.edit->restartPlayback();
+
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expectAudioInRange(result.buffer, result.sampleRate, duplicateStart + 0.2, 1.0,
+                           "duplicated beat-mode clip");
+    }
+
+    void testBeatModeClipboardPastePreservesRightSplitPhase() {
+        beginTest("Beat-mode clipboard paste preserves right split phase");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr, "Source clip should exist");
+        if (clip == nullptr)
+            return;
+
+        configureBeatModeLoop(*clip, 60.0, 172.0, 5.0, 0.0, 5.0 * 172.0 / 60.0, 5.0 * 172.0 / 60.0);
+        auto rightClipId = cm.splitClip(clipId, 8.0, 60.0);
+        auto* rightClip = cm.getClip(rightClipId);
+        expect(rightClip != nullptr, "Right split clip should exist");
+        if (rightClip == nullptr)
+            return;
+
+        const double srcOffsetBeats = rightClip->offsetBeats;
+        const double srcLoopStartBeats = rightClip->loopStartBeats;
+        const double srcLoopLengthBeats = rightClip->loopLengthBeats;
+
+        std::unordered_set<ClipId> copiedIds{rightClipId};
+        cm.copyToClipboard(copiedIds);
+        constexpr double kPasteTime = 12.0;
+        auto pastedIds = cm.pasteFromClipboard(kPasteTime, f.trackId, ClipView::Arrangement);
+        expectEquals(static_cast<int>(pastedIds.size()), 1);
+        if (pastedIds.empty())
+            return;
+
+        auto pastedId = pastedIds.front();
+        auto* pastedClip = cm.getClip(pastedId);
+        expect(pastedClip != nullptr, "Pasted clip should exist");
+        if (pastedClip == nullptr)
+            return;
+
+        // Source-domain phase carries over verbatim — paste must not change which
+        // audio plays.
+        expectWithinAbsoluteError(pastedClip->offsetBeats, srcOffsetBeats, 0.01);
+        expectWithinAbsoluteError(pastedClip->loopStartBeats, srcLoopStartBeats, 0.01);
+        expectWithinAbsoluteError(pastedClip->loopLengthBeats, srcLoopLengthBeats, 0.01);
+        // Phase within loop — same modulo invariant.
+        expectWithinAbsoluteError(wrapPhase(pastedClip->offsetBeats - pastedClip->loopStartBeats,
+                                            pastedClip->loopLengthBeats),
+                                  wrapPhase(srcOffsetBeats - srcLoopStartBeats, srcLoopLengthBeats),
+                                  0.01);
+
+        f.clipSync->syncClipToEngine(pastedId);
+        f.edit->restartPlayback();
+
+        auto* pastedTeClip = f.getTeAudioClip(pastedId);
+        expect(pastedTeClip != nullptr, "Pasted TE clip should exist");
+        if (pastedTeClip != nullptr) {
+            // TE's getOffset is clip-relative seconds derived from
+            // (offsetBeats - loopStartBeats) × 60 / projectBpm.
+            const double expectedTeOffset = pastedClip->getTeOffset(true, 60.0);
+            expectWithinAbsoluteError(pastedTeClip->getPosition().getOffset().inSeconds(),
+                                      expectedTeOffset, 0.01);
+            // Sanity: TE clip's edit start matches the paste timeline position.
+            expectWithinAbsoluteError(pastedTeClip->getPosition().getStart().inSeconds(),
+                                      kPasteTime, 0.01);
+        }
+
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expectAudioInRange(result.buffer, result.sampleRate, kPasteTime + 0.2, 1.0,
+                           "pasted right split clip");
+    }
+
+    void testBeatModeTimeRangePastePreservesTrimmedLoopPhase() {
+        beginTest("Beat-mode time-range paste preserves trimmed loop phase");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr, "Source clip should exist");
+        if (clip == nullptr)
+            return;
+
+        // Source: 120 BPM, loop region beats [2, 6) of source (loopStart=2,
+        // loopLength=4). Placement: 0..12 beats at projectBpm=60. clip.offsetBeats
+        // = loopStartBeats = 2 (configureBeatModeLoop).
+        configureBeatModeLoop(*clip, 60.0, 120.0, 5.0, 2.0, 4.0, 12.0);
+        const double clipLoopStartBeats = clip->loopStartBeats;
+        const double clipLoopLengthBeats = clip->loopLengthBeats;
+        const double clipOffsetBeats = clip->offsetBeats;
+
+        // Time-range copy: trim from 5.5s..7.5s within the original timeline.
+        // copyTimeRangeToClipboard moves trimmed.offsetBeats forward by
+        // trimFromLeftBeats (= 5.5 at projectBpm=60) → expected 2 + 5.5 = 7.5.
+        constexpr double kRangeStart = 5.5;
+        constexpr double kRangeEnd = 7.5;
+        cm.copyTimeRangeToClipboard(kRangeStart, kRangeEnd, {f.trackId}, 60.0);
+
+        constexpr double kPasteTime = 10.0;
+        auto pastedIds = cm.pasteFromClipboard(kPasteTime, f.trackId, ClipView::Arrangement);
+        expectEquals(static_cast<int>(pastedIds.size()), 1);
+        if (pastedIds.empty())
+            return;
+
+        auto pastedId = pastedIds.front();
+        auto* pastedClip = cm.getClip(pastedId);
+        expect(pastedClip != nullptr, "Pasted trimmed clip should exist");
+        if (pastedClip == nullptr)
+            return;
+
+        // Loop region in source-domain unchanged by trimming or pasting.
+        expectWithinAbsoluteError(pastedClip->loopStartBeats, clipLoopStartBeats, 0.01);
+        expectWithinAbsoluteError(pastedClip->loopLengthBeats, clipLoopLengthBeats, 0.01);
+
+        // offsetBeats advanced by the trim distance, then preserved verbatim
+        // by paste. (The paste's timeline position is irrelevant to source phase.)
+        const double expectedOffsetBeats = clipOffsetBeats + (kRangeStart - 0.0);  // = 7.5
+        expectWithinAbsoluteError(pastedClip->offsetBeats, expectedOffsetBeats, 0.01);
+
+        // TE offset is clip-relative seconds: (offsetBeats - loopStartBeats) × 60 / projectBpm.
+        const double expectedTeOffset =
+            (expectedOffsetBeats - clipLoopStartBeats) * 60.0 / 60.0;  // = 5.5
+        expectWithinAbsoluteError(pastedClip->getTeOffset(true, 60.0), expectedTeOffset, 0.01);
+
+        // Phase modulo loop length is what determines audible content alignment.
+        expectWithinAbsoluteError(
+            wrapPhase(pastedClip->offsetBeats - pastedClip->loopStartBeats,
+                      pastedClip->loopLengthBeats),
+            wrapPhase(expectedOffsetBeats - clipLoopStartBeats, clipLoopLengthBeats), 0.01);
+
+        f.clipSync->syncClipToEngine(pastedId);
+        f.edit->restartPlayback();
+
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expectAudioInRange(result.buffer, result.sampleRate, kPasteTime + 0.2, 1.0,
+                           "time-range pasted beat-mode clip");
+    }
+
     void testFadeInOut() {
         beginTest("Fade in/out values sync to TE");
 
@@ -784,6 +1232,284 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
                 expect(rms < 0.01f,
                        "Should be silence after clip (3.1s+), RMS=" + juce::String(rms));
             }
+        }
+    }
+
+    // =========================================================================
+    // Overlap resolution
+    // =========================================================================
+
+    void testCreateAudioClipDeletesFullyOverlappedNeighbour() {
+        beginTest("createAudioClip deletes a fully-covered arrangement neighbour");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        // Existing clip: bars 1-3 (= 8 beats at 60 BPM = 8s)
+        auto existing =
+            cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        expect(existing != INVALID_CLIP_ID);
+
+        // New clip fully covers it: 0-12 beats
+        auto incoming =
+            cm.createAudioClip(f.trackId, 0.0, 12.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        expect(incoming != INVALID_CLIP_ID);
+
+        expect(cm.getClip(existing) == nullptr, "Fully-covered neighbour should have been deleted");
+        expect(cm.getClip(incoming) != nullptr, "Incoming clip should remain");
+    }
+
+    void testMoveAudioClipTrimsNeighbourFromRight() {
+        beginTest("moveClip trims neighbour's right edge when overlapping from the left");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        // Static neighbour at 0-8s, mover starts further right.
+        auto stationary =
+            cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto mover =
+            cm.createAudioClip(f.trackId, 16.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        expect(stationary != INVALID_CLIP_ID);
+        expect(mover != INVALID_CLIP_ID);
+
+        // Move the mover left so it overlaps the right half of stationary.
+        cm.moveClip(mover, 4.0, 60.0);
+
+        const auto* s = cm.getClip(stationary);
+        const auto* m = cm.getClip(mover);
+        expect(s != nullptr && m != nullptr);
+        if (!s || !m)
+            return;
+
+        // Stationary's right edge should be trimmed back to mover's start beat.
+        expectWithinAbsoluteError(s->placement.startBeat, 0.0, 0.01);
+        expectWithinAbsoluteError(s->placement.lengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(m->placement.startBeat, 4.0, 0.01);
+        expectWithinAbsoluteError(m->placement.lengthBeats, 4.0, 0.01);
+    }
+
+    void testMoveAudioClipTrimsNeighbourFromLeft() {
+        beginTest("moveClip trims neighbour's left edge when overlapping from the right");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        // stationary: beats 8-16. mover: 0-8 length 8, then move startTime=4
+        // → mover spans beats 4-12, covering stationary's left half (beats
+        // 8-12). resolveOverlaps should trim stationary's left edge to 12.
+        auto stationary =
+            cm.createAudioClip(f.trackId, 8.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto mover =
+            cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+
+        cm.moveClip(mover, 4.0, 60.0);
+
+        const auto* s = cm.getClip(stationary);
+        const auto* m = cm.getClip(mover);
+        expect(s != nullptr && m != nullptr);
+        if (!s || !m)
+            return;
+
+        expectWithinAbsoluteError(m->placement.startBeat, 4.0, 0.01);
+        expectWithinAbsoluteError(m->placement.lengthBeats, 8.0, 0.01);
+        expectWithinAbsoluteError(s->placement.startBeat, 12.0, 0.01);
+        expectWithinAbsoluteError(s->placement.lengthBeats, 4.0, 0.01);
+    }
+
+    void testDuplicateAudioClipResolvesOverlap() {
+        beginTest("duplicateClipAt resolves overlap with existing clip on same track");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        // Source at 0-4s, victim at 8-12s. Duplicate source to 6s — that lands
+        // at 6-10s and partially covers the victim's left half.
+        auto source =
+            cm.createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto victim =
+            cm.createAudioClip(f.trackId, 8.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+
+        auto copy = cm.duplicateClipAt(source, 6.0, f.trackId, 60.0);
+        expect(copy != INVALID_CLIP_ID);
+
+        const auto* v = cm.getClip(victim);
+        const auto* c = cm.getClip(copy);
+        expect(v != nullptr && c != nullptr);
+        if (!v || !c)
+            return;
+
+        // Victim should now start at beat 10 and be 2 beats long.
+        expectWithinAbsoluteError(c->placement.startBeat, 6.0, 0.01);
+        expectWithinAbsoluteError(c->placement.lengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(v->placement.startBeat, 10.0, 0.01);
+        expectWithinAbsoluteError(v->placement.lengthBeats, 2.0, 0.01);
+    }
+
+    void testPasteAudioClipResolvesOverlap() {
+        beginTest("pasteFromClipboard resolves overlap with existing clip");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto source =
+            cm.createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto victim =
+            cm.createAudioClip(f.trackId, 6.0, 6.0, f.audioPath(), ClipView::Arrangement, 60.0);
+
+        cm.copyToClipboard(std::unordered_set<ClipId>{source});
+        auto pastedIds = cm.pasteFromClipboard(8.0, f.trackId, ClipView::Arrangement);
+        expectEquals(static_cast<int>(pastedIds.size()), 1);
+        if (pastedIds.empty())
+            return;
+
+        const auto* v = cm.getClip(victim);
+        const auto* p = cm.getClip(pastedIds.front());
+        expect(v != nullptr && p != nullptr);
+        if (!v || !p)
+            return;
+
+        expectWithinAbsoluteError(p->placement.startBeat, 8.0, 0.01);
+        expectWithinAbsoluteError(p->placement.lengthBeats, 4.0, 0.01);
+        // Victim originally 6-12. Paste lands 8-12 → fully covers victim's right half,
+        // so victim's right edge trims back to beat 8.
+        expectWithinAbsoluteError(v->placement.startBeat, 6.0, 0.01);
+        expectWithinAbsoluteError(v->placement.lengthBeats, 2.0, 0.01);
+    }
+
+    void testCreateMidiClipResolvesOverlap() {
+        beginTest("createMidiClip resolves overlap (MIDI uses the same code path)");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto stationary = cm.createMidiClip(f.trackId, 0.0, 8.0, ClipView::Arrangement);
+        auto incoming = cm.createMidiClip(f.trackId, 4.0, 8.0, ClipView::Arrangement);
+        expect(stationary != INVALID_CLIP_ID && incoming != INVALID_CLIP_ID);
+
+        const auto* s = cm.getClip(stationary);
+        const auto* i = cm.getClip(incoming);
+        expect(s != nullptr && i != nullptr);
+        if (!s || !i)
+            return;
+
+        // Incoming covers stationary's right half (beats 4-8). Stationary's right
+        // edge should trim to beat 4.
+        expectWithinAbsoluteError(s->placement.startBeat, 0.0, 0.01);
+        expectWithinAbsoluteError(s->placement.lengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(i->placement.startBeat, 4.0, 0.01);
+        expectWithinAbsoluteError(i->placement.lengthBeats, 8.0, 0.01);
+    }
+
+    void testMidiSyncClipsNotesToVisibleRangeAfterResize() {
+        beginTest("MIDI sync clips stale notes to visible range after resize");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto clipId = cm.createMidiClipBeats(f.trackId, 0.0, 8.0, ClipView::Arrangement);
+        expect(clipId != INVALID_CLIP_ID, "MIDI clip should be created");
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr, "MIDI clip should exist");
+        if (clip == nullptr)
+            return;
+
+        expect(cm.addMidiNote(clipId, {60, 100, 1.0, 0.5}), "Visible note should be added");
+        expect(cm.addMidiNote(clipId, {62, 100, 3.5, 1.0}), "Edge-crossing note should be added");
+        expect(cm.addMidiNote(clipId, {64, 100, 6.5, 1.0}), "Later stale note should be added");
+        expectEquals(static_cast<int>(clip->midiNotes.size()), 3);
+
+        ClipOperations::resizeContainerFromRight(*clip, 4.0, 60.0);
+        expectEquals(static_cast<int>(clip->midiNotes.size()), 3,
+                     "Resize should preserve underlying MIDI notes");
+
+        f.clipSync->syncClipToEngine(clipId);
+
+        auto* teMidiClip = f.getTeMidiClip(clipId);
+        expect(teMidiClip != nullptr, "Tracktion MIDI clip should exist after sync");
+        if (teMidiClip == nullptr)
+            return;
+
+        auto& sequence = teMidiClip->getSequence();
+        auto findNote = [&sequence](int noteNumber) -> te::MidiNote* {
+            for (int i = 0; i < sequence.getNumNotes(); ++i) {
+                auto* note = sequence.getNote(i);
+                if (note != nullptr && note->getNoteNumber() == noteNumber)
+                    return note;
+            }
+            return nullptr;
+        };
+
+        expectEquals(sequence.getNumNotes(), 2);
+
+        auto* visibleNote = findNote(60);
+        expect(visibleNote != nullptr, "Visible note should sync to TE");
+        if (visibleNote != nullptr) {
+            expectWithinAbsoluteError(visibleNote->getStartBeat().inBeats(), 1.0, 0.01);
+            expectWithinAbsoluteError(visibleNote->getLengthBeats().inBeats(), 0.5, 0.01);
+        }
+
+        auto* clippedNote = findNote(62);
+        expect(clippedNote != nullptr, "Edge-crossing note should sync clipped to TE");
+        if (clippedNote != nullptr) {
+            expectWithinAbsoluteError(clippedNote->getStartBeat().inBeats(), 3.5, 0.01);
+            expectWithinAbsoluteError(clippedNote->getLengthBeats().inBeats(), 0.5, 0.01);
+        }
+
+        expect(findNote(64) == nullptr, "Stale note beyond resized clip end should not sync to TE");
+    }
+
+    void testMoveClipNoOverlapDoesNotMutateNeighbours() {
+        beginTest("moveClip without overlap leaves neighbours untouched");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto a =
+            cm.createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto b =
+            cm.createAudioClip(f.trackId, 16.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+
+        // Move b further right — no overlap with a.
+        cm.moveClip(b, 32.0, 60.0);
+
+        const auto* aClip = cm.getClip(a);
+        const auto* bClip = cm.getClip(b);
+        expect(aClip != nullptr && bClip != nullptr);
+        if (!aClip || !bClip)
+            return;
+        expectWithinAbsoluteError(aClip->placement.startBeat, 0.0, 0.01);
+        expectWithinAbsoluteError(aClip->placement.lengthBeats, 4.0, 0.01);
+        expectWithinAbsoluteError(bClip->placement.startBeat, 32.0, 0.01);
+        expectWithinAbsoluteError(bClip->placement.lengthBeats, 4.0, 0.01);
+    }
+
+    void testMoveClipToTrackResolvesOverlapOnDestination() {
+        beginTest("moveClipToTrack resolves overlap on the destination track");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        constexpr TrackId secondTrackId = 2;
+        f.trackController->ensureTrackMapping(secondTrackId, "Track 2");
+
+        auto sitter =
+            cm.createAudioClip(secondTrackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto mover =
+            cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        expect(sitter != INVALID_CLIP_ID && mover != INVALID_CLIP_ID);
+
+        cm.moveClipToTrack(mover, secondTrackId);
+
+        // Mover ends up on track 2 fully covering sitter → sitter deleted.
+        expect(cm.getClip(sitter) == nullptr,
+               "Fully-covered clip on destination track should be deleted");
+        const auto* m = cm.getClip(mover);
+        expect(m != nullptr);
+        if (m) {
+            expect(m->trackId == secondTrackId);
+            expectWithinAbsoluteError(m->placement.startBeat, 0.0, 0.01);
+            expectWithinAbsoluteError(m->placement.lengthBeats, 8.0, 0.01);
         }
     }
 };
