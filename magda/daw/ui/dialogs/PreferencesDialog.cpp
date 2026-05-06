@@ -157,16 +157,10 @@ class GeneralPage : public juce::Component {
     }
 
     int getPreferredHeight(int width) const {
-        constexpr int padding = 16;
-        constexpr int rowH = 32;
-        constexpr int headerH = 28;
-        constexpr int secGap = 12;
-
-        const int height = padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 +
-                           (rowH * 2) + 4 + secGap + headerH + 4 + rowH + secGap + headerH + 4 +
-                           rowH + 4 + rowH + secGap + headerH + 4 + rowH + secGap + headerH + 4 +
-                           (rowH * 4) + 12 + secGap + headerH + 4 + rowH + 18 + secGap + headerH +
-                           4 + rowH + padding;
+        const int height =
+            shouldUseSingleColumnLayout(width)
+                ? getSingleColumnPreferredHeight()
+                : juce::jmax(getLeftColumnPreferredHeight(), getRightColumnPreferredHeight());
 
         return juce::jmax(height, width < 520 ? 760 : 0);
     }
@@ -178,67 +172,12 @@ class GeneralPage : public juce::Component {
         const int headerH = 28;
         const int secGap = 12;
 
-        // Zoom
-        zoomHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutTextSliderRow(bounds, zoomInLabel, zoomInSensitivitySlider, rowH, sliderH);
-        bounds.removeFromTop(4);
-        layoutTextSliderRow(bounds, zoomOutLabel, zoomOutSensitivitySlider, rowH, sliderH);
-        bounds.removeFromTop(4);
-        layoutTextSliderRow(bounds, zoomShiftLabel, zoomShiftSensitivitySlider, rowH, sliderH);
-        bounds.removeFromTop(secGap);
+        if (!shouldUseSingleColumnLayout(getWidth())) {
+            layoutTwoColumns(bounds, rowH, sliderH, headerH, secGap);
+            return;
+        }
 
-        // Timeline
-        timelineHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutTextSliderRow(bounds, timelineLengthLabel, timelineLengthSlider, rowH, sliderH);
-        bounds.removeFromTop(4);
-        layoutTextSliderRow(bounds, viewDurationLabel, viewDurationSlider, rowH, sliderH);
-        bounds.removeFromTop(secGap);
-
-        // Transport
-        transportHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        stopUpdatesPlayheadToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
-        bounds.removeFromTop(secGap);
-
-        // Auto-Save
-        autoSaveHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        autoSaveToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
-        bounds.removeFromTop(4);
-        layoutTextSliderRow(bounds, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, sliderH);
-        bounds.removeFromTop(secGap);
-
-        // Layout
-        layoutHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        headersOnRightToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
-        bounds.removeFromTop(secGap);
-
-        // Behaviour
-        behaviorHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        confirmTrackDeleteToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
-        bounds.removeFromTop(4);
-        autoMonitorToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
-        bounds.removeFromTop(4);
-        openMacrosOnSelectToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
-        bounds.removeFromTop(4);
-        showTooltipsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
-        bounds.removeFromTop(secGap);
-
-        // Language
-        languageHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, languageLabel, languageCombo, rowH);
-        restartHint.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(secGap);
-
-        // UI scale
-        scaleHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, scaleLabel, scaleCombo, rowH);
+        layoutSingleColumn(bounds, rowH, sliderH, headerH, secGap);
     }
 
     void loadSettings(Config& config) {
@@ -327,6 +266,180 @@ class GeneralPage : public juce::Component {
     }
 
   private:
+    static constexpr int kTwoColumnMinWidth = 720;
+
+    static bool shouldUseSingleColumnLayout(int width) {
+        return width < kTwoColumnMinWidth;
+    }
+
+    static int getSingleColumnPreferredHeight() {
+        constexpr int padding = 16;
+        constexpr int rowH = 32;
+        constexpr int headerH = 28;
+        constexpr int secGap = 12;
+
+        return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
+               secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
+               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 4) + 12 + secGap + headerH + 4 +
+               rowH + 18 + secGap + headerH + 4 + rowH + padding;
+    }
+
+    static int getLeftColumnPreferredHeight() {
+        constexpr int padding = 16;
+        constexpr int rowH = 32;
+        constexpr int headerH = 28;
+        constexpr int secGap = 12;
+
+        return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
+               secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + padding;
+    }
+
+    static int getRightColumnPreferredHeight() {
+        constexpr int padding = 16;
+        constexpr int rowH = 32;
+        constexpr int headerH = 28;
+        constexpr int secGap = 12;
+
+        return padding + headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 4) + 12 + secGap +
+               headerH + 4 + rowH + 18 + secGap + headerH + 4 + rowH + padding;
+    }
+
+    void layoutSingleColumn(juce::Rectangle<int> bounds, int rowH, int sliderH, int headerH,
+                            int secGap) {
+        // Zoom
+        zoomHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, zoomInLabel, zoomInSensitivitySlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, zoomOutLabel, zoomOutSensitivitySlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, zoomShiftLabel, zoomShiftSensitivitySlider, rowH, sliderH);
+        bounds.removeFromTop(secGap);
+
+        // Timeline
+        timelineHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, timelineLengthLabel, timelineLengthSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, viewDurationLabel, viewDurationSlider, rowH, sliderH);
+        bounds.removeFromTop(secGap);
+
+        // Transport
+        transportHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        stopUpdatesPlayheadToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(secGap);
+
+        // Auto-Save
+        autoSaveHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        autoSaveToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, sliderH);
+        bounds.removeFromTop(secGap);
+
+        // Layout
+        layoutHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        headersOnRightToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(secGap);
+
+        // Behaviour
+        behaviorHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        confirmTrackDeleteToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        autoMonitorToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        openMacrosOnSelectToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        showTooltipsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(secGap);
+
+        // Language
+        languageHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, languageLabel, languageCombo, rowH);
+        restartHint.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(secGap);
+
+        // UI scale
+        scaleHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, scaleLabel, scaleCombo, rowH);
+    }
+
+    void layoutTwoColumns(juce::Rectangle<int> bounds, int rowH, int sliderH, int headerH,
+                          int secGap) {
+        constexpr int colGap = 28;
+
+        const int colW = (bounds.getWidth() - colGap) / 2;
+        auto left = bounds.removeFromLeft(colW);
+        bounds.removeFromLeft(colGap);
+        auto right = bounds;
+
+        // Zoom
+        zoomHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, zoomInLabel, zoomInSensitivitySlider, rowH, sliderH);
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, zoomOutLabel, zoomOutSensitivitySlider, rowH, sliderH);
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, zoomShiftLabel, zoomShiftSensitivitySlider, rowH, sliderH);
+        left.removeFromTop(secGap);
+
+        // Timeline
+        timelineHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, timelineLengthLabel, timelineLengthSlider, rowH, sliderH);
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, viewDurationLabel, viewDurationSlider, rowH, sliderH);
+        left.removeFromTop(secGap);
+
+        // Transport
+        transportHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        stopUpdatesPlayheadToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
+        left.removeFromTop(secGap);
+
+        // Auto-Save
+        autoSaveHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        autoSaveToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, sliderH);
+
+        // Layout
+        layoutHeader.setBounds(right.removeFromTop(headerH));
+        right.removeFromTop(4);
+        headersOnRightToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(secGap);
+
+        // Behaviour
+        behaviorHeader.setBounds(right.removeFromTop(headerH));
+        right.removeFromTop(4);
+        confirmTrackDeleteToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        autoMonitorToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        openMacrosOnSelectToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        showTooltipsToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(secGap);
+
+        // Language
+        languageHeader.setBounds(right.removeFromTop(headerH));
+        right.removeFromTop(4);
+        layoutComboRow(right, languageLabel, languageCombo, rowH);
+        restartHint.setBounds(right.removeFromTop(18));
+        right.removeFromTop(secGap);
+
+        // UI scale
+        scaleHeader.setBounds(right.removeFromTop(headerH));
+        right.removeFromTop(4);
+        layoutComboRow(right, scaleLabel, scaleCombo, rowH);
+    }
+
     void setupComboLabel(juce::Label& label, const juce::String& text) {
         label.setText(text, juce::dontSendNotification);
         label.setFont(FontManager::getInstance().getUIFont(12.0f));
