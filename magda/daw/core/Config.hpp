@@ -710,6 +710,21 @@ class Config {
         midiLearnDefaultScope_ = scope;
     }
 
+    // MCP Server Configuration
+    struct MCPServerConfig {
+        std::string name;
+        std::string command;
+        std::vector<std::string> args;
+        bool enabled = true;
+    };
+
+    std::vector<MCPServerConfig> getMCPServers() const {
+        return mcpServers;
+    }
+    void setMCPServers(const std::vector<MCPServerConfig>& servers) {
+        mcpServers = servers;
+    }
+
     // Save/load to platform-appropriate location:
     //   macOS  ~/Library/Application Support/MAGDA/config.json
     //   Windows  %APPDATA%\MAGDA\config.json
@@ -858,6 +873,9 @@ class Config {
     int localLlamaPort = 8080;
     int localLlamaGpuLayers = -1;  // -1 = auto
     int localLlamaContextSize = 4096;
+
+    // MCP server configs
+    std::vector<MCPServerConfig> mcpServers;
 
     std::vector<ConfigListener*> listeners_;
 

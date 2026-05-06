@@ -54,6 +54,10 @@ dsl_grammar.hpp
     sound_design_agent.cpp
     coder_agent.hpp
     coder_agent.cpp
+    mcp/MCPClient.hpp
+    mcp/MCPClient.cpp
+    mcp/MCPServerManager.hpp
+    mcp/MCPServerManager.cpp
 )
 
 # Create the agents library

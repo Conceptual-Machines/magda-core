@@ -147,6 +147,23 @@ void Config::save() {
         aiObj->setProperty("localLlamaGpuLayers", localLlamaGpuLayers);
         aiObj->setProperty("localLlamaContextSize", localLlamaContextSize);
 
+        // MCP servers
+        if (!mcpServers.empty()) {
+            juce::Array<juce::var> mcpArray;
+            for (const auto& srv : mcpServers) {
+                auto* srvObj = new juce::DynamicObject();
+                srvObj->setProperty("name", toJuceString(srv.name));
+                srvObj->setProperty("command", toJuceString(srv.command));
+                juce::Array<juce::var> argsArray;
+                for (const auto& a : srv.args)
+                    argsArray.add(toJuceString(a));
+                srvObj->setProperty("args", argsArray);
+                srvObj->setProperty("enabled", srv.enabled);
+                mcpArray.add(juce::var(srvObj));
+            }
+            aiObj->setProperty("mcpServers", mcpArray);
+        }
+
         root->setProperty("ai", juce::var(aiObj));
     }
 
@@ -425,6 +442,29 @@ void Config::load() {
                         // Older configs had command/music on gpt-4.1-mini — upgrade
                         cfg.provider = "openai_responses";
                         cfg.model = "gpt-5";
+                    }
+                }
+            }
+
+            // Load MCP server configs
+            auto mcpVar = aiObj->getProperty("mcpServers");
+            if (mcpVar.isArray()) {
+                mcpServers.clear();
+                for (const auto& item : *mcpVar.getArray()) {
+                    if (auto* srvObj = item.getDynamicObject()) {
+                        MCPServerConfig srv;
+                        srv.name = srvObj->getProperty("name").toString().toStdString();
+                        srv.command = srvObj->getProperty("command").toString().toStdString();
+                        auto argsVar = srvObj->getProperty("args");
+                        if (argsVar.isArray()) {
+                            for (const auto& a : *argsVar.getArray())
+                                srv.args.push_back(a.toString().toStdString());
+                        }
+                        srv.enabled = srvObj->hasProperty("enabled")
+                                          ? static_cast<bool>(srvObj->getProperty("enabled"))
+                                          : true;
+                        if (!srv.name.empty() && !srv.command.empty())
+                            mcpServers.push_back(std::move(srv));
                     }
                 }
             }

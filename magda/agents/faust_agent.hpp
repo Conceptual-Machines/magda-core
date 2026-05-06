@@ -33,6 +33,7 @@ class FaustAgent {
   private:
     static const char* getSystemPrompt();
     Result parseJson(const juce::String& text);
+    Result validateWithMCP(Result result);
 
     std::atomic<bool> shouldStop_{false};
 };
