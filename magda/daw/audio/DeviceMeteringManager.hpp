@@ -18,7 +18,8 @@ class PluginManager;
  *
  * Track-level plugins use LevelMeasurer + Client pairs fed by the TE graph hook.
  * Wrapped instruments use a MAGDA-owned InstrumentMeterTapPlugin inside the rack,
- * which writes directly to the same per-device atomics from the audio thread.
+ * which writes block peaks to realtime accumulators that updateAllClients()
+ * consumes and clears on the message thread.
  *
  * Thread Safety:
  * - getOrCreateMeasurer(): called from message thread during graph building
@@ -156,6 +157,8 @@ class DeviceMeteringManager {
         te::LevelMeasurer::Client client;
         std::atomic<float> peakL{0.f};
         std::atomic<float> peakR{0.f};
+        std::atomic<float> realtimePeakL{0.f};
+        std::atomic<float> realtimePeakR{0.f};
         std::atomic<float> gainLinear{1.0f};
         bool clientRegistered = false;
     };

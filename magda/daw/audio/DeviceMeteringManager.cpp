@@ -47,8 +47,13 @@ DeviceId DeviceMeteringManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
 void DeviceMeteringManager::updateAllClients() {
     juce::ScopedLock sl(lock_);
     for (auto& [deviceId, entry] : entries_) {
-        if (!entry->clientRegistered)
+        if (!entry->clientRegistered) {
+            entry->peakL.store(entry->realtimePeakL.exchange(0.0f, std::memory_order_relaxed),
+                               std::memory_order_relaxed);
+            entry->peakR.store(entry->realtimePeakR.exchange(0.0f, std::memory_order_relaxed),
+                               std::memory_order_relaxed);
             continue;
+        }
 
         auto levelL = entry->client.getAndClearAudioLevel(0);
         auto levelR = entry->client.getAndClearAudioLevel(1);
@@ -109,7 +114,7 @@ DeviceMeteringManager::RealtimeTap DeviceMeteringManager::getRealtimeTap(DeviceI
     if (!entry)
         entry = std::make_unique<Entry>();
 
-    return {&entry->peakL, &entry->peakR, &entry->gainLinear};
+    return {&entry->realtimePeakL, &entry->realtimePeakR, &entry->gainLinear};
 }
 
 void DeviceMeteringManager::setRackDirectLevels(RackId rackId, float peakL, float peakR) {

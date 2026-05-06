@@ -76,9 +76,9 @@ class InstrumentMeterTapPlugin : public te::Plugin {
     void bindRealtimeTap();
 
     std::atomic<DeviceId> deviceId_{INVALID_DEVICE_ID};
-    std::atomic<float>* peakL_ = nullptr;
-    std::atomic<float>* peakR_ = nullptr;
-    std::atomic<float>* gainLinear_ = nullptr;
+    std::atomic<std::atomic<float>*> peakL_{nullptr};
+    std::atomic<std::atomic<float>*> peakR_{nullptr};
+    std::atomic<std::atomic<float>*> gainLinear_{nullptr};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InstrumentMeterTapPlugin)
 };

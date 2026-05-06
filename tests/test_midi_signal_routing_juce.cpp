@@ -134,6 +134,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         typedTap->applyToBuffer(rc);
 
         magda::DeviceMeteringManager::DeviceMeterData levels;
+        metering.updateAllClients();
         expect(metering.getLatestLevels(deviceId, levels), "Meter levels should exist");
         expectWithinAbsoluteError(buffer.getSample(0, 0), 0.25f, 0.0001f,
                                   "Meter tap should apply device gain to left channel");

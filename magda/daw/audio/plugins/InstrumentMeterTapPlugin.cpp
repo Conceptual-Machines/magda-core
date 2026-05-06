@@ -7,7 +7,18 @@ namespace magda::daw::audio {
 const char* InstrumentMeterTapPlugin::xmlTypeName = "instrumentmetertap";
 namespace {
 const juce::Identifier deviceIdProperty{"magdaDeviceId"};
+
+void storeMax(std::atomic<float>* target, float value) {
+    if (!target)
+        return;
+
+    auto current = target->load(std::memory_order_relaxed);
+    while (value > current &&
+           !target->compare_exchange_weak(current, value, std::memory_order_relaxed,
+                                          std::memory_order_relaxed)) {
+    }
 }
+}  // namespace
 
 InstrumentMeterTapPlugin::InstrumentMeterTapPlugin(const te::PluginCreationInfo& info)
     : te::Plugin(info) {
@@ -42,9 +53,9 @@ void InstrumentMeterTapPlugin::bindRealtimeTap() {
     if (auto* manager = DeviceMeteringManager::getInstanceForEdit(edit)) {
         auto tap = manager->getRealtimeTap(deviceId);
         if (tap.isValid()) {
-            peakL_ = tap.peakL;
-            peakR_ = tap.peakR;
-            gainLinear_ = tap.gainLinear;
+            peakL_.store(tap.peakL, std::memory_order_release);
+            peakR_.store(tap.peakR, std::memory_order_release);
+            gainLinear_.store(tap.gainLinear, std::memory_order_release);
         }
     }
 }
@@ -53,10 +64,12 @@ void InstrumentMeterTapPlugin::applyToBuffer(const te::PluginRenderContext& fc) 
     if (!fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
 
-    if (peakL_ == nullptr || peakR_ == nullptr || gainLinear_ == nullptr)
-        bindRealtimeTap();
+    auto* peakL = peakL_.load(std::memory_order_acquire);
+    auto* peakR = peakR_.load(std::memory_order_acquire);
+    auto* gainLinear = gainLinear_.load(std::memory_order_acquire);
+    jassert(peakL != nullptr && peakR != nullptr && gainLinear != nullptr);
 
-    const float gain = gainLinear_ ? gainLinear_->load(std::memory_order_relaxed) : 1.0f;
+    const float gain = gainLinear ? gainLinear->load(std::memory_order_relaxed) : 1.0f;
     if (gain != 1.0f)
         fc.destBuffer->applyGain(fc.bufferStartSample, fc.bufferNumSamples, gain);
 
@@ -68,10 +81,8 @@ void InstrumentMeterTapPlugin::applyToBuffer(const te::PluginRenderContext& fc) 
         numChannels > 1 ? fc.destBuffer->getMagnitude(1, fc.bufferStartSample, fc.bufferNumSamples)
                         : left;
 
-    if (peakL_)
-        peakL_->store(left, std::memory_order_relaxed);
-    if (peakR_)
-        peakR_->store(right, std::memory_order_relaxed);
+    storeMax(peakL, left);
+    storeMax(peakR, right);
 }
 
 }  // namespace magda::daw::audio
