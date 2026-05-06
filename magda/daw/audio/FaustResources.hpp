@@ -4,12 +4,16 @@
 
 #include <vector>
 
+#include "plugins/FaustCustomViewKind.hpp"
+
 namespace magda::daw::audio {
 
 struct StarterDsp {
-    juce::String name;     // Display name shown in the loader UI.
-    juce::String filename; // For matching against juce::BinaryData.
-    juce::String source;   // The .dsp file contents.
+    juce::String name;      // Display name shown in the loader UI.
+    juce::String filename;  // For matching against juce::BinaryData.
+    juce::String source;    // The .dsp file contents.
+    FaustCustomViewKind viewKind =
+        FaustCustomViewKind::None;  // Bound bespoke FaustUI view, if any.
 };
 
 // Path to the Faust standard libraries directory bundled alongside the app.

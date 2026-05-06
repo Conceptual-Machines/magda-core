@@ -87,6 +87,7 @@ target_sources(magda_daw PRIVATE
     plugins/InstrumentMeterTapPlugin.hpp
     plugins/MidiDevicePlugin.hpp
     plugins/FaustPlugin.hpp
+    plugins/FaustCustomViewKind.hpp
     plugins/FaustParamSlot.hpp
     plugins/FaustMetadataParser.hpp
     plugins/FaustParamPool.hpp

@@ -33,16 +33,17 @@ std::vector<StarterDsp> getBundledStarterDsps() {
         const char* displayName;
         const char* filename;
         const char* resourceName;
+        FaustCustomViewKind viewKind;
     } kStarters[] = {
-        {"Drive",    "magda_drive.dsp",    "magda_drive_dsp"},
-        {"Tremolo",  "magda_tremolo.dsp",  "magda_tremolo_dsp"},
+        {"Drive", "magda_drive.dsp", "magda_drive_dsp", FaustCustomViewKind::MagdaDrive},
+        {"Tremolo", "magda_tremolo.dsp", "magda_tremolo_dsp", FaustCustomViewKind::None},
     };
 
     std::vector<StarterDsp> out;
     for (const auto& s : kStarters) {
         auto src = readBinaryDspAsString(s.resourceName);
         if (src.isNotEmpty())
-            out.push_back({juce::String(s.displayName), juce::String(s.filename), src});
+            out.push_back({juce::String(s.displayName), juce::String(s.filename), src, s.viewKind});
     }
     return out;
 }

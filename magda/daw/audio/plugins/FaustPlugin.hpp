@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 
+#include "FaustCustomViewKind.hpp"
 #include "FaustParamPool.hpp"
 
 // libfaust types are forward-declared here so consumers don't need the Faust
@@ -82,14 +83,30 @@ class FaustPlugin : public te::Plugin {
     // previously-loaded DSP (if any) is left in place. Safe to call from
     // the message thread while the audio thread is processing — the
     // FaustState swap is atomic.
-    bool loadDspSource(const juce::String& name, const juce::String& source,
-                       juce::String& errorOut);
+    bool loadDspSource(const juce::String& name, const juce::String& source, juce::String& errorOut,
+                       FaustCustomViewKind viewKind = FaustCustomViewKind::None);
 
     // Read access for the UI / parameter-info bridge (Phase 4b). The
     // pool's slot table is mutated only by `loadDspSource` on the
     // message thread.
     const FaustParamPool& getPool() const {
         return pool_;
+    }
+
+    // Per-DSP display name (caller-supplied to `loadDspSource`). Used
+    // for the inspector label only — the FaustUI custom-view registry
+    // keys on `getCustomViewKind()` instead.
+    juce::String getDspName() const {
+        return dspName_;
+    }
+
+    // Identifier for the bespoke FaustUI view registered against this
+    // DSP, or `None` if there isn't one. Set on `loadDspSource`;
+    // defaults to `None` for the constructor's passthrough DSP and
+    // for user-loaded files (file picker / code editor). Stable
+    // across the plugin's lifetime within one loaded DSP.
+    FaustCustomViewKind getCustomViewKind() const {
+        return viewKind_;
     }
 
     // Diagnostics from the most recent rebind (overflow / duplicate idx
@@ -167,6 +184,7 @@ class FaustPlugin : public te::Plugin {
 
     juce::String dspName_;
     juce::String dspSource_;
+    FaustCustomViewKind viewKind_ = FaustCustomViewKind::None;
     std::vector<juce::String> lastDiagnostics_;
 
     // Sample rate captured from initialise(); used when recompiling at

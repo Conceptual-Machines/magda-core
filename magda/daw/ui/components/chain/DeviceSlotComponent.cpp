@@ -2158,9 +2158,26 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // / MIDI Learn / automation behaviour as every other device,
     // driven by FaustProcessor's per-slot ParameterInfo.
     if (isFaust_ && faustUI_) {
-        auto headerArea = contentArea.removeFromTop(FaustUI::kHeaderHeight);
-        faustUI_->setBounds(headerArea);
+        // Top: Faust-specific header strip (logo / name / load / edit).
+        auto faustUIArea = contentArea.removeFromTop(FaustUI::kHeaderHeight);
+        faustUI_->setBounds(faustUIArea);
         faustUI_->setVisible(true);
+
+        // Bottom: per-DSP custom view (if any) anchored to the bottom
+        // edge so it grows into whatever vertical slack the user gives
+        // the device slot. Capped at half the remaining body so a tall
+        // device row doesn't starve the param grid; gated by a minimum
+        // of the view's preferred height so it stays readable when the
+        // row is short.
+        if (faustCustomView_) {
+            const int bodyHeight = juce::jmax(0, contentArea.getHeight());
+            const int preferred = faustCustomView_->getPreferredHeight();
+            const int customHeight = juce::jlimit(juce::jmin(preferred, bodyHeight), bodyHeight,
+                                                  juce::jmax(preferred, bodyHeight / 2));
+            auto customArea = contentArea.removeFromBottom(customHeight);
+            faustCustomView_->setBounds(customArea);
+            faustCustomView_->setVisible(true);
+        }
 
         auto labelFont = FontManager::getInstance().getUIFont(
             DebugSettings::getInstance().getParamLabelFontSize());
@@ -3900,8 +3917,18 @@ void DeviceSlotComponent::createCustomUI() {
             if (auto* bridge = audioEngine->getAudioBridge()) {
                 auto plugin = bridge->getPlugin(device_.id);
                 auto* fp = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get());
-                if (fp)
+                if (fp) {
                     faustUI_->setPlugin(fp);
+                    // Per-DSP custom view (e.g. the MagdaDrive transfer
+                    // curve). Lives at the bottom of the device slot so
+                    // it can grow into whatever vertical slack the user
+                    // gives the row; the standard param grid keeps its
+                    // top position.
+                    faustCustomView_ =
+                        FaustCustomUIRegistry::getInstance().create(fp->getCustomViewKind(), *fp);
+                    if (faustCustomView_)
+                        addAndMakeVisible(*faustCustomView_);
+                }
             }
         }
         // Bind device path so a successful DSP load can fire the

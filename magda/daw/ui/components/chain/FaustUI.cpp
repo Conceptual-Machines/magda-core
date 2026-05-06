@@ -4,6 +4,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "FaustCodeEditorWindow.hpp"
+#include "MagdaDriveCurveView.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/FaustResources.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
@@ -19,6 +20,19 @@ namespace magda::daw::ui {
 namespace te = tracktion::engine;
 
 FaustUI::FaustUI() {
+    // First-touch registration of the built-in Faust custom views.
+    // The function is defined in MagdaDriveCurveView.cpp; calling it
+    // from here gives the linker a reason to keep that TU alive when
+    // libmagda_daw_app is linked statically (a file-scope registrar
+    // would be silently dropped because nothing else references the
+    // TU's symbols). Idempotent — repeats just rewrite the same map
+    // entries.
+    static const bool builtInViewsRegistered = [] {
+        registerBuiltInFaustCustomViews();
+        return true;
+    }();
+    juce::ignoreUnused(builtInViewsRegistered);
+
     logo_ = juce::Drawable::createFromImageData(BinaryData::fausttextlogo_svg,
                                                 BinaryData::fausttextlogo_svgSize);
     if (logo_)
@@ -73,14 +87,16 @@ void FaustUI::refreshNameLabel() {
                        juce::dontSendNotification);
 }
 
-bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
-    DBG("[FaustUI] tryLoad name='" << name << "' src.len=" << source.length());
+bool FaustUI::tryLoad(const juce::String& name, const juce::String& source,
+                      magda::daw::audio::FaustCustomViewKind viewKind) {
+    DBG("[FaustUI] tryLoad name='" << name << "' src.len=" << source.length()
+                                   << " viewKind=" << static_cast<int>(viewKind));
     if (plugin_ == nullptr) {
         DBG("[FaustUI] tryLoad: plugin_ is NULL — bailing");
         return false;
     }
     juce::String err;
-    if (!plugin_->loadDspSource(name, source, err)) {
+    if (!plugin_->loadDspSource(name, source, err, viewKind)) {
         DBG("[FaustUI] tryLoad: loadDspSource FAILED: " << err);
         errorLabel_.setText(err, juce::dontSendNotification);
         return false;
@@ -158,7 +174,7 @@ void FaustUI::showLoadMenu() {
                            if (idx < 0 || idx >= static_cast<int>(starters.size()))
                                return;
                            const auto& s = starters[static_cast<size_t>(idx)];
-                           tryLoad(s.name, s.source);
+                           tryLoad(s.name, s.source, s.viewKind);
                        });
 }
 
@@ -172,7 +188,8 @@ void FaustUI::loadFromFile() {
             auto file = fc.getResult();
             if (!file.existsAsFile() || plugin_ == nullptr)
                 return;
-            tryLoad(file.getFileNameWithoutExtension(), file.loadFileAsString());
+            tryLoad(file.getFileNameWithoutExtension(), file.loadFileAsString(),
+                    magda::daw::audio::FaustCustomViewKind::None);
         });
 }
 
@@ -193,7 +210,12 @@ void FaustUI::showCodeEditor() {
                 return false;
             const auto editedName =
                 plugin_->state.getProperty("dspName", juce::String("Custom")).toString();
-            if (!plugin_->loadDspSource(editedName, src, err))
+            // Preserve the existing custom-view kind across in-place
+            // edits — a user tweaking the bundled MagdaDrive source
+            // shouldn't lose its bespoke view because the code editor
+            // re-saved the same DSP.
+            const auto preservedKind = plugin_->getCustomViewKind();
+            if (!plugin_->loadDspSource(editedName, src, err, preservedKind))
                 return false;
             errorLabel_.setText({}, juce::dontSendNotification);
             refreshNameLabel();

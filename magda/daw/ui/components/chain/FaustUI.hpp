@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include "audio/plugins/FaustCustomViewKind.hpp"
 #include "core/ChainNodePath.hpp"
 
 namespace magda::daw::audio {
@@ -15,6 +16,8 @@ class SvgButton;
 }
 
 namespace magda::daw::ui {
+
+class FaustCustomView;
 
 /**
  * @brief Bespoke header strip for FaustPlugin.
@@ -58,7 +61,8 @@ class FaustUI : public juce::Component {
     void showLoadMenu();
     void loadFromFile();
     void showCodeEditor();
-    bool tryLoad(const juce::String& name, const juce::String& source);
+    bool tryLoad(const juce::String& name, const juce::String& source,
+                 magda::daw::audio::FaustCustomViewKind viewKind);
     void refreshNameLabel();
 
     magda::daw::audio::FaustPlugin* plugin_ = nullptr;
