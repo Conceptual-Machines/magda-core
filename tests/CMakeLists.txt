@@ -169,7 +169,11 @@ target_link_libraries(magda_juce_tests
     juce::juce_core
     juce::juce_events
     juce::juce_gui_basics
-    # Link curl dependencies on Linux
+    # Linux: juce_gui_extra is pulled in transitively via magda_daw's
+    # JUCE_MODULE_AVAILABLE flags (so its .cpp gets compiled into this
+    # target). Its compilation requires GTK / WebKit headers — expose
+    # the same pkgconfig deps the GUI app uses, plus curl.
+    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
 )
 
