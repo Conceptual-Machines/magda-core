@@ -12,6 +12,7 @@
 #include "BinaryData.h"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "core/ClipOperations.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -266,6 +267,22 @@ class DrumGridClipGrid : public juce::Component,
         if (!note || !padRows_)
             return;
 
+        const auto* clip = magda::ClipManager::getInstance().getClip(note->getSourceClipId());
+        if (clip) {
+            magda::MidiNote previewNote;
+            previewNote.startBeat = beat;
+            previewNote.noteNumber = noteNumber;
+            previewNote.lengthBeats = length;
+            if (!magda::ClipOperations::constrainMidiNoteToVisibleRange(*clip, previewNote)) {
+                note->setVisible(false);
+                return;
+            }
+            beat = previewNote.startBeat;
+            noteNumber = previewNote.noteNumber;
+            length = previewNote.lengthBeats;
+            note->setVisible(true);
+        }
+
         int rowIndex = findRowForNote(noteNumber);
         if (rowIndex < 0)
             return;
@@ -298,8 +315,20 @@ class DrumGridClipGrid : public juce::Component,
         double beatDelta = beat - sourceNote.startBeat;
         int noteDelta = noteNumber - sourceNote.noteNumber;
 
+        auto addGhost = [&](double clipBeat, int ghostNote, double ghostLength) {
+            magda::MidiNote previewNote;
+            previewNote.startBeat = clipBeat;
+            previewNote.noteNumber = ghostNote;
+            previewNote.lengthBeats = ghostLength;
+            if (!magda::ClipOperations::constrainMidiNoteToVisibleRange(*srcClip, previewNote))
+                return;
+
+            copyDragGhosts_.push_back(
+                {previewNote.startBeat, previewNote.noteNumber, previewNote.lengthBeats, colour});
+        };
+
         // Ghost for the dragged note
-        copyDragGhosts_.push_back({beat, noteNumber, length, colour});
+        addGhost(beat, noteNumber, length);
 
         // Ghosts for other selected notes
         for (auto& nc : noteComponents_) {
@@ -315,7 +344,7 @@ class DrumGridClipGrid : public juce::Component,
             const auto& otherNote = srcClip->midiNotes[idx];
             double ghostBeat = juce::jmax(0.0, otherNote.startBeat + beatDelta);
             int ghostNote = juce::jlimit(0, 127, otherNote.noteNumber + noteDelta);
-            copyDragGhosts_.push_back({ghostBeat, ghostNote, otherNote.lengthBeats, colour});
+            addGhost(ghostBeat, ghostNote, otherNote.lengthBeats);
         }
 
         repaint();
@@ -947,11 +976,18 @@ class DrumGridClipGrid : public juce::Component,
     }
 
     double clipBeatToDisplayBeat(double beat) const {
-        return relativeMode_ ? beat : clipStartBeats_ + beat;
+        double visibleStart = 0.0;
+        if (const auto* clip = magda::ClipManager::getInstance().getClip(clipId_))
+            visibleStart = magda::ClipOperations::getMidiVisibleRange(*clip).startBeat;
+        return relativeMode_ ? beat - visibleStart : clipStartBeats_ + beat - visibleStart;
     }
 
     double displayBeatToClipBeat(double beat) const {
-        return juce::jmax(0.0, relativeMode_ ? beat : beat - clipStartBeats_);
+        double visibleStart = 0.0;
+        if (const auto* clip = magda::ClipManager::getInstance().getClip(clipId_))
+            visibleStart = magda::ClipOperations::getMidiVisibleRange(*clip).startBeat;
+        return juce::jmax(0.0, relativeMode_ ? beat + visibleStart
+                                             : beat - clipStartBeats_ + visibleStart);
     }
 
     // Rubber band selection state
@@ -1032,6 +1068,10 @@ class DrumGridClipGrid : public juce::Component,
         auto noteColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
 
         for (size_t i = 0; i < clip->midiNotes.size(); i++) {
+            auto visibleNote = clip->midiNotes[i];
+            if (!magda::ClipOperations::clipMidiNoteToVisibleRange(*clip, visibleNote))
+                continue;
+
             auto noteComp = std::make_unique<magda::NoteComponent>(i, this, clipId_);
 
             noteComp->onNoteSelected = [this](size_t index, bool isAdditive) {
@@ -1224,7 +1264,7 @@ class DrumGridClipGrid : public juce::Component,
                     });
             };
 
-            noteComp->updateFromNote(clip->midiNotes[i], noteColour);
+            noteComp->updateFromNote(visibleNote, noteColour);
             addAndMakeVisible(noteComp.get());
             noteComponents_.push_back(std::move(noteComp));
         }
@@ -1249,12 +1289,16 @@ class DrumGridClipGrid : public juce::Component,
             if (noteIndex >= clip->midiNotes.size())
                 continue;
 
-            const auto& note = clip->midiNotes[noteIndex];
+            auto note = clip->midiNotes[noteIndex];
+            if (!magda::ClipOperations::clipMidiNoteToVisibleRange(*clip, note)) {
+                noteComp->setVisible(false);
+                continue;
+            }
             int rowIndex = findRowForNote(note.noteNumber);
             if (rowIndex < 0)
                 continue;
 
-            int x = static_cast<int>(note.startBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+            int x = beatToPixel(clipBeatToDisplayBeat(note.startBeat));
             int y = rowIndex * rowHeight_;
             int w = juce::jmax(4, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
             int h = rowHeight_ - 2;

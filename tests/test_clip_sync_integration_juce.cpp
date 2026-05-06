@@ -102,6 +102,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testDuplicateAudioClipResolvesOverlap();
         testPasteAudioClipResolvesOverlap();
         testCreateMidiClipResolvesOverlap();
+        testMidiSyncClipsNotesToVisibleRangeAfterResize();
         testMoveClipNoOverlapDoesNotMutateNeighbours();
         testMoveClipToTrackResolvesOverlapOnDestination();
     }
@@ -163,6 +164,11 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         te::WaveAudioClip* getTeAudioClip(ClipId clipId) const {
             auto* teClip = clipSync->getArrangementTeClip(clipId);
             return dynamic_cast<te::WaveAudioClip*>(teClip);
+        }
+
+        te::MidiClip* getTeMidiClip(ClipId clipId) const {
+            auto* teClip = clipSync->getArrangementTeClip(clipId);
+            return dynamic_cast<te::MidiClip*>(teClip);
         }
     };
 
@@ -1393,6 +1399,64 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(s->placement.lengthBeats, 4.0, 0.01);
         expectWithinAbsoluteError(i->placement.startBeat, 4.0, 0.01);
         expectWithinAbsoluteError(i->placement.lengthBeats, 8.0, 0.01);
+    }
+
+    void testMidiSyncClipsNotesToVisibleRangeAfterResize() {
+        beginTest("MIDI sync clips stale notes to visible range after resize");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto clipId = cm.createMidiClipBeats(f.trackId, 0.0, 8.0, ClipView::Arrangement);
+        expect(clipId != INVALID_CLIP_ID, "MIDI clip should be created");
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr, "MIDI clip should exist");
+        if (clip == nullptr)
+            return;
+
+        expect(cm.addMidiNote(clipId, {60, 100, 1.0, 0.5}), "Visible note should be added");
+        expect(cm.addMidiNote(clipId, {62, 100, 3.5, 1.0}), "Edge-crossing note should be added");
+        expect(cm.addMidiNote(clipId, {64, 100, 6.5, 1.0}), "Later stale note should be added");
+        expectEquals(static_cast<int>(clip->midiNotes.size()), 3);
+
+        ClipOperations::resizeContainerFromRight(*clip, 4.0, 60.0);
+        expectEquals(static_cast<int>(clip->midiNotes.size()), 3,
+                     "Resize should preserve underlying MIDI notes");
+
+        f.clipSync->syncClipToEngine(clipId);
+
+        auto* teMidiClip = f.getTeMidiClip(clipId);
+        expect(teMidiClip != nullptr, "Tracktion MIDI clip should exist after sync");
+        if (teMidiClip == nullptr)
+            return;
+
+        auto& sequence = teMidiClip->getSequence();
+        auto findNote = [&sequence](int noteNumber) -> te::MidiNote* {
+            for (int i = 0; i < sequence.getNumNotes(); ++i) {
+                auto* note = sequence.getNote(i);
+                if (note != nullptr && note->getNoteNumber() == noteNumber)
+                    return note;
+            }
+            return nullptr;
+        };
+
+        expectEquals(sequence.getNumNotes(), 2);
+
+        auto* visibleNote = findNote(60);
+        expect(visibleNote != nullptr, "Visible note should sync to TE");
+        if (visibleNote != nullptr) {
+            expectWithinAbsoluteError(visibleNote->getStartBeat().inBeats(), 1.0, 0.01);
+            expectWithinAbsoluteError(visibleNote->getLengthBeats().inBeats(), 0.5, 0.01);
+        }
+
+        auto* clippedNote = findNote(62);
+        expect(clippedNote != nullptr, "Edge-crossing note should sync clipped to TE");
+        if (clippedNote != nullptr) {
+            expectWithinAbsoluteError(clippedNote->getStartBeat().inBeats(), 3.5, 0.01);
+            expectWithinAbsoluteError(clippedNote->getLengthBeats().inBeats(), 0.5, 0.01);
+        }
+
+        expect(findNote(64) == nullptr, "Stale note beyond resized clip end should not sync to TE");
     }
 
     void testMoveClipNoOverlapDoesNotMutateNeighbours() {

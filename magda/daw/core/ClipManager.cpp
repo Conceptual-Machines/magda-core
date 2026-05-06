@@ -1350,13 +1350,19 @@ void ClipManager::stretchAudioRight(ClipId clipId, double newLength, double oldL
     }
 }
 
-void ClipManager::addMidiNote(ClipId clipId, const MidiNote& note) {
+bool ClipManager::addMidiNote(ClipId clipId, const MidiNote& note) {
     if (auto* clip = getClip(clipId)) {
         if (clip->isMidi()) {
-            clip->midiNotes.push_back(note);
+            auto clippedNote = note;
+            if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, clippedNote))
+                return false;
+
+            clip->midiNotes.push_back(clippedNote);
             notifyClipPropertyChanged(clipId);
+            return true;
         }
     }
+    return false;
 }
 
 void ClipManager::removeMidiNote(ClipId clipId, int noteIndex) {

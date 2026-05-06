@@ -765,6 +765,16 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
     noteNumber = juce::jlimit(MIN_NOTE, MAX_NOTE, noteNumber);
 
     if (onNoteAdded && targetClipId != INVALID_CLIP_ID) {
+        const auto* targetClip = ClipManager::getInstance().getClip(targetClipId);
+        if (targetClip != nullptr) {
+            beat += ClipOperations::getMidiVisibleRange(*targetClip).startBeat;
+            MidiNote previewNote;
+            previewNote.startBeat = beat;
+            previewNote.lengthBeats = getGridResolutionBeats();
+            if (!ClipOperations::clipMidiNoteToVisibleRange(*targetClip, previewNote))
+                return;
+        }
+
         int defaultVelocity = 100;
         onNoteAdded(targetClipId, beat, noteNumber, defaultVelocity);
     }
@@ -1058,8 +1068,23 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
     // left-resize so notes stay at their timeline positions.
     ClipId clipId = note->getSourceClipId();
     const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip) {
+        MidiNote previewNote;
+        previewNote.startBeat = beat;
+        previewNote.noteNumber = noteNumber;
+        previewNote.lengthBeats = length;
+        if (!ClipOperations::constrainMidiNoteToVisibleRange(*clip, previewNote)) {
+            note->setVisible(false);
+            return;
+        }
+        beat = previewNote.startBeat;
+        noteNumber = previewNote.noteNumber;
+        length = previewNote.lengthBeats;
+        note->setVisible(true);
+    }
 
     double displayBeat;
+    const double visibleStart = clip ? ClipOperations::getMidiVisibleRange(*clip).startBeat : 0.0;
     if (relativeMode_) {
         if (clipIds_.size() > 1 && clip) {
             double tempo = 120.0;
@@ -1067,9 +1092,9 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
                 tempo = controller->getState().tempo.bpm;
             }
             double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
-            displayBeat = clipOffsetBeats + beat;
+            displayBeat = clipOffsetBeats + beat - visibleStart;
         } else {
-            displayBeat = beat;
+            displayBeat = beat - visibleStart;
         }
     } else {
         if (clip) {
@@ -1078,8 +1103,7 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
                 tempo = controller->getState().tempo.bpm;
             }
             double clipStartBeats = clip->startTime * (tempo / 60.0);
-            double trimCompensation = (clip->isMidi()) ? clip->midiTrimOffset : 0.0;
-            displayBeat = clipStartBeats + beat - trimCompensation;
+            displayBeat = clipStartBeats + beat - visibleStart;
         } else {
             displayBeat = clipStartBeats_ + beat;
         }
@@ -1114,8 +1138,39 @@ void PianoRollGridComponent::setCopyDragPreview(double beat, int noteNumber, dou
     double beatDelta = beat - sourceNote.startBeat;
     int noteDelta = noteNumber - sourceNote.noteNumber;
 
+    auto toDisplayBeat = [this, srcClip](double clipBeat) {
+        const double visibleStart = ClipOperations::getMidiVisibleRange(*srcClip).startBeat;
+        if (relativeMode_) {
+            if (clipIds_.size() > 1) {
+                double tempo = 120.0;
+                if (auto* controller = TimelineController::getCurrent())
+                    tempo = controller->getState().tempo.bpm;
+                return srcClip->startTime * (tempo / 60.0) - clipStartBeats_ + clipBeat -
+                       visibleStart;
+            }
+            return clipBeat - visibleStart;
+        }
+
+        double tempo = 120.0;
+        if (auto* controller = TimelineController::getCurrent())
+            tempo = controller->getState().tempo.bpm;
+        return srcClip->startTime * (tempo / 60.0) + clipBeat - visibleStart;
+    };
+
+    auto addGhost = [&](double clipBeat, int ghostNote, double ghostLength) {
+        MidiNote previewNote;
+        previewNote.startBeat = clipBeat;
+        previewNote.noteNumber = ghostNote;
+        previewNote.lengthBeats = ghostLength;
+        if (!ClipOperations::constrainMidiNoteToVisibleRange(*srcClip, previewNote))
+            return;
+
+        copyDragGhosts_.push_back({toDisplayBeat(previewNote.startBeat), previewNote.noteNumber,
+                                   previewNote.lengthBeats, colour});
+    };
+
     // Ghost for the dragged note
-    copyDragGhosts_.push_back({beat, noteNumber, length, colour});
+    addGhost(beat, noteNumber, length);
 
     // Ghosts for other selected notes
     for (auto& nc : noteComponents_) {
@@ -1131,7 +1186,7 @@ void PianoRollGridComponent::setCopyDragPreview(double beat, int noteNumber, dou
         const auto& otherNote = srcClip->midiNotes[idx];
         double ghostBeat = juce::jmax(0.0, otherNote.startBeat + beatDelta);
         int ghostNote = juce::jlimit(MIN_NOTE, MAX_NOTE, otherNote.noteNumber + noteDelta);
-        copyDragGhosts_.push_back({ghostBeat, ghostNote, otherNote.lengthBeats, colour});
+        addGhost(ghostBeat, ghostNote, otherNote.lengthBeats);
     }
 
     repaint();
@@ -1399,6 +1454,10 @@ void PianoRollGridComponent::createNoteComponents() {
 
         // Create note component for each note in this clip
         for (size_t i = 0; i < clip->midiNotes.size(); i++) {
+            auto visibleNote = clip->midiNotes[i];
+            if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, visibleNote))
+                continue;
+
             auto noteComp = std::make_unique<NoteComponent>(i, this, clipId);
 
             noteComp->onNoteSelected = [this, clipId](size_t index, bool isAdditive) {
@@ -1713,7 +1772,7 @@ void PianoRollGridComponent::createNoteComponents() {
             };
 
             noteComp->setGhost(!isClipSelected(clipId));
-            noteComp->updateFromNote(clip->midiNotes[i], noteColour);
+            noteComp->updateFromNote(visibleNote, noteColour);
             addAndMakeVisible(noteComp.get());
             noteComponents_.push_back(std::move(noteComp));
         }
@@ -1740,12 +1799,17 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
             continue;
         }
 
-        const auto& note = clip->midiNotes[noteIndex];
+        auto note = clip->midiNotes[noteIndex];
+        if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, note)) {
+            noteComp->setVisible(false);
+            continue;
+        }
 
         // Relative mode: notes at content-relative beats.
         // Absolute mode: midiTrimOffset compensates for left-resize.
         double displayBeat;
 
+        const double visibleStart = ClipOperations::getMidiVisibleRange(*clip).startBeat;
         if (relativeMode_) {
             if (clipIds_.size() > 1) {
                 double tempo = 120.0;
@@ -1753,9 +1817,9 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
                     tempo = controller->getState().tempo.bpm;
                 }
                 double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
-                displayBeat = clipOffsetBeats + note.startBeat;
+                displayBeat = clipOffsetBeats + note.startBeat - visibleStart;
             } else {
-                displayBeat = note.startBeat;
+                displayBeat = note.startBeat - visibleStart;
             }
         } else {
             // Absolute mode: use clipStartBeats_ which reflects the drag
@@ -1771,8 +1835,7 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
             } else {
                 clipOffsetBeats = clipStartBeats_;
             }
-            double trimCompensation = (clip->isMidi()) ? clip->midiTrimOffset : 0.0;
-            displayBeat = clipOffsetBeats + note.startBeat - trimCompensation;
+            displayBeat = clipOffsetBeats + note.startBeat - visibleStart;
         }
 
         int x = beatToPixel(displayBeat);

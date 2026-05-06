@@ -368,7 +368,7 @@ class ClipManager {
                            double originalSpeedRatio, double bpm = 0.0);
 
     // MIDI-specific
-    void addMidiNote(ClipId clipId, const MidiNote& note);
+    bool addMidiNote(ClipId clipId, const MidiNote& note);
     void removeMidiNote(ClipId clipId, int noteIndex);
     void clearMidiNotes(ClipId clipId);
 
