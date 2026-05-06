@@ -343,11 +343,10 @@ target_link_libraries(magda_daw
     tracktion::tracktion_engine
     juce_llm
     MagdaAssets
-    PRIVATE
-    faust::libfaust
-    # Link GTK/WebKit and curl dependencies on Linux
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
+    PRIVATE
+    faust::libfaust
 )
 
 target_compile_definitions(magda_daw
