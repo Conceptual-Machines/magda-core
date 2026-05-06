@@ -207,26 +207,14 @@ void AudioBridge::syncRecordArmedToTE(TrackId trackId) {
     if (!playbackContext || edit_.getTransport().isPlaying())
         return;
 
-    bool foundAnyDest = false;
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
         auto targets = inputDeviceInstance->getTargets();
         for (auto targetID : targets) {
             if (targetID == track->itemID) {
                 inputDeviceInstance->setRecordingEnabled(track->itemID, trackInfo->recordArmed);
-                juce::Logger::writeToLog(
-                    "[Arm] set recordEnabled=" + juce::String(trackInfo->recordArmed ? "Y" : "N") +
-                    " on device '" + inputDeviceInstance->owner.getName() + "' for track " +
-                    juce::String(trackId));
-                foundAnyDest = true;
                 break;
             }
         }
-    }
-    if (!foundAnyDest) {
-        juce::Logger::writeToLog("[Arm] WARNING: No input device destination found for track " +
-                                 juce::String(trackId) +
-                                 " - recordArmed=" + juce::String(trackInfo->recordArmed ? 1 : 0) +
-                                 " will NOT be synced to TE!");
     }
 }
 
@@ -586,6 +574,13 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
                 auto tePlugin = pluginManager_.getPlugin(deviceId);
                 if (tePlugin)
                     tePlugin->setEnabled(!device->bypassed);
+            }
+
+            // Wrapped instruments consume MIDI while active. When bypassed, disable the
+            // wrapper rack itself so TE skips it and passes MIDI to later devices.
+            if (auto* rackInstance =
+                    pluginManager_.getInstrumentRackManager().getRackInstance(deviceId)) {
+                rackInstance->setEnabled(!device->bypassed);
             }
 
             // Push gain to the audio-graph atomic so DeviceGainNode picks it up.
@@ -1588,46 +1583,29 @@ void AudioBridge::removeSurfaceOnlyMidiInputTargets() {
 void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId) {
     auto* track = getAudioTrack(trackId);
     if (!track) {
-        DBG("AudioBridge::setTrackMidiInput - track not found: " << trackId);
         return;
     }
 
-    DBG("AudioBridge::setTrackMidiInput - trackId="
-        << trackId << " midiDeviceId='" << midiDeviceId << "' (thread: "
-        << (juce::MessageManager::getInstance()->isThisTheMessageThread() ? "message" : "other")
-        << ")");
-
     auto* playbackContext = edit_.getCurrentPlaybackContext();
     if (!playbackContext) {
-        DBG("  -> No playback context available, deferring MIDI routing");
         // Store for later when playback context becomes available
         pendingMidiRoutes_.push_back({trackId, midiDeviceId});
         return;
     }
-
-    DBG("  -> Playback context available, graph allocated: "
-        << (playbackContext->isPlaybackGraphAllocated() ? "yes" : "no")
-        << ", transport playing: " << (edit_.getTransport().isPlaying() ? "yes" : "no"));
 
     if (midiDeviceId.isEmpty()) {
         // Disable MIDI input - remove this track as target from all MIDI inputs
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
             // Check if this is a MIDI input device
             if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
-                auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
-                if (!result) {
-                    DBG("  -> Warning: Could not remove MIDI input target - "
-                        << result.getErrorMessage());
-                }
+                [[maybe_unused]] auto result =
+                    inputDeviceInstance->removeTarget(track->itemID, nullptr);
             }
         }
-        DBG("  -> Cleared MIDI input");
     } else if (midiDeviceId == "all") {
         // Route ALL MIDI input devices to this track
         bool addedAnyRouting = false;
         bool removedAnyRouting = false;
-        DBG("  -> Routing ALL MIDI inputs to track. Total inputs in context: "
-            << playbackContext->getAllInputs().size());
 
         // Determine TE monitor mode from track's inputMonitor setting
         auto teMonitorMode = te::InputDevice::MonitorMode::on;  // default for backward compat
@@ -1653,8 +1631,6 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                     auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
                     if (result) {
                         removedAnyRouting = true;
-                        DBG("  -> Skipped surface-only MIDI input '" << midiDevice->getName()
-                                                                     << "'");
                     }
                     continue;
                 }
@@ -1674,24 +1650,6 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                     // Enable monitoring but not recording
                     (*result)->recordEnabled = false;
                     addedAnyRouting = true;
-                    DBG("  -> Routed MIDI input '" << midiDevice->getName()
-                                                   << "' to track (monitor=on)");
-                    DBG("     Device enabled: " << (midiDevice->isEnabled() ? "yes" : "no"));
-                    DBG("     Monitor mode: " << (int)midiDevice->getMonitorMode());
-                    DBG("     Track name: " << track->getName());
-                    DBG("     Track plugins: " << track->pluginList.size());
-
-                    // List plugins on the track for debugging
-                    for (int i = 0; i < track->pluginList.size(); ++i) {
-                        auto* p = track->pluginList[i];
-                        if (p) {
-                            DBG("       Plugin " << i << ": " << p->getName() << " (enabled="
-                                                 << (p->isEnabled() ? "yes" : "no") << ")");
-                        }
-                    }
-                } else {
-                    DBG("  -> FAILED to route MIDI input '" << midiDevice->getName()
-                                                            << "' to track");
                 }
             }
         }
@@ -1699,10 +1657,7 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
         // Reallocate the playback graph to include the new MIDI input nodes
         if (addedAnyRouting || removedAnyRouting) {
             if (playbackContext->isPlaybackGraphAllocated()) {
-                DBG("  -> Reallocating playback graph to include MIDI input nodes");
                 playbackContext->reallocate();
-            } else {
-                DBG("  -> Playback graph not allocated yet, MIDI routing will take effect on play");
             }
         }
     } else {
@@ -1735,7 +1690,6 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                 for (const auto& device : dm.getMidiInDevices()) {
                     if (device && device->getName() == deviceName) {
                         midiDevice = device.get();
-                        DBG("  -> Found device by name: " << deviceName);
                         break;
                     }
                 }
@@ -1747,11 +1701,7 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                 bool removedAnyRouting = false;
                 for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
                     if (&inputDeviceInstance->owner == midiDevice) {
-                        auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
-                        if (!result) {
-                            DBG("  -> Warning: Could not remove surface-only MIDI target - "
-                                << result.getErrorMessage());
-                        } else {
+                        if (inputDeviceInstance->removeTarget(track->itemID, nullptr)) {
                             removedAnyRouting = true;
                         }
                         break;
@@ -1759,8 +1709,6 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                 }
                 if (removedAnyRouting && playbackContext->isPlaybackGraphAllocated())
                     playbackContext->reallocate();
-                DBG("  -> Refusing to route surface-only MIDI input '" << midiDevice->getName()
-                                                                       << "' to track");
                 return;
             }
 
@@ -1782,28 +1730,16 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                     if (result.has_value()) {
                         (*result)->recordEnabled = false;
                         addedRouting = true;
-                        DBG("  -> Routed MIDI input '" << midiDevice->getName()
-                                                       << "' to track (monitor=on)");
-                        DBG("     Device enabled: " << (midiDevice->isEnabled() ? "yes" : "no"));
-                        DBG("     Monitor mode: " << (int)midiDevice->getMonitorMode());
-                    } else {
-                        DBG("  -> FAILED to route MIDI input '" << midiDevice->getName()
-                                                                << "' to track");
                     }
                     break;
                 }
             }
-        } else {
-            DBG("  -> MIDI device not found: " << midiDeviceId);
         }
 
         // Reallocate the playback graph to include the new MIDI input node
         if (addedRouting) {
             if (playbackContext->isPlaybackGraphAllocated()) {
-                DBG("  -> Reallocating playback graph to include MIDI input node");
                 playbackContext->reallocate();
-            } else {
-                DBG("  -> Playback graph not allocated yet, MIDI routing will take effect on play");
             }
         }
     }

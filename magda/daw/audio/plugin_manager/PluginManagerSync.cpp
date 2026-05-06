@@ -1061,6 +1061,8 @@ void PluginManager::pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId,
                     }
 
                     if (rackPlugin) {
+                        rackPlugin->setEnabled(!devInfo->bypassed);
+
                         // Insert the rack instance back at the original position
                         if (track)
                             track->pluginList.insertPlugin(rackPlugin, pluginIdx, nullptr);
@@ -1957,6 +1959,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             }
 
             if (rackPlugin) {
+                rackPlugin->setEnabled(!device.bypassed);
+
                 // Insert the rack instance back on the track at the original position
                 track->pluginList.insertPlugin(rackPlugin, pluginIdx, nullptr);
 

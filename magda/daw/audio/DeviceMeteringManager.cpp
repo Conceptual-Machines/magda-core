@@ -11,8 +11,13 @@ juce::CriticalSection DeviceMeteringManager::editMapLock_;
 te::LevelMeasurer& DeviceMeteringManager::getOrCreateMeasurer(DeviceId deviceId) {
     juce::ScopedLock sl(lock_);
     auto it = entries_.find(deviceId);
-    if (it != entries_.end())
+    if (it != entries_.end()) {
+        if (!it->second->clientRegistered) {
+            it->second->measurer.addClient(it->second->client);
+            it->second->clientRegistered = true;
+        }
         return it->second->measurer;
+    }
 
     auto entry = std::make_unique<Entry>();
     entry->measurer.addClient(entry->client);
@@ -96,6 +101,15 @@ void DeviceMeteringManager::ensureEntry(DeviceId deviceId) {
     if (entries_.find(deviceId) == entries_.end()) {
         entries_[deviceId] = std::make_unique<Entry>();
     }
+}
+
+DeviceMeteringManager::RealtimeTap DeviceMeteringManager::getRealtimeTap(DeviceId deviceId) {
+    juce::ScopedLock sl(lock_);
+    auto& entry = entries_[deviceId];
+    if (!entry)
+        entry = std::make_unique<Entry>();
+
+    return {&entry->peakL, &entry->peakR, &entry->gainLinear};
 }
 
 void DeviceMeteringManager::setRackDirectLevels(RackId rackId, float peakL, float peakR) {

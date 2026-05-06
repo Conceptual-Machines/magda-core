@@ -16,16 +16,15 @@ class PluginManager;
 /**
  * @brief Manages per-device LevelMeasurer instances for peak metering
  *
- * Each device in the chain gets a LevelMeasurer + Client pair. During TE graph
- * building, createNodeForPlugin() wraps each PluginNode with a LevelMeasuringNode
- * that feeds audio through the measurer. AudioBridge polls all clients on its
- * 30 FPS timer and stores peaks in atomics. DeviceSlotComponent reads the atomics
- * lock-free for UI painting.
+ * Track-level plugins use LevelMeasurer + Client pairs fed by the TE graph hook.
+ * Wrapped instruments use a MAGDA-owned InstrumentMeterTapPlugin inside the rack,
+ * which writes directly to the same per-device atomics from the audio thread.
  *
  * Thread Safety:
  * - getOrCreateMeasurer(): called from message thread during graph building
+ * - getRealtimeTap(): called from message thread when wiring a tap plugin
  * - updateAllClients(): called from message thread (timer)
- * - getLatestLevels(): called from message thread (UI) — reads atomics (lock-free)
+ * - getLatestLevels(): called from message thread (UI)
  * - Static editMap_: protected by editMapLock_
  */
 class DeviceMeteringManager {
@@ -107,6 +106,24 @@ class DeviceMeteringManager {
      * @brief Ensure an entry exists for a device (creates if missing)
      */
     void ensureEntry(DeviceId deviceId);
+
+    struct RealtimeTap {
+        std::atomic<float>* peakL = nullptr;
+        std::atomic<float>* peakR = nullptr;
+        std::atomic<float>* gainLinear = nullptr;
+
+        bool isValid() const {
+            return peakL != nullptr && peakR != nullptr && gainLinear != nullptr;
+        }
+    };
+
+    /**
+     * @brief Get stable atomic endpoints for audio-thread owned metering.
+     *
+     * The returned pointers remain valid until removeMeasurer() or clear().
+     * Call this from the message thread when wiring a device-specific tap.
+     */
+    RealtimeTap getRealtimeTap(DeviceId deviceId);
 
     /**
      * @brief Directly set peak levels for a rack (bypasses LevelMeasurer)

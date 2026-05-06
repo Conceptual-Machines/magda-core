@@ -108,11 +108,7 @@ DeviceId PluginManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
 
     juce::ScopedLock lock(pluginLock_);
     auto it = pluginToDevice_.find(plugin);
-    if (it != pluginToDevice_.end())
-        return it->second;
-
-    // Check if this is an instrument wrapper rack
-    return instrumentRackManager_.getDeviceIdForRack(plugin);
+    return it != pluginToDevice_.end() ? it->second : INVALID_DEVICE_ID;
 }
 
 // =============================================================================
