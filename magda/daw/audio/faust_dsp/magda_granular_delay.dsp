@@ -73,24 +73,35 @@ pitchRatio    = pow(2.0, pitch_st / 12.0);
 hann(x) = 0.5 - 0.5 * cos(2.0 * ma.PI * x);
 
 // One grain voice. `x` is the buffered (already-delayed-and-fed-back)
-// signal; we read it at a per-voice fractional offset inside the grain
-// window, multiply by the Hann envelope, and emit.
+// signal; we read it at a per-voice time-varying offset inside the
+// grain window, multiply by the Hann envelope, and emit.
+//
+// fdelay reads `x(t - readOffset)`, so to play back the grain at a
+// pitch ratio r the readOffset must drift at rate (1 - r) per sample
+// of real time:
+//   r = 1   → readOffset constant     → unity-rate playback (a normal delay)
+//   r > 1   → readOffset shrinks      → faster playback (chipmunk)
+//   r < 1   → readOffset grows        → slower playback (smear)
+// (The intuitive `* pitchRatio` slope is wrong: it makes readOffset
+// drift in lockstep with t at r=1, freezing the grain on a single
+// buffer sample so the only audible content is Hann-shaped DC.)
 //
 // p          : 0..1 phasor at one cycle per grainSamples, offset by k/N
 // trig       : 1 at the moment p wraps (new grain start) — used to S&H
 //              the position jitter so it stays constant across the grain
 // posHold    : sample-and-held jitter, in samples
-// readOffset : sample-accurate read offset relative to the buffered
-//              signal. (p - 0.5) centres the window on offset=0; pitch
-//              ratio scales the read-rate so the grain "covers"
-//              pitchRatio × grainSamples of buffer history.
+// readOffset : centred on delaySamples at p=0.5; (p - 0.5) sweeps
+//              ±0.5·grainSamples·(1 - pitchRatio) around it.
 voice(k, x) = (x : de.fdelay(MAX_DELAY, readOffset)) * hann(p)
 with {
     rate       = ma.SR / max(grainSamples, 1.0);
     p          = (os.phasor(1.0, rate) + k / NVOICES) : ma.frac;
     trig       = (p < p') > 0.5;
     posHold    = ba.sAndH(trig, no.noise) * spray * grainSamples;
-    readOffset = max(0.0, delaySamples + (p - 0.5) * grainSamples * pitchRatio + posHold);
+    readOffset = max(0.0,
+                     delaySamples
+                     + (p - 0.5) * grainSamples * (1.0 - pitchRatio)
+                     + posHold);
 };
 
 // Mono granulator: split the input to NVOICES copies, run each through
