@@ -105,7 +105,7 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
     DBG("InstrumentRackManager: Wrapped '" << instrument->getName() << "' in rack '"
                                            << rackType->rackName.get() << "'");
 
-    pendingMeterTapsByRack_[rackInstance.get()] = meterTap;
+    pendingMeterTapsByRack_[rackInstance->itemID] = meterTap;
     return rackInstance;
 }
 
@@ -190,7 +190,7 @@ te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr in
     DBG("InstrumentRackManager: Wrapped multi-out '" << instrument->getName() << "' with "
                                                      << numOutputChannels << " channels in rack");
 
-    pendingMeterTapsByRack_[rackInstance.get()] = meterTap;
+    pendingMeterTapsByRack_[rackInstance->itemID] = meterTap;
     return rackInstance;
 }
 
@@ -293,10 +293,12 @@ void InstrumentRackManager::recordWrapping(DeviceId deviceId, te::RackType::Ptr 
                                            te::Plugin::Ptr rackInstance, bool isMultiOut,
                                            int numOutputChannels) {
     te::Plugin::Ptr meterTap;
-    auto pendingIt = pendingMeterTapsByRack_.find(rackInstance.get());
-    if (pendingIt != pendingMeterTapsByRack_.end()) {
-        meterTap = pendingIt->second;
-        pendingMeterTapsByRack_.erase(pendingIt);
+    if (rackInstance) {
+        auto pendingIt = pendingMeterTapsByRack_.find(rackInstance->itemID);
+        if (pendingIt != pendingMeterTapsByRack_.end()) {
+            meterTap = pendingIt->second;
+            pendingMeterTapsByRack_.erase(pendingIt);
+        }
     }
 
     if (!meterTap)

@@ -108,7 +108,17 @@ DeviceId PluginManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
 
     juce::ScopedLock lock(pluginLock_);
     auto it = pluginToDevice_.find(plugin);
-    return it != pluginToDevice_.end() ? it->second : INVALID_DEVICE_ID;
+    if (it != pluginToDevice_.end())
+        return it->second;
+
+    // Instrument wrapper rack instances deliberately do not resolve here. Their
+    // visible MAGDA metering/gain is handled by InstrumentMeterTapPlugin inside
+    // the rack, so the TE graph hook must not meter the whole rack output and
+    // include upstream audio passthrough.
+    if (instrumentRackManager_.isWrapperRack(plugin))
+        return INVALID_DEVICE_ID;
+
+    return INVALID_DEVICE_ID;
 }
 
 // =============================================================================

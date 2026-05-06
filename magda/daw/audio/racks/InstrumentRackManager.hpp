@@ -136,7 +136,7 @@ class InstrumentRackManager {
     };
 
     std::map<DeviceId, WrappedInstrument> wrapped_;
-    std::map<te::Plugin*, te::Plugin::Ptr> pendingMeterTapsByRack_;
+    std::map<te::EditItemID, te::Plugin::Ptr> pendingMeterTapsByRack_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InstrumentRackManager)
 };
