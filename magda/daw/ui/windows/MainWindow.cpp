@@ -826,13 +826,22 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     // -> locate -> play sequence).
     if (auto* tew = dynamic_cast<TracktionEngineWrapper*>(engine)) {
         if (auto* live = dynamic_cast<magda::MagdaApiLive*>(&tew->getMagdaApi())) {
+            DBG("[LoopActivation] MainWindow installing transport dispatchers on MagdaApiLive");
             live->setTransportPlayDispatcher(
                 [this]() { mainView->getTimelineController().dispatch(StartPlaybackEvent{}); });
             live->setTransportStopDispatcher(
                 [this]() { mainView->getTimelineController().dispatch(StopPlaybackEvent{}); });
-            live->setTransportLoopDispatcher(
-                [this](bool enabled) { mainView->setLoopEnabled(enabled); });
+            live->setTransportLoopDispatcher([this](bool enabled) {
+                DBG("[LoopActivation] MainWindow API loop dispatcher enabled=" << (int)enabled);
+                mainView->setLoopEnabled(enabled);
+            });
+        } else {
+            DBG("[LoopActivation] MainWindow could not install loop dispatcher: MagdaApi is not "
+                "live");
         }
+    } else {
+        DBG("[LoopActivation] MainWindow could not install loop dispatcher: engine is not "
+            "Tracktion");
     }
 
     // Wire transport callbacks - just dispatch events, TimelineController notifies audio engine
@@ -854,7 +863,17 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         mainView->getTimelineController().dispatch(StartRecordEvent{});
     };
 
-    transportPanel->onLoop = [this](bool enabled) { mainView->setLoopEnabled(enabled); };
+    transportPanel->onLoop = [this](bool enabled) {
+        const auto& state = mainView->getTimelineController().getState();
+        DBG("[LoopActivation] MainWindow transportPanel->onLoop enabled="
+            << (int)enabled << " controllerLoop=[" << state.loop.startTime << ", "
+            << state.loop.endTime << "] loopEnabled=" << (int)state.loop.enabled
+            << " editPosition=" << state.playhead.editPosition
+            << " playbackPosition=" << state.playhead.playbackPosition
+            << " currentPosition=" << state.playhead.getCurrentPosition()
+            << " isPlaying=" << (int)state.playhead.isPlaying);
+        mainView->setLoopEnabled(enabled);
+    };
 
     transportPanel->onBackToArrangement = [this]() {
         if (auto* engine = getAudioEngine())

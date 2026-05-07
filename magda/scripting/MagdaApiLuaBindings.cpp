@@ -742,7 +742,9 @@ int lua_transport_is_loop_enabled(lua_State* L) {
 
 int lua_transport_set_loop_enabled(lua_State* L) {
     luaL_checktype(L, 1, LUA_TBOOLEAN);
-    getApi(L)->transport().setLoopEnabled(lua_toboolean(L, 1) != 0);
+    const bool enabled = lua_toboolean(L, 1) != 0;
+    DBG("[LoopActivation] Lua magda.transport.set_loop_enabled enabled=" << (int)enabled);
+    getApi(L)->transport().setLoopEnabled(enabled);
     return 0;
 }
 

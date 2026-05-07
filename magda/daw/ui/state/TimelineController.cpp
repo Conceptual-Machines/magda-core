@@ -209,6 +209,11 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ScrollToTi
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetEditPositionEvent& e) {
     double newPos = juce::jlimit(0.0, state.timelineLength, e.position);
+    DBG("[LoopActivation] TimelineController::SetEditPositionEvent requested="
+        << e.position << " clamped=" << newPos << " previousEdit=" << state.playhead.editPosition
+        << " previousPlayback=" << state.playhead.playbackPosition
+        << " isPlaying=" << (int)state.playhead.isPlaying << " loop=[" << state.loop.startTime
+        << ", " << state.loop.endTime << "] loopEnabled=" << (int)state.loop.enabled);
     if (newPos == state.playhead.editPosition) {
         return ChangeFlags::None;
     }
@@ -237,6 +242,11 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlayhea
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybackPositionEvent& e) {
     // Only updates the playback position (the moving cursor), not the edit position
     double newPos = juce::jlimit(0.0, state.timelineLength, e.position);
+    DBG("[LoopActivation] TimelineController::SetPlaybackPositionEvent requested="
+        << e.position << " clamped=" << newPos << " previousPlayback="
+        << state.playhead.playbackPosition << " editPosition=" << state.playhead.editPosition
+        << " isPlaying=" << (int)state.playhead.isPlaying << " loop=[" << state.loop.startTime
+        << ", " << state.loop.endTime << "] loopEnabled=" << (int)state.loop.enabled);
     if (newPos == state.playhead.playbackPosition) {
         return ChangeFlags::None;
     }
@@ -266,6 +276,11 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const StartPlaybackEvent& /*e*/) {
+    DBG("[LoopActivation] TimelineController::StartPlaybackEvent isPlaying="
+        << (int)state.playhead.isPlaying << " editPosition=" << state.playhead.editPosition
+        << " playbackPosition=" << state.playhead.playbackPosition << " currentPosition="
+        << state.playhead.getCurrentPosition() << " loop=[" << state.loop.startTime << ", "
+        << state.loop.endTime << "] loopEnabled=" << (int)state.loop.enabled);
     if (state.playhead.isPlaying) {
         return ChangeFlags::None;  // Already playing
     }
@@ -275,6 +290,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartPlayb
     state.playhead.playbackPosition = state.playhead.editPosition;
 
     for (auto* listener : audioEngineListeners) {
+        DBG("[LoopActivation] TimelineController notifying onTransportPlay position="
+            << state.playhead.editPosition);
         listener->onTransportPlay(state.playhead.editPosition);
     }
 

@@ -735,6 +735,9 @@ void TransportPanel::setupTransportButtons() {
         std::make_unique<SvgButton>("Loop", BinaryData::loop_off_svg, BinaryData::loop_off_svgSize,
                                     BinaryData::loop_on_svg, BinaryData::loop_on_svgSize);
     loopButton->onClick = [this]() {
+        DBG("[LoopActivation] TransportPanel loop button clicked current="
+            << (int)isLooping << " next=" << (int)!isLooping << " cachedLoop=[" << cachedLoopStart
+            << ", " << cachedLoopEnd << "]");
         isLooping = !isLooping;
         loopButton->setActive(isLooping);
         if (onLoop)
@@ -828,6 +831,9 @@ void TransportPanel::setupTimeDisplayBoxes() {
     // Loop start/end — always enabled so interaction auto-enables looping
     auto enableLoopIfNeeded = [this]() {
         if (!isLooping) {
+            DBG("[LoopActivation] TransportPanel auto-enabling loop from loop label edit "
+                "cachedLoop=["
+                << cachedLoopStart << ", " << cachedLoopEnd << "]");
             isLooping = true;
             loopButton->setActive(true);
             auto green = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
@@ -844,6 +850,8 @@ void TransportPanel::setupTimeDisplayBoxes() {
         enableLoopIfNeeded();
         double startBeats = loopStartLabel->getValue();
         double startSeconds = (startBeats * 60.0) / currentTempo;
+        DBG("[LoopActivation] TransportPanel loop start label changed beats="
+            << startBeats << " seconds=" << startSeconds << " cachedEnd=" << cachedLoopEnd);
         if (onLoopRegionEdit)
             onLoopRegionEdit(startSeconds, cachedLoopEnd);
     };
@@ -853,6 +861,8 @@ void TransportPanel::setupTimeDisplayBoxes() {
         enableLoopIfNeeded();
         double endBeats = loopEndLabel->getValue();
         double endSeconds = (endBeats * 60.0) / currentTempo;
+        DBG("[LoopActivation] TransportPanel loop end label changed beats="
+            << endBeats << " seconds=" << endSeconds << " cachedStart=" << cachedLoopStart);
         if (onLoopRegionEdit)
             onLoopRegionEdit(cachedLoopStart, endSeconds);
     };
@@ -1180,6 +1190,9 @@ void TransportPanel::setTimeSelection(double startTime, double endTime, bool has
 }
 
 void TransportPanel::setLoopRegion(double startTime, double endTime, bool loopEnabled) {
+    DBG("[LoopActivation] TransportPanel::setLoopRegion start="
+        << startTime << " end=" << endTime << " enabled=" << (int)loopEnabled << " previousCached=["
+        << cachedLoopStart << ", " << cachedLoopEnd << "] previousOn=" << (int)isLooping);
     cachedLoopStart = startTime;
     cachedLoopEnd = endTime;
     cachedLoopEnabled = loopEnabled;

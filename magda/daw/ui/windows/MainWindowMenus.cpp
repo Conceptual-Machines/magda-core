@@ -610,6 +610,14 @@ void MainWindow::setupMenuCallbacks() {
         if (mainComponent && mainComponent->mainView) {
             auto& tc = mainComponent->mainView->getTimelineController();
             bool currentlyLooping = tc.getState().loop.enabled;
+            const auto& state = tc.getState();
+            DBG("[LoopActivation] MainWindowMenus toggle loop currently="
+                << (int)currentlyLooping << " next=" << (int)!currentlyLooping << " loop=["
+                << state.loop.startTime << ", " << state.loop.endTime
+                << "] editPosition=" << state.playhead.editPosition
+                << " playbackPosition=" << state.playhead.playbackPosition
+                << " currentPosition=" << state.playhead.getCurrentPosition()
+                << " isPlaying=" << (int)state.playhead.isPlaying);
             mainComponent->mainView->setLoopEnabled(!currentlyLooping);
         }
     };

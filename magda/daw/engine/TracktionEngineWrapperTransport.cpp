@@ -253,11 +253,15 @@ void TracktionEngineWrapper::setLooping(bool enabled) {
     if (currentEdit_) {
         auto& transport = currentEdit_->getTransport();
         auto loopRange = transport.getLoopRange();
+        const bool previousLooping = transport.looping.get();
         DBG("[LoopActivation] TracktionEngineWrapper::setLooping enabled="
-            << (int)enabled << " currentPosition=" << transport.position.get().inSeconds()
-            << " loopRange=[" << loopRange.getStart().inSeconds() << ", "
-            << loopRange.getEnd().inSeconds() << "]");
-        currentEdit_->getTransport().looping = enabled;
+            << (int)enabled << " previous=" << (int)previousLooping
+            << " currentPosition=" << transport.position.get().inSeconds() << " loopRange=["
+            << loopRange.getStart().inSeconds() << ", " << loopRange.getEnd().inSeconds() << "]");
+        transport.looping = enabled;
+        DBG("[LoopActivation] TracktionEngineWrapper::setLooping committed enabled="
+            << (int)transport.looping.get()
+            << " currentPosition=" << transport.position.get().inSeconds());
     } else {
         DBG("[LoopActivation] TracktionEngineWrapper::setLooping ignored: no current edit");
     }
@@ -270,7 +274,12 @@ void TracktionEngineWrapper::setLoopRegion(double start_seconds, double end_seco
             << "] currentPosition=" << currentEdit_->getTransport().position.get().inSeconds());
         auto startPos = tracktion::TimePosition::fromSeconds(start_seconds);
         auto endPos = tracktion::TimePosition::fromSeconds(end_seconds);
-        currentEdit_->getTransport().setLoopRange(tracktion::TimeRange(startPos, endPos));
+        auto& transport = currentEdit_->getTransport();
+        transport.setLoopRange(tracktion::TimeRange(startPos, endPos));
+        auto committedRange = transport.getLoopRange();
+        DBG("[LoopActivation] TracktionEngineWrapper::setLoopRegion committed range=["
+            << committedRange.getStart().inSeconds() << ", " << committedRange.getEnd().inSeconds()
+            << "] currentPosition=" << transport.position.get().inSeconds());
     } else {
         DBG("[LoopActivation] TracktionEngineWrapper::setLoopRegion ignored: no current edit");
     }
@@ -505,7 +514,16 @@ void TracktionEngineWrapper::onTransportStopRecording() {
 void TracktionEngineWrapper::onEditPositionChanged(double position) {
     // Only seek if not currently playing
     if (!isPlaying()) {
+        DBG("[LoopActivation] TracktionEngineWrapper::onEditPositionChanged locating position="
+            << position << " currentBefore=" << getCurrentPosition()
+            << " looping=" << (int)isLooping());
         locate(position);
+        DBG("[LoopActivation] TracktionEngineWrapper::onEditPositionChanged after="
+            << getCurrentPosition());
+    } else {
+        DBG("[LoopActivation] TracktionEngineWrapper::onEditPositionChanged ignored while playing"
+            << " requested=" << position << " current=" << getCurrentPosition()
+            << " looping=" << (int)isLooping());
     }
 }
 
