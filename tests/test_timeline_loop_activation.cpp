@@ -151,3 +151,27 @@ TEST_CASE("TransportApiLive dispatches loop changes through controller path",
     REQUIRE(dispatchCount == 1);
     REQUIRE(lastEnabled);
 }
+
+TEST_CASE("SetLoopEnabledEvent ignores active time selection",
+          "[timeline][loop][api][regression]") {
+    // A scripted/programmatic loop toggle must not promote a UI time selection into
+    // a loop region. Selection-promotion is a UI button affordance, not a controller
+    // semantic. Routing TransportApi -> SetLoopEnabledEvent (instead of through
+    // MainView::setLoopEnabled) is what enforces this; this test locks the controller
+    // half of the contract.
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetLoopRegionEvent{4.0, 8.0});
+    controller.dispatch(magda::SetLoopEnabledEvent{false});
+
+    // User has a time selection active in the UI somewhere unrelated to the loop.
+    controller.dispatch(magda::SetTimeSelectionEvent{20.0, 24.0, {}});
+
+    controller.dispatch(magda::SetLoopEnabledEvent{true});
+
+    const auto& loop = controller.getState().loop;
+    REQUIRE(loop.enabled);
+    // Region must be the original [4, 8], NOT promoted to the selection [20, 24].
+    REQUIRE(loop.startTime == Catch::Approx(4.0));
+    REQUIRE(loop.endTime == Catch::Approx(8.0));
+}
