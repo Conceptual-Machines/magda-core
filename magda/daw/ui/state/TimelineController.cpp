@@ -550,13 +550,17 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ClearLoopR
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEnabledEvent& e) {
     if (e.enabled && !state.loop.isValid()) {
-        const double defaultDuration = juce::jmax(0.01, state.tempo.getSecondsPerBar());
+        constexpr double minLoopDuration = 0.01;
+        if (state.timelineLength < minLoopDuration)
+            return ChangeFlags::None;
+
+        const double defaultDuration = juce::jmax(minLoopDuration, state.tempo.getSecondsPerBar());
         double start = juce::jlimit(0.0, state.timelineLength, state.playhead.getCurrentPosition());
         double end = juce::jmin(state.timelineLength, start + defaultDuration);
 
-        if (end - start < 0.01) {
-            end = juce::jlimit(0.01, state.timelineLength, end);
-            start = juce::jmax(0.0, end - 0.01);
+        if (end - start < minLoopDuration) {
+            end = juce::jlimit(minLoopDuration, state.timelineLength, end);
+            start = juce::jmax(0.0, end - minLoopDuration);
         }
 
         state.loop.startTime = start;

@@ -78,6 +78,17 @@ TEST_CASE("TimelineController uses playback cursor when activating loop during p
     REQUIRE(loop.endTime == Catch::Approx(13.25));
 }
 
+TEST_CASE("TimelineController does not create invalid loop on too-short timeline",
+          "[timeline][loop][regression]") {
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetTimelineLengthEvent{0.005});
+    controller.dispatch(magda::SetLoopEnabledEvent{true});
+
+    REQUIRE_FALSE(controller.getState().loop.enabled);
+    REQUIRE_FALSE(controller.getState().loop.isValid());
+}
+
 TEST_CASE("TimelineController still toggles an existing loop without moving it",
           "[timeline][loop]") {
     magda::TimelineController controller;
