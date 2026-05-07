@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "magda/daw/api/transport_api_live.hpp"
 #include "magda/daw/ui/state/TimelineController.hpp"
 
 namespace {
@@ -133,4 +134,21 @@ TEST_CASE("TimelineController keeps active loop unchanged on duplicate enable",
     REQUIRE(listener.loopEnabledChangedCount == 0);
 
     controller.removeAudioEngineListener(&listener);
+}
+
+TEST_CASE("TransportApiLive dispatches loop changes through controller path",
+          "[timeline][loop][api][regression]") {
+    magda::TransportApiLive transport;
+
+    int dispatchCount = 0;
+    bool lastEnabled = false;
+    transport.setLoopDispatcher([&](bool enabled) {
+        ++dispatchCount;
+        lastEnabled = enabled;
+    });
+
+    transport.setLoopEnabled(true);
+
+    REQUIRE(dispatchCount == 1);
+    REQUIRE(lastEnabled);
 }
