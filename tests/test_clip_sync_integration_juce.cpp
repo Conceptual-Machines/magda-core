@@ -77,6 +77,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testSessionSyncPreservesDetectedSourceInterpretation();
         testBatchPropertyChangeUpdatesArrangementClipsSynchronously();
         testPropertyChangeCreatesMissingArrangementClipAndReallocatesOnce();
+        testPropertyChangeCreatesMissingReversedArrangementClipSynchronously();
         testBatchSessionSlotCreationReallocatesOnce();
         testMoveClip();
         testResizeFromRight();
@@ -378,6 +379,37 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
                 reallocationCount, 1,
                 "Creating an arrangement TE clip from a property batch should reallocate once");
         }
+    }
+
+    void testPropertyChangeCreatesMissingReversedArrangementClipSynchronously() {
+        beginTest("Property change creates missing reversed arrangement TE clip synchronously");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        expect(clipId != INVALID_CLIP_ID);
+        f.clipSync->removeClipFromEngine(clipId);
+
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr);
+        if (!clip)
+            return;
+
+        clip->isReversed = true;
+        cm.forceNotifyMultipleClipPropertiesChanged({clipId, clipId});
+
+        auto* teClip = f.getTeAudioClip(clipId);
+        expect(teClip != nullptr,
+               "Reversed property sync should recreate the missing TE clip synchronously");
+        if (!teClip)
+            return;
+
+        expect(teClip->getIsReversed(), "Reversed state should sync before returning");
+        if (f.clipSync->getPendingReverseClipId() != INVALID_CLIP_ID)
+            expectEquals(f.clipSync->getPendingReverseClipId(), clipId,
+                         "Proxy-not-ready reversed clips should be tracked for timer reallocation");
     }
 
     void testBatchSessionSlotCreationReallocatesOnce() {
