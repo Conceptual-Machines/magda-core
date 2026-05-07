@@ -176,7 +176,7 @@ void ClipSynchronizer::clipsChanged() {
     }
 
     for (ClipId clipId : clipsToSync) {
-        syncClipToEngine(clipId);
+        juce::ignoreUnused(syncArrangementClipToEngine(clipId));
     }
 
     bool arrangementTopologyChanged = !clipsToRemove.empty() || !clipsToSync.empty();
@@ -199,11 +199,32 @@ void ClipSynchronizer::clipsChanged() {
 }
 
 void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
+    if (syncClipPropertyToEngine(clipId))
+        reallocateAndNotify();
+}
+
+void ClipSynchronizer::clipPropertiesChanged(const std::vector<ClipId>& clipIds) {
+    std::unordered_set<ClipId> seen;
+    seen.reserve(clipIds.size());
+
+    bool needsGraphReallocation = false;
+    for (auto clipId : clipIds) {
+        if (!seen.insert(clipId).second)
+            continue;
+
+        needsGraphReallocation = syncClipPropertyToEngine(clipId) || needsGraphReallocation;
+    }
+
+    if (needsGraphReallocation)
+        reallocateAndNotify();
+}
+
+bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip) {
         DBG("ClipSynchronizer::clipPropertyChanged: clip " << clipId
                                                            << " not found in ClipManager");
-        return;
+        return false;
     }
     if (clip->view == ClipView::Session) {
         // Session clip property changed (e.g. sceneIndex set after creation).
@@ -212,12 +233,8 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
             bool synced = syncSessionClipToSlot(clipId);
 
             if (synced) {
-                // New clip synced — rebuild graph so SlotControlNode is created
-                if (auto* ctx = edit_.getCurrentPlaybackContext()) {
-                    ctx->reallocate();
-                    if (onGraphReallocated)
-                        onGraphReallocated();
-                }
+                // New clip synced — rebuild graph so SlotControlNode is created.
+                return true;
             } else {
                 // Clip already synced — propagate property changes to TE clip.
                 // Only update properties that have actually changed to avoid
@@ -373,10 +390,10 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                 }  // if (teClip)
             }      // else (already synced)
         }          // if (sceneIndex >= 0)
-        return;
+        return false;
     }
 
-    syncClipToEngine(clipId);
+    return syncArrangementClipToEngine(clipId);
 }
 
 void ClipSynchronizer::clipSelectionChanged(ClipId clipId) {
@@ -390,25 +407,32 @@ void ClipSynchronizer::clipSelectionChanged(ClipId clipId) {
 // =============================================================================
 
 void ClipSynchronizer::syncClipToEngine(ClipId clipId) {
+    if (syncArrangementClipToEngine(clipId))
+        reallocateAndNotify();
+}
+
+bool ClipSynchronizer::syncArrangementClipToEngine(ClipId clipId) {
     auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip) {
         DBG("syncClipToEngine: Clip not found: " << clipId);
-        return;
+        return false;
     }
 
     // Only sync arrangement clips - session clips are managed by SessionClipScheduler
     if (clip->view == ClipView::Session) {
-        return;
+        return false;
     }
 
     // Route to appropriate sync method by type
     if (clip->isMidi()) {
-        syncMidiClipToEngine(clipId, clip);
+        return syncMidiClipToEngine(clipId, clip);
     } else if (clip->isAudio()) {
-        syncAudioClipToEngine(clipId, clip);
+        return syncAudioClipToEngine(clipId, clip);
     } else {
         DBG("syncClipToEngine: Unknown clip type for clip " << clipId);
     }
+
+    return false;
 }
 
 void ClipSynchronizer::removeTeClipByEngineId(const std::string& engineId) {
@@ -1233,16 +1257,17 @@ static void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventT
 // Private Sync Helpers
 // =============================================================================
 
-void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
+bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
     // Get the Tracktion AudioTrack for this MAGDA track
     auto* audioTrack = trackController_.getAudioTrack(clip->trackId);
     if (!audioTrack) {
         DBG("syncClipToEngine: Tracktion track not found for MAGDA track: " << clip->trackId);
-        return;
+        return false;
     }
 
     namespace te = tracktion;
     te::MidiClip* midiClipPtr = nullptr;
+    bool createdClip = false;
 
     // Check if clip already exists in Tracktion Engine
     {
@@ -1283,10 +1308,11 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
         auto clipRef = audioTrack->insertMIDIClip(timeRange, nullptr);
         if (!clipRef) {
             DBG("syncClipToEngine: Failed to create MIDI clip");
-            return;
+            return false;
         }
 
         midiClipPtr = clipRef.get();
+        createdClip = true;
 
         // Store clip ID mapping (use clip's EditItemID as string)
         std::string engineClipId = midiClipPtr->itemID.toString().toStdString();
@@ -1376,20 +1402,23 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     // Add pitch bend events with interpolation
     interpolateCCEvents(sequence, clip->midiPitchBendData, te::MidiControllerEvent::pitchWheelType,
                         effectiveOffset, visibleStart, visibleEnd, contentLengthBeats);
+
+    return createdClip;
 }
 
-void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
+bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     namespace te = tracktion;
 
     // 1. Get Tracktion track
     auto* audioTrack = trackController_.getAudioTrack(clip->trackId);
     if (!audioTrack) {
         DBG("ClipSynchronizer: Track not found for audio clip " << clipId);
-        return;
+        return false;
     }
 
     // 2. Check if clip already synced
     te::WaveAudioClip* audioClipPtr = nullptr;
+    bool createdClip = false;
     {
         juce::ScopedLock lock(clipLock_);
         auto it = clipIdToEngineId_.find(clipId);
@@ -1421,12 +1450,12 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     if (!audioClipPtr) {
         if (clip->audio().source.filePath.isEmpty()) {
             DBG("ClipSynchronizer: No audio file for clip " << clipId);
-            return;
+            return false;
         }
         juce::File audioFile(clip->audio().source.filePath);
         if (!audioFile.existsAsFile()) {
             DBG("ClipSynchronizer: Audio file not found: " << clip->audio().source.filePath);
-            return;
+            return false;
         }
 
         double createStart = clip->startTime;
@@ -1440,10 +1469,11 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
         if (!clipRef) {
             DBG("ClipSynchronizer: Failed to create WaveAudioClip");
-            return;
+            return false;
         }
 
         audioClipPtr = clipRef.get();
+        createdClip = true;
 
         // Set timestretcher mode at creation time
         // When timeStretchMode is 0 (disabled), keep it disabled — TE's
@@ -1520,17 +1550,12 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
         // Check if the reversed proxy file is ready
         auto playbackFile = audioClipPtr->getPlaybackFile();
-        if (playbackFile.getFile().existsAsFile()) {
-            if (auto* ctx = edit_.getCurrentPlaybackContext()) {
-                ctx->reallocate();
-                if (onGraphReallocated)
-                    onGraphReallocated();
-            }
-        } else {
+        if (playbackFile.getFile().existsAsFile())
+            return true;
+        else
             pendingReverseClipId_ = clipId;
-        }
 
-        return;  // Don't let subsequent sync steps overwrite TE's reversed state
+        return createdClip;  // Don't let subsequent sync steps overwrite TE's reversed state
     }
 
     // 4. UPDATE clip position/length
@@ -1759,6 +1784,7 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         audioClipPtr->setLaunchFadeSamples(clip->launchFadeSamples);
 
     // 13. CHANNELS — removed (L/R controls removed from Inspector)
+    return createdClip;
 }
 
 }  // namespace magda
