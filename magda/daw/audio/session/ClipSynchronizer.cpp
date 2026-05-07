@@ -126,6 +126,7 @@ void ClipSynchronizer::clipsChanged() {
 
     // Build set of current arrangement clip IDs for fast lookup
     std::unordered_set<ClipId> currentClipIds;
+    currentClipIds.reserve(arrangementClips.size());
     for (const auto& clip : arrangementClips) {
         currentClipIds.insert(clip.id);
     }
@@ -146,23 +147,39 @@ void ClipSynchronizer::clipsChanged() {
         removeClipFromEngine(clipId);
     }
 
-    bool arrangementTopologyChanged = !clipsToRemove.empty();
-    if (!clipsToRemove.empty()) {
+    // engineId → parent TE track, used below to detect cross-track moves
+    namespace te = tracktion;
+    std::unordered_map<std::string, te::AudioTrack*> engineIdToParentTrack;
+    for (auto* track : te::getAudioTracks(edit_)) {
+        for (auto* teClip : track->getClips()) {
+            engineIdToParentTrack[teClip->itemID.toString().toStdString()] = track;
+        }
     }
+
+    // Topology-only diff: sync new clips and clips that crossed tracks.
+    // Property changes already flow through clipPropertyChanged.
+    std::vector<ClipId> clipsToSync;
     {
         juce::ScopedLock lock(clipLock_);
         for (const auto& clip : arrangementClips) {
-            if (clipIdToEngineId_.find(clip.id) == clipIdToEngineId_.end()) {
-                arrangementTopologyChanged = true;
-                break;
+            auto mapIt = clipIdToEngineId_.find(clip.id);
+            if (mapIt == clipIdToEngineId_.end()) {
+                clipsToSync.push_back(clip.id);
+                continue;
+            }
+            auto trackIt = engineIdToParentTrack.find(mapIt->second);
+            auto* expectedTrack = trackController_.getAudioTrack(clip.trackId);
+            if (trackIt == engineIdToParentTrack.end() || trackIt->second != expectedTrack) {
+                clipsToSync.push_back(clip.id);
             }
         }
     }
 
-    // Sync remaining arrangement clips to engine (add new ones, update existing)
-    for (const auto& clip : arrangementClips) {
-        syncClipToEngine(clip.id);
+    for (ClipId clipId : clipsToSync) {
+        syncClipToEngine(clipId);
     }
+
+    bool arrangementTopologyChanged = !clipsToRemove.empty() || !clipsToSync.empty();
 
     // Sync session clips to ClipSlots
     const auto& sessionClips = clipManager.getSessionClips();
