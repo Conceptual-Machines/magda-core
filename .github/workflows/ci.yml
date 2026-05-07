@@ -358,7 +358,7 @@ jobs:
       run: echo "✅ macOS build and tests completed successfully"
 
   build-and-test-windows:
-    runs-on: windows-latest-8core
+    runs-on: windows-latest
     if: |
       github.event_name != 'workflow_dispatch' ||
       github.event.inputs.skip-cpp-build != 'true'
@@ -395,16 +395,23 @@ jobs:
           exit 1
         }
 
+    # Release configure/build/verify only run on push to main. Feature-branch
+    # pushes get Debug coverage; the Release link check happens once per merge,
+    # before any tag is cut. release.yml still does the full Release build
+    # end-to-end on tag push.
     - name: Configure CMake (Release)
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
         cmake -B build-release -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
           -DMAGDA_BUILD_TESTS=OFF
 
     - name: Build (Release)
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: cmake --build build-release --config Release
 
     - name: Verify executable
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
         $exe = Get-ChildItem -Path build-release -Recurse -Filter "MAGDA.exe" | Select-Object -First 1
         if ($exe) {
