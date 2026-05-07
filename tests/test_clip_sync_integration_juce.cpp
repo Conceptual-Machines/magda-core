@@ -86,6 +86,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testLoopTimeBased();
         testLoopTimeBasedWarpEnabled();
         testSplitAudioClip();
+        testSplitDrivesLeftClipUpdateThroughListener();
         testBeatModeSplitRendersRightSide();
         testBeatModeSplitWrapsLoopPhaseAtBoundary();
         testBeatModeDuplicateRendersCopy();
@@ -803,6 +804,49 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(rightPos.getOffset().inSeconds(),
                                   rightClip->getTeOffset(rightClip->loopEnabled), 0.01);
         expect(rightClip->offset > 0.0, "Right clip offset should be > 0 after split");
+    }
+
+    void testSplitDrivesLeftClipUpdateThroughListener() {
+        beginTest("Split notifies property change for left clip (no manual resync needed)");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        // Audio: split must shrink the existing TE clip via the listener flow.
+        auto audioId =
+            cm.createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        cm.splitClip(audioId, 2.0, 60.0);
+
+        auto* leftAudio = f.getTeAudioClip(audioId);
+        expect(leftAudio != nullptr, "Left audio TE clip should still exist after split");
+        if (leftAudio) {
+            const auto pos = leftAudio->getPosition();
+            expectWithinAbsoluteError(pos.getStart().inSeconds(), 0.0, 0.01);
+            expectWithinAbsoluteError(pos.getEnd().inSeconds(), 2.0, 0.01);
+        }
+
+        // MIDI: notes must be partitioned in the left TE clip too.
+        auto midiId = cm.createMidiClip(f.trackId, 0.0, 4.0, ClipView::Arrangement);
+        for (int beat = 0; beat < 4; ++beat) {
+            MidiNote n;
+            n.startBeat = static_cast<double>(beat) * 60.0 / 60.0;
+            n.lengthBeats = 0.25;
+            n.noteNumber = 60 + beat;
+            n.velocity = 100;
+            cm.addMidiNote(midiId, n);
+        }
+        cm.splitClip(midiId, 2.0, 60.0);
+
+        auto* leftMidi = f.getTeMidiClip(midiId);
+        expect(leftMidi != nullptr, "Left MIDI TE clip should still exist after split");
+        if (leftMidi) {
+            const auto pos = leftMidi->getPosition();
+            expectWithinAbsoluteError(pos.getEnd().inSeconds() - pos.getStart().inSeconds(), 2.0,
+                                      0.01);
+            const int teNoteCount = leftMidi->getSequence().getNumNotes();
+            expectEquals(teNoteCount, 2,
+                         "Left MIDI TE clip should hold only the notes before the split");
+        }
     }
 
     void testBeatModeSplitRendersRightSide() {
