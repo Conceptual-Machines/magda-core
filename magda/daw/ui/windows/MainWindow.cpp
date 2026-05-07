@@ -852,10 +852,7 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         mainView->getTimelineController().dispatch(StartRecordEvent{});
     };
 
-    transportPanel->onLoop = [this](bool enabled) {
-        mainView->getTimelineController().dispatch(SetLoopEnabledEvent{enabled});
-        mainView->setLoopEnabled(enabled);
-    };
+    transportPanel->onLoop = [this](bool enabled) { mainView->setLoopEnabled(enabled); };
 
     transportPanel->onBackToArrangement = [this]() {
         if (auto* engine = getAudioEngine())

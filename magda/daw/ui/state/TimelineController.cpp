@@ -549,6 +549,31 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ClearLoopR
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEnabledEvent& e) {
+    if (e.enabled && !state.loop.isValid()) {
+        const double defaultDuration = juce::jmax(0.01, state.tempo.getSecondsPerBar());
+        double start = juce::jlimit(0.0, state.timelineLength, state.playhead.getCurrentPosition());
+        double end = juce::jmin(state.timelineLength, start + defaultDuration);
+
+        if (end - start < 0.01) {
+            end = juce::jlimit(0.01, state.timelineLength, end);
+            start = juce::jmax(0.0, end - 0.01);
+        }
+
+        state.loop.startTime = start;
+        state.loop.endTime = end;
+        state.loop.enabled = true;
+        state.loop.startBeats = magda::TimelineUtils::secondsToBeats(start, state.tempo.bpm);
+        state.loop.endBeats = magda::TimelineUtils::secondsToBeats(end, state.tempo.bpm);
+
+        ProjectManager::getInstance().setLoopSettings(true, state.loop.startBeats,
+                                                      state.loop.endBeats);
+
+        for (auto* listener : audioEngineListeners)
+            listener->onLoopRegionChanged(start, end, true);
+
+        return ChangeFlags::Loop;
+    }
+
     if (!state.loop.isValid()) {
         return ChangeFlags::None;
     }

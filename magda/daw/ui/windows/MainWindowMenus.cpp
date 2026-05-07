@@ -610,7 +610,6 @@ void MainWindow::setupMenuCallbacks() {
         if (mainComponent && mainComponent->mainView) {
             auto& tc = mainComponent->mainView->getTimelineController();
             bool currentlyLooping = tc.getState().loop.enabled;
-            tc.dispatch(SetLoopEnabledEvent{!currentlyLooping});
             mainComponent->mainView->setLoopEnabled(!currentlyLooping);
         }
     };
