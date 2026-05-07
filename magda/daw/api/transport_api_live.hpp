@@ -45,6 +45,13 @@ class TransportApiLive : public TransportApi {
         stopDispatch_ = std::move(fn);
     }
 
+    /** Same idea for loop — wired to MainView::setLoopEnabled so API/script
+     *  loop changes use the same TimelineController path as the transport
+     *  button. */
+    void setLoopDispatcher(std::function<void(bool)> fn) {
+        loopDispatch_ = std::move(fn);
+    }
+
     void play() override;
     void stop() override;
     void setRecording(bool recording) override;
@@ -63,6 +70,7 @@ class TransportApiLive : public TransportApi {
     EditGetter getEdit_;
     TransportFn playDispatch_;
     TransportFn stopDispatch_;
+    std::function<void(bool)> loopDispatch_;
 };
 
 }  // namespace magda

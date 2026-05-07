@@ -830,6 +830,8 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
                 [this]() { mainView->getTimelineController().dispatch(StartPlaybackEvent{}); });
             live->setTransportStopDispatcher(
                 [this]() { mainView->getTimelineController().dispatch(StopPlaybackEvent{}); });
+            live->setTransportLoopDispatcher(
+                [this](bool enabled) { mainView->setLoopEnabled(enabled); });
         }
     }
 
