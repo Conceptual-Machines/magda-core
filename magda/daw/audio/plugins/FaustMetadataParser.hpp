@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -77,6 +78,15 @@ struct ControlMetadata {
 
     /// True iff the gate condition is negated (declared as `[gate:!N]`).
     bool gateNegated = false;
+
+    /// Optional musical anchor from `[scaleAnchor:N]` — the real-units
+    /// value that should fall at the slider's drag-midpoint (norm=0.5).
+    /// Without it, even `[scale:log]` controls drag linearly because
+    /// MAGDA's TextSlider needs a non-symmetric anchor to compute a skew
+    /// (geometric mean ⇒ skew=1 ⇒ no help). Typical use: `1000` on a
+    /// 20–20k Hz cutoff so the bottom of the range gets pixel
+    /// resolution proportional to a log slider. NaN ⇒ unset.
+    float scaleAnchor = std::numeric_limits<float>::quiet_NaN();
 };
 
 /**

@@ -146,10 +146,35 @@ float denormalizeForBinding(const FaustParamPool::ActiveBindingDescriptor& b, fl
                 juce::jlimit(0, count - 1, static_cast<int>(std::round(n * (count - 1))));
             return b.discreteValues[static_cast<size_t>(idx)];
         }
-        case FaustParamSlot::Kind::Continuous:
+        case FaustParamSlot::Kind::Continuous: {
+            // Apply the anchor skew here to match
+            // ParameterUtils::realToNormalized's inverse on the host
+            // side. Without it the slider→AutomatableParameter→zone
+            // round-trip squashes mid-range values (a 1 kHz cutoff with
+            // a 1 kHz anchor lands at ~632 Hz on the audio thread).
+            // pow(0.5, skew) == anchorRatio at slider midpoint, so we
+            // pre-skew n by `skew` before projecting. NaN anchor (or
+            // out-of-range) skips the skew.
+            float skewed = n;
+            if (std::isfinite(b.scaleAnchor) && b.scaleAnchor > b.minValue &&
+                b.scaleAnchor < b.maxValue) {
+                float anchorRatio = 0.0f;
+                if (b.logScale && b.minValue > 0.0f && b.maxValue > b.minValue) {
+                    anchorRatio =
+                        std::log(b.scaleAnchor / b.minValue) / std::log(b.maxValue / b.minValue);
+                } else if (b.maxValue > b.minValue) {
+                    anchorRatio = (b.scaleAnchor - b.minValue) / (b.maxValue - b.minValue);
+                }
+                if (anchorRatio > 0.0f && anchorRatio < 1.0f &&
+                    std::abs(anchorRatio - 0.5f) > 1e-6f) {
+                    const float skew = std::log(anchorRatio) / std::log(0.5f);
+                    skewed = std::pow(juce::jlimit(0.0f, 1.0f, n), skew);
+                }
+            }
             if (b.logScale && b.minValue > 0.0f && b.maxValue > b.minValue)
-                return b.minValue * std::pow(b.maxValue / b.minValue, n);
-            return b.minValue + n * (b.maxValue - b.minValue);
+                return b.minValue * std::pow(b.maxValue / b.minValue, skewed);
+            return b.minValue + skewed * (b.maxValue - b.minValue);
+        }
     }
     return 0.0f;
 }

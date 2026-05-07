@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <array>
+#include <limits>
 #include <vector>
 
 #include "FaustMetadataParser.hpp"
@@ -73,6 +74,14 @@ class FaustParamPool {
         float maxValue = 1.0f;
         float stepValue = 0.0f;
         bool logScale = false;
+        /// Mirrors slot.scaleAnchor — needed on the audio thread so
+        /// `denormalizeForBinding` can invert the same anchor-skew
+        /// `ParameterUtils::realToNormalized` applied when the host
+        /// wrote the slider value into the AutomatableParameter. Without
+        /// it, slider→audio round-trips would squash mid-range values
+        /// (e.g. 1000 Hz on a log cutoff with 1k anchor → 632 Hz at the
+        /// zone). NaN means "no anchor".
+        float scaleAnchor = std::numeric_limits<float>::quiet_NaN();
         /// MAGDA role for this binding. The audio-thread param loop
         /// only writes its `param->getCurrentValue()` for role==User
         /// bindings; non-User roles (e.g. ProjectTempo) are filled in

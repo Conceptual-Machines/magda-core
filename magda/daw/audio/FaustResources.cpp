@@ -40,6 +40,7 @@ std::vector<StarterDsp> getBundledStarterDsps() {
         {"Delay", "magda_delay.dsp", "magda_delay_dsp", FaustCustomViewKind::None},
         {"Granular Delay", "magda_granular_delay.dsp", "magda_granular_delay_dsp",
          FaustCustomViewKind::None},
+        {"Filter", "magda_filter.dsp", "magda_filter_dsp", FaustCustomViewKind::None},
     };
 
     std::vector<StarterDsp> out;

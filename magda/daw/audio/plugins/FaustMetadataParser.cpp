@@ -1,5 +1,7 @@
 #include "FaustMetadataParser.hpp"
 
+#include <cmath>
+
 namespace magda::daw::audio {
 
 namespace {
@@ -9,7 +11,7 @@ namespace {
 // label or keep it intact for forward-compatibility.
 bool isKnownKey(const juce::String& key) {
     return key == "idx" || key == "unit" || key == "scale" || key == "style" || key == "role" ||
-           key == "hidden" || key == "gate";
+           key == "hidden" || key == "gate" || key == "scaleAnchor" || key == "scaleanchor";
 }
 
 // `[style:menu{'A':0;'B':1}]` payloads — the value passed to
@@ -122,6 +124,16 @@ bool applyFaustAnnotation(const juce::String& key, const juce::String& value,
         // is `[hidden:1]` but be lenient about "true" / "yes" / etc.
         metadata.hidden =
             !(v == "0" || v.equalsIgnoreCase("false") || v.equalsIgnoreCase("no") || v.isEmpty());
+        return true;
+    }
+    if (key == "scaleAnchor" || key == "scaleanchor") {
+        // [scaleAnchor:N] — places the slider's drag-midpoint at the
+        // real-units value N. Required for `[scale:log]` to actually
+        // feel logarithmic (without an off-centre anchor, MAGDA's
+        // skewFactor collapses to 1.0 and drag is linear).
+        const float n = value.trim().getFloatValue();
+        if (std::isfinite(n))
+            metadata.scaleAnchor = n;
         return true;
     }
     if (key == "gate") {
@@ -239,6 +251,9 @@ void mergeFaustMetadata(ControlMetadata& parent, const ControlMetadata& child) {
         parent.gateSlotIndex = child.gateSlotIndex;
         parent.gateNegated = child.gateNegated;
     }
+    // scaleAnchor: NaN sentinel means "unset", any finite value wins.
+    if (std::isfinite(child.scaleAnchor))
+        parent.scaleAnchor = child.scaleAnchor;
 }
 
 }  // namespace magda::daw::audio

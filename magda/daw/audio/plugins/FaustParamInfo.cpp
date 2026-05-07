@@ -1,6 +1,7 @@
 #include "FaustParamInfo.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace magda::daw::audio {
 
@@ -28,6 +29,8 @@ magda::ParameterInfo continuousInfo(const FaustParamSlot& slot) {
     info.defaultValue = slot.defaultValue;
     info.currentValue = slot.defaultValue;
     info.scale = slot.logScale ? magda::ParameterScale::Logarithmic : magda::ParameterScale::Linear;
+    if (std::isfinite(slot.scaleAnchor))
+        info.scaleAnchor = slot.scaleAnchor;
     info.gateSlotIndex = slot.gateSlotIndex;
     info.gateNegated = slot.gateNegated;
     return info;

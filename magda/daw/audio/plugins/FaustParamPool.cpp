@@ -36,6 +36,7 @@ void fillSlot(FaustParamSlot& slot, int index, const HarvestedControl& h) {
     slot.hidden = h.metadata.hidden;
     slot.gateSlotIndex = h.metadata.gateSlotIndex;
     slot.gateNegated = h.metadata.gateNegated;
+    slot.scaleAnchor = h.metadata.scaleAnchor;
 }
 
 FaustParamPool::ActiveBindingDescriptor descriptorFor(const FaustParamSlot& slot) {
@@ -47,6 +48,7 @@ FaustParamPool::ActiveBindingDescriptor descriptorFor(const FaustParamSlot& slot
     d.maxValue = slot.maxValue;
     d.stepValue = slot.stepValue;
     d.logScale = slot.logScale;
+    d.scaleAnchor = slot.scaleAnchor;
     d.role = slot.role;
     d.gateSlotIndex = slot.gateSlotIndex;
     d.gateNegated = slot.gateNegated;

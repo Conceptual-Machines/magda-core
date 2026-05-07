@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -82,6 +83,12 @@ struct FaustParamSlot {
     // True iff the gate is negated (`[gate:!N]`): the cell is active when
     // the gate slot's value is < 0.5 (i.e. slot is OFF / near zero).
     bool gateNegated = false;
+
+    // Optional musical anchor from `[scaleAnchor:N]`. NaN ⇒ unset; any
+    // finite value is forwarded to ParameterInfo.scaleAnchor so the
+    // slider's drag math gets a useful skew (without it, even
+    // `[scale:log]` controls drag linearly across their real range).
+    float scaleAnchor = std::numeric_limits<float>::quiet_NaN();
 };
 
 }  // namespace magda::daw::audio
