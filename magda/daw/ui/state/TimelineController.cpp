@@ -549,14 +549,32 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ClearLoopR
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEnabledEvent& e) {
-    if (e.enabled && !state.loop.isValid()) {
-        constexpr double minLoopDuration = 0.01;
-        if (state.timelineLength < minLoopDuration)
-            return ChangeFlags::None;
+    DBG("[LoopActivation] TimelineController::SetLoopEnabledEvent requested="
+        << (int)e.enabled << " loopValid=" << (int)state.loop.isValid()
+        << " loopEnabled=" << (int)state.loop.enabled << " loop=[" << state.loop.startTime << ", "
+        << state.loop.endTime << "] editPosition=" << state.playhead.editPosition
+        << " playbackPosition=" << state.playhead.playbackPosition << " currentPosition="
+        << state.playhead.getCurrentPosition() << " isPlaying=" << (int)state.playhead.isPlaying
+        << " timelineLength=" << state.timelineLength);
 
+    if (e.enabled && state.loop.enabled && state.loop.isValid()) {
+        DBG("[LoopActivation] TimelineController ignored enable: loop already active");
+        return ChangeFlags::None;
+    }
+
+    if (e.enabled) {
+        constexpr double minLoopDuration = 0.01;
+        if (state.timelineLength < minLoopDuration) {
+            DBG("[LoopActivation] TimelineController skipped loop creation: timeline too short");
+            return ChangeFlags::None;
+        }
+
+        const double previousDuration = state.loop.isValid() ? state.loop.getDuration() : 0.0;
         const double defaultDuration = juce::jmax(minLoopDuration, state.tempo.getSecondsPerBar());
+        const double loopDuration = juce::jmax(
+            minLoopDuration, previousDuration > 0.0 ? previousDuration : defaultDuration);
         double start = juce::jlimit(0.0, state.timelineLength, state.playhead.getCurrentPosition());
-        double end = juce::jmin(state.timelineLength, start + defaultDuration);
+        double end = juce::jmin(state.timelineLength, start + loopDuration);
 
         if (end - start < minLoopDuration) {
             end = juce::jlimit(minLoopDuration, state.timelineLength, end);
@@ -572,6 +590,11 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEna
         ProjectManager::getInstance().setLoopSettings(true, state.loop.startBeats,
                                                       state.loop.endBeats);
 
+        DBG("[LoopActivation] TimelineController activated loop at current playhead ["
+            << start << ", " << end << "] beats=[" << state.loop.startBeats << ", "
+            << state.loop.endBeats << "] previousDuration=" << previousDuration
+            << " usedDuration=" << (end - start));
+
         for (auto* listener : audioEngineListeners)
             listener->onLoopRegionChanged(start, end, true);
 
@@ -579,10 +602,12 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEna
     }
 
     if (!state.loop.isValid()) {
+        DBG("[LoopActivation] TimelineController ignored toggle: no valid loop region");
         return ChangeFlags::None;
     }
 
     if (state.loop.enabled == e.enabled) {
+        DBG("[LoopActivation] TimelineController ignored toggle: loop already in requested state");
         return ChangeFlags::None;
     }
 
@@ -590,6 +615,10 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEna
 
     ProjectManager::getInstance().setLoopSettings(e.enabled, state.loop.startBeats,
                                                   state.loop.endBeats);
+
+    DBG("[LoopActivation] TimelineController toggled existing loop enabled="
+        << (int)e.enabled << " loop=[" << state.loop.startTime << ", " << state.loop.endTime
+        << "] currentPosition=" << state.playhead.getCurrentPosition());
 
     // Notify audio engine of loop enabled change
     for (auto* listener : audioEngineListeners) {

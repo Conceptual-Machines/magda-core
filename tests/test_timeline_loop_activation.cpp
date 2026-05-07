@@ -89,7 +89,31 @@ TEST_CASE("TimelineController does not create invalid loop on too-short timeline
     REQUIRE_FALSE(controller.getState().loop.isValid());
 }
 
-TEST_CASE("TimelineController still toggles an existing loop without moving it",
+TEST_CASE("TimelineController moves existing disabled loop to playhead when activating",
+          "[timeline][loop][playhead][regression]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener;
+    controller.addAudioEngineListener(&listener);
+
+    controller.dispatch(magda::SetLoopRegionEvent{4.0, 8.0});
+    controller.dispatch(magda::SetLoopEnabledEvent{false});
+    listener.loopRegionChangedCount = 0;
+    listener.loopEnabledChangedCount = 0;
+
+    controller.dispatch(magda::SetEditPositionEvent{12.0});
+    controller.dispatch(magda::SetLoopEnabledEvent{true});
+
+    REQUIRE(controller.getState().loop.enabled);
+    REQUIRE(controller.getState().loop.startTime == Catch::Approx(12.0));
+    REQUIRE(controller.getState().loop.endTime == Catch::Approx(16.0));
+    REQUIRE(listener.loopRegionChangedCount == 1);
+    REQUIRE(listener.loopEnabledChangedCount == 0);
+    REQUIRE(listener.lastLoopEnabled);
+
+    controller.removeAudioEngineListener(&listener);
+}
+
+TEST_CASE("TimelineController keeps active loop unchanged on duplicate enable",
           "[timeline][loop]") {
     magda::TimelineController controller;
     TestAudioEngineListener listener;
@@ -97,14 +121,16 @@ TEST_CASE("TimelineController still toggles an existing loop without moving it",
 
     controller.dispatch(magda::SetLoopRegionEvent{4.0, 8.0});
     listener.loopRegionChangedCount = 0;
+    listener.loopEnabledChangedCount = 0;
 
-    controller.dispatch(magda::SetLoopEnabledEvent{false});
-    REQUIRE_FALSE(controller.getState().loop.enabled);
+    controller.dispatch(magda::SetEditPositionEvent{12.0});
+    controller.dispatch(magda::SetLoopEnabledEvent{true});
+
+    REQUIRE(controller.getState().loop.enabled);
     REQUIRE(controller.getState().loop.startTime == Catch::Approx(4.0));
     REQUIRE(controller.getState().loop.endTime == Catch::Approx(8.0));
     REQUIRE(listener.loopRegionChangedCount == 0);
-    REQUIRE(listener.loopEnabledChangedCount == 1);
-    REQUIRE_FALSE(listener.lastLoopEnabled);
+    REQUIRE(listener.loopEnabledChangedCount == 0);
 
     controller.removeAudioEngineListener(&listener);
 }

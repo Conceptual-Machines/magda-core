@@ -251,15 +251,28 @@ void TracktionEngineWrapper::getTimeSignature(int& numerator, int& denominator) 
 
 void TracktionEngineWrapper::setLooping(bool enabled) {
     if (currentEdit_) {
+        auto& transport = currentEdit_->getTransport();
+        auto loopRange = transport.getLoopRange();
+        DBG("[LoopActivation] TracktionEngineWrapper::setLooping enabled="
+            << (int)enabled << " currentPosition=" << transport.position.get().inSeconds()
+            << " loopRange=[" << loopRange.getStart().inSeconds() << ", "
+            << loopRange.getEnd().inSeconds() << "]");
         currentEdit_->getTransport().looping = enabled;
+    } else {
+        DBG("[LoopActivation] TracktionEngineWrapper::setLooping ignored: no current edit");
     }
 }
 
 void TracktionEngineWrapper::setLoopRegion(double start_seconds, double end_seconds) {
     if (currentEdit_) {
+        DBG("[LoopActivation] TracktionEngineWrapper::setLoopRegion range=["
+            << start_seconds << ", " << end_seconds
+            << "] currentPosition=" << currentEdit_->getTransport().position.get().inSeconds());
         auto startPos = tracktion::TimePosition::fromSeconds(start_seconds);
         auto endPos = tracktion::TimePosition::fromSeconds(end_seconds);
         currentEdit_->getTransport().setLoopRange(tracktion::TimeRange(startPos, endPos));
+    } else {
+        DBG("[LoopActivation] TracktionEngineWrapper::setLoopRegion ignored: no current edit");
     }
 }
 
@@ -357,7 +370,11 @@ int TracktionEngineWrapper::getCountInMode() const {
 // These methods are called by TimelineController when UI state changes
 
 void TracktionEngineWrapper::onTransportPlay(double position) {
+    DBG("[LoopActivation] TracktionEngineWrapper::onTransportPlay requestedPosition="
+        << position << " before=" << getCurrentPosition());
     locate(position);
+    DBG("[LoopActivation] TracktionEngineWrapper::onTransportPlay after locate="
+        << getCurrentPosition() << " looping=" << (int)isLooping());
     play();
     // Re-launch session clips synchronously (skips already-playing clips)
     if (sessionScheduler_)
@@ -501,11 +518,16 @@ void TracktionEngineWrapper::onTimeSignatureChanged(int numerator, int denominat
 }
 
 void TracktionEngineWrapper::onLoopRegionChanged(double startTime, double endTime, bool enabled) {
+    DBG("[LoopActivation] TracktionEngineWrapper::onLoopRegionChanged range=["
+        << startTime << ", " << endTime << "] enabled=" << (int)enabled
+        << " currentPosition=" << getCurrentPosition());
     setLoopRegion(startTime, endTime);
     setLooping(enabled);
 }
 
 void TracktionEngineWrapper::onLoopEnabledChanged(bool enabled) {
+    DBG("[LoopActivation] TracktionEngineWrapper::onLoopEnabledChanged enabled="
+        << (int)enabled << " currentPosition=" << getCurrentPosition());
     setLooping(enabled);
 }
 

@@ -953,8 +953,19 @@ bool MainView::isArrangementLocked() const {
 }
 
 void MainView::setLoopEnabled(bool enabled) {
+    const auto& state = timelineController->getState();
+    DBG("[LoopActivation] MainView::setLoopEnabled enabled="
+        << (int)enabled << " selectionActive=" << (int)state.selection.isActive()
+        << " loopValid=" << (int)state.loop.isValid() << " loopEnabled=" << (int)state.loop.enabled
+        << " loop=[" << state.loop.startTime << ", " << state.loop.endTime << "] editPosition="
+        << state.playhead.editPosition << " playbackPosition=" << state.playhead.playbackPosition
+        << " currentPosition=" << state.playhead.getCurrentPosition()
+        << " isPlaying=" << (int)state.playhead.isPlaying);
+
     // If enabling loop and there's an active time selection, create loop from it
-    if (enabled && timelineController->getState().selection.isActive()) {
+    if (enabled && state.selection.isActive()) {
+        DBG("[LoopActivation] MainView creating loop from selection ["
+            << state.selection.startTime << ", " << state.selection.endTime << "]");
         timelineController->dispatch(CreateLoopFromSelectionEvent{});
         return;
     }
