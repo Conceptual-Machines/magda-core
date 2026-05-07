@@ -148,7 +148,7 @@ FaustAgent::Result FaustAgent::generate(const std::string& message) {
 
     llm::Request request;
     request.systemPrompt = juce::String::fromUTF8(getSystemPrompt());
-    request.userMessage = juce::String::fromUTF8(message.c_str());
+    request.userMessage = buildUserMessage(message);
     request.temperature = 0.3f;
 
     auto response = client->sendRequest(request);
@@ -189,7 +189,7 @@ FaustAgent::Result FaustAgent::generateStreaming(const std::string& message,
 
     llm::Request request;
     request.systemPrompt = juce::String::fromUTF8(getSystemPrompt());
-    request.userMessage = juce::String::fromUTF8(message.c_str());
+    request.userMessage = buildUserMessage(message);
     request.temperature = 0.3f;
 
     auto response = client->sendStreamingRequest(request, [&](const juce::String& token) {
@@ -215,20 +215,43 @@ FaustAgent::Result FaustAgent::generateStreaming(const std::string& message,
 
 FaustAgent::Result FaustAgent::validateWithMCP(Result result) {
     auto* mcp = MCPServerManager::getInstance().getServer("faust-mcp");
-    if (mcp == nullptr)
+    if (mcp == nullptr) {
+        lastFailedSource_.clear();
+        lastCompileError_.clear();
         return result;
+    }
 
     auto* args = new juce::DynamicObject();
     args->setProperty("code", juce::String(result.source));
     args->setProperty("name", juce::String(result.name));
 
     auto mcpResult = mcp->callTool("compile_faust", juce::var(args));
-    if (!mcpResult.success) {
-        DBG("MCPClient compile_faust error: " + mcpResult.error);
-        result.error = "Faust compilation failed: " + mcpResult.error.toStdString();
-        result.hasError = true;
+    if (mcpResult.success) {
+        lastFailedSource_.clear();
+        lastCompileError_.clear();
+        return result;
     }
+
+    DBG("MCPClient compile_faust error: " + mcpResult.error);
+    lastFailedSource_ = result.source;
+    lastCompileError_ = mcpResult.error.toStdString();
+
+    result.error = "Faust compilation failed:\n" + lastCompileError_ +
+                   "\n\nWould you like me to try fixing it?";
+    result.hasError = true;
     return result;
+}
+
+juce::String FaustAgent::buildUserMessage(const std::string& message) const {
+    if (lastFailedSource_.empty())
+        return juce::String::fromUTF8(message.c_str());
+
+    return "My previous Faust code failed to compile:\n\n```\n" +
+           juce::String(lastFailedSource_) +
+           "\n```\n\nCompiler error:\n" + juce::String(lastCompileError_) +
+           "\n\nUser request: " + juce::String::fromUTF8(message.c_str()) +
+           "\n\nFix the code based on the compiler error and the user's request. "
+           "Output the corrected JSON object.";
 }
 
 }  // namespace magda
