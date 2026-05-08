@@ -45,9 +45,8 @@ class TransportApiLive : public TransportApi {
         stopDispatch_ = std::move(fn);
     }
 
-    /** Same idea for loop — wired to MainView::setLoopEnabled so API/script
-     *  loop changes use the same TimelineController path as the transport
-     *  button. */
+    /** Same idea for loop — wired to TimelineController::dispatch(SetLoopEnabledEvent)
+     *  so API/script toggles use controller semantics without UI-only selection promotion. */
     void setLoopDispatcher(std::function<void(bool)> fn) {
         loopDispatch_ = std::move(fn);
     }

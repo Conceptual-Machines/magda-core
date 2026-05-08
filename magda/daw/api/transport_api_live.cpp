@@ -57,14 +57,10 @@ bool TransportApiLive::isLoopEnabled() const {
 
 void TransportApiLive::setLoopEnabled(bool enabled) {
     if (loopDispatch_) {
-        DBG("[LoopActivation] TransportApiLive::setLoopEnabled dispatching enabled="
-            << (int)enabled);
         loopDispatch_(enabled);
         return;
     }
 
-    DBG("[LoopActivation] TransportApiLive::setLoopEnabled direct fallback enabled="
-        << (int)enabled);
     if (auto* e = edit())
         e->getTransport().looping = enabled;
 }
