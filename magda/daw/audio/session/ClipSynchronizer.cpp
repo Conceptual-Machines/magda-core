@@ -1412,9 +1412,22 @@ bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
         }
     }
 
-    // Add pitch bend events with interpolation
-    interpolateCCEvents(sequence, clip->midiPitchBendData, te::MidiControllerEvent::pitchWheelType,
-                        effectiveOffset, visibleStart, visibleEnd, contentLengthBeats);
+    // Add pitch bend events with interpolation. Skip entirely when every
+    // event in the clip sits at the wheel-rest value (8192) — emitting a
+    // stream of "no-op" pitch wheels is pointless and triggers a deadlock
+    // in fragile synths (see #1193). Real curves that return to rest are
+    // preserved because they contain at least one non-rest event.
+    constexpr int kPitchWheelRest = 8192;
+    const bool allAtRest =
+        !clip->midiPitchBendData.empty() &&
+        std::all_of(clip->midiPitchBendData.begin(), clip->midiPitchBendData.end(),
+                    [](const auto& ev) { return ev.value == kPitchWheelRest; });
+
+    if (!allAtRest) {
+        interpolateCCEvents(sequence, clip->midiPitchBendData,
+                            te::MidiControllerEvent::pitchWheelType, effectiveOffset, visibleStart,
+                            visibleEnd, contentLengthBeats);
+    }
 
     return needsGraphReallocation;
 }
