@@ -2,7 +2,7 @@
 name = "media-db-prototype"
 version = "0.1.0"
 description = "Media database prototype for MAGDA: indexes audio samples, presets, and clips with CLAP semantic embeddings and deterministic features."
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "transformers>=4.40",
     "torch>=2.2",
@@ -13,6 +13,8 @@ dependencies = [
     "rich>=13.7",
     "xxhash>=3.4",
     "pyyaml>=6.0",
+    "onnxruntime>=1.17",
+    "onnxscript>=0.1",
 ]
 
 [project.optional-dependencies]

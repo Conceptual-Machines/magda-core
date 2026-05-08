@@ -30,9 +30,18 @@ def export(embedder: ClapEmbedder, out_dir: Path) -> dict[str, Path]:
     audio_path = out_dir / "clap_audio.onnx"
     text_path = out_dir / "clap_text.onnx"
 
-    _export_audio(embedder, audio_path)
-    _export_text(embedder, text_path)
-    _check_parity(embedder, audio_path)
+    # Trace on CPU. MPS lacks float64 which F.normalize's eps clamp uses.
+    # Inference can use MPS afterwards; export is one-shot.
+    original_device = embedder.device
+    embedder.model.to("cpu")
+    embedder.device = "cpu"
+    try:
+        _export_audio(embedder, audio_path)
+        _export_text(embedder, text_path)
+        _check_parity(embedder, audio_path)
+    finally:
+        embedder.model.to(original_device)
+        embedder.device = original_device
     return {"audio": audio_path, "text": text_path}
 
 
@@ -47,7 +56,7 @@ def _export_audio(emb: ClapEmbedder, path: Path) -> None:
     # therefore needs to compute the same mel spectrogram. If we want a
     # waveform-in graph instead, fuse the feature_extractor as a torch module
     # and trace through it — left as a follow-up once we lock the model.
-    inputs = emb.processor(audios=dummy.cpu().numpy()[0], sampling_rate=TARGET_SR,
+    inputs = emb.processor(audio=dummy.cpu().numpy()[0], sampling_rate=TARGET_SR,
                            return_tensors="pt")
     input_features = inputs["input_features"].to(device)
 
@@ -57,8 +66,8 @@ def _export_audio(emb: ClapEmbedder, path: Path) -> None:
             self.m = m
 
         def forward(self, input_features: torch.Tensor) -> torch.Tensor:
-            feats = self.m.get_audio_features(input_features=input_features)
-            return torch.nn.functional.normalize(feats, dim=-1)
+            # transformers 5.x: pooler_output is the projected + L2-normalized embedding.
+            return self.m.get_audio_features(input_features=input_features).pooler_output
 
     wrapped = AudioWrapper(model).eval()
     torch.onnx.export(
@@ -69,6 +78,7 @@ def _export_audio(emb: ClapEmbedder, path: Path) -> None:
         output_names=["embedding"],
         dynamic_axes={"input_features": {0: "batch"}, "embedding": {0: "batch"}},
         opset_version=OPSET,
+        dynamo=False,  # legacy TorchScript exporter; new dynamo path chokes on CLAP internals
     )
 
 
@@ -85,8 +95,9 @@ def _export_text(emb: ClapEmbedder, path: Path) -> None:
             self.m = m
 
         def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-            feats = self.m.get_text_features(input_ids=input_ids, attention_mask=attention_mask)
-            return torch.nn.functional.normalize(feats, dim=-1)
+            return self.m.get_text_features(
+                input_ids=input_ids, attention_mask=attention_mask
+            ).pooler_output
 
     wrapped = TextWrapper(model).eval()
     torch.onnx.export(
@@ -101,6 +112,7 @@ def _export_text(emb: ClapEmbedder, path: Path) -> None:
             "embedding": {0: "batch"},
         },
         opset_version=OPSET,
+        dynamo=False,
     )
 
 
@@ -116,12 +128,11 @@ def _check_parity(emb: ClapEmbedder, audio_path: Path, tol: float = 1e-3) -> Non
 
     rng = np.random.default_rng(0)
     wave = rng.standard_normal(TARGET_SR * 10).astype(np.float32) * 0.1
-    inputs = emb.processor(audios=wave, sampling_rate=TARGET_SR, return_tensors="pt")
+    inputs = emb.processor(audio=wave, sampling_rate=TARGET_SR, return_tensors="pt")
     input_features = inputs["input_features"].to(emb.device)
 
     with torch.inference_mode():
-        torch_out = emb.model.get_audio_features(input_features=input_features)
-        torch_out = torch.nn.functional.normalize(torch_out, dim=-1)
+        torch_out = emb.model.get_audio_features(input_features=input_features).pooler_output
         torch_np = torch_out.detach().cpu().numpy()
 
     sess = ort.InferenceSession(str(audio_path), providers=["CPUExecutionProvider"])

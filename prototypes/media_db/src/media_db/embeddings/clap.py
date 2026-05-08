@@ -49,10 +49,10 @@ class ClapEmbedder:
             audio = _resample(audio, sr, TARGET_SR)
 
         chunks = _chunk(audio, TARGET_SR * CHUNK_SECONDS)
-        inputs = self.processor(audios=chunks, sampling_rate=TARGET_SR, return_tensors="pt")
+        inputs = self.processor(audio=chunks, sampling_rate=TARGET_SR, return_tensors="pt")
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
-        feats = self.model.get_audio_features(**inputs)  # (N, 512)
-        feats = torch.nn.functional.normalize(feats, dim=-1)
+        # transformers 5.x: pooler_output is the projected + L2-normalized embedding
+        feats = self.model.get_audio_features(**inputs).pooler_output  # (N, 512)
         pooled = feats.mean(dim=0)
         pooled = torch.nn.functional.normalize(pooled, dim=-1)
         return pooled.detach().cpu().numpy().astype(np.float32)
@@ -61,8 +61,7 @@ class ClapEmbedder:
     def embed_text(self, texts: list[str]) -> np.ndarray:
         inputs = self.processor(text=texts, return_tensors="pt", padding=True)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
-        feats = self.model.get_text_features(**inputs)  # (N, 512)
-        feats = torch.nn.functional.normalize(feats, dim=-1)
+        feats = self.model.get_text_features(**inputs).pooler_output  # (N, 512)
         return feats.detach().cpu().numpy().astype(np.float32)
 
 
