@@ -549,22 +549,52 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ClearLoopR
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEnabledEvent& e) {
-    if (!state.loop.isValid()) {
+    if (state.loop.isValid()) {
+        // Region exists — pure on/off toggle. The region stays exactly where the user
+        // placed it; we never relocate on enable/disable.
+        if (state.loop.enabled == e.enabled) {
+            return ChangeFlags::None;
+        }
+
+        state.loop.enabled = e.enabled;
+        ProjectManager::getInstance().setLoopSettings(e.enabled, state.loop.startBeats,
+                                                      state.loop.endBeats);
+
+        for (auto* listener : audioEngineListeners) {
+            listener->onLoopEnabledChanged(e.enabled);
+        }
+        return ChangeFlags::Loop;
+    }
+
+    // No valid region. Disabling is a no-op; enabling seeds a 1-bar default at the playhead
+    // so the loop button is always actionable from a fresh project.
+    if (!e.enabled) {
         return ChangeFlags::None;
     }
 
-    if (state.loop.enabled == e.enabled) {
+    constexpr double minLoopDuration = 0.01;
+    if (state.timelineLength < minLoopDuration) {
         return ChangeFlags::None;
     }
 
-    state.loop.enabled = e.enabled;
+    const double defaultDuration = juce::jmax(minLoopDuration, state.tempo.getSecondsPerBar());
+    double start = juce::jlimit(0.0, state.timelineLength, state.playhead.getCurrentPosition());
+    double end = juce::jmin(state.timelineLength, start + defaultDuration);
+    if (end - start < minLoopDuration) {
+        end = juce::jlimit(minLoopDuration, state.timelineLength, end);
+        start = juce::jmax(0.0, end - minLoopDuration);
+    }
 
-    ProjectManager::getInstance().setLoopSettings(e.enabled, state.loop.startBeats,
-                                                  state.loop.endBeats);
+    state.loop.startTime = start;
+    state.loop.endTime = end;
+    state.loop.enabled = true;
+    state.loop.startBeats = magda::TimelineUtils::secondsToBeats(start, state.tempo.bpm);
+    state.loop.endBeats = magda::TimelineUtils::secondsToBeats(end, state.tempo.bpm);
 
-    // Notify audio engine of loop enabled change
+    ProjectManager::getInstance().setLoopSettings(true, state.loop.startBeats, state.loop.endBeats);
+
     for (auto* listener : audioEngineListeners) {
-        listener->onLoopEnabledChanged(e.enabled);
+        listener->onLoopRegionChanged(start, end, true);
     }
 
     return ChangeFlags::Loop;

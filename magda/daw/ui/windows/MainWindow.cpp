@@ -830,6 +830,13 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
                 [this]() { mainView->getTimelineController().dispatch(StartPlaybackEvent{}); });
             live->setTransportStopDispatcher(
                 [this]() { mainView->getTimelineController().dispatch(StopPlaybackEvent{}); });
+            live->setTransportLoopDispatcher([this](bool enabled) {
+                // Route straight to the controller event — bypasses
+                // MainView::setLoopEnabled's UI-only selection-promotion behavior so
+                // a scripted toggle never silently overwrites the saved loop region
+                // just because the user happens to have a time selection active.
+                mainView->getTimelineController().dispatch(SetLoopEnabledEvent{enabled});
+            });
         }
     }
 

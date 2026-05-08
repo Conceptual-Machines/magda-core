@@ -33,8 +33,12 @@ class FaustAgent {
   private:
     static const char* getSystemPrompt();
     Result parseJson(const juce::String& text);
+    Result validateWithMCP(Result result);
+    juce::String buildUserMessage(const std::string& message) const;
 
     std::atomic<bool> shouldStop_{false};
+    std::string lastFailedSource_;
+    std::string lastCompileError_;
 };
 
 }  // namespace magda

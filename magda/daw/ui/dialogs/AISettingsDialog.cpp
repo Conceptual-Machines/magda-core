@@ -824,6 +824,27 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
         modeCombo_.setSelectedId(1, juce::dontSendNotification);
         updateModeUI();
+
+        // MCP Tools section
+        mcpSectionLabel_.setText("MCP Tools", juce::dontSendNotification);
+        mcpSectionLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
+        mcpSectionLabel_.setColour(juce::Label::textColourId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        addAndMakeVisible(mcpSectionLabel_);
+
+        faustMcpToggle_.setButtonText("Faust DSP");
+        faustMcpToggle_.setColour(juce::ToggleButton::textColourId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        faustMcpToggle_.setColour(juce::ToggleButton::tickColourId,
+                                  DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        addAndMakeVisible(faustMcpToggle_);
+
+        faustMcpHint_.setText("Validates AI-generated Faust code before loading (requires npx)",
+                              juce::dontSendNotification);
+        faustMcpHint_.setFont(FontManager::getInstance().getUIFont(10.5f));
+        faustMcpHint_.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        addAndMakeVisible(faustMcpHint_);
     }
 
     void resized() override {
@@ -853,6 +874,13 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             optimizeLabel_.setBounds(row.removeFromLeft(labelW));
             optimizeCombo_.setBounds(row.reduced(0, 2));
         }
+
+        // MCP Tools section
+        bounds.removeFromTop(16);
+        mcpSectionLabel_.setBounds(bounds.removeFromTop(22));
+        bounds.removeFromTop(4);
+        faustMcpToggle_.setBounds(bounds.removeFromTop(24));
+        faustMcpHint_.setBounds(bounds.removeFromTop(18).withTrimmedLeft(24));
     }
 
     void refreshProviderCombos() {
@@ -879,8 +907,17 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             providerCombo_.setSelectedId(providerCombo_.getItemId(0), juce::dontSendNotification);
     }
 
-    void load(const Config& config) {
+    void load(Config& config) {
         auto presetId = config.getAIPreset();
+
+        // MCP toggle
+        auto mcpServers = config.getMCPServers();
+        bool faustMcpEnabled = false;
+        for (const auto& srv : mcpServers) {
+            if (srv.name == "faust-mcp" && srv.enabled)
+                faustMcpEnabled = true;
+        }
+        faustMcpToggle_.setToggleState(faustMcpEnabled, juce::dontSendNotification);
 
         // Determine mode from preset
         if (presetId.starts_with("local") || presetId == magda::preset::LOCAL_EMBEDDED) {
@@ -928,7 +965,30 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         updateModeUI();
     }
 
-    void apply(Config& config) const {
+    void apply(Config& config) {
+        // MCP servers
+        auto mcpServers = config.getMCPServers();
+        bool wantFaustMcp = faustMcpToggle_.getToggleState();
+
+        // Find or create the faust-mcp entry
+        bool found = false;
+        for (auto& srv : mcpServers) {
+            if (srv.name == "faust-mcp") {
+                srv.enabled = wantFaustMcp;
+                found = true;
+                break;
+            }
+        }
+        if (!found && wantFaustMcp) {
+            Config::MCPServerConfig srv;
+            srv.name = "faust-mcp";
+            srv.command = "npx";
+            srv.args = {"faust-mcp-magda"};
+            srv.enabled = true;
+            mcpServers.push_back(std::move(srv));
+        }
+        config.setMCPServers(mcpServers);
+
         int mode = modeCombo_.getSelectedId();
         auto presetId = providerDisplayToPresetId(providerCombo_.getText());
         auto optimize = optimizeCombo_.getText();
@@ -1076,6 +1136,11 @@ class AISettingsDialog::ConfigPage : public juce::Component {
     juce::Label modelNameLabel_;
     juce::String savedProviderDisplay_;
     juce::String savedOptimize_ = "Quality";
+
+    // MCP Tools
+    juce::Label mcpSectionLabel_;
+    juce::ToggleButton faustMcpToggle_;
+    juce::Label faustMcpHint_;
 };
 
 // ============================================================================

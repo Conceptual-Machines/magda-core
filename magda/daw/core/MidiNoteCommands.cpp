@@ -197,8 +197,15 @@ DeleteMidiNoteCommand::DeleteMidiNoteCommand(ClipId clipId, size_t noteIndex)
 
 void DeleteMidiNoteCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || !clip->isMidi() || noteIndex_ >= clip->midiNotes.size()) {
+        return;
+    }
+
+    deletedNote_ = clip->midiNotes[noteIndex_];
+    const auto oldSize = clip->midiNotes.size();
     clipManager.removeMidiNote(clipId_, static_cast<int>(noteIndex_));
-    executed_ = true;
+    executed_ = clip->midiNotes.size() + 1 == oldSize;
 }
 
 void DeleteMidiNoteCommand::undo() {
@@ -361,7 +368,7 @@ void MoveMultipleMidiNotesCommand::execute() {
         oldValues_.reserve(moves_.size());
         for (const auto& move : moves_) {
             if (move.noteIndex < clip->midiNotes.size()) {
-                oldValues_.push_back({clip->midiNotes[move.noteIndex].startBeat,
+                oldValues_.push_back({move.noteIndex, clip->midiNotes[move.noteIndex].startBeat,
                                       clip->midiNotes[move.noteIndex].noteNumber});
             }
         }
@@ -395,11 +402,11 @@ void MoveMultipleMidiNotesCommand::undo() {
     }
 
     // Restore old values
-    for (size_t i = 0; i < moves_.size() && i < oldValues_.size(); ++i) {
-        size_t index = moves_[i].noteIndex;
+    for (const auto& oldValue : oldValues_) {
+        size_t index = oldValue.noteIndex;
         if (index < clip->midiNotes.size()) {
-            clip->midiNotes[index].startBeat = oldValues_[i].startBeat;
-            clip->midiNotes[index].noteNumber = oldValues_[i].noteNumber;
+            clip->midiNotes[index].startBeat = oldValue.startBeat;
+            clip->midiNotes[index].noteNumber = oldValue.noteNumber;
         }
     }
 
@@ -518,16 +525,15 @@ void MoveMidiNoteBetweenClipsCommand::execute() {
     if (!ClipOperations::constrainMidiNoteToVisibleRange(*destClip, newNote))
         return;
 
-    // Remove from source clip
-    clipManager.removeMidiNote(sourceClipId_, static_cast<int>(sourceNoteIndex_));
-    DBG("  Source clip has " << sourceClip->midiNotes.size() << " notes after removal");
-
-    // Add to destination clip
     size_t oldDestSize = destClip->midiNotes.size();
     if (!clipManager.addMidiNote(destClipId_, newNote) || destClip->midiNotes.size() <= oldDestSize)
         return;
     destNoteIndex_ = destClip->midiNotes.size() - 1;
     DBG("  Dest clip now has " << destClip->midiNotes.size() << " notes");
+
+    // Remove from source clip only after destination insertion succeeded.
+    clipManager.removeMidiNote(sourceClipId_, static_cast<int>(sourceNoteIndex_));
+    DBG("  Source clip has " << sourceClip->midiNotes.size() << " notes after removal");
 
     executed_ = true;
 }
@@ -581,7 +587,7 @@ void QuantizeMidiNotesCommand::execute() {
         for (size_t index : noteIndices_) {
             if (index < clip->midiNotes.size()) {
                 oldValues_.push_back(
-                    {clip->midiNotes[index].startBeat, clip->midiNotes[index].lengthBeats});
+                    {index, clip->midiNotes[index].startBeat, clip->midiNotes[index].lengthBeats});
             }
         }
     }
@@ -623,11 +629,11 @@ void QuantizeMidiNotesCommand::undo() {
     }
 
     // Restore old values
-    for (size_t i = 0; i < noteIndices_.size() && i < oldValues_.size(); ++i) {
-        size_t index = noteIndices_[i];
+    for (const auto& oldValue : oldValues_) {
+        size_t index = oldValue.noteIndex;
         if (index < clip->midiNotes.size()) {
-            clip->midiNotes[index].startBeat = oldValues_[i].startBeat;
-            clip->midiNotes[index].lengthBeats = oldValues_[i].lengthBeats;
+            clip->midiNotes[index].startBeat = oldValue.startBeat;
+            clip->midiNotes[index].lengthBeats = oldValue.lengthBeats;
         }
     }
 

@@ -31,6 +31,10 @@ class PreferencesDialog : public juce::Component {
 
   private:
     juce::TabbedComponent tabbedComponent{juce::TabbedButtonBar::TabsAtTop};
+    juce::Viewport generalPageViewport;
+    juce::Viewport coloursPageViewport;
+    juce::Viewport renderingPageViewport;
+    juce::Viewport pathsPageViewport;
 
     std::unique_ptr<GeneralPage> generalPage;
     std::unique_ptr<ColoursPage> coloursPage;
@@ -43,6 +47,7 @@ class PreferencesDialog : public juce::Component {
     juce::TextButton applyButton;
 
     void loadCurrentSettings();
+    void updatePageViewports();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PreferencesDialog)
 };

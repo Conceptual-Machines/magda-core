@@ -45,6 +45,12 @@ class TransportApiLive : public TransportApi {
         stopDispatch_ = std::move(fn);
     }
 
+    /** Same idea for loop — wired to TimelineController::dispatch(SetLoopEnabledEvent)
+     *  so API/script toggles use controller semantics without UI-only selection promotion. */
+    void setLoopDispatcher(std::function<void(bool)> fn) {
+        loopDispatch_ = std::move(fn);
+    }
+
     void play() override;
     void stop() override;
     void setRecording(bool recording) override;
@@ -63,6 +69,7 @@ class TransportApiLive : public TransportApi {
     EditGetter getEdit_;
     TransportFn playDispatch_;
     TransportFn stopDispatch_;
+    std::function<void(bool)> loopDispatch_;
 };
 
 }  // namespace magda

@@ -1816,7 +1816,11 @@ void MainView::SelectionOverlayComponent::paintTimeSelectionBand(juce::Graphics&
         return blueTinted.withAlpha(px.getAlpha());
     };
 
-    auto snapshot = owner.trackContentPanel->createComponentSnapshot(panelRect, false, 1.0f);
+    // Force a software image: NativeImageType on Windows is Direct2D-backed,
+    // and BitmapData pixel writes don't round-trip back to the GPU surface,
+    // so the inversion below would silently no-op on Windows.
+    auto snapshot = owner.trackContentPanel->createComponentSnapshot(
+        panelRect, false, 1.0f, juce::SoftwareImageType{});
     if (snapshot.isValid() && snapshot.getWidth() > 0 && snapshot.getHeight() > 0) {
         juce::Image::BitmapData data(snapshot, juce::Image::BitmapData::readWrite);
         for (int y = 0; y < data.height; ++y) {
@@ -1830,7 +1834,8 @@ void MainView::SelectionOverlayComponent::paintTimeSelectionBand(juce::Graphics&
     }
 
     if (owner.gridOverlay) {
-        auto gridSnapshot = owner.gridOverlay->createComponentSnapshot(bandRect, false, 1.0f);
+        auto gridSnapshot = owner.gridOverlay->createComponentSnapshot(
+            bandRect, false, 1.0f, juce::SoftwareImageType{});
         if (gridSnapshot.isValid() && gridSnapshot.getWidth() > 0 && gridSnapshot.getHeight() > 0) {
             juce::Image::BitmapData data(gridSnapshot, juce::Image::BitmapData::readWrite);
             for (int y = 0; y < data.height; ++y) {
