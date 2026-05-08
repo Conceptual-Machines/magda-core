@@ -1153,7 +1153,11 @@ static void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventT
         return a.beatPosition < b.beatPosition;
     });
 
-    constexpr double kStepSize = 1.0 / 64.0;  // 1/64 beat between interpolated events
+    // 1/16 beat is finer than any synth can audibly resolve (~32 Hz at 120 BPM)
+    // and emits 4x fewer events than the previous 1/64. Density above this was
+    // tipping fragile synths (e.g. Wave Manuel) into deadlock at clip starts /
+    // loop wraps, where catch-up controller events collapse into one buffer.
+    constexpr double kStepSize = 1.0 / 16.0;
 
     // Tracktion Engine stores all controller values in 14-bit range (0-16383).
     // CC values (0-127) must be left-shifted by 7 bits; pitch bend is already 14-bit.
@@ -1196,6 +1200,14 @@ static void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventT
 
         double v1 = static_cast<double>(ev.value);
         double v2 = static_cast<double>(next.value);
+
+        // Skip dense interpolation across constant-value segments: emitting
+        // dozens of identical pitch-wheel/CC events every beat is pure waste
+        // and can deadlock fragile synths when bursts collapse into one buffer.
+        if (static_cast<int>(std::round(v1)) == static_cast<int>(std::round(v2))) {
+            addEvent(ev.beatPosition, ev.value);
+            continue;
+        }
 
         if (ev.curveType == MidiCurveType::Linear) {
             // Generate interpolated events every kStepSize beats
