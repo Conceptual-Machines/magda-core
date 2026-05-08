@@ -79,6 +79,15 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     void clipPropertyChanged(ClipId clipId) override;
 
     /**
+     * @brief Handle batched clip property changes synchronously
+     * @param clipIds The clips whose properties changed
+     *
+     * Deduplicates IDs and coalesces playback graph reallocation while still
+     * leaving TE state up to date before returning.
+     */
+    void clipPropertiesChanged(const std::vector<ClipId>& clipIds) override;
+
+    /**
      * @brief Handle clip selection changes (no-op)
      * @param clipId The newly selected clip
      */
@@ -278,13 +287,24 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     void reallocateAndNotify();
 
     /**
+     * @brief Sync one clip property notification into Tracktion Engine
+     * @return true if this sync changed topology requiring graph reallocation
+     */
+    bool syncClipPropertyToEngine(ClipId clipId);
+
+    /**
+     * @brief Sync arrangement clip data and report whether graph reallocation is needed
+     */
+    bool syncArrangementClipToEngine(ClipId clipId);
+
+    /**
      * @brief Sync MIDI clip properties to Tracktion Engine
      * @param clipId The MAGDA clip ID
      * @param clip The ClipInfo from ClipManager
      *
      * Handles position, looping, offset, and note data synchronization
      */
-    void syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip);
+    bool syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip);
 
     /**
      * @brief Sync audio clip properties to Tracktion Engine
@@ -294,7 +314,7 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      * Handles position, speed, tempo sync, loop, offset, pitch, fades, etc.
      * Complex logic for beat-based vs. time-based properties
      */
-    void syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip);
+    bool syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip);
 
     /**
      * @brief Configure autoTempo on a session audio clip in TE

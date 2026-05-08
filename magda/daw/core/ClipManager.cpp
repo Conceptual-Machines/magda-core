@@ -645,6 +645,10 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     clips_[rightClip.id] = rightClip;
     addToSessionSlotIndex(clips_[rightClip.id]);
 
+    // Left clip mutated in place (length, midiNotes, loop range, fades, beats);
+    // notifyClipsChanged carries only structural info (right clip added), so the
+    // mutated left clip needs its own property notification.
+    notifyClipPropertyChanged(clipId);
     notifyClipsChanged();
 
     return rightClip.id;

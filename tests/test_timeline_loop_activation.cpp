@@ -1,0 +1,177 @@
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include "magda/daw/api/transport_api_live.hpp"
+#include "magda/daw/ui/state/TimelineController.hpp"
+
+namespace {
+
+class TestAudioEngineListener : public magda::AudioEngineListener {
+  public:
+    void onTransportPlay(double) override {}
+    void onTransportStop(double) override {}
+    void onTransportPause() override {}
+    void onTransportRecord(double) override {}
+    void onTransportStopRecording() override {}
+    void onEditPositionChanged(double) override {}
+    void onTempoChanged(double) override {}
+    void onTimeSignatureChanged(int, int) override {}
+
+    void onLoopRegionChanged(double startTime, double endTime, bool enabled) override {
+        ++loopRegionChangedCount;
+        lastLoopStart = startTime;
+        lastLoopEnd = endTime;
+        lastLoopEnabled = enabled;
+    }
+
+    void onLoopEnabledChanged(bool enabled) override {
+        ++loopEnabledChangedCount;
+        lastLoopEnabled = enabled;
+    }
+
+    int loopRegionChangedCount = 0;
+    int loopEnabledChangedCount = 0;
+    double lastLoopStart = -1.0;
+    double lastLoopEnd = -1.0;
+    bool lastLoopEnabled = false;
+};
+
+}  // namespace
+
+TEST_CASE("Enabling loop with no region seeds a 1-bar region at the playhead",
+          "[timeline][loop][regression]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener;
+    controller.addAudioEngineListener(&listener);
+
+    controller.dispatch(magda::SetEditPositionEvent{12.5});
+    controller.dispatch(magda::SetLoopEnabledEvent{true});
+
+    const auto& loop = controller.getState().loop;
+    REQUIRE(loop.enabled);
+    REQUIRE(loop.isValid());
+    // 1 bar at 120 BPM 4/4 = 2.0s
+    REQUIRE(loop.startTime == Catch::Approx(12.5));
+    REQUIRE(loop.endTime == Catch::Approx(14.5));
+
+    REQUIRE(listener.loopRegionChangedCount == 1);
+    REQUIRE(listener.lastLoopEnabled);
+
+    controller.removeAudioEngineListener(&listener);
+}
+
+TEST_CASE("Enabling loop with an existing valid region keeps it in place",
+          "[timeline][loop][regression]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener;
+
+    // Pre-existing loop region, disabled.
+    controller.dispatch(magda::SetLoopRegionEvent{4.0, 8.0});
+    controller.dispatch(magda::SetLoopEnabledEvent{false});
+
+    controller.addAudioEngineListener(&listener);
+
+    // Move the playhead far away from the loop region.
+    controller.dispatch(magda::SetEditPositionEvent{12.0});
+
+    // Re-enable the loop. The region must NOT relocate to the playhead.
+    controller.dispatch(magda::SetLoopEnabledEvent{true});
+
+    const auto& loop = controller.getState().loop;
+    REQUIRE(loop.enabled);
+    REQUIRE(loop.startTime == Catch::Approx(4.0));
+    REQUIRE(loop.endTime == Catch::Approx(8.0));
+
+    // Toggling enabled-only should fire onLoopEnabledChanged, not onLoopRegionChanged.
+    REQUIRE(listener.loopRegionChangedCount == 0);
+    REQUIRE(listener.loopEnabledChangedCount == 1);
+    REQUIRE(listener.lastLoopEnabled);
+
+    controller.removeAudioEngineListener(&listener);
+}
+
+TEST_CASE("Disabling loop preserves the region for later re-enable",
+          "[timeline][loop][regression]") {
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetLoopRegionEvent{4.0, 8.0});
+    controller.dispatch(magda::SetLoopEnabledEvent{false});
+
+    const auto& loop = controller.getState().loop;
+    REQUIRE_FALSE(loop.enabled);
+    REQUIRE(loop.isValid());
+    REQUIRE(loop.startTime == Catch::Approx(4.0));
+    REQUIRE(loop.endTime == Catch::Approx(8.0));
+
+    controller.dispatch(magda::SetLoopEnabledEvent{true});
+    REQUIRE(loop.enabled);
+    REQUIRE(loop.startTime == Catch::Approx(4.0));
+    REQUIRE(loop.endTime == Catch::Approx(8.0));
+}
+
+TEST_CASE("Enabling loop is a no-op when already enabled with same region", "[timeline][loop]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener;
+
+    controller.dispatch(magda::SetLoopRegionEvent{4.0, 8.0});
+    controller.addAudioEngineListener(&listener);
+
+    controller.dispatch(magda::SetLoopEnabledEvent{true});
+
+    REQUIRE(listener.loopRegionChangedCount == 0);
+    REQUIRE(listener.loopEnabledChangedCount == 0);
+
+    controller.removeAudioEngineListener(&listener);
+}
+
+TEST_CASE("Enabling loop is skipped when timeline is too short to host even a tiny region",
+          "[timeline][loop][regression]") {
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetTimelineLengthEvent{0.005});
+    controller.dispatch(magda::SetLoopEnabledEvent{true});
+
+    REQUIRE_FALSE(controller.getState().loop.enabled);
+    REQUIRE_FALSE(controller.getState().loop.isValid());
+}
+
+TEST_CASE("TransportApiLive dispatches loop changes through controller path",
+          "[timeline][loop][api][regression]") {
+    magda::TransportApiLive transport;
+
+    int dispatchCount = 0;
+    bool lastEnabled = false;
+    transport.setLoopDispatcher([&](bool enabled) {
+        ++dispatchCount;
+        lastEnabled = enabled;
+    });
+
+    transport.setLoopEnabled(true);
+
+    REQUIRE(dispatchCount == 1);
+    REQUIRE(lastEnabled);
+}
+
+TEST_CASE("SetLoopEnabledEvent ignores active time selection",
+          "[timeline][loop][api][regression]") {
+    // A scripted/programmatic loop toggle must not promote a UI time selection into
+    // a loop region. Selection-promotion is a UI button affordance, not a controller
+    // semantic. Routing TransportApi -> SetLoopEnabledEvent (instead of through
+    // MainView::setLoopEnabled) is what enforces this; this test locks the controller
+    // half of the contract.
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetLoopRegionEvent{4.0, 8.0});
+    controller.dispatch(magda::SetLoopEnabledEvent{false});
+
+    // User has a time selection active in the UI somewhere unrelated to the loop.
+    controller.dispatch(magda::SetTimeSelectionEvent{20.0, 24.0, {}});
+
+    controller.dispatch(magda::SetLoopEnabledEvent{true});
+
+    const auto& loop = controller.getState().loop;
+    REQUIRE(loop.enabled);
+    // Region must be the original [4, 8], NOT promoted to the selection [20, 24].
+    REQUIRE(loop.startTime == Catch::Approx(4.0));
+    REQUIRE(loop.endTime == Catch::Approx(8.0));
+}

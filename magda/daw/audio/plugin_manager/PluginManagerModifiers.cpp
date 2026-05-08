@@ -675,20 +675,6 @@ void PluginManager::rebuildSidechainLFOCache() {
                                                          ? modes[static_cast<size_t>(i)]
                                                          : LFOTriggerMode::Free;
         }
-        if (entry.count > 0 && cacheRebuildLogCount_++ < 3) {
-            DBG("[SC-CACHE] track=" << track.id << " totalLFOs=" << entry.count
-                                    << " selfTrack=" << selfTrackCount
-                                    << " crossTrack=" << (entry.count - selfTrackCount));
-            for (int i = 0; i < entry.count; ++i) {
-                auto* lfo = entry.lfos[static_cast<size_t>(i)];
-                DBG("[SC-CACHE]   LFO["
-                    << i << "] crossTrack=" << (int)entry.isCrossTrack[static_cast<size_t>(i)]
-                    << " trigMode=" << (int)entry.trigMode[static_cast<size_t>(i)]
-                    << " gated=" << (int)lfo->isGated()
-                    << " skipNativeResync=" << (int)lfo->getSkipNativeResync()
-                    << " syncType=" << juce::roundToInt(lfo->syncTypeParam->getCurrentValue()));
-            }
-        }
     }
 
     // Atomically swap to the newly built buffer. The audio thread will see
