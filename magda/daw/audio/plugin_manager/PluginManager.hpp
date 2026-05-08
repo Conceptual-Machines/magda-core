@@ -628,7 +628,6 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     std::atomic<SidechainCache*> activeCache_{&cacheBuffers_[0]};
     int writeCacheIndex_ =
         1;  // message thread only — starts at 1 so first write goes to inactive buffer
-    int cacheRebuildLogCount_ = 0;  // throttle DBG spam
 
     // When true, skip gating during offline render and block full device resync.
     std::atomic<bool> renderingActive_{false};
