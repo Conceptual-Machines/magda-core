@@ -108,6 +108,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testPasteAudioClipResolvesOverlap();
         testCreateMidiClipResolvesOverlap();
         testMidiSyncClipsNotesToVisibleRangeAfterResize();
+        testMidiSyncSkipsAllRestPitchBendButKeepsRealCurves();
         testMoveClipNoOverlapDoesNotMutateNeighbours();
         testMoveClipToTrackResolvesOverlapOnDestination();
     }
@@ -1651,6 +1652,74 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         }
 
         expect(findNote(64) == nullptr, "Stale note beyond resized clip end should not sync to TE");
+    }
+
+    void testMidiSyncSkipsAllRestPitchBendButKeepsRealCurves() {
+        beginTest("MIDI sync skips pitch-bend when every event is at wheel rest");
+
+        auto countPitchWheelEvents = [](te::MidiClip& teClip) {
+            int count = 0;
+            for (auto* ev : teClip.getSequence().getControllerEvents()) {
+                if (ev != nullptr && ev->getType() == te::MidiControllerEvent::pitchWheelType)
+                    ++count;
+            }
+            return count;
+        };
+
+        // ---- Case 1: every pitch-bend point at rest (8192) → emit nothing ----
+        {
+            Fixture f;
+            auto& cm = ClipManager::getInstance();
+
+            auto clipId = cm.createMidiClipBeats(f.trackId, 0.0, 4.0, ClipView::Arrangement);
+            auto* clip = cm.getClip(clipId);
+            expect(clip != nullptr, "Clip should be created");
+            if (clip == nullptr)
+                return;
+
+            clip->midiPitchBendData = {
+                {8192, 0.0, MidiCurveType::Linear, 0.0, {}, {}},
+                {8192, 1.0, MidiCurveType::Linear, 0.0, {}, {}},
+                {8192, 2.0, MidiCurveType::Step, 0.0, {}, {}},
+            };
+
+            f.clipSync->syncClipToEngine(clipId);
+            auto* teClip = f.getTeMidiClip(clipId);
+            expect(teClip != nullptr, "TE clip should exist after sync");
+            if (teClip == nullptr)
+                return;
+
+            expectEquals(countPitchWheelEvents(*teClip), 0,
+                         "All-at-rest pitch-bend should be filtered out entirely");
+        }
+
+        // ---- Case 2: at least one non-rest point → curve must still be emitted ----
+        {
+            Fixture f;
+            auto& cm = ClipManager::getInstance();
+
+            auto clipId = cm.createMidiClipBeats(f.trackId, 0.0, 4.0, ClipView::Arrangement);
+            auto* clip = cm.getClip(clipId);
+            expect(clip != nullptr);
+            if (clip == nullptr)
+                return;
+
+            // Bend up then return to rest — the return-to-rest event must NOT be dropped.
+            clip->midiPitchBendData = {
+                {8192, 0.0, MidiCurveType::Linear, 0.0, {}, {}},
+                {12000, 1.0, MidiCurveType::Linear, 0.0, {}, {}},
+                {8192, 2.0, MidiCurveType::Step, 0.0, {}, {}},
+            };
+
+            f.clipSync->syncClipToEngine(clipId);
+            auto* teClip = f.getTeMidiClip(clipId);
+            expect(teClip != nullptr);
+            if (teClip == nullptr)
+                return;
+
+            expect(countPitchWheelEvents(*teClip) > 0,
+                   "Real bend curve should still produce pitch-wheel events");
+        }
     }
 
     void testMoveClipNoOverlapDoesNotMutateNeighbours() {
