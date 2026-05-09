@@ -6,6 +6,7 @@
 
 #include "ArpeggiatorUI.hpp"
 #include "ChorusUI.hpp"
+#include "CompiledFilterCurveView.hpp"
 #include "CompressorUI.hpp"
 #include "DelayUI.hpp"
 #include "DrumGridUI.hpp"
@@ -221,6 +222,7 @@ class DeviceSlotComponent : public NodeComponent,
     bool isArpeggiator_ = false;
     bool isStepSequencer_ = false;
     bool isFaust_ = false;
+    bool isCompiledFaustFilter_ = false;
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 
@@ -268,6 +270,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<UtilityUI> utilityUI_;
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<FaustCustomView> faustCustomView_;
+    std::unique_ptr<CompiledFilterCurveView> compiledFilterCurveView_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;

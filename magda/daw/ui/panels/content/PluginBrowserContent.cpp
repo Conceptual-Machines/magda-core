@@ -368,15 +368,19 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     list.push_back(PluginBrowserInfo::createInternal("Phaser", "phaser", false, "Modulation"));
     list.push_back(PluginBrowserInfo::createInternal("Filter", "lowpass", false, "Filter"));
     list.push_back(PluginBrowserInfo::createInternal(
-        "SVF", audio::compiled::MagdaSVFCompiledPlugin::xmlTypeName, false, "Filter"));
+        "Filter - SVF", audio::compiled::MagdaSVFCompiledPlugin::xmlTypeName, false, "Filter"));
     list.push_back(PluginBrowserInfo::createInternal(
-        "Ladder", audio::compiled::MagdaLadderCompiledPlugin::xmlTypeName, false, "Filter"));
+        "Filter - Ladder", audio::compiled::MagdaLadderCompiledPlugin::xmlTypeName, false,
+        "Filter"));
     list.push_back(PluginBrowserInfo::createInternal(
-        "Korg 35", audio::compiled::MagdaKorg35CompiledPlugin::xmlTypeName, false, "Filter"));
+        "Filter - Korg 35", audio::compiled::MagdaKorg35CompiledPlugin::xmlTypeName, false,
+        "Filter"));
     list.push_back(PluginBrowserInfo::createInternal(
-        "Oberheim", audio::compiled::MagdaOberheimCompiledPlugin::xmlTypeName, false, "Filter"));
+        "Filter - Oberheim", audio::compiled::MagdaOberheimCompiledPlugin::xmlTypeName, false,
+        "Filter"));
     list.push_back(PluginBrowserInfo::createInternal(
-        "Sallen-Key", audio::compiled::MagdaSallenKeyCompiledPlugin::xmlTypeName, false, "Filter"));
+        "Filter - Sallen-Key", audio::compiled::MagdaSallenKeyCompiledPlugin::xmlTypeName, false,
+        "Filter"));
     list.push_back(PluginBrowserInfo::createInternal("Pitch Shift", "pitchshift", false, "Pitch"));
     list.push_back(
         PluginBrowserInfo::createInternal("IR Reverb", "impulseresponse", false, "Reverb"));

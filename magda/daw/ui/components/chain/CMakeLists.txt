@@ -7,6 +7,8 @@ target_sources(magda_daw_app PRIVATE
     ParamHostComponent.cpp
     StandardDeviceLayout.cpp
     FaustDeviceLayout.cpp
+    CompiledFaustDeviceLayout.cpp
+    CompiledFilterCurveView.cpp
     ToneGeneratorUI.cpp
     SamplerUI.cpp
     DrumGridUI.cpp
@@ -86,5 +88,7 @@ target_sources(magda_daw_app PRIVATE
     DeviceParamLayout.hpp
     StandardDeviceLayout.hpp
     FaustDeviceLayout.hpp
+    CompiledFaustDeviceLayout.hpp
+    CompiledFilterCurveView.hpp
     ParamHostComponent.hpp
 )

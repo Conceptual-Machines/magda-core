@@ -12,6 +12,7 @@ namespace magda::daw::audio::compiled {
 const char* MagdaKorg35CompiledPlugin::xmlTypeName = "magda_korg35";
 
 MagdaKorg35CompiledPlugin::MagdaKorg35CompiledPlugin(const te::PluginCreationInfo& info)
-    : CompiledFaustPluginBase(info, std::make_unique<MagdaKorg35Dsp>(), "Korg 35", xmlTypeName) {}
+    : CompiledFaustPluginBase(info, std::make_unique<MagdaKorg35Dsp>(), "Filter - Korg 35",
+                              xmlTypeName) {}
 
 }  // namespace magda::daw::audio::compiled

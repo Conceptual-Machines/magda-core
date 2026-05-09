@@ -12,7 +12,7 @@ namespace magda::daw::audio::compiled {
 const char* MagdaOberheimCompiledPlugin::xmlTypeName = "magda_oberheim";
 
 MagdaOberheimCompiledPlugin::MagdaOberheimCompiledPlugin(const te::PluginCreationInfo& info)
-    : CompiledFaustPluginBase(info, std::make_unique<MagdaOberheimDsp>(), "Oberheim", xmlTypeName) {
-}
+    : CompiledFaustPluginBase(info, std::make_unique<MagdaOberheimDsp>(), "Filter - Oberheim",
+                              xmlTypeName) {}
 
 }  // namespace magda::daw::audio::compiled

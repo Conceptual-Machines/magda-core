@@ -209,8 +209,11 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
     auto area = getLocalBounds();
 
     area.removeFromTop(2);
-    auto paginationArea = area.removeFromTop(PAGINATION_HEIGHT);
-    area.removeFromTop(4);
+    juce::Rectangle<int> paginationArea;
+    if (layout_->wantsPagination()) {
+        paginationArea = area.removeFromTop(PAGINATION_HEIGHT);
+        area.removeFromTop(4);
+    }
 
     if (layout_->wantsPagination()) {
         placeNavArrow(*prevPageButton_, paginationArea, true);

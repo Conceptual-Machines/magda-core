@@ -12,6 +12,7 @@ namespace magda::daw::audio::compiled {
 const char* MagdaLadderCompiledPlugin::xmlTypeName = "magda_ladder";
 
 MagdaLadderCompiledPlugin::MagdaLadderCompiledPlugin(const te::PluginCreationInfo& info)
-    : CompiledFaustPluginBase(info, std::make_unique<MagdaLadderDsp>(), "Ladder", xmlTypeName) {}
+    : CompiledFaustPluginBase(info, std::make_unique<MagdaLadderDsp>(), "Filter - Ladder",
+                              xmlTypeName) {}
 
 }  // namespace magda::daw::audio::compiled

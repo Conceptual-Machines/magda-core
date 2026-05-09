@@ -12,7 +12,7 @@ namespace magda::daw::audio::compiled {
 const char* MagdaSallenKeyCompiledPlugin::xmlTypeName = "magda_sallen_key";
 
 MagdaSallenKeyCompiledPlugin::MagdaSallenKeyCompiledPlugin(const te::PluginCreationInfo& info)
-    : CompiledFaustPluginBase(info, std::make_unique<MagdaSallenKeyDsp>(), "Sallen-Key",
+    : CompiledFaustPluginBase(info, std::make_unique<MagdaSallenKeyDsp>(), "Filter - Sallen-Key",
                               xmlTypeName) {}
 
 }  // namespace magda::daw::audio::compiled

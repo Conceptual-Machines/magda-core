@@ -12,6 +12,6 @@ namespace magda::daw::audio::compiled {
 const char* MagdaSVFCompiledPlugin::xmlTypeName = "magda_svf";
 
 MagdaSVFCompiledPlugin::MagdaSVFCompiledPlugin(const te::PluginCreationInfo& info)
-    : CompiledFaustPluginBase(info, std::make_unique<MagdaSVFDsp>(), "SVF", xmlTypeName) {}
+    : CompiledFaustPluginBase(info, std::make_unique<MagdaSVFDsp>(), "Filter - SVF", xmlTypeName) {}
 
 }  // namespace magda::daw::audio::compiled
