@@ -16,7 +16,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-DEFAULT_MODEL = "laion/larger_clap_music"
+DEFAULT_MODEL = "laion/clap-htsat-unfused"
 TARGET_SR = 48_000
 CHUNK_SECONDS = 10  # CLAP nominal window
 VECTOR_DIM = 512

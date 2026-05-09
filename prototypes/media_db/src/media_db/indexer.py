@@ -38,7 +38,7 @@ def index_directory(
     conn: sqlite3.Connection,
     embedder: Embedder | None,
     tag_list: list[str] | None,
-    tag_threshold: float = 0.25,
+    tag_threshold: float = 0.15,
     max_tags: int = 8,
 ) -> IndexResult:
     files = list(scan.walk(root))

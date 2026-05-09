@@ -16,7 +16,7 @@ from . import tags as tags_mod
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
 
-DEFAULT_MODEL = "laion/larger_clap_music"
+DEFAULT_MODEL = "laion/clap-htsat-unfused"
 
 
 @app.command()
@@ -33,7 +33,7 @@ def scan(
     model: str = typer.Option(DEFAULT_MODEL, "--model"),
     no_embed: bool = typer.Option(False, "--no-embed", help="Skip CLAP, only deterministic features."),
     tags_file: Optional[Path] = typer.Option(None, "--tags-file", help="YAML list of tag prompts."),
-    tag_threshold: float = typer.Option(0.25, "--tag-threshold"),
+    tag_threshold: float = typer.Option(0.15, "--tag-threshold"),
     max_tags: int = typer.Option(8, "--max-tags"),
 ) -> None:
     """Walk DIRECTORY, index audio/preset/clip files into DB."""
