@@ -16,7 +16,7 @@
 #include "FourOscUI.hpp"
 #include "ImpulseResponseUI.hpp"
 #include "NodeComponent.hpp"
-#include "ParamGridComponent.hpp"
+#include "ParamHostComponent.hpp"
 #include "ParamSlotComponent.hpp"
 #include "PhaserUI.hpp"
 #include "PitchShiftUI.hpp"
@@ -236,8 +236,9 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> onButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
 
-    // Parameter grid (owns slots + pagination)
-    std::unique_ptr<ParamGridComponent> paramGrid_;
+    // Parameter host (owns slots + pagination, delegates layout to a
+    // DeviceParamLayout strategy chosen at construction).
+    std::unique_ptr<ParamHostComponent> paramGrid_;
 
     // Custom UI for internal devices
     std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;

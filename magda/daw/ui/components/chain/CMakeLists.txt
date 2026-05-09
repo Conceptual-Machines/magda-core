@@ -4,7 +4,9 @@ target_sources(magda_daw_app PRIVATE
     RackComponent.cpp
     ChainPanel.cpp
     DeviceSlotComponent.cpp
-    ParamGridComponent.cpp
+    ParamHostComponent.cpp
+    StandardDeviceLayout.cpp
+    FaustDeviceLayout.cpp
     ToneGeneratorUI.cpp
     SamplerUI.cpp
     DrumGridUI.cpp
@@ -81,4 +83,8 @@ target_sources(magda_daw_app PRIVATE
     ParamModulationPainter.hpp
     ParamLinkMenu.hpp
     ParamWidgetSetup.hpp
+    DeviceParamLayout.hpp
+    StandardDeviceLayout.hpp
+    FaustDeviceLayout.hpp
+    ParamHostComponent.hpp
 )

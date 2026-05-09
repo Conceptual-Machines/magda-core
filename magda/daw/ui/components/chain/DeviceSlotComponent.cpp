@@ -8,11 +8,13 @@
 #include "../../../../agents/sound_design_agent.hpp"
 #include "AIPanelComponent.hpp"
 #include "DeviceSlotHeaderLayout.hpp"
+#include "FaustDeviceLayout.hpp"
 #include "MacroPanelComponent.hpp"
 #include "ModsPanelComponent.hpp"
 #include "NodeHeaderStyles.hpp"
-#include "ParamGridComponent.hpp"
+#include "ParamHostComponent.hpp"
 #include "ParamSlotComponent.hpp"
+#include "StandardDeviceLayout.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
@@ -451,7 +453,13 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     }
 
     // Create parameter grid (owns slots + pagination)
-    paramGrid_ = std::make_unique<ParamGridComponent>();
+    // Pick the layout strategy for this device family. Faust devices honour
+    // their `[idx:N]` annotations directly so they get a sparse-aware
+    // layout; everything else uses the 8x4 contiguous standard layout.
+    auto layout =
+        isFaust_ ? std::unique_ptr<DeviceParamLayout>(std::make_unique<FaustDeviceLayout>())
+                 : std::unique_ptr<DeviceParamLayout>(std::make_unique<StandardDeviceLayout>());
+    paramGrid_ = std::make_unique<ParamHostComponent>(std::move(layout));
     paramGrid_->onPrevPage = [this]() { goToPrevPage(); };
     paramGrid_->onNextPage = [this]() { goToNextPage(); };
     addAndMakeVisible(*paramGrid_);
