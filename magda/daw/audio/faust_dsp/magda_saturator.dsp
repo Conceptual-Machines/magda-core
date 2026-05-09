@@ -116,13 +116,19 @@ channel(x) = (x * (1.0 - mix) + sat_chain(x) * mix) : soft_limit;
 // curve soft-clips toward ±1.0 instead of slamming the converter. Catches
 // the case where Drive + Output + Mode=Hard would otherwise push past
 // 0 dBFS, without sneaking compression into low-level transients.
+// Faust convention: select2(s, A, B) → A when s=0, B when s=1. So put the
+// above-knee soft-clip branch FIRST (for |x| >= SOFT_KNEE, where the
+// comparison is false) and the passthrough SECOND (|x| < SOFT_KNEE, true).
+// Reversed order silently turns the limiter into a constant-amplitude
+// generator that pushes any small signal up to ±0.7 — heard as a square
+// wave at the input zero-crossings.
 SOFT_KNEE = 0.85;
 soft_limit(x) = select2(ma.fabs(x) < SOFT_KNEE,
-                        x,
                         ma.signum(x)
                           * (SOFT_KNEE
                              + (1.0 - SOFT_KNEE)
                                * ma.tanh((ma.fabs(x) - SOFT_KNEE)
-                                         / (1.0 - SOFT_KNEE))));
+                                         / (1.0 - SOFT_KNEE))),
+                        x);
 
 process = channel, channel;
