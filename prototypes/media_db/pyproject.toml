@@ -1,0 +1,44 @@
+[project]
+name = "media-db-prototype"
+version = "0.1.0"
+description = "Media database prototype for MAGDA: indexes audio samples, presets, and clips with CLAP semantic embeddings and deterministic features."
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "transformers>=4.40",
+    "torch>=2.2",
+    "librosa>=0.10",
+    "soundfile>=0.12",
+    "numpy>=1.26,<3",
+    "typer>=0.12",
+    "rich>=13.7",
+    "xxhash>=3.4",
+    "pyyaml>=6.0",
+    "onnxruntime>=1.17",
+    "onnxscript>=0.1",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+media-db = "media_db.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/media_db"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/media_db/web/static" = "media_db/web/static"
+"src/media_db/schema.sql" = "media_db/schema.sql"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
