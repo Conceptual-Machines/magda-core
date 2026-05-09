@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Media DB</title>
+<style>
+  :root {
+    --bg: #0e0f12;
+    --panel: #15171c;
+    --row: #1a1d24;
+    --row-hover: #21252e;
+    --text: #e6e8ec;
+    --muted: #7a818c;
+    --accent: #6aa9ff;
+    --accent-2: #b48bff;
+    --border: #2a2e38;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, system-ui, sans-serif;
+         background: var(--bg); color: var(--text); font-size: 13px; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+    padding: 10px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  .topbar select, .topbar input {
+    padding: 5px 8px; font-size: 12px;
+    background: var(--row); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px; outline: none;
+  }
+  .topbar input.q { flex: 0 1 280px; min-width: 180px; }
+  .topbar input.bpm { width: 78px; }
+  .topbar select:focus, .topbar input:focus { border-color: var(--accent); }
+  .topbar .stats { margin-left: auto; color: var(--muted); font-size: 11px; }
+  .topbar button {
+    padding: 5px 10px; font-size: 12px;
+    background: var(--row); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 4px; cursor: pointer;
+  }
+  .topbar button:hover { color: var(--text); }
+
+  #results { padding: 0; }
+  .row {
+    display: grid;
+    grid-template-columns: 44px 1fr 260px;
+    gap: 12px; align-items: center;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .row:hover { background: var(--row-hover); }
+  .row .score {
+    font-variant-numeric: tabular-nums; color: var(--accent);
+    font-size: 13px; text-align: right; padding-right: 4px;
+  }
+  .row .score.faded { color: var(--muted); opacity: 0.5; }
+
+  .row .center { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .name {
+    font-size: 13px; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pack { font-size: 11px; color: var(--muted);
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .meta {
+    display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+    font-size: 11px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .meta .pill {
+    padding: 1px 7px; font-size: 10px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; text-transform: lowercase; letter-spacing: 0.02em;
+  }
+  .meta .pill.family { color: var(--accent-2); border-color: var(--accent-2); }
+  .meta .pill.shape  { color: var(--text); }
+  .meta strong { color: var(--text); font-weight: 500; }
+  .meta .tag {
+    color: var(--muted); font-size: 10px;
+    padding: 1px 6px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .meta .tag.path { color: var(--accent); border-color: var(--accent); }
+  .meta .tag strong { color: var(--text); margin-left: 4px; font-size: 10px; }
+
+  .row audio { width: 260px; height: 30px; }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <input class="q" id="q" type="text" placeholder="search (optional) — leave blank to browse">
+  <select id="family">
+    <option value="">all families</option>
+    <option value="drum">drum</option>
+    <option value="bass">bass</option>
+    <option value="lead">lead</option>
+    <option value="pad">pad</option>
+    <option value="keys">keys</option>
+    <option value="guitar">guitar</option>
+    <option value="orchestral">orchestral</option>
+    <option value="vocal">vocal</option>
+    <option value="fx">fx</option>
+    <option value="unknown">unknown</option>
+  </select>
+  <select id="shape">
+    <option value="">any shape</option>
+    <option value="one-shot">one-shot</option>
+    <option value="loop">loop</option>
+    <option value="sustained">sustained</option>
+  </select>
+  <select id="tonal">
+    <option value="">tonal: any</option>
+    <option value="true">tonal</option>
+    <option value="false">atonal</option>
+  </select>
+  <input class="bpm" id="bpmMin" type="number" placeholder="bpm min" step="1">
+  <input class="bpm" id="bpmMax" type="number" placeholder="bpm max" step="1">
+  <button id="reset">reset</button>
+  <span class="stats" id="stats">…</span>
+</div>
+
+<div id="results"><div class="empty">loading…</div></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmtBpm = (b) => b ? b.toFixed(0) : '–';
+const fmtDur = (d) => d ? (d < 1 ? d.toFixed(2) : d.toFixed(1)) + 's' : '–';
+const fmtScore = (s) => (s == null) ? '' : s.toFixed(2);
+const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+
+async function loadStats() {
+  try {
+    const r = await fetch('/stats').then(r => r.json());
+    const fams = Object.entries(r.families)
+      .filter(([k,v])=>v).sort((a,b)=>b[1]-a[1])
+      .map(([k,v])=>`${v} ${k}`).join('  ·  ');
+    $('stats').textContent = fams;
+  } catch (e) { $('stats').textContent = 'stats unavailable'; }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function render(results) {
+  const div = $('results');
+  if (!results.length) { div.innerHTML = '<div class="empty">no results</div>'; return; }
+  div.innerHTML = '';
+  for (const r of results) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const parts = r.name.split('__');
+    const fileLabel = parts[parts.length - 1].replace(/_/g, ' ').replace(/\.[^.]+$/, '');
+    const packLabel = parts.length > 1 ? parts[0].replace(/_/g, ' ') : '';
+
+    const tagChips = (r.tags || []).slice(0, 5).map(t => {
+      const cls = t.source === 'path' ? 'tag path' : 'tag';
+      return `<span class="${cls}">${escapeHtml(t.tag)}<strong>${t.confidence.toFixed(2)}</strong></span>`;
+    }).join('');
+
+    row.innerHTML = `
+      <div class="score ${r.score==null?'faded':''}">${fmtScore(r.score)}</div>
+      <div class="center">
+        <div class="name" title="${escapeHtml(r.path)}">${escapeHtml(fileLabel)}</div>
+        <div class="meta">
+          <span class="pill family">${r.family || '?'}</span>
+          <span class="pill shape">${r.shape || '?'}</span>
+          <span><strong>${fmtBpm(r.bpm)}</strong> bpm</span>
+          <span>${r.key || '–'}</span>
+          <span><strong>${fmtDur(r.duration_s)}</strong></span>
+          ${tagChips}
+        </div>
+        <div class="pack">${escapeHtml(packLabel)}</div>
+      </div>
+      <audio controls preload="none" src="/audio/${r.id}"></audio>
+    `;
+    div.appendChild(row);
+  }
+}
+
+async function load() {
+  const params = new URLSearchParams();
+  const q = $('q').value.trim();
+  if (q) params.set('q', q);
+  const fam = $('family').value;     if (fam)   params.set('family', fam);
+  const shp = $('shape').value;      if (shp)   params.set('shape', shp);
+  const ton = $('tonal').value;      if (ton)   params.set('tonal', ton);
+  const bMin = $('bpmMin').value;    if (bMin)  params.set('bpmMin', bMin);
+  const bMax = $('bpmMax').value;    if (bMax)  params.set('bpmMax', bMax);
+  params.set('limit', '200');
+  const r = await fetch('/search?' + params).then(r => r.json());
+  render(r.results);
+}
+
+const debouncedLoad = debounce(load, 200);
+$('q').addEventListener('input', debouncedLoad);
+['family','shape','tonal','bpmMin','bpmMax'].forEach(id =>
+  $(id).addEventListener('change', load));
+$('reset').addEventListener('click', () => {
+  ['q','bpmMin','bpmMax'].forEach(i => $(i).value = '');
+  ['family','shape','tonal'].forEach(i => $(i).value = '');
+  load();
+});
+
+loadStats();
+load();
+</script>
+
+</body>
+</html>

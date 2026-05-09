@@ -7,6 +7,7 @@ of the first 1 MiB; collisions are tolerable for a sample-browser cache.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -23,6 +24,36 @@ from .embeddings.base import Embedder
 from .features.audio_features import AudioFeatures, extract as extract_features
 
 HASH_PREFIX_BYTES = 1 << 20  # 1 MiB
+
+# Tokenize a path into searchable terms. Underscores, slashes, dashes, dots
+# are separators (sample packs love these). FTS5's tokenizer further splits
+# on punctuation so case + diacritics fall through.
+_PATH_TOKEN_SPLIT = re.compile(r"[_/\-.\s]+")
+
+
+def _path_to_search_text(path: str) -> str:
+    """Build a space-separated keyword string from the file path. Drops the
+    extension and dedupes tokens to keep the FTS index tight."""
+    p = Path(path)
+    raw = " ".join(p.parts) + " " + p.stem
+    tokens = [t for t in _PATH_TOKEN_SPLIT.split(raw) if t]
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in tokens:
+        lo = t.lower()
+        if lo not in seen:
+            seen.add(lo)
+            out.append(t)
+    return " ".join(out)
+
+
+def _tags_to_search_text(top_tags: list[tuple[str, float]]) -> str:
+    """Tags are stored as 'a kick drum' style prompts; index just the keyword
+    payload so users can grep by 'kick' or 'pad' etc."""
+    parts: list[str] = []
+    for tag, _ in top_tags:
+        parts.append(tag.replace("the sound of ", ""))
+    return " ".join(parts)
 
 
 @dataclass
@@ -109,26 +140,44 @@ def _index_one(
             scores = text_embeddings @ vec  # cosine, both L2-normalized
             top_tags = _top_k(scores, tag_list, tag_threshold, max_tags)
 
-    derived = _derive_categoricals(f.kind, feats, top_tags)
+    path_tags_ = derive.path_tags(f.path) if f.kind == "audio" else []
+    derived = _derive_categoricals(f.kind, feats, top_tags, f.path)
     file_id = _upsert_file(conn, f, content_hash, feats, derived)
 
     if vec is not None and embedder is not None:
         _upsert_embedding(conn, file_id, embedder, vec)
         if top_tags:
-            _replace_tags(conn, file_id, top_tags, embedder.model_id)
+            _replace_tags(conn, file_id, top_tags, source_model=embedder.model_id)
 
+    if path_tags_:
+        _replace_tags(conn, file_id, path_tags_, source_model="path")
+
+    # FTS sees CLAP tags + path tags so search matches either source.
+    _upsert_fts(conn, file_id, str(f.path), top_tags + path_tags_)
     return "updated" if existing is not None else "inserted"
 
 
+def _upsert_fts(
+    conn: sqlite3.Connection, file_id: int, path: str,
+    top_tags: list[tuple[str, float]],
+) -> None:
+    conn.execute("DELETE FROM media_fts WHERE rowid = ?", (file_id,))
+    conn.execute(
+        "INSERT INTO media_fts (rowid, path_text, tag_text) VALUES (?, ?, ?)",
+        (file_id, _path_to_search_text(path), _tags_to_search_text(top_tags)),
+    )
+
+
 def _derive_categoricals(
-    kind: str, feats: AudioFeatures | None, top_tags: list[tuple[str, float]]
+    kind: str, feats: AudioFeatures | None, top_tags: list[tuple[str, float]],
+    path: Path,
 ) -> dict[str, object]:
     """Compute shape, family, tonal columns. Non-audio kinds get nulls/unknowns."""
     if kind != "audio" or feats is None:
         return {"shape": None, "family": None, "tonal": None}
     return {
         "shape": derive.shape(feats),
-        "family": derive.family(top_tags),
+        "family": derive.family(top_tags, path),
         "tonal": int(derive.tonal(feats)),
     }
 
@@ -193,15 +242,16 @@ def _upsert_embedding(
 
 
 def _replace_tags(
-    conn: sqlite3.Connection, file_id: int, scored: list[tuple[str, float]], model_id: str
+    conn: sqlite3.Connection, file_id: int, scored: list[tuple[str, float]],
+    source_model: str,
 ) -> None:
     conn.execute(
         "DELETE FROM media_tag WHERE file_id = ? AND source_model = ?",
-        (file_id, model_id),
+        (file_id, source_model),
     )
     conn.executemany(
         "INSERT INTO media_tag (file_id, tag, confidence, source_model) VALUES (?, ?, ?, ?)",
-        [(file_id, tag, float(conf), model_id) for tag, conf in scored],
+        [(file_id, tag, float(conf), source_model) for tag, conf in scored],
     )
 
 

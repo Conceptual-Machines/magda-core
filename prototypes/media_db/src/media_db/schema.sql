@@ -3,7 +3,7 @@
 
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 
 CREATE TABLE IF NOT EXISTS media_file (
     id              INTEGER PRIMARY KEY,
@@ -75,4 +75,11 @@ CREATE TABLE IF NOT EXISTS media_metadata (
     key             TEXT    NOT NULL,
     value           TEXT    NOT NULL,
     PRIMARY KEY (file_id, key)
+);
+
+-- Full-text index over path tokens + tag text for keyword search.
+-- rowid mirrors media_file.id so we can join cheaply.
+CREATE VIRTUAL TABLE IF NOT EXISTS media_fts USING fts5(
+    path_text, tag_text,
+    content='', tokenize='unicode61 remove_diacritics 2'
 );

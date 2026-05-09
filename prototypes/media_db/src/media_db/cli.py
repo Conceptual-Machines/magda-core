@@ -137,6 +137,22 @@ def tags(
     console.print(t)
 
 
+@app.command()
+def serve(
+    db: Path = typer.Option(..., "--db"),
+    model: str = typer.Option(DEFAULT_MODEL, "--model"),
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8765, "--port"),
+) -> None:
+    """Start a local web UI for browsing the DB. Browse to http://HOST:PORT/."""
+    import uvicorn
+
+    from .web.server import make_app
+
+    console.print(f"[green]serving[/green] http://{host}:{port}/  (db={db})")
+    uvicorn.run(make_app(db.resolve(), model), host=host, port=port, log_level="warning")
+
+
 @app.command("export-onnx")
 def export_onnx(
     out: Path = typer.Option(Path("models"), "--out"),
