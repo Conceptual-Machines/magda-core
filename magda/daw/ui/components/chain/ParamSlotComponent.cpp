@@ -5,6 +5,7 @@
 #include "ParamModulationPainter.hpp"
 #include "ParamWidgetSetup.hpp"
 #include "core/LinkModeManager.hpp"
+#include "core/ParameterUtils.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -569,10 +570,14 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
     }
 
     // Modulation indicator bars — delegated to free function
+    const float normalizedParamValue =
+        juce::jlimit(0.0f, 1.0f,
+                     magda::ParameterUtils::realToNormalized(
+                         static_cast<float>(valueSlider_.getValue()), paramInfo_));
     ModulationPaintContext paintCtx;
     paintCtx.sliderBounds = valueSlider_.getBounds();
     paintCtx.cellBounds = getLocalBounds();
-    paintCtx.currentParamValue = static_cast<float>(valueSlider_.getValue());
+    paintCtx.currentParamValue = normalizedParamValue;
     paintCtx.isInLinkMode = isInLinkMode_;
     paintCtx.isLinkModeDrag = isLinkModeDrag_;
     paintCtx.linkModeDragCurrentAmount = linkModeDragCurrentAmount_;
