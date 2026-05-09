@@ -22,7 +22,7 @@
 #include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
-#include "plugins/compiled/CompiledFaustPluginBase.hpp"
+#include "plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "transport/TransportStateManager.hpp"
 
 namespace magda {
@@ -1476,25 +1476,9 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             ps.setProperty(te::IDs::type, daw::audio::ArpeggiatorPlugin::xmlTypeName, nullptr);
             plugin = edit_.getPluginCache().createNewPlugin(ps);
         } else if (device.pluginId.containsIgnoreCase(
-                       daw::audio::compiled::MagdaSVFCompiledPlugin::xmlTypeName)) {
-            plugin =
-                createInternalPlugin(daw::audio::compiled::MagdaSVFCompiledPlugin::xmlTypeName, ps);
-        } else if (device.pluginId.containsIgnoreCase(
-                       daw::audio::compiled::MagdaLadderCompiledPlugin::xmlTypeName)) {
+                       daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName)) {
             plugin = createInternalPlugin(
-                daw::audio::compiled::MagdaLadderCompiledPlugin::xmlTypeName, ps);
-        } else if (device.pluginId.containsIgnoreCase(
-                       daw::audio::compiled::MagdaKorg35CompiledPlugin::xmlTypeName)) {
-            plugin = createInternalPlugin(
-                daw::audio::compiled::MagdaKorg35CompiledPlugin::xmlTypeName, ps);
-        } else if (device.pluginId.containsIgnoreCase(
-                       daw::audio::compiled::MagdaOberheimCompiledPlugin::xmlTypeName)) {
-            plugin = createInternalPlugin(
-                daw::audio::compiled::MagdaOberheimCompiledPlugin::xmlTypeName, ps);
-        } else if (device.pluginId.containsIgnoreCase(
-                       daw::audio::compiled::MagdaSallenKeyCompiledPlugin::xmlTypeName)) {
-            plugin = createInternalPlugin(
-                daw::audio::compiled::MagdaSallenKeyCompiledPlugin::xmlTypeName, ps);
+                daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
             plugin = createInternalPlugin(daw::audio::FaustPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase(
@@ -1627,7 +1611,7 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
         processor = std::make_unique<UtilityProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::FaustPlugin*>(plugin.get())) {
         processor = std::make_unique<FaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::CompiledFaustPluginBase*>(plugin.get())) {
+    } else if (dynamic_cast<daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin.get())) {
         processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
         processor = std::make_unique<MagdaSamplerProcessor>(deviceId, plugin);
@@ -1758,42 +1742,9 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 processor = std::make_unique<ArpeggiatorProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase(
-                       daw::audio::compiled::MagdaSVFCompiledPlugin::xmlTypeName)) {
-            plugin = createInternalPlugin(daw::audio::compiled::MagdaSVFCompiledPlugin::xmlTypeName,
-                                          device.pluginState);
-            if (plugin) {
-                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
-                processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-            }
-        } else if (device.pluginId.containsIgnoreCase(
-                       daw::audio::compiled::MagdaLadderCompiledPlugin::xmlTypeName)) {
+                       daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName)) {
             plugin = createInternalPlugin(
-                daw::audio::compiled::MagdaLadderCompiledPlugin::xmlTypeName, device.pluginState);
-            if (plugin) {
-                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
-                processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-            }
-        } else if (device.pluginId.containsIgnoreCase(
-                       daw::audio::compiled::MagdaKorg35CompiledPlugin::xmlTypeName)) {
-            plugin = createInternalPlugin(
-                daw::audio::compiled::MagdaKorg35CompiledPlugin::xmlTypeName, device.pluginState);
-            if (plugin) {
-                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
-                processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-            }
-        } else if (device.pluginId.containsIgnoreCase(
-                       daw::audio::compiled::MagdaOberheimCompiledPlugin::xmlTypeName)) {
-            plugin = createInternalPlugin(
-                daw::audio::compiled::MagdaOberheimCompiledPlugin::xmlTypeName, device.pluginState);
-            if (plugin) {
-                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
-                processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-            }
-        } else if (device.pluginId.containsIgnoreCase(
-                       daw::audio::compiled::MagdaSallenKeyCompiledPlugin::xmlTypeName)) {
-            plugin = createInternalPlugin(
-                daw::audio::compiled::MagdaSallenKeyCompiledPlugin::xmlTypeName,
-                device.pluginState);
+                daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);

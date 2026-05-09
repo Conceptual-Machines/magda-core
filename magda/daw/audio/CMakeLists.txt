@@ -48,13 +48,8 @@ add_dependencies(magda_daw magda_compiled_dsps)
 target_include_directories(magda_daw PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
 
 target_sources(magda_daw PRIVATE
-    plugins/compiled/CompiledFaustPluginBase.cpp
-    plugins/compiled/MagdaSVFCompiled.cpp
-    plugins/compiled/MagdaLadderCompiled.cpp
-    plugins/compiled/MagdaKorg35Compiled.cpp
-    plugins/compiled/MagdaOberheimCompiled.cpp
-    plugins/compiled/MagdaSallenKeyCompiled.cpp
-    plugins/compiled/CompiledFaustPluginBase.hpp
+    plugins/compiled/MagdaFilterCompiledPlugin.cpp
+    plugins/compiled/MagdaFilterCompiledPlugin.hpp
     plugins/compiled/CompiledFaustHost.hpp
     AudioBridge.cpp
     AudioThumbnailManager.cpp

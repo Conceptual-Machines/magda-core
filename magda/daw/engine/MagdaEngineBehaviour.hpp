@@ -11,7 +11,7 @@
 #include "../audio/plugins/MidiReceivePlugin.hpp"
 #include "../audio/plugins/SidechainMonitorPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
-#include "../audio/plugins/compiled/CompiledFaustPluginBase.hpp"
+#include "../audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../project/ProjectManager.hpp"
 
@@ -96,20 +96,8 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating FaustPlugin");
             return new daw::audio::FaustPlugin(info);
         }
-        if (type == daw::audio::compiled::MagdaSVFCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaSVFCompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaLadderCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaLadderCompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaKorg35CompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaKorg35CompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaOberheimCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaOberheimCompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaSallenKeyCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaSallenKeyCompiledPlugin(info);
+        if (type == daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName) {
+            return new daw::audio::compiled::MagdaFilterCompiledPlugin(info);
         }
         if (type == MidiReceivePlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiReceivePlugin");

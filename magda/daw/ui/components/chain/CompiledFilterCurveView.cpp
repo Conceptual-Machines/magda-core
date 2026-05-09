@@ -4,7 +4,7 @@
 #include <cmath>
 #include <vector>
 
-#include "audio/plugins/compiled/CompiledFaustPluginBase.hpp"
+#include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "core/ParameterUtils.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -22,6 +22,8 @@ constexpr float kHardMaxDb = 72.0f;
 constexpr float kPlotPadX = 8.0f;
 constexpr float kPlotPadY = 6.0f;
 constexpr float kCurveSmoothing = 0.24f;
+constexpr int kAnimationPollMs = 16;  // ~60 Hz when something's actually moving
+constexpr int kIdlePollMs = 100;      // 10 Hz lazy poll to catch LFO retriggers
 
 float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallback) {
     for (const auto& param : device.parameters) {
@@ -41,7 +43,7 @@ const magda::ParameterInfo* paramForSlot(const magda::DeviceInfo& device, int sl
 
 float modulatedValueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallback,
                             const ParamLinkContext* linkContext,
-                            magda::daw::audio::compiled::CompiledFaustPluginBase* plugin) {
+                            magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin) {
     if (plugin != nullptr) {
         if (auto* param = plugin->getSlotParameter(slotIndex))
             return plugin->nativeValueToDisplayValue(slotIndex, param->getCurrentValue());
@@ -103,25 +105,16 @@ float expandedMaxDb(float responseMaxDb) {
 
 }  // namespace
 
-CompiledFilterCurveView::CompiledFilterCurveView(juce::String pluginId) {
-    using namespace magda::daw::audio::compiled;
-
-    if (pluginId.equalsIgnoreCase(MagdaLadderCompiledPlugin::xmlTypeName))
-        family_ = FilterFamily::Ladder;
-    else if (pluginId.equalsIgnoreCase(MagdaKorg35CompiledPlugin::xmlTypeName))
-        family_ = FilterFamily::Korg35;
-    else if (pluginId.equalsIgnoreCase(MagdaOberheimCompiledPlugin::xmlTypeName))
-        family_ = FilterFamily::Oberheim;
-    else if (pluginId.equalsIgnoreCase(MagdaSallenKeyCompiledPlugin::xmlTypeName))
-        family_ = FilterFamily::SallenKey;
-    else
-        family_ = FilterFamily::SVF;
-
+CompiledFilterCurveView::CompiledFilterCurveView(juce::String /*pluginId*/) {
+    // Family is read from the plugin's Engine parameter every refresh —
+    // the unified MagdaFilterCompiledPlugin holds all five engines and
+    // exposes which one is active via slot kEngineSlot.
+    family_ = FilterFamily::SVF;
     setInterceptsMouseClicks(false, false);
 }
 
 void CompiledFilterCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::CompiledFaustPluginBase* plugin) {
+    magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin) {
     compiledPlugin_ = plugin;
 }
 
@@ -158,6 +151,7 @@ void CompiledFilterCurveView::updateFromDevice(const magda::DeviceInfo& device,
 }
 
 void CompiledFilterCurveView::updateTargetValues() {
+    using FilterFamily = CompiledFilterCurveView::FilterFamily;
     const ParamLinkContext* linkContext = hasLinkContext_ ? &linkContext_ : nullptr;
     const float cutoff =
         modulatedValueForSlot(deviceSnapshot_, 0, cutoffHz_, linkContext, compiledPlugin_);
@@ -165,13 +159,18 @@ void CompiledFilterCurveView::updateTargetValues() {
         modulatedValueForSlot(deviceSnapshot_, 1, resonance_, linkContext, compiledPlugin_);
     const float drive =
         modulatedValueForSlot(deviceSnapshot_, 2, drive_, linkContext, compiledPlugin_);
-    const int mode = static_cast<int>(
-        std::round(valueForSlot(deviceSnapshot_, 3, static_cast<float>(modeIndex_))));
+
+    using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
+    const int engine = static_cast<int>(std::round(valueForSlot(
+        deviceSnapshot_, Filter::kEngineSlot, static_cast<float>(static_cast<int>(family_)))));
+    const int mode = static_cast<int>(std::round(
+        valueForSlot(deviceSnapshot_, Filter::kModeSlot, static_cast<float>(modeIndex_))));
 
     targetCutoffHz_ = juce::jlimit(kMinCutoffHz, kMaxFreq, cutoff);
     targetResonance_ = juce::jlimit(0.0f, 1.0f, resonance);
     targetDrive_ = juce::jlimit(0.0f, 1.0f, drive);
     targetModeIndex_ = mode;
+    family_ = static_cast<FilterFamily>(juce::jlimit(0, 4, engine));
 }
 
 bool CompiledFilterCurveView::hasActiveCurveLinks() const {
@@ -198,11 +197,42 @@ void CompiledFilterCurveView::timerCallback() {
     const bool settled = std::abs(cutoffHz_ - targetCutoffHz_) < 0.25f &&
                          std::abs(resonance_ - targetResonance_) < 0.0005f &&
                          std::abs(drive_ - targetDrive_) < 0.0005f;
-    if (settled && compiledPlugin_ == nullptr && !hasActiveCurveLinks()) {
+
+    // Read the live modifier values: if every modulator currently outputs 0
+    // (e.g. a one-shot envelope at rest, an LFO between MIDI triggers) the
+    // displayed curve has nothing to follow — even if a mod link exists
+    // structurally. Drop the timer in that case; the next non-zero modifier
+    // tick will be picked up via updateFromDevice (fired by parameter-change
+    // listeners) and re-arm the timer.
+    bool modulatorIsActive = false;
+    if (compiledPlugin_ != nullptr) {
+        for (int slotIndex : {0, 1, 2}) {
+            if (auto* p = compiledPlugin_->getSlotParameter(slotIndex)) {
+                if (std::abs(p->getCurrentModifierValue()) > 1e-6f) {
+                    modulatorIsActive = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (settled && !modulatorIsActive) {
         cutoffHz_ = targetCutoffHz_;
         resonance_ = targetResonance_;
         drive_ = targetDrive_;
-        stopTimer();
+        // Drop to a lazy poll rate — still need to notice when a re-triggered
+        // LFO / envelope kicks the modifier back to non-zero, but we don't
+        // need 60 Hz redraws for that. The next non-zero modifier value
+        // pushes the timer back up to 60 Hz via the branch below.
+        if (compiledPlugin_ != nullptr) {
+            if (getTimerInterval() != kIdlePollMs)
+                startTimer(kIdlePollMs);
+        } else if (!hasActiveCurveLinks()) {
+            stopTimer();
+        }
+    } else if (modulatorIsActive || !settled) {
+        if (getTimerInterval() != kAnimationPollMs)
+            startTimer(kAnimationPollMs);
     }
 
     repaint();

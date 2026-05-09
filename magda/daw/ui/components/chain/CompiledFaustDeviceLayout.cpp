@@ -1,6 +1,9 @@
 #include "CompiledFaustDeviceLayout.hpp"
 
 #include <algorithm>
+#include <cmath>
+
+#include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 
 namespace magda::daw::ui {
 
@@ -43,6 +46,24 @@ ParamCell CompiledFaustDeviceLayout::cellFor(const magda::DeviceInfo& device, in
     if (paramArrayIdx < 0) {
         cell.mode = ParamCell::Mode::Hidden;
         return cell;
+    }
+
+    // Engine-aware visibility for the Mode slot: Ladder has no mode
+    // picker (LP only), so hide the cell entirely when Engine is set to
+    // Ladder. Slot indices come from MagdaFilterCompiledPlugin so a
+    // reorder there flows through this layout automatically.
+    using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
+    if (cellIndex == Filter::kModeSlot) {
+        const int engineArrayIdx = findParamArrayIndex(device, Filter::kEngineSlot);
+        if (engineArrayIdx >= 0) {
+            const float engineValue =
+                device.parameters[static_cast<size_t>(engineArrayIdx)].currentValue;
+            const int engineIdx = static_cast<int>(std::round(engineValue));
+            if (engineIdx == static_cast<int>(Filter::FilterFamily::Ladder)) {
+                cell.mode = ParamCell::Mode::Hidden;
+                return cell;
+            }
+        }
     }
 
     const auto& param = device.parameters[static_cast<size_t>(paramArrayIdx)];

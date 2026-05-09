@@ -6,7 +6,7 @@
 #include "core/DeviceInfo.hpp"
 
 namespace magda::daw::audio::compiled {
-class CompiledFaustPluginBase;
+class MagdaFilterCompiledPlugin;
 }
 
 namespace magda::daw::ui {
@@ -16,12 +16,12 @@ class CompiledFilterCurveView final : public juce::Component, private juce::Time
     explicit CompiledFilterCurveView(juce::String pluginId);
 
     int getPreferredHeight() const {
-        return 92;
+        return 140;
     }
 
     void updateFromDevice(const magda::DeviceInfo& device,
                           const ParamLinkContext* linkContext = nullptr);
-    void setCompiledPlugin(magda::daw::audio::compiled::CompiledFaustPluginBase* plugin);
+    void setCompiledPlugin(magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin);
     void paint(juce::Graphics& g) override;
 
   private:
@@ -41,7 +41,7 @@ class CompiledFilterCurveView final : public juce::Component, private juce::Time
     magda::DeviceInfo deviceSnapshot_;
     ParamLinkContext linkContext_;
     bool hasLinkContext_ = false;
-    magda::daw::audio::compiled::CompiledFaustPluginBase* compiledPlugin_ = nullptr;
+    magda::daw::audio::compiled::MagdaFilterCompiledPlugin* compiledPlugin_ = nullptr;
 
     FilterMode modeForIndex() const;
     float responseDbAt(float frequencyHz) const;

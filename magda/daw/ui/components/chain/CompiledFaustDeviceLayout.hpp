@@ -14,8 +14,11 @@ namespace magda::daw::ui {
  */
 class CompiledFaustDeviceLayout final : public DeviceParamLayout {
   public:
-    static constexpr int kCellCount = 4;
-    static constexpr int kCellsPerRow = 4;
+    // MAGDA's compiled Filter exposes 5 controls (cutoff, resonance, drive,
+    // engine, mode). Future compiled FX may expose different counts; if the
+    // UX needs to vary per-device we'd promote these to constructor args.
+    static constexpr int kCellCount = 5;
+    static constexpr int kCellsPerRow = 5;
 
     int cellCount() const override {
         return kCellCount;

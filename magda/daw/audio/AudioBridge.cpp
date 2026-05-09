@@ -14,7 +14,7 @@
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/SidechainTriggerBus.hpp"
-#include "plugins/compiled/CompiledFaustPluginBase.hpp"
+#include "plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -811,7 +811,7 @@ te::AutomatableParameter* AudioBridge::resolveControlTarget(const ControlTarget&
             if (!plugin)
                 return nullptr;
             if (auto* compiledFaust =
-                    dynamic_cast<daw::audio::compiled::CompiledFaustPluginBase*>(plugin.get()))
+                    dynamic_cast<daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin.get()))
                 return compiledFaust->getSlotParameter(target.paramIndex);
             auto params = plugin->getAutomatableParameters();
             if (target.paramIndex >= 0 && target.paramIndex < static_cast<int>(params.size()))

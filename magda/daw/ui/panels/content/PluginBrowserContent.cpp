@@ -12,7 +12,7 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
-#include "audio/plugins/compiled/CompiledFaustPluginBase.hpp"
+#include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "core/AppPaths.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
@@ -366,21 +366,9 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     list.push_back(PluginBrowserInfo::createInternal("Delay", "delay", false, "Delay"));
     list.push_back(PluginBrowserInfo::createInternal("Chorus", "chorus", false, "Modulation"));
     list.push_back(PluginBrowserInfo::createInternal("Phaser", "phaser", false, "Modulation"));
-    list.push_back(PluginBrowserInfo::createInternal("Filter", "lowpass", false, "Filter"));
+    list.push_back(PluginBrowserInfo::createInternal("Lowpass", "lowpass", false, "Filter"));
     list.push_back(PluginBrowserInfo::createInternal(
-        "Filter - SVF", audio::compiled::MagdaSVFCompiledPlugin::xmlTypeName, false, "Filter"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Filter - Ladder", audio::compiled::MagdaLadderCompiledPlugin::xmlTypeName, false,
-        "Filter"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Filter - Korg 35", audio::compiled::MagdaKorg35CompiledPlugin::xmlTypeName, false,
-        "Filter"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Filter - Oberheim", audio::compiled::MagdaOberheimCompiledPlugin::xmlTypeName, false,
-        "Filter"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Filter - Sallen-Key", audio::compiled::MagdaSallenKeyCompiledPlugin::xmlTypeName, false,
-        "Filter"));
+        "Filter", audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName, false, "Filter"));
     list.push_back(PluginBrowserInfo::createInternal("Pitch Shift", "pitchshift", false, "Pitch"));
     list.push_back(
         PluginBrowserInfo::createInternal("IR Reverb", "impulseresponse", false, "Reverb"));

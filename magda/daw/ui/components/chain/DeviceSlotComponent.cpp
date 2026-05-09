@@ -23,7 +23,7 @@
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
-#include "audio/plugins/compiled/CompiledFaustPluginBase.hpp"
+#include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "audio/transport/StepClock.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
@@ -71,11 +71,7 @@ magda::ChainNodePath nearestRackPathForDevicePath(const magda::ChainNodePath& de
 
 bool isCompiledFaustFilterPluginId(const juce::String& pluginId) {
     using namespace magda::daw::audio::compiled;
-    return pluginId.equalsIgnoreCase(MagdaSVFCompiledPlugin::xmlTypeName) ||
-           pluginId.equalsIgnoreCase(MagdaLadderCompiledPlugin::xmlTypeName) ||
-           pluginId.equalsIgnoreCase(MagdaKorg35CompiledPlugin::xmlTypeName) ||
-           pluginId.equalsIgnoreCase(MagdaOberheimCompiledPlugin::xmlTypeName) ||
-           pluginId.equalsIgnoreCase(MagdaSallenKeyCompiledPlugin::xmlTypeName);
+    return pluginId.equalsIgnoreCase(MagdaFilterCompiledPlugin::xmlTypeName);
 }
 
 // LookAndFeel for the plugin-presets header button. Visually a flat label
@@ -930,6 +926,37 @@ void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int p
     // Update local cache
     if (paramIndex >= 0 && paramIndex < static_cast<int>(device_.parameters.size())) {
         device_.parameters[static_cast<size_t>(paramIndex)].currentValue = newValue;
+    }
+
+    // Compiled-Faust filter: when Engine changes, the Mode dropdown's
+    // choice list has to switch to the new engine's supported modes
+    // (Korg 35 LP/HP, Sallen-Key LP/BP/HP, etc.). Re-fetch ONLY the Mode
+    // slot's ParameterInfo and re-apply it — touching other slots via
+    // updateParameterSlots() would walk every cell and re-write cached
+    // values back into them, racing the user's in-flight slider drags
+    // and causing visible jumps on params like Cutoff.
+    if (isCompiledFaustFilter_ &&
+        paramIndex == magda::daw::audio::compiled::MagdaFilterCompiledPlugin::kEngineSlot) {
+        constexpr int kModeSlot = magda::daw::audio::compiled::MagdaFilterCompiledPlugin::kModeSlot;
+        const auto cell =
+            paramGrid_->getLayout().cellFor(device_, kModeSlot, paramGrid_->getCurrentPage());
+        if (auto* slot = paramGrid_->getSlot(kModeSlot)) {
+            if (cell.mode == ParamCell::Mode::Filled) {
+                if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+                    if (auto* bridge = audioEngine->getAudioBridge()) {
+                        if (auto* proc = bridge->getDeviceProcessor(device_.id)) {
+                            auto modeInfo = proc->getParameterInfo(kModeSlot);
+                            if (kModeSlot < static_cast<int>(device_.parameters.size()))
+                                device_.parameters[static_cast<size_t>(kModeSlot)] = modeInfo;
+                            slot->setParameterInfo(modeInfo);
+                        }
+                    }
+                }
+                slot->setVisible(true);
+            } else {
+                slot->setVisible(false);
+            }
+        }
     }
 
     // Push the fresh cache into any active plugin-specific custom UI so its
@@ -1868,7 +1895,7 @@ void DeviceSlotComponent::updateParamModulation() {
             if (auto* bridge = audioEngine->getAudioBridge()) {
                 auto plugin = bridge->getPlugin(device_.id);
                 compiledFilterCurveView_->setCompiledPlugin(
-                    dynamic_cast<magda::daw::audio::compiled::CompiledFaustPluginBase*>(
+                    dynamic_cast<magda::daw::audio::compiled::MagdaFilterCompiledPlugin*>(
                         plugin.get()));
             }
         }
@@ -2222,8 +2249,12 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     if (isCompiledFaustFilter_ && compiledFilterCurveView_) {
         const int bodyHeight = juce::jmax(0, contentArea.getHeight());
         const int preferred = compiledFilterCurveView_->getPreferredHeight();
+        // The curve is the dominant visual; give it the larger share of the
+        // body. ~60% of total height feels right against a single row of
+        // param cells. Floor at `preferred` so a tiny device still gets a
+        // legible curve, ceiling at `bodyHeight` so it never overflows.
         const int visualHeight = juce::jlimit(juce::jmin(preferred, bodyHeight), bodyHeight,
-                                              juce::jmax(preferred, bodyHeight / 2));
+                                              juce::jmax(preferred, (bodyHeight * 3) / 4));
 
         auto visualArea = contentArea.removeFromBottom(visualHeight);
         compiledFilterCurveView_->setBounds(visualArea);
