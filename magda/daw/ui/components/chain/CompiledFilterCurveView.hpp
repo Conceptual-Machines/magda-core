@@ -2,11 +2,16 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "ParamLinkResolver.hpp"
 #include "core/DeviceInfo.hpp"
+
+namespace magda::daw::audio::compiled {
+class CompiledFaustPluginBase;
+}
 
 namespace magda::daw::ui {
 
-class CompiledFilterCurveView final : public juce::Component {
+class CompiledFilterCurveView final : public juce::Component, private juce::Timer {
   public:
     explicit CompiledFilterCurveView(juce::String pluginId);
 
@@ -14,7 +19,9 @@ class CompiledFilterCurveView final : public juce::Component {
         return 92;
     }
 
-    void updateFromDevice(const magda::DeviceInfo& device);
+    void updateFromDevice(const magda::DeviceInfo& device,
+                          const ParamLinkContext* linkContext = nullptr);
+    void setCompiledPlugin(magda::daw::audio::compiled::CompiledFaustPluginBase* plugin);
     void paint(juce::Graphics& g) override;
 
   private:
@@ -26,10 +33,22 @@ class CompiledFilterCurveView final : public juce::Component {
     float resonance_ = 0.0f;
     float drive_ = 0.0f;
     int modeIndex_ = 0;
+    float targetCutoffHz_ = 1000.0f;
+    float targetResonance_ = 0.0f;
+    float targetDrive_ = 0.0f;
+    int targetModeIndex_ = 0;
+    bool initialised_ = false;
+    magda::DeviceInfo deviceSnapshot_;
+    ParamLinkContext linkContext_;
+    bool hasLinkContext_ = false;
+    magda::daw::audio::compiled::CompiledFaustPluginBase* compiledPlugin_ = nullptr;
 
     FilterMode modeForIndex() const;
     float responseDbAt(float frequencyHz) const;
     float qValue() const;
+    void updateTargetValues();
+    bool hasActiveCurveLinks() const;
+    void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompiledFilterCurveView)
 };

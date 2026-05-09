@@ -1863,6 +1863,25 @@ void DeviceSlotComponent::updateParamModulation() {
     paramGrid_->updateParamModulation(mods, macros, rackMods, rackMacros, trackMods, trackMacros,
                                       device_.id, nodePath_, selectedModIndex, selectedMacroIndex);
 
+    if (compiledFilterCurveView_ && isCompiledFaustFilter_) {
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                compiledFilterCurveView_->setCompiledPlugin(
+                    dynamic_cast<magda::daw::audio::compiled::CompiledFaustPluginBase*>(
+                        plugin.get()));
+            }
+        }
+
+        ParamLinkContext curveLinkContext{device_.id,        -1,
+                                          nodePath_,         mods,
+                                          rackMods,          macros,
+                                          rackMacros,        trackMods,
+                                          trackMacros,       selectedModIndex,
+                                          selectedMacroIndex};
+        compiledFilterCurveView_->updateFromDevice(device_, &curveLinkContext);
+    }
+
     // Also update custom UI linkable sliders
     setupCustomUILinking();
 

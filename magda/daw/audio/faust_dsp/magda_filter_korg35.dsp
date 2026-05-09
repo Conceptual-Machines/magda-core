@@ -4,7 +4,7 @@ declare description "Virtual analog Korg 35 filter — LP and HP variants of the
 import("stdfaust.lib");
 
 cutoff = hslider("Cutoff [unit:Hz] [scale:log] [scaleAnchor:1000] [idx:0]",
-                 1000, 20, 20000, 1)
+                 1000, 5, 20000, 1)
        : si.smooth(ba.tau2pole(0.02));
 
 res    = hslider("Resonance [idx:1]", 0.0, 0.0, 1.0, 0.001)

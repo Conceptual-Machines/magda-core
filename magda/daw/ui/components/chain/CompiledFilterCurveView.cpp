@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include "audio/plugins/compiled/CompiledFaustPluginBase.hpp"
+#include "core/ParameterUtils.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -11,12 +13,15 @@ namespace magda::daw::ui {
 
 namespace {
 
-constexpr float kMinFreq = 20.0f;
+constexpr float kMinCutoffHz = 5.0f;
+constexpr float kMinPlotFreq = 5.0f;
 constexpr float kMaxFreq = 20000.0f;
-constexpr float kMinDb = -30.0f;
-constexpr float kMaxDb = 18.0f;
+constexpr float kMinDb = -60.0f;
+constexpr float kBaseMaxDb = 18.0f;
+constexpr float kHardMaxDb = 72.0f;
 constexpr float kPlotPadX = 8.0f;
 constexpr float kPlotPadY = 6.0f;
+constexpr float kCurveSmoothing = 0.24f;
 
 float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallback) {
     for (const auto& param : device.parameters) {
@@ -26,23 +31,74 @@ float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallbac
     return fallback;
 }
 
+const magda::ParameterInfo* paramForSlot(const magda::DeviceInfo& device, int slotIndex) {
+    for (const auto& param : device.parameters) {
+        if (param.paramIndex == slotIndex)
+            return &param;
+    }
+    return nullptr;
+}
+
+float modulatedValueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallback,
+                            const ParamLinkContext* linkContext,
+                            magda::daw::audio::compiled::CompiledFaustPluginBase* plugin) {
+    if (plugin != nullptr) {
+        if (auto* param = plugin->getSlotParameter(slotIndex))
+            return plugin->nativeValueToDisplayValue(slotIndex, param->getCurrentValue());
+    }
+
+    const auto* param = paramForSlot(device, slotIndex);
+    if (param == nullptr)
+        return fallback;
+
+    if (linkContext == nullptr)
+        return param->currentValue;
+
+    auto slotContext = *linkContext;
+    slotContext.paramIndex = slotIndex;
+
+    const float baseNorm = magda::ParameterUtils::realToNormalized(param->currentValue, *param);
+    const float modNorm =
+        computeTotalModModulation(slotContext) + computeTotalMacroModulation(slotContext);
+    const float effectiveNorm = juce::jlimit(0.0f, 1.0f, baseNorm + modNorm);
+    return magda::ParameterUtils::normalizedToReal(effectiveNorm, *param);
+}
+
 float freqToX(float freq, float width) {
-    const float norm = std::log(freq / kMinFreq) / std::log(kMaxFreq / kMinFreq);
+    const float norm = std::log(freq / kMinPlotFreq) / std::log(kMaxFreq / kMinPlotFreq);
     return juce::jlimit(0.0f, 1.0f, norm) * width;
 }
 
-float dbToY(float db, float height) {
-    const float norm = (juce::jlimit(kMinDb, kMaxDb, db) - kMinDb) / (kMaxDb - kMinDb);
+float dbToY(float db, float height, float maxDb) {
+    const float norm = (juce::jlimit(kMinDb, maxDb, db) - kMinDb) / (maxDb - kMinDb);
     return height * (1.0f - norm);
 }
 
 float xToFreq(float x, float width) {
     const float norm = width > 0.0f ? juce::jlimit(0.0f, 1.0f, x / width) : 0.0f;
-    return kMinFreq * std::pow(kMaxFreq / kMinFreq, norm);
+    return kMinPlotFreq * std::pow(kMaxFreq / kMinPlotFreq, norm);
 }
 
 float linearToDb(float linear) {
     return 20.0f * std::log10(std::max(linear, 1.0e-5f));
+}
+
+float nextSmoothedValue(float current, float target) {
+    return current + (target - current) * kCurveSmoothing;
+}
+
+float nextSmoothedFrequency(float current, float target) {
+    const float currentLog = std::log(juce::jlimit(kMinCutoffHz, kMaxFreq, current));
+    const float targetLog = std::log(juce::jlimit(kMinCutoffHz, kMaxFreq, target));
+    return std::exp(nextSmoothedValue(currentLog, targetLog));
+}
+
+float expandedMaxDb(float responseMaxDb) {
+    if (responseMaxDb <= kBaseMaxDb - 3.0f)
+        return kBaseMaxDb;
+
+    const float stepped = std::ceil((responseMaxDb + 3.0f) / 6.0f) * 6.0f;
+    return juce::jlimit(kBaseMaxDb, kHardMaxDb, stepped);
 }
 
 }  // namespace
@@ -64,21 +120,92 @@ CompiledFilterCurveView::CompiledFilterCurveView(juce::String pluginId) {
     setInterceptsMouseClicks(false, false);
 }
 
-void CompiledFilterCurveView::updateFromDevice(const magda::DeviceInfo& device) {
-    const float cutoff = valueForSlot(device, 0, cutoffHz_);
-    const float resonance = valueForSlot(device, 1, resonance_);
-    const float drive = valueForSlot(device, 2, drive_);
-    const int mode =
-        static_cast<int>(std::round(valueForSlot(device, 3, static_cast<float>(modeIndex_))));
+void CompiledFilterCurveView::setCompiledPlugin(
+    magda::daw::audio::compiled::CompiledFaustPluginBase* plugin) {
+    compiledPlugin_ = plugin;
+}
 
-    if (std::abs(cutoff - cutoffHz_) > 0.01f || std::abs(resonance - resonance_) > 0.0001f ||
-        std::abs(drive - drive_) > 0.0001f || mode != modeIndex_) {
-        cutoffHz_ = juce::jlimit(kMinFreq, kMaxFreq, cutoff);
-        resonance_ = juce::jlimit(0.0f, 1.0f, resonance);
-        drive_ = juce::jlimit(0.0f, 1.0f, drive);
-        modeIndex_ = mode;
+void CompiledFilterCurveView::updateFromDevice(const magda::DeviceInfo& device,
+                                               const ParamLinkContext* linkContext) {
+    deviceSnapshot_ = device;
+    hasLinkContext_ = linkContext != nullptr;
+    if (linkContext != nullptr)
+        linkContext_ = *linkContext;
+
+    updateTargetValues();
+
+    if (!initialised_) {
+        cutoffHz_ = targetCutoffHz_;
+        resonance_ = targetResonance_;
+        drive_ = targetDrive_;
+        modeIndex_ = targetModeIndex_;
+        initialised_ = true;
+        repaint();
+        return;
+    }
+
+    if (targetModeIndex_ != modeIndex_) {
+        modeIndex_ = targetModeIndex_;
         repaint();
     }
+
+    const bool needsAnimation = std::abs(std::log(cutoffHz_ / targetCutoffHz_)) > 0.0005f ||
+                                std::abs(resonance_ - targetResonance_) > 0.0005f ||
+                                std::abs(drive_ - targetDrive_) > 0.0005f;
+    if ((needsAnimation || hasActiveCurveLinks() || compiledPlugin_ != nullptr) &&
+        !isTimerRunning())
+        startTimerHz(60);
+}
+
+void CompiledFilterCurveView::updateTargetValues() {
+    const ParamLinkContext* linkContext = hasLinkContext_ ? &linkContext_ : nullptr;
+    const float cutoff =
+        modulatedValueForSlot(deviceSnapshot_, 0, cutoffHz_, linkContext, compiledPlugin_);
+    const float resonance =
+        modulatedValueForSlot(deviceSnapshot_, 1, resonance_, linkContext, compiledPlugin_);
+    const float drive =
+        modulatedValueForSlot(deviceSnapshot_, 2, drive_, linkContext, compiledPlugin_);
+    const int mode = static_cast<int>(
+        std::round(valueForSlot(deviceSnapshot_, 3, static_cast<float>(modeIndex_))));
+
+    targetCutoffHz_ = juce::jlimit(kMinCutoffHz, kMaxFreq, cutoff);
+    targetResonance_ = juce::jlimit(0.0f, 1.0f, resonance);
+    targetDrive_ = juce::jlimit(0.0f, 1.0f, drive);
+    targetModeIndex_ = mode;
+}
+
+bool CompiledFilterCurveView::hasActiveCurveLinks() const {
+    if (!hasLinkContext_)
+        return false;
+
+    for (int slotIndex : {0, 1, 2}) {
+        auto slotContext = linkContext_;
+        slotContext.paramIndex = slotIndex;
+        if (hasActiveLinks(slotContext))
+            return true;
+    }
+    return false;
+}
+
+void CompiledFilterCurveView::timerCallback() {
+    if (compiledPlugin_ != nullptr || hasActiveCurveLinks())
+        updateTargetValues();
+
+    cutoffHz_ = nextSmoothedFrequency(cutoffHz_, targetCutoffHz_);
+    resonance_ = nextSmoothedValue(resonance_, targetResonance_);
+    drive_ = nextSmoothedValue(drive_, targetDrive_);
+
+    const bool settled = std::abs(cutoffHz_ - targetCutoffHz_) < 0.25f &&
+                         std::abs(resonance_ - targetResonance_) < 0.0005f &&
+                         std::abs(drive_ - targetDrive_) < 0.0005f;
+    if (settled && compiledPlugin_ == nullptr && !hasActiveCurveLinks()) {
+        cutoffHz_ = targetCutoffHz_;
+        resonance_ = targetResonance_;
+        drive_ = targetDrive_;
+        stopTimer();
+    }
+
+    repaint();
 }
 
 CompiledFilterCurveView::FilterMode CompiledFilterCurveView::modeForIndex() const {
@@ -140,7 +267,7 @@ float CompiledFilterCurveView::responseDbAt(float frequencyHz) const {
     }
 
     const float driveTrimDb = -drive_ * 2.5f;
-    return juce::jlimit(kMinDb, kMaxDb, linearToDb(magnitude) + driveTrimDb);
+    return linearToDb(magnitude) + driveTrimDb;
 }
 
 void CompiledFilterCurveView::paint(juce::Graphics& g) {
@@ -177,22 +304,35 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
         }
     }
 
+    const int samples = juce::jmax(64, static_cast<int>(std::ceil(plot.getWidth())));
+    std::vector<float> responseDbs;
+    responseDbs.reserve(static_cast<size_t>(samples));
+    float maxResponseDb = kMinDb;
+    for (int i = 0; i < samples; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(samples - 1);
+        const float freq = xToFreq(t * plot.getWidth(), plot.getWidth());
+        const float db = responseDbAt(freq);
+        responseDbs.push_back(db);
+        maxResponseDb = std::max(maxResponseDb, db);
+    }
+
+    const float maxDb = expandedMaxDb(maxResponseDb);
+
     for (float db : {-24.0f, -12.0f, 0.0f, 12.0f}) {
-        const float y = plot.getY() + dbToY(db, plot.getHeight());
+        const float y = plot.getY() + dbToY(db, plot.getHeight(), maxDb);
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(db == 0.0f ? 0.46f : 0.16f));
         g.drawHorizontalLine(static_cast<int>(std::round(y)), plot.getX(), plot.getRight());
     }
 
-    const int samples = juce::jmax(64, static_cast<int>(std::ceil(plot.getWidth())));
     juce::Path fillPath;
     juce::Path curvePath;
 
-    const float zeroY = plot.getY() + dbToY(0.0f, plot.getHeight());
+    const float zeroY = plot.getY() + dbToY(0.0f, plot.getHeight(), maxDb);
     for (int i = 0; i < samples; ++i) {
         const float t = static_cast<float>(i) / static_cast<float>(samples - 1);
         const float x = plot.getX() + t * plot.getWidth();
-        const float freq = xToFreq(t * plot.getWidth(), plot.getWidth());
-        const float y = plot.getY() + dbToY(responseDbAt(freq), plot.getHeight());
+        const float y =
+            plot.getY() + dbToY(responseDbs[static_cast<size_t>(i)], plot.getHeight(), maxDb);
 
         if (i == 0) {
             curvePath.startNewSubPath(x, y);
