@@ -40,13 +40,6 @@ std::vector<StarterDsp> getBundledStarterDsps() {
         {"Delay", "magda_delay.dsp", "magda_delay_dsp", FaustCustomViewKind::None},
         {"Granular Delay", "magda_granular_delay.dsp", "magda_granular_delay_dsp",
          FaustCustomViewKind::None},
-        {"SVF", "magda_filter_svf.dsp", "magda_filter_svf_dsp", FaustCustomViewKind::None},
-        {"Ladder", "magda_filter_ladder.dsp", "magda_filter_ladder_dsp", FaustCustomViewKind::None},
-        {"Korg 35", "magda_filter_korg35.dsp", "magda_filter_korg35_dsp",
-         FaustCustomViewKind::None},
-        {"Oberheim", "magda_filter_oberheim.dsp", "magda_filter_oberheim_dsp",
-         FaustCustomViewKind::None},
-        {"Sallen-Key", "magda_filter_sk.dsp", "magda_filter_sk_dsp", FaustCustomViewKind::None},
     };
 
     std::vector<StarterDsp> out;

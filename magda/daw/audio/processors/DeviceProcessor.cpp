@@ -10,6 +10,7 @@
 #include "plugins/FaustParamPool.hpp"
 #include "plugins/FaustPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
+#include "plugins/compiled/CompiledFaustPluginBase.hpp"
 
 namespace magda {
 
@@ -683,6 +684,73 @@ float FaustProcessor::getParameterByIndex(int paramIndex) const {
         const auto info = getParameterInfo(paramIndex);
         return ParameterUtils::normalizedToReal(params[paramIndex]->getCurrentValue(), info);
     }
+    return 0.0f;
+}
+
+// =============================================================================
+// CompiledFaustProcessor
+// =============================================================================
+
+CompiledFaustProcessor::CompiledFaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, plugin) {}
+
+int CompiledFaustProcessor::getParameterCount() const {
+    auto* faust = dynamic_cast<daw::audio::compiled::CompiledFaustPluginBase*>(plugin_.get());
+    return faust != nullptr ? faust->getPool().activeCount() : 0;
+}
+
+ParameterInfo CompiledFaustProcessor::getParameterInfo(int index) const {
+    auto* faust = dynamic_cast<daw::audio::compiled::CompiledFaustPluginBase*>(plugin_.get());
+    if (faust == nullptr || index < 0 || index >= daw::audio::FaustParamPool::kSize)
+        return {};
+
+    auto info = daw::audio::paramInfoFromSlot(faust->getPool().slot(index));
+    const auto& slot = faust->getPool().slot(index);
+    info.teMinValue = slot.minValue;
+    info.teMaxValue = slot.maxValue;
+    return info;
+}
+
+void CompiledFaustProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    auto* faust = dynamic_cast<daw::audio::compiled::CompiledFaustPluginBase*>(plugin_.get());
+    if (faust == nullptr)
+        return;
+
+    auto params = plugin_->getAutomatableParameters();
+    for (int i = 0; i < daw::audio::FaustParamPool::kSize; ++i) {
+        const auto& slot = faust->getPool().slot(i);
+        if (!slot.active || slot.hidden)
+            continue;
+
+        auto paramInfo = getParameterInfo(i);
+        if (i >= 0 && i < params.size() && params[i])
+            paramInfo.currentValue =
+                faust->nativeValueToDisplayValue(i, params[i]->getCurrentValue());
+        info.parameters.push_back(std::move(paramInfo));
+    }
+}
+
+void CompiledFaustProcessor::setParameterByIndex(int paramIndex, float value) {
+    if (!plugin_)
+        return;
+
+    auto* faust = dynamic_cast<daw::audio::compiled::CompiledFaustPluginBase*>(plugin_.get());
+    auto params = plugin_->getAutomatableParameters();
+    if (faust != nullptr && paramIndex >= 0 && paramIndex < params.size() && params[paramIndex]) {
+        params[paramIndex]->setParameterFromHost(
+            faust->displayValueToNativeValue(paramIndex, value), juce::sendNotificationSync);
+    }
+}
+
+float CompiledFaustProcessor::getParameterByIndex(int paramIndex) const {
+    if (!plugin_)
+        return 0.0f;
+
+    auto* faust = dynamic_cast<daw::audio::compiled::CompiledFaustPluginBase*>(plugin_.get());
+    auto params = plugin_->getAutomatableParameters();
+    if (faust != nullptr && paramIndex >= 0 && paramIndex < params.size() && params[paramIndex])
+        return faust->nativeValueToDisplayValue(paramIndex, params[paramIndex]->getCurrentValue());
     return 0.0f;
 }
 

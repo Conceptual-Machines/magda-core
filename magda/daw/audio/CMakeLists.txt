@@ -13,15 +13,48 @@ magda_compile_faust_dsp(
     MagdaSVFDsp
     MAGDA_SVF_GENERATED_CPP
 )
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_ladder.dsp"
+    MagdaLadderDsp
+    MAGDA_LADDER_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_korg35.dsp"
+    MagdaKorg35Dsp
+    MAGDA_KORG35_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_oberheim.dsp"
+    MagdaOberheimDsp
+    MAGDA_OBERHEIM_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_sk.dsp"
+    MagdaSallenKeyDsp
+    MAGDA_SALLEN_KEY_GENERATED_CPP
+)
 # A phony target that just depends on every generated DSP .cpp; making
 # magda_daw depend on it forces the custom commands to fire before any
 # wrapper TU is compiled.
-add_custom_target(magda_compiled_dsps DEPENDS "${MAGDA_SVF_GENERATED_CPP}")
+add_custom_target(magda_compiled_dsps
+    DEPENDS
+        "${MAGDA_SVF_GENERATED_CPP}"
+        "${MAGDA_LADDER_GENERATED_CPP}"
+        "${MAGDA_KORG35_GENERATED_CPP}"
+        "${MAGDA_OBERHEIM_GENERATED_CPP}"
+        "${MAGDA_SALLEN_KEY_GENERATED_CPP}"
+)
 add_dependencies(magda_daw magda_compiled_dsps)
 target_include_directories(magda_daw PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
 
 target_sources(magda_daw PRIVATE
+    plugins/compiled/CompiledFaustPluginBase.cpp
     plugins/compiled/MagdaSVFCompiled.cpp
+    plugins/compiled/MagdaLadderCompiled.cpp
+    plugins/compiled/MagdaKorg35Compiled.cpp
+    plugins/compiled/MagdaOberheimCompiled.cpp
+    plugins/compiled/MagdaSallenKeyCompiled.cpp
+    plugins/compiled/CompiledFaustPluginBase.hpp
     plugins/compiled/CompiledFaustHost.hpp
     AudioBridge.cpp
     AudioThumbnailManager.cpp

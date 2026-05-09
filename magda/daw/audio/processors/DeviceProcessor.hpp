@@ -296,6 +296,25 @@ class FaustProcessor : public DeviceProcessor {
 };
 
 /**
+ * @brief Processor for native filters compiled from Faust DSP sources.
+ *
+ * These plugins use the same `[idx:N]` slot metadata as FaustPlugin,
+ * but their AutomatableParameters store native Faust values directly
+ * instead of normalized 0..1 values.
+ */
+class CompiledFaustProcessor : public DeviceProcessor {
+  public:
+    CompiledFaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+};
+
+/**
  * @brief Processor for the built-in 4-Band Equaliser
  *
  * Enumerates parameters generically from plugin->getAutomatableParameters().

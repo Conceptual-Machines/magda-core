@@ -96,6 +96,13 @@ constexpr AliasSpec kFilterAliases[] = {
     {"mode", 1, "Mode"},
 };
 
+constexpr AliasSpec kCompiledFilterAliases[] = {
+    {"cutoff", 0, "Cutoff"},
+    {"resonance", 1, "Resonance"},
+    {"drive", 2, "Drive"},
+    {"mode", 3, "Mode"},
+};
+
 // ------------------------------------------------------------------
 // Pitch Shift ("pitchshift") — TE PitchShiftPlugin single param.
 // ------------------------------------------------------------------
@@ -125,6 +132,11 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"chorus", kChorusAliases, (int)std::size(kChorusAliases)},
     {"phaser", kPhaserAliases, (int)std::size(kPhaserAliases)},
     {"filter", kFilterAliases, (int)std::size(kFilterAliases)},
+    {"magda_svf", kCompiledFilterAliases, (int)std::size(kCompiledFilterAliases)},
+    {"magda_ladder", kCompiledFilterAliases, (int)std::size(kCompiledFilterAliases)},
+    {"magda_korg35", kCompiledFilterAliases, (int)std::size(kCompiledFilterAliases)},
+    {"magda_oberheim", kCompiledFilterAliases, (int)std::size(kCompiledFilterAliases)},
+    {"magda_sallen_key", kCompiledFilterAliases, (int)std::size(kCompiledFilterAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
     {"utility", kUtilityAliases, (int)std::size(kUtilityAliases)},
 };
