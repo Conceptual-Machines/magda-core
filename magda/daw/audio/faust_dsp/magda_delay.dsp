@@ -43,16 +43,16 @@ division  = nentry("Division [idx:1] [gate:2] [style:menu{
 // Sync toggle: 0 = free time (ms), 1 = follow project BPM × division.
 sync      = checkbox("Sync [idx:2]");
 
-feedback  = hslider("Feedback", 0.45, 0.0, 0.95, 0.001);
-mix       = hslider("Mix",      0.35, 0.0, 1.0,  0.001);
+feedback  = hslider("Feedback [idx:3]", 0.45, 0.0, 0.95, 0.001);
+mix       = hslider("Mix [idx:4]",      0.35, 0.0, 1.0,  0.001);
 
 // Tilt EQ in the feedback path. Negative tilts dark (lowpass dominant);
 // positive tilts bright (highpass dominant); 0 is flat.
-tilt      = hslider("Tone",     0.0, -1.0, 1.0,  0.001);
+tilt      = hslider("Tone [idx:5]",     0.0, -1.0, 1.0,  0.001);
 
 // 0% = parallel stereo (each channel feeds back into itself).
 // 100% = full ping-pong (each channel's tail feeds the other).
-cross     = hslider("Cross",    0.0,  0.0, 1.0,  0.001);
+cross     = hslider("Cross [idx:6]",    0.0,  0.0, 1.0,  0.001);
 
 // Hidden host-driven BPM. The MAGDA host writes the live project tempo
 // into this slot's zone every audio block via the

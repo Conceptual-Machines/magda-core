@@ -112,6 +112,18 @@ constexpr AliasSpec kCompiledSaturatorAliases[] = {
 };
 
 // ------------------------------------------------------------------
+// Compiled Delay ("magda_delay_compiled") — slot order matches
+// MagdaDelayCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_delay.dsp. The legacy interpreter "delay" entry above maps to
+// TE's DelayPlugin and stays as a separate alias key.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledDelayAliases[] = {
+    {"time", 0, "Time"},         {"division", 1, "Division"}, {"sync", 2, "Sync"},
+    {"feedback", 3, "Feedback"}, {"mix", 4, "Mix"},           {"tone", 5, "Tone"},
+    {"cross", 6, "Cross"},
+};
+
+// ------------------------------------------------------------------
 // Pitch Shift ("pitchshift") — TE PitchShiftPlugin single param.
 // ------------------------------------------------------------------
 constexpr AliasSpec kPitchShiftAliases[] = {
@@ -142,6 +154,7 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"filter", kFilterAliases, (int)std::size(kFilterAliases)},
     {"magda_filter", kCompiledFilterAliases, (int)std::size(kCompiledFilterAliases)},
     {"magda_saturator", kCompiledSaturatorAliases, (int)std::size(kCompiledSaturatorAliases)},
+    {"magda_delay_compiled", kCompiledDelayAliases, (int)std::size(kCompiledDelayAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
     {"utility", kUtilityAliases, (int)std::size(kUtilityAliases)},
 };
