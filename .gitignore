@@ -79,6 +79,15 @@ install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 _deps
+CPackConfig.cmake
+CPackSourceConfig.cmake
+
+# CMake configure_file output (when someone runs cmake from the source tree)
+magda/daw/generated/
+
+# gtest_discover_tests artifacts (named <target>_include-<hash>.cmake / <target>_tests-<hash>.cmake)
+tests/*_include-*.cmake
+tests/*_tests-*.cmake
 
 # Catch2
 catch2-*
