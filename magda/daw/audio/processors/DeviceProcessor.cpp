@@ -717,16 +717,14 @@ void CompiledFaustProcessor::populateParameters(DeviceInfo& info) const {
     if (faust == nullptr)
         return;
 
-    auto params = plugin_->getAutomatableParameters();
     for (int i = 0; i < daw::audio::FaustParamPool::kSize; ++i) {
         const auto& slot = faust->getPool().slot(i);
         if (!slot.active || slot.hidden)
             continue;
 
         auto paramInfo = getParameterInfo(i);
-        if (i >= 0 && i < params.size() && params[i])
-            paramInfo.currentValue =
-                faust->nativeValueToDisplayValue(i, params[i]->getCurrentValue());
+        if (auto* param = faust->getSlotParameter(i))
+            paramInfo.currentValue = faust->nativeValueToDisplayValue(i, param->getCurrentValue());
         info.parameters.push_back(std::move(paramInfo));
     }
 }
@@ -736,10 +734,11 @@ void CompiledFaustProcessor::setParameterByIndex(int paramIndex, float value) {
         return;
 
     auto* faust = dynamic_cast<daw::audio::compiled::CompiledFaustPluginBase*>(plugin_.get());
-    auto params = plugin_->getAutomatableParameters();
-    if (faust != nullptr && paramIndex >= 0 && paramIndex < params.size() && params[paramIndex]) {
-        params[paramIndex]->setParameterFromHost(
-            faust->displayValueToNativeValue(paramIndex, value), juce::sendNotificationSync);
+    if (faust != nullptr) {
+        if (auto* param = faust->getSlotParameter(paramIndex)) {
+            param->setParameterFromHost(faust->displayValueToNativeValue(paramIndex, value),
+                                        juce::sendNotificationSync);
+        }
     }
 }
 
@@ -748,9 +747,10 @@ float CompiledFaustProcessor::getParameterByIndex(int paramIndex) const {
         return 0.0f;
 
     auto* faust = dynamic_cast<daw::audio::compiled::CompiledFaustPluginBase*>(plugin_.get());
-    auto params = plugin_->getAutomatableParameters();
-    if (faust != nullptr && paramIndex >= 0 && paramIndex < params.size() && params[paramIndex])
-        return faust->nativeValueToDisplayValue(paramIndex, params[paramIndex]->getCurrentValue());
+    if (faust != nullptr) {
+        if (auto* param = faust->getSlotParameter(paramIndex))
+            return faust->nativeValueToDisplayValue(paramIndex, param->getCurrentValue());
+    }
     return 0.0f;
 }
 

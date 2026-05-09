@@ -329,6 +329,15 @@ void CompiledFaustPluginBase::applyToBuffer(const te::PluginRenderContext& fc) {
     }
 
     dsp_->compute(numSamples, inPtrs_.data(), outPtrs_.data());
+
+    const int channelsToSanitise = std::min(hostChannels, numOutputs);
+    for (int ch = 0; ch < channelsToSanitise; ++ch) {
+        float* out = fc.destBuffer->getWritePointer(ch, startSample);
+        for (int i = 0; i < numSamples; ++i) {
+            const float sample = out[i];
+            out[i] = std::isfinite(sample) ? juce::jlimit(-16.0f, 16.0f, sample) : 0.0f;
+        }
+    }
 }
 
 float CompiledFaustPluginBase::displayValueToNativeValue(int slotIndex, float displayValue) const {
@@ -341,6 +350,12 @@ float CompiledFaustPluginBase::nativeValueToDisplayValue(int slotIndex, float na
     if (slotIndex < 0 || slotIndex >= FaustParamPool::kSize)
         return nativeValue;
     return nativeToDisplay(pool_.slot(slotIndex), nativeValue);
+}
+
+te::AutomatableParameter* CompiledFaustPluginBase::getSlotParameter(int slotIndex) const {
+    if (slotIndex < 0 || slotIndex >= FaustParamPool::kSize)
+        return nullptr;
+    return slotParams_[static_cast<size_t>(slotIndex)].get();
 }
 
 }  // namespace magda::daw::audio::compiled

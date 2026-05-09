@@ -52,6 +52,7 @@ class CompiledFaustPluginBase : public te::Plugin {
 
     float displayValueToNativeValue(int slotIndex, float displayValue) const;
     float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
+    te::AutomatableParameter* getSlotParameter(int slotIndex) const;
 
   private:
     void harvestAndCreateParameters();

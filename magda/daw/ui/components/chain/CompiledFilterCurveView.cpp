@@ -105,7 +105,7 @@ CompiledFilterCurveView::FilterMode CompiledFilterCurveView::modeForIndex() cons
 float CompiledFilterCurveView::qValue() const {
     switch (family_) {
         case FilterFamily::SVF:
-            return 0.5f + resonance_ * 19.5f;
+            return 0.5f + resonance_ * 11.5f;
         case FilterFamily::Ladder:
             return 0.6f + resonance_ * 9.4f;
         case FilterFamily::Korg35:
