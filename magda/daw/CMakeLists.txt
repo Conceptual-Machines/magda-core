@@ -228,8 +228,11 @@ juce_add_binary_data(MagdaAssets
     audio/faust_dsp/magda_tremolo.dsp
     audio/faust_dsp/magda_delay.dsp
     audio/faust_dsp/magda_granular_delay.dsp
-    audio/faust_dsp/magda_filter.dsp
-    audio/faust_dsp/magda_dual_filter.dsp
+    audio/faust_dsp/magda_filter_svf.dsp
+    audio/faust_dsp/magda_filter_ladder.dsp
+    audio/faust_dsp/magda_filter_korg35.dsp
+    audio/faust_dsp/magda_filter_oberheim.dsp
+    audio/faust_dsp/magda_filter_sk.dsp
 )
 
 # =============================================================================
