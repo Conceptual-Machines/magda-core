@@ -2556,11 +2556,18 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     onButton_->setVisible(true);
     area.removeFromTop(4);
 
-    // UI button (only for external plugins, not drum grid)
-    uiButton_->setBounds(
-        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    uiButton_->setVisible(!isInternalDevice() && !drumGridUI_);
-    area.removeFromTop(4);
+    // UI button (only for external plugins, not drum grid). Skip the slot
+    // entirely when it isn't shown so we don't leave a gap above the macro
+    // / mod icons for internal devices.
+    const bool showUI = !isInternalDevice() && !drumGridUI_;
+    if (showUI) {
+        uiButton_->setBounds(
+            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+        uiButton_->setVisible(true);
+        area.removeFromTop(4);
+    } else {
+        uiButton_->setVisible(false);
+    }
 
     bool isDrumGrid = drumGridUI_ != nullptr;
     bool showMod = device_.deviceType != magda::DeviceType::MIDI || isDrumGrid;
