@@ -62,6 +62,94 @@ _PATH_FAMILY_KEYWORDS: dict[str, str] = {
 _PATH_TOKEN_RE = re.compile(r"[_/\-.\s,()]+")
 
 
+# --- Key parsing from filenames -------------------------------------------
+#
+# Producers explicitly encode keys in filenames: 'kick_C.wav', 'synth_F#m.wav',
+# 'bass_Bbmin.wav', 'pad_Cmaj.wav'. When present, this is more reliable than
+# chroma-correlation key detection — especially on short tonal one-shots where
+# Krumhansl has minimal harmonic context to lock onto.
+
+# Matches a single token like 'C', 'Cm', 'C#', 'F#m', 'Bb', 'Cmin', 'Cmaj'.
+# Root letter is case-sensitive uppercase (avoids matching 'g' in 'guitar').
+# Scale suffixes are explicit alternatives (no IGNORECASE because then [A-G]
+# would catch 'g' too).
+_KEY_TOKEN_RE = re.compile(
+    r"^([A-G])"                                                  # root note
+    r"([b#])?"                                                   # optional accidental
+    r"("
+    r"maj|MAJ|Maj|major|MAJOR|Major"
+    r"|min|MIN|Min|minor|MINOR|Minor"
+    r"|m|M"
+    r")?$"
+)
+
+# Convert flat roots to their sharp equivalents so the column is consistent
+# with the chroma analyzer's vocabulary (PITCH_CLASSES uses sharps).
+_FLAT_TO_SHARP: dict[str, str] = {
+    "Cb": "B", "Db": "C#", "Eb": "D#", "Fb": "E",
+    "Gb": "F#", "Ab": "G#", "Bb": "A#",
+}
+
+
+def parse_key_from_path(path: str | Path) -> tuple[str, str | None] | None:
+    """Look for an explicit key marker in the filename.
+
+    Returns (root, scale) where scale is 'major', 'minor', or None when the
+    filename gives only the root (e.g. 'kick_C.wav' — producer conventions
+    treat a bare letter as 'no mode specified', not 'major'). Returns None
+    if no key marker is found.
+
+    Tries tokens from right to left so the *trailing* key wins when a
+    filename mentions several pitches (e.g. 'C_to_F.wav' is in F)."""
+    stem = Path(path).stem
+    tokens = [t for t in re.split(r"[_\-. ]+", stem) if t]
+
+    for i in range(len(tokens) - 1, -1, -1):
+        m = _KEY_TOKEN_RE.match(tokens[i])
+        if m is None:
+            continue
+        root_letter, accidental, scale_str = m.groups()
+
+        # If the token had no inline scale, peek at the next token in case
+        # the producer wrote 'C_minor' / 'F#_major' as separate tokens.
+        if scale_str is None and i + 1 < len(tokens):
+            nxt = tokens[i + 1].lower()
+            if nxt in ("major", "maj"):
+                scale_str = "maj"
+            elif nxt in ("minor", "min"):
+                scale_str = "min"
+
+        return _normalize_key(root_letter, accidental, scale_str)
+    return None
+
+
+def _normalize_key(
+    root_letter: str, accidental: str | None, scale_str: str | None
+) -> tuple[str, str | None]:
+    if accidental == "#":
+        root = root_letter + "#"
+        # B# / E# are theoretically valid but never used in sample-pack naming.
+        # If we see one, fall back to the natural letter.
+        if root in ("B#", "E#"):
+            root = root_letter
+    elif accidental == "b":
+        root = _FLAT_TO_SHARP.get(root_letter + "b", root_letter)
+    else:
+        root = root_letter
+
+    scale: str | None = None
+    if scale_str:
+        sl = scale_str.lower()
+        if sl in ("m", "min", "minor"):
+            scale = "minor"
+        elif sl in ("maj", "major"):
+            scale = "major"
+        elif scale_str == "M":  # explicit uppercase M is major by convention
+            scale = "major"
+
+    return (root, scale)
+
+
 def _resolve_for_inspection(path: str | Path) -> Path:
     """Resolve symlinks so the folder hierarchy of the *real* file is visible.
     Test corpora often symlink files into a flat directory; without resolving,

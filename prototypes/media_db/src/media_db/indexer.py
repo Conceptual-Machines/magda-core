@@ -142,6 +142,22 @@ def _index_one(
 
     path_tags_ = derive.path_tags(f.path) if f.kind == "audio" else []
     derived = _derive_categoricals(f.kind, feats, top_tags, f.path)
+
+    # Apply derivation policies that adjust stored feature values:
+    # - one-shots have no meaningful tempo (single transient or short burst)
+    # - drums and fx have no meaningful key (a ride cymbal IS tonal but
+    #   "key=G#" on a hi-hat or impact is producer-useless noise)
+    # - filename-encoded key trumps chroma analysis when present (after the
+    #   family check, so a path-tagged kick still has its key nulled)
+    if feats is not None and f.kind == "audio":
+        if derived["shape"] == "one-shot":
+            feats.bpm = None
+        path_key = derive.parse_key_from_path(f.path)
+        if path_key is not None:
+            feats.key_root, feats.key_scale = path_key
+        if derived["family"] in ("drum", "fx"):
+            feats.key_root, feats.key_scale = None, None
+
     file_id = _upsert_file(conn, f, content_hash, feats, derived)
 
     if vec is not None and embedder is not None:
