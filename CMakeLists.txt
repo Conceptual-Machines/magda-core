@@ -221,6 +221,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(lua)
 
+# SQLite 3.53.1 — embedded media DB engine (issue #768).
+# Like Lua, the official amalgamation ships no CMakeLists, so FetchContent
+# just populates sqlite3_SOURCE_DIR and the static library is built by
+# third_party/sqlite/CMakeLists.txt with FTS5 and foreign keys enabled.
+FetchContent_Declare(
+    sqlite3
+    URL https://www.sqlite.org/2026/sqlite-amalgamation-3530100.zip
+    URL_HASH SHA3_256=3c07136e4f6b5dd0c395be86455014039597bc65b6851f7111e88f71b6e06114
+)
+FetchContent_MakeAvailable(sqlite3)
+add_subdirectory(third_party/sqlite)
+
 # Simple agent system - no external dependencies needed
 
 # Product-based subdirectories

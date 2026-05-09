@@ -99,6 +99,8 @@ set(TEST_SOURCES
     test_selection_manager_listeners.cpp
     # Configurable user data paths
     test_app_paths.cpp
+    # Media database (issue #768) — Phase A: SQLite skeleton
+    test_media_database.cpp
 )
 
 # Create test executable
