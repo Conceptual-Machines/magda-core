@@ -27,6 +27,8 @@ class QueryResult:
     key_root: str | None
     key_scale: str | None
     duration_s: float | None
+    shape: str | None = None
+    family: str | None = None
 
 
 @dataclass
@@ -37,6 +39,9 @@ class Filters:
     key_root: str | None = None
     key_scale: str | None = None
     format: str | None = None
+    shape: str | None = None
+    family: str | None = None
+    tonal: bool | None = None
 
 
 def search(
@@ -55,6 +60,7 @@ def search(
 
     sql = f"""
         SELECT f.id, f.path, f.kind, f.bpm, f.key_root, f.key_scale, f.duration_s,
+               f.shape, f.family,
                e.vector_dim, e.vector_blob
         FROM media_file AS f
         JOIN media_embedding AS e
@@ -84,6 +90,8 @@ def search(
             key_root=r["key_root"],
             key_scale=r["key_scale"],
             duration_s=r["duration_s"],
+            shape=r["shape"],
+            family=r["family"],
         )
         for score, r in scored[:limit]
     ]
@@ -93,7 +101,7 @@ def _filter_only(
     conn: sqlite3.Connection, where: str, params: dict, limit: int
 ) -> list[QueryResult]:
     sql = f"""
-        SELECT id, path, kind, bpm, key_root, key_scale, duration_s
+        SELECT id, path, kind, bpm, key_root, key_scale, duration_s, shape, family
         FROM media_file
         WHERE {where}
         ORDER BY indexed_at DESC
@@ -110,6 +118,8 @@ def _filter_only(
             key_root=r["key_root"],
             key_scale=r["key_scale"],
             duration_s=r["duration_s"],
+            shape=r["shape"],
+            family=r["family"],
         )
         for r in rows
     ]
@@ -136,4 +146,13 @@ def _build_where(f: Filters) -> tuple[str, dict]:
     if f.format is not None:
         clauses.append("format = :format")
         params["format"] = f.format
+    if f.shape is not None:
+        clauses.append("shape = :shape")
+        params["shape"] = f.shape
+    if f.family is not None:
+        clauses.append("family = :family")
+        params["family"] = f.family
+    if f.tonal is not None:
+        clauses.append("tonal = :tonal")
+        params["tonal"] = 1 if f.tonal else 0
     return " AND ".join(clauses), params

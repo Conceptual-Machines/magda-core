@@ -68,6 +68,10 @@ def query(
     key_root: Optional[str] = typer.Option(None, "--key-root"),
     key_scale: Optional[str] = typer.Option(None, "--key-scale"),
     format_: Optional[str] = typer.Option(None, "--format"),
+    shape: Optional[str] = typer.Option(None, "--shape", help="one-shot|loop|sustained"),
+    family: Optional[str] = typer.Option(None, "--family",
+        help="drum|bass|lead|pad|keys|guitar|orchestral|vocal|fx"),
+    tonal: Optional[bool] = typer.Option(None, "--tonal/--atonal", help="filter by tonality"),
     limit: int = typer.Option(20, "--limit"),
 ) -> None:
     """Search the DB. Provide TEXT for semantic search, filters narrow results."""
@@ -76,6 +80,7 @@ def query(
     filters = qmod.Filters(
         kind=kind, bpm_min=bpm_min, bpm_max=bpm_max,
         key_root=key_root, key_scale=key_scale, format=format_,
+        shape=shape, family=family, tonal=tonal,
     )
 
     embedder = None
@@ -165,7 +170,8 @@ def _render(results: list[qmod.QueryResult]) -> None:
         return
     t = Table()
     t.add_column("score", justify="right")
-    t.add_column("kind")
+    t.add_column("family")
+    t.add_column("shape")
     t.add_column("bpm", justify="right")
     t.add_column("key")
     t.add_column("dur", justify="right")
@@ -175,7 +181,7 @@ def _render(results: list[qmod.QueryResult]) -> None:
         bpm = f"{r.bpm:.1f}" if r.bpm else "-"
         key = f"{r.key_root or '-'} {r.key_scale or ''}".strip()
         dur = f"{r.duration_s:.1f}s" if r.duration_s else "-"
-        t.add_row(score, r.kind, bpm, key, dur, str(r.path))
+        t.add_row(score, r.family or "-", r.shape or "-", bpm, key, dur, str(r.path))
     console.print(t)
 
 

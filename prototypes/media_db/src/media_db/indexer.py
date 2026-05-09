@@ -18,7 +18,7 @@ import xxhash
 from rich.progress import Progress
 
 from . import db as dbmod
-from . import scan, tags
+from . import derive, scan, tags
 from .embeddings.base import Embedder
 from .features.audio_features import AudioFeatures, extract as extract_features
 
@@ -98,21 +98,39 @@ def _index_one(
     if f.kind == "audio":
         feats = extract_features(f.path)
 
-    file_id = _upsert_file(conn, f, content_hash, feats)
-
+    top_tags: list[tuple[str, float]] = []
+    vec = None
     if embedder is not None and f.kind == "audio":
         audio, sr = sf.read(str(f.path), dtype="float32", always_2d=False)
         if audio.ndim == 2:
             audio = audio.mean(axis=1)
         vec = embedder.embed_audio(audio, sr)
-        _upsert_embedding(conn, file_id, embedder, vec)
-
         if tag_list and text_embeddings is not None:
             scores = text_embeddings @ vec  # cosine, both L2-normalized
-            top = _top_k(scores, tag_list, tag_threshold, max_tags)
-            _replace_tags(conn, file_id, top, embedder.model_id)
+            top_tags = _top_k(scores, tag_list, tag_threshold, max_tags)
+
+    derived = _derive_categoricals(f.kind, feats, top_tags)
+    file_id = _upsert_file(conn, f, content_hash, feats, derived)
+
+    if vec is not None and embedder is not None:
+        _upsert_embedding(conn, file_id, embedder, vec)
+        if top_tags:
+            _replace_tags(conn, file_id, top_tags, embedder.model_id)
 
     return "updated" if existing is not None else "inserted"
+
+
+def _derive_categoricals(
+    kind: str, feats: AudioFeatures | None, top_tags: list[tuple[str, float]]
+) -> dict[str, object]:
+    """Compute shape, family, tonal columns. Non-audio kinds get nulls/unknowns."""
+    if kind != "audio" or feats is None:
+        return {"shape": None, "family": None, "tonal": None}
+    return {
+        "shape": derive.shape(feats),
+        "family": derive.family(top_tags),
+        "tonal": int(derive.tonal(feats)),
+    }
 
 
 def _upsert_file(
@@ -120,6 +138,7 @@ def _upsert_file(
     f: scan.ScannedFile,
     content_hash: bytes,
     feats: AudioFeatures | None,
+    derived: dict[str, object],
 ) -> int:
     now = int(time.time())
     audio_cols: dict[str, object] = {}
@@ -131,8 +150,10 @@ def _upsert_file(
             "bpm": feats.bpm,
             "key_root": feats.key_root,
             "key_scale": feats.key_scale,
+            "key_confidence": feats.key_confidence,
             "rms": feats.rms,
             "spectral_centroid": feats.spectral_centroid,
+            "spectral_flatness": feats.spectral_flatness,
             "transient_density": feats.transient_density,
         }
 
@@ -145,7 +166,7 @@ def _upsert_file(
         "content_hash": content_hash,
         "indexed_at": now,
     }
-    cols = {**base_cols, **audio_cols}
+    cols = {**base_cols, **audio_cols, **derived}
     placeholders = ", ".join(f":{k}" for k in cols)
     column_list = ", ".join(cols)
     update_list = ", ".join(f"{k}=excluded.{k}" for k in cols if k != "path")

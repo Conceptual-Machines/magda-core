@@ -37,6 +37,14 @@ _MINOR_PROFILE = np.array(
 )
 
 
+# Spectral flatness threshold for tonality. Flatness is in [0, 1]:
+# tonal music ≈ 0.001-0.05, drums/noise ≈ 0.1-0.4. The chroma-profile correlation
+# we use for key detection is biased upward and won't cleanly separate tonal from
+# atonal (uniform chroma still scores ~0.8 against any rotated profile), so we use
+# flatness as the dedicated tonality signal.
+FLATNESS_THRESHOLD = 0.08
+
+
 @dataclass
 class AudioFeatures:
     duration_s: float
@@ -45,8 +53,10 @@ class AudioFeatures:
     bpm: float | None
     key_root: str | None
     key_scale: str | None
+    key_confidence: float | None     # chroma-profile correlation peak in [0, 1]
     rms: float
     spectral_centroid: float
+    spectral_flatness: float          # [0, 1]; high = noisy/percussive, low = tonal
     transient_density: float
 
 
@@ -59,11 +69,16 @@ def extract(path: Path) -> AudioFeatures:
     duration_s = len(audio) / sr if sr > 0 else 0.0
 
     bpm = _bpm(audio, sr)
-    key_root, key_scale = _key(audio, sr)
+    key_root, key_scale, key_conf = _key(audio, sr)
     rms = float(np.sqrt(np.mean(audio.astype(np.float64) ** 2)))
     centroid = float(librosa.feature.spectral_centroid(y=audio, sr=sr).mean())
+    flatness = float(librosa.feature.spectral_flatness(y=audio).mean())
     onsets = librosa.onset.onset_detect(y=audio, sr=sr, units="time")
     density = float(len(onsets) / duration_s) if duration_s > 0 else 0.0
+
+    # Null out key_root/key_scale for non-tonal content — display would be wrong.
+    if flatness >= FLATNESS_THRESHOLD:
+        key_root, key_scale = None, None
 
     return AudioFeatures(
         duration_s=duration_s,
@@ -72,8 +87,10 @@ def extract(path: Path) -> AudioFeatures:
         bpm=bpm,
         key_root=key_root,
         key_scale=key_scale,
+        key_confidence=key_conf,
         rms=rms,
         spectral_centroid=centroid,
+        spectral_flatness=flatness,
         transient_density=density,
     )
 
@@ -88,16 +105,19 @@ def _bpm(audio: np.ndarray, sr: int) -> float | None:
         return None
 
 
-def _key(audio: np.ndarray, sr: int) -> tuple[str | None, str | None]:
+def _key(audio: np.ndarray, sr: int) -> tuple[str | None, str | None, float | None]:
     """Krumhansl-Schmuckler: pick the (root, mode) maximizing correlation between
-    the file's mean chroma and the rotated key profile."""
+    the file's mean chroma and the rotated key profile. Returns the correlation
+    peak in [0, 1] alongside the result; the caller decides whether the file is
+    tonal enough for the key to be meaningful (atonal/percussive content scores
+    very low even when *some* key wins by margin)."""
     import librosa
     try:
         chroma = librosa.feature.chroma_cqt(y=audio, sr=sr).mean(axis=1)
     except Exception:
-        return None, None
+        return None, None, None
     if not np.any(chroma):
-        return None, None
+        return None, None, 0.0
 
     chroma = chroma / (np.linalg.norm(chroma) + 1e-9)
     major = _MAJOR_PROFILE / np.linalg.norm(_MAJOR_PROFILE)
@@ -116,4 +136,4 @@ def _key(audio: np.ndarray, sr: int) -> tuple[str | None, str | None]:
         if s_min > best_score:
             best_score, best_root, best_scale = s_min, i, "minor"
 
-    return PITCH_CLASSES[best_root], best_scale
+    return PITCH_CLASSES[best_root], best_scale, max(0.0, best_score)

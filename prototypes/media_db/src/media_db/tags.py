@@ -67,6 +67,63 @@ DEFAULT_TAGS: list[str] = [
 ]
 
 
+# Map each prompt to a coarse instrument family. Used to derive media_file.family
+# from the file's top-scoring tag. Texture descriptors map to 'texture' so a
+# "warm sound" tag never silently overrides a real instrument tag.
+TAG_FAMILY: dict[str, str] = {
+    "a kick drum": "drum",
+    "a snare drum": "drum",
+    "a clap": "drum",
+    "a hi-hat": "drum",
+    "a cymbal": "drum",
+    "a tom drum": "drum",
+    "a percussion loop": "drum",
+    "a drum loop": "drum",
+    "a 808 bass drum": "drum",
+
+    "a sub bass": "bass",
+    "a synth bass": "bass",
+    "an acid bass": "bass",
+
+    "a synth lead": "lead",
+    "a synth pluck": "lead",
+    "an arpeggio": "lead",
+
+    "a synth pad": "pad",
+
+    "a piano": "keys",
+    "an electric piano": "keys",
+    "an organ": "keys",
+
+    "an acoustic guitar": "guitar",
+    "an electric guitar": "guitar",
+
+    "strings": "orchestral",
+    "brass": "orchestral",
+    "woodwinds": "orchestral",
+
+    "a vocal": "vocal",
+    "a vocal chop": "vocal",
+
+    "a sound effect": "fx",
+    "an impact": "fx",
+    "a riser": "fx",
+    "a downlifter": "fx",
+    "a noise sweep": "fx",
+    "an ambience": "fx",
+    "a foley sound": "fx",
+
+    "a dark sound": "texture",
+    "a bright sound": "texture",
+    "a warm sound": "texture",
+    "a metallic sound": "texture",
+    "a distorted sound": "texture",
+    "a clean sound": "texture",
+    "a lo-fi sound": "texture",
+    "a glitchy sound": "texture",
+}
+
+
 def load(path: Path | None) -> list[str]:
     if path is None:
         return list(DEFAULT_TAGS)

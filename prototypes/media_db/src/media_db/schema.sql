@@ -3,7 +3,7 @@
 
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 
 CREATE TABLE IF NOT EXISTS media_file (
     id              INTEGER PRIMARY KEY,
@@ -24,13 +24,24 @@ CREATE TABLE IF NOT EXISTS media_file (
     key_scale           TEXT,                          -- 'major','minor'
     rms                 REAL,
     spectral_centroid   REAL,
-    transient_density   REAL                           -- onsets per second
+    spectral_flatness   REAL,                          -- [0,1]; high = noisy/percussive
+    transient_density   REAL,                          -- onsets per second
+    key_confidence      REAL,                          -- chroma-profile correlation peak [0,1]
+
+    -- Derived categorical labels (computed by indexer from features + tags).
+    shape               TEXT CHECK (shape  IN ('one-shot','loop','sustained','unknown')),
+    family              TEXT CHECK (family IN
+                            ('drum','bass','lead','pad','keys','guitar','orchestral',
+                             'vocal','fx','texture','unknown')),
+    tonal               INTEGER CHECK (tonal IN (0, 1))  -- bool: 1 if pitched material
 );
 
 CREATE INDEX IF NOT EXISTS idx_media_file_kind   ON media_file (kind);
 CREATE INDEX IF NOT EXISTS idx_media_file_format ON media_file (format);
 CREATE INDEX IF NOT EXISTS idx_media_file_bpm    ON media_file (bpm);
 CREATE INDEX IF NOT EXISTS idx_media_file_key    ON media_file (key_root, key_scale);
+CREATE INDEX IF NOT EXISTS idx_media_file_shape  ON media_file (shape);
+CREATE INDEX IF NOT EXISTS idx_media_file_family ON media_file (family);
 
 -- Embeddings: one row per (file, model). Vectors stored as raw float32 LE.
 -- C++ reads with: std::memcpy(out.data(), blob.data(), vector_dim * sizeof(float));
