@@ -121,9 +121,15 @@ void CompiledFilterCurveView::setCompiledPlugin(
 void CompiledFilterCurveView::updateFromDevice(const magda::DeviceInfo& device,
                                                const ParamLinkContext* linkContext) {
     deviceSnapshot_ = device;
-    hasLinkContext_ = linkContext != nullptr;
-    if (linkContext != nullptr)
+    // Hold onto the last non-null link context: the slider-drag callback
+    // calls updateFromDevice(device_) without one, but we still need the
+    // cached mods/macros to compute simulated modulation correctly. The
+    // full-refresh path (DeviceSlotComponent::updateParamModulation) keeps
+    // it current whenever mods/macros change.
+    if (linkContext != nullptr) {
+        hasLinkContext_ = true;
         linkContext_ = *linkContext;
+    }
 
     updateTargetValues();
 
@@ -198,39 +204,20 @@ void CompiledFilterCurveView::timerCallback() {
                          std::abs(resonance_ - targetResonance_) < 0.0005f &&
                          std::abs(drive_ - targetDrive_) < 0.0005f;
 
-    // Read the live modifier values: if every modulator currently outputs 0
-    // (e.g. a one-shot envelope at rest, an LFO between MIDI triggers) the
-    // displayed curve has nothing to follow — even if a mod link exists
-    // structurally. Drop the timer in that case; the next non-zero modifier
-    // tick will be picked up via updateFromDevice (fired by parameter-change
-    // listeners) and re-arm the timer.
-    bool modulatorIsActive = false;
-    if (compiledPlugin_ != nullptr) {
-        for (int slotIndex : {0, 1, 2}) {
-            if (auto* p = compiledPlugin_->getSlotParameter(slotIndex)) {
-                if (std::abs(p->getCurrentModifierValue()) > 1e-6f) {
-                    modulatorIsActive = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (settled && !modulatorIsActive) {
+    if (settled) {
         cutoffHz_ = targetCutoffHz_;
         resonance_ = targetResonance_;
         drive_ = targetDrive_;
-        // Drop to a lazy poll rate — still need to notice when a re-triggered
-        // LFO / envelope kicks the modifier back to non-zero, but we don't
-        // need 60 Hz redraws for that. The next non-zero modifier value
-        // pushes the timer back up to 60 Hz via the branch below.
+        // Drop to a lazy poll rate so the next visual-sim tick (LFO retrigger,
+        // macro change, automation movement) wakes us back up promptly, but we
+        // don't keep redrawing at 60 Hz with nothing to show.
         if (compiledPlugin_ != nullptr) {
             if (getTimerInterval() != kIdlePollMs)
                 startTimer(kIdlePollMs);
         } else if (!hasActiveCurveLinks()) {
             stopTimer();
         }
-    } else if (modulatorIsActive || !settled) {
+    } else {
         if (getTimerInterval() != kAnimationPollMs)
             startTimer(kAnimationPollMs);
     }

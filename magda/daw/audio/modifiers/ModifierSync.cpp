@@ -64,13 +64,20 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
                 if (ctx.hasCrossTrackSidechain)
                     lfo->setSkipNativeResync(true);
 
-                // Audio-triggered LFOs start gated so getCurrentValue()
-                // returns 0 until an audio peak fires the trigger. MIDI-
-                // triggered LFOs don't need gating — they reset phase on
-                // note-on and free-run otherwise; the audio thread owns
-                // their gate state via gateSidechainLFOs.
-                if (modInfo.triggerMode == LFOTriggerMode::Audio)
+                // Audio-trigger LFOs start gated; the audio thread clears the
+                // gate on each peak (gateSidechainLFOs / triggerNoteOn).
+                //
+                // MIDI-trigger LFOs ask TE to drive the gate from the MIDI
+                // stream itself: held notes ungate, all-notes-off re-gates.
+                // Without this they free-run between notes and the audio
+                // diverges from MAGDA's visual sim — see the MAGDA TE patch
+                // adding setGateOnTriggerSource() to LFOModifier.
+                if (modInfo.triggerMode == LFOTriggerMode::Audio) {
                     lfo->setGated(true);
+                } else if (modInfo.triggerMode == LFOTriggerMode::MIDI) {
+                    lfo->setGated(true);
+                    lfo->setGateOnTriggerSource(true);
+                }
             }
             modifier = lfoMod;
             break;
