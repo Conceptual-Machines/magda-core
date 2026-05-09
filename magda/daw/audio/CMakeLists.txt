@@ -1,7 +1,28 @@
 # Audio thread, plugin hosting, and routing layer.
 # Most of these compile into magda_daw; AudioEngineOptimizer is app-only.
 
+# Compiled-from-Faust DSP (#1214): build-time .dsp → .cpp generation,
+# linked into magda_daw as native plugin code. Each compiled DSP needs
+# a corresponding wrapper TU under plugins/compiled/ that #include's the
+# generated file. Add new entries by:
+#   1. listing the wrapper .cpp in target_sources below
+#   2. invoking magda_compile_faust_dsp() to produce the generated .cpp
+#   3. adding the generated path to target_sources via OBJECT_DEPENDS
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_svf.dsp"
+    MagdaSVFDsp
+    MAGDA_SVF_GENERATED_CPP
+)
+# A phony target that just depends on every generated DSP .cpp; making
+# magda_daw depend on it forces the custom commands to fire before any
+# wrapper TU is compiled.
+add_custom_target(magda_compiled_dsps DEPENDS "${MAGDA_SVF_GENERATED_CPP}")
+add_dependencies(magda_daw magda_compiled_dsps)
+target_include_directories(magda_daw PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
+
 target_sources(magda_daw PRIVATE
+    plugins/compiled/MagdaSVFCompiled.cpp
+    plugins/compiled/CompiledFaustHost.hpp
     AudioBridge.cpp
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
