@@ -9,6 +9,7 @@ target_sources(magda_daw_app PRIVATE
     FaustDeviceLayout.cpp
     CompiledFaustDeviceLayout.cpp
     CompiledFilterCurveView.cpp
+    CompiledSaturatorCurveView.cpp
     ToneGeneratorUI.cpp
     SamplerUI.cpp
     DrumGridUI.cpp
@@ -90,5 +91,6 @@ target_sources(magda_daw_app PRIVATE
     FaustDeviceLayout.hpp
     CompiledFaustDeviceLayout.hpp
     CompiledFilterCurveView.hpp
+    CompiledSaturatorCurveView.hpp
     ParamHostComponent.hpp
 )

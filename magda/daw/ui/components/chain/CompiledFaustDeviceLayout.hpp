@@ -8,23 +8,27 @@ namespace magda::daw::ui {
  * Compact layout for fixed, compiled Faust effects.
  *
  * Runtime Faust DSPs use a sparse 32-slot pool layout because users can load
- * arbitrary graphs. The compiled MAGDA effects currently expose curated
- * controls in stable slot order, so they can use a single row and leave room
- * for an inline visualiser below.
+ * arbitrary graphs. Compiled MAGDA effects expose curated controls in stable
+ * slot order, so they can use a single row and leave room for an inline
+ * visualiser below.
+ *
+ * Cell count + per-row count are constructor args so each compiled device
+ * (filter = 5 cells, saturator = 6, …) packs its row tightly without a
+ * per-device subclass. Cell-hiding is data-driven: a Discrete cell whose
+ * plugin advertises ≤ 1 choice is hidden as functionally inert. That lets
+ * a plugin like the filter (Ladder engine has only "LP") stop the dropdown
+ * from showing without the layout knowing anything about engines.
  */
 class CompiledFaustDeviceLayout final : public DeviceParamLayout {
   public:
-    // MAGDA's compiled Filter exposes 5 controls (cutoff, resonance, drive,
-    // engine, mode). Future compiled FX may expose different counts; if the
-    // UX needs to vary per-device we'd promote these to constructor args.
-    static constexpr int kCellCount = 5;
-    static constexpr int kCellsPerRow = 5;
+    CompiledFaustDeviceLayout(int cellCount, int cellsPerRow)
+        : cellCount_(cellCount), cellsPerRow_(cellsPerRow) {}
 
     int cellCount() const override {
-        return kCellCount;
+        return cellCount_;
     }
     int cellsPerRow() const override {
-        return kCellsPerRow;
+        return cellsPerRow_;
     }
     bool wantsPagination() const override {
         return false;
@@ -32,6 +36,10 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
     int totalPages(const magda::DeviceInfo& device) const override;
     ParamCell cellFor(const magda::DeviceInfo& device, int cellIndex,
                       int currentPage) const override;
+
+  private:
+    int cellCount_;
+    int cellsPerRow_;
 };
 
 }  // namespace magda::daw::ui

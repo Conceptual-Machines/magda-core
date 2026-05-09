@@ -754,10 +754,10 @@ void CompiledFaustProcessor::setParameterByIndex(int paramIndex, float value) {
     if (!plugin_)
         return;
 
-    auto* faust = dynamic_cast<daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin_.get());
-    if (faust != nullptr) {
-        if (auto* param = faust->getSlotParameter(paramIndex)) {
-            param->setParameterFromHost(faust->displayValueToNativeValue(paramIndex, value),
+    auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
+    if (host != nullptr) {
+        if (auto* param = host->hostSlotParameter(paramIndex)) {
+            param->setParameterFromHost(host->displayToNormalized(paramIndex, value),
                                         juce::sendNotificationSync);
         }
     }
@@ -767,10 +767,10 @@ float CompiledFaustProcessor::getParameterByIndex(int paramIndex) const {
     if (!plugin_)
         return 0.0f;
 
-    auto* faust = dynamic_cast<daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin_.get());
-    if (faust != nullptr) {
-        if (auto* param = faust->getSlotParameter(paramIndex))
-            return faust->nativeValueToDisplayValue(paramIndex, param->getCurrentValue());
+    auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
+    if (host != nullptr) {
+        if (auto* param = host->hostSlotParameter(paramIndex))
+            return host->normalizedToDisplay(paramIndex, param->getCurrentValue());
     }
     return 0.0f;
 }

@@ -109,6 +109,20 @@ sat_chain(x) = (x * drive_lin + bias)
              : tone_tilt
              : *(output_lin);
 
-channel(x) = x * (1.0 - mix) + sat_chain(x) * mix;
+channel(x) = (x * (1.0 - mix) + sat_chain(x) * mix) : soft_limit;
+
+// Output safety net. Below the knee (~-1.4 dBFS) the signal passes through
+// unchanged so quiet/normal material isn't coloured; above the knee a tanh
+// curve soft-clips toward ±1.0 instead of slamming the converter. Catches
+// the case where Drive + Output + Mode=Hard would otherwise push past
+// 0 dBFS, without sneaking compression into low-level transients.
+SOFT_KNEE = 0.85;
+soft_limit(x) = select2(ma.fabs(x) < SOFT_KNEE,
+                        x,
+                        ma.signum(x)
+                          * (SOFT_KNEE
+                             + (1.0 - SOFT_KNEE)
+                               * ma.tanh((ma.fabs(x) - SOFT_KNEE)
+                                         / (1.0 - SOFT_KNEE))));
 
 process = channel, channel;

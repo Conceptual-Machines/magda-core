@@ -1,9 +1,6 @@
 #include "CompiledFaustDeviceLayout.hpp"
 
-#include <algorithm>
 #include <cmath>
-
-#include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 
 namespace magda::daw::ui {
 
@@ -37,7 +34,7 @@ int CompiledFaustDeviceLayout::totalPages(const magda::DeviceInfo&) const {
 ParamCell CompiledFaustDeviceLayout::cellFor(const magda::DeviceInfo& device, int cellIndex,
                                              int) const {
     ParamCell cell;
-    if (cellIndex < 0 || cellIndex >= kCellCount) {
+    if (cellIndex < 0 || cellIndex >= cellCount_) {
         cell.mode = ParamCell::Mode::Hidden;
         return cell;
     }
@@ -48,25 +45,17 @@ ParamCell CompiledFaustDeviceLayout::cellFor(const magda::DeviceInfo& device, in
         return cell;
     }
 
-    // Engine-aware visibility for the Mode slot: Ladder has no mode
-    // picker (LP only), so hide the cell entirely when Engine is set to
-    // Ladder. Slot indices come from MagdaFilterCompiledPlugin so a
-    // reorder there flows through this layout automatically.
-    using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
-    if (cellIndex == Filter::kModeSlot) {
-        const int engineArrayIdx = findParamArrayIndex(device, Filter::kEngineSlot);
-        if (engineArrayIdx >= 0) {
-            const float engineValue =
-                device.parameters[static_cast<size_t>(engineArrayIdx)].currentValue;
-            const int engineIdx = static_cast<int>(std::round(engineValue));
-            if (engineIdx == static_cast<int>(Filter::FilterFamily::Ladder)) {
-                cell.mode = ParamCell::Mode::Hidden;
-                return cell;
-            }
-        }
+    const auto& param = device.parameters[static_cast<size_t>(paramArrayIdx)];
+
+    // A discrete cell whose plugin advertises ≤ 1 choice is functionally
+    // inert (only one option to pick). Hide it instead of drawing a
+    // meaningless dropdown — e.g. the filter's Mode slot when Engine =
+    // Ladder, where modeChoicesForEngine() returns just {"LP"}.
+    if (param.scale == magda::ParameterScale::Discrete && param.choices.size() <= 1) {
+        cell.mode = ParamCell::Mode::Hidden;
+        return cell;
     }
 
-    const auto& param = device.parameters[static_cast<size_t>(paramArrayIdx)];
     cell.mode = ParamCell::Mode::Filled;
     cell.paramArrayIndex = paramArrayIdx;
     cell.targetParamIndex = param.paramIndex >= 0 ? param.paramIndex : paramArrayIdx;
