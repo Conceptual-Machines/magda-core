@@ -695,17 +695,16 @@ CompiledFaustProcessor::CompiledFaustProcessor(DeviceId deviceId, te::Plugin::Pt
     : DeviceProcessor(deviceId, plugin) {}
 
 int CompiledFaustProcessor::getParameterCount() const {
-    auto* faust = dynamic_cast<daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin_.get());
-    return faust != nullptr ? daw::audio::compiled::MagdaFilterCompiledPlugin::kHostSlotCount : 0;
+    auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
+    return host != nullptr ? host->hostSlotCount() : 0;
 }
 
 ParameterInfo CompiledFaustProcessor::getParameterInfo(int index) const {
-    auto* faust = dynamic_cast<daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin_.get());
-    if (faust == nullptr || index < 0 ||
-        index >= daw::audio::compiled::MagdaFilterCompiledPlugin::kHostSlotCount)
+    auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
+    if (host == nullptr || index < 0 || index >= host->hostSlotCount())
         return {};
 
-    const auto& s = faust->getSlotInfo(index);
+    const auto& s = host->hostSlotInfo(index);
     ParameterInfo info;
     info.paramIndex = index;
     info.name = s.name;
@@ -719,13 +718,11 @@ ParameterInfo CompiledFaustProcessor::getParameterInfo(int index) const {
         info.scaleAnchor = s.scaleAnchor;
     info.choices = s.choices;
 
-    // Mode's choice list is engine-dependent: SVF/Oberheim 4 modes,
-    // Sallen-Key 3, Korg 35 2, Ladder 1. Build it from the live Engine
-    // value so the dropdown shows exactly the modes the active engine
-    // supports. The audio path uses the same per-engine count in
-    // applyToBuffer, so what the user sees is what they hear.
-    if (index == daw::audio::compiled::MagdaFilterCompiledPlugin::kModeSlot) {
-        info.choices = faust->modeChoicesForEngine(faust->activeEngineIndex());
+    // Engine-aware mode-list rebuild (filter pack only): the choice list
+    // for Mode depends on the live Engine value. Single-engine plugins
+    // (saturator, …) return -1 from engineAwareModeSlot() and skip this.
+    if (index == host->engineAwareModeSlot() && index >= 0) {
+        info.choices = host->modeChoicesForActiveEngine();
         if (!info.choices.empty()) {
             info.minValue = 0.0f;
             info.maxValue = static_cast<float>(info.choices.size() - 1);
@@ -741,14 +738,14 @@ ParameterInfo CompiledFaustProcessor::getParameterInfo(int index) const {
 
 void CompiledFaustProcessor::populateParameters(DeviceInfo& info) const {
     info.parameters.clear();
-    auto* faust = dynamic_cast<daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin_.get());
-    if (faust == nullptr)
+    auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
+    if (host == nullptr)
         return;
 
-    for (int i = 0; i < daw::audio::compiled::MagdaFilterCompiledPlugin::kHostSlotCount; ++i) {
+    for (int i = 0; i < host->hostSlotCount(); ++i) {
         auto paramInfo = getParameterInfo(i);
-        if (auto* param = faust->getSlotParameter(i))
-            paramInfo.currentValue = faust->nativeValueToDisplayValue(i, param->getCurrentValue());
+        if (auto* param = host->hostSlotParameter(i))
+            paramInfo.currentValue = host->normalizedToDisplay(i, param->getCurrentValue());
         info.parameters.push_back(std::move(paramInfo));
     }
 }

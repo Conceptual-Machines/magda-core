@@ -102,6 +102,16 @@ constexpr AliasSpec kCompiledFilterAliases[] = {
 };
 
 // ------------------------------------------------------------------
+// Saturator ("magda_saturator") — slot order matches
+// MagdaSaturatorCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_saturator.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledSaturatorAliases[] = {
+    {"drive", 0, "Drive"}, {"mode", 1, "Mode"}, {"bias", 2, "Bias"},
+    {"tone", 3, "Tone"},   {"mix", 4, "Mix"},   {"output", 5, "Output"},
+};
+
+// ------------------------------------------------------------------
 // Pitch Shift ("pitchshift") — TE PitchShiftPlugin single param.
 // ------------------------------------------------------------------
 constexpr AliasSpec kPitchShiftAliases[] = {
@@ -131,6 +141,7 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"phaser", kPhaserAliases, (int)std::size(kPhaserAliases)},
     {"filter", kFilterAliases, (int)std::size(kFilterAliases)},
     {"magda_filter", kCompiledFilterAliases, (int)std::size(kCompiledFilterAliases)},
+    {"magda_saturator", kCompiledSaturatorAliases, (int)std::size(kCompiledSaturatorAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
     {"utility", kUtilityAliases, (int)std::size(kUtilityAliases)},
 };

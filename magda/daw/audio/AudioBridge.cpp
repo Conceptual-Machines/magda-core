@@ -15,6 +15,7 @@
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/SidechainTriggerBus.hpp"
 #include "plugins/compiled/MagdaFilterCompiledPlugin.hpp"
+#include "plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -810,9 +811,12 @@ te::AutomatableParameter* AudioBridge::resolveControlTarget(const ControlTarget&
             auto plugin = getPlugin(deviceId);
             if (!plugin)
                 return nullptr;
-            if (auto* compiledFaust =
+            if (auto* compiledFilter =
                     dynamic_cast<daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin.get()))
-                return compiledFaust->getSlotParameter(target.paramIndex);
+                return compiledFilter->getSlotParameter(target.paramIndex);
+            if (auto* compiledSat =
+                    dynamic_cast<daw::audio::compiled::MagdaSaturatorCompiledPlugin*>(plugin.get()))
+                return compiledSat->getSlotParameter(target.paramIndex);
             auto params = plugin->getAutomatableParameters();
             if (target.paramIndex >= 0 && target.paramIndex < static_cast<int>(params.size()))
                 return params[static_cast<size_t>(target.paramIndex)];

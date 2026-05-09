@@ -13,6 +13,7 @@
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
+#include "audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "core/AppPaths.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
@@ -369,6 +370,9 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     list.push_back(PluginBrowserInfo::createInternal("Lowpass", "lowpass", false, "Filter"));
     list.push_back(PluginBrowserInfo::createInternal(
         "Filter", audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName, false, "Filter"));
+    list.push_back(PluginBrowserInfo::createInternal(
+        "Saturator", audio::compiled::MagdaSaturatorCompiledPlugin::xmlTypeName, false,
+        "Distortion"));
     list.push_back(PluginBrowserInfo::createInternal("Pitch Shift", "pitchshift", false, "Pitch"));
     list.push_back(
         PluginBrowserInfo::createInternal("IR Reverb", "impulseresponse", false, "Reverb"));

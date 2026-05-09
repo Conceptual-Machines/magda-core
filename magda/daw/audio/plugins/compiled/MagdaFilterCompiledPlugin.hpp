@@ -8,13 +8,12 @@
 #include <vector>
 
 #include "../FaustParamPool.hpp"
+#include "CompiledFaustInterface.hpp"
 #include "core/ParameterInfo.hpp"
 
 class dsp;
 
 namespace magda::daw::audio::compiled {
-
-namespace te = tracktion::engine;
 
 /**
  * @brief Single compiled-Faust plugin hosting all five filter engine
@@ -37,7 +36,7 @@ namespace te = tracktion::engine;
  * all four (LP/BP/HP/Notch); Korg 35 LP+HP; Sallen-Key LP+BP+HP;
  * Ladder is LP-only. Unsupported modes fall back to LP for the engine.
  */
-class MagdaFilterCompiledPlugin : public te::Plugin {
+class MagdaFilterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
   public:
     static const char* xmlTypeName;
 
@@ -94,16 +93,7 @@ class MagdaFilterCompiledPlugin : public te::Plugin {
     // The five host slots, exposed as ParameterInfo so the processor can
     // populate device.parameters. Kind / range / scale baked here once at
     // construction.
-    struct HostSlotInfo {
-        juce::String name;
-        juce::String unit;
-        magda::ParameterScale scale = magda::ParameterScale::Linear;
-        float minValue = 0.0f;
-        float maxValue = 1.0f;
-        float defaultValue = 0.0f;
-        float scaleAnchor = std::numeric_limits<float>::quiet_NaN();
-        std::vector<juce::String> choices;  // for Discrete kind
-    };
+    using HostSlotInfo = CompiledHostSlotInfo;
     const HostSlotInfo& getSlotInfo(int slotIndex) const;
 
     // Live engine index, derived from the host Engine param. Used by the
@@ -112,6 +102,32 @@ class MagdaFilterCompiledPlugin : public te::Plugin {
     // mode set (e.g. Korg 35 = LP/HP, Sallen-Key = LP/BP/HP, Ladder = LP).
     int activeEngineIndex() const;
     std::vector<juce::String> modeChoicesForEngine(int engineIndex) const;
+
+    // ICompiledFaustPlugin
+    int hostSlotCount() const override {
+        return kHostSlotCount;
+    }
+    const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const override {
+        return getSlotInfo(slotIndex);
+    }
+    te::AutomatableParameter* hostSlotParameter(int slotIndex) const override {
+        return getSlotParameter(slotIndex);
+    }
+    float displayToNormalized(int slotIndex, float displayValue) const override {
+        return displayValueToNativeValue(slotIndex, displayValue);
+    }
+    float normalizedToDisplay(int slotIndex, float normalizedValue) const override {
+        return nativeValueToDisplayValue(slotIndex, normalizedValue);
+    }
+    int engineAwareModeSlot() const override {
+        return kModeSlot;
+    }
+    int activeEngine() const override {
+        return activeEngineIndex();
+    }
+    std::vector<juce::String> modeChoicesForActiveEngine() const override {
+        return modeChoicesForEngine(activeEngineIndex());
+    }
 
   private:
     struct EngineDsp;

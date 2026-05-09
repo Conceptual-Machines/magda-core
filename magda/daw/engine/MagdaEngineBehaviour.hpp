@@ -12,6 +12,7 @@
 #include "../audio/plugins/SidechainMonitorPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
 #include "../audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
+#include "../audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../project/ProjectManager.hpp"
 
@@ -98,6 +99,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         }
         if (type == daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName) {
             return new daw::audio::compiled::MagdaFilterCompiledPlugin(info);
+        }
+        if (type == daw::audio::compiled::MagdaSaturatorCompiledPlugin::xmlTypeName) {
+            return new daw::audio::compiled::MagdaSaturatorCompiledPlugin(info);
         }
         if (type == MidiReceivePlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiReceivePlugin");
