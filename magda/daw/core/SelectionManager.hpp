@@ -962,6 +962,14 @@ class SelectionManager {
      */
     void clearSelection();
 
+    /**
+     * @brief Clear the active selection if it points at a chain node that is about to be deleted.
+     *
+     * Device/rack deletion happens in TrackManager, not SelectionManager, so callers need an
+     * explicit hook to avoid leaving the Inspector focused on a stale ChainNodePath.
+     */
+    void clearSelectionForDeletedChainNode(const ChainNodePath& deletedPath);
+
     // ========================================================================
     // Listeners
     // ========================================================================

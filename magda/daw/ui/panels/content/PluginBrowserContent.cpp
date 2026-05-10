@@ -12,6 +12,7 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
+#include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
@@ -366,8 +367,9 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
                                                      audio::StepSequencerPlugin::xmlTypeName, false,
                                                      "MIDI"));
     list.push_back(PluginBrowserInfo::createInternal("Equaliser", "eq", false, "EQ"));
-    list.push_back(
-        PluginBrowserInfo::createInternal("Compressor", "compressor", false, "Dynamics"));
+    list.push_back(PluginBrowserInfo::createInternal(
+        "Compressor", audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName, false,
+        "Dynamics"));
     list.push_back(PluginBrowserInfo::createInternal("Reverb", "reverb", false, "Reverb"));
     list.push_back(PluginBrowserInfo::createInternal(
         "Delay", audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName, false, "Delay"));

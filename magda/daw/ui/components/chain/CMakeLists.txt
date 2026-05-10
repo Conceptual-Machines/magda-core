@@ -13,6 +13,7 @@ target_sources(magda_daw_app PRIVATE
     CompiledDelayCurveView.cpp
     CompiledGrainDelayCurveView.cpp
     CompiledGritCurveView.cpp
+    CompiledCompressorCurveView.cpp
     CompiledMultibandCurveView.cpp
     CompiledPhaserCurveView.cpp
     ToneGeneratorUI.cpp
@@ -100,6 +101,7 @@ target_sources(magda_daw_app PRIVATE
     CompiledDelayCurveView.hpp
     CompiledGrainDelayCurveView.hpp
     CompiledGritCurveView.hpp
+    CompiledCompressorCurveView.hpp
     CompiledMultibandCurveView.hpp
     CompiledPhaserCurveView.hpp
     ParamHostComponent.hpp

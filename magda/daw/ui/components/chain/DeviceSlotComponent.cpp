@@ -23,6 +23,7 @@
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
@@ -33,6 +34,7 @@
 #include "audio/transport/StepClock.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
+#include "core/InternalDeviceKind.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/ModInfo.hpp"
@@ -108,6 +110,15 @@ bool isCompiledFaustGrainDelayPluginId(const juce::String& pluginId) {
 bool isCompiledFaustPhaserPluginId(const juce::String& pluginId) {
     using namespace magda::daw::audio::compiled;
     return pluginId.equalsIgnoreCase(MagdaPhaserCompiledPlugin::xmlTypeName);
+}
+
+bool isCompiledFaustCompressorPluginId(const juce::String& pluginId) {
+    using namespace magda::daw::audio::compiled;
+    return pluginId.equalsIgnoreCase(MagdaCompressorCompiledPlugin::xmlTypeName);
+}
+
+bool isLegacyTeCompressorPluginId(const juce::String& pluginId) {
+    return magda::classifyInternalDevice(pluginId) == magda::InternalDeviceKind::TeCompressor;
 }
 
 // LookAndFeel for the plugin-presets header button. Visually a flat label
@@ -188,6 +199,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     isCompiledFaustDelay_ = isCompiledFaustDelayPluginId(device.pluginId);
     isCompiledFaustGrainDelay_ = isCompiledFaustGrainDelayPluginId(device.pluginId);
     isCompiledFaustGrit_ = isCompiledFaustGritPluginId(device.pluginId);
+    isCompiledFaustCompressor_ = isCompiledFaustCompressorPluginId(device.pluginId);
     isCompiledFaustMultiband_ = isCompiledFaustMultibandPluginId(device.pluginId);
     isCompiledFaustPhaser_ = isCompiledFaustPhaserPluginId(device.pluginId);
     isTracktionDevice_ = magda::isTracktionEngineStockPlugin(device.pluginId);
@@ -519,6 +531,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 8, /*cellsPerRow*/ 8);
     else if (isCompiledFaustGrit_)
         layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 4, /*cellsPerRow*/ 4);
+    else if (isCompiledFaustCompressor_)
+        layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 11, /*cellsPerRow*/ 6);
     else if (isCompiledFaustMultiband_)
         layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 18, /*cellsPerRow*/ 9);
     else if (isCompiledFaustPhaser_)
@@ -2012,6 +2026,18 @@ void DeviceSlotComponent::updateParamModulation() {
         compiledGritCurveView_->updateFromDevice(device_);
     }
 
+    if (compiledCompressorCurveView_ && isCompiledFaustCompressor_) {
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                compiledCompressorCurveView_->setCompiledPlugin(
+                    dynamic_cast<magda::daw::audio::compiled::MagdaCompressorCompiledPlugin*>(
+                        plugin.get()));
+            }
+        }
+        compiledCompressorCurveView_->updateFromDevice(device_);
+    }
+
     if (compiledMultibandCurveView_ && isCompiledFaustMultiband_) {
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
@@ -2321,8 +2347,12 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             compiledGrainDelayCurveView_->setVisible(false);
         if (compiledGritCurveView_)
             compiledGritCurveView_->setVisible(false);
+        if (compiledCompressorCurveView_)
+            compiledCompressorCurveView_->setVisible(false);
         if (compiledMultibandCurveView_)
             compiledMultibandCurveView_->setVisible(false);
+        if (compiledPhaserCurveView_)
+            compiledPhaserCurveView_->setVisible(false);
         if (chordEngineUI_)
             chordEngineUI_->setVisible(false);
         if (arpeggiatorUI_)
@@ -2404,6 +2434,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     } else if (isCompiledFaustGrit_ && compiledGritCurveView_) {
         compiledCurveView = compiledGritCurveView_.get();
         compiledCurvePreferred = compiledGritCurveView_->getPreferredHeight();
+    } else if (isCompiledFaustCompressor_ && compiledCompressorCurveView_) {
+        compiledCurveView = compiledCompressorCurveView_.get();
+        compiledCurvePreferred = compiledCompressorCurveView_->getPreferredHeight();
     } else if (isCompiledFaustMultiband_ && compiledMultibandCurveView_) {
         compiledCurveView = compiledMultibandCurveView_.get();
         compiledCurvePreferred = compiledMultibandCurveView_->getPreferredHeight();
@@ -3370,6 +3403,16 @@ void DeviceSlotComponent::createCustomUI() {
         compiledGritCurveView_ = std::make_unique<CompiledGritCurveView>(device_.pluginId);
         compiledGritCurveView_->updateFromDevice(device_);
         addAndMakeVisible(*compiledGritCurveView_);
+    } else if (isCompiledFaustCompressor_) {
+        compiledCompressorCurveView_ =
+            std::make_unique<CompiledCompressorCurveView>(device_.pluginId);
+        compiledCompressorCurveView_->onParameterChanged = [this](int paramIndex,
+                                                                  float displayValue) {
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       displayValue);
+        };
+        compiledCompressorCurveView_->updateFromDevice(device_);
+        addAndMakeVisible(*compiledCompressorCurveView_);
     } else if (isCompiledFaustMultiband_) {
         compiledMultibandCurveView_ =
             std::make_unique<CompiledMultibandCurveView>(device_.pluginId);
@@ -3898,7 +3941,7 @@ void DeviceSlotComponent::createCustomUI() {
             };
             const InternalEntry internals[] = {
                 {"Equaliser", "eq"},
-                {"Compressor", "compressor"},
+                {"Compressor", daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName},
                 {"Reverb", "reverb"},
                 {"Delay", "delay"},
                 {"Chorus", "chorus"},
@@ -4064,7 +4107,7 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*eqUI_);
         updateCustomUI();
-    } else if (device_.pluginId.containsIgnoreCase("compressor")) {
+    } else if (isLegacyTeCompressorPluginId(device_.pluginId)) {
         compressorUI_ = std::make_unique<CompressorUI>();
         compressorUI_->onParameterChanged = [this](int paramIndex, float value) {
             if (!nodePath_.isValid())
@@ -4343,7 +4386,7 @@ void DeviceSlotComponent::refreshCustomUIParameterValues() {
     // fetches. Safe to call every timer tick.
     if (eqUI_ && device_.pluginId.equalsIgnoreCase("eq"))
         eqUI_->updateFromParameters(device_.parameters);
-    if (compressorUI_ && device_.pluginId.containsIgnoreCase("compressor"))
+    if (compressorUI_ && isLegacyTeCompressorPluginId(device_.pluginId))
         compressorUI_->updateFromParameters(device_.parameters);
     if (reverbUI_ && device_.pluginId.containsIgnoreCase("reverb"))
         reverbUI_->updateFromParameters(device_.parameters);
@@ -4373,6 +4416,8 @@ void DeviceSlotComponent::refreshCustomUIParameterValues() {
         compiledGrainDelayCurveView_->updateFromDevice(device_);
     if (compiledGritCurveView_ && isCompiledFaustGrit_)
         compiledGritCurveView_->updateFromDevice(device_);
+    if (compiledCompressorCurveView_ && isCompiledFaustCompressor_)
+        compiledCompressorCurveView_->updateFromDevice(device_);
     if (compiledMultibandCurveView_ && isCompiledFaustMultiband_)
         compiledMultibandCurveView_->updateFromDevice(device_);
     if (compiledPhaserCurveView_ && isCompiledFaustPhaser_)
@@ -4562,7 +4607,7 @@ void DeviceSlotComponent::updateCustomUI() {
         eqUI_->updateFromParameters(device_.parameters);
     }
 
-    if (compressorUI_ && device_.pluginId.containsIgnoreCase("compressor")) {
+    if (compressorUI_ && isLegacyTeCompressorPluginId(device_.pluginId)) {
         compressorUI_->updateFromParameters(device_.parameters);
     }
 

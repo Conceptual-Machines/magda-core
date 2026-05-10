@@ -4,9 +4,11 @@
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
+#include "core/InternalDeviceKind.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -15,6 +17,14 @@
 #include "project/ProjectManager.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+
+bool isLegacyTeCompressorPluginId(const juce::String& pluginId) {
+    return magda::classifyInternalDevice(pluginId) == magda::InternalDeviceKind::TeCompressor;
+}
+
+}  // namespace
 
 // =============================================================================
 // Queries
@@ -658,7 +668,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
             };
             const InternalEntry internals[] = {
                 {"Equaliser", "eq"},
-                {"Compressor", "compressor"},
+                {"Compressor", audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName},
                 {"Reverb", "reverb"},
                 {"Delay", "delay"},
                 {"Chorus", "chorus"},
@@ -815,7 +825,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         };
         parent->addAndMakeVisible(*eqUI_);
         update(device);
-    } else if (device.pluginId.containsIgnoreCase("compressor")) {
+    } else if (isLegacyTeCompressorPluginId(device.pluginId)) {
         compressorUI_ = std::make_unique<CompressorUI>();
         compressorUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
             if (cb.onParameterChanged)
@@ -1154,7 +1164,7 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         eqUI_->updateFromParameters(device.parameters);
     }
 
-    if (compressorUI_ && device.pluginId.containsIgnoreCase("compressor")) {
+    if (compressorUI_ && isLegacyTeCompressorPluginId(device.pluginId)) {
         compressorUI_->updateFromParameters(device.parameters);
     }
 

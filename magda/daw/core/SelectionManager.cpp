@@ -673,6 +673,59 @@ void SelectionManager::clearSelection() {
     notifySelectionTypeChanged(SelectionType::None);
 }
 
+void SelectionManager::clearSelectionForDeletedChainNode(const ChainNodePath& deletedPath) {
+    if (!deletedPath.isValid() || selectionType_ == SelectionType::None)
+        return;
+
+    auto pointsAtDeletedNode = [&deletedPath](const ChainNodePath& selectedPath) {
+        if (!selectedPath.isValid())
+            return false;
+        if (selectedPath == deletedPath)
+            return true;
+
+        const auto deletedDeviceId = deletedPath.getDeviceId();
+        return deletedDeviceId != INVALID_DEVICE_ID &&
+               selectedPath.trackId == deletedPath.trackId &&
+               selectedPath.getDeviceId() == deletedDeviceId;
+    };
+
+    bool shouldClear = false;
+    switch (selectionType_) {
+        case SelectionType::ChainNode:
+            shouldClear = pointsAtDeletedNode(selectedChainNode_);
+            break;
+        case SelectionType::Param:
+            shouldClear = pointsAtDeletedNode(paramSelection_.devicePath);
+            break;
+        case SelectionType::Mod:
+            shouldClear = pointsAtDeletedNode(modSelection_.parentPath);
+            break;
+        case SelectionType::Macro:
+            shouldClear = pointsAtDeletedNode(macroSelection_.parentPath);
+            break;
+        case SelectionType::ModsPanel:
+            shouldClear = pointsAtDeletedNode(modsPanelSelection_.parentPath);
+            break;
+        case SelectionType::MacrosPanel:
+            shouldClear = pointsAtDeletedNode(macrosPanelSelection_.parentPath);
+            break;
+        case SelectionType::Device:
+            shouldClear = deviceSelection_.trackId == deletedPath.trackId &&
+                          deviceSelection_.deviceId == deletedPath.getDeviceId();
+            break;
+        default:
+            break;
+    }
+
+    if (!shouldClear)
+        return;
+
+    if (selectionType_ == SelectionType::ChainNode)
+        clearChainNodeSelection();
+    else
+        clearSelection();
+}
+
 // ============================================================================
 // Listeners
 // ============================================================================

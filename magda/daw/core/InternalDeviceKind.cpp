@@ -12,6 +12,7 @@
 #include "audio/plugins/MidiReceivePlugin.hpp"
 #include "audio/plugins/SidechainMonitorPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
+#include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
@@ -43,6 +44,82 @@ bool matches(const juce::String& id, const char* a, const char* b) {
     return b != nullptr && id.equalsIgnoreCase(b);
 }
 
+const InternalDeviceMetadata kMetadata[] = {
+    {InternalDeviceKind::TeEq, "Equaliser", "", "EQ",
+     "Four-band equaliser for broad tonal shaping and corrective filtering."},
+    {InternalDeviceKind::TeCompressor, "Compressor", "", "Dynamics",
+     "Track compressor for controlling level, transient shape, and sustain."},
+    {InternalDeviceKind::TeReverb, "Reverb", "", "Reverb",
+     "Algorithmic space effect for room, plate, and ambience-style tails."},
+    {InternalDeviceKind::TeDelay, "Delay", "", "Delay",
+     "Tempo-capable delay effect for echoes and rhythmic repeats."},
+    {InternalDeviceKind::TeChorus, "Chorus", "", "Modulation",
+     "Modulated delay effect for width, movement, and ensemble-style thickening."},
+    {InternalDeviceKind::TePhaser, "Phaser", "", "Modulation",
+     "Swept phase-cancellation effect for resonant movement and stereo motion."},
+    {InternalDeviceKind::TeLowpass, "Lowpass", "", "Filter",
+     "Low-pass filter for removing high-frequency content."},
+    {InternalDeviceKind::TePitchShift, "Pitch Shift", "", "Pitch",
+     "Pitch shifting effect for transposition and special effects."},
+    {InternalDeviceKind::TeImpulseResponse, "IR Reverb", "", "Reverb",
+     "Convolution-style response loader for captured spaces and resonant bodies."},
+    {InternalDeviceKind::TeVolumeAndPan, "Utility", "", "Utility",
+     "Gain and pan utility for simple level and stereo placement changes."},
+    {InternalDeviceKind::TeFourOsc, "4OSC Synth", "", "Synth",
+     "Four-oscillator subtractive instrument with modulation and macro-friendly controls."},
+    {InternalDeviceKind::TeToneGenerator, "Test Tone", "", "Utility",
+     "Simple tone generator for calibration, routing checks, and utility signals."},
+    {InternalDeviceKind::TeLevelMeter, "Level Meter", "", "Meter",
+     "Signal meter for monitoring level inside a chain."},
+    {InternalDeviceKind::MagdaSampler, "Sampler", "", "Sampler",
+     "Sample playback instrument with envelope, pitch, start/end, and looping controls."},
+    {InternalDeviceKind::DrumGrid, "Drum Grid", "", "Drums",
+     "Pad-based drum instrument with per-pad sample and effect chains."},
+    {InternalDeviceKind::MidiReceive, "MIDI Receive", "", "MIDI",
+     "Internal MIDI routing endpoint used by MAGDA track and device routing."},
+    {InternalDeviceKind::MidiChordEngine, "Chord Engine", "", "MIDI",
+     "MIDI processor for chord generation, voicing, and harmonic transforms."},
+    {InternalDeviceKind::Arpeggiator, "Arpeggiator", "", "MIDI",
+     "MIDI arpeggiator for rhythmic note patterns and held-note motion."},
+    {InternalDeviceKind::StepSequencer, "Step Sequencer", "", "MIDI",
+     "MIDI step sequencer for pattern-driven notes and rhythmic control."},
+    {InternalDeviceKind::SidechainMonitor, "Sidechain Monitor", "", "Utility",
+     "Internal monitor used to expose sidechain signal state."},
+    {InternalDeviceKind::AudioSidechainMonitor, "Audio Sidechain Monitor", "", "Utility",
+     "Internal audio monitor used by sidechain-aware devices."},
+    {InternalDeviceKind::InstrumentMeterTap, "Instrument Meter Tap", "", "Meter",
+     "Internal meter tap used to observe instrument output levels."},
+    {InternalDeviceKind::SessionMonitor, "Session Monitor", "", "Session",
+     "Internal monitor used by session playback and launch state."},
+    {InternalDeviceKind::Faust, "Faust", "", "Experimental",
+     "Interpreted Faust device for loading and editing user DSP code."},
+    {InternalDeviceKind::CompiledFilter, "Filter", "", "Filter",
+     "Compiled Faust multimode filter.\n"
+     "SVF: clean 2-pole LP/BP/HP/Notch for precise shaping.\n"
+     "Ladder: classic 4-pole low-pass with driven resonance.\n"
+     "Korg 35: MS-style LP/HP character with sharper analog bite.\n"
+     "Oberheim: SEM-style LP/BP/HP/Notch with broad musical sweeps.\n"
+     "Sallen-Key: smooth 2nd-order LP/BP/HP response.\n"
+     "Diode: resonant 4-pole diode ladder with input drive.\n"
+     "Warning: high resonance can create very loud peaks or self-oscillation. "
+     "Keep monitoring levels conservative to protect speakers and ears."},
+    {InternalDeviceKind::CompiledSaturator, "Saturator", "", "Distortion",
+     "Compiled Faust waveshaper with drive, mode, bias, tone, mix, and output."},
+    {InternalDeviceKind::CompiledDelay, "Delay", "", "Delay",
+     "Compiled Faust stereo delay with sync, tone, feedback, and crossfeed."},
+    {InternalDeviceKind::CompiledGrainDelay, "Grain Delay", "", "Delay",
+     "Compiled Faust granular delay for smeared repeats, pitch motion, and texture."},
+    {InternalDeviceKind::CompiledGrit, "Grit", "", "Distortion",
+     "Compiled Faust bit-depth and sample-rate reduction effect."},
+    {InternalDeviceKind::CompiledCompressor, "Compressor", "", "Dynamics",
+     "Compiled Faust compressor with peak/RMS detection, soft knee, stereo link, "
+     "audio sidechain input, parallel mix, and output safety limiting."},
+    {InternalDeviceKind::CompiledMultiband, "Multiband Compressor", "", "Dynamics",
+     "Compiled Faust multiband compressor with editable band thresholds."},
+    {InternalDeviceKind::CompiledPhaser, "Phaser", "", "Modulation",
+     "Compiled Faust phaser with selectable stages, feedback, and sweep window."},
+};
+
 }  // namespace
 
 InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
@@ -61,6 +138,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::MagdaSamplerPlugin;
     using daw::audio::MidiChordEnginePlugin;
     using daw::audio::StepSequencerPlugin;
+    using daw::audio::compiled::MagdaCompressorCompiledPlugin;
     using daw::audio::compiled::MagdaDelayCompiledPlugin;
     using daw::audio::compiled::MagdaFilterCompiledPlugin;
     using daw::audio::compiled::MagdaGrainDelayCompiledPlugin;
@@ -78,6 +156,8 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::CompiledGrainDelay, MagdaGrainDelayCompiledPlugin::xmlTypeName,
          nullptr},
         {InternalDeviceKind::CompiledGrit, MagdaGritCompiledPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::CompiledCompressor, MagdaCompressorCompiledPlugin::xmlTypeName,
+         nullptr},
         {InternalDeviceKind::CompiledMultiband, MagdaMultibandCompiledPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::CompiledPhaser, MagdaPhaserCompiledPlugin::xmlTypeName, nullptr},
         // TE built-in effects — picker uses a short id, the live plugin
@@ -117,6 +197,22 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
             return m.kind;
     }
     return InternalDeviceKind::External;
+}
+
+const InternalDeviceMetadata* getInternalDeviceMetadata(InternalDeviceKind kind) {
+    if (kind == InternalDeviceKind::External)
+        return nullptr;
+
+    for (const auto& metadata : kMetadata) {
+        if (metadata.kind == kind)
+            return &metadata;
+    }
+
+    return nullptr;
+}
+
+const InternalDeviceMetadata* getInternalDeviceMetadataForPluginId(const juce::String& pluginId) {
+    return getInternalDeviceMetadata(classifyInternalDevice(pluginId));
 }
 
 }  // namespace magda

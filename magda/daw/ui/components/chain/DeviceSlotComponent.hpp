@@ -6,6 +6,7 @@
 
 #include "ArpeggiatorUI.hpp"
 #include "ChorusUI.hpp"
+#include "CompiledCompressorCurveView.hpp"
 #include "CompiledDelayCurveView.hpp"
 #include "CompiledFilterCurveView.hpp"
 #include "CompiledGrainDelayCurveView.hpp"
@@ -233,6 +234,7 @@ class DeviceSlotComponent : public NodeComponent,
     bool isCompiledFaustDelay_ = false;
     bool isCompiledFaustGrainDelay_ = false;
     bool isCompiledFaustGrit_ = false;
+    bool isCompiledFaustCompressor_ = false;
     bool isCompiledFaustMultiband_ = false;
     bool isCompiledFaustPhaser_ = false;
     bool isTracktionDevice_ = false;
@@ -287,6 +289,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<CompiledDelayCurveView> compiledDelayCurveView_;
     std::unique_ptr<CompiledGrainDelayCurveView> compiledGrainDelayCurveView_;
     std::unique_ptr<CompiledGritCurveView> compiledGritCurveView_;
+    std::unique_ptr<CompiledCompressorCurveView> compiledCompressorCurveView_;
     std::unique_ptr<CompiledMultibandCurveView> compiledMultibandCurveView_;
     std::unique_ptr<CompiledPhaserCurveView> compiledPhaserCurveView_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;

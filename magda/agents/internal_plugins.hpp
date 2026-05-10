@@ -65,8 +65,8 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
     static const std::vector<InternalPluginInfo> kPlugins = {
         // Effects (TE stock)
         {"Equaliser", "eq", DeviceType::Effect, InternalPlugin::Equaliser, V::TracktionEngine},
-        {"Compressor", "compressor", DeviceType::Effect, InternalPlugin::Compressor,
-         V::TracktionEngine},
+        {"Compressor", "magda_compressor", DeviceType::Effect, InternalPlugin::Compressor,
+         V::Magda},
         {"Reverb", "reverb", DeviceType::Effect, InternalPlugin::Reverb, V::TracktionEngine},
         {"Delay", "delay", DeviceType::Effect, InternalPlugin::Delay, V::TracktionEngine},
         {"Chorus", "chorus", DeviceType::Effect, InternalPlugin::Chorus, V::TracktionEngine},
@@ -102,6 +102,8 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
 inline bool isTracktionEngineStockPlugin(const juce::String& pluginId) {
     if (pluginId.isEmpty())
         return false;
+    if (pluginId.equalsIgnoreCase("compressor"))
+        return true;  // legacy TE compressor projects
     for (const auto& entry : getInternalPlugins()) {
         if (entry.pluginId.equalsIgnoreCase(pluginId))
             return entry.vendor == InternalPluginVendor::TracktionEngine;

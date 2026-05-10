@@ -14,6 +14,7 @@
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/SidechainTriggerBus.hpp"
+#include "plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
@@ -805,6 +806,10 @@ te::AutomatableParameter* AudioBridge::resolveControlTarget(const ControlTarget&
             if (auto* compiledPhaser =
                     dynamic_cast<daw::audio::compiled::MagdaPhaserCompiledPlugin*>(plugin.get()))
                 return compiledPhaser->getSlotParameter(target.paramIndex);
+            if (auto* compiledComp =
+                    dynamic_cast<daw::audio::compiled::MagdaCompressorCompiledPlugin*>(
+                        plugin.get()))
+                return compiledComp->getSlotParameter(target.paramIndex);
             auto params = plugin->getAutomatableParameters();
             if (target.paramIndex >= 0 && target.paramIndex < static_cast<int>(params.size()))
                 return params[static_cast<size_t>(target.paramIndex)];

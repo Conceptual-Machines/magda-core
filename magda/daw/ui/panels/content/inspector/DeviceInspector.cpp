@@ -2,6 +2,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "core/InternalDeviceKind.hpp"
 #include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -30,6 +31,45 @@ DeviceInspector::DeviceInspector() {
     latencyValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
     latencyValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     addChildComponent(latencyValue_);
+
+    categoryLabel_.setText("Category", juce::dontSendNotification);
+    categoryLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    categoryLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(categoryLabel_);
+
+    categoryValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    categoryValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    addChildComponent(categoryValue_);
+
+    codenameLabel_.setText("Codename", juce::dontSendNotification);
+    codenameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    codenameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(codenameLabel_);
+
+    codenameValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    codenameValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    addChildComponent(codenameValue_);
+
+    descriptionLabel_.setText("Description", juce::dontSendNotification);
+    descriptionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    descriptionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(descriptionLabel_);
+
+    descriptionValue_.setMultiLine(true);
+    descriptionValue_.setReadOnly(true);
+    descriptionValue_.setScrollbarsShown(true);
+    descriptionValue_.setCaretVisible(false);
+    descriptionValue_.setPopupMenuEnabled(false);
+    descriptionValue_.setWantsKeyboardFocus(false);
+    descriptionValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    descriptionValue_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+    descriptionValue_.setColour(juce::TextEditor::backgroundColourId,
+                                juce::Colours::transparentBlack);
+    descriptionValue_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    descriptionValue_.setColour(juce::TextEditor::focusedOutlineColourId,
+                                juce::Colours::transparentBlack);
+    descriptionValue_.setIndents(0, 0);
+    addChildComponent(descriptionValue_);
 }
 
 DeviceInspector::~DeviceInspector() = default;
@@ -57,10 +97,38 @@ void DeviceInspector::resized() {
     chainNodeTypeLabel_.setBounds(bounds.removeFromTop(16));
     bounds.removeFromTop(4);
 
-    // Chain node name
-    chainNodeNameLabel_.setBounds(bounds.removeFromTop(16));
-    chainNodeNameValue_.setBounds(bounds.removeFromTop(24));
-    bounds.removeFromTop(16);
+    if (categoryLabel_.isVisible()) {
+        auto labelRow = bounds.removeFromTop(16);
+        auto valueRow = bounds.removeFromTop(24);
+        const int gap = 12;
+        const int columnWidth = (labelRow.getWidth() - gap) / 2;
+
+        chainNodeNameLabel_.setBounds(labelRow.removeFromLeft(columnWidth));
+        labelRow.removeFromLeft(gap);
+        categoryLabel_.setBounds(labelRow);
+
+        chainNodeNameValue_.setBounds(valueRow.removeFromLeft(columnWidth));
+        valueRow.removeFromLeft(gap);
+        categoryValue_.setBounds(valueRow);
+        bounds.removeFromTop(16);
+    } else {
+        // Chain node name
+        chainNodeNameLabel_.setBounds(bounds.removeFromTop(16));
+        chainNodeNameValue_.setBounds(bounds.removeFromTop(24));
+        bounds.removeFromTop(16);
+    }
+
+    if (codenameLabel_.isVisible()) {
+        codenameLabel_.setBounds(bounds.removeFromTop(16));
+        codenameValue_.setBounds(bounds.removeFromTop(24));
+        bounds.removeFromTop(10);
+    }
+
+    if (descriptionLabel_.isVisible()) {
+        descriptionLabel_.setBounds(bounds.removeFromTop(16));
+        descriptionValue_.setBounds(bounds.removeFromTop(160));
+        bounds.removeFromTop(16);
+    }
 
     // Latency (if visible)
     if (latencyLabel_.isVisible()) {
@@ -90,6 +158,7 @@ void DeviceInspector::updateFromSelectedChainNode() {
     juce::String nameStr;
     double latency = 0.0;
     bool showLatency = false;
+    const magda::InternalDeviceMetadata* metadata = nullptr;
 
     // Check for display overrides (e.g., pad chain plugin info)
     auto& sm = magda::SelectionManager::getInstance();
@@ -111,6 +180,7 @@ void DeviceInspector::updateFromSelectedChainNode() {
                     nameStr = device->name;
                     latency = tm.getDeviceLatencySeconds(selectedChainNode_);
                     showLatency = true;
+                    metadata = magda::getInternalDeviceMetadataForPluginId(device->pluginId);
                 }
                 break;
             }
@@ -134,6 +204,32 @@ void DeviceInspector::updateFromSelectedChainNode() {
     chainNodeTypeLabel_.setText(typeStr, juce::dontSendNotification);
     chainNodeNameValue_.setText(nameStr, juce::dontSendNotification);
 
+    if (metadata != nullptr) {
+        categoryValue_.setText(metadata->category, juce::dontSendNotification);
+        descriptionValue_.setText(metadata->description, false);
+        descriptionValue_.setTooltip(metadata->description);
+        categoryLabel_.setVisible(juce::String(metadata->category).isNotEmpty());
+        categoryValue_.setVisible(juce::String(metadata->category).isNotEmpty());
+        descriptionLabel_.setVisible(juce::String(metadata->description).isNotEmpty());
+        descriptionValue_.setVisible(juce::String(metadata->description).isNotEmpty());
+
+        const juce::String codename(metadata->codename);
+        codenameValue_.setText(codename, juce::dontSendNotification);
+        codenameLabel_.setVisible(codename.isNotEmpty());
+        codenameValue_.setVisible(codename.isNotEmpty());
+    } else {
+        categoryLabel_.setVisible(false);
+        categoryValue_.setVisible(false);
+        codenameLabel_.setVisible(false);
+        codenameValue_.setVisible(false);
+        descriptionLabel_.setVisible(false);
+        descriptionValue_.setVisible(false);
+        categoryValue_.setText({}, juce::dontSendNotification);
+        codenameValue_.setText({}, juce::dontSendNotification);
+        descriptionValue_.clear();
+        descriptionValue_.setTooltip({});
+    }
+
     if (showLatency && latency > 0.0) {
         auto latencyMs = latency * 1000.0;
         latencyValue_.setText(juce::String(latencyMs, 1) + " ms", juce::dontSendNotification);
@@ -156,6 +252,12 @@ void DeviceInspector::showDeviceControls(bool show) {
     chainNodeNameValue_.setVisible(show);
     latencyLabel_.setVisible(false);
     latencyValue_.setVisible(false);
+    categoryLabel_.setVisible(false);
+    categoryValue_.setVisible(false);
+    codenameLabel_.setVisible(false);
+    codenameValue_.setVisible(false);
+    descriptionLabel_.setVisible(false);
+    descriptionValue_.setVisible(false);
 }
 
 }  // namespace magda::daw::ui

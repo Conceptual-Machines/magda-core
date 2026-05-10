@@ -11,6 +11,7 @@
 #include "../audio/plugins/MidiReceivePlugin.hpp"
 #include "../audio/plugins/SidechainMonitorPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
+#include "../audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "../audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "../audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "../audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
@@ -122,6 +123,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         }
         if (type == daw::audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName) {
             return new daw::audio::compiled::MagdaPhaserCompiledPlugin(info);
+        }
+        if (type == daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName) {
+            return new daw::audio::compiled::MagdaCompressorCompiledPlugin(info);
         }
         if (type == MidiReceivePlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiReceivePlugin");

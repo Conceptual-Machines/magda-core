@@ -58,8 +58,17 @@ enum class InternalDeviceKind {
     CompiledDelay,       // magda_delay
     CompiledGrainDelay,  // magda_grain_delay
     CompiledGrit,        // magda_grit
+    CompiledCompressor,  // magda_compressor
     CompiledMultiband,   // magda_multiband
     CompiledPhaser,      // magda_phaser
+};
+
+struct InternalDeviceMetadata {
+    InternalDeviceKind kind = InternalDeviceKind::External;
+    const char* displayName = "";
+    const char* codename = "";
+    const char* category = "";
+    const char* description = "";
 };
 
 /**
@@ -70,5 +79,8 @@ enum class InternalDeviceKind {
  * touch raw strings again.
  */
 InternalDeviceKind classifyInternalDevice(const juce::String& pluginId);
+
+const InternalDeviceMetadata* getInternalDeviceMetadata(InternalDeviceKind kind);
+const InternalDeviceMetadata* getInternalDeviceMetadataForPluginId(const juce::String& pluginId);
 
 }  // namespace magda

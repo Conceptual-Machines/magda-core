@@ -48,6 +48,20 @@ constexpr AliasSpec kCompressorAliases[] = {
     {"makeup_gain", 4, "Output gain"},
 };
 
+constexpr AliasSpec kCompiledCompressorAliases[] = {
+    {"threshold", 0, "Threshold"},
+    {"ratio", 1, "Ratio"},
+    {"attack", 2, "Attack"},
+    {"release", 3, "Release"},
+    {"knee", 4, "Knee"},
+    {"makeup", 5, "Makeup"},
+    {"mix", 6, "Mix"},
+    {"output", 7, "Output"},
+    {"detector", 8, "Detector"},
+    {"link", 9, "Link"},
+    {"sc_hpf", 10, "SC HPF"},
+};
+
 // ------------------------------------------------------------------
 // Reverb ("reverb") — TE ReverbPlugin: room size / damping / wet / dry /
 // width / mode (freeze).
@@ -212,6 +226,7 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"magda_delay_compiled", kCompiledDelayAliases, (int)std::size(kCompiledDelayAliases)},
     {"magda_grain_delay", kCompiledGrainDelayAliases, (int)std::size(kCompiledGrainDelayAliases)},
     {"magda_grit", kCompiledGritAliases, (int)std::size(kCompiledGritAliases)},
+    {"magda_compressor", kCompiledCompressorAliases, (int)std::size(kCompiledCompressorAliases)},
     {"magda_multiband", kCompiledMultibandAliases, (int)std::size(kCompiledMultibandAliases)},
     {"magda_phaser", kCompiledPhaserAliases, (int)std::size(kCompiledPhaserAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
