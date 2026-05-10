@@ -267,7 +267,18 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
     }
 
     double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-    auto di = ClipDisplayInfo::from(clip, tempo);
+
+    double fileDuration = 0.0;
+    auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
+    if (thumbnail)
+        fileDuration = thumbnail->getTotalLength();
+
+    // Build display info with the real file duration so loop-region
+    // fields get clamped against the file extent. Without this the
+    // factory falls back to a clip-length-derived extent and the loop
+    // clamp branch is skipped, which leaves loopRegionLengthSource
+    // potentially extending past the file.
+    auto di = ClipDisplayInfo::from(clip, tempo, fileDuration);
 
     double displayOffset = clip.offset;
     if (isDragging_ && dragMode_ == DragMode::ResizeLeft)
@@ -277,11 +288,6 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
     const auto waveColour =
         waveColourOverride.isTransparent() ? juce::Colours::black : waveColourOverride;
     float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
-
-    double fileDuration = 0.0;
-    auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
-    if (thumbnail)
-        fileDuration = thumbnail->getTotalLength();
 
     bool useWarpedDraw = false;
     std::vector<WarpMarkerInfo> warpMarkers;
@@ -390,8 +396,18 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             double tileFileStart = loopRegionStart;
             double tileFullDuration = loopCycle;
             if (isFirstTile) {
-                tileFileStart = loopRegionStart + phaseSource;
-                tileFullDuration = sourceDeltaToPreviewTimeline(loopRegionEnd - tileFileStart);
+                // Render the partial loop fragment from (loopStart + phase)
+                // to loopRegionEnd. Floating-point wrap edge cases can put
+                // phase right at the loop boundary, producing a zero-length
+                // fragment — fall through to the regular tile so we still
+                // draw the rest of the clip instead of breaking out.
+                const double partialStart = loopRegionStart + phaseSource;
+                const double partialDuration =
+                    sourceDeltaToPreviewTimeline(loopRegionEnd - partialStart);
+                if (partialDuration > 0.0001) {
+                    tileFileStart = partialStart;
+                    tileFullDuration = partialDuration;
+                }
                 isFirstTile = false;
             }
             if (tileFullDuration <= 0.0001)
