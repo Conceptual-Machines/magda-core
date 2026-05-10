@@ -25,6 +25,7 @@
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
+#include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "audio/transport/StepClock.hpp"
 #include "core/ClipManager.hpp"
@@ -84,6 +85,11 @@ bool isCompiledFaustSaturatorPluginId(const juce::String& pluginId) {
 bool isCompiledFaustDelayPluginId(const juce::String& pluginId) {
     using namespace magda::daw::audio::compiled;
     return pluginId.equalsIgnoreCase(MagdaDelayCompiledPlugin::xmlTypeName);
+}
+
+bool isCompiledFaustGrainDelayPluginId(const juce::String& pluginId) {
+    using namespace magda::daw::audio::compiled;
+    return pluginId.equalsIgnoreCase(MagdaGrainDelayCompiledPlugin::xmlTypeName);
 }
 
 // LookAndFeel for the plugin-presets header button. Visually a flat label
@@ -162,6 +168,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     isCompiledFaustFilter_ = isCompiledFaustFilterPluginId(device.pluginId);
     isCompiledFaustSaturator_ = isCompiledFaustSaturatorPluginId(device.pluginId);
     isCompiledFaustDelay_ = isCompiledFaustDelayPluginId(device.pluginId);
+    isCompiledFaustGrainDelay_ = isCompiledFaustGrainDelayPluginId(device.pluginId);
     isTracktionDevice_ = magda::isTracktionEngineStockPlugin(device.pluginId);
     if (isTracktionDevice_) {
         tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
@@ -482,11 +489,13 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     if (isFaust_)
         layout = std::make_unique<FaustDeviceLayout>();
     else if (isCompiledFaustFilter_)
-        layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 5, /*cellsPerRow*/ 5);
+        layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 6, /*cellsPerRow*/ 6);
     else if (isCompiledFaustSaturator_)
         layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 6, /*cellsPerRow*/ 6);
     else if (isCompiledFaustDelay_)
         layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 7, /*cellsPerRow*/ 7);
+    else if (isCompiledFaustGrainDelay_)
+        layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 8, /*cellsPerRow*/ 8);
     else
         layout = std::make_unique<StandardDeviceLayout>();
     paramGrid_ = std::make_unique<ParamHostComponent>(std::move(layout));
@@ -1828,7 +1837,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         !eqUI_ && !compressorUI_ && !reverbUI_ && !delayUI_ && !chorusUI_ && !phaserUI_ &&
         !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_ && !utilityUI_ && !faustUI_ &&
         !compiledFilterCurveView_ && !compiledSaturatorCurveView_ && !compiledDelayCurveView_ &&
-        !chordEngineUI_) {
+        !compiledGrainDelayCurveView_ && !chordEngineUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
@@ -1940,6 +1949,18 @@ void DeviceSlotComponent::updateParamModulation() {
             }
         }
         compiledDelayCurveView_->updateFromDevice(device_);
+    }
+
+    if (compiledGrainDelayCurveView_ && isCompiledFaustGrainDelay_) {
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                compiledGrainDelayCurveView_->setCompiledPlugin(
+                    dynamic_cast<magda::daw::audio::compiled::MagdaGrainDelayCompiledPlugin*>(
+                        plugin.get()));
+            }
+        }
+        compiledGrainDelayCurveView_->updateFromDevice(device_);
     }
 
     // Also update custom UI linkable sliders
@@ -2223,6 +2244,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             compiledSaturatorCurveView_->setVisible(false);
         if (compiledDelayCurveView_)
             compiledDelayCurveView_->setVisible(false);
+        if (compiledGrainDelayCurveView_)
+            compiledGrainDelayCurveView_->setVisible(false);
         if (chordEngineUI_)
             chordEngineUI_->setVisible(false);
         if (arpeggiatorUI_)
@@ -2298,6 +2321,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     } else if (isCompiledFaustDelay_ && compiledDelayCurveView_) {
         compiledCurveView = compiledDelayCurveView_.get();
         compiledCurvePreferred = compiledDelayCurveView_->getPreferredHeight();
+    } else if (isCompiledFaustGrainDelay_ && compiledGrainDelayCurveView_) {
+        compiledCurveView = compiledGrainDelayCurveView_.get();
+        compiledCurvePreferred = compiledGrainDelayCurveView_->getPreferredHeight();
     }
     if (compiledCurveView != nullptr) {
         const int bodyHeight = juce::jmax(0, contentArea.getHeight());
@@ -3245,6 +3271,11 @@ void DeviceSlotComponent::createCustomUI() {
         compiledDelayCurveView_ = std::make_unique<CompiledDelayCurveView>(device_.pluginId);
         compiledDelayCurveView_->updateFromDevice(device_);
         addAndMakeVisible(*compiledDelayCurveView_);
+    } else if (isCompiledFaustGrainDelay_) {
+        compiledGrainDelayCurveView_ =
+            std::make_unique<CompiledGrainDelayCurveView>(device_.pluginId);
+        compiledGrainDelayCurveView_->updateFromDevice(device_);
+        addAndMakeVisible(*compiledGrainDelayCurveView_);
     } else if (device_.pluginId.containsIgnoreCase("tone")) {
         toneGeneratorUI_ = std::make_unique<ToneGeneratorUI>();
         toneGeneratorUI_->onParameterChanged = [this](int paramIndex, float normalizedValue) {
@@ -3938,7 +3969,8 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*reverbUI_);
         updateCustomUI();
-    } else if (device_.pluginId.containsIgnoreCase("delay") && !isCompiledFaustDelay_) {
+    } else if (device_.pluginId.containsIgnoreCase("delay") && !isCompiledFaustDelay_ &&
+               !isCompiledFaustGrainDelay_) {
         // The legacy TE DelayPlugin gets its bespoke DelayUI; the compiled
         // MagdaDelayCompiledPlugin (pluginId "magda_delay") matches the same
         // substring but uses the generic compiled layout + curve view.
@@ -4222,6 +4254,8 @@ void DeviceSlotComponent::refreshCustomUIParameterValues() {
         compiledSaturatorCurveView_->updateFromDevice(device_);
     if (compiledDelayCurveView_ && isCompiledFaustDelay_)
         compiledDelayCurveView_->updateFromDevice(device_);
+    if (compiledGrainDelayCurveView_ && isCompiledFaustGrainDelay_)
+        compiledGrainDelayCurveView_->updateFromDevice(device_);
 }
 
 void DeviceSlotComponent::updateCustomUI() {
@@ -4231,6 +4265,8 @@ void DeviceSlotComponent::updateCustomUI() {
         compiledSaturatorCurveView_->updateFromDevice(device_);
     if (compiledDelayCurveView_ && isCompiledFaustDelay_)
         compiledDelayCurveView_->updateFromDevice(device_);
+    if (compiledGrainDelayCurveView_ && isCompiledFaustGrainDelay_)
+        compiledGrainDelayCurveView_->updateFromDevice(device_);
 
     if (toneGeneratorUI_ && device_.pluginId.containsIgnoreCase("tone")) {
         float frequency = 440.0f;

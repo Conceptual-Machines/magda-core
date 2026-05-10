@@ -16,10 +16,11 @@ class dsp;
 namespace magda::daw::audio::compiled {
 
 /**
- * @brief Single compiled-Faust plugin hosting all five filter engine
- *        topologies (SVF, Moog ladder, Korg 35, Oberheim SEM, Sallen-Key).
+ * @brief Single compiled-Faust plugin hosting all six filter engine
+ *        topologies (SVF, Moog ladder, Korg 35, Oberheim SEM, Sallen-Key,
+ *        diode ladder).
  *
- * Holds five DSP instances simultaneously but only one runs `compute()`
+ * Holds six DSP instances simultaneously but only one runs `compute()`
  * per audio callback — the one selected by the Engine parameter. This
  * avoids Faust's "every selectn branch updates state" cost while keeping
  * a single device in MAGDA's picker.
@@ -27,10 +28,10 @@ namespace magda::daw::audio::compiled {
  * Engine switching is not seamless: the new engine's filter state is
  * stale (it hasn't been processing audio), so a switch produces a
  * one-shot click as state warms up. Acceptable trade for keeping all
- * five engines available without paying for them all every sample.
+ * six engines available without paying for them all every sample.
  *
- * Cutoff / Resonance / Drive map to the same idx across all five
- * engine DSPs, so the host writes one set of values into all five
+ * Cutoff / Resonance / Drive map to the same idx across all six
+ * engine DSPs, so the host writes one set of values into all six
  * zones every block — keeps every engine ready to take over on a
  * future Engine swap. Mode is engine-aware: SVF and Oberheim accept
  * all four (LP/BP/HP/Notch); Korg 35 LP+HP; Sallen-Key LP+BP+HP;
@@ -69,17 +70,18 @@ class MagdaFilterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin
         return 0.0;
     }
 
-    // Slot-indexed accessors for the five host params (cutoff, res, drive,
-    // engine, mode). Used by the curve view + processor.
+    // Slot-indexed accessors for host params. Used by the curve view +
+    // processor.
     static constexpr int kCutoffSlot = 0;
     static constexpr int kResonanceSlot = 1;
     static constexpr int kDriveSlot = 2;
     static constexpr int kEngineSlot = 3;
     static constexpr int kModeSlot = 4;
-    static constexpr int kHostSlotCount = 5;
+    static constexpr int kLimitSlot = 5;
+    static constexpr int kHostSlotCount = 6;
 
-    enum class FilterFamily { SVF, Ladder, Korg35, Oberheim, SallenKey };
-    static constexpr int kEngineCount = 5;
+    enum class FilterFamily { SVF, Ladder, Korg35, Oberheim, SallenKey, Diode };
+    static constexpr int kEngineCount = 6;
 
     te::AutomatableParameter* getSlotParameter(int slotIndex) const;
 
@@ -90,7 +92,7 @@ class MagdaFilterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin
     float displayValueToNativeValue(int slotIndex, float displayValue) const;
     float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
 
-    // The five host slots, exposed as ParameterInfo so the processor can
+    // The host slots, exposed as ParameterInfo so the processor can
     // populate device.parameters. Kind / range / scale baked here once at
     // construction.
     using HostSlotInfo = CompiledHostSlotInfo;

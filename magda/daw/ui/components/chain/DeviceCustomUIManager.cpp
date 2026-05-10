@@ -5,6 +5,7 @@
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
+#include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -831,7 +832,9 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         update(device);
     } else if (device.pluginId.containsIgnoreCase("delay") &&
                !device.pluginId.equalsIgnoreCase(
-                   audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName)) {
+                   audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName) &&
+               !device.pluginId.equalsIgnoreCase(
+                   audio::compiled::MagdaGrainDelayCompiledPlugin::xmlTypeName)) {
         // Skip the legacy DelayUI when this is the compiled MAGDA delay —
         // its pluginId "magda_delay" trips containsIgnoreCase("delay") but
         // it uses the generic compiled layout, not DelayUI.

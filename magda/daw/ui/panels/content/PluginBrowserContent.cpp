@@ -14,6 +14,7 @@
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
+#include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "core/AppPaths.hpp"
 #include "core/DeviceInfo.hpp"
@@ -367,6 +368,9 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     list.push_back(PluginBrowserInfo::createInternal("Reverb", "reverb", false, "Reverb"));
     list.push_back(PluginBrowserInfo::createInternal(
         "Delay", audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName, false, "Delay"));
+    list.push_back(PluginBrowserInfo::createInternal(
+        "Grain Delay", audio::compiled::MagdaGrainDelayCompiledPlugin::xmlTypeName, false,
+        "Delay"));
     list.push_back(PluginBrowserInfo::createInternal("Chorus", "chorus", false, "Modulation"));
     list.push_back(PluginBrowserInfo::createInternal("Phaser", "phaser", false, "Modulation"));
     list.push_back(PluginBrowserInfo::createInternal("Lowpass", "lowpass", false, "Filter"));

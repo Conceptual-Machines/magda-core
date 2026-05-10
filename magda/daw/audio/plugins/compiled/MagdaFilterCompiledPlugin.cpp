@@ -11,11 +11,12 @@
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
 
-// All five engine DSPs are #included into THIS translation unit only —
+// All six engine DSPs are #included into THIS translation unit only —
 // each generated `.cpp` defines a self-contained class, so co-locating
 // them lets us instantiate one of each without conflicts. The per-engine
 // wrapper TUs (MagdaSVFCompiled.cpp etc.) are removed; this file is the
 // single owner of the generated code from now on.
+#include "magda_filter_diode.generated.cpp"
 #include "magda_filter_korg35.generated.cpp"
 #include "magda_filter_ladder.generated.cpp"
 #include "magda_filter_oberheim.generated.cpp"
@@ -130,12 +131,13 @@ const EngineHarvest::Control* findByIdx(const EngineHarvest& h, int idx) {
 
 MagdaFilterCompiledPlugin::MagdaFilterCompiledPlugin(const te::PluginCreationInfo& info)
     : te::Plugin(info) {
-    // Instantiate all five engines.
+    // Instantiate all six engines.
     engines_[0].dsp = std::make_unique<MagdaSVFDsp>();
     engines_[1].dsp = std::make_unique<MagdaLadderDsp>();
     engines_[2].dsp = std::make_unique<MagdaKorg35Dsp>();
     engines_[3].dsp = std::make_unique<MagdaOberheimDsp>();
     engines_[4].dsp = std::make_unique<MagdaSallenKeyDsp>();
+    engines_[5].dsp = std::make_unique<MagdaDiodeDsp>();
 
     constexpr int kProvisionalSampleRate = 44100;
     rebuildEngineState(kProvisionalSampleRate);
@@ -219,10 +221,11 @@ void MagdaFilterCompiledPlugin::buildHostParameters() {
                                  .minValue = 0.0f,
                                  .maxValue = 1.0f,
                                  .defaultValue = 0.0f};
-    // Slot 3: Engine (discrete, 5 options)
+    // Slot 3: Engine (discrete, 6 options)
     hostSlotInfo_[kEngineSlot].name = "Engine";
     hostSlotInfo_[kEngineSlot].scale = magda::ParameterScale::Discrete;
-    hostSlotInfo_[kEngineSlot].choices = {"SVF", "Ladder", "Korg 35", "Oberheim", "Sallen-Key"};
+    hostSlotInfo_[kEngineSlot].choices = {"SVF",      "Ladder",     "Korg 35",
+                                          "Oberheim", "Sallen-Key", "Diode"};
     hostSlotInfo_[kEngineSlot].minValue = 0.0f;
     hostSlotInfo_[kEngineSlot].maxValue =
         static_cast<float>(hostSlotInfo_[kEngineSlot].choices.size() - 1);
@@ -235,6 +238,12 @@ void MagdaFilterCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kModeSlot].maxValue =
         static_cast<float>(hostSlotInfo_[kModeSlot].choices.size() - 1);
     hostSlotInfo_[kModeSlot].defaultValue = 0.0f;
+    // Slot 5: Limit blends a post-filter soft limiter into the active engine.
+    hostSlotInfo_[kLimitSlot] = {.name = "Limit",
+                                 .scale = magda::ParameterScale::Linear,
+                                 .minValue = 0.0f,
+                                 .maxValue = 1.0f,
+                                 .defaultValue = 0.0f};
 
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
@@ -315,6 +324,7 @@ void MagdaFilterCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc)
     const float driveNorm = hostParams_[kDriveSlot]->getCurrentValue();
     const float engineNorm = hostParams_[kEngineSlot]->getCurrentValue();
     const float modeNorm = hostParams_[kModeSlot]->getCurrentValue();
+    const float limitMix = juce::jlimit(0.0f, 1.0f, hostParams_[kLimitSlot]->getCurrentValue());
 
     // Denormalize cutoff/res/drive into native units once and write the
     // same value into every engine's matching zone — keeps every engine's
@@ -403,12 +413,16 @@ void MagdaFilterCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc)
 
     active.dsp->compute(numSamples, inPtrs_.data(), outPtrs_.data());
 
-    // Sanitise output: flush NaN / Inf and clamp.
+    // Optional post-filter soft limiting, then sanitise output.
     const int channelsToSanitise = std::min(hostChannels, numOutputs);
     for (int ch = 0; ch < channelsToSanitise; ++ch) {
         float* out = fc.destBuffer->getWritePointer(ch, startSample);
         for (int i = 0; i < numSamples; ++i) {
-            const float sample = out[i];
+            float sample = out[i];
+            if (limitMix > 0.0f && std::isfinite(sample)) {
+                const float limited = std::tanh(sample);
+                sample += (limited - sample) * limitMix;
+            }
             out[i] = std::isfinite(sample) ? juce::jlimit(-16.0f, 16.0f, sample) : 0.0f;
         }
     }
@@ -451,6 +465,8 @@ std::vector<juce::String> MagdaFilterCompiledPlugin::modeChoicesForEngine(int en
             return {"LP", "BP", "HP", "Notch"};
         case FilterFamily::SallenKey:
             return {"LP", "BP", "HP"};
+        case FilterFamily::Diode:
+            return {"LP"};
     }
     return {"LP"};
 }

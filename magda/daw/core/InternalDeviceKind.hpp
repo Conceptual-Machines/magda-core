@@ -52,10 +52,11 @@ enum class InternalDeviceKind {
     InstrumentMeterTap,
     SessionMonitor,
     // --- Faust ---------------------------------------------------------
-    Faust,              // interpreter-based, runs arbitrary user .dsp
-    CompiledFilter,     // magda_filter
-    CompiledSaturator,  // magda_saturator
-    CompiledDelay,      // magda_delay
+    Faust,               // interpreter-based, runs arbitrary user .dsp
+    CompiledFilter,      // magda_filter
+    CompiledSaturator,   // magda_saturator
+    CompiledDelay,       // magda_delay
+    CompiledGrainDelay,  // magda_grain_delay
 };
 
 /**

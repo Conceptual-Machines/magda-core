@@ -75,6 +75,7 @@ void CompiledDelayCurveView::timerCallback() {
             divIdx = static_cast<int>(std::round(compiledPlugin_->nativeValueToDisplayValue(
                 Delay::kDivisionSlot, p->getCurrentValue())));
         }
+        bpm = compiledPlugin_->currentBpm();
     } else {
         time = valueForSlot(deviceSnapshot_, Delay::kTimeSlot, time);
         fb = valueForSlot(deviceSnapshot_, Delay::kFeedbackSlot, fb);

@@ -98,7 +98,7 @@ constexpr AliasSpec kFilterAliases[] = {
 
 constexpr AliasSpec kCompiledFilterAliases[] = {
     {"cutoff", 0, "Cutoff"}, {"resonance", 1, "Resonance"}, {"drive", 2, "Drive"},
-    {"engine", 3, "Engine"}, {"mode", 4, "Mode"},
+    {"engine", 3, "Engine"}, {"mode", 4, "Mode"},           {"limit", 5, "Limit"},
 };
 
 // ------------------------------------------------------------------
@@ -122,6 +122,12 @@ constexpr AliasSpec kCompiledDelayAliases[] = {
     {"time", 0, "Time"},         {"division", 1, "Division"}, {"sync", 2, "Sync"},
     {"feedback", 3, "Feedback"}, {"mix", 4, "Mix"},           {"tone", 5, "Tone"},
     {"cross", 6, "Cross"},
+};
+
+constexpr AliasSpec kCompiledGrainDelayAliases[] = {
+    {"time", 0, "Time"},         {"division", 1, "Division"}, {"sync", 2, "Sync"},
+    {"size", 3, "Size"},         {"pitch", 4, "Pitch"},       {"spray", 5, "Spray"},
+    {"feedback", 6, "Feedback"}, {"mix", 7, "Mix"},
 };
 
 // ------------------------------------------------------------------
@@ -156,6 +162,7 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"magda_filter", kCompiledFilterAliases, (int)std::size(kCompiledFilterAliases)},
     {"magda_saturator", kCompiledSaturatorAliases, (int)std::size(kCompiledSaturatorAliases)},
     {"magda_delay_compiled", kCompiledDelayAliases, (int)std::size(kCompiledDelayAliases)},
+    {"magda_grain_delay", kCompiledGrainDelayAliases, (int)std::size(kCompiledGrainDelayAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
     {"utility", kUtilityAliases, (int)std::size(kUtilityAliases)},
 };

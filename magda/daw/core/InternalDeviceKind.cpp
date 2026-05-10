@@ -14,6 +14,7 @@
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
+#include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "audio/session/SessionMonitorPlugin.hpp"
 
@@ -59,6 +60,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::StepSequencerPlugin;
     using daw::audio::compiled::MagdaDelayCompiledPlugin;
     using daw::audio::compiled::MagdaFilterCompiledPlugin;
+    using daw::audio::compiled::MagdaGrainDelayCompiledPlugin;
     using daw::audio::compiled::MagdaSaturatorCompiledPlugin;
     namespace TE = tracktion::engine;
 
@@ -67,6 +69,8 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::CompiledFilter, MagdaFilterCompiledPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::CompiledSaturator, MagdaSaturatorCompiledPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::CompiledDelay, MagdaDelayCompiledPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::CompiledGrainDelay, MagdaGrainDelayCompiledPlugin::xmlTypeName,
+         nullptr},
         // TE built-in effects — picker uses a short id, the live plugin
         // reports the real `te::*::xmlTypeName`. Match either.
         {InternalDeviceKind::TeEq, "eq", TE::EqualiserPlugin::xmlTypeName},

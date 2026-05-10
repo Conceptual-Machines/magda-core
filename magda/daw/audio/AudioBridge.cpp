@@ -16,6 +16,7 @@
 #include "plugins/SidechainTriggerBus.hpp"
 #include "plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaFilterCompiledPlugin.hpp"
+#include "plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
@@ -788,6 +789,10 @@ te::AutomatableParameter* AudioBridge::resolveControlTarget(const ControlTarget&
             if (auto* compiledDelay =
                     dynamic_cast<daw::audio::compiled::MagdaDelayCompiledPlugin*>(plugin.get()))
                 return compiledDelay->getSlotParameter(target.paramIndex);
+            if (auto* compiledGrainDelay =
+                    dynamic_cast<daw::audio::compiled::MagdaGrainDelayCompiledPlugin*>(
+                        plugin.get()))
+                return compiledGrainDelay->getSlotParameter(target.paramIndex);
             auto params = plugin->getAutomatableParameters();
             if (target.paramIndex >= 0 && target.paramIndex < static_cast<int>(params.size()))
                 return params[static_cast<size_t>(target.paramIndex)];

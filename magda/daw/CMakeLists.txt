@@ -233,6 +233,7 @@ juce_add_binary_data(MagdaAssets
     audio/faust_dsp/magda_filter_korg35.dsp
     audio/faust_dsp/magda_filter_oberheim.dsp
     audio/faust_dsp/magda_filter_sk.dsp
+    audio/faust_dsp/magda_filter_diode.dsp
 )
 
 # =============================================================================

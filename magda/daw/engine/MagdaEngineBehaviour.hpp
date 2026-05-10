@@ -13,6 +13,7 @@
 #include "../audio/plugins/StepSequencerPlugin.hpp"
 #include "../audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "../audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
+#include "../audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "../audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../project/ProjectManager.hpp"
@@ -106,6 +107,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         }
         if (type == daw::audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName) {
             return new daw::audio::compiled::MagdaDelayCompiledPlugin(info);
+        }
+        if (type == daw::audio::compiled::MagdaGrainDelayCompiledPlugin::xmlTypeName) {
+            return new daw::audio::compiled::MagdaGrainDelayCompiledPlugin(info);
         }
         if (type == MidiReceivePlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiReceivePlugin");
