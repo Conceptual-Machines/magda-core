@@ -142,6 +142,17 @@ constexpr AliasSpec kCompiledGritAliases[] = {
 };
 
 // ------------------------------------------------------------------
+// Multiband ("magda_multiband") — slot order matches
+// MagdaMultibandCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_multiband.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledMultibandAliases[] = {
+    {"low_xo", 0, "Low XO"},       {"high_xo", 1, "High XO"},   {"depth", 2, "Depth"},
+    {"time", 3, "Time"},           {"low_gain", 4, "Low Gain"}, {"mid_gain", 5, "Mid Gain"},
+    {"high_gain", 6, "High Gain"}, {"mix", 7, "Mix"},           {"output", 8, "Output"},
+};
+
+// ------------------------------------------------------------------
 // Pitch Shift ("pitchshift") — TE PitchShiftPlugin single param.
 // ------------------------------------------------------------------
 constexpr AliasSpec kPitchShiftAliases[] = {
@@ -175,6 +186,7 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"magda_delay_compiled", kCompiledDelayAliases, (int)std::size(kCompiledDelayAliases)},
     {"magda_grain_delay", kCompiledGrainDelayAliases, (int)std::size(kCompiledGrainDelayAliases)},
     {"magda_grit", kCompiledGritAliases, (int)std::size(kCompiledGritAliases)},
+    {"magda_multiband", kCompiledMultibandAliases, (int)std::size(kCompiledMultibandAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
     {"utility", kUtilityAliases, (int)std::size(kUtilityAliases)},
 };

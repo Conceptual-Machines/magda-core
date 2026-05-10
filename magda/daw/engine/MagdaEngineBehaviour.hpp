@@ -15,6 +15,7 @@
 #include "../audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "../audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "../audio/plugins/compiled/MagdaGritCompiledPlugin.hpp"
+#include "../audio/plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
 #include "../audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../project/ProjectManager.hpp"
@@ -114,6 +115,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         }
         if (type == daw::audio::compiled::MagdaGritCompiledPlugin::xmlTypeName) {
             return new daw::audio::compiled::MagdaGritCompiledPlugin(info);
+        }
+        if (type == daw::audio::compiled::MagdaMultibandCompiledPlugin::xmlTypeName) {
+            return new daw::audio::compiled::MagdaMultibandCompiledPlugin(info);
         }
         if (type == MidiReceivePlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiReceivePlugin");

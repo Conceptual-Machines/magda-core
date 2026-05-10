@@ -58,6 +58,7 @@ enum class InternalDeviceKind {
     CompiledDelay,       // magda_delay
     CompiledGrainDelay,  // magda_grain_delay
     CompiledGrit,        // magda_grit
+    CompiledMultiband,   // magda_multiband
 };
 
 /**
