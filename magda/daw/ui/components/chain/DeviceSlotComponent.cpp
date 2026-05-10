@@ -513,7 +513,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     else if (isCompiledFaustGrit_)
         layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 4, /*cellsPerRow*/ 4);
     else if (isCompiledFaustMultiband_)
-        layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 9, /*cellsPerRow*/ 9);
+        layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 18, /*cellsPerRow*/ 9);
     else
         layout = std::make_unique<StandardDeviceLayout>();
     paramGrid_ = std::make_unique<ParamHostComponent>(std::move(layout));

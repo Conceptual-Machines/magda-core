@@ -163,12 +163,12 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
                                   .maxValue = 8000.0f,
                                   .defaultValue = 2500.0f,
                                   .scaleAnchor = 2000.0f};
-    // Slot 2: Depth (compression amount, 0..1).
+    // Slot 2: Depth (master compression amount, 0..1).
     hostSlotInfo_[kDepthSlot] = {.name = "Depth",
                                  .scale = magda::ParameterScale::Linear,
                                  .minValue = 0.0f,
                                  .maxValue = 1.0f,
-                                 .defaultValue = 0.5f};
+                                 .defaultValue = 1.0f};
     // Slot 3: Time (attack/release scaling, 0..1).
     hostSlotInfo_[kTimeSlot] = {.name = "Time",
                                 .scale = magda::ParameterScale::Linear,
@@ -207,6 +207,40 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
                                   .minValue = -24.0f,
                                   .maxValue = 12.0f,
                                   .defaultValue = 0.0f};
+
+    auto setThreshAbove = [this](int slot, juce::String name) {
+        hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
+                                                    .unit = "dB",
+                                                    .scale = magda::ParameterScale::Linear,
+                                                    .minValue = -60.0f,
+                                                    .maxValue = 0.0f,
+                                                    .defaultValue = -24.0f};
+    };
+    auto setThreshBelow = [this](int slot, juce::String name) {
+        hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
+                                                    .unit = "dB",
+                                                    .scale = magda::ParameterScale::Linear,
+                                                    .minValue = -80.0f,
+                                                    .maxValue = 0.0f,
+                                                    .defaultValue = -48.0f};
+    };
+    auto setRatio = [this](int slot, juce::String name) {
+        hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
+                                                    .scale = magda::ParameterScale::Linear,
+                                                    .minValue = 1.0f,
+                                                    .maxValue = 20.0f,
+                                                    .defaultValue = 4.0f};
+    };
+
+    setThreshAbove(kLowThreshAboveSlot, "Low Thresh Above");
+    setThreshBelow(kLowThreshBelowSlot, "Low Thresh Below");
+    setRatio(kLowRatioSlot, "Low Ratio");
+    setThreshAbove(kMidThreshAboveSlot, "Mid Thresh Above");
+    setThreshBelow(kMidThreshBelowSlot, "Mid Thresh Below");
+    setRatio(kMidRatioSlot, "Mid Ratio");
+    setThreshAbove(kHighThreshAboveSlot, "High Thresh Above");
+    setThreshBelow(kHighThreshBelowSlot, "High Thresh Below");
+    setRatio(kHighRatioSlot, "High Ratio");
 
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();

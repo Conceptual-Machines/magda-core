@@ -21,7 +21,7 @@ namespace magda::daw::audio::compiled {
  * runs feed-forward parallel up + down compression; the three bands are
  * makeup-gained and summed back to stereo.
  *
- * Single-engine compiled plugin — all eight host controls map 1:1 to
+ * Single-engine compiled plugin — all host controls map 1:1 to
  * Faust slots pinned by [idx:N].
  */
 class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
@@ -67,7 +67,16 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     static constexpr int kHighGainSlot = 6;
     static constexpr int kMixSlot = 7;
     static constexpr int kOutputSlot = 8;
-    static constexpr int kHostSlotCount = 9;
+    static constexpr int kLowThreshAboveSlot = 9;
+    static constexpr int kLowThreshBelowSlot = 10;
+    static constexpr int kLowRatioSlot = 11;
+    static constexpr int kMidThreshAboveSlot = 12;
+    static constexpr int kMidThreshBelowSlot = 13;
+    static constexpr int kMidRatioSlot = 14;
+    static constexpr int kHighThreshAboveSlot = 15;
+    static constexpr int kHighThreshBelowSlot = 16;
+    static constexpr int kHighRatioSlot = 17;
+    static constexpr int kHostSlotCount = 18;
 
     te::AutomatableParameter* getSlotParameter(int slotIndex) const;
 

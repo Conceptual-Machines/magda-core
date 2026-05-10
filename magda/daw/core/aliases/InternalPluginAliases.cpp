@@ -147,9 +147,24 @@ constexpr AliasSpec kCompiledGritAliases[] = {
 // magda_multiband.dsp.
 // ------------------------------------------------------------------
 constexpr AliasSpec kCompiledMultibandAliases[] = {
-    {"low_xo", 0, "Low XO"},       {"high_xo", 1, "High XO"},   {"depth", 2, "Depth"},
-    {"time", 3, "Time"},           {"low_gain", 4, "Low Gain"}, {"mid_gain", 5, "Mid Gain"},
-    {"high_gain", 6, "High Gain"}, {"mix", 7, "Mix"},           {"output", 8, "Output"},
+    {"low_xo", 0, "Low XO"},
+    {"high_xo", 1, "High XO"},
+    {"depth", 2, "Depth"},
+    {"time", 3, "Time"},
+    {"low_gain", 4, "Low Gain"},
+    {"mid_gain", 5, "Mid Gain"},
+    {"high_gain", 6, "High Gain"},
+    {"mix", 7, "Mix"},
+    {"output", 8, "Output"},
+    {"low_thresh_above", 9, "Low Thresh Above"},
+    {"low_thresh_below", 10, "Low Thresh Below"},
+    {"low_ratio", 11, "Low Ratio"},
+    {"mid_thresh_above", 12, "Mid Thresh Above"},
+    {"mid_thresh_below", 13, "Mid Thresh Below"},
+    {"mid_ratio", 14, "Mid Ratio"},
+    {"high_thresh_above", 15, "High Thresh Above"},
+    {"high_thresh_below", 16, "High Thresh Below"},
+    {"high_ratio", 17, "High Ratio"},
 };
 
 // ------------------------------------------------------------------
