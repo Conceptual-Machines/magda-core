@@ -146,7 +146,11 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         REQUIRE(di.fileExtentTimeline() == Catch::Approx(1.5));  // 3s / 2x
     }
 
-    SECTION("loopEnabled with loopLength=0: not considered looped") {
+    SECTION("loopEnabled with loopLength=0: sentinel falls back to remaining file") {
+        // Older clips and freshly-toggled loops can land in this state.
+        // The session scheduler treats it as "loop the whole source from
+        // loopStart" so the editor must too — otherwise the clip plays
+        // looped while the overlay draws it as non-looped.
         ClipInfo clip;
         clip.setAudioContent();
         clip.startTime = 0.0;
@@ -160,8 +164,8 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/1.0);
 
-        // No loop region length → not looping in the new contract.
-        REQUIRE_FALSE(di.isLooped());
+        REQUIRE(di.isLooped());
+        REQUIRE(di.loopRegionLengthSource == Catch::Approx(1.0));
         REQUIRE(di.sourceFileEnd == Catch::Approx(1.0));
     }
 

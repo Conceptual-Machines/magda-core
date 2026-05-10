@@ -200,6 +200,20 @@ struct ClipDisplayInfo {
         d.loopRegionStartSource = clipLoopStart;
         d.loopRegionLengthSource = clipLoopLength;
 
+        // Sentinel: in the rest of the codebase, `loopLength == 0` while
+        // `loopEnabled` is true means "loop the whole remaining source"
+        // — the playback path (SessionClipScheduler etc.) treats it that
+        // way and it shows up on older / imported / freshly-toggled
+        // clips. We mirror that here so the editor / playhead / overlays
+        // don't read the same clip as non-looped while it's actively
+        // looping in audio. Without this fallback, isLooped() returns
+        // false for any zero-length sentinel.
+        if (clip.loopEnabled && d.loopRegionLengthSource <= 0.0) {
+            const double anchor = std::max(d.loopRegionStartSource, d.sourceFileStart);
+            d.loopRegionStartSource = anchor;
+            d.loopRegionLengthSource = std::max(0.0, d.sourceFileEnd - anchor);
+        }
+
         // Clamp loop region to file bounds when known. Don't shrink the
         // file-extent fields — only the loop region itself.
         if (fileDuration > 0.0) {

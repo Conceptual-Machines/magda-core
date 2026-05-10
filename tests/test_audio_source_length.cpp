@@ -170,6 +170,30 @@ TEST_CASE("ClipDisplayInfo - loop region tracks clip.loopStart / loopLength",
           "[clip][display][loop]") {
     using namespace magda;
 
+    SECTION("loopEnabled with loopLength=0: sentinel falls back to remaining source") {
+        // Older clips, freshly-toggled loops, and the session scheduler
+        // treat (loopEnabled=true, loopLength=0) as "loop the whole
+        // source from loopStart". The editor must mirror that — without
+        // the fallback the clip would play looped in audio while the
+        // overlay drew it as non-looped.
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.startTime = 0.0;
+        clip.length = 4.0;
+        clip.offset = 0.0;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = true;
+        clip.loopStart = 1.0;
+        clip.loopLength = 0.0;  // sentinel
+
+        syncPlacement(clip);
+        auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
+
+        REQUIRE(di.isLooped());
+        REQUIRE(di.loopRegionStartSource == Catch::Approx(1.0));
+        REQUIRE(di.loopRegionLengthSource == Catch::Approx(3.0));  // file - loopStart
+    }
+
     SECTION("Loop disabled: loop region length is 0, isLooped() is false") {
         ClipInfo clip;
         clip.setAudioContent();
