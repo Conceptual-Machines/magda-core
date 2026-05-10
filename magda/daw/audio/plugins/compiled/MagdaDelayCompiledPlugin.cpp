@@ -14,7 +14,7 @@
 
 namespace magda::daw::audio::compiled {
 
-const char* MagdaDelayCompiledPlugin::xmlTypeName = "magda_delay_compiled";
+const char* MagdaDelayCompiledPlugin::xmlTypeName = "magda_delay";
 
 namespace {
 

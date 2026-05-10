@@ -112,10 +112,11 @@ constexpr AliasSpec kCompiledSaturatorAliases[] = {
 };
 
 // ------------------------------------------------------------------
-// Compiled Delay ("magda_delay_compiled") — slot order matches
+// Compiled Delay ("magda_delay") — slot order matches
 // MagdaDelayCompiledPlugin::k*Slot and the [idx:N] pins in
-// magda_delay.dsp. The legacy interpreter "delay" entry above maps to
-// TE's DelayPlugin and stays as a separate alias key.
+// magda_delay.dsp. The legacy "delay" entry above maps to TE's
+// DelayPlugin and stays as a separate alias key for projects that
+// already had it instantiated; new chains use this one.
 // ------------------------------------------------------------------
 constexpr AliasSpec kCompiledDelayAliases[] = {
     {"time", 0, "Time"},         {"division", 1, "Division"}, {"sync", 2, "Sync"},

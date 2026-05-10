@@ -365,10 +365,8 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     list.push_back(
         PluginBrowserInfo::createInternal("Compressor", "compressor", false, "Dynamics"));
     list.push_back(PluginBrowserInfo::createInternal("Reverb", "reverb", false, "Reverb"));
-    list.push_back(PluginBrowserInfo::createInternal("Delay", "delay", false, "Delay"));
     list.push_back(PluginBrowserInfo::createInternal(
-        "Delay (Compiled)", audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName, false,
-        "Delay"));
+        "Delay", audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName, false, "Delay"));
     list.push_back(PluginBrowserInfo::createInternal("Chorus", "chorus", false, "Modulation"));
     list.push_back(PluginBrowserInfo::createInternal("Phaser", "phaser", false, "Modulation"));
     list.push_back(PluginBrowserInfo::createInternal("Lowpass", "lowpass", false, "Filter"));

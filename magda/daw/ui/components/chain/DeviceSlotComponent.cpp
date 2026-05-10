@@ -3924,7 +3924,10 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*reverbUI_);
         updateCustomUI();
-    } else if (device_.pluginId.containsIgnoreCase("delay")) {
+    } else if (device_.pluginId.containsIgnoreCase("delay") && !isCompiledFaustDelay_) {
+        // The legacy TE DelayPlugin gets its bespoke DelayUI; the compiled
+        // MagdaDelayCompiledPlugin (pluginId "magda_delay") matches the same
+        // substring but uses the generic compiled layout + curve view.
         delayUI_ = std::make_unique<DelayUI>();
         delayUI_->onParameterChanged = [this](int paramIndex, float value) {
             if (!nodePath_.isValid())
