@@ -101,6 +101,9 @@ set(TEST_SOURCES
     test_app_paths.cpp
     # Media database (issue #768) — Phase A: SQLite skeleton
     test_media_database.cpp
+    # Media database (issue #768) — Phase B: scanner + path rules
+    test_media_db_scan.cpp
+    test_media_db_path_rules.cpp
 )
 
 # Create test executable

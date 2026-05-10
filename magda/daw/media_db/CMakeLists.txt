@@ -3,6 +3,8 @@
 
 target_sources(magda_daw PRIVATE
     MediaDatabase.cpp
+    PathRules.cpp
+    Scan.cpp
 )
 
 target_link_libraries(magda_daw PUBLIC sqlite3)
