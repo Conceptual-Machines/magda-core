@@ -794,6 +794,25 @@ void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
     }
 }
 
+// Helper: keep beat-domain fields in sync with their seconds-domain
+// counterparts on autoTempo audio clips. Every audio setter that
+// touches a seconds-domain field must call this so the two views never
+// drift. Pass `bpm` as a fallback when the clip's own source-interpretation
+// BPM isn't set yet.
+namespace {
+void syncAudioBeatFields(ClipInfo& clip, double bpm) {
+    if (!clip.isAudio() || !clip.autoTempo)
+        return;
+    const double convBpm =
+        (clip.audio().interpretation.bpm > 0.0) ? clip.audio().interpretation.bpm : bpm;
+    if (convBpm <= 0.0)
+        return;
+    clip.offsetBeats = clip.offset * convBpm / 60.0;
+    clip.loopStartBeats = clip.loopStart * convBpm / 60.0;
+    clip.loopLengthBeats = clip.loopLength * convBpm / 60.0;
+}
+}  // namespace
+
 void ClipManager::setOffset(ClipId clipId, double offset) {
     if (auto* clip = getClip(clipId)) {
         if (clip->isMidi()) {
@@ -801,8 +820,7 @@ void ClipManager::setOffset(ClipId clipId, double offset) {
             clip->midiOffset = juce::jmax(0.0, offset);
         } else {
             clip->offset = juce::jmax(0.0, offset);
-            if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0)
-                clip->offsetBeats = clip->offset * clip->audio().interpretation.bpm / 60.0;
+            syncAudioBeatFields(*clip, /*bpm=*/0.0);
             sanitizeAudioClip(*clip);
         }
         notifyClipPropertyChanged(clipId);
@@ -814,8 +832,7 @@ void ClipManager::setLoopPhase(ClipId clipId, double phase) {
         const bool loopActive = clip->loopEnabled || clip->autoTempo;
         if (clip->isAudio() && loopActive) {
             clip->offset = clip->loopStart + phase;
-            if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0)
-                clip->offsetBeats = clip->offset * clip->audio().interpretation.bpm / 60.0;
+            syncAudioBeatFields(*clip, /*bpm=*/0.0);
             sanitizeAudioClip(*clip);
             notifyClipPropertyChanged(clipId);
         }
@@ -826,14 +843,7 @@ void ClipManager::setLoopStart(ClipId clipId, double loopStart, double bpm) {
     if (auto* clip = getClip(clipId)) {
         clip->loopStart = juce::jmax(0.0, loopStart);
         if (clip->isAudio()) {
-            if (clip->autoTempo) {
-                // Use source interpretation BPM for beat conversion — loopStartBeats is in
-                // source-beat domain
-                double convBpm = (clip->audio().interpretation.bpm > 0.0)
-                                     ? clip->audio().interpretation.bpm
-                                     : bpm;
-                clip->loopStartBeats = (clip->loopStart * convBpm) / 60.0;
-            }
+            syncAudioBeatFields(*clip, bpm);
             sanitizeAudioClip(*clip);
         }
         notifyClipPropertyChanged(clipId);
@@ -847,44 +857,31 @@ void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
             // MIDI: keep loopLengthBeats in sync using project BPM
             clip->loopLengthBeats = (clip->loopLength * juce::jmax(1.0, bpm)) / 60.0;
         } else if (clip->isAudio()) {
-            if (clip->autoTempo) {
-                // Use source interpretation BPM for beat conversion — loopLengthBeats is in
-                // source-beat domain
-                double convBpm = (clip->audio().interpretation.bpm > 0.0)
-                                     ? clip->audio().interpretation.bpm
-                                     : bpm;
-                clip->loopLengthBeats = (clip->loopLength * convBpm) / 60.0;
-            }
+            syncAudioBeatFields(*clip, bpm);
             sanitizeAudioClip(*clip);
         }
         notifyClipPropertyChanged(clipId);
     }
 }
 
-void ClipManager::setLoopStartAndLength(ClipId clipId, double loopStart, double loopLength,
-                                        double bpm) {
+void ClipManager::relocateLoopRegion(ClipId clipId, double loopStart, double loopLength,
+                                     double bpm) {
     if (auto* clip = getClip(clipId)) {
         const double oldLoopStart = clip->loopStart;
         clip->loopStart = juce::jmax(0.0, loopStart);
         clip->loopLength = juce::jmax(0.0, loopLength);
 
         if (clip->isAudio()) {
-            // Moving the loop START snaps the phase (clip.offset relative to loopStart) back to 0
-            // — the user's drag intent is to relocate the loop, not to compensate for a stale
-            // phase. Loop END moves don't touch the phase.
+            // Composite intent: the caller is relocating the loop as a
+            // unit, not editing one field. Reset phase to 0 by snapping
+            // offset to the new loopStart whenever loopStart moved.
+            // setLoopStart on its own preserves phase — use that path
+            // when the caller doesn't want this side effect.
             const bool loopStartMoved = std::abs(clip->loopStart - oldLoopStart) > 1e-9;
             if (loopStartMoved)
                 clip->offset = clip->loopStart;
 
-            if (clip->autoTempo) {
-                double convBpm = (clip->audio().interpretation.bpm > 0.0)
-                                     ? clip->audio().interpretation.bpm
-                                     : bpm;
-                clip->loopStartBeats = (clip->loopStart * convBpm) / 60.0;
-                clip->loopLengthBeats = (clip->loopLength * convBpm) / 60.0;
-                if (loopStartMoved && clip->audio().interpretation.bpm > 0.0)
-                    clip->offsetBeats = clip->offset * clip->audio().interpretation.bpm / 60.0;
-            }
+            syncAudioBeatFields(*clip, bpm);
             sanitizeAudioClip(*clip);
         } else if (clip->isMidi()) {
             clip->loopLengthBeats = (clip->loopLength * juce::jmax(1.0, bpm)) / 60.0;

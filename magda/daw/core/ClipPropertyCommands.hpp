@@ -242,11 +242,11 @@ class SetClipLoopLengthCommand : public UndoableCommand {
 };
 
 /**
- * @brief Command for setting a clip's loop start and length together.
- *
- * Use for editor drags that intentionally snap the offset to the new loop
- * start (the behaviour inside ClipManager::setLoopStartAndLength). Captures
- * the original offset so undo restores the pre-drag phase too.
+ * @brief Command for relocating a clip's loop region (start + length) as a
+ *        unit. Wraps ClipManager::relocateLoopRegion, which snaps the
+ *        phase to 0 by setting offset = loopStart whenever loopStart
+ *        moves. Captures the pre-drag offset so undo restores the
+ *        previous phase.
  */
 class SetClipLoopRangeCommand : public UndoableCommand {
   public:
@@ -261,14 +261,13 @@ class SetClipLoopRangeCommand : public UndoableCommand {
     }
 
     void execute() override {
-        ClipManager::getInstance().setLoopStartAndLength(clipId_, newLoopStart_, newLoopLength_,
-                                                         bpm_);
+        ClipManager::getInstance().relocateLoopRegion(clipId_, newLoopStart_, newLoopLength_, bpm_);
     }
     void undo() override {
-        ClipManager::getInstance().setLoopStartAndLength(clipId_, oldLoopStart_, oldLoopLength_,
-                                                         bpm_);
-        // setLoopStartAndLength snaps the offset for audio clips when
-        // loopStart moves; restore the captured pre-drag offset on top.
+        ClipManager::getInstance().relocateLoopRegion(clipId_, oldLoopStart_, oldLoopLength_, bpm_);
+        // relocateLoopRegion snaps offset to the (new) loopStart for
+        // audio clips when loopStart moves; restore the captured pre-drag
+        // offset on top so undo is a true round-trip.
         ClipManager::getInstance().setOffset(clipId_, oldOffset_);
     }
     juce::String getDescription() const override {
