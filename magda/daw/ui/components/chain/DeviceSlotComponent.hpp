@@ -6,6 +6,7 @@
 
 #include "ArpeggiatorUI.hpp"
 #include "ChorusUI.hpp"
+#include "CompiledDelayCurveView.hpp"
 #include "CompiledFilterCurveView.hpp"
 #include "CompiledSaturatorCurveView.hpp"
 #include "CompressorUI.hpp"
@@ -275,6 +276,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<FaustCustomView> faustCustomView_;
     std::unique_ptr<CompiledFilterCurveView> compiledFilterCurveView_;
     std::unique_ptr<CompiledSaturatorCurveView> compiledSaturatorCurveView_;
+    std::unique_ptr<CompiledDelayCurveView> compiledDelayCurveView_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;

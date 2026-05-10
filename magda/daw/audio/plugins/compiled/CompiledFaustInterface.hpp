@@ -27,6 +27,13 @@ struct CompiledHostSlotInfo {
     float defaultValue = 0.0f;
     float scaleAnchor = std::numeric_limits<float>::quiet_NaN();
     std::vector<juce::String> choices;  // for Discrete kind
+
+    // Gate condition harvested from `[gate:N]` / `[gate:!N]` annotations on
+    // the Faust slider label. Layout reads these via ParameterInfo to grey
+    // out cells whose enable condition is not met (e.g. delay's Time greys
+    // when Sync is on). -1 = no gate, always enabled.
+    int gateSlotIndex = -1;
+    bool gateNegated = false;
 };
 
 /**

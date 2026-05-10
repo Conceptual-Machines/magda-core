@@ -78,8 +78,14 @@ syncedSamples  = division * 60.0 / max(bpm, 1.0) * ma.SR;
 // Free-time branch, in samples.
 freeSamples    = time * ma.SR / 1000.0;
 
-// Pick the active branch.  `sync` is 0 or 1.
-delaySamples   = (1.0 - sync) * freeSamples + sync * syncedSamples;
+// Pick the active branch.  `sync` is 0 or 1. Smooth the blended result so
+// flipping Sync (or stepping Division, or BPM changes) doesn't slam the
+// read pointer to a new offset — that produced an audible click and a
+// brief feedback runaway as the buffer pointer jumped past in-flight
+// echoes. ~50 ms one-pole keeps the transition inaudible while still
+// settling fast enough to feel responsive.
+delaySamples   = ((1.0 - sync) * freeSamples + sync * syncedSamples)
+                 : si.smooth(ba.tau2pole(0.05));
 
 // Tilt EQ: blend a 1 kHz lowpass and a 1 kHz highpass against the dry
 // signal.  At tilt = 0 we pass `x` through unchanged.
@@ -95,10 +101,23 @@ oneLine = de.fdelay(MAX_DELAY_SAMPLES, delaySamples) : tone;
 xmix(a, b) = a * (1.0 - cross) + b * cross,
              b * (1.0 - cross) + a * cross;
 
+// Dry-input asymmetry. xmix alone does nothing for mono material because
+// stereo-symmetric input (L = R) stays symmetric through every linear
+// operation in the feedback loop — swapping equal taps yields equal taps.
+// Routing more of the dry signal toward L as cross→1 (R toward silence)
+// breaks that symmetry: the first echo lands on L, bounces to R via the
+// swapped feedback, back to L, and so on — classic ping-pong. Stereo
+// material gets gently mono'd at the wet input at high cross, which is
+// the conventional ping-pong feel anyway. cross = 0 is a clean
+// passthrough so parallel stereo behaviour is preserved.
+inputCross(L, R) = L * (1.0 - cross) + (L + R) * 0.5 * cross,
+                   R * (1.0 - cross);
+
 // Stereo delay with cross-feedback. See the delay PR description for the
 // 4-in/2-out body + 2-in/2-out feedback path that `~` glues together.
-stereoDelay = (ro.interleave(2, 2) : (+, +) : (oneLine, oneLine))
-              ~ (xmix : par(i, 2, *(feedback)));
+stereoDelay = inputCross
+              : ((ro.interleave(2, 2) : (+, +) : (oneLine, oneLine))
+                 ~ (xmix : par(i, 2, *(feedback))));
 
 // Wet/dry mix.  Split the dry pair, run the wet pair through stereoDelay,
 // scale, and sum.  The :> n→2 merge sums (in0+in2, in1+in3), giving

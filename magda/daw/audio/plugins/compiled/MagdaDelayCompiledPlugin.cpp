@@ -27,6 +27,12 @@ struct DelayHarvest {
         FaustParamSlot::Kind kind = FaustParamSlot::Kind::Continuous;
         FAUSTFLOAT* zone = nullptr;
         std::vector<std::pair<float, juce::String>> choices;
+        // Gate condition harvested from `[gate:N]` / `[gate:!N]` — copied
+        // through to ParameterInfo so the layout greys out cells whose
+        // enable condition is not met (Time when Sync is on, Division
+        // when Sync is off).
+        int gateSlotIndex = -1;
+        bool gateNegated = false;
     };
     std::vector<Control> controls;
 };
@@ -87,6 +93,8 @@ class DelayHarvester : public ::UI {
         c.kind = merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind;
         c.zone = zone;
         c.choices = merged.menuChoices;
+        c.gateSlotIndex = merged.gateSlotIndex;
+        c.gateNegated = merged.gateNegated;
         harvest.controls.push_back(std::move(c));
     }
 
@@ -143,10 +151,17 @@ void MagdaDelayCompiledPlugin::rebuildEngineState(int sampleRate) {
     zones_.fill(nullptr);
     bpmZone_ = nullptr;
     divisionChoiceValues_.clear();
+    divisionChoiceLabels_.clear();
 
     for (int i = 0; i < kHostSlotCount; ++i) {
-        if (auto* c = findByIdx(harvester.harvest, i))
+        harvestedGates_[static_cast<size_t>(i)] = {-1, false};
+        if (auto* c = findByIdx(harvester.harvest, i)) {
             zones_[static_cast<size_t>(i)] = c->zone;
+            // Stash the harvested gate aside; buildHostParameters wipes
+            // hostSlotInfo via designated initializers, so we re-apply at
+            // the end of that function instead of here.
+            harvestedGates_[static_cast<size_t>(i)] = {c->gateSlotIndex, c->gateNegated};
+        }
     }
     if (auto* c = findByIdx(harvester.harvest, kBpmSlot))
         bpmZone_ = c->zone;
@@ -156,8 +171,11 @@ void MagdaDelayCompiledPlugin::rebuildEngineState(int sampleRate) {
         std::sort(sorted.begin(), sorted.end(),
                   [](const auto& a, const auto& b) { return a.first < b.first; });
         divisionChoiceValues_.reserve(sorted.size());
-        for (const auto& choice : sorted)
+        divisionChoiceLabels_.reserve(sorted.size());
+        for (const auto& choice : sorted) {
             divisionChoiceValues_.push_back(choice.first);
+            divisionChoiceLabels_.push_back(choice.second);
+        }
     }
 }
 
@@ -211,20 +229,15 @@ void MagdaDelayCompiledPlugin::buildHostParameters() {
                                  .maxValue = 1.0f,
                                  .defaultValue = 0.0f};
 
-    // Division choice list comes from the DSP harvest. Populate the Discrete
-    // slot's choices by index — the underlying Faust value is mapped at
-    // applyToBuffer time via divisionChoiceValues_, so the host only ever
-    // deals in 0..N-1 indices.
+    // Division choice list comes from the DSP harvest. Use the Faust-side
+    // labels ("1/4", "1/8.", "1/16T") rather than stringified floats so the
+    // dropdown reads as musical divisions; the underlying float values stay
+    // in divisionChoiceValues_ for the audio-side mapping in applyToBuffer.
     if (!divisionChoiceValues_.empty()) {
         const int n = static_cast<int>(divisionChoiceValues_.size());
-        // We don't know the human-readable labels from the harvest here —
-        // FaustMetadataParser drops them. Fall back to numeric stringified
-        // tokens; the menu in the DSP source is the canonical set.
-        for (int i = 0; i < n; ++i)
-            hostSlotInfo_[kDivisionSlot].choices.push_back(
-                juce::String(divisionChoiceValues_[static_cast<size_t>(i)], 3));
+        hostSlotInfo_[kDivisionSlot].choices = divisionChoiceLabels_;
         hostSlotInfo_[kDivisionSlot].maxValue = static_cast<float>(n - 1);
-        // Default to "1/4" if it's in the set (value 1.0); otherwise middle.
+        // Default to "1/4" if it's in the set (Faust value 1.0); otherwise 0.
         for (int i = 0; i < n; ++i) {
             if (std::abs(divisionChoiceValues_[static_cast<size_t>(i)] - 1.0f) < 1e-3f) {
                 hostSlotInfo_[kDivisionSlot].defaultValue = static_cast<float>(i);
@@ -272,6 +285,17 @@ void MagdaDelayCompiledPlugin::buildHostParameters() {
             });
         param->attachToCurrentValue(hostCached_[i]);
         hostParams_[i] = param;
+    }
+
+    // Re-apply the gate annotations the harvest captured. Each slot
+    // assignment above used designated initialisers that reset every
+    // field including gateSlotIndex / gateNegated, so we patch them in
+    // here from the snapshot rebuildEngineState saved.
+    for (int i = 0; i < kHostSlotCount; ++i) {
+        hostSlotInfo_[static_cast<size_t>(i)].gateSlotIndex =
+            harvestedGates_[static_cast<size_t>(i)].slotIndex;
+        hostSlotInfo_[static_cast<size_t>(i)].gateNegated =
+            harvestedGates_[static_cast<size_t>(i)].negated;
     }
 }
 
@@ -397,6 +421,13 @@ const MagdaDelayCompiledPlugin::HostSlotInfo& MagdaDelayCompiledPlugin::getSlotI
     if (slotIndex < 0 || slotIndex >= kHostSlotCount)
         return kEmpty;
     return hostSlotInfo_[static_cast<size_t>(slotIndex)];
+}
+
+float MagdaDelayCompiledPlugin::divisionFaustValueForIndex(int index) const {
+    if (divisionChoiceValues_.empty())
+        return 1.0f;
+    const int safeIdx = juce::jlimit(0, static_cast<int>(divisionChoiceValues_.size()) - 1, index);
+    return divisionChoiceValues_[static_cast<size_t>(safeIdx)];
 }
 
 float MagdaDelayCompiledPlugin::displayValueToNativeValue(int slotIndex, float displayValue) const {

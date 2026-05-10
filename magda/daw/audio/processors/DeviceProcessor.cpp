@@ -717,6 +717,8 @@ ParameterInfo CompiledFaustProcessor::getParameterInfo(int index) const {
     if (std::isfinite(s.scaleAnchor))
         info.scaleAnchor = s.scaleAnchor;
     info.choices = s.choices;
+    info.gateSlotIndex = s.gateSlotIndex;
+    info.gateNegated = s.gateNegated;
 
     // Engine-aware mode-list rebuild (filter pack only): the choice list
     // for Mode depends on the live Engine value. Single-engine plugins

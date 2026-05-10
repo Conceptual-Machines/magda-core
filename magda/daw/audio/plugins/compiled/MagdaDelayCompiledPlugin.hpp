@@ -76,6 +76,12 @@ class MagdaDelayCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin 
     using HostSlotInfo = CompiledHostSlotInfo;
     const HostSlotInfo& getSlotInfo(int slotIndex) const;
 
+    // Underlying Faust value (quarter-note multiplier) for a given Division
+    // dropdown index. Curve views use this to compute exact echo times when
+    // Sync is on — the dropdown labels ("1/4", "1/8.") aren't parseable so
+    // we can't recover the value via String::getFloatValue.
+    float divisionFaustValueForIndex(int index) const;
+
     // ICompiledFaustPlugin
     int hostSlotCount() const override {
         return kHostSlotCount;
@@ -105,8 +111,18 @@ class MagdaDelayCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin 
     // numeric value the user picks via a menu, but here both Sync (bool)
     // and Division (continuous menu) work via the same direct-write path.
     std::array<FAUSTFLOAT*, kHostSlotCount> zones_{};
-    FAUSTFLOAT* bpmZone_ = nullptr;  // [idx:63], hidden, host-driven
-    std::vector<float> divisionChoiceValues_;
+    FAUSTFLOAT* bpmZone_ = nullptr;                   // [idx:63], hidden, host-driven
+    std::vector<float> divisionChoiceValues_;         // Faust-side values, used for audio writes
+    std::vector<juce::String> divisionChoiceLabels_;  // Display labels (e.g. "1/4", "1/8.")
+
+    // Gate annotations harvested from the DSP, kept aside so
+    // buildHostParameters' designated-initializer assignments don't wipe
+    // them. Indexed by host slot.
+    struct GateSpec {
+        int slotIndex = -1;
+        bool negated = false;
+    };
+    std::array<GateSpec, kHostSlotCount> harvestedGates_{};
 
     std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
     std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
