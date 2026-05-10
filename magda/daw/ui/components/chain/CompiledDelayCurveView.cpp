@@ -148,17 +148,9 @@ void CompiledDelayCurveView::paint(juce::Graphics& g) {
     if (windowSec <= 1.0e-6f)
         return;
 
-    // Sync mode: draw a quarter-note grid behind the taps. Beat spacing in
-    // seconds is `60 / bpm`; map to pixels using the same windowSec scale
-    // as the taps themselves so they line up.
-    if (sync_ && bpm_ > 1.0f) {
-        const float beatSec = 60.0f / bpm_;
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.18f));
-        for (float t = beatSec; t <= windowSec; t += beatSec) {
-            const float x = plot.getX() + (t / windowSec) * plot.getWidth();
-            g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
-        }
-    }
+    // Defer drawing the sync-mode tempo grid until after the bar-width is
+    // known so it shares the same left margin as the taps; placeholder
+    // here keeps the centre line / frame ordering clear.
 
     // Centre line — separates "L" half (above) from "R" half (below) when
     // ping-pong is engaged. Always visible so the timeline reads as
@@ -171,6 +163,25 @@ void CompiledDelayCurveView::paint(juce::Graphics& g) {
     constexpr float kBarMinPx = 1.5f;
     const float barWidthPx =
         juce::jmax(kBarMinPx, plot.getWidth() / static_cast<float>(maxTaps) * 0.35f);
+
+    // Indent the timeline so the dry tap (t = 0) doesn't slam against the
+    // left edge of the plot frame — without this the first bar's left half
+    // gets clipped by the border. Reserve a bar's worth of margin and map
+    // t ∈ [0, windowSec] to the remaining width.
+    const float kLeftMargin = barWidthPx;
+    const float plotXOffset = plot.getX() + kLeftMargin;
+    const float plotWidthInner = plot.getWidth() - kLeftMargin;
+
+    // Sync-mode tempo grid sits behind the taps. Use the same x-mapping the
+    // bars use so beats line up with the taps that fall on them.
+    if (sync_ && bpm_ > 1.0f) {
+        const float beatSec = 60.0f / bpm_;
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.18f));
+        for (float t = beatSec; t <= windowSec; t += beatSec) {
+            const float x = plotXOffset + (t / windowSec) * plotWidthInner;
+            g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
+        }
+    }
 
     // Tap 0 = dry signal (full amplitude on both sides at cross = 0).
     // Subsequent taps decay by Feedback^N. Cross splits successive taps
@@ -198,7 +209,7 @@ void CompiledDelayCurveView::paint(juce::Graphics& g) {
             continue;
 
         const float t = static_cast<float>(n) * delaySec;
-        const float x = plot.getX() + (t / windowSec) * plot.getWidth();
+        const float x = plotXOffset + (t / windowSec) * plotWidthInner;
 
         // Upward bar (L): height ∝ ampL; Downward bar (R): height ∝ ampR.
         const float topY = midY - ampL * halfH;
