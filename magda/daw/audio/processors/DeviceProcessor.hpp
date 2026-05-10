@@ -97,6 +97,7 @@ class DeviceProcessor {
      * models override this directly.
      */
     virtual void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, ParameterModelValue value);
 
     // =========================================================================
     // Gain Stage

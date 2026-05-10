@@ -197,19 +197,7 @@ double AutomationRecordingEngine::getCurrentBeatTime() const {
 double AutomationRecordingEngine::normalizeDeviceParam(const AutomationTarget& target,
                                                        float rawValue) {
     ParameterInfo paramInfo = getParameterInfoForTarget(target);
-    const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
-    const bool infoMatchesTeRange = std::abs(paramInfo.minValue - paramInfo.teMinValue) < 1e-6f &&
-                                    std::abs(paramInfo.maxValue - paramInfo.teMaxValue) < 1e-6f;
-    const bool displayMappedInternal = std::abs(paramInfo.teMinValue) < 1e-6f &&
-                                       std::abs(paramInfo.teMaxValue - 1.0f) < 1e-6f &&
-                                       !infoMatchesTeRange && paramInfo.displayText == nullptr;
-
-    if (teSpan > 0.0f && !infoMatchesTeRange && !displayMappedInternal) {
-        return juce::jlimit(0.0, 1.0,
-                            static_cast<double>((rawValue - paramInfo.teMinValue) / teSpan));
-    }
-
-    return static_cast<double>(ParameterUtils::realToNormalized(rawValue, paramInfo));
+    return ParameterUtils::modelToNormalizedValue(ParameterModelValue{rawValue}, paramInfo).value;
 }
 
 bool AutomationRecordingEngine::shouldThinPoint(AutomationLaneId laneId, double beatTime,

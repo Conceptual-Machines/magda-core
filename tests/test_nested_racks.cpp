@@ -1,5 +1,6 @@
 #include <juce_core/juce_core.h>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "../magda/daw/core/RackInfo.hpp"
@@ -631,6 +632,62 @@ TEST_CASE("TrackManager: Set Device Bypassed by Path", "[trackmanager][device][p
         foundDevice = fixture.tm().getDeviceInChainByPath(devicePath);
         REQUIRE(foundDevice->bypassed == false);
     }
+}
+
+TEST_CASE("TrackManager: Parameter writes follow device id after top-level reorder",
+          "[trackmanager][device][path][parameter]") {
+    TrackManagerTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Test Track");
+
+    DeviceInfo saturator;
+    saturator.name = "Saturator";
+    saturator.pluginId = "magda_saturator";
+    saturator.format = PluginFormat::Internal;
+    ParameterInfo drive;
+    drive.paramIndex = 0;
+    drive.name = "Drive";
+    drive.minValue = 0.0f;
+    drive.maxValue = 24.0f;
+    drive.currentValue = 0.0f;
+    drive.teMinValue = 0.0f;
+    drive.teMaxValue = 1.0f;
+    saturator.parameters.push_back(drive);
+
+    DeviceInfo delay;
+    delay.name = "Delay";
+    delay.pluginId = "magda_delay";
+    delay.format = PluginFormat::Internal;
+    ParameterInfo time;
+    time.paramIndex = 0;
+    time.name = "Time";
+    time.minValue = 1.0f;
+    time.maxValue = 2000.0f;
+    time.currentValue = 250.0f;
+    time.teMinValue = 0.0f;
+    time.teMaxValue = 1.0f;
+    delay.parameters.push_back(time);
+
+    const auto saturatorId = fixture.tm().addDeviceToTrack(trackId, saturator);
+    const auto delayId = fixture.tm().addDeviceToTrack(trackId, delay);
+    REQUIRE(saturatorId != INVALID_DEVICE_ID);
+    REQUIRE(delayId != INVALID_DEVICE_ID);
+
+    fixture.tm().moveNode(trackId, 1, 0);
+
+    const auto saturatorPath = ChainNodePath::topLevelDevice(trackId, saturatorId);
+    fixture.tm().setDeviceParameterValue(saturatorPath, 0, ParameterModelValue{12.0f});
+
+    const auto* liveSaturator = fixture.tm().getDeviceInChainByPath(saturatorPath);
+    const auto* liveDelay =
+        fixture.tm().getDeviceInChainByPath(ChainNodePath::topLevelDevice(trackId, delayId));
+
+    REQUIRE(liveSaturator != nullptr);
+    REQUIRE(liveDelay != nullptr);
+    REQUIRE(liveSaturator->name == "Saturator");
+    REQUIRE(liveDelay->name == "Delay");
+    REQUIRE(liveSaturator->parameters[0].currentValue == Catch::Approx(12.0f));
+    REQUIRE(liveDelay->parameters[0].currentValue == Catch::Approx(250.0f));
 }
 
 // ============================================================================

@@ -187,6 +187,46 @@ float realToNormalized(float real, const ParameterInfo& info) {
     }
 }
 
+bool infoMatchesTeRange(const ParameterInfo& info) {
+    return std::abs(info.minValue - info.teMinValue) < 1e-6f &&
+           std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
+}
+
+bool isDisplayMappedInternalValue(const ParameterInfo& info) {
+    return std::abs(info.teMinValue) < 1e-6f && std::abs(info.teMaxValue - 1.0f) < 1e-6f &&
+           !infoMatchesTeRange(info) && info.displayText == nullptr;
+}
+
+ParameterModelValue normalizedToModelValue(ParameterNormalizedValue normalized,
+                                           const ParameterInfo& info) {
+    const float teSpan = info.teMaxValue - info.teMinValue;
+    const bool useScaledModel = (infoMatchesTeRange(info) || isDisplayMappedInternalValue(info)) &&
+                                info.maxValue > info.minValue;
+
+    if (useScaledModel)
+        return {normalizedToReal(normalized.value, info)};
+
+    if (teSpan > 0.0f)
+        return {info.teMinValue + normalized.value * teSpan};
+
+    return {normalized.value};
+}
+
+ParameterNormalizedValue modelToNormalizedValue(ParameterModelValue model,
+                                                const ParameterInfo& info) {
+    const float teSpan = info.teMaxValue - info.teMinValue;
+    const bool useScaledModel = (infoMatchesTeRange(info) || isDisplayMappedInternalValue(info)) &&
+                                info.maxValue > info.minValue;
+
+    if (useScaledModel)
+        return ParameterNormalizedValue::clamped(realToNormalized(model.value, info));
+
+    if (teSpan > 0.0f)
+        return ParameterNormalizedValue::clamped((model.value - info.teMinValue) / teSpan);
+
+    return ParameterNormalizedValue::clamped(model.value);
+}
+
 float applyModulation(float baseNormalized, float modValue, float amount, bool bipolar) {
     // modValue is 0-1, convert to -1 to +1 if bipolar
     float modOffset = bipolar ? (modValue * 2.0f - 1.0f) : modValue;

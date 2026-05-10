@@ -155,6 +155,18 @@ struct ParameterInfo {
     }
 };
 
+struct ParameterNormalizedValue {
+    float value = 0.0f;
+
+    static ParameterNormalizedValue clamped(float v) {
+        return {juce::jlimit(0.0f, 1.0f, v)};
+    }
+};
+
+struct ParameterModelValue {
+    float value = 0.0f;
+};
+
 /**
  * @brief Common parameter presets for typical audio parameters
  */

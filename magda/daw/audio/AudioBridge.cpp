@@ -525,7 +525,7 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
         return;
     }
 
-    processor->setParameterByIndex(paramIndex, newValue);
+    processor->setParameterByIndex(paramIndex, ParameterModelValue{newValue});
 
     // Forward to automation recording engine
     automationRecording_.onDeviceParameterChanged(deviceId, paramIndex, newValue);

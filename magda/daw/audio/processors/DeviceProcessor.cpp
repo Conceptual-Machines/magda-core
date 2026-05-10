@@ -131,6 +131,10 @@ void DeviceProcessor::setParameterByIndex(int paramIndex, float value) {
         setParameter(names[static_cast<size_t>(paramIndex)], value);
 }
 
+void DeviceProcessor::setParameterByIndex(int paramIndex, ParameterModelValue value) {
+    setParameterByIndex(paramIndex, value.value);
+}
+
 void DeviceProcessor::setGainDb(float gainDb) {
     gainDb_ = gainDb;
     gainLinear_ = juce::Decibels::decibelsToGain(gainDb);

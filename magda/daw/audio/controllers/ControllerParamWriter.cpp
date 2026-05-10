@@ -27,17 +27,6 @@ const ParameterInfo* findDeviceParameterInfo(const DeviceInfo& device, int param
     return nullptr;
 }
 
-bool isInternalDisplayMappedParam(const DeviceInfo& device, const ParameterInfo& info) {
-    if (device.format != PluginFormat::Internal)
-        return false;
-
-    const bool teRangeIsNormalised =
-        std::abs(info.teMinValue) < 1e-6f && std::abs(info.teMaxValue - 1.0f) < 1e-6f;
-    const bool displayRangeDiffers = std::abs(info.minValue - info.teMinValue) > 1e-6f ||
-                                     std::abs(info.maxValue - info.teMaxValue) > 1e-6f;
-    return teRangeIsNormalised && displayRangeDiffers && info.maxValue > info.minValue;
-}
-
 }  // namespace
 
 void DefaultControllerParamWriter::write(const ResolveResult& resolved, float value) {
@@ -67,9 +56,11 @@ void DefaultControllerParamWriter::writePluginParam(const ControlTarget& target,
     auto& trackMgr = TrackManager::getInstance();
     if (auto* device = trackMgr.getDeviceInChainByPath(target.devicePath)) {
         const auto* info = findDeviceParameterInfo(*device, target.paramIndex);
-        const bool displayMapped = info != nullptr && isInternalDisplayMappedParam(*device, *info);
+        const bool displayMapped = info != nullptr && device->format == PluginFormat::Internal &&
+                                   ParameterUtils::isDisplayMappedInternalValue(*info);
         if (displayMapped) {
-            const float displayValue = ParameterUtils::normalizedToReal(clamped, *info);
+            const auto displayValue = ParameterUtils::normalizedToModelValue(
+                ParameterNormalizedValue::clamped(clamped), *info);
             trackMgr.setDeviceParameterValue(target.devicePath, target.paramIndex, displayValue);
             return;
         }

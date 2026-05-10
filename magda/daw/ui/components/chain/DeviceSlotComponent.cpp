@@ -1122,16 +1122,10 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
     // (before any AI-Detect override) so this projection is safe without a
     // live plugin lookup.
     const auto& info = device_.parameters[static_cast<size_t>(paramIndex)];
-    const float teSpan = info.teMaxValue - info.teMinValue;
-    const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
-                                    std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
-    const bool displayMappedInternal = std::abs(info.teMinValue) < 1e-6f &&
-                                       std::abs(info.teMaxValue - 1.0f) < 1e-6f &&
-                                       !infoMatchesTeRange && info.displayText == nullptr;
     const float modelValue =
-        ((infoMatchesTeRange || displayMappedInternal) && info.maxValue > info.minValue)
-            ? magda::ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), info)
-            : info.teMinValue + static_cast<float>(normalizedValue) * teSpan;
+        magda::ParameterUtils::normalizedToModelValue(
+            magda::ParameterNormalizedValue::clamped(static_cast<float>(normalizedValue)), info)
+            .value;
 
     // Keep the cached value in sync so any non-automation refresh path and
     // custom UI read the same value-space that live parameter writes use.

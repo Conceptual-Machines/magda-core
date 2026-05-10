@@ -687,13 +687,13 @@ void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
 }
 
 void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex,
-                                           float value) {
+                                           ParameterModelValue value) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         const int storedIndex = findStoredParameterIndex(*device, paramIndex);
         if (storedIndex >= 0) {
-            device->parameters[static_cast<size_t>(storedIndex)].currentValue = value;
+            device->parameters[static_cast<size_t>(storedIndex)].currentValue = value.value;
             // Use granular notification - only sync this one parameter, not all 543
-            notifyDeviceParameterChanged(device->id, paramIndex, value);
+            notifyDeviceParameterChanged(device->id, paramIndex, value.value);
         }
     }
 }
