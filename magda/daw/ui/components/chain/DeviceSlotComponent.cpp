@@ -1854,7 +1854,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         !eqUI_ && !compressorUI_ && !reverbUI_ && !delayUI_ && !chorusUI_ && !phaserUI_ &&
         !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_ && !utilityUI_ && !faustUI_ &&
         !compiledFilterCurveView_ && !compiledSaturatorCurveView_ && !compiledDelayCurveView_ &&
-        !compiledGrainDelayCurveView_ && !chordEngineUI_) {
+        !compiledGrainDelayCurveView_ && !compiledGritCurveView_ && !chordEngineUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
@@ -1863,7 +1863,8 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
         reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
         impulseResponseUI_ || utilityUI_ || faustUI_ || compiledFilterCurveView_ ||
-        compiledSaturatorCurveView_ || compiledDelayCurveView_ || chordEngineUI_) {
+        compiledSaturatorCurveView_ || compiledDelayCurveView_ || compiledGritCurveView_ ||
+        chordEngineUI_) {
         updateCustomUI();
     }
 
@@ -1978,6 +1979,18 @@ void DeviceSlotComponent::updateParamModulation() {
             }
         }
         compiledGrainDelayCurveView_->updateFromDevice(device_);
+    }
+
+    if (compiledGritCurveView_ && isCompiledFaustGrit_) {
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                compiledGritCurveView_->setCompiledPlugin(
+                    dynamic_cast<magda::daw::audio::compiled::MagdaGritCompiledPlugin*>(
+                        plugin.get()));
+            }
+        }
+        compiledGritCurveView_->updateFromDevice(device_);
     }
 
     // Also update custom UI linkable sliders
@@ -2263,6 +2276,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             compiledDelayCurveView_->setVisible(false);
         if (compiledGrainDelayCurveView_)
             compiledGrainDelayCurveView_->setVisible(false);
+        if (compiledGritCurveView_)
+            compiledGritCurveView_->setVisible(false);
         if (chordEngineUI_)
             chordEngineUI_->setVisible(false);
         if (arpeggiatorUI_)
@@ -2341,6 +2356,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     } else if (isCompiledFaustGrainDelay_ && compiledGrainDelayCurveView_) {
         compiledCurveView = compiledGrainDelayCurveView_.get();
         compiledCurvePreferred = compiledGrainDelayCurveView_->getPreferredHeight();
+    } else if (isCompiledFaustGrit_ && compiledGritCurveView_) {
+        compiledCurveView = compiledGritCurveView_.get();
+        compiledCurvePreferred = compiledGritCurveView_->getPreferredHeight();
     }
     if (compiledCurveView != nullptr) {
         const int bodyHeight = juce::jmax(0, contentArea.getHeight());
@@ -2980,6 +2998,8 @@ void DeviceSlotComponent::updateParameterSlots() {
                 self->compiledSaturatorCurveView_->updateFromDevice(self->device_);
             if (self->compiledDelayCurveView_)
                 self->compiledDelayCurveView_->updateFromDevice(self->device_);
+            if (self->compiledGritCurveView_)
+                self->compiledGritCurveView_->updateFromDevice(self->device_);
             magda::TrackManager::getInstance().setDeviceParameterValue(self->nodePath_, paramIndex,
                                                                        static_cast<float>(value));
             // Re-evaluate gate conditions now that the local cache is updated.
@@ -3293,6 +3313,10 @@ void DeviceSlotComponent::createCustomUI() {
             std::make_unique<CompiledGrainDelayCurveView>(device_.pluginId);
         compiledGrainDelayCurveView_->updateFromDevice(device_);
         addAndMakeVisible(*compiledGrainDelayCurveView_);
+    } else if (isCompiledFaustGrit_) {
+        compiledGritCurveView_ = std::make_unique<CompiledGritCurveView>(device_.pluginId);
+        compiledGritCurveView_->updateFromDevice(device_);
+        addAndMakeVisible(*compiledGritCurveView_);
     } else if (device_.pluginId.containsIgnoreCase("tone")) {
         toneGeneratorUI_ = std::make_unique<ToneGeneratorUI>();
         toneGeneratorUI_->onParameterChanged = [this](int paramIndex, float normalizedValue) {
@@ -4273,6 +4297,8 @@ void DeviceSlotComponent::refreshCustomUIParameterValues() {
         compiledDelayCurveView_->updateFromDevice(device_);
     if (compiledGrainDelayCurveView_ && isCompiledFaustGrainDelay_)
         compiledGrainDelayCurveView_->updateFromDevice(device_);
+    if (compiledGritCurveView_ && isCompiledFaustGrit_)
+        compiledGritCurveView_->updateFromDevice(device_);
 }
 
 void DeviceSlotComponent::updateCustomUI() {

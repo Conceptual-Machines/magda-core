@@ -9,6 +9,7 @@
 #include "CompiledDelayCurveView.hpp"
 #include "CompiledFilterCurveView.hpp"
 #include "CompiledGrainDelayCurveView.hpp"
+#include "CompiledGritCurveView.hpp"
 #include "CompiledSaturatorCurveView.hpp"
 #include "CompressorUI.hpp"
 #include "DelayUI.hpp"
@@ -281,6 +282,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<CompiledSaturatorCurveView> compiledSaturatorCurveView_;
     std::unique_ptr<CompiledDelayCurveView> compiledDelayCurveView_;
     std::unique_ptr<CompiledGrainDelayCurveView> compiledGrainDelayCurveView_;
+    std::unique_ptr<CompiledGritCurveView> compiledGritCurveView_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;

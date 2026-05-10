@@ -64,9 +64,12 @@ carrier_r = ba.selectn(3, int(mode),
                        os.osc(freq));
 
 // Ring-modulate, scale by Amount, sum back into dry. Equivalent to
-//   out = dry * (1 + amount * carrier)
-// but split this way so a "carrier-only" mode could later drop the
-// passthrough.
-modulate(c, x) = x + amount * (x * c);
+//   out = dry * (1 + amount² * carrier)
+// Squaring `amount` gives the knob a perceptual taper — near zero you
+// get a tiny grit smear (amount = 0.1 → 0.01 wet), and the effect
+// ramps into the audible range only as the knob crosses ~0.3. Without
+// the taper the bottom 10% of travel is already "too much" because
+// the carrier × dry product is loud relative to the dry passthrough.
+modulate(c, x) = x + amount * amount * (x * c);
 
 process = modulate(carrier_l), modulate(carrier_r);
