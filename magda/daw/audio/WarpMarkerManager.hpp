@@ -153,7 +153,10 @@ class WarpMarkerManager {
     //      it up when it observes completion and schedules the rerun.
     struct PendingDetection {
         float sensitivity = 0.0f;
-        std::map<ClipId, std::string> clipIdToEngineId;  // snapshot, callers' map is local
+        // Resolved at queue time so the slider hot-path doesn't snapshot the
+        // whole clipIdToEngineId map per tick. Empty engineId means we
+        // couldn't resolve the clip (e.g. it was removed) — apply will skip.
+        std::string engineId;
         te::Edit* edit = nullptr;
     };
 
@@ -170,8 +173,8 @@ class WarpMarkerManager {
     };
 
     void applyPendingSensitivities();
-    void applySensitivityNow(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
-                             ClipId clipId, float sensitivity);
+    void applySensitivityNow(te::Edit& edit, const std::string& engineId, ClipId clipId,
+                             float sensitivity);
 
     std::map<ClipId, PendingDetection> pendingByClip_;
     std::set<ClipId> detectionInFlight_;
