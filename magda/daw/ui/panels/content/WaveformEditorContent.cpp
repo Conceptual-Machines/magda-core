@@ -191,13 +191,13 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                 return;
 
             // Wrap playhead inside loop region when looping is enabled
-            if (di.loopEnabled && di.loopLengthSeconds > 0.0 && di.sourceLength > 0.0) {
+            if (di.isLooped() && di.loopLengthSeconds > 0.0) {
                 double relPos = playPos - clip->startTime;
                 double sourceDelta = timelineDeltaToSourceDelta(relPos);
-                double wrapped = std::fmod(di.loopOffset + sourceDelta, di.sourceLength);
+                double wrapped = std::fmod(di.loopOffset + sourceDelta, di.loopRegionLengthSource);
                 if (wrapped < 0.0)
-                    wrapped += di.sourceLength;
-                double sourcePos = di.loopStart + wrapped;
+                    wrapped += di.loopRegionLengthSource;
+                double sourcePos = di.loopRegionStartSource + wrapped;
                 int playX = sourcePositionToX(sourcePos);
                 if (playX >= 0 && playX < getWidth()) {
                     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
@@ -1113,7 +1113,7 @@ void WaveformEditorContent::updateGridSize() {
                 // Convert file duration to timeline seconds (accounting for speed/tempo)
                 double bpm = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
                 auto info = magda::ClipDisplayInfo::from(*clip, bpm, fileDuration);
-                totalTime = info.fullSourceExtentSeconds;
+                totalTime = info.fileExtentTimeline();
                 // When bar origin is negative (shifted to match arrangement position),
                 // the ruler needs extra length so bar numbers extend to the file end.
                 // The ruler draws from barOrigin (seconds) for timelineLength (seconds),
