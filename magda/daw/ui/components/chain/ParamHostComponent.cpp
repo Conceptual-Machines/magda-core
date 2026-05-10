@@ -29,6 +29,7 @@ void applyFilled(ParamSlotComponent& slot, const magda::ParameterInfo& param, co
 }
 
 void applyPlaceholder(ParamSlotComponent& slot) {
+    slot.cancelGesture();
     slot.setParamName("-");
     slot.setShowEmptyText(true);
     slot.setEnabled(false);
@@ -37,6 +38,7 @@ void applyPlaceholder(ParamSlotComponent& slot) {
 }
 
 void applyHidden(ParamSlotComponent& slot) {
+    slot.cancelGesture();
     slot.setVisible(false);
     slot.onValueChanged = nullptr;
 }

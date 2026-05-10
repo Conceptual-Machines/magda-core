@@ -336,7 +336,8 @@ class TrackManager {
     void updateDeviceParameters(DeviceId deviceId, const std::vector<ParameterInfo>& params);
     void setDeviceVisibleParameters(DeviceId deviceId, const std::vector<int>& visibleParams);
 
-    // Set a specific device parameter value
+    // Set a specific device parameter value in ParameterInfo real/display units,
+    // not normalized host units.
     void setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex, float value);
 
     /**

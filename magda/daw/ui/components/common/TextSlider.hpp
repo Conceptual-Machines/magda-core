@@ -109,14 +109,13 @@ class TextSlider : public juce::Component,
         paramInfoCopy_ = info;
         hasParamInfo_ = true;
 
-        // A custom UI may have called setValueFormatter to override per-param
-        // formatting (e.g. 4OSC pan wants "0" at centre, not the plugin's
-        // native "0R"). Don't clobber an explicit formatter.
-        if (!hasExplicitFormatter_) {
-            valueFormatter_ = [this](double real) {
-                return magda::ParameterUtils::formatValue(static_cast<float>(real), paramInfoCopy_);
-            };
-        }
+        // ParameterInfo is the value-space contract for this slider. Reset
+        // any previous formatter/parser installed for another parameter so a
+        // reused ParamSlot cannot keep a stale normalized/display assumption
+        // after pagination or chain rebuilds.
+        valueFormatter_ = [this](double real) {
+            return magda::ParameterUtils::formatValue(static_cast<float>(real), paramInfoCopy_);
+        };
         valueParser_ = [this](const juce::String& text) {
             auto parsed = magda::ParameterUtils::parseValue(text, paramInfoCopy_);
             return parsed.has_value() ? static_cast<double>(*parsed) : value_;  // keep on failure
@@ -185,15 +184,14 @@ class TextSlider : public juce::Component,
     }
 
     // Custom value formatter - takes the slider's real value, returns display string.
-    // This override sticks: setParameterInfo will not replace it with the generic
-    // ParameterUtils formatter, so plugin-UI-specific formatting wins.
+    // The override is scoped to the currently assigned ParameterInfo; the next
+    // setParameterInfo call reinstalls the generic formatter/parser first.
     void setValueFormatter(std::function<juce::String(double)> formatter) {
         valueFormatter_ = std::move(formatter);
-        hasExplicitFormatter_ = static_cast<bool>(valueFormatter_);
         updateLabel();
     }
 
-    // Custom value parser - takes user input string, returns normalized value (0-1)
+    // Custom value parser - takes user input string, returns the slider's real value.
     void setValueParser(std::function<double(const juce::String&)> parser) {
         valueParser_ = std::move(parser);
     }
@@ -221,6 +219,20 @@ class TextSlider : public juce::Component,
 
     bool isBeingDragged() const {
         return isLeftButtonDrag_;
+    }
+
+    void cancelGesture() {
+        const bool wasLeftDrag = isLeftButtonDrag_;
+        isLeftButtonDrag_ = false;
+        isShiftDrag_ = false;
+        hasDragged_ = false;
+        overrideLatchedThisGesture_ = false;
+        if (wasLeftDrag && hasAutomationTarget_) {
+            auto& mgr = magda::AutomationManager::getInstance();
+            mgr.setTargetUserTouched(automationTarget_, false);
+            mgr.setTargetTouchSuppressed(automationTarget_, false);
+            mgr.clearTouchBaseline(automationTarget_);
+        }
     }
 
     // Bind this slider to an automation target so mouseDown/mouseUp automatically
@@ -650,13 +662,11 @@ class TextSlider : public juce::Component,
     juce::String emptyText_ = "-";
     bool showEmptyText_ = false;
     std::function<juce::String(double)>
-        valueFormatter_;  // Custom value formatting (normalized → string)
+        valueFormatter_;  // Custom value formatting (real value -> string)
     std::function<double(const juce::String&)>
-        valueParser_;                     // Custom value parsing (string → normalized)
+        valueParser_;                     // Custom value parsing (string -> real value)
     magda::ParameterInfo paramInfoCopy_;  // Populated by setParameterInfo
     bool hasParamInfo_ = false;
-    bool hasExplicitFormatter_ =
-        false;  // setValueFormatter override; sticky across setParameterInfo
 
     void updateLabel() {
         // Show empty text instead of value when disabled/empty

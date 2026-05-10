@@ -525,40 +525,7 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
         return;
     }
 
-    // Use setParameterByIndex for efficient single-param sync
-    if (auto* extProcessor = dynamic_cast<ExternalPluginProcessor*>(processor)) {
-        extProcessor->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* toneProc = dynamic_cast<ToneGeneratorProcessor*>(processor)) {
-        toneProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* samplerProc = dynamic_cast<MagdaSamplerProcessor*>(processor)) {
-        samplerProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* fourOscProc = dynamic_cast<FourOscProcessor*>(processor)) {
-        fourOscProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* eqProc = dynamic_cast<EqualiserProcessor*>(processor)) {
-        eqProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* compProc = dynamic_cast<CompressorProcessor*>(processor)) {
-        compProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* reverbProc = dynamic_cast<ReverbProcessor*>(processor)) {
-        reverbProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* delayProc = dynamic_cast<DelayProcessor*>(processor)) {
-        delayProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* chorusProc = dynamic_cast<ChorusProcessor*>(processor)) {
-        chorusProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* phaserProc = dynamic_cast<PhaserProcessor*>(processor)) {
-        phaserProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* lpProc = dynamic_cast<FilterProcessor*>(processor)) {
-        lpProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* pitchProc = dynamic_cast<PitchShiftProcessor*>(processor)) {
-        pitchProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* irProc = dynamic_cast<ImpulseResponseProcessor*>(processor)) {
-        irProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* utilityProc = dynamic_cast<UtilityProcessor*>(processor)) {
-        utilityProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* faustProc = dynamic_cast<FaustProcessor*>(processor)) {
-        faustProc->setParameterByIndex(paramIndex, newValue);
-    } else if (auto* compiledFaustProc = dynamic_cast<CompiledFaustProcessor*>(processor)) {
-        compiledFaustProc->setParameterByIndex(paramIndex, newValue);
-    }
+    processor->setParameterByIndex(paramIndex, newValue);
 
     // Forward to automation recording engine
     automationRecording_.onDeviceParameterChanged(deviceId, paramIndex, newValue);

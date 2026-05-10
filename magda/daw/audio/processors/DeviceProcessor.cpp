@@ -10,6 +10,7 @@
 #include "plugins/FaustParamPool.hpp"
 #include "plugins/FaustPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
+#include "plugins/compiled/CompiledFaustInterface.hpp"
 #include "plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 
 namespace magda {
@@ -124,6 +125,12 @@ void DeviceProcessor::populateParameters(DeviceInfo& info) const {
     }
 }
 
+void DeviceProcessor::setParameterByIndex(int paramIndex, float value) {
+    const auto names = getParameterNames();
+    if (paramIndex >= 0 && paramIndex < static_cast<int>(names.size()))
+        setParameter(names[static_cast<size_t>(paramIndex)], value);
+}
+
 void DeviceProcessor::setGainDb(float gainDb) {
     gainDb_ = gainDb;
     gainLinear_ = juce::Decibels::decibelsToGain(gainDb);
@@ -150,13 +157,13 @@ void DeviceProcessor::syncFromDeviceInfo(const DeviceInfo& info) {
     setGainDb(info.gainDb);
     setBypassed(info.bypassed);
 
-    // Sync parameter values (ParameterInfo stores actual values in real units)
-    auto names = getParameterNames();
+    // ParameterInfo::paramIndex is the stable plugin/slot index. This keeps
+    // restore semantics aligned with live UI writes and supports processors
+    // whose display order is not the same as their native parameter index.
     for (size_t i = 0; i < info.parameters.size(); ++i) {
         const auto& param = info.parameters[i];
-        if (i < names.size()) {
-            setParameter(names[i], param.currentValue);
-        }
+        const int paramIndex = param.paramIndex >= 0 ? param.paramIndex : static_cast<int>(i);
+        setParameterByIndex(paramIndex, param.currentValue);
     }
 }
 
@@ -759,8 +766,8 @@ void CompiledFaustProcessor::setParameterByIndex(int paramIndex, float value) {
     auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
     if (host != nullptr) {
         if (auto* param = host->hostSlotParameter(paramIndex)) {
-            param->setParameterFromHost(host->displayToNormalized(paramIndex, value),
-                                        juce::sendNotificationSync);
+            const float targetNative = host->displayToNormalized(paramIndex, value);
+            param->setParameterFromHost(targetNative, juce::sendNotificationSync);
         }
     }
 }
@@ -1802,8 +1809,8 @@ void ExternalPluginProcessor::populateParameters(DeviceInfo& info) const {
 }
 
 void ExternalPluginProcessor::syncFromDeviceInfo(const DeviceInfo& info) {
-    // Call base class for gain and bypass
-    DeviceProcessor::syncFromDeviceInfo(info);
+    setGainDb(info.gainDb);
+    setBypassed(info.bypassed);
 
     // Set flag to prevent our listener from triggering a feedback loop
     settingParameterFromUI_ = true;

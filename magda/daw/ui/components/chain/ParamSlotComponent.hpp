@@ -38,6 +38,7 @@ class ParamSlotComponent : public juce::Component,
     void setParamName(const juce::String& name);
     void setParamValue(double value);
     void setParameterInfo(const magda::ParameterInfo& info);  // Set full param info for formatting
+    void cancelGesture();
     void setShowEmptyText(bool show);  // Show "-" instead of value for empty slots
     void setFonts(const juce::Font& labelFont, const juce::Font& valueFont);
     bool isBeingDragged() const;  // Check if user is actively dragging this parameter

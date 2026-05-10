@@ -10,6 +10,8 @@
 namespace magda::daw::ui {
 
 void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& info) {
+    slider.setParameterInfo(info);
+
     // Live plugin display text — exact values, no quantization.
     //
     // DisplayTextProvider::format is a thin wrapper around TE's
@@ -39,12 +41,15 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
             }
             return teMin + static_cast<float>(normalized) * teSpan;
         };
-        slider.setValueFormatter([provider, projectToTe](double normalized) {
+        slider.setValueFormatter([provider, projectToTe, infoCopy](double real) {
+            const float normalized =
+                magda::ParameterUtils::realToNormalized(static_cast<float>(real), infoCopy);
             return provider->format(projectToTe(normalized));
         });
         // Reverse-lookup parser: strip unit suffix, parse number, find closest
         // normalized value by querying the plugin at sample points.
-        slider.setValueParser([provider, projectToTe](const juce::String& text) -> double {
+        slider.setValueParser([provider, projectToTe,
+                               infoCopy](const juce::String& text) -> double {
             auto stripped = text.trim().retainCharacters("0123456789.-+eE");
             double target = stripped.getDoubleValue();
             int bestIdx = 0;
@@ -62,42 +67,48 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
                     bestIdx = i;
                 }
             }
-            return static_cast<double>(bestIdx) / kSteps;
+            const float normalized = static_cast<float>(bestIdx) / kSteps;
+            return static_cast<double>(
+                magda::ParameterUtils::normalizedToReal(normalized, infoCopy));
         });
         return;
     }
 
     // If we have a full value table from the plugin, use it directly
     if (!info.valueTable.empty()) {
-        slider.setValueFormatter([vt = info.valueTable](double normalized) {
+        slider.setValueFormatter([vt = info.valueTable, infoCopy = info](double real) {
+            const float normalized =
+                magda::ParameterUtils::realToNormalized(static_cast<float>(real), infoCopy);
             int idx = juce::jlimit(0, static_cast<int>(vt.size()) - 1,
                                    static_cast<int>(std::round(normalized * (vt.size() - 1))));
             return vt[static_cast<size_t>(idx)].trim();
         });
         // Reverse-lookup parser: strip any unit suffix, parse the number,
         // then find the closest value table entry by numeric distance.
-        slider.setValueParser([vt = info.valueTable](const juce::String& text) -> double {
-            auto stripped = text.trim().retainCharacters("0123456789.-+eE");
-            double target = stripped.getDoubleValue();
-            int bestIdx = 0;
-            double bestDist = std::numeric_limits<double>::max();
-            for (int i = 0; i < static_cast<int>(vt.size()); ++i) {
-                auto numPart =
-                    vt[static_cast<size_t>(i)].trim().retainCharacters("0123456789.-+eE");
-                if (numPart.isEmpty())
-                    continue;
-                double dist = std::abs(numPart.getDoubleValue() - target);
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    bestIdx = i;
+        slider.setValueParser(
+            [vt = info.valueTable, infoCopy = info](const juce::String& text) -> double {
+                auto stripped = text.trim().retainCharacters("0123456789.-+eE");
+                double target = stripped.getDoubleValue();
+                int bestIdx = 0;
+                double bestDist = std::numeric_limits<double>::max();
+                for (int i = 0; i < static_cast<int>(vt.size()); ++i) {
+                    auto numPart =
+                        vt[static_cast<size_t>(i)].trim().retainCharacters("0123456789.-+eE");
+                    if (numPart.isEmpty())
+                        continue;
+                    double dist = std::abs(numPart.getDoubleValue() - target);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestIdx = i;
+                    }
                 }
-            }
-            return static_cast<double>(bestIdx) / juce::jmax(1, static_cast<int>(vt.size()) - 1);
-        });
+                const float normalized =
+                    static_cast<float>(bestIdx) / juce::jmax(1, static_cast<int>(vt.size()) - 1);
+                return static_cast<double>(
+                    magda::ParameterUtils::normalizedToReal(normalized, infoCopy));
+            });
         return;
     }
-
-    slider.setParameterInfo(info);
 }
 
 void configureBoolToggle(juce::ToggleButton& toggle, const magda::ParameterInfo& info,

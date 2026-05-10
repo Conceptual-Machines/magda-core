@@ -363,9 +363,15 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     const bool bakedIsDeviceParam = lane.target.kind == ControlTarget::Kind::PluginParam;
     const float bakedTeMin = bakedInfo.teMinValue;
     const float bakedTeSpan = bakedInfo.teMaxValue - bakedInfo.teMinValue;
+    const bool bakedInfoMatchesTeRange =
+        bakedIsDeviceParam && std::abs(bakedInfo.minValue - bakedInfo.teMinValue) < 1e-6f &&
+        std::abs(bakedInfo.maxValue - bakedInfo.teMaxValue) < 1e-6f;
+    const bool bakedDisplayMappedInternal =
+        bakedIsDeviceParam && std::abs(bakedInfo.teMinValue) < 1e-6f &&
+        std::abs(bakedInfo.teMaxValue - 1.0f) < 1e-6f && !bakedInfoMatchesTeRange &&
+        bakedInfo.displayText == nullptr;
     const bool bakedUseTeRange = bakedIsDeviceParam && bakedTeSpan > 0.0f &&
-                                 (std::abs(bakedInfo.minValue - bakedInfo.teMinValue) > 1e-6f ||
-                                  std::abs(bakedInfo.maxValue - bakedInfo.teMaxValue) > 1e-6f);
+                                 !bakedInfoMatchesTeRange && !bakedDisplayMappedInternal;
     // For the info == TE-range path (most internal plugins, VSTs without
     // AI-Detect), we still need normalizedToReal to honour info.scale/
     // scaleAnchor. Precompute the info once — convertToTEValue itself
@@ -510,7 +516,10 @@ float AutomationPlaybackEngine::convertToTEValue(const AutomationTarget& target,
             }
             const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
                                             std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
-            if (infoMatchesTeRange && info.maxValue > info.minValue)
+            const bool displayMappedInternal = std::abs(info.teMinValue) < 1e-6f &&
+                                               std::abs(info.teMaxValue - 1.0f) < 1e-6f &&
+                                               !infoMatchesTeRange && info.displayText == nullptr;
+            if ((infoMatchesTeRange || displayMappedInternal) && info.maxValue > info.minValue)
                 return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), info);
             return info.teMinValue + static_cast<float>(magdaNormalized) * teSpan;
         }
@@ -628,7 +637,10 @@ double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& targ
             }
             const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
                                             std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
-            if (infoMatchesTeRange && info.maxValue > info.minValue)
+            const bool displayMappedInternal = std::abs(info.teMinValue) < 1e-6f &&
+                                               std::abs(info.teMaxValue - 1.0f) < 1e-6f &&
+                                               !infoMatchesTeRange && info.displayText == nullptr;
+            if ((infoMatchesTeRange || displayMappedInternal) && info.maxValue > info.minValue)
                 return ParameterUtils::realToNormalized(teValue, info);
             return juce::jlimit(0.0, 1.0,
                                 static_cast<double>((teValue - info.teMinValue) / teSpan));

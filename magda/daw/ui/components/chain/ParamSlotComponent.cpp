@@ -447,11 +447,20 @@ bool ParamSlotComponent::isBeingDragged() const {
     return valueSlider_.isBeingDragged();
 }
 
+void ParamSlotComponent::cancelGesture() {
+    valueSlider_.cancelGesture();
+    isLinkModeDrag_ = false;
+    isModAmountDrag_ = false;
+    modAmountDragModIndex_ = -1;
+    amountLabel_.setVisible(false);
+}
+
 void ParamSlotComponent::setShowEmptyText(bool show) {
     valueSlider_.setShowEmptyText(show);
 }
 
 void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
+    cancelGesture();
     paramInfo_ = info;
 
     // Hide all widgets first

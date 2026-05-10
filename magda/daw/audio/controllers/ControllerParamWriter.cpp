@@ -1,5 +1,8 @@
 #include "controllers/ControllerParamWriter.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 #include "../../core/AutomationInfo.hpp"
 #include "../../core/ModInfo.hpp"
 #include "../../core/ParameterUtils.hpp"
@@ -8,6 +11,34 @@
 #include "plugin_manager/PluginManager.hpp"
 
 namespace magda {
+
+namespace {
+
+const ParameterInfo* findDeviceParameterInfo(const DeviceInfo& device, int paramIndex) {
+    auto it = std::find_if(
+        device.parameters.begin(), device.parameters.end(),
+        [paramIndex](const ParameterInfo& param) { return param.paramIndex == paramIndex; });
+    if (it != device.parameters.end())
+        return &*it;
+
+    if (paramIndex >= 0 && paramIndex < static_cast<int>(device.parameters.size()))
+        return &device.parameters[static_cast<size_t>(paramIndex)];
+
+    return nullptr;
+}
+
+bool isInternalDisplayMappedParam(const DeviceInfo& device, const ParameterInfo& info) {
+    if (device.format != PluginFormat::Internal)
+        return false;
+
+    const bool teRangeIsNormalised =
+        std::abs(info.teMinValue) < 1e-6f && std::abs(info.teMaxValue - 1.0f) < 1e-6f;
+    const bool displayRangeDiffers = std::abs(info.minValue - info.teMinValue) > 1e-6f ||
+                                     std::abs(info.maxValue - info.teMaxValue) > 1e-6f;
+    return teRangeIsNormalised && displayRangeDiffers && info.maxValue > info.minValue;
+}
+
+}  // namespace
 
 void DefaultControllerParamWriter::write(const ResolveResult& resolved, float value) {
     if (!resolved.ok())
@@ -25,10 +56,25 @@ void DefaultControllerParamWriter::write(const ResolveResult& resolved, float va
         case ControlTarget::Kind::ModParam:
             writeModParam(resolved.target, clamped);
             break;
+        case ControlTarget::Kind::TrackVolume:
+        case ControlTarget::Kind::TrackPan:
+        case ControlTarget::Kind::SendLevel:
+            break;
     }
 }
 
 void DefaultControllerParamWriter::writePluginParam(const ControlTarget& target, float clamped) {
+    auto& trackMgr = TrackManager::getInstance();
+    if (auto* device = trackMgr.getDeviceInChainByPath(target.devicePath)) {
+        const auto* info = findDeviceParameterInfo(*device, target.paramIndex);
+        const bool displayMapped = info != nullptr && isInternalDisplayMappedParam(*device, *info);
+        if (displayMapped) {
+            const float displayValue = ParameterUtils::normalizedToReal(clamped, *info);
+            trackMgr.setDeviceParameterValue(target.devicePath, target.paramIndex, displayValue);
+            return;
+        }
+    }
+
     auto* param = bridge_.resolveControlTarget(target);
     if (!param)
         return;

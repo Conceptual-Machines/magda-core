@@ -1125,24 +1125,20 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
     const float teSpan = info.teMaxValue - info.teMinValue;
     const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
                                     std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
-    const float teRaw =
-        (infoMatchesTeRange && info.maxValue > info.minValue)
+    const bool displayMappedInternal = std::abs(info.teMinValue) < 1e-6f &&
+                                       std::abs(info.teMaxValue - 1.0f) < 1e-6f &&
+                                       !infoMatchesTeRange && info.displayText == nullptr;
+    const float modelValue =
+        ((infoMatchesTeRange || displayMappedInternal) && info.maxValue > info.minValue)
             ? magda::ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), info)
             : info.teMinValue + static_cast<float>(normalizedValue) * teSpan;
 
-    // Keep the cached value in sync so any non-automation refresh path (and
-    // any custom UI that reads currentValue directly, e.g. FourOscUI) sees
-    // the same native value that propagateParameterChange would store.
-    device_.parameters[static_cast<size_t>(paramIndex)].currentValue = teRaw;
+    // Keep the cached value in sync so any non-automation refresh path and
+    // custom UI read the same value-space that live parameter writes use.
+    device_.parameters[static_cast<size_t>(paramIndex)].currentValue = modelValue;
 
     // Push into the param slot (if the matching parameter is on the current
     // page) and into any active custom UI so the on-device knob follows too.
-    //
-    // The generic param-grid slot's slider is a fixed 0..1 range and its
-    // formatter (configureSliderFormatting) was written against a
-    // MAGDA-normalized input, so we pass normalizedValue directly. Using
-    // teRaw would clamp for any parameter whose native range isn't 0..1
-    // (4OSC note-number params, EQ frequency in Hz, …).
     if (paramGrid_) {
         const int paramsPerPage = paramGrid_->getSlotCount();
         const int currentPage = paramGrid_->getCurrentPage();
@@ -1162,7 +1158,7 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
             }
             if (actualParamIndex == paramIndex) {
                 if (auto* slot = paramGrid_->getSlot(slotIndex))
-                    slot->setParamValue(normalizedValue);
+                    slot->setParamValue(modelValue);
                 break;
             }
         }
