@@ -957,33 +957,41 @@ void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int p
 
     // Compiled-Faust filter: when Engine changes, the Mode dropdown's
     // choice list has to switch to the new engine's supported modes
-    // (Korg 35 LP/HP, Sallen-Key LP/BP/HP, etc.). Re-fetch ONLY the Mode
-    // slot's ParameterInfo and re-apply it — touching other slots via
-    // updateParameterSlots() would walk every cell and re-write cached
-    // values back into them, racing the user's in-flight slider drags
-    // and causing visible jumps on params like Cutoff.
+    // (Korg 35 LP/HP, Sallen-Key LP/BP/HP, Diode LP, etc.). Re-fetch
+    // ONLY the Mode slot's ParameterInfo and re-apply it — touching
+    // other slots via updateParameterSlots() would walk every cell and
+    // re-write cached values back into them, racing the user's in-flight
+    // slider drags and causing visible jumps on params like Cutoff.
+    //
+    // Refresh the Mode ParameterInfo BEFORE asking the layout for its
+    // cell state. Without this, switching from a single-mode engine
+    // (e.g. Diode = LP only) back to a multi-mode one would read the
+    // stale 1-choice cache, see Hidden, skip the refresh entirely, and
+    // leave Mode stuck hidden.
     if (isCompiledFaustFilter_ &&
         paramIndex == magda::daw::audio::compiled::MagdaFilterCompiledPlugin::kEngineSlot) {
         constexpr int kModeSlot = magda::daw::audio::compiled::MagdaFilterCompiledPlugin::kModeSlot;
-        const auto cell =
-            paramGrid_->getLayout().cellFor(device_, kModeSlot, paramGrid_->getCurrentPage());
-        if (auto* slot = paramGrid_->getSlot(kModeSlot)) {
-            if (cell.mode == ParamCell::Mode::Filled) {
-                if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-                    if (auto* bridge = audioEngine->getAudioBridge()) {
-                        if (auto* proc = bridge->getDeviceProcessor(device_.id)) {
-                            auto modeInfo = proc->getParameterInfo(kModeSlot);
-                            if (kModeSlot < static_cast<int>(device_.parameters.size()))
-                                device_.parameters[static_cast<size_t>(kModeSlot)] = modeInfo;
-                            slot->setParameterInfo(modeInfo);
-                        }
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                if (auto* proc = bridge->getDeviceProcessor(device_.id)) {
+                    auto modeInfo = proc->getParameterInfo(kModeSlot);
+                    if (kModeSlot < static_cast<int>(device_.parameters.size())) {
+                        // Preserve the live currentValue — getParameterInfo
+                        // returns the slot's default, not the user's last
+                        // selection.
+                        modeInfo.currentValue =
+                            device_.parameters[static_cast<size_t>(kModeSlot)].currentValue;
+                        device_.parameters[static_cast<size_t>(kModeSlot)] = modeInfo;
                     }
+                    if (auto* slot = paramGrid_->getSlot(kModeSlot))
+                        slot->setParameterInfo(modeInfo);
                 }
-                slot->setVisible(true);
-            } else {
-                slot->setVisible(false);
             }
         }
+        const auto cell =
+            paramGrid_->getLayout().cellFor(device_, kModeSlot, paramGrid_->getCurrentPage());
+        if (auto* slot = paramGrid_->getSlot(kModeSlot))
+            slot->setVisible(cell.mode == ParamCell::Mode::Filled);
     }
 
     // Push the fresh cache into any active plugin-specific custom UI so its
