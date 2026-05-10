@@ -17,6 +17,7 @@
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGritCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
+#include "audio/plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "core/AppPaths.hpp"
 #include "core/DeviceInfo.hpp"
@@ -374,7 +375,8 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
         "Grain Delay", audio::compiled::MagdaGrainDelayCompiledPlugin::xmlTypeName, false,
         "Delay"));
     list.push_back(PluginBrowserInfo::createInternal("Chorus", "chorus", false, "Modulation"));
-    list.push_back(PluginBrowserInfo::createInternal("Phaser", "phaser", false, "Modulation"));
+    list.push_back(PluginBrowserInfo::createInternal(
+        "Phaser", audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName, false, "Modulation"));
     list.push_back(PluginBrowserInfo::createInternal("Lowpass", "lowpass", false, "Filter"));
     list.push_back(PluginBrowserInfo::createInternal(
         "Filter", audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName, false, "Filter"));

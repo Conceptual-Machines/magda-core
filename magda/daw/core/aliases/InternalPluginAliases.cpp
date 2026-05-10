@@ -168,6 +168,17 @@ constexpr AliasSpec kCompiledMultibandAliases[] = {
 };
 
 // ------------------------------------------------------------------
+// Phaser ("magda_phaser") — slot order matches
+// MagdaPhaserCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_phaser.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledPhaserAliases[] = {
+    {"rate", 0, "Rate"},     {"depth", 1, "Depth"},   {"feedback", 2, "Feedback"},
+    {"stages", 3, "Stages"}, {"min_hz", 4, "Min Hz"}, {"max_hz", 5, "Max Hz"},
+    {"mix", 6, "Mix"},
+};
+
+// ------------------------------------------------------------------
 // Pitch Shift ("pitchshift") — TE PitchShiftPlugin single param.
 // ------------------------------------------------------------------
 constexpr AliasSpec kPitchShiftAliases[] = {
@@ -202,6 +213,7 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"magda_grain_delay", kCompiledGrainDelayAliases, (int)std::size(kCompiledGrainDelayAliases)},
     {"magda_grit", kCompiledGritAliases, (int)std::size(kCompiledGritAliases)},
     {"magda_multiband", kCompiledMultibandAliases, (int)std::size(kCompiledMultibandAliases)},
+    {"magda_phaser", kCompiledPhaserAliases, (int)std::size(kCompiledPhaserAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
     {"utility", kUtilityAliases, (int)std::size(kUtilityAliases)},
 };

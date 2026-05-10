@@ -63,6 +63,11 @@ magda_compile_faust_dsp(
     MagdaMultibandDsp
     MAGDA_MULTIBAND_GENERATED_CPP
 )
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_phaser.dsp"
+    MagdaPhaserDsp
+    MAGDA_PHASER_GENERATED_CPP
+)
 # A phony target that just depends on every generated DSP .cpp; making
 # magda_daw depend on it forces the custom commands to fire before any
 # wrapper TU is compiled.
@@ -79,6 +84,7 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_GRAIN_DELAY_GENERATED_CPP}"
         "${MAGDA_GRIT_GENERATED_CPP}"
         "${MAGDA_MULTIBAND_GENERATED_CPP}"
+        "${MAGDA_PHASER_GENERATED_CPP}"
 )
 add_dependencies(magda_daw magda_compiled_dsps)
 target_include_directories(magda_daw PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
@@ -96,6 +102,8 @@ target_sources(magda_daw PRIVATE
     plugins/compiled/MagdaGritCompiledPlugin.hpp
     plugins/compiled/MagdaMultibandCompiledPlugin.cpp
     plugins/compiled/MagdaMultibandCompiledPlugin.hpp
+    plugins/compiled/MagdaPhaserCompiledPlugin.cpp
+    plugins/compiled/MagdaPhaserCompiledPlugin.hpp
     plugins/compiled/CompiledFaustHost.hpp
     plugins/compiled/CompiledFaustInterface.hpp
     AudioBridge.cpp

@@ -49,10 +49,10 @@ phaserN(N) = pf.phaser2_stereo(N, notchWidth, frqMin, fratio, frqMax,
 // Stereo wet path — selectn over the four stage counts. CPU is small;
 // only one branch is heard.
 wet = _,_ <: (phaserN(2), phaserN(4), phaserN(6), phaserN(8))
-           : ba.selectn(8, int(stages) * 2),
-             ba.selectn(8, int(stages) * 2 + 1);
+           : ro.interleave(2, 4)
+           : ba.selectn(4, int(stages)), ba.selectn(4, int(stages));
 
 // Mix dry/wet per channel.
 mixCh(d, w) = d * (1.0 - mix) + w * mix;
 
-process = _,_ <: (_,_), wet : !,!, _,_, _,_ : (mixCh, mixCh);
+process = _,_ <: (_,_), wet : ro.interleave(2, 2) : mixCh, mixCh;

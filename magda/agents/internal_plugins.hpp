@@ -70,7 +70,6 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
         {"Reverb", "reverb", DeviceType::Effect, InternalPlugin::Reverb, V::TracktionEngine},
         {"Delay", "delay", DeviceType::Effect, InternalPlugin::Delay, V::TracktionEngine},
         {"Chorus", "chorus", DeviceType::Effect, InternalPlugin::Chorus, V::TracktionEngine},
-        {"Phaser", "phaser", DeviceType::Effect, InternalPlugin::Phaser, V::TracktionEngine},
         {"Filter", "lowpass", DeviceType::Effect, InternalPlugin::Filter, V::TracktionEngine},
         {"Utility", "utility", DeviceType::Effect, InternalPlugin::Utility, V::TracktionEngine},
         {"Pitch Shift", "pitchshift", DeviceType::Effect, InternalPlugin::PitchShift,
@@ -79,6 +78,7 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
          V::TracktionEngine},
         {"Test Tone", "tone", DeviceType::Effect, InternalPlugin::TestTone, V::TracktionEngine},
         // Effects (MAGDA-native)
+        {"Phaser", "magda_phaser", DeviceType::Effect, InternalPlugin::Phaser, V::Magda},
         {"Faust", "faust", DeviceType::Effect, InternalPlugin::Faust, V::Magda},
         // Instruments (TE stock)
         {"4OSC Synth", "4osc", DeviceType::Instrument, InternalPlugin::FourOsc, V::TracktionEngine},

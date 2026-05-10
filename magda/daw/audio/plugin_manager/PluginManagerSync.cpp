@@ -28,6 +28,7 @@
 #include "plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaGritCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
+#include "plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "transport/TransportStateManager.hpp"
 
@@ -1461,6 +1462,10 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
                 plugin = createInternalPlugin(
                     daw::audio::compiled::MagdaMultibandCompiledPlugin::xmlTypeName, ps);
                 break;
+            case InternalDeviceKind::CompiledPhaser:
+                plugin = createInternalPlugin(
+                    daw::audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName, ps);
+                break;
             case InternalDeviceKind::TeDelay:
                 plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, ps);
                 break;
@@ -1673,6 +1678,8 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
         processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::compiled::MagdaMultibandCompiledPlugin*>(plugin.get())) {
         processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<daw::audio::compiled::MagdaPhaserCompiledPlugin*>(plugin.get())) {
+        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
         processor = std::make_unique<MagdaSamplerProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
@@ -1834,6 +1841,12 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             case InternalDeviceKind::CompiledMultiband:
                 plugin = insertFromState(
                     daw::audio::compiled::MagdaMultibandCompiledPlugin::xmlTypeName);
+                if (plugin)
+                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
+                break;
+            case InternalDeviceKind::CompiledPhaser:
+                plugin =
+                    insertFromState(daw::audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName);
                 if (plugin)
                     processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
                 break;

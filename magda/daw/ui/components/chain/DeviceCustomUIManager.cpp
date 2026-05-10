@@ -6,6 +6,7 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
+#include "audio/plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -661,7 +662,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
                 {"Reverb", "reverb"},
                 {"Delay", "delay"},
                 {"Chorus", "chorus"},
-                {"Phaser", "phaser"},
+                {"Phaser", audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName},
                 {"Filter", "lowpass"},
                 {"Pitch Shift", "pitchshift"},
                 {"IR Reverb", "impulseresponse"},
@@ -853,7 +854,9 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         };
         parent->addAndMakeVisible(*chorusUI_);
         update(device);
-    } else if (device.pluginId.containsIgnoreCase("phaser")) {
+    } else if (device.pluginId.containsIgnoreCase("phaser") &&
+               !device.pluginId.equalsIgnoreCase(
+                   audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName)) {
         phaserUI_ = std::make_unique<PhaserUI>();
         phaserUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
             if (cb.onParameterChanged)
