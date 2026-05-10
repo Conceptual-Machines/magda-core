@@ -366,13 +366,6 @@ void ClipInspector::initClipPropertiesSection() {
         // Parse BPM from text. Older builds stored the unit in the text, so strip it defensively.
         juce::String text = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
         double newBPM = text.getDoubleValue();
-        DBG("[InspectorTrace] clipInspector:bpmEdit id="
-            << clip->id << " rawText='" << clipBpmValue_.getText() << "' parsedBpm=" << newBPM
-            << " before.source.interpretation.bpm=" << clip->audio().interpretation.bpm
-            << " before.source.interpretation.totalBeats="
-            << clip->audio().interpretation.totalBeats << " before.placement.lengthBeats="
-            << clip->placement.lengthBeats << " before.loopLengthBeats=" << clip->loopLengthBeats
-            << " autoTempo=" << static_cast<int>(clip->autoTempo));
         if (newBPM < 20.0 || newBPM > 999.0)
             return;
 
@@ -397,15 +390,6 @@ void ClipInspector::initClipPropertiesSection() {
                 u.lockInterpretationTotalBeats = true;
             }
             magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u, bpm);
-            if (auto* afterClip = magda::ClipManager::getInstance().getClip(primaryClipId())) {
-                DBG("[InspectorTrace] clipInspector:bpmEditApplied id="
-                    << afterClip->id
-                    << " after.source.interpretation.bpm=" << afterClip->audio().interpretation.bpm
-                    << " after.source.interpretation.totalBeats="
-                    << afterClip->audio().interpretation.totalBeats
-                    << " after.placement.lengthBeats=" << afterClip->placement.lengthBeats
-                    << " after.loopLengthBeats=" << afterClip->loopLengthBeats);
-            }
         } else {
             // Non-autoTempo audio: source interpretation BPM is just stored metadata.
             clip->audio().interpretation.bpm = newBPM;
@@ -418,12 +402,6 @@ void ClipInspector::initClipPropertiesSection() {
                 }
             }
             magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(primaryClipId());
-            DBG("[InspectorTrace] clipInspector:bpmEditApplied id="
-                << clip->id << " after.source.interpretation.bpm="
-                << clip->audio().interpretation.bpm << " after.source.interpretation.totalBeats="
-                << clip->audio().interpretation.totalBeats
-                << " after.placement.lengthBeats=" << clip->placement.lengthBeats
-                << " after.loopLengthBeats=" << clip->loopLengthBeats);
         }
 
         clipBpmValue_.setText(juce::String(newBPM, 1), juce::dontSendNotification);
@@ -470,29 +448,8 @@ void ClipInspector::initClipPropertiesSection() {
                 if (durationSeconds > 0.0 && clip->audio().source.durationSeconds <= 0.0)
                     u.sourceDurationSeconds = durationSeconds;
 
-                DBG("[InspectorTrace] clipInspector:sourceBeatsEdit id="
-                    << clip->id << " newUiValue=" << newSourceBeats
-                    << " targetField=source.interpretation.totalBeats"
-                    << " before.placement.lengthBeats=" << clip->placement.lengthBeats
-                    << " before.source.interpretation.totalBeats="
-                    << clip->audio().interpretation.totalBeats
-                    << " before.source.interpretation.bpm=" << clip->audio().interpretation.bpm
-                    << " before.loopLengthBeats=" << clip->loopLengthBeats
-                    << " durationSeconds=" << durationSeconds);
-
                 magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u,
                                                                       projectBpm);
-
-                if (auto* afterClip = magda::ClipManager::getInstance().getClip(primaryClipId())) {
-                    DBG("[InspectorTrace] clipInspector:sourceBeatsEditApplied id="
-                        << afterClip->id
-                        << " after.placement.lengthBeats=" << afterClip->placement.lengthBeats
-                        << " after.source.interpretation.totalBeats="
-                        << afterClip->audio().interpretation.totalBeats
-                        << " after.source.interpretation.bpm="
-                        << afterClip->audio().interpretation.bpm
-                        << " after.loopLengthBeats=" << afterClip->loopLengthBeats);
-                }
             }
         }
     };

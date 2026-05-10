@@ -350,26 +350,7 @@ void AudioClipPropertiesContent::createControls() {
         if (durationSeconds > 0.0 && clip->audio().source.durationSeconds <= 0.0)
             u.sourceDurationSeconds = durationSeconds;
 
-        DBG("[InspectorTrace] audioClipProperties:sourceBeatsEdit id="
-            << clip->id << " newUiValue=" << newSourceBeats
-            << " targetField=source.interpretation.totalBeats"
-            << " before.source.interpretation.totalBeats="
-            << clip->audio().interpretation.totalBeats
-            << " before.source.interpretation.bpm=" << clip->audio().interpretation.bpm
-            << " before.placement.lengthBeats=" << clip->placement.lengthBeats
-            << " before.loopLengthBeats=" << clip->loopLengthBeats
-            << " durationSeconds=" << durationSeconds);
-
         magda::ClipManager::getInstance().applyAudioClipBeats(clipId_, u, projectBpm);
-
-        if (auto* afterClip = magda::ClipManager::getInstance().getClip(clipId_)) {
-            DBG("[InspectorTrace] audioClipProperties:sourceBeatsEditApplied id="
-                << afterClip->id << " after.source.interpretation.totalBeats="
-                << afterClip->audio().interpretation.totalBeats
-                << " after.source.interpretation.bpm=" << afterClip->audio().interpretation.bpm
-                << " after.placement.lengthBeats=" << afterClip->placement.lengthBeats
-                << " after.loopLengthBeats=" << afterClip->loopLengthBeats);
-        }
     };
     addAndMakeVisible(*beatsValue_);
 
@@ -513,14 +494,6 @@ void AudioClipPropertiesContent::updateFromClip() {
                                   ? clip->audio().interpretation.totalBeats
                                   : 4.0,
                               juce::dontSendNotification);
-        DBG("[InspectorTrace] audioClipProperties:sourceBeatsDisplay id="
-            << clip->id << " ui.value=" << beatsValue_->getValue()
-            << " boundField=source.interpretation.totalBeats"
-            << " source.interpretation.totalBeats=" << clip->audio().interpretation.totalBeats
-            << " source.interpretation.bpm=" << clip->audio().interpretation.bpm
-            << " source.durationSeconds=" << clip->audio().source.durationSeconds
-            << " placement.lengthBeats=" << clip->placement.lengthBeats
-            << " loopLengthBeats=" << clip->loopLengthBeats);
         pitchValue_->setValue(static_cast<double>(clip->pitchChange), juce::dontSendNotification);
         volumeValue_->setValue(static_cast<double>(clip->volumeDB), juce::dontSendNotification);
         gainValue_->setValue(static_cast<double>(clip->gainDB), juce::dontSendNotification);
