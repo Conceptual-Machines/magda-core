@@ -131,6 +131,17 @@ constexpr AliasSpec kCompiledGrainDelayAliases[] = {
 };
 
 // ------------------------------------------------------------------
+// Grit ("magda_grit") — slot order matches MagdaGritCompiledPlugin::k*Slot
+// and the [idx:N] pins in magda_grit.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledGritAliases[] = {
+    {"frequency", 0, "Frequency"},
+    {"width", 1, "Width"},
+    {"amount", 2, "Amount"},
+    {"mode", 3, "Mode"},
+};
+
+// ------------------------------------------------------------------
 // Pitch Shift ("pitchshift") — TE PitchShiftPlugin single param.
 // ------------------------------------------------------------------
 constexpr AliasSpec kPitchShiftAliases[] = {
@@ -163,6 +174,7 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"magda_saturator", kCompiledSaturatorAliases, (int)std::size(kCompiledSaturatorAliases)},
     {"magda_delay_compiled", kCompiledDelayAliases, (int)std::size(kCompiledDelayAliases)},
     {"magda_grain_delay", kCompiledGrainDelayAliases, (int)std::size(kCompiledGrainDelayAliases)},
+    {"magda_grit", kCompiledGritAliases, (int)std::size(kCompiledGritAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
     {"utility", kUtilityAliases, (int)std::size(kUtilityAliases)},
 };

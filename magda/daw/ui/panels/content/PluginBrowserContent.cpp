@@ -15,6 +15,7 @@
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
+#include "audio/plugins/compiled/MagdaGritCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "core/AppPaths.hpp"
 #include "core/DeviceInfo.hpp"
@@ -379,6 +380,8 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     list.push_back(PluginBrowserInfo::createInternal(
         "Saturator", audio::compiled::MagdaSaturatorCompiledPlugin::xmlTypeName, false,
         "Distortion"));
+    list.push_back(PluginBrowserInfo::createInternal(
+        "Grit", audio::compiled::MagdaGritCompiledPlugin::xmlTypeName, false, "Distortion"));
     list.push_back(PluginBrowserInfo::createInternal("Pitch Shift", "pitchshift", false, "Pitch"));
     list.push_back(
         PluginBrowserInfo::createInternal("IR Reverb", "impulseresponse", false, "Reverb"));

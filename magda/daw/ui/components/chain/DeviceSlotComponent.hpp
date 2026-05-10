@@ -229,6 +229,7 @@ class DeviceSlotComponent : public NodeComponent,
     bool isCompiledFaustSaturator_ = false;
     bool isCompiledFaustDelay_ = false;
     bool isCompiledFaustGrainDelay_ = false;
+    bool isCompiledFaustGrit_ = false;
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 
