@@ -79,6 +79,15 @@ install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 _deps
+CPackConfig.cmake
+CPackSourceConfig.cmake
+_CPack_Packages/
+
+# Stray generated build artifacts that occasionally land in the source
+# tree instead of cmake-build-*/. The real outputs live in the build
+# directory; if you see one of these in `git status`, delete it.
+magda/daw/generated/
+tests/magda_tests_include-*.cmake
 
 # Catch2
 catch2-*
