@@ -645,6 +645,10 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     clips_[rightClip.id] = rightClip;
     addToSessionSlotIndex(clips_[rightClip.id]);
 
+    // Left clip mutated in place (length, midiNotes, loop range, fades, beats);
+    // notifyClipsChanged carries only structural info (right clip added), so the
+    // mutated left clip needs its own property notification.
+    notifyClipPropertyChanged(clipId);
     notifyClipsChanged();
 
     return rightClip.id;
@@ -684,6 +688,21 @@ void ClipManager::setClipColour(ClipId clipId, juce::Colour colour) {
 
 void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM) {
     if (auto* clip = getClip(clipId)) {
+        // Invariant: autoTempo (beat mode) requires loopEnabled. TE's
+        // autoTempo beat range only operates over a loop region, and
+        // ClipOperations' resize / offset math for autoTempo clips assumes
+        // loopLengthBeats / loopStartBeats are live. Allowing loop-off while
+        // beat mode is on lands the clip in a state nothing models, so
+        // resize gestures fall through inconsistent branches and the user
+        // sees the clip resize to an unrelated length. Reject the disable
+        // here rather than corrupt state — the user must exit beat mode
+        // first to turn looping off. Emit a property-changed notification
+        // anyway so callers that flipped their local toggle optimistically
+        // re-read the (unchanged) model and revert.
+        if (!enabled && clip->autoTempo) {
+            notifyClipPropertyChanged(clipId);
+            return;
+        }
         clip->loopEnabled = enabled;
 
         // When enabling loop on MIDI clips, capture current length as loop region
@@ -716,14 +735,43 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
             clip->midiOffset = 0.0;
         }
 
-        // When disabling loop on audio clips, sync loopStart and clamp length to actual file
-        // content
+        // When disabling loop on audio clips, snap the clip's timeline length
+        // to the audible source content so the user doesn't end up with empty
+        // space after the audio. Two reasons the previous behaviour wasn't
+        // enough: clampLengthToSource only edited clip->length (the seconds
+        // cache) without touching placement.lengthBeats, so the next
+        // beats→seconds derive would resurrect the old length; and a clamp
+        // (cap-if-longer) leaves the clip oversized whenever the file is
+        // longer than the timeline span, which still reads as empty space
+        // after a short loop region. Set the length explicitly to "file
+        // content from offset on", routed through setPlacementBeats so the
+        // beat domain stays authoritative.
         if (!enabled && clip->isAudio() && clip->audio().source.filePath.isNotEmpty()) {
             clip->loopStart = clip->offset;
-            auto* thumbnail =
-                AudioThumbnailManager::getInstance().getThumbnail(clip->audio().source.filePath);
-            if (thumbnail) {
-                clip->clampLengthToSource(thumbnail->getTotalLength());
+
+            double fileDuration = 0.0;
+            if (auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(
+                    clip->audio().source.filePath)) {
+                fileDuration = thumbnail->getTotalLength();
+            }
+            if (fileDuration <= 0.0)
+                fileDuration = clip->audio().source.durationSeconds;
+
+            const double speed = clip->speedRatio > 0.0 ? clip->speedRatio : 1.0;
+            if (fileDuration > 0.0) {
+                const double availableSource = juce::jmax(0.0, fileDuration - clip->offset);
+                const double newTimelineLength =
+                    juce::jmax(ClipInfo::MIN_CLIP_LENGTH, availableSource / speed);
+                const double bpm = juce::jmax(1.0, projectBPM);
+                clip->setPlacementBeats(clip->placement.startBeat, newTimelineLength * bpm / 60.0);
+                clip->deriveTimesFromBeats(bpm);
+
+                // The new timeline length can exceed the previous loop region,
+                // which on the arrangement view can push the clip into a
+                // neighbour. Match the policy other length-changing setters
+                // (resizeClip / trimClip) already enforce.
+                if (clip->view == ClipView::Arrangement)
+                    resolveOverlaps(clipId);
             }
         }
 
@@ -790,6 +838,25 @@ void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
     }
 }
 
+// Helper: keep beat-domain fields in sync with their seconds-domain
+// counterparts on autoTempo audio clips. Every audio setter that
+// touches a seconds-domain field must call this so the two views never
+// drift. Pass `bpm` as a fallback when the clip's own source-interpretation
+// BPM isn't set yet.
+namespace {
+void syncAudioBeatFields(ClipInfo& clip, double bpm) {
+    if (!clip.isAudio() || !clip.autoTempo)
+        return;
+    const double convBpm =
+        (clip.audio().interpretation.bpm > 0.0) ? clip.audio().interpretation.bpm : bpm;
+    if (convBpm <= 0.0)
+        return;
+    clip.offsetBeats = clip.offset * convBpm / 60.0;
+    clip.loopStartBeats = clip.loopStart * convBpm / 60.0;
+    clip.loopLengthBeats = clip.loopLength * convBpm / 60.0;
+}
+}  // namespace
+
 void ClipManager::setOffset(ClipId clipId, double offset) {
     if (auto* clip = getClip(clipId)) {
         if (clip->isMidi()) {
@@ -797,8 +864,7 @@ void ClipManager::setOffset(ClipId clipId, double offset) {
             clip->midiOffset = juce::jmax(0.0, offset);
         } else {
             clip->offset = juce::jmax(0.0, offset);
-            if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0)
-                clip->offsetBeats = clip->offset * clip->audio().interpretation.bpm / 60.0;
+            syncAudioBeatFields(*clip, /*bpm=*/0.0);
             sanitizeAudioClip(*clip);
         }
         notifyClipPropertyChanged(clipId);
@@ -810,8 +876,7 @@ void ClipManager::setLoopPhase(ClipId clipId, double phase) {
         const bool loopActive = clip->loopEnabled || clip->autoTempo;
         if (clip->isAudio() && loopActive) {
             clip->offset = clip->loopStart + phase;
-            if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0)
-                clip->offsetBeats = clip->offset * clip->audio().interpretation.bpm / 60.0;
+            syncAudioBeatFields(*clip, /*bpm=*/0.0);
             sanitizeAudioClip(*clip);
             notifyClipPropertyChanged(clipId);
         }
@@ -822,14 +887,7 @@ void ClipManager::setLoopStart(ClipId clipId, double loopStart, double bpm) {
     if (auto* clip = getClip(clipId)) {
         clip->loopStart = juce::jmax(0.0, loopStart);
         if (clip->isAudio()) {
-            if (clip->autoTempo) {
-                // Use source interpretation BPM for beat conversion — loopStartBeats is in
-                // source-beat domain
-                double convBpm = (clip->audio().interpretation.bpm > 0.0)
-                                     ? clip->audio().interpretation.bpm
-                                     : bpm;
-                clip->loopStartBeats = (clip->loopStart * convBpm) / 60.0;
-            }
+            syncAudioBeatFields(*clip, bpm);
             sanitizeAudioClip(*clip);
         }
         notifyClipPropertyChanged(clipId);
@@ -843,44 +901,31 @@ void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
             // MIDI: keep loopLengthBeats in sync using project BPM
             clip->loopLengthBeats = (clip->loopLength * juce::jmax(1.0, bpm)) / 60.0;
         } else if (clip->isAudio()) {
-            if (clip->autoTempo) {
-                // Use source interpretation BPM for beat conversion — loopLengthBeats is in
-                // source-beat domain
-                double convBpm = (clip->audio().interpretation.bpm > 0.0)
-                                     ? clip->audio().interpretation.bpm
-                                     : bpm;
-                clip->loopLengthBeats = (clip->loopLength * convBpm) / 60.0;
-            }
+            syncAudioBeatFields(*clip, bpm);
             sanitizeAudioClip(*clip);
         }
         notifyClipPropertyChanged(clipId);
     }
 }
 
-void ClipManager::setLoopStartAndLength(ClipId clipId, double loopStart, double loopLength,
-                                        double bpm) {
+void ClipManager::relocateLoopRegion(ClipId clipId, double loopStart, double loopLength,
+                                     double bpm) {
     if (auto* clip = getClip(clipId)) {
         const double oldLoopStart = clip->loopStart;
         clip->loopStart = juce::jmax(0.0, loopStart);
         clip->loopLength = juce::jmax(0.0, loopLength);
 
         if (clip->isAudio()) {
-            // Moving the loop START snaps the phase (clip.offset relative to loopStart) back to 0
-            // — the user's drag intent is to relocate the loop, not to compensate for a stale
-            // phase. Loop END moves don't touch the phase.
+            // Composite intent: the caller is relocating the loop as a
+            // unit, not editing one field. Reset phase to 0 by snapping
+            // offset to the new loopStart whenever loopStart moved.
+            // setLoopStart on its own preserves phase — use that path
+            // when the caller doesn't want this side effect.
             const bool loopStartMoved = std::abs(clip->loopStart - oldLoopStart) > 1e-9;
             if (loopStartMoved)
                 clip->offset = clip->loopStart;
 
-            if (clip->autoTempo) {
-                double convBpm = (clip->audio().interpretation.bpm > 0.0)
-                                     ? clip->audio().interpretation.bpm
-                                     : bpm;
-                clip->loopStartBeats = (clip->loopStart * convBpm) / 60.0;
-                clip->loopLengthBeats = (clip->loopLength * convBpm) / 60.0;
-                if (loopStartMoved && clip->audio().interpretation.bpm > 0.0)
-                    clip->offsetBeats = clip->offset * clip->audio().interpretation.bpm / 60.0;
-            }
+            syncAudioBeatFields(*clip, bpm);
             sanitizeAudioClip(*clip);
         } else if (clip->isMidi()) {
             clip->loopLengthBeats = (clip->loopLength * juce::jmax(1.0, bpm)) / 60.0;

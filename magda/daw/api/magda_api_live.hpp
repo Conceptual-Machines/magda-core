@@ -78,6 +78,9 @@ class MagdaApiLive : public MagdaApi {
     void setTransportStopDispatcher(TransportApiLive::TransportFn fn) {
         transport_.setStopDispatcher(std::move(fn));
     }
+    void setTransportLoopDispatcher(std::function<void(bool)> fn) {
+        transport_.setLoopDispatcher(std::move(fn));
+    }
 
   private:
     SelectionApiLive selection_;

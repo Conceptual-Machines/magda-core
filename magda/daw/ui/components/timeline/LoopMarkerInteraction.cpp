@@ -136,8 +136,15 @@ bool LoopMarkerInteraction::isOnTopBorder(int x, int y) const {
     if (!host_.timeToPixel)
         return false;
 
-    // Check Y is near the top border line
-    if (std::abs(y - host_.topBorderY) > host_.topBorderThreshold)
+    // Asymmetric hit zone around the strip's top edge: clicks just slightly
+    // above the strip count (so the line itself is easy to grab), but the
+    // larger draggable area extends DOWN through the strip body, not up. A
+    // symmetric threshold here captured clicks well above the visible strip
+    // and silently turned what looked like a ruler-zoom drag into a loop
+    // region drag — the cursor still showed the zoom lens because the
+    // caller's mouse-move only consults the loop cursor inside the strip.
+    constexpr int aboveTolerance = 4;
+    if (y < host_.topBorderY - aboveTolerance || y > host_.topBorderY + host_.topBorderThreshold)
         return false;
 
     int startX = host_.timeToPixel(startTime_);

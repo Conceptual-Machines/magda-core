@@ -56,6 +56,11 @@ bool TransportApiLive::isLoopEnabled() const {
 }
 
 void TransportApiLive::setLoopEnabled(bool enabled) {
+    if (loopDispatch_) {
+        loopDispatch_(enabled);
+        return;
+    }
+
     if (auto* e = edit())
         e->getTransport().looping = enabled;
 }

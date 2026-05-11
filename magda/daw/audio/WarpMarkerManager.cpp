@@ -6,16 +6,11 @@
 namespace magda {
 
 namespace {
-// Helper to find WaveAudioClip from MAGDA clip ID.
+// Helper to find WaveAudioClip from a TE engine ID.
 // Searches both arrangement clips on the timeline and session clips in slots.
-te::WaveAudioClip* findWaveAudioClip(te::Edit& edit,
-                                     const std::map<ClipId, std::string>& clipIdToEngineId,
-                                     ClipId clipId) {
-    auto it = clipIdToEngineId.find(clipId);
-    if (it == clipIdToEngineId.end())
+te::WaveAudioClip* findWaveAudioClipByEngineId(te::Edit& edit, const std::string& engineId) {
+    if (engineId.empty())
         return nullptr;
-
-    const auto& engineId = it->second;
     for (auto* track : te::getAudioTracks(edit)) {
         // Search arrangement clips on the timeline
         for (auto* teClip : track->getClips()) {
@@ -34,16 +29,75 @@ te::WaveAudioClip* findWaveAudioClip(te::Edit& edit,
     }
     return nullptr;
 }
+
+// Convenience wrapper: resolve via the caller's clipIdToEngineId map.
+te::WaveAudioClip* findWaveAudioClip(te::Edit& edit,
+                                     const std::map<ClipId, std::string>& clipIdToEngineId,
+                                     ClipId clipId) {
+    auto it = clipIdToEngineId.find(clipId);
+    if (it == clipIdToEngineId.end())
+        return nullptr;
+    return findWaveAudioClipByEngineId(edit, it->second);
+}
 }  // namespace
+
+WarpMarkerManager::~WarpMarkerManager() {
+    // Stop the coalescing timer before any of our maps are torn down so
+    // a fire mid-destruction can't reach into half-destroyed state.
+    coalescingTimer_.stopTimer();
+    coalescingTimer_.callback = nullptr;
+}
 
 void WarpMarkerManager::setTransientSensitivity(
     te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId, ClipId clipId,
     float sensitivity) {
+    // Coalesce: just record the latest value per clip and (re)start a
+    // short timer. Hot paths (slider drags) hit this method many times
+    // per second; we want exactly ONE TE detection job per clip per
+    // coalescing window.
+    //
+    // Resolve the engineId at queue time (a single map lookup) instead
+    // of snapshotting the whole clipIdToEngineId map per call — the map
+    // can be large for arrangements and copying it on every slider tick
+    // would dominate even with coalescing.
+    PendingDetection& slot = pendingByClip_[clipId];
+    slot.sensitivity = sensitivity;
+    auto it = clipIdToEngineId.find(clipId);
+    slot.engineId = (it != clipIdToEngineId.end()) ? it->second : std::string{};
+    slot.edit = &edit;
+
+    coalescingTimer_.callback = [this]() { applyPendingSensitivities(); };
+    coalescingTimer_.startTimer(kCoalesceMs);
+}
+
+void WarpMarkerManager::applyPendingSensitivities() {
+    auto pending = std::move(pendingByClip_);
+    pendingByClip_.clear();
+
+    for (const auto& [clipId, det] : pending) {
+        if (det.edit == nullptr)
+            continue;
+
+        // If a detection is already in flight for this clip, parking
+        // the latest value is enough — getTransientTimes will pick it
+        // up on completion and schedule one rerun. This avoids the
+        // race that produced the original ThreadPool crash: never two
+        // overlapping detection jobs against the same WarpTimeManager.
+        if (detectionInFlight_.count(clipId)) {
+            dirtyAfterCompletion_[clipId] = det;
+            continue;
+        }
+        applySensitivityNow(*det.edit, det.engineId, clipId, det.sensitivity);
+    }
+}
+
+void WarpMarkerManager::applySensitivityNow(te::Edit& edit, const std::string& engineId,
+                                            ClipId clipId, float sensitivity) {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty())
         return;
 
-    te::WaveAudioClip* audioClipPtr = findWaveAudioClip(edit, clipIdToEngineId, clipId);
+    te::WaveAudioClip* audioClipPtr = findWaveAudioClipByEngineId(edit, engineId);
     if (!audioClipPtr)
         return;
 
@@ -52,9 +106,9 @@ void WarpMarkerManager::setTransientSensitivity(
     warpManager.detectTransients();
 
     // Clear cache so the next poll picks up fresh results.
-    // Keep clipId in detectionStarted_ since detectTransients() already started the job.
     AudioThumbnailManager::getInstance().clearCachedTransients(clip->audio().source.filePath);
     detectionStarted_.insert(clipId);
+    detectionInFlight_.insert(clipId);
 
     DBG("WarpMarkerManager: set sensitivity=" << sensitivity << " for "
                                               << clip->audio().source.filePath);
@@ -88,16 +142,39 @@ bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
     // getOrCreateDetectionJob which returns the existing job if one is
     // already in flight for this file+config, so calling it once is safe.
     // We must NOT call it on every poll because it resets transientTimes.
+    //
+    // Mark in-flight here too — without this, a sensitivity change that
+    // arrives during the initial poll-driven detection wouldn't see the
+    // guard and would submit a second overlapping TE job, reproducing
+    // the original ThreadPool crash.
     if (!detectionStarted_.count(clipId)) {
         warpManager.detectTransients();
         detectionStarted_.insert(clipId);
+        detectionInFlight_.insert(clipId);
     }
 
     // Poll for completion
     auto [complete, transientPositions] = warpManager.getTransientTimes();
 
     if (complete) {
-        // Convert TimePosition array to double array
+        // Detection finished — clear the in-flight flag.
+        detectionInFlight_.erase(clipId);
+
+        // If a newer sensitivity arrived while we were running, fire
+        // one more detection with that value. Skip caching the
+        // about-to-be-stale results and report `false` so the UI keeps
+        // polling until the rerun completes.
+        auto dirty = dirtyAfterCompletion_.find(clipId);
+        if (dirty != dirtyAfterCompletion_.end()) {
+            const auto det = std::move(dirty->second);
+            dirtyAfterCompletion_.erase(dirty);
+            if (det.edit != nullptr) {
+                applySensitivityNow(*det.edit, det.engineId, clipId, det.sensitivity);
+                return false;
+            }
+        }
+
+        // No dirt — cache the result and report complete.
         juce::Array<double> times;
         times.ensureStorageAllocated(transientPositions.size());
         for (const auto& tp : transientPositions) {

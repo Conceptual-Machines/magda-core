@@ -381,3 +381,109 @@ TEST_CASE("ClipManager - addMidiNote rejects notes beyond MIDI clip extent",
     REQUIRE(clip->midiNotes[0].startBeat == Catch::Approx(3.5));
     REQUIRE(clip->midiNotes[0].lengthBeats == Catch::Approx(0.5));
 }
+
+TEST_CASE("MIDI note commands ignore invalid delete indices on undo", "[midi][undo][commands]") {
+    using namespace magda;
+
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    ClipId clipId = cm.createMidiClipBeats(1, 0.0, 4.0);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+
+    MidiNote note{60, 100, 1.0, 0.5};
+    REQUIRE(cm.addMidiNote(clipId, note));
+
+    DeleteMidiNoteCommand cmd(clipId, 99);
+    cmd.execute();
+    cmd.undo();
+
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes.size() == 1);
+    REQUIRE(clip->midiNotes[0].noteNumber == 60);
+    REQUIRE(clip->midiNotes[0].startBeat == Catch::Approx(1.0));
+}
+
+TEST_CASE("MIDI batch move undo restores valid notes when invalid indices are skipped",
+          "[midi][undo][commands]") {
+    using namespace magda;
+
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    ClipId clipId = cm.createMidiClipBeats(1, 0.0, 8.0);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+
+    REQUIRE(cm.addMidiNote(clipId, {60, 100, 0.0, 0.5}));
+    REQUIRE(cm.addMidiNote(clipId, {61, 100, 1.0, 0.5}));
+    REQUIRE(cm.addMidiNote(clipId, {62, 100, 2.0, 0.5}));
+
+    std::vector<MoveMultipleMidiNotesCommand::NoteMove> moves{
+        {99, 6.0, 80},
+        {1, 3.0, 70},
+    };
+    MoveMultipleMidiNotesCommand cmd(clipId, std::move(moves));
+    cmd.execute();
+
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(3.0));
+    REQUIRE(clip->midiNotes[1].noteNumber == 70);
+
+    cmd.undo();
+
+    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(1.0));
+    REQUIRE(clip->midiNotes[1].noteNumber == 61);
+}
+
+TEST_CASE("MIDI quantize undo restores valid notes when invalid indices are skipped",
+          "[midi][undo][commands]") {
+    using namespace magda;
+
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    ClipId clipId = cm.createMidiClipBeats(1, 0.0, 8.0);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+
+    REQUIRE(cm.addMidiNote(clipId, {60, 100, 0.0, 0.5}));
+    REQUIRE(cm.addMidiNote(clipId, {61, 100, 1.2, 0.7}));
+
+    QuantizeMidiNotesCommand cmd(clipId, {99, 1}, 1.0, QuantizeMode::StartAndLength);
+    cmd.execute();
+
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(1.0));
+    REQUIRE(clip->midiNotes[1].lengthBeats == Catch::Approx(1.0));
+
+    cmd.undo();
+
+    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(1.2));
+    REQUIRE(clip->midiNotes[1].lengthBeats == Catch::Approx(0.7));
+}
+
+TEST_CASE("MoveMidiNoteBetweenClipsCommand keeps source note when destination insert cannot run",
+          "[midi][undo][commands]") {
+    using namespace magda;
+
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    ClipId sourceId = cm.createMidiClipBeats(1, 0.0, 4.0);
+    ClipId destId = cm.createMidiClipBeats(1, 4.0, 4.0);
+    REQUIRE(sourceId != INVALID_CLIP_ID);
+    REQUIRE(destId != INVALID_CLIP_ID);
+
+    REQUIRE(cm.addMidiNote(sourceId, {60, 100, 1.0, 0.5}));
+    auto* dest = cm.getClip(destId);
+    REQUIRE(dest != nullptr);
+    dest->setPlacementBeats(4.0, 0.0);
+
+    MoveMidiNoteBetweenClipsCommand cmd(sourceId, 0, destId, 0.0, 62);
+    cmd.execute();
+    cmd.undo();
+
+    auto* source = cm.getClip(sourceId);
+    REQUIRE(source != nullptr);
+    REQUIRE(source->midiNotes.size() == 1);
+    REQUIRE(source->midiNotes[0].noteNumber == 60);
+    REQUIRE(dest->midiNotes.empty());
+}

@@ -366,64 +366,54 @@ void ClipInspector::initClipPropertiesSection() {
         // Parse BPM from text. Older builds stored the unit in the text, so strip it defensively.
         juce::String text = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
         double newBPM = text.getDoubleValue();
-        DBG("[InspectorTrace] clipInspector:bpmEdit id="
-            << clip->id << " rawText='" << clipBpmValue_.getText() << "' parsedBpm=" << newBPM
-            << " before.source.interpretation.bpm=" << clip->audio().interpretation.bpm
-            << " before.source.interpretation.totalBeats="
-            << clip->audio().interpretation.totalBeats << " before.placement.lengthBeats="
-            << clip->placement.lengthBeats << " before.loopLengthBeats=" << clip->loopLengthBeats
-            << " autoTempo=" << static_cast<int>(clip->autoTempo));
         if (newBPM < 20.0 || newBPM > 999.0)
             return;
 
         double bpm = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
 
         // BPM and Beats are two editable views of the same fixed-duration source
-        // interpretation. Editing either one must keep the other coherent.
+        // interpretation. Editing the BPM must keep totalBeats coherent against
+        // the same file duration so the inspector doesn't display the previous
+        // (often project-BPM-derived) beat count under the new tempo.
+        //
+        // The user setting the BPM is asserting "this file is N BPM" — that is
+        // the authoritative musical interpretation. totalBeats = fileDuration ×
+        // newBPM / 60, regardless of autoTempo (autoTempo controls playback
+        // stretching, not the interpretation metadata).
+        double durationSeconds = clip->audio().source.durationSeconds;
+        double thumbDuration = 0.0;
+        if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                clip->audio().source.filePath)) {
+            thumbDuration = thumb->getTotalLength();
+            if (thumbDuration > 0.0)
+                durationSeconds = thumbDuration;
+        }
+        if (durationSeconds <= 0.0)
+            durationSeconds = clip->getSourceLength();
+
         if (clip->autoTempo) {
             magda::ClipManager::AudioClipBeatsUpdate u;
             u.interpretationBpm = newBPM;
-            double durationSeconds = clip->audio().source.durationSeconds;
-            if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                    clip->audio().source.filePath)) {
-                double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0)
-                    durationSeconds = fileDuration;
-                if (fileDuration > 0.0 && clip->audio().source.durationSeconds <= 0.0)
-                    u.sourceDurationSeconds = fileDuration;
-            }
+            if (thumbDuration > 0.0 && clip->audio().source.durationSeconds <= 0.0)
+                u.sourceDurationSeconds = thumbDuration;
             if (durationSeconds > 0.0) {
                 u.interpretationTotalBeats = durationSeconds * newBPM / 60.0;
                 u.lockInterpretationTotalBeats = true;
             }
             magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u, bpm);
-            if (auto* afterClip = magda::ClipManager::getInstance().getClip(primaryClipId())) {
-                DBG("[InspectorTrace] clipInspector:bpmEditApplied id="
-                    << afterClip->id
-                    << " after.source.interpretation.bpm=" << afterClip->audio().interpretation.bpm
-                    << " after.source.interpretation.totalBeats="
-                    << afterClip->audio().interpretation.totalBeats
-                    << " after.placement.lengthBeats=" << afterClip->placement.lengthBeats
-                    << " after.loopLengthBeats=" << afterClip->loopLengthBeats);
-            }
         } else {
-            // Non-autoTempo audio: source interpretation BPM is just stored metadata.
+            // Non-autoTempo audio: source interpretation is stored metadata,
+            // not playback-affecting, but the inspector reads it for display
+            // and tooling (autoTempo toggle, future stretch correctness, etc.)
+            // so the BPM-and-totalBeats pair must stay coherent here too.
             clip->audio().interpretation.bpm = newBPM;
-            if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                    clip->audio().source.filePath)) {
-                double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0) {
-                    if (clip->audio().source.durationSeconds <= 0.0)
-                        clip->audio().source.durationSeconds = fileDuration;
-                }
+            if (thumbDuration > 0.0 && clip->audio().source.durationSeconds <= 0.0)
+                clip->audio().source.durationSeconds = thumbDuration;
+            if (durationSeconds > 0.0) {
+                clip->audio().interpretation.totalBeats = durationSeconds * newBPM / 60.0;
+                clip->audio().interpretation.totalBeatsLocked = true;
             }
             magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(primaryClipId());
-            DBG("[InspectorTrace] clipInspector:bpmEditApplied id="
-                << clip->id << " after.source.interpretation.bpm="
-                << clip->audio().interpretation.bpm << " after.source.interpretation.totalBeats="
-                << clip->audio().interpretation.totalBeats
-                << " after.placement.lengthBeats=" << clip->placement.lengthBeats
-                << " after.loopLengthBeats=" << clip->loopLengthBeats);
         }
 
         clipBpmValue_.setText(juce::String(newBPM, 1), juce::dontSendNotification);
@@ -470,29 +460,8 @@ void ClipInspector::initClipPropertiesSection() {
                 if (durationSeconds > 0.0 && clip->audio().source.durationSeconds <= 0.0)
                     u.sourceDurationSeconds = durationSeconds;
 
-                DBG("[InspectorTrace] clipInspector:sourceBeatsEdit id="
-                    << clip->id << " newUiValue=" << newSourceBeats
-                    << " targetField=source.interpretation.totalBeats"
-                    << " before.placement.lengthBeats=" << clip->placement.lengthBeats
-                    << " before.source.interpretation.totalBeats="
-                    << clip->audio().interpretation.totalBeats
-                    << " before.source.interpretation.bpm=" << clip->audio().interpretation.bpm
-                    << " before.loopLengthBeats=" << clip->loopLengthBeats
-                    << " durationSeconds=" << durationSeconds);
-
                 magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u,
                                                                       projectBpm);
-
-                if (auto* afterClip = magda::ClipManager::getInstance().getClip(primaryClipId())) {
-                    DBG("[InspectorTrace] clipInspector:sourceBeatsEditApplied id="
-                        << afterClip->id
-                        << " after.placement.lengthBeats=" << afterClip->placement.lengthBeats
-                        << " after.source.interpretation.totalBeats="
-                        << afterClip->audio().interpretation.totalBeats
-                        << " after.source.interpretation.bpm="
-                        << afterClip->audio().interpretation.bpm
-                        << " after.loopLengthBeats=" << afterClip->loopLengthBeats);
-                }
             }
         }
     };

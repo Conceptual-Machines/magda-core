@@ -45,14 +45,18 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
         auto* thumbnail =
             magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audio().source.filePath);
         if (thumbnail && thumbnail->getTotalLength() > 0.0) {
-            // Build display info using project BPM
+            // Build display info using project BPM, passing the file
+            // duration so sourceFileStart / sourceFileEnd describe the
+            // real file (ClipDisplayInfo's no-thumbnail fallback would
+            // otherwise derive a clip-length-based extent here).
             double bpm = 120.0;
             if (auto* controller = TimelineController::getCurrent()) {
                 bpm = controller->getState().tempo.bpm;
             }
-            auto di = ClipDisplayInfo::from(*clip, bpm);
+            const double thumbnailLength = thumbnail->getTotalLength();
+            auto di = ClipDisplayInfo::from(*clip, bpm, thumbnailLength);
 
-            // Calculate visible time range based on clip length and offset
+            // Visible source range = the full file extent.
             double startTime = di.sourceFileStart;
             double endTime = di.sourceFileEnd;
 
@@ -60,21 +64,24 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
             thumbnail->drawChannels(g, waveformBounds, startTime, endTime, 1.0f);
 
-            // Draw loop region if enabled
+            // Draw loop region overlay. Loop X positions come from the
+            // loop-region fields, NOT from the file extent — a loop with
+            // a non-zero start used to be drawn at the left edge of the
+            // waveform because the previous code hard-coded loopStartX
+            // to waveformBounds.getX(). Now we project the loop range
+            // through the same transform the waveform uses.
             if (di.isLooped()) {
-                double loopSourceLength = di.sourceLength;
-                double loopEndTime = startTime + loopSourceLength;
+                const double visibleDuration = endTime - startTime;
+                if (visibleDuration > 0.0) {
+                    const double loopStartInFile = di.loopRegionStartSource - startTime;
+                    const double loopEndInFile =
+                        di.loopRegionStartSource + di.loopRegionLengthSource - startTime;
+                    const double scale = waveformBounds.getWidth() / visibleDuration;
 
-                if (loopEndTime <= endTime) {
-                    // Calculate loop region bounds (loop starts at clip beginning)
-                    double visibleDuration = endTime - startTime;
+                    int loopStartX =
+                        waveformBounds.getX() + static_cast<int>(loopStartInFile * scale);
+                    int loopEndX = waveformBounds.getX() + static_cast<int>(loopEndInFile * scale);
 
-                    int loopStartX = waveformBounds.getX();
-                    int loopEndX = waveformBounds.getX() +
-                                   static_cast<int>(loopSourceLength / visibleDuration *
-                                                    waveformBounds.getWidth());
-
-                    // Draw loop region overlay
                     juce::Rectangle<int> loopRegion(loopStartX, waveformBounds.getY(),
                                                     loopEndX - loopStartX,
                                                     waveformBounds.getHeight());
@@ -82,7 +89,6 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
                     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.2f));
                     g.fillRect(loopRegion);
 
-                    // Draw loop boundaries
                     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
                     g.drawVerticalLine(loopStartX, waveformBounds.getY(),
                                        waveformBounds.getBottom());

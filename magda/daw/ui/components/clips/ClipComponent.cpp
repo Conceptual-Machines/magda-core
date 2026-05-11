@@ -267,7 +267,18 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
     }
 
     double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-    auto di = ClipDisplayInfo::from(clip, tempo);
+
+    double fileDuration = 0.0;
+    auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
+    if (thumbnail)
+        fileDuration = thumbnail->getTotalLength();
+
+    // Build display info with the real file duration so loop-region
+    // fields get clamped against the file extent. Without this the
+    // factory falls back to a clip-length-derived extent and the loop
+    // clamp branch is skipped, which leaves loopRegionLengthSource
+    // potentially extending past the file.
+    auto di = ClipDisplayInfo::from(clip, tempo, fileDuration);
 
     double displayOffset = clip.offset;
     if (isDragging_ && dragMode_ == DragMode::ResizeLeft)
@@ -277,11 +288,6 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
     const auto waveColour =
         waveColourOverride.isTransparent() ? juce::Colours::black : waveColourOverride;
     float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
-
-    double fileDuration = 0.0;
-    auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
-    if (thumbnail)
-        fileDuration = thumbnail->getTotalLength();
 
     bool useWarpedDraw = false;
     std::vector<WarpMarkerInfo> warpMarkers;
@@ -344,7 +350,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
         if (sourceDurationForBeats <= 0.0 && fileDuration > 0.0)
             sourceDurationForBeats = fileDuration;
         if (sourceDurationForBeats <= 0.0)
-            sourceDurationForBeats = di.sourceLength;
+            sourceDurationForBeats = di.fileExtentSource();
 
         auto timelineDeltaToPreviewSource = [&](double timelineDelta) {
             if (clip.autoTempo && clip.audio().interpretation.totalBeats > 0.0 &&
@@ -369,25 +375,39 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
         double loopCycle = di.loopLengthSeconds;
         if (clip.autoTempo && clip.loopLengthBeats > 0.0 && tempo > 0.0)
             loopCycle = clip.loopLengthBeats * 60.0 / tempo;
-        double fileStart = di.loopStart;
-        double fileEnd = di.loopStart + di.sourceLength;
-        if (fileDuration > 0.0 && fileEnd > fileDuration)
-            fileEnd = fileDuration;
+        // These were named "fileStart/End" but actually hold the loop
+        // region's bounds (in source-time). Renamed to match what they
+        // really are; per-tile rendering reads from this loop subset, not
+        // the whole file.
+        double loopRegionStart = di.loopRegionStartSource;
+        double loopRegionEnd = di.loopRegionStartSource + di.loopRegionLengthSource;
+        if (fileDuration > 0.0 && loopRegionEnd > fileDuration)
+            loopRegionEnd = fileDuration;
         double phaseSource = di.loopOffset;
         if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
             phaseSource = wrapPhase(resizePreviewClip_.offset - resizePreviewClip_.loopStart,
-                                    di.sourceLength);
+                                    di.loopRegionLengthSource);
         }
         double phaseTimeline = sourceDeltaToPreviewTimeline(phaseSource);
         bool isFirstTile = (phaseTimeline > 0.001);
 
         double timePos = 0.0;
         while (timePos < clipDisplayLength) {
-            double tileFileStart = fileStart;
+            double tileFileStart = loopRegionStart;
             double tileFullDuration = loopCycle;
             if (isFirstTile) {
-                tileFileStart = fileStart + phaseSource;
-                tileFullDuration = sourceDeltaToPreviewTimeline(fileEnd - tileFileStart);
+                // Render the partial loop fragment from (loopStart + phase)
+                // to loopRegionEnd. Floating-point wrap edge cases can put
+                // phase right at the loop boundary, producing a zero-length
+                // fragment — fall through to the regular tile so we still
+                // draw the rest of the clip instead of breaking out.
+                const double partialStart = loopRegionStart + phaseSource;
+                const double partialDuration =
+                    sourceDeltaToPreviewTimeline(loopRegionEnd - partialStart);
+                if (partialDuration > 0.0001) {
+                    tileFileStart = partialStart;
+                    tileFullDuration = partialDuration;
+                }
                 isFirstTile = false;
             }
             if (tileFullDuration <= 0.0001)
@@ -398,10 +418,10 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             double segmentSourceStart = tileFileStart;
             int safety = 0;
             while (remainingTileDuration > 0.0001 && safety++ < 128) {
-                if (segmentSourceStart >= fileEnd - 0.0001)
-                    segmentSourceStart = fileStart;
+                if (segmentSourceStart >= loopRegionEnd - 0.0001)
+                    segmentSourceStart = loopRegionStart;
 
-                double remainingSource = fileEnd - segmentSourceStart;
+                double remainingSource = loopRegionEnd - segmentSourceStart;
                 double fullSegmentDuration = sourceDeltaToPreviewTimeline(remainingSource);
                 if (remainingSource <= 0.0001 || fullSegmentDuration <= 0.0001)
                     break;
@@ -418,7 +438,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
 
                 double segmentSourceEnd =
                     segmentSourceStart + timelineDeltaToPreviewSource(segmentDuration);
-                segmentSourceEnd = juce::jmin(segmentSourceEnd, fileEnd);
+                segmentSourceEnd = juce::jmin(segmentSourceEnd, loopRegionEnd);
                 if (clipToVisible(segmentRect, segmentSourceStart, segmentSourceEnd))
                     thumbnailManager.drawWaveform(g, segmentRect, clip.audio().source.filePath,
                                                   segmentSourceStart, segmentSourceEnd, waveColour,
@@ -427,7 +447,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
                 segmentTime = segmentEnd;
                 remainingTileDuration -= segmentDuration;
                 if (segmentDuration >= fullSegmentDuration - 0.0001)
-                    segmentSourceStart = fileStart;
+                    segmentSourceStart = loopRegionStart;
                 else
                     segmentSourceStart = segmentSourceEnd;
             }

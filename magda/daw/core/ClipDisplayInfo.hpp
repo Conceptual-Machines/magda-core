@@ -8,96 +8,110 @@
 namespace magda {
 
 /**
- * @brief Pre-computed display values derived from ClipInfo + BPM
+ * @brief Pre-computed display values derived from ClipInfo + BPM.
  *
- * Centralizes all stretch-to-source-file and loop boundary calculations
- * so that every UI paint/layout path uses consistent values instead of
- * doing inline math.
+ * Single source of truth for the waveform editor / clip-rendering paths.
  *
- * TE-aligned model fields:
- * - offset: start position in source file (seconds)
- * - loopStart/loopLength: loop region in source file
- * - speedRatio: time stretch ratio
- * - loopEnabled: whether source region loops
+ * Field meanings are deliberately one-purpose. The previous version
+ * overloaded "sourceLength" and "sourceFileStart/End" to mean both the
+ * displayable source range AND the active loop region — which is what
+ * caused the editor to truncate the waveform whenever the loop region
+ * was smaller than the source file. The clean contract:
+ *
+ *   - File extent fields  → always describe the source file on disk.
+ *                           Renderers should draw THIS range, full stop.
+ *   - Loop region fields  → describe the looping subset within the file.
+ *                           Drawn as overlays, never gate the file extent.
+ *
+ * If you find yourself computing "drawable" or "visible" range from a
+ * loop field, that's the bug returning. Reach for the file-extent fields.
  */
 struct ClipDisplayInfo {
-    // Source data (copied for convenience, using TE terminology)
+    // ------- Clip placement on the timeline -------
     double startTime;   // clip start on timeline (seconds)
     double length;      // clip duration on timeline (seconds)
-    double offset;      // source file offset (seconds) - TE: Clip::offset
-    double speedRatio;  // time stretch ratio - TE: Clip::speedRatio
-                        // NOTE: In autoTempo mode, speedRatio is always 1.0 (TE handles stretching)
+    double endTime;     // startTime + length
+    double offset;      // source file offset (seconds) — TE: Clip::offset
+    double speedRatio;  // time stretch ratio — TE: Clip::speedRatio
+                        // In autoTempo mode, speedRatio is always 1.0 (TE handles stretching).
 
-    // Pre-computed display values
-    double endTime;  // startTime + length
+    // ------- Source file extent (the only "what to draw" answer) -------
+    // Always describes the source audio on disk; never a loop subset.
+    // When fileDuration is unknown the factory falls back to the clip's
+    // own length so callers always get a sensible draw range.
+    double sourceFileStart;  // start of the drawable file range (source-time, seconds)
+    double sourceFileEnd;    // end of the drawable file range (source-time, seconds)
 
-    // Source extent (the loop region or derived from clip length)
-    double sourceLength;         // loop region length in source-file seconds
-    double sourceExtentSeconds;  // sourceLength * speedRatio (visual extent on timeline)
-
-    // Loop (all in seconds) - TE: AudioClipBase loopStart/loopLength
+    // ------- Loop region (only valid when loopEnabled) -------
+    // The active loop subset within the file. Renderers should draw loop
+    // brackets / dim out-of-loop content using these — never use them to
+    // gate the file extent above.
     bool loopEnabled;
-    double loopStart;          // where loop starts in source file
-    double loopOffset;         // phase within loop region, derived from offset - loopStart
-    double loopLengthSeconds;  // loop duration in timeline seconds (from clip's actual loopLength)
-    double loopStartPositionSeconds;  // loop start position (absolute source position in timeline
-                                      // seconds)
+    double loopRegionStartSource;   // loop start in source-time
+    double loopRegionLengthSource;  // loop length in source-time
+
+    // Loop region in timeline coordinates, pre-converted for overlay
+    // drawing (kept as separate fields because the renderer reads them
+    // every paint and the conversion ratio is constant per-clip).
+    double loopStartPositionSeconds;  // loop start, anchored at file start = 0
     double loopEndPositionSeconds;    // loopStartPositionSeconds + loopLengthSeconds
-    double offsetPositionSeconds;     // offset position in timeline seconds (from file start)
-    double loopPhasePositionSeconds;  // phase position in timeline seconds (loopStart + phase)
+    double loopLengthSeconds;         // loop length in timeline-time
 
-    // Full source extent (from file start to file end, for waveform editor)
-    double fullSourceExtentSeconds;
+    // ------- Offset / phase (for playhead and orange-dot overlays) -------
+    double offsetPositionSeconds;     // offset in timeline coords (from file start)
+    double loopOffset;                // phase within the loop region (source-time)
+    double loopPhasePositionSeconds;  // phase position in timeline coords
 
-    // Source-file ranges for waveform drawing
-    double sourceFileStart;  // Where to start reading from source file
-    double sourceFileEnd;    // Where to stop reading from source file
+    // ------- Source-time ↔ timeline-time conversion -------
+    // One ratio drives every conversion. Computed once in the factory so
+    // sourceToTimeline / timelineToSource don't have to re-resolve the
+    // autoTempo / speedRatio branch on every call.
+    //   timeline = source * srcToTimelineRatio
+    //   source   = timeline / srcToTimelineRatio
+    double srcToTimelineRatio;
 
-    // Pre-computed display helpers
-    double effectiveSourceExtentSeconds;  // Visual boundary extent with fallback chain baked in
-    double fullDrawStartSeconds;          // Full drawable source-file range start
-    double fullDrawEndSeconds;  // Full drawable source-file range end (extends to file end in loop
-                                // mode)
+    // ------- Auto-tempo / musical-mode display -------
+    bool autoTempo = false;
+    double lengthBeats = 0.0;      // clip timeline length in project beats
+    double loopLengthBeats = 0.0;  // loop length in beats (when autoTempo=true)
+    double startBeats = 0.0;       // start position in beats
+    double endBeats = 0.0;         // end position in beats
 
-    // Auto-tempo (musical mode) display
-    bool autoTempo = false;        // Whether clip uses beat-based length
-    double lengthBeats = 0.0;      // Clip timeline length in project beats
-    double loopLengthBeats = 0.0;  // Loop length in beats (when autoTempo=true)
-    double startBeats = 0.0;       // Start position in beats
-    double endBeats = 0.0;         // End position in beats
-
+    // ============================================================
     // Helpers
-    // For manual stretch: speedRatio is a SPEED FACTOR (timeline = source / speedRatio)
-    // For autoTempo: uses sourceLength/sourceExtentSeconds ratio instead of speedRatio
-    double timelineToSource(double timelineDelta) const {
-        if (autoTempo && sourceExtentSeconds > 0.0) {
-            return timelineDelta * sourceLength / sourceExtentSeconds;
-        }
-        return timelineDelta * speedRatio;
-    }
+    // ============================================================
 
     double sourceToTimeline(double sourceDelta) const {
-        if (autoTempo && sourceLength > 0.0) {
-            return sourceDelta * sourceExtentSeconds / sourceLength;
-        }
-        if (speedRatio <= 0.0)
-            return 0.0;
-        return sourceDelta / speedRatio;
+        return sourceDelta * srcToTimelineRatio;
     }
 
+    double timelineToSource(double timelineDelta) const {
+        return (srcToTimelineRatio > 0.0) ? timelineDelta / srcToTimelineRatio : 0.0;
+    }
+
+    /// Total source file extent in source-time.
+    double fileExtentSource() const {
+        return sourceFileEnd - sourceFileStart;
+    }
+
+    /// Total source file extent in timeline-time.
+    double fileExtentTimeline() const {
+        return sourceToTimeline(fileExtentSource());
+    }
+
+    /// Maximum clip length given the file's duration and the current offset.
     double maxClipLength(double fileDuration) const {
-        if (autoTempo && sourceLength > 0.0 && sourceExtentSeconds > 0.0) {
-            return (fileDuration - offset) * sourceExtentSeconds / sourceLength;
-        }
-        if (speedRatio <= 0.0)
+        if (srcToTimelineRatio <= 0.0)
             return 0.0;
-        return (fileDuration - offset) / speedRatio;
+        return (fileDuration - offset) * srcToTimelineRatio;
     }
 
     bool isLooped() const {
-        return loopEnabled && sourceLength > 0.0;
+        return loopEnabled && loopRegionLengthSource > 0.0;
     }
 
+    /// Where on the editor's timeline ruler the session playhead is for a
+    /// given session-time. Looped clips wrap around the loop region.
     double sessionPlayheadToDisplayPosition(double sessionPlayheadSeconds) const {
         if (sessionPlayheadSeconds < 0.0)
             return -1.0;
@@ -114,23 +128,24 @@ struct ClipDisplayInfo {
         return offsetPositionSeconds + sessionPlayheadSeconds;
     }
 
-    // Convert a timeline position (relative to display anchor = file start) to absolute source file
-    // time
+    /// Convert a timeline position (timeline-seconds, anchored at file start = 0)
+    /// to absolute source-file time.
     double displayPositionToSourceTime(double timelinePos) const {
         return timelineToSource(timelinePos);
     }
 
+    // ============================================================
     // Factory
-    // fileDuration is optional - pass 0 if unknown
+    // ============================================================
+    //
+    // fileDuration is optional; pass 0 if unknown.
     //
     // Issue #1157: every seconds-domain value read from `clip` is routed
-    // through the ClipInfo accessors (getTimelineLength / getSourceLoopStart
-    // / getSourceLoopLength / getSourceOffset). For autoTempo clips these
-    // compute live from beats × BPM, so the layout stays correct even if the
-    // cached seconds fields are stale (e.g. just after a BPM change, before
-    // listeners have run).
+    // through ClipInfo accessors (getTimelineLength / getSourceLoopStart /
+    // getSourceLoopLength / getSourceOffset) so autoTempo clips compute
+    // live from beats × BPM and stay correct after BPM changes.
     static ClipDisplayInfo from(const ClipInfo& clip, double bpm, double fileDuration = 0.0) {
-        ClipDisplayInfo d;
+        ClipDisplayInfo d{};
 
         const double clipLength = clip.getTimelineLength(bpm);
         const double clipStart = clip.getTimelineStart(bpm);
@@ -140,114 +155,88 @@ struct ClipDisplayInfo {
 
         d.startTime = clipStart;
         d.length = clipLength;
+        d.endTime = clipStart + clipLength;
         d.offset = clipOffset;
         d.speedRatio = clip.speedRatio;
-        d.endTime = clipStart + clipLength;
 
-        // Auto-tempo display info (using centralized ClipInfo methods)
         d.autoTempo = clip.autoTempo;
         d.lengthBeats = clip.placement.lengthBeats;
         d.loopLengthBeats = clip.loopLengthBeats;
         d.startBeats = clip.getStartBeats(bpm);
         d.endBeats = clip.getEndBeats(bpm);
 
-        // Compute source length from loop region or derive from clip
-        // Priority: loopLength > fileDuration > clip.length
-        // SPECIAL CASE: In autoTempo mode, clip.length is timeline duration (changes with BPM)
-        // but we need the actual SOURCE audio length (which stays constant)
-        if (clip.autoTempo && clipLoopLength > 0.0) {
-            // Musical mode: loopLength IS the source audio length
-            d.sourceLength = clipLoopLength;
-            d.loopStart = clipLoopStart;
-        } else if (clip.loopEnabled && clipLoopLength > 0.0) {
-            d.sourceLength = clipLoopLength;
-            d.loopStart = clipLoopStart;
-            // Clamp loop region to available audio
-            if (fileDuration > 0.0 && d.loopStart + d.sourceLength > fileDuration) {
-                d.sourceLength = std::max(0.001, fileDuration - d.loopStart);
-            }
-        } else if (fileDuration > 0.0 && fileDuration > clipOffset) {
-            d.sourceLength = fileDuration - clipOffset;
-            d.loopStart = clipOffset;
+        // ---- Source-time ↔ timeline-time conversion ratio ----
+        //
+        // AutoTempo: TE stretches the source so 1 source beat == 1 timeline
+        // beat, so timelineSeconds = sourceSeconds × (sourceBPM / projectBPM).
+        // We try the source-interpretation BPM first; if absent, fall back to
+        // the loop's beat-count for the same calibration. Issue #1157.
+        //
+        // Manual stretch: timelineSeconds = sourceSeconds / speedRatio.
+        if (clip.autoTempo && clip.audio().interpretation.bpm > 0.0 && bpm > 0.0) {
+            d.srcToTimelineRatio = clip.audio().interpretation.bpm / bpm;
+        } else if (clip.autoTempo && clipLoopLength > 0.0 && clip.loopLengthBeats > 0.0 &&
+                   bpm > 0.0) {
+            d.srcToTimelineRatio = (clip.loopLengthBeats * 60.0 / bpm) / clipLoopLength;
         } else {
-            // Fallback: derive from clip length
-            d.sourceLength = clip.timelineToSource(clipLength);
-            d.loopStart = clipOffset;
+            d.srcToTimelineRatio = (clip.speedRatio > 0.0) ? 1.0 / clip.speedRatio : 1.0;
         }
-        // Convert source-file duration to timeline duration.
-        //
-        // AutoTempo invariant: TE stretches the source so 1 source beat == 1
-        // timeline beat. Therefore
-        //     timelineSeconds = sourceSeconds × (source interpretation BPM / projectBPM)
-        // The earlier branch I added used the inverted ratio (projectBPM /
-        // source interpretation BPM), which is what made the green loop bracket span ~9
-        // bars in the user's screenshot when lengthBeats said 4 bars.
-        // Issue #1157.
-        //
-        // For manual stretch: timelineSeconds = sourceSeconds / speedRatio.
-        auto srcToTimeline = [&](double sourceDelta) -> double {
-            if (clip.autoTempo && clip.audio().interpretation.bpm > 0.0 && bpm > 0.0) {
-                return sourceDelta * clip.audio().interpretation.bpm / bpm;
-            }
-            if (clip.autoTempo && clipLoopLength > 0.0 && clip.loopLengthBeats > 0.0 && bpm > 0.0) {
-                return sourceDelta * (clip.loopLengthBeats * 60.0 / bpm) / clipLoopLength;
-            }
-            return (clip.speedRatio > 0.0) ? sourceDelta / clip.speedRatio : 0.0;
-        };
 
-        d.sourceExtentSeconds = srcToTimeline(d.sourceLength);
-
-        d.loopEnabled = clip.loopEnabled;
-
-        // Compute loop offset: phase within the loop region derived from offset - loopStart
-        d.loopOffset = wrapPhase(clipOffset - clipLoopStart, d.sourceLength);
-
-        d.loopLengthSeconds = (clipLoopLength > 0.0) ? srcToTimeline(clipLoopLength) : 0.0;
-
-        // Anchor display at source file start (position 0 = file start).
-        // All positions are absolute source positions converted to timeline seconds.
-        d.loopStartPositionSeconds = srcToTimeline(clipLoopStart);
-        d.loopEndPositionSeconds = d.loopStartPositionSeconds + d.loopLengthSeconds;
-        d.offsetPositionSeconds = srcToTimeline(clipOffset);
-        d.loopPhasePositionSeconds = d.loopStartPositionSeconds + srcToTimeline(d.loopOffset);
-
-        // Full source extent from file start to file end
+        // ---- Source file extent (always [0, fileDuration]) ----
+        d.sourceFileStart = 0.0;
         if (fileDuration > 0.0) {
-            d.fullSourceExtentSeconds = srcToTimeline(fileDuration);
-        } else {
-            d.fullSourceExtentSeconds = d.sourceExtentSeconds;
-        }
-
-        // Source file range: the source region relevant for waveform drawing
-        // Looped: the loop region (loopStart to loopStart + loopLength)
-        // Non-looped: from offset to offset + sourceLength
-        if (clip.loopEnabled && clipLoopLength > 0.0) {
-            d.sourceFileStart = clipLoopStart;
-            d.sourceFileEnd = clipLoopStart + d.sourceLength;
-        } else {
-            d.sourceFileStart = clipOffset;
-            d.sourceFileEnd = clipOffset + d.sourceLength;
-        }
-
-        // Clamp to file bounds
-        if (fileDuration > 0.0 && d.sourceFileEnd > fileDuration) {
             d.sourceFileEnd = fileDuration;
-        }
-
-        // Effective source extent: visual boundary with fallback chain
-        d.effectiveSourceExtentSeconds = d.fullSourceExtentSeconds;
-        if (d.effectiveSourceExtentSeconds <= 0.0)
-            d.effectiveSourceExtentSeconds = d.sourceExtentSeconds;
-        if (d.effectiveSourceExtentSeconds <= 0.0)
-            d.effectiveSourceExtentSeconds = clipLength;
-
-        // Full drawable source-file range: always from file start
-        d.fullDrawStartSeconds = 0.0;
-        if (fileDuration > 0.0) {
-            d.fullDrawEndSeconds = fileDuration;
         } else {
-            d.fullDrawEndSeconds = d.sourceFileEnd;
+            // No thumbnail / file metadata available — fall back to a
+            // conservative range derived from the clip's own length so
+            // the editor still gets something sane to draw.
+            const double sourceLenFromLength =
+                (clip.speedRatio > 0.0) ? clipLength * clip.speedRatio : clipLength;
+            d.sourceFileEnd = std::max(clipOffset + sourceLenFromLength, clipOffset + 0.001);
         }
+
+        // ---- Loop region ----
+        d.loopEnabled = clip.loopEnabled;
+        d.loopRegionStartSource = clipLoopStart;
+        d.loopRegionLengthSource = clipLoopLength;
+
+        // Sentinel: in the rest of the codebase, `loopLength == 0` while
+        // `loopEnabled` is true means "loop the whole remaining source"
+        // — the playback path (SessionClipScheduler etc.) treats it that
+        // way and it shows up on older / imported / freshly-toggled
+        // clips. We mirror that here so the editor / playhead / overlays
+        // don't read the same clip as non-looped while it's actively
+        // looping in audio. Without this fallback, isLooped() returns
+        // false for any zero-length sentinel.
+        if (clip.loopEnabled && d.loopRegionLengthSource <= 0.0) {
+            const double anchor = std::max(d.loopRegionStartSource, d.sourceFileStart);
+            d.loopRegionStartSource = anchor;
+            d.loopRegionLengthSource = std::max(0.0, d.sourceFileEnd - anchor);
+        }
+
+        // Clamp loop region to file bounds when known. Don't shrink the
+        // file-extent fields — only the loop region itself.
+        if (fileDuration > 0.0) {
+            d.loopRegionStartSource = std::min(d.loopRegionStartSource, fileDuration);
+            if (d.loopRegionStartSource + d.loopRegionLengthSource > fileDuration) {
+                d.loopRegionLengthSource = std::max(0.0, fileDuration - d.loopRegionStartSource);
+            }
+        }
+
+        // ---- Phase / offset ----
+        // loopOffset = where in the loop region playback starts, relative
+        // to loopRegionStartSource; wrapped into [0, loopLength).
+        d.loopOffset =
+            (d.loopRegionLengthSource > 0.0)
+                ? wrapPhase(clipOffset - d.loopRegionStartSource, d.loopRegionLengthSource)
+                : 0.0;
+
+        // ---- Loop region in timeline-time ----
+        d.loopStartPositionSeconds = d.sourceToTimeline(d.loopRegionStartSource);
+        d.loopLengthSeconds = d.sourceToTimeline(d.loopRegionLengthSource);
+        d.loopEndPositionSeconds = d.loopStartPositionSeconds + d.loopLengthSeconds;
+        d.offsetPositionSeconds = d.sourceToTimeline(clipOffset);
+        d.loopPhasePositionSeconds = d.loopStartPositionSeconds + d.sourceToTimeline(d.loopOffset);
 
         return d;
     }

@@ -174,15 +174,23 @@ struct ClipInfo {
     /// Populate source metadata from engine (only sets if not already populated).
     /// This is source-domain data only; it must never edit clip placement or
     /// source loop region state.
+    ///
+    /// numBeats is only seeded when bpm is also known. A beat count without an
+    /// anchoring BPM is meaningless — it claims musical content the file
+    /// doesn't actually carry. Without this guard the source-domain
+    /// interpretation gets a bpm=0 / totalBeats=projectBpm×duration seed,
+    /// which renders as "—" in the BPM column but a wrong integer in the
+    /// beats column, and stays that way after the user later sets the real
+    /// BPM unless the BPM-edit path also rewrites totalBeats.
     void setSourceMetadata(double numBeats, double bpm) {
         if (!isAudio())
             return;
 
         auto& source = audio();
-        if (numBeats > 0.0 && source.interpretation.totalBeats <= 0.0)
-            source.interpretation.totalBeats = numBeats;
         if (bpm > 0.0 && source.interpretation.bpm <= 0.0)
             source.interpretation.bpm = bpm;
+        if (numBeats > 0.0 && bpm > 0.0 && source.interpretation.totalBeats <= 0.0)
+            source.interpretation.totalBeats = numBeats;
         if (source.source.durationSeconds <= 0.0 && source.interpretation.totalBeats > 0.0 &&
             source.interpretation.bpm > 0.0) {
             source.source.durationSeconds =

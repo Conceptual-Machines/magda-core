@@ -230,13 +230,6 @@ void ClipInspector::updateFromSelectedClip() {
             clipBpmValue_.setVisible(true);
             clipBpmUnitLabel_.setVisible(true);
             updateAudioSourceValueDisplays(*clip);
-            DBG("[InspectorTrace] clipInspector:bpmDisplay id="
-                << clip->id << " text='" << clipBpmValue_.getText()
-                << "' source.interpretation.bpm=" << clip->audio().interpretation.bpm
-                << " source.interpretation.totalBeats=" << clip->audio().interpretation.totalBeats
-                << " source.durationSeconds=" << clip->audio().source.durationSeconds
-                << " placement.lengthBeats=" << clip->placement.lengthBeats
-                << " loopLengthBeats=" << clip->loopLengthBeats);
         } else {
             clipBpmValue_.setVisible(false);
             clipBpmUnitLabel_.setVisible(false);
@@ -250,13 +243,6 @@ void ClipInspector::updateFromSelectedClip() {
             clipBeatsLengthValue_->setEnabled(true);
             clipBeatsLengthValue_->setAlpha(1.0f);
             updateAudioSourceValueDisplays(*clip);
-            DBG("[InspectorTrace] clipInspector:sourceBeatsDisplay id="
-                << clip->id << " ui.value=" << clipBeatsLengthValue_->getValue()
-                << " boundField=source.interpretation.totalBeats"
-                << " placement.lengthBeats=" << clip->placement.lengthBeats
-                << " source.interpretation.totalBeats=" << clip->audio().interpretation.totalBeats
-                << " source.interpretation.bpm=" << clip->audio().interpretation.bpm
-                << " loopLengthBeats=" << clip->loopLengthBeats);
         } else {
             clipBeatsLengthValue_->setVisible(false);
             clipBeatsUnitLabel_.setVisible(false);
