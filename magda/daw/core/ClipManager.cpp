@@ -696,9 +696,13 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
         // resize gestures fall through inconsistent branches and the user
         // sees the clip resize to an unrelated length. Reject the disable
         // here rather than corrupt state — the user must exit beat mode
-        // first to turn looping off.
-        if (!enabled && clip->autoTempo)
+        // first to turn looping off. Emit a property-changed notification
+        // anyway so callers that flipped their local toggle optimistically
+        // re-read the (unchanged) model and revert.
+        if (!enabled && clip->autoTempo) {
+            notifyClipPropertyChanged(clipId);
             return;
+        }
         clip->loopEnabled = enabled;
 
         // When enabling loop on MIDI clips, capture current length as loop region
@@ -761,6 +765,13 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
                 const double bpm = juce::jmax(1.0, projectBPM);
                 clip->setPlacementBeats(clip->placement.startBeat, newTimelineLength * bpm / 60.0);
                 clip->deriveTimesFromBeats(bpm);
+
+                // The new timeline length can exceed the previous loop region,
+                // which on the arrangement view can push the clip into a
+                // neighbour. Match the policy other length-changing setters
+                // (resizeClip / trimClip) already enforce.
+                if (clip->view == ClipView::Arrangement)
+                    resolveOverlaps(clipId);
             }
         }
 

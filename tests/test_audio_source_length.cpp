@@ -275,4 +275,57 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves loopLength", "[audio][clip
         REQUIRE(clip->loopLength == Catch::Approx(4.0));
         REQUIRE(clip->loopEnabled == true);
     }
+
+    SECTION("Disabling loop snaps timeline length to (fileDuration - offset) / speedRatio") {
+        constexpr double FILE_DURATION = 8.0;
+        constexpr double BPM = 120.0;
+
+        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 2.0, "test.wav");
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        // Source is 8s of audio; clip is currently looping a 2s region from
+        // offset 1s. Disabling loop should expand the clip back to the
+        // remaining 7s of source, in both seconds and beat domains.
+        clip->audio().source.durationSeconds = FILE_DURATION;
+        clip->speedRatio = 1.0;
+        clip->offset = 1.0;
+        clip->loopEnabled = true;
+        clip->loopStart = 1.0;
+        clip->loopLength = 2.0;
+        clip->length = 2.0;
+        clip->setPlacementBeats(0.0, 2.0 * BPM / 60.0);
+
+        ClipManager::getInstance().setClipLoopEnabled(clipId, false, BPM);
+
+        const double expectedLength = FILE_DURATION - clip->offset;  // speedRatio = 1
+        REQUIRE(clip->loopEnabled == false);
+        REQUIRE(clip->length == Catch::Approx(expectedLength));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(expectedLength * BPM / 60.0));
+    }
+
+    SECTION("Disabling loop with speedRatio > 1 shortens the timeline length proportionally") {
+        constexpr double FILE_DURATION = 8.0;
+        constexpr double SPEED = 2.0;
+        constexpr double BPM = 120.0;
+
+        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 2.0, "test.wav");
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        clip->audio().source.durationSeconds = FILE_DURATION;
+        clip->speedRatio = SPEED;
+        clip->offset = 0.0;
+        clip->loopEnabled = true;
+        clip->loopStart = 0.0;
+        clip->loopLength = 1.0;
+        clip->length = 1.0;
+        clip->setPlacementBeats(0.0, 1.0 * BPM / 60.0);
+
+        ClipManager::getInstance().setClipLoopEnabled(clipId, false, BPM);
+
+        const double expectedLength = FILE_DURATION / SPEED;  // 4.0s on the timeline
+        REQUIRE(clip->length == Catch::Approx(expectedLength));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(expectedLength * BPM / 60.0));
+    }
 }
