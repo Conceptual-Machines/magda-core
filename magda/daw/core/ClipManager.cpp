@@ -688,6 +688,17 @@ void ClipManager::setClipColour(ClipId clipId, juce::Colour colour) {
 
 void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM) {
     if (auto* clip = getClip(clipId)) {
+        // Invariant: autoTempo (beat mode) requires loopEnabled. TE's
+        // autoTempo beat range only operates over a loop region, and
+        // ClipOperations' resize / offset math for autoTempo clips assumes
+        // loopLengthBeats / loopStartBeats are live. Allowing loop-off while
+        // beat mode is on lands the clip in a state nothing models, so
+        // resize gestures fall through inconsistent branches and the user
+        // sees the clip resize to an unrelated length. Reject the disable
+        // here rather than corrupt state — the user must exit beat mode
+        // first to turn looping off.
+        if (!enabled && clip->autoTempo)
+            return;
         clip->loopEnabled = enabled;
 
         // When enabling loop on MIDI clips, capture current length as loop region
