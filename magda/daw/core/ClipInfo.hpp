@@ -365,6 +365,39 @@ struct ClipInfo {
         }
     }
 
+    // =========================================================================
+    // Beats-first source-domain setters (audio clips)
+    //
+    // The ONLY supported paths for writing offset / loopStart / loopLength.
+    // They take BEATS and derive the seconds mirror via the source's
+    // interpretation BPM (during the transitional period while the seconds
+    // fields still exist). When all readers are migrated off the seconds
+    // fields, those fields go away and the derive step goes with them.
+    //
+    // Deliberately no `setXxxSeconds` counterpart: a parallel seconds API
+    // would just keep call sites writing seconds and quietly recompute beats,
+    // which is the leak we're trying to close. Callers that have seconds
+    // convert at the call site: beats = seconds × interpBpm / 60.
+    // =========================================================================
+
+    void setSourceOffsetBeats(double beats, double interpBpm) {
+        offsetBeats = juce::jmax(0.0, beats);
+        if (interpBpm > 0.0)
+            offset = offsetBeats * 60.0 / interpBpm;
+    }
+
+    void setLoopStartBeats(double beats, double interpBpm) {
+        loopStartBeats = juce::jmax(0.0, beats);
+        if (interpBpm > 0.0)
+            loopStart = loopStartBeats * 60.0 / interpBpm;
+    }
+
+    void setLoopLengthBeats(double beats, double interpBpm) {
+        loopLengthBeats = juce::jmax(0.0, beats);
+        if (interpBpm > 0.0)
+            loopLength = loopLengthBeats * 60.0 / interpBpm;
+    }
+
     /// Get end position in beats without BPM conversion (beats are always valid for MIDI)
     double getEndBeatsRaw() const {
         return placement.endBeat();
