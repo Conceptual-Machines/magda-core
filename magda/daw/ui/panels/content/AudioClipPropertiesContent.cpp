@@ -1,5 +1,7 @@
 #include "AudioClipPropertiesContent.hpp"
 
+#include <cmath>
+
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/InspectorComboBoxLookAndFeel.hpp"
@@ -25,6 +27,67 @@ constexpr int SEPARATOR_PAD = 5;
 constexpr int TOGGLE_WIDTH = 46;
 constexpr int H_PAD = 8;
 constexpr int V_PAD = 4;
+
+double getAudioFileDurationForProperties(const magda::ClipInfo& clip) {
+    if (!clip.isAudio())
+        return 0.0;
+
+    double durationSeconds = clip.audio().source.durationSeconds;
+    if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+            clip.audio().source.filePath)) {
+        const double fileDuration = thumb->getTotalLength();
+        if (fileDuration > 0.0)
+            durationSeconds = fileDuration;
+    }
+    return durationSeconds;
+}
+
+double getProjectBpmForProperties() {
+    if (auto* tc = magda::TimelineController::getCurrent())
+        return tc->getState().tempo.bpm;
+    return 120.0;
+}
+
+struct SourceDisplayValues {
+    double bpm = 0.0;
+    double totalBeats = 0.0;
+};
+
+SourceDisplayValues getSourceDisplayValues(const magda::ClipInfo& clip, magda::ClipId clipId) {
+    SourceDisplayValues values;
+    if (!clip.isAudio())
+        return values;
+
+    const double projectBpm = getProjectBpmForProperties();
+    const double storedBpm = clip.audio().interpretation.bpm;
+    const bool storedBpmLooksDefaulted =
+        storedBpm <= 0.0 ||
+        (!clip.autoTempo && projectBpm > 0.0 && std::abs(storedBpm - projectBpm) < 0.1);
+
+    values.bpm = storedBpm;
+    if (storedBpmLooksDefaulted) {
+        auto& thumbs = magda::AudioThumbnailManager::getInstance();
+        const double cachedBpm = thumbs.getCachedBPM(clip.audio().source.filePath);
+        if (cachedBpm > 0.0) {
+            values.bpm = cachedBpm;
+        } else if (clip.audio().source.filePath.isNotEmpty()) {
+            thumbs.requestBPMDetection(clip.audio().source.filePath, [clipId](double bpm) {
+                if (bpm > 0.0)
+                    magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId);
+            });
+        }
+    }
+
+    const double durationSeconds = getAudioFileDurationForProperties(clip);
+    if (values.bpm > 0.0 && durationSeconds > 0.0 &&
+        (storedBpmLooksDefaulted || clip.audio().interpretation.totalBeats <= 0.0)) {
+        values.totalBeats = durationSeconds * values.bpm / 60.0;
+    } else {
+        values.totalBeats = clip.audio().interpretation.totalBeats;
+    }
+
+    return values;
+}
 }  // namespace
 
 AudioClipPropertiesContent::AudioClipPropertiesContent() {
@@ -487,12 +550,10 @@ void AudioClipPropertiesContent::updateFromClip() {
     if (hasClip) {
         stretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
         stretchModeCombo_->setSelectedId(clip->timeStretchMode + 1, juce::dontSendNotification);
-        bpmValue_->setValue(
-            clip->audio().interpretation.bpm > 0.0 ? clip->audio().interpretation.bpm : 120.0,
-            juce::dontSendNotification);
-        beatsValue_->setValue(clip->audio().interpretation.totalBeats > 0.0
-                                  ? clip->audio().interpretation.totalBeats
-                                  : 4.0,
+        const auto sourceDisplay = getSourceDisplayValues(*clip, clipId_);
+        bpmValue_->setValue(sourceDisplay.bpm > 0.0 ? sourceDisplay.bpm : 120.0,
+                            juce::dontSendNotification);
+        beatsValue_->setValue(sourceDisplay.totalBeats > 0.0 ? sourceDisplay.totalBeats : 4.0,
                               juce::dontSendNotification);
         pitchValue_->setValue(static_cast<double>(clip->pitchChange), juce::dontSendNotification);
         volumeValue_->setValue(static_cast<double>(clip->volumeDB), juce::dontSendNotification);

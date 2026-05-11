@@ -86,15 +86,25 @@ class SetClipOffsetCommand : public UndoableCommand {
   public:
     SetClipOffsetCommand(ClipId clipId, double newOffset) : clipId_(clipId), newOffset_(newOffset) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (clip)
+        if (clip) {
+            oldClip_ = *clip;
+            hasOldClip_ = true;
             oldOffset_ = (clip->isMidi()) ? clip->midiOffset : clip->offset;
+        }
     }
 
     void execute() override {
         ClipManager::getInstance().setOffset(clipId_, newOffset_);
     }
     void undo() override {
-        ClipManager::getInstance().setOffset(clipId_, oldOffset_);
+        if (hasOldClip_) {
+            if (auto* clip = ClipManager::getInstance().getClip(clipId_)) {
+                *clip = oldClip_;
+                ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+            }
+        } else {
+            ClipManager::getInstance().setOffset(clipId_, oldOffset_);
+        }
     }
     juce::String getDescription() const override {
         return "Set Clip Offset";
@@ -112,6 +122,8 @@ class SetClipOffsetCommand : public UndoableCommand {
   private:
     ClipId clipId_;
     double oldOffset_ = 0.0, newOffset_;
+    ClipInfo oldClip_;
+    bool hasOldClip_ = false;
 };
 
 /**

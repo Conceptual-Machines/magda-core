@@ -1903,14 +1903,23 @@ void ClipManager::sanitizeAudioClip(ClipInfo& clip) {
 
     auto* thumbnail =
         AudioThumbnailManager::getInstance().getThumbnail(clip.audio().source.filePath);
-    if (!thumbnail)
-        return;
-
-    double fileDuration = thumbnail->getTotalLength();
+    double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
+    if (fileDuration <= 0.0)
+        fileDuration = clip.audio().source.durationSeconds;
     if (fileDuration <= 0.0)
         return;
 
+    const double oldStart = clip.startTime;
+    const double oldLength = clip.length;
     ClipOperations::sanitizeAudioToSourceDuration(clip, fileDuration);
+    if (!clip.loopEnabled && !clip.autoTempo &&
+        (std::abs(clip.startTime - oldStart) > 0.000001 ||
+         std::abs(clip.length - oldLength) > 0.000001)) {
+        double bpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+        if (bpm <= 0.0)
+            bpm = 120.0;
+        syncPlacementFromTimelineSeconds(clip, bpm);
+    }
 }
 
 // ============================================================================

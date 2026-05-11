@@ -4,6 +4,7 @@
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
+#include "magda/daw/core/ClipPropertyCommands.hpp"
 
 /**
  * Tests for waveform editor absolute mode positioning logic
@@ -309,7 +310,7 @@ TEST_CASE("ClipOperations - audio sanitizing preserves sample start",
     REQUIRE(clip.loopStart == Catch::Approx(0.25));
 }
 
-TEST_CASE("ClipOperations - non-loop offset drag preserves sample start and clip bounds",
+TEST_CASE("ClipOperations - non-loop offset drag preserves sample start and clamps clip bounds",
           "[clip][audio][offset][regression]") {
     ClipInfo clip;
     clip.setAudioContent();
@@ -317,17 +318,19 @@ TEST_CASE("ClipOperations - non-loop offset drag preserves sample start and clip
     clip.loopEnabled = false;
     clip.autoTempo = false;
     clip.startTime = 4.0;
-    clip.length = 2.0;
+    clip.length = 7.75;
+    clip.setPlacementBeats(8.0, 15.5);
     clip.speedRatio = 1.0;
     clip.loopStart = 0.25;
     clip.offset = 0.25;
 
-    ClipOperations::setAudioOffsetPreservingSourceRegion(clip, 0.75, 8.0);
+    ClipOperations::setAudioOffsetPreservingSourceRegion(clip, 0.75, 8.0, 120.0);
 
     REQUIRE(clip.offset == Catch::Approx(0.75));
     REQUIRE(clip.loopStart == Catch::Approx(0.25));
     REQUIRE(clip.startTime == Catch::Approx(4.0));
-    REQUIRE(clip.length == Catch::Approx(2.0));
+    REQUIRE(clip.length == Catch::Approx(7.25));
+    REQUIRE(clip.lengthBeats == Catch::Approx(14.5));
 }
 
 TEST_CASE("ClipOperations - phase drag clamps audio offset at zero",
@@ -343,6 +346,38 @@ TEST_CASE("ClipOperations - phase drag clamps audio offset at zero",
     ClipOperations::setAudioLoopPhaseClamped(clip, 0.1);
 
     REQUIRE(clip.offset == Catch::Approx(0.0));
+}
+
+TEST_CASE("SetClipOffsetCommand - non-loop offset clamp restores length on undo",
+          "[clip][audio][offset][undo][regression]") {
+    auto& clipManager = ClipManager::getInstance();
+    clipManager.clearAllClips();
+
+    ClipId clipId =
+        clipManager.createAudioClip(INVALID_TRACK_ID, 0.0, 8.0, "/tmp/magda_offset_undo.wav");
+    auto* clip = clipManager.getClip(clipId);
+    REQUIRE(clip != nullptr);
+
+    clip->loopEnabled = false;
+    clip->autoTempo = false;
+    clip->audio().source.durationSeconds = 8.0;
+    clip->offset = 0.0;
+    clip->length = 8.0;
+    clip->setPlacementBeats(0.0, 16.0);
+
+    SetClipOffsetCommand cmd(clipId, 1.0);
+    cmd.execute();
+
+    REQUIRE(clip->offset == Catch::Approx(1.0));
+    REQUIRE(clip->length == Catch::Approx(7.0));
+
+    cmd.undo();
+
+    clip = clipManager.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->offset == Catch::Approx(0.0));
+    REQUIRE(clip->length == Catch::Approx(8.0));
+    REQUIRE(clip->lengthBeats == Catch::Approx(16.0));
 }
 
 TEST_CASE("ClipManager - Clip position change notifies listeners", "[clip][manager][notify]") {

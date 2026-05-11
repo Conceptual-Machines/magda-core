@@ -258,7 +258,8 @@ class ClipOperations {
     }
 
     static inline void setAudioOffsetPreservingSourceRegion(ClipInfo& clip, double newOffset,
-                                                            double fileDuration = 0.0) {
+                                                            double fileDuration = 0.0,
+                                                            double bpm = 0.0) {
         if (!clip.isAudio())
             return;
 
@@ -269,6 +270,14 @@ class ClipOperations {
         clip.offset = newOffset;
         if (clip.autoTempo && clip.audio().interpretation.bpm > 0.0) {
             clip.offsetBeats = clip.offset * clip.audio().interpretation.bpm / 60.0;
+        }
+
+        if (!clip.loopEnabled && !clip.autoTempo && fileDuration > 0.0) {
+            const double oldLength = clip.length;
+            clip.clampLengthToSource(fileDuration);
+            if (bpm > 0.0 && std::abs(clip.length - oldLength) > 0.000001) {
+                clip.setPlacementBeats(clip.startTime * bpm / 60.0, clip.length * bpm / 60.0);
+            }
         }
     }
 
