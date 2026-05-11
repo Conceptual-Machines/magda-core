@@ -67,10 +67,10 @@ void ClipInspector::resized() {
     int fieldWidth =
         juce::jmax(1, (containerWidth - iconSize - gap * timingFieldCount) / timingFieldCount);
 
-    // Position row: position icon — start, end, offset (arrangement clips only)
+    // Position row: position icon — start, end, len (arrangement clips only)
     if (clipPositionIcon_->isVisible()) {
-        clipOffsetLabel_.setVisible(!hideSecondaryTimingFields);
-        clipContentOffsetValue_->setVisible(!hideSecondaryTimingFields);
+        clipLengthLabel_.setVisible(!hideSecondaryTimingFields);
+        clipLengthValue_->setVisible(!hideSecondaryTimingFields);
 
         auto labelRow = addRow(labelHeight);
         labelRow.removeFromLeft(iconSize + gap);
@@ -79,7 +79,7 @@ void ClipInspector::resized() {
         clipEndLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
         if (!hideSecondaryTimingFields) {
             labelRow.removeFromLeft(gap);
-            clipOffsetLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+            clipLengthLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
         }
 
         auto valueRow = addRow(valueHeight);
@@ -90,7 +90,7 @@ void ClipInspector::resized() {
         clipEndValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
         if (!hideSecondaryTimingFields) {
             valueRow.removeFromLeft(gap);
-            clipContentOffsetValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+            clipLengthValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
         }
 
         addSeparator();
@@ -102,7 +102,7 @@ void ClipInspector::resized() {
         addSeparator();
     }
 
-    // Loop row: loop toggle + lstart | lend | phase (always shown; greyed when off)
+    // Loop row: loop toggle + start | end | offset/phase (start/end greyed when loop is off)
     if (clipLoopToggle_->isVisible()) {
         clipLoopPhaseLabel_.setVisible(!hideSecondaryTimingFields);
         clipLoopPhaseValue_->setVisible(!hideSecondaryTimingFields);

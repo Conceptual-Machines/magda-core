@@ -1910,29 +1910,7 @@ void ClipManager::sanitizeAudioClip(ClipInfo& clip) {
     if (fileDuration <= 0.0)
         return;
 
-    // Clamp loopStart to file bounds
-    clip.loopStart = juce::jlimit(0.0, fileDuration, clip.loopStart);
-
-    // Clamp loopLength so loop region doesn't exceed file
-    double availableFromLoop = fileDuration - clip.loopStart;
-    if (clip.loopLength > availableFromLoop) {
-        double oldLoopLength = clip.loopLength;
-        clip.loopLength = juce::jmax(0.0, availableFromLoop);
-        if (clip.autoTempo && oldLoopLength > 0.0) {
-            clip.loopLengthBeats *= clip.loopLength / oldLoopLength;
-        }
-    }
-
-    // Clamp offset to file bounds
-    clip.offset = juce::jlimit(0.0, fileDuration, clip.offset);
-
-    // Non-loop mode: keep loopStart synced to offset and clamp clip length.
-    // Auto-tempo/BEAT mode also uses loopStart/loopLength as an active source
-    // region, even when the explicit loop toggle is not set.
-    if (!clip.loopEnabled && !clip.autoTempo) {
-        clip.loopStart = clip.offset;
-        clip.clampLengthToSource(fileDuration);
-    }
+    ClipOperations::sanitizeAudioToSourceDuration(clip, fileDuration);
 }
 
 // ============================================================================

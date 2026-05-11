@@ -229,6 +229,60 @@ class ClipOperations {
     // ========================================================================
 
     /**
+     * @brief Clamp audio source-domain fields to the known source duration.
+     *
+     * Offset is the playback/read phase. loopStart is the source-region anchor
+     * used by loop-mode transitions and editor boundaries; non-loop sanitizing
+     * must not mirror it to offset.
+     */
+    static inline void sanitizeAudioToSourceDuration(ClipInfo& clip, double fileDuration) {
+        if (!clip.isAudio() || fileDuration <= 0.0)
+            return;
+
+        clip.loopStart = juce::jlimit(0.0, fileDuration, clip.loopStart);
+
+        const double availableFromLoop = fileDuration - clip.loopStart;
+        if (clip.loopLength > availableFromLoop) {
+            const double oldLoopLength = clip.loopLength;
+            clip.loopLength = juce::jmax(0.0, availableFromLoop);
+            if (clip.autoTempo && oldLoopLength > 0.0) {
+                clip.loopLengthBeats *= clip.loopLength / oldLoopLength;
+            }
+        }
+
+        clip.offset = juce::jlimit(0.0, fileDuration, clip.offset);
+
+        if (!clip.loopEnabled && !clip.autoTempo) {
+            clip.clampLengthToSource(fileDuration);
+        }
+    }
+
+    static inline void setAudioOffsetPreservingSourceRegion(ClipInfo& clip, double newOffset,
+                                                            double fileDuration = 0.0) {
+        if (!clip.isAudio())
+            return;
+
+        if (fileDuration > 0.0)
+            newOffset = juce::jmin(newOffset, fileDuration);
+        newOffset = juce::jmax(0.0, newOffset);
+
+        clip.offset = newOffset;
+        if (clip.autoTempo && clip.audio().interpretation.bpm > 0.0) {
+            clip.offsetBeats = clip.offset * clip.audio().interpretation.bpm / 60.0;
+        }
+    }
+
+    static inline void setAudioLoopPhaseClamped(ClipInfo& clip, double phase) {
+        if (!clip.isAudio())
+            return;
+
+        clip.offset = juce::jmax(0.0, clip.loopStart + phase);
+        if (clip.autoTempo && clip.audio().interpretation.bpm > 0.0) {
+            clip.offsetBeats = clip.offset * clip.audio().interpretation.bpm / 60.0;
+        }
+    }
+
+    /**
      * @brief Trim audio from left edge
      * Adjusts clip.offset, clip.startTime, clip.length.
      * @param clip Clip to modify

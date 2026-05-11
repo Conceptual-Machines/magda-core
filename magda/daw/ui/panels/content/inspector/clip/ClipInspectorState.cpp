@@ -71,12 +71,16 @@ void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double 
     clipLoopEndValue_->setValue(loopStartBeats + loopLengthDisplayBeats,
                                 juce::dontSendNotification);
 
+    const bool loopOn = clip.view == magda::ClipView::Session || clip.loopEnabled || clip.autoTempo;
+    clipLoopPhaseLabel_.setText(loopOn ? "phase" : "offset", juce::dontSendNotification);
+
     if (clip.isMidi()) {
         clipLoopPhaseValue_->setValue(clip.midiOffset, juce::dontSendNotification);
     } else {
-        const double phaseSeconds = clip.offset - clip.loopStart;
-        const double phaseBeats = magda::TimelineUtils::secondsToBeats(phaseSeconds, loopBpm);
-        clipLoopPhaseValue_->setValue(phaseBeats, juce::dontSendNotification);
+        const double sourcePositionSeconds = loopOn ? clip.offset - clip.loopStart : clip.offset;
+        const double sourcePositionBeats =
+            magda::TimelineUtils::secondsToBeats(juce::jmax(0.0, sourcePositionSeconds), loopBpm);
+        clipLoopPhaseValue_->setValue(sourcePositionBeats, juce::dontSendNotification);
     }
 }
 
@@ -262,7 +266,7 @@ void ClipInspector::updateFromSelectedClip() {
         // Update beatsPerBar on all draggable labels
         clipStartValue_->setBeatsPerBar(beatsPerBar);
         clipEndValue_->setBeatsPerBar(beatsPerBar);
-        clipContentOffsetValue_->setBeatsPerBar(beatsPerBar);
+        clipLengthValue_->setBeatsPerBar(beatsPerBar);
         clipLoopEndValue_->setBeatsPerBar(beatsPerBar);
 
         if (isSessionClip) {
@@ -272,10 +276,10 @@ void ClipInspector::updateFromSelectedClip() {
             clipStartValue_->setVisible(false);
             clipEndLabel_.setVisible(false);
             clipEndValue_->setVisible(false);
-            clipOffsetLabel_.setVisible(false);
-            clipContentOffsetValue_->setVisible(false);
+            clipLengthLabel_.setVisible(false);
+            clipLengthValue_->setVisible(false);
         } else {
-            // Arrangement clips: start and end as positions in beats
+            // Arrangement clips: start/end as positions, len as duration in beats
             clipPositionIcon_->setVisible(true);
             clipStartLabel_.setVisible(true);
             clipStartValue_->setVisible(true);
@@ -283,22 +287,18 @@ void ClipInspector::updateFromSelectedClip() {
             clipStartValue_->setAlpha(1.0f);
             clipEndLabel_.setVisible(true);
             clipEndValue_->setVisible(true);
-            clipOffsetLabel_.setVisible(true);
-            clipContentOffsetValue_->setVisible(true);
+            clipLengthLabel_.setVisible(true);
+            clipLengthValue_->setVisible(true);
+            clipLengthLabel_.setText("len", juce::dontSendNotification);
+            clipLengthValue_->setEnabled(true);
+            clipLengthValue_->setAlpha(1.0f);
 
             clipStartValue_->setValue(clip->getStartBeats(bpm), juce::dontSendNotification);
             clipEndValue_->setValue(clip->getEndBeats(bpm), juce::dontSendNotification);
-
-            // Offset value
-            if (clip->isMidi()) {
-                clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
-            } else if (clip->isAudio()) {
-                // Use source interpretation BPM for source-file positions when available
-                double displayBpm =
-                    clip->audio().interpretation.bpm > 0.0 ? clip->audio().interpretation.bpm : bpm;
-                double offsetBeats = magda::TimelineUtils::secondsToBeats(clip->offset, displayBpm);
-                clipContentOffsetValue_->setValue(offsetBeats, juce::dontSendNotification);
-            }
+            clipLengthValue_->setValue(clip->placement.lengthBeats > 0.0
+                                           ? clip->placement.lengthBeats
+                                           : clip->length * bpm / 60.0,
+                                       juce::dontSendNotification);
         }
 
         clipLoopToggle_->setActive(clip->loopEnabled || clip->autoTempo);
@@ -306,18 +306,14 @@ void ClipInspector::updateFromSelectedClip() {
         // disabled. Click handling ignores attempts to toggle it while auto-tempo owns looping.
         clipLoopToggle_->setEnabled(true);
 
-        // Loop state determines offset interactivity and loop row visibility
+        // Loop state determines source-row labels/interactivity.
         bool loopOn = isSessionClip || clip->loopEnabled || clip->autoTempo;
+        updateLoopValueDisplays(*clip, bpm, beatsPerBar);
 
         if (loopOn) {
-            // Loop ON: offset in position row becomes disabled/greyed
-            clipContentOffsetValue_->setEnabled(false);
-            clipContentOffsetValue_->setAlpha(0.4f);
-
             // Show loop row: lstart | lend | phase
             clipLoopStartLabel_.setVisible(true);
             clipLoopStartValue_->setVisible(true);
-            updateLoopValueDisplays(*clip, bpm, beatsPerBar);
             clipLoopStartValue_->setEnabled(true);
             clipLoopStartValue_->setAlpha(1.0f);
             clipLoopStartLabel_.setAlpha(1.0f);
@@ -334,10 +330,7 @@ void ClipInspector::updateFromSelectedClip() {
             clipLoopPhaseValue_->setAlpha(1.0f);
             clipLoopPhaseLabel_.setAlpha(1.0f);
         } else {
-            // Loop OFF: offset is active, loop row shown but greyed out
-            clipContentOffsetValue_->setEnabled(true);
-            clipContentOffsetValue_->setAlpha(1.0f);
-
+            // Loop OFF: loop start/end are shown but greyed out; offset remains editable.
             clipLoopStartLabel_.setVisible(true);
             clipLoopStartValue_->setVisible(true);
             clipLoopStartValue_->setEnabled(false);
@@ -352,9 +345,9 @@ void ClipInspector::updateFromSelectedClip() {
 
             clipLoopPhaseLabel_.setVisible(true);
             clipLoopPhaseValue_->setVisible(true);
-            clipLoopPhaseValue_->setEnabled(false);
-            clipLoopPhaseValue_->setAlpha(0.4f);
-            clipLoopPhaseLabel_.setAlpha(0.4f);
+            clipLoopPhaseValue_->setEnabled(true);
+            clipLoopPhaseValue_->setAlpha(1.0f);
+            clipLoopPhaseLabel_.setAlpha(1.0f);
         }
 
         // Warp toggle (visible when audio props expanded)
@@ -527,6 +520,7 @@ void ClipInspector::updateFromSelectedClip() {
         if (!isSessionClip) {
             multiStartDragStart_ = clipStartValue_->getValue();
             multiEndDragStart_ = clipEndValue_->getValue();
+            multiLengthDragStart_ = clipLengthValue_->getValue();
         }
         refreshClipRangeDisplay();
 
@@ -561,8 +555,8 @@ void ClipInspector::showClipControls(bool show) {
         clipStartValue_->setVisible(false);
         clipEndLabel_.setVisible(false);
         clipEndValue_->setVisible(false);
-        clipOffsetLabel_.setVisible(false);
-        clipContentOffsetValue_->setVisible(false);
+        clipLengthLabel_.setVisible(false);
+        clipLengthValue_->setVisible(false);
         clipLoopToggle_->setVisible(false);
         clipLoopStartLabel_.setVisible(false);
         clipLoopStartValue_->setVisible(false);
@@ -620,8 +614,8 @@ void ClipInspector::showClipControls(bool show) {
         clipStartValue_->setVisible(!isSession);
         clipEndLabel_.setVisible(!isSession);
         clipEndValue_->setVisible(!isSession);
-        clipOffsetLabel_.setVisible(!isSession);
-        clipContentOffsetValue_->setVisible(!isSession);
+        clipLengthLabel_.setVisible(!isSession);
+        clipLengthValue_->setVisible(!isSession);
         clipLoopToggle_->setVisible(true);
     }
 
@@ -691,7 +685,7 @@ void ClipInspector::refreshClipRangeDisplay() {
             clipStretchValue_->clearTextOverride();
         clipStartValue_->clearTextOverride();
         clipEndValue_->clearTextOverride();
-        clipContentOffsetValue_->clearTextOverride();
+        clipLengthValue_->clearTextOverride();
         clipLoopStartValue_->clearTextOverride();
         clipLoopEndValue_->clearTextOverride();
         clipLoopPhaseValue_->clearTextOverride();
@@ -708,7 +702,7 @@ void ClipInspector::refreshClipRangeDisplay() {
         clipStretchValue_->setTextOverride(multiDash);
     clipStartValue_->setTextOverride(multiDash);
     clipEndValue_->setTextOverride(multiDash);
-    clipContentOffsetValue_->setTextOverride(multiDash);
+    clipLengthValue_->setTextOverride(multiDash);
     clipLoopStartValue_->setTextOverride(multiDash);
     clipLoopEndValue_->setTextOverride(multiDash);
     clipLoopPhaseValue_->setTextOverride(multiDash);

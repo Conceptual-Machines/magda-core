@@ -3,6 +3,7 @@
 
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/ClipOperations.hpp"
 
 /**
  * Tests for waveform editor absolute mode positioning logic
@@ -40,6 +41,10 @@ class WaveformCoordinateConverter {
         clipStartTime_ = startTime;
         clipLength_ = length;
     }
+    void updateSourcePositions(double sampleStart, double offset) {
+        sampleStart_ = sampleStart;
+        offset_ = offset;
+    }
 
     double getClipStartTime() const {
         return clipStartTime_;
@@ -55,11 +60,22 @@ class WaveformCoordinateConverter {
     double pixelToTime(int x) const {
         return (x - LEFT_PADDING) / horizontalZoom_;
     }
+    double getDisplayStartTime() const {
+        return relativeMode_ ? 0.0 : clipStartTime_ - sampleStart_;
+    }
+    int sampleStartPixel() const {
+        return timeToPixel(getDisplayStartTime() + sampleStart_);
+    }
+    int offsetPixel() const {
+        return timeToPixel(getDisplayStartTime() + offset_);
+    }
 
   private:
     bool relativeMode_ = false;
     double clipStartTime_ = 0.0;
     double clipLength_ = 0.0;
+    double sampleStart_ = 0.0;
+    double offset_ = 0.0;
     double horizontalZoom_ = 100.0;
 };
 
@@ -252,6 +268,81 @@ TEST_CASE("WaveformCoordinateConverter - Multiple moves preserve correct positio
         REQUIRE(converter.timeToPixel(startTime) == expectedPixelStart);
         REQUIRE(converter.timeToPixel(startTime + clipLength) == expectedPixelEnd);
     }
+}
+
+TEST_CASE("WaveformCoordinateConverter - offset moves independently from sample start",
+          "[waveform][grid][offset][regression]") {
+    WaveformCoordinateConverter converter;
+    converter.setRelativeMode(false);
+    converter.setHorizontalZoom(100.0);
+    converter.updateClipPosition(4.0, 2.0);
+    converter.updateSourcePositions(1.0, 1.0);
+
+    const int initialSampleStartX = converter.sampleStartPixel();
+    const int initialOffsetX = converter.offsetPixel();
+
+    REQUIRE(initialSampleStartX == 410);
+    REQUIRE(initialOffsetX == initialSampleStartX);
+
+    converter.updateSourcePositions(1.0, 1.5);
+
+    REQUIRE(converter.sampleStartPixel() == initialSampleStartX);
+    REQUIRE(converter.offsetPixel() == 460);
+    REQUIRE(converter.offsetPixel() != initialOffsetX);
+}
+
+TEST_CASE("ClipOperations - audio sanitizing preserves sample start",
+          "[clip][audio][offset][regression]") {
+    ClipInfo clip;
+    clip.setAudioContent();
+    clip.audio().source.filePath = "/tmp/magda_offset_regression.wav";
+    clip.loopEnabled = false;
+    clip.autoTempo = false;
+    clip.length = 4.0;
+    clip.speedRatio = 1.0;
+    clip.loopStart = 0.25;
+    clip.offset = 0.75;
+
+    ClipOperations::sanitizeAudioToSourceDuration(clip, 8.0);
+
+    REQUIRE(clip.offset == Catch::Approx(0.75));
+    REQUIRE(clip.loopStart == Catch::Approx(0.25));
+}
+
+TEST_CASE("ClipOperations - non-loop offset drag preserves sample start and clip bounds",
+          "[clip][audio][offset][regression]") {
+    ClipInfo clip;
+    clip.setAudioContent();
+    clip.audio().source.filePath = "/tmp/magda_offset_drag_regression.wav";
+    clip.loopEnabled = false;
+    clip.autoTempo = false;
+    clip.startTime = 4.0;
+    clip.length = 2.0;
+    clip.speedRatio = 1.0;
+    clip.loopStart = 0.25;
+    clip.offset = 0.25;
+
+    ClipOperations::setAudioOffsetPreservingSourceRegion(clip, 0.75, 8.0);
+
+    REQUIRE(clip.offset == Catch::Approx(0.75));
+    REQUIRE(clip.loopStart == Catch::Approx(0.25));
+    REQUIRE(clip.startTime == Catch::Approx(4.0));
+    REQUIRE(clip.length == Catch::Approx(2.0));
+}
+
+TEST_CASE("ClipOperations - phase drag clamps audio offset at zero",
+          "[clip][audio][phase][regression]") {
+    ClipInfo clip;
+    clip.setAudioContent();
+    clip.audio().source.filePath = "/tmp/magda_phase_drag_regression.wav";
+    clip.loopEnabled = true;
+    clip.autoTempo = false;
+    clip.loopStart = -0.25;
+    clip.offset = 0.0;
+
+    ClipOperations::setAudioLoopPhaseClamped(clip, 0.1);
+
+    REQUIRE(clip.offset == Catch::Approx(0.0));
 }
 
 TEST_CASE("ClipManager - Clip position change notifies listeners", "[clip][manager][notify]") {

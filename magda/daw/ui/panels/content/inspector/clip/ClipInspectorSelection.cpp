@@ -29,7 +29,7 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
     // disrupts the drag interaction.  Skip the update for value-only changes.
     bool anyDragging = (clipStartValue_ && clipStartValue_->isDragging()) ||
                        (clipEndValue_ && clipEndValue_->isDragging()) ||
-                       (clipContentOffsetValue_ && clipContentOffsetValue_->isDragging()) ||
+                       (clipLengthValue_ && clipLengthValue_->isDragging()) ||
                        (clipLoopStartValue_ && clipLoopStartValue_->isDragging()) ||
                        (clipLoopEndValue_ && clipLoopEndValue_->isDragging()) ||
                        (clipLoopPhaseValue_ && clipLoopPhaseValue_->isDragging()) ||
