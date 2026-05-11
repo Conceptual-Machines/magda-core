@@ -504,16 +504,32 @@ void TracktionEngineWrapper::onTempoChanged(double bpm) {
     // when MAGDA also updates the loop range (recomputed in seconds from the
     // same cached beats with the new BPM), the playhead can end up outside the
     // new bounds. Re-anchoring in beats keeps the playhead at the same musical
-    // position relative to the new tempo, so it stays consistent with the
-    // re-anchored loop range.
+    // position relative to the new tempo.
     auto& transport = currentEdit_->getTransport();
     const auto playheadBeats = transport.getPositionBeats();
     const auto loopBeats = transport.getLoopRangeBeats();
+    const bool wasPlaying = transport.isPlaying();
 
     setTempo(bpm);
 
-    transport.setPosition(playheadBeats);
+    // Loop range lives on TransportControl and is read by the audio thread
+    // via CachedValue, so a direct set is visible mid-playback.
     transport.setLoopRange(loopBeats);
+
+    // Playhead is different: TransportControl::setPosition(TimePosition) only
+    // writes the stored property, which is *sampled from* the audio-thread
+    // playhead on every tick. During playback, that store is overwritten on
+    // the next sample and the audio thread keeps advancing from the old
+    // TimePosition — so the playhead drifts musically anyway. We need to go
+    // through EditPlaybackContext::postPosition to actually move the
+    // audio-thread playhead.
+    const auto newPlayheadTime = currentEdit_->tempoSequence.toTime(playheadBeats);
+    if (wasPlaying) {
+        if (auto* epc = transport.getCurrentPlaybackContext())
+            epc->postPosition(newPlayheadTime);
+    } else {
+        transport.setPosition(newPlayheadTime);
+    }
 }
 
 void TracktionEngineWrapper::onTimeSignatureChanged(int numerator, int denominator) {
