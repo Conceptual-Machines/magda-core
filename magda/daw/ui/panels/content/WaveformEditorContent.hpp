@@ -8,6 +8,7 @@
 #include "core/UndoManager.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
+#include "ui/components/timeline/ZoomScrollBar.hpp"
 #include "ui/components/waveform/WaveformGridComponent.hpp"
 #include "ui/state/TimelineController.hpp"
 
@@ -104,12 +105,14 @@ class WaveformEditorContent : public PanelContent,
     static constexpr int TIME_RULER_HEIGHT = 48;
     static constexpr int TOOLBAR_HEIGHT = 30;
     static constexpr int GRID_LEFT_PADDING = 10;
+    static constexpr int H_SCROLLBAR_HEIGHT = 12;
 
     // Components (created in constructor)
     class ScrollNotifyingViewport;  // Forward declaration
     std::unique_ptr<ScrollNotifyingViewport> viewport_;
     std::unique_ptr<WaveformGridComponent> gridComponent_;
     std::unique_ptr<magda::TimeRuler> timeRuler_;
+    std::unique_ptr<magda::ZoomScrollBar> horizontalScrollBar_;
     std::unique_ptr<juce::TextButton> timeModeButton_;
 
     std::unique_ptr<DraggableValueLabel> gridNumeratorLabel_;
@@ -136,9 +139,11 @@ class WaveformEditorContent : public PanelContent,
 
     // Virtual scroll position (replaces viewport-based horizontal scrolling)
     int virtualScrollX_ = 0;
+    bool isUpdatingFromScrollBar_ = false;
 
     int getMaxVirtualScrollX() const;
     void setVirtualScrollX(int x);
+    void updateHorizontalScrollBar();
 
     // Update grid size when clip or zoom changes
     void updateGridSize();

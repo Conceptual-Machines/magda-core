@@ -454,6 +454,49 @@ WaveformEditorContent::WaveformEditorContent() {
     playheadOverlay_ = std::make_unique<PlayheadOverlay>(*this);
     addAndMakeVisible(playheadOverlay_.get());
 
+    // Horizontal scroll/zoom bar at the bottom — drives the virtual scroll
+    // and the editor's horizontal zoom (drag thumb = scroll, drag edges =
+    // zoom). Matches the arranger's ZoomScrollBar pattern.
+    horizontalScrollBar_ =
+        std::make_unique<magda::ZoomScrollBar>(magda::ZoomScrollBar::Orientation::Horizontal);
+    horizontalScrollBar_->onRangeChanged = [this](double start, double end) {
+        if (!viewport_ || !gridComponent_)
+            return;
+        const double rangeWidth = end - start;
+        if (rangeWidth <= 0.0)
+            return;
+        const juce::int64 contentW = gridComponent_->getVirtualContentWidth();
+        const int viewW = viewport_->getWidth();
+        if (contentW <= 0 || viewW <= 0)
+            return;
+
+        // Re-derive zoom from the new visible fraction. visibleFrac in pixel
+        // terms equals viewW / contentW today; setting it to rangeWidth means
+        // scaling horizontalZoom_ by (current visibleFrac / rangeWidth).
+        const double currentVisibleFrac =
+            static_cast<double>(viewW) / static_cast<double>(contentW);
+        const double newZoom =
+            juce::jlimit(MIN_ZOOM, MAX_ZOOM, horizontalZoom_ * (currentVisibleFrac / rangeWidth));
+
+        isUpdatingFromScrollBar_ = true;
+        if (newZoom != horizontalZoom_) {
+            horizontalZoom_ = newZoom;
+            gridComponent_->setHorizontalZoom(horizontalZoom_);
+            if (timeRuler_) {
+                double bpm = 120.0;
+                if (auto* controller = magda::TimelineController::getCurrent())
+                    bpm = controller->getState().tempo.bpm;
+                timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
+                timeRuler_->setTempo(bpm);
+            }
+            updateGridSize();
+        }
+        const juce::int64 newContentW = gridComponent_->getVirtualContentWidth();
+        setVirtualScrollX(static_cast<int>(start * static_cast<double>(newContentW)));
+        isUpdatingFromScrollBar_ = false;
+    };
+    addAndMakeVisible(horizontalScrollBar_.get());
+
     // Register as TimelineStateListener
     auto* controller = magda::TimelineController::getCurrent();
     if (controller) {
@@ -606,6 +649,8 @@ void WaveformEditorContent::resized() {
         viewport_->setBounds(0, 0, 0, 0);
         if (playheadOverlay_)
             playheadOverlay_->setBounds(0, 0, 0, 0);
+        if (horizontalScrollBar_)
+            horizontalScrollBar_->setBounds(0, 0, 0, 0);
         return;
     }
 
@@ -620,6 +665,14 @@ void WaveformEditorContent::resized() {
     // Time ruler at top
     auto rulerArea = bounds.removeFromTop(TIME_RULER_HEIGHT);
     timeRuler_->setBounds(rulerArea);
+
+    // Horizontal scroll/zoom bar at the bottom
+    if (horizontalScrollBar_ && bounds.getHeight() > H_SCROLLBAR_HEIGHT) {
+        auto scrollBarArea = bounds.removeFromBottom(H_SCROLLBAR_HEIGHT);
+        horizontalScrollBar_->setBounds(scrollBarArea);
+    } else if (horizontalScrollBar_) {
+        horizontalScrollBar_->setBounds(0, 0, 0, 0);
+    }
 
     // Viewport fills remaining space
     viewport_->setBounds(bounds);
@@ -637,6 +690,10 @@ void WaveformEditorContent::resized() {
 
     // Update grid size
     updateGridSize();
+
+    // Refresh the horizontal scroll bar — viewport width or content width
+    // may have changed, which shifts the visible fraction.
+    updateHorizontalScrollBar();
 }
 
 // ============================================================================
@@ -1090,6 +1147,20 @@ void WaveformEditorContent::setVirtualScrollX(int x) {
         timeRuler_->setScrollOffset(x);
     if (playheadOverlay_)
         playheadOverlay_->repaint();
+    if (!isUpdatingFromScrollBar_)
+        updateHorizontalScrollBar();
+}
+
+void WaveformEditorContent::updateHorizontalScrollBar() {
+    if (!horizontalScrollBar_ || !gridComponent_ || !viewport_)
+        return;
+    const juce::int64 contentW = gridComponent_->getVirtualContentWidth();
+    const int viewW = viewport_->getWidth();
+    if (contentW <= 0 || viewW <= 0)
+        return;
+    const double start = static_cast<double>(virtualScrollX_) / static_cast<double>(contentW);
+    const double end = static_cast<double>(virtualScrollX_ + viewW) / static_cast<double>(contentW);
+    horizontalScrollBar_->setVisibleRange(start, juce::jmin(1.0, end));
 }
 
 void WaveformEditorContent::updateGridSize() {
