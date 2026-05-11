@@ -354,11 +354,6 @@ void TimeRuler::mouseDoubleClick(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseMove(const juce::MouseEvent& event) {
-    // Determine the desired cursor
-    int loopStripTop = getHeight() - tickHeightMajor() - LOOP_STRIP_HEIGHT;
-    int loopStripBottom = getHeight() - tickHeightMajor();
-    bool inLoopStrip = event.y >= loopStripTop && event.y < loopStripBottom;
-
     juce::MouseCursor desiredCursor = CursorManager::getInstance().getZoomCursor();
 
     // Alt+hover near phase marker shows resize cursor
@@ -367,12 +362,14 @@ void TimeRuler::mouseMove(const juce::MouseEvent& event) {
         int phaseX = timeToPixel(phaseTime);
         if (std::abs(event.x - phaseX) <= 8) {
             desiredCursor = juce::MouseCursor::LeftRightResizeCursor;
-        } else if (inLoopStrip) {
-            auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
-            if (loopCursor != juce::MouseCursor::NormalCursor)
-                desiredCursor = loopCursor;
         }
-    } else if (inLoopStrip) {
+    }
+
+    // Always consult loopInteraction for the cursor — its hit-zone may extend
+    // a few pixels above the visible strip, and previously gating on a strict
+    // inLoopStrip check left the zoom cursor showing in that band even though
+    // a click there got captured as a loop-region drag.
+    if (desiredCursor == CursorManager::getInstance().getZoomCursor()) {
         auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
         if (loopCursor != juce::MouseCursor::NormalCursor)
             desiredCursor = loopCursor;
