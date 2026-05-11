@@ -731,14 +731,36 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
             clip->midiOffset = 0.0;
         }
 
-        // When disabling loop on audio clips, sync loopStart and clamp length to actual file
-        // content
+        // When disabling loop on audio clips, snap the clip's timeline length
+        // to the audible source content so the user doesn't end up with empty
+        // space after the audio. Two reasons the previous behaviour wasn't
+        // enough: clampLengthToSource only edited clip->length (the seconds
+        // cache) without touching placement.lengthBeats, so the next
+        // beats→seconds derive would resurrect the old length; and a clamp
+        // (cap-if-longer) leaves the clip oversized whenever the file is
+        // longer than the timeline span, which still reads as empty space
+        // after a short loop region. Set the length explicitly to "file
+        // content from offset on", routed through setPlacementBeats so the
+        // beat domain stays authoritative.
         if (!enabled && clip->isAudio() && clip->audio().source.filePath.isNotEmpty()) {
             clip->loopStart = clip->offset;
-            auto* thumbnail =
-                AudioThumbnailManager::getInstance().getThumbnail(clip->audio().source.filePath);
-            if (thumbnail) {
-                clip->clampLengthToSource(thumbnail->getTotalLength());
+
+            double fileDuration = 0.0;
+            if (auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(
+                    clip->audio().source.filePath)) {
+                fileDuration = thumbnail->getTotalLength();
+            }
+            if (fileDuration <= 0.0)
+                fileDuration = clip->audio().source.durationSeconds;
+
+            const double speed = clip->speedRatio > 0.0 ? clip->speedRatio : 1.0;
+            if (fileDuration > 0.0) {
+                const double availableSource = juce::jmax(0.0, fileDuration - clip->offset);
+                const double newTimelineLength =
+                    juce::jmax(ClipInfo::MIN_CLIP_LENGTH, availableSource / speed);
+                const double bpm = juce::jmax(1.0, projectBPM);
+                clip->setPlacementBeats(clip->placement.startBeat, newTimelineLength * bpm / 60.0);
+                clip->deriveTimesFromBeats(bpm);
             }
         }
 
