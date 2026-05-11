@@ -6,10 +6,26 @@
 #include "../../../../utils/TimelineUtils.hpp"
 #include "../ClipInspector.hpp"
 #include "BinaryData.h"
+#include "core/ClipDisplayInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
+namespace {
+
+double getAudioFileDurationForInspector(const magda::ClipInfo& clip) {
+    if (!clip.isAudio() || clip.audio().source.filePath.isEmpty())
+        return 0.0;
+
+    if (auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
+            clip.audio().source.filePath)) {
+        return thumbnail->getTotalLength();
+    }
+
+    return clip.audio().source.durationSeconds;
+}
+
+}  // namespace
 
 void ClipInspector::updateAudioSourceValueDisplays(const magda::ClipInfo& clip) {
     if (!clip.isAudio()) {
@@ -51,11 +67,30 @@ void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double 
     clipLoopEndValue_->setBeatsPerBar(beatsPerBar);
     clipLoopPhaseValue_->setBeatsPerBar(beatsPerBar);
 
-    double loopBpm = projectBPM;
-    if (clip.isAudio() && clip.audio().interpretation.bpm > 0.0)
-        loopBpm = clip.audio().interpretation.bpm;
-    if (loopBpm <= 0.0)
-        loopBpm = 120.0;
+    double loopBpm = projectBPM > 0.0 ? projectBPM : 120.0;
+
+    if (clip.isAudio()) {
+        const auto info =
+            magda::ClipDisplayInfo::from(clip, loopBpm, getAudioFileDurationForInspector(clip));
+        const bool loopOn =
+            clip.view == magda::ClipView::Session || clip.loopEnabled || clip.autoTempo;
+
+        clipLoopStartValue_->setValue(
+            magda::TimelineUtils::secondsToBeats(info.loopStartPositionSeconds, loopBpm),
+            juce::dontSendNotification);
+        clipLoopEndValue_->setValue(
+            magda::TimelineUtils::secondsToBeats(info.loopEndPositionSeconds, loopBpm),
+            juce::dontSendNotification);
+
+        clipLoopPhaseLabel_.setText(loopOn ? "phase" : "offset", juce::dontSendNotification);
+        const double displayPositionSeconds =
+            loopOn ? info.loopPhasePositionSeconds - info.loopStartPositionSeconds
+                   : info.offsetPositionSeconds;
+        clipLoopPhaseValue_->setValue(
+            magda::TimelineUtils::secondsToBeats(juce::jmax(0.0, displayPositionSeconds), loopBpm),
+            juce::dontSendNotification);
+        return;
+    }
 
     const double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip.loopStart, loopBpm);
     clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);

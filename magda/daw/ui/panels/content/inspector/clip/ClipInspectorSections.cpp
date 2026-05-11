@@ -13,6 +13,7 @@
 #include "audio/AudioBridge.hpp"
 #include "core/ClipBatchEdit.hpp"
 #include "core/ClipCommands.hpp"
+#include "core/ClipDisplayInfo.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/Config.hpp"
@@ -24,6 +25,30 @@
 #include "project/ProjectManager.hpp"
 
 namespace magda::daw::ui {
+namespace {
+
+double getAudioFileDurationForInspector(const magda::ClipInfo& clip) {
+    if (!clip.isAudio() || clip.audio().source.filePath.isEmpty())
+        return 0.0;
+
+    if (auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
+            clip.audio().source.filePath)) {
+        return thumbnail->getTotalLength();
+    }
+
+    return clip.audio().source.durationSeconds;
+}
+
+double displayBeatsToAudioSourceSeconds(const magda::ClipInfo& clip, double displayBeats,
+                                        double projectBpm) {
+    const double bpm = projectBpm > 0.0 ? projectBpm : 120.0;
+    const auto info =
+        magda::ClipDisplayInfo::from(clip, bpm, getAudioFileDurationForInspector(clip));
+    const double displaySeconds = magda::TimelineUtils::beatsToSeconds(displayBeats, bpm);
+    return info.timelineToSource(displaySeconds);
+}
+
+}  // namespace
 
 // ========================================================================
 // GroovePickerPopup — two-column category browser
@@ -911,15 +936,11 @@ void ClipInspector::initClipPropertiesSection() {
         if (timelineController_) {
             bpm = timelineController_->getState().tempo.bpm;
         }
-        // Preserve current phase when moving loop start
-        // Use source interpretation BPM for audio source-file positions
-        double loopBpm = (clip->isAudio() && clip->audio().interpretation.bpm > 0.0)
-                             ? clip->audio().interpretation.bpm
-                             : bpm;
         double currentPhase = clip->offset - clip->loopStart;
         double newLoopStartBeats = clipLoopStartValue_->getValue();
         double newLoopStartSeconds =
-            magda::TimelineUtils::beatsToSeconds(newLoopStartBeats, loopBpm);
+            clip->isAudio() ? displayBeatsToAudioSourceSeconds(*clip, newLoopStartBeats, bpm)
+                            : magda::TimelineUtils::beatsToSeconds(newLoopStartBeats, bpm);
         newLoopStartSeconds = std::max(0.0, newLoopStartSeconds);
         double newOffset = newLoopStartSeconds + currentPhase;
         // Atomic: change loopStart, then place offset to preserve phase. Undo
@@ -955,24 +976,23 @@ void ClipInspector::initClipPropertiesSection() {
             bpm = timelineController_->getState().tempo.bpm;
         }
 
-        // Compute new loop length from loop end - loop start
-        // Use source interpretation BPM for audio source-file positions
-        double loopBpm = (clip->isAudio() && clip->audio().interpretation.bpm > 0.0)
-                             ? clip->audio().interpretation.bpm
-                             : bpm;
+        // Compute new loop length from loop end - loop start.
         double newLoopEndBeats = clipLoopEndValue_->getValue();
-        double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, loopBpm);
-        double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
-        if (newLoopLengthBeats < 0.25)
-            newLoopLengthBeats = 0.25;
 
         double newLoopLengthSeconds;
-        if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0) {
-            newLoopLengthSeconds = (newLoopLengthBeats * 60.0) / clip->audio().interpretation.bpm;
+        if (clip->isAudio()) {
+            const double newLoopEndSeconds =
+                displayBeatsToAudioSourceSeconds(*clip, newLoopEndBeats, bpm);
+            newLoopLengthSeconds = juce::jmax(0.0, newLoopEndSeconds - clip->loopStart);
         } else {
-            newLoopLengthSeconds =
-                magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, loopBpm);
+            double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, bpm);
+            double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
+            if (newLoopLengthBeats < 0.25)
+                newLoopLengthBeats = 0.25;
+            newLoopLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
         }
+        newLoopLengthSeconds =
+            juce::jmax(magda::ClipOperations::MIN_SOURCE_LENGTH, newLoopLengthSeconds);
 
         bool shouldResizeClip = false;
         double resizeLengthSeconds = 0.0;
@@ -1030,14 +1050,11 @@ void ClipInspector::initClipPropertiesSection() {
                 std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(),
                                                               newPhaseOrOffsetBeats));
         } else {
-            // Audio source positions use source BPM when available, not project BPM.
-            double loopBpm = clip->audio().interpretation.bpm;
-            if (loopBpm <= 0.0 && timelineController_)
-                loopBpm = timelineController_->getState().tempo.bpm;
-            if (loopBpm <= 0.0)
-                loopBpm = 120.0;
-            double newSeconds =
-                magda::TimelineUtils::beatsToSeconds(newPhaseOrOffsetBeats, loopBpm);
+            double bpm = 120.0;
+            if (timelineController_) {
+                bpm = timelineController_->getState().tempo.bpm;
+            }
+            double newSeconds = displayBeatsToAudioSourceSeconds(*clip, newPhaseOrOffsetBeats, bpm);
             if (loopOn) {
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetClipLoopPhaseCommand>(primaryClipId(), newSeconds));
