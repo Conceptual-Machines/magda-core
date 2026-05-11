@@ -1128,6 +1128,20 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     const bool nearLeftEdge = isNearLeftEdge(x, *clip);
     const bool nearRightEdge = isNearRightEdge(x, *clip);
 
+    // Shift = force zoom-drag, even when over the phase marker. The phase
+    // marker only exists when loop is on, and its 20px hit zone otherwise
+    // swallows shift-drags that the user intended as zoom, making zoom feel
+    // broken specifically inside the loop region. Matches the warp-mode
+    // branch's shift+inside-waveform → zoom precedence above.
+    if (shiftHeld && isInsideWaveform(x, *clip)) {
+        dragMode_ = DragMode::Zoom;
+        zoomDragStartY_ = event.y;
+        zoomDragAnchorX_ = x;
+        if (onZoomDrag)
+            onZoomDrag(0, zoomDragAnchorX_);
+        return;
+    }
+
     if (nearPhaseMarker) {
         dragMode_ = DragMode::PhaseMarker;
     } else if (nearLeftEdge) {
