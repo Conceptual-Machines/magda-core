@@ -590,7 +590,15 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     auto loopColour = DarkTheme::getColour(DarkTheme::LOOP_MARKER);
 
     double baseTime = getDisplayStartTime();
-    double activeOffset = relativeMode_ ? 0.0 : displayInfo_.offsetPositionSeconds;
+    // offsetPositionSeconds is the timeline-time position of the clip's
+    // source offset within the drawable file extent. In non-REL mode the
+    // file is anchored at clipStart - offsetPositionSeconds so adding it
+    // back lands the clip boundary at clipStart. In REL mode the file is
+    // anchored at timeline=0, so the clip boundary needs to sit at
+    // timeline=offsetPositionSeconds — pinning it at 0 (the previous
+    // behaviour) made resize-from-left in the arrangement read out as
+    // resize-from-right in the editor because only clipLength_ moved.
+    double activeOffset = displayInfo_.offsetPositionSeconds;
 
     // Loop boundaries - only shown when loop is enabled
     if (isLooped && displayInfo_.loopLengthSeconds > 0.0) {
