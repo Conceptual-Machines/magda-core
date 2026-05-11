@@ -493,7 +493,27 @@ void TracktionEngineWrapper::onEditPositionChanged(double position) {
 }
 
 void TracktionEngineWrapper::onTempoChanged(double bpm) {
+    if (!currentEdit_) {
+        setTempo(bpm);
+        return;
+    }
+
+    // Capture the playhead's MUSICAL position before updating the tempo sequence.
+    // After the tempo change, the same TimePosition would correspond to a
+    // different BeatPosition, so the playhead would drift musically — and worse,
+    // when MAGDA also updates the loop range (recomputed in seconds from the
+    // same cached beats with the new BPM), the playhead can end up outside the
+    // new bounds. Re-anchoring in beats keeps the playhead at the same musical
+    // position relative to the new tempo, so it stays consistent with the
+    // re-anchored loop range.
+    auto& transport = currentEdit_->getTransport();
+    const auto playheadBeats = transport.getPositionBeats();
+    const auto loopBeats = transport.getLoopRangeBeats();
+
     setTempo(bpm);
+
+    transport.setPosition(playheadBeats);
+    transport.setLoopRange(loopBeats);
 }
 
 void TracktionEngineWrapper::onTimeSignatureChanged(int numerator, int denominator) {

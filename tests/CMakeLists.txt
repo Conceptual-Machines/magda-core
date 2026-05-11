@@ -144,6 +144,7 @@ target_sources(magda_juce_tests PRIVATE
     test_midi_recording_juce.cpp
     test_clip_sync_integration_juce.cpp
     test_timeline_loop_activation_juce.cpp
+    test_loop_bounds_bpm_drift_juce.cpp
     test_midi_signal_routing_juce.cpp
     test_clip_inspector_juce.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
