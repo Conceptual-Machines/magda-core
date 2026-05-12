@@ -192,11 +192,16 @@ add_library(faust::libfaust ALIAS staticlib)
 # default with `CharacterSet=NotSet`) the file picks the wide branch,
 # but the Win32 `CreateDirectory` macro resolves to `CreateDirectoryA`
 # (the char* version) — a wchar_t* / char* mismatch and a C2664 build
-# error. Define `_MBCS` for Faust's staticlib only so it takes the
-# narrow branch upstream Faust expects on Windows; other targets are
-# untouched.
-if(MSVC AND TARGET staticlib)
-    target_compile_definitions(staticlib PRIVATE _MBCS)
+# error. Define `_MBCS` for Faust's staticlib AND the `faust` executable
+# (both compile compatibility.cpp) so they take the narrow branch
+# upstream Faust expects on Windows; other targets are untouched.
+if(MSVC)
+    if(TARGET staticlib)
+        target_compile_definitions(staticlib PRIVATE _MBCS)
+    endif()
+    if(TARGET faust)
+        target_compile_definitions(faust PRIVATE _MBCS)
+    endif()
 endif()
 
 # ----------------------------------------------------------------------------
