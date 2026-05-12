@@ -207,13 +207,11 @@ void AudioClipPropertiesContent::createControls() {
 
         bool enable = !clip->autoTempo;
 
-        double bpm = 120.0;
-        if (auto* tc = magda::TimelineController::getCurrent())
-            bpm = tc->getState().tempo.bpm;
+        const double bpm = getProjectBpmForProperties();
 
         const bool sourceInterpretationBpmLooksDefaulted =
             clip->audio().interpretation.bpm <= 0.0 ||
-            (bpm > 0.0 && std::abs(clip->audio().interpretation.bpm - bpm) < 0.1);
+            std::abs(clip->audio().interpretation.bpm - bpm) < 0.1;
         if (enable && clip->isAudio() && sourceInterpretationBpmLooksDefaulted) {
             // Issue #1157: only seed from AudioThumbnailManager when the
             // file didn't carry tempo metadata. setSourceMetadata (from TE's
@@ -244,7 +242,7 @@ void AudioClipPropertiesContent::createControls() {
                         double live =
                             magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
                         bool existingLooksDefaulted =
-                            c->audio().interpretation.bpm > 0.0 && live > 0.0 &&
+                            c->audio().interpretation.bpm > 0.0 && magda::isValidBpm(live) &&
                             std::abs(c->audio().interpretation.bpm - live) < 0.1;
                         if (c->audio().interpretation.bpm > 0.0 && !existingLooksDefaulted)
                             return;
