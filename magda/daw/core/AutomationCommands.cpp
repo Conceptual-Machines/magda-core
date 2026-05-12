@@ -38,9 +38,9 @@ static const AutomationPoint* findPoint(bool isClip, AutomationLaneId laneId,
 void AddAutomationPointCommand::execute() {
     auto& mgr = AutomationManager::getInstance();
     if (isClip_)
-        addedPointId_ = mgr.addPointToClip(clipId_, time_, value_, curveType_);
+        addedPointId_ = mgr.addPointToClip(clipId_, beatPosition_, value_, curveType_);
     else
-        addedPointId_ = mgr.addPoint(laneId_, time_, value_, curveType_);
+        addedPointId_ = mgr.addPoint(laneId_, beatPosition_, value_, curveType_);
 }
 
 void AddAutomationPointCommand::undo() {
@@ -101,7 +101,7 @@ void DeleteAutomationPointCommand::undo() {
 void MoveAutomationPointCommand::captureOldPosition() {
     const auto* pt = findPoint(isClip_, laneId_, clipId_, pointId_);
     if (pt) {
-        oldTime_ = pt->beatPosition;
+        oldBeatPosition_ = pt->beatPosition;
         oldValue_ = pt->value;
     }
 }
@@ -109,17 +109,17 @@ void MoveAutomationPointCommand::captureOldPosition() {
 void MoveAutomationPointCommand::execute() {
     auto& mgr = AutomationManager::getInstance();
     if (isClip_)
-        mgr.movePointInClip(clipId_, pointId_, newTime_, newValue_);
+        mgr.movePointInClip(clipId_, pointId_, newBeatPosition_, newValue_);
     else
-        mgr.movePoint(laneId_, pointId_, newTime_, newValue_);
+        mgr.movePoint(laneId_, pointId_, newBeatPosition_, newValue_);
 }
 
 void MoveAutomationPointCommand::undo() {
     auto& mgr = AutomationManager::getInstance();
     if (isClip_)
-        mgr.movePointInClip(clipId_, pointId_, oldTime_, oldValue_);
+        mgr.movePointInClip(clipId_, pointId_, oldBeatPosition_, oldValue_);
     else
-        mgr.movePoint(laneId_, pointId_, oldTime_, oldValue_);
+        mgr.movePoint(laneId_, pointId_, oldBeatPosition_, oldValue_);
 }
 
 // ============================================================================

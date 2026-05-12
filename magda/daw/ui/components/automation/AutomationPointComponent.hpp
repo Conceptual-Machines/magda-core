@@ -16,7 +16,7 @@ class AutomationCurveEditor;
  * @brief A single draggable point on an automation curve
  *
  * 8px circle normally, 10px when selected. Shows bezier handles when selected.
- * Drag to move time/value position.
+ * Drag to move beat/value position.
  */
 class AutomationPointComponent : public juce::Component {
   public:
@@ -59,7 +59,7 @@ class AutomationPointComponent : public juce::Component {
 
     // Callbacks
     std::function<void(AutomationPointId)> onPointSelected;
-    std::function<void(AutomationPointId, double, double)> onPointMoved;  // id, newTime, newValue
+    std::function<void(AutomationPointId, double, double)> onPointMoved;  // id, beat, value
     std::function<void(AutomationPointId, double, double)> onPointDragPreview;
     std::function<void(AutomationPointId)> onPointDeleted;
     std::function<void(AutomationPointId, const BezierHandle&, const BezierHandle&)>
@@ -81,7 +81,7 @@ class AutomationPointComponent : public juce::Component {
     bool handlesVisible_ = false;
 
     juce::Point<int> dragStartPos_;
-    double dragStartTime_ = 0.0;
+    double dragStartBeatPosition_ = 0.0;
     double dragStartValue_ = 0.0;
 
     std::unique_ptr<BezierHandleComponent> inHandle_;

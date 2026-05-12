@@ -2478,7 +2478,6 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
             entry.trackId = trackId;
             entry.laneId = laneId;
             entry.component = std::make_unique<AutomationLaneComponent>(laneId);
-            entry.component->setPixelsPerSecond(currentZoom * tempoBPM / 60.0);
             entry.component->setPixelsPerBeat(currentZoom);
             entry.component->setTempoBPM(tempoBPM);
             entry.component->snapBeatToGrid = snapBeatsToGrid;
@@ -2526,7 +2525,6 @@ void TrackContentPanel::updateAutomationLanePositions() {
             for (auto& entry : automationLaneComponents_) {
                 if (entry.trackId == trackId && entry.laneId == laneId) {
                     entry.component->setBounds(0, y, getWidth(), height);
-                    entry.component->setPixelsPerSecond(currentZoom * tempoBPM / 60.0);
                     entry.component->setPixelsPerBeat(currentZoom);
                     entry.component->setTempoBPM(tempoBPM);
                     break;

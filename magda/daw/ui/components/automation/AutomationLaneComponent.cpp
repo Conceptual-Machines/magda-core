@@ -195,14 +195,6 @@ void AutomationLaneComponent::automationLaneSelectionChanged(
     syncSelectionState();
 }
 
-void AutomationLaneComponent::setPixelsPerSecond(double pps) {
-    pixelsPerSecond_ = pps;
-    if (curveEditor_) {
-        curveEditor_->setPixelsPerSecond(pps);
-    }
-    updateClipPositions();
-}
-
 void AutomationLaneComponent::setPixelsPerBeat(double ppb) {
     pixelsPerBeat_ = ppb;
     if (curveEditor_) {
@@ -247,7 +239,6 @@ void AutomationLaneComponent::rebuildContent() {
     if (lane->isAbsolute()) {
         // Absolute lane: single curve editor
         curveEditor_ = std::make_unique<AutomationCurveEditor>(laneId_);
-        curveEditor_->setPixelsPerSecond(pixelsPerSecond_);
         curveEditor_->setPixelsPerBeat(pixelsPerBeat_);
         curveEditor_->setTempoBPM(tempoBPM_);
         curveEditor_->snapBeatToGrid = [this](double x) {

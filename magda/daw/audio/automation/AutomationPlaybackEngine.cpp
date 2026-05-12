@@ -416,7 +416,7 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
             if (i > 0 && (*sourcePoints)[i - 1].curveType == AutomationCurveType::Step) {
                 double preStepBeat = point.beatPosition - kStepEpsilon;
                 if (preStepBeat > (*sourcePoints)[i - 1].beatPosition)
-                    addTEPoint(preStepBeat, autoMgr.getValueAtTime(lane.id, preStepBeat));
+                    addTEPoint(preStepBeat, autoMgr.getValueAtBeat(lane.id, preStepBeat));
             }
 
             // Bezier: tessellate the segment between the previous and current
@@ -428,7 +428,7 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
                     for (int s = 1; s < kBezierSegments; ++s) {
                         double t = static_cast<double>(s) / kBezierSegments;
                         double beat = prev.beatPosition + span * t;
-                        addTEPoint(beat, autoMgr.getValueAtTime(lane.id, beat));
+                        addTEPoint(beat, autoMgr.getValueAtBeat(lane.id, beat));
                     }
                 }
             }

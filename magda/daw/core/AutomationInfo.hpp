@@ -127,16 +127,16 @@ struct AutomationClipInfo {
     }
 
     /**
-     * @brief Get local time within clip (0 to length)
+     * @brief Get local beat position within clip (0 to length)
      */
     double getLocalBeat(double globalBeat) const {
-        double localTime = globalBeat - startBeats;
+        double localBeatPosition = globalBeat - startBeats;
         if (looping && loopLengthBeats > 0.0) {
-            localTime = std::fmod(localTime, loopLengthBeats);
-            if (localTime < 0.0)
-                localTime += loopLengthBeats;
+            localBeatPosition = std::fmod(localBeatPosition, loopLengthBeats);
+            if (localBeatPosition < 0.0)
+                localBeatPosition += loopLengthBeats;
         }
-        return localTime;
+        return localBeatPosition;
     }
 
     // Default automation clip colors
