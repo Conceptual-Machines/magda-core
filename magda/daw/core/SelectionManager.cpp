@@ -5,6 +5,7 @@
 #include "../project/ProjectManager.hpp"
 #include "ClipManager.hpp"
 #include "Config.hpp"
+#include "TempoUtils.hpp"
 #include "TrackInfo.hpp"
 #include "TrackManager.hpp"
 
@@ -429,16 +430,12 @@ void SelectionManager::selectTimeRange(double startTime, double endTime,
     selectionType_ = SelectionType::TimeRange;
     if (startTime > endTime)
         std::swap(startTime, endTime);
-    const double bpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-    timeRangeSelection_.startBeats = bpm > 0.0 ? startTime * bpm / 60.0 : startTime;
-    timeRangeSelection_.endBeats = bpm > 0.0 ? endTime * bpm / 60.0 : endTime;
-    if (bpm > 0.0) {
-        timeRangeSelection_.startTime = timeRangeSelection_.startBeats * 60.0 / bpm;
-        timeRangeSelection_.endTime = timeRangeSelection_.endBeats * 60.0 / bpm;
-    } else {
-        timeRangeSelection_.startTime = startTime;
-        timeRangeSelection_.endTime = endTime;
-    }
+    const double projectBpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    const double bpm = isValidBpm(projectBpm) ? projectBpm : DEFAULT_BPM;
+    timeRangeSelection_.startBeats = startTime * bpm / 60.0;
+    timeRangeSelection_.endBeats = endTime * bpm / 60.0;
+    timeRangeSelection_.startTime = timeRangeSelection_.startBeats * 60.0 / bpm;
+    timeRangeSelection_.endTime = timeRangeSelection_.endBeats * 60.0 / bpm;
     timeRangeSelection_.trackIds = trackIds;
 
     // Sync with managers (clear their selections)
