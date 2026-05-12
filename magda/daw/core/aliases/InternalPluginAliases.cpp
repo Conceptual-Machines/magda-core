@@ -193,6 +193,15 @@ constexpr AliasSpec kCompiledPhaserAliases[] = {
 };
 
 // ------------------------------------------------------------------
+// Compiled MAGDA Mod ("magda_mod") — slot indices match
+// MagdaModCompiledPlugin::k*Slot and the [idx:N] pins in magda_mod.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledModAliases[] = {
+    {"mode", 0, "Mode"},    {"sync", 1, "Sync"},   {"rate", 2, "Rate"},
+    {"div", 3, "Division"}, {"depth", 4, "Depth"}, {"shape", 5, "Shape"},
+};
+
+// ------------------------------------------------------------------
 // Pitch Shift ("pitchshift") — TE PitchShiftPlugin single param.
 // ------------------------------------------------------------------
 constexpr AliasSpec kPitchShiftAliases[] = {
@@ -229,6 +238,7 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"magda_compressor", kCompiledCompressorAliases, (int)std::size(kCompiledCompressorAliases)},
     {"magda_multiband", kCompiledMultibandAliases, (int)std::size(kCompiledMultibandAliases)},
     {"magda_phaser", kCompiledPhaserAliases, (int)std::size(kCompiledPhaserAliases)},
+    {"magda_mod", kCompiledModAliases, (int)std::size(kCompiledModAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
     {"utility", kUtilityAliases, (int)std::size(kUtilityAliases)},
 };

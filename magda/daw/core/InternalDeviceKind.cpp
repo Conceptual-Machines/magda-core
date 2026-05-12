@@ -17,6 +17,7 @@
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGritCompiledPlugin.hpp"
+#include "audio/plugins/compiled/MagdaModCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
@@ -118,6 +119,10 @@ const InternalDeviceMetadata kMetadata[] = {
      "Compiled Faust multiband compressor with editable band thresholds."},
     {InternalDeviceKind::CompiledPhaser, "Phaser", "", "Modulation",
      "Compiled Faust phaser with selectable stages, feedback, and sweep window."},
+    {InternalDeviceKind::CompiledMod, "Mod", "", "Modulation",
+     "Compiled Faust modulation: tremolo, vibrato, or auto-pan, sharing one LFO. "
+     "Free Hz or tempo-synced (musical division). "
+     "Sine, triangle, square, or sample-and-hold shape."},
 };
 
 }  // namespace
@@ -143,6 +148,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::compiled::MagdaFilterCompiledPlugin;
     using daw::audio::compiled::MagdaGrainDelayCompiledPlugin;
     using daw::audio::compiled::MagdaGritCompiledPlugin;
+    using daw::audio::compiled::MagdaModCompiledPlugin;
     using daw::audio::compiled::MagdaMultibandCompiledPlugin;
     using daw::audio::compiled::MagdaPhaserCompiledPlugin;
     using daw::audio::compiled::MagdaSaturatorCompiledPlugin;
@@ -160,6 +166,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
          nullptr},
         {InternalDeviceKind::CompiledMultiband, MagdaMultibandCompiledPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::CompiledPhaser, MagdaPhaserCompiledPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::CompiledMod, MagdaModCompiledPlugin::xmlTypeName, nullptr},
         // TE built-in effects — picker uses a short id, the live plugin
         // reports the real `te::*::xmlTypeName`. Match either.
         {InternalDeviceKind::TeEq, "eq", TE::EqualiserPlugin::xmlTypeName},

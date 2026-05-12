@@ -28,6 +28,7 @@
 #include "plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaGritCompiledPlugin.hpp"
+#include "plugins/compiled/MagdaModCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
@@ -824,6 +825,13 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
         plugin = edit_.getPluginCache().createNewPlugin(pluginState);
         if (plugin)
             track->pluginList.insertPlugin(plugin, -1, nullptr);
+    } else if (type.equalsIgnoreCase(daw::audio::compiled::MagdaModCompiledPlugin::xmlTypeName)) {
+        juce::ValueTree pluginState(te::IDs::PLUGIN);
+        pluginState.setProperty(te::IDs::type,
+                                daw::audio::compiled::MagdaModCompiledPlugin::xmlTypeName, nullptr);
+        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+        if (plugin)
+            track->pluginList.insertPlugin(plugin, -1, nullptr);
     } else if (type.equalsIgnoreCase("tone") || type.equalsIgnoreCase("tonegenerator")) {
         plugin = createToneGenerator(track);
     } else if (type.equalsIgnoreCase("meter") || type.equalsIgnoreCase("levelmeter")) {
@@ -1480,6 +1488,10 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
                 plugin = createInternalPlugin(
                     daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName, ps);
                 break;
+            case InternalDeviceKind::CompiledMod:
+                plugin = createInternalPlugin(
+                    daw::audio::compiled::MagdaModCompiledPlugin::xmlTypeName, ps);
+                break;
             case InternalDeviceKind::TeDelay:
                 plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, ps);
                 break;
@@ -1693,6 +1705,8 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
     } else if (dynamic_cast<daw::audio::compiled::MagdaMultibandCompiledPlugin*>(plugin.get())) {
         processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::compiled::MagdaPhaserCompiledPlugin*>(plugin.get())) {
+        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<daw::audio::compiled::MagdaModCompiledPlugin*>(plugin.get())) {
         processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::compiled::MagdaCompressorCompiledPlugin*>(plugin.get())) {
         processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);

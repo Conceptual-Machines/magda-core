@@ -19,6 +19,7 @@
 #include "plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaGritCompiledPlugin.hpp"
+#include "plugins/compiled/MagdaModCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
@@ -810,6 +811,9 @@ te::AutomatableParameter* AudioBridge::resolveControlTarget(const ControlTarget&
                     dynamic_cast<daw::audio::compiled::MagdaCompressorCompiledPlugin*>(
                         plugin.get()))
                 return compiledComp->getSlotParameter(target.paramIndex);
+            if (auto* compiledMod =
+                    dynamic_cast<daw::audio::compiled::MagdaModCompiledPlugin*>(plugin.get()))
+                return compiledMod->getSlotParameter(target.paramIndex);
             auto params = plugin->getAutomatableParameters();
             if (target.paramIndex >= 0 && target.paramIndex < static_cast<int>(params.size()))
                 return params[static_cast<size_t>(target.paramIndex)];

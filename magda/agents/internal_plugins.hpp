@@ -42,6 +42,7 @@ enum class InternalPlugin {
     MidiChordEngine,
     StepSequencer,
     Faust,
+    Mod,
 };
 
 /// Vendor of an internal plugin. TracktionEngine = stock TE plugin (gets TE
@@ -79,6 +80,7 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
         {"Test Tone", "tone", DeviceType::Effect, InternalPlugin::TestTone, V::TracktionEngine},
         // Effects (MAGDA-native)
         {"Phaser", "magda_phaser", DeviceType::Effect, InternalPlugin::Phaser, V::Magda},
+        {"Mod", "magda_mod", DeviceType::Effect, InternalPlugin::Mod, V::Magda},
         {"Faust", "faust", DeviceType::Effect, InternalPlugin::Faust, V::Magda},
         // Instruments (TE stock)
         {"4OSC Synth", "4osc", DeviceType::Instrument, InternalPlugin::FourOsc, V::TracktionEngine},

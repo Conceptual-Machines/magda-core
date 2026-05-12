@@ -11,6 +11,7 @@
 #include "CompiledFilterCurveView.hpp"
 #include "CompiledGrainDelayCurveView.hpp"
 #include "CompiledGritCurveView.hpp"
+#include "CompiledModCurveView.hpp"
 #include "CompiledMultibandCurveView.hpp"
 #include "CompiledPhaserCurveView.hpp"
 #include "CompiledSaturatorCurveView.hpp"
@@ -237,6 +238,7 @@ class DeviceSlotComponent : public NodeComponent,
     bool isCompiledFaustCompressor_ = false;
     bool isCompiledFaustMultiband_ = false;
     bool isCompiledFaustPhaser_ = false;
+    bool isCompiledFaustMod_ = false;
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 
@@ -292,6 +294,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<CompiledCompressorCurveView> compiledCompressorCurveView_;
     std::unique_ptr<CompiledMultibandCurveView> compiledMultibandCurveView_;
     std::unique_ptr<CompiledPhaserCurveView> compiledPhaserCurveView_;
+    std::unique_ptr<CompiledModCurveView> compiledModCurveView_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;

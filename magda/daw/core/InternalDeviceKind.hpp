@@ -61,6 +61,7 @@ enum class InternalDeviceKind {
     CompiledCompressor,  // magda_compressor
     CompiledMultiband,   // magda_multiband
     CompiledPhaser,      // magda_phaser
+    CompiledMod,         // magda_mod
 };
 
 struct InternalDeviceMetadata {
