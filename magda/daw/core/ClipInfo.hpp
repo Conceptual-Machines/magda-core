@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "ClipTypes.hpp"
+#include "TempoUtils.hpp"
 #include "TrackTypes.hpp"
 #include "TypeIds.hpp"
 
@@ -411,12 +412,22 @@ struct ClipInfo {
         return timelineTime * speedRatio;  // Timeline × speed = source distance
     }
 
-    /// Effective source length: loopLength if set, otherwise derived from clip length
+    /// Effective source length: loopLength if set, otherwise derived from timeline placement.
+    double getSourceLength(double projectBPM) const {
+        return loopLength > 0.0 ? loopLength : timelineToSource(getTimelineLength(projectBPM));
+    }
+
+    /// Compatibility fallback for callers that still do not have project BPM nearby.
     double getSourceLength() const {
         return loopLength > 0.0 ? loopLength : timelineToSource(length);
     }
 
     /// Source length expressed in timeline seconds
+    double getSourceLengthOnTimeline(double projectBPM) const {
+        return sourceToTimeline(getSourceLength(projectBPM));
+    }
+
+    /// Compatibility fallback for callers that still do not have project BPM nearby.
     double getSourceLengthOnTimeline() const {
         return sourceToTimeline(getSourceLength());
     }
@@ -450,6 +461,11 @@ struct ClipInfo {
     }
 
     /// TE loop end in timeline seconds (source / speedRatio)
+    double getTeLoopEnd(double projectBPM) const {
+        return sourceToTimeline(loopStart + getSourceLength(projectBPM));
+    }
+
+    /// Compatibility fallback for callers that still do not have project BPM nearby.
     double getTeLoopEnd() const {
         return sourceToTimeline(loopStart + getSourceLength());
     }
@@ -527,7 +543,7 @@ struct ClipInfo {
 
     /// Timeline-domain seconds for the clip's length, derived from placement.
     double getTimelineLength(double projectBPM) const {
-        if (placement.lengthBeats > 0.0 && projectBPM > 0.0) {
+        if (placement.lengthBeats > 0.0 && isValidBpm(projectBPM)) {
             return placement.lengthBeats * 60.0 / projectBPM;
         }
         return length;
@@ -535,7 +551,7 @@ struct ClipInfo {
 
     /// Timeline-domain seconds for the clip's start position, derived from placement.
     double getTimelineStart(double projectBPM) const {
-        if (projectBPM > 0.0) {
+        if (isValidBpm(projectBPM)) {
             return placement.startBeat * 60.0 / projectBPM;
         }
         return startTime;

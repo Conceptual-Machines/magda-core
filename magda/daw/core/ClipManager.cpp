@@ -25,7 +25,7 @@ bool sourceInterpretationBpmLooksDefaulted(const ClipInfo& clip, double projectB
     if (projectBPM <= 0.0 || std::abs(clip.audio().interpretation.bpm - projectBPM) >= 0.1)
         return false;
 
-    const double sourceDuration = clip.getSourceLength();
+    const double sourceDuration = clip.getSourceLength(projectBPM);
     if (sourceDuration <= 0.0 || clip.audio().interpretation.totalBeats <= 0.0)
         return true;
 
@@ -52,7 +52,7 @@ bool seedSourceMetadataFromCachedDetection(ClipInfo& clip, double projectBPM) {
         }
     }
     if (fileDuration <= 0.0)
-        fileDuration = clip.getSourceLength();
+        fileDuration = clip.getSourceLength(projectBPM);
     if (fileDuration > 0.0) {
         if (clip.audio().source.durationSeconds <= 0.0)
             clip.audio().source.durationSeconds = fileDuration;
@@ -161,7 +161,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
             // arrangement path and matches the contract createAudioClip used
             // to satisfy by writing source.durationSeconds = length directly.
             if (fileDuration <= 0.0)
-                fileDuration = c->getSourceLength();
+                fileDuration = c->getSourceLength(creationProjectBPM);
 
             AudioClipBeatsUpdate u;
             u.interpretationBpm = detectedBPM;
