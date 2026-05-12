@@ -4,6 +4,8 @@
 #include "magda/daw/audio/AudioThumbnailManager.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/ui/state/TimelineController.hpp"
+#include "magda/daw/ui/state/TimelineEvents.hpp"
 
 // Issue #1157: session/autoTempo audio clips have a single canonical update
 // path (ClipManager::applyAudioClipBeats) that separates audio source facts,
@@ -609,4 +611,36 @@ TEST_CASE("Beats-only edits never drift through float round-trips", "[clip][bpm]
         REQUIRE(c->lengthBeats == originalBeats);  // exact equality
         REQUIRE(c->getTimelineLength(bpm) == Approx(originalBeats * 60.0 / bpm));
     }
+}
+
+TEST_CASE("Tempo change migrates legacy timeline cache into beat placement",
+          "[clip][bpm][legacy]") {
+    ClipManager::getInstance().shutdown();
+
+    magda::TimelineController controller;
+    controller.dispatch(magda::SetTempoEvent{120.0});
+
+    ClipInfo legacy;
+    legacy.id = 42;
+    legacy.trackId = 1;
+    legacy.setMidiContent();
+    legacy.view = ClipView::Arrangement;
+    legacy.startTime = 5.0;
+    legacy.length = 3.0;
+    legacy.startBeats = 0.0;
+    legacy.lengthBeats = 4.0;
+    legacy.setPlacementBeats(0.0, 4.0);
+    ClipManager::getInstance().restoreClip(legacy);
+
+    controller.dispatch(magda::SetTempoEvent{60.0});
+
+    const auto* migrated = ClipManager::getInstance().getClip(legacy.id);
+    REQUIRE(migrated != nullptr);
+    REQUIRE(migrated->placement.startBeat == Approx(10.0));
+    REQUIRE(migrated->placement.lengthBeats == Approx(6.0));
+    REQUIRE(migrated->startTime == Approx(10.0));
+    REQUIRE(migrated->length == Approx(6.0));
+
+    controller.dispatch(magda::SetTempoEvent{120.0});
+    ClipManager::getInstance().shutdown();
 }

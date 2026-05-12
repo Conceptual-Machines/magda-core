@@ -793,32 +793,35 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
             if (!mutableClip)
                 continue;
 
-            // Migration: populate startBeats / lengthBeats if absent (legacy
-            // projects saved before beats-authoritative storage existed).
-            if (mutableClip->isBeatsAuthoritative()) {
-                if (mutableClip->startBeats <= 0.0 && mutableClip->startTime > 0.0) {
-                    mutableClip->startBeats =
-                        magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
-                }
-                if (mutableClip->lengthBeats <= 0.0 && mutableClip->length > 0.0) {
-                    mutableClip->lengthBeats =
-                        magda::TimelineUtils::secondsToBeats(clip.length, oldBpm);
-                }
-            } else if (clip.view == ClipView::Arrangement) {
-                // Time-authoritative arrangement clips: keep startTime fixed
-                // in beats so the clip stays at the same musical position.
-                if (mutableClip->startBeats <= 0.0 && mutableClip->startTime > 0.0) {
-                    mutableClip->startBeats =
-                        magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
-                }
-                mutableClip->startTime =
-                    magda::TimelineUtils::beatsToSeconds(mutableClip->startBeats, newBpm);
-                updatedClipIds.push_back(clip.id);
-                continue;
-            } else {
-                // Session time-authoritative clips: nothing to update.
+            // Legacy migration: old projects may have meaningful startTime/length
+            // caches while placement is still at its default value. Convert that
+            // cache into beat placement before refreshing derived seconds.
+            if (!mutableClip->isBeatsAuthoritative()) {
                 continue;
             }
+
+            constexpr double eps = 0.000001;
+            double startBeats = mutableClip->placement.startBeat;
+            double lengthBeats = mutableClip->placement.lengthBeats;
+
+            if (startBeats <= eps && mutableClip->startBeats > eps)
+                startBeats = mutableClip->startBeats;
+            if (startBeats <= eps && mutableClip->startTime > eps)
+                startBeats = magda::TimelineUtils::secondsToBeats(mutableClip->startTime, oldBpm);
+
+            if (lengthBeats <= eps && mutableClip->lengthBeats > eps)
+                lengthBeats = mutableClip->lengthBeats;
+
+            const double placementLengthSeconds =
+                magda::TimelineUtils::beatsToSeconds(lengthBeats, oldBpm);
+            const bool hasLegacyLengthCache =
+                mutableClip->length > eps &&
+                (lengthBeats <= eps ||
+                 std::abs(mutableClip->length - placementLengthSeconds) > eps);
+            if (hasLegacyLengthCache)
+                lengthBeats = magda::TimelineUtils::secondsToBeats(mutableClip->length, oldBpm);
+
+            mutableClip->setPlacementBeats(startBeats, lengthBeats);
 
             // Beat-authoritative path: refresh the seconds cache from beats.
             clipManager.refreshDerivedSeconds(clip.id, newBpm);
