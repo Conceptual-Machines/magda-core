@@ -34,12 +34,12 @@ enum class AutomationVisualState {
  * When linked=true, moving one handle mirrors the other.
  */
 struct BezierHandle {
-    double time = 0.0;   // Time offset from point (beats)
-    double value = 0.0;  // Value offset from point (normalized)
-    bool linked = true;  // Mirror handles when one is moved
+    double beatOffset = 0.0;  // Beat offset from point
+    double value = 0.0;       // Value offset from point (normalized)
+    bool linked = true;       // Mirror handles when one is moved
 
     bool isZero() const {
-        return time == 0.0 && value == 0.0;
+        return beatOffset == 0.0 && value == 0.0;
     }
 };
 
@@ -48,8 +48,8 @@ struct BezierHandle {
  */
 struct AutomationPoint {
     AutomationPointId id = INVALID_AUTOMATION_POINT_ID;
-    double time = 0.0;   // Position in beats
-    double value = 0.5;  // Normalized value 0-1
+    double beatPosition = 0.0;  // Position in beats
+    double value = 0.5;         // Normalized value 0-1
 
     AutomationCurveType curveType = AutomationCurveType::Linear;
     BezierHandle inHandle;   // Handle before the point
@@ -60,7 +60,7 @@ struct AutomationPoint {
     double tension = 0.0;
 
     bool operator<(const AutomationPoint& other) const {
-        return time < other.time;
+        return beatPosition < other.beatPosition;
     }
 
     bool operator==(const AutomationPoint& other) const {
@@ -105,38 +105,38 @@ struct AutomationClipInfo {
     juce::String name;
     juce::Colour colour;
 
-    double startTime = 0.0;  // Position on timeline (beats)
-    double length = 4.0;     // Duration (beats)
+    double startBeats = 0.0;   // Position on timeline in beats
+    double lengthBeats = 4.0;  // Duration in beats
 
     bool looping = false;
-    double loopLength = 4.0;  // Loop length in beats
+    double loopLengthBeats = 4.0;  // Loop length in beats
 
     std::vector<AutomationPoint> points;
 
     // Helpers
-    double getEndTime() const {
-        return startTime + length;
+    double getEndBeats() const {
+        return startBeats + lengthBeats;
     }
 
-    bool containsTime(double time) const {
-        return time >= startTime && time < getEndTime();
+    bool containsBeat(double beat) const {
+        return beat >= startBeats && beat < getEndBeats();
     }
 
-    bool overlaps(double start, double end) const {
-        return startTime < end && getEndTime() > start;
+    bool overlapsBeats(double start, double end) const {
+        return startBeats < end && getEndBeats() > start;
     }
 
     /**
-     * @brief Get local time within clip (0 to length)
+     * @brief Get local beat position within clip (0 to length)
      */
-    double getLocalTime(double globalTime) const {
-        double localTime = globalTime - startTime;
-        if (looping && loopLength > 0.0) {
-            localTime = std::fmod(localTime, loopLength);
-            if (localTime < 0.0)
-                localTime += loopLength;
+    double getLocalBeat(double globalBeat) const {
+        double localBeatPosition = globalBeat - startBeats;
+        if (looping && loopLengthBeats > 0.0) {
+            localBeatPosition = std::fmod(localBeatPosition, loopLengthBeats);
+            if (localBeatPosition < 0.0)
+                localBeatPosition += loopLengthBeats;
         }
-        return localTime;
+        return localBeatPosition;
     }
 
     // Default automation clip colors
@@ -179,9 +179,9 @@ struct AutomationLaneInfo {
     // leaves the parameter alone for the duration of the gesture instead of
     // fighting it every block.
     bool touchSuppressed = false;
-    bool snapTime = true;    // Snap drawn points to time grid
-    bool snapValue = false;  // Snap drawn values to parameter's natural ticks
-    int height = 60;         // Lane height in pixels
+    bool snapEditsToBeatGrid = true;  // Snap edit gestures to the beat grid
+    bool snapValue = false;           // Snap drawn values to parameter's natural ticks
+    int height = 60;                  // Lane height in pixels
 
     // For Absolute type: points directly on lane
     std::vector<AutomationPoint> absolutePoints;

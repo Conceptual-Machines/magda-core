@@ -5,9 +5,7 @@
 
 namespace magda {
 
-AutomationClipComponent::AutomationClipComponent(AutomationClipId clipId,
-                                                 AutomationLaneComponent* parent)
-    : clipId_(clipId), parentLane_(parent) {
+AutomationClipComponent::AutomationClipComponent(AutomationClipId clipId) : clipId_(clipId) {
     setName("AutomationClipComponent");
     setRepaintsOnMouseActivity(true);
 
@@ -67,10 +65,10 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
     // Loop indicator
     if (clip->looping) {
         g.setColour(juce::Colour(0xAAFFFFFF));
-        int loopX = static_cast<int>(clip->loopLength * pixelsPerSecond_);
+        int loopX = static_cast<int>(clip->loopLengthBeats * pixelsPerBeat_);
         while (loopX < getWidth()) {
             g.drawVerticalLine(loopX, 0.0f, static_cast<float>(getHeight()));
-            loopX += static_cast<int>(clip->loopLength * pixelsPerSecond_);
+            loopX += static_cast<int>(clip->loopLengthBeats * pixelsPerBeat_);
         }
     }
 }
@@ -85,7 +83,8 @@ void AutomationClipComponent::paintMiniCurve(juce::Graphics& g, juce::Rectangle<
 
     for (const auto& point : clip->points) {
         // Map point to bounds
-        float x = bounds.getX() + static_cast<float>(point.time / clip->length) * bounds.getWidth();
+        float x = bounds.getX() +
+                  static_cast<float>(point.beatPosition / clip->lengthBeats) * bounds.getWidth();
         float y = bounds.getBottom() - static_cast<float>(point.value) * bounds.getHeight();
 
         if (!pathStarted) {
@@ -131,10 +130,10 @@ void AutomationClipComponent::mouseDown(const juce::MouseEvent& e) {
 
         isDragging_ = true;
         dragStartPos_ = e.getEventRelativeTo(getParentComponent()).getPosition();
-        dragStartTime_ = clip->startTime;
-        dragStartLength_ = clip->length;
-        previewStartTime_ = clip->startTime;
-        previewLength_ = clip->length;
+        dragStartBeat_ = clip->startBeats;
+        dragStartLengthBeats_ = clip->lengthBeats;
+        previewStartBeat_ = clip->startBeats;
+        previewLengthBeats_ = clip->lengthBeats;
     }
 }
 
@@ -144,50 +143,52 @@ void AutomationClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
     auto parentPos = e.getEventRelativeTo(getParentComponent()).getPosition();
     int deltaX = parentPos.x - dragStartPos_.x;
-    double deltaTime = deltaX / pixelsPerSecond_;
+    double deltaBeats = deltaX / pixelsPerBeat_;
 
     switch (dragMode_) {
         case DragMode::Move: {
-            double newStartTime = juce::jmax(0.0, dragStartTime_ + deltaTime);
-            if (snapTimeToGrid) {
-                newStartTime = snapTimeToGrid(newStartTime);
+            double newStartBeat = juce::jmax(0.0, dragStartBeat_ + deltaBeats);
+            if (snapBeatToGrid) {
+                newStartBeat = snapBeatToGrid(newStartBeat);
             }
-            previewStartTime_ = newStartTime;
+            previewStartBeat_ = newStartBeat;
 
             // Update position visually
-            int newX = static_cast<int>(previewStartTime_ * pixelsPerSecond_);
+            int newX = AutomationLaneComponent::SCALE_LABEL_WIDTH +
+                       static_cast<int>(previewStartBeat_ * pixelsPerBeat_);
             setBounds(newX, getY(), getWidth(), getHeight());
             break;
         }
 
         case DragMode::ResizeLeft: {
-            double newStartTime = juce::jmax(0.0, dragStartTime_ + deltaTime);
-            if (snapTimeToGrid) {
-                newStartTime = snapTimeToGrid(newStartTime);
+            double newStartBeat = juce::jmax(0.0, dragStartBeat_ + deltaBeats);
+            if (snapBeatToGrid) {
+                newStartBeat = snapBeatToGrid(newStartBeat);
             }
-            double endTime = dragStartTime_ + dragStartLength_;
-            double newLength = endTime - newStartTime;
+            double endBeat = dragStartBeat_ + dragStartLengthBeats_;
+            double newLength = endBeat - newStartBeat;
 
             if (newLength > 0.1) {
-                previewStartTime_ = newStartTime;
-                previewLength_ = newLength;
+                previewStartBeat_ = newStartBeat;
+                previewLengthBeats_ = newLength;
 
-                int newX = static_cast<int>(previewStartTime_ * pixelsPerSecond_);
-                int newWidth = static_cast<int>(previewLength_ * pixelsPerSecond_);
+                int newX = AutomationLaneComponent::SCALE_LABEL_WIDTH +
+                           static_cast<int>(previewStartBeat_ * pixelsPerBeat_);
+                int newWidth = static_cast<int>(previewLengthBeats_ * pixelsPerBeat_);
                 setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
             }
             break;
         }
 
         case DragMode::ResizeRight: {
-            double newLength = juce::jmax(0.1, dragStartLength_ + deltaTime);
-            if (snapTimeToGrid) {
-                double endTime = snapTimeToGrid(dragStartTime_ + newLength);
-                newLength = endTime - dragStartTime_;
+            double newLength = juce::jmax(0.1, dragStartLengthBeats_ + deltaBeats);
+            if (snapBeatToGrid) {
+                double endBeat = snapBeatToGrid(dragStartBeat_ + newLength);
+                newLength = endBeat - dragStartBeat_;
             }
-            previewLength_ = newLength;
+            previewLengthBeats_ = newLength;
 
-            int newWidth = static_cast<int>(previewLength_ * pixelsPerSecond_);
+            int newWidth = static_cast<int>(previewLengthBeats_ * pixelsPerBeat_);
             setBounds(getX(), getY(), juce::jmax(10, newWidth), getHeight());
             break;
         }
@@ -208,16 +209,16 @@ void AutomationClipComponent::mouseUp(const juce::MouseEvent& e) {
 
         switch (dragMode_) {
             case DragMode::Move:
-                manager.moveClip(clipId_, previewStartTime_);
+                manager.moveClip(clipId_, previewStartBeat_);
                 break;
 
             case DragMode::ResizeLeft:
-                manager.moveClip(clipId_, previewStartTime_);
-                manager.resizeClip(clipId_, previewLength_, false);
+                manager.moveClip(clipId_, previewStartBeat_);
+                manager.resizeClip(clipId_, previewLengthBeats_, false);
                 break;
 
             case DragMode::ResizeRight:
-                manager.resizeClip(clipId_, previewLength_, false);
+                manager.resizeClip(clipId_, previewLengthBeats_, false);
                 break;
 
             default:

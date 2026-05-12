@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "../../core/ClipManager.hpp"
+#include "../../core/TempoUtils.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "../utils/TimelineUtils.hpp"
@@ -449,15 +450,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSel
     double start = juce::jlimit(0.0, state.timelineLength, e.startTime);
     double end = juce::jlimit(0.0, state.timelineLength, e.endTime);
 
-    // Ensure start < end
-    if (start > end) {
-        std::swap(start, end);
-    }
-
-    state.selection.startTime = start;
-    state.selection.endTime = end;
-    state.selection.startBeats = magda::TimelineUtils::secondsToBeats(start, state.tempo.bpm);
-    state.selection.endBeats = magda::TimelineUtils::secondsToBeats(end, state.tempo.bpm);
+    state.selection.setFromSeconds(start, end, state.tempo.bpm);
     state.selection.trackIndices = e.trackIndices;
     state.selection.visuallyHidden = false;  // New selection is always visible
 
@@ -480,14 +473,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
         return ChangeFlags::None;
     }
 
-    state.loop.startTime = state.selection.startTime;
-    state.loop.endTime = state.selection.endTime;
+    state.loop.setFromBeats(state.selection.startBeats, state.selection.endBeats, state.tempo.bpm);
     state.loop.enabled = true;
-
-    // Compute beat positions
-    double bpm = state.tempo.bpm;
-    state.loop.startBeats = magda::TimelineUtils::secondsToBeats(state.loop.startTime, bpm);
-    state.loop.endBeats = magda::TimelineUtils::secondsToBeats(state.loop.endTime, bpm);
 
     ProjectManager::getInstance().setLoopSettings(state.loop.enabled, state.loop.startBeats,
                                                   state.loop.endBeats);
@@ -514,13 +501,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopReg
         end = start + 0.01;
     }
 
-    state.loop.startTime = start;
-    state.loop.endTime = end;
-
-    // Store beat positions (authoritative for tempo changes)
-    double bpm = state.tempo.bpm;
-    state.loop.startBeats = magda::TimelineUtils::secondsToBeats(start, bpm);
-    state.loop.endBeats = magda::TimelineUtils::secondsToBeats(end, bpm);
+    state.loop.setFromSeconds(start, end, state.tempo.bpm);
 
     // Enable loop if it wasn't valid before
     if (!state.loop.enabled && state.loop.isValid()) {
@@ -585,11 +566,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEna
         start = juce::jmax(0.0, end - minLoopDuration);
     }
 
-    state.loop.startTime = start;
-    state.loop.endTime = end;
+    state.loop.setFromSeconds(start, end, state.tempo.bpm);
     state.loop.enabled = true;
-    state.loop.startBeats = magda::TimelineUtils::secondsToBeats(start, state.tempo.bpm);
-    state.loop.endBeats = magda::TimelineUtils::secondsToBeats(end, state.tempo.bpm);
 
     ProjectManager::getInstance().setLoopSettings(true, state.loop.startBeats, state.loop.endBeats);
 
@@ -605,19 +583,13 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const MoveLoopRe
         return ChangeFlags::None;
     }
 
-    double duration = state.loop.getDuration();
-    double newStart = state.loop.startTime + e.deltaSeconds;
+    double durationBeats = state.loop.getDurationBeats();
+    double newStartBeats = state.loop.startBeats + state.secondsToBeats(e.deltaSeconds);
+    double timelineLengthBeats = state.secondsToBeats(state.timelineLength);
 
     // Clamp to valid range
-    newStart = juce::jlimit(0.0, state.timelineLength - duration, newStart);
-
-    state.loop.startTime = newStart;
-    state.loop.endTime = newStart + duration;
-
-    // Update beat positions and sync to ProjectManager
-    double bpm = state.tempo.bpm;
-    state.loop.startBeats = magda::TimelineUtils::secondsToBeats(newStart, bpm);
-    state.loop.endBeats = magda::TimelineUtils::secondsToBeats(newStart + duration, bpm);
+    newStartBeats = juce::jlimit(0.0, timelineLengthBeats - durationBeats, newStartBeats);
+    state.loop.setFromBeats(newStartBeats, newStartBeats + durationBeats, state.tempo.bpm);
 
     ProjectManager::getInstance().setLoopSettings(state.loop.enabled, state.loop.startBeats,
                                                   state.loop.endBeats);
@@ -636,13 +608,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchRe
         end = start + 0.01;
     }
 
-    state.punch.startTime = start;
-    state.punch.endTime = end;
-
-    // Store beat positions (authoritative for tempo changes)
-    double bpm = state.tempo.bpm;
-    state.punch.startBeats = magda::TimelineUtils::secondsToBeats(start, bpm);
-    state.punch.endBeats = magda::TimelineUtils::secondsToBeats(end, bpm);
+    state.punch.setFromSeconds(start, end, state.tempo.bpm);
 
     // Enable both punch in/out if region wasn't valid before
     if (!state.punch.isEnabled() && state.punch.isValid()) {
@@ -722,7 +688,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchOu
 // ===== Tempo Event Handlers =====
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEvent& e) {
-    double newBpm = juce::jlimit(20.0, 999.0, e.bpm);
+    double newBpm = clampBpm(e.bpm);
     if (newBpm == state.tempo.bpm) {
         return ChangeFlags::None;
     }
@@ -764,47 +730,19 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
 
     // --- Time selection ---
     if (state.selection.isActive()) {
-        // Migration: calculate beat positions if missing
-        if (state.selection.startBeats < 0 && state.selection.endBeats < 0) {
-            state.selection.startBeats =
-                magda::TimelineUtils::secondsToBeats(state.selection.startTime, oldBpm);
-            state.selection.endBeats =
-                magda::TimelineUtils::secondsToBeats(state.selection.endTime, oldBpm);
-        }
-        if (state.selection.startBeats >= 0 && state.selection.endBeats >= 0) {
-            state.selection.startTime =
-                magda::TimelineUtils::beatsToSeconds(state.selection.startBeats, newBpm);
-            state.selection.endTime =
-                magda::TimelineUtils::beatsToSeconds(state.selection.endBeats, newBpm);
-            extraFlags |= static_cast<uint32_t>(ChangeFlags::Selection);
-        }
+        state.selection.setFromBeats(state.selection.startBeats, state.selection.endBeats, newBpm);
+        extraFlags |= static_cast<uint32_t>(ChangeFlags::Selection);
     }
 
     // --- Punch region ---
-    if (state.punch.isValid() && state.punch.startBeats < 0 && state.punch.endBeats < 0) {
-        state.punch.startBeats =
-            magda::TimelineUtils::secondsToBeats(state.punch.startTime, oldBpm);
-        state.punch.endBeats = magda::TimelineUtils::secondsToBeats(state.punch.endTime, oldBpm);
-    }
-
-    if (state.punch.isValid() && state.punch.startBeats >= 0 && state.punch.endBeats >= 0) {
-        state.punch.startTime =
-            magda::TimelineUtils::beatsToSeconds(state.punch.startBeats, newBpm);
-        state.punch.endTime = magda::TimelineUtils::beatsToSeconds(state.punch.endBeats, newBpm);
+    if (state.punch.isValid()) {
+        state.punch.setFromBeats(state.punch.startBeats, state.punch.endBeats, newBpm);
         extraFlags |= static_cast<uint32_t>(ChangeFlags::Punch);
     }
 
     // --- Loop region ---
-    // Migration: Calculate beat positions if missing (e.g., loop created without going through
-    // SetLoopRegionEvent)
-    if (state.loop.isValid() && state.loop.startBeats < 0 && state.loop.endBeats < 0) {
-        state.loop.startBeats = magda::TimelineUtils::secondsToBeats(state.loop.startTime, oldBpm);
-        state.loop.endBeats = magda::TimelineUtils::secondsToBeats(state.loop.endTime, oldBpm);
-    }
-
-    if (state.loop.isValid() && state.loop.startBeats >= 0 && state.loop.endBeats >= 0) {
-        state.loop.startTime = magda::TimelineUtils::beatsToSeconds(state.loop.startBeats, newBpm);
-        state.loop.endTime = magda::TimelineUtils::beatsToSeconds(state.loop.endBeats, newBpm);
+    if (state.loop.isValid()) {
+        state.loop.setFromBeats(state.loop.startBeats, state.loop.endBeats, newBpm);
         extraFlags |= static_cast<uint32_t>(ChangeFlags::Loop);
     }
 
@@ -855,32 +793,31 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
             if (!mutableClip)
                 continue;
 
-            // Migration: populate startBeats / lengthBeats if absent (legacy
-            // projects saved before beats-authoritative storage existed).
-            if (mutableClip->isBeatsAuthoritative()) {
-                if (mutableClip->startBeats <= 0.0 && mutableClip->startTime > 0.0) {
-                    mutableClip->startBeats =
-                        magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
-                }
-                if (mutableClip->lengthBeats <= 0.0 && mutableClip->length > 0.0) {
-                    mutableClip->lengthBeats =
-                        magda::TimelineUtils::secondsToBeats(clip.length, oldBpm);
-                }
-            } else if (clip.view == ClipView::Arrangement) {
-                // Time-authoritative arrangement clips: keep startTime fixed
-                // in beats so the clip stays at the same musical position.
-                if (mutableClip->startBeats <= 0.0 && mutableClip->startTime > 0.0) {
-                    mutableClip->startBeats =
-                        magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
-                }
-                mutableClip->startTime =
-                    magda::TimelineUtils::beatsToSeconds(mutableClip->startBeats, newBpm);
-                updatedClipIds.push_back(clip.id);
-                continue;
-            } else {
-                // Session time-authoritative clips: nothing to update.
-                continue;
-            }
+            // Legacy migration: old projects may have meaningful startTime/length
+            // caches while placement is still at its default value. Convert that
+            // cache into beat placement before refreshing derived seconds.
+            constexpr double eps = 0.000001;
+            double startBeats = mutableClip->placement.startBeat;
+            double lengthBeats = mutableClip->placement.lengthBeats;
+
+            if (startBeats <= eps && mutableClip->startBeats > eps)
+                startBeats = mutableClip->startBeats;
+            if (startBeats <= eps && mutableClip->startTime > eps)
+                startBeats = magda::TimelineUtils::secondsToBeats(mutableClip->startTime, oldBpm);
+
+            if (lengthBeats <= eps && mutableClip->lengthBeats > eps)
+                lengthBeats = mutableClip->lengthBeats;
+
+            const double placementLengthSeconds =
+                magda::TimelineUtils::beatsToSeconds(lengthBeats, oldBpm);
+            const bool hasLegacyLengthCache =
+                mutableClip->length > eps &&
+                (lengthBeats <= eps ||
+                 std::abs(mutableClip->length - placementLengthSeconds) > eps);
+            if (hasLegacyLengthCache)
+                lengthBeats = magda::TimelineUtils::secondsToBeats(mutableClip->length, oldBpm);
+
+            mutableClip->setPlacementBeats(startBeats, lengthBeats);
 
             // Beat-authoritative path: refresh the seconds cache from beats.
             clipManager.refreshDerivedSeconds(clip.id, newBpm);
@@ -898,8 +835,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSignatureEvent& e) {
-    int num = juce::jlimit(1, 16, e.numerator);
-    int den = juce::jlimit(1, 16, e.denominator);
+    int num = clampTimeSignatureValue(e.numerator);
+    int den = clampTimeSignatureValue(e.denominator);
 
     if (num == state.tempo.timeSignatureNumerator && den == state.tempo.timeSignatureDenominator) {
         return ChangeFlags::None;
@@ -1104,16 +1041,22 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
     }
 
     if (state.loop.isValid()) {
-        state.loop.endTime = juce::jmin(state.loop.endTime, state.timelineLength);
-        if (state.loop.startTime >= state.loop.endTime) {
+        const double timelineLengthBeats = state.secondsToBeats(state.timelineLength);
+        const double endBeats = juce::jmin(state.loop.endBeats, timelineLengthBeats);
+        if (state.loop.startBeats >= endBeats) {
             state.loop.clear();
+        } else {
+            state.loop.setFromBeats(state.loop.startBeats, endBeats, state.tempo.bpm);
         }
     }
 
     if (state.punch.isValid()) {
-        state.punch.endTime = juce::jmin(state.punch.endTime, state.timelineLength);
-        if (state.punch.startTime >= state.punch.endTime) {
+        const double timelineLengthBeats = state.secondsToBeats(state.timelineLength);
+        const double endBeats = juce::jmin(state.punch.endBeats, timelineLengthBeats);
+        if (state.punch.startBeats >= endBeats) {
             state.punch.clear();
+        } else {
+            state.punch.setFromBeats(state.punch.startBeats, endBeats, state.tempo.bpm);
         }
     }
 
@@ -1128,23 +1071,20 @@ void TimelineController::restoreProjectState(double tempo, int timeSigNum, int t
                                              bool loopEnabled, double loopStartBeats,
                                              double loopEndBeats) {
     // Unconditionally set state — no early returns
-    state.tempo.bpm = juce::jlimit(20.0, 999.0, tempo);
-    state.tempo.timeSignatureNumerator = juce::jlimit(1, 16, timeSigNum);
-    state.tempo.timeSignatureDenominator = juce::jlimit(1, 16, timeSigDen);
+    state.tempo.bpm = clampBpm(tempo);
+    state.tempo.timeSignatureNumerator = clampTimeSignatureValue(timeSigNum);
+    state.tempo.timeSignatureDenominator = clampTimeSignatureValue(timeSigDen);
 
     // Recalculate timeline length from configured bars using actual project tempo
     auto& config = magda::Config::getInstance();
     state.timelineLength = state.tempo.barsToTime(config.getDefaultTimelineLengthBars());
 
     // Loop: beats are authoritative, derive seconds from BPM
-    state.loop.startBeats = loopStartBeats;
-    state.loop.endBeats = loopEndBeats;
     state.loop.enabled = loopEnabled;
 
     if (loopEndBeats - loopStartBeats >= 0.01) {
-        state.loop.startTime =
-            magda::TimelineUtils::beatsToSeconds(loopStartBeats, state.tempo.bpm);
-        state.loop.endTime = magda::TimelineUtils::beatsToSeconds(loopEndBeats, state.tempo.bpm);
+        state.loop.setFromBeats(loopStartBeats, loopEndBeats, state.tempo.bpm);
+        state.loop.enabled = loopEnabled;
     } else {
         state.loop.clear();
     }

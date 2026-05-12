@@ -16,15 +16,15 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
     setName("AutomationCurveEditor");
 
     // Wire up base class snapping to automation snapping.
-    // Gated on the lane's snapTime flag so the user can disable per-lane.
+    // Gated on the lane's snapEditsToBeatGrid flag so recorded automation remains unsnapped.
     CurveEditorBase::snapXToGrid = [this](double x) -> double {
         if (AutomationManager::getInstance().isWriteModeEnabled())
             return x;
         const auto* lane = AutomationManager::getInstance().getLane(laneId_);
-        if (lane && !lane->snapTime)
+        if (lane && !lane->snapEditsToBeatGrid)
             return x;
-        if (snapTimeToGrid) {
-            return snapTimeToGrid(x);
+        if (snapBeatToGrid) {
+            return snapBeatToGrid(x);
         }
         return x;
     };
@@ -380,14 +380,14 @@ void AutomationCurveEditor::updatePointsCache() const {
         for (const auto& ap : *sourcePoints) {
             CurvePoint cp;
             cp.id = ap.id;
-            cp.x = ap.time;
+            cp.x = ap.beatPosition;
             cp.y = ap.value;
             cp.curveType = toCurveType(ap.curveType);
             cp.tension = ap.tension;
-            cp.inHandle.x = ap.inHandle.time;
+            cp.inHandle.x = ap.inHandle.beatOffset;
             cp.inHandle.y = ap.inHandle.value;
             cp.inHandle.linked = ap.inHandle.linked;
-            cp.outHandle.x = ap.outHandle.time;
+            cp.outHandle.x = ap.outHandle.beatOffset;
             cp.outHandle.y = ap.outHandle.value;
             cp.outHandle.linked = ap.outHandle.linked;
             cachedPoints_.push_back(cp);
@@ -494,12 +494,12 @@ void AutomationCurveEditor::onHandlesChanged(uint32_t pointId, const CurveHandle
                                              const CurveHandleData& outHandle) {
     // Convert CurveHandleData to BezierHandle
     BezierHandle inH;
-    inH.time = inHandle.x;
+    inH.beatOffset = inHandle.x;
     inH.value = inHandle.y;
     inH.linked = inHandle.linked;
 
     BezierHandle outH;
-    outH.time = outHandle.x;
+    outH.beatOffset = outHandle.x;
     outH.value = outHandle.y;
     outH.linked = outHandle.linked;
 
@@ -572,7 +572,7 @@ void AutomationCurveEditor::onStepStamped(double gridStart, double gridEnd, doub
                 originalPrevType = p.curveType;
                 prevFound = true;
             }
-            if (std::abs(p.time - gridEnd) < kTimeEps)
+            if (std::abs(p.beatPosition - gridEnd) < kTimeEps)
                 nextExistsAtGridEnd = true;
         }
     };

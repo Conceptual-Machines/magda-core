@@ -11,6 +11,7 @@
 #include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/TempoUtils.hpp"
 
 namespace magda {
 
@@ -253,7 +254,7 @@ class PianoRollGridComponent : public juce::Component,
     // Grid snap
     double gridResolutionBeats_ = 0.25;  // Default 1/16 note
     bool snapEnabled_ = true;
-    int timeSignatureNumerator_ = 4;
+    int timeSignatureNumerator_ = DEFAULT_TIME_SIGNATURE_NUMERATOR;
 
     // Clip position and display mode
     double clipStartBeats_ = 0.0;        // Clip's start position on timeline (in beats)

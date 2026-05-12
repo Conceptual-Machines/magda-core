@@ -4,6 +4,8 @@
 
 #include <functional>
 
+#include "core/TempoUtils.hpp"
+
 namespace magda {
 
 /**
@@ -74,7 +76,7 @@ class BarsBeatsTicksLabel : public juce::Component {
     double minValue_ = 0.0;
     double maxValue_ = 1.0;
     double defaultValue_ = 0.0;
-    int beatsPerBar_ = 4;
+    int beatsPerBar_ = DEFAULT_TIME_SIGNATURE_NUMERATOR;
     bool barsBeatsIsPosition_ = true;
     bool doubleClickResets_ = true;
     juce::Colour customTextColour_;

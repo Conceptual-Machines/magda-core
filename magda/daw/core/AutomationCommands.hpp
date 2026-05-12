@@ -11,12 +11,12 @@ namespace magda {
  */
 class AddAutomationPointCommand : public UndoableCommand {
   public:
-    AddAutomationPointCommand(AutomationLaneId laneId, AutomationClipId clipId, double time,
+    AddAutomationPointCommand(AutomationLaneId laneId, AutomationClipId clipId, double beatPosition,
                               double value,
                               AutomationCurveType curveType = AutomationCurveType::Linear)
         : laneId_(laneId),
           clipId_(clipId),
-          time_(time),
+          beatPosition_(beatPosition),
           value_(value),
           curveType_(curveType),
           isClip_(clipId != INVALID_AUTOMATION_CLIP_ID) {}
@@ -35,7 +35,7 @@ class AddAutomationPointCommand : public UndoableCommand {
   private:
     AutomationLaneId laneId_;
     AutomationClipId clipId_;
-    double time_;
+    double beatPosition_;
     double value_;
     AutomationCurveType curveType_;
     bool isClip_;
@@ -78,11 +78,11 @@ class DeleteAutomationPointCommand : public UndoableCommand {
 class MoveAutomationPointCommand : public UndoableCommand {
   public:
     MoveAutomationPointCommand(AutomationLaneId laneId, AutomationClipId clipId,
-                               AutomationPointId pointId, double newTime, double newValue)
+                               AutomationPointId pointId, double newBeatPosition, double newValue)
         : laneId_(laneId),
           clipId_(clipId),
           pointId_(pointId),
-          newTime_(newTime),
+          newBeatPosition_(newBeatPosition),
           newValue_(newValue),
           isClip_(clipId != INVALID_AUTOMATION_CLIP_ID) {
         captureOldPosition();
@@ -101,7 +101,7 @@ class MoveAutomationPointCommand : public UndoableCommand {
     }
     void mergeWith(const UndoableCommand* other) override {
         auto* o = static_cast<const MoveAutomationPointCommand*>(other);
-        newTime_ = o->newTime_;
+        newBeatPosition_ = o->newBeatPosition_;
         newValue_ = o->newValue_;
     }
 
@@ -111,8 +111,8 @@ class MoveAutomationPointCommand : public UndoableCommand {
     AutomationLaneId laneId_;
     AutomationClipId clipId_;
     AutomationPointId pointId_;
-    double newTime_, newValue_;
-    double oldTime_ = 0.0, oldValue_ = 0.5;
+    double newBeatPosition_, newValue_;
+    double oldBeatPosition_ = 0.0, oldValue_ = 0.5;
     bool isClip_;
 };
 

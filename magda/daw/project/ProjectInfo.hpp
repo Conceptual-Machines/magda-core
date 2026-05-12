@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include "../core/TempoUtils.hpp"
 #include "version.hpp"
 
 namespace magda {
@@ -17,9 +18,9 @@ struct ProjectInfo {
     juce::String filePath;  // .mgd file path
 
     // Playback settings
-    double tempo = 120.0;
-    int timeSignatureNumerator = 4;
-    int timeSignatureDenominator = 4;
+    double tempo = DEFAULT_BPM;
+    int timeSignatureNumerator = DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    int timeSignatureDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
     double projectLength = 240.0;  // seconds
     double sampleRate = 44100.0;
 

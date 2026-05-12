@@ -178,7 +178,7 @@ TEST_CASE("AutomationExecutor: target=volume creates TrackVolume lane on selecte
     // initial anchor point, so we only require the lane holds our two.
     auto hasPoint = [&](double t, double v) {
         for (const auto& p : lane->absolutePoints)
-            if (std::abs(p.time - t) < 1e-6 && std::abs(p.value - v) < 1e-6)
+            if (std::abs(p.beatPosition - t) < 1e-6 && std::abs(p.value - v) < 1e-6)
                 return true;
         return false;
     };
@@ -315,7 +315,7 @@ TEST_CASE("AutomationExecutor: line writes exactly 2 endpoints with correct valu
     auto* lane = AutomationManager::getInstance().getLane(lanes[0]);
     auto hasPoint = [&](double t, double v) {
         for (const auto& p : lane->absolutePoints)
-            if (std::abs(p.time - t) < 1e-6 && std::abs(p.value - v) < 1e-6)
+            if (std::abs(p.beatPosition - t) < 1e-6 && std::abs(p.value - v) < 1e-6)
                 return true;
         return false;
     };
@@ -341,8 +341,8 @@ TEST_CASE("AutomationExecutor: sin writes many points bounded by [min,max]",
     for (const auto& p : lane->absolutePoints) {
         REQUIRE(p.value >= Approx(0.1).margin(1e-6));
         REQUIRE(p.value <= Approx(0.9).margin(1e-6));
-        REQUIRE(p.time >= Approx(0.0));
-        REQUIRE(p.time <= Approx(8.0));
+        REQUIRE(p.beatPosition >= Approx(0.0));
+        REQUIRE(p.beatPosition <= Approx(8.0));
     }
 }
 
@@ -365,7 +365,7 @@ TEST_CASE("AutomationExecutor: freeform writes the exact provided points",
     // values appear somewhere in the lane's points.
     auto contains = [&](double t, double v) {
         for (const auto& p : lane->absolutePoints)
-            if (std::abs(p.time - t) < 1e-6 && std::abs(p.value - v) < 1e-6)
+            if (std::abs(p.beatPosition - t) < 1e-6 && std::abs(p.value - v) < 1e-6)
                 return true;
         return false;
     };

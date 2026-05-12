@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "ClipInfo.hpp"
+#include "TempoUtils.hpp"
 
 namespace magda {
 
@@ -146,9 +147,10 @@ struct ClipDisplayInfo {
     // live from beats × BPM and stay correct after BPM changes.
     static ClipDisplayInfo from(const ClipInfo& clip, double bpm, double fileDuration = 0.0) {
         ClipDisplayInfo d{};
+        const double projectBpm = isValidBpm(bpm) ? bpm : DEFAULT_BPM;
 
-        const double clipLength = clip.getTimelineLength(bpm);
-        const double clipStart = clip.getTimelineStart(bpm);
+        const double clipLength = clip.getTimelineLength(projectBpm);
+        const double clipStart = clip.getTimelineStart(projectBpm);
         const double clipOffset = clip.getSourceOffset();
         const double clipLoopStart = clip.getSourceLoopStart();
         const double clipLoopLength = clip.getSourceLoopLength();
@@ -162,8 +164,8 @@ struct ClipDisplayInfo {
         d.autoTempo = clip.autoTempo;
         d.lengthBeats = clip.placement.lengthBeats;
         d.loopLengthBeats = clip.loopLengthBeats;
-        d.startBeats = clip.getStartBeats(bpm);
-        d.endBeats = clip.getEndBeats(bpm);
+        d.startBeats = clip.getStartBeats(projectBpm);
+        d.endBeats = clip.getEndBeats(projectBpm);
 
         // ---- Source-time ↔ timeline-time conversion ratio ----
         //
@@ -173,11 +175,10 @@ struct ClipDisplayInfo {
         // the loop's beat-count for the same calibration. Issue #1157.
         //
         // Manual stretch: timelineSeconds = sourceSeconds / speedRatio.
-        if (clip.autoTempo && clip.audio().interpretation.bpm > 0.0 && bpm > 0.0) {
-            d.srcToTimelineRatio = clip.audio().interpretation.bpm / bpm;
-        } else if (clip.autoTempo && clipLoopLength > 0.0 && clip.loopLengthBeats > 0.0 &&
-                   bpm > 0.0) {
-            d.srcToTimelineRatio = (clip.loopLengthBeats * 60.0 / bpm) / clipLoopLength;
+        if (clip.autoTempo && clip.audio().interpretation.bpm > 0.0) {
+            d.srcToTimelineRatio = clip.audio().interpretation.bpm / projectBpm;
+        } else if (clip.autoTempo && clipLoopLength > 0.0 && clip.loopLengthBeats > 0.0) {
+            d.srcToTimelineRatio = (clip.loopLengthBeats * 60.0 / projectBpm) / clipLoopLength;
         } else {
             d.srcToTimelineRatio = (clip.speedRatio > 0.0) ? 1.0 / clip.speedRatio : 1.0;
         }

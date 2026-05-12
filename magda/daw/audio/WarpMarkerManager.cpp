@@ -208,7 +208,7 @@ void WarpMarkerManager::enableWarp(te::Edit& edit,
         return;
 
     // Get the clip's offset - this is where playback starts in the source file
-    double clipOffset = clip->offset;
+    double clipOffset = clip->getSourceOffset();
 
     // Get cached transients from AudioThumbnailManager
     auto* cachedTransients =
@@ -218,7 +218,10 @@ void WarpMarkerManager::enableWarp(te::Edit& edit,
         << " file=" << clip->audio().source.filePath << " offset=" << clipOffset);
     if (cachedTransients) {
         // Insert identity-mapped markers at each transient position within the visible range
-        double visibleEnd = clipOffset + clip->length * clip->speedRatio;
+        double bpm = edit.tempoSequence.getBpmAt(te::TimePosition());
+        if (bpm <= 0.0)
+            bpm = 120.0;
+        double visibleEnd = clipOffset + clip->timelineToSource(clip->getTimelineLength(bpm));
         for (double t : *cachedTransients) {
             // Only include transients within the visible portion of the clip
             if (t >= clipOffset && t <= visibleEnd) {

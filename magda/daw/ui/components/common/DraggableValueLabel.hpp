@@ -7,6 +7,7 @@
 
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
+#include "core/TempoUtils.hpp"
 
 namespace magda {
 
@@ -207,7 +208,7 @@ class DraggableValueLabel : public juce::Component,
     double defaultValue_ = 0.0;
     double dragSensitivity_ = 200.0;  // pixels for full range
     int decimalPlaces_ = 1;
-    int beatsPerBar_ = 4;
+    int beatsPerBar_ = DEFAULT_TIME_SIGNATURE_NUMERATOR;
     bool barsBeatsIsPosition_ = true;
     juce::String suffix_;
     bool doubleClickResets_ = true;

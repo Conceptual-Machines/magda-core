@@ -6,6 +6,7 @@
 
 #include "../../layout/LayoutConfig.hpp"
 #include "LoopMarkerInteraction.hpp"
+#include "core/TempoUtils.hpp"
 
 namespace magda {
 
@@ -138,9 +139,9 @@ class TimeRuler : public juce::Component, private juce::Timer {
     int scrollOffset = 0;           // pixels
 
     // Musical time settings
-    double tempo = 120.0;  // BPM
-    int timeSigNumerator = 4;
-    int timeSigDenominator = 4;
+    double tempo = DEFAULT_BPM;  // BPM
+    int timeSigNumerator = DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    int timeSigDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
     double gridResolutionBeats = 0.0;  // 0 = auto-compute from zoom
     bool snapEnabled = false;
 

@@ -314,6 +314,7 @@ class WaveformGridComponent : public juce::Component {
     static constexpr int WARP_MARKER_HIT_DISTANCE = 5;
 
     // Display start time for the full source file.
+    double getSampleStartPositionSeconds() const;
     double getDisplayStartTime() const;
     double getDrawableTimelineLength() const;
     void debugLogGeometry(const char* context) const;

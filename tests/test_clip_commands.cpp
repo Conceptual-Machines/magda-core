@@ -54,6 +54,14 @@ static ClipId createAudio(TrackId trackId, double start, double length) {
                                                       ClipView::Arrangement);
 }
 
+static BeatPosition secondsToBeatPosition(double seconds, double bpm = 120.0) {
+    return BeatPosition{seconds * bpm / 60.0};
+}
+
+static BeatDuration secondsToBeatDuration(double seconds, double bpm = 120.0) {
+    return BeatDuration{seconds * bpm / 60.0};
+}
+
 // ============================================================================
 // DuplicateClipCommand
 // ============================================================================
@@ -93,7 +101,7 @@ TEST_CASE("DuplicateClipCommand - basic duplicate", "[clip][command][duplicate]"
 
     SECTION("Duplicate at specific position and track") {
         TrackId track2 = createTrack("Track 2");
-        DuplicateClipCommand cmd(original, 5.0, track2);
+        DuplicateClipCommand cmd(original, secondsToBeatPosition(5.0), track2);
         cmd.execute();
 
         auto* dup = ClipManager::getInstance().getClip(cmd.getDuplicatedClipId());
@@ -143,22 +151,22 @@ TEST_CASE("DuplicateClipCommand - session undo removes duplicate only",
     ClipId original = cm.createMidiClip(track, 0.0, 4.0, ClipView::Session);
     cm.setClipSceneIndex(original, 0);
 
-    DuplicateClipCommand cmd(original, -1.0, INVALID_TRACK_ID, 0.0, 2);
-    cmd.execute();
+    auto cmd = DuplicateClipCommand::forSessionSlot(original, INVALID_TRACK_ID, 2);
+    cmd->execute();
 
-    ClipId duplicateId = cmd.getDuplicatedClipId();
+    ClipId duplicateId = cmd->getDuplicatedClipId();
     REQUIRE(duplicateId != INVALID_CLIP_ID);
     REQUIRE(cm.getClipInSlot(track, 0) == original);
     REQUIRE(cm.getClipInSlot(track, 2) == duplicateId);
 
-    cmd.undo();
+    cmd->undo();
 
     REQUIRE(cm.getClip(duplicateId) == nullptr);
     REQUIRE(cm.getClipInSlot(track, 0) == original);
     REQUIRE(cm.getClipInSlot(track, 2) == INVALID_CLIP_ID);
 
-    cmd.execute();
-    ClipId redoDuplicateId = cmd.getDuplicatedClipId();
+    cmd->execute();
+    ClipId redoDuplicateId = cmd->getDuplicatedClipId();
     REQUIRE(redoDuplicateId != INVALID_CLIP_ID);
     REQUIRE(cm.getClipInSlot(track, 0) == original);
     REQUIRE(cm.getClipInSlot(track, 2) == redoDuplicateId);
@@ -268,7 +276,7 @@ TEST_CASE("copyTimeRangeToClipboard + paste - preserves internal clip spacing",
     auto& cm = ClipManager::getInstance();
     cm.copyTimeRangeToClipboard(2.0, 6.0, {track}, /*tempoBPM=*/90.0);
 
-    PasteClipCommand paste(/*pasteTime=*/6.0);
+    PasteClipCommand paste(secondsToBeatPosition(6.0, 90.0));
     paste.execute();
 
     auto pastedIds = paste.getPastedClipIds();
@@ -313,7 +321,7 @@ TEST_CASE("copyTimeRangeToClipboard + paste - trimmed audio keeps beat placement
     // carry that 4s / 6-beat placement, not the original 8s / 12-beat width.
     cm.copyTimeRangeToClipboard(2.0, 6.0, {track}, /*tempoBPM=*/90.0);
 
-    PasteClipCommand paste(/*pasteTime=*/6.0);
+    PasteClipCommand paste(secondsToBeatPosition(6.0, 90.0));
     paste.execute();
 
     auto pastedIds = paste.getPastedClipIds();
@@ -359,7 +367,7 @@ TEST_CASE(
 
     cm.copyTimeRangeToClipboard(1.5, 2.0, {track}, /*tempoBPM=*/120.0);
 
-    PasteClipCommand paste(/*pasteTime=*/3.0);
+    PasteClipCommand paste(secondsToBeatPosition(3.0, 120.0));
     paste.execute();
 
     auto pastedIds = paste.getPastedClipIds();
@@ -406,7 +414,7 @@ TEST_CASE("copyTimeRangeToClipboard + paste - exact beat slice keeps waveform id
     cm.copyTimeRangeToClipboard(source->getTimelineStart(120.0), source->getTimelineEnd(120.0),
                                 {track}, /*tempoBPM=*/120.0);
 
-    PasteClipCommand paste(/*pasteTime=*/2.0);
+    PasteClipCommand paste(secondsToBeatPosition(2.0, 120.0));
     paste.execute();
 
     auto pastedIds = paste.getPastedClipIds();
@@ -570,8 +578,8 @@ TEST_CASE("JoinClipsCommand - split then join roundtrip", "[clip][command][join]
     auto& cm = ClipManager::getInstance();
     size_t originalNoteCount = cm.getClip(original)->midiNotes.size();
 
-    // Split at 2 seconds
-    SplitClipCommand splitCmd(original, 2.0);
+    // Split at 2 seconds (4 beats at 120 BPM)
+    SplitClipCommand splitCmd(original, secondsToBeatPosition(2.0));
     splitCmd.execute();
     ClipId rightId = splitCmd.getRightClipId();
 
@@ -638,7 +646,7 @@ TEST_CASE("MoveClipCommand - basic move", "[clip][command][move]") {
     TrackId track = createTrack();
     ClipId clipId = createMidi(track, 0.0, 2.0, {0.0, 1.0});
 
-    MoveClipCommand cmd(clipId, 5.0);
+    MoveClipCommand cmd(clipId, secondsToBeatPosition(5.0));
     cmd.execute();
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -653,7 +661,7 @@ TEST_CASE("MoveClipCommand - undo/redo", "[clip][command][move][undo]") {
     TrackId track = createTrack();
     ClipId clipId = createMidi(track, 1.0, 2.0);
 
-    MoveClipCommand cmd(clipId, 5.0);
+    MoveClipCommand cmd(clipId, secondsToBeatPosition(5.0));
     cmd.execute();
     REQUIRE(ClipManager::getInstance().getClip(clipId)->startTime == Catch::Approx(5.0));
 
@@ -680,7 +688,7 @@ TEST_CASE("MoveClipCommand - startBeats derived from live project tempo, not 120
     TrackId track = createTrack();
     ClipId clipId = createAudio(track, 0.0, 2.0);
 
-    MoveClipCommand cmd(clipId, 6.0);
+    MoveClipCommand cmd(clipId, secondsToBeatPosition(6.0, 90.0));
     cmd.execute();
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -708,7 +716,7 @@ TEST_CASE("MoveClipCommand - clip stays bar-anchored across BPM change",
     TrackId track = createTrack();
     ClipId clipId = createAudio(track, 0.0, 2.0);
 
-    MoveClipCommand cmd(clipId, 6.0);
+    MoveClipCommand cmd(clipId, secondsToBeatPosition(6.0, 90.0));
     cmd.execute();
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -727,9 +735,9 @@ TEST_CASE("MoveClipCommand - merge consecutive moves", "[clip][command][move][me
     TrackId track = createTrack();
     ClipId clipId = createMidi(track, 0.0, 2.0);
 
-    MoveClipCommand cmd1(clipId, 1.0);
-    MoveClipCommand cmd2(clipId, 3.0);
-    MoveClipCommand cmdOther(clipId + 1, 5.0);
+    MoveClipCommand cmd1(clipId, secondsToBeatPosition(1.0));
+    MoveClipCommand cmd2(clipId, secondsToBeatPosition(3.0));
+    MoveClipCommand cmdOther(clipId + 1, secondsToBeatPosition(5.0));
 
     REQUIRE(cmd1.canMergeWith(&cmd2));
     REQUIRE_FALSE(cmd1.canMergeWith(&cmdOther));
@@ -792,7 +800,7 @@ TEST_CASE("ResizeClipCommand - resize from right", "[clip][command][resize]") {
     TrackId track = createTrack();
     ClipId clipId = createMidi(track, 0.0, 4.0);
 
-    ResizeClipCommand cmd(clipId, 2.0, false);
+    ResizeClipCommand cmd(clipId, secondsToBeatDuration(2.0), false);
     cmd.execute();
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -805,7 +813,7 @@ TEST_CASE("ResizeClipCommand - resize from left", "[clip][command][resize]") {
     TrackId track = createTrack();
     ClipId clipId = createMidi(track, 2.0, 4.0);
 
-    ResizeClipCommand cmd(clipId, 2.0, true);
+    ResizeClipCommand cmd(clipId, secondsToBeatDuration(2.0), true);
     cmd.execute();
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -819,7 +827,7 @@ TEST_CASE("ResizeClipCommand - undo/redo", "[clip][command][resize][undo]") {
     TrackId track = createTrack();
     ClipId clipId = createMidi(track, 0.0, 4.0);
 
-    ResizeClipCommand cmd(clipId, 2.0, false);
+    ResizeClipCommand cmd(clipId, secondsToBeatDuration(2.0), false);
     cmd.execute();
     REQUIRE(ClipManager::getInstance().getClip(clipId)->length == Catch::Approx(2.0));
 
@@ -835,9 +843,9 @@ TEST_CASE("ResizeClipCommand - merge consecutive resizes", "[clip][command][resi
     TrackId track = createTrack();
     ClipId clipId = createMidi(track, 0.0, 4.0);
 
-    ResizeClipCommand cmd1(clipId, 3.0, false);
-    ResizeClipCommand cmd2(clipId, 2.0, false);
-    ResizeClipCommand cmdFromLeft(clipId, 2.0, true);
+    ResizeClipCommand cmd1(clipId, secondsToBeatDuration(3.0), false);
+    ResizeClipCommand cmd2(clipId, secondsToBeatDuration(2.0), false);
+    ResizeClipCommand cmdFromLeft(clipId, secondsToBeatDuration(2.0), true);
 
     // Same clip, same direction: can merge
     REQUIRE(cmd1.canMergeWith(&cmd2));
@@ -903,7 +911,8 @@ TEST_CASE("CreateClipCommand - create MIDI clip", "[clip][command][create]") {
     resetState();
     TrackId track = createTrack();
 
-    CreateClipCommand cmd(ClipType::MIDI, track, 1.0, 3.0);
+    CreateClipCommand cmd(ClipType::MIDI, track, secondsToBeatPosition(1.0),
+                          secondsToBeatDuration(3.0));
     REQUIRE(cmd.canExecute());
     cmd.execute();
 
@@ -922,7 +931,8 @@ TEST_CASE("CreateClipCommand - undo/redo", "[clip][command][create][undo]") {
     resetState();
     TrackId track = createTrack();
 
-    CreateClipCommand cmd(ClipType::MIDI, track, 0.0, 2.0);
+    CreateClipCommand cmd(ClipType::MIDI, track, secondsToBeatPosition(0.0),
+                          secondsToBeatDuration(2.0));
     cmd.execute();
     ClipId created = cmd.getCreatedClipId();
     REQUIRE(ClipManager::getInstance().getClip(created) != nullptr);
@@ -939,13 +949,15 @@ TEST_CASE("CreateClipCommand - validation", "[clip][command][create]") {
     resetState();
 
     SECTION("Cannot create with invalid track") {
-        CreateClipCommand cmd(ClipType::MIDI, INVALID_TRACK_ID, 0.0, 2.0);
+        CreateClipCommand cmd(ClipType::MIDI, INVALID_TRACK_ID, secondsToBeatPosition(0.0),
+                              secondsToBeatDuration(2.0));
         REQUIRE_FALSE(cmd.canExecute());
     }
 
     SECTION("Cannot create with zero length") {
         TrackId track = createTrack();
-        CreateClipCommand cmd(ClipType::MIDI, track, 0.0, 0.0);
+        CreateClipCommand cmd(ClipType::MIDI, track, secondsToBeatPosition(0.0),
+                              secondsToBeatDuration(0.0));
         REQUIRE_FALSE(cmd.canExecute());
     }
 }
@@ -966,7 +978,7 @@ TEST_CASE("PasteClipCommand - paste from clipboard", "[clip][command][paste]") {
     REQUIRE(cm.hasClipsInClipboard());
 
     // Paste at time 5.0
-    PasteClipCommand cmd(5.0);
+    PasteClipCommand cmd(secondsToBeatPosition(5.0));
     REQUIRE(cmd.canExecute());
     cmd.execute();
 
@@ -988,7 +1000,7 @@ TEST_CASE("PasteClipCommand - undo/redo", "[clip][command][paste][undo]") {
     auto& cm = ClipManager::getInstance();
     cm.copyToClipboard({original});
 
-    PasteClipCommand cmd(3.0);
+    PasteClipCommand cmd(secondsToBeatPosition(3.0));
     cmd.execute();
     const auto& pastedIds = cmd.getPastedClipIds();
     REQUIRE(!pastedIds.empty());
@@ -1008,7 +1020,7 @@ TEST_CASE("PasteClipCommand - cannot paste empty clipboard", "[clip][command][pa
 
     // Clipboard is empty after reset
     ClipManager::getInstance().clearClipboard();
-    PasteClipCommand cmd(0.0);
+    PasteClipCommand cmd(secondsToBeatPosition(0.0));
     REQUIRE_FALSE(cmd.canExecute());
 }
 
@@ -1021,7 +1033,7 @@ TEST_CASE("PasteClipCommand - paste multiple clips", "[clip][command][paste]") {
     auto& cm = ClipManager::getInstance();
     cm.copyToClipboard({c1, c2});
 
-    PasteClipCommand cmd(10.0);
+    PasteClipCommand cmd(secondsToBeatPosition(10.0));
     cmd.execute();
 
     const auto& pastedIds = cmd.getPastedClipIds();

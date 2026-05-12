@@ -8,6 +8,7 @@
 #include "../components/common/BarsBeatsTicksLabel.hpp"
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/SvgButton.hpp"
+#include "core/TempoUtils.hpp"
 
 namespace magda {
 
@@ -224,15 +225,15 @@ class TransportPanel : public juce::Component {
     bool isSnapEnabled = true;
     bool isAutoGrid = true;
     int gridNumerator = 1;
-    int gridDenominator = 4;
+    int gridDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
     int lastAutoNumerator = 1;
-    int lastAutoDenominator = 4;
+    int lastAutoDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
     bool lastAutoWasBars = false;
     bool isPunchInEnabled = false;
     bool isPunchOutEnabled = false;
-    double currentTempo = 120.0;
-    int timeSignatureNumerator = 4;
-    int timeSignatureDenominator = 4;
+    double currentTempo = DEFAULT_BPM;
+    int timeSignatureNumerator = DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    int timeSignatureDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
     int countInMode_ = 0;  // 0=none, 1=1bar, 2=2bars, 3=2beats, 4=1beat
 
     // Cached state for display updates
