@@ -66,7 +66,7 @@ void BezierHandleComponent::mouseDrag(const juce::MouseEvent& e) {
     double valueScale = 0.01;  // Value units per pixel
 
     BezierHandle newHandle = dragStartHandle_;
-    newHandle.time = dragStartHandle_.time + deltaX * timeScale;
+    newHandle.beatOffset = dragStartHandle_.beatOffset + deltaX * timeScale;
     newHandle.value = dragStartHandle_.value - deltaY * valueScale;  // Y is inverted
 
     handle_ = newHandle;

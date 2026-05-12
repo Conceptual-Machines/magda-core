@@ -381,7 +381,7 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
     for (const auto& pt : lane->absolutePoints) {
         bool inScope =
             !hasFilter || std::binary_search(filterSorted.begin(), filterSorted.end(), pt.id);
-        entries.push_back({pt.id, {pt.time, pt.value}, inScope});
+        entries.push_back({pt.id, {pt.beatPosition, pt.value}, inScope});
     }
     std::sort(entries.begin(), entries.end(),
               [](const Entry& a, const Entry& b) { return a.p.time < b.p.time; });

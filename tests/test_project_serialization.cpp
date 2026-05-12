@@ -342,10 +342,10 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     auto pointId = automation.addPointToClip(clipId, 1.5, 0.75, AutomationCurveType::Bezier);
     REQUIRE(pointId != INVALID_AUTOMATION_POINT_ID);
     BezierHandle inHandle;
-    inHandle.time = -0.25;
+    inHandle.beatOffset = -0.25;
     inHandle.value = -0.1;
     BezierHandle outHandle;
-    outHandle.time = 0.5;
+    outHandle.beatOffset = 0.5;
     outHandle.value = 0.2;
     automation.setPointHandlesInClip(clipId, pointId, inHandle, outHandle);
 
@@ -399,9 +399,9 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     REQUIRE(restoredClips[0].lengthBeats == Approx(8.0));
     REQUIRE(restoredClips[0].loopLengthBeats == Approx(2.0));
     REQUIRE(restoredClips[0].points.size() == 1);
-    REQUIRE(restoredClips[0].points[0].time == Approx(1.5));
-    REQUIRE(restoredClips[0].points[0].inHandle.time == Approx(-0.25));
-    REQUIRE(restoredClips[0].points[0].outHandle.time == Approx(0.5));
+    REQUIRE(restoredClips[0].points[0].beatPosition == Approx(1.5));
+    REQUIRE(restoredClips[0].points[0].inHandle.beatOffset == Approx(-0.25));
+    REQUIRE(restoredClips[0].points[0].outHandle.beatOffset == Approx(0.5));
 }
 
 TEST_CASE("Automation serialization reads legacy time-named beat properties",
@@ -462,9 +462,9 @@ TEST_CASE("Automation serialization reads legacy time-named beat properties",
     REQUIRE(restoredClips[0].looping);
     REQUIRE(restoredClips[0].loopLengthBeats == Approx(1.5));
     REQUIRE(restoredClips[0].points.size() == 1);
-    REQUIRE(restoredClips[0].points[0].time == Approx(2.25));
-    REQUIRE(restoredClips[0].points[0].inHandle.time == Approx(-0.5));
-    REQUIRE(restoredClips[0].points[0].outHandle.time == Approx(0.75));
+    REQUIRE(restoredClips[0].points[0].beatPosition == Approx(2.25));
+    REQUIRE(restoredClips[0].points[0].inHandle.beatOffset == Approx(-0.5));
+    REQUIRE(restoredClips[0].points[0].outHandle.beatOffset == Approx(0.75));
 }
 
 TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {

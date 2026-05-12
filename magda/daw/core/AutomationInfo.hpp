@@ -34,12 +34,12 @@ enum class AutomationVisualState {
  * When linked=true, moving one handle mirrors the other.
  */
 struct BezierHandle {
-    double time = 0.0;   // Time offset from point (beats)
-    double value = 0.0;  // Value offset from point (normalized)
-    bool linked = true;  // Mirror handles when one is moved
+    double beatOffset = 0.0;  // Beat offset from point
+    double value = 0.0;       // Value offset from point (normalized)
+    bool linked = true;       // Mirror handles when one is moved
 
     bool isZero() const {
-        return time == 0.0 && value == 0.0;
+        return beatOffset == 0.0 && value == 0.0;
     }
 };
 
@@ -48,8 +48,8 @@ struct BezierHandle {
  */
 struct AutomationPoint {
     AutomationPointId id = INVALID_AUTOMATION_POINT_ID;
-    double time = 0.0;   // Position in beats
-    double value = 0.5;  // Normalized value 0-1
+    double beatPosition = 0.0;  // Position in beats
+    double value = 0.5;         // Normalized value 0-1
 
     AutomationCurveType curveType = AutomationCurveType::Linear;
     BezierHandle inHandle;   // Handle before the point
@@ -60,7 +60,7 @@ struct AutomationPoint {
     double tension = 0.0;
 
     bool operator<(const AutomationPoint& other) const {
-        return time < other.time;
+        return beatPosition < other.beatPosition;
     }
 
     bool operator==(const AutomationPoint& other) const {

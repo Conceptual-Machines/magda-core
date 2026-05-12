@@ -240,7 +240,7 @@ AutomationLaneId AutomationManager::createLane(const AutomationTarget& target,
         double initialValue = getCurrentTargetValueImpl(target).value_or(0.5);
         AutomationPoint point;
         point.id = nextPointId_++;
-        point.time = 0.0;
+        point.beatPosition = 0.0;
         point.value = initialValue;
         point.curveType = AutomationCurveType::Linear;
         lane.absolutePoints.push_back(point);
@@ -630,7 +630,7 @@ AutomationPointId AutomationManager::addPoint(AutomationLaneId laneId, double ti
 
     AutomationPoint point;
     point.id = nextPointId_++;
-    point.time = juce::jmax(0.0, time);
+    point.beatPosition = juce::jmax(0.0, time);
     point.value = juce::jlimit(0.0, 1.0, value);
     point.curveType = curveType;
 
@@ -649,7 +649,7 @@ AutomationPointId AutomationManager::addPointToClip(AutomationClipId clipId, dou
 
     AutomationPoint point;
     point.id = nextPointId_++;
-    point.time = juce::jlimit(0.0, clip->lengthBeats, localTime);
+    point.beatPosition = juce::jlimit(0.0, clip->lengthBeats, localTime);
     point.value = juce::jlimit(0.0, 1.0, value);
     point.curveType = curveType;
 
@@ -702,7 +702,7 @@ void AutomationManager::movePoint(AutomationLaneId laneId, AutomationPointId poi
         return;
 
     if (auto* point = findPoint(lane->absolutePoints, pointId)) {
-        point->time = juce::jmax(0.0, newTime);
+        point->beatPosition = juce::jmax(0.0, newTime);
         point->value = juce::jlimit(0.0, 1.0, newValue);
         sortPoints(lane->absolutePoints);
         notifyPointsChanged(laneId);
@@ -716,7 +716,7 @@ void AutomationManager::movePointInClip(AutomationClipId clipId, AutomationPoint
         return;
 
     if (auto* point = findPoint(clip->points, pointId)) {
-        point->time = juce::jlimit(0.0, clip->lengthBeats, newTime);
+        point->beatPosition = juce::jlimit(0.0, clip->lengthBeats, newTime);
         point->value = juce::jlimit(0.0, 1.0, newValue);
         sortPoints(clip->points);
         notifyClipsChanged(clip->laneId);
@@ -841,10 +841,10 @@ double AutomationManager::interpolateLinear(double t, double v1, double v2) cons
 double AutomationManager::interpolateBezier(double t, const AutomationPoint& p1,
                                             const AutomationPoint& p2) const {
     // Cubic bezier interpolation
-    // P0 = (p1.time, p1.value)
-    // P1 = (p1.time + p1.outHandle.time, p1.value + p1.outHandle.value)
-    // P2 = (p2.time + p2.inHandle.time, p2.value + p2.inHandle.value)
-    // P3 = (p2.time, p2.value)
+    // P0 = (p1.beatPosition, p1.value)
+    // P1 = (p1.beatPosition + p1.outHandle.beatOffset, p1.value + p1.outHandle.value)
+    // P2 = (p2.beatPosition + p2.inHandle.beatOffset, p2.value + p2.inHandle.value)
+    // P3 = (p2.beatPosition, p2.value)
 
     double t2 = t * t;
     double t3 = t2 * t;
@@ -889,11 +889,11 @@ double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& 
         return 0.5;
 
     // Before first point
-    if (time <= points.front().time)
+    if (time <= points.front().beatPosition)
         return points.front().value;
 
     // After last point
-    if (time >= points.back().time)
+    if (time >= points.back().beatPosition)
         return points.back().value;
 
     // Find surrounding points
@@ -901,13 +901,13 @@ double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& 
         const auto& p1 = points[i];
         const auto& p2 = points[i + 1];
 
-        if (time >= p1.time && time < p2.time) {
+        if (time >= p1.beatPosition && time < p2.beatPosition) {
             // Normalize t to 0-1 between points
-            double duration = p2.time - p1.time;
+            double duration = p2.beatPosition - p1.beatPosition;
             if (duration <= 0.0)
                 return p1.value;
 
-            double t = (time - p1.time) / duration;
+            double t = (time - p1.beatPosition) / duration;
 
             switch (p1.curveType) {
                 case AutomationCurveType::Linear:

@@ -208,7 +208,7 @@ juce::var ProjectSerializer::serializeAutomationPoint(const AutomationPoint& poi
     auto* obj = new juce::DynamicObject();
 
     obj->setProperty("id", point.id);
-    obj->setProperty("beatPosition", point.time);
+    obj->setProperty("beatPosition", point.beatPosition);
     obj->setProperty("value", point.value);
     obj->setProperty("curveType", static_cast<int>(point.curveType));
     obj->setProperty("tension", point.tension);
@@ -228,8 +228,8 @@ bool ProjectSerializer::deserializeAutomationPoint(const juce::var& json,
     auto* obj = json.getDynamicObject();
 
     outPoint.id = obj->getProperty("id");
-    outPoint.time = obj->hasProperty("beatPosition") ? obj->getProperty("beatPosition")
-                                                     : obj->getProperty("time");
+    outPoint.beatPosition = obj->hasProperty("beatPosition") ? obj->getProperty("beatPosition")
+                                                             : obj->getProperty("time");
     outPoint.value = obj->getProperty("value");
     outPoint.curveType =
         static_cast<AutomationCurveType>(static_cast<int>(obj->getProperty("curveType")));
@@ -296,7 +296,7 @@ bool ProjectSerializer::deserializeAutomationTarget(const juce::var& json,
 juce::var ProjectSerializer::serializeBezierHandle(const BezierHandle& handle) {
     auto* obj = new juce::DynamicObject();
 
-    obj->setProperty("beatOffset", handle.time);
+    obj->setProperty("beatOffset", handle.beatOffset);
     obj->setProperty("value", handle.value);
     obj->setProperty("linked", handle.linked);
 
@@ -311,7 +311,7 @@ bool ProjectSerializer::deserializeBezierHandle(const juce::var& json, BezierHan
 
     auto* obj = json.getDynamicObject();
 
-    outHandle.time =
+    outHandle.beatOffset =
         obj->hasProperty("beatOffset") ? obj->getProperty("beatOffset") : obj->getProperty("time");
     outHandle.value = obj->getProperty("value");
     outHandle.linked = obj->getProperty("linked");

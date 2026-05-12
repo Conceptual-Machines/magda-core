@@ -83,8 +83,8 @@ void AutomationClipComponent::paintMiniCurve(juce::Graphics& g, juce::Rectangle<
 
     for (const auto& point : clip->points) {
         // Map point to bounds
-        float x =
-            bounds.getX() + static_cast<float>(point.time / clip->lengthBeats) * bounds.getWidth();
+        float x = bounds.getX() +
+                  static_cast<float>(point.beatPosition / clip->lengthBeats) * bounds.getWidth();
         float y = bounds.getBottom() - static_cast<float>(point.value) * bounds.getHeight();
 
         if (!pathStarted) {

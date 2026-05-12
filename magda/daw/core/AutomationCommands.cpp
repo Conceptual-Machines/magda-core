@@ -74,8 +74,8 @@ void DeleteAutomationPointCommand::execute() {
 void DeleteAutomationPointCommand::undo() {
     auto& mgr = AutomationManager::getInstance();
     if (isClip_) {
-        AutomationPointId newId = mgr.addPointToClip(clipId_, storedPoint_.time, storedPoint_.value,
-                                                     storedPoint_.curveType);
+        AutomationPointId newId = mgr.addPointToClip(clipId_, storedPoint_.beatPosition,
+                                                     storedPoint_.value, storedPoint_.curveType);
         // Restore tension and handles on the re-created point
         if (newId != INVALID_AUTOMATION_POINT_ID) {
             mgr.setPointTensionInClip(clipId_, newId, storedPoint_.tension);
@@ -84,8 +84,8 @@ void DeleteAutomationPointCommand::undo() {
             pointId_ = newId;  // Update for potential redo
         }
     } else {
-        AutomationPointId newId =
-            mgr.addPoint(laneId_, storedPoint_.time, storedPoint_.value, storedPoint_.curveType);
+        AutomationPointId newId = mgr.addPoint(laneId_, storedPoint_.beatPosition,
+                                               storedPoint_.value, storedPoint_.curveType);
         if (newId != INVALID_AUTOMATION_POINT_ID) {
             mgr.setPointTension(laneId_, newId, storedPoint_.tension);
             mgr.setPointHandles(laneId_, newId, storedPoint_.inHandle, storedPoint_.outHandle);
@@ -101,7 +101,7 @@ void DeleteAutomationPointCommand::undo() {
 void MoveAutomationPointCommand::captureOldPosition() {
     const auto* pt = findPoint(isClip_, laneId_, clipId_, pointId_);
     if (pt) {
-        oldTime_ = pt->time;
+        oldTime_ = pt->beatPosition;
         oldValue_ = pt->value;
     }
 }

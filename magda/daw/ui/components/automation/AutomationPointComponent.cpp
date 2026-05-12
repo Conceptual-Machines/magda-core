@@ -101,7 +101,7 @@ void AutomationPointComponent::mouseDown(const juce::MouseEvent& e) {
         // Start drag
         isDragging_ = true;
         dragStartPos_ = e.getEventRelativeTo(getParentComponent()).getPosition();
-        dragStartTime_ = point_.time;
+        dragStartTime_ = point_.beatPosition;
         dragStartValue_ = point_.value;
     }
 }
@@ -234,7 +234,8 @@ void AutomationPointComponent::updateHandlePositions() {
 
     // In handle position
     if (inHandle_) {
-        int handleX = pointCenter.x + static_cast<int>(point_.inHandle.time * pixelsPerSecond);
+        int handleX =
+            pointCenter.x + static_cast<int>(point_.inHandle.beatOffset * pixelsPerSecond);
         int handleY = pointCenter.y - static_cast<int>(point_.inHandle.value * pixelsPerValue);
         inHandle_->setCentrePosition(handleX, handleY);
         inHandle_->updateFromHandle(point_.inHandle);
@@ -242,7 +243,8 @@ void AutomationPointComponent::updateHandlePositions() {
 
     // Out handle position
     if (outHandle_) {
-        int handleX = pointCenter.x + static_cast<int>(point_.outHandle.time * pixelsPerSecond);
+        int handleX =
+            pointCenter.x + static_cast<int>(point_.outHandle.beatOffset * pixelsPerSecond);
         int handleY = pointCenter.y - static_cast<int>(point_.outHandle.value * pixelsPerValue);
         outHandle_->setCentrePosition(handleX, handleY);
         outHandle_->updateFromHandle(point_.outHandle);
@@ -258,14 +260,14 @@ void AutomationPointComponent::onHandleChanged(BezierHandleComponent::HandleType
         inH = handle;
         // If linked, mirror the out handle
         if (inH.linked && outH.linked) {
-            outH.time = -inH.time;
+            outH.beatOffset = -inH.beatOffset;
             outH.value = -inH.value;
         }
     } else {
         outH = handle;
         // If linked, mirror the in handle
         if (inH.linked && outH.linked) {
-            inH.time = -outH.time;
+            inH.beatOffset = -outH.beatOffset;
             inH.value = -outH.value;
         }
     }
