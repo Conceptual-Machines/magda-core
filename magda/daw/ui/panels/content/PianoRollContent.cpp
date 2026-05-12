@@ -12,6 +12,7 @@
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "music/ChordEngine.hpp"
@@ -1364,7 +1365,7 @@ void PianoRollContent::detectChordsFromNotes() {
     if (!clip || clip->midiNotes.empty())
         return;
 
-    int beatsPerBar = 4;
+    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
     if (auto* controller = magda::TimelineController::getCurrent())
         beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
 

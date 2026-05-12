@@ -300,7 +300,7 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Get tempo from TimelineController, fallback to 120 BPM if not available
         double bpm = 120.0;
-        int beatsPerBar = 4;
+        int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
         if (timelineController_) {
             const auto& state = timelineController_->getState();
             bpm = state.tempo.bpm;

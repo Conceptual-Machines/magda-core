@@ -1,5 +1,6 @@
 #include "../../../../state/TimelineController.hpp"
 #include "../ClipInspector.hpp"
+#include "core/TempoUtils.hpp"
 
 namespace magda::daw::ui {
 
@@ -50,7 +51,7 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
         if (clip && clip->isAudio()) {
             updateAudioSourceValueDisplays(*clip);
             double projectBPM = 120.0;
-            int beatsPerBar = 4;
+            int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
             if (timelineController_) {
                 const auto& state = timelineController_->getState();
                 projectBPM = state.tempo.bpm;
