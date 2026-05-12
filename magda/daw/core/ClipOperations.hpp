@@ -345,7 +345,7 @@ class ClipOperations {
 
     /**
      * @brief Trim audio from left edge
-     * Adjusts clip.offset, clip.startTime, clip.length.
+     * Adjusts source offset and timeline beat placement.
      * @param clip Clip to modify
      * @param trimAmount Amount to trim in timeline seconds (positive=trim, negative=extend)
      * @param fileDuration Total file duration for constraint checking (0 = no file constraint)
@@ -374,7 +374,7 @@ class ClipOperations {
 
     /**
      * @brief Trim audio from right edge
-     * Adjusts clip.length and loopLength.
+     * Adjusts timeline beat placement and loopLength.
      * @param clip Clip to modify
      * @param trimAmount Amount to trim in timeline seconds (positive=trim, negative=extend)
      * @param fileDuration Total file duration for constraint checking (0 = no file constraint)
@@ -396,7 +396,7 @@ class ClipOperations {
 
     /**
      * @brief Stretch audio from right edge
-     * Adjusts clip.length and clip.speedRatio.
+     * Adjusts timeline beat placement and speedRatio.
      * @param clip Clip to stretch
      * @param newLength New timeline length
      * @param oldLength Original timeline length at drag start
@@ -424,7 +424,7 @@ class ClipOperations {
 
     /**
      * @brief Stretch audio from left edge
-     * Adjusts clip.startTime, clip.length, clip.speedRatio to keep right edge fixed.
+     * Adjusts timeline beat placement and speedRatio to keep the right edge fixed.
      * @param clip Clip to stretch
      * @param newLength New timeline length
      * @param oldLength Original timeline length at drag start
@@ -863,7 +863,7 @@ class ClipOperations {
     /**
      * @brief Set source extent via timeline extent (editor right-edge drag)
      * Updates loopLength from timeline extent.
-     * For non-looped clips, also updates clip.length.
+     * For non-looped clips, also updates timeline beat placement.
      * @param clip Clip to modify
      * @param newTimelineExtent New extent in timeline seconds
      */
@@ -877,7 +877,7 @@ class ClipOperations {
     }
 
     /**
-     * @brief Stretch in editor (changes speedRatio, scales clip.length,
+     * @brief Stretch in editor (changes speedRatio, scales timeline beat placement,
      * adjusts loopLength for looped clips)
      * @param clip Clip to stretch
      * @param newSpeedRatio New speed ratio
