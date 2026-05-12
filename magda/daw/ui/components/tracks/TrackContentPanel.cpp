@@ -2272,11 +2272,15 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
         // Collect clips to split
         std::vector<ClipId> clipsToSplit;
         const auto& selectedClips = selectionManager.getSelectedClips();
+        const double bpm = getTempo();
+        const auto containsSplitTime = [bpm, splitTime](const ClipInfo& clip) {
+            return splitTime > clip.getTimelineStart(bpm) && splitTime < clip.getTimelineEnd(bpm);
+        };
 
         // First, check if any selected clips contain the edit cursor
         for (ClipId clipId : selectedClips) {
             const auto* clip = ClipManager::getInstance().getClip(clipId);
-            if (clip && clip->containsTime(splitTime)) {
+            if (clip && containsSplitTime(*clip)) {
                 clipsToSplit.push_back(clipId);
             }
         }
@@ -2285,7 +2289,7 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
         if (clipsToSplit.empty()) {
             const auto& allClips = ClipManager::getInstance().getArrangementClips();
             for (const auto& clip : allClips) {
-                if (clip.containsTime(splitTime)) {
+                if (containsSplitTime(clip)) {
                     clipsToSplit.push_back(clip.id);
                 }
             }

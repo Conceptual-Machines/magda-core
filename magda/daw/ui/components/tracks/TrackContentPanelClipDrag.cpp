@@ -5,6 +5,7 @@
 #include "TrackContentPanel.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TempoUtils.hpp"
 #include "core/UndoManager.hpp"
 
 namespace magda {
@@ -22,7 +23,8 @@ double clipTimelineEnd(const ClipInfo& clip, double bpm) {
 double clipTimelineLengthBeats(const ClipInfo& clip, double bpm) {
     if (clip.placement.lengthBeats > 0.0)
         return clip.placement.lengthBeats;
-    return bpm > 0.0 ? clip.getTimelineLength(bpm) * bpm / 60.0 : clip.length;
+    const double resolvedBpm = isValidBpm(bpm) ? bpm : DEFAULT_BPM;
+    return clip.getTimelineLength(resolvedBpm) * resolvedBpm / 60.0;
 }
 
 }  // namespace
