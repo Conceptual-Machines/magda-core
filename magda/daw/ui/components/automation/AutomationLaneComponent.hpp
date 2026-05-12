@@ -65,7 +65,7 @@ class AutomationLaneComponent : public juce::Component,
     bool isExpanded() const;
 
     // Snapping
-    std::function<double(double)> snapTimeToGrid;
+    std::function<double(double)> snapBeatToGrid;
     std::function<double()> getGridSpacingBeats;
 
     // Header dimensions

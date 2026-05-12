@@ -449,11 +449,11 @@ void AutomationManager::setTargetTouchSuppressed(const AutomationTarget& target,
         touchSuppressionListener_(laneId, suppressed);
 }
 
-void AutomationManager::setLaneSnapTime(AutomationLaneId laneId, bool snap) {
+void AutomationManager::setLaneSnapToBeatGrid(AutomationLaneId laneId, bool snap) {
     if (auto* lane = getLane(laneId)) {
-        if (lane->snapTime == snap)
+        if (lane->snapToBeatGrid == snap)
             return;
-        lane->snapTime = snap;
+        lane->snapToBeatGrid = snap;
         notifyLanePropertyChanged(laneId);
     }
 }

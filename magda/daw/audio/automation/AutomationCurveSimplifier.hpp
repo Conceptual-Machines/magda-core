@@ -8,12 +8,12 @@ namespace magda {
  * @brief Ramer–Douglas–Peucker curve simplification for automation points.
  *
  * Reduces a recorded automation polyline to the minimum set of points that
- * preserves its shape within a tolerance. Operates on (time, value) pairs
- * where value is normalized [0, 1]. Time units are arbitrary (beats).
+ * preserves its shape within a tolerance. Operates on (beatPosition, value) pairs
+ * where value is normalized [0, 1].
  *
  * The "distance" metric is vertical distance from the candidate point to
  * the straight line between the range endpoints — i.e. how much the linear
- * interpolation would deviate from the actual recorded value at that time.
+ * interpolation would deviate from the actual recorded value at that beat position.
  * This is what matters for automation fidelity.
  *
  * First and last points are always kept.
@@ -21,14 +21,14 @@ namespace magda {
 class AutomationCurveSimplifier {
   public:
     struct Point {
-        double time;
+        double beatPosition;
         double value;
     };
 
     /**
      * @brief Return the indices of points to keep (sorted ascending).
      *
-     * @param points   Input points, already sorted by time.
+     * @param points   Input points, already sorted by beatPosition.
      * @param epsilon  Tolerance in value-axis units (normalized). Points within
      *                 epsilon of the interpolated line are dropped. Typical
      *                 range: 0.005–0.02 (0.5%–2% of parameter range).

@@ -73,7 +73,7 @@ juce::var ProjectSerializer::serializeAutomationLaneInfo(const AutomationLaneInf
     obj->setProperty("visible", lane.visible);
     obj->setProperty("expanded", lane.expanded);
     obj->setProperty("bypass", lane.bypass);
-    obj->setProperty("snapTime", lane.snapTime);
+    obj->setProperty("snapToBeatGrid", lane.snapToBeatGrid);
     obj->setProperty("snapValue", lane.snapValue);
     obj->setProperty("height", lane.height);
 
@@ -113,8 +113,10 @@ bool ProjectSerializer::deserializeAutomationLaneInfo(const juce::var& json,
     outLane.expanded = obj->getProperty("expanded");
     if (obj->hasProperty("bypass"))
         outLane.bypass = obj->getProperty("bypass");
-    if (obj->hasProperty("snapTime"))
-        outLane.snapTime = obj->getProperty("snapTime");
+    if (obj->hasProperty("snapToBeatGrid"))
+        outLane.snapToBeatGrid = obj->getProperty("snapToBeatGrid");
+    else if (obj->hasProperty("snapTime"))
+        outLane.snapToBeatGrid = obj->getProperty("snapTime");
     if (obj->hasProperty("snapValue"))
         outLane.snapValue = obj->getProperty("snapValue");
     outLane.height = obj->getProperty("height");

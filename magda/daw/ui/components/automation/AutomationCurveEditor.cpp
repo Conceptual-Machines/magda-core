@@ -16,15 +16,15 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
     setName("AutomationCurveEditor");
 
     // Wire up base class snapping to automation snapping.
-    // Gated on the lane's snapTime flag so the user can disable per-lane.
+    // Gated on the lane's snapToBeatGrid flag so the user can disable per-lane.
     CurveEditorBase::snapXToGrid = [this](double x) -> double {
         if (AutomationManager::getInstance().isWriteModeEnabled())
             return x;
         const auto* lane = AutomationManager::getInstance().getLane(laneId_);
-        if (lane && !lane->snapTime)
+        if (lane && !lane->snapToBeatGrid)
             return x;
-        if (snapTimeToGrid) {
-            return snapTimeToGrid(x);
+        if (snapBeatToGrid) {
+            return snapBeatToGrid(x);
         }
         return x;
     };

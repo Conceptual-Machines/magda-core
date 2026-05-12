@@ -218,7 +218,7 @@ class AutomationManager : public TrackManagerListener {
         touchSuppressionListener_ = std::move(listener);
     }
 
-    void setLaneSnapTime(AutomationLaneId laneId, bool snap);
+    void setLaneSnapToBeatGrid(AutomationLaneId laneId, bool snap);
     void setLaneSnapValue(AutomationLaneId laneId, bool snap);
     void setLaneHeight(AutomationLaneId laneId, int height);
 

@@ -250,9 +250,9 @@ void AutomationLaneComponent::rebuildContent() {
         curveEditor_->setPixelsPerSecond(pixelsPerSecond_);
         curveEditor_->setPixelsPerBeat(pixelsPerBeat_);
         curveEditor_->setTempoBPM(tempoBPM_);
-        curveEditor_->snapTimeToGrid = [this](double x) {
-            if (snapTimeToGrid)
-                return snapTimeToGrid(x);
+        curveEditor_->snapBeatToGrid = [this](double x) {
+            if (snapBeatToGrid)
+                return snapBeatToGrid(x);
             return x;
         };
         curveEditor_->getGridSpacingBeats = [this]() -> double {
@@ -362,8 +362,8 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
     if (lane == nullptr || !lane->isAbsolute() || lane->absolutePoints.size() <= 2)
         return;
 
-    // Snapshot IDs + (time, value) pairs sorted by time. When a filter is
-    // supplied we still sort everything by time, but only points inside the
+    // Snapshot IDs + (beat position, value) pairs sorted by beat position. When a filter is
+    // supplied we still sort everything by beat position, but only points inside the
     // filter are candidates for removal — others are pinned as "keep" so the
     // user's unselected points survive intact.
     struct Entry {
@@ -384,7 +384,7 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
         entries.push_back({pt.id, {pt.beatPosition, pt.value}, inScope});
     }
     std::sort(entries.begin(), entries.end(),
-              [](const Entry& a, const Entry& b) { return a.p.time < b.p.time; });
+              [](const Entry& a, const Entry& b) { return a.p.beatPosition < b.p.beatPosition; });
 
     std::vector<AutomationCurveSimplifier::Point> polyline;
     polyline.reserve(entries.size());

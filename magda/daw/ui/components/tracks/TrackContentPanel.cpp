@@ -2481,7 +2481,7 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
             entry.component->setPixelsPerSecond(currentZoom * tempoBPM / 60.0);
             entry.component->setPixelsPerBeat(currentZoom);
             entry.component->setTempoBPM(tempoBPM);
-            entry.component->snapTimeToGrid = snapBeatsToGrid;
+            entry.component->snapBeatToGrid = snapBeatsToGrid;
             entry.component->getGridSpacingBeats = getGridSpacingBeats;
 
             entry.component->onHeightChanged = [this](AutomationLaneId, int) {
