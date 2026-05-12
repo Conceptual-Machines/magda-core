@@ -179,9 +179,9 @@ struct AutomationLaneInfo {
     // leaves the parameter alone for the duration of the gesture instead of
     // fighting it every block.
     bool touchSuppressed = false;
-    bool snapToBeatGrid = true;  // Snap drawn points to beat grid
-    bool snapValue = false;      // Snap drawn values to parameter's natural ticks
-    int height = 60;             // Lane height in pixels
+    bool snapEditsToBeatGrid = true;  // Snap edit gestures to the beat grid
+    bool snapValue = false;           // Snap drawn values to parameter's natural ticks
+    int height = 60;                  // Lane height in pixels
 
     // For Absolute type: points directly on lane
     std::vector<AutomationPoint> absolutePoints;

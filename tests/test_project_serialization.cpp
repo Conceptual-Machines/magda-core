@@ -335,7 +335,7 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     auto& automation = AutomationManager::getInstance();
     auto laneId =
         automation.createLane(ControlTarget::trackVolume(trackId), AutomationLaneType::ClipBased);
-    automation.setLaneSnapToBeatGrid(laneId, false);
+    automation.setLaneSnapEditsToBeatGrid(laneId, false);
     auto clipId = automation.createClip(laneId, 4.0, 8.0);
     REQUIRE(clipId != INVALID_AUTOMATION_CLIP_ID);
     automation.setClipLooping(clipId, true);
@@ -362,9 +362,10 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     REQUIRE(lanes->size() == 1);
     auto* laneObj = lanes->getReference(0).getDynamicObject();
     REQUIRE(laneObj != nullptr);
-    REQUIRE(laneObj->hasProperty("snapToBeatGrid"));
+    REQUIRE(laneObj->hasProperty("snapEditsToBeatGrid"));
+    REQUIRE_FALSE(laneObj->hasProperty("snapToBeatGrid"));
     REQUIRE_FALSE(laneObj->hasProperty("snapTime"));
-    REQUIRE(static_cast<bool>(laneObj->getProperty("snapToBeatGrid")) == false);
+    REQUIRE(static_cast<bool>(laneObj->getProperty("snapEditsToBeatGrid")) == false);
 
     auto* clips = automationObj->getProperty("clips").getArray();
     REQUIRE(clips != nullptr);
@@ -414,7 +415,7 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     REQUIRE(restoredClips[0].points[0].outHandle.beatOffset == Approx(0.5));
     const auto* restoredLane = AutomationManager::getInstance().getLane(laneId);
     REQUIRE(restoredLane != nullptr);
-    REQUIRE_FALSE(restoredLane->snapToBeatGrid);
+    REQUIRE_FALSE(restoredLane->snapEditsToBeatGrid);
 }
 
 TEST_CASE("Automation serialization reads legacy time-named beat properties",

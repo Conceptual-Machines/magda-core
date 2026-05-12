@@ -3923,10 +3923,11 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
         auto entry = std::make_unique<AutoLaneHeaderButtons>();
         entry->laneId = laneId;
 
-        entry->snapBeatGridBtn = std::make_unique<SnapIconLaneButton>(
-            "snapToBeatGrid", BinaryData::horizontal_snap_svg, BinaryData::horizontal_snap_svgSize);
-        entry->snapBeatGridBtn->setTooltip("Snap points to beat grid");
-        addAndMakeVisible(*entry->snapBeatGridBtn);
+        entry->snapEditGridBtn = std::make_unique<SnapIconLaneButton>(
+            "snapEditsToBeatGrid", BinaryData::horizontal_snap_svg,
+            BinaryData::horizontal_snap_svgSize);
+        entry->snapEditGridBtn->setTooltip("Snap edits to beat grid");
+        addAndMakeVisible(*entry->snapEditGridBtn);
 
         entry->snapValueBtn = std::make_unique<SnapIconLaneButton>(
             "snapValue", BinaryData::vertical_snap_svg, BinaryData::vertical_snap_svgSize);
@@ -3952,10 +3953,10 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
         // rebuilds (the raw pointer `entry.get()` would dangle if the entry
         // is later destroyed, but the laneId lookup is safe).
         AutomationLaneId id = laneId;
-        entry->snapBeatGridBtn->onClick = [id]() {
+        entry->snapEditGridBtn->onClick = [id]() {
             auto& mgr = AutomationManager::getInstance();
             if (const auto* lane = mgr.getLane(id))
-                mgr.setLaneSnapToBeatGrid(id, !lane->snapToBeatGrid);
+                mgr.setLaneSnapEditsToBeatGrid(id, !lane->snapEditsToBeatGrid);
         };
         entry->snapValueBtn->onClick = [id]() {
             auto& mgr = AutomationManager::getInstance();
@@ -3980,7 +3981,8 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
         const auto* lane = manager.getLane(entry->laneId);
         if (!lane)
             continue;
-        entry->snapBeatGridBtn->setToggleState(lane->snapToBeatGrid, juce::dontSendNotification);
+        entry->snapEditGridBtn->setToggleState(lane->snapEditsToBeatGrid,
+                                               juce::dontSendNotification);
         entry->snapValueBtn->setToggleState(lane->snapValue, juce::dontSendNotification);
         // Power glyph: inverted — "on" means automation active, not bypassed.
         entry->bypassBtn->setToggleState(!lane->bypass, juce::dontSendNotification);
@@ -4018,7 +4020,7 @@ void TrackHeadersPanel::positionLaneHeaderButtons() {
                 int btnY = y + AutomationLaneComponent::HEADER_HEIGHT + kTopMargin;
                 bool inView = lane->expanded;
 
-                entry->snapBeatGridBtn->setVisible(inView);
+                entry->snapEditGridBtn->setVisible(inView);
                 entry->snapValueBtn->setVisible(inView);
                 entry->bypassBtn->setVisible(inView);
                 entry->deleteBtn->setVisible(inView);
@@ -4029,7 +4031,7 @@ void TrackHeadersPanel::positionLaneHeaderButtons() {
                         b.setBounds(x, btnY, kBtnSize, kBtnSize);
                         x += (kBtnSize + kBtnGap);
                     };
-                    place(*entry->snapBeatGridBtn);
+                    place(*entry->snapEditGridBtn);
                     place(*entry->snapValueBtn);
                     place(*entry->bypassBtn);
                     place(*entry->deleteBtn);

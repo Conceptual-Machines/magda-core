@@ -209,7 +209,7 @@ class TrackHeadersPanel : public juce::Component,
     // updateTrackHeaderLayout.
     struct AutoLaneHeaderButtons {
         AutomationLaneId laneId = INVALID_AUTOMATION_LANE_ID;
-        std::unique_ptr<juce::Button> snapBeatGridBtn;
+        std::unique_ptr<juce::Button> snapEditGridBtn;
         std::unique_ptr<juce::Button> snapValueBtn;
         std::unique_ptr<juce::Button> bypassBtn;
         std::unique_ptr<juce::Button> deleteBtn;
