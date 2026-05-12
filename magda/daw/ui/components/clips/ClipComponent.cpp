@@ -1758,8 +1758,9 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
 
                     // Shift+drag duplicate: create duplicate at final position via undo command
                     double dupTempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-                    auto cmd = std::make_unique<DuplicateClipCommand>(clipId_, finalStartTime,
-                                                                      targetTrackId, dupTempo);
+                    auto cmd = std::make_unique<DuplicateClipCommand>(
+                        clipId_, BeatPosition{finalStartTime * dupTempo / 60.0}, targetTrackId,
+                        dupTempo);
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
                     // Select the duplicate — must happen before SafePointer check
@@ -2633,7 +2634,9 @@ void ClipComponent::showContextMenu() {
                             }
                         }
                     }
-                    auto cmd = std::make_unique<PasteClipCommand>(pasteTime);
+                    const double bpm = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                    auto cmd =
+                        std::make_unique<PasteClipCommand>(BeatPosition{pasteTime * bpm / 60.0});
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
                     const auto& pastedIds = cmdPtr->getPastedClipIds();
@@ -2702,7 +2705,8 @@ void ClipComponent::showContextMenu() {
                 if (!clipManager.hasClipsInClipboard())
                     break;
 
-                auto cmd = std::make_unique<PasteClipCommand>(sel.endTime);
+                auto cmd = std::make_unique<PasteClipCommand>(
+                    BeatPosition{sel.endTime * tc.getState().tempo.bpm / 60.0});
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 
                 double duration = sel.endTime - sel.startTime;
@@ -2732,8 +2736,8 @@ void ClipComponent::showContextMenu() {
                                 UndoManager::getInstance().beginCompoundOperation("Split Clips");
                             for (auto cid : toSplit) {
                                 double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-                                auto cmd =
-                                    std::make_unique<SplitClipCommand>(cid, splitTime, tempo);
+                                auto cmd = std::make_unique<SplitClipCommand>(
+                                    cid, BeatPosition{splitTime * tempo / 60.0}, tempo);
                                 UndoManager::getInstance().executeCommand(std::move(cmd));
                             }
                             if (toSplit.size() > 1)

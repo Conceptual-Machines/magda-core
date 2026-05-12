@@ -78,6 +78,11 @@ double resolveTimelineBpm(double tempo) {
     return currentProjectBpm();
 }
 
+double beatsToTimelineSeconds(double beats, double tempo) {
+    const double bpm = resolveTimelineBpm(tempo);
+    return beats * 60.0 / bpm;
+}
+
 /**
  * Progress window for offline rendering that runs on a background thread
  * while pumping the message loop (via runThread()) so the UI stays responsive.
@@ -128,14 +133,13 @@ class RenderProgressWindow : public juce::ThreadWithProgressWindow {
 // SplitClipCommand
 // ============================================================================
 
-SplitClipCommand::SplitClipCommand(ClipId clipId, double splitTime, double tempo)
-    : clipId_(clipId), splitTime_(splitTime), tempo_(tempo) {}
+SplitClipCommand::SplitClipCommand(ClipId clipId, BeatPosition splitBeat, double tempo)
+    : clipId_(clipId), splitBeat_(splitBeat.value), tempo_(tempo) {}
 
 bool SplitClipCommand::canExecute() const {
     auto* clip = ClipManager::getInstance().getClip(clipId_);
     const double bpm = resolveTimelineBpm(tempo_);
-    return clip && splitTime_ > clip->getTimelineStart(bpm) &&
-           splitTime_ < clip->getTimelineEnd(bpm);
+    return clip && splitBeat_ > clip->getStartBeats(bpm) && splitBeat_ < clip->getEndBeats(bpm);
 }
 
 ClipInfo SplitClipCommand::captureState() {
@@ -160,7 +164,7 @@ void SplitClipCommand::restoreState(const ClipInfo& state) {
 }
 
 void SplitClipCommand::performAction() {
-    rightClipId_ = ClipManager::getInstance().splitClip(clipId_, splitTime_, tempo_);
+    rightClipId_ = ClipManager::getInstance().splitClipAtBeat(clipId_, splitBeat_, tempo_);
 }
 
 bool SplitClipCommand::validateState() const {
@@ -205,8 +209,8 @@ bool SplitClipCommand::validateState() const {
 // MoveClipCommand
 // ============================================================================
 
-MoveClipCommand::MoveClipCommand(ClipId clipId, double newStartTime)
-    : clipId_(clipId), newStartTime_(newStartTime) {}
+MoveClipCommand::MoveClipCommand(ClipId clipId, BeatPosition newStartBeat, double tempo)
+    : clipId_(clipId), newStartBeat_(newStartBeat.value), tempo_(tempo) {}
 
 void MoveClipCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
@@ -216,7 +220,7 @@ void MoveClipCommand::execute() {
         arrangementSnapshot_ = clipManager.getArrangementClips();
     }
 
-    clipManager.moveClip(clipId_, newStartTime_);
+    clipManager.moveClipBeats(clipId_, newStartBeat_, tempo_);
     executed_ = true;
 }
 
@@ -249,7 +253,7 @@ void MoveClipCommand::mergeWith(const UndoableCommand* other) {
     auto* otherMove = dynamic_cast<const MoveClipCommand*>(other);
     if (otherMove) {
         // Keep our original snapshot, just update the target position
-        newStartTime_ = otherMove->newStartTime_;
+        newStartBeat_ = otherMove->newStartBeat_;
     }
 }
 
@@ -347,8 +351,9 @@ void MoveClipToTrackCommand::undo() {
 // ResizeClipCommand
 // ============================================================================
 
-ResizeClipCommand::ResizeClipCommand(ClipId clipId, double newLength, bool fromStart, double tempo)
-    : clipId_(clipId), newLength_(newLength), fromStart_(fromStart), tempo_(tempo) {}
+ResizeClipCommand::ResizeClipCommand(ClipId clipId, BeatDuration newLength, bool fromStart,
+                                     double tempo)
+    : clipId_(clipId), newLengthBeats_(newLength.value), fromStart_(fromStart), tempo_(tempo) {}
 
 ClipInfo ResizeClipCommand::captureState() {
     auto* clip = ClipManager::getInstance().getClip(clipId_);
@@ -364,7 +369,7 @@ void ResizeClipCommand::restoreState(const ClipInfo& state) {
 }
 
 void ResizeClipCommand::performAction() {
-    ClipManager::getInstance().resizeClip(clipId_, newLength_, fromStart_, tempo_);
+    ClipManager::getInstance().resizeClipBeats(clipId_, newLengthBeats_, fromStart_, tempo_);
 }
 
 bool ResizeClipCommand::canMergeWith(const UndoableCommand* other) const {
@@ -377,7 +382,7 @@ void ResizeClipCommand::mergeWith(const UndoableCommand* other) {
     auto* otherResize = dynamic_cast<const ResizeClipCommand*>(other);
     if (otherResize) {
         // Update to their new length
-        newLength_ = otherResize->newLength_;
+        newLengthBeats_ = otherResize->newLengthBeats_;
     }
 }
 
@@ -410,18 +415,19 @@ bool DeleteClipCommand::validateState() const {
 // CreateClipCommand
 // ============================================================================
 
-CreateClipCommand::CreateClipCommand(ClipType type, TrackId trackId, double startTime,
-                                     double length, const juce::String& audioFilePath,
-                                     ClipView view)
+CreateClipCommand::CreateClipCommand(ClipType type, TrackId trackId, BeatPosition startBeat,
+                                     BeatDuration lengthBeats, const juce::String& audioFilePath,
+                                     ClipView view, double tempo)
     : type_(type),
       trackId_(trackId),
-      startTime_(startTime),
-      length_(length),
+      startBeat_(startBeat.value),
+      lengthBeats_(lengthBeats.value),
       audioFilePath_(audioFilePath),
-      view_(view) {}
+      view_(view),
+      tempo_(tempo) {}
 
 bool CreateClipCommand::canExecute() const {
-    return trackId_ != INVALID_TRACK_ID && length_ > 0.0;
+    return trackId_ != INVALID_TRACK_ID && lengthBeats_ > 0.0;
 }
 
 void CreateClipCommand::execute() {
@@ -435,10 +441,10 @@ void CreateClipCommand::execute() {
     }
 
     if (type_ == ClipType::Audio) {
-        createdClipId_ =
-            clipManager.createAudioClip(trackId_, startTime_, length_, audioFilePath_, view_);
+        createdClipId_ = clipManager.createAudioClipBeats(trackId_, startBeat_, lengthBeats_,
+                                                          audioFilePath_, view_, tempo_);
     } else {
-        createdClipId_ = clipManager.createMidiClip(trackId_, startTime_, length_, view_);
+        createdClipId_ = clipManager.createMidiClipBeats(trackId_, startBeat_, lengthBeats_, view_);
     }
 
     executed_ = true;
@@ -467,14 +473,30 @@ void CreateClipCommand::undo() {
 // DuplicateClipCommand
 // ============================================================================
 
-DuplicateClipCommand::DuplicateClipCommand(ClipId sourceClipId, double startTime,
+DuplicateClipCommand::DuplicateClipCommand(ClipId sourceClipId)
+    : sourceClipId_(sourceClipId),
+      targetTrackId_(INVALID_TRACK_ID),
+      tempo_(0.0),
+      targetSceneIndex_(-1) {}
+
+DuplicateClipCommand::DuplicateClipCommand(ClipId sourceClipId, BeatPosition startBeat,
                                            TrackId targetTrackId, double tempo,
                                            int targetSceneIndex)
     : sourceClipId_(sourceClipId),
-      startTime_(startTime),
+      hasExplicitStartBeat_(true),
+      startBeat_(startBeat.value),
       targetTrackId_(targetTrackId),
       tempo_(tempo),
       targetSceneIndex_(targetSceneIndex) {}
+
+std::unique_ptr<DuplicateClipCommand> DuplicateClipCommand::forSessionSlot(ClipId sourceClipId,
+                                                                           TrackId targetTrackId,
+                                                                           int targetSceneIndex) {
+    auto command = std::make_unique<DuplicateClipCommand>(sourceClipId);
+    command->targetTrackId_ = targetTrackId;
+    command->targetSceneIndex_ = targetSceneIndex;
+    return command;
+}
 
 bool DuplicateClipCommand::canExecute() const {
     return ClipManager::getInstance().getClip(sourceClipId_) != nullptr;
@@ -486,11 +508,11 @@ void DuplicateClipCommand::execute() {
 
     auto& clipManager = ClipManager::getInstance();
 
-    if (startTime_ < 0) {
+    if (!hasExplicitStartBeat_) {
         duplicatedClipId_ = clipManager.duplicateClip(sourceClipId_);
     } else {
         duplicatedClipId_ =
-            clipManager.duplicateClipAt(sourceClipId_, startTime_, targetTrackId_, tempo_);
+            clipManager.duplicateClipAtBeats(sourceClipId_, startBeat_, targetTrackId_, tempo_);
     }
     if (duplicatedClipId_ != INVALID_CLIP_ID) {
         if (targetTrackId_ != INVALID_TRACK_ID)
@@ -576,9 +598,9 @@ std::vector<std::unique_ptr<DuplicateClipCommand>> createArrangementBlockDuplica
         const auto* clip = clipManager.getClip(clipId);
         if (!clip)
             continue;
-        const double newStart = clip->getTimelineStart(bpm) + blockLength;
-        commands.push_back(
-            std::make_unique<DuplicateClipCommand>(clipId, newStart, INVALID_TRACK_ID, tempo));
+        const double newStartBeat = clip->getStartBeats(bpm) + blockLength * bpm / 60.0;
+        commands.push_back(std::make_unique<DuplicateClipCommand>(
+            clipId, BeatPosition{newStartBeat}, INVALID_TRACK_ID, tempo));
     }
 
     return commands;
@@ -588,12 +610,13 @@ std::vector<std::unique_ptr<DuplicateClipCommand>> createArrangementBlockDuplica
 // PasteClipCommand Implementation
 // ============================================================================
 
-PasteClipCommand::PasteClipCommand(double pasteTime, TrackId targetTrackId, ClipView targetView,
-                                   int targetSceneIndex)
-    : pasteTime_(pasteTime),
+PasteClipCommand::PasteClipCommand(BeatPosition pasteBeat, TrackId targetTrackId,
+                                   ClipView targetView, int targetSceneIndex, double tempo)
+    : pasteBeat_(pasteBeat.value),
       targetTrackId_(targetTrackId),
       targetView_(targetView),
-      targetSceneIndex_(targetSceneIndex) {}
+      targetSceneIndex_(targetSceneIndex),
+      tempo_(tempo) {}
 
 bool PasteClipCommand::canExecute() const {
     return ClipManager::getInstance().hasClipsInClipboard();
@@ -610,8 +633,8 @@ void PasteClipCommand::execute() {
         sessionSnapshot_ = clipManager.getSessionClips();
     }
 
-    pastedClipIds_ =
-        clipManager.pasteFromClipboard(pasteTime_, targetTrackId_, targetView_, targetSceneIndex_);
+    pastedClipIds_ = clipManager.pasteFromClipboard(beatsToTimelineSeconds(pasteBeat_, tempo_),
+                                                    targetTrackId_, targetView_, targetSceneIndex_);
     executed_ = true;
 }
 
@@ -1992,7 +2015,9 @@ void sliceClipAtTimes(ClipId clipId, const std::vector<double>& splitTimes, doub
     ClipId currentClipId = clipId;
 
     for (double splitTime : splitTimes) {
-        auto cmd = std::make_unique<SplitClipCommand>(currentClipId, splitTime, tempo);
+        const double bpm = resolveTimelineBpm(tempo);
+        auto cmd = std::make_unique<SplitClipCommand>(currentClipId,
+                                                      BeatPosition{splitTime * bpm / 60.0}, bpm);
         auto* cmdPtr = cmd.get();
         undoManager.executeCommand(std::move(cmd));
         currentClipId = cmdPtr->getRightClipId();

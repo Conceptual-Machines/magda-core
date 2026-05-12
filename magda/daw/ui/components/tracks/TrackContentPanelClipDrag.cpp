@@ -65,10 +65,12 @@ void TrackContentPanel::createClipFromTimeSelection() {
 
             if (track) {
                 double length = selection.endTime - selection.startTime;
+                const double bpm = getTempo();
 
                 // Create MIDI clip by default (tracks are hybrid - can contain both MIDI and audio)
-                auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId,
-                                                               selection.startTime, length);
+                auto cmd = std::make_unique<CreateClipCommand>(
+                    ClipType::MIDI, trackId, BeatPosition{selection.startTime * bpm / 60.0},
+                    BeatDuration{length * bpm / 60.0});
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 
                 // Find the newly created clip to select it
@@ -281,8 +283,9 @@ void TrackContentPanel::finishMultiClipDrag() {
             int targetIdx =
                 juce::jlimit(0, numTracks - 1, dragInfo.originalTrackIndex + trackDelta);
             TrackId targetTrackId = visibleTrackIds_[static_cast<size_t>(targetIdx)];
-            auto cmd = std::make_unique<DuplicateClipCommand>(dragInfo.clipId, newStartTime,
-                                                              targetTrackId, getTempo());
+            const double bpm = getTempo();
+            auto cmd = std::make_unique<DuplicateClipCommand>(
+                dragInfo.clipId, BeatPosition{newStartTime * bpm / 60.0}, targetTrackId, bpm);
             commands.push_back(std::move(cmd));
         }
 
@@ -306,7 +309,9 @@ void TrackContentPanel::finishMultiClipDrag() {
 
         for (const auto& dragInfo : multiClipDragInfos_) {
             double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
-            auto cmd = std::make_unique<MoveClipCommand>(dragInfo.clipId, newStartTime);
+            const double bpm = getTempo();
+            auto cmd = std::make_unique<MoveClipCommand>(
+                dragInfo.clipId, BeatPosition{newStartTime * bpm / 60.0}, bpm);
             UndoManager::getInstance().executeCommand(std::move(cmd));
 
             // Move to new track if needed
@@ -428,7 +433,9 @@ void TrackContentPanel::splitClipsAtSelectionBoundaries() {
 
         // Split at left boundary first — the right piece gets a new ID
         if (info.needsLeftSplit) {
-            auto cmd = std::make_unique<SplitClipCommand>(info.clipId, start, getTempo());
+            const double bpm = getTempo();
+            auto cmd = std::make_unique<SplitClipCommand>(info.clipId,
+                                                          BeatPosition{start * bpm / 60.0}, bpm);
             auto* cmdPtr = cmd.get();
             UndoManager::getInstance().executeCommand(std::move(cmd));
             // The right piece (from start onward) is the one that may need a right split
@@ -440,7 +447,9 @@ void TrackContentPanel::splitClipsAtSelectionBoundaries() {
             const auto* clip = ClipManager::getInstance().getClip(rightSideId);
             if (clip && end > clipTimelineStart(*clip, getTempo()) &&
                 end < clipTimelineEnd(*clip, getTempo())) {
-                auto cmd = std::make_unique<SplitClipCommand>(rightSideId, end, getTempo());
+                const double bpm = getTempo();
+                auto cmd = std::make_unique<SplitClipCommand>(rightSideId,
+                                                              BeatPosition{end * bpm / 60.0}, bpm);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
             }
         }
@@ -529,7 +538,9 @@ void TrackContentPanel::commitClipsInTimeSelection(double deltaTime) {
     // Commit all clip moves through the undo system
     for (const auto& info : clipsInTimeSelection_) {
         double newStartTime = juce::jmax(0.0, info.originalStartTime + deltaTime);
-        auto cmd = std::make_unique<MoveClipCommand>(info.clipId, newStartTime);
+        const double bpm = getTempo();
+        auto cmd = std::make_unique<MoveClipCommand>(info.clipId,
+                                                     BeatPosition{newStartTime * bpm / 60.0}, bpm);
         UndoManager::getInstance().executeCommand(std::move(cmd));
     }
 

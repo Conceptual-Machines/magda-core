@@ -1292,8 +1292,9 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
             UndoManager::getInstance().beginCompoundOperation("Trim Clips");
 
         for (const auto& [clipId, params] : trimOperations) {
-            auto cmd = std::make_unique<ResizeClipCommand>(clipId, params.first, params.second,
-                                                           getTempo());
+            const double bpm = getTempo();
+            auto cmd = std::make_unique<ResizeClipCommand>(
+                clipId, BeatDuration{params.first * bpm / 60.0}, params.second, bpm);
             UndoManager::getInstance().executeCommand(std::move(cmd));
         }
 
@@ -1526,7 +1527,9 @@ void TrackContentPanel::mouseDoubleClick(const juce::MouseEvent& event) {
 void TrackContentPanel::createMidiClipAtPosition(TrackId trackId, double startTime) {
     double barLength = (timeSignatureNumerator * 60.0) / tempoBPM;
 
-    auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId, startTime, barLength);
+    auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId,
+                                                   BeatPosition{startTime * tempoBPM / 60.0},
+                                                   BeatDuration{barLength * tempoBPM / 60.0});
     UndoManager::getInstance().executeCommand(std::move(cmd));
 
     auto clipId = ClipManager::getInstance().getClipAtPosition(trackId, startTime);
@@ -1579,7 +1582,8 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
                 break;
             }
             case 2: {  // Paste
-                auto cmd = std::make_unique<PasteClipCommand>(startTime);
+                const double bpm = safeThis ? safeThis->getTempo() : 120.0;
+                auto cmd = std::make_unique<PasteClipCommand>(BeatPosition{startTime * bpm / 60.0});
                 auto* cmdPtr = cmd.get();
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 
@@ -1627,7 +1631,9 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
                 if (!cm.hasClipsInClipboard())
                     return;
 
-                auto cmd = std::make_unique<PasteClipCommand>(sel.endTime);
+                const double bpm = tc.getState().tempo.bpm;
+                auto cmd =
+                    std::make_unique<PasteClipCommand>(BeatPosition{sel.endTime * bpm / 60.0});
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 
                 // Shift the time selection to the duplicated region so a
@@ -1800,8 +1806,10 @@ void TrackContentPanel::rebuildClipComponents() {
         auto clipComp = std::make_unique<ClipComponent>(clip.id, this);
 
         // Set up callbacks - all clip operations go through the undo system
-        clipComp->onClipMoved = [](ClipId id, double newStartTime) {
-            auto cmd = std::make_unique<MoveClipCommand>(id, newStartTime);
+        clipComp->onClipMoved = [this](ClipId id, double newStartTime) {
+            const double bpm = getTempo();
+            auto cmd =
+                std::make_unique<MoveClipCommand>(id, BeatPosition{newStartTime * bpm / 60.0}, bpm);
             UndoManager::getInstance().executeCommand(std::move(cmd));
         };
 
@@ -1829,7 +1837,9 @@ void TrackContentPanel::rebuildClipComponents() {
                 if (!c)
                     continue;
                 double clipLen = juce::jmax(0.1, c->getTimelineLength(getTempo()) + lengthDelta);
-                auto cmd = std::make_unique<ResizeClipCommand>(cid, clipLen, fromStart, getTempo());
+                const double bpm = getTempo();
+                auto cmd = std::make_unique<ResizeClipCommand>(
+                    cid, BeatDuration{clipLen * bpm / 60.0}, fromStart, bpm);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
             }
 
@@ -1879,7 +1889,9 @@ void TrackContentPanel::rebuildClipComponents() {
         };
 
         clipComp->onClipSplit = [this](ClipId id, double splitTime) {
-            auto cmd = std::make_unique<SplitClipCommand>(id, splitTime, getTempo());
+            const double bpm = getTempo();
+            auto cmd =
+                std::make_unique<SplitClipCommand>(id, BeatPosition{splitTime * bpm / 60.0}, bpm);
             UndoManager::getInstance().executeCommand(std::move(cmd));
 
             // Get the created clip ID for selection (we need to look it up)
@@ -2307,7 +2319,9 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
 
         // Split each clip through the undo system
         for (ClipId clipId : clipsToSplit) {
-            auto cmd = std::make_unique<SplitClipCommand>(clipId, splitTime, getTempo());
+            const double bpm = getTempo();
+            auto cmd = std::make_unique<SplitClipCommand>(
+                clipId, BeatPosition{splitTime * bpm / 60.0}, bpm);
             UndoManager::getInstance().executeCommand(std::move(cmd));
         }
 
@@ -2720,7 +2734,9 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
                 }
 
                 auto cmd = std::make_unique<CreateClipCommand>(
-                    ClipType::Audio, clipTrackId, dropTime, fileDuration, filePath.toStdString());
+                    ClipType::Audio, clipTrackId, BeatPosition{dropTime * tempoBPM / 60.0},
+                    BeatDuration{fileDuration * tempoBPM / 60.0}, filePath.toStdString(),
+                    ClipView::Arrangement, tempoBPM);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
                 importedCount++;
             }
@@ -2743,9 +2759,10 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
                         static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
                 }
 
-                auto cmd =
-                    std::make_unique<CreateClipCommand>(ClipType::Audio, targetTrackId, currentTime,
-                                                        fileDuration, filePath.toStdString());
+                auto cmd = std::make_unique<CreateClipCommand>(
+                    ClipType::Audio, targetTrackId, BeatPosition{currentTime * tempoBPM / 60.0},
+                    BeatDuration{fileDuration * tempoBPM / 60.0}, filePath.toStdString(),
+                    ClipView::Arrangement, tempoBPM);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 
                 currentTime += fileDuration + 0.5;
@@ -2827,8 +2844,9 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
                 }
 
                 // Create MIDI clip
-                auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, clipTrackId,
-                                                               dropTime, clipDuration);
+                auto cmd = std::make_unique<CreateClipCommand>(
+                    ClipType::MIDI, clipTrackId, BeatPosition{dropTime * projectTempo / 60.0},
+                    BeatDuration{clipDuration * projectTempo / 60.0});
                 auto* cmdPtr = cmd.get();
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 

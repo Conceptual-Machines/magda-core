@@ -551,7 +551,8 @@ void ClipInspector::initClipPropertiesSection() {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->view != magda::ClipView::Session) {
                 double newStart = juce::jmax(0.0, timelineStartSeconds(*c, bpm) + deltaSeconds);
-                batch.execute(std::make_unique<magda::MoveClipCommand>(cid, newStart));
+                batch.execute(std::make_unique<magda::MoveClipCommand>(
+                    cid, magda::BeatPosition{newStart * bpm / 60.0}, bpm));
             }
         }
         multiStartDragStart_ = currentValue;
@@ -582,8 +583,8 @@ void ClipInspector::initClipPropertiesSection() {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->view != magda::ClipView::Session) {
                 double newLength = juce::jmax(0.0, timelineLengthSeconds(*c, bpm) + deltaSeconds);
-                batch.execute(
-                    std::make_unique<magda::ResizeClipCommand>(cid, newLength, false, bpm));
+                batch.execute(std::make_unique<magda::ResizeClipCommand>(
+                    cid, magda::BeatDuration{newLength * bpm / 60.0}, false, bpm));
             }
         }
         multiEndDragStart_ = currentValue;
@@ -616,8 +617,8 @@ void ClipInspector::initClipPropertiesSection() {
             if (c && c->view != magda::ClipView::Session) {
                 const double newLength = juce::jmax(magda::ClipOperations::MIN_CLIP_LENGTH,
                                                     timelineLengthSeconds(*c, bpm) + deltaSeconds);
-                batch.execute(
-                    std::make_unique<magda::ResizeClipCommand>(cid, newLength, false, bpm));
+                batch.execute(std::make_unique<magda::ResizeClipCommand>(
+                    cid, magda::BeatDuration{newLength * bpm / 60.0}, false, bpm));
             }
         }
         multiLengthDragStart_ = currentValue;
@@ -1028,7 +1029,8 @@ void ClipInspector::initClipPropertiesSection() {
         magda::ClipBatchEdit batch("Set Clip Loop End", shouldResizeClip ? 2u : 1u);
         if (shouldResizeClip) {
             batch.execute(std::make_unique<magda::ResizeClipCommand>(
-                primaryClipId(), resizeLengthSeconds, false, bpm));
+                primaryClipId(), magda::BeatDuration{resizeLengthSeconds * bpm / 60.0}, false,
+                bpm));
         }
 
         batch.execute(std::make_unique<magda::SetClipLoopLengthCommand>(primaryClipId(),
