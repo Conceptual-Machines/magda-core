@@ -276,9 +276,11 @@ class ClipOperations {
      * used by loop-mode transitions and editor boundaries; non-loop sanitizing
      * must not mirror it to offset.
      */
-    static inline void sanitizeAudioToSourceDuration(ClipInfo& clip, double fileDuration) {
+    static inline void sanitizeAudioToSourceDuration(ClipInfo& clip, double fileDuration,
+                                                     double bpm = DEFAULT_BPM) {
         if (!clip.isAudio() || fileDuration <= 0.0)
             return;
+        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
 
         clip.loopStart = juce::jlimit(0.0, fileDuration, clip.loopStart);
 
@@ -294,7 +296,13 @@ class ClipOperations {
         clip.offset = juce::jlimit(0.0, fileDuration, clip.offset);
 
         if (!clip.loopEnabled && !clip.autoTempo) {
-            clip.clampLengthToSource(fileDuration);
+            const double speed = clip.speedRatio > 0.0 ? clip.speedRatio : 1.0;
+            const double maxLength = (fileDuration - clip.offset) / speed;
+            const double currentLength = clip.getTimelineLength(bpm);
+            if (currentLength > maxLength) {
+                setTimelinePlacement(clip, clip.getTimelineStart(bpm),
+                                     juce::jmax(ClipInfo::MIN_CLIP_LENGTH, maxLength), bpm);
+            }
         }
     }
 

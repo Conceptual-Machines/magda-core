@@ -480,18 +480,6 @@ struct ClipInfo {
         loopLength = timelineToSource(timelineLength);
     }
 
-    /// Clamp clip length so a non-looped clip doesn't exceed the available source audio.
-    /// @param fileDuration Total duration of the audio file (seconds)
-    void clampLengthToSource(double fileDuration) {
-        if (!loopEnabled && fileDuration > 0.0) {
-            double available = fileDuration - offset;
-            double maxLength = available / speedRatio;
-            if (length > maxLength) {
-                length = juce::jmax(MIN_CLIP_LENGTH, maxLength);
-            }
-        }
-    }
-
     // =========================================================================
     // Auto-tempo helpers
     // =========================================================================

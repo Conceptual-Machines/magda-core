@@ -733,7 +733,7 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
         // When disabling loop on audio clips, snap the clip's timeline length
         // to the audible source content so the user doesn't end up with empty
         // space after the audio. Two reasons the previous behaviour wasn't
-        // enough: clampLengthToSource only edited clip->length (the seconds
+        // enough: the old clamp path only edited clip->length (the seconds
         // cache) without touching placement.lengthBeats, so the next
         // beats→seconds derive would resurrect the old length; and a clamp
         // (cap-if-longer) leaves the clip oversized whenever the file is

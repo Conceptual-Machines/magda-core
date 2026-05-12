@@ -294,6 +294,27 @@ TEST_CASE("ClipOperations - audio sanitizing preserves sample start",
     REQUIRE(clip.loopStart == Catch::Approx(0.25));
 }
 
+TEST_CASE("ClipOperations - audio sanitizing clamps length through beat placement",
+          "[clip][audio][offset][beats][regression]") {
+    ClipInfo clip;
+    clip.setAudioContent();
+    clip.audio().source.filePath = "/tmp/magda_source_sanitize_beats.wav";
+    clip.loopEnabled = false;
+    clip.autoTempo = false;
+    clip.startTime = 2.0;
+    clip.length = 10.0;
+    clip.setPlacementBeats(4.0, 20.0);
+    clip.speedRatio = 1.0;
+    clip.offset = 3.0;
+
+    ClipOperations::sanitizeAudioToSourceDuration(clip, 8.0, 120.0);
+
+    REQUIRE(clip.startTime == Catch::Approx(2.0));
+    REQUIRE(clip.startBeats == Catch::Approx(4.0));
+    REQUIRE(clip.length == Catch::Approx(5.0));
+    REQUIRE(clip.lengthBeats == Catch::Approx(10.0));
+}
+
 TEST_CASE("ClipOperations - non-loop offset drag preserves sample start and clamps clip bounds",
           "[clip][audio][offset][regression]") {
     ClipInfo clip;
