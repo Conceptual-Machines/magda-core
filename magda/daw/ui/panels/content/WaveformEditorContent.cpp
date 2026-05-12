@@ -117,14 +117,14 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         int scrollX = owner_.virtualScrollX_;
 
         const auto& di = owner_.cachedDisplayInfo_;
+        const double projectBpm = owner_.timeRuler_ ? owner_.timeRuler_->getTempo() : 120.0;
+        const double clipStart = clip->getTimelineStart(projectBpm);
+        const double clipEnd = clip->getTimelineEnd(projectBpm);
 
         // The editor shows source file content — convert arrangement time
         // to source-file position. Only show cursors when the arrangement
         // playhead falls within this clip's time range.
-        double clipEnd = clip->startTime + clip->length;
-
         auto timelineDeltaToSourceDelta = [&](double timelineDelta) {
-            double projectBpm = owner_.timeRuler_ ? owner_.timeRuler_->getTempo() : 120.0;
             double sourceDuration = clip->audio().source.durationSeconds;
             if (clip->autoTempo && clip->audio().interpretation.totalBeats > 0.0 &&
                 sourceDuration > 0.0 && projectBpm > 0.0) {
@@ -146,14 +146,14 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         };
 
         auto arrangementToSourceX = [&](double arrangementTime) -> int {
-            double relTime = arrangementTime - clip->startTime;
+            double relTime = arrangementTime - clipStart;
             double sourcePos = clip->offset + timelineDeltaToSourceDelta(relTime);
             return sourcePositionToX(sourcePos);
         };
 
         // Draw edit cursor (triangle at top) — only when inside clip range
         double editPos = owner_.cachedEditPosition_;
-        if (editPos >= clip->startTime && editPos <= clipEnd) {
+        if (editPos >= clipStart && editPos <= clipEnd) {
             int editX = arrangementToSourceX(editPos);
             if (editX >= 0 && editX < getWidth()) {
                 g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
@@ -187,12 +187,12 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
             double playPos = owner_.cachedPlaybackPosition_;
 
             // Only show when playhead is within clip's arrangement range
-            if (playPos < clip->startTime || playPos > clipEnd)
+            if (playPos < clipStart || playPos > clipEnd)
                 return;
 
             // Wrap playhead inside loop region when looping is enabled
             if (di.isLooped() && di.loopLengthSeconds > 0.0) {
-                double relPos = playPos - clip->startTime;
+                double relPos = playPos - clipStart;
                 double sourceDelta = timelineDeltaToSourceDelta(relPos);
                 double wrapped = std::fmod(di.loopOffset + sourceDelta, di.loopRegionLengthSource);
                 if (wrapped < 0.0)

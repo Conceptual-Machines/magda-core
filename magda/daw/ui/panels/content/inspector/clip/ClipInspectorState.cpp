@@ -25,6 +25,14 @@ double getAudioFileDurationForInspector(const magda::ClipInfo& clip) {
     return clip.audio().source.durationSeconds;
 }
 
+double timelineStartSeconds(const magda::ClipInfo& clip, double bpm) {
+    return clip.getTimelineStart(bpm);
+}
+
+double timelineLengthSeconds(const magda::ClipInfo& clip, double bpm) {
+    return clip.getTimelineLength(bpm);
+}
+
 }  // namespace
 
 void ClipInspector::updateAudioSourceValueDisplays(const magda::ClipInfo& clip) {
@@ -99,8 +107,10 @@ void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double 
     if (clip.autoTempo && clip.loopLengthBeats > 0.0) {
         loopLengthDisplayBeats = clip.loopLengthBeats;
     } else {
-        const double sourceLength =
-            clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
+        double projectBPM = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
+        const double sourceLength = clip.getSourceLoopLength() > 0.0
+                                        ? clip.getSourceLoopLength()
+                                        : clip.timelineToSource(clip.getTimelineLength(projectBPM));
         loopLengthDisplayBeats = magda::TimelineUtils::secondsToBeats(sourceLength, loopBpm);
     }
     clipLoopEndValue_->setValue(loopStartBeats + loopLengthDisplayBeats,
@@ -330,10 +340,7 @@ void ClipInspector::updateFromSelectedClip() {
 
             clipStartValue_->setValue(clip->getStartBeats(bpm), juce::dontSendNotification);
             clipEndValue_->setValue(clip->getEndBeats(bpm), juce::dontSendNotification);
-            clipLengthValue_->setValue(clip->placement.lengthBeats > 0.0
-                                           ? clip->placement.lengthBeats
-                                           : clip->length * bpm / 60.0,
-                                       juce::dontSendNotification);
+            clipLengthValue_->setValue(clip->getLengthInBeats(bpm), juce::dontSendNotification);
         }
 
         clipLoopToggle_->setActive(clip->loopEnabled || clip->autoTempo);
@@ -661,6 +668,7 @@ void ClipInspector::showClipControls(bool show) {
 
 void ClipInspector::computeClipRange() {
     clipRange_ = ClipRange{};
+    const double bpm = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
 
     bool first = true;
     for (auto cid : selectedClipIds_) {
@@ -684,8 +692,9 @@ void ClipInspector::computeClipRange() {
             clipRange_.minPan = clipRange_.maxPan = c->pan;
             clipRange_.minGainDB = clipRange_.maxGainDB = c->gainDB;
             clipRange_.minSpeedRatio = clipRange_.maxSpeedRatio = c->speedRatio;
-            clipRange_.minStartSeconds = clipRange_.maxStartSeconds = c->startTime;
-            clipRange_.minLengthSeconds = clipRange_.maxLengthSeconds = c->length;
+            clipRange_.minStartSeconds = clipRange_.maxStartSeconds = timelineStartSeconds(*c, bpm);
+            clipRange_.minLengthSeconds = clipRange_.maxLengthSeconds =
+                timelineLengthSeconds(*c, bpm);
             clipRange_.minOffsetSeconds = clipRange_.maxOffsetSeconds = c->offset;
             first = false;
         } else {
@@ -699,10 +708,12 @@ void ClipInspector::computeClipRange() {
             clipRange_.maxGainDB = juce::jmax(clipRange_.maxGainDB, c->gainDB);
             clipRange_.minSpeedRatio = juce::jmin(clipRange_.minSpeedRatio, c->speedRatio);
             clipRange_.maxSpeedRatio = juce::jmax(clipRange_.maxSpeedRatio, c->speedRatio);
-            clipRange_.minStartSeconds = juce::jmin(clipRange_.minStartSeconds, c->startTime);
-            clipRange_.maxStartSeconds = juce::jmax(clipRange_.maxStartSeconds, c->startTime);
-            clipRange_.minLengthSeconds = juce::jmin(clipRange_.minLengthSeconds, c->length);
-            clipRange_.maxLengthSeconds = juce::jmax(clipRange_.maxLengthSeconds, c->length);
+            const double startSeconds = timelineStartSeconds(*c, bpm);
+            const double lengthSeconds = timelineLengthSeconds(*c, bpm);
+            clipRange_.minStartSeconds = juce::jmin(clipRange_.minStartSeconds, startSeconds);
+            clipRange_.maxStartSeconds = juce::jmax(clipRange_.maxStartSeconds, startSeconds);
+            clipRange_.minLengthSeconds = juce::jmin(clipRange_.minLengthSeconds, lengthSeconds);
+            clipRange_.maxLengthSeconds = juce::jmax(clipRange_.maxLengthSeconds, lengthSeconds);
             clipRange_.minOffsetSeconds = juce::jmin(clipRange_.minOffsetSeconds, c->offset);
             clipRange_.maxOffsetSeconds = juce::jmax(clipRange_.maxOffsetSeconds, c->offset);
         }

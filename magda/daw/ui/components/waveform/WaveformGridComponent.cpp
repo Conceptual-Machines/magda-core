@@ -4,6 +4,7 @@
 
 #include <cmath>
 
+#include "../../state/TimelineController.hpp"
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -12,6 +13,14 @@
 #include "core/ClipOperations.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+double currentTimelineBpm() {
+    if (auto* controller = magda::TimelineController::getCurrent())
+        return controller->getState().tempo.bpm;
+    return 120.0;
+}
+}  // namespace
 
 WaveformGridComponent::WaveformGridComponent() {
     setName("WaveformGrid");
@@ -1184,9 +1193,10 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
 
     dragStartX_ = x;
     dragStartAudioOffset_ = clip->loopEnabled ? clip->loopStart : clip->offset;
-    dragStartStartTime_ = clip->startTime;
+    const double projectBpm = currentTimelineBpm();
+    dragStartStartTime_ = clip->getTimelineStart(projectBpm);
     dragStartSpeedRatio_ = clip->speedRatio;
-    dragStartClipLength_ = clip->length;  // Save original clip.length for stretch operations
+    dragStartClipLength_ = clip->getTimelineLength(projectBpm);
 
     if (dragMode_ == DragMode::PhaseMarker) {
         double phase = clip->offset - clip->loopStart;
@@ -1204,7 +1214,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     // length if the file extent isn't known (no thumbnail yet).
     dragStartLength_ = displayInfo_.fileExtentTimeline();
     if (dragStartLength_ <= 0.0) {
-        dragStartLength_ = clip->length;  // Fallback
+        dragStartLength_ = clip->getTimelineLength(projectBpm);
     }
 
     // Cache file duration for trim clamping
