@@ -78,17 +78,12 @@ void WarpMarkerManager::applyPendingSensitivities() {
         if (det.edit == nullptr)
             continue;
 
-        const auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty())
-            continue;
-
         // If a detection is already in flight for this clip, parking
         // the latest value is enough — getTransientTimes will pick it
         // up on completion and schedule one rerun. This avoids the
         // race that produced the original ThreadPool crash: never two
         // overlapping detection jobs against the same WarpTimeManager.
-        if (detectionInFlight_.count(clipId) ||
-            detectionFilesInFlight_.count(clip->audio().source.filePath)) {
+        if (detectionInFlight_.count(clipId)) {
             dirtyAfterCompletion_[clipId] = det;
             continue;
         }
@@ -102,11 +97,6 @@ void WarpMarkerManager::applySensitivityNow(te::Edit& edit, const std::string& e
     if (!clip || !clip->isAudio() || clip->audio().source.filePath.isEmpty())
         return;
 
-    if (detectionFilesInFlight_.count(clip->audio().source.filePath)) {
-        dirtyAfterCompletion_[clipId] = PendingDetection{sensitivity, engineId, &edit};
-        return;
-    }
-
     te::WaveAudioClip* audioClipPtr = findWaveAudioClipByEngineId(edit, engineId);
     if (!audioClipPtr)
         return;
@@ -117,34 +107,11 @@ void WarpMarkerManager::applySensitivityNow(te::Edit& edit, const std::string& e
 
     // Clear cache so the next poll picks up fresh results.
     AudioThumbnailManager::getInstance().clearCachedTransients(clip->audio().source.filePath);
-    markDetectionInFlight(clipId, clip->audio().source.filePath);
+    detectionStarted_.insert(clipId);
+    detectionInFlight_.insert(clipId);
 
     DBG("WarpMarkerManager: set sensitivity=" << sensitivity << " for "
                                               << clip->audio().source.filePath);
-}
-
-void WarpMarkerManager::markDetectionInFlight(ClipId clipId, const juce::String& filePath) {
-    detectionStarted_.insert(clipId);
-    detectionInFlight_.insert(clipId);
-    detectionFilesInFlight_.insert(filePath);
-    detectionFileByClip_[clipId] = filePath;
-}
-
-void WarpMarkerManager::clearDetectionInFlight(ClipId clipId, const juce::String& filePath) {
-    detectionInFlight_.erase(clipId);
-    detectionFilesInFlight_.erase(filePath);
-    detectionFileByClip_.erase(clipId);
-}
-
-std::map<ClipId, WarpMarkerManager::PendingDetection>::iterator
-WarpMarkerManager::findDirtyDetectionForFile(const juce::String& filePath) {
-    for (auto it = dirtyAfterCompletion_.begin(); it != dirtyAfterCompletion_.end(); ++it) {
-        const auto* dirtyClip = ClipManager::getInstance().getClip(it->first);
-        if (dirtyClip && dirtyClip->isAudio() && dirtyClip->audio().source.filePath == filePath)
-            return it;
-    }
-
-    return dirtyAfterCompletion_.end();
 }
 
 bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
@@ -180,13 +147,10 @@ bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
     // arrives during the initial poll-driven detection wouldn't see the
     // guard and would submit a second overlapping TE job, reproducing
     // the original ThreadPool crash.
-    const auto filePath = clip->audio().source.filePath;
     if (!detectionStarted_.count(clipId)) {
-        if (detectionFilesInFlight_.count(filePath))
-            return false;
-
         warpManager.detectTransients();
-        markDetectionInFlight(clipId, filePath);
+        detectionStarted_.insert(clipId);
+        detectionInFlight_.insert(clipId);
     }
 
     // Poll for completion
@@ -194,13 +158,13 @@ bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
 
     if (complete) {
         // Detection finished — clear the in-flight flag.
-        clearDetectionInFlight(clipId, filePath);
+        detectionInFlight_.erase(clipId);
 
         // If a newer sensitivity arrived while we were running, fire
         // one more detection with that value. Skip caching the
         // about-to-be-stale results and report `false` so the UI keeps
         // polling until the rerun completes.
-        auto dirty = findDirtyDetectionForFile(filePath);
+        auto dirty = dirtyAfterCompletion_.find(clipId);
         if (dirty != dirtyAfterCompletion_.end()) {
             const auto det = std::move(dirty->second);
             dirtyAfterCompletion_.erase(dirty);

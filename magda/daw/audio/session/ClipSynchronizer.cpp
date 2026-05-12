@@ -16,6 +16,18 @@ namespace magda {
 
 namespace {
 
+double timelineStartSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineStart(bpm);
+}
+
+double timelineLengthSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineLength(bpm);
+}
+
+double timelineEndSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineEnd(bpm);
+}
+
 double timelineLengthBeats(const ClipInfo& clip, double bpm) {
     if (clip.placement.lengthBeats > 0.0)
         return clip.placement.lengthBeats;
@@ -567,7 +579,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
         // Create clip directly in the slot
         const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-        double clipDuration = clip->getTimelineLength(projectBpm);
+        double clipDuration = timelineLengthSeconds(*clip, projectBpm);
         auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
                                        te::TimePosition::fromSeconds(clipDuration));
 
@@ -721,7 +733,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
     } else if (clip->isMidi()) {
         // Create MIDI clip directly in the slot
         const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-        double clipDuration = clip->getTimelineLength(projectBpm);
+        double clipDuration = timelineLengthSeconds(*clip, projectBpm);
         auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
                                        te::TimePosition::fromSeconds(clipDuration));
 
@@ -1501,8 +1513,8 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         }
 
         const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-        double createStart = clip->getTimelineStart(projectBpm);
-        double createEnd = clip->getTimelineEnd(projectBpm);
+        double createStart = timelineStartSeconds(*clip, projectBpm);
+        double createEnd = timelineEndSeconds(*clip, projectBpm);
         auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(createStart),
                                        te::TimePosition::fromSeconds(createEnd));
 
@@ -1606,8 +1618,8 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
     // 4. UPDATE clip position/length
     const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-    double engineStart = clip->getTimelineStart(projectBpm);
-    double engineEnd = clip->getTimelineEnd(projectBpm);
+    double engineStart = timelineStartSeconds(*clip, projectBpm);
+    double engineEnd = timelineEndSeconds(*clip, projectBpm);
 
     auto currentPos = audioClipPtr->getPosition();
     auto currentStart = currentPos.getStart().inSeconds();

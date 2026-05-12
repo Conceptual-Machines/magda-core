@@ -175,15 +175,9 @@ class WarpMarkerManager {
     void applyPendingSensitivities();
     void applySensitivityNow(te::Edit& edit, const std::string& engineId, ClipId clipId,
                              float sensitivity);
-    void markDetectionInFlight(ClipId clipId, const juce::String& filePath);
-    void clearDetectionInFlight(ClipId clipId, const juce::String& filePath);
-    std::map<ClipId, PendingDetection>::iterator findDirtyDetectionForFile(
-        const juce::String& filePath);
 
     std::map<ClipId, PendingDetection> pendingByClip_;
     std::set<ClipId> detectionInFlight_;
-    std::set<juce::String> detectionFilesInFlight_;
-    std::map<ClipId, juce::String> detectionFileByClip_;
     std::map<ClipId, PendingDetection> dirtyAfterCompletion_;
     CoalescingTimer coalescingTimer_;
 };

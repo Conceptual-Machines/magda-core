@@ -140,8 +140,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             // Create fresh edit: 60 BPM, 1 audio track
             edit = te::test_utilities::createTestEdit(*engine, 1);
             jassert(edit != nullptr);
-            if (auto* tempo = edit->tempoSequence.getTempo(0))
-                tempo->setBpm(60.0);
 
             // Create TrackController and map MAGDA trackId=1 to the first TE AudioTrack
             trackController = std::make_unique<TrackController>(*engine, *edit);
@@ -178,16 +176,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             auto* teClip = clipSync->getArrangementTeClip(clipId);
             return dynamic_cast<te::MidiClip*>(teClip);
         }
-
-        te::test_utilities::BufferAndSampleRate renderToSeconds(double endSeconds) const {
-            auto tf = std::make_unique<juce::TemporaryFile>(".wav");
-            te::Renderer::renderToFile("ClipSynchronizer Integration Render", tf->getFile(), *edit,
-                                       te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                                                     te::TimePosition::fromSeconds(endSeconds)),
-                                       te::toBitSet(te::getAllTracks(*edit)), true, true, {},
-                                       false);
-            return te::test_utilities::loadBufferAndSampleRate(std::move(tf));
-        }
     };
 
     static void configureBeatModeLoop(ClipInfo& clip, double projectBpm, double sourceBpm,
@@ -207,25 +195,9 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         clip.deriveTimesFromBeats(projectBpm);
     }
 
-    bool hasRenderableBuffer(const te::test_utilities::BufferAndSampleRate& result,
-                             const juce::String& label) {
-        if (result.sampleRate <= 0.0 || result.buffer.getNumSamples() == 0) {
-            logMessage("Skipping render RMS checks for " + label +
-                       ": Tracktion renderer produced no readable buffer in this environment");
-            return false;
-        }
-        return true;
-    }
-
     bool expectAudioInRange(const juce::AudioBuffer<float>& buf, double sampleRate,
                             double startSeconds, double durationSeconds,
                             const juce::String& label) {
-        if (sampleRate <= 0.0 || buf.getNumSamples() == 0) {
-            logMessage("Skipping render RMS check for " + label +
-                       ": Tracktion renderer produced no readable buffer in this environment");
-            return true;
-        }
-
         const int startSample = static_cast<int>(startSeconds * sampleRate);
         const int numSamples = static_cast<int>(durationSeconds * sampleRate);
         const bool rangeAvailable =
@@ -493,7 +465,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // Move clip to t=2.0
         auto* clip = ClipManager::getInstance().getClip(clipId);
         expect(clip != nullptr);
-        ClipOperations::moveContainer(*clip, 2.0, 60.0);
+        ClipOperations::moveContainer(*clip, 2.0);
         f.clipSync->syncClipToEngine(clipId);
 
         auto pos = teClip->getPosition();
@@ -519,7 +491,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         // Resize to 4.0s
         auto* clip = ClipManager::getInstance().getClip(clipId);
-        ClipOperations::resizeContainerFromRight(*clip, 4.0, 60.0);
+        ClipOperations::resizeContainerFromRight(*clip, 4.0);
         f.clipSync->syncClipToEngine(clipId);
 
         auto pos = teClip->getPosition();
@@ -541,7 +513,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         // Resize from left: new length = 2.0 (start moves from 1.0 to 2.0)
         auto* clip = ClipManager::getInstance().getClip(clipId);
-        ClipOperations::resizeContainerFromLeft(*clip, 2.0, 60.0);
+        ClipOperations::resizeContainerFromLeft(*clip, 2.0);
         f.clipSync->syncClipToEngine(clipId);
 
         auto pos = teClip->getPosition();
@@ -565,7 +537,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         double originalOffset = clip->offset;
 
         // Trim 1.0s from left
-        ClipOperations::trimAudioFromLeft(*clip, 1.0, 0.0, 60.0);
+        ClipOperations::trimAudioFromLeft(*clip, 1.0);
         f.clipSync->syncClipToEngine(clipId);
 
         auto* teClip = f.getTeAudioClip(clipId);
@@ -600,7 +572,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         // Trim 1.0s from right
         auto* clip = ClipManager::getInstance().getClip(clipId);
-        ClipOperations::trimAudioFromRight(*clip, 1.0, 0.0, 60.0);
+        ClipOperations::trimAudioFromRight(*clip, 1.0);
         f.clipSync->syncClipToEngine(clipId);
 
         auto pos = teClip->getPosition();
@@ -815,9 +787,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(loopRange.getLength().inBeats(), 2.0, 0.01);
 
         // --- Render: audio must be present throughout all 3s ---
-        auto result = f.renderToSeconds(3.2);
-        if (!hasRenderableBuffer(result, "time-based loop"))
-            return;
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expect(result.buffer.getNumSamples() > 0, "Rendered buffer should not be empty");
 
         double sr = result.sampleRate;
         auto& buf = result.buffer;
@@ -879,7 +850,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         auto* clip = ClipManager::getInstance().getClip(clipId);
         expect(clip != nullptr);
-        ClipOperations::resizeContainerFromRight(*clip, 3.0, 60.0);
+        ClipOperations::resizeContainerFromRight(*clip, 3.0);
 
         // Enable warp (this routes sync through the auto-tempo/warp code path)
         clip->warpEnabled = true;
@@ -907,9 +878,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(pos.getEnd().inSeconds(), 3.0, 0.01);
 
         // --- Render: audio must be present throughout all 3s ---
-        auto result = f.renderToSeconds(3.2);
-        if (!hasRenderableBuffer(result, "warp-enabled time-based loop"))
-            return;
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expect(result.buffer.getNumSamples() > 0, "Rendered buffer should not be empty");
 
         double sr = result.sampleRate;
         auto& buf = result.buffer;
@@ -1063,9 +1033,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         f.clipSync->syncClipToEngine(rightClipId);
         f.edit->restartPlayback();
 
-        auto result = f.renderToSeconds(splitTime + 1.5);
-        if (!hasRenderableBuffer(result, "beat-mode split"))
-            return;
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expect(result.buffer.getNumSamples() > 0, "Rendered buffer should not be empty");
 
         auto& buf = result.buffer;
         const double sr = result.sampleRate;
@@ -1126,7 +1095,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
                                       0.01);
         }
 
-        auto result = f.renderToSeconds(5.0);
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
         expectAudioInRange(result.buffer, result.sampleRate, 4.2, 0.7,
                            "right side after boundary split");
     }
@@ -1150,7 +1119,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         const double originalLoopStartBeats = clip->loopStartBeats;
         const double originalLoopLengthBeats = clip->loopLengthBeats;
 
-        const double duplicateStart = clip->getTimelineEnd(60.0);
+        const double duplicateStart = clip->getEndTime();
         auto duplicateId = cm.duplicateClipAt(clipId, duplicateStart, f.trackId, 60.0);
         expect(duplicateId != INVALID_CLIP_ID, "Duplicate should create copied clip");
         auto* duplicate = cm.getClip(duplicateId);
@@ -1176,7 +1145,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         f.clipSync->syncClipToEngine(duplicateId);
         f.edit->restartPlayback();
 
-        auto result = f.renderToSeconds(duplicateStart + 1.5);
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
         expectAudioInRange(result.buffer, result.sampleRate, duplicateStart + 0.2, 1.0,
                            "duplicated beat-mode clip");
     }
@@ -1245,7 +1214,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
                                       kPasteTime, 0.01);
         }
 
-        auto result = f.renderToSeconds(kPasteTime + 1.5);
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
         expectAudioInRange(result.buffer, result.sampleRate, kPasteTime + 0.2, 1.0,
                            "pasted right split clip");
     }
@@ -1312,7 +1281,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         f.clipSync->syncClipToEngine(pastedId);
         f.edit->restartPlayback();
 
-        auto result = f.renderToSeconds(kPasteTime + 1.5);
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
         expectAudioInRange(result.buffer, result.sampleRate, kPasteTime + 0.2, 1.0,
                            "time-range pasted beat-mode clip");
     }
@@ -1418,9 +1387,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         f.clipSync->syncClipToEngine(clipId);
 
         // Render the edit
-        auto result = f.renderToSeconds(3.2);
-        if (!hasRenderableBuffer(result, "position render verification"))
-            return;
+        auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
+        expect(result.buffer.getNumSamples() > 0, "Rendered buffer should not be empty");
 
         double sr = result.sampleRate;
         auto& buf = result.buffer;
