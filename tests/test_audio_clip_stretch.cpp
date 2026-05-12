@@ -394,15 +394,14 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
         double originalLength = clip.length;
         double originalStretchFactor = clip.speedRatio;
 
-        // Try to stretch to 10.0 (5.0x ratio) — clamped to 0.25 min
+        // Try to stretch to 10.0 (5.0x ratio). The requested speed would clamp at the
+        // minimum speed, but keeping the right edge fixed must not push the clip before
+        // the timeline origin.
         ClipOperations::stretchAudioFromLeft(clip, 10.0, originalLength, originalStretchFactor);
 
-        // Stretch ratio = 10.0 / 2.0 = 5.0
-        // newSpeedRatio = 1.0 / 5.0 = 0.2, but clamped to 0.25 (MIN_SPEED_RATIO)
-        // actual length = oldLength * (originalSpeedRatio / newSpeedRatio) = 2.0 * (1.0 / 0.25)
-        // = 8.0
-        REQUIRE(clip.speedRatio == Catch::Approx(0.25));
-        REQUIRE(clip.length == Catch::Approx(8.0));
+        REQUIRE(clip.speedRatio == Catch::Approx(2.0 / 7.0));
+        REQUIRE(clip.startTime == Catch::Approx(0.0));
+        REQUIRE(clip.length == Catch::Approx(7.0));
 
         // Right edge maintained
         double rightEdge = clip.startTime + clip.length;

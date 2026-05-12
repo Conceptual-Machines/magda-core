@@ -523,13 +523,13 @@ void TrackContentPanel::setTimeDisplayMode(TimeDisplayMode mode) {
 }
 
 void TrackContentPanel::setTempo(double bpm) {
-    tempoBPM = juce::jlimit(20.0, 999.0, bpm);
+    tempoBPM = clampBpm(bpm);
     repaintVisible();
 }
 
 void TrackContentPanel::setTimeSignature(int numerator, int denominator) {
-    timeSignatureNumerator = juce::jlimit(1, 16, numerator);
-    timeSignatureDenominator = juce::jlimit(1, 16, denominator);
+    timeSignatureNumerator = clampTimeSignatureValue(numerator);
+    timeSignatureDenominator = clampTimeSignatureValue(denominator);
     repaintVisible();
 }
 

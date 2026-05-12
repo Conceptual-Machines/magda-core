@@ -18,7 +18,7 @@ namespace {
 double currentTimelineBpm() {
     if (auto* controller = magda::TimelineController::getCurrent())
         return controller->getState().tempo.bpm;
-    return 120.0;
+    return magda::DEFAULT_BPM;
 }
 }  // namespace
 
@@ -1323,14 +1323,14 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
                 newOffset = juce::jmax(0.0, newOffset);
             }
 
+            double bpm = timeRuler_ ? timeRuler_->getTempo() : magda::DEFAULT_BPM;
             if (clip->loopEnabled) {
-                magda::ClipOperations::moveLoopStart(*clip, newOffset, dragStartFileDuration_);
+                magda::ClipOperations::moveLoopStart(*clip, newOffset, dragStartFileDuration_, bpm);
             } else {
                 // Non-loop editor left-handle is phase/offset only. The source
                 // region anchor (loopStart/sample start) is not editable from
                 // this handle. Clip length is clamped to the remaining source so
                 // arrangement clips don't extend past the waveform.
-                double bpm = timeRuler_ ? timeRuler_->getTempo() : 120.0;
                 magda::ClipOperations::setAudioOffsetPreservingSourceRegion(
                     *clip, newOffset, dragStartFileDuration_, bpm);
             }

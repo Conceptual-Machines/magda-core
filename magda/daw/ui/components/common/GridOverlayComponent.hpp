@@ -5,6 +5,7 @@
 #include "../../../utils/ScopedListener.hpp"
 #include "../../layout/LayoutConfig.hpp"
 #include "../../state/TimelineController.hpp"
+#include "core/TempoUtils.hpp"
 
 namespace magda {
 
@@ -72,9 +73,9 @@ class GridOverlayComponent : public juce::Component, public TimelineStateListene
     double currentZoom = 1.0;
     double timelineLength = 300.0;
     TimeDisplayMode displayMode = TimeDisplayMode::BarsBeats;
-    double tempoBPM = 120.0;
-    int timeSignatureNumerator = 4;
-    int timeSignatureDenominator = 4;
+    double tempoBPM = DEFAULT_BPM;
+    int timeSignatureNumerator = DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    int timeSignatureDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
     GridQuantize gridQuantize;
     int leftPadding = LayoutConfig::TIMELINE_LEFT_PADDING;  // Default to match timeline
     int scrollOffset = 0;  // Horizontal scroll offset for viewport-relative drawing

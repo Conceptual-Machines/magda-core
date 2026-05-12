@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "../../core/ClipManager.hpp"
+#include "../../core/TempoUtils.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "../utils/TimelineUtils.hpp"
@@ -687,7 +688,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchOu
 // ===== Tempo Event Handlers =====
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEvent& e) {
-    double newBpm = juce::jlimit(20.0, 999.0, e.bpm);
+    double newBpm = clampBpm(e.bpm);
     if (newBpm == state.tempo.bpm) {
         return ChangeFlags::None;
     }
@@ -835,8 +836,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSignatureEvent& e) {
-    int num = juce::jlimit(1, 16, e.numerator);
-    int den = juce::jlimit(1, 16, e.denominator);
+    int num = clampTimeSignatureValue(e.numerator);
+    int den = clampTimeSignatureValue(e.denominator);
 
     if (num == state.tempo.timeSignatureNumerator && den == state.tempo.timeSignatureDenominator) {
         return ChangeFlags::None;
@@ -1071,9 +1072,9 @@ void TimelineController::restoreProjectState(double tempo, int timeSigNum, int t
                                              bool loopEnabled, double loopStartBeats,
                                              double loopEndBeats) {
     // Unconditionally set state — no early returns
-    state.tempo.bpm = juce::jlimit(20.0, 999.0, tempo);
-    state.tempo.timeSignatureNumerator = juce::jlimit(1, 16, timeSigNum);
-    state.tempo.timeSignatureDenominator = juce::jlimit(1, 16, timeSigDen);
+    state.tempo.bpm = clampBpm(tempo);
+    state.tempo.timeSignatureNumerator = clampTimeSignatureValue(timeSigNum);
+    state.tempo.timeSignatureDenominator = clampTimeSignatureValue(timeSigDen);
 
     // Recalculate timeline length from configured bars using actual project tempo
     auto& config = magda::Config::getInstance();

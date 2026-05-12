@@ -7,6 +7,7 @@
 
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipManager.hpp"
+#include "../core/TempoUtils.hpp"
 #include "../core/TrackManager.hpp"
 #include "serialization/ProjectSerializer.hpp"
 #include "version.hpp"
@@ -354,17 +355,20 @@ juce::String ProjectManager::getProjectName() const {
 }
 
 void ProjectManager::setTempo(double tempo) {
-    if (currentProject_.tempo != tempo) {
-        currentProject_.tempo = tempo;
+    const double clampedTempo = clampBpm(tempo);
+    if (currentProject_.tempo != clampedTempo) {
+        currentProject_.tempo = clampedTempo;
         markDirty();
     }
 }
 
 void ProjectManager::setTimeSignature(int numerator, int denominator) {
-    if (currentProject_.timeSignatureNumerator != numerator ||
-        currentProject_.timeSignatureDenominator != denominator) {
-        currentProject_.timeSignatureNumerator = numerator;
-        currentProject_.timeSignatureDenominator = denominator;
+    const int clampedNumerator = clampTimeSignatureValue(numerator);
+    const int clampedDenominator = clampTimeSignatureValue(denominator);
+    if (currentProject_.timeSignatureNumerator != clampedNumerator ||
+        currentProject_.timeSignatureDenominator != clampedDenominator) {
+        currentProject_.timeSignatureNumerator = clampedNumerator;
+        currentProject_.timeSignatureDenominator = clampedDenominator;
         markDirty();
     }
 }
