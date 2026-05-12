@@ -8,6 +8,7 @@ Current committed state:
 - Audio clip creation has beat-first APIs.
 - `ClipManager` has beat-first move, resize, duplicate, split, and trim APIs while older seconds APIs remain as compatibility shims.
 - `ClipCommands` placement operations now take explicit `BeatPosition`/`BeatDuration` wrappers for create, move, resize, duplicate, split, and paste. Remaining seconds callers must convert locally at UI or source-duration boundaries instead of silently passing raw doubles.
+- `tests/test_midi_clip_sync.cpp` uses beat placement setup instead of writing `clip.startTime`/`clip.length` directly.
 - `clip.isBeatsAuthoritative()`/`clip.isBeatAuthoritative()` is gone.
 
 Still left:
