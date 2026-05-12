@@ -352,7 +352,7 @@ struct ClipInfo {
 
     /// Derive startTime/length from placement beats using the given BPM.
     void deriveTimesFromBeats(double bpm) {
-        if (bpm > 0.0) {
+        if (isValidBpm(bpm)) {
             if (placement.lengthBeats <= 0.0 && lengthBeats > 0.0)
                 setPlacementBeats(startBeats, lengthBeats);
             if (placement.lengthBeats > 0.0) {
@@ -444,7 +444,7 @@ struct ClipInfo {
     /// For autoTempo clips, offsetBeats is authoritative and converted to
     /// timeline seconds via projectBPM at the TE boundary.
     double getTeOffset(bool looped, double projectBPM = 0.0) const {
-        if (autoTempo && projectBPM > 0.0) {
+        if (autoTempo && isValidBpm(projectBPM)) {
             // Convert source beats to timeline seconds for TE
             if (looped)
                 return (offsetBeats - loopStartBeats) * 60.0 / projectBPM;

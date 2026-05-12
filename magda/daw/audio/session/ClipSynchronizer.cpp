@@ -7,6 +7,7 @@
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/ClipOperations.hpp"
+#include "../../core/TempoUtils.hpp"
 #include "../../core/TrackManager.hpp"
 #include "TrackController.hpp"
 #include "WarpMarkerManager.hpp"
@@ -30,7 +31,10 @@ double timelineEndSeconds(const ClipInfo& clip, double bpm) {
 double timelineLengthBeats(const ClipInfo& clip, double bpm) {
     if (clip.placement.lengthBeats > 0.0)
         return clip.placement.lengthBeats;
-    return bpm > 0.0 ? clip.getTimelineLength(bpm) * bpm / 60.0 : clip.lengthBeats;
+    if (clip.lengthBeats > 0.0)
+        return clip.lengthBeats;
+    const double resolvedBpm = isValidBpm(bpm) ? bpm : DEFAULT_BPM;
+    return clip.getTimelineLength(resolvedBpm) * resolvedBpm / 60.0;
 }
 
 }  // namespace

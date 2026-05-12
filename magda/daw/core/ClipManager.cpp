@@ -7,6 +7,7 @@
 #include "../project/ProjectManager.hpp"
 #include "ClipOperations.hpp"
 #include "Config.hpp"
+#include "TempoUtils.hpp"
 #include "TrackManager.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 
@@ -102,10 +103,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     clip.offset = 0.0;
     clip.speedRatio = 1.0;
 
-    double bpm =
-        projectBPM > 0.0 ? projectBPM : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-    if (bpm <= 0.0)
-        bpm = 120.0;
+    const double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
 
     clip.setPlacementBeats(startTime * bpm / 60.0, length * bpm / 60.0);
     clip.deriveTimesFromBeats(bpm);
@@ -1035,7 +1033,7 @@ void ClipManager::refreshDerivedSeconds(ClipId clipId, double projectBPM) {
         clip->speedRatio = 1.0;
 
     // Timeline-domain seconds (length, startTime): depend on PROJECT BPM.
-    if (projectBPM > 0.0) {
+    if (isValidBpm(projectBPM)) {
         if (clip->placement.lengthBeats > 0.0)
             clip->length = clip->placement.lengthBeats * 60.0 / projectBPM;
         clip->startTime = clip->placement.startBeat * 60.0 / projectBPM;
@@ -1054,7 +1052,7 @@ void ClipManager::refreshDerivedSeconds(ClipId clipId, double projectBPM) {
         clip->loopStart = clip->loopStartBeats * 60.0 / clip->audio().interpretation.bpm;
         if (clip->loopLengthBeats > 0.0)
             clip->loopLength = clip->loopLengthBeats * 60.0 / clip->audio().interpretation.bpm;
-    } else if (clip->isMidi() && projectBPM > 0.0 && clip->loopLengthBeats > 0.0) {
+    } else if (clip->isMidi() && isValidBpm(projectBPM) && clip->loopLengthBeats > 0.0) {
         clip->loopLength = clip->loopLengthBeats * 60.0 / projectBPM;
     }
 }
