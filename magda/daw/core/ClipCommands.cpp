@@ -193,7 +193,9 @@ bool SplitClipCommand::validateState() const {
         }
 
         // Validate clips are adjacent and continuous
-        if (std::abs(leftClip->getEndTime() - rightClip->startTime) > 0.001) {
+        const double bpm = tempo_ > 0.0 ? tempo_ : currentProjectBpm();
+        if (std::abs(timelineEndSeconds(*leftClip, bpm) - timelineStartSeconds(*rightClip, bpm)) >
+            0.001) {
             return false;
         }
     }
@@ -537,8 +539,11 @@ std::vector<std::unique_ptr<DuplicateClipCommand>> createArrangementBlockDuplica
                   const auto* clipB = clipManager.getClip(b);
                   if (!clipA || !clipB)
                       return a < b;
-                  if (clipA->startTime != clipB->startTime)
-                      return clipA->startTime < clipB->startTime;
+                  const double bpm = currentProjectBpm();
+                  const double startA = timelineStartSeconds(*clipA, bpm);
+                  const double startB = timelineStartSeconds(*clipB, bpm);
+                  if (startA != startB)
+                      return startA < startB;
                   if (clipA->trackId != clipB->trackId)
                       return clipA->trackId < clipB->trackId;
                   return a < b;
@@ -661,7 +666,8 @@ bool JoinClipsCommand::canExecute() const {
         return false;
 
     // Must be adjacent (left ends where right starts)
-    if (std::abs(left->getEndTime() - right->startTime) > 0.001)
+    const double bpm = tempo_ > 0.0 ? tempo_ : currentProjectBpm();
+    if (std::abs(timelineEndSeconds(*left, bpm) - timelineStartSeconds(*right, bpm)) > 0.001)
         return false;
 
     return true;
@@ -708,8 +714,8 @@ void JoinClipsCommand::performAction() {
 
     if (left->isMidi()) {
         // MIDI join: copy right clip's notes into left, adjusting beat positions
-        const double beatsPerSecond = tempo_ / 60.0;
-        double beatOffset = (right->startTime - left->startTime) * beatsPerSecond;
+        const double bpm = tempo_ > 0.0 ? tempo_ : currentProjectBpm();
+        double beatOffset = right->getStartBeats(bpm) - left->getStartBeats(bpm);
 
         for (const auto& note : right->midiNotes) {
             MidiNote adjustedNote = note;
@@ -722,7 +728,10 @@ void JoinClipsCommand::performAction() {
     }
 
     // Extend left clip length
-    left->length += right->length;
+    const double bpm = tempo_ > 0.0 ? tempo_ : currentProjectBpm();
+    const double newEndBeats = right->getEndBeats(bpm);
+    left->setPlacementBeats(left->getStartBeats(bpm), newEndBeats - left->getStartBeats(bpm));
+    left->deriveTimesFromBeats(bpm);
 
     // Delete right clip
     clipManager.deleteClip(rightClipId_);
@@ -1684,8 +1693,8 @@ void BounceInPlaceCommand::execute() {
 
     // Replace MIDI clip with audio clip using the original snapshot
     // (clip pointer may be invalidated by render/transport operations)
-    double startTime = originalClipSnapshot_.startTime;
-    double length = originalClipSnapshot_.length;
+    double startTime = timelineStartSeconds(originalClipSnapshot_, projectBPM);
+    double length = timelineLengthSeconds(originalClipSnapshot_, projectBPM);
     TrackId trackId = originalClipSnapshot_.trackId;
     juce::Colour colour = originalClipSnapshot_.colour;
     juce::String name = originalClipSnapshot_.name;
