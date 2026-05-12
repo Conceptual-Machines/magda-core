@@ -8,17 +8,17 @@ namespace magda {
 
 namespace {
 
-// Vertical distance from point p to the line segment (a -> b) at p's time.
+// Vertical distance from point p to the line segment (a -> b) at p's beat position.
 // "Vertical" here means along the value axis only.
 double verticalDistance(const AutomationCurveSimplifier::Point& p,
                         const AutomationCurveSimplifier::Point& a,
                         const AutomationCurveSimplifier::Point& b) {
-    double dt = b.time - a.time;
+    double dt = b.beatPosition - a.beatPosition;
     if (dt <= 0.0) {
         // Degenerate segment — fall back to absolute value delta.
         return std::abs(p.value - a.value);
     }
-    double t = (p.time - a.time) / dt;
+    double t = (p.beatPosition - a.beatPosition) / dt;
     double interpolated = a.value + (t * (b.value - a.value));
     return std::abs(p.value - interpolated);
 }

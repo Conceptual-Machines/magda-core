@@ -317,6 +317,7 @@ void MainWindow::setupMenuCallbacks() {
             // Import each file as a clip
             namespace te = tracktion;
             double currentTime = 0.0;  // Start at timeline beginning
+            const double bpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
             int numImported = 0;
 
             for (const auto& file : files) {
@@ -328,9 +329,10 @@ void MainWindow::setupMenuCallbacks() {
                 double fileDuration = audioFile.getLength();
 
                 // Create audio clip via command (for undo support)
-                auto cmd =
-                    std::make_unique<CreateClipCommand>(ClipType::Audio, targetTrackId, currentTime,
-                                                        fileDuration, file.getFullPathName());
+                auto cmd = std::make_unique<CreateClipCommand>(
+                    ClipType::Audio, targetTrackId, BeatPosition{currentTime * bpm / 60.0},
+                    BeatDuration{fileDuration * bpm / 60.0}, file.getFullPathName(),
+                    ClipView::Arrangement, bpm);
 
                 UndoManager::getInstance().executeCommand(std::move(cmd));
                 ++numImported;

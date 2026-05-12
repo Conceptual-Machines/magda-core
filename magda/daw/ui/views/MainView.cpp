@@ -13,6 +13,7 @@
 #include "audio/controllers/ControllerParamWriter.hpp"
 #include "audio/controllers/ControllerRouter.hpp"
 #include "core/ClipCommands.hpp"
+#include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
@@ -61,6 +62,14 @@ float dbToMeterPos(float db) {
 
     // Apply power curve: y = x^3
     return std::pow(normalized, 3.0f);
+}
+
+double timelineStartSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineStart(bpm);
+}
+
+double timelineEndSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineEnd(bpm);
 }
 
 }  // namespace
@@ -992,8 +1001,9 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
             if (selectedClipId != INVALID_CLIP_ID) {
                 const auto* clip = ClipManager::getInstance().getClip(selectedClipId);
                 if (clip) {
-                    timelineController->dispatch(
-                        SetLoopRegionEvent{clip->startTime, clip->getEndTime()});
+                    const double bpm = timelineController->getState().tempo.bpm;
+                    timelineController->dispatch(SetLoopRegionEvent{
+                        timelineStartSeconds(*clip, bpm), timelineEndSeconds(*clip, bpm)});
                 }
             }
         }
@@ -1819,8 +1829,8 @@ void MainView::SelectionOverlayComponent::paintTimeSelectionBand(juce::Graphics&
     // Force a software image: NativeImageType on Windows is Direct2D-backed,
     // and BitmapData pixel writes don't round-trip back to the GPU surface,
     // so the inversion below would silently no-op on Windows.
-    auto snapshot = owner.trackContentPanel->createComponentSnapshot(
-        panelRect, false, 1.0f, juce::SoftwareImageType{});
+    auto snapshot = owner.trackContentPanel->createComponentSnapshot(panelRect, false, 1.0f,
+                                                                     juce::SoftwareImageType{});
     if (snapshot.isValid() && snapshot.getWidth() > 0 && snapshot.getHeight() > 0) {
         juce::Image::BitmapData data(snapshot, juce::Image::BitmapData::readWrite);
         for (int y = 0; y < data.height; ++y) {
@@ -1834,8 +1844,8 @@ void MainView::SelectionOverlayComponent::paintTimeSelectionBand(juce::Graphics&
     }
 
     if (owner.gridOverlay) {
-        auto gridSnapshot = owner.gridOverlay->createComponentSnapshot(
-            bandRect, false, 1.0f, juce::SoftwareImageType{});
+        auto gridSnapshot = owner.gridOverlay->createComponentSnapshot(bandRect, false, 1.0f,
+                                                                       juce::SoftwareImageType{});
         if (gridSnapshot.isValid() && gridSnapshot.getWidth() > 0 && gridSnapshot.getHeight() > 0) {
             juce::Image::BitmapData data(gridSnapshot, juce::Image::BitmapData::readWrite);
             for (int y = 0; y < data.height; ++y) {

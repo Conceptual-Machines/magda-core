@@ -308,8 +308,8 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     double dataEndBeats = 0.0;
 
     if (lane.isAbsolute() && !lane.absolutePoints.empty()) {
-        dataStartBeats = lane.absolutePoints.front().time;
-        dataEndBeats = lane.absolutePoints.back().time;
+        dataStartBeats = lane.absolutePoints.front().beatPosition;
+        dataEndBeats = lane.absolutePoints.back().beatPosition;
     } else if (lane.isClipBased()) {
         // Find the overall range from all clips
         bool first = true;
@@ -317,10 +317,10 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
             const auto* clip = autoMgr.getClip(clipId);
             if (!clip)
                 continue;
-            if (first || clip->startTime < dataStartBeats)
-                dataStartBeats = clip->startTime;
-            if (first || clip->getEndTime() > dataEndBeats)
-                dataEndBeats = clip->getEndTime();
+            if (first || clip->startBeats < dataStartBeats)
+                dataStartBeats = clip->startBeats;
+            if (first || clip->getEndBeats() > dataEndBeats)
+                dataEndBeats = clip->getEndBeats();
             first = false;
         }
     }
@@ -413,26 +413,26 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
             // point's position, then jump — TE's linear iterator otherwise
             // ramps between the two points and lets the old value through.
             if (i > 0 && (*sourcePoints)[i - 1].curveType == AutomationCurveType::Step) {
-                double preStepBeat = point.time - kStepEpsilon;
-                if (preStepBeat > (*sourcePoints)[i - 1].time)
-                    addTEPoint(preStepBeat, autoMgr.getValueAtTime(lane.id, preStepBeat));
+                double preStepBeat = point.beatPosition - kStepEpsilon;
+                if (preStepBeat > (*sourcePoints)[i - 1].beatPosition)
+                    addTEPoint(preStepBeat, autoMgr.getValueAtBeat(lane.id, preStepBeat));
             }
 
             // Bezier: tessellate the segment between the previous and current
             // point, so TE's linear interpolation follows the curved shape.
             if (i > 0 && (*sourcePoints)[i - 1].curveType == AutomationCurveType::Bezier) {
                 const auto& prev = (*sourcePoints)[i - 1];
-                const double span = point.time - prev.time;
+                const double span = point.beatPosition - prev.beatPosition;
                 if (span > 0.0) {
                     for (int s = 1; s < kBezierSegments; ++s) {
                         double t = static_cast<double>(s) / kBezierSegments;
-                        double beat = prev.time + span * t;
-                        addTEPoint(beat, autoMgr.getValueAtTime(lane.id, beat));
+                        double beat = prev.beatPosition + span * t;
+                        addTEPoint(beat, autoMgr.getValueAtBeat(lane.id, beat));
                     }
                 }
             }
 
-            addTEPoint(point.time, point.value);
+            addTEPoint(point.beatPosition, point.value);
         }
     }
 

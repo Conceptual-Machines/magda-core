@@ -60,6 +60,32 @@ TEST_CASE("Enabling loop with no region seeds a 1-bar region at the playhead",
     controller.removeAudioEngineListener(&listener);
 }
 
+TEST_CASE("Timeline range state treats beats as authoritative", "[timeline][beats][regression]") {
+    magda::LoopRegion loop;
+    loop.setFromBeats(8.0, 16.0, 120.0);
+    loop.startTime = 99.0;
+    loop.endTime = 99.0;
+
+    REQUIRE(loop.isValid());
+    REQUIRE(loop.getDurationBeats() == Catch::Approx(8.0));
+
+    magda::PunchRegion punch;
+    punch.setFromBeats(4.0, 12.0, 120.0);
+    punch.startTime = 50.0;
+    punch.endTime = 1.0;
+
+    REQUIRE(punch.isValid());
+    REQUIRE(punch.getDurationBeats() == Catch::Approx(8.0));
+
+    magda::TimeSelection selection;
+    selection.setFromBeats(2.0, 6.0, 120.0);
+    selection.startTime = 10.0;
+    selection.endTime = 0.0;
+
+    REQUIRE(selection.isActive());
+    REQUIRE(selection.getDurationBeats() == Catch::Approx(4.0));
+}
+
 TEST_CASE("Enabling loop with an existing valid region keeps it in place",
           "[timeline][loop][regression]") {
     magda::TimelineController controller;

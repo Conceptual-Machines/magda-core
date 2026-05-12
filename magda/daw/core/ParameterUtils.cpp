@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <limits>
 
+#include "TempoUtils.hpp"
+
 namespace magda {
 namespace ParameterUtils {
 
@@ -285,7 +287,7 @@ juce::String formatMidiNote(float value) {
     return juce::String(names[n % 12]) + juce::String(octave);
 }
 
-juce::String formatBars(float beats, int beatsPerBar = 4) {
+juce::String formatBars(float beats, int beatsPerBar = DEFAULT_TIME_SIGNATURE_NUMERATOR) {
     constexpr int TICKS_PER_BEAT = 480;
     int bars = static_cast<int>(std::floor(beats / beatsPerBar));
     float rem = beats - bars * beatsPerBar;
@@ -539,7 +541,7 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
         case DisplayFormat::BarsBeats: {
             // "bars.beats.ticks", 1-indexed for bars and beats.
             constexpr int TICKS_PER_BEAT = 480;
-            constexpr int beatsPerBar = 4;
+            constexpr int beatsPerBar = DEFAULT_TIME_SIGNATURE_NUMERATOR;
             auto parts = juce::StringArray::fromTokens(trimmed, ".", "");
             if (parts.isEmpty())
                 return std::nullopt;

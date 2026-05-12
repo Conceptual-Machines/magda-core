@@ -140,16 +140,22 @@ struct DeviceSelection {
  * @brief Time range selection data
  */
 struct TimeRangeSelection {
-    double startTime = 0.0;
-    double endTime = 0.0;
+    double startTime = 0.0;         // seconds cache derived from beats
+    double endTime = 0.0;           // seconds cache derived from beats
+    double startBeats = 0.0;        // authoritative timeline position
+    double endBeats = 0.0;          // authoritative timeline position
     std::vector<TrackId> trackIds;  // Which tracks are included
 
     bool isValid() const {
-        return endTime > startTime && !trackIds.empty();
+        return endBeats > startBeats && !trackIds.empty();
     }
 
     double getLength() const {
         return endTime - startTime;
+    }
+
+    double getLengthBeats() const {
+        return endBeats - startBeats;
     }
 };
 

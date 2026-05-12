@@ -19,7 +19,7 @@ namespace magda {
  *
  * Contains a header with name, visibility toggle, arm button.
  * Below header: either CurveEditor (absolute) or ClipComponents (clip-based).
- * Handles coordinate conversion: time <-> pixel, value <-> Y.
+ * Handles coordinate conversion: beat <-> pixel, value <-> Y.
  */
 class AutomationLaneComponent : public juce::Component,
                                 public AutomationManagerListener,
@@ -53,19 +53,15 @@ class AutomationLaneComponent : public juce::Component,
     AutomationLaneId getLaneId() const {
         return laneId_;
     }
-    void setPixelsPerSecond(double pps);
     void setPixelsPerBeat(double ppb);
     void setTempoBPM(double bpm);
-    double getPixelsPerSecond() const {
-        return pixelsPerSecond_;
-    }
 
     // Height management
     int getPreferredHeight() const;
     bool isExpanded() const;
 
     // Snapping
-    std::function<double(double)> snapTimeToGrid;
+    std::function<double(double)> snapBeatToGrid;
     std::function<double()> getGridSpacingBeats;
 
     // Header dimensions
@@ -98,7 +94,6 @@ class AutomationLaneComponent : public juce::Component,
 
   private:
     AutomationLaneId laneId_;
-    double pixelsPerSecond_ = 100.0;
     double pixelsPerBeat_ = 10.0;
     double tempoBPM_ = 120.0;
     bool isSelected_ = false;

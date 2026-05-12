@@ -246,7 +246,8 @@ void AutomationRecordingEngine::recordPoint(AutomationLaneId laneId, double beat
         // Delete only pre-recording points that fall within [sweepFrom, beatTime].
         std::vector<AutomationPointId> toDelete;
         for (const auto& pt : lane->absolutePoints) {
-            if (pt.time >= sweepFrom && pt.time <= beatTime && snapshot.count(pt.id))
+            if (pt.beatPosition >= sweepFrom && pt.beatPosition <= beatTime &&
+                snapshot.count(pt.id))
                 toDelete.push_back(pt.id);
         }
         for (auto pid : toDelete) {

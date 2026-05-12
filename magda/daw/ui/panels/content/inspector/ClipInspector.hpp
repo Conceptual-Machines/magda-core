@@ -15,8 +15,8 @@ namespace magda::daw::ui {
  * @brief Inspector for clip properties
  *
  * Displays and edits comprehensive clip properties:
- * - Position (start, end, length, offset)
- * - Loop controls (toggle, start, length, phase)
+ * - Position (start, end, length)
+ * - Source/loop controls (toggle, start, end, offset/phase)
  * - Warp/auto-tempo/stretch settings
  * - Pitch (auto-pitch, transpose)
  * - Per-clip mix (volume, pan, gain)
@@ -92,8 +92,8 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipStartValue_;
     juce::Label clipEndLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipEndValue_;
-    juce::Label clipOffsetLabel_;
-    std::unique_ptr<magda::BarsBeatsTicksLabel> clipContentOffsetValue_;
+    juce::Label clipLengthLabel_;
+    std::unique_ptr<magda::BarsBeatsTicksLabel> clipLengthValue_;
 
     // Loop section
     std::unique_ptr<magda::SvgButton> clipLoopToggle_;
@@ -206,7 +206,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     double multiSpeedRatioDragStart_ = 0.0;
     double multiStartDragStart_ = 0.0;
     double multiEndDragStart_ = 0.0;
-    double multiOffsetDragStart_ = 0.0;
+    double multiLengthDragStart_ = 0.0;
 
     // Update methods
     void updateFromSelectedClip();

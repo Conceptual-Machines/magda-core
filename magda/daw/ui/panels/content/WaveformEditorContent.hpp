@@ -8,6 +8,7 @@
 #include "core/UndoManager.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
+#include "ui/components/timeline/ZoomScrollBar.hpp"
 #include "ui/components/waveform/WaveformGridComponent.hpp"
 #include "ui/state/TimelineController.hpp"
 
@@ -20,7 +21,7 @@ namespace magda::daw::ui {
  * - ScrollNotifyingViewport (scrolling)
  * - WaveformGridComponent (scrollable waveform content)
  * - TimeRuler (synchronized with scroll)
- * - ABS/REL mode toggle
+ * - Source-relative time ruler
  * - Zoom controls
  *
  * Architecture based on PianoRollContent pattern.
@@ -78,18 +79,17 @@ class WaveformEditorContent : public PanelContent,
         return editingClipId_;
     }
 
-    // Timeline mode
+    // Waveform editor is always source-relative.
     void setRelativeTimeMode(bool relative);
     bool isRelativeTimeMode() const {
-        return relativeTimeMode_;
+        return true;
     }
     void setSnapEnabledFromUI(bool enabled);
 
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
 
-    // Timeline mode
-    bool relativeTimeMode_ = false;  // false = absolute (timeline), true = relative (clip)
+    bool relativeTimeMode_ = true;
 
     // Zoom
     double horizontalZoom_ = 100.0;  // pixels per second
@@ -104,12 +104,14 @@ class WaveformEditorContent : public PanelContent,
     static constexpr int TIME_RULER_HEIGHT = 48;
     static constexpr int TOOLBAR_HEIGHT = 30;
     static constexpr int GRID_LEFT_PADDING = 10;
+    static constexpr int H_SCROLLBAR_HEIGHT = 12;
 
     // Components (created in constructor)
     class ScrollNotifyingViewport;  // Forward declaration
     std::unique_ptr<ScrollNotifyingViewport> viewport_;
     std::unique_ptr<WaveformGridComponent> gridComponent_;
     std::unique_ptr<magda::TimeRuler> timeRuler_;
+    std::unique_ptr<magda::ZoomScrollBar> horizontalScrollBar_;
     std::unique_ptr<juce::TextButton> timeModeButton_;
 
     std::unique_ptr<DraggableValueLabel> gridNumeratorLabel_;
@@ -136,9 +138,11 @@ class WaveformEditorContent : public PanelContent,
 
     // Virtual scroll position (replaces viewport-based horizontal scrolling)
     int virtualScrollX_ = 0;
+    bool isUpdatingFromScrollBar_ = false;
 
     int getMaxVirtualScrollX() const;
     void setVirtualScrollX(int x);
+    void updateHorizontalScrollBar();
 
     // Update grid size when clip or zoom changes
     void updateGridSize();

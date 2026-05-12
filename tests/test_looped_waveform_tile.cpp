@@ -62,7 +62,20 @@ TileSourceRange computeTileSourceRange(double timePos, double loopCycle, double 
 TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]") {
     using namespace magda;
 
-    SECTION("Non-looped clip: source range spans full clip") {
+    // Under the new contract these tests pin two invariants per scenario:
+    //
+    //   1. Loop region fields  (loopRegionStartSource / loopRegionLengthSource,
+    //      loopStartPositionSeconds / loopEndPositionSeconds) reflect the
+    //      user's loop selection.
+    //   2. File extent fields  (sourceFileStart / sourceFileEnd) describe
+    //      the source file on disk, INDEPENDENTLY of the loop region.
+    //
+    // The previous tests asserted "sourceFileEnd == loopStart + loopLength"
+    // which was the conflation that caused the editor to truncate the
+    // waveform whenever the loop region was smaller than the file. Each
+    // section below now exercises both fields side-by-side.
+
+    SECTION("Non-looped clip: file extent uses the file (or a fallback derived from clip length)") {
         ClipInfo clip;
         clip.setAudioContent();
         clip.startTime = 0.0;
@@ -71,66 +84,73 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.speedRatio = 1.0;
         clip.loopEnabled = false;
         clip.loopStart = 0.0;
-        clip.loopLength = 0.0;  // Not set, derived from clip length
+        clip.loopLength = 0.0;
 
         syncPlacement(clip);
-        auto di = ClipDisplayInfo::from(clip, 120.0);
+        auto di = ClipDisplayInfo::from(clip, 120.0);  // fileDuration=0 → fallback
 
-        REQUIRE(di.sourceFileStart == Catch::Approx(1.0));
-        REQUIRE(di.sourceFileEnd == Catch::Approx(5.0));  // 1.0 + 4.0 / 1.0
+        REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
+        REQUIRE(di.sourceFileEnd > 0.0);
         REQUIRE_FALSE(di.isLooped());
     }
 
-    SECTION("Looped clip: source range covers one loop cycle") {
+    SECTION("Looped clip: loop region tracks the selection; file extent stays full file") {
         ClipInfo clip;
         clip.setAudioContent();
         clip.startTime = 0.0;
-        clip.length = 8.0;  // clip is 8s long
+        clip.length = 8.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 0.5;          // loop starts at 0.5s in source
-        clip.loopLength = 2.0;         // 2s of source audio (loop cycle)
-        clip.offset = clip.loopStart;  // phase=0 within loop
+        clip.loopStart = 0.5;
+        clip.loopLength = 2.0;
+        clip.offset = clip.loopStart;
 
-        double bpm = 120.0;
         syncPlacement(clip);
-        auto di = ClipDisplayInfo::from(clip, bpm);
+        auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
 
-        REQUIRE(di.loopLengthSeconds == Catch::Approx(2.0));  // sourceLength * speedRatio
-        REQUIRE(di.loopEndPositionSeconds ==
-                Catch::Approx(2.5));  // loopStart(0.5) + loopLength(2.0)
+        // Loop region matches selection.
+        REQUIRE(di.loopRegionStartSource == Catch::Approx(0.5));
+        REQUIRE(di.loopRegionLengthSource == Catch::Approx(2.0));
+        REQUIRE(di.loopStartPositionSeconds == Catch::Approx(0.5));
+        REQUIRE(di.loopEndPositionSeconds == Catch::Approx(2.5));
+        REQUIRE(di.loopLengthSeconds == Catch::Approx(2.0));
         REQUIRE(di.isLooped());
 
-        // Source file range for one cycle
-        REQUIRE(di.sourceFileStart == Catch::Approx(0.5));  // loopStart
-        REQUIRE(di.sourceFileEnd == Catch::Approx(2.5));    // loopStart + loopLength
+        // File extent = full file, regardless of loop.
+        REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
+        REQUIRE(di.sourceFileEnd == Catch::Approx(4.0));
     }
 
-    SECTION("Looped clip with stretch: source range accounts for stretch") {
+    SECTION(
+        "Looped clip with stretch: loop in timeline scales by speedRatio; file extent unchanged") {
         ClipInfo clip;
         clip.setAudioContent();
         clip.startTime = 0.0;
-        clip.length = 16.0;     // stretched clip
+        clip.length = 16.0;
         clip.speedRatio = 2.0;  // 2x faster
         clip.loopEnabled = true;
-        clip.loopStart = 1.0;          // loop starts at 1.0s in source
-        clip.loopLength = 1.0;         // 1s of source audio
-        clip.offset = clip.loopStart;  // phase=0 within loop
+        clip.loopStart = 1.0;
+        clip.loopLength = 1.0;
+        clip.offset = clip.loopStart;
 
-        double bpm = 120.0;
         syncPlacement(clip);
-        auto di = ClipDisplayInfo::from(clip, bpm);
+        auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/3.0);
 
-        REQUIRE(di.loopLengthSeconds ==
-                Catch::Approx(0.5));  // 1s source / 2.0 speedRatio = 0.5s on timeline
+        REQUIRE(di.loopLengthSeconds == Catch::Approx(0.5));  // 1s source / 2x = 0.5s timeline
+        REQUIRE(di.loopRegionStartSource == Catch::Approx(1.0));
+        REQUIRE(di.loopRegionLengthSource == Catch::Approx(1.0));
         REQUIRE(di.isLooped());
 
-        // Source file range for one cycle
-        REQUIRE(di.sourceFileStart == Catch::Approx(1.0));  // loopStart
-        REQUIRE(di.sourceFileEnd == Catch::Approx(2.0));    // loopStart + loopLength
+        REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
+        REQUIRE(di.sourceFileEnd == Catch::Approx(3.0));
+        REQUIRE(di.fileExtentTimeline() == Catch::Approx(1.5));  // 3s / 2x
     }
 
-    SECTION("Loop active when loopLength is zero but loopEnabled is true") {
+    SECTION("loopEnabled with loopLength=0: sentinel falls back to remaining file") {
+        // Older clips and freshly-toggled loops can land in this state.
+        // The session scheduler treats it as "loop the whole source from
+        // loopStart" so the editor must too — otherwise the clip plays
+        // looped while the overlay draws it as non-looped.
         ClipInfo clip;
         clip.setAudioContent();
         clip.startTime = 0.0;
@@ -138,97 +158,78 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.offset = clip.loopStart;
         clip.loopStart = 0.0;
-        clip.loopLength = 0.0;  // No source region defined
+        clip.loopLength = 0.0;
 
         syncPlacement(clip);
-        auto di = ClipDisplayInfo::from(clip, 120.0);
+        auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/1.0);
 
-        // With loopLength=0, sourceLength falls back to clip.length * speedRatio
-        // So it will be looped since sourceLength > 0
         REQUIRE(di.isLooped());
+        REQUIRE(di.loopRegionLengthSource == Catch::Approx(1.0));
+        REQUIRE(di.sourceFileEnd == Catch::Approx(1.0));
     }
 
-    SECTION("Clip shorter than loop cycle: source range covers full loop region") {
+    SECTION("Loop region inside a longer file: loop fields == selection, file extent == file") {
         ClipInfo clip;
         clip.setAudioContent();
         clip.startTime = 0.0;
-        clip.length = 1.0;  // 1s clip, shorter than 2s loop cycle
+        clip.length = 1.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopStart = 0.5;          // loop starts at 0.5s
-        clip.loopLength = 2.0;         // 2s source region
-        clip.offset = clip.loopStart;  // phase=0 within loop
-
-        syncPlacement(clip);
-        auto di = ClipDisplayInfo::from(clip, 120.0);
-
-        // sourceFileStart/End represent the full loop source region for waveform drawing.
-        // Per-tile clamping for partial cycles is handled by the drawing code.
-        REQUIRE(di.sourceFileStart == Catch::Approx(0.5));
-        REQUIRE(di.sourceFileEnd == Catch::Approx(2.5));  // loopStart + loopLength
-    }
-
-    SECTION("Looped clip with stretch: clip covers multiple cycles") {
-        ClipInfo clip;
-        clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 1.0;  // 1s on timeline
-        clip.offset = 0.0;
-        clip.speedRatio = 2.0;  // 2x faster
-        clip.loopEnabled = true;
+        clip.loopStart = 0.5;
+        clip.loopLength = 2.0;
         clip.offset = clip.loopStart;
-        clip.loopStart = 0.0;
-        clip.loopLength = 1.0;  // 1s source region → 0.5s on timeline → clip has 2 full cycles
 
         syncPlacement(clip);
-        auto di = ClipDisplayInfo::from(clip, 120.0);
+        auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
 
-        // At 2x speed: 1.0s on timeline = 2.0s of source, loop cycle = 0.5s on timeline
-        // Clip covers 2 full loop cycles, so full loop source range is needed
+        REQUIRE(di.loopRegionStartSource == Catch::Approx(0.5));
+        REQUIRE(di.loopRegionLengthSource == Catch::Approx(2.0));
         REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
-        REQUIRE(di.sourceFileEnd == Catch::Approx(1.0));  // loopStart + loopLength
+        REQUIRE(di.sourceFileEnd == Catch::Approx(4.0));
     }
 
-    SECTION("Clip equal to loop cycle: source range not clamped") {
+    SECTION("Clip = one loop cycle: loop region matches; file extent untouched") {
         ClipInfo clip;
         clip.setAudioContent();
         clip.startTime = 0.0;
-        clip.length = 2.0;  // exactly one loop cycle on timeline
+        clip.length = 2.0;
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.offset = clip.loopStart;
         clip.loopStart = 0.0;
-        clip.loopLength = 2.0;  // 2s source = 2s on timeline
+        clip.loopLength = 2.0;
 
         syncPlacement(clip);
-        auto di = ClipDisplayInfo::from(clip, 120.0);
+        auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/2.0);
 
-        // Clip length == loop cycle, no clamping needed
+        REQUIRE(di.loopRegionStartSource == Catch::Approx(0.0));
+        REQUIRE(di.loopRegionLengthSource == Catch::Approx(2.0));
         REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
         REQUIRE(di.sourceFileEnd == Catch::Approx(2.0));
     }
 
-    SECTION("Clip longer than loop cycle: source range not clamped") {
+    SECTION("Clip > loop cycle: loop region unchanged, file extent shows full file") {
+        // The bug repro: file is longer than the loop region. Pre-fix this
+        // would have given sourceFileEnd == loopLength (= 2.0), shrinking
+        // the editor's waveform window. Post-fix the file extent is the
+        // full file even though the loop is shorter.
         ClipInfo clip;
         clip.setAudioContent();
         clip.startTime = 0.0;
-        clip.length = 6.0;  // 3x the loop cycle
+        clip.length = 6.0;
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.offset = clip.loopStart;
         clip.loopStart = 0.0;
-        clip.loopLength = 2.0;  // 2s source = 2s loop on timeline
+        clip.loopLength = 2.0;
 
         syncPlacement(clip);
-        auto di = ClipDisplayInfo::from(clip, 120.0);
+        auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
 
-        // Full loop cycle source range, no clamping
+        REQUIRE(di.loopRegionLengthSource == Catch::Approx(2.0));
         REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
-        REQUIRE(di.sourceFileEnd == Catch::Approx(2.0));
+        REQUIRE(di.sourceFileEnd == Catch::Approx(4.0));  // FULL file, not loop
         REQUIRE(di.isLooped());
     }
 }
@@ -367,7 +368,7 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
 
         const auto di = ClipDisplayInfo::from(clip, 120.0, clip.audio().source.durationSeconds);
 
-        REQUIRE(di.fullSourceExtentSeconds == Catch::Approx(6.0));
+        REQUIRE(di.fileExtentTimeline() == Catch::Approx(6.0));
         REQUIRE(di.loopLengthSeconds == Catch::Approx(6.0));
         REQUIRE(di.offsetPositionSeconds == Catch::Approx(1.5));
         REQUIRE(di.displayPositionToSourceTime(1.5) == Catch::Approx(1.5 * 120.0 / 129.0));

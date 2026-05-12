@@ -81,11 +81,12 @@ CTestTestfile.cmake
 _deps
 CPackConfig.cmake
 CPackSourceConfig.cmake
+_CPack_Packages/
 
-# CMake configure_file output (when someone runs cmake from the source tree)
+# Stray generated build artifacts that occasionally land in the source
+# tree instead of cmake-build-*/. The real outputs live in the build
+# directory; if you see one of these in `git status`, delete it.
 magda/daw/generated/
-
-# gtest_discover_tests artifacts (named <target>_include-<hash>.cmake / <target>_tests-<hash>.cmake)
 tests/*_include-*.cmake
 tests/*_tests-*.cmake
 

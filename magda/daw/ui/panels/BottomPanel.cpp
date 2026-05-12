@@ -1002,12 +1002,14 @@ void BottomPanel::applyTimeModeToContent() {
         return;
 
     // ABS/REL toggle policy:
+    //   - Waveform editor is always source-relative and does not expose the toggle.
     //   - Session-view clips never expose the toggle (session is always relative — there is no
     //     arrangement timeline to be absolute against). The button is hidden, not just disabled.
     //   - Looped arrangement clips force relative mode but keep the button visible-but-disabled
     //     so the user can see the constraint.
     //   - Other arrangement clips: button visible and enabled.
     ClipId activeClipId = INVALID_CLIP_ID;
+    const bool isWaveformEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content) != nullptr;
     if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content))
         activeClipId = midiEditor->getEditingClipId();
     else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content))
@@ -1017,7 +1019,7 @@ void BottomPanel::applyTimeModeToContent() {
                                ? ClipManager::getInstance().getClip(activeClipId)
                                : nullptr;
     const bool isSession = clip && clip->view == ClipView::Session;
-    const bool forceRelative = clip && (isSession || clip->loopEnabled);
+    const bool forceRelative = isWaveformEditor || (clip && (isSession || clip->loopEnabled));
     const bool targetRelative = forceRelative ? true : relativeTimeMode_;
 
     if (forceRelative)
@@ -1034,7 +1036,7 @@ void BottomPanel::applyTimeModeToContent() {
     timeModeButton_->setButtonText(relativeTimeMode_ ? "REL" : "ABS");
     timeModeButton_->setToggleState(relativeTimeMode_, juce::dontSendNotification);
 
-    timeModeButton_->setVisible(!isSession);
+    timeModeButton_->setVisible(!isWaveformEditor && !isSession);
     timeModeButton_->setEnabled(!forceRelative);
     timeModeButton_->setAlpha(forceRelative ? 0.4f : 1.0f);
 }

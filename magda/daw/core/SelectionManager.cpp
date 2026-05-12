@@ -2,8 +2,10 @@
 
 #include <algorithm>
 
+#include "../project/ProjectManager.hpp"
 #include "ClipManager.hpp"
 #include "Config.hpp"
+#include "TempoUtils.hpp"
 #include "TrackInfo.hpp"
 #include "TrackManager.hpp"
 
@@ -369,10 +371,12 @@ void SelectionManager::extendSelectionTo(ClipId targetClipId) {
         return;
     }
 
-    // Calculate the rectangular region between anchor and target
-    double minTime = std::min(anchorClip->startTime, targetClip->startTime);
-    double maxTime = std::max(anchorClip->startTime + anchorClip->length,
-                              targetClip->startTime + targetClip->length);
+    const double bpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+
+    // Calculate the rectangular region between anchor and target. Placement
+    // beats are authoritative; seconds fields are only derived caches.
+    double minTime = std::min(anchorClip->getTimelineStart(bpm), targetClip->getTimelineStart(bpm));
+    double maxTime = std::max(anchorClip->getTimelineEnd(bpm), targetClip->getTimelineEnd(bpm));
 
     TrackId minTrackId = std::min(anchorClip->trackId, targetClip->trackId);
     TrackId maxTrackId = std::max(anchorClip->trackId, targetClip->trackId);
@@ -388,8 +392,9 @@ void SelectionManager::extendSelectionTo(ClipId targetClipId) {
         }
 
         // Check if clip overlaps with time range
-        double clipEnd = clip.startTime + clip.length;
-        if (clip.startTime < maxTime && clipEnd > minTime) {
+        const double clipStart = clip.getTimelineStart(bpm);
+        const double clipEnd = clip.getTimelineEnd(bpm);
+        if (clipStart < maxTime && clipEnd > minTime) {
             clipsInRange.insert(clip.id);
         }
     }
@@ -423,8 +428,14 @@ void SelectionManager::selectTimeRange(double startTime, double endTime,
     selectedClipId_ = INVALID_CLIP_ID;
 
     selectionType_ = SelectionType::TimeRange;
-    timeRangeSelection_.startTime = startTime;
-    timeRangeSelection_.endTime = endTime;
+    if (startTime > endTime)
+        std::swap(startTime, endTime);
+    const double projectBpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    const double bpm = isValidBpm(projectBpm) ? projectBpm : DEFAULT_BPM;
+    timeRangeSelection_.startBeats = startTime * bpm / 60.0;
+    timeRangeSelection_.endBeats = endTime * bpm / 60.0;
+    timeRangeSelection_.startTime = timeRangeSelection_.startBeats * 60.0 / bpm;
+    timeRangeSelection_.endTime = timeRangeSelection_.endBeats * 60.0 / bpm;
     timeRangeSelection_.trackIds = trackIds;
 
     // Sync with managers (clear their selections)

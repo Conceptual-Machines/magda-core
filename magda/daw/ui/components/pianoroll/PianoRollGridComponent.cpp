@@ -15,6 +15,20 @@
 
 namespace magda {
 
+namespace {
+double timelineStartBeats(const ClipInfo& clip, double bpm) {
+    return clip.getStartBeats(bpm);
+}
+
+double timelineLengthBeats(const ClipInfo& clip, double bpm) {
+    return clip.getLengthInBeats(bpm);
+}
+
+double timelineEndBeats(const ClipInfo& clip, double bpm) {
+    return clip.getEndBeats(bpm);
+}
+}  // namespace
+
 PianoRollGridComponent::PianoRollGridComponent() {
     setName("PianoRollGrid");
     setWantsKeyboardFocus(true);
@@ -53,8 +67,8 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
                 continue;
             }
 
-            double clipStartBeats = clip->startTime * (tempo / 60.0);
-            double clipEndBeats = (clip->startTime + clip->length) * (tempo / 60.0);
+            double clipStartBeats = timelineStartBeats(*clip, tempo);
+            double clipEndBeats = timelineEndBeats(*clip, tempo);
 
             // In relative mode, offset from the earliest clip start
             if (relativeMode_) {
@@ -702,8 +716,8 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
             if (!clip)
                 continue;
 
-            double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
-            double clipEndRelBeats = clipOffsetBeats + clip->length * (tempo / 60.0);
+            double clipOffsetBeats = timelineStartBeats(*clip, tempo) - clipStartBeats_;
+            double clipEndRelBeats = clipOffsetBeats + timelineLengthBeats(*clip, tempo);
 
             if (beat >= clipOffsetBeats && beat < clipEndRelBeats) {
                 targetClipId = selectedClipId;
@@ -724,7 +738,6 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
             tempo = controller->getState().tempo.bpm;
         }
 
-        double timeSeconds = beat / (tempo / 60.0);
         auto& clipManager = ClipManager::getInstance();
 
         // Find selected clip at this position
@@ -734,7 +747,7 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
                 continue;
             }
 
-            if (timeSeconds >= clip->startTime && timeSeconds < (clip->startTime + clip->length)) {
+            if (beat >= timelineStartBeats(*clip, tempo) && beat < timelineEndBeats(*clip, tempo)) {
                 targetClipId = selectedClipId;
                 break;
             }
@@ -751,7 +764,7 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
             return;
         }
 
-        double clipStartBeats = clip->startTime * (tempo / 60.0);
+        double clipStartBeats = timelineStartBeats(*clip, tempo);
         beat = beat - clipStartBeats;
     }
 
@@ -1091,7 +1104,7 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
             if (auto* controller = TimelineController::getCurrent()) {
                 tempo = controller->getState().tempo.bpm;
             }
-            double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
+            double clipOffsetBeats = timelineStartBeats(*clip, tempo) - clipStartBeats_;
             displayBeat = clipOffsetBeats + beat - visibleStart;
         } else {
             displayBeat = beat - visibleStart;
@@ -1102,7 +1115,7 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
             if (auto* controller = TimelineController::getCurrent()) {
                 tempo = controller->getState().tempo.bpm;
             }
-            double clipStartBeats = clip->startTime * (tempo / 60.0);
+            double clipStartBeats = timelineStartBeats(*clip, tempo);
             displayBeat = clipStartBeats + beat - visibleStart;
         } else {
             displayBeat = clipStartBeats_ + beat;
@@ -1816,7 +1829,7 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
                 if (auto* controller = TimelineController::getCurrent()) {
                     tempo = controller->getState().tempo.bpm;
                 }
-                double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
+                double clipOffsetBeats = timelineStartBeats(*clip, tempo) - clipStartBeats_;
                 displayBeat = clipOffsetBeats + note.startBeat - visibleStart;
             } else {
                 displayBeat = note.startBeat - visibleStart;
@@ -1831,7 +1844,7 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
                 if (auto* controller = TimelineController::getCurrent()) {
                     tempo = controller->getState().tempo.bpm;
                 }
-                clipOffsetBeats = clip->startTime * (tempo / 60.0);
+                clipOffsetBeats = timelineStartBeats(*clip, tempo);
             } else {
                 clipOffsetBeats = clipStartBeats_;
             }

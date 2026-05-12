@@ -9,6 +9,7 @@
 #include "../../layout/LayoutConfig.hpp"
 #include "../../state/TimelineController.hpp"
 #include "LoopMarkerInteraction.hpp"
+#include "core/TempoUtils.hpp"
 
 namespace magda {
 
@@ -145,9 +146,9 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
 
     // Time display mode and tempo
     TimeDisplayMode displayMode = TimeDisplayMode::BarsBeats;
-    double tempoBPM = 120.0;
-    int timeSignatureNumerator = 4;
-    int timeSignatureDenominator = 4;
+    double tempoBPM = DEFAULT_BPM;
+    int timeSignatureNumerator = DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    int timeSignatureDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
 
     // Arrangement sections
     std::vector<std::unique_ptr<ArrangementSection>> sections;

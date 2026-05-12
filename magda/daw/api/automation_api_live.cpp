@@ -21,9 +21,9 @@ const AutomationLaneInfo* AutomationApiLive::getLane(AutomationLaneId laneId) co
     return AutomationManager::getInstance().getLane(laneId);
 }
 
-AutomationPointId AutomationApiLive::addPoint(AutomationLaneId laneId, double time, double value,
-                                              AutomationCurveType curveType) {
-    return AutomationManager::getInstance().addPoint(laneId, time, value, curveType);
+AutomationPointId AutomationApiLive::addPoint(AutomationLaneId laneId, double beatPosition,
+                                              double value, AutomationCurveType curveType) {
+    return AutomationManager::getInstance().addPoint(laneId, beatPosition, value, curveType);
 }
 
 void AutomationApiLive::clearLanePoints(AutomationLaneId laneId) {
