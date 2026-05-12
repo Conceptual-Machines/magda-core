@@ -262,11 +262,6 @@ struct ClipInfo {
         return analogPitch && !autoTempo && !warpEnabled;
     }
 
-    /// Clip timeline placement is always beat-authoritative. Audio source
-    /// offsets/loops remain source-domain data and are converted at the bridge.
-    bool isBeatsAuthoritative() const {
-        return true;
-    }
     int autoPitchMode = 0;     // 0=pitchTrack, 1=chordTrackMono, 2=chordTrackPoly
     float pitchChange = 0.0f;  // -48 to +48 semitones
     int transpose = 0;         // -24 to +24 semitones (only when !autoPitch)

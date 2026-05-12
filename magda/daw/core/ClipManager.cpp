@@ -74,9 +74,9 @@ ClipManager& ClipManager::getInstance() {
 // Clip Creation
 // ============================================================================
 
-ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double length,
-                                    const juce::String& audioFilePath, ClipView view,
-                                    double projectBPM) {
+ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, double lengthBeats,
+                                         const juce::String& audioFilePath, ClipView view,
+                                         double projectBPM) {
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
@@ -105,12 +105,12 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
 
     const double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
 
-    clip.setPlacementBeats(startTime * bpm / 60.0, length * bpm / 60.0);
+    clip.setPlacementBeats(startBeats, lengthBeats);
     clip.deriveTimesFromBeats(bpm);
 
     // Set loopStart to offset (0), loopLength to the clip's source extent
     clip.loopStart = 0.0;
-    clip.setLoopLengthFromTimeline(length);
+    clip.setLoopLengthFromTimeline(clip.getTimelineLength(bpm));
 
     if (view == ClipView::Arrangement) {
         clips_[clip.id] = clip;
@@ -189,6 +189,14 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     }
 
     return clip.id;
+}
+
+ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double length,
+                                    const juce::String& audioFilePath, ClipView view,
+                                    double projectBPM) {
+    const double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
+    return createAudioClipBeats(trackId, startTime * bpm / 60.0, length * bpm / 60.0, audioFilePath,
+                                view, bpm);
 }
 
 ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, double lengthBeats,
@@ -322,7 +330,7 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
     } else {
         // Session clips always loop
         const double bpm = currentProjectTempoOrDefault();
-        ClipOperations::setTimelinePlacement(newClip, 0.0, newClip.getTimelineLength(bpm), bpm);
+        ClipOperations::setBeatPlacement(newClip, 0.0, newClip.placement.lengthBeats, bpm);
         newClip.loopEnabled = true;
         newClip.sceneIndex = -1;
     }
@@ -354,13 +362,13 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
 
     if (newClip.view == ClipView::Arrangement) {
         const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
-        ClipOperations::setTimelinePlacement(newClip, startTime, newClip.getTimelineLength(bpm),
-                                             bpm);
+        ClipOperations::setBeatPlacement(newClip, startTime * bpm / 60.0,
+                                         newClip.placement.lengthBeats, bpm);
         clips_[newClip.id] = newClip;
     } else {
         // Session clips always loop
         const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
-        ClipOperations::setTimelinePlacement(newClip, 0.0, newClip.getTimelineLength(bpm), bpm);
+        ClipOperations::setBeatPlacement(newClip, 0.0, newClip.placement.lengthBeats, bpm);
         newClip.loopEnabled = true;
         newClip.sceneIndex = -1;
         clips_[newClip.id] = newClip;
@@ -378,9 +386,9 @@ void ClipManager::resetLoopedClipLength(ClipInfo& clip) {
     if (!clip.loopEnabled)
         return;
 
-    if (clip.isBeatsAuthoritative() && clip.loopLengthBeats > 0.0) {
-        clip.setPlacementBeats(clip.placement.startBeat, clip.loopLengthBeats);
-        clip.deriveTimesFromBeats(currentProjectTempoOrDefault());
+    if (clip.loopLengthBeats > 0.0) {
+        const double bpm = currentProjectTempoOrDefault();
+        ClipOperations::setBeatPlacement(clip, clip.placement.startBeat, clip.loopLengthBeats, bpm);
     } else if (clip.loopLength > 0.0) {
         const double bpm = currentProjectTempoOrDefault();
         ClipOperations::setTimelinePlacement(clip, clip.getTimelineStart(bpm),
@@ -478,13 +486,14 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     ClipInfo rightClip = *clip;
     rightClip.id = nextClipId_++;
     rightClip.name = clip->name + " R";
-    ClipOperations::setTimelinePlacement(rightClip, splitTime, rightLength, bpm);
+    ClipOperations::setBeatPlacement(rightClip, clip->placement.startBeat + leftLengthBeats,
+                                     rightLengthBeats, bpm);
 
     // Adjust offset for right clip (TE-aligned: offset is start position in source)
     if (rightClip.isAudio()) {
         // In autoTempo/warp mode, speedRatio is 1.0 but actual stretch is projectBPM/source
         // interpretation BPM. Use the tempo ratio to convert timeline seconds to source seconds.
-        if (clip->isBeatsAuthoritative() && clip->audio().interpretation.bpm > 0.0) {
+        if (clip->audio().interpretation.bpm > 0.0) {
             double deltaBeats = leftLengthBeats;
             rightClip.offsetBeats += deltaBeats;
             rightClip.offset = rightClip.offsetBeats * 60.0 / clip->audio().interpretation.bpm;
@@ -532,14 +541,8 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     }
 
     // Resize original clip to be left half
-    ClipOperations::setTimelinePlacement(*clip, clipStart, leftLength, bpm);
+    ClipOperations::setBeatPlacement(*clip, clip->placement.startBeat, leftLengthBeats, bpm);
     clip->name = clip->name + " L";
-
-    // Left clip: lengthBeats changes, startBeats stays the same.
-    clip->setPlacementBeats(clip->placement.startBeat, leftLengthBeats);
-    clip->deriveTimesFromBeats(bpm);
-    rightClip.setPlacementBeats(splitTime * bpm / 60.0, rightLengthBeats);
-    rightClip.deriveTimesFromBeats(bpm);
 
     // Sync loop region after split
     if (clip->loopEnabled) {
@@ -595,12 +598,10 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
         // Non-looped audio: sync loopStart/loopLength to actual source extent
         // Left clip: loopStart stays at original value, loopLength shrinks
         clip->loopLength = clip->timelineToSource(clip->getTimelineLength(bpm));
-        if (clip->isBeatsAuthoritative()) {
-            clip->loopLengthBeats =
-                clip->loopLength *
-                (clip->audio().interpretation.bpm > 0.0 ? clip->audio().interpretation.bpm : bpm) /
-                60.0;
-        }
+        clip->loopLengthBeats =
+            clip->loopLength *
+            (clip->audio().interpretation.bpm > 0.0 ? clip->audio().interpretation.bpm : bpm) /
+            60.0;
 
         // Right clip: loopStart must match offset so TE's loop range covers the
         // correct source region (otherwise offset falls outside the loop range,
@@ -613,21 +614,18 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
             rightClip.loopStart = rightClip.offset;
         }
         rightClip.loopLength = rightClip.timelineToSource(rightClip.getTimelineLength(bpm));
-        if (rightClip.isBeatsAuthoritative()) {
-            double srcBpm = rightClip.audio().interpretation.bpm > 0.0
-                                ? rightClip.audio().interpretation.bpm
-                                : bpm;
-            if (!rightClip.autoTempo)
-                rightClip.loopStartBeats = rightClip.loopStart * srcBpm / 60.0;
-            rightClip.loopLengthBeats = rightClip.loopLength * srcBpm / 60.0;
-        }
+        double srcBpm =
+            rightClip.audio().interpretation.bpm > 0.0 ? rightClip.audio().interpretation.bpm : bpm;
+        if (!rightClip.autoTempo)
+            rightClip.loopStartBeats = rightClip.loopStart * srcBpm / 60.0;
+        rightClip.loopLengthBeats = rightClip.loopLength * srcBpm / 60.0;
     }
 
     // Time-stretched clips (autoTempo/warp): add small anti-click fades at the
     // split boundary.  The stretcher's overlapping analysis windows bleed audio
     // from beyond the boundary, which sounds like a doubled transient.  A short
     // fade masks this startup/shutdown artifact without being audible.
-    if (clip->isAudio() && clip->isBeatsAuthoritative()) {
+    if (clip->isAudio()) {
         constexpr double kSplitFadeSeconds = 0.005;  // 5 ms
         clip->fadeOut = kSplitFadeSeconds;
         rightClip.fadeIn = kSplitFadeSeconds;
@@ -2007,8 +2005,7 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
         if (clip.isAudio()) {
             // Adjust offset for the trimmed start position
             double trimFromLeft = overlapStart - clipStart;
-            if (clip.isBeatsAuthoritative() && clip.audio().interpretation.bpm > 0.0 &&
-                tempoBPM > 0.0) {
+            if (clip.audio().interpretation.bpm > 0.0 && tempoBPM > 0.0) {
                 // autoTempo: work in beats, derive seconds
                 double deltaBeats = trimFromLeft * tempoBPM / 60.0;
                 trimmed.offsetBeats = clip.offsetBeats + deltaBeats;

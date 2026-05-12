@@ -131,22 +131,42 @@ class ClipOperations {
     // Container Operations (clip-level only)
     // ========================================================================
 
-    static inline void setTimelinePlacement(ClipInfo& clip, double newStartTime, double newLength,
-                                            double bpm) {
-        newStartTime = juce::jmax(0.0, newStartTime);
-        newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
-
+    static inline void setBeatPlacement(ClipInfo& clip, double startBeat, double lengthBeats,
+                                        double bpm) {
         if (!isValidBpm(bpm))
             return;
 
-        clip.setPlacementBeats(newStartTime * bpm / 60.0, newLength * bpm / 60.0);
+        startBeat = juce::jmax(0.0, startBeat);
+        lengthBeats = juce::jmax(MIN_CLIP_LENGTH * bpm / 60.0, lengthBeats);
+        clip.setPlacementBeats(startBeat, lengthBeats);
         clip.deriveTimesFromBeats(bpm);
+    }
+
+    static inline void setTimelinePlacement(ClipInfo& clip, double newStartTime, double newLength,
+                                            double bpm) {
+        if (!isValidBpm(bpm))
+            return;
+
+        newStartTime = juce::jmax(0.0, newStartTime);
+        newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
+        setBeatPlacement(clip, newStartTime * bpm / 60.0, newLength * bpm / 60.0, bpm);
+    }
+
+    static inline void setStartBeat(ClipInfo& clip, double newStartBeat, double bpm) {
+        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
+        setBeatPlacement(clip, newStartBeat, clip.placement.lengthBeats, bpm);
     }
 
     static inline void setTimelineStart(ClipInfo& clip, double newStartTime, double bpm) {
         seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
-        const double currentLength = clip.getTimelineLength(bpm);
-        setTimelinePlacement(clip, newStartTime, currentLength, bpm);
+        if (!isValidBpm(bpm))
+            return;
+        setStartBeat(clip, newStartTime * bpm / 60.0, bpm);
+    }
+
+    static inline void moveContainerBeats(ClipInfo& clip, double newStartBeat,
+                                          double bpm = DEFAULT_BPM) {
+        setStartBeat(clip, newStartBeat, bpm);
     }
 
     /**
@@ -845,7 +865,7 @@ class ClipOperations {
             double avail = fileDuration - clip.loopStart;
             if (clip.loopLength > avail) {
                 clip.loopLength = juce::jmax(0.0, avail);
-                if (clip.isBeatsAuthoritative() && oldLoopLength > 0.0) {
+                if (oldLoopLength > 0.0) {
                     clip.loopLengthBeats *= clip.loopLength / oldLoopLength;
                 }
             }

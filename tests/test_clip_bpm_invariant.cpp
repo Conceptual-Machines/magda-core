@@ -479,6 +479,28 @@ TEST_CASE("session audio import uses detector when loopInfo is still defaulted",
     path.deleteFile();
 }
 
+TEST_CASE("audio clip creation accepts beat placement without seconds round-trip",
+          "[clip][bpm][beats][audio]") {
+    ClipManager::getInstance().shutdown();
+
+    constexpr double projectBpm = 96.0;
+    constexpr double startBeats = 8.0;
+    constexpr double lengthBeats = 4.0;
+
+    ClipId clipId = ClipManager::getInstance().createAudioClipBeats(
+        1, startBeats, lengthBeats, "beat-placed.wav", ClipView::Arrangement, projectBpm);
+
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->placement.startBeat == Approx(startBeats));
+    REQUIRE(clip->placement.lengthBeats == Approx(lengthBeats));
+    REQUIRE(clip->startBeats == Approx(startBeats));
+    REQUIRE(clip->lengthBeats == Approx(lengthBeats));
+    REQUIRE(clip->startTime == Approx(startBeats * 60.0 / projectBpm));
+    REQUIRE(clip->length == Approx(lengthBeats * 60.0 / projectBpm));
+    REQUIRE(clip->loopLength == Approx(lengthBeats * 60.0 / projectBpm));
+}
+
 // ============================================================================
 // BPM-change invariants — the core regression suite for issue #1157.
 //

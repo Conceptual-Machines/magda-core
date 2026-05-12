@@ -82,9 +82,21 @@ class ClipManager {
     // ========================================================================
 
     /**
-     * @brief Create an audio clip from a file
-     * @param view Which view the clip belongs to (Arrangement or Session)
-     * @param startTime Position on timeline - only used for Arrangement view
+     * @brief Create an audio clip from a file — beats-authoritative API.
+     *
+     * Source duration, offset, and loop fields remain source-domain seconds.
+     * Timeline placement is stored in beats and seconds are derived only for
+     * bridge/UI compatibility.
+     */
+    ClipId createAudioClipBeats(TrackId trackId, double startBeats, double lengthBeats,
+                                const juce::String& audioFilePath,
+                                ClipView view = ClipView::Arrangement, double projectBPM = 0.0);
+
+    /**
+     * @brief Create an audio clip from timeline seconds.
+     *
+     * Thin shim around createAudioClipBeats for UI/engine boundaries whose
+     * natural input is still seconds.
      */
     ClipId createAudioClip(TrackId trackId, double startTime, double length,
                            const juce::String& audioFilePath, ClipView view = ClipView::Arrangement,

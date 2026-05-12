@@ -796,10 +796,6 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
             // Legacy migration: old projects may have meaningful startTime/length
             // caches while placement is still at its default value. Convert that
             // cache into beat placement before refreshing derived seconds.
-            if (!mutableClip->isBeatsAuthoritative()) {
-                continue;
-            }
-
             constexpr double eps = 0.000001;
             double startBeats = mutableClip->placement.startBeat;
             double lengthBeats = mutableClip->placement.lengthBeats;
