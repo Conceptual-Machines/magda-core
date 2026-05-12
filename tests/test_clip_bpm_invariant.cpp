@@ -501,6 +501,41 @@ TEST_CASE("audio clip creation accepts beat placement without seconds round-trip
     REQUIRE(clip->loopLength == Approx(lengthBeats * 60.0 / projectBpm));
 }
 
+TEST_CASE("audio clip manager operations accept beat placement", "[clip][bpm][beats][audio]") {
+    ClipManager::getInstance().shutdown();
+
+    constexpr double projectBpm = 96.0;
+    auto& clipManager = ClipManager::getInstance();
+    ClipId clipId = clipManager.createAudioClipBeats(1, 8.0, 4.0, "beat-ops.wav",
+                                                     ClipView::Arrangement, projectBpm);
+
+    clipManager.moveClipBeats(clipId, 16.0, projectBpm);
+    auto* clip = clipManager.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->placement.startBeat == Approx(16.0));
+    REQUIRE(clip->startTime == Approx(16.0 * 60.0 / projectBpm));
+
+    clipManager.resizeClipBeats(clipId, 6.0, false, projectBpm);
+    REQUIRE(clip->placement.lengthBeats == Approx(6.0));
+    REQUIRE(clip->length == Approx(6.0 * 60.0 / projectBpm));
+
+    ClipId duplicateId = clipManager.duplicateClipAtBeats(clipId, 32.0, 1, projectBpm);
+    const auto* duplicate = clipManager.getClip(duplicateId);
+    REQUIRE(duplicate != nullptr);
+    REQUIRE(duplicate->placement.startBeat == Approx(32.0));
+    REQUIRE(duplicate->placement.lengthBeats == Approx(6.0));
+
+    ClipId rightId = clipManager.splitClipAtBeat(clipId, 18.0, projectBpm);
+    const auto* left = clipManager.getClip(clipId);
+    const auto* right = clipManager.getClip(rightId);
+    REQUIRE(left != nullptr);
+    REQUIRE(right != nullptr);
+    REQUIRE(left->placement.startBeat == Approx(16.0));
+    REQUIRE(left->placement.lengthBeats == Approx(2.0));
+    REQUIRE(right->placement.startBeat == Approx(18.0));
+    REQUIRE(right->placement.lengthBeats == Approx(4.0));
+}
+
 // ============================================================================
 // BPM-change invariants — the core regression suite for issue #1157.
 //

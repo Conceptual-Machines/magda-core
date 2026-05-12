@@ -344,8 +344,8 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
     return newClip.id;
 }
 
-ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId trackId,
-                                    double tempo) {
+ClipId ClipManager::duplicateClipAtBeats(ClipId clipId, double startBeat, TrackId trackId,
+                                         double tempo) {
     const auto* original = getClip(clipId);
     if (!original) {
         return INVALID_CLIP_ID;
@@ -362,8 +362,7 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
 
     if (newClip.view == ClipView::Arrangement) {
         const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
-        ClipOperations::setBeatPlacement(newClip, startTime * bpm / 60.0,
-                                         newClip.placement.lengthBeats, bpm);
+        ClipOperations::setBeatPlacement(newClip, startBeat, newClip.placement.lengthBeats, bpm);
         clips_[newClip.id] = newClip;
     } else {
         // Session clips always loop
@@ -380,6 +379,12 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
     notifyClipsChanged();
 
     return newClip.id;
+}
+
+ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId trackId,
+                                    double tempo) {
+    const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
+    return duplicateClipAtBeats(clipId, startTime * bpm / 60.0, trackId, bpm);
 }
 
 void ClipManager::resetLoopedClipLength(ClipInfo& clip) {
@@ -401,24 +406,21 @@ void ClipManager::resetLoopedClipLength(ClipInfo& clip) {
 // Clip Manipulation
 // ============================================================================
 
-void ClipManager::moveClip(ClipId clipId, double newStartTime, double tempo) {
+void ClipManager::moveClipBeats(ClipId clipId, double newStartBeat, double tempo) {
     if (auto* clip = getClip(clipId)) {
-        // Always pull the live project tempo when re-deriving startBeats —
-        // callers who relied on the default 120 BPM were silently corrupting
-        // startBeats whenever the project was at any other tempo, and the
-        // damage only surfaced on the next SetTempoEvent (which re-derives
-        // startTime from this stale startBeats and snaps clips to the wrong
-        // position). The `tempo` param is kept for the rare in-test caller
-        // that genuinely wants to override; production code should pass <= 0
-        // (or omit it) to fall back to ProjectManager.
         double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
-        ClipOperations::moveContainer(*clip, newStartTime, bpm);
+        ClipOperations::moveContainerBeats(*clip, newStartBeat, bpm);
         // Notes maintain their relative position within the clip (startBeat unchanged)
         // so they move with the clip on the timeline
         if (clip->view == ClipView::Arrangement)
             resolveOverlaps(clipId);
         notifyClipPropertyChanged(clipId);
     }
+}
+
+void ClipManager::moveClip(ClipId clipId, double newStartTime, double tempo) {
+    const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
+    moveClipBeats(clipId, newStartTime * bpm / 60.0, bpm);
 }
 
 void ClipManager::moveClipToTrack(ClipId clipId, TrackId newTrackId) {
@@ -434,9 +436,11 @@ void ClipManager::moveClipToTrack(ClipId clipId, TrackId newTrackId) {
     }
 }
 
-void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, double tempo) {
+void ClipManager::resizeClipBeats(ClipId clipId, double newLengthBeats, bool fromStart,
+                                  double tempo) {
     if (auto* clip = getClip(clipId)) {
         const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
+        const double newLength = newLengthBeats * 60.0 / bpm;
         if (fromStart) {
             ClipOperations::resizeContainerFromLeft(*clip, newLength, bpm);
             // Non-loop mode: keep loopStart synced to offset
@@ -461,13 +465,19 @@ void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, do
     }
 }
 
-ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
+void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, double tempo) {
+    const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
+    resizeClipBeats(clipId, newLength * bpm / 60.0, fromStart, bpm);
+}
+
+ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double tempo) {
     auto* clip = getClip(clipId);
     if (!clip) {
         return INVALID_CLIP_ID;
     }
 
     const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
+    const double splitTime = splitBeat * 60.0 / bpm;
     const double clipStart = clip->getTimelineStart(bpm);
     const double clipEnd = clip->getTimelineEnd(bpm);
 
@@ -644,13 +654,25 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     return rightClip.id;
 }
 
-void ClipManager::trimClip(ClipId clipId, double newStartTime, double newLength, double tempo) {
+ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
+    const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
+    return splitClipAtBeat(clipId, splitTime * bpm / 60.0, bpm);
+}
+
+void ClipManager::trimClipBeats(ClipId clipId, double newStartBeat, double newLengthBeats,
+                                double tempo) {
     if (auto* clip = getClip(clipId)) {
-        ClipOperations::setTimelinePlacement(*clip, newStartTime, newLength, tempo);
+        const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
+        ClipOperations::setBeatPlacement(*clip, newStartBeat, newLengthBeats, bpm);
         if (clip->view == ClipView::Arrangement)
             resolveOverlaps(clipId);
         notifyClipPropertyChanged(clipId);
     }
+}
+
+void ClipManager::trimClip(ClipId clipId, double newStartTime, double newLength, double tempo) {
+    const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
+    trimClipBeats(clipId, newStartTime * bpm / 60.0, newLength * bpm / 60.0, bpm);
 }
 
 // ============================================================================
