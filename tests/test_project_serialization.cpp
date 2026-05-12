@@ -327,6 +327,146 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
     }
 }
 
+TEST_CASE("Automation serialization uses beat-domain property names",
+          "[project][serialization][automation][beats]") {
+    ProjectTestFixture fixture;
+
+    auto trackId = TrackManager::getInstance().createTrack("Automation", TrackType::Audio);
+    auto& automation = AutomationManager::getInstance();
+    auto laneId =
+        automation.createLane(ControlTarget::trackVolume(trackId), AutomationLaneType::ClipBased);
+    auto clipId = automation.createClip(laneId, 4.0, 8.0);
+    REQUIRE(clipId != INVALID_AUTOMATION_CLIP_ID);
+    automation.setClipLooping(clipId, true);
+    automation.setClipLoopLength(clipId, 2.0);
+    auto pointId = automation.addPointToClip(clipId, 1.5, 0.75, AutomationCurveType::Bezier);
+    REQUIRE(pointId != INVALID_AUTOMATION_POINT_ID);
+    BezierHandle inHandle;
+    inHandle.time = -0.25;
+    inHandle.value = -0.1;
+    BezierHandle outHandle;
+    outHandle.time = 0.5;
+    outHandle.value = 0.2;
+    automation.setPointHandlesInClip(clipId, pointId, inHandle, outHandle);
+
+    ProjectInfo info;
+    info.name = "Automation Beats";
+    auto json = ProjectSerializer::serializeProject(info);
+    auto* rootObj = json.getDynamicObject();
+    REQUIRE(rootObj != nullptr);
+    auto* automationObj = rootObj->getProperty("automation").getDynamicObject();
+    REQUIRE(automationObj != nullptr);
+    auto* clips = automationObj->getProperty("clips").getArray();
+    REQUIRE(clips != nullptr);
+    REQUIRE(clips->size() == 1);
+
+    auto* obj = clips->getReference(0).getDynamicObject();
+    REQUIRE(obj != nullptr);
+    REQUIRE(obj->hasProperty("startBeats"));
+    REQUIRE(obj->hasProperty("lengthBeats"));
+    REQUIRE(obj->hasProperty("loopLengthBeats"));
+    REQUIRE_FALSE(obj->hasProperty("startTime"));
+    REQUIRE_FALSE(obj->hasProperty("length"));
+    REQUIRE_FALSE(obj->hasProperty("loopLength"));
+    REQUIRE(static_cast<double>(obj->getProperty("startBeats")) == Approx(4.0));
+    REQUIRE(static_cast<double>(obj->getProperty("lengthBeats")) == Approx(8.0));
+    REQUIRE(static_cast<double>(obj->getProperty("loopLengthBeats")) == Approx(2.0));
+
+    auto* points = obj->getProperty("points").getArray();
+    REQUIRE(points != nullptr);
+    REQUIRE(points->size() == 1);
+    auto* pointObj = points->getReference(0).getDynamicObject();
+    REQUIRE(pointObj != nullptr);
+    REQUIRE(pointObj->hasProperty("beatPosition"));
+    REQUIRE_FALSE(pointObj->hasProperty("time"));
+    REQUIRE(static_cast<double>(pointObj->getProperty("beatPosition")) == Approx(1.5));
+
+    auto* inHandleObj = pointObj->getProperty("inHandle").getDynamicObject();
+    auto* outHandleObj = pointObj->getProperty("outHandle").getDynamicObject();
+    REQUIRE(inHandleObj != nullptr);
+    REQUIRE(outHandleObj != nullptr);
+    REQUIRE(inHandleObj->hasProperty("beatOffset"));
+    REQUIRE(outHandleObj->hasProperty("beatOffset"));
+    REQUIRE_FALSE(inHandleObj->hasProperty("time"));
+    REQUIRE_FALSE(outHandleObj->hasProperty("time"));
+    REQUIRE(static_cast<double>(inHandleObj->getProperty("beatOffset")) == Approx(-0.25));
+    REQUIRE(static_cast<double>(outHandleObj->getProperty("beatOffset")) == Approx(0.5));
+
+    REQUIRE(ProjectSerializer::deserializeProject(json, info));
+    const auto& restoredClips = AutomationManager::getInstance().getClips();
+    REQUIRE(restoredClips.size() == 1);
+    REQUIRE(restoredClips[0].startBeats == Approx(4.0));
+    REQUIRE(restoredClips[0].lengthBeats == Approx(8.0));
+    REQUIRE(restoredClips[0].loopLengthBeats == Approx(2.0));
+    REQUIRE(restoredClips[0].points.size() == 1);
+    REQUIRE(restoredClips[0].points[0].time == Approx(1.5));
+    REQUIRE(restoredClips[0].points[0].inHandle.time == Approx(-0.25));
+    REQUIRE(restoredClips[0].points[0].outHandle.time == Approx(0.5));
+}
+
+TEST_CASE("Automation serialization reads legacy time-named beat properties",
+          "[project][serialization][automation][beats]") {
+    ProjectTestFixture fixture;
+
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("id", 9);
+    obj->setProperty("laneId", 4);
+    obj->setProperty("name", "Legacy Auto");
+    obj->setProperty("colour", "#ff00ff00");
+    obj->setProperty("startTime", 3.0);
+    obj->setProperty("length", 6.0);
+    obj->setProperty("looping", true);
+    obj->setProperty("loopLength", 1.5);
+
+    auto* pointObj = new juce::DynamicObject();
+    pointObj->setProperty("id", 13);
+    pointObj->setProperty("time", 2.25);
+    pointObj->setProperty("value", 0.4);
+    pointObj->setProperty("curveType", static_cast<int>(AutomationCurveType::Bezier));
+    pointObj->setProperty("tension", 0.1);
+
+    auto* inHandleObj = new juce::DynamicObject();
+    inHandleObj->setProperty("time", -0.5);
+    inHandleObj->setProperty("value", -0.2);
+    inHandleObj->setProperty("linked", false);
+    pointObj->setProperty("inHandle", juce::var(inHandleObj));
+
+    auto* outHandleObj = new juce::DynamicObject();
+    outHandleObj->setProperty("time", 0.75);
+    outHandleObj->setProperty("value", 0.3);
+    outHandleObj->setProperty("linked", false);
+    pointObj->setProperty("outHandle", juce::var(outHandleObj));
+
+    juce::Array<juce::var> points;
+    points.add(juce::var(pointObj));
+    obj->setProperty("points", juce::var(points));
+
+    juce::Array<juce::var> clips;
+    clips.add(juce::var(obj));
+
+    auto* automationObj = new juce::DynamicObject();
+    automationObj->setProperty("lanes", juce::Array<juce::var>{});
+    automationObj->setProperty("clips", juce::var(clips));
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+    auto* rootObj = json.getDynamicObject();
+    REQUIRE(rootObj != nullptr);
+    rootObj->setProperty("automation", juce::var(automationObj));
+
+    REQUIRE(ProjectSerializer::deserializeProject(json, info));
+    const auto& restoredClips = AutomationManager::getInstance().getClips();
+    REQUIRE(restoredClips.size() == 1);
+    REQUIRE(restoredClips[0].startBeats == Approx(3.0));
+    REQUIRE(restoredClips[0].lengthBeats == Approx(6.0));
+    REQUIRE(restoredClips[0].looping);
+    REQUIRE(restoredClips[0].loopLengthBeats == Approx(1.5));
+    REQUIRE(restoredClips[0].points.size() == 1);
+    REQUIRE(restoredClips[0].points[0].time == Approx(2.25));
+    REQUIRE(restoredClips[0].points[0].inHandle.time == Approx(-0.5));
+    REQUIRE(restoredClips[0].points[0].outHandle.time == Approx(0.75));
+}
+
 TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
     ProjectTestFixture fixture;
 
