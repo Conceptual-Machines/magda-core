@@ -18,6 +18,7 @@
 #include "core/ClipPropertyCommands.hpp"
 #include "core/Config.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
@@ -743,7 +744,7 @@ void ClipInspector::initClipPropertiesSection() {
         // funnels through applyAudioClipBeats once autoTempo is on.
         const bool sourceInterpretationBpmLooksDefaulted =
             clip.audio().interpretation.bpm <= 0.0 ||
-            (bpm > 0.0 && std::abs(clip.audio().interpretation.bpm - bpm) < 0.1);
+            (magda::isValidBpm(bpm) && std::abs(clip.audio().interpretation.bpm - bpm) < 0.1);
         if (!sourceInterpretationBpmLooksDefaulted)
             return;
 
@@ -774,7 +775,8 @@ void ClipInspector::initClipPropertiesSection() {
                 // Issue #1157: file metadata wins over audio analysis.
                 // TempoDetect can be wrong by ~1.3x on syncopated loops.
                 double live = magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-                bool existingLooksDefaulted = c->audio().interpretation.bpm > 0.0 && live > 0.0 &&
+                bool existingLooksDefaulted = c->audio().interpretation.bpm > 0.0 &&
+                                              magda::isValidBpm(live) &&
                                               std::abs(c->audio().interpretation.bpm - live) < 0.1;
                 if (c->audio().interpretation.bpm > 0.0 && !existingLooksDefaulted)
                     return;

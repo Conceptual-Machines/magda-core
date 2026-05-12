@@ -13,6 +13,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipPropertyCommands.hpp"
+#include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "core/WarpMarkerCommands.hpp"
@@ -274,13 +275,13 @@ WaveformEditorContent::WaveformEditorContent() {
             return;
 
         auto* controller = magda::TimelineController::getCurrent();
-        double bpm = controller ? controller->getState().tempo.bpm : 120.0;
+        double bpm = controller ? controller->getState().tempo.bpm : magda::DEFAULT_BPM;
+        bpm = magda::isValidBpm(bpm) ? bpm : magda::DEFAULT_BPM;
 
         // displayStart/displayEnd are in timeline seconds (from srcToTimeline in ClipDisplayInfo).
         // Reverse the transform to get source seconds.
         auto timelineToSrc = [&](double t) -> double {
-            if (clip->autoTempo && clip->loopLength > 0.0 && clip->loopLengthBeats > 0.0 &&
-                bpm > 0.0) {
+            if (clip->autoTempo && clip->loopLength > 0.0 && clip->loopLengthBeats > 0.0) {
                 return t * clip->loopLength / (clip->loopLengthBeats * 60.0 / bpm);
             }
             return (clip->speedRatio > 0.0) ? t * clip->speedRatio : 0.0;

@@ -7,6 +7,7 @@
 #include "../ClipInspector.hpp"
 #include "BinaryData.h"
 #include "core/ClipDisplayInfo.hpp"
+#include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
@@ -75,7 +76,7 @@ void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double 
     clipLoopEndValue_->setBeatsPerBar(beatsPerBar);
     clipLoopPhaseValue_->setBeatsPerBar(beatsPerBar);
 
-    double loopBpm = projectBPM > 0.0 ? projectBPM : 120.0;
+    double loopBpm = magda::isValidBpm(projectBPM) ? projectBPM : magda::DEFAULT_BPM;
 
     if (clip.isAudio()) {
         const auto info =

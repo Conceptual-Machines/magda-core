@@ -27,6 +27,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/SessionLaunchService.hpp"
 #include "core/SessionViewState.hpp"
+#include "core/TempoUtils.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -3372,10 +3373,11 @@ void SessionView::timerCallback() {
                 // audio thread hasn't ticked yet.
                 double atPos = audioEngine_->getAudioThreadTransportSeconds();
                 double pos = (atPos >= 0.0) ? atPos : transport.getPosition().inSeconds();
-                double beatDuration = 60.0 / (bpm > 0.0 ? bpm : 120.0);
+                const double projectBpm = isValidBpm(bpm) ? bpm : DEFAULT_BPM;
+                double beatDuration = 60.0 / projectBpm;
                 double beatPhase = std::fmod(pos, beatDuration) / beatDuration;
                 newBlinkOn = (beatPhase < 0.5);
-                posBeats = (bpm > 0.0) ? pos * bpm / 60.0 : 0.0;
+                posBeats = pos * projectBpm / 60.0;
             }
         }
 

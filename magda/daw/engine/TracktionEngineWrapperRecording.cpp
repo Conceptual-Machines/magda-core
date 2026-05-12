@@ -1,5 +1,6 @@
 #include "../audio/AudioBridge.hpp"
 #include "../core/ClipManager.hpp"
+#include "../core/TempoUtils.hpp"
 #include "../core/TrackManager.hpp"
 #include "../project/ProjectManager.hpp"
 #include "TracktionEngineWrapper.hpp"
@@ -100,7 +101,7 @@ void TracktionEngineWrapper::recordingFinished(
             // was recorded at, so skip unreliable auto-detection in syncClipToEngine.
             if (auto* newClip = clipManager.getClip(clipId)) {
                 double projectBPM = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-                if (projectBPM > 0.0) {
+                if (isValidBpm(projectBPM)) {
                     newClip->audio().interpretation.bpm = projectBPM;
                     newClip->audio().interpretation.totalBeats = lengthSeconds * projectBPM / 60.0;
                 }

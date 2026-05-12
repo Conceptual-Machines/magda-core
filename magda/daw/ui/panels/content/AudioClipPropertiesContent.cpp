@@ -12,6 +12,7 @@
 #include "core/ClipManager.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
+#include "core/TempoUtils.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "project/ProjectManager.hpp"
@@ -43,9 +44,11 @@ double getAudioFileDurationForProperties(const magda::ClipInfo& clip) {
 }
 
 double getProjectBpmForProperties() {
-    if (auto* tc = magda::TimelineController::getCurrent())
-        return tc->getState().tempo.bpm;
-    return 120.0;
+    if (auto* tc = magda::TimelineController::getCurrent()) {
+        const double bpm = tc->getState().tempo.bpm;
+        return magda::isValidBpm(bpm) ? bpm : magda::DEFAULT_BPM;
+    }
+    return magda::DEFAULT_BPM;
 }
 
 struct SourceDisplayValues {
@@ -61,8 +64,7 @@ SourceDisplayValues getSourceDisplayValues(const magda::ClipInfo& clip, magda::C
     const double projectBpm = getProjectBpmForProperties();
     const double storedBpm = clip.audio().interpretation.bpm;
     const bool storedBpmLooksDefaulted =
-        storedBpm <= 0.0 ||
-        (!clip.autoTempo && projectBpm > 0.0 && std::abs(storedBpm - projectBpm) < 0.1);
+        storedBpm <= 0.0 || (!clip.autoTempo && std::abs(storedBpm - projectBpm) < 0.1);
 
     values.bpm = storedBpm;
     if (storedBpmLooksDefaulted) {
@@ -551,7 +553,7 @@ void AudioClipPropertiesContent::updateFromClip() {
         stretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
         stretchModeCombo_->setSelectedId(clip->timeStretchMode + 1, juce::dontSendNotification);
         const auto sourceDisplay = getSourceDisplayValues(*clip, clipId_);
-        bpmValue_->setValue(sourceDisplay.bpm > 0.0 ? sourceDisplay.bpm : 120.0,
+        bpmValue_->setValue(sourceDisplay.bpm > 0.0 ? sourceDisplay.bpm : magda::DEFAULT_BPM,
                             juce::dontSendNotification);
         beatsValue_->setValue(sourceDisplay.totalBeats > 0.0 ? sourceDisplay.totalBeats : 4.0,
                               juce::dontSendNotification);

@@ -20,6 +20,7 @@
 #include "core/ClipPropertyCommands.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
@@ -367,11 +368,12 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             sourceDurationForBeats = fileDuration;
         if (sourceDurationForBeats <= 0.0)
             sourceDurationForBeats = di.fileExtentSource();
+        const double projectBpm = isValidBpm(tempo) ? tempo : DEFAULT_BPM;
 
         auto timelineDeltaToPreviewSource = [&](double timelineDelta) {
             if (clip.autoTempo && clip.audio().interpretation.totalBeats > 0.0 &&
-                sourceDurationForBeats > 0.0 && tempo > 0.0) {
-                double projectBeats = timelineDelta * tempo / 60.0;
+                sourceDurationForBeats > 0.0) {
+                double projectBeats = timelineDelta * projectBpm / 60.0;
                 return projectBeats * sourceDurationForBeats /
                        clip.audio().interpretation.totalBeats;
             }
@@ -380,17 +382,17 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
 
         auto sourceDeltaToPreviewTimeline = [&](double sourceDelta) {
             if (clip.autoTempo && clip.audio().interpretation.totalBeats > 0.0 &&
-                sourceDurationForBeats > 0.0 && tempo > 0.0) {
+                sourceDurationForBeats > 0.0) {
                 double sourceBeats =
                     sourceDelta * clip.audio().interpretation.totalBeats / sourceDurationForBeats;
-                return sourceBeats * 60.0 / tempo;
+                return sourceBeats * 60.0 / projectBpm;
             }
             return di.sourceToTimeline(sourceDelta);
         };
 
         double loopCycle = di.loopLengthSeconds;
-        if (clip.autoTempo && clip.loopLengthBeats > 0.0 && tempo > 0.0)
-            loopCycle = clip.loopLengthBeats * 60.0 / tempo;
+        if (clip.autoTempo && clip.loopLengthBeats > 0.0)
+            loopCycle = clip.loopLengthBeats * 60.0 / projectBpm;
         // These were named "fileStart/End" but actually hold the loop
         // region's bounds (in source-time). Renamed to match what they
         // really are; per-tile rendering reads from this loop subset, not

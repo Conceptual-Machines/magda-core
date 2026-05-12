@@ -535,14 +535,11 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     ClipOperations::setTimelinePlacement(*clip, clipStart, leftLength, bpm);
     clip->name = clip->name + " L";
 
-    // Update beat fields for both halves
-    if (bpm > 0.0) {
-        // Left clip: lengthBeats changes, startBeats stays the same
-        clip->setPlacementBeats(clip->placement.startBeat, leftLengthBeats);
-        clip->deriveTimesFromBeats(bpm);
-        rightClip.setPlacementBeats(splitTime * bpm / 60.0, rightLengthBeats);
-        rightClip.deriveTimesFromBeats(bpm);
-    }
+    // Left clip: lengthBeats changes, startBeats stays the same.
+    clip->setPlacementBeats(clip->placement.startBeat, leftLengthBeats);
+    clip->deriveTimesFromBeats(bpm);
+    rightClip.setPlacementBeats(splitTime * bpm / 60.0, rightLengthBeats);
+    rightClip.deriveTimesFromBeats(bpm);
 
     // Sync loop region after split
     if (clip->loopEnabled) {
@@ -892,7 +889,8 @@ void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
         if (clip->isMidi()) {
             clip->loopLength = juce::jmax(0.0, loopLength);
             // MIDI: keep loopLengthBeats in sync using project BPM
-            clip->loopLengthBeats = (clip->loopLength * juce::jmax(1.0, bpm)) / 60.0;
+            const double projectBpm = isValidBpm(bpm) ? bpm : currentProjectTempoOrDefault();
+            clip->loopLengthBeats = (clip->loopLength * projectBpm) / 60.0;
         } else if (clip->isAudio()) {
             if (clip->autoTempo) {
                 const double interpBpm =
@@ -938,7 +936,8 @@ void ClipManager::relocateLoopRegion(ClipId clipId, double loopStart, double loo
                     clip->offset = clip->loopStart;
                 sanitizeAudioClip(*clip);
             } else if (clip->isMidi()) {
-                clip->loopLengthBeats = (clip->loopLength * juce::jmax(1.0, bpm)) / 60.0;
+                const double projectBpm = isValidBpm(bpm) ? bpm : currentProjectTempoOrDefault();
+                clip->loopLengthBeats = (clip->loopLength * projectBpm) / 60.0;
             }
         }
 
