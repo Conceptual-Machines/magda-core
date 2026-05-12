@@ -1528,7 +1528,8 @@ std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId) const {
     std::sort(result.begin(), result.end(), [this](ClipId a, ClipId b) {
         const auto* clipA = getClip(a);
         const auto* clipB = getClip(b);
-        return clipA && clipB && clipA->startTime < clipB->startTime;
+        const double bpm = currentProjectTempoOrDefault();
+        return clipA && clipB && clipA->getTimelineStart(bpm) < clipB->getTimelineStart(bpm);
     });
     return result;
 }
@@ -1543,16 +1544,20 @@ std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId, ClipView view)
         std::sort(result.begin(), result.end(), [this](ClipId a, ClipId b) {
             const auto* clipA = getClip(a);
             const auto* clipB = getClip(b);
-            return clipA && clipB && clipA->startTime < clipB->startTime;
+            const double bpm = currentProjectTempoOrDefault();
+            return clipA && clipB && clipA->getTimelineStart(bpm) < clipB->getTimelineStart(bpm);
         });
     }
     return result;
 }
 
 ClipId ClipManager::getClipAtPosition(TrackId trackId, double time) const {
+    const double bpm = currentProjectTempoOrDefault();
     for (const auto& [id, clip] : clips_) {
-        if (clip.view == ClipView::Arrangement && clip.trackId == trackId &&
-            clip.containsTime(time)) {
+        const double clipStart = clip.getTimelineStart(bpm);
+        const double clipEnd = clip.getTimelineEnd(bpm);
+        if (clip.view == ClipView::Arrangement && clip.trackId == trackId && time >= clipStart &&
+            time < clipEnd) {
             return clip.id;
         }
     }
@@ -1562,9 +1567,12 @@ ClipId ClipManager::getClipAtPosition(TrackId trackId, double time) const {
 std::vector<ClipId> ClipManager::getClipsInRange(TrackId trackId, double startTime,
                                                  double endTime) const {
     std::vector<ClipId> result;
+    const double bpm = currentProjectTempoOrDefault();
     for (const auto& [id, clip] : clips_) {
-        if (clip.view == ClipView::Arrangement && clip.trackId == trackId &&
-            clip.overlaps(startTime, endTime)) {
+        const double clipStart = clip.getTimelineStart(bpm);
+        const double clipEnd = clip.getTimelineEnd(bpm);
+        if (clip.view == ClipView::Arrangement && clip.trackId == trackId && clipStart < endTime &&
+            clipEnd > startTime) {
             result.push_back(clip.id);
         }
     }
@@ -2056,6 +2064,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
     }
 
     // Calculate offset from reference time to paste time
+    const double bpm = currentProjectTempoOrDefault();
     double timeOffset = pasteTime - clipboardReferenceTime_;
 
     // Track which scene slots have been used during this paste (for multi-clip session paste)
@@ -2063,7 +2072,8 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
 
     for (const auto& clipData : clipboard_) {
         // Calculate new start time maintaining relative position
-        double newStartTime = clipData.startTime + timeOffset;
+        double newStartTime = clipData.getTimelineStart(bpm) + timeOffset;
+        double clipLength = clipData.getTimelineLength(bpm);
 
         // Determine target track
         TrackId newTrackId = (targetTrackId != INVALID_TRACK_ID) ? targetTrackId : clipData.trackId;
@@ -2072,12 +2082,12 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
         ClipId newClipId = INVALID_CLIP_ID;
         if (clipData.isAudio()) {
             if (clipData.audio().source.filePath.isNotEmpty()) {
-                newClipId = createAudioClip(newTrackId, newStartTime, clipData.length,
+                newClipId = createAudioClip(newTrackId, newStartTime, clipLength,
                                             clipData.audio().source.filePath, targetView);
             }
         } else {
             // For MIDI clips, create empty then copy notes
-            newClipId = createMidiClip(newTrackId, newStartTime, clipData.length, targetView);
+            newClipId = createMidiClip(newTrackId, newStartTime, clipLength, targetView);
         }
 
         if (newClipId != INVALID_CLIP_ID) {

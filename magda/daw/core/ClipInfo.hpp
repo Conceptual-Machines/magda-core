@@ -349,10 +349,6 @@ struct ClipInfo {
         lengthBeats = placement.lengthBeats;
     }
 
-    double getEndTime() const {
-        return startTime + length;
-    }
-
     /// Derive startTime/length from placement beats using the given BPM.
     void deriveTimesFromBeats(double bpm) {
         if (bpm > 0.0) {
@@ -478,18 +474,6 @@ struct ClipInfo {
                 length = juce::jmax(MIN_CLIP_LENGTH, maxLength);
             }
         }
-    }
-
-    bool containsTime(double time) const {
-        return time >= startTime && time < getEndTime();
-    }
-
-    bool overlaps(double start, double end) const {
-        return startTime < end && getEndTime() > start;
-    }
-
-    bool overlaps(const ClipInfo& other) const {
-        return overlaps(other.startTime, other.getEndTime());
     }
 
     // =========================================================================
