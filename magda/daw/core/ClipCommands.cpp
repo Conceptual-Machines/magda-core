@@ -62,6 +62,23 @@ juce::String expandBouncePattern(const juce::String& clipName, const juce::Strin
     return expandPattern(pattern, clipName, trackName);
 }
 
+double currentProjectBpm() {
+    double bpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    return bpm > 0.0 ? bpm : 120.0;
+}
+
+double timelineStartSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineStart(bpm);
+}
+
+double timelineLengthSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineLength(bpm);
+}
+
+double timelineEndSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineEnd(bpm);
+}
+
 /**
  * Progress window for offline rendering that runs on a background thread
  * while pumping the message loop (via runThread()) so the UI stays responsive.
@@ -117,7 +134,9 @@ SplitClipCommand::SplitClipCommand(ClipId clipId, double splitTime, double tempo
 
 bool SplitClipCommand::canExecute() const {
     auto* clip = ClipManager::getInstance().getClip(clipId_);
-    return clip && splitTime_ > clip->startTime && splitTime_ < clip->getEndTime();
+    const double bpm = tempo_ > 0.0 ? tempo_ : currentProjectBpm();
+    return clip && splitTime_ > timelineStartSeconds(*clip, bpm) &&
+           splitTime_ < timelineEndSeconds(*clip, bpm);
 }
 
 ClipInfo SplitClipCommand::captureState() {
@@ -912,16 +931,9 @@ void RenderClipCommand::execute() {
     params.useMasterPlugins = false;
     params.checkNodesForAudio = false;
 
-    // Set time range — use seconds directly (authoritative for non-autoTempo clips)
-    double projectBPM = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-    double renderStart = clip->startTime;
-    double renderEnd = clip->startTime + clip->length;
-
-    // For autoTempo clips (lengthBeats > 0), beats are authoritative
-    if (clip->lengthBeats > 0.0 && projectBPM > 0.0) {
-        renderStart = clip->startBeats * 60.0 / projectBPM;
-        renderEnd = (clip->startBeats + clip->lengthBeats) * 60.0 / projectBPM;
-    }
+    const double projectBPM = currentProjectBpm();
+    const double renderStart = timelineStartSeconds(*clip, projectBPM);
+    const double renderEnd = timelineEndSeconds(*clip, projectBPM);
 
     params.time = te::TimeRange(te::TimePosition::fromSeconds(renderStart),
                                 te::TimePosition::fromSeconds(renderEnd));
@@ -945,17 +957,11 @@ void RenderClipCommand::execute() {
         return;
     }
 
-    // Capture original clip properties before deletion — use seconds directly
-    double startBeats = clip->startBeats;
-    double lengthBeats = clip->lengthBeats;
-    double startTime = clip->startTime;
-    double length = clip->length;
-
-    // For autoTempo clips, derive seconds from beats (beats are authoritative)
-    if (lengthBeats > 0.0 && projectBPM > 0.0) {
-        startTime = startBeats * 60.0 / projectBPM;
-        length = lengthBeats * 60.0 / projectBPM;
-    }
+    // Capture original clip properties before deletion
+    double startBeats = clip->getStartBeats(projectBPM);
+    double lengthBeats = clip->getLengthInBeats(projectBPM);
+    double startTime = timelineStartSeconds(*clip, projectBPM);
+    double length = timelineLengthSeconds(*clip, projectBPM);
     TrackId trackId = clip->trackId;
     juce::Colour colour = clip->colour;
     juce::String name = clip->name;
@@ -1647,9 +1653,11 @@ void BounceInPlaceCommand::execute() {
 
     // Time range = clip timeline range + tail allowance
     double endAllowance = 2.0;
-    params.time =
-        te::TimeRange(te::TimePosition::fromSeconds(clip->startTime),
-                      te::TimePosition::fromSeconds(clip->startTime + clip->length + endAllowance));
+    const double projectBPM = currentProjectBpm();
+    const double clipStart = timelineStartSeconds(*clip, projectBPM);
+    const double clipEnd = timelineEndSeconds(*clip, projectBPM);
+    params.time = te::TimeRange(te::TimePosition::fromSeconds(clipStart),
+                                te::TimePosition::fromSeconds(clipEnd + endAllowance));
 
     juce::BigInteger trackBits;
     trackBits.setBit(trackIndex);
@@ -1819,9 +1827,11 @@ void BounceToNewTrackCommand::execute() {
     params.checkNodesForAudio = false;
 
     double endAllowance = 2.0;
-    params.time =
-        te::TimeRange(te::TimePosition::fromSeconds(clip->startTime),
-                      te::TimePosition::fromSeconds(clip->startTime + clip->length + endAllowance));
+    const double projectBPM = currentProjectBpm();
+    const double clipStart = timelineStartSeconds(*clip, projectBPM);
+    const double clipEnd = timelineEndSeconds(*clip, projectBPM);
+    params.time = te::TimeRange(te::TimePosition::fromSeconds(clipStart),
+                                te::TimePosition::fromSeconds(clipEnd + endAllowance));
 
     juce::BigInteger trackBits;
     trackBits.setBit(trackIndex);
@@ -1845,8 +1855,8 @@ void BounceToNewTrackCommand::execute() {
     // listener callbacks that may invalidate the clip pointer
     const auto clipName = clip->name;
     const auto clipColour = clip->colour;
-    const auto clipStartTime = clip->startTime;
-    const auto clipLength = clip->length;
+    const auto clipStartTime = clipStart;
+    const auto clipLength = timelineLengthSeconds(*clip, projectBPM);
     const auto clipTrackId = clip->trackId;
 
     // Create new audio track after the source track
@@ -2021,9 +2031,10 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     clip->warpEnabled = false;
     bridge->disableWarp(clipId);
 
-    double clipStart = clip->startTime;
-    double clipEnd = clip->startTime + clip->length;
-    double clipOffset = clip->offset;
+    const double bpm = tempo > 0.0 ? tempo : currentProjectBpm();
+    double clipStart = timelineStartSeconds(*clip, bpm);
+    double clipEnd = timelineEndSeconds(*clip, bpm);
+    double clipOffset = clip->getSourceOffset();
 
     std::vector<double> splitTimes;
     splitTimes.reserve(markers.size());
@@ -2065,8 +2076,9 @@ void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBrid
             bridge->disableWarp(clipId);
     }
 
-    double clipStart = clip->startTime;
-    double clipEnd = clip->startTime + clip->length;
+    const double bpm = tempo > 0.0 ? tempo : currentProjectBpm();
+    double clipStart = timelineStartSeconds(*clip, bpm);
+    double clipEnd = timelineEndSeconds(*clip, bpm);
 
     double startK = std::ceil(clipStart / gridInterval);
     double iterStart = startK * gridInterval;
@@ -2168,9 +2180,11 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
 
     // Create MIDI clip with notes triggering each pad
     auto& clipManager = ClipManager::getInstance();
-    double clipStart = clip.startTime;
-    double clipEnd = clip.startTime + clip.length;
-    ClipId midiClipId = clipManager.createMidiClip(newTrackId, clipStart, clip.length);
+    const double bpm = tempo > 0.0 ? tempo : currentProjectBpm();
+    double clipStart = timelineStartSeconds(clip, bpm);
+    double clipEnd = timelineEndSeconds(clip, bpm);
+    ClipId midiClipId =
+        clipManager.createMidiClip(newTrackId, clipStart, timelineLengthSeconds(clip, bpm));
     if (midiClipId == INVALID_CLIP_ID)
         return;
 
@@ -2220,9 +2234,10 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
     if (!audioFile.existsAsFile())
         return;
 
-    double clipStart = clip->startTime;
-    double clipEnd = clip->startTime + clip->length;
-    double clipOffset = clip->offset;
+    const double bpm = tempo > 0.0 ? tempo : currentProjectBpm();
+    double clipStart = timelineStartSeconds(*clip, bpm);
+    double clipEnd = timelineEndSeconds(*clip, bpm);
+    double clipOffset = clip->getSourceOffset();
 
     // Build sorted interior marker source times
     std::vector<double> interiorSourceTimes;
@@ -2278,9 +2293,10 @@ void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, Aud
     if (!audioFile.existsAsFile())
         return;
 
-    double clipStart = clip->startTime;
-    double clipEnd = clip->startTime + clip->length;
-    double clipOffset = clip->offset;
+    const double bpm = tempo > 0.0 ? tempo : currentProjectBpm();
+    double clipStart = timelineStartSeconds(*clip, bpm);
+    double clipEnd = timelineEndSeconds(*clip, bpm);
+    double clipOffset = clip->getSourceOffset();
 
     // Convert timeline grid lines to source-file boundaries
     auto timelineToSource = [&](double timelinePos) -> double {
