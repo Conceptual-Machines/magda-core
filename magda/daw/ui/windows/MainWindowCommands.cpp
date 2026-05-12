@@ -702,15 +702,17 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     double trimStart = state.selection.startTime;
                     double trimEnd = state.selection.endTime;
 
+                    const auto selectedTrackIds = resolveTimeSelectionTrackIds();
+                    const std::unordered_set<TrackId> selectedTrackSet(selectedTrackIds.begin(),
+                                                                       selectedTrackIds.end());
+
                     std::vector<ClipId> clipsToSplit;
-                    if (!selectedClips.empty()) {
-                        clipsToSplit.assign(selectedClips.begin(), selectedClips.end());
-                    } else {
-                        for (const auto& clip : clipManager.getArrangementClips()) {
-                            if (overlapsTimelineRange(clip, trimStart, trimEnd, tempo)) {
-                                clipsToSplit.push_back(clip.id);
-                            }
-                        }
+                    for (const auto& clip : clipManager.getArrangementClips()) {
+                        const bool trackInSelection = state.selection.isAllTracks() ||
+                                                      selectedTrackSet.count(clip.trackId) > 0;
+                        if (trackInSelection &&
+                            overlapsTimelineRange(clip, trimStart, trimEnd, tempo))
+                            clipsToSplit.push_back(clip.id);
                     }
 
                     if (!clipsToSplit.empty()) {
