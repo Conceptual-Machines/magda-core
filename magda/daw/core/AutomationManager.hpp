@@ -229,7 +229,7 @@ class AutomationManager : public TrackManagerListener {
     /**
      * @brief Create an automation clip on a lane
      */
-    AutomationClipId createClip(AutomationLaneId laneId, double startTime, double length);
+    AutomationClipId createClip(AutomationLaneId laneId, double startBeats, double lengthBeats);
 
     /**
      * @brief Delete an automation clip

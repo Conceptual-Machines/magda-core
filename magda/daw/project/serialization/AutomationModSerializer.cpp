@@ -151,10 +151,10 @@ juce::var ProjectSerializer::serializeAutomationClipInfo(const AutomationClipInf
     obj->setProperty("laneId", clip.laneId);
     obj->setProperty("name", clip.name);
     obj->setProperty("colour", colourToString(clip.colour));
-    obj->setProperty("startTime", clip.startTime);
-    obj->setProperty("length", clip.length);
+    obj->setProperty("startTime", clip.startBeats);
+    obj->setProperty("length", clip.lengthBeats);
     obj->setProperty("looping", clip.looping);
-    obj->setProperty("loopLength", clip.loopLength);
+    obj->setProperty("loopLength", clip.loopLengthBeats);
 
     // Points
     juce::Array<juce::var> pointsArray;
@@ -179,10 +179,10 @@ bool ProjectSerializer::deserializeAutomationClipInfo(const juce::var& json,
     outClip.laneId = obj->getProperty("laneId");
     outClip.name = obj->getProperty("name").toString();
     outClip.colour = stringToColour(obj->getProperty("colour").toString());
-    outClip.startTime = obj->getProperty("startTime");
-    outClip.length = obj->getProperty("length");
+    outClip.startBeats = obj->getProperty("startTime");
+    outClip.lengthBeats = obj->getProperty("length");
     outClip.looping = obj->getProperty("looping");
-    outClip.loopLength = obj->getProperty("loopLength");
+    outClip.loopLengthBeats = obj->getProperty("loopLength");
 
     // Points
     auto pointsVar = obj->getProperty("points");

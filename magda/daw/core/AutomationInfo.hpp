@@ -105,36 +105,36 @@ struct AutomationClipInfo {
     juce::String name;
     juce::Colour colour;
 
-    double startTime = 0.0;  // Position on timeline (beats)
-    double length = 4.0;     // Duration (beats)
+    double startBeats = 0.0;   // Position on timeline in beats
+    double lengthBeats = 4.0;  // Duration in beats
 
     bool looping = false;
-    double loopLength = 4.0;  // Loop length in beats
+    double loopLengthBeats = 4.0;  // Loop length in beats
 
     std::vector<AutomationPoint> points;
 
     // Helpers
-    double getEndTime() const {
-        return startTime + length;
+    double getEndBeats() const {
+        return startBeats + lengthBeats;
     }
 
-    bool containsTime(double time) const {
-        return time >= startTime && time < getEndTime();
+    bool containsBeat(double beat) const {
+        return beat >= startBeats && beat < getEndBeats();
     }
 
-    bool overlaps(double start, double end) const {
-        return startTime < end && getEndTime() > start;
+    bool overlapsBeats(double start, double end) const {
+        return startBeats < end && getEndBeats() > start;
     }
 
     /**
      * @brief Get local time within clip (0 to length)
      */
-    double getLocalTime(double globalTime) const {
-        double localTime = globalTime - startTime;
-        if (looping && loopLength > 0.0) {
-            localTime = std::fmod(localTime, loopLength);
+    double getLocalBeat(double globalBeat) const {
+        double localTime = globalBeat - startBeats;
+        if (looping && loopLengthBeats > 0.0) {
+            localTime = std::fmod(localTime, loopLengthBeats);
             if (localTime < 0.0)
-                localTime += loopLength;
+                localTime += loopLengthBeats;
         }
         return localTime;
     }

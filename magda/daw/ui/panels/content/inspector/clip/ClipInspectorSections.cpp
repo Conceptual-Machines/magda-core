@@ -936,7 +936,7 @@ void ClipInspector::initClipPropertiesSection() {
         if (timelineController_) {
             bpm = timelineController_->getState().tempo.bpm;
         }
-        double currentPhase = clip->offset - clip->loopStart;
+        double currentPhase = clip->getSourceOffset() - clip->getSourceLoopStart();
         double newLoopStartBeats = clipLoopStartValue_->getValue();
         double newLoopStartSeconds =
             clip->isAudio() ? displayBeatsToAudioSourceSeconds(*clip, newLoopStartBeats, bpm)
@@ -983,7 +983,7 @@ void ClipInspector::initClipPropertiesSection() {
         if (clip->isAudio()) {
             const double newLoopEndSeconds =
                 displayBeatsToAudioSourceSeconds(*clip, newLoopEndBeats, bpm);
-            newLoopLengthSeconds = juce::jmax(0.0, newLoopEndSeconds - clip->loopStart);
+            newLoopLengthSeconds = juce::jmax(0.0, newLoopEndSeconds - clip->getSourceLoopStart());
         } else {
             double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, bpm);
             double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
@@ -999,16 +999,18 @@ void ClipInspector::initClipPropertiesSection() {
 
         if (clip->view == magda::ClipView::Session) {
             double clipEndSeconds = clip->length;
-            double currentSourceEnd = clip->loopStart + clip->loopLength;
+            const double sourceLoopStart = clip->getSourceLoopStart();
+            const double sourceLoopLength = clip->getSourceLoopLength();
+            double currentSourceEnd = sourceLoopStart + sourceLoopLength;
             bool sourceEndMatchedClipEnd = std::abs(currentSourceEnd - clipEndSeconds) < 0.001;
-            double newSourceEnd = clip->loopStart + newLoopLengthSeconds;
+            double newSourceEnd = sourceLoopStart + newLoopLengthSeconds;
 
             if (sourceEndMatchedClipEnd && newSourceEnd > clipEndSeconds) {
                 shouldResizeClip = true;
                 resizeLengthSeconds = newSourceEnd;
             } else {
                 if (newSourceEnd > clipEndSeconds) {
-                    newLoopLengthSeconds = clipEndSeconds - clip->loopStart;
+                    newLoopLengthSeconds = clipEndSeconds - sourceLoopStart;
                 }
             }
         }

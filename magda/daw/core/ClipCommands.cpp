@@ -1204,9 +1204,17 @@ void RenderTimeSelectionCommand::undo() {
 // For looped clips, time selection operations just adjust the container
 // (startTime, length, midiOffset) — the notes repeat and don't need modification.
 // Returns true if the clip was handled as a looped clip.
-static void syncClipPlacementFromSeconds(ClipInfo& clip, double tempo) {
+static void setClipPlacementFromSeconds(ClipInfo& clip, double startTime, double length,
+                                        double tempo) {
+    ClipOperations::setTimelinePlacement(clip, startTime, length, tempo);
+}
+
+static double resolveTimelineBpm(double tempo) {
     if (tempo > 0.0)
-        clip.setPlacementBeats(clip.startTime * tempo / 60.0, clip.length * tempo / 60.0);
+        return tempo;
+    if (auto* controller = magda::TimelineController::getCurrent())
+        return controller->getState().tempo.bpm;
+    return 120.0;
 }
 
 static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, double selStart,
@@ -1219,8 +1227,11 @@ static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, doubl
     if (!liveClip)
         return false;
 
-    double clipEnd = clip.startTime + clip.length;
-    bool startsBeforeSel = clip.startTime < selStart;
+    const double bpm = resolveTimelineBpm(tempo);
+    const double clipStart = clip.getTimelineStart(bpm);
+    const double clipLength = clip.getTimelineLength(bpm);
+    const double clipEnd = clip.getTimelineEnd(bpm);
+    bool startsBeforeSel = clipStart < selStart;
     bool endsAfterSel = clipEnd > selEnd;
 
     if (startsBeforeSel && endsAfterSel) {
@@ -1229,27 +1240,23 @@ static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, doubl
             return false;
         }
         // Ripple: reduce length by duration, gap gets closed
-        liveClip->length -= duration;
-        syncClipPlacementFromSeconds(*liveClip, tempo);
+        setClipPlacementFromSeconds(*liveClip, liveClip->getTimelineStart(bpm),
+                                    liveClip->getTimelineLength(bpm) - duration, bpm);
     } else if (startsBeforeSel) {
         // Spans left boundary: trim right edge
-        liveClip->length = selStart - clip.startTime;
-        syncClipPlacementFromSeconds(*liveClip, tempo);
+        setClipPlacementFromSeconds(*liveClip, liveClip->getTimelineStart(bpm),
+                                    selStart - clipStart, bpm);
     } else if (endsAfterSel) {
         // Spans right boundary: trim left edge, adjust phase
-        double trimAmount = selEnd - clip.startTime;
-        liveClip->startTime = ripple ? selStart : selEnd;
-        liveClip->length -= trimAmount;
-        syncClipPlacementFromSeconds(*liveClip, tempo);
+        double trimAmount = selEnd - clipStart;
+        setClipPlacementFromSeconds(*liveClip, ripple ? selStart : selEnd, clipLength - trimAmount,
+                                    bpm);
 
         // Adjust midiOffset (phase) for the trimmed portion
-        if (clip.isMidi() && clip.loopLength > 0.0) {
-            double bpm = 120.0;
-            if (auto* controller = magda::TimelineController::getCurrent()) {
-                bpm = controller->getState().tempo.bpm;
-            }
+        if (clip.isMidi()) {
             double trimBeats = trimAmount * bpm / 60.0;
-            double loopLengthBeats = clip.loopLength * bpm / 60.0;
+            double loopLengthBeats =
+                clip.loopLengthBeats > 0.0 ? clip.loopLengthBeats : clip.placement.lengthBeats;
             if (loopLengthBeats > 0.0) {
                 double newPhase = std::fmod(clip.midiOffset + trimBeats, loopLengthBeats);
                 if (newPhase < 0.0)
@@ -1282,6 +1289,7 @@ void RippleDeleteTimeSelectionCommand::execute() {
     double duration = endTime_ - startTime_;
     if (duration <= 0.0)
         return;
+    const double bpm = resolveTimelineBpm(tempo_);
 
     // Helper: check if a clip's track is affected
     auto isAffectedTrack = [this](TrackId trackId) {
@@ -1300,10 +1308,11 @@ void RippleDeleteTimeSelectionCommand::execute() {
         if (!isAffectedTrack(clip.trackId))
             continue;
 
-        double clipEnd = clip.startTime + clip.length;
+        const double clipStart = clip.getTimelineStart(bpm);
+        const double clipEnd = clip.getTimelineEnd(bpm);
 
         // No overlap
-        if (clip.startTime >= endTime_ || clipEnd <= startTime_)
+        if (clipStart >= endTime_ || clipEnd <= startTime_)
             continue;
 
         // Looped clips: just adjust boundaries, don't split/delete notes
@@ -1311,7 +1320,7 @@ void RippleDeleteTimeSelectionCommand::execute() {
                            tempo_))
             continue;
 
-        bool startsBeforeSel = clip.startTime < startTime_;
+        bool startsBeforeSel = clipStart < startTime_;
         bool endsAfterSel = clipEnd > endTime_;
 
         if (startsBeforeSel && endsAfterSel) {
@@ -1327,18 +1336,18 @@ void RippleDeleteTimeSelectionCommand::execute() {
                 if (tailId != INVALID_CLIP_ID) {
                     auto* tailClip = clipManager.getClip(tailId);
                     if (tailClip) {
-                        tailClip->startTime = startTime_;  // Shift left to fill gap
-                        syncClipPlacementFromSeconds(*tailClip, tempo_);
+                        setClipPlacementFromSeconds(*tailClip, startTime_,
+                                                    tailClip->getTimelineLength(bpm), bpm);
                     }
                 }
             }
         } else if (startsBeforeSel) {
             // Clip spans left boundary only: trim right edge to startTime_
-            double newLength = startTime_ - clip.startTime;
+            double newLength = startTime_ - clipStart;
             auto* liveClip = clipManager.getClip(clip.id);
             if (liveClip) {
-                liveClip->length = newLength;
-                syncClipPlacementFromSeconds(*liveClip, tempo_);
+                setClipPlacementFromSeconds(*liveClip, liveClip->getTimelineStart(bpm), newLength,
+                                            bpm);
             }
         } else if (endsAfterSel) {
             // Clip spans right boundary only: split at endTime_, shift right portion left
@@ -1349,8 +1358,8 @@ void RippleDeleteTimeSelectionCommand::execute() {
             if (tailId != INVALID_CLIP_ID) {
                 auto* tailClip = clipManager.getClip(tailId);
                 if (tailClip) {
-                    tailClip->startTime = startTime_;
-                    syncClipPlacementFromSeconds(*tailClip, tempo_);
+                    setClipPlacementFromSeconds(*tailClip, startTime_,
+                                                tailClip->getTimelineLength(bpm), bpm);
                 }
             }
         } else {
@@ -1371,9 +1380,9 @@ void RippleDeleteTimeSelectionCommand::execute() {
 
         // Use non-const access
         auto* liveClip = clipManager.getClip(clip.id);
-        if (liveClip && liveClip->startTime >= endTime_) {
-            liveClip->startTime -= duration;
-            syncClipPlacementFromSeconds(*liveClip, tempo_);
+        if (liveClip && liveClip->getTimelineStart(bpm) >= endTime_) {
+            setClipPlacementFromSeconds(*liveClip, liveClip->getTimelineStart(bpm) - duration,
+                                        liveClip->getTimelineLength(bpm), bpm);
         }
     }
 
@@ -1420,6 +1429,7 @@ void DeleteTimeSelectionCommand::execute() {
     double duration = endTime_ - startTime_;
     if (duration <= 0.0)
         return;
+    const double bpm = resolveTimelineBpm(tempo_);
 
     auto isAffectedTrack = [this](TrackId trackId) {
         if (trackIds_.empty())
@@ -1434,10 +1444,11 @@ void DeleteTimeSelectionCommand::execute() {
         if (!isAffectedTrack(clip.trackId))
             continue;
 
-        double clipEnd = clip.startTime + clip.length;
+        const double clipStart = clip.getTimelineStart(bpm);
+        const double clipEnd = clip.getTimelineEnd(bpm);
 
         // No overlap
-        if (clip.startTime >= endTime_ || clipEnd <= startTime_)
+        if (clipStart >= endTime_ || clipEnd <= startTime_)
             continue;
 
         // Looped clips: just adjust boundaries, don't split/delete notes
@@ -1445,7 +1456,7 @@ void DeleteTimeSelectionCommand::execute() {
                            tempo_))
             continue;
 
-        bool startsBeforeSel = clip.startTime < startTime_;
+        bool startsBeforeSel = clipStart < startTime_;
         bool endsAfterSel = clipEnd > endTime_;
 
         if (startsBeforeSel && endsAfterSel) {
@@ -1460,11 +1471,11 @@ void DeleteTimeSelectionCommand::execute() {
             }
         } else if (startsBeforeSel) {
             // Clip spans left boundary: trim right edge to startTime_
-            double newLength = startTime_ - clip.startTime;
+            double newLength = startTime_ - clipStart;
             auto* liveClip = clipManager.getClip(clip.id);
             if (liveClip) {
-                liveClip->length = newLength;
-                syncClipPlacementFromSeconds(*liveClip, tempo_);
+                setClipPlacementFromSeconds(*liveClip, liveClip->getTimelineStart(bpm), newLength,
+                                            bpm);
             }
         } else if (endsAfterSel) {
             // Clip spans right boundary: split at endTime_, delete left portion

@@ -202,6 +202,50 @@ TEST_CASE("Audio Clip - Stretch maintains file window", "[audio][clip][stretch]"
     }
 }
 
+TEST_CASE("Audio Clip - Analog pitch resamples instead of time-stretching",
+          "[audio][clip][pitch][analog]") {
+    using namespace magda;
+
+    ClipManager::getInstance().shutdown();
+
+    SECTION("Pitch down slows playback and grows timeline length") {
+        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 2.0, "test.wav");
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        clip->speedRatio = 1.0;
+        clip->length = 2.0;
+        clip->setPlacementBeats(0.0, 4.0);
+
+        ClipManager::getInstance().setAnalogPitch(clipId, true);
+        ClipManager::getInstance().setPitchChange(clipId, -12.0f);
+
+        REQUIRE(clip->analogPitch);
+        REQUIRE(clip->speedRatio == Catch::Approx(0.5));
+        REQUIRE(clip->length == Catch::Approx(4.0));
+        REQUIRE(clip->lengthBeats == Catch::Approx(8.0));
+        REQUIRE(clip->timelineToSource(clip->length) == Catch::Approx(2.0));
+    }
+
+    SECTION("Pitch up speeds playback and shrinks timeline length") {
+        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 2.0, "test.wav");
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        clip->speedRatio = 1.0;
+        clip->length = 2.0;
+        clip->setPlacementBeats(0.0, 4.0);
+
+        ClipManager::getInstance().setAnalogPitch(clipId, true);
+        ClipManager::getInstance().setPitchChange(clipId, 12.0f);
+
+        REQUIRE(clip->speedRatio == Catch::Approx(2.0));
+        REQUIRE(clip->length == Catch::Approx(1.0));
+        REQUIRE(clip->lengthBeats == Catch::Approx(2.0));
+        REQUIRE(clip->timelineToSource(clip->length) == Catch::Approx(2.0));
+    }
+}
+
 TEST_CASE("Audio Clip - Real-world scenario: Amen break trim", "[audio][clip][integration]") {
     using namespace magda;
 

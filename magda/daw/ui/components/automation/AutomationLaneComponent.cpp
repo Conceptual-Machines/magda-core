@@ -286,8 +286,8 @@ void AutomationLaneComponent::rebuildClipComponents() {
         if (!clip)
             continue;
 
-        auto cc = std::make_unique<AutomationClipComponent>(clipId, this);
-        cc->setPixelsPerSecond(pixelsPerSecond_);
+        auto cc = std::make_unique<AutomationClipComponent>(clipId);
+        cc->setPixelsPerBeat(pixelsPerBeat_);
         addAndMakeVisible(cc.get());
         clipComponents_.push_back(std::move(cc));
     }
@@ -305,8 +305,8 @@ void AutomationLaneComponent::updateClipPositions() {
         if (!clip)
             continue;
 
-        int x = SCALE_LABEL_WIDTH + static_cast<int>(clip->startTime * pixelsPerBeat_);
-        int width = static_cast<int>(clip->length * pixelsPerBeat_);
+        int x = SCALE_LABEL_WIDTH + static_cast<int>(clip->startBeats * pixelsPerBeat_);
+        int width = static_cast<int>(clip->lengthBeats * pixelsPerBeat_);
         cc->setBounds(x, contentY, juce::jmax(10, width), juce::jmax(10, contentHeight));
     }
 }

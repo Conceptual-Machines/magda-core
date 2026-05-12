@@ -107,13 +107,35 @@ class ClipOperations {
     // Container Operations (clip-level only)
     // ========================================================================
 
+    static inline void setTimelinePlacement(ClipInfo& clip, double newStartTime, double newLength,
+                                            double bpm) {
+        newStartTime = juce::jmax(0.0, newStartTime);
+        newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
+
+        if (bpm > 0.0) {
+            clip.setPlacementBeats(newStartTime * bpm / 60.0, newLength * bpm / 60.0);
+            clip.deriveTimesFromBeats(bpm);
+        } else {
+            clip.startTime = newStartTime;
+            clip.length = newLength;
+            clip.setPlacementBeats(newStartTime, newLength);
+        }
+    }
+
+    static inline void setTimelineStart(ClipInfo& clip, double newStartTime, double bpm) {
+        const double currentLength = bpm > 0.0 && clip.placement.lengthBeats > 0.0
+                                         ? clip.placement.lengthBeats * 60.0 / bpm
+                                         : clip.length;
+        setTimelinePlacement(clip, newStartTime, currentLength, bpm);
+    }
+
     /**
      * @brief Move clip container to new timeline position
      * @param clip Clip to move
      * @param newStartTime New absolute timeline position (clamped to >= 0.0)
      */
-    static inline void moveContainer(ClipInfo& clip, double newStartTime) {
-        clip.startTime = juce::jmax(0.0, newStartTime);
+    static inline void moveContainer(ClipInfo& clip, double newStartTime, double bpm = 0.0) {
+        setTimelineStart(clip, newStartTime, bpm);
     }
 
     /**
@@ -194,13 +216,7 @@ class ClipOperations {
 
         // Clip placement is beat-domain. Seconds are derived cache values for
         // callers that still operate at the UI/bridge boundary.
-        if (bpm > 0.0) {
-            clip.setPlacementBeats(newStartTime * bpm / 60.0, newLength * bpm / 60.0);
-            clip.deriveTimesFromBeats(bpm);
-        } else {
-            clip.startTime = newStartTime;
-            clip.length = newLength;
-        }
+        setTimelinePlacement(clip, newStartTime, newLength, bpm);
     }
 
     /**
@@ -216,12 +232,11 @@ class ClipOperations {
     static inline void resizeContainerFromRight(ClipInfo& clip, double newLength,
                                                 double bpm = 120.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
-        if (bpm > 0.0) {
-            clip.setPlacementBeats(clip.startTime * bpm / 60.0, newLength * bpm / 60.0);
-            clip.deriveTimesFromBeats(bpm);
-        } else {
-            clip.length = newLength;
-        }
+        const bool hasExplicitBeatStart = std::abs(clip.placement.startBeat) > 0.000001;
+        const double currentStart = bpm > 0.0 && (hasExplicitBeatStart || clip.startTime <= 0.0)
+                                        ? clip.placement.startBeat * 60.0 / bpm
+                                        : clip.startTime;
+        setTimelinePlacement(clip, currentStart, newLength, bpm);
     }
 
     // ========================================================================
@@ -275,9 +290,8 @@ class ClipOperations {
         if (!clip.loopEnabled && !clip.autoTempo && fileDuration > 0.0) {
             const double oldLength = clip.length;
             clip.clampLengthToSource(fileDuration);
-            if (bpm > 0.0 && std::abs(clip.length - oldLength) > 0.000001) {
-                clip.setPlacementBeats(clip.startTime * bpm / 60.0, clip.length * bpm / 60.0);
-            }
+            if (bpm > 0.0 && std::abs(clip.length - oldLength) > 0.000001)
+                setTimelinePlacement(clip, clip.startTime, clip.length, bpm);
         }
     }
 
@@ -313,12 +327,9 @@ class ClipOperations {
 
         clip.offset = newOffset;
         clip.loopStart = clip.offset;
-        clip.startTime = juce::jmax(0.0, clip.startTime + timelineDelta);
-        clip.length = juce::jmax(MIN_CLIP_LENGTH, clip.length - timelineDelta);
-
-        if (bpm > 0.0) {
-            clip.setPlacementBeats(clip.startTime * bpm / 60.0, clip.length * bpm / 60.0);
-        }
+        const double newStartTime = juce::jmax(0.0, clip.startTime + timelineDelta);
+        const double newLength = juce::jmax(MIN_CLIP_LENGTH, clip.length - timelineDelta);
+        setTimelinePlacement(clip, newStartTime, newLength, bpm);
     }
 
     /**
@@ -338,11 +349,9 @@ class ClipOperations {
         }
 
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
-        clip.length = newLength;
-
-        if (bpm > 0.0) {
-            clip.setPlacementBeats(clip.placement.startBeat, newLength * bpm / 60.0);
-        }
+        const double currentStart =
+            bpm > 0.0 ? clip.placement.startBeat * 60.0 / bpm : clip.startTime;
+        setTimelinePlacement(clip, currentStart, newLength, bpm);
     }
 
     /**
@@ -354,7 +363,7 @@ class ClipOperations {
      * @param originalSpeedRatio Original speed ratio at drag start
      */
     static inline void stretchAudioFromRight(ClipInfo& clip, double newLength, double oldLength,
-                                             double originalSpeedRatio) {
+                                             double originalSpeedRatio, double bpm = 0.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
 
         double stretchRatio = newLength / oldLength;
@@ -363,7 +372,8 @@ class ClipOperations {
 
         newLength = oldLength * (originalSpeedRatio / newSpeedRatio);
 
-        clip.length = newLength;
+        const double currentStart = bpm > 0.0 ? clip.getTimelineStart(bpm) : clip.startTime;
+        setTimelinePlacement(clip, currentStart, newLength, bpm);
         clip.speedRatio = newSpeedRatio;
 
         // Keep loopLength in sync for non-looped clips
@@ -380,7 +390,7 @@ class ClipOperations {
      * @param originalSpeedRatio Original speed ratio at drag start
      */
     static inline void stretchAudioFromLeft(ClipInfo& clip, double newLength, double oldLength,
-                                            double originalSpeedRatio) {
+                                            double originalSpeedRatio, double bpm = 0.0) {
         double rightEdge = clip.startTime + clip.length;
 
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
@@ -391,8 +401,14 @@ class ClipOperations {
 
         newLength = oldLength * (originalSpeedRatio / newSpeedRatio);
 
-        clip.length = newLength;
-        clip.startTime = rightEdge - newLength;
+        const double newStart = rightEdge - newLength;
+        if (bpm > 0.0) {
+            setTimelinePlacement(clip, newStart, newLength, bpm);
+        } else {
+            clip.startTime = newStart;
+            clip.length = newLength;
+            clip.setPlacementBeats(newStart, newLength);
+        }
         clip.speedRatio = newSpeedRatio;
 
         // Keep loopLength in sync for non-looped clips
@@ -421,8 +437,7 @@ class ClipOperations {
 
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         double lengthDelta = clip.length - newLength;
-        clip.startTime = juce::jmax(0.0, clip.startTime + lengthDelta);
-        clip.length = newLength;
+        setTimelinePlacement(clip, clip.startTime + lengthDelta, newLength, 0.0);
 
         // Stretch audio proportionally
         stretchAudioFromLeft(clip, newLength, oldLength, originalSpeedRatio);
@@ -460,9 +475,8 @@ class ClipOperations {
      * @param newLength New clip length
      */
     static inline void resizeContainerAbsolute(ClipInfo& clip, double newStartTime,
-                                               double newLength) {
-        clip.startTime = newStartTime;
-        resizeContainerFromRight(clip, newLength);
+                                               double newLength, double bpm = 0.0) {
+        setTimelinePlacement(clip, newStartTime, newLength, bpm);
     }
 
     /**
@@ -491,7 +505,8 @@ class ClipOperations {
      */
     static inline void stretchAbsolute(ClipInfo& clip, double newSpeedRatio, double newLength,
                                        double bpm = 120.0) {
-        clip.length = newLength;
+        const double currentStart = bpm > 0.0 ? clip.getTimelineStart(bpm) : clip.startTime;
+        setTimelinePlacement(clip, currentStart, newLength, bpm);
         if (clip.autoTempo && bpm > 0.0) {
             double newBeats = newLength * bpm / 60.0;
             setAutoTempoPlacementLengthBeats(clip, newBeats, bpm);
@@ -512,8 +527,7 @@ class ClipOperations {
     static inline void stretchAbsoluteFromLeft(ClipInfo& clip, double newSpeedRatio,
                                                double newLength, double rightEdge,
                                                double bpm = 120.0) {
-        clip.length = newLength;
-        clip.startTime = rightEdge - newLength;
+        setTimelinePlacement(clip, rightEdge - newLength, newLength, bpm);
         if (clip.autoTempo && bpm > 0.0) {
             double newBeats = newLength * bpm / 60.0;
             setAutoTempoPlacementLengthBeats(clip, newBeats, bpm);
@@ -794,10 +808,12 @@ class ClipOperations {
      * @param clip Clip to modify
      * @param newTimelineExtent New extent in timeline seconds
      */
-    static inline void resizeSourceExtent(ClipInfo& clip, double newTimelineExtent) {
+    static inline void resizeSourceExtent(ClipInfo& clip, double newTimelineExtent,
+                                          double bpm = 0.0) {
         clip.setLoopLengthFromTimeline(newTimelineExtent);
         if (!clip.loopEnabled) {
-            clip.length = newTimelineExtent;
+            const double currentStart = bpm > 0.0 ? clip.getTimelineStart(bpm) : clip.startTime;
+            setTimelinePlacement(clip, currentStart, newTimelineExtent, bpm);
         }
     }
 
@@ -813,9 +829,10 @@ class ClipOperations {
      */
     static inline void stretchEditor(ClipInfo& clip, double newSpeedRatio,
                                      double clipLengthScaleFactor, double dragStartClipLength,
-                                     double dragStartExtent) {
+                                     double dragStartExtent, double bpm = 0.0) {
         clip.speedRatio = newSpeedRatio;
-        clip.length = dragStartClipLength * clipLengthScaleFactor;
+        const double currentStart = bpm > 0.0 ? clip.getTimelineStart(bpm) : clip.startTime;
+        setTimelinePlacement(clip, currentStart, dragStartClipLength * clipLengthScaleFactor, bpm);
         // In loop mode, adjust loopLength to keep loop markers fixed on timeline
         if (clip.loopEnabled && clip.loopLength > 0.0) {
             clip.loopLength = dragStartExtent / newSpeedRatio;
@@ -835,10 +852,10 @@ class ClipOperations {
     static inline void stretchEditorFromLeft(ClipInfo& clip, double newSpeedRatio,
                                              double clipLengthScaleFactor,
                                              double dragStartClipLength, double dragStartExtent,
-                                             double rightEdge) {
+                                             double rightEdge, double bpm = 0.0) {
         clip.speedRatio = newSpeedRatio;
-        clip.length = dragStartClipLength * clipLengthScaleFactor;
-        clip.startTime = rightEdge - clip.length;
+        const double newLength = dragStartClipLength * clipLengthScaleFactor;
+        setTimelinePlacement(clip, rightEdge - newLength, newLength, bpm);
         // In loop mode, adjust loopLength to keep loop markers fixed on timeline
         if (clip.loopEnabled && clip.loopLength > 0.0) {
             clip.loopLength = dragStartExtent / newSpeedRatio;

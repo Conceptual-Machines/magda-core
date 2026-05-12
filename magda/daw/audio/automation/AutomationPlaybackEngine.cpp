@@ -317,10 +317,10 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
             const auto* clip = autoMgr.getClip(clipId);
             if (!clip)
                 continue;
-            if (first || clip->startTime < dataStartBeats)
-                dataStartBeats = clip->startTime;
-            if (first || clip->getEndTime() > dataEndBeats)
-                dataEndBeats = clip->getEndTime();
+            if (first || clip->startBeats < dataStartBeats)
+                dataStartBeats = clip->startBeats;
+            if (first || clip->getEndBeats() > dataEndBeats)
+                dataEndBeats = clip->getEndBeats();
             first = false;
         }
     }

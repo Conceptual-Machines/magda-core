@@ -116,6 +116,27 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
     }
 }
 
+TEST_CASE("ClipOperations placement edits keep beats authoritative", "[clip][resize][beats]") {
+    ClipInfo clip;
+    clip.startTime = 99.0;
+    clip.length = 99.0;
+    clip.setPlacementBeats(8.0, 4.0);
+
+    ClipOperations::resizeContainerFromRight(clip, 3.0, 120.0);
+
+    REQUIRE(clip.placement.startBeat == Catch::Approx(8.0));
+    REQUIRE(clip.placement.lengthBeats == Catch::Approx(6.0));
+    REQUIRE(clip.startTime == Catch::Approx(4.0));
+    REQUIRE(clip.length == Catch::Approx(3.0));
+
+    ClipOperations::setTimelinePlacement(clip, 6.0, 2.0, 120.0);
+
+    REQUIRE(clip.placement.startBeat == Catch::Approx(12.0));
+    REQUIRE(clip.placement.lengthBeats == Catch::Approx(4.0));
+    REQUIRE(clip.startTime == Catch::Approx(6.0));
+    REQUIRE(clip.length == Catch::Approx(2.0));
+}
+
 // ============================================================================
 // resizeContainerFromRight - clip length only
 // ============================================================================

@@ -478,8 +478,8 @@ void AutomationManager::setLaneHeight(AutomationLaneId laneId, int height) {
 // Automation Clips
 // ============================================================================
 
-AutomationClipId AutomationManager::createClip(AutomationLaneId laneId, double startTime,
-                                               double length) {
+AutomationClipId AutomationManager::createClip(AutomationLaneId laneId, double startBeats,
+                                               double lengthBeats) {
     auto* lane = getLane(laneId);
     if (!lane || !lane->isClipBased())
         return INVALID_AUTOMATION_CLIP_ID;
@@ -487,8 +487,8 @@ AutomationClipId AutomationManager::createClip(AutomationLaneId laneId, double s
     AutomationClipInfo clip;
     clip.id = nextClipId_++;
     clip.laneId = laneId;
-    clip.startTime = startTime;
-    clip.length = length;
+    clip.startBeats = startBeats;
+    clip.lengthBeats = lengthBeats;
     clip.colour = AutomationClipInfo::getDefaultColor(static_cast<int>(clips_.size()));
     clip.name = "Automation " + juce::String(clip.id);
 
@@ -538,7 +538,7 @@ const AutomationClipInfo* AutomationManager::getClip(AutomationClipId clipId) co
 
 void AutomationManager::moveClip(AutomationClipId clipId, double newStartTime) {
     if (auto* clip = getClip(clipId)) {
-        clip->startTime = juce::jmax(0.0, newStartTime);
+        clip->startBeats = juce::jmax(0.0, newStartTime);
         notifyClipsChanged(clip->laneId);
     }
 }
@@ -549,14 +549,14 @@ void AutomationManager::resizeClip(AutomationClipId clipId, double newLength, bo
         newLength = juce::jmax(minLength, newLength);
 
         if (fromStart) {
-            double endTime = clip->getEndTime();
-            clip->startTime = endTime - newLength;
-            if (clip->startTime < 0.0) {
-                clip->startTime = 0.0;
-                newLength = endTime;
+            double endBeats = clip->getEndBeats();
+            clip->startBeats = endBeats - newLength;
+            if (clip->startBeats < 0.0) {
+                clip->startBeats = 0.0;
+                newLength = endBeats;
             }
         }
-        clip->length = newLength;
+        clip->lengthBeats = newLength;
         notifyClipsChanged(clip->laneId);
     }
 }
@@ -568,7 +568,7 @@ AutomationClipId AutomationManager::duplicateClip(AutomationClipId clipId) {
 
     AutomationClipInfo newClip = *sourceClip;
     newClip.id = nextClipId_++;
-    newClip.startTime = sourceClip->getEndTime();
+    newClip.startBeats = sourceClip->getEndBeats();
     newClip.name = sourceClip->name + " copy";
 
     // Generate new point IDs
@@ -613,7 +613,7 @@ void AutomationManager::setClipLooping(AutomationClipId clipId, bool looping) {
 
 void AutomationManager::setClipLoopLength(AutomationClipId clipId, double length) {
     if (auto* clip = getClip(clipId)) {
-        clip->loopLength = juce::jmax(0.1, length);
+        clip->loopLengthBeats = juce::jmax(0.1, length);
         notifyClipsChanged(clip->laneId);
     }
 }
@@ -649,7 +649,7 @@ AutomationPointId AutomationManager::addPointToClip(AutomationClipId clipId, dou
 
     AutomationPoint point;
     point.id = nextPointId_++;
-    point.time = juce::jlimit(0.0, clip->length, localTime);
+    point.time = juce::jlimit(0.0, clip->lengthBeats, localTime);
     point.value = juce::jlimit(0.0, 1.0, value);
     point.curveType = curveType;
 
@@ -716,7 +716,7 @@ void AutomationManager::movePointInClip(AutomationClipId clipId, AutomationPoint
         return;
 
     if (auto* point = findPoint(clip->points, pointId)) {
-        point->time = juce::jlimit(0.0, clip->length, newTime);
+        point->time = juce::jlimit(0.0, clip->lengthBeats, newTime);
         point->value = juce::jlimit(0.0, 1.0, newValue);
         sortPoints(clip->points);
         notifyClipsChanged(clip->laneId);
@@ -817,8 +817,8 @@ double AutomationManager::getValueAtTime(AutomationLaneId laneId, double time) c
     // Clip-based: find clip containing time
     for (auto clipId : lane->clipIds) {
         const auto* clip = getClip(clipId);
-        if (clip && clip->containsTime(time)) {
-            double localTime = clip->getLocalTime(time);
+        if (clip && clip->containsBeat(time)) {
+            double localTime = clip->getLocalBeat(time);
             return interpolatePoints(clip->points, localTime);
         }
     }

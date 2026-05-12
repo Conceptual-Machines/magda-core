@@ -89,7 +89,7 @@ class SetClipOffsetCommand : public UndoableCommand {
         if (clip) {
             oldClip_ = *clip;
             hasOldClip_ = true;
-            oldOffset_ = (clip->isMidi()) ? clip->midiOffset : clip->offset;
+            oldOffset_ = (clip->isMidi()) ? clip->midiOffset : clip->getSourceOffset();
         }
     }
 
@@ -134,7 +134,8 @@ class SetClipLoopPhaseCommand : public UndoableCommand {
     SetClipLoopPhaseCommand(ClipId clipId, double newPhase) : clipId_(clipId), newPhase_(newPhase) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldPhase_ = (clip->isMidi()) ? clip->midiOffset : clip->getLoopPhase();
+            oldPhase_ = (clip->isMidi()) ? clip->midiOffset
+                                         : clip->getSourceOffset() - clip->getSourceLoopStart();
     }
 
     void execute() override {
@@ -185,7 +186,7 @@ class SetClipLoopStartCommand : public UndoableCommand {
     SetClipLoopStartCommand(ClipId clipId, double newLoopStart, double bpm = 120.0)
         : clipId_(clipId), newLoopStart_(newLoopStart), bpm_(bpm) {
         if (auto* clip = ClipManager::getInstance().getClip(clipId))
-            oldLoopStart_ = clip->loopStart;
+            oldLoopStart_ = clip->getSourceLoopStart();
     }
 
     void execute() override {
@@ -223,7 +224,7 @@ class SetClipLoopLengthCommand : public UndoableCommand {
     SetClipLoopLengthCommand(ClipId clipId, double newLoopLength, double bpm = 120.0)
         : clipId_(clipId), newLoopLength_(newLoopLength), bpm_(bpm) {
         if (auto* clip = ClipManager::getInstance().getClip(clipId))
-            oldLoopLength_ = clip->loopLength;
+            oldLoopLength_ = clip->getSourceLoopLength();
     }
 
     void execute() override {

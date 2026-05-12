@@ -198,7 +198,7 @@ struct TimeSelection {
     bool visuallyHidden = false;  // When true, selection is hidden visually but data remains
 
     bool isActive() const {
-        return startTime >= 0 && endTime > startTime;
+        return startBeats >= 0.0 && endBeats > startBeats;
     }
     bool isVisuallyActive() const {
         return isActive() && !visuallyHidden;
@@ -226,6 +226,27 @@ struct TimeSelection {
     double getDuration() const {
         return isActive() ? (endTime - startTime) : 0.0;
     }
+
+    double getDurationBeats() const {
+        return isActive() ? (endBeats - startBeats) : 0.0;
+    }
+
+    void setFromBeats(double start, double end, double bpm) {
+        if (start > end)
+            std::swap(start, end);
+        startBeats = juce::jmax(0.0, start);
+        endBeats = juce::jmax(startBeats, end);
+        if (bpm > 0.0) {
+            startTime = startBeats * 60.0 / bpm;
+            endTime = endBeats * 60.0 / bpm;
+        }
+    }
+
+    void setFromSeconds(double start, double end, double bpm) {
+        if (start > end)
+            std::swap(start, end);
+        setFromBeats(start * bpm / 60.0, end * bpm / 60.0, bpm);
+    }
 };
 
 /**
@@ -239,7 +260,7 @@ struct LoopRegion {
     bool enabled = false;
 
     bool isValid() const {
-        return startTime >= 0 && endTime > startTime;
+        return startBeats >= 0.0 && endBeats > startBeats;
     }
     void clear() {
         startTime = -1.0;
@@ -250,6 +271,27 @@ struct LoopRegion {
     }
     double getDuration() const {
         return isValid() ? (endTime - startTime) : 0.0;
+    }
+
+    double getDurationBeats() const {
+        return isValid() ? (endBeats - startBeats) : 0.0;
+    }
+
+    void setFromBeats(double start, double end, double bpm) {
+        if (start > end)
+            std::swap(start, end);
+        startBeats = juce::jmax(0.0, start);
+        endBeats = juce::jmax(startBeats, end);
+        if (bpm > 0.0) {
+            startTime = startBeats * 60.0 / bpm;
+            endTime = endBeats * 60.0 / bpm;
+        }
+    }
+
+    void setFromSeconds(double start, double end, double bpm) {
+        if (start > end)
+            std::swap(start, end);
+        setFromBeats(start * bpm / 60.0, end * bpm / 60.0, bpm);
     }
 };
 
@@ -265,7 +307,7 @@ struct PunchRegion {
     bool punchOutEnabled = false;
 
     bool isValid() const {
-        return startTime >= 0 && endTime > startTime;
+        return startBeats >= 0.0 && endBeats > startBeats;
     }
     bool isEnabled() const {
         return punchInEnabled || punchOutEnabled;
@@ -280,6 +322,27 @@ struct PunchRegion {
     }
     double getDuration() const {
         return isValid() ? (endTime - startTime) : 0.0;
+    }
+
+    double getDurationBeats() const {
+        return isValid() ? (endBeats - startBeats) : 0.0;
+    }
+
+    void setFromBeats(double start, double end, double bpm) {
+        if (start > end)
+            std::swap(start, end);
+        startBeats = juce::jmax(0.0, start);
+        endBeats = juce::jmax(startBeats, end);
+        if (bpm > 0.0) {
+            startTime = startBeats * 60.0 / bpm;
+            endTime = endBeats * 60.0 / bpm;
+        }
+    }
+
+    void setFromSeconds(double start, double end, double bpm) {
+        if (start > end)
+            std::swap(start, end);
+        setFromBeats(start * bpm / 60.0, end * bpm / 60.0, bpm);
     }
 };
 
