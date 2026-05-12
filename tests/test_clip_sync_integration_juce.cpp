@@ -1119,7 +1119,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         const double originalLoopStartBeats = clip->loopStartBeats;
         const double originalLoopLengthBeats = clip->loopLengthBeats;
 
-        const double duplicateStart = clip->getEndTime();
+        const double duplicateStart = clip->getTimelineEnd(60.0);
         auto duplicateId = cm.duplicateClipAt(clipId, duplicateStart, f.trackId, 60.0);
         expect(duplicateId != INVALID_CLIP_ID, "Duplicate should create copied clip");
         auto* duplicate = cm.getClip(duplicateId);
