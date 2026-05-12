@@ -23,6 +23,29 @@
 
 namespace magda {
 
+namespace {
+
+double timelineStartSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineStart(bpm);
+}
+
+double timelineEndSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineEnd(bpm);
+}
+
+bool containsTimelineTime(const ClipInfo& clip, double timeSeconds, double bpm) {
+    return timeSeconds > timelineStartSeconds(clip, bpm) &&
+           timeSeconds < timelineEndSeconds(clip, bpm);
+}
+
+bool overlapsTimelineRange(const ClipInfo& clip, double startSeconds, double endSeconds,
+                           double bpm) {
+    return timelineStartSeconds(clip, bpm) < endSeconds &&
+           timelineEndSeconds(clip, bpm) > startSeconds;
+}
+
+}  // namespace
+
 // ============================================================================
 // Command Handling Implementation
 // ============================================================================
@@ -623,6 +646,9 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
         case joinClips:
             if (selectedClips.size() >= 2) {
+                double tempo =
+                    mainView ? mainView->getTimelineController().getState().tempo.bpm : 120.0;
+
                 // Sort clips by start time
                 std::vector<ClipId> sortedClips(selectedClips.begin(), selectedClips.end());
                 std::sort(sortedClips.begin(), sortedClips.end(), [&](ClipId a, ClipId b) {
@@ -630,11 +656,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     auto* cb = clipManager.getClip(b);
                     if (!ca || !cb)
                         return false;
-                    return ca->startTime < cb->startTime;
+                    return timelineStartSeconds(*ca, tempo) < timelineStartSeconds(*cb, tempo);
                 });
-
-                double tempo =
-                    mainView ? mainView->getTimelineController().getState().tempo.bpm : 120.0;
 
                 // Join sequentially: left absorbs right, then result absorbs next, etc.
                 if (sortedClips.size() > 2) {
@@ -680,8 +703,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                         clipsToSplit.assign(selectedClips.begin(), selectedClips.end());
                     } else {
                         for (const auto& clip : clipManager.getArrangementClips()) {
-                            double clipEnd = clip.startTime + clip.length;
-                            if (clip.startTime < trimEnd && clipEnd > trimStart) {
+                            if (overlapsTimelineRange(clip, trimStart, trimEnd, tempo)) {
                                 clipsToSplit.push_back(clip.id);
                             }
                         }
@@ -697,14 +719,15 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                             if (!clip)
                                 continue;
 
-                            double clipEnd = clip->startTime + clip->length;
-                            if (clip->startTime >= trimEnd || clipEnd <= trimStart)
+                            double clipStart = timelineStartSeconds(*clip, tempo);
+                            double clipEnd = timelineEndSeconds(*clip, tempo);
+                            if (clipStart >= trimEnd || clipEnd <= trimStart)
                                 continue;
 
                             ClipId currentClipId = clipId;
 
                             // Split at left edge if clip extends before selection
-                            if (clip->startTime < trimStart && trimStart < clipEnd) {
+                            if (clipStart < trimStart && trimStart < clipEnd) {
                                 auto splitCmd = std::make_unique<SplitClipCommand>(
                                     currentClipId, trimStart, tempo);
                                 auto* cmdPtr = splitCmd.get();
@@ -714,7 +737,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                                 clip = clipManager.getClip(currentClipId);
                                 if (!clip)
                                     continue;
-                                clipEnd = clip->startTime + clip->length;
+                                clipEnd = timelineEndSeconds(*clip, tempo);
                             }
 
                             // Split at right edge if clip extends after selection
@@ -752,16 +775,14 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                         for (auto cid : selectedClips) {
                             const auto* clip = clipManager.getClip(cid);
-                            if (clip && splitTime > clip->startTime &&
-                                splitTime < clip->startTime + clip->length) {
+                            if (clip && containsTimelineTime(*clip, splitTime, tempo)) {
                                 clipsToSplit.push_back(cid);
                             }
                         }
 
                         if (clipsToSplit.empty()) {
                             for (const auto& clip : clipManager.getArrangementClips()) {
-                                if (splitTime > clip.startTime &&
-                                    splitTime < clip.startTime + clip.length) {
+                                if (containsTimelineTime(clip, splitTime, tempo)) {
                                     clipsToSplit.push_back(clip.id);
                                 }
                             }
@@ -863,8 +884,9 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (selectedClipId != INVALID_CLIP_ID) {
                 const auto* clip = clipManager.getClip(selectedClipId);
                 if (clip && mainView) {
-                    mainView->getTimelineController().dispatch(
-                        SetLoopRegionEvent{clip->startTime, clip->getEndTime()});
+                    double tempo = mainView->getTimelineController().getState().tempo.bpm;
+                    mainView->getTimelineController().dispatch(SetLoopRegionEvent{
+                        timelineStartSeconds(*clip, tempo), timelineEndSeconds(*clip, tempo)});
                 }
             }
             return true;

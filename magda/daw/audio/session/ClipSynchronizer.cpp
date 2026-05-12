@@ -13,6 +13,28 @@
 
 namespace magda {
 
+namespace {
+
+double timelineStartSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineStart(bpm);
+}
+
+double timelineLengthSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineLength(bpm);
+}
+
+double timelineEndSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineEnd(bpm);
+}
+
+double timelineLengthBeats(const ClipInfo& clip, double bpm) {
+    if (clip.placement.lengthBeats > 0.0)
+        return clip.placement.lengthBeats;
+    return bpm > 0.0 ? clip.getTimelineLength(bpm) * bpm / 60.0 : clip.lengthBeats;
+}
+
+}  // namespace
+
 void ClipSynchronizer::reallocateAndNotify() {
     if (auto* ctx = edit_.getCurrentPlaybackContext()) {
         edit_.getTransport().editHasChanged();
@@ -363,10 +385,9 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                             auto& sequence = midiClip->getSequence();
                             sequence.clear(nullptr);
 
-                            // For MIDI, use clip length as boundary
-                            double clipLengthBeats =
-                                clip->length *
-                                (edit_.tempoSequence.getBpmAt(te::TimePosition()) / 60.0);
+                            // For MIDI, use beat-authoritative clip length as boundary.
+                            const double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                            double clipLengthBeats = timelineLengthBeats(*clip, bpm);
                             for (const auto& note : clip->midiNotes) {
                                 double start = note.startBeat;
                                 double length = note.lengthBeats;
@@ -554,7 +575,8 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         }
 
         // Create clip directly in the slot
-        double clipDuration = clip->length;
+        const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        double clipDuration = timelineLengthSeconds(*clip, projectBpm);
         auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
                                        te::TimePosition::fromSeconds(clipDuration));
 
@@ -704,7 +726,8 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
     } else if (clip->isMidi()) {
         // Create MIDI clip directly in the slot
-        double clipDuration = clip->length;
+        const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        double clipDuration = timelineLengthSeconds(*clip, projectBpm);
         auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
                                        te::TimePosition::fromSeconds(clipDuration));
 
@@ -1485,8 +1508,9 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             return needsGraphReallocation;
         }
 
-        double createStart = clip->startTime;
-        double createEnd = createStart + clip->length;
+        const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        double createStart = timelineStartSeconds(*clip, projectBpm);
+        double createEnd = timelineEndSeconds(*clip, projectBpm);
         auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(createStart),
                                        te::TimePosition::fromSeconds(createEnd));
 
@@ -1589,9 +1613,9 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     }
 
     // 4. UPDATE clip position/length
-    // Read seconds directly — BPM handler keeps these in sync for autoTempo clips.
-    double engineStart = clip->startTime;
-    double engineEnd = clip->startTime + clip->length;
+    const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+    double engineStart = timelineStartSeconds(*clip, projectBpm);
+    double engineEnd = timelineEndSeconds(*clip, projectBpm);
 
     auto currentPos = audioClipPtr->getPosition();
     auto currentStart = currentPos.getStart().inSeconds();
