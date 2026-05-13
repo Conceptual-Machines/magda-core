@@ -7,7 +7,6 @@
 #include "ai/AIPanelComponent.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
-#include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "core/Config.hpp"
 #include "core/InternalDeviceKind.hpp"
@@ -35,6 +34,7 @@
 #include "slot/DeviceSlotContentLayout.hpp"
 #include "slot/DeviceSlotContentPainter.hpp"
 #include "slot/DeviceSlotHeaderControls.hpp"
+#include "slot/DeviceSlotInlineUiFactory.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
 #include "slot/DeviceSlotMidiUiBinding.hpp"
 #include "slot/DeviceSlotParamLayoutFactory.hpp"
@@ -1969,57 +1969,29 @@ void DeviceSlotComponent::showContextMenu() {
 // =============================================================================
 
 void DeviceSlotComponent::createCustomUI() {
-    if (traits_.compiledPresentation && traits_.compiledPresentation->createPanel) {
-        compiledPanel_ = traits_.compiledPresentation->createPanel(device_.pluginId);
-        compiledPanel_->setOnParameterChanged([this](int paramIndex, float displayValue) {
-            if (!nodePath_.isValid())
-                return;
-            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
-                                                                       displayValue);
-        });
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device_.id);
-                compiledPanel_->bindPlugin(plugin.get());
-            }
-        }
-        compiledPanel_->updateFromDevice(device_);
-        addAndMakeVisible(compiledPanel_->component());
-    } else if (device_.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
-        faustUI_ = std::make_unique<FaustUI>();
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device_.id);
-                auto* fp = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get());
-                if (fp) {
-                    faustUI_->setPlugin(fp);
-                    faustCustomView_ =
-                        FaustCustomUIRegistry::getInstance().create(fp->getCustomViewKind(), *fp);
-                    if (faustCustomView_)
-                        addAndMakeVisible(*faustCustomView_);
-                }
-            }
-        }
-        faustUI_->setDevicePath(nodePath_);
-        addAndMakeVisible(*faustUI_);
-    } else {
-        DeviceCustomUIManager::Callbacks callbacks;
-        callbacks.onParameterChanged = [this](int paramIndex, float value) {
-            if (!nodePath_.isValid())
-                return;
-            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
-                                                                       value);
-        };
-        callbacks.onLayoutChanged = [this]() {
-            if (onDeviceLayoutChanged)
-                onDeviceLayoutChanged();
-        };
-        callbacks.onParamModulationChanged = [this]() { updateParamModulation(); };
-        callbacks.onUpdateModsPanel = [this]() { updateModsPanel(); };
-        callbacks.onUpdateMacroPanel = [this]() { updateMacroPanel(); };
-        callbacks.getNodePath = [this]() { return nodePath_; };
+    DeviceSlotInlineUiCallbacks callbacks;
+    callbacks.onParameterChanged = [this](int paramIndex, float value) {
+        if (!nodePath_.isValid())
+            return;
+        magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex, value);
+    };
+    callbacks.onLayoutChanged = [this]() {
+        if (onDeviceLayoutChanged)
+            onDeviceLayoutChanged();
+    };
+    callbacks.onParamModulationChanged = [this]() { updateParamModulation(); };
+    callbacks.onUpdateModsPanel = [this]() { updateModsPanel(); };
+    callbacks.onUpdateMacroPanel = [this]() { updateMacroPanel(); };
+    callbacks.getNodePath = [this]() { return nodePath_; };
 
-        customUI_.create(device_, this, callbacks);
+    const auto createdKind = createDeviceSlotInlineUi(device_, traits_, nodePath_, *this,
+                                                      {.compiledPanel = compiledPanel_,
+                                                       .faustUI = faustUI_,
+                                                       .faustCustomView = faustCustomView_,
+                                                       .customUI = customUI_},
+                                                      std::move(callbacks));
+
+    if (createdKind == DeviceSlotInlineUiKind::Custom) {
         updateCustomUI();
         readAndPushModMatrix();
         wirePadChainLinkCallbacks();
