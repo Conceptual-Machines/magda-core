@@ -215,7 +215,11 @@ target_sources(magda_daw PRIVATE
     automation/AutomationPlaybackEngine.cpp
     automation/AutomationRecordingEngine.cpp
     automation/AutomationCurveSimplifier.cpp
+    session/ArrangementClipSyncPlanner.cpp
+    session/ClipEngineIdMap.cpp
+    session/ClipLaunchQuantization.cpp
     session/ClipSynchronizer.cpp
+    session/ClipWarpSynchronizer.cpp
     plugins/SidechainMonitorPlugin.cpp
     plugins/AudioSidechainMonitorPlugin.cpp
     plugins/MidiReceivePlugin.cpp
@@ -254,7 +258,11 @@ target_sources(magda_daw PRIVATE
     racks/InstrumentRackManager.hpp
     racks/RackSyncManager.hpp
     automation/AutomationPlaybackEngine.hpp
+    session/ArrangementClipSyncPlanner.hpp
+    session/ClipEngineIdMap.hpp
+    session/ClipLaunchQuantization.hpp
     session/ClipSynchronizer.hpp
+    session/ClipWarpSynchronizer.hpp
     plugins/SidechainTriggerBus.hpp
     plugins/SidechainMonitorPlugin.hpp
     plugins/AudioSidechainMonitorPlugin.hpp

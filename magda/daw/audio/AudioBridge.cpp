@@ -860,12 +860,11 @@ void AudioBridge::timerCallback() {
     // Poll for reversed proxy file completion (delegated to ClipSynchronizer)
     ClipId pendingClipId = clipSynchronizer_.getPendingReverseClipId();
     if (pendingClipId != INVALID_CLIP_ID) {
-        const auto& clipIdToEngineId = clipSynchronizer_.getClipIdToEngineId();
-        auto it = clipIdToEngineId.find(pendingClipId);
-        if (it != clipIdToEngineId.end()) {
+        auto engineId = clipSynchronizer_.getArrangementEngineId(pendingClipId);
+        if (engineId) {
             for (auto* track : te::getAudioTracks(edit_)) {
                 for (auto* teClip : track->getClips()) {
-                    if (teClip->itemID.toString().toStdString() == it->second) {
+                    if (teClip->itemID.toString().toStdString() == *engineId) {
                         if (auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip)) {
                             auto proxyFile = audioClip->getPlaybackFile().getFile();
                             if (proxyFile.existsAsFile()) {
