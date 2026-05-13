@@ -242,7 +242,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<juce::TextButton> presetsButton_;
     // Vertical gain slider overlaid on the meter
     std::unique_ptr<juce::Slider> gainSlider_;
-    int lastArpNote_ = -1;
+    int lastMidiNote_ = -1;
     std::array<int, 32> lastChordNotes_{};
     int lastChordCount_ = 0;
 

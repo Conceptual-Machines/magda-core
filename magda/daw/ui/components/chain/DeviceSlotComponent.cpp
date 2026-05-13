@@ -42,6 +42,7 @@
 #include "params/ParamSlotComponent.hpp"
 #include "project/ProjectManager.hpp"
 #include "slot/DevicePresetMenu.hpp"
+#include "slot/DeviceSlotMidiActivity.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/dialogs/ParameterConfigDialog.hpp"
@@ -846,46 +847,9 @@ void DeviceSlotComponent::timerCallback() {
         }
     }
 
-    if (traits_.isArpeggiator) {
-        // Poll arpeggiator note output for the MIDI note strip
-        if (auto* arpPlugin = customUI_.getArpPlugin()) {
-            int note = arpPlugin->midiOutNote_.load(std::memory_order_relaxed);
-            int vel = arpPlugin->midiOutVelocity_.load(std::memory_order_relaxed);
-            if (note != lastArpNote_) {
-                if (lastArpNote_ >= 0)
-                    midiNoteStrip_.clearNote(lastArpNote_);
-                lastArpNote_ = note;
-            }
-            if (note >= 0)
-                midiNoteStrip_.setNote(note, vel);
-        }
-    } else if (traits_.isStepSequencer) {
-        if (auto* stepSeqPlugin = customUI_.getStepSeqPlugin()) {
-            int note = stepSeqPlugin->midiOutNote_.load(std::memory_order_relaxed);
-            int vel = stepSeqPlugin->midiOutVelocity_.load(std::memory_order_relaxed);
-            if (note != lastArpNote_) {
-                if (lastArpNote_ >= 0)
-                    midiNoteStrip_.clearNote(lastArpNote_);
-                lastArpNote_ = note;
-            }
-            if (note >= 0)
-                midiNoteStrip_.setNote(note, vel);
-        }
-    } else if (traits_.isChordEngine) {
-        // Poll chord engine held notes for the MIDI note strip
-        if (auto* chordPlugin = customUI_.getChordPlugin()) {
-            int count = chordPlugin->getHeldNoteCount();
-            // Clear notes that are no longer held
-            for (int i = 0; i < lastChordCount_; ++i)
-                midiNoteStrip_.clearNote(lastChordNotes_[static_cast<size_t>(i)]);
-            // Set currently held notes
-            for (int i = 0; i < count && i < static_cast<int>(lastChordNotes_.size()); ++i) {
-                int n = chordPlugin->getHeldNote(i);
-                lastChordNotes_[static_cast<size_t>(i)] = n;
-                midiNoteStrip_.setNote(n, 100);
-            }
-            lastChordCount_ = count;
-        }
+    if (traits_.isArpeggiator || traits_.isStepSequencer || traits_.isChordEngine) {
+        refreshDeviceSlotMidiActivity(traits_, customUI_, midiNoteStrip_, lastMidiNote_,
+                                      lastChordNotes_, lastChordCount_);
     } else {
         // Poll device peak levels for right-side meter strip
         magda::DeviceMeteringManager::DeviceMeterData data;
