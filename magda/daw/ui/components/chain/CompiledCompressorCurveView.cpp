@@ -386,4 +386,9 @@ const CompiledPresentationSpec& getMagdaCompressorPresentation() {
     return kSpec;
 }
 
+void CompiledCompressorCurveView::bindPlugin(te::Plugin* plugin) {
+    setCompiledPlugin(
+        dynamic_cast<magda::daw::audio::compiled::MagdaCompressorCompiledPlugin*>(plugin));
+}
+
 }  // namespace magda::daw::ui

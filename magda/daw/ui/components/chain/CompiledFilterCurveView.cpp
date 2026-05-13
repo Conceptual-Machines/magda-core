@@ -388,4 +388,9 @@ const CompiledPresentationSpec& getMagdaFilterPresentation() {
     return kSpec;
 }
 
+void CompiledFilterCurveView::bindPlugin(te::Plugin* plugin) {
+    setCompiledPlugin(
+        dynamic_cast<magda::daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin));
+}
+
 }  // namespace magda::daw::ui

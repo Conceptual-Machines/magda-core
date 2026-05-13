@@ -239,4 +239,8 @@ const CompiledPresentationSpec& getMagdaDelayPresentation() {
     return kSpec;
 }
 
+void CompiledDelayCurveView::bindPlugin(te::Plugin* plugin) {
+    setCompiledPlugin(dynamic_cast<magda::daw::audio::compiled::MagdaDelayCompiledPlugin*>(plugin));
+}
+
 }  // namespace magda::daw::ui

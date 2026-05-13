@@ -193,4 +193,8 @@ const CompiledPresentationSpec& getMagdaGritPresentation() {
     return kSpec;
 }
 
+void CompiledGritCurveView::bindPlugin(te::Plugin* plugin) {
+    setCompiledPlugin(dynamic_cast<magda::daw::audio::compiled::MagdaGritCompiledPlugin*>(plugin));
+}
+
 }  // namespace magda::daw::ui

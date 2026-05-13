@@ -22,8 +22,7 @@ class CompiledFilterCurveView final : public juce::Component,
         return 140;
     }
 
-    void updateFromDevice(const magda::DeviceInfo& device,
-                          const ParamLinkContext* linkContext = nullptr);
+    void updateFromDevice(const magda::DeviceInfo& device, const ParamLinkContext* linkContext);
     void setCompiledPlugin(magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin);
 
     // CompiledDevicePanel — the slot component drives the 2-arg form
@@ -35,10 +34,7 @@ class CompiledFilterCurveView final : public juce::Component,
     void updateFromDevice(const magda::DeviceInfo& device) override {
         updateFromDevice(device, nullptr);
     }
-    void bindPlugin(te::Plugin* plugin) override {
-        setCompiledPlugin(
-            dynamic_cast<magda::daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin));
-    }
+    void bindPlugin(te::Plugin* plugin) override;
     void setOnParameterChanged(std::function<void(int, float)>) override {}  // read-only view
     int preferredHeight() const override {
         return getPreferredHeight();

@@ -285,4 +285,9 @@ const CompiledPresentationSpec& getMagdaGrainDelayPresentation() {
     return kSpec;
 }
 
+void CompiledGrainDelayCurveView::bindPlugin(te::Plugin* plugin) {
+    setCompiledPlugin(
+        dynamic_cast<magda::daw::audio::compiled::MagdaGrainDelayCompiledPlugin*>(plugin));
+}
+
 }  // namespace magda::daw::ui

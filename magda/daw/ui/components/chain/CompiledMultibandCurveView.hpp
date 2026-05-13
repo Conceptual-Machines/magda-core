@@ -44,10 +44,7 @@ class CompiledMultibandCurveView final : public juce::Component,
     juce::Component& component() override {
         return *this;
     }
-    void bindPlugin(te::Plugin* plugin) override {
-        setCompiledPlugin(
-            dynamic_cast<magda::daw::audio::compiled::MagdaMultibandCompiledPlugin*>(plugin));
-    }
+    void bindPlugin(te::Plugin* plugin) override;
     void setOnParameterChanged(std::function<void(int, float)> cb) override {
         onParameterChanged = std::move(cb);
     }

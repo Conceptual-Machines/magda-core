@@ -533,4 +533,9 @@ const CompiledPresentationSpec& getMagdaMultibandPresentation() {
     return kSpec;
 }
 
+void CompiledMultibandCurveView::bindPlugin(te::Plugin* plugin) {
+    setCompiledPlugin(
+        dynamic_cast<magda::daw::audio::compiled::MagdaMultibandCompiledPlugin*>(plugin));
+}
+
 }  // namespace magda::daw::ui

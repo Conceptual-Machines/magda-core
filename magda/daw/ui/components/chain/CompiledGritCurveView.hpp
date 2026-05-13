@@ -36,10 +36,7 @@ class CompiledGritCurveView final : public juce::Component,
     juce::Component& component() override {
         return *this;
     }
-    void bindPlugin(te::Plugin* plugin) override {
-        setCompiledPlugin(
-            dynamic_cast<magda::daw::audio::compiled::MagdaGritCompiledPlugin*>(plugin));
-    }
+    void bindPlugin(te::Plugin* plugin) override;
     void setOnParameterChanged(std::function<void(int, float)>) override {}
     int preferredHeight() const override {
         return getPreferredHeight();

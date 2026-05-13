@@ -56,6 +56,11 @@ void CompiledPhaserCurveView::setCompiledPlugin(
     compiledPlugin_ = plugin;
 }
 
+void CompiledPhaserCurveView::bindPlugin(te::Plugin* plugin) {
+    setCompiledPlugin(
+        dynamic_cast<magda::daw::audio::compiled::MagdaPhaserCompiledPlugin*>(plugin));
+}
+
 void CompiledPhaserCurveView::updateFromDevice(const magda::DeviceInfo& device) {
     deviceSnapshot_ = device;
     resampleFromPlugin();

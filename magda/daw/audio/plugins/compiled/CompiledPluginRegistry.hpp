@@ -6,6 +6,8 @@
 
 namespace magda::daw::audio::compiled {
 
+namespace te = tracktion::engine;
+
 /**
  * @brief Identity + factory of a single compiled-Faust plugin.
  *

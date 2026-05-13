@@ -230,4 +230,9 @@ const CompiledPresentationSpec& getMagdaSaturatorPresentation() {
     return kSpec;
 }
 
+void CompiledSaturatorCurveView::bindPlugin(te::Plugin* plugin) {
+    setCompiledPlugin(
+        dynamic_cast<magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin*>(plugin));
+}
+
 }  // namespace magda::daw::ui

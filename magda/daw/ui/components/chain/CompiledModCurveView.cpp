@@ -46,6 +46,10 @@ void CompiledModCurveView::setCompiledPlugin(
     compiledPlugin_ = plugin;
 }
 
+void CompiledModCurveView::bindPlugin(te::Plugin* plugin) {
+    setCompiledPlugin(dynamic_cast<magda::daw::audio::compiled::MagdaModCompiledPlugin*>(plugin));
+}
+
 void CompiledModCurveView::updateFromDevice(const magda::DeviceInfo& device) {
     deviceSnapshot_ = device;
     resampleFromPlugin();

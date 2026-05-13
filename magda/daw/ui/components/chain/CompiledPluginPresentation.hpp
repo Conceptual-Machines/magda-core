@@ -11,6 +11,8 @@
 
 namespace magda::daw::ui {
 
+namespace te = tracktion::engine;
+
 /// Tagged kind for the legacy *UI components a compiled plugin should
 /// suppress (so the wrong UI doesn't claim the slot via `containsIgnoreCase`).
 /// Grow this enum if a new legacy UI needs to be suppressed.
