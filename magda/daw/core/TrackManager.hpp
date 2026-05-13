@@ -336,8 +336,13 @@ class TrackManager {
     void updateDeviceParameters(DeviceId deviceId, const std::vector<ParameterInfo>& params);
     void setDeviceVisibleParameters(DeviceId deviceId, const std::vector<int>& visibleParams);
 
-    // Set a specific device parameter value
-    void setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex, float value);
+    // Set a specific device parameter value in ParameterInfo model units,
+    // not MAGDA-normalized automation/controller units.
+    void setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex,
+                                 ParameterModelValue value);
+    void setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex, float value) {
+        setDeviceParameterValue(devicePath, paramIndex, ParameterModelValue{value});
+    }
 
     /**
      * @brief Apply a deserialized DeviceInfo (from a .mps preset) to a live device.

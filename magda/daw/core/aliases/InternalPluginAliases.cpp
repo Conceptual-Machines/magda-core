@@ -48,6 +48,20 @@ constexpr AliasSpec kCompressorAliases[] = {
     {"makeup_gain", 4, "Output gain"},
 };
 
+constexpr AliasSpec kCompiledCompressorAliases[] = {
+    {"threshold", 0, "Threshold"},
+    {"ratio", 1, "Ratio"},
+    {"attack", 2, "Attack"},
+    {"release", 3, "Release"},
+    {"knee", 4, "Knee"},
+    {"makeup", 5, "Makeup"},
+    {"mix", 6, "Mix"},
+    {"output", 7, "Output"},
+    {"detector", 8, "Detector"},
+    {"link", 9, "Link"},
+    {"sc_hpf", 10, "SC HPF"},
+};
+
 // ------------------------------------------------------------------
 // Reverb ("reverb") — TE ReverbPlugin: room size / damping / wet / dry /
 // width / mode (freeze).
@@ -96,6 +110,140 @@ constexpr AliasSpec kFilterAliases[] = {
     {"mode", 1, "Mode"},
 };
 
+constexpr AliasSpec kCompiledFilterAliases[] = {
+    {"cutoff", 0, "Cutoff"}, {"resonance", 1, "Resonance"}, {"drive", 2, "Drive"},
+    {"engine", 3, "Engine"}, {"mode", 4, "Mode"},           {"limit", 5, "Limit"},
+};
+
+// ------------------------------------------------------------------
+// Saturator ("magda_saturator") — slot order matches
+// MagdaSaturatorCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_saturator.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledSaturatorAliases[] = {
+    {"drive", 0, "Drive"}, {"mode", 1, "Mode"}, {"bias", 2, "Bias"},
+    {"tone", 3, "Tone"},   {"mix", 4, "Mix"},   {"output", 5, "Output"},
+};
+
+// ------------------------------------------------------------------
+// Compiled Delay ("magda_delay") — slot order matches
+// MagdaDelayCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_delay.dsp. The legacy "delay" entry above maps to TE's
+// DelayPlugin and stays as a separate alias key for projects that
+// already had it instantiated; new chains use this one.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledDelayAliases[] = {
+    {"time", 0, "Time"},         {"division", 1, "Division"}, {"sync", 2, "Sync"},
+    {"feedback", 3, "Feedback"}, {"mix", 4, "Mix"},           {"tone", 5, "Tone"},
+    {"cross", 6, "Cross"},
+};
+
+constexpr AliasSpec kCompiledGrainDelayAliases[] = {
+    {"time", 0, "Time"},         {"division", 1, "Division"}, {"sync", 2, "Sync"},
+    {"size", 3, "Size"},         {"pitch", 4, "Pitch"},       {"spray", 5, "Spray"},
+    {"feedback", 6, "Feedback"}, {"mix", 7, "Mix"},
+};
+
+// ------------------------------------------------------------------
+// Grit ("magda_grit") — slot order matches MagdaGritCompiledPlugin::k*Slot
+// and the [idx:N] pins in magda_grit.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledGritAliases[] = {
+    {"frequency", 0, "Frequency"},
+    {"width", 1, "Width"},
+    {"amount", 2, "Amount"},
+    {"mode", 3, "Mode"},
+};
+
+// ------------------------------------------------------------------
+// Multiband ("magda_multiband") — slot order matches
+// MagdaMultibandCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_multiband.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledMultibandAliases[] = {
+    {"low_xo", 0, "Low XO"},
+    {"high_xo", 1, "High XO"},
+    {"depth", 2, "Depth"},
+    {"time", 3, "Time"},
+    {"low_gain", 4, "Low Gain"},
+    {"mid_gain", 5, "Mid Gain"},
+    {"high_gain", 6, "High Gain"},
+    {"mix", 7, "Mix"},
+    {"output", 8, "Output"},
+    {"low_thresh_above", 9, "Low Thresh Above"},
+    {"low_thresh_below", 10, "Low Thresh Below"},
+    {"low_ratio", 11, "Low Ratio"},
+    {"mid_thresh_above", 12, "Mid Thresh Above"},
+    {"mid_thresh_below", 13, "Mid Thresh Below"},
+    {"mid_ratio", 14, "Mid Ratio"},
+    {"high_thresh_above", 15, "High Thresh Above"},
+    {"high_thresh_below", 16, "High Thresh Below"},
+    {"high_ratio", 17, "High Ratio"},
+};
+
+// ------------------------------------------------------------------
+// Phaser ("magda_phaser") — slot order matches
+// MagdaPhaserCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_phaser.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledPhaserAliases[] = {
+    {"rate", 0, "Rate"},     {"depth", 1, "Depth"},   {"feedback", 2, "Feedback"},
+    {"stages", 3, "Stages"}, {"min_hz", 4, "Min Hz"}, {"max_hz", 5, "Max Hz"},
+    {"mix", 6, "Mix"},
+};
+
+// ------------------------------------------------------------------
+// Compiled MAGDA Mod ("magda_mod") — slot indices match
+// MagdaModCompiledPlugin::k*Slot and the [idx:N] pins in magda_mod.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledModAliases[] = {
+    {"mode", 0, "Mode"},    {"sync", 1, "Sync"},   {"rate", 2, "Rate"},
+    {"div", 3, "Division"}, {"depth", 4, "Depth"}, {"shape", 5, "Shape"},
+};
+
+// ------------------------------------------------------------------
+// Compiled MAGDA Chorus ("magda_chorus") — slot indices match
+// MagdaChorusCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_chorus.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledChorusAliases[] = {
+    {"voices", 0, "Voices"}, {"sync", 1, "Sync"},   {"rate", 2, "Rate"},
+    {"div", 3, "Division"},  {"depth", 4, "Depth"}, {"feedback", 5, "Feedback"},
+    {"mix", 6, "Mix"},       {"width", 7, "Width"},
+};
+
+// ------------------------------------------------------------------
+// Compiled MAGDA Flanger ("magda_flanger") — slot indices match
+// MagdaFlangerCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_flanger.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledFlangerAliases[] = {
+    {"sync", 0, "Sync"},         {"rate", 1, "Rate"}, {"div", 2, "Division"}, {"depth", 3, "Depth"},
+    {"feedback", 4, "Feedback"}, {"mix", 5, "Mix"},   {"width", 6, "Width"},
+};
+
+// ------------------------------------------------------------------
+// Compiled MAGDA Ring Mod ("magda_ring_mod") — slot indices match
+// MagdaRingModCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_ring_mod.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledRingModAliases[] = {
+    {"sync", 0, "Sync"}, {"freq", 1, "Frequency"}, {"div", 2, "Division"},  {"shape", 3, "Shape"},
+    {"mix", 4, "Mix"},   {"width", 5, "Width"},    {"source", 6, "Source"},
+};
+
+// ------------------------------------------------------------------
+// Compiled MAGDA Freq Shift ("magda_freq_shift") — slot indices match
+// MagdaFreqShiftCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_freq_shift.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledFreqShiftAliases[] = {
+    {"shift", 0, "Shift"},
+    {"feedback", 1, "Feedback"},
+    {"mix", 2, "Mix"},
+    {"spread", 3, "Spread"},
+};
+
 // ------------------------------------------------------------------
 // Pitch Shift ("pitchshift") — TE PitchShiftPlugin single param.
 // ------------------------------------------------------------------
@@ -125,6 +273,19 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"chorus", kChorusAliases, (int)std::size(kChorusAliases)},
     {"phaser", kPhaserAliases, (int)std::size(kPhaserAliases)},
     {"filter", kFilterAliases, (int)std::size(kFilterAliases)},
+    {"magda_filter", kCompiledFilterAliases, (int)std::size(kCompiledFilterAliases)},
+    {"magda_saturator", kCompiledSaturatorAliases, (int)std::size(kCompiledSaturatorAliases)},
+    {"magda_delay_compiled", kCompiledDelayAliases, (int)std::size(kCompiledDelayAliases)},
+    {"magda_grain_delay", kCompiledGrainDelayAliases, (int)std::size(kCompiledGrainDelayAliases)},
+    {"magda_grit", kCompiledGritAliases, (int)std::size(kCompiledGritAliases)},
+    {"magda_compressor", kCompiledCompressorAliases, (int)std::size(kCompiledCompressorAliases)},
+    {"magda_multiband", kCompiledMultibandAliases, (int)std::size(kCompiledMultibandAliases)},
+    {"magda_phaser", kCompiledPhaserAliases, (int)std::size(kCompiledPhaserAliases)},
+    {"magda_mod", kCompiledModAliases, (int)std::size(kCompiledModAliases)},
+    {"magda_chorus", kCompiledChorusAliases, (int)std::size(kCompiledChorusAliases)},
+    {"magda_flanger", kCompiledFlangerAliases, (int)std::size(kCompiledFlangerAliases)},
+    {"magda_ring_mod", kCompiledRingModAliases, (int)std::size(kCompiledRingModAliases)},
+    {"magda_freq_shift", kCompiledFreqShiftAliases, (int)std::size(kCompiledFreqShiftAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
     {"utility", kUtilityAliases, (int)std::size(kUtilityAliases)},
 };

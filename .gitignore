@@ -87,7 +87,8 @@ _CPack_Packages/
 # tree instead of cmake-build-*/. The real outputs live in the build
 # directory; if you see one of these in `git status`, delete it.
 magda/daw/generated/
-tests/magda_tests_include-*.cmake
+tests/*_include-*.cmake
+tests/*_tests-*.cmake
 
 # Catch2
 catch2-*

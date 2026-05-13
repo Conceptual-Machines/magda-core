@@ -43,6 +43,14 @@ class DeviceInspector : public BaseInspector {
     juce::Label latencyLabel_;
     juce::Label latencyValue_;
 
+    // Internal device metadata
+    juce::Label categoryLabel_;
+    juce::Label categoryValue_;
+    juce::Label codenameLabel_;
+    juce::Label codenameValue_;
+    juce::Label descriptionLabel_;
+    juce::TextEditor descriptionValue_;
+
     // Update methods
     void updateFromSelectedChainNode();
     void showDeviceControls(bool show);

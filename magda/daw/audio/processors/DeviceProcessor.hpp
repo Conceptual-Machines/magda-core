@@ -89,6 +89,16 @@ class DeviceProcessor {
      */
     virtual void populateParameters(DeviceInfo& info) const;
 
+    /**
+     * @brief Set a parameter by its stable ParameterInfo::paramIndex.
+     *
+     * The default bridges old name-based processors by indexing
+     * getParameterNames(). Processors with slot-indexed/native parameter
+     * models override this directly.
+     */
+    virtual void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, ParameterModelValue value);
+
     // =========================================================================
     // Gain Stage
     // =========================================================================
@@ -189,7 +199,7 @@ class ToneGeneratorProcessor : public DeviceProcessor {
 
     // Single-parameter sync from DeviceInfo (values in real units: TE osc enum / bandLimit / Hz /
     // dB)
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
 
     // Initialize with default values - call after processor is fully set up
     void initializeDefaults();
@@ -252,7 +262,7 @@ class MagdaSamplerProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };
 
@@ -270,7 +280,7 @@ class FourOscProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };
 
@@ -291,7 +301,25 @@ class FaustProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
+    float getParameterByIndex(int paramIndex) const;
+};
+
+/**
+ * @brief Processor for native filters compiled from Faust DSP sources.
+ *
+ * These plugins use the same `[idx:N]` slot metadata as FaustPlugin,
+ * but their AutomatableParameters store native Faust values directly
+ * instead of normalized 0..1 values.
+ */
+class CompiledFaustProcessor : public DeviceProcessor {
+  public:
+    CompiledFaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };
 
@@ -310,7 +338,7 @@ class EqualiserProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };
 
@@ -322,7 +350,7 @@ class CompressorProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };
 
@@ -334,7 +362,7 @@ class DelayProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };
 
@@ -346,7 +374,7 @@ class ReverbProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };
 
@@ -358,7 +386,7 @@ class ChorusProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };
 
@@ -370,7 +398,7 @@ class PhaserProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };
 
@@ -382,7 +410,7 @@ class FilterProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };
 
@@ -394,7 +422,7 @@ class PitchShiftProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };
 
@@ -414,7 +442,7 @@ class UtilityProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 
   private:
@@ -429,7 +457,7 @@ class ImpulseResponseProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };
 
@@ -457,7 +485,7 @@ class ArpeggiatorProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 
   private:
@@ -484,7 +512,7 @@ class StepSequencerProcessor : public DeviceProcessor {
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
 
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 
   private:
@@ -534,7 +562,7 @@ class ExternalPluginProcessor : public DeviceProcessor, public te::AutomatablePa
      * @param paramIndex Index into the plugin's automatable parameters
      * @param value Normalized value (0-1) or actual value depending on parameter type
      */
-    void setParameterByIndex(int paramIndex, float value);
+    void setParameterByIndex(int paramIndex, float value) override;
 
     /**
      * @brief Get a parameter value by index

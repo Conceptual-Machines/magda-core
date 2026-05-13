@@ -42,6 +42,10 @@ enum class InternalPlugin {
     MidiChordEngine,
     StepSequencer,
     Faust,
+    Mod,
+    Flanger,
+    RingMod,
+    FreqShift,
 };
 
 /// Vendor of an internal plugin. TracktionEngine = stock TE plugin (gets TE
@@ -65,12 +69,11 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
     static const std::vector<InternalPluginInfo> kPlugins = {
         // Effects (TE stock)
         {"Equaliser", "eq", DeviceType::Effect, InternalPlugin::Equaliser, V::TracktionEngine},
-        {"Compressor", "compressor", DeviceType::Effect, InternalPlugin::Compressor,
-         V::TracktionEngine},
+        {"Compressor", "magda_compressor", DeviceType::Effect, InternalPlugin::Compressor,
+         V::Magda},
         {"Reverb", "reverb", DeviceType::Effect, InternalPlugin::Reverb, V::TracktionEngine},
         {"Delay", "delay", DeviceType::Effect, InternalPlugin::Delay, V::TracktionEngine},
-        {"Chorus", "chorus", DeviceType::Effect, InternalPlugin::Chorus, V::TracktionEngine},
-        {"Phaser", "phaser", DeviceType::Effect, InternalPlugin::Phaser, V::TracktionEngine},
+        {"Chorus", "magda_chorus", DeviceType::Effect, InternalPlugin::Chorus, V::Magda},
         {"Filter", "lowpass", DeviceType::Effect, InternalPlugin::Filter, V::TracktionEngine},
         {"Utility", "utility", DeviceType::Effect, InternalPlugin::Utility, V::TracktionEngine},
         {"Pitch Shift", "pitchshift", DeviceType::Effect, InternalPlugin::PitchShift,
@@ -79,6 +82,11 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
          V::TracktionEngine},
         {"Test Tone", "tone", DeviceType::Effect, InternalPlugin::TestTone, V::TracktionEngine},
         // Effects (MAGDA-native)
+        {"Phaser", "magda_phaser", DeviceType::Effect, InternalPlugin::Phaser, V::Magda},
+        {"Mod", "magda_mod", DeviceType::Effect, InternalPlugin::Mod, V::Magda},
+        {"Flanger", "magda_flanger", DeviceType::Effect, InternalPlugin::Flanger, V::Magda},
+        {"Ring Mod", "magda_ring_mod", DeviceType::Effect, InternalPlugin::RingMod, V::Magda},
+        {"Freq Shift", "magda_freq_shift", DeviceType::Effect, InternalPlugin::FreqShift, V::Magda},
         {"Faust", "faust", DeviceType::Effect, InternalPlugin::Faust, V::Magda},
         // Instruments (TE stock)
         {"4OSC Synth", "4osc", DeviceType::Instrument, InternalPlugin::FourOsc, V::TracktionEngine},
@@ -102,6 +110,8 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
 inline bool isTracktionEngineStockPlugin(const juce::String& pluginId) {
     if (pluginId.isEmpty())
         return false;
+    if (pluginId.equalsIgnoreCase("compressor"))
+        return true;  // legacy TE compressor projects
     for (const auto& entry : getInternalPlugins()) {
         if (entry.pluginId.equalsIgnoreCase(pluginId))
             return entry.vendor == InternalPluginVendor::TracktionEngine;

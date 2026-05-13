@@ -364,8 +364,8 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     const float bakedTeMin = bakedInfo.teMinValue;
     const float bakedTeSpan = bakedInfo.teMaxValue - bakedInfo.teMinValue;
     const bool bakedUseTeRange = bakedIsDeviceParam && bakedTeSpan > 0.0f &&
-                                 (std::abs(bakedInfo.minValue - bakedInfo.teMinValue) > 1e-6f ||
-                                  std::abs(bakedInfo.maxValue - bakedInfo.teMaxValue) > 1e-6f);
+                                 !ParameterUtils::infoMatchesTeRange(bakedInfo) &&
+                                 !ParameterUtils::isDisplayMappedInternalValue(bakedInfo);
     // For the info == TE-range path (most internal plugins, VSTs without
     // AI-Detect), we still need normalizedToReal to honour info.scale/
     // scaleAnchor. Precompute the info once — convertToTEValue itself
@@ -377,11 +377,10 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
             return bakedTeMin + static_cast<float>(magdaNormalized) * bakedTeSpan;
         if (!bakedIsDeviceParam)
             return convertToTEValue(lane.target, param, magdaNormalized);
-        if (bakedInfo.maxValue > bakedInfo.minValue)
-            return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), bakedInfo);
-        if (bakedTeSpan > 0.0f)
-            return bakedTeMin + static_cast<float>(magdaNormalized) * bakedTeSpan;
-        return static_cast<float>(magdaNormalized);
+        return ParameterUtils::normalizedToModelValue(
+                   ParameterNormalizedValue::clamped(static_cast<float>(magdaNormalized)),
+                   bakedInfo)
+            .value;
     };
 
     // Bake: write ONE TE point per source MAGDA point. te::AutomationCurve
@@ -508,11 +507,9 @@ float AutomationPlaybackEngine::convertToTEValue(const AutomationTarget& target,
                 return range.getStart() +
                        static_cast<float>(magdaNormalized) * (range.getEnd() - range.getStart());
             }
-            const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
-                                            std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
-            if (infoMatchesTeRange && info.maxValue > info.minValue)
-                return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), info);
-            return info.teMinValue + static_cast<float>(magdaNormalized) * teSpan;
+            return ParameterUtils::normalizedToModelValue(
+                       ParameterNormalizedValue::clamped(static_cast<float>(magdaNormalized)), info)
+                .value;
         }
     }
 }
@@ -626,12 +623,7 @@ double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& targ
                 return juce::jlimit(0.0, 1.0,
                                     static_cast<double>((teValue - range.getStart()) / span));
             }
-            const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
-                                            std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
-            if (infoMatchesTeRange && info.maxValue > info.minValue)
-                return ParameterUtils::realToNormalized(teValue, info);
-            return juce::jlimit(0.0, 1.0,
-                                static_cast<double>((teValue - info.teMinValue) / teSpan));
+            return ParameterUtils::modelToNormalizedValue(ParameterModelValue{teValue}, info).value;
         }
     }
 }

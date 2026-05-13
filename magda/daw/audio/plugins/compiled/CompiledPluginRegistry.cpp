@@ -1,0 +1,62 @@
+#include "CompiledPluginRegistry.hpp"
+
+#include "MagdaChorusCompiledPlugin.hpp"
+#include "MagdaCompressorCompiledPlugin.hpp"
+#include "MagdaDelayCompiledPlugin.hpp"
+#include "MagdaFilterCompiledPlugin.hpp"
+#include "MagdaFlangerCompiledPlugin.hpp"
+#include "MagdaFreqShiftCompiledPlugin.hpp"
+#include "MagdaGrainDelayCompiledPlugin.hpp"
+#include "MagdaGritCompiledPlugin.hpp"
+#include "MagdaModCompiledPlugin.hpp"
+#include "MagdaMultibandCompiledPlugin.hpp"
+#include "MagdaPhaserCompiledPlugin.hpp"
+#include "MagdaRingModCompiledPlugin.hpp"
+#include "MagdaSaturatorCompiledPlugin.hpp"
+
+namespace magda::daw::audio::compiled {
+
+// Per-device specs are defined alongside each plugin's wrapper (in its own
+// .cpp). The accessors below are the single point of contact between this
+// registry and the plugin TUs — no static self-registration, no link-order
+// magic. To add a new compiled plugin: write its spec accessor next to the
+// wrapper and add a line below.
+const CompiledPluginSpec& getMagdaFilterSpec();
+const CompiledPluginSpec& getMagdaSaturatorSpec();
+const CompiledPluginSpec& getMagdaDelaySpec();
+const CompiledPluginSpec& getMagdaGrainDelaySpec();
+const CompiledPluginSpec& getMagdaGritSpec();
+const CompiledPluginSpec& getMagdaMultibandSpec();
+const CompiledPluginSpec& getMagdaPhaserSpec();
+const CompiledPluginSpec& getMagdaCompressorSpec();
+const CompiledPluginSpec& getMagdaModSpec();
+const CompiledPluginSpec& getMagdaChorusSpec();
+const CompiledPluginSpec& getMagdaFlangerSpec();
+const CompiledPluginSpec& getMagdaRingModSpec();
+const CompiledPluginSpec& getMagdaFreqShiftSpec();
+
+namespace {
+
+const CompiledPluginSpec* const kAllSpecs[] = {
+    &getMagdaFilterSpec(),     &getMagdaSaturatorSpec(),  &getMagdaDelaySpec(),
+    &getMagdaGrainDelaySpec(), &getMagdaGritSpec(),       &getMagdaMultibandSpec(),
+    &getMagdaPhaserSpec(),     &getMagdaCompressorSpec(), &getMagdaModSpec(),
+    &getMagdaChorusSpec(),     &getMagdaFlangerSpec(),    &getMagdaRingModSpec(),
+    &getMagdaFreqShiftSpec(),
+};
+
+}  // namespace
+
+std::span<const CompiledPluginSpec* const> getAllCompiledPluginSpecs() {
+    return {kAllSpecs, std::size(kAllSpecs)};
+}
+
+const CompiledPluginSpec* findCompiledPluginSpec(const juce::String& pluginId) {
+    for (const auto* spec : kAllSpecs) {
+        if (pluginId.equalsIgnoreCase(spec->pluginId))
+            return spec;
+    }
+    return nullptr;
+}
+
+}  // namespace magda::daw::audio::compiled

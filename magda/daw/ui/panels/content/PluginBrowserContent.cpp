@@ -12,6 +12,7 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
+#include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "core/AppPaths.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
@@ -359,13 +360,15 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
                                                      audio::StepSequencerPlugin::xmlTypeName, false,
                                                      "MIDI"));
     list.push_back(PluginBrowserInfo::createInternal("Equaliser", "eq", false, "EQ"));
-    list.push_back(
-        PluginBrowserInfo::createInternal("Compressor", "compressor", false, "Dynamics"));
     list.push_back(PluginBrowserInfo::createInternal("Reverb", "reverb", false, "Reverb"));
-    list.push_back(PluginBrowserInfo::createInternal("Delay", "delay", false, "Delay"));
-    list.push_back(PluginBrowserInfo::createInternal("Chorus", "chorus", false, "Modulation"));
-    list.push_back(PluginBrowserInfo::createInternal("Phaser", "phaser", false, "Modulation"));
-    list.push_back(PluginBrowserInfo::createInternal("Filter", "lowpass", false, "Filter"));
+    list.push_back(PluginBrowserInfo::createInternal("Lowpass", "lowpass", false, "Filter"));
+    // Compiled-Faust devices come from the registry — displayName / category /
+    // pluginId live with the wrapper. Adding a new compiled device picks up
+    // here automatically.
+    for (const auto* spec : audio::compiled::getAllCompiledPluginSpecs()) {
+        list.push_back(PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId, false,
+                                                         spec->browserCategory));
+    }
     list.push_back(PluginBrowserInfo::createInternal("Pitch Shift", "pitchshift", false, "Pitch"));
     list.push_back(
         PluginBrowserInfo::createInternal("IR Reverb", "impulseresponse", false, "Reverb"));

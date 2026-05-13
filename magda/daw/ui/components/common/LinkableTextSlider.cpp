@@ -1,9 +1,9 @@
 #include "LinkableTextSlider.hpp"
 
-#include "ParamLinkResolver.hpp"
 #include "core/LinkModeManager.hpp"
-#include "ui/components/chain/ParamLinkMenu.hpp"
-#include "ui/components/chain/ParamModulationPainter.hpp"
+#include "ui/components/chain/params/ParamLinkMenu.hpp"
+#include "ui/components/chain/params/ParamLinkResolver.hpp"
+#include "ui/components/chain/params/ParamModulationPainter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 

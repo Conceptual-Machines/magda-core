@@ -2,37 +2,38 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include <unordered_map>
-
-#include "ArpeggiatorUI.hpp"
-#include "ChorusUI.hpp"
-#include "CompressorUI.hpp"
-#include "DelayUI.hpp"
-#include "DrumGridUI.hpp"
-#include "EqualiserUI.hpp"
-#include "FaustCustomUIRegistry.hpp"
-#include "FaustUI.hpp"
-#include "FilterUI.hpp"
-#include "FourOscUI.hpp"
-#include "ImpulseResponseUI.hpp"
 #include "NodeComponent.hpp"
-#include "ParamGridComponent.hpp"
-#include "ParamSlotComponent.hpp"
-#include "PhaserUI.hpp"
-#include "PitchShiftUI.hpp"
-#include "ReverbUI.hpp"
-#include "SamplerUI.hpp"
-#include "StepSequencerUI.hpp"
-#include "ToneGeneratorUI.hpp"
-#include "UtilityUI.hpp"
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
+#include "compiled/CompiledPluginPresentation.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
+#include "custom_ui/ArpeggiatorUI.hpp"
+#include "custom_ui/ChorusUI.hpp"
+#include "custom_ui/CompressorUI.hpp"
+#include "custom_ui/DelayUI.hpp"
+#include "custom_ui/EqualiserUI.hpp"
+#include "custom_ui/FaustCustomUIRegistry.hpp"
+#include "custom_ui/FaustUI.hpp"
+#include "custom_ui/FilterUI.hpp"
+#include "custom_ui/FourOscUI.hpp"
+#include "custom_ui/ImpulseResponseUI.hpp"
+#include "custom_ui/PhaserUI.hpp"
+#include "custom_ui/PitchShiftUI.hpp"
+#include "custom_ui/ReverbUI.hpp"
+#include "custom_ui/SamplerUI.hpp"
+#include "custom_ui/StepSequencerUI.hpp"
+#include "custom_ui/ToneGeneratorUI.hpp"
+#include "custom_ui/UtilityUI.hpp"
+#include "drum_grid/DrumGridUI.hpp"
+#include "params/ParamHostComponent.hpp"
+#include "params/ParamSlotComponent.hpp"
+#include "slot/DeviceCustomUIManager.hpp"
+#include "slot/DeviceParameterChangeHandler.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -221,6 +222,9 @@ class DeviceSlotComponent : public NodeComponent,
     bool isArpeggiator_ = false;
     bool isStepSequencer_ = false;
     bool isFaust_ = false;
+    bool isAISupported_ = false;
+    bool isSoundDesignSupported_ = false;
+    const CompiledPresentationSpec* compiledPresentation_ = nullptr;
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 
@@ -236,40 +240,21 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> onButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
 
-    // Parameter grid (owns slots + pagination)
-    std::unique_ptr<ParamGridComponent> paramGrid_;
+    // Parameter host (owns slots + pagination, delegates layout to a
+    // DeviceParamLayout strategy chosen at construction).
+    std::unique_ptr<ParamHostComponent> paramGrid_;
 
-    // Custom UI for internal devices
-    std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;
-    std::unique_ptr<SamplerUI> samplerUI_;
-    std::unique_ptr<DrumGridUI> drumGridUI_;
-    std::unique_ptr<FourOscUI> fourOscUI_;
-    static constexpr int NO_PENDING_TAB = -1;
-    int pendingCustomUITabIndex_ = NO_PENDING_TAB;
+    DeviceCustomUIManager customUI_;
 
     // Learn-mode debounce: plugins like Vital fire parameterValueChanged for
     // many crosstalk / display parameters when the user touches a single
     // control, which makes the highlighted slot jitter. Lock onto the first
     // param that reports a meaningful change and refuse to switch for a short
     // window so the highlight stays on what the user actually touched.
-    int learnLockedParamIndex_ = -1;
-    juce::uint32 learnLockTimeMs_ = 0;
-    std::unordered_map<int, float> learnLastValueByParam_;
-    std::unique_ptr<EqualiserUI> eqUI_;
-    std::unique_ptr<CompressorUI> compressorUI_;
-    std::unique_ptr<ReverbUI> reverbUI_;
-    std::unique_ptr<DelayUI> delayUI_;
-    std::unique_ptr<ChorusUI> chorusUI_;
-    std::unique_ptr<PhaserUI> phaserUI_;
-    std::unique_ptr<FilterUI> filterUI_;
-    std::unique_ptr<PitchShiftUI> pitchShiftUI_;
-    std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
-    std::unique_ptr<UtilityUI> utilityUI_;
+    ParameterLearnHighlightState learnHighlight_;
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<FaustCustomView> faustCustomView_;
-    std::unique_ptr<ChordPanelContent> chordEngineUI_;
-    std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
-    std::unique_ptr<StepSequencerUI> stepSequencerUI_;
+    std::unique_ptr<CompiledDevicePanel> compiledPanel_;
 
     static constexpr int METER_STRIP_WIDTH = 18;  // wide enough for slider thumb overlay
     magda::LevelMeter levelMeter_;
@@ -284,10 +269,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<juce::TextButton> presetsButton_;
     // Vertical gain slider overlaid on the meter
     std::unique_ptr<juce::Slider> gainSlider_;
-    daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;
-    daw::audio::StepSequencerPlugin* stepSeqPlugin_ = nullptr;
     int lastArpNote_ = -1;
-    daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
     std::array<int, 32> lastChordNotes_{};
     int lastChordCount_ = 0;
 

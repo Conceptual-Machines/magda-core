@@ -246,8 +246,7 @@ juce::String FaustAgent::buildUserMessage(const std::string& message) const {
     if (lastFailedSource_.empty())
         return juce::String::fromUTF8(message.c_str());
 
-    return "My previous Faust code failed to compile:\n\n```\n" +
-           juce::String(lastFailedSource_) +
+    return "My previous Faust code failed to compile:\n\n```\n" + juce::String(lastFailedSource_) +
            "\n```\n\nCompiler error:\n" + juce::String(lastCompileError_) +
            "\n\nUser request: " + juce::String::fromUTF8(message.c_str()) +
            "\n\nFix the code based on the compiler error and the user's request. "

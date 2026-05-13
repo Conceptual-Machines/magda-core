@@ -311,6 +311,8 @@ void TrackManager::removeDeviceFromChain(TrackId trackId, RackId rackId, ChainId
         if (it != elements.end()) {
             DBG("Removed device: " << magda::getDevice(*it).name << " (id=" << deviceId
                                    << ") from chain " << chainId);
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
+                ChainNodePath::chainDevice(trackId, rackId, chainId, deviceId));
             elements.erase(it);
             notifyTrackDevicesChanged(trackId);
         }
@@ -458,6 +460,7 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
         if (it != elements.end()) {
             DBG("Removed top-level device: " << magda::getDevice(*it).name
                                              << " (id=" << devicePath.topLevelDeviceId << ")");
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
             elements.erase(it);
             notifyTrackDevicesChanged(devicePath.trackId);
         }
@@ -491,6 +494,7 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
         if (it != elements.end()) {
             DBG("Removed nested device via path: " << magda::getDevice(*it).name
                                                    << " (id=" << deviceId << ")");
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
             elements.erase(it);
             notifyTrackDevicesChanged(devicePath.trackId);
         }
@@ -687,13 +691,13 @@ void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
 }
 
 void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex,
-                                           float value) {
+                                           ParameterModelValue value) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         const int storedIndex = findStoredParameterIndex(*device, paramIndex);
         if (storedIndex >= 0) {
-            device->parameters[static_cast<size_t>(storedIndex)].currentValue = value;
+            device->parameters[static_cast<size_t>(storedIndex)].currentValue = value.value;
             // Use granular notification - only sync this one parameter, not all 543
-            notifyDeviceParameterChanged(device->id, paramIndex, value);
+            notifyDeviceParameterChanged(device->id, paramIndex, value.value);
         }
     }
 }

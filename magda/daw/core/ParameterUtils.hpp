@@ -38,6 +38,36 @@ float normalizedToReal(float normalized, const ParameterInfo& info);
 float realToNormalized(float real, const ParameterInfo& info);
 
 /**
+ * @brief True when ParameterInfo real/display range matches the value range
+ *        stored by the owning Tracktion AutomatableParameter.
+ */
+bool infoMatchesTeRange(const ParameterInfo& info);
+
+/**
+ * @brief True for MAGDA internal parameters that expose a normalized TE param
+ *        but store/display a scaled real value in DeviceInfo.currentValue.
+ */
+bool isDisplayMappedInternalValue(const ParameterInfo& info);
+
+/**
+ * @brief Convert a MAGDA-normalized lane/controller value to the model value
+ *        stored in DeviceInfo.currentValue and passed through TrackManager.
+ *
+ * For normal internal params and compiled/interpreted Faust params this returns
+ * the scaled real/display value. For external plugin params with an AI-detect
+ * display range override it returns the TE-native value, so UI preview and
+ * automation echo do not fight ExternalPluginProcessor's native listener.
+ */
+ParameterModelValue normalizedToModelValue(ParameterNormalizedValue normalized,
+                                           const ParameterInfo& info);
+
+/**
+ * @brief Inverse of normalizedToModelValue().
+ */
+ParameterNormalizedValue modelToNormalizedValue(ParameterModelValue model,
+                                                const ParameterInfo& info);
+
+/**
  * @brief Apply modulation to a base normalized value
  *
  * @param baseNormalized Base parameter value (0-1)

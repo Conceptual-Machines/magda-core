@@ -9,7 +9,7 @@
 #include "core/ParameterInfo.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
-#include "ui/components/chain/ParamModulationPainter.hpp"
+#include "ui/components/chain/params/ParamModulationPainter.hpp"
 
 namespace magda::daw::ui {
 

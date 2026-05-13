@@ -111,6 +111,13 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
     lfo->phaseParam->setParameterFromHost(modInfo.phaseOffset, juce::dontSendNotification);
     lfo->syncTypeParam->setParameterFromHost(syncType, juce::dontSendNotification);
     lfo->rateTypeParam->setParameterFromHost(rateType, juce::dontSendNotification);
+
+    // Gate-on-trigger-source: TE will drive the gate from MIDI itself only
+    // when this flag is set AND syncType==note. Toggle it whenever the
+    // trigger mode changes at runtime. Note-trigger arms it; switching to
+    // Free / Audio / Transport disarms it (and the setter clears any held
+    // gate so output resumes).
+    lfo->setGateOnTriggerSource(modInfo.triggerMode == LFOTriggerMode::MIDI);
 }
 
 /**

@@ -82,22 +82,26 @@ class TextSlider : public juce::Component,
     void setParameterInfo(const magda::ParameterInfo& info) {
         setRange(static_cast<double>(info.minValue), static_cast<double>(info.maxValue));
 
-        // Map scaleAnchor into TextSlider's linear-ratio skew so the drag
-        // behaviour lines up with ParameterUtils' anchor handling. Exact
-        // display/parse still goes through ParameterUtils below, so the
-        // slider and the automation lane cannot disagree on values.
+        // Map scaleAnchor into TextSlider's drag-skew so the slider
+        // matches ParameterUtils' anchor handling. The actual
+        // projection (linear vs log) is selected by `useLogProjection_`
+        // below — without it, scale=Logarithmic + scaleAnchor would
+        // compute a log anchor-ratio and then project linearly, which
+        // lands the anchor at the wrong pixel position.
+        useLogProjection_ =
+            (info.scale == magda::ParameterScale::Logarithmic && info.minValue > 0.0f);
         skewFactor_ = 1.0;
         if (info.scaleAnchor > info.minValue && info.scaleAnchor < info.maxValue &&
             info.maxValue > info.minValue) {
-            // Use log-space anchor ratio for logarithmic params to match
-            // ParameterUtils::normalizedToReal/realToNormalized.
-            double anchorRatio;
-            if (info.scale == magda::ParameterScale::Logarithmic && info.minValue > 0.0f) {
-                anchorRatio = std::log(static_cast<double>(info.scaleAnchor) / info.minValue) /
-                              std::log(static_cast<double>(info.maxValue) / info.minValue);
-            } else {
-                anchorRatio = (info.scaleAnchor - info.minValue) / (info.maxValue - info.minValue);
-            }
+            // The skew is solved so that pow(0.5, 1/skew) = anchorRatio,
+            // i.e. the slider's pixel midpoint maps to the anchor's
+            // position in whichever projected space (linear or log) the
+            // drag handler then uses.
+            const double anchorRatio =
+                useLogProjection_
+                    ? (std::log(static_cast<double>(info.scaleAnchor) / info.minValue) /
+                       std::log(static_cast<double>(info.maxValue) / info.minValue))
+                    : (info.scaleAnchor - info.minValue) / (info.maxValue - info.minValue);
             if (anchorRatio > 0.0 && anchorRatio < 1.0)
                 skewFactor_ = std::log(0.5) / std::log(anchorRatio);
         }
@@ -105,9 +109,11 @@ class TextSlider : public juce::Component,
         paramInfoCopy_ = info;
         hasParamInfo_ = true;
 
-        // A custom UI may have called setValueFormatter to override per-param
-        // formatting (e.g. 4OSC pan wants "0" at centre, not the plugin's
-        // native "0R"). Don't clobber an explicit formatter.
+        // ParameterInfo is the value-space contract for this slider. Reset
+        // any previous parser installed for another parameter so a reused
+        // ParamSlot cannot keep a stale normalized/display assumption after
+        // pagination or chain rebuilds. The formatter is preserved if the
+        // host called setValueFormatter() — see hasExplicitFormatter_.
         if (!hasExplicitFormatter_) {
             valueFormatter_ = [this](double real) {
                 return magda::ParameterUtils::formatValue(static_cast<float>(real), paramInfoCopy_);
@@ -180,16 +186,18 @@ class TextSlider : public juce::Component,
         updateLabel();
     }
 
-    // Custom value formatter - takes the slider's real value, returns display string.
-    // This override sticks: setParameterInfo will not replace it with the generic
-    // ParameterUtils formatter, so plugin-UI-specific formatting wins.
+    // Custom value formatter — takes the slider's real value, returns
+    // display string. Sticky against setParameterInfo() so custom UIs
+    // (e.g. FourOscUI's "L50"/"R50" pan label) survive the refresh cycle
+    // DeviceSlotComponent runs whenever the device's ParameterInfo
+    // republishes.
     void setValueFormatter(std::function<juce::String(double)> formatter) {
         valueFormatter_ = std::move(formatter);
         hasExplicitFormatter_ = static_cast<bool>(valueFormatter_);
         updateLabel();
     }
 
-    // Custom value parser - takes user input string, returns normalized value (0-1)
+    // Custom value parser - takes user input string, returns the slider's real value.
     void setValueParser(std::function<double(const juce::String&)> parser) {
         valueParser_ = std::move(parser);
     }
@@ -217,6 +225,20 @@ class TextSlider : public juce::Component,
 
     bool isBeingDragged() const {
         return isLeftButtonDrag_;
+    }
+
+    void cancelGesture() {
+        const bool wasLeftDrag = isLeftButtonDrag_;
+        isLeftButtonDrag_ = false;
+        isShiftDrag_ = false;
+        hasDragged_ = false;
+        overrideLatchedThisGesture_ = false;
+        if (wasLeftDrag && hasAutomationTarget_) {
+            auto& mgr = magda::AutomationManager::getInstance();
+            mgr.setTargetUserTouched(automationTarget_, false);
+            mgr.setTargetTouchSuppressed(automationTarget_, false);
+            mgr.clearTouchBaseline(automationTarget_);
+        }
     }
 
     // Bind this slider to an automation target so mouseDown/mouseUp automatically
@@ -503,7 +525,25 @@ class TextSlider : public juce::Component,
                 }
 
                 double newValue;
-                if (skewFactor_ != 1.0) {
+                if (useLogProjection_) {
+                    // Log slider: drag operates in log-normalised space
+                    // [0,1] = log(val/min) / log(max/min). Equal pixel
+                    // movements give equal RATIO changes on the value;
+                    // an optional skew keeps an anchor at the midpoint.
+                    const double logRange = std::log(maxValue_ / minValue_);
+                    const double startNorm = std::log(dragStartValue_ / minValue_) / logRange;
+                    if (skewFactor_ != 1.0) {
+                        const double startSkewed = std::pow(startNorm, skewFactor_);
+                        const double skewedNorm =
+                            juce::jlimit(0.0, 1.0, startSkewed + pixelDelta / pixelRange);
+                        const double unskewed = std::pow(skewedNorm, 1.0 / skewFactor_);
+                        newValue = minValue_ * std::exp(unskewed * logRange);
+                    } else {
+                        const double newNorm =
+                            juce::jlimit(0.0, 1.0, startNorm + pixelDelta / pixelRange);
+                        newValue = minValue_ * std::exp(newNorm * logRange);
+                    }
+                } else if (skewFactor_ != 1.0) {
                     // Skewed drag: work in normalised (0-1) space with skew applied
                     double startNorm = (dragStartValue_ - minValue_) / (maxValue_ - minValue_);
                     double startSkewed = std::pow(startNorm, skewFactor_);
@@ -614,6 +654,7 @@ class TextSlider : public juce::Component,
     double maxValue_ = 1.0;
     double interval_ = 0.01;
     double skewFactor_ = 1.0;
+    bool useLogProjection_ = false;
     double dragStartValue_ = 0.0;
     int dragStartX_ = 0;
     int dragStartY_ = 0;
@@ -627,13 +668,18 @@ class TextSlider : public juce::Component,
     juce::String emptyText_ = "-";
     bool showEmptyText_ = false;
     std::function<juce::String(double)>
-        valueFormatter_;  // Custom value formatting (normalized → string)
+        valueFormatter_;  // Custom value formatting (real value -> string)
     std::function<double(const juce::String&)>
-        valueParser_;                     // Custom value parsing (string → normalized)
+        valueParser_;                     // Custom value parsing (string -> real value)
     magda::ParameterInfo paramInfoCopy_;  // Populated by setParameterInfo
     bool hasParamInfo_ = false;
-    bool hasExplicitFormatter_ =
-        false;  // setValueFormatter override; sticky across setParameterInfo
+    // True if a custom formatter was installed via setValueFormatter().
+    // Stops setParameterInfo() from clobbering it on every refresh —
+    // FourOscUI installs format-specific labels (e.g. "L50"/"R50" for pan)
+    // at construction that the generic ParameterUtils formatter cannot
+    // produce. The parser is still replaced — only the display side is
+    // sticky.
+    bool hasExplicitFormatter_ = false;
 
     void updateLabel() {
         // Show empty text instead of value when disabled/empty
