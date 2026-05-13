@@ -14,7 +14,7 @@
 #include "MagdaRingModCompiledPlugin.hpp"
 #include "MagdaSaturatorCompiledPlugin.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
-#include "processors/DeviceProcessor.hpp"
+#include "processors/CompiledFaustProcessor.hpp"
 
 namespace magda::daw::audio::compiled {
 

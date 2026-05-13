@@ -161,6 +161,8 @@ target_sources(magda_daw PRIVATE
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
     FaustResources.cpp
+    processors/CompiledFaustProcessor.cpp
+    processors/CompiledFaustProcessor.hpp
     processors/DeviceProcessor.cpp
     MidiBridge.cpp
     midi/MidiDeviceMatch.cpp
