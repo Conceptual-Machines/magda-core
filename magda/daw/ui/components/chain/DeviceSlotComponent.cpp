@@ -4,8 +4,6 @@
 
 #include <algorithm>
 
-#include "../../../../agents/internal_plugins.hpp"
-#include "../../../../agents/sound_design_agent.hpp"
 #include "ai/AIPanelComponent.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
@@ -39,6 +37,7 @@
 #include "params/ParamSlotComponent.hpp"
 #include "project/ProjectManager.hpp"
 #include "slot/DevicePresetMenu.hpp"
+#include "slot/DeviceSlotTraits.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/dialogs/ParameterConfigDialog.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -133,24 +132,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // NodeComponent (the base class) — it owns the controller-indicator
     // dots and the refresh logic.
 
-    isDrumGrid_ = drum_grid_slot::isDrumGridPluginId(device.pluginId);
-    isChordEngine_ =
-        device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName);
-    isArpeggiator_ = device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName);
-    isStepSequencer_ =
-        device.pluginId.containsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName);
-    isFaust_ = device.pluginId.containsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName);
-    isAISupported_ = magda::isDeviceAISupported(device.pluginId);
-    isSoundDesignSupported_ = magda::isSoundDesignSupported(device.pluginId);
-    compiledPresentation_ = findCompiledPresentation(device.pluginId);
-    isTracktionDevice_ = magda::isTracktionEngineStockPlugin(device.pluginId);
-    if (isTracktionDevice_) {
-        tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
-                                                             BinaryData::fadlogotracktion_svgSize);
-        if (tracktionLogo_)
-            tracktionLogo_->replaceColour(juce::Colours::black,
-                                          DarkTheme::getSecondaryTextColour());
-    }
+    refreshDeviceTraits(device.pluginId);
 
     drum_grid_slot::applySlotName(*this, isDrumGrid_, device.name);
     setBypassed(device.bypassed);
@@ -1245,6 +1227,30 @@ void DeviceSlotComponent::showSavePluginPresetDialog() {
         });
 }
 
+void DeviceSlotComponent::refreshDeviceTraits(const juce::String& pluginId) {
+    const auto traits = makeDeviceSlotTraits(pluginId);
+
+    isDrumGrid_ = traits.isDrumGrid;
+    isChordEngine_ = traits.isChordEngine;
+    isArpeggiator_ = traits.isArpeggiator;
+    isStepSequencer_ = traits.isStepSequencer;
+    isFaust_ = traits.isFaust;
+    isAISupported_ = traits.isAISupported;
+    isSoundDesignSupported_ = traits.isSoundDesignSupported;
+    compiledPresentation_ = traits.compiledPresentation;
+    isTracktionDevice_ = traits.isTracktionDevice;
+
+    if (isTracktionDevice_ && tracktionLogo_ == nullptr) {
+        tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
+                                                             BinaryData::fadlogotracktion_svgSize);
+        if (tracktionLogo_)
+            tracktionLogo_->replaceColour(juce::Colours::black,
+                                          DarkTheme::getSecondaryTextColour());
+    } else if (!isTracktionDevice_) {
+        tracktionLogo_.reset();
+    }
+}
+
 void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Detect plugin replacement BEFORE assignment so we can drop a stale
     // currentPresetName_ reference (a preset is tied to one plugin).
@@ -1259,26 +1265,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     }
 
     device_ = device;
-    isDrumGrid_ = drum_grid_slot::isDrumGridPluginId(device.pluginId);
-    isChordEngine_ =
-        device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName);
-    isArpeggiator_ = device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName);
-    isStepSequencer_ =
-        device.pluginId.containsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName);
-    isFaust_ = device.pluginId.containsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName);
-    isAISupported_ = magda::isDeviceAISupported(device.pluginId);
-    isSoundDesignSupported_ = magda::isSoundDesignSupported(device.pluginId);
-    compiledPresentation_ = findCompiledPresentation(device.pluginId);
-    isTracktionDevice_ = magda::isTracktionEngineStockPlugin(device.pluginId);
-    if (isTracktionDevice_ && tracktionLogo_ == nullptr) {
-        tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
-                                                             BinaryData::fadlogotracktion_svgSize);
-        if (tracktionLogo_)
-            tracktionLogo_->replaceColour(juce::Colours::black,
-                                          DarkTheme::getSecondaryTextColour());
-    } else if (!isTracktionDevice_) {
-        tracktionLogo_.reset();
-    }
+    refreshDeviceTraits(device.pluginId);
     drum_grid_slot::applySlotName(*this, isDrumGrid_, device.name);
     setBypassed(device.bypassed);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);

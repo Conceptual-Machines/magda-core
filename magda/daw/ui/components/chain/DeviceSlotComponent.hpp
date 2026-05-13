@@ -3,9 +3,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "NodeComponent.hpp"
-#include "audio/plugins/ArpeggiatorPlugin.hpp"
-#include "audio/plugins/MidiChordEnginePlugin.hpp"
-#include "audio/plugins/StepSequencerPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/DeviceInfo.hpp"
@@ -311,6 +308,7 @@ class DeviceSlotComponent : public NodeComponent,
     void updateScButtonState();  // Update SC button appearance based on sidechain config
     void showMultiOutMenu();     // Show popup menu for multi-output routing
     void showContextMenu();      // Show right-click context menu
+    void refreshDeviceTraits(const juce::String& pluginId);
 
     // Helper to check if this is an internal device
     bool isInternalDevice() const {

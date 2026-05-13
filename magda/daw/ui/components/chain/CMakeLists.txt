@@ -8,6 +8,7 @@ target_sources(magda_daw_app PRIVATE
     slot/DeviceCustomUIManager.cpp
     slot/DeviceParameterChangeHandler.cpp
     slot/DevicePresetMenu.cpp
+    slot/DeviceSlotTraits.cpp
     drum_grid/DeviceSlotDrumGridBridge.cpp
     drum_grid/DrumGridUI.cpp
     drum_grid/PadChainPanel.cpp
@@ -75,6 +76,7 @@ target_sources(magda_daw_app PRIVATE
     slot/DeviceCustomUIManager.hpp
     slot/DeviceParameterChangeHandler.hpp
     slot/DevicePresetMenu.hpp
+    slot/DeviceSlotTraits.hpp
     drum_grid/DeviceSlotDrumGridBridge.hpp
     drum_grid/DrumGridUI.hpp
     drum_grid/PadChainPanel.hpp
