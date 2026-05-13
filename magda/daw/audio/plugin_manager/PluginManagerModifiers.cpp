@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "../../core/RackInfo.hpp"
+#include "../../core/SidechainTraversal.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/aliases/AutoAliasGenerator.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
@@ -564,63 +565,13 @@ void PluginManager::rebuildSidechainLFOCache() {
             collectDeviceLFOs(device);
         }
 
-        // Also collect from racks on this track (skip racks with external sidechain)
-        {
-            bool hasRackSidechain = false;
-            for (const auto& element : track.chainElements) {
-                if (isRack(element)) {
-                    const auto& rack = getRack(element);
-                    if (rack.sidechain.sourceTrackId != INVALID_TRACK_ID) {
-                        hasRackSidechain = true;
-                        break;
-                    }
-                    // Also check devices inside rack for sidechain sources
-                    for (const auto& chain : rack.chains) {
-                        for (const auto& ce : chain.elements) {
-                            if (isDevice(ce) &&
-                                getDevice(ce).sidechain.sourceTrackId != INVALID_TRACK_ID) {
-                                hasRackSidechain = true;
-                                break;
-                            }
-                        }
-                        if (hasRackSidechain)
-                            break;
-                    }
-                }
-            }
-            if (!hasRackSidechain) {
-                rackSyncManager_.collectLFOModifiersWithModes(track.id, lfos, modes);
-            }
-        }
+        // Also collect from racks on this track. If any nested rack scope has
+        // an external sidechain source, the rack manager will collect matching
+        // LFOs in the source-track pass below.
+        if (!sidechain::elementsContainExternalSource(track.chainElements))
+            rackSyncManager_.collectLFOModifiersWithModes(track.id, lfos, modes);
 
         selfTrackCount = static_cast<int>(lfos.size());
-
-        auto chainElementsContainSidechainSource = [&](auto&& self,
-                                                       const std::vector<ChainElement>& elements,
-                                                       TrackId sourceTrackId) -> bool {
-            for (const auto& element : elements) {
-                if (isDevice(element)) {
-                    const auto& device = getDevice(element);
-                    if ((device.sidechain.type == SidechainConfig::Type::MIDI ||
-                         device.sidechain.type == SidechainConfig::Type::Audio) &&
-                        device.sidechain.sourceTrackId == sourceTrackId) {
-                        return true;
-                    }
-                } else if (isRack(element)) {
-                    const auto& rack = getRack(element);
-                    if ((rack.sidechain.type == SidechainConfig::Type::MIDI ||
-                         rack.sidechain.type == SidechainConfig::Type::Audio) &&
-                        rack.sidechain.sourceTrackId == sourceTrackId) {
-                        return true;
-                    }
-                    for (const auto& chain : rack.chains) {
-                        if (self(self, chain.elements, sourceTrackId))
-                            return true;
-                    }
-                }
-            }
-            return false;
-        };
 
         // 2. Cross-track LFOs: for each OTHER track that has a device or rack
         //    sidechained from this track, collect only the destination LFOs
@@ -629,8 +580,7 @@ void PluginManager::rebuildSidechainLFOCache() {
             if (otherTrack.id == track.id)
                 continue;
 
-            if (!chainElementsContainSidechainSource(chainElementsContainSidechainSource,
-                                                     otherTrack.chainElements, track.id))
+            if (!sidechain::elementsUseSource(otherTrack.chainElements, track.id))
                 continue;
 
             // Collect LFO modifiers only from devices on the destination track

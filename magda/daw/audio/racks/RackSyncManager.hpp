@@ -74,6 +74,13 @@ class RackSyncManager {
     te::Plugin* getInnerPlugin(DeviceId deviceId) const;
 
     /**
+     * @brief Refresh native audio sidechain source routing for rack-internal plugins.
+     */
+    void syncSidechains(
+        const RackInfo& rackInfo,
+        const std::function<te::AudioTrack*(TrackId sourceTrackId)>& resolveSourceTrack);
+
+    /**
      * @brief Get the RackInstance plugin on the TE track for a synced rack
      * @param rackId The MAGDA rack ID
      * @return The RackInstance plugin, or nullptr if not found

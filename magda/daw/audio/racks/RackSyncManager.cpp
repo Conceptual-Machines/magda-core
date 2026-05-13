@@ -315,6 +315,49 @@ te::Plugin* RackSyncManager::getInnerPlugin(DeviceId deviceId) const {
     return nullptr;
 }
 
+void RackSyncManager::syncSidechains(
+    const RackInfo& rackInfo,
+    const std::function<te::AudioTrack*(TrackId sourceTrackId)>& resolveSourceTrack) {
+    auto syncedIt = syncedRacks_.find(rackInfo.id);
+    if (syncedIt == syncedRacks_.end())
+        return;
+
+    auto& synced = syncedIt->second;
+
+    std::function<void(const RackInfo&)> syncRack = [&](const RackInfo& rack) {
+        for (const auto& chain : rack.chains) {
+            for (const auto& element : chain.elements) {
+                if (isDevice(element)) {
+                    const auto& device = getDevice(element);
+                    auto pluginIt = synced.innerPlugins.find(device.id);
+                    if (pluginIt == synced.innerPlugins.end() || !pluginIt->second)
+                        continue;
+
+                    auto* plugin = pluginIt->second.get();
+                    if (!plugin->canSidechain())
+                        continue;
+
+                    if (device.sidechain.isActive() &&
+                        device.sidechain.type == SidechainConfig::Type::Audio) {
+                        if (auto* sourceTrack =
+                                resolveSourceTrack(device.sidechain.sourceTrackId)) {
+                            plugin->setSidechainSourceID(sourceTrack->itemID);
+                            plugin->guessSidechainRouting();
+                            continue;
+                        }
+                    }
+
+                    plugin->setSidechainSourceID({});
+                } else if (isRack(element)) {
+                    syncRack(getRack(element));
+                }
+            }
+        }
+    };
+
+    syncRack(rackInfo);
+}
+
 te::Plugin* RackSyncManager::getRackInstance(RackId rackId) const {
     auto it = syncedRacks_.find(rackId);
     if (it != syncedRacks_.end()) {

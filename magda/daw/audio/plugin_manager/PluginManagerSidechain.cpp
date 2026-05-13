@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "../../core/RackInfo.hpp"
+#include "../../core/SidechainTraversal.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/aliases/AutoAliasGenerator.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
@@ -34,11 +35,7 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
     if (!trackInfo || !teTrack)
         return;
 
-    for (const auto& element : trackInfo->chainElements) {
-        if (!isDevice(element))
-            continue;
-
-        const auto& device = getDevice(element);
+    auto syncTopLevelDevice = [&](const DeviceInfo& device) {
         auto plugin = getPlugin(device.id);
 
         // --- Audio sidechain (TE native) ---
@@ -61,6 +58,16 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
         } else {
             removeMidiReceive(trackId, device.id);
         }
+    };
+
+    for (const auto& element : trackInfo->chainElements) {
+        if (isDevice(element)) {
+            syncTopLevelDevice(getDevice(element));
+        } else if (isRack(element)) {
+            rackSyncManager_.syncSidechains(getRack(element), [this](TrackId sourceTrackId) {
+                return trackController_.getAudioTrack(sourceTrackId);
+            });
+        }
     }
 }
 
@@ -77,61 +84,15 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
     // Audio-triggered mods don't need the monitor — audio peaks come from
     // LevelMeterPlugin via AudioBridge timer, not from this plugin.
     //
-    // Must recurse into rack chains: an LFO on a 4OSC sitting inside a rack
-    // chain still listens on this track's MIDI bus for retrigger, so missing
-    // it here would leave the SidechainMonitor uninstalled and self-trigger
-    // LFOs silently dead in that scope.
-    std::function<bool(const std::vector<ChainElement>&)> hasMidiTriggeredMod =
-        [&](const std::vector<ChainElement>& elements) -> bool {
-        for (const auto& element : elements) {
-            if (isDevice(element)) {
-                for (const auto& mod : getDevice(element).mods)
-                    if (mod.triggerMode == LFOTriggerMode::MIDI)
-                        return true;
-            } else if (isRack(element)) {
-                const auto& rack = getRack(element);
-                for (const auto& mod : rack.mods)
-                    if (mod.triggerMode == LFOTriggerMode::MIDI)
-                        return true;
-                for (const auto& chain : rack.chains)
-                    if (hasMidiTriggeredMod(chain.elements))
-                        return true;
-            }
-        }
-        return false;
-    };
-    if (hasMidiTriggeredMod(trackInfo->chainElements))
+    // Must recurse into rack chains: an LFO on a device sitting inside a rack
+    // chain still listens on this track's MIDI bus for retrigger.
+    if (sidechain::elementsHaveMidiTriggeredMod(trackInfo->chainElements))
         return true;
 
     // Check if this track is a MIDI sidechain source for any other track
     for (const auto& track : TrackManager::getInstance().getTracks()) {
-        for (const auto& element : track.chainElements) {
-            if (isDevice(element)) {
-                const auto& device = getDevice(element);
-                if (device.sidechain.type == SidechainConfig::Type::MIDI &&
-                    device.sidechain.sourceTrackId == trackId) {
-                    return true;
-                }
-            } else if (isRack(element)) {
-                const auto& rack = getRack(element);
-                // Check rack-level sidechain
-                if (rack.sidechain.type == SidechainConfig::Type::MIDI &&
-                    rack.sidechain.sourceTrackId == trackId) {
-                    return true;
-                }
-                for (const auto& chain : rack.chains) {
-                    for (const auto& ce : chain.elements) {
-                        if (isDevice(ce)) {
-                            const auto& device = getDevice(ce);
-                            if (device.sidechain.type == SidechainConfig::Type::MIDI &&
-                                device.sidechain.sourceTrackId == trackId) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        if (sidechain::elementsUseSource(track.chainElements, trackId, SidechainConfig::Type::MIDI))
+            return true;
     }
 
     return false;
@@ -218,7 +179,7 @@ bool PluginManager::trackNeedsAudioSidechainMonitor(TrackId trackId) const {
     // The sidechain routing type (MIDI vs Audio) is independent of the LFO trigger
     // mode, so we check the mod's triggerMode rather than sidechain.type.
     auto deviceHasAudioTrigger = [&](const DeviceInfo& device) {
-        if (device.sidechain.sourceTrackId != trackId)
+        if (!sidechain::deviceUsesSource(device, trackId))
             return false;
         for (const auto& mod : device.mods) {
             if (mod.triggerMode == LFOTriggerMode::Audio)
@@ -233,21 +194,8 @@ bool PluginManager::trackNeedsAudioSidechainMonitor(TrackId trackId) const {
                 if (deviceHasAudioTrigger(getDevice(element)))
                     return true;
             } else if (isRack(element)) {
-                const auto& rack = getRack(element);
-                // Check rack-level mods
-                if (rack.sidechain.sourceTrackId == trackId) {
-                    for (const auto& mod : rack.mods) {
-                        if (mod.triggerMode == LFOTriggerMode::Audio)
-                            return true;
-                    }
-                }
-                // Check devices inside rack
-                for (const auto& chain : rack.chains) {
-                    for (const auto& ce : chain.elements) {
-                        if (isDevice(ce) && deviceHasAudioTrigger(getDevice(ce)))
-                            return true;
-                    }
-                }
+                if (sidechain::rackHasAudioTriggeredModForSource(getRack(element), trackId))
+                    return true;
             }
         }
     }
