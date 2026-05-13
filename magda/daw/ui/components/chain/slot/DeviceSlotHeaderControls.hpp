@@ -43,4 +43,8 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
                                        const magda::DeviceInfo& device, bool isInternalDevice,
                                        DeviceSlotCollapsedControls controls, int maxButtonSize);
 
+void applyMidiOnlyDeviceHeaderVisibility(const DeviceSlotTraits& traits,
+                                         const magda::DeviceInfo& device,
+                                         juce::Component* modButton, juce::Component* macroButton);
+
 }  // namespace magda::daw::ui

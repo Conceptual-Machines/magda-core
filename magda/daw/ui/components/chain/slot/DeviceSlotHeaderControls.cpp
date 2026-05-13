@@ -157,4 +157,15 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
     }
 }
 
+void applyMidiOnlyDeviceHeaderVisibility(const DeviceSlotTraits& traits,
+                                         const magda::DeviceInfo& device,
+                                         juce::Component* modButton, juce::Component* macroButton) {
+    if (device.deviceType != magda::DeviceType::MIDI)
+        return;
+
+    setVisibleIfPresent(modButton, false);
+    if (!traits.isArpeggiator && !traits.isStepSequencer)
+        setVisibleIfPresent(macroButton, false);
+}
+
 }  // namespace magda::daw::ui

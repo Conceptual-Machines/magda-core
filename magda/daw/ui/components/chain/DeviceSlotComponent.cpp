@@ -1997,13 +1997,7 @@ void DeviceSlotComponent::createCustomUI() {
         wirePadChainLinkCallbacks();
     }
 
-    // MIDI-only plugins have no mappable parameters — hide mod buttons.
-    // Arpeggiator and Step Sequencer keep macros for user-assignable control.
-    if (device_.deviceType == magda::DeviceType::MIDI) {
-        modButton_->setVisible(false);
-        if (!traits_.isArpeggiator && !traits_.isStepSequencer)
-            macroButton_->setVisible(false);
-    }
+    applyMidiOnlyDeviceHeaderVisibility(traits_, device_, modButton_.get(), macroButton_.get());
 }
 
 void DeviceSlotComponent::readAndPushModMatrix() {
