@@ -6,7 +6,6 @@
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/FaustParamPool.hpp"
 #include "plugins/FaustPlugin.hpp"
-#include "processors/ParameterInfoBuilder.hpp"
 
 namespace magda {
 
@@ -15,73 +14,16 @@ namespace magda {
 // =============================================================================
 
 MagdaSamplerProcessor::MagdaSamplerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : DeviceProcessor(deviceId, std::move(plugin)) {}
-
-int MagdaSamplerProcessor::getParameterCount() const {
-    if (plugin_)
-        return plugin_->getAutomatableParameters().size();
-    return 0;
-}
-
-ParameterInfo MagdaSamplerProcessor::getParameterInfo(int index) const {
-    if (!plugin_)
-        return {};
-    auto params = plugin_->getAutomatableParameters();
-    if (index < 0 || index >= params.size())
-        return {};
-    return makeInfoFromTeParam(index, params[index]);
-}
-
-void MagdaSamplerProcessor::populateParameters(DeviceInfo& info) const {
-    info.parameters.clear();
-    int count = getParameterCount();
-    for (int i = 0; i < count; ++i) {
-        info.parameters.push_back(getParameterInfo(i));
-    }
-}
-
-void MagdaSamplerProcessor::setParameterByIndex(int paramIndex, float value) {
-    if (!plugin_)
-        return;
-
-    auto params = plugin_->getAutomatableParameters();
-    if (paramIndex >= 0 && paramIndex < params.size()) {
-        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
-    }
-}
-
-float MagdaSamplerProcessor::getParameterByIndex(int paramIndex) const {
-    if (!plugin_)
-        return 0.0f;
-
-    auto params = plugin_->getAutomatableParameters();
-    if (paramIndex >= 0 && paramIndex < params.size())
-        return params[paramIndex]->getCurrentValue();
-    return 0.0f;
-}
+    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
 
 // =============================================================================
 // FourOscProcessor
 // =============================================================================
 
 FourOscProcessor::FourOscProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : DeviceProcessor(deviceId, std::move(plugin)) {}
+    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
 
-int FourOscProcessor::getParameterCount() const {
-    if (plugin_)
-        return plugin_->getAutomatableParameters().size();
-    return 0;
-}
-
-ParameterInfo FourOscProcessor::getParameterInfo(int index) const {
-    if (!plugin_)
-        return {};
-    auto params = plugin_->getAutomatableParameters();
-    if (index < 0 || index >= params.size())
-        return {};
-    auto* param = params[index];
-    ParameterInfo info = makeInfoFromTeParam(index, param);
-
+void FourOscProcessor::customiseParameterInfo(int index, ParameterInfo& info) const {
     // filterFreq stores a MIDI note in 0..135.076 that TE turns into Hz via
     // valueToString. The custom UI pins A4 (note 69, 440 Hz) to the visual
     // centre with setSkewForCentre(69.0); mirror that on the shared
@@ -89,7 +31,9 @@ ParameterInfo FourOscProcessor::getParameterInfo(int index) const {
     // playback all agree with the plugin UI's skew. Without this, visual
     // centre lands on note 67.5 / ~404 Hz, which doesn't match what a user
     // dragging the FREQ knob sees.
-    if (param && param->paramID == "filterFreq")
+    if (auto params = getAutomatableParameters(); index >= 0 && index < params.size() &&
+                                                  params[index] &&
+                                                  params[index]->paramID == "filterFreq")
         info.scaleAnchor = 69.0f;
 
     // 4OSC exposes raw values (note number for filter freq, 0..100 for
@@ -109,35 +53,6 @@ ParameterInfo FourOscProcessor::getParameterInfo(int index) const {
         provider->paramIndex = index;
         info.displayText = std::move(provider);
     }
-    return info;
-}
-
-void FourOscProcessor::populateParameters(DeviceInfo& info) const {
-    info.parameters.clear();
-    int count = getParameterCount();
-    for (int i = 0; i < count; ++i) {
-        info.parameters.push_back(getParameterInfo(i));
-    }
-}
-
-void FourOscProcessor::setParameterByIndex(int paramIndex, float value) {
-    if (!plugin_)
-        return;
-
-    auto params = plugin_->getAutomatableParameters();
-    if (paramIndex >= 0 && paramIndex < params.size()) {
-        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
-    }
-}
-
-float FourOscProcessor::getParameterByIndex(int paramIndex) const {
-    if (!plugin_)
-        return 0.0f;
-
-    auto params = plugin_->getAutomatableParameters();
-    if (paramIndex >= 0 && paramIndex < params.size())
-        return params[paramIndex]->getCurrentValue();
-    return 0.0f;
 }
 
 // =============================================================================

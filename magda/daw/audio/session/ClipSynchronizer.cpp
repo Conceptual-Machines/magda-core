@@ -9,6 +9,8 @@
 #include "../../core/ClipOperations.hpp"
 #include "../../core/TempoUtils.hpp"
 #include "../../core/TrackManager.hpp"
+#include "ArrangementClipSyncPlanner.hpp"
+#include "ClipLaunchQuantization.hpp"
 #include "TrackController.hpp"
 #include "WarpMarkerManager.hpp"
 
@@ -47,31 +49,6 @@ void ClipSynchronizer::reallocateAndNotify() {
             onGraphReallocated();
     } else {
     }
-}
-
-// Map our LaunchQuantize enum to Tracktion Engine's LaunchQType
-static te::LaunchQType toTELaunchQType(LaunchQuantize q) {
-    switch (q) {
-        case LaunchQuantize::None:
-            return te::LaunchQType::none;
-        case LaunchQuantize::EightBars:
-            return te::LaunchQType::eightBars;
-        case LaunchQuantize::FourBars:
-            return te::LaunchQType::fourBars;
-        case LaunchQuantize::TwoBars:
-            return te::LaunchQType::twoBars;
-        case LaunchQuantize::OneBar:
-            return te::LaunchQType::bar;
-        case LaunchQuantize::HalfBar:
-            return te::LaunchQType::half;
-        case LaunchQuantize::QuarterBar:
-            return te::LaunchQType::quarter;
-        case LaunchQuantize::EighthBar:
-            return te::LaunchQType::eighth;
-        case LaunchQuantize::SixteenthBar:
-            return te::LaunchQType::sixteenth;
-    }
-    return te::LaunchQType::none;
 }
 
 static void syncAudioSourceInterpretationToLoopInfo(te::WaveAudioClip& audioClip,
@@ -113,7 +90,10 @@ static void initialiseSourceLoopBeatsFromMetadata(ClipInfo& clip) {
 
 ClipSynchronizer::ClipSynchronizer(te::Edit& edit, TrackController& trackController,
                                    WarpMarkerManager& warpMarkerManager)
-    : edit_(edit), trackController_(trackController), warpMarkerManager_(warpMarkerManager) {
+    : edit_(edit),
+      trackController_(trackController),
+      warpSync_(edit_, warpMarkerManager, clipIds_,
+                [this](ClipId clipId) { return getSessionTeClip(clipId); }) {
     ClipManager::getInstance().addListener(this);
     TrackManager::getInstance().addListener(this);
 }
@@ -150,59 +130,16 @@ void ClipSynchronizer::clipsChanged() {
     // Only sync arrangement clips - session clips are managed by SessionClipScheduler
     const auto& arrangementClips = clipManager.getArrangementClips();
 
-    // Build set of current arrangement clip IDs for fast lookup
-    std::unordered_set<ClipId> currentClipIds;
-    currentClipIds.reserve(arrangementClips.size());
-    for (const auto& clip : arrangementClips) {
-        currentClipIds.insert(clip.id);
-    }
-
-    // Find arrangement clips that are in the engine but no longer in ClipManager (deleted)
-    std::vector<ClipId> clipsToRemove;
-    {
-        juce::ScopedLock lock(clipLock_);
-        for (const auto& [clipId, engineId] : clipIdToEngineId_) {
-            if (currentClipIds.find(clipId) == currentClipIds.end()) {
-                clipsToRemove.push_back(clipId);
-            }
-        }
-    }
+    auto arrangementPlan =
+        buildArrangementClipSyncPlan(edit_, trackController_, arrangementClips, clipIds_);
 
     // Remove deleted clips from engine
-    for (ClipId clipId : clipsToRemove) {
+    for (ClipId clipId : arrangementPlan.clipsToRemove) {
         removeClipFromEngine(clipId);
     }
 
-    // engineId → parent TE track, used below to detect cross-track moves
-    namespace te = tracktion;
-    std::unordered_map<std::string, te::AudioTrack*> engineIdToParentTrack;
-    for (auto* track : te::getAudioTracks(edit_)) {
-        for (auto* teClip : track->getClips()) {
-            engineIdToParentTrack[teClip->itemID.toString().toStdString()] = track;
-        }
-    }
-
-    // Topology-only diff: sync new clips and clips that crossed tracks.
-    // Property changes already flow through clipPropertyChanged.
-    std::vector<ClipId> clipsToSync;
-    {
-        juce::ScopedLock lock(clipLock_);
-        for (const auto& clip : arrangementClips) {
-            auto mapIt = clipIdToEngineId_.find(clip.id);
-            if (mapIt == clipIdToEngineId_.end()) {
-                clipsToSync.push_back(clip.id);
-                continue;
-            }
-            auto trackIt = engineIdToParentTrack.find(mapIt->second);
-            auto* expectedTrack = trackController_.getAudioTrack(clip.trackId);
-            if (trackIt == engineIdToParentTrack.end() || trackIt->second != expectedTrack) {
-                clipsToSync.push_back(clip.id);
-            }
-        }
-    }
-
-    bool arrangementTopologyChanged = !clipsToRemove.empty();
-    for (ClipId clipId : clipsToSync) {
+    bool arrangementTopologyChanged = !arrangementPlan.clipsToRemove.empty();
+    for (ClipId clipId : arrangementPlan.clipsToSync) {
         arrangementTopologyChanged =
             syncArrangementClipToEngine(clipId) || arrangementTopologyChanged;
     }
@@ -282,7 +219,7 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                     // Update launch quantization (lightweight CachedValue, always safe)
                     auto* lq = teClip->getLaunchQuantisation();
                     if (lq) {
-                        lq->type = toTELaunchQType(clip->launchQuantize);
+                        lq->type = clip_launch::toTracktionLaunchQType(clip->launchQuantize);
                     }
 
                     // AutoTempo handling for audio clips
@@ -471,28 +408,23 @@ void ClipSynchronizer::removeTeClipByEngineId(const std::string& engineId) {
 }
 
 void ClipSynchronizer::removeClipFromEngine(ClipId clipId) {
-    juce::ScopedLock lock(clipLock_);
-
     // Remove clip from engine
-    auto it = clipIdToEngineId_.find(clipId);
-    if (it == clipIdToEngineId_.end()) {
+    auto engineId = clipIds_.getEngineId(clipId);
+    if (!engineId) {
         DBG("removeClipFromEngine: Clip not in engine: " << clipId);
         return;
     }
-
-    std::string engineId = it->second;
 
     // Find the clip in Tracktion Engine and remove it
     // We need to find which track contains this clip
     for (auto* track : tracktion::getAudioTracks(edit_)) {
         for (auto* clip : track->getClips()) {
-            if (clip->itemID.toString().toStdString() == engineId) {
+            if (clip->itemID.toString().toStdString() == *engineId) {
                 // Found the clip - remove it
                 clip->removeFromParent();
 
                 // Remove from mappings
-                clipIdToEngineId_.erase(it);
-                engineIdToClipId_.erase(engineId);
+                clipIds_.erase(clipId);
 
                 DBG("removeClipFromEngine: Removed clip " << clipId);
                 return;
@@ -500,24 +432,25 @@ void ClipSynchronizer::removeClipFromEngine(ClipId clipId) {
         }
     }
 
-    DBG("removeClipFromEngine: Clip not found in Tracktion Engine: " << engineId);
+    DBG("removeClipFromEngine: Clip not found in Tracktion Engine: " << *engineId);
 }
 
 te::Clip* ClipSynchronizer::getArrangementTeClip(ClipId clipId) const {
-    juce::ScopedLock lock(clipLock_);
-
-    auto it = clipIdToEngineId_.find(clipId);
-    if (it == clipIdToEngineId_.end())
+    auto engineId = clipIds_.getEngineId(clipId);
+    if (!engineId)
         return nullptr;
 
-    const auto& engineId = it->second;
     for (auto* track : te::getAudioTracks(edit_)) {
         for (auto* teClip : track->getClips()) {
-            if (teClip->itemID.toString().toStdString() == engineId)
+            if (teClip->itemID.toString().toStdString() == *engineId)
                 return teClip;
         }
     }
     return nullptr;
+}
+
+std::optional<std::string> ClipSynchronizer::getArrangementEngineId(ClipId clipId) const {
+    return clipIds_.getEngineId(clipId);
 }
 
 // =============================================================================
@@ -669,7 +602,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         // Set per-clip launch quantization
         audioClipPtr->setUsesGlobalLaunchQuatisation(false);
         if (auto* lq = audioClipPtr->getLaunchQuantisation()) {
-            lq->type = toTELaunchQType(clip->launchQuantize);
+            lq->type = clip_launch::toTracktionLaunchQType(clip->launchQuantize);
         }
 
         // Sync session-applicable audio properties at creation
@@ -794,7 +727,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         // Set per-clip launch quantization
         midiClipPtr->setUsesGlobalLaunchQuatisation(false);
         if (auto* lq = midiClipPtr->getLaunchQuantisation()) {
-            lq->type = toTELaunchQType(clip->launchQuantize);
+            lq->type = clip_launch::toTracktionLaunchQType(clip->launchQuantize);
         }
 
         // Set LaunchHandle looping state at creation time
@@ -860,8 +793,9 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
     // Track playback mode is managed by SessionClipScheduler::syncTrackPlaybackModes()
     // which runs before this method is called.
 
-    auto qType =
-        (clip && !forceImmediate) ? toTELaunchQType(clip->launchQuantize) : te::LaunchQType::none;
+    auto qType = (clip && !forceImmediate)
+                     ? clip_launch::toTracktionLaunchQType(clip->launchQuantize)
+                     : te::LaunchQType::none;
 
     // Override the TE slot's own launch quantize to match our intent.
     // Without this, play(std::nullopt) uses the slot's stored quantize
@@ -871,20 +805,14 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
     }
 
     // Calculate the target beat (nullopt = immediate).
-    auto targetBeat = (qType != te::LaunchQType::none) ? computeQuantizedBeat(clip->launchQuantize)
-                                                       : std::optional<te::MonotonicBeat>{};
+    auto targetBeat = (qType != te::LaunchQType::none)
+                          ? clip_launch::computeQuantizedBeat(edit_, clip->launchQuantize)
+                          : std::optional<te::MonotonicBeat>{};
 
     // Store the precise quantized launch time for SessionRecorder
     if (targetBeat && clip) {
-        // Convert monotonic beat back to edit beat for time conversion
-        auto* ctx = edit_.getCurrentPlaybackContext();
-        auto syncPoint = ctx ? ctx->getSyncPoint() : std::nullopt;
-        if (syncPoint) {
-            double offset = syncPoint->monotonicBeat.v.inBeats() - syncPoint->beat.inBeats();
-            auto editBeat = te::BeatPosition::fromBeats(targetBeat->v.inBeats() - offset);
-            double quantizedTime = edit_.tempoSequence.beatsToTime(editBeat).inSeconds();
-            lastLaunchTimeByTrack_[clip->trackId] = quantizedTime;
-        }
+        if (auto quantizedTime = clip_launch::toEditTimeSeconds(edit_, *targetBeat))
+            lastLaunchTimeByTrack_[clip->trackId] = *quantizedTime;
     }
 
     // Stop other clips on the same track:
@@ -932,26 +860,6 @@ double ClipSynchronizer::getLastLaunchTimeForTrack(TrackId trackId) const {
     return (it != lastLaunchTimeByTrack_.end()) ? it->second : 0.0;
 }
 
-std::optional<te::MonotonicBeat> ClipSynchronizer::computeQuantizedBeat(LaunchQuantize quantize) {
-    auto qType = toTELaunchQType(quantize);
-    if (qType == te::LaunchQType::none)
-        return std::nullopt;
-
-    auto* ctx = edit_.getCurrentPlaybackContext();
-    auto syncPoint = ctx ? ctx->getSyncPoint() : std::nullopt;
-    if (!syncPoint)
-        return std::nullopt;
-
-    auto quantizedBeat = te::getNext(qType, edit_.tempoSequence, syncPoint->beat);
-    if (quantizedBeat <= syncPoint->beat) {
-        quantizedBeat = te::getNext(qType, edit_.tempoSequence,
-                                    syncPoint->beat + te::BeatDuration::fromBeats(0.001));
-    }
-
-    double offset = syncPoint->monotonicBeat.v.inBeats() - syncPoint->beat.inBeats();
-    return te::MonotonicBeat{te::BeatPosition::fromBeats(quantizedBeat.inBeats() + offset)};
-}
-
 void ClipSynchronizer::stopSessionClipQueued(ClipId clipId, LaunchQuantize quantize) {
     auto* teClip = getSessionTeClip(clipId);
     if (!teClip)
@@ -961,7 +869,7 @@ void ClipSynchronizer::stopSessionClipQueued(ClipId clipId, LaunchQuantize quant
     if (!launchHandle)
         return;
 
-    auto targetBeat = computeQuantizedBeat(quantize);
+    auto targetBeat = clip_launch::computeQuantizedBeat(edit_, quantize);
     launchHandle->stop(targetBeat ? *targetBeat : std::optional<te::MonotonicBeat>{});
 
     // Reset synth plugins to prevent stuck MIDI notes
@@ -1075,76 +983,39 @@ void ClipSynchronizer::configureSessionAutoTempo(te::WaveAudioClip* audioClip,
 }
 
 // =============================================================================
-// Warp Marker Operations (Delegated to WarpMarkerManager)
+// Warp Marker Operations
 // =============================================================================
 
-// Helper: build a clip-ID-to-engine-ID map that works for both arrangement and
-// session clips.  For arrangement clips the entry already exists in
-// clipIdToEngineId_.  For session clips we resolve the TE clip via the slot and
-// add a temporary entry so WarpMarkerManager's findWaveAudioClip() can find it.
-std::map<ClipId, std::string> ClipSynchronizer::buildWarpClipMap(ClipId clipId) {
-    // Start with the existing arrangement map
-    auto map = clipIdToEngineId_;
-
-    // If the clip is already in the map, nothing to do
-    if (map.count(clipId))
-        return map;
-
-    // Try resolving as a session clip
-    auto* teClip = getSessionTeClip(clipId);
-    if (teClip) {
-        map[clipId] = teClip->itemID.toString().toStdString();
-    }
-
-    return map;
-}
-
 void ClipSynchronizer::setTransientSensitivity(ClipId clipId, float sensitivity) {
-    juce::ScopedLock lock(clipLock_);
-    auto map = buildWarpClipMap(clipId);
-    warpMarkerManager_.setTransientSensitivity(edit_, map, clipId, sensitivity);
+    warpSync_.setTransientSensitivity(clipId, sensitivity);
 }
 
 bool ClipSynchronizer::getTransientTimes(ClipId clipId) {
-    juce::ScopedLock lock(clipLock_);
-    auto map = buildWarpClipMap(clipId);
-    return warpMarkerManager_.getTransientTimes(edit_, map, clipId);
+    return warpSync_.getTransientTimes(clipId);
 }
 
 void ClipSynchronizer::enableWarp(ClipId clipId) {
-    juce::ScopedLock lock(clipLock_);
-    auto map = buildWarpClipMap(clipId);
-    warpMarkerManager_.enableWarp(edit_, map, clipId);
+    warpSync_.enableWarp(clipId);
 }
 
 void ClipSynchronizer::disableWarp(ClipId clipId) {
-    juce::ScopedLock lock(clipLock_);
-    auto map = buildWarpClipMap(clipId);
-    warpMarkerManager_.disableWarp(edit_, map, clipId);
+    warpSync_.disableWarp(clipId);
 }
 
 std::vector<WarpMarkerInfo> ClipSynchronizer::getWarpMarkers(ClipId clipId) {
-    juce::ScopedLock lock(clipLock_);
-    auto map = buildWarpClipMap(clipId);
-    return warpMarkerManager_.getWarpMarkers(edit_, map, clipId);
+    return warpSync_.getWarpMarkers(clipId);
 }
 
 int ClipSynchronizer::addWarpMarker(ClipId clipId, double sourceTime, double warpTime) {
-    juce::ScopedLock lock(clipLock_);
-    auto map = buildWarpClipMap(clipId);
-    return warpMarkerManager_.addWarpMarker(edit_, map, clipId, sourceTime, warpTime);
+    return warpSync_.addWarpMarker(clipId, sourceTime, warpTime);
 }
 
 double ClipSynchronizer::moveWarpMarker(ClipId clipId, int index, double newWarpTime) {
-    juce::ScopedLock lock(clipLock_);
-    auto map = buildWarpClipMap(clipId);
-    return warpMarkerManager_.moveWarpMarker(edit_, map, clipId, index, newWarpTime);
+    return warpSync_.moveWarpMarker(clipId, index, newWarpTime);
 }
 
 void ClipSynchronizer::removeWarpMarker(ClipId clipId, int index) {
-    juce::ScopedLock lock(clipLock_);
-    auto map = buildWarpClipMap(clipId);
-    warpMarkerManager_.removeWarpMarker(edit_, map, clipId, index);
+    warpSync_.removeWarpMarker(clipId, index);
 }
 
 // =============================================================================
@@ -1309,30 +1180,24 @@ bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     bool needsGraphReallocation = false;
 
     // Check if clip already exists in Tracktion Engine
-    {
-        juce::ScopedLock lock(clipLock_);
-        auto it = clipIdToEngineId_.find(clipId);
-        if (it != clipIdToEngineId_.end()) {
-            // Clip exists - find it and update
-            std::string engineId = it->second;
+    if (auto engineId = clipIds_.getEngineId(clipId)) {
+        // Clip exists - find it and update
 
-            // Find the MidiClip in the track
-            for (auto* teClip : audioTrack->getClips()) {
-                if (teClip->itemID.toString().toStdString() == engineId) {
-                    midiClipPtr = dynamic_cast<te::MidiClip*>(teClip);
-                    break;
-                }
+        // Find the MidiClip in the track
+        for (auto* teClip : audioTrack->getClips()) {
+            if (teClip->itemID.toString().toStdString() == *engineId) {
+                midiClipPtr = dynamic_cast<te::MidiClip*>(teClip);
+                break;
             }
+        }
 
-            // Clip not found on expected track — it may have moved.
-            // Remove the old TE clip from whichever track still holds it.
-            if (!midiClipPtr) {
-                DBG("ClipSynchronizer: MIDI clip moved or stale, removing old TE clip " << clipId);
-                removeTeClipByEngineId(engineId);
-                clipIdToEngineId_.erase(it);
-                engineIdToClipId_.erase(engineId);
-                needsGraphReallocation = true;
-            }
+        // Clip not found on expected track — it may have moved.
+        // Remove the old TE clip from whichever track still holds it.
+        if (!midiClipPtr) {
+            DBG("ClipSynchronizer: MIDI clip moved or stale, removing old TE clip " << clipId);
+            removeTeClipByEngineId(*engineId);
+            clipIds_.erase(clipId);
+            needsGraphReallocation = true;
         }
     }
 
@@ -1356,11 +1221,7 @@ bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
 
         // Store clip ID mapping (use clip's EditItemID as string)
         std::string engineClipId = midiClipPtr->itemID.toString().toStdString();
-        {
-            juce::ScopedLock lock(clipLock_);
-            clipIdToEngineId_[clipId] = engineClipId;
-            engineIdToClipId_[engineClipId] = clipId;
-        }
+        clipIds_.set(clipId, engineClipId);
     }
 
     // Update clip position/length using beats-based positioning via TE's tempo sequence
@@ -1472,31 +1333,24 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     // 2. Check if clip already synced
     te::WaveAudioClip* audioClipPtr = nullptr;
     bool needsGraphReallocation = false;
-    {
-        juce::ScopedLock lock(clipLock_);
-        auto it = clipIdToEngineId_.find(clipId);
+    if (auto engineId = clipIds_.getEngineId(clipId)) {
+        // UPDATE existing clip
 
-        if (it != clipIdToEngineId_.end()) {
-            // UPDATE existing clip
-            std::string engineId = it->second;
-
-            // Find clip in track by engine ID
-            for (auto* teClip : audioTrack->getClips()) {
-                if (teClip->itemID.toString().toStdString() == engineId) {
-                    audioClipPtr = dynamic_cast<te::WaveAudioClip*>(teClip);
-                    break;
-                }
+        // Find clip in track by engine ID
+        for (auto* teClip : audioTrack->getClips()) {
+            if (teClip->itemID.toString().toStdString() == *engineId) {
+                audioClipPtr = dynamic_cast<te::WaveAudioClip*>(teClip);
+                break;
             }
+        }
 
-            // Clip not found on expected track — it may have moved.
-            // Remove the old TE clip from whichever track still holds it.
-            if (!audioClipPtr) {
-                DBG("ClipSynchronizer: Clip moved or stale, removing old TE clip " << clipId);
-                removeTeClipByEngineId(engineId);
-                clipIdToEngineId_.erase(it);
-                engineIdToClipId_.erase(engineId);
-                needsGraphReallocation = true;
-            }
+        // Clip not found on expected track — it may have moved.
+        // Remove the old TE clip from whichever track still holds it.
+        if (!audioClipPtr) {
+            DBG("ClipSynchronizer: Clip moved or stale, removing old TE clip " << clipId);
+            removeTeClipByEngineId(*engineId);
+            clipIds_.erase(clipId);
+            needsGraphReallocation = true;
         }
     }
 
@@ -1570,11 +1424,7 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
         // Store bidirectional mapping
         std::string engineClipId = audioClipPtr->itemID.toString().toStdString();
-        {
-            juce::ScopedLock lock(clipLock_);
-            clipIdToEngineId_[clipId] = engineClipId;
-            engineIdToClipId_[engineClipId] = clipId;
-        }
+        clipIds_.set(clipId, engineClipId);
 
         DBG("ClipSynchronizer: Created WaveAudioClip (engine ID: " << engineClipId << ")");
     }

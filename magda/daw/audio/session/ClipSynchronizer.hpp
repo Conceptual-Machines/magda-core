@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -12,6 +13,8 @@
 #include "../../core/ClipManager.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/TypeIds.hpp"
+#include "ClipEngineIdMap.hpp"
+#include "ClipWarpSynchronizer.hpp"
 
 namespace magda {
 
@@ -33,7 +36,7 @@ struct WarpMarkerInfo;
  *
  * Thread Safety:
  * - All operations assumed to run on message thread
- * - Clip mapping protected by internal clipLock_
+ * - Clip mapping is isolated in ClipEngineIdMap
  * - pendingReverseClipId_ accessed from timer thread
  *
  * Dependencies:
@@ -270,13 +273,8 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      */
     double getLastLaunchTimeForTrack(TrackId trackId) const;
 
-    /**
-     * @brief Get clip ID mapping for external access
-     * @return Const reference to clipIdToEngineId_ map
-     */
-    const std::map<ClipId, std::string>& getClipIdToEngineId() const {
-        return clipIdToEngineId_;
-    }
+    /** Resolve an arrangement clip's Tracktion Engine item ID. */
+    std::optional<std::string> getArrangementEngineId(ClipId clipId) const;
 
   private:
     // =========================================================================
@@ -327,10 +325,6 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      */
     void configureSessionAutoTempo(te::WaveAudioClip* audioClip, const ClipInfo* clip);
 
-    /** Compute the next quantized target beat for a given LaunchQuantize value.
-        Returns nullopt if quantize is None or no playback context. */
-    std::optional<te::MonotonicBeat> computeQuantizedBeat(LaunchQuantize quantize);
-
     /**
      * @brief Sync TrackInfo::playbackMode to TE's audioTrack->playSlotClips
      * @param trackId The track to sync
@@ -345,32 +339,18 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      */
     void removeTeClipByEngineId(const std::string& engineId);
 
-    /**
-     * @brief Build a clip-ID-to-engine-ID map that includes session clips.
-     *
-     * For arrangement clips the entry already exists in clipIdToEngineId_.
-     * For session clips, resolves the TE clip via its slot and adds a
-     * temporary entry so WarpMarkerManager can find it.
-     */
-    std::map<ClipId, std::string> buildWarpClipMap(ClipId clipId);
-
     // References to dependencies (not owned)
     te::Edit& edit_;
     TrackController& trackController_;
-    WarpMarkerManager& warpMarkerManager_;
 
-    // Clip ID mappings
-    std::map<ClipId, std::string> clipIdToEngineId_;  // MAGDA → TE
-    std::map<std::string, ClipId> engineIdToClipId_;  // TE → MAGDA
+    ClipEngineIdMap clipIds_;
+    ClipWarpSynchronizer warpSync_;
 
     // Reverse proxy state (for deferred reallocation)
     ClipId pendingReverseClipId_{INVALID_CLIP_ID};
 
     // Precise quantized launch times per track (seconds), written by launchSessionClip()
     std::unordered_map<TrackId, double> lastLaunchTimeByTrack_;
-
-    // Thread safety
-    mutable juce::CriticalSection clipLock_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipSynchronizer)
 };
