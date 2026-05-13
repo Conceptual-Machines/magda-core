@@ -13,7 +13,6 @@ namespace {
 constexpr float kPlotPadX = 8.0f;
 constexpr float kPlotPadY = 8.0f;
 constexpr int kPollMs = 33;
-constexpr int kPathSamples = 200;
 constexpr float kMinFreqHz = 50.0f;
 constexpr float kMaxFreqHz = 18000.0f;
 constexpr float kCenterMs = 3.0f;
@@ -187,18 +186,32 @@ void CompiledFlangerCurveView::paint(juce::Graphics& g) {
     const float delayMs = kCenterMs + lfoBi * depth_ * kSwingMs;
     const float delaySec = delayMs / 1000.0f;
 
-    // Plot the magnitude response. y = (1 - mag) so notches dip down.
+    // Plot the magnitude response. Comb notches at high feedback can be
+    // narrower than a single pixel, so we oversample each output column
+    // and average — kills the per-frame aliasing flicker that comes from
+    // sample positions snapping past razor-thin notches.
     const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+    const int pixelCount = std::max(64, static_cast<int>(std::round(plot.getWidth())));
+    constexpr int kSubSamples = 8;
+    const float logMinHz = std::log(kMinFreqHz);
+    const float logSpan = std::log(kMaxFreqHz / kMinFreqHz);
     juce::Path curve;
-    for (int i = 0; i <= kPathSamples; ++i) {
-        const float t = static_cast<float>(i) / static_cast<float>(kPathSamples);
-        const float hz = kMinFreqHz * std::exp(t * std::log(kMaxFreqHz / kMinFreqHz));
-        const float mag = magnitudeAt(hz, delaySec, feedback_);
+    for (int px = 0; px <= pixelCount; ++px) {
+        float magSum = 0.0f;
+        for (int s = 0; s < kSubSamples; ++s) {
+            const float t = (static_cast<float>(px) +
+                             (static_cast<float>(s) + 0.5f) / static_cast<float>(kSubSamples)) /
+                            static_cast<float>(pixelCount);
+            const float hz = std::exp(logMinHz + t * logSpan);
+            magSum += magnitudeAt(hz, delaySec, feedback_);
+        }
+        const float mag = magSum / static_cast<float>(kSubSamples);
         // Scale by mix so dry-only flattens the curve toward a line.
         const float scaled = mag * mix_ + (1.0f - mix_);
-        const float x = plot.getX() + t * plot.getWidth();
+        const float x = plot.getX() +
+                        (static_cast<float>(px) / static_cast<float>(pixelCount)) * plot.getWidth();
         const float y = plot.getBottom() - scaled * plot.getHeight() * 0.92f;
-        if (i == 0)
+        if (px == 0)
             curve.startNewSubPath(x, y);
         else
             curve.lineTo(x, y);
