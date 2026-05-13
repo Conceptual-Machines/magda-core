@@ -169,6 +169,8 @@ target_sources(magda_daw PRIVATE
     processors/ParameterInfoBuilder.hpp
     processors/external/ExternalPluginProcessor.cpp
     processors/external/ExternalPluginProcessor.hpp
+    processors/internal/MidiDeviceProcessors.cpp
+    processors/internal/MidiDeviceProcessors.hpp
     processors/CompiledFaustProcessor.cpp
     processors/CompiledFaustProcessor.hpp
     processors/DeviceProcessor.cpp
