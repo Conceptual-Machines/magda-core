@@ -6,8 +6,17 @@ target_sources(magda_daw_app PRIVATE
     DeviceSlotComponent.cpp
     ai/AIPanelComponent.cpp
     slot/DeviceCustomUIManager.cpp
+    slot/DeviceSlotContentLayout.cpp
+    slot/DeviceSlotContentPainter.cpp
+    slot/DeviceSlotHeaderControls.cpp
+    slot/DeviceSlotInlineUiFactory.cpp
+    slot/DeviceSlotMidiActivity.cpp
+    slot/DeviceSlotMidiUiBinding.cpp
+    slot/DeviceSlotParamLayoutFactory.cpp
     slot/DeviceParameterChangeHandler.cpp
     slot/DevicePresetMenu.cpp
+    slot/DeviceSlotTraits.cpp
+    slot/StepSequencerClipExport.cpp
     drum_grid/DeviceSlotDrumGridBridge.cpp
     drum_grid/DrumGridUI.cpp
     drum_grid/PadChainPanel.cpp
@@ -73,8 +82,17 @@ target_sources(magda_daw_app PRIVATE
     DeviceSlotComponent.hpp
     ai/AIPanelComponent.hpp
     slot/DeviceCustomUIManager.hpp
+    slot/DeviceSlotContentLayout.hpp
+    slot/DeviceSlotContentPainter.hpp
+    slot/DeviceSlotHeaderControls.hpp
+    slot/DeviceSlotInlineUiFactory.hpp
+    slot/DeviceSlotMidiActivity.hpp
+    slot/DeviceSlotMidiUiBinding.hpp
+    slot/DeviceSlotParamLayoutFactory.hpp
     slot/DeviceParameterChangeHandler.hpp
     slot/DevicePresetMenu.hpp
+    slot/DeviceSlotTraits.hpp
+    slot/StepSequencerClipExport.hpp
     drum_grid/DeviceSlotDrumGridBridge.hpp
     drum_grid/DrumGridUI.hpp
     drum_grid/PadChainPanel.hpp

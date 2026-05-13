@@ -3,45 +3,26 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "NodeComponent.hpp"
-#include "audio/plugins/ArpeggiatorPlugin.hpp"
-#include "audio/plugins/MidiChordEnginePlugin.hpp"
-#include "audio/plugins/StepSequencerPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
-#include "custom_ui/ArpeggiatorUI.hpp"
-#include "custom_ui/ChorusUI.hpp"
-#include "custom_ui/CompressorUI.hpp"
-#include "custom_ui/DelayUI.hpp"
-#include "custom_ui/EqualiserUI.hpp"
-#include "custom_ui/FaustCustomUIRegistry.hpp"
-#include "custom_ui/FaustUI.hpp"
-#include "custom_ui/FilterUI.hpp"
-#include "custom_ui/FourOscUI.hpp"
-#include "custom_ui/ImpulseResponseUI.hpp"
-#include "custom_ui/PhaserUI.hpp"
-#include "custom_ui/PitchShiftUI.hpp"
-#include "custom_ui/ReverbUI.hpp"
-#include "custom_ui/SamplerUI.hpp"
-#include "custom_ui/StepSequencerUI.hpp"
-#include "custom_ui/ToneGeneratorUI.hpp"
-#include "custom_ui/UtilityUI.hpp"
-#include "drum_grid/DrumGridUI.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DeviceCustomUIManager.hpp"
 #include "slot/DeviceParameterChangeHandler.hpp"
+#include "slot/DeviceSlotTraits.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
-#include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/components/mixer/MidiNoteStrip.hpp"
-#include "ui/panels/content/ChordPanelContent.hpp"  // relative to magda/daw/
 
 namespace magda::daw::ui {
+
+class FaustCustomView;
+class FaustUI;
 
 /**
  * @brief Device slot component for displaying a device in a chain
@@ -217,15 +198,7 @@ class DeviceSlotComponent : public NodeComponent,
 
   private:
     magda::DeviceInfo device_;
-    bool isDrumGrid_ = false;
-    bool isChordEngine_ = false;
-    bool isArpeggiator_ = false;
-    bool isStepSequencer_ = false;
-    bool isFaust_ = false;
-    bool isAISupported_ = false;
-    bool isSoundDesignSupported_ = false;
-    const CompiledPresentationSpec* compiledPresentation_ = nullptr;
-    bool isTracktionDevice_ = false;
+    DeviceSlotTraits traits_;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 
     // Header controls
@@ -269,7 +242,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<juce::TextButton> presetsButton_;
     // Vertical gain slider overlaid on the meter
     std::unique_ptr<juce::Slider> gainSlider_;
-    int lastArpNote_ = -1;
+    int lastMidiNote_ = -1;
     std::array<int, 32> lastChordNotes_{};
     int lastChordCount_ = 0;
 
@@ -311,6 +284,7 @@ class DeviceSlotComponent : public NodeComponent,
     void updateScButtonState();  // Update SC button appearance based on sidechain config
     void showMultiOutMenu();     // Show popup menu for multi-output routing
     void showContextMenu();      // Show right-click context menu
+    void refreshDeviceTraits(const juce::String& pluginId);
 
     // Helper to check if this is an internal device
     bool isInternalDevice() const {

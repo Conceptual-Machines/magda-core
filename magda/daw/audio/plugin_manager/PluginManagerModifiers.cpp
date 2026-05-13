@@ -239,7 +239,7 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
 
         for (auto& [_modId, mod] : it->second.modifiers) {
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
-                lfo->triggerNoteOn();
+                triggerLFONoteOnWithReset(lfo);
             }
         }
     }
@@ -252,7 +252,7 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
     if (tmIt != trackModStates_.end()) {
         for (auto& [_modId, mod] : tmIt->second.modifiers) {
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
-                lfo->triggerNoteOn();
+                triggerLFONoteOnWithReset(lfo);
             }
         }
     }
@@ -588,11 +588,7 @@ void PluginManager::rebuildSidechainLFOCache() {
                 }
             }
             if (!hasRackSidechain) {
-                size_t before = lfos.size();
-                rackSyncManager_.collectLFOModifiers(track.id, lfos);
-                // Rack LFOs default to Free trigger mode (TODO: track per-mod modes)
-                modes.resize(lfos.size(), LFOTriggerMode::Free);
-                juce::ignoreUnused(before);
+                rackSyncManager_.collectLFOModifiersWithModes(track.id, lfos, modes);
             }
         }
 
@@ -656,12 +652,7 @@ void PluginManager::rebuildSidechainLFOCache() {
                 collectDeviceLFOs(device);
             }
             // TODO: also filter rack LFOs by sidechain source
-            {
-                size_t before = lfos.size();
-                rackSyncManager_.collectLFOModifiers(otherTrack.id, lfos);
-                modes.resize(lfos.size(), LFOTriggerMode::Free);
-                juce::ignoreUnused(before);
-            }
+            { rackSyncManager_.collectLFOModifiersWithModes(otherTrack.id, lfos, modes); }
         }
 
         // Write to cache entry (capped at kMaxLFOs)

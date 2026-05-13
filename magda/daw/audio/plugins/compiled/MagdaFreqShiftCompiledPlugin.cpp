@@ -342,6 +342,13 @@ float MagdaFreqShiftCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
 }
 
+constexpr AliasSpec kAliases[] = {
+    {"shift", 0, "Shift"},
+    {"feedback", 1, "Feedback"},
+    {"mix", 2, "Mix"},
+    {"spread", 3, "Spread"},
+};
+
 const CompiledPluginSpec& getMagdaFreqShiftSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaFreqShiftCompiledPlugin::xmlTypeName,
@@ -353,6 +360,8 @@ const CompiledPluginSpec& getMagdaFreqShiftSpec() {
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaFreqShiftCompiledPlugin(info);
         },
+        .aliases = kAliases,
+        .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
     };
     return kSpec;
 }

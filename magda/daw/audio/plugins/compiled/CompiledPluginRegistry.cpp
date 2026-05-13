@@ -13,6 +13,8 @@
 #include "MagdaPhaserCompiledPlugin.hpp"
 #include "MagdaRingModCompiledPlugin.hpp"
 #include "MagdaSaturatorCompiledPlugin.hpp"
+#include "plugins/compiled/CompiledFaustInterface.hpp"
+#include "processors/CompiledFaustProcessor.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -57,6 +59,16 @@ const CompiledPluginSpec* findCompiledPluginSpec(const juce::String& pluginId) {
             return spec;
     }
     return nullptr;
+}
+
+std::unique_ptr<magda::DeviceProcessor> createCompiledPluginProcessor(
+    const CompiledPluginSpec& spec, DeviceId deviceId, te::Plugin::Ptr plugin) {
+    juce::ignoreUnused(spec);
+
+    if (dynamic_cast<ICompiledFaustPlugin*>(plugin.get()) == nullptr)
+        return nullptr;
+
+    return std::make_unique<magda::CompiledFaustProcessor>(deviceId, plugin);
 }
 
 }  // namespace magda::daw::audio::compiled

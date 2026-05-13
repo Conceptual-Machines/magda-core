@@ -458,6 +458,12 @@ float MagdaChorusCompiledPlugin::nativeValueToDisplayValue(int slotIndex, float 
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
 }
 
+constexpr AliasSpec kAliases[] = {
+    {"voices", 0, "Voices"}, {"sync", 1, "Sync"},   {"rate", 2, "Rate"},
+    {"div", 3, "Division"},  {"depth", 4, "Depth"}, {"feedback", 5, "Feedback"},
+    {"mix", 6, "Mix"},       {"width", 7, "Width"},
+};
+
 const CompiledPluginSpec& getMagdaChorusSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaChorusCompiledPlugin::xmlTypeName,
@@ -468,6 +474,8 @@ const CompiledPluginSpec& getMagdaChorusSpec() {
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaChorusCompiledPlugin(info);
         },
+        .aliases = kAliases,
+        .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
     };
     return kSpec;
 }

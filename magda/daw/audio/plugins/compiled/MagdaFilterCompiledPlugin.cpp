@@ -523,6 +523,11 @@ float MagdaFilterCompiledPlugin::nativeValueToDisplayValue(int slotIndex, float 
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
 }
 
+constexpr AliasSpec kAliases[] = {
+    {"cutoff", 0, "Cutoff"}, {"resonance", 1, "Resonance"}, {"drive", 2, "Drive"},
+    {"engine", 3, "Engine"}, {"mode", 4, "Mode"},           {"limit", 5, "Limit"},
+};
+
 const CompiledPluginSpec& getMagdaFilterSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaFilterCompiledPlugin::xmlTypeName,
@@ -541,6 +546,8 @@ const CompiledPluginSpec& getMagdaFilterSpec() {
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaFilterCompiledPlugin(info);
         },
+        .aliases = kAliases,
+        .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
     };
     return kSpec;
 }

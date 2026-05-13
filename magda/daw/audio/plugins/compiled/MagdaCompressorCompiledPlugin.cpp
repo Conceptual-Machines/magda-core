@@ -441,6 +441,20 @@ float MagdaCompressorCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
 }
 
+constexpr AliasSpec kAliases[] = {
+    {"threshold", 0, "Threshold"},
+    {"ratio", 1, "Ratio"},
+    {"attack", 2, "Attack"},
+    {"release", 3, "Release"},
+    {"knee", 4, "Knee"},
+    {"makeup", 5, "Makeup"},
+    {"mix", 6, "Mix"},
+    {"output", 7, "Output"},
+    {"detector", 8, "Detector"},
+    {"link", 9, "Link"},
+    {"sc_hpf", 10, "SC HPF"},
+};
+
 const CompiledPluginSpec& getMagdaCompressorSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaCompressorCompiledPlugin::xmlTypeName,
@@ -452,6 +466,8 @@ const CompiledPluginSpec& getMagdaCompressorSpec() {
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaCompressorCompiledPlugin(info);
         },
+        .aliases = kAliases,
+        .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
     };
     return kSpec;
 }

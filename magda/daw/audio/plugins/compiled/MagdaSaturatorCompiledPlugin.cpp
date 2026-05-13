@@ -383,6 +383,11 @@ float MagdaSaturatorCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
 }
 
+constexpr AliasSpec kAliases[] = {
+    {"drive", 0, "Drive"}, {"mode", 1, "Mode"}, {"bias", 2, "Bias"},
+    {"tone", 3, "Tone"},   {"mix", 4, "Mix"},   {"output", 5, "Output"},
+};
+
 const CompiledPluginSpec& getMagdaSaturatorSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaSaturatorCompiledPlugin::xmlTypeName,
@@ -392,6 +397,8 @@ const CompiledPluginSpec& getMagdaSaturatorSpec() {
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaSaturatorCompiledPlugin(info);
         },
+        .aliases = kAliases,
+        .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
     };
     return kSpec;
 }

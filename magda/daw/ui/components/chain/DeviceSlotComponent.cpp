@@ -4,42 +4,42 @@
 
 #include <algorithm>
 
-#include "../../../../agents/internal_plugins.hpp"
-#include "../../../../agents/sound_design_agent.hpp"
 #include "ai/AIPanelComponent.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
-#include "audio/plugins/ArpeggiatorPlugin.hpp"
-#include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
-#include "audio/plugins/MidiChordEnginePlugin.hpp"
-#include "audio/transport/StepClock.hpp"
-#include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/InternalDeviceKind.hpp"
 #include "core/MacroInfo.hpp"
-#include "core/MidiFileWriter.hpp"
 #include "core/ModInfo.hpp"
 #include "core/ParameterUtils.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "custom_ui/ArpeggiatorUI.hpp"
+#include "custom_ui/FaustCustomUIRegistry.hpp"
+#include "custom_ui/FaustUI.hpp"
+#include "custom_ui/StepSequencerUI.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
-#include "layout/CompiledFaustDeviceLayout.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
-#include "layout/FaustDeviceLayout.hpp"
 #include "layout/NodeHeaderStyles.hpp"
-#include "layout/StandardDeviceLayout.hpp"
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
-#include "project/ProjectManager.hpp"
 #include "slot/DevicePresetMenu.hpp"
-#include "ui/debug/DebugSettings.hpp"
+#include "slot/DeviceSlotContentLayout.hpp"
+#include "slot/DeviceSlotContentPainter.hpp"
+#include "slot/DeviceSlotHeaderControls.hpp"
+#include "slot/DeviceSlotInlineUiFactory.hpp"
+#include "slot/DeviceSlotMidiActivity.hpp"
+#include "slot/DeviceSlotMidiUiBinding.hpp"
+#include "slot/DeviceSlotParamLayoutFactory.hpp"
+#include "slot/DeviceSlotTraits.hpp"
+#include "slot/StepSequencerClipExport.hpp"
 #include "ui/dialogs/ParameterConfigDialog.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -133,26 +133,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // NodeComponent (the base class) — it owns the controller-indicator
     // dots and the refresh logic.
 
-    isDrumGrid_ = drum_grid_slot::isDrumGridPluginId(device.pluginId);
-    isChordEngine_ =
-        device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName);
-    isArpeggiator_ = device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName);
-    isStepSequencer_ =
-        device.pluginId.containsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName);
-    isFaust_ = device.pluginId.containsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName);
-    isAISupported_ = magda::isDeviceAISupported(device.pluginId);
-    isSoundDesignSupported_ = magda::isSoundDesignSupported(device.pluginId);
-    compiledPresentation_ = findCompiledPresentation(device.pluginId);
-    isTracktionDevice_ = magda::isTracktionEngineStockPlugin(device.pluginId);
-    if (isTracktionDevice_) {
-        tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
-                                                             BinaryData::fadlogotracktion_svgSize);
-        if (tracktionLogo_)
-            tracktionLogo_->replaceColour(juce::Colours::black,
-                                          DarkTheme::getSecondaryTextColour());
-    }
+    refreshDeviceTraits(device.pluginId);
 
-    drum_grid_slot::applySlotName(*this, isDrumGrid_, device.name);
+    drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
     setBypassed(device.bypassed);
 
     // Restore panel visibility from device state
@@ -411,7 +394,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addAndMakeVisible(*onButton_);
 
     // Export as MIDI clip button (step sequencer only for now)
-    if (isStepSequencer_) {
+    if (traits_.isStepSequencer) {
         exportClipButton_ = std::make_unique<magda::SvgButton>("ExportClip", BinaryData::copy_svg,
                                                                BinaryData::copy_svgSize);
         applyHeaderIconStyle(*exportClipButton_, DarkTheme::getColour(DarkTheme::ACCENT_GREEN),
@@ -420,48 +403,14 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         exportClipButton_->addMouseListener(this, false);
         exportClipButton_->onClick = [this]() {
             auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
-            if (!stepSeqPlugin)
-                return;
-            int count = juce::jlimit(1, daw::audio::StepSequencerPlugin::MAX_STEPS,
-                                     stepSeqPlugin->numSteps.get());
-            auto rateEnum = static_cast<daw::audio::StepClock::Rate>(stepSeqPlugin->rate.get());
-            double stepBeats = daw::audio::StepClock::rateToBeats(rateEnum);
-            float gate = stepSeqPlugin->gateLength.get();
-            int accentVel = stepSeqPlugin->accentVelocity.get();
-            int normalVel = stepSeqPlugin->normalVelocity.get();
-
-            std::vector<magda::MidiNote> notes;
-            for (int i = 0; i < count; ++i) {
-                auto step = stepSeqPlugin->getStep(i);
-                if (!step.gate)
-                    continue;
-                magda::MidiNote note;
-                note.noteNumber = std::clamp(step.noteNumber + step.octaveShift * 12, 0, 127);
-                note.velocity = step.accent ? accentVel : normalVel;
-                note.startBeat = i * stepBeats;
-                note.lengthBeats = stepBeats * gate;
-                notes.push_back(note);
-            }
-
-            if (!notes.empty())
-                ClipManager::getInstance().setNoteClipboard(std::move(notes));
+            if (stepSeqPlugin != nullptr)
+                copyStepSequencerPatternToClipboard(*stepSeqPlugin);
         };
         addAndMakeVisible(*exportClipButton_);
     }
 
-    // Create parameter grid (owns slots + pagination)
-    // Pick the layout strategy for this device family. Faust devices honour
-    // their `[idx:N]` annotations directly so they get a sparse-aware
-    // layout; everything else uses the 8x4 contiguous standard layout.
-    std::unique_ptr<DeviceParamLayout> layout;
-    if (isFaust_)
-        layout = std::make_unique<FaustDeviceLayout>();
-    else if (compiledPresentation_)
-        layout = std::make_unique<CompiledFaustDeviceLayout>(
-            compiledPresentation_->layoutCellCount, compiledPresentation_->layoutCellsPerRow);
-    else
-        layout = std::make_unique<StandardDeviceLayout>();
-    paramGrid_ = std::make_unique<ParamHostComponent>(std::move(layout));
+    // Create parameter grid (owns slots + pagination).
+    paramGrid_ = std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_));
     paramGrid_->onPrevPage = [this]() { goToPrevPage(); };
     paramGrid_->onNextPage = [this]() { goToNextPage(); };
     addAndMakeVisible(*paramGrid_);
@@ -857,46 +806,9 @@ void DeviceSlotComponent::timerCallback() {
         }
     }
 
-    if (isArpeggiator_) {
-        // Poll arpeggiator note output for the MIDI note strip
-        if (auto* arpPlugin = customUI_.getArpPlugin()) {
-            int note = arpPlugin->midiOutNote_.load(std::memory_order_relaxed);
-            int vel = arpPlugin->midiOutVelocity_.load(std::memory_order_relaxed);
-            if (note != lastArpNote_) {
-                if (lastArpNote_ >= 0)
-                    midiNoteStrip_.clearNote(lastArpNote_);
-                lastArpNote_ = note;
-            }
-            if (note >= 0)
-                midiNoteStrip_.setNote(note, vel);
-        }
-    } else if (isStepSequencer_) {
-        if (auto* stepSeqPlugin = customUI_.getStepSeqPlugin()) {
-            int note = stepSeqPlugin->midiOutNote_.load(std::memory_order_relaxed);
-            int vel = stepSeqPlugin->midiOutVelocity_.load(std::memory_order_relaxed);
-            if (note != lastArpNote_) {
-                if (lastArpNote_ >= 0)
-                    midiNoteStrip_.clearNote(lastArpNote_);
-                lastArpNote_ = note;
-            }
-            if (note >= 0)
-                midiNoteStrip_.setNote(note, vel);
-        }
-    } else if (isChordEngine_) {
-        // Poll chord engine held notes for the MIDI note strip
-        if (auto* chordPlugin = customUI_.getChordPlugin()) {
-            int count = chordPlugin->getHeldNoteCount();
-            // Clear notes that are no longer held
-            for (int i = 0; i < lastChordCount_; ++i)
-                midiNoteStrip_.clearNote(lastChordNotes_[static_cast<size_t>(i)]);
-            // Set currently held notes
-            for (int i = 0; i < count && i < static_cast<int>(lastChordNotes_.size()); ++i) {
-                int n = chordPlugin->getHeldNote(i);
-                lastChordNotes_[static_cast<size_t>(i)] = n;
-                midiNoteStrip_.setNote(n, 100);
-            }
-            lastChordCount_ = count;
-        }
+    if (traits_.isArpeggiator || traits_.isStepSequencer || traits_.isChordEngine) {
+        refreshDeviceSlotMidiActivity(traits_, customUI_, midiNoteStrip_, lastMidiNote_,
+                                      lastChordNotes_, lastChordCount_);
     } else {
         // Poll device peak levels for right-side meter strip
         magda::DeviceMeteringManager::DeviceMeterData data;
@@ -913,7 +825,7 @@ void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int p
 
     updateCachedParameterValue(device_, paramIndex, newValue);
 
-    if (compiledPresentation_)
+    if (traits_.compiledPresentation)
         refreshEngineAwareCompiledModeSlot(device_, device_.id, paramIndex, *paramGrid_);
 
     refreshCustomUIParameterValues();
@@ -1054,43 +966,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     refreshControllerIndicators();
 
     // Update MIDI custom UIs with the now-valid trackId (createCustomUI runs before setNodePath).
-    if (auto* chordEngineUI = customUI_.getChordEngineUI();
-        chordEngineUI && nodePath_.trackId != magda::INVALID_TRACK_ID) {
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device_.id);
-                if (auto* chordPlugin =
-                        dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
-                    chordEngineUI->setChordEngine(chordPlugin, nodePath_.trackId);
-                }
-            }
-        }
-    }
-
-    if (auto* arpeggiatorUI = customUI_.getArpeggiatorUI();
-        arpeggiatorUI && nodePath_.trackId != magda::INVALID_TRACK_ID) {
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device_.id);
-                if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
-                    arpeggiatorUI->setArpeggiator(arp);
-                }
-            }
-        }
-    }
-
-    if (auto* stepSequencerUI = customUI_.getStepSequencerUI();
-        stepSequencerUI && nodePath_.trackId != magda::INVALID_TRACK_ID) {
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device_.id);
-                if (auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get())) {
-                    stepSequencerUI->setPlugin(seq);
-                    customUI_.setStepSeqPlugin(seq);
-                }
-            }
-        }
-    }
+    bindDeviceSlotMidiCustomUIs(customUI_, device_.id, nodePath_);
 }
 
 int DeviceSlotComponent::getCustomUITabIndex() const {
@@ -1120,7 +996,7 @@ int DeviceSlotComponent::getPreferredWidth() const {
                getRightPanelsWidth();
     }
     const auto customWidth = customUI_.getPreferredContentWidth(
-        drum_grid_slot::getPreferredContentWidth(isDrumGrid_, customUI_.getDrumGridUI()));
+        drum_grid_slot::getPreferredContentWidth(traits_.isDrumGrid, customUI_.getDrumGridUI()));
     if (customWidth > 0)
         return getTotalWidth(customWidth) + meterExtra;
     return getTotalWidth(getDynamicSlotWidth()) + meterExtra;
@@ -1245,6 +1121,20 @@ void DeviceSlotComponent::showSavePluginPresetDialog() {
         });
 }
 
+void DeviceSlotComponent::refreshDeviceTraits(const juce::String& pluginId) {
+    traits_ = makeDeviceSlotTraits(pluginId);
+
+    if (traits_.isTracktionDevice && tracktionLogo_ == nullptr) {
+        tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
+                                                             BinaryData::fadlogotracktion_svgSize);
+        if (tracktionLogo_)
+            tracktionLogo_->replaceColour(juce::Colours::black,
+                                          DarkTheme::getSecondaryTextColour());
+    } else if (!traits_.isTracktionDevice) {
+        tracktionLogo_.reset();
+    }
+}
+
 void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Detect plugin replacement BEFORE assignment so we can drop a stale
     // currentPresetName_ reference (a preset is tied to one plugin).
@@ -1259,27 +1149,8 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     }
 
     device_ = device;
-    isDrumGrid_ = drum_grid_slot::isDrumGridPluginId(device.pluginId);
-    isChordEngine_ =
-        device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName);
-    isArpeggiator_ = device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName);
-    isStepSequencer_ =
-        device.pluginId.containsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName);
-    isFaust_ = device.pluginId.containsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName);
-    isAISupported_ = magda::isDeviceAISupported(device.pluginId);
-    isSoundDesignSupported_ = magda::isSoundDesignSupported(device.pluginId);
-    compiledPresentation_ = findCompiledPresentation(device.pluginId);
-    isTracktionDevice_ = magda::isTracktionEngineStockPlugin(device.pluginId);
-    if (isTracktionDevice_ && tracktionLogo_ == nullptr) {
-        tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
-                                                             BinaryData::fadlogotracktion_svgSize);
-        if (tracktionLogo_)
-            tracktionLogo_->replaceColour(juce::Colours::black,
-                                          DarkTheme::getSecondaryTextColour());
-    } else if (!isTracktionDevice_) {
-        tracktionLogo_.reset();
-    }
-    drum_grid_slot::applySlotName(*this, isDrumGrid_, device.name);
+    refreshDeviceTraits(device.pluginId);
+    drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
     setBypassed(device.bypassed);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setActive(!device.bypassed);
@@ -1295,7 +1166,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Update sidechain button visibility and state
     if (scButton_) {
         scButton_->setVisible(drum_grid_slot::shouldShowSidechainButton(
-            isDrumGrid_, device_.canSidechain, device_.canReceiveMidi));
+            traits_.isDrumGrid, device_.canSidechain, device_.canReceiveMidi));
         updateScButtonState();
     }
 
@@ -1424,8 +1295,8 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
     // Call base class paint for standard rendering
     NodeComponent::paint(g);
 
-    drum_grid_slot::paintHeaderLogo(g, isDrumGrid_, collapsed_, getHeaderHeight(), getWidth(),
-                                    modButton_.get(),
+    drum_grid_slot::paintHeaderLogo(g, traits_.isDrumGrid, collapsed_, getHeaderHeight(),
+                                    getWidth(), modButton_.get(),
                                     {uiButton_.get(), scButton_.get(), multiOutButton_.get(),
                                      onButton_.get(), exportClipButton_.get()});
 }
@@ -1437,422 +1308,98 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
 
 juce::Point<float> DeviceSlotComponent::getControllerIndicatorAnchor() const {
     if (auto anchor = drum_grid_slot::getControllerIndicatorAnchor(
-            isDrumGrid_, collapsed_, getHeaderHeight(), modButton_.get()))
+            traits_.isDrumGrid, collapsed_, getHeaderHeight(), modButton_.get()))
         return *anchor;
 
     return NodeComponent::getControllerIndicatorAnchor();
 }
 
 void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
-    // Draw separator line to the left of the meter/note strip (below content header)
-    if (!collapsed_) {
-        int lineX = contentArea.getRight() - METER_STRIP_WIDTH - 4;
-        int meterTop = contentArea.getY() + (isFaust_ ? 0 : CONTENT_HEADER_HEIGHT);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawVerticalLine(lineX, static_cast<float>(meterTop + 2),
-                           static_cast<float>(contentArea.getBottom() - 2));
-
-        // Separator under content header (all devices except Faust, which has
-        // no content header) — spans full width
-        float left = static_cast<float>(contentArea.getX() + 2);
-        float right = static_cast<float>(contentArea.getRight() - 2);
-        int headerBottom = contentArea.getY() + CONTENT_HEADER_HEIGHT;
-        if (!isFaust_) {
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.drawHorizontalLine(headerBottom, left, right);
-        }
-
-        // Additional line below pagination row (for external plugin param grid only)
-        if (!compiledPresentation_ && (!isInternalDevice() || isFaust_ || !customUI_.hasAnyUI())) {
-            constexpr int paginationTopPadding = 2;
-            constexpr int paginationBottomPadding = 4;
-            const int paramGridTop =
-                contentArea.getY() + (isFaust_ ? FaustUI::kHeaderHeight : CONTENT_HEADER_HEIGHT);
-            int paginationBottom =
-                paramGridTop + paginationTopPadding + PAGINATION_HEIGHT + paginationBottomPadding;
-            g.drawHorizontalLine(paginationBottom, left, right);
-        }
+    DeviceSlotStepRecordingPaintState stepRecording;
+    if (auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
+        traits_.isStepSequencer && stepSeqPlugin != nullptr && stepSeqPlugin->isStepRecording()) {
+        stepRecording.active = true;
+        stepRecording.position = stepSeqPlugin->stepRecordPosition_.load(std::memory_order_relaxed);
+        stepRecording.maxSteps = juce::jlimit(1, 32, stepSeqPlugin->numSteps.get());
     }
 
-    // Loading state overlay: show "Loading..." and skip normal content
-    if (device_.loadState == magda::DeviceLoadState::Loading) {
-        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.6f));
-        g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        g.drawText("Loading...", contentArea, juce::Justification::centred);
-        return;
-    }
-
-    // Failed state overlay
-    if (device_.loadState == magda::DeviceLoadState::Failed) {
-        g.setColour(juce::Colours::red.withAlpha(0.7f));
-        g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        g.drawText("Failed to load", contentArea, juce::Justification::centred);
-        return;
-    }
-
-    // Content header subtitle row for all devices (Faust draws its own
-    // header inside the FaustUI panel, so skip the slot-level one).
-    if (!isFaust_) {
-        auto headerArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
-        auto textArea = headerArea.withTrimmedLeft(6).withTrimmedRight(2);
-
-        const bool headerHandled =
-            drum_grid_slot::paintContentHeader(g, isDrumGrid_, isBypassed(), textArea);
-        if (headerHandled) {
-            return;
-        }
-
-        if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
-            auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                           : DarkTheme::getSecondaryTextColour();
-            g.setColour(textColour);
-            // Step recording banner overrides the header
-            auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
-            if (isStepSequencer_ && stepSeqPlugin && stepSeqPlugin->isStepRecording()) {
-                g.saveState();
-                g.setColour(juce::Colour(0xFFCC3333).withAlpha(0.9f));
-                g.fillRect(headerArea);
-                g.setColour(juce::Colours::white);
-                g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-                int recPos = stepSeqPlugin->stepRecordPosition_.load(std::memory_order_relaxed);
-                int maxSteps = juce::jlimit(1, 32, stepSeqPlugin->numSteps.get());
-                g.drawText("STEP RECORDING  " + juce::String(recPos + 1) + "/" +
-                               juce::String(maxSteps),
-                           textArea, juce::Justification::centredLeft);
-                g.restoreState();
-            } else {
-                g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-                juce::String label = isChordEngine_   ? "MAGDA Chord Engine"
-                                     : isArpeggiator_ ? "MAGDA Arpeggiator"
-                                                      : "MAGDA Step Sequencer";
-                g.drawText(label, textArea, juce::Justification::centredLeft);
-            }
-        } else if (isTracktionDevice_ && tracktionLogo_) {
-            auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                           : DarkTheme::getSecondaryTextColour();
-            g.setColour(textColour);
-            // Tracktion devices: TE logo inline + "Tracktion / {device name}"
-            constexpr int logoSize = 14;
-            auto logoBounds = textArea.removeFromLeft(logoSize).toFloat();
-            logoBounds = logoBounds.withSizeKeepingCentre(logoSize, logoSize);
-            tracktionLogo_->drawWithin(g, logoBounds, juce::RectanglePlacement::centred,
-                                       isBypassed() ? 0.3f : 0.6f);
-            textArea.removeFromLeft(4);  // spacing after logo
-            g.setFont(FontManager::getInstance().getUIFont(9.0f));
-            g.drawText("Tracktion / " + device_.name, textArea, juce::Justification::centredLeft);
-        } else {
-            auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                           : DarkTheme::getSecondaryTextColour();
-            g.setColour(textColour);
-            // External devices: "manufacturer / device name"
-            g.setFont(FontManager::getInstance().getUIFont(9.0f));
-            g.drawText(device_.manufacturer + " / " + device_.name, textArea,
-                       juce::Justification::centredLeft);
-        }
-    }
+    paintDeviceSlotContent(g, contentArea,
+                           {.traits = traits_,
+                            .loadState = device_.loadState,
+                            .collapsed = collapsed_,
+                            .bypassed = isBypassed(),
+                            .internalDevice = isInternalDevice(),
+                            .hasCustomUI = customUI_.hasAnyUI(),
+                            .manufacturer = device_.manufacturer,
+                            .deviceName = device_.name,
+                            .tracktionLogo = tracktionLogo_.get(),
+                            .stepRecording = stepRecording},
+                           METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT, PAGINATION_HEIGHT,
+                           FaustUI::kHeaderHeight);
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
-    // Position the level meter / note strip on the right edge of the content area.
-    // When collapsed, NodeComponent calls resizedCollapsed() first then resizedContent()
-    // with an empty rect — so we must not touch meter visibility when collapsed.
-    if (!collapsed_) {
-        // Carve the FULL-width second header first so the presets button can
-        // sit flush against the right edge of the panel. Faust draws its own
-        // header inside the FaustUI panel, so it skips this strip entirely.
-        if (!isFaust_) {
-            auto secondHeaderArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
-            if (presetsButton_) {
-                const bool eligible = !isChordEngine_ && !isArpeggiator_ && !isStepSequencer_;
-                const bool show = eligible && hasPluginPresetsAvailable();
-                if (show) {
-                    const int btnWidth = juce::jmin(140, secondHeaderArea.getWidth() / 2);
-                    presetsButton_->setBounds(
-                        secondHeaderArea.removeFromRight(btnWidth).reduced(2, 3));
-                    presetsButton_->setVisible(true);
-                } else {
-                    presetsButton_->setVisible(false);
-                }
-            }
-        } else if (presetsButton_) {
-            presetsButton_->setVisible(false);
-        }
-
-        // Then the meter strip lives in the area BELOW the second header.
-        auto stripBounds = contentArea.removeFromRight(METER_STRIP_WIDTH).reduced(1, 3);
-        contentArea.removeFromRight(4);  // Padding between content and meter
-
-        bool usesNoteStrip = isArpeggiator_ || isChordEngine_ || isStepSequencer_;
-        levelMeter_.setBounds(stripBounds);
-        levelMeter_.setVisible(!usesNoteStrip);
-        midiNoteStrip_.setBounds(stripBounds);
-        midiNoteStrip_.setVisible(usesNoteStrip);
-
-        // Slider overlaid on the meter — same bounds, drawn on top, always visible.
-        if (gainSlider_) {
-            gainSlider_->setBounds(stripBounds);
-            gainSlider_->setVisible(true);
-            gainSlider_->toFront(false);
-        }
-    }
-
-    // Bottom padding
-    contentArea.removeFromBottom(2);
-
-    // When collapsed or still loading, hide all content controls
-    if (collapsed_ || device_.loadState != magda::DeviceLoadState::Loaded) {
-        paramGrid_->setVisible(false);
-        gainLabel_.setVisible(false);
-        if (presetsButton_)
-            presetsButton_->setVisible(false);
-        if (gainSlider_)
-            gainSlider_->setVisible(false);
-        if (presetButton_)
-            presetButton_->setVisible(
-                !collapsed_);  // preset button stays in header even while loading
-        if (auto* activeCustomUI = customUI_.getActiveUI())
-            activeCustomUI->setVisible(false);
-        if (compiledPanel_)
-            compiledPanel_->component().setVisible(false);
+    auto* activeCustomUI = customUI_.getActiveUI();
+    auto* compiledPanelComponent =
+        compiledPanel_ != nullptr ? &compiledPanel_->component() : nullptr;
+    const bool pluginPresetsAvailable =
+        !collapsed_ && !traits_.isFaust && hasPluginPresetsAvailable();
+    if (!prepareDeviceSlotContentFrame(contentArea, traits_, device_, collapsed_,
+                                       isInternalDevice(), pluginPresetsAvailable,
+                                       {.pluginPresetsButton = presetsButton_.get(),
+                                        .levelMeter = &levelMeter_,
+                                        .midiNoteStrip = &midiNoteStrip_,
+                                        .gainSlider = gainSlider_.get(),
+                                        .paramGrid = paramGrid_.get(),
+                                        .gainLabel = &gainLabel_,
+                                        .magdaPresetButton = presetButton_.get(),
+                                        .activeCustomUI = activeCustomUI,
+                                        .compiledPanel = compiledPanelComponent,
+                                        .modButton = modButton_.get(),
+                                        .macroButton = macroButton_.get(),
+                                        .uiButton = uiButton_.get(),
+                                        .powerButton = onButton_.get()},
+                                       METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT)) {
         return;
     }
-
-    // Show header controls when expanded
-    bool showMod = drum_grid_slot::shouldShowModButton(isDrumGrid_, device_.deviceType);
-    bool showMacro = drum_grid_slot::shouldShowMacroButton(isDrumGrid_, device_.deviceType,
-                                                           isArpeggiator_, isStepSequencer_);
-    modButton_->setVisible(showMod);
-    macroButton_->setVisible(showMacro);
-    uiButton_->setVisible(!isInternalDevice());
-    onButton_->setVisible(true);
-    gainLabel_.setVisible(!isChordEngine_ && !isArpeggiator_ && !isStepSequencer_);
 
     // (Second header carve + programs combo placement happen in the
     //  `if (!collapsed_)` block above so the dropdown can sit flush right.)
-
-    // Faust uses a hybrid layout: the bespoke header strip (logo /
-    // Load / Edit / DSP name) sits at the top, and the standard
-    // paramGrid_ renders the body — same drag-and-drop / mod / macro
-    // / MIDI Learn / automation behaviour as every other device,
-    // driven by FaustProcessor's per-slot ParameterInfo.
-    if (isFaust_ && faustUI_) {
-        // Top: Faust-specific header strip (logo / name / load / edit).
-        auto faustUIArea = contentArea.removeFromTop(FaustUI::kHeaderHeight);
-        faustUI_->setBounds(faustUIArea);
-        faustUI_->setVisible(true);
-
-        // Bottom: per-DSP custom view (if any) anchored to the bottom
-        // edge so it grows into whatever vertical slack the user gives
-        // the device slot. Capped at half the remaining body so a tall
-        // device row doesn't starve the param grid; gated by a minimum
-        // of the view's preferred height so it stays readable when the
-        // row is short.
-        if (faustCustomView_) {
-            const int bodyHeight = juce::jmax(0, contentArea.getHeight());
-            const int preferred = faustCustomView_->getPreferredHeight();
-            const int customHeight = juce::jlimit(juce::jmin(preferred, bodyHeight), bodyHeight,
-                                                  juce::jmax(preferred, bodyHeight / 2));
-            auto customArea = contentArea.removeFromBottom(customHeight);
-            faustCustomView_->setBounds(customArea);
-            faustCustomView_->setVisible(true);
-        }
-
-        auto labelFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamLabelFontSize());
-        auto valueFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamValueFontSize());
-        paramGrid_->setBounds(contentArea);
-        paramGrid_->setVisible(true);
-        paramGrid_->layoutContent(labelFont, valueFont);
-        return;
-    }
-
-    if (compiledPanel_ != nullptr) {
-        auto& compiledPanelComponent = compiledPanel_->component();
-        const int compiledCurvePreferred = compiledPanel_->preferredHeight();
-        const int bodyHeight = juce::jmax(0, contentArea.getHeight());
-        const int visualHeight =
-            juce::jlimit(juce::jmin(compiledCurvePreferred, bodyHeight), bodyHeight,
-                         juce::jmax(compiledCurvePreferred, (bodyHeight * 3) / 4));
-
-        auto visualArea = contentArea.removeFromBottom(visualHeight);
-        compiledPanelComponent.setBounds(visualArea);
-        compiledPanelComponent.setVisible(true);
-
-        auto labelFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamLabelFontSize());
-        auto valueFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamValueFontSize());
-        paramGrid_->setBounds(contentArea);
-        paramGrid_->setVisible(true);
-        paramGrid_->layoutContent(labelFont, valueFont);
-        return;
-    }
-
-    // Check if this is an internal device with custom UI
-    if (isInternalDevice() && customUI_.hasAnyUI()) {
-        if (!drum_grid_slot::layoutDrumGridUI(customUI_.getDrumGridUI(), contentArea)) {
-            auto* activeCustomUI = customUI_.getActiveUI();
-            if (activeCustomUI != nullptr) {
-                activeCustomUI->setBounds(contentArea.reduced(4));
-                activeCustomUI->setVisible(true);
-            }
-        }
-
-        // Hide parameter grid and pagination
-        paramGrid_->setVisible(false);
-    } else {
-        // External plugin or internal device without custom UI - show 4x4 parameter grid
-        if (auto* activeCustomUI = customUI_.getActiveUI())
-            activeCustomUI->setVisible(false);
-
-        // paramGrid_ covers the pagination + slots area
-        auto labelFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamLabelFontSize());
-        auto valueFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamValueFontSize());
-
-        paramGrid_->setBounds(contentArea);
-        paramGrid_->setVisible(true);
-        paramGrid_->layoutContent(labelFont, valueFont);
-    }
+    auto* compiledBodyPanel = compiledPanel_ != nullptr ? &compiledPanel_->component() : nullptr;
+    layoutDeviceSlotContentBody(
+        contentArea, traits_, isInternalDevice(), customUI_.hasAnyUI(),
+        {.faustHeader = faustUI_.get(),
+         .faustCustomView = faustCustomView_.get(),
+         .faustCustomViewPreferredHeight =
+             faustCustomView_ != nullptr ? faustCustomView_->getPreferredHeight() : 0,
+         .compiledPanel = compiledBodyPanel,
+         .compiledPanelPreferredHeight =
+             compiledPanel_ != nullptr ? compiledPanel_->preferredHeight() : 0,
+         .drumGridUI = customUI_.getDrumGridUI(),
+         .activeCustomUI = activeCustomUI,
+         .paramGrid = paramGrid_.get()},
+        FaustUI::kHeaderHeight);
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    // Header layout (visual L→R):
-    //   Plugin-hosted: [macro] [mod] [name ...]  [learn] [ui] [multiOut] [sc] [preset] [power] [X]
-    //   MIDI:          [macro] [mod?] [name ...]                       [preset] [exportClip]
-    //   [power] [X] X (delete) is owned by NodeComponent.
-    //
-    // Right→left removal order is the reverse of the visual order above.
-
-    gainLabel_.setVisible(false);  // gain has moved to the meter-strip slider
-
-    // Left side: macro, mod, AI (AI only when this device has a registered
-    // SoundDesignAgent — currently 4OSC; extends with the registry).
-    auto placeAIButton = [&]() {
-        if (isAISupported_) {
-            aiButton_->setVisible(true);
-            aiButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-            headerArea.removeFromLeft(4);
-        } else {
-            aiButton_->setVisible(false);
-        }
-    };
-    if (drum_grid_slot::shouldShowModButton(isDrumGrid_, device_.deviceType)) {
-        macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-        headerArea.removeFromLeft(4);
-        modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-        headerArea.removeFromLeft(4);
-        placeAIButton();
-    } else if (isArpeggiator_ || isStepSequencer_) {
-        macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-        headerArea.removeFromLeft(4);
-        modButton_->setVisible(false);
-        placeAIButton();
-    } else {
-        macroButton_->setVisible(false);
-        modButton_->setVisible(false);
-        aiButton_->setVisible(false);
-    }
-
-    // place(): right→left removal of one button, with gap, only if visible.
-    auto place = [&](juce::Component* c) {
-        if (c == nullptr || !c->isVisible())
-            return;
-        c->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-        headerArea.removeFromRight(4);
-    };
-
-    // The right edge of the header — [preset][power][delete] — is now owned
-    // by NodeComponent (preset slot reserved via getHeaderPresetButton(),
-    // bypass + delete by the base class itself). Subclass placements here
-    // sit to the LEFT of that triplet and can't accidentally split it.
-
-    // MIDI branch: exportClip, [preset, power, delete]
-    if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
-        learnButton_->setVisible(false);
-        if (scButton_)
-            scButton_->setVisible(false);
-        if (multiOutButton_)
-            multiOutButton_->setVisible(false);
-        onButton_->setVisible(true);
-        // Chord engine state is meant to live in clips on the timeline (use
-        // the copy-pattern / export button to bake a progression into a
-        // clip), so the .mps preset surface would just duplicate that flow
-        // and confuse users. Hide it; arp + step sequencer keep theirs.
-        if (presetButton_)
-            presetButton_->setVisible(!isChordEngine_);
-        if (exportClipButton_)
-            exportClipButton_->setVisible(true);
-
-        place(exportClipButton_ ? exportClipButton_.get() : nullptr);
-        return;
-    }
-
-    // Non-MIDI: ui, learn, sc, multiOut, [preset, power, delete]
-    if (exportClipButton_)
-        exportClipButton_->setVisible(false);
-
-    if (scButton_)
-        scButton_->setVisible(drum_grid_slot::shouldShowSidechainButton(
-            isDrumGrid_, device_.canSidechain, device_.canReceiveMidi));
-    if (multiOutButton_)
-        multiOutButton_->setVisible(device_.multiOut.isMultiOut);
-    learnButton_->setVisible(!isInternalDevice());
-    onButton_->setVisible(true);
-    uiButton_->setVisible(!isInternalDevice());
-    if (presetButton_)
-        presetButton_->setVisible(true);
-
-    place(scButton_ ? scButton_.get() : nullptr);
-    place(multiOutButton_ ? multiOutButton_.get() : nullptr);
-    place(uiButton_.get());
-    place(learnButton_.get());
+    layoutExpandedDeviceSlotHeader(headerArea, traits_, device_, isInternalDevice(),
+                                   {.gainLabel = &gainLabel_,
+                                    .macroButton = macroButton_.get(),
+                                    .modButton = modButton_.get(),
+                                    .aiButton = aiButton_.get(),
+                                    .learnButton = learnButton_.get(),
+                                    .sidechainButton = scButton_.get(),
+                                    .multiOutButton = multiOutButton_.get(),
+                                    .uiButton = uiButton_.get(),
+                                    .powerButton = onButton_.get(),
+                                    .presetButton = presetButton_.get(),
+                                    .exportClipButton = exportClipButton_.get()},
+                                   BUTTON_SIZE);
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
-    // Export clip drag from header button
-    auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
-    if (exportClipButton_ && e.originalComponent == exportClipButton_.get() &&
-        e.getDistanceFromDragStart() > 5 && stepSeqPlugin) {
-        int count = juce::jlimit(1, daw::audio::StepSequencerPlugin::MAX_STEPS,
-                                 stepSeqPlugin->numSteps.get());
-        auto rateEnum = static_cast<daw::audio::StepClock::Rate>(stepSeqPlugin->rate.get());
-        double stepBeats = daw::audio::StepClock::rateToBeats(rateEnum);
-        float gate = stepSeqPlugin->gateLength.get();
-        int accentVel = stepSeqPlugin->accentVelocity.get();
-        int normalVel = stepSeqPlugin->normalVelocity.get();
-
-        std::vector<magda::MidiNote> notes;
-        for (int i = 0; i < count; ++i) {
-            auto step = stepSeqPlugin->getStep(i);
-            if (!step.gate)
-                continue;
-            magda::MidiNote note;
-            note.noteNumber = std::clamp(step.noteNumber + step.octaveShift * 12, 0, 127);
-            note.velocity = step.accent ? accentVel : normalVel;
-            note.startBeat = i * stepBeats;
-            note.lengthBeats = stepBeats * gate;
-            notes.push_back(note);
-        }
-
-        if (notes.empty())
-            return;
-
-        double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-        if (tempo <= 0.0)
-            tempo = 120.0;
-
-        auto tempFile = daw::MidiFileWriter::writeToTempFile(notes, tempo, "seq-pattern");
-        if (tempFile.existsAsFile()) {
-            if (exportClipButton_)
-                exportClipButton_->setAlpha(0.4f);
-            juce::DragAndDropContainer::performExternalDragDropOfFiles(
-                juce::StringArray{tempFile.getFullPathName()}, false, this);
-            if (exportClipButton_)
-                exportClipButton_->setAlpha(1.0f);
-        }
+    if (handleStepSequencerPatternExternalDrag(customUI_.getStepSeqPlugin(),
+                                               exportClipButton_.get(), this, e)) {
         return;
     }
 
@@ -1861,66 +1408,21 @@ void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
-    // Meter is positioned by base class via getCollapsedMeterWidth() -> collapsedMeterArea_
-    bool usesNoteStrip = isArpeggiator_ || isChordEngine_ || isStepSequencer_;
-    levelMeter_.setBounds(collapsedMeterArea_);
-    levelMeter_.setVisible(!usesNoteStrip);
-    midiNoteStrip_.setBounds(collapsedMeterArea_);
-    midiNoteStrip_.setVisible(usesNoteStrip);
-
-    int buttonSize = juce::jmin(BUTTON_SIZE, area.getWidth() - 4);
-
-    // On/power button
-    onButton_->setBounds(
-        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    onButton_->setVisible(true);
-    area.removeFromTop(4);
-
-    // UI button: skip the slot entirely when it isn't shown so we don't
-    // leave a gap above the macro / mod icons for internal devices.
-    const bool showUI =
-        drum_grid_slot::shouldShowCollapsedUiButton(isDrumGrid_, isInternalDevice());
-    if (showUI) {
-        uiButton_->setBounds(
-            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-        uiButton_->setVisible(true);
-        area.removeFromTop(4);
-    } else {
-        uiButton_->setVisible(false);
-    }
-
-    bool showMod = drum_grid_slot::shouldShowModButton(isDrumGrid_, device_.deviceType);
-    bool showMacro = drum_grid_slot::shouldShowMacroButton(isDrumGrid_, device_.deviceType,
-                                                           isArpeggiator_, isStepSequencer_);
-    macroButton_->setBounds(
-        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    macroButton_->setVisible(showMacro);
-    area.removeFromTop(4);
-    modButton_->setBounds(
-        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    modButton_->setVisible(showMod);
-
-    // AI button (4OSC sound design) belongs in the collapsed vertical icon stack.
-    if (isSoundDesignSupported_) {
-        area.removeFromTop(4);
-        aiButton_->setBounds(
-            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-        aiButton_->setVisible(true);
-    } else {
-        aiButton_->setVisible(false);
-    }
-
-    // Multi-out button (only if plugin is multi-out)
-    if (device_.multiOut.isMultiOut && multiOutButton_) {
-        area.removeFromTop(4);
-        multiOutButton_->setBounds(
-            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-        multiOutButton_->setVisible(true);
-    }
+    layoutCollapsedDeviceSlotControls(area, collapsedMeterArea_, traits_, device_,
+                                      isInternalDevice(),
+                                      {.levelMeter = &levelMeter_,
+                                       .midiNoteStrip = &midiNoteStrip_,
+                                       .powerButton = onButton_.get(),
+                                       .uiButton = uiButton_.get(),
+                                       .macroButton = macroButton_.get(),
+                                       .modButton = modButton_.get(),
+                                       .aiButton = aiButton_.get(),
+                                       .multiOutButton = multiOutButton_.get()},
+                                      BUTTON_SIZE);
 }
 
 juce::String DeviceSlotComponent::getCollapsedName() const {
-    return drum_grid_slot::getCollapsedName(isDrumGrid_, device_.name,
+    return drum_grid_slot::getCollapsedName(traits_.isDrumGrid, device_.name,
                                             NodeComponent::getCollapsedName());
 }
 
@@ -2467,69 +1969,35 @@ void DeviceSlotComponent::showContextMenu() {
 // =============================================================================
 
 void DeviceSlotComponent::createCustomUI() {
-    if (compiledPresentation_ && compiledPresentation_->createPanel) {
-        compiledPanel_ = compiledPresentation_->createPanel(device_.pluginId);
-        compiledPanel_->setOnParameterChanged([this](int paramIndex, float displayValue) {
-            if (!nodePath_.isValid())
-                return;
-            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
-                                                                       displayValue);
-        });
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device_.id);
-                compiledPanel_->bindPlugin(plugin.get());
-            }
-        }
-        compiledPanel_->updateFromDevice(device_);
-        addAndMakeVisible(compiledPanel_->component());
-    } else if (device_.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
-        faustUI_ = std::make_unique<FaustUI>();
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device_.id);
-                auto* fp = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get());
-                if (fp) {
-                    faustUI_->setPlugin(fp);
-                    faustCustomView_ =
-                        FaustCustomUIRegistry::getInstance().create(fp->getCustomViewKind(), *fp);
-                    if (faustCustomView_)
-                        addAndMakeVisible(*faustCustomView_);
-                }
-            }
-        }
-        faustUI_->setDevicePath(nodePath_);
-        addAndMakeVisible(*faustUI_);
-    } else {
-        DeviceCustomUIManager::Callbacks callbacks;
-        callbacks.onParameterChanged = [this](int paramIndex, float value) {
-            if (!nodePath_.isValid())
-                return;
-            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
-                                                                       value);
-        };
-        callbacks.onLayoutChanged = [this]() {
-            if (onDeviceLayoutChanged)
-                onDeviceLayoutChanged();
-        };
-        callbacks.onParamModulationChanged = [this]() { updateParamModulation(); };
-        callbacks.onUpdateModsPanel = [this]() { updateModsPanel(); };
-        callbacks.onUpdateMacroPanel = [this]() { updateMacroPanel(); };
-        callbacks.getNodePath = [this]() { return nodePath_; };
+    DeviceSlotInlineUiCallbacks callbacks;
+    callbacks.onParameterChanged = [this](int paramIndex, float value) {
+        if (!nodePath_.isValid())
+            return;
+        magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex, value);
+    };
+    callbacks.onLayoutChanged = [this]() {
+        if (onDeviceLayoutChanged)
+            onDeviceLayoutChanged();
+    };
+    callbacks.onParamModulationChanged = [this]() { updateParamModulation(); };
+    callbacks.onUpdateModsPanel = [this]() { updateModsPanel(); };
+    callbacks.onUpdateMacroPanel = [this]() { updateMacroPanel(); };
+    callbacks.getNodePath = [this]() { return nodePath_; };
 
-        customUI_.create(device_, this, callbacks);
+    const auto createdKind = createDeviceSlotInlineUi(device_, traits_, nodePath_, *this,
+                                                      {.compiledPanel = compiledPanel_,
+                                                       .faustUI = faustUI_,
+                                                       .faustCustomView = faustCustomView_,
+                                                       .customUI = customUI_},
+                                                      std::move(callbacks));
+
+    if (createdKind == DeviceSlotInlineUiKind::Custom) {
         updateCustomUI();
         readAndPushModMatrix();
         wirePadChainLinkCallbacks();
     }
 
-    // MIDI-only plugins have no mappable parameters — hide mod buttons.
-    // Arpeggiator and Step Sequencer keep macros for user-assignable control.
-    if (device_.deviceType == magda::DeviceType::MIDI) {
-        modButton_->setVisible(false);
-        if (!isArpeggiator_ && !isStepSequencer_)
-            macroButton_->setVisible(false);
-    }
+    applyMidiOnlyDeviceHeaderVisibility(traits_, device_, modButton_.get(), macroButton_.get());
 }
 
 void DeviceSlotComponent::readAndPushModMatrix() {

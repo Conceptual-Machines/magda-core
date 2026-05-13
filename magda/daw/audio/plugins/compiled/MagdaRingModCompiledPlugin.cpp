@@ -454,6 +454,11 @@ float MagdaRingModCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
 }
 
+constexpr AliasSpec kAliases[] = {
+    {"sync", 0, "Sync"}, {"freq", 1, "Frequency"}, {"div", 2, "Division"},  {"shape", 3, "Shape"},
+    {"mix", 4, "Mix"},   {"width", 5, "Width"},    {"source", 6, "Source"},
+};
+
 const CompiledPluginSpec& getMagdaRingModSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaRingModCompiledPlugin::xmlTypeName,
@@ -465,6 +470,8 @@ const CompiledPluginSpec& getMagdaRingModSpec() {
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaRingModCompiledPlugin(info);
         },
+        .aliases = kAliases,
+        .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
     };
     return kSpec;
 }

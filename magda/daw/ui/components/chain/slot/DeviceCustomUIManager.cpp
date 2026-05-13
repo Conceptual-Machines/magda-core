@@ -1,19 +1,40 @@
 #include "slot/DeviceCustomUIManager.hpp"
 
 #include "audio/AudioBridge.hpp"
+#include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
-#include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
-#include "audio/plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
+#include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/StepSequencerPlugin.hpp"
+#include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/InternalDeviceKind.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "custom_ui/ArpeggiatorUI.hpp"
+#include "custom_ui/ChorusUI.hpp"
+#include "custom_ui/CompressorUI.hpp"
+#include "custom_ui/DelayUI.hpp"
+#include "custom_ui/EqualiserUI.hpp"
+#include "custom_ui/FaustUI.hpp"
+#include "custom_ui/FilterUI.hpp"
+#include "custom_ui/FourOscUI.hpp"
+#include "custom_ui/ImpulseResponseUI.hpp"
+#include "custom_ui/PhaserUI.hpp"
+#include "custom_ui/PitchShiftUI.hpp"
+#include "custom_ui/ReverbUI.hpp"
+#include "custom_ui/SamplerUI.hpp"
+#include "custom_ui/StepSequencerUI.hpp"
+#include "custom_ui/ToneGeneratorUI.hpp"
+#include "custom_ui/UtilityUI.hpp"
+#include "drum_grid/DrumGridUI.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
+#include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/panels/content/ChordPanelContent.hpp"
 
 namespace magda::daw::ui {
 
@@ -23,7 +44,31 @@ bool isLegacyTeCompressorPluginId(const juce::String& pluginId) {
     return magda::classifyInternalDevice(pluginId) == magda::InternalDeviceKind::TeCompressor;
 }
 
+struct InternalFxEntry {
+    juce::String name;
+    juce::String pluginId;
+};
+
+void addInternalFxEntry(std::vector<InternalFxEntry>& entries, juce::String name,
+                        juce::String pluginId) {
+    if (pluginId.isNotEmpty())
+        entries.push_back({name, pluginId});
+}
+
+void addCompiledInternalFxEntry(std::vector<InternalFxEntry>& entries,
+                                const juce::String& displayName) {
+    for (auto* spec : audio::compiled::getAllCompiledPluginSpecs()) {
+        if (spec != nullptr && displayName.equalsIgnoreCase(spec->displayName)) {
+            addInternalFxEntry(entries, spec->displayName, spec->pluginId);
+            return;
+        }
+    }
+}
+
 }  // namespace
+
+DeviceCustomUIManager::DeviceCustomUIManager() = default;
+DeviceCustomUIManager::~DeviceCustomUIManager() = default;
 
 // =============================================================================
 // Queries
@@ -686,22 +731,17 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
 
             // Internal FX plugins (no instruments — pad already has a sampler)
             juce::PopupMenu internalMenu;
-            struct InternalEntry {
-                juce::String name;
-                juce::String pluginId;
-            };
-            const InternalEntry internals[] = {
-                {"Equaliser", "eq"},
-                {"Compressor", audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName},
-                {"Reverb", "reverb"},
-                {"Delay", "delay"},
-                {"Chorus", "chorus"},
-                {"Phaser", audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName},
-                {"Filter", "lowpass"},
-                {"Pitch Shift", "pitchshift"},
-                {"IR Reverb", "impulseresponse"},
-                {"Utility", "utility"},
-            };
+            std::vector<InternalFxEntry> internals;
+            addInternalFxEntry(internals, "Equaliser", "eq");
+            addCompiledInternalFxEntry(internals, "Compressor");
+            addInternalFxEntry(internals, "Reverb", "reverb");
+            addInternalFxEntry(internals, "Delay", "delay");
+            addInternalFxEntry(internals, "Chorus", "chorus");
+            addCompiledInternalFxEntry(internals, "Phaser");
+            addInternalFxEntry(internals, "Filter", "lowpass");
+            addInternalFxEntry(internals, "Pitch Shift", "pitchshift");
+            addInternalFxEntry(internals, "IR Reverb", "impulseresponse");
+            addInternalFxEntry(internals, "Utility", "utility");
             int itemId = 1;
             for (const auto& entry : internals)
                 internalMenu.addItem(itemId++, entry.name);
@@ -732,8 +772,8 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
 
             auto capturedPlugins =
                 std::make_shared<juce::Array<juce::PluginDescription>>(std::move(externalPlugins));
-            auto capturedInternals = std::make_shared<std::vector<InternalEntry>>(
-                std::begin(internals), std::end(internals));
+            auto capturedInternals =
+                std::make_shared<std::vector<InternalFxEntry>>(std::move(internals));
 
             menu.showMenuAsync(
                 juce::PopupMenu::Options(),

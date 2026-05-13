@@ -5,20 +5,18 @@
 namespace magda {
 
 /**
- * @brief Compile-time identifier for every internal plugin kind MAGDA
- *        knows how to dispatch on.
+ * @brief Compile-time identifier for non-registry internal plugin kinds
+ *        MAGDA knows how to dispatch on.
  *
  * Replaces the previous `device.pluginId.containsIgnoreCase("…")` chains
  * scattered through PluginManagerSync / DeviceSlotComponent /
  * DeviceCustomUIManager. Substring matching was the source of recurring
- * routing bugs — most recently `containsIgnoreCase("delay")` swallowing
- * the compiled MAGDA delay's "magda_delay" pluginId and routing it to
- * TE's DelayPlugin.
+ * routing bugs. Compiled Faust devices are intentionally excluded from
+ * this enum and resolved through `CompiledPluginRegistry`.
  *
- * Kinds map 1:1 onto the canonical `xmlTypeName` of each plugin (see
- * each plugin's `static const char* xmlTypeName` for the source of
- * truth). Keep this list aligned with what the engine factory in
- * MagdaEngineBehaviour can actually instantiate.
+ * Kinds map 1:1 onto the canonical `xmlTypeName` of each non-registry
+ * plugin (see each plugin's `static const char* xmlTypeName` for the
+ * source of truth).
  *
  * Anything that doesn't match a known internal pluginId — VST3 / AU /
  * AAX descriptors, junk strings, future plugins — resolves to
@@ -52,20 +50,7 @@ enum class InternalDeviceKind {
     InstrumentMeterTap,
     SessionMonitor,
     // --- Faust ---------------------------------------------------------
-    Faust,               // interpreter-based, runs arbitrary user .dsp
-    CompiledFilter,      // magda_filter
-    CompiledSaturator,   // magda_saturator
-    CompiledDelay,       // magda_delay
-    CompiledGrainDelay,  // magda_grain_delay
-    CompiledGrit,        // magda_grit
-    CompiledCompressor,  // magda_compressor
-    CompiledMultiband,   // magda_multiband
-    CompiledPhaser,      // magda_phaser
-    CompiledMod,         // magda_mod
-    CompiledChorus,      // magda_chorus
-    CompiledFlanger,     // magda_flanger
-    CompiledRingMod,     // magda_ring_mod
-    CompiledFreqShift,   // magda_freq_shift
+    Faust,  // interpreter-based, runs arbitrary user .dsp
 };
 
 struct InternalDeviceMetadata {

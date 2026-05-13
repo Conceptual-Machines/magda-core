@@ -14,19 +14,7 @@
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/SidechainTriggerBus.hpp"
-#include "plugins/compiled/MagdaChorusCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaDelayCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaFilterCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaFlangerCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaFreqShiftCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaGritCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaModCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaRingModCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
+#include "plugins/compiled/CompiledFaustInterface.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -789,47 +777,9 @@ te::AutomatableParameter* AudioBridge::resolveControlTarget(const ControlTarget&
             auto plugin = getPlugin(deviceId);
             if (!plugin)
                 return nullptr;
-            if (auto* compiledFilter =
-                    dynamic_cast<daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin.get()))
-                return compiledFilter->getSlotParameter(target.paramIndex);
-            if (auto* compiledSat =
-                    dynamic_cast<daw::audio::compiled::MagdaSaturatorCompiledPlugin*>(plugin.get()))
-                return compiledSat->getSlotParameter(target.paramIndex);
-            if (auto* compiledDelay =
-                    dynamic_cast<daw::audio::compiled::MagdaDelayCompiledPlugin*>(plugin.get()))
-                return compiledDelay->getSlotParameter(target.paramIndex);
-            if (auto* compiledGrainDelay =
-                    dynamic_cast<daw::audio::compiled::MagdaGrainDelayCompiledPlugin*>(
-                        plugin.get()))
-                return compiledGrainDelay->getSlotParameter(target.paramIndex);
-            if (auto* compiledGrit =
-                    dynamic_cast<daw::audio::compiled::MagdaGritCompiledPlugin*>(plugin.get()))
-                return compiledGrit->getSlotParameter(target.paramIndex);
-            if (auto* compiledMb =
-                    dynamic_cast<daw::audio::compiled::MagdaMultibandCompiledPlugin*>(plugin.get()))
-                return compiledMb->getSlotParameter(target.paramIndex);
-            if (auto* compiledPhaser =
-                    dynamic_cast<daw::audio::compiled::MagdaPhaserCompiledPlugin*>(plugin.get()))
-                return compiledPhaser->getSlotParameter(target.paramIndex);
-            if (auto* compiledComp =
-                    dynamic_cast<daw::audio::compiled::MagdaCompressorCompiledPlugin*>(
-                        plugin.get()))
-                return compiledComp->getSlotParameter(target.paramIndex);
-            if (auto* compiledMod =
-                    dynamic_cast<daw::audio::compiled::MagdaModCompiledPlugin*>(plugin.get()))
-                return compiledMod->getSlotParameter(target.paramIndex);
-            if (auto* compiledChorus =
-                    dynamic_cast<daw::audio::compiled::MagdaChorusCompiledPlugin*>(plugin.get()))
-                return compiledChorus->getSlotParameter(target.paramIndex);
-            if (auto* compiledFlanger =
-                    dynamic_cast<daw::audio::compiled::MagdaFlangerCompiledPlugin*>(plugin.get()))
-                return compiledFlanger->getSlotParameter(target.paramIndex);
-            if (auto* compiledRingMod =
-                    dynamic_cast<daw::audio::compiled::MagdaRingModCompiledPlugin*>(plugin.get()))
-                return compiledRingMod->getSlotParameter(target.paramIndex);
-            if (auto* compiledFreqShift =
-                    dynamic_cast<daw::audio::compiled::MagdaFreqShiftCompiledPlugin*>(plugin.get()))
-                return compiledFreqShift->getSlotParameter(target.paramIndex);
+            if (auto* compiled =
+                    dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin.get()))
+                return compiled->hostSlotParameter(target.paramIndex);
             auto params = plugin->getAutomatableParameters();
             if (target.paramIndex >= 0 && target.paramIndex < static_cast<int>(params.size()))
                 return params[static_cast<size_t>(target.paramIndex)];

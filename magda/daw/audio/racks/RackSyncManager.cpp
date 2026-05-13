@@ -321,6 +321,7 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
             ext->flushPluginStateToValueTree();
             stateStr = ext->state.getProperty(te::IDs::state).toString();
         } else {
+            plugin->flushPluginStateToValueTree();
             // Strip MODIFIERASSIGNMENTS so the post-restore syncModifiers
             // adds fresh assignments instead of doubling up on the
             // captured ones (which would re-apply the LFO modulation on
@@ -1005,6 +1006,70 @@ void RackSyncManager::collectLFOModifiers(TrackId trackId,
         if (collected > 0)
             DBG("RackSyncManager::collectLFOModifiers - rackId=" << rackId << " trackId=" << trackId
                                                                  << " collected=" << collected);
+    }
+}
+
+void RackSyncManager::collectLFOModifiersWithModes(TrackId trackId,
+                                                   std::vector<te::LFOModifier*>& out,
+                                                   std::vector<LFOTriggerMode>& modes) const {
+    auto& tm = TrackManager::getInstance();
+
+    auto collectFromMods = [&](const std::vector<ModInfo>& magdaMods,
+                               const std::map<ModId, te::Modifier::Ptr>& teMods) -> int {
+        int n = 0;
+        for (const auto& modInfo : magdaMods) {
+            if (!modInfo.enabled || modInfo.links.empty())
+                continue;
+            auto it = teMods.find(modInfo.id);
+            if (it == teMods.end() || !it->second)
+                continue;
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(it->second.get())) {
+                out.push_back(lfo);
+                modes.push_back(modInfo.triggerMode);
+                ++n;
+            }
+        }
+        return n;
+    };
+
+    std::function<DeviceInfo*(std::vector<ChainElement>&, DeviceId)> findDevice;
+    findDevice = [&](std::vector<ChainElement>& elements, DeviceId id) -> DeviceInfo* {
+        for (auto& element : elements) {
+            if (isDevice(element)) {
+                auto& device = getDevice(element);
+                if (device.id == id)
+                    return &device;
+            } else if (isRack(element)) {
+                for (auto& chain : getRack(element).chains)
+                    if (auto* found = findDevice(chain.elements, id))
+                        return found;
+            }
+        }
+        return nullptr;
+    };
+
+    for (const auto& [rackId, synced] : syncedRacks_) {
+        if (synced.trackId != trackId)
+            continue;
+
+        auto* rackInfo = tm.getRack(synced.trackId, rackId);
+        if (!rackInfo)
+            continue;
+
+        int collected = collectFromMods(rackInfo->mods, synced.innerModifiers);
+
+        for (const auto& [deviceId, devState] : synced.innerDeviceMods) {
+            for (auto& chain : rackInfo->chains) {
+                if (auto* device = findDevice(chain.elements, deviceId)) {
+                    collected += collectFromMods(device->mods, devState.modifiers);
+                    break;
+                }
+            }
+        }
+
+        if (collected > 0)
+            DBG("RackSyncManager::collectLFOModifiersWithModes - rackId="
+                << rackId << " trackId=" << trackId << " collected=" << collected);
     }
 }
 

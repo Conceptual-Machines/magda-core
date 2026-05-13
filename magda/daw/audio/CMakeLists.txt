@@ -161,7 +161,11 @@ target_sources(magda_daw PRIVATE
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
     FaustResources.cpp
+    processors/CompiledFaustProcessor.cpp
+    processors/CompiledFaustProcessor.hpp
     processors/DeviceProcessor.cpp
+    processors/DeviceProcessorFactory.cpp
+    processors/DeviceProcessorFactory.hpp
     MidiBridge.cpp
     midi/MidiDeviceMatch.cpp
     midi/QwertyMidiKeyboard.cpp
@@ -169,6 +173,8 @@ target_sources(magda_daw PRIVATE
     session/SessionClipAudioMonitor.cpp
     session/SessionMonitorPlugin.cpp
     session/SessionRecorder.cpp
+    plugins/InternalPluginRegistry.cpp
+    plugins/InternalPluginRegistry.hpp
     # Phase 1: Pure data managers
     transport/TransportStateManager.cpp
     midi/MidiActivityMonitor.cpp

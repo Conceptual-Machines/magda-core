@@ -535,11 +535,6 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Poll for async plugin load completion (TE's background thread instantiation)
     void pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin);
 
-    // Plugin creation helpers
-    te::Plugin::Ptr createToneGenerator(te::AudioTrack* track);
-    te::Plugin::Ptr createLevelMeter(te::AudioTrack* track);
-    te::Plugin::Ptr createFourOscSynth(te::AudioTrack* track);
-
     // Create a TE internal plugin, restoring saved ValueTree state if available.
     // Falls back to creating a fresh plugin from xmlTypeName when no saved state exists.
     te::Plugin::Ptr createInternalPlugin(const juce::String& xmlTypeName,

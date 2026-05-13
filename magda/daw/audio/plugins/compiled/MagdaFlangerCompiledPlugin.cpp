@@ -436,6 +436,11 @@ float MagdaFlangerCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
 }
 
+constexpr AliasSpec kAliases[] = {
+    {"sync", 0, "Sync"},         {"rate", 1, "Rate"}, {"div", 2, "Division"}, {"depth", 3, "Depth"},
+    {"feedback", 4, "Feedback"}, {"mix", 5, "Mix"},   {"width", 6, "Width"},
+};
+
 const CompiledPluginSpec& getMagdaFlangerSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaFlangerCompiledPlugin::xmlTypeName,
@@ -446,6 +451,8 @@ const CompiledPluginSpec& getMagdaFlangerSpec() {
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaFlangerCompiledPlugin(info);
         },
+        .aliases = kAliases,
+        .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
     };
     return kSpec;
 }
