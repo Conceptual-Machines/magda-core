@@ -22,6 +22,7 @@
 #include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
+#include "processors/DeviceProcessor.hpp"
 #include "transport/TransportStateManager.hpp"
 
 namespace magda {

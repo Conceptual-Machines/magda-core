@@ -11,6 +11,8 @@
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "processors/DeviceProcessor.hpp"
+#include "processors/internal/MidiDeviceProcessors.hpp"
+#include "processors/internal/NativeDeviceProcessors.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda::daw::audio {

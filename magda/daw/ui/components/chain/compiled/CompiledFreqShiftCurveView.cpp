@@ -135,9 +135,9 @@ void CompiledFreqShiftCurveView::paint(juce::Graphics& g) {
                juce::Justification::centred);
 
     // Direction hint under the big number.
-    const char* dirLabel = std::fabs(shiftHz_) < 0.5f ? "BYPASS"
-                           : shiftHz_ > 0.0f          ? "▲ UP"
-                                                      : "▼ DOWN";
+    const juce::String dirLabel = std::fabs(shiftHz_) < 0.5f ? juce::String("BYPASS")
+                                  : shiftHz_ > 0.0f ? juce::String::fromUTF8("\xe2\x96\xb2 UP")
+                                                    : juce::String::fromUTF8("\xe2\x96\xbc DOWN");
     g.setColour(dimText);
     g.setFont(10.0f);
     g.drawText(dirLabel,

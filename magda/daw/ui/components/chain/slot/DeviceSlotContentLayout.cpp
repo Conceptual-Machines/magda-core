@@ -92,9 +92,14 @@ void layoutParamGrid(ParamHostComponent* paramGrid, juce::Rectangle<int> area) {
     paramGrid->layoutContent(labelFont, valueFont);
 }
 
-int boundedBottomPanelHeight(int preferredHeight, int bodyHeight, int minFractionDivisor) {
+int boundedBottomPanelHeight(int preferredHeight, int bodyHeight, int minFractionNumerator,
+                             int minFractionDenominator) {
+    jassert(minFractionNumerator >= 0);
+    jassert(minFractionDenominator > 0);
+
+    const int minScaledHeight = (bodyHeight * minFractionNumerator) / minFractionDenominator;
     return juce::jlimit(juce::jmin(preferredHeight, bodyHeight), bodyHeight,
-                        juce::jmax(preferredHeight, bodyHeight / minFractionDivisor));
+                        juce::jmax(preferredHeight, minScaledHeight));
 }
 
 }  // namespace
@@ -137,7 +142,7 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
         if (controls.faustCustomView != nullptr) {
             const int bodyHeight = juce::jmax(0, contentArea.getHeight());
             const int customHeight =
-                boundedBottomPanelHeight(controls.faustCustomViewPreferredHeight, bodyHeight, 2);
+                boundedBottomPanelHeight(controls.faustCustomViewPreferredHeight, bodyHeight, 1, 2);
             controls.faustCustomView->setBounds(contentArea.removeFromBottom(customHeight));
             controls.faustCustomView->setVisible(true);
         }
@@ -149,7 +154,7 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
     if (controls.compiledPanel != nullptr) {
         const int bodyHeight = juce::jmax(0, contentArea.getHeight());
         const int visualHeight =
-            boundedBottomPanelHeight(controls.compiledPanelPreferredHeight, bodyHeight, 4);
+            boundedBottomPanelHeight(controls.compiledPanelPreferredHeight, bodyHeight, 3, 4);
         controls.compiledPanel->setBounds(contentArea.removeFromBottom(visualHeight));
         controls.compiledPanel->setVisible(true);
 

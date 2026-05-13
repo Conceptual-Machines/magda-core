@@ -25,6 +25,7 @@
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "processors/DeviceProcessor.hpp"
 #include "processors/DeviceProcessorFactory.hpp"
 #include "transport/TransportStateManager.hpp"
 

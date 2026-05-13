@@ -163,6 +163,16 @@ target_sources(magda_daw PRIVATE
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
     FaustResources.cpp
+    processors/base/DeviceProcessor.cpp
+    processors/base/DeviceProcessor.hpp
+    processors/ParameterInfoBuilder.cpp
+    processors/ParameterInfoBuilder.hpp
+    processors/external/ExternalPluginProcessor.cpp
+    processors/external/ExternalPluginProcessor.hpp
+    processors/internal/MidiDeviceProcessors.cpp
+    processors/internal/MidiDeviceProcessors.hpp
+    processors/internal/NativeDeviceProcessors.cpp
+    processors/internal/NativeDeviceProcessors.hpp
     processors/CompiledFaustProcessor.cpp
     processors/CompiledFaustProcessor.hpp
     processors/DeviceProcessor.cpp

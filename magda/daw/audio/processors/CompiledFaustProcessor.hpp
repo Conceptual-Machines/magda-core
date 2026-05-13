@@ -1,6 +1,6 @@
 #pragma once
 
-#include "processors/DeviceProcessor.hpp"
+#include "processors/base/DeviceProcessor.hpp"
 
 namespace magda {
 
