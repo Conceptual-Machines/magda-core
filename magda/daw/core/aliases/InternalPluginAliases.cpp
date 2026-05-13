@@ -213,6 +213,16 @@ constexpr AliasSpec kCompiledChorusAliases[] = {
 };
 
 // ------------------------------------------------------------------
+// Compiled MAGDA Flanger ("magda_flanger") — slot indices match
+// MagdaFlangerCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_flanger.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledFlangerAliases[] = {
+    {"sync", 0, "Sync"},         {"rate", 1, "Rate"}, {"div", 2, "Division"}, {"depth", 3, "Depth"},
+    {"feedback", 4, "Feedback"}, {"mix", 5, "Mix"},   {"width", 6, "Width"},
+};
+
+// ------------------------------------------------------------------
 // Pitch Shift ("pitchshift") — TE PitchShiftPlugin single param.
 // ------------------------------------------------------------------
 constexpr AliasSpec kPitchShiftAliases[] = {
@@ -251,6 +261,7 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"magda_phaser", kCompiledPhaserAliases, (int)std::size(kCompiledPhaserAliases)},
     {"magda_mod", kCompiledModAliases, (int)std::size(kCompiledModAliases)},
     {"magda_chorus", kCompiledChorusAliases, (int)std::size(kCompiledChorusAliases)},
+    {"magda_flanger", kCompiledFlangerAliases, (int)std::size(kCompiledFlangerAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
     {"utility", kUtilityAliases, (int)std::size(kUtilityAliases)},
 };

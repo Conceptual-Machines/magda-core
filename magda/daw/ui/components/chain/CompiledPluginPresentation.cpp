@@ -18,15 +18,17 @@ const CompiledPresentationSpec& getMagdaPhaserPresentation();
 const CompiledPresentationSpec& getMagdaCompressorPresentation();
 const CompiledPresentationSpec& getMagdaModPresentation();
 const CompiledPresentationSpec& getMagdaChorusPresentation();
+const CompiledPresentationSpec& getMagdaFlangerPresentation();
 
 namespace {
 
 const CompiledPresentationSpec* const kAllPresentations[] = {
-    &getMagdaFilterPresentation(), &getMagdaSaturatorPresentation(),
-    &getMagdaDelayPresentation(),  &getMagdaGrainDelayPresentation(),
-    &getMagdaGritPresentation(),   &getMagdaMultibandPresentation(),
-    &getMagdaPhaserPresentation(), &getMagdaCompressorPresentation(),
-    &getMagdaModPresentation(),    &getMagdaChorusPresentation(),
+    &getMagdaFilterPresentation(),  &getMagdaSaturatorPresentation(),
+    &getMagdaDelayPresentation(),   &getMagdaGrainDelayPresentation(),
+    &getMagdaGritPresentation(),    &getMagdaMultibandPresentation(),
+    &getMagdaPhaserPresentation(),  &getMagdaCompressorPresentation(),
+    &getMagdaModPresentation(),     &getMagdaChorusPresentation(),
+    &getMagdaFlangerPresentation(),
 };
 
 }  // namespace

@@ -4,6 +4,7 @@
 #include "MagdaCompressorCompiledPlugin.hpp"
 #include "MagdaDelayCompiledPlugin.hpp"
 #include "MagdaFilterCompiledPlugin.hpp"
+#include "MagdaFlangerCompiledPlugin.hpp"
 #include "MagdaGrainDelayCompiledPlugin.hpp"
 #include "MagdaGritCompiledPlugin.hpp"
 #include "MagdaModCompiledPlugin.hpp"
@@ -28,6 +29,7 @@ const CompiledPluginSpec& getMagdaPhaserSpec();
 const CompiledPluginSpec& getMagdaCompressorSpec();
 const CompiledPluginSpec& getMagdaModSpec();
 const CompiledPluginSpec& getMagdaChorusSpec();
+const CompiledPluginSpec& getMagdaFlangerSpec();
 
 namespace {
 
@@ -35,7 +37,7 @@ const CompiledPluginSpec* const kAllSpecs[] = {
     &getMagdaFilterSpec(),     &getMagdaSaturatorSpec(),  &getMagdaDelaySpec(),
     &getMagdaGrainDelaySpec(), &getMagdaGritSpec(),       &getMagdaMultibandSpec(),
     &getMagdaPhaserSpec(),     &getMagdaCompressorSpec(), &getMagdaModSpec(),
-    &getMagdaChorusSpec(),
+    &getMagdaChorusSpec(),     &getMagdaFlangerSpec(),
 };
 
 }  // namespace

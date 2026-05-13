@@ -27,6 +27,7 @@
 #include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
+#include "audio/plugins/compiled/MagdaFlangerCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGritCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaModCompiledPlugin.hpp"
@@ -124,6 +125,11 @@ bool isCompiledFaustChorusPluginId(const juce::String& pluginId) {
     return pluginId.equalsIgnoreCase(MagdaChorusCompiledPlugin::xmlTypeName);
 }
 
+bool isCompiledFaustFlangerPluginId(const juce::String& pluginId) {
+    using namespace magda::daw::audio::compiled;
+    return pluginId.equalsIgnoreCase(MagdaFlangerCompiledPlugin::xmlTypeName);
+}
+
 bool isCompiledFaustCompressorPluginId(const juce::String& pluginId) {
     using namespace magda::daw::audio::compiled;
     return pluginId.equalsIgnoreCase(MagdaCompressorCompiledPlugin::xmlTypeName);
@@ -216,6 +222,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     isCompiledFaustPhaser_ = isCompiledFaustPhaserPluginId(device.pluginId);
     isCompiledFaustMod_ = isCompiledFaustModPluginId(device.pluginId);
     isCompiledFaustChorus_ = isCompiledFaustChorusPluginId(device.pluginId);
+    isCompiledFaustFlanger_ = isCompiledFaustFlangerPluginId(device.pluginId);
     isTracktionDevice_ = magda::isTracktionEngineStockPlugin(device.pluginId);
     if (isTracktionDevice_) {
         tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
@@ -555,6 +562,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 6, /*cellsPerRow*/ 6);
     else if (isCompiledFaustChorus_)
         layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 8, /*cellsPerRow*/ 8);
+    else if (isCompiledFaustFlanger_)
+        layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 7, /*cellsPerRow*/ 7);
     else
         layout = std::make_unique<StandardDeviceLayout>();
     paramGrid_ = std::make_unique<ParamHostComponent>(std::move(layout));
@@ -1906,7 +1915,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         !compiledFilterCurveView_ && !compiledSaturatorCurveView_ && !compiledDelayCurveView_ &&
         !compiledGrainDelayCurveView_ && !compiledGritCurveView_ && !compiledMultibandCurveView_ &&
         !compiledPhaserCurveView_ && !compiledModCurveView_ && !compiledChorusCurveView_ &&
-        !chordEngineUI_) {
+        !compiledFlangerCurveView_ && !chordEngineUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
@@ -1917,7 +1926,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         impulseResponseUI_ || utilityUI_ || faustUI_ || compiledFilterCurveView_ ||
         compiledSaturatorCurveView_ || compiledDelayCurveView_ || compiledGritCurveView_ ||
         compiledMultibandCurveView_ || compiledPhaserCurveView_ || compiledModCurveView_ ||
-        compiledChorusCurveView_ || chordEngineUI_) {
+        compiledChorusCurveView_ || compiledFlangerCurveView_ || chordEngineUI_) {
         updateCustomUI();
     }
 
@@ -2092,6 +2101,18 @@ void DeviceSlotComponent::updateParamModulation() {
             }
         }
         compiledChorusCurveView_->updateFromDevice(device_);
+    }
+
+    if (compiledFlangerCurveView_ && isCompiledFaustFlanger_) {
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                compiledFlangerCurveView_->setCompiledPlugin(
+                    dynamic_cast<magda::daw::audio::compiled::MagdaFlangerCompiledPlugin*>(
+                        plugin.get()));
+            }
+        }
+        compiledFlangerCurveView_->updateFromDevice(device_);
     }
 
     if (compiledPhaserCurveView_ && isCompiledFaustPhaser_) {
@@ -2401,6 +2422,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             compiledModCurveView_->setVisible(false);
         if (compiledChorusCurveView_)
             compiledChorusCurveView_->setVisible(false);
+        if (compiledFlangerCurveView_)
+            compiledFlangerCurveView_->setVisible(false);
         if (chordEngineUI_)
             chordEngineUI_->setVisible(false);
         if (arpeggiatorUI_)
@@ -2497,6 +2520,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     } else if (isCompiledFaustChorus_ && compiledChorusCurveView_) {
         compiledCurveView = compiledChorusCurveView_.get();
         compiledCurvePreferred = compiledChorusCurveView_->getPreferredHeight();
+    } else if (isCompiledFaustFlanger_ && compiledFlangerCurveView_) {
+        compiledCurveView = compiledFlangerCurveView_.get();
+        compiledCurvePreferred = compiledFlangerCurveView_->getPreferredHeight();
     }
     if (compiledCurveView != nullptr) {
         const int bodyHeight = juce::jmax(0, contentArea.getHeight());
@@ -3500,6 +3526,10 @@ void DeviceSlotComponent::createCustomUI() {
         compiledChorusCurveView_ = std::make_unique<CompiledChorusCurveView>(device_.pluginId);
         compiledChorusCurveView_->updateFromDevice(device_);
         addAndMakeVisible(*compiledChorusCurveView_);
+    } else if (isCompiledFaustFlanger_) {
+        compiledFlangerCurveView_ = std::make_unique<CompiledFlangerCurveView>(device_.pluginId);
+        compiledFlangerCurveView_->updateFromDevice(device_);
+        addAndMakeVisible(*compiledFlangerCurveView_);
     } else if (device_.pluginId.containsIgnoreCase("tone")) {
         toneGeneratorUI_ = std::make_unique<ToneGeneratorUI>();
         toneGeneratorUI_->onParameterChanged = [this](int paramIndex, float normalizedValue) {
@@ -4492,6 +4522,8 @@ void DeviceSlotComponent::refreshCustomUIParameterValues() {
         compiledModCurveView_->updateFromDevice(device_);
     if (compiledChorusCurveView_ && isCompiledFaustChorus_)
         compiledChorusCurveView_->updateFromDevice(device_);
+    if (compiledFlangerCurveView_ && isCompiledFaustFlanger_)
+        compiledFlangerCurveView_->updateFromDevice(device_);
 }
 
 void DeviceSlotComponent::updateCustomUI() {
@@ -4513,6 +4545,8 @@ void DeviceSlotComponent::updateCustomUI() {
         compiledModCurveView_->updateFromDevice(device_);
     if (compiledChorusCurveView_ && isCompiledFaustChorus_)
         compiledChorusCurveView_->updateFromDevice(device_);
+    if (compiledFlangerCurveView_ && isCompiledFaustFlanger_)
+        compiledFlangerCurveView_->updateFromDevice(device_);
 
     if (toneGeneratorUI_ && device_.pluginId.containsIgnoreCase("tone")) {
         float frequency = 440.0f;
