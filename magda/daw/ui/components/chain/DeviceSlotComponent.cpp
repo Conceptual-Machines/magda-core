@@ -12,12 +12,9 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
-#include "audio/transport/StepClock.hpp"
-#include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/InternalDeviceKind.hpp"
 #include "core/MacroInfo.hpp"
-#include "core/MidiFileWriter.hpp"
 #include "core/ModInfo.hpp"
 #include "core/ParameterUtils.hpp"
 #include "core/SelectionManager.hpp"
@@ -40,10 +37,10 @@
 #include "modulation/ModsPanelComponent.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
-#include "project/ProjectManager.hpp"
 #include "slot/DevicePresetMenu.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
 #include "slot/DeviceSlotTraits.hpp"
+#include "slot/StepSequencerClipExport.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/dialogs/ParameterConfigDialog.hpp"
 #include "ui/panels/content/ChordPanelContent.hpp"
@@ -409,31 +406,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         exportClipButton_->addMouseListener(this, false);
         exportClipButton_->onClick = [this]() {
             auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
-            if (!stepSeqPlugin)
-                return;
-            int count = juce::jlimit(1, daw::audio::StepSequencerPlugin::MAX_STEPS,
-                                     stepSeqPlugin->numSteps.get());
-            auto rateEnum = static_cast<daw::audio::StepClock::Rate>(stepSeqPlugin->rate.get());
-            double stepBeats = daw::audio::StepClock::rateToBeats(rateEnum);
-            float gate = stepSeqPlugin->gateLength.get();
-            int accentVel = stepSeqPlugin->accentVelocity.get();
-            int normalVel = stepSeqPlugin->normalVelocity.get();
-
-            std::vector<magda::MidiNote> notes;
-            for (int i = 0; i < count; ++i) {
-                auto step = stepSeqPlugin->getStep(i);
-                if (!step.gate)
-                    continue;
-                magda::MidiNote note;
-                note.noteNumber = std::clamp(step.noteNumber + step.octaveShift * 12, 0, 127);
-                note.velocity = step.accent ? accentVel : normalVel;
-                note.startBeat = i * stepBeats;
-                note.lengthBeats = stepBeats * gate;
-                notes.push_back(note);
-            }
-
-            if (!notes.empty())
-                ClipManager::getInstance().setNoteClipboard(std::move(notes));
+            if (stepSeqPlugin != nullptr)
+                copyStepSequencerPatternToClipboard(*stepSeqPlugin);
         };
         addAndMakeVisible(*exportClipButton_);
     }
@@ -1768,35 +1742,7 @@ void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
     auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
     if (exportClipButton_ && e.originalComponent == exportClipButton_.get() &&
         e.getDistanceFromDragStart() > 5 && stepSeqPlugin) {
-        int count = juce::jlimit(1, daw::audio::StepSequencerPlugin::MAX_STEPS,
-                                 stepSeqPlugin->numSteps.get());
-        auto rateEnum = static_cast<daw::audio::StepClock::Rate>(stepSeqPlugin->rate.get());
-        double stepBeats = daw::audio::StepClock::rateToBeats(rateEnum);
-        float gate = stepSeqPlugin->gateLength.get();
-        int accentVel = stepSeqPlugin->accentVelocity.get();
-        int normalVel = stepSeqPlugin->normalVelocity.get();
-
-        std::vector<magda::MidiNote> notes;
-        for (int i = 0; i < count; ++i) {
-            auto step = stepSeqPlugin->getStep(i);
-            if (!step.gate)
-                continue;
-            magda::MidiNote note;
-            note.noteNumber = std::clamp(step.noteNumber + step.octaveShift * 12, 0, 127);
-            note.velocity = step.accent ? accentVel : normalVel;
-            note.startBeat = i * stepBeats;
-            note.lengthBeats = stepBeats * gate;
-            notes.push_back(note);
-        }
-
-        if (notes.empty())
-            return;
-
-        double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-        if (tempo <= 0.0)
-            tempo = 120.0;
-
-        auto tempFile = daw::MidiFileWriter::writeToTempFile(notes, tempo, "seq-pattern");
+        auto tempFile = writeStepSequencerPatternToTempMidiFile(*stepSeqPlugin);
         if (tempFile.existsAsFile()) {
             if (exportClipButton_)
                 exportClipButton_->setAlpha(0.4f);
