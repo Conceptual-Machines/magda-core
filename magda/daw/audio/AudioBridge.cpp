@@ -24,6 +24,7 @@
 #include "plugins/compiled/MagdaModCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
+#include "plugins/compiled/MagdaRingModCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
@@ -822,6 +823,9 @@ te::AutomatableParameter* AudioBridge::resolveControlTarget(const ControlTarget&
             if (auto* compiledFlanger =
                     dynamic_cast<daw::audio::compiled::MagdaFlangerCompiledPlugin*>(plugin.get()))
                 return compiledFlanger->getSlotParameter(target.paramIndex);
+            if (auto* compiledRingMod =
+                    dynamic_cast<daw::audio::compiled::MagdaRingModCompiledPlugin*>(plugin.get()))
+                return compiledRingMod->getSlotParameter(target.paramIndex);
             auto params = plugin->getAutomatableParameters();
             if (target.paramIndex >= 0 && target.paramIndex < static_cast<int>(params.size()))
                 return params[static_cast<size_t>(target.paramIndex)];

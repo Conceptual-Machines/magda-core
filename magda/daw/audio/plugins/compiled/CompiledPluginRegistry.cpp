@@ -10,6 +10,7 @@
 #include "MagdaModCompiledPlugin.hpp"
 #include "MagdaMultibandCompiledPlugin.hpp"
 #include "MagdaPhaserCompiledPlugin.hpp"
+#include "MagdaRingModCompiledPlugin.hpp"
 #include "MagdaSaturatorCompiledPlugin.hpp"
 
 namespace magda::daw::audio::compiled {
@@ -30,6 +31,7 @@ const CompiledPluginSpec& getMagdaCompressorSpec();
 const CompiledPluginSpec& getMagdaModSpec();
 const CompiledPluginSpec& getMagdaChorusSpec();
 const CompiledPluginSpec& getMagdaFlangerSpec();
+const CompiledPluginSpec& getMagdaRingModSpec();
 
 namespace {
 
@@ -37,7 +39,7 @@ const CompiledPluginSpec* const kAllSpecs[] = {
     &getMagdaFilterSpec(),     &getMagdaSaturatorSpec(),  &getMagdaDelaySpec(),
     &getMagdaGrainDelaySpec(), &getMagdaGritSpec(),       &getMagdaMultibandSpec(),
     &getMagdaPhaserSpec(),     &getMagdaCompressorSpec(), &getMagdaModSpec(),
-    &getMagdaChorusSpec(),     &getMagdaFlangerSpec(),
+    &getMagdaChorusSpec(),     &getMagdaFlangerSpec(),    &getMagdaRingModSpec(),
 };
 
 }  // namespace

@@ -22,6 +22,7 @@
 #include "audio/plugins/compiled/MagdaModCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
+#include "audio/plugins/compiled/MagdaRingModCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 #include "audio/session/SessionMonitorPlugin.hpp"
 
@@ -131,6 +132,9 @@ const InternalDeviceMetadata kMetadata[] = {
     {InternalDeviceKind::CompiledFlanger, "Flanger", "", "Modulation",
      "Compiled Faust stereo flanger — short modulated delay with heavy feedback for the "
      "classic comb-sweep character. Sync- or free-rate LFO."},
+    {InternalDeviceKind::CompiledRingMod, "Ring Mod", "", "Modulation",
+     "Compiled Faust stereo ring modulator. Multiplies the input by a sine, triangle, or "
+     "square carrier from 1 Hz (tremolo) to 5 kHz (metallic clang). Sync- or free-rate."},
 };
 
 }  // namespace
@@ -161,6 +165,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::compiled::MagdaModCompiledPlugin;
     using daw::audio::compiled::MagdaMultibandCompiledPlugin;
     using daw::audio::compiled::MagdaPhaserCompiledPlugin;
+    using daw::audio::compiled::MagdaRingModCompiledPlugin;
     using daw::audio::compiled::MagdaSaturatorCompiledPlugin;
     namespace TE = tracktion::engine;
 
@@ -179,6 +184,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::CompiledMod, MagdaModCompiledPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::CompiledChorus, MagdaChorusCompiledPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::CompiledFlanger, MagdaFlangerCompiledPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::CompiledRingMod, MagdaRingModCompiledPlugin::xmlTypeName, nullptr},
         // TE built-in effects — picker uses a short id, the live plugin
         // reports the real `te::*::xmlTypeName`. Match either.
         {InternalDeviceKind::TeEq, "eq", TE::EqualiserPlugin::xmlTypeName},
