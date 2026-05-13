@@ -15,6 +15,12 @@ namespace magda::daw::audio::compiled {
 
 namespace te = tracktion::engine;
 
+struct AliasSpec {
+    const char* alias;
+    int paramIndex;
+    const char* paramName;  // Used as paramNameAtSetTime for drift recovery.
+};
+
 /**
  * @brief Identity + factory of a single compiled-Faust plugin.
  *
@@ -31,6 +37,9 @@ struct CompiledPluginSpec {
     const char* browserCategory;  // "Modulation" / "Delay" / ...
     const char* description;      // tooltip / catalog blurb
     te::Plugin::Ptr (*createPlugin)(const te::PluginCreationInfo& info);
+    const char* aliasKey = nullptr;  // defaults to pluginId when null
+    const AliasSpec* aliases = nullptr;
+    int aliasCount = 0;
 };
 
 /// All compiled-plugin specs known to MAGDA, in stable iteration order.

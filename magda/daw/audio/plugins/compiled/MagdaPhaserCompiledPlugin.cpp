@@ -364,6 +364,12 @@ float MagdaPhaserCompiledPlugin::nativeValueToDisplayValue(int slotIndex, float 
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
 }
 
+constexpr AliasSpec kAliases[] = {
+    {"rate", 0, "Rate"},     {"depth", 1, "Depth"},   {"feedback", 2, "Feedback"},
+    {"stages", 3, "Stages"}, {"min_hz", 4, "Min Hz"}, {"max_hz", 5, "Max Hz"},
+    {"mix", 6, "Mix"},
+};
+
 const CompiledPluginSpec& getMagdaPhaserSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaPhaserCompiledPlugin::xmlTypeName,
@@ -373,6 +379,8 @@ const CompiledPluginSpec& getMagdaPhaserSpec() {
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaPhaserCompiledPlugin(info);
         },
+        .aliases = kAliases,
+        .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
     };
     return kSpec;
 }

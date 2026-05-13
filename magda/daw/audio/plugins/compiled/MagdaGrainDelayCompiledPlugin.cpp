@@ -434,6 +434,12 @@ float MagdaGrainDelayCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
 }
 
+constexpr AliasSpec kAliases[] = {
+    {"time", 0, "Time"},         {"division", 1, "Division"}, {"sync", 2, "Sync"},
+    {"size", 3, "Size"},         {"pitch", 4, "Pitch"},       {"spray", 5, "Spray"},
+    {"feedback", 6, "Feedback"}, {"mix", 7, "Mix"},
+};
+
 const CompiledPluginSpec& getMagdaGrainDelaySpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaGrainDelayCompiledPlugin::xmlTypeName,
@@ -444,6 +450,8 @@ const CompiledPluginSpec& getMagdaGrainDelaySpec() {
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaGrainDelayCompiledPlugin(info);
         },
+        .aliases = kAliases,
+        .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
     };
     return kSpec;
 }

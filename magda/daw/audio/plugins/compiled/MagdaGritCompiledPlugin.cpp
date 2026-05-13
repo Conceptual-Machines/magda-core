@@ -366,6 +366,13 @@ float MagdaGritCompiledPlugin::nativeValueToDisplayValue(int slotIndex, float na
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
 }
 
+constexpr AliasSpec kAliases[] = {
+    {"frequency", 0, "Frequency"},
+    {"width", 1, "Width"},
+    {"amount", 2, "Amount"},
+    {"mode", 3, "Mode"},
+};
+
 const CompiledPluginSpec& getMagdaGritSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaGritCompiledPlugin::xmlTypeName,
@@ -375,6 +382,8 @@ const CompiledPluginSpec& getMagdaGritSpec() {
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaGritCompiledPlugin(info);
         },
+        .aliases = kAliases,
+        .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),
     };
     return kSpec;
 }
