@@ -11,6 +11,7 @@
 #include "magda_compressor.generated.cpp"
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -438,6 +439,21 @@ float MagdaCompressorCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
         return nativeValue;
     const auto info = parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slotIndex)]);
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
+}
+
+const CompiledPluginSpec& getMagdaCompressorSpec() {
+    static const CompiledPluginSpec kSpec{
+        .pluginId = MagdaCompressorCompiledPlugin::xmlTypeName,
+        .displayName = "Compressor",
+        .browserCategory = "Dynamics",
+        .description = "Compiled Faust compressor with peak/RMS detection, soft knee, "
+                       "stereo link, audio sidechain input, parallel mix, and output safety "
+                       "limiting.",
+        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
+            return new MagdaCompressorCompiledPlugin(info);
+        },
+    };
+    return kSpec;
 }
 
 }  // namespace magda::daw::audio::compiled

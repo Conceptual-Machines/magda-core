@@ -11,6 +11,7 @@
 #include "magda_delay.generated.cpp"
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -459,6 +460,19 @@ float MagdaDelayCompiledPlugin::nativeValueToDisplayValue(int slotIndex, float n
         info.scaleAnchor = s.scaleAnchor;
     info.choices = s.choices;
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
+}
+
+const CompiledPluginSpec& getMagdaDelaySpec() {
+    static const CompiledPluginSpec kSpec{
+        .pluginId = MagdaDelayCompiledPlugin::xmlTypeName,
+        .displayName = "Delay",
+        .browserCategory = "Delay",
+        .description = "Compiled Faust stereo delay with sync, tone, feedback, and crossfeed.",
+        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
+            return new MagdaDelayCompiledPlugin(info);
+        },
+    };
+    return kSpec;
 }
 
 }  // namespace magda::daw::audio::compiled

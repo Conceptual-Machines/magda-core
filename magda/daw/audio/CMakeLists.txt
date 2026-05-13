@@ -128,6 +128,8 @@ target_sources(magda_daw PRIVATE
     plugins/compiled/MagdaModCompiledPlugin.hpp
     plugins/compiled/MagdaChorusCompiledPlugin.cpp
     plugins/compiled/MagdaChorusCompiledPlugin.hpp
+    plugins/compiled/CompiledPluginRegistry.cpp
+    plugins/compiled/CompiledPluginRegistry.hpp
     plugins/compiled/CompiledFaustHost.hpp
     plugins/compiled/CompiledFaustInterface.hpp
     AudioBridge.cpp

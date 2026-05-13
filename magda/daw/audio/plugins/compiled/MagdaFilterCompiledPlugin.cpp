@@ -10,6 +10,7 @@
 #include "faust/gui/meta.h"
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 // All six engine DSPs are #included into THIS translation unit only —
 // each generated `.cpp` defines a self-contained class, so co-locating
@@ -520,6 +521,28 @@ float MagdaFilterCompiledPlugin::nativeValueToDisplayValue(int slotIndex, float 
         info.scaleAnchor = s.scaleAnchor;
     info.choices = s.choices;
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
+}
+
+const CompiledPluginSpec& getMagdaFilterSpec() {
+    static const CompiledPluginSpec kSpec{
+        .pluginId = MagdaFilterCompiledPlugin::xmlTypeName,
+        .displayName = "Filter",
+        .browserCategory = "Filter",
+        .description = "Compiled Faust multimode filter.\n"
+                       "SVF: clean 2-pole LP/BP/HP/Notch for precise shaping.\n"
+                       "Ladder: classic 4-pole low-pass with driven resonance.\n"
+                       "Korg 35: MS-style LP/HP character with sharper analog bite.\n"
+                       "Oberheim: SEM-style LP/BP/HP/Notch with broad musical sweeps.\n"
+                       "Sallen-Key: smooth 2nd-order LP/BP/HP response.\n"
+                       "Diode: resonant 4-pole diode ladder with input drive.\n"
+                       "Warning: high resonance can create very loud peaks or "
+                       "self-oscillation. "
+                       "Keep monitoring levels conservative to protect speakers and ears.",
+        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
+            return new MagdaFilterCompiledPlugin(info);
+        },
+    };
+    return kSpec;
 }
 
 }  // namespace magda::daw::audio::compiled

@@ -12,16 +12,7 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
-#include "audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
-#include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
-#include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
-#include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
-#include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
-#include "audio/plugins/compiled/MagdaGritCompiledPlugin.hpp"
-#include "audio/plugins/compiled/MagdaModCompiledPlugin.hpp"
-#include "audio/plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
-#include "audio/plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
-#include "audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
+#include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "core/AppPaths.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
@@ -369,32 +360,15 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
                                                      audio::StepSequencerPlugin::xmlTypeName, false,
                                                      "MIDI"));
     list.push_back(PluginBrowserInfo::createInternal("Equaliser", "eq", false, "EQ"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Compressor", audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName, false,
-        "Dynamics"));
     list.push_back(PluginBrowserInfo::createInternal("Reverb", "reverb", false, "Reverb"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Delay", audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName, false, "Delay"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Grain Delay", audio::compiled::MagdaGrainDelayCompiledPlugin::xmlTypeName, false,
-        "Delay"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Chorus", audio::compiled::MagdaChorusCompiledPlugin::xmlTypeName, false, "Modulation"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Phaser", audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName, false, "Modulation"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Mod", audio::compiled::MagdaModCompiledPlugin::xmlTypeName, false, "Modulation"));
     list.push_back(PluginBrowserInfo::createInternal("Lowpass", "lowpass", false, "Filter"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Filter", audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName, false, "Filter"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Saturator", audio::compiled::MagdaSaturatorCompiledPlugin::xmlTypeName, false,
-        "Distortion"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Grit", audio::compiled::MagdaGritCompiledPlugin::xmlTypeName, false, "Distortion"));
-    list.push_back(PluginBrowserInfo::createInternal(
-        "Multiband Compressor", audio::compiled::MagdaMultibandCompiledPlugin::xmlTypeName, false,
-        "Dynamics"));
+    // Compiled-Faust devices come from the registry — displayName / category /
+    // pluginId live with the wrapper. Adding a new compiled device picks up
+    // here automatically.
+    for (const auto* spec : audio::compiled::getAllCompiledPluginSpecs()) {
+        list.push_back(PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId, false,
+                                                         spec->browserCategory));
+    }
     list.push_back(PluginBrowserInfo::createInternal("Pitch Shift", "pitchshift", false, "Pitch"));
     list.push_back(
         PluginBrowserInfo::createInternal("IR Reverb", "impulseresponse", false, "Reverb"));

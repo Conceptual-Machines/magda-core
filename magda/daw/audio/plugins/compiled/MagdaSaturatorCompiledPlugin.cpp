@@ -11,6 +11,7 @@
 #include "magda_saturator.generated.cpp"
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -380,6 +381,19 @@ float MagdaSaturatorCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
         info.scaleAnchor = s.scaleAnchor;
     info.choices = s.choices;
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
+}
+
+const CompiledPluginSpec& getMagdaSaturatorSpec() {
+    static const CompiledPluginSpec kSpec{
+        .pluginId = MagdaSaturatorCompiledPlugin::xmlTypeName,
+        .displayName = "Saturator",
+        .browserCategory = "Distortion",
+        .description = "Compiled Faust waveshaper with drive, mode, bias, tone, mix, and output.",
+        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
+            return new MagdaSaturatorCompiledPlugin(info);
+        },
+    };
+    return kSpec;
 }
 
 }  // namespace magda::daw::audio::compiled

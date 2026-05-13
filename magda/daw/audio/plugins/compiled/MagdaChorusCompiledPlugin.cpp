@@ -12,6 +12,7 @@
 #include "magda_chorus.generated.cpp"
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -455,6 +456,20 @@ float MagdaChorusCompiledPlugin::nativeValueToDisplayValue(int slotIndex, float 
         info.scaleAnchor = s.scaleAnchor;
     info.choices = s.choices;
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
+}
+
+const CompiledPluginSpec& getMagdaChorusSpec() {
+    static const CompiledPluginSpec kSpec{
+        .pluginId = MagdaChorusCompiledPlugin::xmlTypeName,
+        .displayName = "Chorus",
+        .browserCategory = "Modulation",
+        .description = "Compiled Faust stereo chorus with 1 to 3 modulated voices per channel. "
+                       "Free Hz or tempo-synced rate, depth, feedback, mix, and stereo width.",
+        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
+            return new MagdaChorusCompiledPlugin(info);
+        },
+    };
+    return kSpec;
 }
 
 }  // namespace magda::daw::audio::compiled

@@ -11,6 +11,7 @@
 #include "magda_multiband.generated.cpp"
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -420,6 +421,19 @@ float MagdaMultibandCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
         info.scaleAnchor = s.scaleAnchor;
     info.choices = s.choices;
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
+}
+
+const CompiledPluginSpec& getMagdaMultibandSpec() {
+    static const CompiledPluginSpec kSpec{
+        .pluginId = MagdaMultibandCompiledPlugin::xmlTypeName,
+        .displayName = "Multiband Compressor",
+        .browserCategory = "Dynamics",
+        .description = "Compiled Faust multiband compressor with editable band thresholds.",
+        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
+            return new MagdaMultibandCompiledPlugin(info);
+        },
+    };
+    return kSpec;
 }
 
 }  // namespace magda::daw::audio::compiled

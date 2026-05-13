@@ -11,6 +11,7 @@
 #include "magda_grit.generated.cpp"
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -363,6 +364,19 @@ float MagdaGritCompiledPlugin::nativeValueToDisplayValue(int slotIndex, float na
         info.scaleAnchor = s.scaleAnchor;
     info.choices = s.choices;
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
+}
+
+const CompiledPluginSpec& getMagdaGritSpec() {
+    static const CompiledPluginSpec kSpec{
+        .pluginId = MagdaGritCompiledPlugin::xmlTypeName,
+        .displayName = "Grit",
+        .browserCategory = "Distortion",
+        .description = "Compiled Faust bit-depth and sample-rate reduction effect.",
+        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
+            return new MagdaGritCompiledPlugin(info);
+        },
+    };
+    return kSpec;
 }
 
 }  // namespace magda::daw::audio::compiled

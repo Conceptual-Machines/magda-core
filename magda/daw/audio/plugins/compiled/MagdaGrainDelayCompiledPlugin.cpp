@@ -11,6 +11,7 @@
 #include "magda_granular_delay.generated.cpp"
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -431,6 +432,20 @@ float MagdaGrainDelayCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
         info.scaleAnchor = s.scaleAnchor;
     info.choices = s.choices;
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
+}
+
+const CompiledPluginSpec& getMagdaGrainDelaySpec() {
+    static const CompiledPluginSpec kSpec{
+        .pluginId = MagdaGrainDelayCompiledPlugin::xmlTypeName,
+        .displayName = "Grain Delay",
+        .browserCategory = "Delay",
+        .description =
+            "Compiled Faust granular delay for smeared repeats, pitch motion, and texture.",
+        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
+            return new MagdaGrainDelayCompiledPlugin(info);
+        },
+    };
+    return kSpec;
 }
 
 }  // namespace magda::daw::audio::compiled

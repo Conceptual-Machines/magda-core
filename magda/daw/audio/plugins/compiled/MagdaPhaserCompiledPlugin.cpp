@@ -11,6 +11,7 @@
 #include "magda_phaser.generated.cpp"
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -361,6 +362,19 @@ float MagdaPhaserCompiledPlugin::nativeValueToDisplayValue(int slotIndex, float 
         info.scaleAnchor = s.scaleAnchor;
     info.choices = s.choices;
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
+}
+
+const CompiledPluginSpec& getMagdaPhaserSpec() {
+    static const CompiledPluginSpec kSpec{
+        .pluginId = MagdaPhaserCompiledPlugin::xmlTypeName,
+        .displayName = "Phaser",
+        .browserCategory = "Modulation",
+        .description = "Compiled Faust phaser with selectable stages, feedback, and sweep window.",
+        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
+            return new MagdaPhaserCompiledPlugin(info);
+        },
+    };
+    return kSpec;
 }
 
 }  // namespace magda::daw::audio::compiled

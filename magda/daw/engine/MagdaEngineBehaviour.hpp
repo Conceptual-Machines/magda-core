@@ -11,16 +11,7 @@
 #include "../audio/plugins/MidiReceivePlugin.hpp"
 #include "../audio/plugins/SidechainMonitorPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
-#include "../audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
-#include "../audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
-#include "../audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
-#include "../audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
-#include "../audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
-#include "../audio/plugins/compiled/MagdaGritCompiledPlugin.hpp"
-#include "../audio/plugins/compiled/MagdaModCompiledPlugin.hpp"
-#include "../audio/plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
-#include "../audio/plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
-#include "../audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
+#include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../project/ProjectManager.hpp"
 
@@ -105,35 +96,10 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating FaustPlugin");
             return new daw::audio::FaustPlugin(info);
         }
-        if (type == daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaFilterCompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaSaturatorCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaSaturatorCompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaDelayCompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaGrainDelayCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaGrainDelayCompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaGritCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaGritCompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaMultibandCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaMultibandCompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaPhaserCompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaCompressorCompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaModCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaModCompiledPlugin(info);
-        }
-        if (type == daw::audio::compiled::MagdaChorusCompiledPlugin::xmlTypeName) {
-            return new daw::audio::compiled::MagdaChorusCompiledPlugin(info);
+        // Compiled-Faust plugins go through the registry; one factory per
+        // device lives in its own .cpp (see CompiledPluginRegistry.hpp).
+        if (auto* spec = daw::audio::compiled::findCompiledPluginSpec(type)) {
+            return spec->createPlugin(info);
         }
         if (type == MidiReceivePlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiReceivePlugin");

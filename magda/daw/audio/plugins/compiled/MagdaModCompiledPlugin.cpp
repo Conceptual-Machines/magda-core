@@ -12,6 +12,7 @@
 #include "magda_mod.generated.cpp"
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -457,6 +458,21 @@ float MagdaModCompiledPlugin::nativeValueToDisplayValue(int slotIndex, float nat
         info.scaleAnchor = s.scaleAnchor;
     info.choices = s.choices;
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
+}
+
+const CompiledPluginSpec& getMagdaModSpec() {
+    static const CompiledPluginSpec kSpec{
+        .pluginId = MagdaModCompiledPlugin::xmlTypeName,
+        .displayName = "Mod",
+        .browserCategory = "Modulation",
+        .description = "Compiled Faust modulation: tremolo, vibrato, or auto-pan, sharing one LFO. "
+                       "Free Hz or tempo-synced (musical division). "
+                       "Sine, triangle, square, or sample-and-hold shape.",
+        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
+            return new MagdaModCompiledPlugin(info);
+        },
+    };
+    return kSpec;
 }
 
 }  // namespace magda::daw::audio::compiled
