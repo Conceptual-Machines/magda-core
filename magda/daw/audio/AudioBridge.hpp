@@ -812,12 +812,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Create track mapping
     void ensureTrackMapping(TrackId trackId);
 
-    // Plugin creation helpers
-    te::Plugin::Ptr createToneGenerator(te::AudioTrack* track);
-    // Note: createVolumeAndPan removed - track volume is separate infrastructure
-    te::Plugin::Ptr createLevelMeter(te::AudioTrack* track);
-    te::Plugin::Ptr createFourOscSynth(te::AudioTrack* track);
-
     // Convert DeviceInfo to plugin
     te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device);
 

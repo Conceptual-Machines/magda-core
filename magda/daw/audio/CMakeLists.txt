@@ -173,6 +173,8 @@ target_sources(magda_daw PRIVATE
     session/SessionClipAudioMonitor.cpp
     session/SessionMonitorPlugin.cpp
     session/SessionRecorder.cpp
+    plugins/InternalPluginRegistry.cpp
+    plugins/InternalPluginRegistry.hpp
     # Phase 1: Pure data managers
     transport/TransportStateManager.cpp
     midi/MidiActivityMonitor.cpp
