@@ -7,6 +7,9 @@
 
 namespace magda::daw::ui {
 
+class DrumGridUI;
+class ParamHostComponent;
+
 struct DeviceSlotContentFrameControls {
     juce::Component* pluginPresetsButton = nullptr;
     juce::Component* levelMeter = nullptr;
@@ -23,10 +26,25 @@ struct DeviceSlotContentFrameControls {
     juce::Component* powerButton = nullptr;
 };
 
+struct DeviceSlotContentBodyControls {
+    juce::Component* faustHeader = nullptr;
+    juce::Component* faustCustomView = nullptr;
+    int faustCustomViewPreferredHeight = 0;
+    juce::Component* compiledPanel = nullptr;
+    int compiledPanelPreferredHeight = 0;
+    DrumGridUI* drumGridUI = nullptr;
+    juce::Component* activeCustomUI = nullptr;
+    ParamHostComponent* paramGrid = nullptr;
+};
+
 bool prepareDeviceSlotContentFrame(juce::Rectangle<int>& contentArea,
                                    const DeviceSlotTraits& traits, const magda::DeviceInfo& device,
                                    bool collapsed, bool internalDevice, bool pluginPresetsAvailable,
                                    DeviceSlotContentFrameControls controls, int meterStripWidth,
                                    int contentHeaderHeight);
+
+void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceSlotTraits& traits,
+                                 bool internalDevice, bool hasCustomUI,
+                                 DeviceSlotContentBodyControls controls, int faustHeaderHeight);
 
 }  // namespace magda::daw::ui

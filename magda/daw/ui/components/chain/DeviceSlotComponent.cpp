@@ -40,7 +40,6 @@
 #include "slot/DeviceSlotParamLayoutFactory.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "slot/StepSequencerClipExport.hpp"
-#include "ui/debug/DebugSettings.hpp"
 #include "ui/dialogs/ParameterConfigDialog.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -1366,93 +1365,20 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
     // (Second header carve + programs combo placement happen in the
     //  `if (!collapsed_)` block above so the dropdown can sit flush right.)
-
-    // Faust uses a hybrid layout: the bespoke header strip (logo /
-    // Load / Edit / DSP name) sits at the top, and the standard
-    // paramGrid_ renders the body — same drag-and-drop / mod / macro
-    // / MIDI Learn / automation behaviour as every other device,
-    // driven by FaustProcessor's per-slot ParameterInfo.
-    if (traits_.isFaust && faustUI_) {
-        // Top: Faust-specific header strip (logo / name / load / edit).
-        auto faustUIArea = contentArea.removeFromTop(FaustUI::kHeaderHeight);
-        faustUI_->setBounds(faustUIArea);
-        faustUI_->setVisible(true);
-
-        // Bottom: per-DSP custom view (if any) anchored to the bottom
-        // edge so it grows into whatever vertical slack the user gives
-        // the device slot. Capped at half the remaining body so a tall
-        // device row doesn't starve the param grid; gated by a minimum
-        // of the view's preferred height so it stays readable when the
-        // row is short.
-        if (faustCustomView_) {
-            const int bodyHeight = juce::jmax(0, contentArea.getHeight());
-            const int preferred = faustCustomView_->getPreferredHeight();
-            const int customHeight = juce::jlimit(juce::jmin(preferred, bodyHeight), bodyHeight,
-                                                  juce::jmax(preferred, bodyHeight / 2));
-            auto customArea = contentArea.removeFromBottom(customHeight);
-            faustCustomView_->setBounds(customArea);
-            faustCustomView_->setVisible(true);
-        }
-
-        auto labelFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamLabelFontSize());
-        auto valueFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamValueFontSize());
-        paramGrid_->setBounds(contentArea);
-        paramGrid_->setVisible(true);
-        paramGrid_->layoutContent(labelFont, valueFont);
-        return;
-    }
-
-    if (compiledPanel_ != nullptr) {
-        auto& compiledPanelComponent = compiledPanel_->component();
-        const int compiledCurvePreferred = compiledPanel_->preferredHeight();
-        const int bodyHeight = juce::jmax(0, contentArea.getHeight());
-        const int visualHeight =
-            juce::jlimit(juce::jmin(compiledCurvePreferred, bodyHeight), bodyHeight,
-                         juce::jmax(compiledCurvePreferred, (bodyHeight * 3) / 4));
-
-        auto visualArea = contentArea.removeFromBottom(visualHeight);
-        compiledPanelComponent.setBounds(visualArea);
-        compiledPanelComponent.setVisible(true);
-
-        auto labelFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamLabelFontSize());
-        auto valueFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamValueFontSize());
-        paramGrid_->setBounds(contentArea);
-        paramGrid_->setVisible(true);
-        paramGrid_->layoutContent(labelFont, valueFont);
-        return;
-    }
-
-    // Check if this is an internal device with custom UI
-    if (isInternalDevice() && customUI_.hasAnyUI()) {
-        if (!drum_grid_slot::layoutDrumGridUI(customUI_.getDrumGridUI(), contentArea)) {
-            auto* activeCustomUI = customUI_.getActiveUI();
-            if (activeCustomUI != nullptr) {
-                activeCustomUI->setBounds(contentArea.reduced(4));
-                activeCustomUI->setVisible(true);
-            }
-        }
-
-        // Hide parameter grid and pagination
-        paramGrid_->setVisible(false);
-    } else {
-        // External plugin or internal device without custom UI - show 4x4 parameter grid
-        if (auto* activeCustomUI = customUI_.getActiveUI())
-            activeCustomUI->setVisible(false);
-
-        // paramGrid_ covers the pagination + slots area
-        auto labelFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamLabelFontSize());
-        auto valueFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamValueFontSize());
-
-        paramGrid_->setBounds(contentArea);
-        paramGrid_->setVisible(true);
-        paramGrid_->layoutContent(labelFont, valueFont);
-    }
+    auto* compiledBodyPanel = compiledPanel_ != nullptr ? &compiledPanel_->component() : nullptr;
+    layoutDeviceSlotContentBody(
+        contentArea, traits_, isInternalDevice(), customUI_.hasAnyUI(),
+        {.faustHeader = faustUI_.get(),
+         .faustCustomView = faustCustomView_.get(),
+         .faustCustomViewPreferredHeight =
+             faustCustomView_ != nullptr ? faustCustomView_->getPreferredHeight() : 0,
+         .compiledPanel = compiledBodyPanel,
+         .compiledPanelPreferredHeight =
+             compiledPanel_ != nullptr ? compiledPanel_->preferredHeight() : 0,
+         .drumGridUI = customUI_.getDrumGridUI(),
+         .activeCustomUI = activeCustomUI,
+         .paramGrid = paramGrid_.get()},
+        FaustUI::kHeaderHeight);
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {

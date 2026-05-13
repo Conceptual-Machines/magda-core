@@ -1,6 +1,9 @@
 #include "slot/DeviceSlotContentLayout.hpp"
 
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
+#include "params/ParamHostComponent.hpp"
+#include "ui/debug/DebugSettings.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -76,6 +79,24 @@ void showExpandedHeaderControls(const DeviceSlotTraits& traits, const magda::Dev
     setVisibleIfPresent(controls.gainLabel, !isMidiUtility(traits));
 }
 
+void layoutParamGrid(ParamHostComponent* paramGrid, juce::Rectangle<int> area) {
+    if (paramGrid == nullptr)
+        return;
+
+    auto labelFont =
+        FontManager::getInstance().getUIFont(DebugSettings::getInstance().getParamLabelFontSize());
+    auto valueFont =
+        FontManager::getInstance().getUIFont(DebugSettings::getInstance().getParamValueFontSize());
+    paramGrid->setBounds(area);
+    paramGrid->setVisible(true);
+    paramGrid->layoutContent(labelFont, valueFont);
+}
+
+int boundedBottomPanelHeight(int preferredHeight, int bodyHeight, int minFractionDivisor) {
+    return juce::jlimit(juce::jmin(preferredHeight, bodyHeight), bodyHeight,
+                        juce::jmax(preferredHeight, bodyHeight / minFractionDivisor));
+}
+
 }  // namespace
 
 bool prepareDeviceSlotContentFrame(juce::Rectangle<int>& contentArea,
@@ -104,6 +125,51 @@ bool prepareDeviceSlotContentFrame(juce::Rectangle<int>& contentArea,
 
     showExpandedHeaderControls(traits, device, internalDevice, controls);
     return true;
+}
+
+void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceSlotTraits& traits,
+                                 bool internalDevice, bool hasCustomUI,
+                                 DeviceSlotContentBodyControls controls, int faustHeaderHeight) {
+    if (traits.isFaust && controls.faustHeader != nullptr) {
+        controls.faustHeader->setBounds(contentArea.removeFromTop(faustHeaderHeight));
+        controls.faustHeader->setVisible(true);
+
+        if (controls.faustCustomView != nullptr) {
+            const int bodyHeight = juce::jmax(0, contentArea.getHeight());
+            const int customHeight =
+                boundedBottomPanelHeight(controls.faustCustomViewPreferredHeight, bodyHeight, 2);
+            controls.faustCustomView->setBounds(contentArea.removeFromBottom(customHeight));
+            controls.faustCustomView->setVisible(true);
+        }
+
+        layoutParamGrid(controls.paramGrid, contentArea);
+        return;
+    }
+
+    if (controls.compiledPanel != nullptr) {
+        const int bodyHeight = juce::jmax(0, contentArea.getHeight());
+        const int visualHeight =
+            boundedBottomPanelHeight(controls.compiledPanelPreferredHeight, bodyHeight, 4);
+        controls.compiledPanel->setBounds(contentArea.removeFromBottom(visualHeight));
+        controls.compiledPanel->setVisible(true);
+
+        layoutParamGrid(controls.paramGrid, contentArea);
+        return;
+    }
+
+    if (internalDevice && hasCustomUI) {
+        if (!drum_grid_slot::layoutDrumGridUI(controls.drumGridUI, contentArea) &&
+            controls.activeCustomUI != nullptr) {
+            controls.activeCustomUI->setBounds(contentArea.reduced(4));
+            controls.activeCustomUI->setVisible(true);
+        }
+
+        setVisibleIfPresent(controls.paramGrid, false);
+        return;
+    }
+
+    setVisibleIfPresent(controls.activeCustomUI, false);
+    layoutParamGrid(controls.paramGrid, contentArea);
 }
 
 }  // namespace magda::daw::ui
