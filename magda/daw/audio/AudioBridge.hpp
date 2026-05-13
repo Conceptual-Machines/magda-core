@@ -25,10 +25,11 @@
 #include "params/ParameterManager.hpp"
 #include "params/ParameterQueue.hpp"
 #include "plugin_manager/PluginManager.hpp"
-#include "plugins/SidechainTriggerBus.hpp"
 #include "processors/DeviceProcessor.hpp"
+#include "sampling/SamplerFileLoader.hpp"
 #include "session/ClipSynchronizer.hpp"
 #include "session/SessionClipAudioMonitor.hpp"
+#include "sidechain/SidechainRoutingManager.hpp"
 #include "transport/TransportStateManager.hpp"
 
 namespace magda {
@@ -504,8 +505,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     void triggerMidiActivity(TrackId trackId) {
         midiActivity_.triggerActivity(trackId);
-        // Write to sidechain trigger bus so updateAllMods() picks up live MIDI too
-        SidechainTriggerBus::getInstance().triggerNoteOn(trackId);
+        // Write to sidechain trigger bus so updateAllMods() picks up live MIDI too.
+        sidechainRouting_.triggerMidiActivity(trackId);
         // LFO retrigger is handled on the audio thread by SidechainMonitorPlugin
         // (which calls PluginManager::triggerSidechainNoteOn). Calling it here
         // from the MIDI thread would double-trigger and race with the audio
@@ -842,6 +843,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     AudioBridgeMixer mixer_;
     MidiInputRouter midiInputRouter_;
     ControlTargetResolver controlTargetResolver_;
+    SidechainRoutingManager sidechainRouting_;
+    SamplerFileLoader samplerFileLoader_;
     ClipSynchronizer clipSynchronizer_;
     SessionClipAudioMonitor sessionAudioMonitor_;
     SessionMonitorPlugin* sessionMonitorPlugin_ = nullptr;

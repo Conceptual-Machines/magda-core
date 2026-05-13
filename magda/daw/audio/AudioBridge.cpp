@@ -9,8 +9,6 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
-#include "plugins/MagdaSamplerPlugin.hpp"
-#include "plugins/SidechainTriggerBus.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -52,6 +50,8 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
       mixer_(edit, trackController_),
       midiInputRouter_(engine, edit, trackController_),
       controlTargetResolver_(trackController_, pluginManager_),
+      sidechainRouting_(pluginManager_, trackController_),
+      samplerFileLoader_(pluginManager_),
       clipSynchronizer_(edit, trackController_, warpMarkerManager_),
       automationPlayback_(*this, edit),
       automationRecording_(edit) {
@@ -318,10 +318,7 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
 
     // Re-check sidechain monitors on this track and all other tracks
     // (a sidechain source change on this track may affect the source track's monitor)
-    for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
-        pluginManager_.checkSidechainMonitor(track.id);
-        pluginManager_.checkAudioSidechainMonitor(track.id);
-    }
+    sidechainRouting_.refreshAllSourceMonitors();
 
     // Re-check MIDI routing in case trigger mode changed to/from MIDI
     updateMidiRoutingForSelection();
@@ -415,43 +412,7 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
             // When bypass changes, resync modifiers so they are removed/restored
             pluginManager_.resyncDeviceModifiers(track.id);
 
-            // Sync sidechain routing if changed
-            auto* tePlugin = pluginManager_.getPlugin(deviceId).get();
-            if (tePlugin && tePlugin->canSidechain()) {
-                if (device->sidechain.isActive() &&
-                    device->sidechain.type == SidechainConfig::Type::Audio) {
-                    auto* sourceTrack =
-                        trackController_.getAudioTrack(device->sidechain.sourceTrackId);
-                    if (sourceTrack) {
-                        tePlugin->setSidechainSourceID(sourceTrack->itemID);
-                        tePlugin->guessSidechainRouting();
-                    }
-                } else {
-                    tePlugin->setSidechainSourceID({});
-                }
-            }
-
-            // Both MIDI and Audio sidechain routes use MidiBroadcastBus + MidiReceivePlugin
-            // for TE's native LFO resync. Audio sidechain generates synthetic MIDI from
-            // AudioSidechainMonitorPlugin; MIDI sidechain uses real MIDI from
-            // SidechainMonitorPlugin.
-            if (device->sidechain.isActive()) {
-                DBG("AudioBridge::devicePropertyChanged - sidechain set (type="
-                    << (int)device->sidechain.type
-                    << "), ensuring MidiReceive + monitors for source track "
-                    << device->sidechain.sourceTrackId);
-                pluginManager_.ensureMidiReceive(track.id, device->id,
-                                                 device->sidechain.sourceTrackId);
-                if (device->sidechain.type == SidechainConfig::Type::MIDI)
-                    pluginManager_.checkSidechainMonitor(device->sidechain.sourceTrackId);
-                if (device->sidechain.type == SidechainConfig::Type::Audio)
-                    pluginManager_.checkAudioSidechainMonitor(device->sidechain.sourceTrackId);
-            } else {
-                pluginManager_.removeMidiReceive(track.id, device->id);
-            }
-            // Re-check monitors on current track (may no longer need them)
-            pluginManager_.checkSidechainMonitor(track.id);
-            pluginManager_.checkAudioSidechainMonitor(track.id);
+            sidechainRouting_.handleDeviceSidechainChanged(track.id, *device);
 
             return;
         }
@@ -973,7 +934,7 @@ void AudioBridge::timerCallback() {
 
                         // Write audio peak to sidechain bus for Audio-triggered modulators
                         float peak = std::max(data.peakL, data.peakR);
-                        SidechainTriggerBus::getInstance().setAudioPeakLevel(trackId, peak);
+                        sidechainRouting_.publishAudioPeak(trackId, peak);
                     }
                 });
         });
@@ -1198,14 +1159,7 @@ bool AudioBridge::togglePluginWindow(DeviceId deviceId) {
 }
 
 bool AudioBridge::loadSamplerSample(DeviceId deviceId, const juce::File& file) {
-    auto plugin = getPlugin(deviceId);
-    if (plugin) {
-        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-            sampler->loadSample(file);
-            return true;
-        }
-    }
-    return false;
+    return samplerFileLoader_.loadSample(deviceId, file);
 }
 
 // =============================================================================

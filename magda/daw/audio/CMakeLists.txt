@@ -172,6 +172,10 @@ target_sources(magda_daw PRIVATE
     midi/MidiDeviceMatch.cpp
     midi/MidiInputRouter.cpp
     midi/MidiInputRouter.hpp
+    sampling/SamplerFileLoader.cpp
+    sampling/SamplerFileLoader.hpp
+    sidechain/SidechainRoutingManager.cpp
+    sidechain/SidechainRoutingManager.hpp
     midi/QwertyMidiKeyboard.cpp
     session/SessionClipScheduler.cpp
     session/SessionClipAudioMonitor.cpp
