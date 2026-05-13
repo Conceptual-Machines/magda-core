@@ -1398,19 +1398,8 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
-    // Export clip drag from header button
-    auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
-    if (exportClipButton_ && e.originalComponent == exportClipButton_.get() &&
-        e.getDistanceFromDragStart() > 5 && stepSeqPlugin) {
-        auto tempFile = writeStepSequencerPatternToTempMidiFile(*stepSeqPlugin);
-        if (tempFile.existsAsFile()) {
-            if (exportClipButton_)
-                exportClipButton_->setAlpha(0.4f);
-            juce::DragAndDropContainer::performExternalDragDropOfFiles(
-                juce::StringArray{tempFile.getFullPathName()}, false, this);
-            if (exportClipButton_)
-                exportClipButton_->setAlpha(1.0f);
-        }
+    if (handleStepSequencerPatternExternalDrag(customUI_.getStepSeqPlugin(),
+                                               exportClipButton_.get(), this, e)) {
         return;
     }
 

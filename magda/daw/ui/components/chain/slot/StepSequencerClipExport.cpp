@@ -63,4 +63,25 @@ juce::File writeStepSequencerPatternToTempMidiFile(daw::audio::StepSequencerPlug
                                                 "seq-pattern");
 }
 
+bool handleStepSequencerPatternExternalDrag(daw::audio::StepSequencerPlugin* plugin,
+                                            juce::Component* exportButton,
+                                            juce::Component* dragOwner,
+                                            const juce::MouseEvent& event, int dragThresholdPx) {
+    if (plugin == nullptr || exportButton == nullptr || dragOwner == nullptr ||
+        event.originalComponent != exportButton ||
+        event.getDistanceFromDragStart() <= dragThresholdPx) {
+        return false;
+    }
+
+    auto tempFile = writeStepSequencerPatternToTempMidiFile(*plugin);
+    if (tempFile.existsAsFile()) {
+        exportButton->setAlpha(0.4f);
+        juce::DragAndDropContainer::performExternalDragDropOfFiles(
+            juce::StringArray{tempFile.getFullPathName()}, false, dragOwner);
+        exportButton->setAlpha(1.0f);
+    }
+
+    return true;
+}
+
 }  // namespace magda::daw::ui
