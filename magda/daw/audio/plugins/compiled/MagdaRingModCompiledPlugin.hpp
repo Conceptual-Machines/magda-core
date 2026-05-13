@@ -51,6 +51,9 @@ class MagdaRingModCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
     bool producesAudioWhenNoAudioInput() override {
         return false;
     }
+    bool canSidechain() override {
+        return true;  // Source=Sidechain uses input channel 3 as the carrier.
+    }
     double getTailLength() const override {
         return 0.0;
     }
@@ -62,7 +65,8 @@ class MagdaRingModCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
     static constexpr int kShapeSlot = 3;
     static constexpr int kMixSlot = 4;
     static constexpr int kWidthSlot = 5;
-    static constexpr int kHostSlotCount = 6;
+    static constexpr int kSourceSlot = 6;
+    static constexpr int kHostSlotCount = 7;
     static constexpr int kBpmSlot = 63;
 
     te::AutomatableParameter* getSlotParameter(int slotIndex) const;

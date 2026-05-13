@@ -214,6 +214,14 @@ void MagdaRingModCompiledPlugin::buildHostParameters() {
                                  .maxValue = 1.0f,
                                  .defaultValue = 0.5f};
 
+    hostSlotInfo_[kSourceSlot].name = "Source";
+    hostSlotInfo_[kSourceSlot].scale = magda::ParameterScale::Discrete;
+    hostSlotInfo_[kSourceSlot].choices = {"Oscillator", "Sidechain"};
+    hostSlotInfo_[kSourceSlot].minValue = 0.0f;
+    hostSlotInfo_[kSourceSlot].maxValue =
+        static_cast<float>(hostSlotInfo_[kSourceSlot].choices.size() - 1);
+    hostSlotInfo_[kSourceSlot].defaultValue = 0.0f;
+
     if (!divisionChoiceValues_.empty()) {
         const int n = static_cast<int>(divisionChoiceValues_.size());
         hostSlotInfo_[kDivisionSlot].choices = divisionChoiceLabels_;
@@ -334,6 +342,7 @@ void MagdaRingModCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc
         }
     };
     writeMenuIndex(kShapeSlot);
+    writeMenuIndex(kSourceSlot);
 
     if (auto* z = zones_[kSyncSlot])
         *z = hostParams_[kSyncSlot]->getCurrentValue() >= 0.5f ? FAUSTFLOAT(1) : FAUSTFLOAT(0);

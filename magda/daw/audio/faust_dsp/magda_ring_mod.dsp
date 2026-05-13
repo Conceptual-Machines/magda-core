@@ -1,5 +1,5 @@
 declare name "MagdaRingMod";
-declare description "Stereo ring modulator — multiply by a sine/triangle/square carrier.";
+declare description "Stereo ring modulator — multiply by an internal oscillator or a sidechain carrier.";
 
 import("stdfaust.lib");
 
@@ -38,6 +38,13 @@ mix = hslider("Mix [idx:4]", 0.5, 0.0, 1.0, 0.001)
 width = hslider("Width [idx:5]", 0.5, 0.0, 1.0, 0.01)
       : si.smooth(ba.tau2pole(0.05));
 
+// Source selects whether the carrier is the internal oscillator or the
+// host-routed sidechain bus (channel 3 of the input). Switching to
+// Sidechain with nothing wired feeds silence in → output collapses to
+// dry * (1 - mix), which is a clear "you forgot to route something" hint.
+source = nentry("Source [idx:6] [style:menu{'Oscillator':0;'Sidechain':1}]",
+                0, 0, 1, 1);
+
 bpm = nentry("BPM [role:projectTempo] [hidden:1] [idx:63]",
              120.0, 20.0, 999.0, 0.001);
 
@@ -53,13 +60,16 @@ phaseAt(off) = os.lf_sawpos(carrierHz) + off : ma.frac;
 triangleFromPhase(p) = 4.0 * abs(p - 0.5) - 1.0;
 squareFromPhase(p)   = select2(p < 0.5, -1.0, 1.0);
 
-carrierAt(off) = ba.selectn(3, int(shape),
-                            sin(phaseAt(off) * 2.0 * ma.PI),
-                            triangleFromPhase(phaseAt(off)),
-                            squareFromPhase(phaseAt(off)));
+oscCarrierAt(off) = ba.selectn(3, int(shape),
+                               sin(phaseAt(off) * 2.0 * ma.PI),
+                               triangleFromPhase(phaseAt(off)),
+                               squareFromPhase(phaseAt(off)));
+
+carrierL(sc) = (1.0 - source) * oscCarrierAt(0.0) + source * sc;
+carrierR(sc) = (1.0 - source) * oscCarrierAt(0.5 * width) + source * sc;
 
 // ============================================================================
-// Wet/dry mix; width spreads the L/R carrier phase.
+// Wet/dry mix; SC is the mono sidechain bus (channel 3).
 // ============================================================================
-process(L, R) = L * (1.0 - mix) + L * carrierAt(0.0) * mix,
-                R * (1.0 - mix) + R * carrierAt(0.5 * width) * mix;
+process(L, R, SC) = L * (1.0 - mix) + L * carrierL(SC) * mix,
+                    R * (1.0 - mix) + R * carrierR(SC) * mix;

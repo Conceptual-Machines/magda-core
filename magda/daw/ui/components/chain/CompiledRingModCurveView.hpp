@@ -63,6 +63,7 @@ class CompiledRingModCurveView final : public juce::Component,
     int shape_ = 0;
     float mix_ = 0.5f;
     float width_ = 0.5f;
+    int source_ = 0;  // 0 = oscillator, 1 = sidechain
     float bpm_ = 120.0f;
 
     double phase_ = 0.0;
