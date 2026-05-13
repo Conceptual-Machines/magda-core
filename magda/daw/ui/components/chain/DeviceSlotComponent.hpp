@@ -9,37 +9,20 @@
 #include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
-#include "custom_ui/ArpeggiatorUI.hpp"
-#include "custom_ui/ChorusUI.hpp"
-#include "custom_ui/CompressorUI.hpp"
-#include "custom_ui/DelayUI.hpp"
-#include "custom_ui/EqualiserUI.hpp"
-#include "custom_ui/FaustCustomUIRegistry.hpp"
-#include "custom_ui/FaustUI.hpp"
-#include "custom_ui/FilterUI.hpp"
-#include "custom_ui/FourOscUI.hpp"
-#include "custom_ui/ImpulseResponseUI.hpp"
-#include "custom_ui/PhaserUI.hpp"
-#include "custom_ui/PitchShiftUI.hpp"
-#include "custom_ui/ReverbUI.hpp"
-#include "custom_ui/SamplerUI.hpp"
-#include "custom_ui/StepSequencerUI.hpp"
-#include "custom_ui/ToneGeneratorUI.hpp"
-#include "custom_ui/UtilityUI.hpp"
-#include "drum_grid/DrumGridUI.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DeviceCustomUIManager.hpp"
 #include "slot/DeviceParameterChangeHandler.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
-#include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/components/mixer/MidiNoteStrip.hpp"
-#include "ui/panels/content/ChordPanelContent.hpp"  // relative to magda/daw/
 
 namespace magda::daw::ui {
+
+class FaustCustomView;
+class FaustUI;
 
 /**
  * @brief Device slot component for displaying a device in a chain

@@ -2,32 +2,39 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "audio/plugins/ArpeggiatorPlugin.hpp"
-#include "audio/plugins/MidiChordEnginePlugin.hpp"
-#include "audio/plugins/StepSequencerPlugin.hpp"
+#include <memory>
+#include <vector>
+
 #include "core/DeviceInfo.hpp"
 #include "core/SelectionManager.hpp"
-#include "custom_ui/ArpeggiatorUI.hpp"
-#include "custom_ui/ChorusUI.hpp"
-#include "custom_ui/CompressorUI.hpp"
-#include "custom_ui/DelayUI.hpp"
-#include "custom_ui/EqualiserUI.hpp"
-#include "custom_ui/FaustUI.hpp"
-#include "custom_ui/FilterUI.hpp"
-#include "custom_ui/FourOscUI.hpp"
-#include "custom_ui/ImpulseResponseUI.hpp"
-#include "custom_ui/PhaserUI.hpp"
-#include "custom_ui/PitchShiftUI.hpp"
-#include "custom_ui/ReverbUI.hpp"
-#include "custom_ui/SamplerUI.hpp"
-#include "custom_ui/StepSequencerUI.hpp"
-#include "custom_ui/ToneGeneratorUI.hpp"
-#include "custom_ui/UtilityUI.hpp"
-#include "drum_grid/DrumGridUI.hpp"
-#include "ui/components/common/LinkableTextSlider.hpp"
-#include "ui/panels/content/ChordPanelContent.hpp"
+
+namespace magda::daw::audio {
+class ArpeggiatorPlugin;
+class MidiChordEnginePlugin;
+class StepSequencerPlugin;
+}  // namespace magda::daw::audio
 
 namespace magda::daw::ui {
+
+class ArpeggiatorUI;
+class ChordPanelContent;
+class ChorusUI;
+class CompressorUI;
+class DelayUI;
+class DrumGridUI;
+class EqualiserUI;
+class FaustUI;
+class FilterUI;
+class FourOscUI;
+class ImpulseResponseUI;
+class LinkableTextSlider;
+class PhaserUI;
+class PitchShiftUI;
+class ReverbUI;
+class SamplerUI;
+class StepSequencerUI;
+class ToneGeneratorUI;
+class UtilityUI;
 
 /**
  * @brief Manages all custom UI instances for a DeviceSlotComponent.
@@ -63,8 +70,8 @@ class DeviceCustomUIManager {
         std::function<magda::ChainNodePath()> getNodePath;
     };
 
-    DeviceCustomUIManager() = default;
-    ~DeviceCustomUIManager() = default;
+    DeviceCustomUIManager();
+    ~DeviceCustomUIManager();
 
     // -------------------------------------------------------------------------
     // Lifecycle
