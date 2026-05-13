@@ -31,6 +31,7 @@
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DeviceCustomUIManager.hpp"
 #include "slot/DeviceParameterChangeHandler.hpp"
+#include "slot/DeviceSlotTraits.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -214,15 +215,7 @@ class DeviceSlotComponent : public NodeComponent,
 
   private:
     magda::DeviceInfo device_;
-    bool isDrumGrid_ = false;
-    bool isChordEngine_ = false;
-    bool isArpeggiator_ = false;
-    bool isStepSequencer_ = false;
-    bool isFaust_ = false;
-    bool isAISupported_ = false;
-    bool isSoundDesignSupported_ = false;
-    const CompiledPresentationSpec* compiledPresentation_ = nullptr;
-    bool isTracktionDevice_ = false;
+    DeviceSlotTraits traits_;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 
     // Header controls
