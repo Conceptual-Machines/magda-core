@@ -5,6 +5,7 @@
 #include <array>
 #include <functional>
 
+#include "CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
 
 namespace magda::daw::audio::compiled {
@@ -27,7 +28,9 @@ namespace magda::daw::ui {
  * Polls host params at ~30 Hz and only repaints when one moves
  * materially (or when a drag is in progress).
  */
-class CompiledMultibandCurveView final : public juce::Component, private juce::Timer {
+class CompiledMultibandCurveView final : public juce::Component,
+                                         public CompiledDevicePanel,
+                                         private juce::Timer {
   public:
     explicit CompiledMultibandCurveView(juce::String pluginId);
 
@@ -36,7 +39,21 @@ class CompiledMultibandCurveView final : public juce::Component, private juce::T
     }
 
     void setCompiledPlugin(magda::daw::audio::compiled::MagdaMultibandCompiledPlugin* plugin);
-    void updateFromDevice(const magda::DeviceInfo& device);
+    void updateFromDevice(const magda::DeviceInfo& device) override;
+
+    juce::Component& component() override {
+        return *this;
+    }
+    void bindPlugin(te::Plugin* plugin) override {
+        setCompiledPlugin(
+            dynamic_cast<magda::daw::audio::compiled::MagdaMultibandCompiledPlugin*>(plugin));
+    }
+    void setOnParameterChanged(std::function<void(int, float)> cb) override {
+        onParameterChanged = std::move(cb);
+    }
+    int preferredHeight() const override {
+        return getPreferredHeight();
+    }
 
     /// Fires while the user is dragging a handle. `displayValue` is in
     /// the slot's display unit, e.g. Hz for crossovers and dB for thresholds.

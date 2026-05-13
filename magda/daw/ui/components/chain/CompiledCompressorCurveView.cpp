@@ -373,4 +373,17 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
                      juce::Justification::centredBottom, 1);
 }
 
+const CompiledPresentationSpec& getMagdaCompressorPresentation() {
+    static const CompiledPresentationSpec kSpec{
+        .pluginId = magda::daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName,
+        .layoutCellCount = 11,
+        .layoutCellsPerRow = 6,
+        .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
+            return std::make_unique<CompiledCompressorCurveView>(pluginId);
+        },
+        .suppressLegacyUis = {},
+    };
+    return kSpec;
+}
+
 }  // namespace magda::daw::ui

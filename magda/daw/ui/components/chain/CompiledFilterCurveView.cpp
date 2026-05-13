@@ -375,4 +375,17 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
     g.drawVerticalLine(static_cast<int>(std::round(cutoffX)), plot.getY(), plot.getBottom());
 }
 
+const CompiledPresentationSpec& getMagdaFilterPresentation() {
+    static const CompiledPresentationSpec kSpec{
+        .pluginId = magda::daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName,
+        .layoutCellCount = 6,
+        .layoutCellsPerRow = 6,
+        .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
+            return std::make_unique<CompiledFilterCurveView>(pluginId);
+        },
+        .suppressLegacyUis = {},
+    };
+    return kSpec;
+}
+
 }  // namespace magda::daw::ui

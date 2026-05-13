@@ -217,4 +217,17 @@ void CompiledSaturatorCurveView::paint(juce::Graphics& g) {
                                                  juce::PathStrokeType::rounded));
 }
 
+const CompiledPresentationSpec& getMagdaSaturatorPresentation() {
+    static const CompiledPresentationSpec kSpec{
+        .pluginId = magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin::xmlTypeName,
+        .layoutCellCount = 6,
+        .layoutCellsPerRow = 6,
+        .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
+            return std::make_unique<CompiledSaturatorCurveView>(pluginId);
+        },
+        .suppressLegacyUis = {},
+    };
+    return kSpec;
+}
+
 }  // namespace magda::daw::ui

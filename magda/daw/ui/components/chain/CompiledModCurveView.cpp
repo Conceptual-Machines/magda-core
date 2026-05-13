@@ -260,4 +260,17 @@ void CompiledModCurveView::paint(juce::Graphics& g) {
         juce::Justification::centredRight);
 }
 
+const CompiledPresentationSpec& getMagdaModPresentation() {
+    static const CompiledPresentationSpec kSpec{
+        .pluginId = magda::daw::audio::compiled::MagdaModCompiledPlugin::xmlTypeName,
+        .layoutCellCount = 6,
+        .layoutCellsPerRow = 6,
+        .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
+            return std::make_unique<CompiledModCurveView>(pluginId);
+        },
+        .suppressLegacyUis = {},
+    };
+    return kSpec;
+}
+
 }  // namespace magda::daw::ui

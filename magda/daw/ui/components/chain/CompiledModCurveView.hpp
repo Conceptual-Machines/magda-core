@@ -4,6 +4,7 @@
 
 #include <functional>
 
+#include "CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
 
 namespace magda::daw::audio::compiled {
@@ -19,7 +20,9 @@ namespace magda::daw::ui {
  * sync mode draws a beat grid (one vertical line per LFO period). Mode
  * (Trem / Vibrato / Autopan) is labelled in the top-left.
  */
-class CompiledModCurveView final : public juce::Component, private juce::Timer {
+class CompiledModCurveView final : public juce::Component,
+                                   public CompiledDevicePanel,
+                                   private juce::Timer {
   public:
     explicit CompiledModCurveView(juce::String pluginId);
 
@@ -28,7 +31,22 @@ class CompiledModCurveView final : public juce::Component, private juce::Timer {
     }
 
     void setCompiledPlugin(magda::daw::audio::compiled::MagdaModCompiledPlugin* plugin);
-    void updateFromDevice(const magda::DeviceInfo& device);
+    void updateFromDevice(const magda::DeviceInfo& device) override;
+
+    // CompiledDevicePanel
+    juce::Component& component() override {
+        return *this;
+    }
+    void bindPlugin(te::Plugin* plugin) override {
+        setCompiledPlugin(
+            dynamic_cast<magda::daw::audio::compiled::MagdaModCompiledPlugin*>(plugin));
+    }
+    void setOnParameterChanged(std::function<void(int, float)> cb) override {
+        onParameterChanged = std::move(cb);
+    }
+    int preferredHeight() const override {
+        return getPreferredHeight();
+    }
 
     std::function<void(int slotIndex, float displayValue)> onParameterChanged;
 

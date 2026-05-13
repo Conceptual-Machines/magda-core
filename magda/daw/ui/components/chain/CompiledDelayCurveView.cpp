@@ -225,4 +225,18 @@ void CompiledDelayCurveView::paint(juce::Graphics& g) {
     }
 }
 
+const CompiledPresentationSpec& getMagdaDelayPresentation() {
+    static const LegacyUiKind kSuppress[] = {LegacyUiKind::Delay};
+    static const CompiledPresentationSpec kSpec{
+        .pluginId = magda::daw::audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName,
+        .layoutCellCount = 7,
+        .layoutCellsPerRow = 7,
+        .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
+            return std::make_unique<CompiledDelayCurveView>(pluginId);
+        },
+        .suppressLegacyUis = kSuppress,
+    };
+    return kSpec;
+}
+
 }  // namespace magda::daw::ui

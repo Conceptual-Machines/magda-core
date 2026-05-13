@@ -1,13 +1,11 @@
 #include "DeviceCustomUIManager.hpp"
 
+#include "CompiledPluginPresentation.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
-#include "audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
-#include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
-#include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
 #include "core/InternalDeviceKind.hpp"
 #include "core/MidiFileWriter.hpp"
@@ -843,13 +841,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         parent->addAndMakeVisible(*reverbUI_);
         update(device);
     } else if (device.pluginId.containsIgnoreCase("delay") &&
-               !device.pluginId.equalsIgnoreCase(
-                   audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName) &&
-               !device.pluginId.equalsIgnoreCase(
-                   audio::compiled::MagdaGrainDelayCompiledPlugin::xmlTypeName)) {
-        // Skip the legacy DelayUI when this is the compiled MAGDA delay —
-        // its pluginId "magda_delay" trips containsIgnoreCase("delay") but
-        // it uses the generic compiled layout, not DelayUI.
+               !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Delay)) {
         delayUI_ = std::make_unique<DelayUI>();
         delayUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
             if (cb.onParameterChanged)
@@ -858,8 +850,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         parent->addAndMakeVisible(*delayUI_);
         update(device);
     } else if (device.pluginId.containsIgnoreCase("chorus") &&
-               !device.pluginId.equalsIgnoreCase(
-                   audio::compiled::MagdaChorusCompiledPlugin::xmlTypeName)) {
+               !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Chorus)) {
         chorusUI_ = std::make_unique<ChorusUI>();
         chorusUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
             if (cb.onParameterChanged)
@@ -868,8 +859,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         parent->addAndMakeVisible(*chorusUI_);
         update(device);
     } else if (device.pluginId.containsIgnoreCase("phaser") &&
-               !device.pluginId.equalsIgnoreCase(
-                   audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName)) {
+               !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Phaser)) {
         phaserUI_ = std::make_unique<PhaserUI>();
         phaserUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
             if (cb.onParameterChanged)

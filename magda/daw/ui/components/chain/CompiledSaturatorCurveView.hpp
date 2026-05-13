@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
 
 namespace magda::daw::audio::compiled {
@@ -24,7 +25,9 @@ namespace magda::daw::ui {
  * crosses an epsilon. Mode also forces a repaint because changing
  * waveshape redraws the whole curve.
  */
-class CompiledSaturatorCurveView final : public juce::Component, private juce::Timer {
+class CompiledSaturatorCurveView final : public juce::Component,
+                                         public CompiledDevicePanel,
+                                         private juce::Timer {
   public:
     explicit CompiledSaturatorCurveView(juce::String pluginId);
 
@@ -33,7 +36,21 @@ class CompiledSaturatorCurveView final : public juce::Component, private juce::T
     }
 
     void setCompiledPlugin(magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin* plugin);
-    void updateFromDevice(const magda::DeviceInfo& device);
+    void updateFromDevice(const magda::DeviceInfo& device) override;
+
+    // CompiledDevicePanel
+    juce::Component& component() override {
+        return *this;
+    }
+    void bindPlugin(te::Plugin* plugin) override {
+        setCompiledPlugin(
+            dynamic_cast<magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin*>(plugin));
+    }
+    void setOnParameterChanged(std::function<void(int, float)>) override {}  // read-only view
+    int preferredHeight() const override {
+        return getPreferredHeight();
+    }
+
     void paint(juce::Graphics& g) override;
 
   private:

@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "CompiledPluginPresentation.hpp"
 #include "ParamLinkResolver.hpp"
 #include "core/DeviceInfo.hpp"
 
@@ -11,7 +12,9 @@ class MagdaFilterCompiledPlugin;
 
 namespace magda::daw::ui {
 
-class CompiledFilterCurveView final : public juce::Component, private juce::Timer {
+class CompiledFilterCurveView final : public juce::Component,
+                                      public CompiledDevicePanel,
+                                      private juce::Timer {
   public:
     explicit CompiledFilterCurveView(juce::String pluginId);
 
@@ -22,6 +25,25 @@ class CompiledFilterCurveView final : public juce::Component, private juce::Time
     void updateFromDevice(const magda::DeviceInfo& device,
                           const ParamLinkContext* linkContext = nullptr);
     void setCompiledPlugin(magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin);
+
+    // CompiledDevicePanel — the slot component drives the 2-arg form
+    // separately when it has a CompiledFilterCurveView in hand (filter
+    // is the one device that needs the link context too).
+    juce::Component& component() override {
+        return *this;
+    }
+    void updateFromDevice(const magda::DeviceInfo& device) override {
+        updateFromDevice(device, nullptr);
+    }
+    void bindPlugin(te::Plugin* plugin) override {
+        setCompiledPlugin(
+            dynamic_cast<magda::daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin));
+    }
+    void setOnParameterChanged(std::function<void(int, float)>) override {}  // read-only view
+    int preferredHeight() const override {
+        return getPreferredHeight();
+    }
+
     void paint(juce::Graphics& g) override;
 
   private:

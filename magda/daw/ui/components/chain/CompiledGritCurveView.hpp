@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
 
 namespace magda::daw::audio::compiled {
@@ -19,7 +20,9 @@ namespace magda::daw::ui {
  * Frequency. Amount scales the curve's height. Polls the host params
  * at ~30 Hz and only repaints when one moves materially.
  */
-class CompiledGritCurveView final : public juce::Component, private juce::Timer {
+class CompiledGritCurveView final : public juce::Component,
+                                    public CompiledDevicePanel,
+                                    private juce::Timer {
   public:
     explicit CompiledGritCurveView(juce::String pluginId);
 
@@ -28,7 +31,19 @@ class CompiledGritCurveView final : public juce::Component, private juce::Timer 
     }
 
     void setCompiledPlugin(magda::daw::audio::compiled::MagdaGritCompiledPlugin* plugin);
-    void updateFromDevice(const magda::DeviceInfo& device);
+    void updateFromDevice(const magda::DeviceInfo& device) override;
+
+    juce::Component& component() override {
+        return *this;
+    }
+    void bindPlugin(te::Plugin* plugin) override {
+        setCompiledPlugin(
+            dynamic_cast<magda::daw::audio::compiled::MagdaGritCompiledPlugin*>(plugin));
+    }
+    void setOnParameterChanged(std::function<void(int, float)>) override {}
+    int preferredHeight() const override {
+        return getPreferredHeight();
+    }
     void paint(juce::Graphics& g) override;
 
   private:

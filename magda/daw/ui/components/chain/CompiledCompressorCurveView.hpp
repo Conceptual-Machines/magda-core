@@ -4,6 +4,7 @@
 
 #include <functional>
 
+#include "CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
 
 namespace magda::daw::audio::compiled {
@@ -12,7 +13,9 @@ class MagdaCompressorCompiledPlugin;
 
 namespace magda::daw::ui {
 
-class CompiledCompressorCurveView final : public juce::Component, private juce::Timer {
+class CompiledCompressorCurveView final : public juce::Component,
+                                          public CompiledDevicePanel,
+                                          private juce::Timer {
   public:
     explicit CompiledCompressorCurveView(juce::String pluginId);
 
@@ -21,7 +24,21 @@ class CompiledCompressorCurveView final : public juce::Component, private juce::
     }
 
     void setCompiledPlugin(magda::daw::audio::compiled::MagdaCompressorCompiledPlugin* plugin);
-    void updateFromDevice(const magda::DeviceInfo& device);
+    void updateFromDevice(const magda::DeviceInfo& device) override;
+
+    juce::Component& component() override {
+        return *this;
+    }
+    void bindPlugin(te::Plugin* plugin) override {
+        setCompiledPlugin(
+            dynamic_cast<magda::daw::audio::compiled::MagdaCompressorCompiledPlugin*>(plugin));
+    }
+    void setOnParameterChanged(std::function<void(int, float)> cb) override {
+        onParameterChanged = std::move(cb);
+    }
+    int preferredHeight() const override {
+        return getPreferredHeight();
+    }
 
     std::function<void(int slotIndex, float displayValue)> onParameterChanged;
 

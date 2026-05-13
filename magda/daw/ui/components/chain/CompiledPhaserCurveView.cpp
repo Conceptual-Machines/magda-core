@@ -349,4 +349,17 @@ void CompiledPhaserCurveView::paint(juce::Graphics& g) {
     drawLabel(maxX, maxHz_, Handle::MaxHz);
 }
 
+const CompiledPresentationSpec& getMagdaPhaserPresentation() {
+    static const CompiledPresentationSpec kSpec{
+        .pluginId = magda::daw::audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName,
+        .layoutCellCount = 7,
+        .layoutCellsPerRow = 7,
+        .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
+            return std::make_unique<CompiledPhaserCurveView>(pluginId);
+        },
+        .suppressLegacyUis = {},
+    };
+    return kSpec;
+}
+
 }  // namespace magda::daw::ui

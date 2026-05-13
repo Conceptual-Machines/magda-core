@@ -180,4 +180,17 @@ void CompiledGritCurveView::paint(juce::Graphics& g) {
     g.fillPath(curve);
 }
 
+const CompiledPresentationSpec& getMagdaGritPresentation() {
+    static const CompiledPresentationSpec kSpec{
+        .pluginId = magda::daw::audio::compiled::MagdaGritCompiledPlugin::xmlTypeName,
+        .layoutCellCount = 4,
+        .layoutCellsPerRow = 4,
+        .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
+            return std::make_unique<CompiledGritCurveView>(pluginId);
+        },
+        .suppressLegacyUis = {},
+    };
+    return kSpec;
+}
+
 }  // namespace magda::daw::ui

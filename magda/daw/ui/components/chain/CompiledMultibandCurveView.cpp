@@ -520,4 +520,17 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
     drawLabel(highX, highXoHz_, Handle::HighXo);
 }
 
+const CompiledPresentationSpec& getMagdaMultibandPresentation() {
+    static const CompiledPresentationSpec kSpec{
+        .pluginId = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin::xmlTypeName,
+        .layoutCellCount = 18,
+        .layoutCellsPerRow = 9,
+        .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
+            return std::make_unique<CompiledMultibandCurveView>(pluginId);
+        },
+        .suppressLegacyUis = {},
+    };
+    return kSpec;
+}
+
 }  // namespace magda::daw::ui
