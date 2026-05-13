@@ -1,6 +1,6 @@
 #pragma once
 
-#include "processors/base/DeviceProcessor.hpp"
+#include "processors/base/AutomatablePluginProcessor.hpp"
 
 namespace magda {
 
@@ -11,16 +11,9 @@ namespace te = tracktion;
  *
  * Sets parameters directly on the MagdaSamplerPlugin's automatable parameters by index.
  */
-class MagdaSamplerProcessor : public DeviceProcessor {
+class MagdaSamplerProcessor : public AutomatablePluginProcessor {
   public:
     MagdaSamplerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
-
-    int getParameterCount() const override;
-    ParameterInfo getParameterInfo(int index) const override;
-    void populateParameters(DeviceInfo& info) const override;
-
-    void setParameterByIndex(int paramIndex, float value) override;
-    float getParameterByIndex(int paramIndex) const;
 };
 
 /**
@@ -29,16 +22,12 @@ class MagdaSamplerProcessor : public DeviceProcessor {
  * Enumerates parameters generically from plugin->getAutomatableParameters().
  * The UI maps each control to its param index.
  */
-class FourOscProcessor : public DeviceProcessor {
+class FourOscProcessor : public AutomatablePluginProcessor {
   public:
     FourOscProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 
-    int getParameterCount() const override;
-    ParameterInfo getParameterInfo(int index) const override;
-    void populateParameters(DeviceInfo& info) const override;
-
-    void setParameterByIndex(int paramIndex, float value) override;
-    float getParameterByIndex(int paramIndex) const;
+  protected:
+    void customiseParameterInfo(int index, ParameterInfo& info) const override;
 };
 
 /**

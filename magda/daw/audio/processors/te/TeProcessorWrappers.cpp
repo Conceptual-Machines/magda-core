@@ -1,4 +1,4 @@
-#include "processors/DeviceProcessor.hpp"
+#include "processors/te/TeProcessorWrappers.hpp"
 
 #include <cmath>
 #include <utility>
@@ -576,50 +576,7 @@ float DelayProcessor::getParameterByIndex(int paramIndex) const {
 // =============================================================================
 
 ReverbProcessor::ReverbProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : DeviceProcessor(deviceId, std::move(plugin)) {}
-
-int ReverbProcessor::getParameterCount() const {
-    if (plugin_)
-        return plugin_->getAutomatableParameters().size();
-    return 0;
-}
-
-ParameterInfo ReverbProcessor::getParameterInfo(int index) const {
-    if (!plugin_)
-        return {};
-    auto params = plugin_->getAutomatableParameters();
-    if (index < 0 || index >= params.size())
-        return {};
-    return makeInfoFromTeParam(index, params[index]);
-}
-
-void ReverbProcessor::populateParameters(DeviceInfo& info) const {
-    info.parameters.clear();
-    int count = getParameterCount();
-    for (int i = 0; i < count; ++i) {
-        info.parameters.push_back(getParameterInfo(i));
-    }
-}
-
-void ReverbProcessor::setParameterByIndex(int paramIndex, float value) {
-    if (!plugin_)
-        return;
-
-    auto params = plugin_->getAutomatableParameters();
-    if (paramIndex >= 0 && paramIndex < params.size()) {
-        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
-    }
-}
-
-float ReverbProcessor::getParameterByIndex(int paramIndex) const {
-    if (!plugin_)
-        return 0.0f;
-
-    auto params = plugin_->getAutomatableParameters();
-    if (paramIndex >= 0 && paramIndex < params.size())
-        return params[paramIndex]->getCurrentValue();
-    return 0.0f;
-}
+    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
 
 // =============================================================================
 // ChorusProcessor
@@ -898,90 +855,14 @@ float FilterProcessor::getParameterByIndex(int paramIndex) const {
 // =============================================================================
 
 PitchShiftProcessor::PitchShiftProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : DeviceProcessor(deviceId, std::move(plugin)) {}
-
-int PitchShiftProcessor::getParameterCount() const {
-    if (!plugin_)
-        return 0;
-    return static_cast<int>(plugin_->getAutomatableParameters().size());
-}
-
-ParameterInfo PitchShiftProcessor::getParameterInfo(int index) const {
-    if (!plugin_)
-        return {};
-    auto params = plugin_->getAutomatableParameters();
-    if (index < 0 || index >= static_cast<int>(params.size()))
-        return {};
-    return makeInfoFromTeParam(index, params[index]);
-}
-
-void PitchShiftProcessor::populateParameters(DeviceInfo& info) const {
-    info.parameters.clear();
-    for (int i = 0; i < getParameterCount(); ++i)
-        info.parameters.push_back(getParameterInfo(i));
-}
-
-void PitchShiftProcessor::setParameterByIndex(int paramIndex, float value) {
-    if (!plugin_)
-        return;
-    auto params = plugin_->getAutomatableParameters();
-    if (paramIndex < static_cast<int>(params.size()) && params[paramIndex])
-        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
-}
-
-float PitchShiftProcessor::getParameterByIndex(int paramIndex) const {
-    if (!plugin_)
-        return 0.0f;
-    auto params = plugin_->getAutomatableParameters();
-    if (paramIndex < static_cast<int>(params.size()) && params[paramIndex])
-        return params[paramIndex]->getCurrentValue();
-    return 0.0f;
-}
+    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
 
 // =============================================================================
 // ImpulseResponseProcessor
 // =============================================================================
 
 ImpulseResponseProcessor::ImpulseResponseProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : DeviceProcessor(deviceId, std::move(plugin)) {}
-
-int ImpulseResponseProcessor::getParameterCount() const {
-    if (!plugin_)
-        return 0;
-    return static_cast<int>(plugin_->getAutomatableParameters().size());
-}
-
-ParameterInfo ImpulseResponseProcessor::getParameterInfo(int index) const {
-    if (!plugin_)
-        return {};
-    auto params = plugin_->getAutomatableParameters();
-    if (index < 0 || index >= static_cast<int>(params.size()))
-        return {};
-    return makeInfoFromTeParam(index, params[index]);
-}
-
-void ImpulseResponseProcessor::populateParameters(DeviceInfo& info) const {
-    info.parameters.clear();
-    for (int i = 0; i < getParameterCount(); ++i)
-        info.parameters.push_back(getParameterInfo(i));
-}
-
-void ImpulseResponseProcessor::setParameterByIndex(int paramIndex, float value) {
-    if (!plugin_)
-        return;
-    auto params = plugin_->getAutomatableParameters();
-    if (paramIndex < static_cast<int>(params.size()) && params[paramIndex])
-        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
-}
-
-float ImpulseResponseProcessor::getParameterByIndex(int paramIndex) const {
-    if (!plugin_)
-        return 0.0f;
-    auto params = plugin_->getAutomatableParameters();
-    if (paramIndex < static_cast<int>(params.size()) && params[paramIndex])
-        return params[paramIndex]->getCurrentValue();
-    return 0.0f;
-}
+    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
 
 // =============================================================================
 // UtilityProcessor

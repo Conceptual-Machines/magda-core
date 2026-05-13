@@ -1,6 +1,6 @@
 #pragma once
 
-#include "processors/base/DeviceProcessor.hpp"
+#include "processors/base/AutomatablePluginProcessor.hpp"
 
 namespace magda {
 
@@ -27,19 +27,12 @@ class StepSequencerPlugin;
  * - 8: Velocity Mode (discrete 0-2)
  * - 9: Fixed Velocity (1-127)
  */
-class ArpeggiatorProcessor : public DeviceProcessor {
+class ArpeggiatorProcessor : public AutomatablePluginProcessor {
   public:
     ArpeggiatorProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 
-    int getParameterCount() const override;
-    ParameterInfo getParameterInfo(int index) const override;
-    void populateParameters(DeviceInfo& info) const override;
-
-    void setParameterByIndex(int paramIndex, float value) override;
-    float getParameterByIndex(int paramIndex) const;
-
-  private:
-    daw::audio::ArpeggiatorPlugin* getArpPlugin() const;
+  protected:
+    void customiseParameterInfo(int index, ParameterInfo& info) const override;
 };
 
 /**
@@ -54,19 +47,12 @@ class ArpeggiatorProcessor : public DeviceProcessor {
  * - 4: Accent Velocity (1-127)
  * - 5: Normal Velocity (1-127)
  */
-class StepSequencerProcessor : public DeviceProcessor {
+class StepSequencerProcessor : public AutomatablePluginProcessor {
   public:
     StepSequencerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 
-    int getParameterCount() const override;
-    ParameterInfo getParameterInfo(int index) const override;
-    void populateParameters(DeviceInfo& info) const override;
-
-    void setParameterByIndex(int paramIndex, float value) override;
-    float getParameterByIndex(int paramIndex) const;
-
-  private:
-    daw::audio::StepSequencerPlugin* getSeqPlugin() const;
+  protected:
+    void customiseParameterInfo(int index, ParameterInfo& info) const override;
 };
 
 /**
@@ -75,13 +61,12 @@ class StepSequencerProcessor : public DeviceProcessor {
  * Minimal processor - the drum grid has no top-level automatable params initially.
  * Per-pad parameters live on child plugins inside DrumGridPlugin.
  */
-class DrumGridProcessor : public DeviceProcessor {
+class DrumGridProcessor : public AutomatablePluginProcessor {
   public:
     DrumGridProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 
-    int getParameterCount() const override;
-    ParameterInfo getParameterInfo(int index) const override;
-    void populateParameters(DeviceInfo& info) const override;
+  protected:
+    void customiseParameterInfo(int index, ParameterInfo& info) const override;
 };
 
 }  // namespace magda

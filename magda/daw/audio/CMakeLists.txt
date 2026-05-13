@@ -165,6 +165,8 @@ target_sources(magda_daw PRIVATE
     FaustResources.cpp
     processors/base/DeviceProcessor.cpp
     processors/base/DeviceProcessor.hpp
+    processors/base/AutomatablePluginProcessor.cpp
+    processors/base/AutomatablePluginProcessor.hpp
     processors/ParameterInfoBuilder.cpp
     processors/ParameterInfoBuilder.hpp
     processors/external/ExternalPluginProcessor.cpp
@@ -173,9 +175,11 @@ target_sources(magda_daw PRIVATE
     processors/internal/MidiDeviceProcessors.hpp
     processors/internal/NativeDeviceProcessors.cpp
     processors/internal/NativeDeviceProcessors.hpp
+    processors/te/TeProcessorWrappers.cpp
+    processors/te/TeProcessorWrappers.hpp
     processors/CompiledFaustProcessor.cpp
     processors/CompiledFaustProcessor.hpp
-    processors/DeviceProcessor.cpp
+    processors/DeviceProcessor.hpp
     processors/DeviceProcessorFactory.cpp
     processors/DeviceProcessorFactory.hpp
     MidiBridge.cpp
