@@ -228,8 +228,20 @@ constexpr AliasSpec kCompiledFlangerAliases[] = {
 // magda_ring_mod.dsp.
 // ------------------------------------------------------------------
 constexpr AliasSpec kCompiledRingModAliases[] = {
-    {"sync", 0, "Sync"},   {"freq", 1, "Frequency"}, {"div", 2, "Division"},
-    {"shape", 3, "Shape"}, {"mix", 4, "Mix"},        {"width", 5, "Width"},
+    {"sync", 0, "Sync"}, {"freq", 1, "Frequency"}, {"div", 2, "Division"},  {"shape", 3, "Shape"},
+    {"mix", 4, "Mix"},   {"width", 5, "Width"},    {"source", 6, "Source"},
+};
+
+// ------------------------------------------------------------------
+// Compiled MAGDA Freq Shift ("magda_freq_shift") — slot indices match
+// MagdaFreqShiftCompiledPlugin::k*Slot and the [idx:N] pins in
+// magda_freq_shift.dsp.
+// ------------------------------------------------------------------
+constexpr AliasSpec kCompiledFreqShiftAliases[] = {
+    {"shift", 0, "Shift"},
+    {"feedback", 1, "Feedback"},
+    {"mix", 2, "Mix"},
+    {"spread", 3, "Spread"},
 };
 
 // ------------------------------------------------------------------
@@ -273,6 +285,7 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"magda_chorus", kCompiledChorusAliases, (int)std::size(kCompiledChorusAliases)},
     {"magda_flanger", kCompiledFlangerAliases, (int)std::size(kCompiledFlangerAliases)},
     {"magda_ring_mod", kCompiledRingModAliases, (int)std::size(kCompiledRingModAliases)},
+    {"magda_freq_shift", kCompiledFreqShiftAliases, (int)std::size(kCompiledFreqShiftAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
     {"utility", kUtilityAliases, (int)std::size(kUtilityAliases)},
 };

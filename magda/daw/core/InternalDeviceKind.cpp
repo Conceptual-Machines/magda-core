@@ -17,6 +17,7 @@
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFlangerCompiledPlugin.hpp"
+#include "audio/plugins/compiled/MagdaFreqShiftCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGritCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaModCompiledPlugin.hpp"
@@ -135,6 +136,10 @@ const InternalDeviceMetadata kMetadata[] = {
     {InternalDeviceKind::CompiledRingMod, "Ring Mod", "", "Modulation",
      "Compiled Faust stereo ring modulator. Multiplies the input by a sine, triangle, or "
      "square carrier from 1 Hz (tremolo) to 5 kHz (metallic clang). Sync- or free-rate."},
+    {InternalDeviceKind::CompiledFreqShift, "Freq Shift", "", "Modulation",
+     "Compiled Faust stereo single-sideband frequency shifter. Shifts the entire spectrum by "
+     "a fixed Hz offset via a Hilbert-pair Bode design. Feedback for resonant artefacts, "
+     "Spread for stereo width."},
 };
 
 }  // namespace
@@ -160,6 +165,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::compiled::MagdaDelayCompiledPlugin;
     using daw::audio::compiled::MagdaFilterCompiledPlugin;
     using daw::audio::compiled::MagdaFlangerCompiledPlugin;
+    using daw::audio::compiled::MagdaFreqShiftCompiledPlugin;
     using daw::audio::compiled::MagdaGrainDelayCompiledPlugin;
     using daw::audio::compiled::MagdaGritCompiledPlugin;
     using daw::audio::compiled::MagdaModCompiledPlugin;
@@ -185,6 +191,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::CompiledChorus, MagdaChorusCompiledPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::CompiledFlanger, MagdaFlangerCompiledPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::CompiledRingMod, MagdaRingModCompiledPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::CompiledFreqShift, MagdaFreqShiftCompiledPlugin::xmlTypeName, nullptr},
         // TE built-in effects — picker uses a short id, the live plugin
         // reports the real `te::*::xmlTypeName`. Match either.
         {InternalDeviceKind::TeEq, "eq", TE::EqualiserPlugin::xmlTypeName},

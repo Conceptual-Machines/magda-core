@@ -28,6 +28,7 @@
 #include "plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaFlangerCompiledPlugin.hpp"
+#include "plugins/compiled/MagdaFreqShiftCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaGritCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaModCompiledPlugin.hpp"
@@ -859,6 +860,15 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
         plugin = edit_.getPluginCache().createNewPlugin(pluginState);
         if (plugin)
             track->pluginList.insertPlugin(plugin, -1, nullptr);
+    } else if (type.equalsIgnoreCase(
+                   daw::audio::compiled::MagdaFreqShiftCompiledPlugin::xmlTypeName)) {
+        juce::ValueTree pluginState(te::IDs::PLUGIN);
+        pluginState.setProperty(te::IDs::type,
+                                daw::audio::compiled::MagdaFreqShiftCompiledPlugin::xmlTypeName,
+                                nullptr);
+        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+        if (plugin)
+            track->pluginList.insertPlugin(plugin, -1, nullptr);
     } else if (type.equalsIgnoreCase("tone") || type.equalsIgnoreCase("tonegenerator")) {
         plugin = createToneGenerator(track);
     } else if (type.equalsIgnoreCase("meter") || type.equalsIgnoreCase("levelmeter")) {
@@ -1531,6 +1541,10 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
                 plugin = createInternalPlugin(
                     daw::audio::compiled::MagdaRingModCompiledPlugin::xmlTypeName, ps);
                 break;
+            case InternalDeviceKind::CompiledFreqShift:
+                plugin = createInternalPlugin(
+                    daw::audio::compiled::MagdaFreqShiftCompiledPlugin::xmlTypeName, ps);
+                break;
             case InternalDeviceKind::TeDelay:
                 plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, ps);
                 break;
@@ -1753,6 +1767,8 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
         processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::compiled::MagdaRingModCompiledPlugin*>(plugin.get())) {
         processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<daw::audio::compiled::MagdaFreqShiftCompiledPlugin*>(plugin.get())) {
+        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::compiled::MagdaCompressorCompiledPlugin*>(plugin.get())) {
         processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
@@ -1951,6 +1967,12 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             case InternalDeviceKind::CompiledRingMod:
                 plugin =
                     insertFromState(daw::audio::compiled::MagdaRingModCompiledPlugin::xmlTypeName);
+                if (plugin)
+                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
+                break;
+            case InternalDeviceKind::CompiledFreqShift:
+                plugin = insertFromState(
+                    daw::audio::compiled::MagdaFreqShiftCompiledPlugin::xmlTypeName);
                 if (plugin)
                     processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
                 break;

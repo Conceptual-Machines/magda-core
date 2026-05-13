@@ -65,6 +65,7 @@ enum class InternalDeviceKind {
     CompiledChorus,      // magda_chorus
     CompiledFlanger,     // magda_flanger
     CompiledRingMod,     // magda_ring_mod
+    CompiledFreqShift,   // magda_freq_shift
 };
 
 struct InternalDeviceMetadata {

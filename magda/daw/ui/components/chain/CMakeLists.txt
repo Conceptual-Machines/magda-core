@@ -20,6 +20,7 @@ target_sources(magda_daw_app PRIVATE
     CompiledChorusCurveView.cpp
     CompiledFlangerCurveView.cpp
     CompiledRingModCurveView.cpp
+    CompiledFreqShiftCurveView.cpp
     CompiledPluginPresentation.cpp
     ToneGeneratorUI.cpp
     SamplerUI.cpp
@@ -113,6 +114,7 @@ target_sources(magda_daw_app PRIVATE
     CompiledChorusCurveView.hpp
     CompiledFlangerCurveView.hpp
     CompiledRingModCurveView.hpp
+    CompiledFreqShiftCurveView.hpp
     CompiledPluginPresentation.hpp
     ParamHostComponent.hpp
 )
