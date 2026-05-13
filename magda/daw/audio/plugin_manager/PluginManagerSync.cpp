@@ -1518,20 +1518,6 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
                 case InternalDeviceKind::SessionMonitor:
                 case InternalDeviceKind::External:
                     break;
-                case InternalDeviceKind::CompiledDelay:
-                case InternalDeviceKind::CompiledGrainDelay:
-                case InternalDeviceKind::CompiledFilter:
-                case InternalDeviceKind::CompiledSaturator:
-                case InternalDeviceKind::CompiledGrit:
-                case InternalDeviceKind::CompiledMultiband:
-                case InternalDeviceKind::CompiledPhaser:
-                case InternalDeviceKind::CompiledCompressor:
-                case InternalDeviceKind::CompiledMod:
-                case InternalDeviceKind::CompiledChorus:
-                case InternalDeviceKind::CompiledFlanger:
-                case InternalDeviceKind::CompiledRingMod:
-                case InternalDeviceKind::CompiledFreqShift:
-                    break;
             }
         }
     } else {
@@ -1863,20 +1849,6 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 case InternalDeviceKind::InstrumentMeterTap:
                 case InternalDeviceKind::SessionMonitor:
                 case InternalDeviceKind::External:
-                    break;
-                case InternalDeviceKind::CompiledDelay:
-                case InternalDeviceKind::CompiledGrainDelay:
-                case InternalDeviceKind::CompiledFilter:
-                case InternalDeviceKind::CompiledSaturator:
-                case InternalDeviceKind::CompiledGrit:
-                case InternalDeviceKind::CompiledMultiband:
-                case InternalDeviceKind::CompiledPhaser:
-                case InternalDeviceKind::CompiledCompressor:
-                case InternalDeviceKind::CompiledMod:
-                case InternalDeviceKind::CompiledChorus:
-                case InternalDeviceKind::CompiledFlanger:
-                case InternalDeviceKind::CompiledRingMod:
-                case InternalDeviceKind::CompiledFreqShift:
                     break;
             }
         }
