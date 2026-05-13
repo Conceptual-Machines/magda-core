@@ -818,6 +818,37 @@ TEST_CASE("TrackManager: Remove Nested Rack by Path", "[trackmanager][nested_rac
     }
 }
 
+TEST_CASE("TrackManager: setSidechainSource reaches devices in nested racks",
+          "[trackmanager][sidechain][nested_rack]") {
+    TrackManagerTestFixture fixture;
+
+    auto sourceTrackId = fixture.tm().createTrack("Source");
+    auto destTrackId = fixture.tm().createTrack("Destination");
+    auto rackId = fixture.tm().addRackToTrack(destTrackId, "Top Rack");
+
+    auto* rack = fixture.tm().getRack(destTrackId, rackId);
+    REQUIRE(rack != nullptr);
+    auto chainPath = ChainNodePath::chain(destTrackId, rackId, rack->chains[0].id);
+
+    auto nestedRackId = fixture.tm().addRackToChainByPath(chainPath, "Nested Rack");
+    auto* nestedRack = fixture.tm().getRackByPath(chainPath.withRack(nestedRackId));
+    REQUIRE(nestedRack != nullptr);
+    auto nestedChainPath = chainPath.withRack(nestedRackId).withChain(nestedRack->chains[0].id);
+
+    DeviceInfo device;
+    device.name = "Nested Compressor";
+    auto nestedDeviceId = fixture.tm().addDeviceToChainByPath(nestedChainPath, device);
+    REQUIRE(nestedDeviceId != INVALID_DEVICE_ID);
+
+    fixture.tm().setSidechainSource(nestedDeviceId, sourceTrackId, SidechainConfig::Type::Audio);
+
+    auto nestedDevicePath = nestedChainPath.withDevice(nestedDeviceId);
+    auto* nestedDevice = fixture.tm().getDeviceInChainByPath(nestedDevicePath);
+    REQUIRE(nestedDevice != nullptr);
+    REQUIRE(nestedDevice->sidechain.type == SidechainConfig::Type::Audio);
+    REQUIRE(nestedDevice->sidechain.sourceTrackId == sourceTrackId);
+}
+
 // ============================================================================
 // Path Resolution Tests
 // ============================================================================

@@ -1213,36 +1213,31 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
 
 void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack,
                                       SidechainConfig::Type type) {
-    // Search all tracks for the target device
-    for (auto& track : tracks_) {
-        // Search top-level chain elements
-        for (auto& element : track.chainElements) {
+    auto updateElements = [&](auto&& self, std::vector<ChainElement>& elements) -> bool {
+        for (auto& element : elements) {
             if (magda::isDevice(element)) {
                 auto& device = magda::getDevice(element);
                 if (device.id == targetDevice) {
                     device.sidechain.type = type;
                     device.sidechain.sourceTrackId = sourceTrack;
                     notifyDevicePropertyChanged(targetDevice);
-                    return;
+                    return true;
                 }
             } else if (magda::isRack(element)) {
-                // Search inside racks
                 auto& rack = magda::getRack(element);
-                for (auto& chain : rack.chains) {
-                    for (auto& chainElement : chain.elements) {
-                        if (magda::isDevice(chainElement)) {
-                            auto& device = magda::getDevice(chainElement);
-                            if (device.id == targetDevice) {
-                                device.sidechain.type = type;
-                                device.sidechain.sourceTrackId = sourceTrack;
-                                notifyDevicePropertyChanged(targetDevice);
-                                return;
-                            }
-                        }
-                    }
-                }
+                for (auto& chain : rack.chains)
+                    if (self(self, chain.elements))
+                        return true;
             }
         }
+
+        return false;
+    };
+
+    // Search all tracks for the target device
+    for (auto& track : tracks_) {
+        if (updateElements(updateElements, track.chainElements))
+            return;
     }
 }
 

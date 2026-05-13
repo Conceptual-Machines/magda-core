@@ -740,14 +740,19 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
             if (track.id == trackId)
                 continue;
             for (const auto& element : track.chainElements) {
-                if (!isDevice(element))
-                    continue;
-                const auto& device = getDevice(element);
-                if (device.sidechain.isActive() && device.sidechain.sourceTrackId == trackId) {
-                    auto plugin = getPlugin(device.id);
-                    if (plugin && plugin->canSidechain()) {
-                        plugin->setSidechainSourceID({});
+                if (isDevice(element)) {
+                    const auto& device = getDevice(element);
+                    if (device.sidechain.isActive() && device.sidechain.sourceTrackId == trackId) {
+                        auto plugin = getPlugin(device.id);
+                        if (plugin && plugin->canSidechain()) {
+                            plugin->setSidechainSourceID({});
+                        }
                     }
+                } else if (isRack(element)) {
+                    rackSyncManager_.syncSidechains(
+                        getRack(element), [this](TrackId sourceTrackId) {
+                            return trackController_.getAudioTrack(sourceTrackId);
+                        });
                 }
             }
         }

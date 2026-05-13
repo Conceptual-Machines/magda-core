@@ -101,8 +101,13 @@ inline ChainFingerprint computeRackFingerprint(const RackInfo& rackInfo) {
 
     for (const auto& chain : rackInfo.chains) {
         for (const auto& chainElement : chain.elements) {
+            if (isRack(chainElement)) {
+                fp += computeRackFingerprint(getRack(chainElement));
+                continue;
+            }
             if (!isDevice(chainElement))
                 continue;
+
             const auto& device = getDevice(chainElement);
             if (device.bypassed)
                 continue;

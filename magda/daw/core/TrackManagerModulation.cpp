@@ -4,6 +4,7 @@
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
+#include "SidechainTraversal.hpp"
 #include "TrackManager.hpp"
 
 namespace magda {
@@ -854,30 +855,15 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             bool rackMidiNoteOff = midiNoteOff;
             float rackAudioPeak = audioPeak;
 
-            // Check rack-level sidechain source — replaces self triggers
-            if (rack.sidechain.sourceTrackId != INVALID_TRACK_ID) {
-                auto srcId = rack.sidechain.sourceTrackId;
+            // A rack-level mod can inherit the first explicit sidechain source
+            // from nested rack/device contents when the rack itself has no
+            // source. Keep this recursive so nested racks behave like flat racks.
+            if (auto sourceTrackId = sidechain::findFirstSource(rack)) {
+                auto srcId = *sourceTrackId;
                 rackMidiTriggered = midiNoteOnTracks.count(srcId) > 0;
                 rackMidiNoteOff = midiAllNotesOffTracks.count(srcId) > 0;
                 if (srcId >= 0 && srcId < kMaxBusTracks)
                     rackAudioPeak = audioPeakLevels[srcId];
-            }
-
-            // Check devices inside the rack for sidechain sources — replaces self triggers
-            for (const auto& chain : rack.chains) {
-                for (const auto& chainElement : chain.elements) {
-                    if (isDevice(chainElement)) {
-                        const auto& dev = magda::getDevice(chainElement);
-                        if (dev.sidechain.sourceTrackId != INVALID_TRACK_ID) {
-                            auto srcId = dev.sidechain.sourceTrackId;
-                            rackMidiTriggered = midiNoteOnTracks.count(srcId) > 0;
-                            rackMidiNoteOff = midiAllNotesOffTracks.count(srcId) > 0;
-                            if (srcId >= 0 && srcId < kMaxBusTracks)
-                                rackAudioPeak = audioPeakLevels[srcId];
-                            break;
-                        }
-                    }
-                }
             }
 
             for (auto& mod : rack.mods) {
