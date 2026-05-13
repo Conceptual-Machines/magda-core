@@ -307,6 +307,14 @@ void MagdaModCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (!fc.destBuffer || fc.bufferNumSamples <= 0 || !dsp_)
         return;
 
+    // Restart the LFO phase whenever transport goes from stopped to playing
+    // so the modulation is in sync with the song every time you hit play.
+    // instanceClear() also flushes the vibrato delay line; brief silence at
+    // the transport edge is the expected behaviour for a phase reset.
+    if (fc.isPlaying && !wasPlaying_)
+        dsp_->instanceClear();
+    wasPlaying_ = fc.isPlaying;
+
     auto writeContinuous = [&](int slot) {
         if (auto* zone = zones_[static_cast<size_t>(slot)]) {
             const auto& s = hostSlotInfo_[static_cast<size_t>(slot)];

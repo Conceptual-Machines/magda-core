@@ -126,6 +126,7 @@ class MagdaModCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
     std::vector<float*> outPtrs_;
 
     std::atomic<float> currentBpm_{120.0f};
+    bool wasPlaying_ = false;  // audio-thread only; rising edge restarts the LFO phase
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaModCompiledPlugin)
 };
