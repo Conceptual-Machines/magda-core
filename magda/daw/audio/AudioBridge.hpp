@@ -11,6 +11,7 @@
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
+#include "AudioBridgeMixer.hpp"
 #include "DeviceMeteringManager.hpp"
 #include "MeteringBuffer.hpp"
 #include "PluginWindowBridge.hpp"
@@ -18,7 +19,9 @@
 #include "WarpMarkerManager.hpp"
 #include "automation/AutomationPlaybackEngine.hpp"
 #include "automation/AutomationRecordingEngine.hpp"
+#include "automation/ControlTargetResolver.hpp"
 #include "midi/MidiActivityMonitor.hpp"
+#include "midi/MidiInputRouter.hpp"
 #include "params/ParameterManager.hpp"
 #include "params/ParameterQueue.hpp"
 #include "plugin_manager/PluginManager.hpp"
@@ -805,10 +808,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Timer callback for metering updates (runs on message thread)
     void timerCallback() override;
 
-    bool isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
-                                const juce::String& liveName) const;
-    void removeSurfaceOnlyMidiInputTargets();
-
     // Create track mapping
     void ensureTrackMapping(TrackId trackId);
 
@@ -819,22 +818,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     te::Engine& engine_;
     te::Edit& edit_;
 
-    // Virtual MIDI device for QWERTY keyboard (lazily created).
-    // qwertyNeedsContextRefresh_ is set when the device is freshly created
-    // during this session — the live playback context's InputDeviceInstance
-    // list needs a rebuild before the device can route to tracks. Cleared
-    // on the first getQwertyMidiDevice() call after the graph is allocated.
-    // See #1054.
-    std::shared_ptr<te::MidiInputDevice> qwertyMidiDevice_;
-    bool qwertyNeedsContextRefresh_ = false;
-
     // Bidirectional mappings
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID
-
-    // MIDI ports owned by Lua/controller scripts. These should never feed
-    // instrument tracks through Tracktion's native live MIDI graph.
-    juce::StringArray surfaceOnlyMidiInputPorts_;
-    mutable juce::CriticalSection surfaceOnlyMidiInputLock_;
 
     // (Session clips use ClipSlot-based mapping via trackId + sceneIndex — no ID maps needed)
 
@@ -854,6 +839,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Phase 3 refactoring: Core controllers (extracted from AudioBridge)
     TrackController trackController_;
     PluginManager pluginManager_;
+    AudioBridgeMixer mixer_;
+    MidiInputRouter midiInputRouter_;
+    ControlTargetResolver controlTargetResolver_;
     ClipSynchronizer clipSynchronizer_;
     SessionClipAudioMonitor sessionAudioMonitor_;
     SessionMonitorPlugin* sessionMonitorPlugin_ = nullptr;
@@ -877,17 +865,10 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     mutable juce::CriticalSection
         mappingLock_;  // Protects mapping updates (mutable for const getters)
 
-    // Selection-based MIDI routing
-    TrackId lastSelectedTrack_ = INVALID_TRACK_ID;
     void updateMidiRoutingForSelection();
     void resyncAllInputMonitors();
 
-    // Pending MIDI routes (applied when playback context becomes available)
-    std::vector<std::pair<TrackId, juce::String>> pendingMidiRoutes_;
     void applyPendingMidiRoutes();
-
-    // Track playback context to detect restarts that drop MIDI routing
-    te::EditPlaybackContext* lastPlaybackContext_ = nullptr;
 
     // Engine wrapper (owns this AudioBridge, used for ClipInterface access)
     TracktionEngineWrapper* engineWrapper_ = nullptr;

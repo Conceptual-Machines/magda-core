@@ -157,6 +157,8 @@ target_sources(magda_daw PRIVATE
     plugins/compiled/CompiledFaustHost.hpp
     plugins/compiled/CompiledFaustInterface.hpp
     AudioBridge.cpp
+    AudioBridgeMixer.cpp
+    AudioBridgeMixer.hpp
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
@@ -168,6 +170,8 @@ target_sources(magda_daw PRIVATE
     processors/DeviceProcessorFactory.hpp
     MidiBridge.cpp
     midi/MidiDeviceMatch.cpp
+    midi/MidiInputRouter.cpp
+    midi/MidiInputRouter.hpp
     midi/QwertyMidiKeyboard.cpp
     session/SessionClipScheduler.cpp
     session/SessionClipAudioMonitor.cpp
@@ -192,6 +196,8 @@ target_sources(magda_daw PRIVATE
     racks/InstrumentRackManager.cpp
     racks/RackSyncManager.cpp
     modifiers/ModifierSync.cpp
+    automation/ControlTargetResolver.cpp
+    automation/ControlTargetResolver.hpp
     automation/AutomationPlaybackEngine.cpp
     automation/AutomationRecordingEngine.cpp
     automation/AutomationCurveSimplifier.cpp
