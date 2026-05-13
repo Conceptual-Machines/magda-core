@@ -23,7 +23,6 @@
 #include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
-#include "plugins/compiled/CompiledFaustInterface.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 #include "transport/TransportStateManager.hpp"
 
@@ -1659,9 +1658,9 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
         processor = std::make_unique<UtilityProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::FaustPlugin*>(plugin.get())) {
         processor = std::make_unique<FaustProcessor>(deviceId, plugin);
-    } else if (daw::audio::compiled::findCompiledPluginSpec(device.pluginId) != nullptr &&
-               dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin.get()) != nullptr) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
+    } else if (auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(device.pluginId)) {
+        processor =
+            daw::audio::compiled::createCompiledPluginProcessor(*compiledSpec, deviceId, plugin);
     } else if (dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
         processor = std::make_unique<MagdaSamplerProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
@@ -1753,7 +1752,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
         if (auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(device.pluginId)) {
             plugin = insertFromState(compiledSpec->pluginId);
             if (plugin)
-                processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
+                processor = daw::audio::compiled::createCompiledPluginProcessor(*compiledSpec,
+                                                                                device.id, plugin);
         } else {
             switch (classifyInternalDevice(device.pluginId)) {
                 case InternalDeviceKind::TeToneGenerator:

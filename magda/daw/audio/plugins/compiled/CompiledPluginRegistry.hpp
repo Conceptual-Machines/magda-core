@@ -2,7 +2,14 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <memory>
 #include <span>
+
+#include "core/TypeIds.hpp"
+
+namespace magda {
+class DeviceProcessor;
+}
 
 namespace magda::daw::audio::compiled {
 
@@ -31,5 +38,9 @@ std::span<const CompiledPluginSpec* const> getAllCompiledPluginSpecs();
 
 /// Returns null if `pluginId` doesn't match any compiled plugin.
 const CompiledPluginSpec* findCompiledPluginSpec(const juce::String& pluginId);
+
+/// Creates the runtime processor for a compiled plugin instance.
+std::unique_ptr<magda::DeviceProcessor> createCompiledPluginProcessor(
+    const CompiledPluginSpec& spec, DeviceId deviceId, te::Plugin::Ptr plugin);
 
 }  // namespace magda::daw::audio::compiled
