@@ -4185,7 +4185,7 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*delayUI_);
         updateCustomUI();
-    } else if (device_.pluginId.containsIgnoreCase("chorus")) {
+    } else if (device_.pluginId.containsIgnoreCase("chorus") && !isCompiledFaustChorus_) {
         chorusUI_ = std::make_unique<ChorusUI>();
         chorusUI_->onParameterChanged = [this](int paramIndex, float value) {
             if (!nodePath_.isValid())
