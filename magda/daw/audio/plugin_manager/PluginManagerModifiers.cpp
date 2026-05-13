@@ -595,50 +595,42 @@ void PluginManager::rebuildSidechainLFOCache() {
 
         selfTrackCount = static_cast<int>(lfos.size());
 
-        // 2. Cross-track LFOs: for each OTHER track that has a device sidechained
-        //    from this track, collect that destination track's LFO modifiers
-        for (const auto& otherTrack : tm.getTracks()) {
-            if (otherTrack.id == track.id)
-                continue;
-            bool isDestination = false;
-            for (const auto& element : otherTrack.chainElements) {
+        auto chainElementsContainSidechainSource = [&](auto&& self,
+                                                       const std::vector<ChainElement>& elements,
+                                                       TrackId sourceTrackId) -> bool {
+            for (const auto& element : elements) {
                 if (isDevice(element)) {
                     const auto& device = getDevice(element);
                     if ((device.sidechain.type == SidechainConfig::Type::MIDI ||
                          device.sidechain.type == SidechainConfig::Type::Audio) &&
-                        device.sidechain.sourceTrackId == track.id) {
-                        isDestination = true;
-                        break;
+                        device.sidechain.sourceTrackId == sourceTrackId) {
+                        return true;
                     }
                 } else if (isRack(element)) {
                     const auto& rack = getRack(element);
-                    // Check rack-level sidechain
                     if ((rack.sidechain.type == SidechainConfig::Type::MIDI ||
                          rack.sidechain.type == SidechainConfig::Type::Audio) &&
-                        rack.sidechain.sourceTrackId == track.id) {
-                        isDestination = true;
-                        break;
+                        rack.sidechain.sourceTrackId == sourceTrackId) {
+                        return true;
                     }
                     for (const auto& chain : rack.chains) {
-                        for (const auto& ce : chain.elements) {
-                            if (isDevice(ce)) {
-                                const auto& device = getDevice(ce);
-                                if ((device.sidechain.type == SidechainConfig::Type::MIDI ||
-                                     device.sidechain.type == SidechainConfig::Type::Audio) &&
-                                    device.sidechain.sourceTrackId == track.id) {
-                                    isDestination = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (isDestination)
-                            break;
+                        if (self(self, chain.elements, sourceTrackId))
+                            return true;
                     }
                 }
-                if (isDestination)
-                    break;
             }
-            if (!isDestination)
+            return false;
+        };
+
+        // 2. Cross-track LFOs: for each OTHER track that has a device or rack
+        //    sidechained from this track, collect only the destination LFOs
+        //    whose sidechain source resolves to this track.
+        for (const auto& otherTrack : tm.getTracks()) {
+            if (otherTrack.id == track.id)
+                continue;
+
+            if (!chainElementsContainSidechainSource(chainElementsContainSidechainSource,
+                                                     otherTrack.chainElements, track.id))
                 continue;
 
             // Collect LFO modifiers only from devices on the destination track
@@ -652,8 +644,8 @@ void PluginManager::rebuildSidechainLFOCache() {
                     continue;
                 collectDeviceLFOs(device);
             }
-            // TODO: also filter rack LFOs by sidechain source
-            { rackSyncManager_.collectLFOModifiersWithModes(otherTrack.id, lfos, modes); }
+            rackSyncManager_.collectLFOModifiersWithModesForSidechainSource(otherTrack.id, track.id,
+                                                                            lfos, modes);
         }
 
         // Write to cache entry (capped at kMaxLFOs)
