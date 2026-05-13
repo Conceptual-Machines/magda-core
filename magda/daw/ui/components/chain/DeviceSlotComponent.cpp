@@ -32,6 +32,7 @@
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DevicePresetMenu.hpp"
+#include "slot/DeviceSlotContentLayout.hpp"
 #include "slot/DeviceSlotContentPainter.hpp"
 #include "slot/DeviceSlotHeaderControls.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
@@ -1339,82 +1340,29 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
-    // Position the level meter / note strip on the right edge of the content area.
-    // When collapsed, NodeComponent calls resizedCollapsed() first then resizedContent()
-    // with an empty rect — so we must not touch meter visibility when collapsed.
-    if (!collapsed_) {
-        // Carve the FULL-width second header first so the presets button can
-        // sit flush against the right edge of the panel. Faust draws its own
-        // header inside the FaustUI panel, so it skips this strip entirely.
-        if (!traits_.isFaust) {
-            auto secondHeaderArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
-            if (presetsButton_) {
-                const bool eligible =
-                    !traits_.isChordEngine && !traits_.isArpeggiator && !traits_.isStepSequencer;
-                const bool show = eligible && hasPluginPresetsAvailable();
-                if (show) {
-                    const int btnWidth = juce::jmin(140, secondHeaderArea.getWidth() / 2);
-                    presetsButton_->setBounds(
-                        secondHeaderArea.removeFromRight(btnWidth).reduced(2, 3));
-                    presetsButton_->setVisible(true);
-                } else {
-                    presetsButton_->setVisible(false);
-                }
-            }
-        } else if (presetsButton_) {
-            presetsButton_->setVisible(false);
-        }
-
-        // Then the meter strip lives in the area BELOW the second header.
-        auto stripBounds = contentArea.removeFromRight(METER_STRIP_WIDTH).reduced(1, 3);
-        contentArea.removeFromRight(4);  // Padding between content and meter
-
-        bool usesNoteStrip =
-            traits_.isArpeggiator || traits_.isChordEngine || traits_.isStepSequencer;
-        levelMeter_.setBounds(stripBounds);
-        levelMeter_.setVisible(!usesNoteStrip);
-        midiNoteStrip_.setBounds(stripBounds);
-        midiNoteStrip_.setVisible(usesNoteStrip);
-
-        // Slider overlaid on the meter — same bounds, drawn on top, always visible.
-        if (gainSlider_) {
-            gainSlider_->setBounds(stripBounds);
-            gainSlider_->setVisible(true);
-            gainSlider_->toFront(false);
-        }
-    }
-
-    // Bottom padding
-    contentArea.removeFromBottom(2);
-
-    // When collapsed or still loading, hide all content controls
-    if (collapsed_ || device_.loadState != magda::DeviceLoadState::Loaded) {
-        paramGrid_->setVisible(false);
-        gainLabel_.setVisible(false);
-        if (presetsButton_)
-            presetsButton_->setVisible(false);
-        if (gainSlider_)
-            gainSlider_->setVisible(false);
-        if (presetButton_)
-            presetButton_->setVisible(
-                !collapsed_);  // preset button stays in header even while loading
-        if (auto* activeCustomUI = customUI_.getActiveUI())
-            activeCustomUI->setVisible(false);
-        if (compiledPanel_)
-            compiledPanel_->component().setVisible(false);
+    auto* activeCustomUI = customUI_.getActiveUI();
+    auto* compiledPanelComponent =
+        compiledPanel_ != nullptr ? &compiledPanel_->component() : nullptr;
+    const bool pluginPresetsAvailable =
+        !collapsed_ && !traits_.isFaust && hasPluginPresetsAvailable();
+    if (!prepareDeviceSlotContentFrame(contentArea, traits_, device_, collapsed_,
+                                       isInternalDevice(), pluginPresetsAvailable,
+                                       {.pluginPresetsButton = presetsButton_.get(),
+                                        .levelMeter = &levelMeter_,
+                                        .midiNoteStrip = &midiNoteStrip_,
+                                        .gainSlider = gainSlider_.get(),
+                                        .paramGrid = paramGrid_.get(),
+                                        .gainLabel = &gainLabel_,
+                                        .magdaPresetButton = presetButton_.get(),
+                                        .activeCustomUI = activeCustomUI,
+                                        .compiledPanel = compiledPanelComponent,
+                                        .modButton = modButton_.get(),
+                                        .macroButton = macroButton_.get(),
+                                        .uiButton = uiButton_.get(),
+                                        .powerButton = onButton_.get()},
+                                       METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT)) {
         return;
     }
-
-    // Show header controls when expanded
-    bool showMod = drum_grid_slot::shouldShowModButton(traits_.isDrumGrid, device_.deviceType);
-    bool showMacro = drum_grid_slot::shouldShowMacroButton(
-        traits_.isDrumGrid, device_.deviceType, traits_.isArpeggiator, traits_.isStepSequencer);
-    modButton_->setVisible(showMod);
-    macroButton_->setVisible(showMacro);
-    uiButton_->setVisible(!isInternalDevice());
-    onButton_->setVisible(true);
-    gainLabel_.setVisible(!traits_.isChordEngine && !traits_.isArpeggiator &&
-                          !traits_.isStepSequencer);
 
     // (Second header carve + programs combo placement happen in the
     //  `if (!collapsed_)` block above so the dropdown can sit flush right.)
