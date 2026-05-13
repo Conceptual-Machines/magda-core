@@ -32,6 +32,7 @@
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DevicePresetMenu.hpp"
+#include "slot/DeviceSlotHeaderControls.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
 #include "slot/DeviceSlotMidiUiBinding.hpp"
 #include "slot/DeviceSlotParamLayoutFactory.hpp"
@@ -1592,96 +1593,19 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    // Header layout (visual L→R):
-    //   Plugin-hosted: [macro] [mod] [name ...]  [learn] [ui] [multiOut] [sc] [preset] [power] [X]
-    //   MIDI:          [macro] [mod?] [name ...]                       [preset] [exportClip]
-    //   [power] [X] X (delete) is owned by NodeComponent.
-    //
-    // Right→left removal order is the reverse of the visual order above.
-
-    gainLabel_.setVisible(false);  // gain has moved to the meter-strip slider
-
-    // Left side: macro, mod, AI (AI only when this device has a registered
-    // SoundDesignAgent — currently 4OSC; extends with the registry).
-    auto placeAIButton = [&]() {
-        if (traits_.isAISupported) {
-            aiButton_->setVisible(true);
-            aiButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-            headerArea.removeFromLeft(4);
-        } else {
-            aiButton_->setVisible(false);
-        }
-    };
-    if (drum_grid_slot::shouldShowModButton(traits_.isDrumGrid, device_.deviceType)) {
-        macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-        headerArea.removeFromLeft(4);
-        modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-        headerArea.removeFromLeft(4);
-        placeAIButton();
-    } else if (traits_.isArpeggiator || traits_.isStepSequencer) {
-        macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-        headerArea.removeFromLeft(4);
-        modButton_->setVisible(false);
-        placeAIButton();
-    } else {
-        macroButton_->setVisible(false);
-        modButton_->setVisible(false);
-        aiButton_->setVisible(false);
-    }
-
-    // place(): right→left removal of one button, with gap, only if visible.
-    auto place = [&](juce::Component* c) {
-        if (c == nullptr || !c->isVisible())
-            return;
-        c->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-        headerArea.removeFromRight(4);
-    };
-
-    // The right edge of the header — [preset][power][delete] — is now owned
-    // by NodeComponent (preset slot reserved via getHeaderPresetButton(),
-    // bypass + delete by the base class itself). Subclass placements here
-    // sit to the LEFT of that triplet and can't accidentally split it.
-
-    // MIDI branch: exportClip, [preset, power, delete]
-    if (traits_.isChordEngine || traits_.isArpeggiator || traits_.isStepSequencer) {
-        learnButton_->setVisible(false);
-        if (scButton_)
-            scButton_->setVisible(false);
-        if (multiOutButton_)
-            multiOutButton_->setVisible(false);
-        onButton_->setVisible(true);
-        // Chord engine state is meant to live in clips on the timeline (use
-        // the copy-pattern / export button to bake a progression into a
-        // clip), so the .mps preset surface would just duplicate that flow
-        // and confuse users. Hide it; arp + step sequencer keep theirs.
-        if (presetButton_)
-            presetButton_->setVisible(!traits_.isChordEngine);
-        if (exportClipButton_)
-            exportClipButton_->setVisible(true);
-
-        place(exportClipButton_ ? exportClipButton_.get() : nullptr);
-        return;
-    }
-
-    // Non-MIDI: ui, learn, sc, multiOut, [preset, power, delete]
-    if (exportClipButton_)
-        exportClipButton_->setVisible(false);
-
-    if (scButton_)
-        scButton_->setVisible(drum_grid_slot::shouldShowSidechainButton(
-            traits_.isDrumGrid, device_.canSidechain, device_.canReceiveMidi));
-    if (multiOutButton_)
-        multiOutButton_->setVisible(device_.multiOut.isMultiOut);
-    learnButton_->setVisible(!isInternalDevice());
-    onButton_->setVisible(true);
-    uiButton_->setVisible(!isInternalDevice());
-    if (presetButton_)
-        presetButton_->setVisible(true);
-
-    place(scButton_ ? scButton_.get() : nullptr);
-    place(multiOutButton_ ? multiOutButton_.get() : nullptr);
-    place(uiButton_.get());
-    place(learnButton_.get());
+    layoutExpandedDeviceSlotHeader(headerArea, traits_, device_, isInternalDevice(),
+                                   {.gainLabel = &gainLabel_,
+                                    .macroButton = macroButton_.get(),
+                                    .modButton = modButton_.get(),
+                                    .aiButton = aiButton_.get(),
+                                    .learnButton = learnButton_.get(),
+                                    .sidechainButton = scButton_.get(),
+                                    .multiOutButton = multiOutButton_.get(),
+                                    .uiButton = uiButton_.get(),
+                                    .powerButton = onButton_.get(),
+                                    .presetButton = presetButton_.get(),
+                                    .exportClipButton = exportClipButton_.get()},
+                                   BUTTON_SIZE);
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
