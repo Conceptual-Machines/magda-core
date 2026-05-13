@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <unordered_map>
@@ -184,6 +185,8 @@ class RackSyncManager {
      * Used by PluginManager::rebuildSidechainLFOCache() to populate the cache.
      */
     void collectLFOModifiers(TrackId trackId, std::vector<te::LFOModifier*>& out) const;
+    void collectLFOModifiersWithModes(TrackId trackId, std::vector<te::LFOModifier*>& out,
+                                      std::vector<LFOTriggerMode>& modes) const;
 
     /**
      * @brief Copy each rack-internal TE LFO's current phase + value into its

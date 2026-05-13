@@ -358,6 +358,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                                 devInfo.pluginState =
                                     ext->state.getProperty(te::IDs::state).toString();
                             } else {
+                                innerPlugin->flushPluginStateToValueTree();
                                 auto stateCopy = innerPlugin->state.createCopy();
                                 stateCopy.removeProperty(te::IDs::id, nullptr);
                                 if (auto xml = stateCopy.createXml())
