@@ -28,17 +28,15 @@
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
-#include "layout/CompiledFaustDeviceLayout.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
-#include "layout/FaustDeviceLayout.hpp"
 #include "layout/NodeHeaderStyles.hpp"
-#include "layout/StandardDeviceLayout.hpp"
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DevicePresetMenu.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
+#include "slot/DeviceSlotParamLayoutFactory.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "slot/StepSequencerClipExport.hpp"
 #include "ui/debug/DebugSettings.hpp"
@@ -412,20 +410,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         addAndMakeVisible(*exportClipButton_);
     }
 
-    // Create parameter grid (owns slots + pagination)
-    // Pick the layout strategy for this device family. Faust devices honour
-    // their `[idx:N]` annotations directly so they get a sparse-aware
-    // layout; everything else uses the 8x4 contiguous standard layout.
-    std::unique_ptr<DeviceParamLayout> layout;
-    if (traits_.isFaust)
-        layout = std::make_unique<FaustDeviceLayout>();
-    else if (traits_.compiledPresentation)
-        layout = std::make_unique<CompiledFaustDeviceLayout>(
-            traits_.compiledPresentation->layoutCellCount,
-            traits_.compiledPresentation->layoutCellsPerRow);
-    else
-        layout = std::make_unique<StandardDeviceLayout>();
-    paramGrid_ = std::make_unique<ParamHostComponent>(std::move(layout));
+    // Create parameter grid (owns slots + pagination).
+    paramGrid_ = std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_));
     paramGrid_->onPrevPage = [this]() { goToPrevPage(); };
     paramGrid_->onNextPage = [this]() { goToNextPage(); };
     addAndMakeVisible(*paramGrid_);
