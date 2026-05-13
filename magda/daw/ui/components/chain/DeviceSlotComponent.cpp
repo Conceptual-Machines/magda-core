@@ -1545,62 +1545,17 @@ void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
-    // Meter is positioned by base class via getCollapsedMeterWidth() -> collapsedMeterArea_
-    bool usesNoteStrip = traits_.isArpeggiator || traits_.isChordEngine || traits_.isStepSequencer;
-    levelMeter_.setBounds(collapsedMeterArea_);
-    levelMeter_.setVisible(!usesNoteStrip);
-    midiNoteStrip_.setBounds(collapsedMeterArea_);
-    midiNoteStrip_.setVisible(usesNoteStrip);
-
-    int buttonSize = juce::jmin(BUTTON_SIZE, area.getWidth() - 4);
-
-    // On/power button
-    onButton_->setBounds(
-        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    onButton_->setVisible(true);
-    area.removeFromTop(4);
-
-    // UI button: skip the slot entirely when it isn't shown so we don't
-    // leave a gap above the macro / mod icons for internal devices.
-    const bool showUI =
-        drum_grid_slot::shouldShowCollapsedUiButton(traits_.isDrumGrid, isInternalDevice());
-    if (showUI) {
-        uiButton_->setBounds(
-            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-        uiButton_->setVisible(true);
-        area.removeFromTop(4);
-    } else {
-        uiButton_->setVisible(false);
-    }
-
-    bool showMod = drum_grid_slot::shouldShowModButton(traits_.isDrumGrid, device_.deviceType);
-    bool showMacro = drum_grid_slot::shouldShowMacroButton(
-        traits_.isDrumGrid, device_.deviceType, traits_.isArpeggiator, traits_.isStepSequencer);
-    macroButton_->setBounds(
-        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    macroButton_->setVisible(showMacro);
-    area.removeFromTop(4);
-    modButton_->setBounds(
-        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    modButton_->setVisible(showMod);
-
-    // AI button (4OSC sound design) belongs in the collapsed vertical icon stack.
-    if (traits_.isSoundDesignSupported) {
-        area.removeFromTop(4);
-        aiButton_->setBounds(
-            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-        aiButton_->setVisible(true);
-    } else {
-        aiButton_->setVisible(false);
-    }
-
-    // Multi-out button (only if plugin is multi-out)
-    if (device_.multiOut.isMultiOut && multiOutButton_) {
-        area.removeFromTop(4);
-        multiOutButton_->setBounds(
-            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-        multiOutButton_->setVisible(true);
-    }
+    layoutCollapsedDeviceSlotControls(area, collapsedMeterArea_, traits_, device_,
+                                      isInternalDevice(),
+                                      {.levelMeter = &levelMeter_,
+                                       .midiNoteStrip = &midiNoteStrip_,
+                                       .powerButton = onButton_.get(),
+                                       .uiButton = uiButton_.get(),
+                                       .macroButton = macroButton_.get(),
+                                       .modButton = modButton_.get(),
+                                       .aiButton = aiButton_.get(),
+                                       .multiOutButton = multiOutButton_.get()},
+                                      BUTTON_SIZE);
 }
 
 juce::String DeviceSlotComponent::getCollapsedName() const {

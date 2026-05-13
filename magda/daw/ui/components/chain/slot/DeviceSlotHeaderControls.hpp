@@ -21,9 +21,26 @@ struct DeviceSlotHeaderControls {
     juce::Component* exportClipButton = nullptr;
 };
 
+struct DeviceSlotCollapsedControls {
+    juce::Component* levelMeter = nullptr;
+    juce::Component* midiNoteStrip = nullptr;
+    juce::Component* powerButton = nullptr;
+    juce::Component* uiButton = nullptr;
+    juce::Component* macroButton = nullptr;
+    juce::Component* modButton = nullptr;
+    juce::Component* aiButton = nullptr;
+    juce::Component* multiOutButton = nullptr;
+};
+
 void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
                                     const DeviceSlotTraits& traits, const magda::DeviceInfo& device,
                                     bool isInternalDevice, DeviceSlotHeaderControls controls,
                                     int buttonSize);
+
+void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
+                                       juce::Rectangle<int> collapsedMeterArea,
+                                       const DeviceSlotTraits& traits,
+                                       const magda::DeviceInfo& device, bool isInternalDevice,
+                                       DeviceSlotCollapsedControls controls, int maxButtonSize);
 
 }  // namespace magda::daw::ui
