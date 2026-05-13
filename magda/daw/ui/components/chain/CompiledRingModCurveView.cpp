@@ -16,7 +16,6 @@ constexpr int kPollMs = 33;
 constexpr float kMinFreqHz = 10.0f;
 constexpr float kMaxFreqHz = 20000.0f;
 constexpr int kInsetCycles = 2;
-constexpr int kInsetSamples = 96;
 
 float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallback) {
     for (const auto& param : device.parameters)
@@ -171,75 +170,76 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
     juce::Graphics::ScopedSaveState clipGuard(g);
     g.reduceClipRegion(plot.toNearestInt());
 
-    // Audible-band shading (~20 Hz – 20 kHz). Outside this range the carrier
-    // produces sub-audio tremolo / inaudible top-octave content.
     const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+
+    // Split: thin top strip (spectrum) + main waveform area below. Waveform
+    // fills the full horizontal width.
+    constexpr float kSpectrumStripHeight = 22.0f;
+    auto spectrumStrip = plot.removeFromTop(kSpectrumStripHeight);
+    plot.removeFromTop(4.0f);  // small gap
+
+    // -------- Top strip: log-freq carrier marker --------
     {
-        const float audibleLeft = freqToX(20.0f, plot);
-        const float audibleRight = freqToX(20000.0f, plot);
-        g.setColour(accent.withAlpha(0.05f));
-        g.fillRect(juce::Rectangle<float>(audibleLeft, plot.getY(), audibleRight - audibleLeft,
-                                          plot.getHeight()));
+        // Audible-band shading (~20 Hz – 20 kHz).
+        const float audibleLeft = freqToX(20.0f, spectrumStrip);
+        const float audibleRight = freqToX(20000.0f, spectrumStrip);
+        g.setColour(accent.withAlpha(0.06f));
+        g.fillRect(juce::Rectangle<float>(audibleLeft, spectrumStrip.getY(),
+                                          audibleRight - audibleLeft, spectrumStrip.getHeight()));
+
+        // Decade ticks.
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.25f));
+        for (float decade : {100.0f, 1000.0f, 10000.0f}) {
+            const float x = freqToX(decade, spectrumStrip);
+            g.drawVerticalLine(static_cast<int>(std::round(x)), spectrumStrip.getY(),
+                               spectrumStrip.getBottom());
+        }
+
+        // Carrier marker.
+        const float carrierX = freqToX(effectiveFreqHz(), spectrumStrip);
+        g.setColour(accent.withAlpha(0.95f));
+        g.fillRect(juce::Rectangle<float>(carrierX - 1.0f, spectrumStrip.getY(), 2.0f,
+                                          spectrumStrip.getHeight()));
+
+        // Frequency readout (left) and shape label (right) inside the strip.
+        const float freqDisp = effectiveFreqHz();
+        const juce::String freqLabel =
+            freqDisp >= 1000.0f ? juce::String(freqDisp / 1000.0f, 2) + " kHz"
+                                : juce::String(freqDisp, freqDisp >= 100.0f ? 0 : 1) + " Hz";
+        g.setFont(11.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
+        g.drawText(freqLabel,
+                   juce::Rectangle<float>(spectrumStrip.getX() + 4.0f, spectrumStrip.getY(), 90.0f,
+                                          spectrumStrip.getHeight())
+                       .toNearestInt(),
+                   juce::Justification::centredLeft);
+
+        const char* shapeLabel = shape_ == 1 ? "TRI" : shape_ == 2 ? "SQR" : "SIN";
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.6f));
+        g.drawText(shapeLabel,
+                   juce::Rectangle<float>(spectrumStrip.getRight() - 60.0f, spectrumStrip.getY(),
+                                          54.0f, spectrumStrip.getHeight())
+                       .toNearestInt(),
+                   juce::Justification::centredRight);
     }
 
-    // Decade grid lines.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.20f));
-    for (float decade : {100.0f, 1000.0f, 10000.0f}) {
-        const float x = freqToX(decade, plot);
-        g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
-    }
+    // -------- Waveform area: full-width carrier shape --------
+    if (plot.getHeight() < 8.0f)
+        return;
 
-    // Carrier marker — thick vertical line at the live frequency.
-    const float carrierX = freqToX(effectiveFreqHz(), plot);
-    g.setColour(accent.withAlpha(0.85f));
-    g.fillRect(juce::Rectangle<float>(carrierX - 1.0f, plot.getY(), 2.0f, plot.getHeight()));
-
-    // Top-left frequency readout.
-    const float freqDisp = effectiveFreqHz();
-    const juce::String freqLabel = freqDisp >= 1000.0f
-                                       ? juce::String(freqDisp / 1000.0f, 2) + " kHz"
-                                       : juce::String(freqDisp, freqDisp >= 100.0f ? 0 : 1) + " Hz";
-    g.setFont(11.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
-    g.drawText(freqLabel,
-               juce::Rectangle<float>(plot.getX() + 6.0f, plot.getY() + 4.0f, 100.0f, 14.0f)
-                   .toNearestInt(),
-               juce::Justification::centredLeft);
-
-    // Top-right shape label.
-    const char* shapeLabel = shape_ == 1 ? "TRI" : shape_ == 2 ? "SQR" : "SIN";
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.6f));
-    g.drawText(
-        shapeLabel,
-        juce::Rectangle<float>(plot.getRight() - 80.0f - 6.0f, plot.getY() + 4.0f, 80.0f, 14.0f)
-            .toNearestInt(),
-        juce::Justification::centredRight);
-
-    // Carrier-shape inset — bottom-right, ~30% width × 50% height. Shows two
-    // cycles of the active shape. At audio rates the phase is clamped in the
-    // timer so the glyph reads as a stable preview of the chosen waveform.
-    const float insetW = std::min(140.0f, plot.getWidth() * 0.35f);
-    const float insetH = std::min(50.0f, plot.getHeight() * 0.45f);
-    const float insetMargin = 6.0f;
-    juce::Rectangle<float> inset(plot.getRight() - insetW - insetMargin,
-                                 plot.getBottom() - insetH - insetMargin, insetW, insetH);
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.20f));
-    g.fillRect(inset);
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.45f));
-    g.drawRect(inset, 1.0f);
-
-    const float midY = inset.getCentreY();
+    const float midY = plot.getCentreY();
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.30f));
-    g.drawHorizontalLine(static_cast<int>(std::round(midY)), inset.getX(), inset.getRight());
+    g.drawHorizontalLine(static_cast<int>(std::round(midY)), plot.getX(), plot.getRight());
 
     juce::Path wave;
-    const float halfH = inset.getHeight() * 0.42f;
-    for (int i = 0; i <= kInsetSamples; ++i) {
-        const float t = static_cast<float>(i) / static_cast<float>(kInsetSamples);
+    const float halfH = plot.getHeight() * 0.42f;
+    const int samples = std::max(96, static_cast<int>(std::round(plot.getWidth() * 1.5f)));
+    for (int i = 0; i <= samples; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(samples);
         const double tracePhase =
             phase_ - static_cast<double>(kInsetCycles) * (1.0 - static_cast<double>(t));
         const float v = carrierSample(shape_, tracePhase);
-        const float x = inset.getX() + t * inset.getWidth();
+        const float x = plot.getX() + t * plot.getWidth();
         const float y = midY - v * halfH;
         if (i == 0)
             wave.startNewSubPath(x, y);
@@ -247,7 +247,7 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
             wave.lineTo(x, y);
     }
     g.setColour(accent.withAlpha(0.9f));
-    g.strokePath(wave, juce::PathStrokeType(1.6f));
+    g.strokePath(wave, juce::PathStrokeType(1.8f));
 }
 
 const CompiledPresentationSpec& getMagdaRingModPresentation() {
