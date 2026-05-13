@@ -9,6 +9,7 @@
 #include "AIPanelComponent.hpp"
 #include "CompiledFaustDeviceLayout.hpp"
 #include "DevicePresetMenu.hpp"
+#include "DeviceSlotDrumGridBridge.hpp"
 #include "DeviceSlotHeaderLayout.hpp"
 #include "FaustDeviceLayout.hpp"
 #include "MacroPanelComponent.hpp"
@@ -20,7 +21,6 @@
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
-#include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
@@ -133,8 +133,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // NodeComponent (the base class) — it owns the controller-indicator
     // dots and the refresh logic.
 
-    // Custom name and font for drum grid (MPC-style with Microgramma)
-    isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
+    isDrumGrid_ = drum_grid_slot::isDrumGridPluginId(device.pluginId);
     isChordEngine_ =
         device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName);
     isArpeggiator_ = device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName);
@@ -153,12 +152,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                                           DarkTheme::getSecondaryTextColour());
     }
 
-    if (isDrumGrid_) {
-        // Set empty name - we'll draw custom two-color text in paint()
-        setNodeName("");
-    } else {
-        setNodeName(device.name);
-    }
+    drum_grid_slot::applySlotName(*this, isDrumGrid_, device.name);
     setBypassed(device.bypassed);
 
     // Restore panel visibility from device state
@@ -1108,15 +1102,12 @@ void DeviceSlotComponent::setCustomUITabIndex(int index) {
 }
 
 std::vector<tracktion::engine::Plugin*> DeviceSlotComponent::getDrumPadCollapsedPlugins() const {
-    if (auto* drumGridUI = customUI_.getDrumGridUI())
-        return drumGridUI->getPadChainPanel().getCollapsedPlugins();
-    return {};
+    return drum_grid_slot::getCollapsedPlugins(customUI_.getDrumGridUI());
 }
 
 void DeviceSlotComponent::setDrumPadCollapsedPlugins(
     const std::vector<tracktion::engine::Plugin*>& plugins) {
-    if (auto* drumGridUI = customUI_.getDrumGridUI())
-        drumGridUI->getPadChainPanel().setCollapsedPlugins(plugins);
+    drum_grid_slot::setCollapsedPlugins(customUI_.getDrumGridUI(), plugins);
 }
 
 int DeviceSlotComponent::getPreferredWidth() const {
@@ -1129,9 +1120,7 @@ int DeviceSlotComponent::getPreferredWidth() const {
                getRightPanelsWidth();
     }
     const auto customWidth = customUI_.getPreferredContentWidth(
-        isDrumGrid_ && customUI_.getDrumGridUI() != nullptr
-            ? customUI_.getDrumGridUI()->getPreferredContentWidth()
-            : 0);
+        drum_grid_slot::getPreferredContentWidth(isDrumGrid_, customUI_.getDrumGridUI()));
     if (customWidth > 0)
         return getTotalWidth(customWidth) + meterExtra;
     return getTotalWidth(getDynamicSlotWidth()) + meterExtra;
@@ -1270,8 +1259,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     }
 
     device_ = device;
-    // Custom name and font for drum grid (MPC-style with Microgramma)
-    isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
+    isDrumGrid_ = drum_grid_slot::isDrumGridPluginId(device.pluginId);
     isChordEngine_ =
         device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName);
     isArpeggiator_ = device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName);
@@ -1291,13 +1279,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     } else if (!isTracktionDevice_) {
         tracktionLogo_.reset();
     }
-    if (isDrumGrid_) {
-        // Set empty name - we'll draw custom two-color text in paint()
-        setNodeName("");
-    } else {
-        setNodeName(device.name);
-        setNodeNameFont(FontManager::getInstance().getUIFontBold(10.0f));
-    }
+    drum_grid_slot::applySlotName(*this, isDrumGrid_, device.name);
     setBypassed(device.bypassed);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setActive(!device.bypassed);
@@ -1312,7 +1294,8 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Update sidechain button visibility and state
     if (scButton_) {
-        scButton_->setVisible(device_.canSidechain || device_.canReceiveMidi);
+        scButton_->setVisible(drum_grid_slot::shouldShowSidechainButton(
+            isDrumGrid_, device_.canSidechain, device_.canReceiveMidi));
         updateScButtonState();
     }
 
@@ -1433,53 +1416,18 @@ void DeviceSlotComponent::updateParamModulation() {
     // Also update custom UI linkable sliders
     setupCustomUILinking();
 
-    // Update pad chain plugin link context (DrumGrid)
-    if (auto* drumGridUI = customUI_.getDrumGridUI()) {
-        auto& padChain = drumGridUI->getPadChainPanel();
-        padChain.setLinkContext(nodePath_, macros, mods, trackMacros, trackMods);
-    }
+    drum_grid_slot::setPadChainLinkContext(customUI_.getDrumGridUI(), nodePath_, macros, mods,
+                                           trackMacros, trackMods);
 }
 
 void DeviceSlotComponent::paint(juce::Graphics& g) {
     // Call base class paint for standard rendering
     NodeComponent::paint(g);
 
-    // Custom header text for drum grid (two-color text)
-    if (isDrumGrid_ && !collapsed_ && getHeaderHeight() > 0 && modButton_ &&
-        modButton_->isVisible()) {
-        // Anchor the orange "MDG2000" text directly to the right edge of the
-        // mod button. The macro/mod buttons are placed by resizedHeaderExtra
-        // inside a header rect that already has the param/mod/extra side
-        // panels stripped off, so following the button position is the only
-        // way to stay aligned when the macro or mod editor is open.
-        auto modBounds = modButton_->getBounds();
-        int textStartX = modBounds.getRight() + 4;
-        int textY = modBounds.getY();
-        int textHeight = modBounds.getHeight();
-
-        // Right edge: stop before any header buttons on the right side. The
-        // leftmost right-side button's X gives us the safe boundary.
-        int rightLimit = getWidth();
-        auto narrowestRightX = [&](juce::Component* c) {
-            if (c && c->isVisible() && c->getX() > textStartX && c->getX() < rightLimit)
-                rightLimit = c->getX();
-        };
-        narrowestRightX(uiButton_.get());
-        narrowestRightX(scButton_.get());
-        narrowestRightX(multiOutButton_.get());
-        narrowestRightX(onButton_.get());
-        narrowestRightX(exportClipButton_.get());
-
-        int availableWidth = rightLimit - textStartX - 4;
-        if (availableWidth <= 0)
-            return;
-
-        auto font = FontManager::getInstance().getMicrogrammaFont(11.0f);
-        g.setFont(font);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-        g.drawText("MDG2000", textStartX, textY, availableWidth, textHeight,
-                   juce::Justification::centredLeft, false);
-    }
+    drum_grid_slot::paintHeaderLogo(g, isDrumGrid_, collapsed_, getHeaderHeight(), getWidth(),
+                                    modButton_.get(),
+                                    {uiButton_.get(), scButton_.get(), multiOutButton_.get(),
+                                     onButton_.get(), exportClipButton_.get()});
 }
 
 // paintOverChildren is now handled entirely by NodeComponent — controller
@@ -1488,29 +1436,10 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
 // logic, which has been moved to the base.
 
 juce::Point<float> DeviceSlotComponent::getControllerIndicatorAnchor() const {
-    // Drum Grid: anchor next to the orange "MDG2000" logo we paint in
-    // paint() rather than to the (empty) nameLabel_. Position has to
-    // match the conditions under which the logo actually renders;
-    // otherwise we'd float a dot in dead space.
-    if (isDrumGrid_ && !collapsed_ && getHeaderHeight() > 0 && modButton_ &&
-        modButton_->isVisible()) {
-        auto modBounds = modButton_->getBounds();
-        const float textStartX = static_cast<float>(modBounds.getRight() + 4);
-        const float textCentreY = static_cast<float>(modBounds.getCentreY());
+    if (auto anchor = drum_grid_slot::getControllerIndicatorAnchor(
+            isDrumGrid_, collapsed_, getHeaderHeight(), modButton_.get()))
+        return *anchor;
 
-        // Microgramma 11pt — same font paint() draws "MDG2000" with.
-        // GlyphArrangement is the JUCE-recommended way to measure text;
-        // juce::Font::getStringWidthFloat is deprecated.
-        auto font = FontManager::getInstance().getMicrogrammaFont(11.0f);
-        juce::GlyphArrangement glyphs;
-        glyphs.addLineOfText(font, "MDG2000", 0.0f, 0.0f);
-        const float logoWidth = glyphs.getBoundingBox(0, -1, true).getWidth();
-
-        constexpr float gapAfterLogo = 8.0f;
-        return {textStartX + logoWidth + gapAfterLogo, textCentreY};
-    }
-
-    // Other devices: keep the base behaviour (anchor to nameLabel_).
     return NodeComponent::getControllerIndicatorAnchor();
 }
 
@@ -1565,16 +1494,18 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
     // header inside the FaustUI panel, so skip the slot-level one).
     if (!isFaust_) {
         auto headerArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
-        auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                       : DarkTheme::getSecondaryTextColour();
-        g.setColour(textColour);
         auto textArea = headerArea.withTrimmedLeft(6).withTrimmedRight(2);
 
-        if (isDrumGrid_) {
-            // Drum Grid: "MAGDA Drum Grid" in Microgramma
-            g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-            g.drawText("MAGDA Drum Grid", textArea, juce::Justification::centredLeft);
-        } else if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
+        const bool headerHandled =
+            drum_grid_slot::paintContentHeader(g, isDrumGrid_, isBypassed(), textArea);
+        if (headerHandled) {
+            return;
+        }
+
+        if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
+            auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
+                                           : DarkTheme::getSecondaryTextColour();
+            g.setColour(textColour);
             // Step recording banner overrides the header
             auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
             if (isStepSequencer_ && stepSeqPlugin && stepSeqPlugin->isStepRecording()) {
@@ -1597,6 +1528,9 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
                 g.drawText(label, textArea, juce::Justification::centredLeft);
             }
         } else if (isTracktionDevice_ && tracktionLogo_) {
+            auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
+                                           : DarkTheme::getSecondaryTextColour();
+            g.setColour(textColour);
             // Tracktion devices: TE logo inline + "Tracktion / {device name}"
             constexpr int logoSize = 14;
             auto logoBounds = textArea.removeFromLeft(logoSize).toFloat();
@@ -1607,6 +1541,9 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
             g.setFont(FontManager::getInstance().getUIFont(9.0f));
             g.drawText("Tracktion / " + device_.name, textArea, juce::Justification::centredLeft);
         } else {
+            auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
+                                           : DarkTheme::getSecondaryTextColour();
+            g.setColour(textColour);
             // External devices: "manufacturer / device name"
             g.setFont(FontManager::getInstance().getUIFont(9.0f));
             g.drawText(device_.manufacturer + " / " + device_.name, textArea,
@@ -1681,9 +1618,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     }
 
     // Show header controls when expanded
-    bool showMod = device_.deviceType != magda::DeviceType::MIDI || isDrumGrid_;
-    bool showMacro = device_.deviceType != magda::DeviceType::MIDI || isArpeggiator_ ||
-                     isStepSequencer_ || isDrumGrid_;
+    bool showMod = drum_grid_slot::shouldShowModButton(isDrumGrid_, device_.deviceType);
+    bool showMacro = drum_grid_slot::shouldShowMacroButton(isDrumGrid_, device_.deviceType,
+                                                           isArpeggiator_, isStepSequencer_);
     modButton_->setVisible(showMod);
     macroButton_->setVisible(showMacro);
     uiButton_->setVisible(!isInternalDevice());
@@ -1754,13 +1691,12 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
     // Check if this is an internal device with custom UI
     if (isInternalDevice() && customUI_.hasAnyUI()) {
-        if (auto* drumGridUI = customUI_.getDrumGridUI()) {
-            auto drumGridArea = contentArea.reduced(4, 2);
-            drumGridUI->setBounds(drumGridArea);
-            drumGridUI->setVisible(true);
-        } else if (auto* activeCustomUI = customUI_.getActiveUI()) {
-            activeCustomUI->setBounds(contentArea.reduced(4));
-            activeCustomUI->setVisible(true);
+        if (!drum_grid_slot::layoutDrumGridUI(customUI_.getDrumGridUI(), contentArea)) {
+            auto* activeCustomUI = customUI_.getActiveUI();
+            if (activeCustomUI != nullptr) {
+                activeCustomUI->setBounds(contentArea.reduced(4));
+                activeCustomUI->setVisible(true);
+            }
         }
 
         // Hide parameter grid and pagination
@@ -1803,7 +1739,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
             aiButton_->setVisible(false);
         }
     };
-    if (device_.deviceType != magda::DeviceType::MIDI || isDrumGrid_) {
+    if (drum_grid_slot::shouldShowModButton(isDrumGrid_, device_.deviceType)) {
         macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
         modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
@@ -1859,7 +1795,8 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         exportClipButton_->setVisible(false);
 
     if (scButton_)
-        scButton_->setVisible(!isDrumGrid_ && (device_.canSidechain || device_.canReceiveMidi));
+        scButton_->setVisible(drum_grid_slot::shouldShowSidechainButton(
+            isDrumGrid_, device_.canSidechain, device_.canReceiveMidi));
     if (multiOutButton_)
         multiOutButton_->setVisible(device_.multiOut.isMultiOut);
     learnButton_->setVisible(!isInternalDevice());
@@ -1939,10 +1876,10 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     onButton_->setVisible(true);
     area.removeFromTop(4);
 
-    // UI button (only for external plugins, not drum grid). Skip the slot
-    // entirely when it isn't shown so we don't leave a gap above the macro
-    // / mod icons for internal devices.
-    const bool showUI = !isInternalDevice() && !isDrumGrid_;
+    // UI button: skip the slot entirely when it isn't shown so we don't
+    // leave a gap above the macro / mod icons for internal devices.
+    const bool showUI =
+        drum_grid_slot::shouldShowCollapsedUiButton(isDrumGrid_, isInternalDevice());
     if (showUI) {
         uiButton_->setBounds(
             area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
@@ -1952,9 +1889,9 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
         uiButton_->setVisible(false);
     }
 
-    bool showMod = device_.deviceType != magda::DeviceType::MIDI || isDrumGrid_;
-    bool showMacro = device_.deviceType != magda::DeviceType::MIDI || isArpeggiator_ ||
-                     isStepSequencer_ || isDrumGrid_;
+    bool showMod = drum_grid_slot::shouldShowModButton(isDrumGrid_, device_.deviceType);
+    bool showMacro = drum_grid_slot::shouldShowMacroButton(isDrumGrid_, device_.deviceType,
+                                                           isArpeggiator_, isStepSequencer_);
     macroButton_->setBounds(
         area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
     macroButton_->setVisible(showMacro);
@@ -1983,9 +1920,8 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
 }
 
 juce::String DeviceSlotComponent::getCollapsedName() const {
-    if (isDrumGrid_)
-        return device_.name;
-    return NodeComponent::getCollapsedName();
+    return drum_grid_slot::getCollapsedName(isDrumGrid_, device_.name,
+                                            NodeComponent::getCollapsedName());
 }
 
 int DeviceSlotComponent::getModPanelWidth() const {
@@ -2013,19 +1949,7 @@ const magda::MacroArray* DeviceSlotComponent::getMacrosData() const {
 std::vector<std::pair<magda::DeviceId, juce::String>> DeviceSlotComponent::getAvailableDevices()
     const {
     std::vector<std::pair<magda::DeviceId, juce::String>> result = {{device_.id, device_.name}};
-    if (auto* drumGridUI = customUI_.getDrumGridUI()) {
-        if (auto* dg = drumGridUI->getDrumGridPlugin()) {
-            for (const auto& chain : dg->getChains()) {
-                for (int pi = 0; pi < static_cast<int>(chain->plugins.size()); ++pi) {
-                    int devId = dg->getPluginDeviceId(chain->index, pi);
-                    if (devId >= 0)
-                        result.push_back(
-                            {devId, chain->name + ": " +
-                                        chain->plugins[static_cast<size_t>(pi)]->getName()});
-                }
-            }
-        }
-    }
+    drum_grid_slot::appendAvailableDevices(customUI_.getDrumGridUI(), result);
     return result;
 }
 
@@ -2037,24 +1961,7 @@ std::map<magda::DeviceId, std::vector<juce::String>> DeviceSlotComponent::getDev
         names.push_back(param.name);
     }
     std::map<magda::DeviceId, std::vector<juce::String>> result = {{device_.id, std::move(names)}};
-    if (auto* drumGridUI = customUI_.getDrumGridUI()) {
-        if (auto* dg = drumGridUI->getDrumGridPlugin()) {
-            for (const auto& chain : dg->getChains()) {
-                for (int pi = 0; pi < static_cast<int>(chain->plugins.size()); ++pi) {
-                    int devId = dg->getPluginDeviceId(chain->index, pi);
-                    if (devId < 0)
-                        continue;
-                    auto* plugin = chain->plugins[static_cast<size_t>(pi)].get();
-                    auto params = plugin->getAutomatableParameters();
-                    std::vector<juce::String> paramNames;
-                    paramNames.reserve(static_cast<size_t>(params.size()));
-                    for (auto* p : params)
-                        paramNames.push_back(p->getParameterName());
-                    result[devId] = std::move(paramNames);
-                }
-            }
-        }
-    }
+    drum_grid_slot::appendDeviceParamNames(customUI_.getDrumGridUI(), result);
     return result;
 }
 
@@ -2644,13 +2551,6 @@ void DeviceSlotComponent::updateCustomUI() {
 }
 
 void DeviceSlotComponent::wirePadChainLinkCallbacks() {
-    auto* drumGridUI = customUI_.getDrumGridUI();
-    if (!drumGridUI)
-        return;
-
-    auto& padChain = drumGridUI->getPadChainPanel();
-
-    // Set link context (macros/mods from this device + track)
     const auto* macros = getMacrosData();
     const auto* mods = getModsData();
     const magda::MacroArray* trackMacros = nullptr;
@@ -2662,413 +2562,35 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
             trackMacros = &trackInfo->macros;
         }
     }
-    padChain.setLinkContext(nodePath_, macros, mods, trackMacros, trackMods);
+    drum_grid_slot::setPadChainLinkContext(customUI_.getDrumGridUI(), nodePath_, macros, mods,
+                                           trackMacros, trackMods);
 
-    // Wire onSlotSetup so each PadDeviceSlot gets link callbacks on its controls
-    padChain.onSlotSetup = [safeThis = juce::Component::SafePointer(this)](
-                               PadDeviceSlot& slot, const PadChainPanel::PluginSlotInfo& /*info*/) {
-        if (!safeThis)
-            return;
-
-        // Wire sampler's LinkableTextSliders
-        auto sliders = slot.getLinkableSliders();
-        for (auto* slider : sliders) {
-            slider->onModLinkedWithAmount = [safeThis](int modIndex, magda::ControlTarget target,
-                                                       float amount) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto nodePath = self->nodePath_;
-                auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
-                if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
-                    magda::TrackManager::getInstance().setModTarget(nodePath, modIndex, target);
-                    magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target,
-                                                                        amount);
-                    if (self)
-                        self->updateModsPanel();
-                } else if (activeModSelection.isValid() &&
-                           activeModSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-                    auto trackId = activeModSelection.parentPath.trackId;
-                    magda::TrackManager::getInstance().setModTarget(
-                        ChainNodePath::trackLevel(trackId), modIndex, target);
-                    magda::TrackManager::getInstance().setModLinkAmount(
-                        ChainNodePath::trackLevel(trackId), modIndex, target, amount);
-                } else if (activeModSelection.isValid()) {
-                    magda::TrackManager::getInstance().setModTarget(activeModSelection.parentPath,
-                                                                    modIndex, target);
-                    magda::TrackManager::getInstance().setModLinkAmount(
-                        activeModSelection.parentPath, modIndex, target, amount);
-                }
-                if (self)
-                    self->updateParamModulation();
-            };
-
-            slider->onModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                magda::TrackManager::getInstance().removeModLink(self->nodePath_, modIndex, target);
-                if (self) {
-                    self->updateParamModulation();
-                    self->updateModsPanel();
-                }
-            };
-
-            slider->onRackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
-                if (rackPath.isValid())
-                    magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
-                if (self) {
-                    self->updateParamModulation();
-                    self->updateModsPanel();
-                }
-            };
-
-            slider->onTrackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto trackId = self->nodePath_.trackId;
-                if (trackId != magda::INVALID_TRACK_ID)
-                    magda::TrackManager::getInstance().removeModLink(
-                        ChainNodePath::trackLevel(trackId), modIndex, target);
-                if (self) {
-                    self->updateParamModulation();
-                    self->updateModsPanel();
-                }
-            };
-
-            slider->onModAmountChanged = [safeThis](int modIndex, magda::ControlTarget target,
-                                                    float amount) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto nodePath = self->nodePath_;
-                auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
-                if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
-                    magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target,
-                                                                        amount);
-                    if (self)
-                        self->updateModsPanel();
-                } else if (activeModSelection.isValid() &&
-                           activeModSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-                    magda::TrackManager::getInstance().setModLinkAmount(
-                        ChainNodePath::trackLevel(activeModSelection.parentPath.trackId), modIndex,
-                        target, amount);
-                } else if (activeModSelection.isValid()) {
-                    magda::TrackManager::getInstance().setModLinkAmount(
-                        activeModSelection.parentPath, modIndex, target, amount);
-                }
-                if (self)
-                    self->updateParamModulation();
-            };
-
-            slider->onMacroLinkedWithAmount = [safeThis](int macroIndex,
-                                                         magda::ControlTarget target,
-                                                         float amount) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto nodePath = self->nodePath_;
-                auto activeMacroSelection =
-                    magda::LinkModeManager::getInstance().getMacroInLinkMode();
-                if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
-                    magda::TrackManager::getInstance().setMacroTarget(nodePath, macroIndex, target);
-                    magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex,
-                                                                          target, amount);
-                    if (self)
-                        self->updateMacroPanel();
-                } else if (activeMacroSelection.isValid() &&
-                           activeMacroSelection.parentPath.getType() ==
-                               magda::ChainNodeType::Track) {
-                    auto trackId = activeMacroSelection.parentPath.trackId;
-                    magda::TrackManager::getInstance().setMacroTarget(
-                        ChainNodePath::trackLevel(trackId), macroIndex, target);
-                    magda::TrackManager::getInstance().setMacroLinkAmount(
-                        ChainNodePath::trackLevel(trackId), macroIndex, target, amount);
-                } else if (activeMacroSelection.isValid()) {
-                    magda::TrackManager::getInstance().setMacroTarget(
-                        activeMacroSelection.parentPath, macroIndex, target);
-                    magda::TrackManager::getInstance().setMacroLinkAmount(
-                        activeMacroSelection.parentPath, macroIndex, target, amount);
-                }
-                if (self)
-                    self->updateParamModulation();
-            };
-
-            slider->onMacroLinked = [safeThis](int macroIndex, magda::ControlTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                self->onMacroTargetChangedInternal(macroIndex, target);
-                if (self)
-                    self->updateParamModulation();
-            };
-
-            slider->onMacroUnlinked = [safeThis](int macroIndex, magda::ControlTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                magda::TrackManager::getInstance().removeMacroLink(self->nodePath_, macroIndex,
-                                                                   target);
-                if (self) {
-                    self->updateParamModulation();
-                    self->updateMacroPanel();
-                }
-            };
-
-            slider->onTrackMacroUnlinked = [safeThis](int macroIndex, magda::ControlTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto trackId = self->nodePath_.trackId;
-                if (trackId != magda::INVALID_TRACK_ID)
-                    magda::TrackManager::getInstance().removeMacroLink(
-                        ChainNodePath::trackLevel(trackId), macroIndex, target);
-                if (self) {
-                    self->updateParamModulation();
-                    self->updateMacroPanel();
-                }
-            };
-
-            slider->onMacroAmountChanged = [safeThis](int macroIndex, magda::ControlTarget target,
-                                                      float amount) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto nodePath = self->nodePath_;
-                auto activeMacroSelection =
-                    magda::LinkModeManager::getInstance().getMacroInLinkMode();
-                if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
-                    magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex,
-                                                                          target, amount);
-                    if (self)
-                        self->updateMacroPanel();
-                } else if (activeMacroSelection.isValid() &&
-                           activeMacroSelection.parentPath.getType() ==
-                               magda::ChainNodeType::Track) {
-                    magda::TrackManager::getInstance().setMacroLinkAmount(
-                        ChainNodePath::trackLevel(activeMacroSelection.parentPath.trackId),
-                        macroIndex, target, amount);
-                } else if (activeMacroSelection.isValid()) {
-                    magda::TrackManager::getInstance().setMacroLinkAmount(
-                        activeMacroSelection.parentPath, macroIndex, target, amount);
-                }
-                if (self)
-                    self->updateParamModulation();
-            };
-
-            slider->onShowAutomationLane = [safeThis, slider]() {
-                auto self = safeThis;
-                if (!self || !slider)
-                    return;
-                self->showAutomationLaneForParam(slider->getParamIndex());
-            };
-        }
-
-        // Wire external plugin ParamSlotComponents
-        int numParams = slot.getVisibleParamCount();
-        for (int i = 0; i < numParams; ++i) {
-            auto* ps = slot.getParamSlot(i);
-            if (!ps)
-                continue;
-
-            ps->onModLinkedWithAmount = [safeThis](int modIndex, magda::ControlTarget target,
-                                                   float amount) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto nodePath = self->nodePath_;
-                auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
-                if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
-                    magda::TrackManager::getInstance().setModTarget(nodePath, modIndex, target);
-                    magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target,
-                                                                        amount);
-                    if (self)
-                        self->updateModsPanel();
-                } else if (activeModSelection.isValid() &&
-                           activeModSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-                    auto trackId = activeModSelection.parentPath.trackId;
-                    magda::TrackManager::getInstance().setModTarget(
-                        ChainNodePath::trackLevel(trackId), modIndex, target);
-                    magda::TrackManager::getInstance().setModLinkAmount(
-                        ChainNodePath::trackLevel(trackId), modIndex, target, amount);
-                } else if (activeModSelection.isValid()) {
-                    magda::TrackManager::getInstance().setModTarget(activeModSelection.parentPath,
-                                                                    modIndex, target);
-                    magda::TrackManager::getInstance().setModLinkAmount(
-                        activeModSelection.parentPath, modIndex, target, amount);
-                }
-                if (self)
-                    self->updateParamModulation();
-            };
-
-            ps->onModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                magda::TrackManager::getInstance().removeModLink(self->nodePath_, modIndex, target);
-                if (self) {
-                    self->updateParamModulation();
-                    self->updateModsPanel();
-                }
-            };
-
-            ps->onRackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
-                if (rackPath.isValid())
-                    magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
-                if (self) {
-                    self->updateParamModulation();
-                    self->updateModsPanel();
-                }
-            };
-
-            ps->onTrackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto trackId = self->nodePath_.trackId;
-                if (trackId != magda::INVALID_TRACK_ID)
-                    magda::TrackManager::getInstance().removeModLink(
-                        ChainNodePath::trackLevel(trackId), modIndex, target);
-                if (self) {
-                    self->updateParamModulation();
-                    self->updateModsPanel();
-                }
-            };
-
-            ps->onModAmountChanged = [safeThis](int modIndex, magda::ControlTarget target,
-                                                float amount) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto nodePath = self->nodePath_;
-                auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
-                if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
-                    magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target,
-                                                                        amount);
-                    if (self)
-                        self->updateModsPanel();
-                } else if (activeModSelection.isValid() &&
-                           activeModSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-                    magda::TrackManager::getInstance().setModLinkAmount(
-                        ChainNodePath::trackLevel(activeModSelection.parentPath.trackId), modIndex,
-                        target, amount);
-                } else if (activeModSelection.isValid()) {
-                    magda::TrackManager::getInstance().setModLinkAmount(
-                        activeModSelection.parentPath, modIndex, target, amount);
-                }
-                if (self)
-                    self->updateParamModulation();
-            };
-
-            ps->onMacroLinkedWithAmount = [safeThis](int macroIndex, magda::ControlTarget target,
-                                                     float amount) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto nodePath = self->nodePath_;
-                auto activeMacroSelection =
-                    magda::LinkModeManager::getInstance().getMacroInLinkMode();
-                if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
-                    magda::TrackManager::getInstance().setMacroTarget(nodePath, macroIndex, target);
-                    magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex,
-                                                                          target, amount);
-                    if (self)
-                        self->updateMacroPanel();
-                } else if (activeMacroSelection.isValid() &&
-                           activeMacroSelection.parentPath.getType() ==
-                               magda::ChainNodeType::Track) {
-                    auto trackId = activeMacroSelection.parentPath.trackId;
-                    magda::TrackManager::getInstance().setMacroTarget(
-                        ChainNodePath::trackLevel(trackId), macroIndex, target);
-                    magda::TrackManager::getInstance().setMacroLinkAmount(
-                        ChainNodePath::trackLevel(trackId), macroIndex, target, amount);
-                } else if (activeMacroSelection.isValid()) {
-                    magda::TrackManager::getInstance().setMacroTarget(
-                        activeMacroSelection.parentPath, macroIndex, target);
-                    magda::TrackManager::getInstance().setMacroLinkAmount(
-                        activeMacroSelection.parentPath, macroIndex, target, amount);
-                }
-                if (self)
-                    self->updateParamModulation();
-            };
-
-            ps->onMacroLinked = [safeThis](int macroIndex, magda::ControlTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                self->onMacroTargetChangedInternal(macroIndex, target);
-                if (self)
-                    self->updateParamModulation();
-            };
-
-            ps->onMacroUnlinked = [safeThis](int macroIndex, magda::ControlTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                magda::TrackManager::getInstance().removeMacroLink(self->nodePath_, macroIndex,
-                                                                   target);
-                if (self) {
-                    self->updateParamModulation();
-                    self->updateMacroPanel();
-                }
-            };
-
-            ps->onTrackMacroUnlinked = [safeThis](int macroIndex, magda::ControlTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto trackId = self->nodePath_.trackId;
-                if (trackId != magda::INVALID_TRACK_ID)
-                    magda::TrackManager::getInstance().removeMacroLink(
-                        ChainNodePath::trackLevel(trackId), macroIndex, target);
-                if (self) {
-                    self->updateParamModulation();
-                    self->updateMacroPanel();
-                }
-            };
-
-            ps->onMacroAmountChanged = [safeThis](int macroIndex, magda::ControlTarget target,
-                                                  float amount) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto nodePath = self->nodePath_;
-                auto activeMacroSelection =
-                    magda::LinkModeManager::getInstance().getMacroInLinkMode();
-                if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
-                    magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex,
-                                                                          target, amount);
-                    if (self)
-                        self->updateMacroPanel();
-                } else if (activeMacroSelection.isValid() &&
-                           activeMacroSelection.parentPath.getType() ==
-                               magda::ChainNodeType::Track) {
-                    magda::TrackManager::getInstance().setMacroLinkAmount(
-                        ChainNodePath::trackLevel(activeMacroSelection.parentPath.trackId),
-                        macroIndex, target, amount);
-                } else if (activeMacroSelection.isValid()) {
-                    magda::TrackManager::getInstance().setMacroLinkAmount(
-                        activeMacroSelection.parentPath, macroIndex, target, amount);
-                }
-                if (self)
-                    self->updateParamModulation();
-            };
-
-            ps->onShowAutomationLane = [safeThis, pIdx = ps->getParamIndex()]() {
-                if (auto self = safeThis)
-                    self->showAutomationLaneForParam(pIdx);
-            };
-        }
+    juce::Component::SafePointer<DeviceSlotComponent> safeThis(this);
+    drum_grid_slot::PadChainLinkCallbacks callbacks;
+    callbacks.getNodePath = [safeThis]() {
+        return safeThis != nullptr ? safeThis->nodePath_ : magda::ChainNodePath{};
     };
+    callbacks.updateParamModulation = [safeThis]() {
+        if (safeThis != nullptr)
+            safeThis->updateParamModulation();
+    };
+    callbacks.updateModsPanel = [safeThis]() {
+        if (safeThis != nullptr)
+            safeThis->updateModsPanel();
+    };
+    callbacks.updateMacroPanel = [safeThis]() {
+        if (safeThis != nullptr)
+            safeThis->updateMacroPanel();
+    };
+    callbacks.onMacroTargetChanged = [safeThis](int macroIndex, magda::ControlTarget target) {
+        if (safeThis != nullptr)
+            safeThis->onMacroTargetChangedInternal(macroIndex, target);
+    };
+    callbacks.showAutomationLaneForParam = [safeThis](int paramIndex) {
+        if (safeThis != nullptr)
+            safeThis->showAutomationLaneForParam(paramIndex);
+    };
+    drum_grid_slot::wirePadChainLinkCallbacks(customUI_.getDrumGridUI(), std::move(callbacks));
 }
 
 void DeviceSlotComponent::setupCustomUILinking() {
