@@ -23,19 +23,8 @@
 #include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
-#include "plugins/compiled/MagdaChorusCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaDelayCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaFilterCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaFlangerCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaFreqShiftCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaGritCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaModCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaRingModCompiledPlugin.hpp"
-#include "plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
+#include "plugins/compiled/CompiledFaustInterface.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
 #include "transport/TransportStateManager.hpp"
 
 namespace magda {
@@ -820,52 +809,9 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
         plugin = edit_.getPluginCache().createNewPlugin(pluginState);
         if (plugin)
             track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase(
-                   daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName)) {
+    } else if (auto* spec = daw::audio::compiled::findCompiledPluginSpec(type)) {
         juce::ValueTree pluginState(te::IDs::PLUGIN);
-        pluginState.setProperty(te::IDs::type,
-                                daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName,
-                                nullptr);
-        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase(daw::audio::compiled::MagdaModCompiledPlugin::xmlTypeName)) {
-        juce::ValueTree pluginState(te::IDs::PLUGIN);
-        pluginState.setProperty(te::IDs::type,
-                                daw::audio::compiled::MagdaModCompiledPlugin::xmlTypeName, nullptr);
-        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase(
-                   daw::audio::compiled::MagdaChorusCompiledPlugin::xmlTypeName)) {
-        juce::ValueTree pluginState(te::IDs::PLUGIN);
-        pluginState.setProperty(
-            te::IDs::type, daw::audio::compiled::MagdaChorusCompiledPlugin::xmlTypeName, nullptr);
-        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase(
-                   daw::audio::compiled::MagdaFlangerCompiledPlugin::xmlTypeName)) {
-        juce::ValueTree pluginState(te::IDs::PLUGIN);
-        pluginState.setProperty(
-            te::IDs::type, daw::audio::compiled::MagdaFlangerCompiledPlugin::xmlTypeName, nullptr);
-        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase(
-                   daw::audio::compiled::MagdaRingModCompiledPlugin::xmlTypeName)) {
-        juce::ValueTree pluginState(te::IDs::PLUGIN);
-        pluginState.setProperty(
-            te::IDs::type, daw::audio::compiled::MagdaRingModCompiledPlugin::xmlTypeName, nullptr);
-        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase(
-                   daw::audio::compiled::MagdaFreqShiftCompiledPlugin::xmlTypeName)) {
-        juce::ValueTree pluginState(te::IDs::PLUGIN);
-        pluginState.setProperty(te::IDs::type,
-                                daw::audio::compiled::MagdaFreqShiftCompiledPlugin::xmlTypeName,
-                                nullptr);
+        pluginState.setProperty(te::IDs::type, spec->pluginId, nullptr);
         plugin = edit_.getPluginCache().createNewPlugin(pluginState);
         if (plugin)
             track->pluginList.insertPlugin(plugin, -1, nullptr);
@@ -1480,6 +1426,8 @@ void PluginManager::syncMasterPlugins() {
 // =============================================================================
 
 te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInfo& device) {
+    juce::ignoreUnused(trackId);
+
     te::Plugin::Ptr plugin;
 
     if (device.format == PluginFormat::Internal) {
@@ -1492,134 +1440,100 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             return edit_.getPluginCache().createNewPlugin(pluginState);
         };
 
-        switch (classifyInternalDevice(device.pluginId)) {
-            case InternalDeviceKind::CompiledDelay:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::CompiledGrainDelay:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaGrainDelayCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::CompiledFilter:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::CompiledSaturator:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaSaturatorCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::CompiledGrit:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaGritCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::CompiledMultiband:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaMultibandCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::CompiledPhaser:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::CompiledCompressor:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::CompiledMod:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaModCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::CompiledChorus:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaChorusCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::CompiledFlanger:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaFlangerCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::CompiledRingMod:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaRingModCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::CompiledFreqShift:
-                plugin = createInternalPlugin(
-                    daw::audio::compiled::MagdaFreqShiftCompiledPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::TeDelay:
-                plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::TeReverb:
-                plugin = createInternalPlugin(te::ReverbPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::TeEq:
-                plugin = createInternalPlugin(te::EqualiserPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::TeCompressor:
-                plugin = createInternalPlugin(te::CompressorPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::TeChorus:
-                plugin = createInternalPlugin(te::ChorusPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::TePhaser:
-                plugin = createInternalPlugin(te::PhaserPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::TeLowpass:
-                plugin = createInternalPlugin(te::LowPassPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::TePitchShift:
-                plugin = createInternalPlugin(te::PitchShiftPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::TeImpulseResponse:
-                plugin = createInternalPlugin(te::ImpulseResponsePlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::TeToneGenerator:
-                plugin = createInternalPlugin(te::ToneGeneratorPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::TeFourOsc:
-                plugin = createInternalPlugin(te::FourOscPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::TeVolumeAndPan:
-                plugin = createInternalPlugin(te::VolumeAndPanPlugin::xmlTypeName, ps);
-                break;
-            case InternalDeviceKind::MagdaSampler:
-                plugin = createWithFreshState(daw::audio::MagdaSamplerPlugin::xmlTypeName);
-                break;
-            case InternalDeviceKind::DrumGrid:
-                plugin = createWithFreshState(daw::audio::DrumGridPlugin::xmlTypeName);
-                // DrumGrid stores its inner chain state in pluginState as XML;
-                // rehydrate it so loaded projects don't lose pad assignments.
-                if (plugin && device.pluginState.isNotEmpty()) {
-                    if (auto xml = juce::XmlDocument::parse(device.pluginState)) {
-                        auto savedState = juce::ValueTree::fromXml(*xml);
-                        if (savedState.isValid())
-                            plugin->restorePluginStateFromValueTree(savedState);
+        if (auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(device.pluginId)) {
+            plugin = createInternalPlugin(compiledSpec->pluginId, ps);
+        } else {
+            switch (classifyInternalDevice(device.pluginId)) {
+                case InternalDeviceKind::TeDelay:
+                    plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, ps);
+                    break;
+                case InternalDeviceKind::TeReverb:
+                    plugin = createInternalPlugin(te::ReverbPlugin::xmlTypeName, ps);
+                    break;
+                case InternalDeviceKind::TeEq:
+                    plugin = createInternalPlugin(te::EqualiserPlugin::xmlTypeName, ps);
+                    break;
+                case InternalDeviceKind::TeCompressor:
+                    plugin = createInternalPlugin(te::CompressorPlugin::xmlTypeName, ps);
+                    break;
+                case InternalDeviceKind::TeChorus:
+                    plugin = createInternalPlugin(te::ChorusPlugin::xmlTypeName, ps);
+                    break;
+                case InternalDeviceKind::TePhaser:
+                    plugin = createInternalPlugin(te::PhaserPlugin::xmlTypeName, ps);
+                    break;
+                case InternalDeviceKind::TeLowpass:
+                    plugin = createInternalPlugin(te::LowPassPlugin::xmlTypeName, ps);
+                    break;
+                case InternalDeviceKind::TePitchShift:
+                    plugin = createInternalPlugin(te::PitchShiftPlugin::xmlTypeName, ps);
+                    break;
+                case InternalDeviceKind::TeImpulseResponse:
+                    plugin = createInternalPlugin(te::ImpulseResponsePlugin::xmlTypeName, ps);
+                    break;
+                case InternalDeviceKind::TeToneGenerator:
+                    plugin = createInternalPlugin(te::ToneGeneratorPlugin::xmlTypeName, ps);
+                    break;
+                case InternalDeviceKind::TeFourOsc:
+                    plugin = createInternalPlugin(te::FourOscPlugin::xmlTypeName, ps);
+                    break;
+                case InternalDeviceKind::TeVolumeAndPan:
+                    plugin = createInternalPlugin(te::VolumeAndPanPlugin::xmlTypeName, ps);
+                    break;
+                case InternalDeviceKind::MagdaSampler:
+                    plugin = createWithFreshState(daw::audio::MagdaSamplerPlugin::xmlTypeName);
+                    break;
+                case InternalDeviceKind::DrumGrid:
+                    plugin = createWithFreshState(daw::audio::DrumGridPlugin::xmlTypeName);
+                    // DrumGrid stores its inner chain state in pluginState as XML;
+                    // rehydrate it so loaded projects don't lose pad assignments.
+                    if (plugin && device.pluginState.isNotEmpty()) {
+                        if (auto xml = juce::XmlDocument::parse(device.pluginState)) {
+                            auto savedState = juce::ValueTree::fromXml(*xml);
+                            if (savedState.isValid())
+                                plugin->restorePluginStateFromValueTree(savedState);
+                        }
                     }
-                }
-                break;
-            case InternalDeviceKind::MidiChordEngine:
-                plugin = createWithFreshState(daw::audio::MidiChordEnginePlugin::xmlTypeName);
-                break;
-            case InternalDeviceKind::Arpeggiator:
-                plugin = createWithFreshState(daw::audio::ArpeggiatorPlugin::xmlTypeName);
-                break;
-            case InternalDeviceKind::StepSequencer:
-                plugin = createWithFreshState(daw::audio::StepSequencerPlugin::xmlTypeName);
-                break;
-            case InternalDeviceKind::Faust:
-                plugin = createInternalPlugin(daw::audio::FaustPlugin::xmlTypeName, ps);
-                break;
-            // Kinds we don't construct from this code path: TeLevelMeter
-            // (added by trackController auto-meter), MidiReceive /
-            // sidechain monitors / InstrumentMeterTap / SessionMonitor
-            // (managed elsewhere). External falls into the else branch.
-            case InternalDeviceKind::TeLevelMeter:
-            case InternalDeviceKind::MidiReceive:
-            case InternalDeviceKind::SidechainMonitor:
-            case InternalDeviceKind::AudioSidechainMonitor:
-            case InternalDeviceKind::InstrumentMeterTap:
-            case InternalDeviceKind::SessionMonitor:
-            case InternalDeviceKind::External:
-                break;
+                    break;
+                case InternalDeviceKind::MidiChordEngine:
+                    plugin = createWithFreshState(daw::audio::MidiChordEnginePlugin::xmlTypeName);
+                    break;
+                case InternalDeviceKind::Arpeggiator:
+                    plugin = createWithFreshState(daw::audio::ArpeggiatorPlugin::xmlTypeName);
+                    break;
+                case InternalDeviceKind::StepSequencer:
+                    plugin = createWithFreshState(daw::audio::StepSequencerPlugin::xmlTypeName);
+                    break;
+                case InternalDeviceKind::Faust:
+                    plugin = createInternalPlugin(daw::audio::FaustPlugin::xmlTypeName, ps);
+                    break;
+                // Kinds we don't construct from this code path: TeLevelMeter
+                // (added by trackController auto-meter), MidiReceive /
+                // sidechain monitors / InstrumentMeterTap / SessionMonitor
+                // (managed elsewhere). External falls into the else branch.
+                case InternalDeviceKind::TeLevelMeter:
+                case InternalDeviceKind::MidiReceive:
+                case InternalDeviceKind::SidechainMonitor:
+                case InternalDeviceKind::AudioSidechainMonitor:
+                case InternalDeviceKind::InstrumentMeterTap:
+                case InternalDeviceKind::SessionMonitor:
+                case InternalDeviceKind::External:
+                    break;
+                case InternalDeviceKind::CompiledDelay:
+                case InternalDeviceKind::CompiledGrainDelay:
+                case InternalDeviceKind::CompiledFilter:
+                case InternalDeviceKind::CompiledSaturator:
+                case InternalDeviceKind::CompiledGrit:
+                case InternalDeviceKind::CompiledMultiband:
+                case InternalDeviceKind::CompiledPhaser:
+                case InternalDeviceKind::CompiledCompressor:
+                case InternalDeviceKind::CompiledMod:
+                case InternalDeviceKind::CompiledChorus:
+                case InternalDeviceKind::CompiledFlanger:
+                case InternalDeviceKind::CompiledRingMod:
+                case InternalDeviceKind::CompiledFreqShift:
+                    break;
+            }
         }
     } else {
         // External plugin — same lookup logic as loadDeviceAsPlugin but without track insertion
@@ -1745,31 +1659,8 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
         processor = std::make_unique<UtilityProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::FaustPlugin*>(plugin.get())) {
         processor = std::make_unique<FaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaSaturatorCompiledPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaDelayCompiledPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaGrainDelayCompiledPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaGritCompiledPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaMultibandCompiledPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaPhaserCompiledPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaModCompiledPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaChorusCompiledPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaFlangerCompiledPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaRingModCompiledPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaFreqShiftCompiledPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::compiled::MagdaCompressorCompiledPlugin*>(plugin.get())) {
+    } else if (daw::audio::compiled::findCompiledPluginSpec(device.pluginId) != nullptr &&
+               dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin.get()) != nullptr) {
         processor = std::make_unique<CompiledFaustProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
         processor = std::make_unique<MagdaSamplerProcessor>(deviceId, plugin);
@@ -1859,192 +1750,135 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             return p;
         };
 
-        switch (classifyInternalDevice(device.pluginId)) {
-            case InternalDeviceKind::TeToneGenerator:
-                plugin = createToneGenerator(track);
-                if (plugin)
-                    processor = std::make_unique<ToneGeneratorProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::MagdaSampler:
-                plugin = insertWithFreshState(daw::audio::MagdaSamplerPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<MagdaSamplerProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::DrumGrid:
-                // DrumGrid: don't restore state here — defer until after rack
-                // wrapping. Restoring adds PLUGIN children (samplers) to the
-                // DrumGrid state, which confuses TE's rack graph builder.
-                plugin = insertWithFreshState(daw::audio::DrumGridPlugin::xmlTypeName);
-                if (plugin) {
-                    processor = std::make_unique<DrumGridProcessor>(device.id, plugin);
-                    if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get()))
-                        dg->addListener(this);
-                }
-                break;
-            case InternalDeviceKind::TeFourOsc:
-                plugin = insertFromState(te::FourOscPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<FourOscProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::TeLevelMeter:
-                plugin = createLevelMeter(track);
-                // No processor — meter is measurement-only.
-                break;
-            case InternalDeviceKind::MidiChordEngine:
-                plugin = insertFromState(daw::audio::MidiChordEnginePlugin::xmlTypeName);
-                // No processor — analysis-only plugin, transparent passthrough.
-                break;
-            case InternalDeviceKind::Arpeggiator:
-                plugin = insertFromState(daw::audio::ArpeggiatorPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<ArpeggiatorProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledFilter:
-                plugin =
-                    insertFromState(daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledSaturator:
-                plugin = insertFromState(
-                    daw::audio::compiled::MagdaSaturatorCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledDelay:
-                plugin =
-                    insertFromState(daw::audio::compiled::MagdaDelayCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledGrainDelay:
-                plugin = insertFromState(
-                    daw::audio::compiled::MagdaGrainDelayCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledGrit:
-                plugin =
-                    insertFromState(daw::audio::compiled::MagdaGritCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledMultiband:
-                plugin = insertFromState(
-                    daw::audio::compiled::MagdaMultibandCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledPhaser:
-                plugin =
-                    insertFromState(daw::audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledCompressor:
-                plugin = insertFromState(
-                    daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledMod:
-                plugin = insertFromState(daw::audio::compiled::MagdaModCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledChorus:
-                plugin =
-                    insertFromState(daw::audio::compiled::MagdaChorusCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledFlanger:
-                plugin =
-                    insertFromState(daw::audio::compiled::MagdaFlangerCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledRingMod:
-                plugin =
-                    insertFromState(daw::audio::compiled::MagdaRingModCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::CompiledFreqShift:
-                plugin = insertFromState(
-                    daw::audio::compiled::MagdaFreqShiftCompiledPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::Faust:
-                plugin = insertFromState(daw::audio::FaustPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<FaustProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::StepSequencer:
-                plugin = insertFromState(daw::audio::StepSequencerPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<StepSequencerProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::TeDelay:
-                plugin = insertFromState(te::DelayPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<DelayProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::TeReverb:
-                plugin = insertFromState(te::ReverbPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<ReverbProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::TeEq:
-                plugin = insertFromState(te::EqualiserPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<EqualiserProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::TeCompressor:
-                plugin = insertFromState(te::CompressorPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<CompressorProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::TeChorus:
-                plugin = insertFromState(te::ChorusPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<ChorusProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::TePhaser:
-                plugin = insertFromState(te::PhaserPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<PhaserProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::TeLowpass:
-                plugin = insertFromState(te::LowPassPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<FilterProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::TePitchShift:
-                plugin = insertFromState(te::PitchShiftPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<PitchShiftProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::TeImpulseResponse:
-                plugin = insertFromState(te::ImpulseResponsePlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<ImpulseResponseProcessor>(device.id, plugin);
-                break;
-            case InternalDeviceKind::TeVolumeAndPan:
-                plugin = insertFromState(te::VolumeAndPanPlugin::xmlTypeName);
-                if (plugin)
-                    processor = std::make_unique<UtilityProcessor>(device.id, plugin);
-                break;
-            // Track-level "volume" infrastructure is managed elsewhere
-            // (ensureVolumePluginPosition / setTrackVolume); not added here.
-            case InternalDeviceKind::MidiReceive:
-            case InternalDeviceKind::SidechainMonitor:
-            case InternalDeviceKind::AudioSidechainMonitor:
-            case InternalDeviceKind::InstrumentMeterTap:
-            case InternalDeviceKind::SessionMonitor:
-            case InternalDeviceKind::External:
-                break;
+        if (auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(device.pluginId)) {
+            plugin = insertFromState(compiledSpec->pluginId);
+            if (plugin)
+                processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
+        } else {
+            switch (classifyInternalDevice(device.pluginId)) {
+                case InternalDeviceKind::TeToneGenerator:
+                    plugin = createToneGenerator(track);
+                    if (plugin)
+                        processor = std::make_unique<ToneGeneratorProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::MagdaSampler:
+                    plugin = insertWithFreshState(daw::audio::MagdaSamplerPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<MagdaSamplerProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::DrumGrid:
+                    // DrumGrid: don't restore state here — defer until after rack
+                    // wrapping. Restoring adds PLUGIN children (samplers) to the
+                    // DrumGrid state, which confuses TE's rack graph builder.
+                    plugin = insertWithFreshState(daw::audio::DrumGridPlugin::xmlTypeName);
+                    if (plugin) {
+                        processor = std::make_unique<DrumGridProcessor>(device.id, plugin);
+                        if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get()))
+                            dg->addListener(this);
+                    }
+                    break;
+                case InternalDeviceKind::TeFourOsc:
+                    plugin = insertFromState(te::FourOscPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<FourOscProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::TeLevelMeter:
+                    plugin = createLevelMeter(track);
+                    // No processor — meter is measurement-only.
+                    break;
+                case InternalDeviceKind::MidiChordEngine:
+                    plugin = insertFromState(daw::audio::MidiChordEnginePlugin::xmlTypeName);
+                    // No processor — analysis-only plugin, transparent passthrough.
+                    break;
+                case InternalDeviceKind::Arpeggiator:
+                    plugin = insertFromState(daw::audio::ArpeggiatorPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<ArpeggiatorProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::Faust:
+                    plugin = insertFromState(daw::audio::FaustPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<FaustProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::StepSequencer:
+                    plugin = insertFromState(daw::audio::StepSequencerPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<StepSequencerProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::TeDelay:
+                    plugin = insertFromState(te::DelayPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<DelayProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::TeReverb:
+                    plugin = insertFromState(te::ReverbPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<ReverbProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::TeEq:
+                    plugin = insertFromState(te::EqualiserPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<EqualiserProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::TeCompressor:
+                    plugin = insertFromState(te::CompressorPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<CompressorProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::TeChorus:
+                    plugin = insertFromState(te::ChorusPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<ChorusProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::TePhaser:
+                    plugin = insertFromState(te::PhaserPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<PhaserProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::TeLowpass:
+                    plugin = insertFromState(te::LowPassPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<FilterProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::TePitchShift:
+                    plugin = insertFromState(te::PitchShiftPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<PitchShiftProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::TeImpulseResponse:
+                    plugin = insertFromState(te::ImpulseResponsePlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<ImpulseResponseProcessor>(device.id, plugin);
+                    break;
+                case InternalDeviceKind::TeVolumeAndPan:
+                    plugin = insertFromState(te::VolumeAndPanPlugin::xmlTypeName);
+                    if (plugin)
+                        processor = std::make_unique<UtilityProcessor>(device.id, plugin);
+                    break;
+                // Track-level "volume" infrastructure is managed elsewhere
+                // (ensureVolumePluginPosition / setTrackVolume); not added here.
+                case InternalDeviceKind::MidiReceive:
+                case InternalDeviceKind::SidechainMonitor:
+                case InternalDeviceKind::AudioSidechainMonitor:
+                case InternalDeviceKind::InstrumentMeterTap:
+                case InternalDeviceKind::SessionMonitor:
+                case InternalDeviceKind::External:
+                    break;
+                case InternalDeviceKind::CompiledDelay:
+                case InternalDeviceKind::CompiledGrainDelay:
+                case InternalDeviceKind::CompiledFilter:
+                case InternalDeviceKind::CompiledSaturator:
+                case InternalDeviceKind::CompiledGrit:
+                case InternalDeviceKind::CompiledMultiband:
+                case InternalDeviceKind::CompiledPhaser:
+                case InternalDeviceKind::CompiledCompressor:
+                case InternalDeviceKind::CompiledMod:
+                case InternalDeviceKind::CompiledChorus:
+                case InternalDeviceKind::CompiledFlanger:
+                case InternalDeviceKind::CompiledRingMod:
+                case InternalDeviceKind::CompiledFreqShift:
+                    break;
+            }
         }
     } else {
         // External plugin - find matching description from KnownPluginList
