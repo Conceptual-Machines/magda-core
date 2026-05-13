@@ -4,11 +4,11 @@
 
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
-#include "NodeHeaderStyles.hpp"
 #include "audio/AudioBridge.hpp"
 #include "core/Config.hpp"
 #include "core/PresetManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "layout/NodeHeaderStyles.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
