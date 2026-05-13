@@ -8,6 +8,7 @@
 #include "../../../../agents/sound_design_agent.hpp"
 #include "AIPanelComponent.hpp"
 #include "CompiledFaustDeviceLayout.hpp"
+#include "DevicePresetMenu.hpp"
 #include "DeviceSlotHeaderLayout.hpp"
 #include "FaustDeviceLayout.hpp"
 #include "MacroPanelComponent.hpp"
@@ -31,8 +32,6 @@
 #include "core/MidiFileWriter.hpp"
 #include "core/ModInfo.hpp"
 #include "core/ParameterUtils.hpp"
-#include "core/PluginPresetScanner.hpp"
-#include "core/PresetManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -1138,222 +1137,63 @@ int DeviceSlotComponent::getPreferredWidth() const {
     return getTotalWidth(getDynamicSlotWidth()) + meterExtra;
 }
 
-namespace {
-void showPresetErrorAsync(const juce::String& title, const juce::String& message) {
-    juce::AlertWindow::showAsync(juce::MessageBoxOptions()
-                                     .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                     .withTitle(title)
-                                     .withMessage(message)
-                                     .withButton("OK"),
-                                 nullptr);
-}
-}  // namespace
-
-namespace {
-
-// Recursively walk a preset directory and append items / submenus to `menu`.
-// `outIndex` collects the relative path of every preset file in click order
-// so the chosen menu id can be resolved back to a path.
-void buildPresetSubmenu(juce::PopupMenu& menu, const juce::File& dir, const juce::String& prefix,
-                        int idBase, int& nextId, const juce::String& currentLoaded,
-                        juce::StringArray& outIndex) {
-    if (!dir.isDirectory())
-        return;
-    auto subdirs = dir.findChildFiles(juce::File::findDirectories, false);
-    auto files = dir.findChildFiles(juce::File::findFiles, false, "*.mps");
-    subdirs.sort();
-    files.sort();
-
-    for (const auto& sub : subdirs) {
-        juce::PopupMenu submenu;
-        buildPresetSubmenu(submenu, sub, prefix + sub.getFileName() + "/", idBase, nextId,
-                           currentLoaded, outIndex);
-        menu.addSubMenu(sub.getFileName(), submenu);
-    }
-    for (const auto& f : files) {
-        const auto displayName = f.getFileNameWithoutExtension();
-        const auto relPath = prefix + displayName;
-        outIndex.add(relPath);
-        const bool ticked = (relPath == currentLoaded);
-        menu.addItem(idBase + outIndex.size() - 1, displayName, /*isActive*/ true, ticked);
-    }
-}
-
-}  // namespace
-
 void DeviceSlotComponent::showPresetMenu() {
-    auto& pm = magda::PresetManager::getInstance();
-    const auto pluginFolder = device_.name;
-
-    constexpr int kSaveOverwrite = 1;
-    constexpr int kSaveAs = 2;
-    constexpr int kRevealInFinder = 3;
-    constexpr int kPresetIdBase = 1000;
-
-    juce::PopupMenu menu;
-    menu.addSectionHeader("MAGDA Presets");
-
-    juce::StringArray index;  // relative paths, indexed by chosen-id - kPresetIdBase
-    int nextId = 0;
-    auto pluginDir = pm.getDevicePluginDirectory(pluginFolder);
-    buildPresetSubmenu(menu, pluginDir, "", kPresetIdBase, nextId, currentPresetName_, index);
-
-    if (index.isEmpty())
-        menu.addItem(kPresetIdBase, "(no presets yet)", /*isActive*/ false);
-
-    menu.addSeparator();
-    if (currentPresetName_.isNotEmpty())
-        menu.addItem(kSaveOverwrite, "Save \"" + currentPresetName_ + "\"");
-    menu.addItem(kSaveAs, "Save as MAGDA Preset...");
-    menu.addItem(kRevealInFinder, "Reveal in Finder");
-
-    const auto indexCopy = index;
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(presetButton_.get()),
-                       [this, indexCopy](int chosen) {
-                           if (chosen == 0)
-                               return;
-                           if (chosen == kSaveAs) {
-                               showSaveMagdaPresetDialog();
-                           } else if (chosen == kSaveOverwrite) {
-                               saveCurrentMagdaPreset();
-                           } else if (chosen == kRevealInFinder) {
-                               auto& pm = magda::PresetManager::getInstance();
-                               auto dir = pm.getDevicePluginDirectory(device_.name);
-                               if (!dir.exists())
-                                   dir = pm.getDevicesDirectory();
-                               dir.revealToUser();
-                           } else if (chosen >= kPresetIdBase) {
-                               const int idx = chosen - kPresetIdBase;
-                               if (idx >= 0 && idx < indexCopy.size())
-                                   loadMagdaPreset(indexCopy[idx]);
-                           }
-                       });
+    juce::Component::SafePointer<DeviceSlotComponent> self(this);
+    MagdaPresetMenuActions actions;
+    actions.saveAs = [self]() {
+        if (self != nullptr)
+            self->showSaveMagdaPresetDialog();
+    };
+    actions.saveCurrent = [self]() {
+        if (self != nullptr)
+            self->saveCurrentMagdaPreset();
+    };
+    actions.loadPreset = [self](const juce::String& presetRelativePath) {
+        if (self != nullptr)
+            self->loadMagdaPreset(presetRelativePath);
+    };
+    showMagdaPresetMenu(presetButton_.get(), device_.name, currentPresetName_, std::move(actions));
 }
 
 magda::DeviceInfo DeviceSlotComponent::snapshotForPreset() {
-    // Force the plugin's current state into DeviceInfo before we snapshot,
-    // otherwise device_.pluginState reflects only the last project-save /
-    // capture point and recent edits would be silently dropped.
-    auto& tm = magda::TrackManager::getInstance();
-    if (auto* engine = tm.getAudioEngine()) {
-        if (auto* bridge = engine->getAudioBridge())
-            bridge->getPluginManager().capturePluginState(device_.id);
-    }
-    if (auto* live = tm.getDeviceInChainByPath(nodePath_))
-        return *live;
-    return device_;
+    return snapshotDeviceForPreset(device_, nodePath_).value_or(device_);
 }
 
 void DeviceSlotComponent::showSaveMagdaPresetDialog() {
-    auto* aw = new juce::AlertWindow("Save MAGDA Preset",
-                                     "Enter a name and optional category for this device preset:",
-                                     juce::MessageBoxIconType::NoIcon);
-    // Default fallback chain: explicit `currentPresetName_` (a previously
-    // saved/loaded preset on this slot) → suggestion from PresetManager (e.g.
-    // a name produced by the /design AI agent for this device) → device name.
-    // The default may itself be `Category/Name` form — split on the LAST
-    // slash so multi-level folders survive (e.g. "Bass/Sub/Deep Sub" splits
-    // into category "Bass/Sub" and name "Deep Sub").
-    juce::String defaultPath = currentPresetName_;
-    if (defaultPath.isEmpty())
-        defaultPath = magda::PresetManager::getInstance().getSuggestedPresetName(device_.id);
-    if (defaultPath.isEmpty())
-        defaultPath = device_.name;
-    juce::String defaultCategory;
-    juce::String defaultName = defaultPath;
-    auto slash = defaultPath.lastIndexOfChar('/');
-    if (slash > 0) {
-        defaultCategory = defaultPath.substring(0, slash);
-        defaultName = defaultPath.substring(slash + 1);
-    }
-    aw->addTextEditor("category", defaultCategory, "Category (optional):");
-    aw->addTextEditor("name", defaultName, "Name:");
-    aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    aw->enterModalState(
-        true, juce::ModalCallbackFunction::create([aw, self](int result) {
-            if (result != 1) {
-                delete aw;
-                return;
-            }
-            auto name = aw->getTextEditorContents("name").trim();
-            auto category = aw->getTextEditorContents("category").trim();
-            delete aw;
-            if (name.isEmpty() || self == nullptr)
-                return;
-
-            // Strip any leading/trailing slashes the user typed to avoid
-            // accidentally creating empty path segments (".../Foo/.mps").
-            while (category.startsWithChar('/'))
-                category = category.substring(1);
-            while (category.endsWithChar('/'))
-                category = category.dropLastCharacters(1);
-            const auto fullName = category.isEmpty() ? name : (category + "/" + name);
-
-            auto doSave = [fullName, self]() {
-                if (self == nullptr)
-                    return;
-                auto fresh = self->snapshotForPreset();
-                auto& mgr = magda::PresetManager::getInstance();
-                if (!mgr.saveDevicePreset(fresh, fullName)) {
-                    showPresetErrorAsync("Save Preset Failed", mgr.getLastError());
-                    return;
-                }
-                if (self != nullptr)
-                    self->currentPresetName_ = fullName;
-            };
-
-            const auto pluginFolder = self->device_.name;
-            if (magda::PresetManager::getInstance()
-                    .getDevicePresets(pluginFolder)
-                    .contains(fullName)) {
-                juce::AlertWindow::showAsync(
-                    juce::MessageBoxOptions()
-                        .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                        .withTitle("Overwrite Preset?")
-                        .withMessage("\"" + fullName + "\" already exists. Overwrite?")
-                        .withButton("Overwrite")
-                        .withButton("Cancel"),
-                    [doSave](int r) {
-                        if (r == 1)
-                            doSave();
-                    });
-            } else {
-                doSave();
-            }
-        }));
+    magda::daw::ui::showSaveMagdaPresetDialog(
+        device_, currentPresetName_,
+        [self]() -> std::optional<magda::DeviceInfo> {
+            if (self == nullptr)
+                return std::nullopt;
+            return self->snapshotForPreset();
+        },
+        [self](const juce::String& presetName) {
+            if (self != nullptr)
+                self->currentPresetName_ = presetName;
+        });
 }
 
 void DeviceSlotComponent::saveCurrentMagdaPreset() {
-    if (currentPresetName_.isEmpty())
-        return;
-    auto& pm = magda::PresetManager::getInstance();
-    auto fresh = snapshotForPreset();
-    if (!pm.saveDevicePreset(fresh, currentPresetName_))
-        showPresetErrorAsync("Save Preset Failed", pm.getLastError());
+    juce::Component::SafePointer<DeviceSlotComponent> self(this);
+    magda::daw::ui::saveCurrentMagdaPreset(currentPresetName_,
+                                           [self]() -> std::optional<magda::DeviceInfo> {
+                                               if (self == nullptr)
+                                                   return std::nullopt;
+                                               return self->snapshotForPreset();
+                                           });
 }
 
 void DeviceSlotComponent::loadMagdaPreset(const juce::String& presetRelativePath) {
-    magda::DeviceInfo preset;
-    auto& pm = magda::PresetManager::getInstance();
-    if (!pm.loadDevicePreset(device_.name, presetRelativePath, preset)) {
-        showPresetErrorAsync("Load Preset Failed", pm.getLastError());
-        return;
-    }
-    auto& tm = magda::TrackManager::getInstance();
-    if (!tm.applyDevicePreset(nodePath_, preset)) {
-        showPresetErrorAsync("Load Preset Failed",
-                             "Preset is for a different plugin (\"" + preset.pluginId + "\").");
-        return;
-    }
-    // Refresh this slot's UI from the now-mutated live DeviceInfo. The
-    // applyDevicePreset path notifies via devicePropertyChanged (AudioBridge),
-    // but DeviceSlotComponent's custom-UI refresh sits in updateFromDevice().
-    if (auto* live = tm.getDeviceInChainByPath(nodePath_))
-        updateFromDevice(*live);
-    currentPresetName_ = presetRelativePath;
+    juce::Component::SafePointer<DeviceSlotComponent> self(this);
+    magda::daw::ui::loadMagdaPreset(
+        device_.name, nodePath_, presetRelativePath,
+        [self](const magda::DeviceInfo& liveDevice, const juce::String& presetName) {
+            if (self == nullptr)
+                return;
+            self->updateFromDevice(liveDevice);
+            self->currentPresetName_ = presetName;
+        });
 }
 
 void DeviceSlotComponent::refreshPresetsButton() {
@@ -1364,225 +1204,56 @@ void DeviceSlotComponent::refreshPresetsButton() {
 }
 
 bool DeviceSlotComponent::hasPluginPresetsAvailable() const {
-    // Disk presets only. The legacy getNumPrograms / getProgramName API is
-    // effectively useless on modern VST3s (Serum, Vital, etc. report 128
-    // generic "Program N" entries that resolve to identical state) so we
-    // don't fall back to it — that's exactly the lie #1118 set out to remove.
-    if (isInternalDevice() || device_.loadState != magda::DeviceLoadState::Loaded)
-        return false;
-    return !magda::PluginPresetScanner::getInstance().getPresets(device_).empty();
+    return magda::daw::ui::hasPluginPresetsAvailable(device_, isInternalDevice());
 }
-
-namespace {
-
-// Walk a PluginPresetScanner tree, append items / submenus to `menu`,
-// and accumulate every leaf preset's File so the chosen menu id can be
-// resolved back to a path. Items matching `currentLoaded` are ticked.
-void buildPluginPresetSubmenu(juce::PopupMenu& menu,
-                              const std::vector<magda::PluginPresetScanner::Entry>& entries,
-                              int idBase, juce::Array<juce::File>& outFiles,
-                              const juce::File& currentLoaded) {
-    for (const auto& entry : entries) {
-        if (entry.isFolder) {
-            juce::PopupMenu submenu;
-            buildPluginPresetSubmenu(submenu, entry.children, idBase, outFiles, currentLoaded);
-            if (submenu.getNumItems() > 0)
-                menu.addSubMenu(entry.name, submenu);
-        } else {
-            outFiles.add(entry.file);
-            const bool ticked = currentLoaded == entry.file;
-            menu.addItem(idBase + outFiles.size() - 1, entry.name, /*isActive*/ true, ticked);
-        }
-    }
-}
-
-}  // namespace
 
 void DeviceSlotComponent::showPluginPresetMenu() {
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    auto* bridge = audioEngine != nullptr ? audioEngine->getAudioBridge() : nullptr;
-    if (bridge == nullptr || isInternalDevice())
-        return;
-
-    auto& scanner = magda::PluginPresetScanner::getInstance();
-    const auto extension = scanner.getPresetExtension(device_);
-    const bool diskPresetsSupported = extension.isNotEmpty();
-
-    constexpr int kPresetIdBase = 1000;
-    constexpr int kProgramIdBase = 5000;
-    constexpr int kSavePresetAs = 1;
-    constexpr int kRevealUserDir = 2;
-    constexpr int kRescan = 3;
-
-    juce::PopupMenu menu;
-    juce::Array<juce::File> indexed;
-
-    if (diskPresetsSupported) {
-        const auto& tree = scanner.getPresets(device_);
-        if (!tree.empty()) {
-            buildPluginPresetSubmenu(menu, tree.roots, kPresetIdBase, indexed,
-                                     currentPluginPresetFile_);
-        } else {
-            menu.addItem(kPresetIdBase, "(no presets installed)", /*isActive*/ false);
-        }
-    }
-
-    // Legacy program API as a fallback / supplementary entry. Plugins like
-    // older VSTs and a handful of VST3s still expose meaningful program lists
-    // through getNumPrograms — keep them reachable.
-    const int numPrograms = bridge->getPluginNumPrograms(device_.id);
-    if (numPrograms > 1) {
-        juce::PopupMenu programsSubmenu;
-        const int currentProgram = bridge->getPluginCurrentProgram(device_.id);
-        for (int i = 0; i < numPrograms; ++i) {
-            auto name = bridge->getPluginProgramName(device_.id, i);
-            if (name.isEmpty())
-                name = "Program " + juce::String(i + 1);
-            programsSubmenu.addItem(kProgramIdBase + i, name, /*isActive*/ true,
-                                    /*isTicked*/ i == currentProgram);
-        }
-        if (menu.getNumItems() > 0)
-            menu.addSeparator();
-        menu.addSubMenu("Built-in Programs", programsSubmenu);
-    }
-
-    if (diskPresetsSupported) {
-        menu.addSeparator();
-        menu.addItem(kSavePresetAs, "Save Preset As...");
-        const auto userDir = scanner.getUserPresetDirectory(device_);
-        menu.addItem(kRevealUserDir, "Reveal User Preset Folder",
-                     /*isActive*/ !userDir.getFullPathName().isEmpty());
-        menu.addItem(kRescan, "Rescan");
-    } else if (numPrograms <= 1) {
-        // Nothing to show at all (e.g. a legacy VST with one program and no
-        // disk presets). Don't show the menu.
-        return;
-    }
-
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(presetsButton_.get()),
-        [self, indexed](int chosen) {
-            if (self == nullptr || chosen == 0)
-                return;
-            if (chosen == kSavePresetAs) {
-                self->showSavePluginPresetDialog();
-            } else if (chosen == kRevealUserDir) {
-                auto dir =
-                    magda::PluginPresetScanner::getInstance().getUserPresetDirectory(self->device_);
-                if (!dir.exists())
-                    dir.createDirectory();
-                if (dir.exists())
-                    dir.revealToUser();
-            } else if (chosen == kRescan) {
-                magda::PluginPresetScanner::getInstance().rescan(self->device_);
-            } else if (chosen >= kProgramIdBase) {
-                const int programIndex = chosen - kProgramIdBase;
-                auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-                if (auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr) {
-                    if (bridge->setPluginCurrentProgram(self->device_.id, programIndex)) {
-                        auto name = bridge->getPluginProgramName(self->device_.id, programIndex);
-                        self->pluginPresetName_ =
-                            name.isNotEmpty() ? name
-                                              : ("Program " + juce::String(programIndex + 1));
-                        self->currentPluginPresetFile_ = juce::File();
-                        self->refreshPresetsButton();
-                    }
-                }
-            } else if (chosen >= kPresetIdBase) {
-                const int idx = chosen - kPresetIdBase;
-                if (idx >= 0 && idx < indexed.size())
-                    self->loadPluginPresetFile(indexed[idx]);
-            }
-        });
+    PluginPresetMenuActions actions;
+    actions.saveAs = [self]() {
+        if (self != nullptr)
+            self->showSavePluginPresetDialog();
+    };
+    actions.loadFile = [self](const juce::File& file) {
+        if (self != nullptr)
+            self->loadPluginPresetFile(file);
+    };
+    actions.selectionChanged = [self](const juce::File& currentFile,
+                                      const juce::String& displayName) {
+        if (self == nullptr)
+            return;
+        self->currentPluginPresetFile_ = currentFile;
+        self->pluginPresetName_ = displayName;
+        self->refreshPresetsButton();
+    };
+
+    magda::daw::ui::showPluginPresetMenu(presetsButton_.get(), device_, isInternalDevice(),
+                                         currentPluginPresetFile_, std::move(actions));
 }
 
 void DeviceSlotComponent::loadPluginPresetFile(const juce::File& file) {
-    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-    auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
-    if (bridge == nullptr)
-        return;
-    if (!bridge->loadPluginPresetFile(device_.id, file)) {
-        showPresetErrorAsync("Load Preset Failed",
-                             "Could not load \"" + file.getFileName() + "\".");
-        return;
-    }
-    currentPluginPresetFile_ = file;
-    pluginPresetName_ = file.getFileNameWithoutExtension();
-    refreshPresetsButton();
+    juce::Component::SafePointer<DeviceSlotComponent> self(this);
+    magda::daw::ui::loadPluginPresetFile(
+        device_.id, file, [self](const juce::File& currentFile, const juce::String& displayName) {
+            if (self == nullptr)
+                return;
+            self->currentPluginPresetFile_ = currentFile;
+            self->pluginPresetName_ = displayName;
+            self->refreshPresetsButton();
+        });
 }
 
 void DeviceSlotComponent::showSavePluginPresetDialog() {
-    auto& scanner = magda::PluginPresetScanner::getInstance();
-    const auto extension = scanner.getPresetExtension(device_);
-    if (extension.isEmpty())
-        return;
-    const auto userDir = scanner.getUserPresetDirectory(device_);
-    if (userDir.getFullPathName().isEmpty()) {
-        showPresetErrorAsync("Save Preset Failed",
-                             "No writable preset directory for this plugin format.");
-        return;
-    }
-
-    auto* aw = new juce::AlertWindow("Save Plugin Preset",
-                                     "Enter a name for this " + extension.substring(1) + " preset:",
-                                     juce::MessageBoxIconType::NoIcon);
-    aw->addTextEditor("name", pluginPresetName_.isNotEmpty() ? pluginPresetName_ : device_.name,
-                      "Name:");
-    aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    aw->enterModalState(
-        true, juce::ModalCallbackFunction::create([aw, self, userDir, extension](int result) {
-            if (result != 1) {
-                delete aw;
+    magda::daw::ui::showSavePluginPresetDialog(
+        device_, pluginPresetName_,
+        [self](const juce::File& currentFile, const juce::String& displayName) {
+            if (self == nullptr)
                 return;
-            }
-            auto rawName = aw->getTextEditorContents("name").trim();
-            delete aw;
-            if (rawName.isEmpty() || self == nullptr)
-                return;
-            auto safeName = juce::File::createLegalFileName(rawName);
-            if (safeName.isEmpty())
-                return;
-
-            auto target = userDir.getChildFile(safeName + extension);
-
-            auto doSave = [self, target]() {
-                if (self == nullptr)
-                    return;
-                auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-                auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
-                if (bridge == nullptr)
-                    return;
-                if (!bridge->savePluginPresetFile(self->device_.id, target)) {
-                    showPresetErrorAsync("Save Preset Failed",
-                                         "Could not write \"" + target.getFileName() + "\".");
-                    return;
-                }
-                magda::PluginPresetScanner::getInstance().rescan(self->device_);
-                self->currentPluginPresetFile_ = target;
-                self->pluginPresetName_ = target.getFileNameWithoutExtension();
-                self->refreshPresetsButton();
-            };
-
-            if (target.existsAsFile()) {
-                juce::AlertWindow::showAsync(
-                    juce::MessageBoxOptions()
-                        .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                        .withTitle("Overwrite Preset?")
-                        .withMessage("\"" + target.getFileName() + "\" already exists. Overwrite?")
-                        .withButton("Overwrite")
-                        .withButton("Cancel"),
-                    [doSave](int r) {
-                        if (r == 1)
-                            doSave();
-                    });
-            } else {
-                doSave();
-            }
-        }));
+            self->currentPluginPresetFile_ = currentFile;
+            self->pluginPresetName_ = displayName;
+            self->refreshPresetsButton();
+        });
 }
 
 void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
