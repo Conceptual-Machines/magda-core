@@ -32,18 +32,16 @@ float freqToX(float hz, const juce::Rectangle<float>& plot) {
 
 // |H(f)| of a single recirculating delay line:
 //   H(f) = 1 / (1 - g · e^{-j 2π f τ})  →  |H(f)|² = 1 / (1 + g² - 2g cos(2π f τ))
-// We normalise so the peak is 1 for display. Returns 0..1 (1 = peak gain,
-// 0 = deepest notch).
+// Returns the unnormalised magnitude (mag = 1 at feedback = 0, no boost or
+// cut). The renderer turns it into dB centred at 0 so peaks/dips read above
+// and below the midline of the plot.
 float magnitudeAt(float hz, float delaySec, float feedback) {
     const float g = juce::jlimit(-0.99f, 0.99f, feedback);
     const float w = 2.0f * juce::MathConstants<float>::pi * hz * delaySec;
     const float denomSq = 1.0f + g * g - 2.0f * g * std::cos(w);
     if (denomSq <= 1.0e-9f)
         return 1.0f;
-    const float mag = 1.0f / std::sqrt(denomSq);
-    // Peak magnitude when feedback > 0 is 1/(1-|g|); when feedback ≤ 0 it's 1/(1-g²)^0.5
-    const float peak = 1.0f / std::max(1.0e-3f, 1.0f - std::abs(g));
-    return juce::jlimit(0.0f, 1.0f, mag / peak);
+    return 1.0f / std::sqrt(denomSq);
 }
 
 }  // namespace
@@ -186,15 +184,24 @@ void CompiledFlangerCurveView::paint(juce::Graphics& g) {
     const float delayMs = kCenterMs + lfoBi * depth_ * kSwingMs;
     const float delaySec = delayMs / 1000.0f;
 
-    // Plot the magnitude response. Comb notches at high feedback can be
-    // narrower than a single pixel, so we oversample each output column
+    // 0 dB midline — flat response sits on it; peaks rise above, notches dip
+    // below. Symmetric reading uses the whole plot height rather than the
+    // top half only.
+    const float midY = plot.getCentreY();
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.30f));
+    g.drawHorizontalLine(static_cast<int>(std::round(midY)), plot.getX(), plot.getRight());
+
+    // Plot the magnitude response in dB. Comb notches at high feedback can
+    // be narrower than a single pixel, so we oversample each output column
     // and average — kills the per-frame aliasing flicker that comes from
     // sample positions snapping past razor-thin notches.
     const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
     const int pixelCount = std::max(64, static_cast<int>(std::round(plot.getWidth())));
     constexpr int kSubSamples = 8;
+    constexpr float kDisplayRangeDb = 24.0f;  // ±24 dB fills the plot
     const float logMinHz = std::log(kMinFreqHz);
     const float logSpan = std::log(kMaxFreqHz / kMinFreqHz);
+    const float halfHeight = plot.getHeight() * 0.46f;
     juce::Path curve;
     for (int px = 0; px <= pixelCount; ++px) {
         float magSum = 0.0f;
@@ -206,11 +213,13 @@ void CompiledFlangerCurveView::paint(juce::Graphics& g) {
             magSum += magnitudeAt(hz, delaySec, feedback_);
         }
         const float mag = magSum / static_cast<float>(kSubSamples);
-        // Scale by mix so dry-only flattens the curve toward a line.
-        const float scaled = mag * mix_ + (1.0f - mix_);
+        const float magDb = 20.0f * std::log10(std::max(0.001f, mag));
+        // Scale deviation by mix — dry-only collapses toward the midline.
+        const float scaledDb = magDb * mix_;
+        const float normalised = juce::jlimit(-1.0f, 1.0f, scaledDb / kDisplayRangeDb);
         const float x = plot.getX() +
                         (static_cast<float>(px) / static_cast<float>(pixelCount)) * plot.getWidth();
-        const float y = plot.getBottom() - scaled * plot.getHeight() * 0.92f;
+        const float y = midY - normalised * halfHeight;
         if (px == 0)
             curve.startNewSubPath(x, y);
         else
