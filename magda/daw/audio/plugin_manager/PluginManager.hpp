@@ -14,7 +14,7 @@
 #include "../../core/TypeIds.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "plugins/DrumGridPlugin.hpp"
-#include "processors/DeviceProcessor.hpp"
+#include "processors/base/DeviceProcessor.hpp"
 #include "racks/InstrumentRackManager.hpp"
 #include "racks/RackSyncManager.hpp"
 

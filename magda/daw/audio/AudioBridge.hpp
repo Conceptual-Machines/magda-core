@@ -25,7 +25,7 @@
 #include "params/ParameterManager.hpp"
 #include "params/ParameterQueue.hpp"
 #include "plugin_manager/PluginManager.hpp"
-#include "processors/DeviceProcessor.hpp"
+#include "processors/base/DeviceProcessor.hpp"
 #include "sampling/SamplerFileLoader.hpp"
 #include "session/ClipSynchronizer.hpp"
 #include "session/SessionClipAudioMonitor.hpp"
