@@ -164,6 +164,8 @@ target_sources(magda_daw PRIVATE
     processors/CompiledFaustProcessor.cpp
     processors/CompiledFaustProcessor.hpp
     processors/DeviceProcessor.cpp
+    processors/DeviceProcessorFactory.cpp
+    processors/DeviceProcessorFactory.hpp
     MidiBridge.cpp
     midi/MidiDeviceMatch.cpp
     midi/QwertyMidiKeyboard.cpp

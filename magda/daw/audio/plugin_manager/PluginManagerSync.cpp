@@ -24,6 +24,7 @@
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "processors/DeviceProcessorFactory.hpp"
 #include "transport/TransportStateManager.hpp"
 
 namespace magda {
@@ -1033,23 +1034,24 @@ void PluginManager::pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId,
             }
 
             // Create processor now that the plugin instance is ready
-            auto extProcessor = std::make_unique<ExternalPluginProcessor>(deviceId, plugin);
-            extProcessor->startParameterListening();
+            auto processor = createDeviceProcessorForPlugin(deviceId, plugin, {});
 
             // Populate parameters on the DeviceInfo
-            if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, deviceId)) {
-                extProcessor->populateParameters(*devInfo);
+            if (processor) {
+                if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, deviceId)) {
+                    processor->populateParameters(*devInfo);
 
-                // Update capability flags
-                if (plugin->canSidechain())
-                    devInfo->canSidechain = true;
-                if (plugin->takesMidiInput() && !devInfo->isInstrument)
-                    devInfo->canReceiveMidi = true;
+                    // Update capability flags
+                    if (plugin->canSidechain())
+                        devInfo->canSidechain = true;
+                    if (plugin->takesMidiInput() && !devInfo->isInstrument)
+                        devInfo->canReceiveMidi = true;
+                }
             }
 
             {
                 juce::ScopedLock lock(self.pluginLock_);
-                self.syncedDevices_[deviceId].processor = std::move(extProcessor);
+                self.syncedDevices_[deviceId].processor = std::move(processor);
             }
 
             // Wrap instruments in a RackType (for audio passthrough + multi-out)
@@ -1605,53 +1607,7 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
     if (!plugin)
         return;
 
-    std::unique_ptr<DeviceProcessor> processor;
-
-    if (dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
-        auto extProc = std::make_unique<ExternalPluginProcessor>(deviceId, plugin);
-        extProc->startParameterListening();
-
-        // Populate parameters back to TrackManager
-        DeviceInfo tempInfo;
-        extProc->populateParameters(tempInfo);
-        TrackManager::getInstance().updateDeviceParameters(deviceId, tempInfo.parameters);
-        AutoAliasGenerator::regenerateForDevice(deviceId);
-
-        processor = std::move(extProc);
-    } else if (dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
-        processor = std::make_unique<FourOscProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<te::DelayPlugin*>(plugin.get())) {
-        processor = std::make_unique<DelayProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<te::ReverbPlugin*>(plugin.get())) {
-        processor = std::make_unique<ReverbProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<te::EqualiserPlugin*>(plugin.get())) {
-        processor = std::make_unique<EqualiserProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<te::CompressorPlugin*>(plugin.get())) {
-        processor = std::make_unique<CompressorProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<te::ChorusPlugin*>(plugin.get())) {
-        processor = std::make_unique<ChorusProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<te::PhaserPlugin*>(plugin.get())) {
-        processor = std::make_unique<PhaserProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<te::LowPassPlugin*>(plugin.get())) {
-        processor = std::make_unique<FilterProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<te::PitchShiftPlugin*>(plugin.get())) {
-        processor = std::make_unique<PitchShiftProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get())) {
-        processor = std::make_unique<ImpulseResponseProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<te::ToneGeneratorPlugin*>(plugin.get())) {
-        processor = std::make_unique<ToneGeneratorProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<te::VolumeAndPanPlugin*>(plugin.get())) {
-        processor = std::make_unique<UtilityProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::FaustPlugin*>(plugin.get())) {
-        processor = std::make_unique<FaustProcessor>(deviceId, plugin);
-    } else if (auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(device.pluginId)) {
-        processor =
-            daw::audio::compiled::createCompiledPluginProcessor(*compiledSpec, deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-        processor = std::make_unique<MagdaSamplerProcessor>(deviceId, plugin);
-    } else if (dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
-        processor = std::make_unique<DrumGridProcessor>(deviceId, plugin);
-    }
+    auto processor = createDeviceProcessorForPlugin(deviceId, plugin, device.pluginId);
 
     if (processor) {
         // Restore parameter values from DeviceInfo onto the newly created plugin
@@ -1737,20 +1693,13 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
 
         if (auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(device.pluginId)) {
             plugin = insertFromState(compiledSpec->pluginId);
-            if (plugin)
-                processor = daw::audio::compiled::createCompiledPluginProcessor(*compiledSpec,
-                                                                                device.id, plugin);
         } else {
             switch (classifyInternalDevice(device.pluginId)) {
                 case InternalDeviceKind::TeToneGenerator:
                     plugin = createToneGenerator(track);
-                    if (plugin)
-                        processor = std::make_unique<ToneGeneratorProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::MagdaSampler:
                     plugin = insertWithFreshState(daw::audio::MagdaSamplerPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<MagdaSamplerProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::DrumGrid:
                     // DrumGrid: don't restore state here — defer until after rack
@@ -1758,15 +1707,12 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                     // DrumGrid state, which confuses TE's rack graph builder.
                     plugin = insertWithFreshState(daw::audio::DrumGridPlugin::xmlTypeName);
                     if (plugin) {
-                        processor = std::make_unique<DrumGridProcessor>(device.id, plugin);
                         if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get()))
                             dg->addListener(this);
                     }
                     break;
                 case InternalDeviceKind::TeFourOsc:
                     plugin = insertFromState(te::FourOscPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<FourOscProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::TeLevelMeter:
                     plugin = createLevelMeter(track);
@@ -1778,68 +1724,42 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                     break;
                 case InternalDeviceKind::Arpeggiator:
                     plugin = insertFromState(daw::audio::ArpeggiatorPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<ArpeggiatorProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::Faust:
                     plugin = insertFromState(daw::audio::FaustPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<FaustProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::StepSequencer:
                     plugin = insertFromState(daw::audio::StepSequencerPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<StepSequencerProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::TeDelay:
                     plugin = insertFromState(te::DelayPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<DelayProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::TeReverb:
                     plugin = insertFromState(te::ReverbPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<ReverbProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::TeEq:
                     plugin = insertFromState(te::EqualiserPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<EqualiserProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::TeCompressor:
                     plugin = insertFromState(te::CompressorPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<CompressorProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::TeChorus:
                     plugin = insertFromState(te::ChorusPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<ChorusProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::TePhaser:
                     plugin = insertFromState(te::PhaserPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<PhaserProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::TeLowpass:
                     plugin = insertFromState(te::LowPassPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<FilterProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::TePitchShift:
                     plugin = insertFromState(te::PitchShiftPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<PitchShiftProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::TeImpulseResponse:
                     plugin = insertFromState(te::ImpulseResponsePlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<ImpulseResponseProcessor>(device.id, plugin);
                     break;
                 case InternalDeviceKind::TeVolumeAndPan:
                     plugin = insertFromState(te::VolumeAndPanPlugin::xmlTypeName);
-                    if (plugin)
-                        processor = std::make_unique<UtilityProcessor>(device.id, plugin);
                     break;
                 // Track-level "volume" infrastructure is managed elsewhere
                 // (ensureVolumePluginPosition / setTrackVolume); not added here.
@@ -1964,10 +1884,6 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                     }
                 }
 
-                auto extProcessor = std::make_unique<ExternalPluginProcessor>(device.id, plugin);
-                // Start listening for parameter changes from the plugin's native UI
-                extProcessor->startParameterListening();
-                processor = std::move(extProcessor);
             } else {
                 // Plugin failed to load - notify via callback
                 if (onPluginLoadFailed) {
@@ -1981,6 +1897,9 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 << device.name);
         }
     }
+
+    if (plugin && !processor)
+        processor = createDeviceProcessorForPlugin(device.id, plugin, device.pluginId);
 
     if (plugin) {
         // Update capability flags on the DeviceInfo in TrackManager
