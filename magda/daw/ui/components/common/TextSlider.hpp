@@ -110,12 +110,15 @@ class TextSlider : public juce::Component,
         hasParamInfo_ = true;
 
         // ParameterInfo is the value-space contract for this slider. Reset
-        // any previous formatter/parser installed for another parameter so a
-        // reused ParamSlot cannot keep a stale normalized/display assumption
-        // after pagination or chain rebuilds.
-        valueFormatter_ = [this](double real) {
-            return magda::ParameterUtils::formatValue(static_cast<float>(real), paramInfoCopy_);
-        };
+        // any previous parser installed for another parameter so a reused
+        // ParamSlot cannot keep a stale normalized/display assumption after
+        // pagination or chain rebuilds. The formatter is preserved if the
+        // host called setValueFormatter() — see hasExplicitFormatter_.
+        if (!hasExplicitFormatter_) {
+            valueFormatter_ = [this](double real) {
+                return magda::ParameterUtils::formatValue(static_cast<float>(real), paramInfoCopy_);
+            };
+        }
         valueParser_ = [this](const juce::String& text) {
             auto parsed = magda::ParameterUtils::parseValue(text, paramInfoCopy_);
             return parsed.has_value() ? static_cast<double>(*parsed) : value_;  // keep on failure
@@ -183,11 +186,14 @@ class TextSlider : public juce::Component,
         updateLabel();
     }
 
-    // Custom value formatter - takes the slider's real value, returns display string.
-    // The override is scoped to the currently assigned ParameterInfo; the next
-    // setParameterInfo call reinstalls the generic formatter/parser first.
+    // Custom value formatter — takes the slider's real value, returns
+    // display string. Sticky against setParameterInfo() so custom UIs
+    // (e.g. FourOscUI's "L50"/"R50" pan label) survive the refresh cycle
+    // DeviceSlotComponent runs whenever the device's ParameterInfo
+    // republishes.
     void setValueFormatter(std::function<juce::String(double)> formatter) {
         valueFormatter_ = std::move(formatter);
+        hasExplicitFormatter_ = static_cast<bool>(valueFormatter_);
         updateLabel();
     }
 
@@ -667,6 +673,13 @@ class TextSlider : public juce::Component,
         valueParser_;                     // Custom value parsing (string -> real value)
     magda::ParameterInfo paramInfoCopy_;  // Populated by setParameterInfo
     bool hasParamInfo_ = false;
+    // True if a custom formatter was installed via setValueFormatter().
+    // Stops setParameterInfo() from clobbering it on every refresh —
+    // FourOscUI installs format-specific labels (e.g. "L50"/"R50" for pan)
+    // at construction that the generic ParameterUtils formatter cannot
+    // produce. The parser is still replaced — only the display side is
+    // sticky.
+    bool hasExplicitFormatter_ = false;
 
     void updateLabel() {
         // Show empty text instead of value when disabled/empty
