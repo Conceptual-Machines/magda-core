@@ -7,11 +7,8 @@
 #include "ai/AIPanelComponent.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
-#include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
-#include "audio/plugins/MidiChordEnginePlugin.hpp"
-#include "audio/plugins/StepSequencerPlugin.hpp"
 #include "core/Config.hpp"
 #include "core/InternalDeviceKind.hpp"
 #include "core/MacroInfo.hpp"
@@ -36,12 +33,12 @@
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DevicePresetMenu.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
+#include "slot/DeviceSlotMidiUiBinding.hpp"
 #include "slot/DeviceSlotParamLayoutFactory.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "slot/StepSequencerClipExport.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/dialogs/ParameterConfigDialog.hpp"
-#include "ui/panels/content/ChordPanelContent.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -967,43 +964,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     refreshControllerIndicators();
 
     // Update MIDI custom UIs with the now-valid trackId (createCustomUI runs before setNodePath).
-    if (auto* chordEngineUI = customUI_.getChordEngineUI();
-        chordEngineUI && nodePath_.trackId != magda::INVALID_TRACK_ID) {
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device_.id);
-                if (auto* chordPlugin =
-                        dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
-                    chordEngineUI->setChordEngine(chordPlugin, nodePath_.trackId);
-                }
-            }
-        }
-    }
-
-    if (auto* arpeggiatorUI = customUI_.getArpeggiatorUI();
-        arpeggiatorUI && nodePath_.trackId != magda::INVALID_TRACK_ID) {
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device_.id);
-                if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
-                    arpeggiatorUI->setArpeggiator(arp);
-                }
-            }
-        }
-    }
-
-    if (auto* stepSequencerUI = customUI_.getStepSequencerUI();
-        stepSequencerUI && nodePath_.trackId != magda::INVALID_TRACK_ID) {
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device_.id);
-                if (auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get())) {
-                    stepSequencerUI->setPlugin(seq);
-                    customUI_.setStepSeqPlugin(seq);
-                }
-            }
-        }
-    }
+    bindDeviceSlotMidiCustomUIs(customUI_, device_.id, nodePath_);
 }
 
 int DeviceSlotComponent::getCustomUITabIndex() const {
