@@ -32,6 +32,7 @@
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DevicePresetMenu.hpp"
+#include "slot/DeviceSlotContentPainter.hpp"
 #include "slot/DeviceSlotHeaderControls.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
 #include "slot/DeviceSlotMidiUiBinding.hpp"
@@ -1314,113 +1315,27 @@ juce::Point<float> DeviceSlotComponent::getControllerIndicatorAnchor() const {
 }
 
 void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
-    // Draw separator line to the left of the meter/note strip (below content header)
-    if (!collapsed_) {
-        int lineX = contentArea.getRight() - METER_STRIP_WIDTH - 4;
-        int meterTop = contentArea.getY() + (traits_.isFaust ? 0 : CONTENT_HEADER_HEIGHT);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawVerticalLine(lineX, static_cast<float>(meterTop + 2),
-                           static_cast<float>(contentArea.getBottom() - 2));
-
-        // Separator under content header (all devices except Faust, which has
-        // no content header) — spans full width
-        float left = static_cast<float>(contentArea.getX() + 2);
-        float right = static_cast<float>(contentArea.getRight() - 2);
-        int headerBottom = contentArea.getY() + CONTENT_HEADER_HEIGHT;
-        if (!traits_.isFaust) {
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.drawHorizontalLine(headerBottom, left, right);
-        }
-
-        // Additional line below pagination row (for external plugin param grid only)
-        if (!traits_.compiledPresentation &&
-            (!isInternalDevice() || traits_.isFaust || !customUI_.hasAnyUI())) {
-            constexpr int paginationTopPadding = 2;
-            constexpr int paginationBottomPadding = 4;
-            const int paramGridTop = contentArea.getY() + (traits_.isFaust ? FaustUI::kHeaderHeight
-                                                                           : CONTENT_HEADER_HEIGHT);
-            int paginationBottom =
-                paramGridTop + paginationTopPadding + PAGINATION_HEIGHT + paginationBottomPadding;
-            g.drawHorizontalLine(paginationBottom, left, right);
-        }
+    DeviceSlotStepRecordingPaintState stepRecording;
+    if (auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
+        traits_.isStepSequencer && stepSeqPlugin != nullptr && stepSeqPlugin->isStepRecording()) {
+        stepRecording.active = true;
+        stepRecording.position = stepSeqPlugin->stepRecordPosition_.load(std::memory_order_relaxed);
+        stepRecording.maxSteps = juce::jlimit(1, 32, stepSeqPlugin->numSteps.get());
     }
 
-    // Loading state overlay: show "Loading..." and skip normal content
-    if (device_.loadState == magda::DeviceLoadState::Loading) {
-        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.6f));
-        g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        g.drawText("Loading...", contentArea, juce::Justification::centred);
-        return;
-    }
-
-    // Failed state overlay
-    if (device_.loadState == magda::DeviceLoadState::Failed) {
-        g.setColour(juce::Colours::red.withAlpha(0.7f));
-        g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        g.drawText("Failed to load", contentArea, juce::Justification::centred);
-        return;
-    }
-
-    // Content header subtitle row for all devices (Faust draws its own
-    // header inside the FaustUI panel, so skip the slot-level one).
-    if (!traits_.isFaust) {
-        auto headerArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
-        auto textArea = headerArea.withTrimmedLeft(6).withTrimmedRight(2);
-
-        const bool headerHandled =
-            drum_grid_slot::paintContentHeader(g, traits_.isDrumGrid, isBypassed(), textArea);
-        if (headerHandled) {
-            return;
-        }
-
-        if (traits_.isChordEngine || traits_.isArpeggiator || traits_.isStepSequencer) {
-            auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                           : DarkTheme::getSecondaryTextColour();
-            g.setColour(textColour);
-            // Step recording banner overrides the header
-            auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
-            if (traits_.isStepSequencer && stepSeqPlugin && stepSeqPlugin->isStepRecording()) {
-                g.saveState();
-                g.setColour(juce::Colour(0xFFCC3333).withAlpha(0.9f));
-                g.fillRect(headerArea);
-                g.setColour(juce::Colours::white);
-                g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-                int recPos = stepSeqPlugin->stepRecordPosition_.load(std::memory_order_relaxed);
-                int maxSteps = juce::jlimit(1, 32, stepSeqPlugin->numSteps.get());
-                g.drawText("STEP RECORDING  " + juce::String(recPos + 1) + "/" +
-                               juce::String(maxSteps),
-                           textArea, juce::Justification::centredLeft);
-                g.restoreState();
-            } else {
-                g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-                juce::String label = traits_.isChordEngine   ? "MAGDA Chord Engine"
-                                     : traits_.isArpeggiator ? "MAGDA Arpeggiator"
-                                                             : "MAGDA Step Sequencer";
-                g.drawText(label, textArea, juce::Justification::centredLeft);
-            }
-        } else if (traits_.isTracktionDevice && tracktionLogo_) {
-            auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                           : DarkTheme::getSecondaryTextColour();
-            g.setColour(textColour);
-            // Tracktion devices: TE logo inline + "Tracktion / {device name}"
-            constexpr int logoSize = 14;
-            auto logoBounds = textArea.removeFromLeft(logoSize).toFloat();
-            logoBounds = logoBounds.withSizeKeepingCentre(logoSize, logoSize);
-            tracktionLogo_->drawWithin(g, logoBounds, juce::RectanglePlacement::centred,
-                                       isBypassed() ? 0.3f : 0.6f);
-            textArea.removeFromLeft(4);  // spacing after logo
-            g.setFont(FontManager::getInstance().getUIFont(9.0f));
-            g.drawText("Tracktion / " + device_.name, textArea, juce::Justification::centredLeft);
-        } else {
-            auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                           : DarkTheme::getSecondaryTextColour();
-            g.setColour(textColour);
-            // External devices: "manufacturer / device name"
-            g.setFont(FontManager::getInstance().getUIFont(9.0f));
-            g.drawText(device_.manufacturer + " / " + device_.name, textArea,
-                       juce::Justification::centredLeft);
-        }
-    }
+    paintDeviceSlotContent(g, contentArea,
+                           {.traits = traits_,
+                            .loadState = device_.loadState,
+                            .collapsed = collapsed_,
+                            .bypassed = isBypassed(),
+                            .internalDevice = isInternalDevice(),
+                            .hasCustomUI = customUI_.hasAnyUI(),
+                            .manufacturer = device_.manufacturer,
+                            .deviceName = device_.name,
+                            .tracktionLogo = tracktionLogo_.get(),
+                            .stepRecording = stepRecording},
+                           METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT, PAGINATION_HEIGHT,
+                           FaustUI::kHeaderHeight);
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
