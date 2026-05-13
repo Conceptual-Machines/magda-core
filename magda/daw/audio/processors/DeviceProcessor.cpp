@@ -11,7 +11,6 @@
 #include "plugins/FaustPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
-#include "plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 
 namespace magda {
 

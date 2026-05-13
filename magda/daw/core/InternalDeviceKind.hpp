@@ -11,14 +11,12 @@ namespace magda {
  * Replaces the previous `device.pluginId.containsIgnoreCase("…")` chains
  * scattered through PluginManagerSync / DeviceSlotComponent /
  * DeviceCustomUIManager. Substring matching was the source of recurring
- * routing bugs — most recently `containsIgnoreCase("delay")` swallowing
- * the compiled MAGDA delay's "magda_delay" pluginId and routing it to
- * TE's DelayPlugin.
+ * routing bugs. Compiled Faust devices are intentionally excluded from
+ * this enum and resolved through `CompiledPluginRegistry`.
  *
  * Kinds map 1:1 onto the canonical `xmlTypeName` of each non-registry
  * plugin (see each plugin's `static const char* xmlTypeName` for the
- * source of truth). Compiled Faust devices are intentionally excluded:
- * those live in `CompiledPluginRegistry`.
+ * source of truth).
  *
  * Anything that doesn't match a known internal pluginId — VST3 / AU /
  * AAX descriptors, junk strings, future plugins — resolves to
