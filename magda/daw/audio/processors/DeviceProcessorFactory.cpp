@@ -3,6 +3,7 @@
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 #include "processors/DeviceProcessor.hpp"
+#include "processors/external/ExternalPluginProcessor.hpp"
 
 namespace magda {
 
