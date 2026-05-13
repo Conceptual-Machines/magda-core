@@ -22,12 +22,11 @@ class CompiledFilterCurveView final : public juce::Component,
         return 140;
     }
 
-    void updateFromDevice(const magda::DeviceInfo& device, const ParamLinkContext* linkContext);
+    void updateFromDevice(const magda::DeviceInfo& device,
+                          const ParamLinkContext* linkContext) override;
     void setCompiledPlugin(magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin);
 
-    // CompiledDevicePanel — the slot component drives the 2-arg form
-    // separately when it has a CompiledFilterCurveView in hand (filter
-    // is the one device that needs the link context too).
+    // CompiledDevicePanel
     juce::Component& component() override {
         return *this;
     }

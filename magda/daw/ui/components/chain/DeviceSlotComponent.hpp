@@ -2,25 +2,13 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include <unordered_map>
-
 #include "ArpeggiatorUI.hpp"
 #include "ChorusUI.hpp"
-#include "CompiledChorusCurveView.hpp"
-#include "CompiledCompressorCurveView.hpp"
-#include "CompiledDelayCurveView.hpp"
-#include "CompiledFilterCurveView.hpp"
-#include "CompiledFlangerCurveView.hpp"
-#include "CompiledFreqShiftCurveView.hpp"
-#include "CompiledGrainDelayCurveView.hpp"
-#include "CompiledGritCurveView.hpp"
-#include "CompiledModCurveView.hpp"
-#include "CompiledMultibandCurveView.hpp"
-#include "CompiledPhaserCurveView.hpp"
-#include "CompiledRingModCurveView.hpp"
-#include "CompiledSaturatorCurveView.hpp"
+#include "CompiledPluginPresentation.hpp"
 #include "CompressorUI.hpp"
 #include "DelayUI.hpp"
+#include "DeviceCustomUIManager.hpp"
+#include "DeviceParameterChangeHandler.hpp"
 #include "DrumGridUI.hpp"
 #include "EqualiserUI.hpp"
 #include "FaustCustomUIRegistry.hpp"
@@ -234,19 +222,9 @@ class DeviceSlotComponent : public NodeComponent,
     bool isArpeggiator_ = false;
     bool isStepSequencer_ = false;
     bool isFaust_ = false;
-    bool isCompiledFaustFilter_ = false;
-    bool isCompiledFaustSaturator_ = false;
-    bool isCompiledFaustDelay_ = false;
-    bool isCompiledFaustGrainDelay_ = false;
-    bool isCompiledFaustGrit_ = false;
-    bool isCompiledFaustCompressor_ = false;
-    bool isCompiledFaustMultiband_ = false;
-    bool isCompiledFaustPhaser_ = false;
-    bool isCompiledFaustMod_ = false;
-    bool isCompiledFaustChorus_ = false;
-    bool isCompiledFaustFlanger_ = false;
-    bool isCompiledFaustRingMod_ = false;
-    bool isCompiledFaustFreqShift_ = false;
+    bool isAISupported_ = false;
+    bool isSoundDesignSupported_ = false;
+    const CompiledPresentationSpec* compiledPresentation_ = nullptr;
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 
@@ -266,50 +244,17 @@ class DeviceSlotComponent : public NodeComponent,
     // DeviceParamLayout strategy chosen at construction).
     std::unique_ptr<ParamHostComponent> paramGrid_;
 
-    // Custom UI for internal devices
-    std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;
-    std::unique_ptr<SamplerUI> samplerUI_;
-    std::unique_ptr<DrumGridUI> drumGridUI_;
-    std::unique_ptr<FourOscUI> fourOscUI_;
-    static constexpr int NO_PENDING_TAB = -1;
-    int pendingCustomUITabIndex_ = NO_PENDING_TAB;
+    DeviceCustomUIManager customUI_;
 
     // Learn-mode debounce: plugins like Vital fire parameterValueChanged for
     // many crosstalk / display parameters when the user touches a single
     // control, which makes the highlighted slot jitter. Lock onto the first
     // param that reports a meaningful change and refuse to switch for a short
     // window so the highlight stays on what the user actually touched.
-    int learnLockedParamIndex_ = -1;
-    juce::uint32 learnLockTimeMs_ = 0;
-    std::unordered_map<int, float> learnLastValueByParam_;
-    std::unique_ptr<EqualiserUI> eqUI_;
-    std::unique_ptr<CompressorUI> compressorUI_;
-    std::unique_ptr<ReverbUI> reverbUI_;
-    std::unique_ptr<DelayUI> delayUI_;
-    std::unique_ptr<ChorusUI> chorusUI_;
-    std::unique_ptr<PhaserUI> phaserUI_;
-    std::unique_ptr<FilterUI> filterUI_;
-    std::unique_ptr<PitchShiftUI> pitchShiftUI_;
-    std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
-    std::unique_ptr<UtilityUI> utilityUI_;
+    ParameterLearnHighlightState learnHighlight_;
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<FaustCustomView> faustCustomView_;
-    std::unique_ptr<CompiledFilterCurveView> compiledFilterCurveView_;
-    std::unique_ptr<CompiledSaturatorCurveView> compiledSaturatorCurveView_;
-    std::unique_ptr<CompiledDelayCurveView> compiledDelayCurveView_;
-    std::unique_ptr<CompiledGrainDelayCurveView> compiledGrainDelayCurveView_;
-    std::unique_ptr<CompiledGritCurveView> compiledGritCurveView_;
-    std::unique_ptr<CompiledCompressorCurveView> compiledCompressorCurveView_;
-    std::unique_ptr<CompiledMultibandCurveView> compiledMultibandCurveView_;
-    std::unique_ptr<CompiledPhaserCurveView> compiledPhaserCurveView_;
-    std::unique_ptr<CompiledModCurveView> compiledModCurveView_;
-    std::unique_ptr<CompiledChorusCurveView> compiledChorusCurveView_;
-    std::unique_ptr<CompiledFlangerCurveView> compiledFlangerCurveView_;
-    std::unique_ptr<CompiledRingModCurveView> compiledRingModCurveView_;
-    std::unique_ptr<CompiledFreqShiftCurveView> compiledFreqShiftCurveView_;
-    std::unique_ptr<ChordPanelContent> chordEngineUI_;
-    std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
-    std::unique_ptr<StepSequencerUI> stepSequencerUI_;
+    std::unique_ptr<CompiledDevicePanel> compiledPanel_;
 
     static constexpr int METER_STRIP_WIDTH = 18;  // wide enough for slider thumb overlay
     magda::LevelMeter levelMeter_;
@@ -324,10 +269,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<juce::TextButton> presetsButton_;
     // Vertical gain slider overlaid on the meter
     std::unique_ptr<juce::Slider> gainSlider_;
-    daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;
-    daw::audio::StepSequencerPlugin* stepSeqPlugin_ = nullptr;
     int lastArpNote_ = -1;
-    daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
     std::array<int, 32> lastChordNotes_{};
     int lastChordCount_ = 0;
 

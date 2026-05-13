@@ -4,6 +4,8 @@ target_sources(magda_daw_app PRIVATE
     RackComponent.cpp
     ChainPanel.cpp
     DeviceSlotComponent.cpp
+    DeviceCustomUIManager.cpp
+    DeviceParameterChangeHandler.cpp
     ParamHostComponent.cpp
     StandardDeviceLayout.cpp
     FaustDeviceLayout.cpp
@@ -66,6 +68,8 @@ target_sources(magda_daw_app PRIVATE
     ChainRowComponent.hpp
     RackComponent.hpp
     ChainPanel.hpp
+    DeviceCustomUIManager.hpp
+    DeviceParameterChangeHandler.hpp
     PadChainPanel.hpp
     PadDeviceSlot.hpp
     ToneGeneratorUI.hpp

@@ -13,6 +13,8 @@ namespace magda::daw::ui {
 
 namespace te = tracktion::engine;
 
+struct ParamLinkContext;
+
 /// Tagged kind for the legacy *UI components a compiled plugin should
 /// suppress (so the wrong UI doesn't claim the slot via `containsIgnoreCase`).
 /// Grow this enum if a new legacy UI needs to be suppressed.
@@ -34,6 +36,9 @@ class CompiledDevicePanel {
     virtual ~CompiledDevicePanel() = default;
     virtual juce::Component& component() = 0;
     virtual void updateFromDevice(const magda::DeviceInfo&) = 0;
+    virtual void updateFromDevice(const magda::DeviceInfo& device, const ParamLinkContext*) {
+        updateFromDevice(device);
+    }
     virtual void bindPlugin(te::Plugin*) = 0;
     virtual void setOnParameterChanged(std::function<void(int slotIndex, float displayValue)>) = 0;
     virtual int preferredHeight() const = 0;

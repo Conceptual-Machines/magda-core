@@ -203,6 +203,31 @@ void DeviceCustomUIManager::readAndPushModMatrix(magda::DeviceId deviceId) {
     fourOscUI_->updateModMatrix(matrixEntries);
 }
 
+void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& device) {
+    if (eqUI_ && device.pluginId.equalsIgnoreCase("eq"))
+        eqUI_->updateFromParameters(device.parameters);
+    if (compressorUI_ && isLegacyTeCompressorPluginId(device.pluginId))
+        compressorUI_->updateFromParameters(device.parameters);
+    if (reverbUI_ && device.pluginId.containsIgnoreCase("reverb"))
+        reverbUI_->updateFromParameters(device.parameters);
+    if (delayUI_ && device.pluginId.containsIgnoreCase("delay"))
+        delayUI_->updateFromParameters(device.parameters);
+    if (chorusUI_ && device.pluginId.containsIgnoreCase("chorus"))
+        chorusUI_->updateFromParameters(device.parameters);
+    if (phaserUI_ && device.pluginId.containsIgnoreCase("phaser"))
+        phaserUI_->updateFromParameters(device.parameters);
+    if (filterUI_ && device.pluginId.containsIgnoreCase("lowpass"))
+        filterUI_->updateFromParameters(device.parameters);
+    if (pitchShiftUI_ && device.pluginId.containsIgnoreCase("pitchshift"))
+        pitchShiftUI_->updateFromParameters(device.parameters);
+    if (impulseResponseUI_ && device.pluginId.containsIgnoreCase("impulseresponse"))
+        impulseResponseUI_->updateFromParameters(device.parameters);
+    if (utilityUI_ && device.pluginId.containsIgnoreCase("utility"))
+        utilityUI_->updateFromParameters(device.parameters);
+    if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc"))
+        fourOscUI_->updateFromParameters(device.parameters);
+}
+
 // =============================================================================
 // create
 // =============================================================================

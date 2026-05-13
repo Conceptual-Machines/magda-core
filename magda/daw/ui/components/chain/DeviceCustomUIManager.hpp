@@ -84,6 +84,12 @@ class DeviceCustomUIManager {
     void update(const magda::DeviceInfo& device);
 
     /**
+     * Push cached parameter values into lightweight controls without heavier
+     * plugin-state reads such as waveforms or drum-pad chain snapshots.
+     */
+    void refreshParameterValues(const magda::DeviceInfo& device);
+
+    /**
      * Read the FourOsc mod matrix from the plugin and push it to FourOscUI.
      */
     void readAndPushModMatrix(magda::DeviceId deviceId);
