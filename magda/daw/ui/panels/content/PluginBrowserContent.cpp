@@ -12,6 +12,7 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
+#include "audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
@@ -377,7 +378,8 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     list.push_back(PluginBrowserInfo::createInternal(
         "Grain Delay", audio::compiled::MagdaGrainDelayCompiledPlugin::xmlTypeName, false,
         "Delay"));
-    list.push_back(PluginBrowserInfo::createInternal("Chorus", "chorus", false, "Modulation"));
+    list.push_back(PluginBrowserInfo::createInternal(
+        "Chorus", audio::compiled::MagdaChorusCompiledPlugin::xmlTypeName, false, "Modulation"));
     list.push_back(PluginBrowserInfo::createInternal(
         "Phaser", audio::compiled::MagdaPhaserCompiledPlugin::xmlTypeName, false, "Modulation"));
     list.push_back(PluginBrowserInfo::createInternal(

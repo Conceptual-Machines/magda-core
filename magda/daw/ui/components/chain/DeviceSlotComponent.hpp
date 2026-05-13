@@ -239,6 +239,7 @@ class DeviceSlotComponent : public NodeComponent,
     bool isCompiledFaustMultiband_ = false;
     bool isCompiledFaustPhaser_ = false;
     bool isCompiledFaustMod_ = false;
+    bool isCompiledFaustChorus_ = false;
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 

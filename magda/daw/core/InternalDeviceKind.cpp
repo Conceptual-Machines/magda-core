@@ -12,6 +12,7 @@
 #include "audio/plugins/MidiReceivePlugin.hpp"
 #include "audio/plugins/SidechainMonitorPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
+#include "audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
@@ -123,6 +124,9 @@ const InternalDeviceMetadata kMetadata[] = {
      "Compiled Faust modulation: tremolo, vibrato, or auto-pan, sharing one LFO. "
      "Free Hz or tempo-synced (musical division). "
      "Sine, triangle, square, or sample-and-hold shape."},
+    {InternalDeviceKind::CompiledChorus, "Chorus", "", "Modulation",
+     "Compiled Faust stereo chorus with 1 to 3 modulated voices per channel. "
+     "Free Hz or tempo-synced rate, depth, feedback, mix, and stereo width."},
 };
 
 }  // namespace
@@ -143,6 +147,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::MagdaSamplerPlugin;
     using daw::audio::MidiChordEnginePlugin;
     using daw::audio::StepSequencerPlugin;
+    using daw::audio::compiled::MagdaChorusCompiledPlugin;
     using daw::audio::compiled::MagdaCompressorCompiledPlugin;
     using daw::audio::compiled::MagdaDelayCompiledPlugin;
     using daw::audio::compiled::MagdaFilterCompiledPlugin;
@@ -167,6 +172,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::CompiledMultiband, MagdaMultibandCompiledPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::CompiledPhaser, MagdaPhaserCompiledPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::CompiledMod, MagdaModCompiledPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::CompiledChorus, MagdaChorusCompiledPlugin::xmlTypeName, nullptr},
         // TE built-in effects — picker uses a short id, the live plugin
         // reports the real `te::*::xmlTypeName`. Match either.
         {InternalDeviceKind::TeEq, "eq", TE::EqualiserPlugin::xmlTypeName},

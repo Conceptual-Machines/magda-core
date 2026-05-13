@@ -4,6 +4,7 @@
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
@@ -856,7 +857,9 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         };
         parent->addAndMakeVisible(*delayUI_);
         update(device);
-    } else if (device.pluginId.containsIgnoreCase("chorus")) {
+    } else if (device.pluginId.containsIgnoreCase("chorus") &&
+               !device.pluginId.equalsIgnoreCase(
+                   audio::compiled::MagdaChorusCompiledPlugin::xmlTypeName)) {
         chorusUI_ = std::make_unique<ChorusUI>();
         chorusUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
             if (cb.onParameterChanged)

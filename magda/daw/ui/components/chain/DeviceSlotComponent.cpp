@@ -23,6 +23,7 @@
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
@@ -118,6 +119,11 @@ bool isCompiledFaustModPluginId(const juce::String& pluginId) {
     return pluginId.equalsIgnoreCase(MagdaModCompiledPlugin::xmlTypeName);
 }
 
+bool isCompiledFaustChorusPluginId(const juce::String& pluginId) {
+    using namespace magda::daw::audio::compiled;
+    return pluginId.equalsIgnoreCase(MagdaChorusCompiledPlugin::xmlTypeName);
+}
+
 bool isCompiledFaustCompressorPluginId(const juce::String& pluginId) {
     using namespace magda::daw::audio::compiled;
     return pluginId.equalsIgnoreCase(MagdaCompressorCompiledPlugin::xmlTypeName);
@@ -209,6 +215,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     isCompiledFaustMultiband_ = isCompiledFaustMultibandPluginId(device.pluginId);
     isCompiledFaustPhaser_ = isCompiledFaustPhaserPluginId(device.pluginId);
     isCompiledFaustMod_ = isCompiledFaustModPluginId(device.pluginId);
+    isCompiledFaustChorus_ = isCompiledFaustChorusPluginId(device.pluginId);
     isTracktionDevice_ = magda::isTracktionEngineStockPlugin(device.pluginId);
     if (isTracktionDevice_) {
         tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
@@ -546,6 +553,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 7, /*cellsPerRow*/ 7);
     else if (isCompiledFaustMod_)
         layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 6, /*cellsPerRow*/ 6);
+    else if (isCompiledFaustChorus_)
+        layout = std::make_unique<CompiledFaustDeviceLayout>(/*cellCount*/ 8, /*cellsPerRow*/ 8);
     else
         layout = std::make_unique<StandardDeviceLayout>();
     paramGrid_ = std::make_unique<ParamHostComponent>(std::move(layout));

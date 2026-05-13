@@ -70,7 +70,7 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
          V::Magda},
         {"Reverb", "reverb", DeviceType::Effect, InternalPlugin::Reverb, V::TracktionEngine},
         {"Delay", "delay", DeviceType::Effect, InternalPlugin::Delay, V::TracktionEngine},
-        {"Chorus", "chorus", DeviceType::Effect, InternalPlugin::Chorus, V::TracktionEngine},
+        {"Chorus", "magda_chorus", DeviceType::Effect, InternalPlugin::Chorus, V::Magda},
         {"Filter", "lowpass", DeviceType::Effect, InternalPlugin::Filter, V::TracktionEngine},
         {"Utility", "utility", DeviceType::Effect, InternalPlugin::Utility, V::TracktionEngine},
         {"Pitch Shift", "pitchshift", DeviceType::Effect, InternalPlugin::PitchShift,
