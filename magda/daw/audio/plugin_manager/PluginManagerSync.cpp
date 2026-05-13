@@ -1886,6 +1886,11 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 if (plugin)
                     processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
                 break;
+            case InternalDeviceKind::CompiledMod:
+                plugin = insertFromState(daw::audio::compiled::MagdaModCompiledPlugin::xmlTypeName);
+                if (plugin)
+                    processor = std::make_unique<CompiledFaustProcessor>(device.id, plugin);
+                break;
             case InternalDeviceKind::Faust:
                 plugin = insertFromState(daw::audio::FaustPlugin::xmlTypeName);
                 if (plugin)
