@@ -2,24 +2,7 @@
 
 #include <algorithm>
 
-#include "audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
-
 namespace magda::daw::ui {
-
-// Chorus has no inline curve view yet (Phase 1 ships without one). Its
-// presentation spec lives here rather than in a curve-view .cpp; when a
-// CompiledChorusCurveView is added, move this next to it.
-const CompiledPresentationSpec& getMagdaChorusPresentation() {
-    static const LegacyUiKind kSuppress[] = {LegacyUiKind::Chorus};
-    static const CompiledPresentationSpec kSpec{
-        .pluginId = magda::daw::audio::compiled::MagdaChorusCompiledPlugin::xmlTypeName,
-        .layoutCellCount = 8,
-        .layoutCellsPerRow = 8,
-        .createPanel = nullptr,
-        .suppressLegacyUis = kSuppress,
-    };
-    return kSpec;
-}
 
 // Per-device presentation specs live next to each curve view (or the
 // wrapper if there's no curve view). Add a new compiled plugin by
@@ -34,6 +17,7 @@ const CompiledPresentationSpec& getMagdaMultibandPresentation();
 const CompiledPresentationSpec& getMagdaPhaserPresentation();
 const CompiledPresentationSpec& getMagdaCompressorPresentation();
 const CompiledPresentationSpec& getMagdaModPresentation();
+const CompiledPresentationSpec& getMagdaChorusPresentation();
 
 namespace {
 

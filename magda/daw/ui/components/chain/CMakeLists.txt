@@ -17,6 +17,7 @@ target_sources(magda_daw_app PRIVATE
     CompiledMultibandCurveView.cpp
     CompiledPhaserCurveView.cpp
     CompiledModCurveView.cpp
+    CompiledChorusCurveView.cpp
     CompiledPluginPresentation.cpp
     ToneGeneratorUI.cpp
     SamplerUI.cpp
@@ -107,6 +108,7 @@ target_sources(magda_daw_app PRIVATE
     CompiledMultibandCurveView.hpp
     CompiledPhaserCurveView.hpp
     CompiledModCurveView.hpp
+    CompiledChorusCurveView.hpp
     CompiledPluginPresentation.hpp
     ParamHostComponent.hpp
 )
