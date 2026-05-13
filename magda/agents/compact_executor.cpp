@@ -195,7 +195,7 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
         }
     }
 
-    DBG("CompactExecutor: execute done — succeeded=" + juce::String(succeeded) +
+    DBG("CompactExecutor: execute done - succeeded=" + juce::String(succeeded) +
         " failed=" + juce::String(failed) + " currentClip=" + juce::String(currentClipId_));
 
     if (succeeded == 0 && failed > 0) {
@@ -208,7 +208,7 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
 
 bool CompactExecutor::autoCreateClip() {
     if (currentTrackId_ < 0) {
-        error_ = "No track context — use TRACK first or select a track";
+        error_ = "No track context - use TRACK first or select a track";
         DBG("CompactExecutor::autoCreateClip FAIL: " + error_);
         return false;
     }

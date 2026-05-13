@@ -256,7 +256,7 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
         // Just show a centred label so the panel doesn't read as "broken".
         g.setFont(13.0f);
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.55f));
-        g.drawText("CARRIER ← SIDECHAIN INPUT",
+        g.drawText(juce::String::fromUTF8("CARRIER \xe2\x86\x90 SIDECHAIN INPUT"),
                    plot.withSizeKeepingCentre(plot.getWidth(), 20.0f).toNearestInt(),
                    juce::Justification::centred);
         return;
