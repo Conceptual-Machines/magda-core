@@ -124,6 +124,10 @@ struct ParameterInfo {
     int gateSlotIndex = -1;
     bool gateNegated = false;
 
+    // UI-only visibility. Hidden parameters remain addressable for automation,
+    // aliases, and host writes, but parameter-grid layouts omit their cell.
+    bool hidden = false;
+
     // Modulation constraints
     bool modulatable = true;         // Can mods affect this parameter?
     bool bipolarModulation = false;  // Default unipolar; set true for params that need bipolar

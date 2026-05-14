@@ -825,8 +825,11 @@ void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int p
 
     updateCachedParameterValue(device_, paramIndex, newValue);
 
-    if (traits_.compiledPresentation)
-        refreshEngineAwareCompiledModeSlot(device_, device_.id, paramIndex, *paramGrid_);
+    if (traits_.compiledPresentation &&
+        refreshEngineAwareCompiledSlots(device_, device_.id, paramIndex, *paramGrid_)) {
+        updateParameterSlots();
+        updateParamModulation();
+    }
 
     refreshCustomUIParameterValues();
 
@@ -1685,6 +1688,13 @@ void DeviceSlotComponent::updateParameterSlots() {
                 self->compiledPanel_->updateFromDevice(self->device_);
             magda::TrackManager::getInstance().setDeviceParameterValue(self->nodePath_, paramIndex,
                                                                        static_cast<float>(value));
+            if (self->traits_.compiledPresentation &&
+                refreshEngineAwareCompiledSlots(self->device_, self->device_.id, paramIndex,
+                                                *self->paramGrid_)) {
+                self->updateParameterSlots();
+                self->updateParamModulation();
+                return;
+            }
             // Re-evaluate gate conditions now that the local cache is updated.
             // This makes gated cells (e.g. Time / Division when Sync toggles)
             // respond immediately without waiting for the next full repaint.

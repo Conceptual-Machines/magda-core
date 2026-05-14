@@ -46,6 +46,7 @@ ParameterInfo CompiledFaustProcessor::getParameterInfo(int index) const {
             info.maxValue = static_cast<float>(info.choices.size() - 1);
         }
     }
+    info.hidden = host->isSlotHiddenForActiveEngine(index);
 
     info.teMinValue = 0.0f;
     info.teMaxValue = 1.0f;

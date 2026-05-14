@@ -4,6 +4,7 @@
 #include "MagdaClipperCompiledPlugin.hpp"
 #include "MagdaCompressorCompiledPlugin.hpp"
 #include "MagdaDelayCompiledPlugin.hpp"
+#include "MagdaDimensionCompiledPlugin.hpp"
 #include "MagdaEqCompiledPlugin.hpp"
 #include "MagdaFilterCompiledPlugin.hpp"
 #include "MagdaFlangerCompiledPlugin.hpp"
@@ -44,6 +45,7 @@ const CompiledPluginSpec& getMagdaLimiterSpec();
 const CompiledPluginSpec& getMagdaClipperSpec();
 const CompiledPluginSpec& getMagdaReverbSpec();
 const CompiledPluginSpec& getMagdaEqSpec();
+const CompiledPluginSpec& getMagdaDimensionSpec();
 
 namespace {
 
@@ -53,7 +55,7 @@ const CompiledPluginSpec* const kAllSpecs[] = {
     &getMagdaPhaserSpec(),     &getMagdaCompressorSpec(), &getMagdaModSpec(),
     &getMagdaChorusSpec(),     &getMagdaFlangerSpec(),    &getMagdaRingModSpec(),
     &getMagdaFreqShiftSpec(),  &getMagdaLimiterSpec(),    &getMagdaClipperSpec(),
-    &getMagdaReverbSpec(),     &getMagdaEqSpec(),
+    &getMagdaReverbSpec(),     &getMagdaEqSpec(),         &getMagdaDimensionSpec(),
 };
 
 }  // namespace

@@ -25,6 +25,7 @@ const CompiledPresentationSpec& getMagdaLimiterPresentation();
 const CompiledPresentationSpec& getMagdaClipperPresentation();
 const CompiledPresentationSpec& getMagdaReverbPresentation();
 const CompiledPresentationSpec& getMagdaEqPresentation();
+const CompiledPresentationSpec& getMagdaDimensionPresentation();
 
 namespace {
 
@@ -37,7 +38,7 @@ const CompiledPresentationSpec* const kAllPresentations[] = {
     &getMagdaFlangerPresentation(),   &getMagdaRingModPresentation(),
     &getMagdaFreqShiftPresentation(), &getMagdaLimiterPresentation(),
     &getMagdaClipperPresentation(),   &getMagdaReverbPresentation(),
-    &getMagdaEqPresentation(),
+    &getMagdaEqPresentation(),        &getMagdaDimensionPresentation(),
 };
 
 }  // namespace

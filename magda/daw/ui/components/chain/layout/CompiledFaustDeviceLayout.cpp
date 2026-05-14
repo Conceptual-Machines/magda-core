@@ -61,6 +61,10 @@ ParamCell CompiledFaustDeviceLayout::cellFor(const magda::DeviceInfo& device, in
     }
 
     const auto& param = device.parameters[static_cast<size_t>(paramArrayIdx)];
+    if (param.hidden) {
+        cell.mode = ParamCell::Mode::Hidden;
+        return cell;
+    }
 
     // A discrete cell whose plugin advertises ≤ 1 choice is functionally
     // inert (only one option to pick). Hide it instead of drawing a
