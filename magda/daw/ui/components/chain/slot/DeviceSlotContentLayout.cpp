@@ -153,8 +153,21 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
 
     if (controls.compiledPanel != nullptr) {
         const int bodyHeight = juce::jmax(0, contentArea.getHeight());
+
+        if (controls.compiledPanelWantsFullBody) {
+            // Panel wants the entire body — hide the param grid and let the
+            // panel paint the whole content area. The EQ's collapse toggle
+            // uses this path.
+            controls.compiledPanel->setBounds(contentArea);
+            controls.compiledPanel->setVisible(true);
+            setVisibleIfPresent(controls.paramGrid, false);
+            return;
+        }
+
         const int visualHeight =
-            boundedBottomPanelHeight(controls.compiledPanelPreferredHeight, bodyHeight, 3, 4);
+            boundedBottomPanelHeight(controls.compiledPanelPreferredHeight, bodyHeight,
+                                     controls.compiledPanelMinFractionNumerator,
+                                     controls.compiledPanelMinFractionDenominator);
         controls.compiledPanel->setBounds(contentArea.removeFromBottom(visualHeight));
         controls.compiledPanel->setVisible(true);
 

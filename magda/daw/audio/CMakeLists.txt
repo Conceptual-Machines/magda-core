@@ -113,6 +113,61 @@ magda_compile_faust_dsp(
     MagdaClipperDsp
     MAGDA_CLIPPER_GENERATED_CPP
 )
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_reverb_plate.dsp"
+    MagdaReverbPlateDsp
+    MAGDA_REVERB_PLATE_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_reverb_hall.dsp"
+    MagdaReverbHallDsp
+    MAGDA_REVERB_HALL_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_reverb_room.dsp"
+    MagdaReverbRoomDsp
+    MAGDA_REVERB_ROOM_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_eq.dsp"
+    MagdaEqDsp
+    MAGDA_EQ_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_dimension_dim.dsp"
+    MagdaDimensionDimDsp
+    MAGDA_DIMENSION_DIM_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_dimension_haas.dsp"
+    MagdaDimensionHaasDsp
+    MAGDA_DIMENSION_HAAS_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_dimension_ms.dsp"
+    MagdaDimensionMSDsp
+    MAGDA_DIMENSION_MS_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_pitch_shifter.dsp"
+    MagdaPitchShifterDsp
+    MAGDA_PITCH_SHIFTER_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_pitch_detuner.dsp"
+    MagdaPitchDetunerDsp
+    MAGDA_PITCH_DETUNER_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_pitch_harmonizer.dsp"
+    MagdaPitchHarmonizerDsp
+    MAGDA_PITCH_HARMONIZER_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_bitcrusher.dsp"
+    MagdaBitcrusherDsp
+    MAGDA_BITCRUSHER_GENERATED_CPP
+)
 # A phony target that just depends on every generated DSP .cpp; making
 # magda_daw depend on it forces the custom commands to fire before any
 # wrapper TU is compiled.
@@ -139,6 +194,17 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_FREQ_SHIFT_GENERATED_CPP}"
         "${MAGDA_LIMITER_GENERATED_CPP}"
         "${MAGDA_CLIPPER_GENERATED_CPP}"
+        "${MAGDA_REVERB_PLATE_GENERATED_CPP}"
+        "${MAGDA_REVERB_HALL_GENERATED_CPP}"
+        "${MAGDA_REVERB_ROOM_GENERATED_CPP}"
+        "${MAGDA_EQ_GENERATED_CPP}"
+        "${MAGDA_DIMENSION_DIM_GENERATED_CPP}"
+        "${MAGDA_DIMENSION_HAAS_GENERATED_CPP}"
+        "${MAGDA_DIMENSION_MS_GENERATED_CPP}"
+        "${MAGDA_PITCH_SHIFTER_GENERATED_CPP}"
+        "${MAGDA_PITCH_DETUNER_GENERATED_CPP}"
+        "${MAGDA_PITCH_HARMONIZER_GENERATED_CPP}"
+        "${MAGDA_BITCRUSHER_GENERATED_CPP}"
 )
 add_dependencies(magda_daw magda_compiled_dsps)
 target_include_directories(magda_daw PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
@@ -174,6 +240,16 @@ target_sources(magda_daw PRIVATE
     plugins/compiled/MagdaLimiterCompiledPlugin.hpp
     plugins/compiled/MagdaClipperCompiledPlugin.cpp
     plugins/compiled/MagdaClipperCompiledPlugin.hpp
+    plugins/compiled/MagdaReverbCompiledPlugin.cpp
+    plugins/compiled/MagdaReverbCompiledPlugin.hpp
+    plugins/compiled/MagdaEqCompiledPlugin.cpp
+    plugins/compiled/MagdaEqCompiledPlugin.hpp
+    plugins/compiled/MagdaDimensionCompiledPlugin.cpp
+    plugins/compiled/MagdaDimensionCompiledPlugin.hpp
+    plugins/compiled/MagdaPitchCompiledPlugin.cpp
+    plugins/compiled/MagdaPitchCompiledPlugin.hpp
+    plugins/compiled/MagdaBitcrusherCompiledPlugin.cpp
+    plugins/compiled/MagdaBitcrusherCompiledPlugin.hpp
     plugins/compiled/CompiledPluginRegistry.cpp
     plugins/compiled/CompiledPluginRegistry.hpp
     plugins/compiled/CompiledFaustHost.hpp

@@ -53,41 +53,54 @@ void updateCachedParameterValue(magda::DeviceInfo& device, int paramIndex, float
         it->currentValue = newValue;
 }
 
-void refreshEngineAwareCompiledModeSlot(magda::DeviceInfo& device, magda::DeviceId deviceId,
-                                        int changedParamIndex, ParamHostComponent& paramGrid) {
+bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device, magda::DeviceId deviceId,
+                                     int changedParamIndex, ParamHostComponent& paramGrid) {
     int modeSlot = -1;
+    bool layoutNeedsRefresh = false;
 
     if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
         if (auto* bridge = audioEngine->getAudioBridge()) {
             auto plugin = bridge->getPlugin(deviceId);
-            if (auto* compiled =
-                    dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin.get())) {
+            daw::audio::compiled::ICompiledFaustPlugin* compiled = nullptr;
+            compiled = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin.get());
+            if (compiled != nullptr)
                 modeSlot = compiled->engineAwareModeSlot();
-            }
 
-            if (modeSlot >= 0 && changedParamIndex != modeSlot) {
+            if (compiled != nullptr) {
                 if (auto* proc = bridge->getDeviceProcessor(deviceId)) {
-                    auto modeInfo = proc->getParameterInfo(modeSlot);
+                    for (int slotIndex = 0; slotIndex < compiled->hostSlotCount(); ++slotIndex) {
+                        if (auto paramIt = findParameterInfo(device, slotIndex);
+                            paramIt != device.parameters.end()) {
+                            auto refreshedInfo = proc->getParameterInfo(slotIndex);
+                            refreshedInfo.currentValue = paramIt->currentValue;
 
-                    if (auto modeIt = findParameterInfo(device, modeSlot);
-                        modeIt != device.parameters.end()) {
-                        modeInfo.currentValue = modeIt->currentValue;
-                        *modeIt = modeInfo;
+                            if (paramIt->hidden != refreshedInfo.hidden)
+                                layoutNeedsRefresh = true;
+
+                            const bool refreshMetadata =
+                                slotIndex == modeSlot || paramIt->hidden != refreshedInfo.hidden;
+                            if (refreshMetadata)
+                                *paramIt = refreshedInfo;
+
+                            if (!layoutNeedsRefresh && slotIndex == modeSlot &&
+                                changedParamIndex != modeSlot) {
+                                if (auto* slot = paramGrid.getSlot(modeSlot))
+                                    slot->setParameterInfo(refreshedInfo);
+                            }
+                        }
                     }
-
-                    if (auto* slot = paramGrid.getSlot(modeSlot))
-                        slot->setParameterInfo(modeInfo);
                 }
             }
         }
     }
 
     if (modeSlot < 0)
-        return;
+        return layoutNeedsRefresh;
 
     const auto cell = paramGrid.getLayout().cellFor(device, modeSlot, paramGrid.getCurrentPage());
     if (auto* slot = paramGrid.getSlot(modeSlot))
         slot->setVisible(cell.mode == ParamCell::Mode::Filled);
+    return layoutNeedsRefresh;
 }
 
 void applyLearnModeParameterHighlight(magda::DeviceInfo& device, ParamHostComponent& paramGrid,
@@ -136,22 +149,30 @@ void updateCurrentPageParameterSlotValue(const magda::DeviceInfo& device,
                                          ParamHostComponent& paramGrid, int paramIndex,
                                          float newValue) {
     const int paramsPerPage = paramGrid.getSlotCount();
-    const int pageOffset = paramGrid.getCurrentPage() * paramsPerPage;
-    const bool useVisibilityFilter = !device.visibleParameters.empty();
+    const int currentPage = paramGrid.getCurrentPage();
+
+    // The grid cell that displays `paramIndex` is the one whose layout-
+    // reported `paramArrayIndex` matches. For row-major layouts that's just
+    // the cell whose index equals paramIndex, but column-major (EQ) and any
+    // other re-mapping layout need an explicit lookup — otherwise a single-
+    // param notify writes into the wrong cell (e.g. dragging B4 Gain ends
+    // up changing whatever cell sits at grid index 14, which under the EQ
+    // column-major mapping is a different band entirely).
+    const auto& layout = paramGrid.getLayout();
+    const auto findIt = std::find_if(
+        device.parameters.begin(), device.parameters.end(),
+        [paramIndex](const magda::ParameterInfo& p) { return p.paramIndex == paramIndex; });
+    const int paramArrayIndex =
+        (findIt != device.parameters.end())
+            ? static_cast<int>(std::distance(device.parameters.begin(), findIt))
+            : paramIndex;
 
     for (int slotIndex = 0; slotIndex < paramsPerPage; ++slotIndex) {
-        const int visibleParamIndex = pageOffset + slotIndex;
-
-        int actualParamIndex = visibleParamIndex;
-        if (useVisibilityFilter) {
-            if (visibleParamIndex >= static_cast<int>(device.visibleParameters.size()))
-                continue;
-            actualParamIndex = device.visibleParameters[static_cast<size_t>(visibleParamIndex)];
-        }
-
-        if (actualParamIndex != paramIndex)
+        const auto cell = layout.cellFor(device, slotIndex, currentPage);
+        if (cell.mode != ParamCell::Mode::Filled)
             continue;
-
+        if (cell.paramArrayIndex != paramArrayIndex)
+            continue;
         if (auto* slot = paramGrid.getSlot(slotIndex))
             slot->setParamValue(newValue);
         return;

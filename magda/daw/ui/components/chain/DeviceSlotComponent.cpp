@@ -825,8 +825,11 @@ void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int p
 
     updateCachedParameterValue(device_, paramIndex, newValue);
 
-    if (traits_.compiledPresentation)
-        refreshEngineAwareCompiledModeSlot(device_, device_.id, paramIndex, *paramGrid_);
+    if (traits_.compiledPresentation &&
+        refreshEngineAwareCompiledSlots(device_, device_.id, paramIndex, *paramGrid_)) {
+        updateParameterSlots();
+        updateParamModulation();
+    }
 
     refreshCustomUIParameterValues();
 
@@ -1375,6 +1378,15 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .compiledPanel = compiledBodyPanel,
          .compiledPanelPreferredHeight =
              compiledPanel_ != nullptr ? compiledPanel_->preferredHeight() : 0,
+         .compiledPanelMinFractionNumerator =
+             traits_.compiledPresentation != nullptr
+                 ? traits_.compiledPresentation->visualMinFractionNumerator
+                 : 3,
+         .compiledPanelMinFractionDenominator =
+             traits_.compiledPresentation != nullptr
+                 ? traits_.compiledPresentation->visualMinFractionDenominator
+                 : 4,
+         .compiledPanelWantsFullBody = compiledPanel_ != nullptr && compiledPanel_->wantsFullBody(),
          .drumGridUI = customUI_.getDrumGridUI(),
          .activeCustomUI = activeCustomUI,
          .paramGrid = paramGrid_.get()},
@@ -1676,6 +1688,13 @@ void DeviceSlotComponent::updateParameterSlots() {
                 self->compiledPanel_->updateFromDevice(self->device_);
             magda::TrackManager::getInstance().setDeviceParameterValue(self->nodePath_, paramIndex,
                                                                        static_cast<float>(value));
+            if (self->traits_.compiledPresentation &&
+                refreshEngineAwareCompiledSlots(self->device_, self->device_.id, paramIndex,
+                                                *self->paramGrid_)) {
+                self->updateParameterSlots();
+                self->updateParamModulation();
+                return;
+            }
             // Re-evaluate gate conditions now that the local cache is updated.
             // This makes gated cells (e.g. Time / Division when Sync toggles)
             // respond immediately without waiting for the next full repaint.
@@ -1976,6 +1995,12 @@ void DeviceSlotComponent::createCustomUI() {
         magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex, value);
     };
     callbacks.onLayoutChanged = [this]() {
+        // Force this slot to re-lay out its internal body even when the
+        // parent chain doesn't change the slot's outer bounds. The EQ's
+        // "collapse knobs" toggle, in particular, swaps between curve-only
+        // and curve-plus-grid without resizing the slot itself, so JUCE's
+        // bounds-based resized() would otherwise stay silent.
+        resized();
         if (onDeviceLayoutChanged)
             onDeviceLayoutChanged();
     };
@@ -2393,6 +2418,12 @@ int DeviceSlotComponent::getVisibleParamCount() const {
 }
 
 int DeviceSlotComponent::getDynamicSlotWidth() const {
+    // Compiled plugins can request a wider host slot via their presentation
+    // spec — used by surfaces like the 8-band EQ where the default 8-column
+    // grid at PARAM_CELL_WIDTH truncates labels.
+    if (traits_.compiledPresentation != nullptr &&
+        traits_.compiledPresentation->preferredSlotWidth > 0)
+        return traits_.compiledPresentation->preferredSlotWidth;
     return PARAM_CELL_WIDTH * PARAMS_PER_ROW;
 }
 

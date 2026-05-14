@@ -1,9 +1,12 @@
 #include "CompiledPluginRegistry.hpp"
 
+#include "MagdaBitcrusherCompiledPlugin.hpp"
 #include "MagdaChorusCompiledPlugin.hpp"
 #include "MagdaClipperCompiledPlugin.hpp"
 #include "MagdaCompressorCompiledPlugin.hpp"
 #include "MagdaDelayCompiledPlugin.hpp"
+#include "MagdaDimensionCompiledPlugin.hpp"
+#include "MagdaEqCompiledPlugin.hpp"
 #include "MagdaFilterCompiledPlugin.hpp"
 #include "MagdaFlangerCompiledPlugin.hpp"
 #include "MagdaFreqShiftCompiledPlugin.hpp"
@@ -13,6 +16,8 @@
 #include "MagdaModCompiledPlugin.hpp"
 #include "MagdaMultibandCompiledPlugin.hpp"
 #include "MagdaPhaserCompiledPlugin.hpp"
+#include "MagdaPitchCompiledPlugin.hpp"
+#include "MagdaReverbCompiledPlugin.hpp"
 #include "MagdaRingModCompiledPlugin.hpp"
 #include "MagdaSaturatorCompiledPlugin.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
@@ -40,6 +45,11 @@ const CompiledPluginSpec& getMagdaRingModSpec();
 const CompiledPluginSpec& getMagdaFreqShiftSpec();
 const CompiledPluginSpec& getMagdaLimiterSpec();
 const CompiledPluginSpec& getMagdaClipperSpec();
+const CompiledPluginSpec& getMagdaReverbSpec();
+const CompiledPluginSpec& getMagdaEqSpec();
+const CompiledPluginSpec& getMagdaDimensionSpec();
+const CompiledPluginSpec& getMagdaPitchSpec();
+const CompiledPluginSpec& getMagdaBitcrusherSpec();
 
 namespace {
 
@@ -49,6 +59,8 @@ const CompiledPluginSpec* const kAllSpecs[] = {
     &getMagdaPhaserSpec(),     &getMagdaCompressorSpec(), &getMagdaModSpec(),
     &getMagdaChorusSpec(),     &getMagdaFlangerSpec(),    &getMagdaRingModSpec(),
     &getMagdaFreqShiftSpec(),  &getMagdaLimiterSpec(),    &getMagdaClipperSpec(),
+    &getMagdaReverbSpec(),     &getMagdaEqSpec(),         &getMagdaDimensionSpec(),
+    &getMagdaPitchSpec(),      &getMagdaBitcrusherSpec(),
 };
 
 }  // namespace
