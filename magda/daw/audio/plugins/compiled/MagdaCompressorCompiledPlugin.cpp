@@ -301,6 +301,12 @@ void MagdaCompressorCompiledPlugin::buildHostParameters() {
                                 .minValue = 0.0f,
                                 .maxValue = 1.0f,
                                 .defaultValue = 0.5f};
+    hostSlotInfo_[kStyleSlot].name = "Style";
+    hostSlotInfo_[kStyleSlot].scale = magda::ParameterScale::Discrete;
+    hostSlotInfo_[kStyleSlot].choices = {"Pre", "Post"};
+    hostSlotInfo_[kStyleSlot].minValue = 0.0f;
+    hostSlotInfo_[kStyleSlot].maxValue = 1.0f;
+    hostSlotInfo_[kStyleSlot].defaultValue = 0.0f;
 
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
@@ -508,7 +514,7 @@ constexpr AliasSpec kAliases[] = {
     {"makeup", 6, "Makeup"},   {"mix", 7, "Mix"},
     {"output", 8, "Output"},   {"detector", 9, "Detector"},
     {"link", 10, "Link"},      {"sc_hpf", 11, "SC HPF"},
-    {"fbff", 12, "FBFF"},
+    {"fbff", 12, "FBFF"},      {"style", 13, "Style"},
 };
 
 const CompiledPluginSpec& getMagdaCompressorSpec() {
@@ -520,8 +526,8 @@ const CompiledPluginSpec& getMagdaCompressorSpec() {
             "Compiled Faust compressor with selectable engines.\n"
             "Clean: feed-forward, peak/RMS detection, soft knee, stereo link, "
             "sidechain HPF, external audio sidechain, parallel mix, output safety limiting.\n"
-            "Glue: Brouns FBFF compressor with user-exposed FF↔FB blend for "
-            "vintage glue character; peak detector only, no external sidechain.",
+            "Glue: Brouns FBFF compressor with exposed character controls "
+            "(Detector Peak/RMS, Style Pre/Post, FBFF blend). No external sidechain.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaCompressorCompiledPlugin(info);
         },
