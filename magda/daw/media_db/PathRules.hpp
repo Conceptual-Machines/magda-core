@@ -54,4 +54,18 @@ struct ParsedKey {
 };
 std::optional<ParsedKey> parseKeyFromPath(const std::filesystem::path& path);
 
+// Producer-encoded BPM parsed from the filename: "kick_120bpm.wav",
+// "120_BPM_loop.wav", "house_128.5BPM.wav". The "bpm" suffix is required —
+// a bare number is too ambiguous (could be a file index, count, MIDI note).
+//
+// Examples:
+//   kick_120bpm.wav          -> 120.0
+//   house_125_BPM_loop.wav   -> 125.0
+//   trap_85.5bpm.wav         -> 85.5
+//   loop_92bpm_140bpm.wav    -> 140.0   // last match wins
+//   kick_120.wav             -> nullopt // no "bpm" marker
+//
+// Sanity-clamped to [30, 300]; out-of-range matches are rejected.
+std::optional<double> parseBpmFromPath(const std::filesystem::path& path);
+
 }  // namespace magda::media

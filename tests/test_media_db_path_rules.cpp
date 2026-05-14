@@ -7,6 +7,7 @@
 
 #include "../magda/daw/media_db/PathRules.hpp"
 
+using magda::media::parseBpmFromPath;
 using magda::media::ParsedKey;
 using magda::media::parseKeyFromPath;
 using magda::media::pathFamilyHint;
@@ -156,4 +157,37 @@ TEST_CASE("parseKeyFromPath: filename with no key marker", "[media_db][path_rule
 
 TEST_CASE("parseKeyFromPath: words like Animal don't match", "[media_db][path_rules][key]") {
     REQUIRE_FALSE(parseKeyFromPath("Animal_Sounds.wav").has_value());
+}
+
+// ---- parseBpmFromPath ----------------------------------------------------
+
+TEST_CASE("parseBpmFromPath: inline integer with bpm suffix", "[media_db][path_rules][bpm]") {
+    REQUIRE(parseBpmFromPath("kick_120bpm.wav") == 120.0);
+    REQUIRE(parseBpmFromPath("loop_85bpm.wav") == 85.0);
+    REQUIRE(parseBpmFromPath("hard_174BPM.wav") == 174.0);
+}
+
+TEST_CASE("parseBpmFromPath: separator between number and bpm", "[media_db][path_rules][bpm]") {
+    REQUIRE(parseBpmFromPath("kick_120_bpm.wav") == 120.0);
+    REQUIRE(parseBpmFromPath("kick_120-BPM.wav") == 120.0);
+    REQUIRE(parseBpmFromPath("kick 120 bpm.wav") == 120.0);
+}
+
+TEST_CASE("parseBpmFromPath: fractional BPM", "[media_db][path_rules][bpm]") {
+    REQUIRE(parseBpmFromPath("trap_85.5bpm.wav") == 85.5);
+}
+
+TEST_CASE("parseBpmFromPath: last match wins", "[media_db][path_rules][bpm]") {
+    REQUIRE(parseBpmFromPath("variant_92bpm_then_140BPM.wav") == 140.0);
+}
+
+TEST_CASE("parseBpmFromPath: bare number without bpm marker is not a match",
+          "[media_db][path_rules][bpm]") {
+    REQUIRE_FALSE(parseBpmFromPath("kick_120.wav").has_value());
+    REQUIRE_FALSE(parseBpmFromPath("MTVR2_dry.wav").has_value());
+}
+
+TEST_CASE("parseBpmFromPath: out-of-range values are rejected", "[media_db][path_rules][bpm]") {
+    REQUIRE_FALSE(parseBpmFromPath("weird_20bpm.wav").has_value());   // < 30
+    REQUIRE_FALSE(parseBpmFromPath("weird_500bpm.wav").has_value());  // > 300
 }

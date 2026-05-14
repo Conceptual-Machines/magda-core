@@ -105,6 +105,8 @@ set(TEST_SOURCES
     # Media database (issue #768) — Phase B: scanner + path rules
     test_media_db_scan.cpp
     test_media_db_path_rules.cpp
+    # Media database (issue #768) — Phase C: audio features
+    test_media_db_audio_features.cpp
 )
 
 # Create test executable

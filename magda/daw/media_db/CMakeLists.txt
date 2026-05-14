@@ -2,6 +2,7 @@
 # presets, and clips. Phase A: schema + connection wrapper only.
 
 target_sources(magda_daw PRIVATE
+    AudioFeatures.cpp
     MediaDatabase.cpp
     PathRules.cpp
     Scan.cpp

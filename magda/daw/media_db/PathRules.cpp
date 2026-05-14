@@ -263,6 +263,28 @@ std::vector<std::pair<std::string, float>> pathTags(const std::filesystem::path&
     return out;
 }
 
+std::optional<double> parseBpmFromPath(const std::filesystem::path& path) {
+    // 2-3 digits, optional decimal, optional separator, then "bpm" (any case).
+    // Two/three digit constraint excludes single-digit noise like "9bpm" and
+    // anything > 999 which would never be a real tempo.
+    static const std::regex kBpmRe(R"((\d{2,3}(?:\.\d+)?)\s*[_\- ]?\s*bpm)", std::regex::icase);
+
+    std::string stem = path.stem().string();
+    std::optional<double> result;
+    for (auto it = std::sregex_iterator(stem.begin(), stem.end(), kBpmRe);
+         it != std::sregex_iterator{}; ++it) {
+        try {
+            double bpm = std::stod((*it)[1].str());
+            if (bpm >= 30.0 && bpm <= 300.0) {
+                result = bpm;  // last sensible match wins
+            }
+        } catch (...) {
+            // unparseable group, ignore
+        }
+    }
+    return result;
+}
+
 std::optional<ParsedKey> parseKeyFromPath(const std::filesystem::path& path) {
     std::string stem = path.stem().string();
     std::vector<std::string> tokens;
