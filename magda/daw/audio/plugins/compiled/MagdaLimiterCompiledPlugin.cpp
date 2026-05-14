@@ -263,6 +263,10 @@ void MagdaLimiterCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc
         info.scale = s.scale;
         if (std::isfinite(s.scaleAnchor))
             info.scaleAnchor = s.scaleAnchor;
+        // For Discrete params, normalizedToReal returns 0 when choices is
+        // empty — must copy the choice list across or the conversion is
+        // silently broken for Autogain / Output dropdowns.
+        info.choices = s.choices;
         const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
         return magda::ParameterUtils::normalizedToReal(norm, info);
     };

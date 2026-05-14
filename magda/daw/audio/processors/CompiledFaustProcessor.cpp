@@ -71,7 +71,12 @@ void CompiledFaustProcessor::setParameterByIndex(int paramIndex, float value) {
     if (host != nullptr) {
         if (auto* param = host->hostSlotParameter(paramIndex)) {
             const float targetNative = host->displayToNormalized(paramIndex, value);
+            DBG("[CFProc] setParam plugin=" << plugin_->getName() << " idx=" << paramIndex
+                                            << " display=" << value << " native=" << targetNative);
             param->setParameterFromHost(targetNative, juce::sendNotificationSync);
+        } else {
+            DBG("[CFProc] setParam plugin=" << plugin_->getName() << " idx=" << paramIndex
+                                            << " value=" << value << " NO PARAM AT INDEX");
         }
     }
 }

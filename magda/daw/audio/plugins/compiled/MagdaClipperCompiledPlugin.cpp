@@ -244,6 +244,10 @@ void MagdaClipperCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc
             info.scale = s.scale;
             if (std::isfinite(s.scaleAnchor))
                 info.scaleAnchor = s.scaleAnchor;
+            // Discrete params need choices populated — normalizedToReal
+            // returns 0 when choices is empty, which silently breaks
+            // dropdowns like Mode and Autogain.
+            info.choices = s.choices;
             const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
             *zone = static_cast<FAUSTFLOAT>(magda::ParameterUtils::normalizedToReal(norm, info));
         }
