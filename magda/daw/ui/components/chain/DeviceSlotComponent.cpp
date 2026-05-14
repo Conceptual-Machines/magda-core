@@ -1375,6 +1375,15 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .compiledPanel = compiledBodyPanel,
          .compiledPanelPreferredHeight =
              compiledPanel_ != nullptr ? compiledPanel_->preferredHeight() : 0,
+         .compiledPanelMinFractionNumerator =
+             traits_.compiledPresentation != nullptr
+                 ? traits_.compiledPresentation->visualMinFractionNumerator
+                 : 3,
+         .compiledPanelMinFractionDenominator =
+             traits_.compiledPresentation != nullptr
+                 ? traits_.compiledPresentation->visualMinFractionDenominator
+                 : 4,
+         .compiledPanelWantsFullBody = compiledPanel_ != nullptr && compiledPanel_->wantsFullBody(),
          .drumGridUI = customUI_.getDrumGridUI(),
          .activeCustomUI = activeCustomUI,
          .paramGrid = paramGrid_.get()},
@@ -2393,6 +2402,12 @@ int DeviceSlotComponent::getVisibleParamCount() const {
 }
 
 int DeviceSlotComponent::getDynamicSlotWidth() const {
+    // Compiled plugins can request a wider host slot via their presentation
+    // spec — used by surfaces like the 8-band EQ where the default 8-column
+    // grid at PARAM_CELL_WIDTH truncates labels.
+    if (traits_.compiledPresentation != nullptr &&
+        traits_.compiledPresentation->preferredSlotWidth > 0)
+        return traits_.compiledPresentation->preferredSlotWidth;
     return PARAM_CELL_WIDTH * PARAMS_PER_ROW;
 }
 

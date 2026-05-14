@@ -39,7 +39,22 @@ ParamCell CompiledFaustDeviceLayout::cellFor(const magda::DeviceInfo& device, in
         return cell;
     }
 
-    const int paramArrayIdx = findParamArrayIndex(device, cellIndex);
+    // Map the visual cell position to the paramIndex it should display.
+    // Row-major (default): cell N at (row=N/cellsPerRow, col=N%cellsPerRow)
+    // shows paramIndex N — the cell order matches the slot declaration order.
+    // Column-major: cell N at the same visual position shows the parameter
+    // at paramIndex (col * numRows + row), so consecutive paramIndex values
+    // run top-to-bottom instead of left-to-right. Used by the 8-band EQ so
+    // each band's {Type, Freq, Gain, Q} forms a vertical strip.
+    int paramSlotIdx = cellIndex;
+    if (columnMajor_ && cellsPerRow_ > 0) {
+        const int numRows = (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_;
+        const int row = cellIndex / cellsPerRow_;
+        const int col = cellIndex % cellsPerRow_;
+        paramSlotIdx = col * numRows + row;
+    }
+
+    const int paramArrayIdx = findParamArrayIndex(device, paramSlotIdx);
     if (paramArrayIdx < 0) {
         cell.mode = ParamCell::Mode::Hidden;
         return cell;

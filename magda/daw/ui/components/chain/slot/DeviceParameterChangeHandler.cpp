@@ -136,22 +136,30 @@ void updateCurrentPageParameterSlotValue(const magda::DeviceInfo& device,
                                          ParamHostComponent& paramGrid, int paramIndex,
                                          float newValue) {
     const int paramsPerPage = paramGrid.getSlotCount();
-    const int pageOffset = paramGrid.getCurrentPage() * paramsPerPage;
-    const bool useVisibilityFilter = !device.visibleParameters.empty();
+    const int currentPage = paramGrid.getCurrentPage();
+
+    // The grid cell that displays `paramIndex` is the one whose layout-
+    // reported `paramArrayIndex` matches. For row-major layouts that's just
+    // the cell whose index equals paramIndex, but column-major (EQ) and any
+    // other re-mapping layout need an explicit lookup — otherwise a single-
+    // param notify writes into the wrong cell (e.g. dragging B4 Gain ends
+    // up changing whatever cell sits at grid index 14, which under the EQ
+    // column-major mapping is a different band entirely).
+    const auto& layout = paramGrid.getLayout();
+    const auto findIt = std::find_if(
+        device.parameters.begin(), device.parameters.end(),
+        [paramIndex](const magda::ParameterInfo& p) { return p.paramIndex == paramIndex; });
+    const int paramArrayIndex =
+        (findIt != device.parameters.end())
+            ? static_cast<int>(std::distance(device.parameters.begin(), findIt))
+            : paramIndex;
 
     for (int slotIndex = 0; slotIndex < paramsPerPage; ++slotIndex) {
-        const int visibleParamIndex = pageOffset + slotIndex;
-
-        int actualParamIndex = visibleParamIndex;
-        if (useVisibilityFilter) {
-            if (visibleParamIndex >= static_cast<int>(device.visibleParameters.size()))
-                continue;
-            actualParamIndex = device.visibleParameters[static_cast<size_t>(visibleParamIndex)];
-        }
-
-        if (actualParamIndex != paramIndex)
+        const auto cell = layout.cellFor(device, slotIndex, currentPage);
+        if (cell.mode != ParamCell::Mode::Filled)
             continue;
-
+        if (cell.paramArrayIndex != paramArrayIndex)
+            continue;
         if (auto* slot = paramGrid.getSlot(slotIndex))
             slot->setParamValue(newValue);
         return;

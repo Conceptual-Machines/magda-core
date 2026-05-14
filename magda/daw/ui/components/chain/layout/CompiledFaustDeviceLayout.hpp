@@ -21,8 +21,8 @@ namespace magda::daw::ui {
  */
 class CompiledFaustDeviceLayout final : public DeviceParamLayout {
   public:
-    CompiledFaustDeviceLayout(int cellCount, int cellsPerRow)
-        : cellCount_(cellCount), cellsPerRow_(cellsPerRow) {}
+    CompiledFaustDeviceLayout(int cellCount, int cellsPerRow, bool columnMajor = false)
+        : cellCount_(cellCount), cellsPerRow_(cellsPerRow), columnMajor_(columnMajor) {}
 
     int cellCount() const override {
         return cellCount_;
@@ -40,6 +40,7 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
   private:
     int cellCount_;
     int cellsPerRow_;
+    bool columnMajor_;
 };
 
 }  // namespace magda::daw::ui
