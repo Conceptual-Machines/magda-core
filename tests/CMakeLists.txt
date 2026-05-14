@@ -107,6 +107,8 @@ set(TEST_SOURCES
     test_media_db_path_rules.cpp
     # Media database (issue #768) — Phase C: audio features
     test_media_db_audio_features.cpp
+    # Media database (issue #768) — Phase D: CLAP audio encoder + mel
+    test_media_db_clap_encoder.cpp
 )
 
 # Create test executable

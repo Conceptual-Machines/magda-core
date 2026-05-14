@@ -3,9 +3,11 @@
 
 target_sources(magda_daw PRIVATE
     AudioFeatures.cpp
+    ClapAudioEncoder.cpp
     MediaDatabase.cpp
+    MelSpectrogram.cpp
     PathRules.cpp
     Scan.cpp
 )
 
-target_link_libraries(magda_daw PUBLIC sqlite3)
+target_link_libraries(magda_daw PUBLIC sqlite3 onnxruntime)
