@@ -126,6 +126,8 @@ class MagdaLimiterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
     std::atomic<float> outputPeakDb_{-120.0f};
     std::atomic<float> gainReductionDb_{0.0f};
 
+    uint32_t debugTraceCounter_ = 0;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaLimiterCompiledPlugin)
 };
 

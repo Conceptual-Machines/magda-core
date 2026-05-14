@@ -173,6 +173,10 @@ class MagdaCompressorCompiledPlugin : public te::Plugin, public ICompiledFaustPl
     std::atomic<float> gainReductionDb_{0.0f};
     std::atomic<bool> usingExternalSidechain_{false};
 
+    // Audio-thread-only counter for throttled DBG logging. Not atomic
+    // because applyToBuffer is the sole writer.
+    uint32_t debugTraceCounter_ = 0;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaCompressorCompiledPlugin)
 };
 

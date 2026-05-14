@@ -402,6 +402,27 @@ void MagdaCompressorCompiledPlugin::applyToBuffer(const te::PluginRenderContext&
     if (active.useSidechainZone != nullptr)
         *active.useSidechainZone = getSidechainSourceID().isValid() ? FAUSTFLOAT(1) : FAUSTFLOAT(0);
 
+    // --- DEBUG TRACE ----------------------------------------------------------
+    // Throttled to once per ~1 sec at 256-block / 44.1 kHz (~172 calls/sec).
+    // Shows whether the autogain host slot is reaching the DSP zone and what
+    // makeup the math is producing. Remove once autogain behaviour is
+    // confirmed working in the UI.
+    if ((++debugTraceCounter_ % 172) == 0) {
+        const float thresholdReal = realForSlot(kThresholdSlot);
+        const float ratioReal = realForSlot(kRatioSlot);
+        const float autogainReal = realForSlot(kAutogainSlot);
+        const float strength = 1.0f - (1.0f / std::max(1.0f, ratioReal));
+        const float expectedAutogainDb = autogainReal * (-(thresholdReal * strength));
+        auto* autogainZone = active.zones[static_cast<size_t>(kAutogainSlot)];
+        const float zoneValue =
+            autogainZone != nullptr ? static_cast<float>(*autogainZone) : -999.0f;
+        DBG("[Comp] engine=" << (engineIndex == 0 ? "Clean" : "Glue") << " thr=" << thresholdReal
+                             << " ratio=" << ratioReal << " autogain_slot=" << autogainReal
+                             << " zone=" << zoneValue
+                             << " expected_makeup_dB=" << expectedAutogainDb);
+    }
+    // --- END DEBUG TRACE ------------------------------------------------------
+
     if (!active.dsp)
         return;
 

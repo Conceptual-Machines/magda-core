@@ -255,21 +255,38 @@ void MagdaLimiterCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc
     if (!fc.destBuffer || fc.bufferNumSamples <= 0 || !dsp_)
         return;
 
+    auto realForSlot = [&](int slot) -> float {
+        const auto& s = hostSlotInfo_[static_cast<size_t>(slot)];
+        magda::ParameterInfo info;
+        info.minValue = s.minValue;
+        info.maxValue = s.maxValue;
+        info.scale = s.scale;
+        if (std::isfinite(s.scaleAnchor))
+            info.scaleAnchor = s.scaleAnchor;
+        const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
+        return magda::ParameterUtils::normalizedToReal(norm, info);
+    };
     auto writeSlot = [&](int slot) {
-        if (auto* zone = zones_[static_cast<size_t>(slot)]) {
-            const auto& s = hostSlotInfo_[static_cast<size_t>(slot)];
-            magda::ParameterInfo info;
-            info.minValue = s.minValue;
-            info.maxValue = s.maxValue;
-            info.scale = s.scale;
-            if (std::isfinite(s.scaleAnchor))
-                info.scaleAnchor = s.scaleAnchor;
-            const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
-            *zone = static_cast<FAUSTFLOAT>(magda::ParameterUtils::normalizedToReal(norm, info));
-        }
+        if (auto* zone = zones_[static_cast<size_t>(slot)])
+            *zone = static_cast<FAUSTFLOAT>(realForSlot(slot));
     };
     for (int i = 0; i < kHostSlotCount; ++i)
         writeSlot(i);
+
+    // --- DEBUG TRACE ----------------------------------------------------------
+    // Throttled to ~once per second. Shows what the autogain slot is doing
+    // and whether the zone is being written. Remove once verified.
+    if ((++debugTraceCounter_ % 172) == 0) {
+        const float thresholdReal = realForSlot(kThresholdSlot);
+        const float autogainReal = realForSlot(kAutogainSlot);
+        auto* autogainZone = zones_[static_cast<size_t>(kAutogainSlot)];
+        const float zoneValue =
+            autogainZone != nullptr ? static_cast<float>(*autogainZone) : -999.0f;
+        const float expectedPreGainDb = autogainReal * (-thresholdReal);
+        DBG("[Lim] thr=" << thresholdReal << " autogain_slot=" << autogainReal
+                         << " zone=" << zoneValue << " expected_pregain_dB=" << expectedPreGainDb);
+    }
+    // --- END DEBUG TRACE ------------------------------------------------------
 
     const int numSamples = fc.bufferNumSamples;
     const int startSample = fc.bufferStartSample;
