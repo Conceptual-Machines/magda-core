@@ -116,6 +116,18 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
         actualFile = wrapperDir.getChildFile(file.getFileName());
     }
 
+    // Set up the target media directory before serializing so any clips that
+    // point at the unsaved project's temp media folder are rewritten to the
+    // durable project media folder in the saved .mgd.
+    auto oldMediaDir = mediaDirectory_;
+    juce::String mediaDirName = actualFile.getFileNameWithoutExtension() + "_Media";
+    auto targetMediaDir = actualFile.getParentDirectory().getChildFile(mediaDirName);
+    ensureMediaSubdirectories(targetMediaDir);
+
+    if (oldMediaDir != juce::File() && oldMediaDir != targetMediaDir && oldMediaDir.isDirectory()) {
+        migrateMediaFiles(oldMediaDir, targetMediaDir);
+    }
+
     // Prepare updated project info without mutating currentProject_ yet
     ProjectInfo newProject = currentProject_;
     newProject.filePath = actualFile.getFullPathName();
@@ -135,18 +147,7 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     currentProject_ = std::move(newProject);
     currentFile_ = actualFile;
     isProjectOpen_ = true;
-
-    // Set up permanent media directory beside the project file
-    auto oldMediaDir = mediaDirectory_;
-    juce::String mediaDirName = actualFile.getFileNameWithoutExtension() + "_Media";
-    mediaDirectory_ = actualFile.getParentDirectory().getChildFile(mediaDirName);
-    ensureMediaSubdirectories(mediaDirectory_);
-
-    // Migrate files from temp directory if needed
-    if (oldMediaDir != juce::File() && oldMediaDir != mediaDirectory_ &&
-        oldMediaDir.isDirectory()) {
-        migrateMediaFiles(oldMediaDir, mediaDirectory_);
-    }
+    mediaDirectory_ = targetMediaDir;
 
     clearDirty();
     deleteAutosaveFile();
@@ -483,6 +484,7 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
 
     auto oldPath = oldDir.getFullPathName();
     auto newPath = newDir.getFullPathName();
+    std::vector<ClipId> updatedClipIds;
 
     // Move files from each subdirectory
     const char* subdirs[] = {kRecordingsDir, kRendersDir, kBouncesDir};
@@ -510,6 +512,7 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
                 if (clip) {
                     clip->audio().source.filePath =
                         clip->audio().source.filePath.replace(oldPath, newPath, false);
+                    updatedClipIds.push_back(clip->id);
                 }
             }
         }
@@ -517,6 +520,9 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
 
     updateClipPaths(clipManager.getArrangementClips());
     updateClipPaths(clipManager.getSessionClips());
+
+    if (!updatedClipIds.empty())
+        clipManager.forceNotifyMultipleClipPropertiesChanged(updatedClipIds);
 
     // Remove old temp directory if it's empty or under the temp root
     auto tempRoot =

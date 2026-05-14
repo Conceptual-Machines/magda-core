@@ -492,7 +492,30 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
     if (!slot)
         return false;
 
-    // If slot already has a clip, skip (already synced)
+    // If the source file changed under an existing audio slot clip (e.g. Save As
+    // migrated temp project media), recreate it so TE follows ClipManager.
+    if (auto* existingSlotClip = slot->getClip()) {
+        if (clip->isAudio()) {
+            juce::File desiredAudioFile(clip->audio().source.filePath);
+            if (desiredAudioFile.existsAsFile()) {
+                if (auto* existingAudioClip = dynamic_cast<te::WaveAudioClip*>(existingSlotClip)) {
+                    if (existingAudioClip->getOriginalFile() != desiredAudioFile) {
+                        existingAudioClip->removeFromParent();
+                    } else {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
+    // If slot still has a clip, skip (already synced)
     if (slot->getClip() != nullptr)
         return false;
 
@@ -1335,6 +1358,7 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     bool needsGraphReallocation = false;
     if (auto engineId = clipIds_.getEngineId(clipId)) {
         // UPDATE existing clip
+        bool removedForSourceChange = false;
 
         // Find clip in track by engine ID
         for (auto* teClip : audioTrack->getClips()) {
@@ -1344,9 +1368,24 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             }
         }
 
+        // Source path changed under an existing model clip (e.g. Save As migrated temp media).
+        // Recreate the TE clip so playback, warp, and thumbnails resolve the durable file.
+        if (audioClipPtr) {
+            juce::File desiredAudioFile(clip->audio().source.filePath);
+            if (desiredAudioFile.existsAsFile() &&
+                audioClipPtr->getOriginalFile() != desiredAudioFile) {
+                DBG("ClipSynchronizer: Audio source changed, recreating TE clip " << clipId);
+                audioClipPtr->removeFromParent();
+                clipIds_.erase(clipId);
+                audioClipPtr = nullptr;
+                removedForSourceChange = true;
+                needsGraphReallocation = true;
+            }
+        }
+
         // Clip not found on expected track — it may have moved.
         // Remove the old TE clip from whichever track still holds it.
-        if (!audioClipPtr) {
+        if (!audioClipPtr && !removedForSourceChange) {
             DBG("ClipSynchronizer: Clip moved or stale, removing old TE clip " << clipId);
             removeTeClipByEngineId(*engineId);
             clipIds_.erase(clipId);
