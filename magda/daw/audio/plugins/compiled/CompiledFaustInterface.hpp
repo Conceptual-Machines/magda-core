@@ -70,6 +70,9 @@ class ICompiledFaustPlugin {
     virtual std::vector<juce::String> modeChoicesForActiveEngine() const {
         return {};
     }
+    virtual bool isSlotHiddenForActiveEngine(int) const {
+        return false;
+    }
 };
 
 }  // namespace magda::daw::audio::compiled
