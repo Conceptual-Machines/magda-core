@@ -47,6 +47,7 @@ enum class InternalPlugin {
     RingMod,
     FreqShift,
     Limiter,
+    Clipper,
 };
 
 /// Vendor of an internal plugin. TracktionEngine = stock TE plugin (gets TE
@@ -89,6 +90,7 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
         {"Ring Mod", "magda_ring_mod", DeviceType::Effect, InternalPlugin::RingMod, V::Magda},
         {"Freq Shift", "magda_freq_shift", DeviceType::Effect, InternalPlugin::FreqShift, V::Magda},
         {"Limiter", "magda_limiter", DeviceType::Effect, InternalPlugin::Limiter, V::Magda},
+        {"Clipper", "magda_clipper", DeviceType::Effect, InternalPlugin::Clipper, V::Magda},
         {"Faust", "faust", DeviceType::Effect, InternalPlugin::Faust, V::Magda},
         // Instruments (TE stock)
         {"4OSC Synth", "4osc", DeviceType::Instrument, InternalPlugin::FourOsc, V::TracktionEngine},
