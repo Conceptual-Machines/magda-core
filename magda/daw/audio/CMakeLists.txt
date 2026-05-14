@@ -163,6 +163,11 @@ magda_compile_faust_dsp(
     MagdaPitchHarmonizerDsp
     MAGDA_PITCH_HARMONIZER_GENERATED_CPP
 )
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_bitcrusher.dsp"
+    MagdaBitcrusherDsp
+    MAGDA_BITCRUSHER_GENERATED_CPP
+)
 # A phony target that just depends on every generated DSP .cpp; making
 # magda_daw depend on it forces the custom commands to fire before any
 # wrapper TU is compiled.
@@ -199,6 +204,7 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_PITCH_SHIFTER_GENERATED_CPP}"
         "${MAGDA_PITCH_DETUNER_GENERATED_CPP}"
         "${MAGDA_PITCH_HARMONIZER_GENERATED_CPP}"
+        "${MAGDA_BITCRUSHER_GENERATED_CPP}"
 )
 add_dependencies(magda_daw magda_compiled_dsps)
 target_include_directories(magda_daw PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
@@ -242,6 +248,8 @@ target_sources(magda_daw PRIVATE
     plugins/compiled/MagdaDimensionCompiledPlugin.hpp
     plugins/compiled/MagdaPitchCompiledPlugin.cpp
     plugins/compiled/MagdaPitchCompiledPlugin.hpp
+    plugins/compiled/MagdaBitcrusherCompiledPlugin.cpp
+    plugins/compiled/MagdaBitcrusherCompiledPlugin.hpp
     plugins/compiled/CompiledPluginRegistry.cpp
     plugins/compiled/CompiledPluginRegistry.hpp
     plugins/compiled/CompiledFaustHost.hpp
