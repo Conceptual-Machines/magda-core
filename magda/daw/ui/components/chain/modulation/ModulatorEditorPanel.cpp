@@ -450,6 +450,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
         static_cast<double>(syncDivisionToIndex(magda::SyncDivision::Quarter)),
         juce::dontSendNotification);
     syncDivisionSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    syncDivisionSlider_.setShowFillIndicator(false);
     syncDivisionSlider_.setValueFormatter([](double v) {
         int idx = juce::jlimit(0, kNumDivisions - 1, static_cast<int>(std::round(v)));
         // Order matches kSyncDivisionOrder above (slow → fast, grouped per note).
@@ -474,6 +475,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     rateSlider_.setRange(0.05, 20.0, 0.01);
     rateSlider_.setValue(1.0, juce::dontSendNotification);
     rateSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    rateSlider_.setShowFillIndicator(false);
     rateSlider_.onValueChanged = [this](double value) {
         currentMod_.rate = static_cast<float>(value);
         if (onRateChanged) {
@@ -524,6 +526,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     audioAttackSlider_.setRange(0.1, 500.0, 0.1);
     audioAttackSlider_.setValue(1.0, juce::dontSendNotification);
     audioAttackSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    audioAttackSlider_.setShowFillIndicator(false);
     audioAttackSlider_.onValueChanged = [this](double value) {
         currentMod_.audioAttackMs = static_cast<float>(value);
         if (onAudioAttackChanged) {
@@ -536,6 +539,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     audioReleaseSlider_.setRange(1.0, 2000.0, 1.0);
     audioReleaseSlider_.setValue(100.0, juce::dontSendNotification);
     audioReleaseSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    audioReleaseSlider_.setShowFillIndicator(false);
     audioReleaseSlider_.onValueChanged = [this](double value) {
         currentMod_.audioReleaseMs = static_cast<float>(value);
         if (onAudioReleaseChanged) {

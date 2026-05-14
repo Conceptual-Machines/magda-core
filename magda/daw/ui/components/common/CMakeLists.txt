@@ -10,6 +10,7 @@ target_sources(magda_daw_app PRIVATE
     GridOverlayComponent.cpp
     LinkableTextSlider.cpp
     Toast.cpp
+    ValueLabelControl.cpp
     DraggableValueLabel.cpp
     BarsBeatsTicksLabel.cpp
     SvgButton.hpp
@@ -20,6 +21,7 @@ target_sources(magda_daw_app PRIVATE
     MixerDebugPanel.hpp
     GridOverlayComponent.hpp
     LinkableTextSlider.hpp
+    ValueLabelControl.hpp
     DraggableValueLabel.hpp
     BarsBeatsTicksLabel.hpp
 )

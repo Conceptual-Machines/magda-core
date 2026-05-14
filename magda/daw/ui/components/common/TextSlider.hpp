@@ -5,6 +5,7 @@
 
 #include <functional>
 
+#include "ValueLabelControl.hpp"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/ParameterInfo.hpp"
@@ -19,28 +20,23 @@ namespace magda::daw::ui {
  *
  * Click to edit, drag to change value. Supports dB and pan formatting.
  */
-class TextSlider : public juce::Component,
-                   public juce::Label::Listener,
-                   public magda::AutomationManagerListener {
+class TextSlider : public juce::Component, public magda::AutomationManagerListener {
   public:
     enum class Format { Decimal, Decibels, Pan };
     enum class Orientation { Horizontal, Vertical };
 
     TextSlider(Format format = Format::Decimal) : format_(format) {
-        label_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        label_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-        label_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-        label_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
-        label_.setColour(juce::Label::outlineWhenEditingColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        label_.setColour(juce::Label::backgroundWhenEditingColourId,
-                         DarkTheme::getColour(DarkTheme::BACKGROUND));
-        label_.setJustificationType(juce::Justification::centred);
-        label_.setEditable(false, true, false);  // Single-click to edit
-        label_.addListener(this);
-        // Don't let label intercept mouse - we handle all mouse events
-        label_.setInterceptsMouseClicks(false, false);
-        addAndMakeVisible(label_);
+        valueControl_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        valueControl_.setTextColour(DarkTheme::getTextColour());
+        valueControl_.setJustification(juce::Justification::centred);
+        valueControl_.onMouseDown = [this](const juce::MouseEvent& e) { mouseDown(e); };
+        valueControl_.onMouseDrag = [this](const juce::MouseEvent& e) { mouseDrag(e); };
+        valueControl_.onMouseUp = [this](const juce::MouseEvent& e) { mouseUp(e); };
+        valueControl_.onMouseDoubleClick = [this](const juce::MouseEvent& e) {
+            mouseDoubleClick(e);
+        };
+        valueControl_.onEditCommit = [this](const juce::String& text) { commitText(text); };
+        addAndMakeVisible(valueControl_);
 
         updateLabel();
     }
@@ -57,6 +53,7 @@ class TextSlider : public juce::Component,
         maxValue_ = max;
         interval_ = interval;
         setValue(juce::jlimit(min, max, value_), juce::dontSendNotification);
+        updateLabel();
     }
 
     /** Set a skew factor for logarithmic-feel drag behaviour.
@@ -166,19 +163,25 @@ class TextSlider : public juce::Component,
     }
 
     void setFont(const juce::Font& font) {
-        label_.setFont(font);
+        valueControl_.setFont(font);
     }
 
     void setTextColour(const juce::Colour& colour) {
-        label_.setColour(juce::Label::textColourId, colour);
+        valueControl_.setTextColour(colour);
     }
 
     void setBackgroundColour(const juce::Colour& colour) {
-        label_.setColour(juce::Label::backgroundColourId, colour);
+        juce::ignoreUnused(colour);
+        valueControl_.clearBackgroundColour();
     }
 
     void setRightClickEditsText(bool shouldEdit) {
         rightClickEditsText_ = shouldEdit;
+    }
+
+    void setShowFillIndicator(bool show) {
+        showFillIndicator_ = show;
+        updateLabel();
     }
 
     void setEmptyText(const juce::String& text) {
@@ -209,6 +212,7 @@ class TextSlider : public juce::Component,
 
     void setOrientation(Orientation o) {
         orientation_ = o;
+        updateLabel();
     }
 
     Orientation getOrientation() const {
@@ -224,6 +228,7 @@ class TextSlider : public juce::Component,
         if (std::abs(meterPeakL_ - peakL) > 0.001f || std::abs(meterPeakR_ - peakR) > 0.001f) {
             meterPeakL_ = peakL;
             meterPeakR_ = peakR;
+            updateLabel();
             repaint();
         }
     }
@@ -238,6 +243,7 @@ class TextSlider : public juce::Component,
         isShiftDrag_ = false;
         hasDragged_ = false;
         overrideLatchedThisGesture_ = false;
+        valueControl_.setDragging(false);
         if (wasLeftDrag && hasAutomationTarget_) {
             auto& mgr = magda::AutomationManager::getInstance();
             mgr.setTargetUserTouched(automationTarget_, false);
@@ -331,12 +337,11 @@ class TextSlider : public juce::Component,
             g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
             g.drawHorizontalLine(handleY, static_cast<float>(handleRect.getX() + 2),
                                  static_cast<float>(handleRect.getRight() - 2));
-        } else {
-            // Horizontal mode (original behavior)
+        } else if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
             g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-            g.fillRect(bounds);
+            g.fillRoundedRectangle(bounds.toFloat(), 2.0f);
             g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.drawRect(bounds);
+            g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 2.0f, 1.0f);
 
             if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
                 float w = static_cast<float>(bounds.getWidth());
@@ -374,34 +379,11 @@ class TextSlider : public juce::Component,
                 drawHorizontalBar(bounds.getY() + bounds.getHeight() / 2, bounds.getHeight() / 2,
                                   meterPeakR_);
             }
-
-            // Pan fill indicator (draw from center outward)
-            if (format_ == Format::Pan) {
-                float w = static_cast<float>(bounds.getWidth());
-                float centerX = bounds.getX() + w * 0.5f;
-                float panValue = static_cast<float>(value_);
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
-                if (std::abs(panValue) < 0.01f) {
-                    g.fillRect(centerX - 1.0f, static_cast<float>(bounds.getY()), 2.0f,
-                               static_cast<float>(bounds.getHeight()));
-                } else if (panValue < 0) {
-                    float fillW = (w * 0.5f) * (-panValue);
-                    g.fillRect(centerX - fillW, static_cast<float>(bounds.getY()), fillW,
-                               static_cast<float>(bounds.getHeight()));
-                } else {
-                    float fillW = (w * 0.5f) * panValue;
-                    g.fillRect(centerX, static_cast<float>(bounds.getY()), fillW,
-                               static_cast<float>(bounds.getHeight()));
-                }
-            }
-
-            // 0dB tick mark removed - shown on level meters instead
         }
 
-        // Automation highlight: purple tint when the lane is driving the
-        // parameter, grey when the user has taken over. Drawn last so it
-        // sits on top of meter bars and value fills.
-        if (automationVisualState_ != magda::AutomationVisualState::None) {
+        if ((orientation_ == Orientation::Vertical || meterPeakL_ > 0.001f ||
+             meterPeakR_ > 0.001f) &&
+            automationVisualState_ != magda::AutomationVisualState::None) {
             auto boundsF = getLocalBounds().toFloat();
             const juce::Colour tint =
                 automationVisualState_ == magda::AutomationVisualState::Overridden
@@ -415,17 +397,18 @@ class TextSlider : public juce::Component,
     }
 
     void resized() override {
-        label_.setBounds(getLocalBounds());
+        valueControl_.setBounds(getLocalBounds());
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
-        if (!label_.isBeingEdited() && e.mods.isLeftButtonDown()) {
+        if (!valueControl_.isEditing() && e.mods.isLeftButtonDown()) {
             dragStartValue_ = value_;
             dragStartY_ = e.y;
             dragStartX_ = e.x;
             hasDragged_ = false;
             overrideLatchedThisGesture_ = false;
             isLeftButtonDrag_ = true;
+            valueControl_.setDragging(true);
             // Only enter Shift+drag mode if the owner actually wants to take
             // the gesture (e.g. a mod is currently selected for amount edit).
             // Otherwise Shift falls through to the normal drag path so its
@@ -468,11 +451,12 @@ class TextSlider : public juce::Component,
         } else {
             isLeftButtonDrag_ = false;
             isShiftDrag_ = false;
+            valueControl_.setDragging(false);
         }
     }
 
     void mouseDrag(const juce::MouseEvent& e) override {
-        if (label_.isBeingEdited() || !isLeftButtonDrag_)
+        if (valueControl_.isEditing() || !isLeftButtonDrag_)
             return;
 
         // Check if we've moved enough to count as a drag
@@ -574,6 +558,7 @@ class TextSlider : public juce::Component,
         // — stop refreshing. (#1108)
         const bool wasLeftDrag = isLeftButtonDrag_;
         isLeftButtonDrag_ = false;
+        valueControl_.setDragging(false);
 
         // Release the transient flags; the lane stays in bypass (override)
         // state until the user explicitly re-enables it from the header.
@@ -604,7 +589,7 @@ class TextSlider : public juce::Component,
             if (e.mods.isPopupMenu()) {
                 if (rightClickEditsText_) {
                     // Right-click to edit text directly
-                    label_.showEditor();
+                    valueControl_.showEditor(currentDisplayText());
                 } else if (onRightClicked) {
                     // Right-click callback (for context menus, etc.)
                     onRightClicked();
@@ -621,38 +606,35 @@ class TextSlider : public juce::Component,
 
     void mouseDoubleClick(const juce::MouseEvent&) override {
         // Double-click to edit value
-        label_.showEditor();
-    }
-
-    // Label::Listener
-    void labelTextChanged(juce::Label* labelThatChanged) override {
-        if (labelThatChanged == &label_) {
-            auto text = label_.getText().trim();
-
-            // Use custom parser if provided
-            if (valueParser_) {
-                double newValue = valueParser_(text);
-                setValue(newValue);
-                return;
-            }
-
-            // Default parsing - remove common suffixes
-            if (text.endsWithIgnoreCase("db")) {
-                text = text.dropLastCharacters(2).trim();
-            } else if (text.endsWithIgnoreCase("l") || text.endsWithIgnoreCase("r")) {
-                text = text.dropLastCharacters(1).trim();
-            } else if (text.equalsIgnoreCase("c") || text.equalsIgnoreCase("center")) {
-                setValue(0.0);
-                return;
-            }
-
-            double newValue = text.getDoubleValue();
-            setValue(newValue);
-        }
+        valueControl_.showEditor(currentDisplayText());
     }
 
   private:
-    juce::Label label_;
+    void commitText(const juce::String& committedText) {
+        auto text = committedText.trim();
+
+        // Use custom parser if provided
+        if (valueParser_) {
+            double newValue = valueParser_(text);
+            setValue(newValue);
+            return;
+        }
+
+        // Default parsing - remove common suffixes
+        if (text.endsWithIgnoreCase("db")) {
+            text = text.dropLastCharacters(2).trim();
+        } else if (text.endsWithIgnoreCase("l") || text.endsWithIgnoreCase("r")) {
+            text = text.dropLastCharacters(1).trim();
+        } else if (text.equalsIgnoreCase("c") || text.equalsIgnoreCase("center")) {
+            setValue(0.0);
+            return;
+        }
+
+        double newValue = text.getDoubleValue();
+        setValue(newValue);
+    }
+
+    ValueLabelControl valueControl_;
     Format format_;
     double value_ = 0.0;
     double minValue_ = 0.0;
@@ -670,6 +652,7 @@ class TextSlider : public juce::Component,
     float shiftDragStartValue_ = 0.5f;
     Orientation orientation_ = Orientation::Horizontal;
     bool rightClickEditsText_ = true;
+    bool showFillIndicator_ = true;
     juce::String emptyText_ = "-";
     bool showEmptyText_ = false;
     std::function<juce::String(double)>
@@ -686,17 +669,15 @@ class TextSlider : public juce::Component,
     // sticky.
     bool hasExplicitFormatter_ = false;
 
-    void updateLabel() {
+    juce::String currentDisplayText() const {
         // Show empty text instead of value when disabled/empty
         if (showEmptyText_) {
-            label_.setText(emptyText_, juce::dontSendNotification);
-            return;
+            return emptyText_;
         }
 
         // Use custom formatter if provided
         if (valueFormatter_) {
-            label_.setText(valueFormatter_(value_), juce::dontSendNotification);
-            return;
+            return valueFormatter_(value_);
         }
 
         juce::String text;
@@ -726,7 +707,23 @@ class TextSlider : public juce::Component,
                 break;
         }
 
-        label_.setText(text, juce::dontSendNotification);
+        return text;
+    }
+
+    void updateLabel() {
+        valueControl_.setRange(minValue_, maxValue_);
+        valueControl_.setValue(value_);
+        valueControl_.setDisplayText(currentDisplayText());
+        valueControl_.setFillMode(format_ == Format::Pan
+                                      ? ValueLabelControl::FillMode::PanCentre
+                                      : ValueLabelControl::FillMode::LeftToRight);
+        const bool hasMeter = meterPeakL_ > 0.001f || meterPeakR_ > 0.001f;
+        valueControl_.setShowFillIndicator(showFillIndicator_ &&
+                                           orientation_ == Orientation::Horizontal && !hasMeter);
+        valueControl_.setDrawBackground(orientation_ == Orientation::Horizontal && !hasMeter);
+        valueControl_.setDrawBorder(orientation_ == Orientation::Horizontal && !hasMeter);
+        valueControl_.setDragging(isLeftButtonDrag_);
+        valueControl_.setTintState(toControlTintState(automationVisualState_));
     }
 
     float meterPeakL_ = 0.f;
@@ -746,6 +743,7 @@ class TextSlider : public juce::Component,
         if (automationVisualState_ == newState)
             return;
         automationVisualState_ = newState;
+        valueControl_.setTintState(toControlTintState(automationVisualState_));
         repaint();
     }
 
@@ -753,7 +751,20 @@ class TextSlider : public juce::Component,
         if (automationVisualState_ == state)
             return;
         automationVisualState_ = state;
+        valueControl_.setTintState(toControlTintState(automationVisualState_));
         repaint();
+    }
+
+    static ValueLabelControl::TintState toControlTintState(magda::AutomationVisualState state) {
+        switch (state) {
+            case magda::AutomationVisualState::Overridden:
+                return ValueLabelControl::TintState::Overridden;
+            case magda::AutomationVisualState::Active:
+                return ValueLabelControl::TintState::Automated;
+            case magda::AutomationVisualState::None:
+            default:
+                return ValueLabelControl::TintState::None;
+        }
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TextSlider)

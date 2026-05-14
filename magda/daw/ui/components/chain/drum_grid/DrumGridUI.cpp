@@ -255,6 +255,7 @@ DrumGridUI::DrumGridUI() {
     // Level slider (-60 to +12 dB)
     levelSlider_.setRange(-60.0, 12.0, 0.1);
     levelSlider_.setValue(0.0, juce::dontSendNotification);
+    levelSlider_.setShowFillIndicator(false);
     levelSlider_.onValueChanged = [this](double value) {
         if (onPadLevelChanged)
             onPadLevelChanged(selectedPad_, static_cast<float>(value));
@@ -264,6 +265,7 @@ DrumGridUI::DrumGridUI() {
     // Pan slider (-1 to +1)
     panSlider_.setRange(-1.0, 1.0, 0.01);
     panSlider_.setValue(0.0, juce::dontSendNotification);
+    panSlider_.setShowFillIndicator(false);
     panSlider_.setValueFormatter([](double v) {
         if (std::abs(v) < 0.01)
             return juce::String("C");

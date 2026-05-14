@@ -30,6 +30,7 @@ SamplerUI::SamplerUI() {
     // Root note slider (MIDI note 0-127, displayed as note name)
     rootNoteSlider_.setRange(0, 127, 1);
     rootNoteSlider_.setValue(60, juce::dontSendNotification);
+    rootNoteSlider_.setShowFillIndicator(false);
     rootNoteSlider_.setValueFormatter([](double v) {
         static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
                                           "F#", "G",  "G#", "A",  "A#", "B"};

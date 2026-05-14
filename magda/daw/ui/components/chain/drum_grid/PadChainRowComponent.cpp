@@ -20,6 +20,7 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     // Level text slider (dB format)
     levelSlider_.setRange(-60.0, 12.0, 0.1);
     levelSlider_.setValue(0.0, juce::dontSendNotification);
+    levelSlider_.setShowFillIndicator(false);
     levelSlider_.onValueChanged = [this](double value) {
         if (onLevelChanged)
             onLevelChanged(padIndex_, static_cast<float>(value));
@@ -29,6 +30,7 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     // Pan text slider (L/C/R format)
     panSlider_.setRange(-1.0, 1.0, 0.01);
     panSlider_.setValue(0.0, juce::dontSendNotification);
+    panSlider_.setShowFillIndicator(false);
     panSlider_.onValueChanged = [this](double value) {
         if (onPanChanged)
             onPanChanged(padIndex_, static_cast<float>(value));
