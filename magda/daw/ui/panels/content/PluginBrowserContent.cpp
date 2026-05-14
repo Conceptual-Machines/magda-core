@@ -370,7 +370,6 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
         list.push_back(PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId, false,
                                                          spec->browserCategory));
     }
-    list.push_back(PluginBrowserInfo::createInternal("Pitch Shift", "pitchshift", false, "Pitch"));
     list.push_back(
         PluginBrowserInfo::createInternal("IR Reverb", "impulseresponse", false, "Reverb"));
     list.push_back(PluginBrowserInfo::createInternal("Utility", "utility", false, "Utility"));
