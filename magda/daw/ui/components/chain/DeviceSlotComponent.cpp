@@ -1985,6 +1985,12 @@ void DeviceSlotComponent::createCustomUI() {
         magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex, value);
     };
     callbacks.onLayoutChanged = [this]() {
+        // Force this slot to re-lay out its internal body even when the
+        // parent chain doesn't change the slot's outer bounds. The EQ's
+        // "collapse knobs" toggle, in particular, swaps between curve-only
+        // and curve-plus-grid without resizing the slot itself, so JUCE's
+        // bounds-based resized() would otherwise stay silent.
+        resized();
         if (onDeviceLayoutChanged)
             onDeviceLayoutChanged();
     };
