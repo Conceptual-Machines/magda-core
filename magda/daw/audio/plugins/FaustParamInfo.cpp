@@ -29,6 +29,9 @@ magda::ParameterInfo continuousInfo(const FaustParamSlot& slot) {
     info.defaultValue = slot.defaultValue;
     info.currentValue = slot.defaultValue;
     info.scale = slot.logScale ? magda::ParameterScale::Logarithmic : magda::ParameterScale::Linear;
+    if (slot.label.equalsIgnoreCase("Mix") && std::abs(slot.minValue) < 1.0e-6f &&
+        std::abs(slot.maxValue - 1.0f) < 1.0e-6f)
+        info.displayFormat = magda::DisplayFormat::Percent;
     if (std::isfinite(slot.scaleAnchor))
         info.scaleAnchor = slot.scaleAnchor;
     info.gateSlotIndex = slot.gateSlotIndex;

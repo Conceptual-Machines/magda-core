@@ -80,7 +80,12 @@ class TextSlider : public juce::Component,
      * valueParser (delegating to ParameterUtils::formatValue/parseValue).
      */
     void setParameterInfo(const magda::ParameterInfo& info) {
-        setRange(static_cast<double>(info.minValue), static_cast<double>(info.maxValue));
+        double interval = 0.01;
+        if (info.displayFormat == magda::DisplayFormat::Percent && info.minValue >= -1.0e-6f &&
+            info.maxValue <= 1.0f + 1.0e-6f) {
+            interval = 0.001;
+        }
+        setRange(static_cast<double>(info.minValue), static_cast<double>(info.maxValue), interval);
 
         // Map scaleAnchor into TextSlider's drag-skew so the slider
         // matches ParameterUtils' anchor handling. The actual

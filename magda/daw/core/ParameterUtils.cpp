@@ -298,6 +298,10 @@ juce::String formatBars(float beats, int beatsPerBar = DEFAULT_TIME_SIGNATURE_NU
     return juce::String(buf);
 }
 
+bool storesPercentAsUnitFraction(const ParameterInfo& info) {
+    return info.minValue >= -1.0e-6f && info.maxValue <= 1.0f + 1.0e-6f;
+}
+
 std::optional<float> parseDecibels(juce::String text) {
     auto lower = text.trim().toLowerCase();
     if (lower == "-inf" || lower == "-infinity" || lower == "inf")
@@ -453,9 +457,9 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
         case DisplayFormat::Pan:
             return formatPan(realValue);
         case DisplayFormat::Percent:
-            // Stored as 0..100 by convention (matches ParameterPresets::percent).
-            // No scaling; the formatter just tacks on "%".
-            return juce::String(realValue, decimalPlaces) + "%";
+            return juce::String(storesPercentAsUnitFraction(info) ? realValue * 100.0f : realValue,
+                                decimalPlaces) +
+                   "%";
         case DisplayFormat::MidiNote:
             return formatMidiNote(realValue);
         case DisplayFormat::Beats:
@@ -472,7 +476,9 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
     if (info.unit == "ms")
         return formatMs(realValue, decimalPlaces);
     if (info.unit == "%")
-        return juce::String(realValue, decimalPlaces) + "%";
+        return juce::String(storesPercentAsUnitFraction(info) ? realValue * 100.0f : realValue,
+                            decimalPlaces) +
+               "%";
     if (info.unit == "dB")
         return formatDecibels(realValue, decimalPlaces);
     if (info.unit == "st") {
@@ -526,7 +532,10 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
                 t = t.dropLastCharacters(1).trim();
             if (t.isEmpty())
                 return std::nullopt;
-            return clamp(static_cast<float>(t.getDoubleValue()));
+            float parsed = static_cast<float>(t.getDoubleValue());
+            if (storesPercentAsUnitFraction(info))
+                parsed *= 0.01f;
+            return clamp(parsed);
         }
         case DisplayFormat::MidiNote:
             return clamp(parseMidiNote(trimmed));
@@ -570,7 +579,10 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
             t = t.dropLastCharacters(1).trim();
         if (t.isEmpty())
             return std::nullopt;
-        return clamp(static_cast<float>(t.getDoubleValue()));
+        float parsed = static_cast<float>(t.getDoubleValue());
+        if (storesPercentAsUnitFraction(info))
+            parsed *= 0.01f;
+        return clamp(parsed);
     }
     if (info.unit == "st") {
         auto t = trimmed.toLowerCase();

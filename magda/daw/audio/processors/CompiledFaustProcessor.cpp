@@ -35,6 +35,9 @@ ParameterInfo CompiledFaustProcessor::getParameterInfo(int index) const {
     info.choices = s.choices;
     info.gateSlotIndex = s.gateSlotIndex;
     info.gateNegated = s.gateNegated;
+    if (s.name.equalsIgnoreCase("Mix") && std::abs(s.minValue) < 1.0e-6f &&
+        std::abs(s.maxValue - 1.0f) < 1.0e-6f)
+        info.displayFormat = DisplayFormat::Percent;
 
     if (index == host->engineAwareModeSlot() && index >= 0) {
         info.choices = host->modeChoicesForActiveEngine();

@@ -746,6 +746,18 @@ TEST_CASE("formatValue - DisplayFormat Percent", "[parameter][format]") {
     REQUIRE(ParameterUtils::formatValue(100.0f, info) == "100.0%");
 }
 
+TEST_CASE("formatValue - DisplayFormat Percent supports 0..1 fractions", "[parameter][format]") {
+    ParameterInfo info;
+    info.minValue = 0.0f;
+    info.maxValue = 1.0f;
+    info.displayFormat = DisplayFormat::Percent;
+
+    REQUIRE(ParameterUtils::formatValue(0.0f, info) == "0.0%");
+    REQUIRE(ParameterUtils::formatValue(0.001f, info) == "0.1%");
+    REQUIRE(ParameterUtils::formatValue(0.5f, info) == "50.0%");
+    REQUIRE(ParameterUtils::formatValue(1.0f, info) == "100.0%");
+}
+
 TEST_CASE("formatValue - Default dispatches on Hz unit", "[parameter][format]") {
     ParameterInfo info;
     info.minValue = 20.0f;
@@ -808,6 +820,18 @@ TEST_CASE("parseValue - Percent with or without sign", "[parameter][parse]") {
     REQUIRE(*ParameterUtils::parseValue("100%", info) == Catch::Approx(100.0f));
     // Clamp
     REQUIRE(*ParameterUtils::parseValue("150%", info) == Catch::Approx(100.0f));
+}
+
+TEST_CASE("parseValue - Percent supports 0..1 fractions", "[parameter][parse]") {
+    ParameterInfo info;
+    info.minValue = 0.0f;
+    info.maxValue = 1.0f;
+    info.displayFormat = DisplayFormat::Percent;
+
+    REQUIRE(*ParameterUtils::parseValue("0.1%", info) == Catch::Approx(0.001f));
+    REQUIRE(*ParameterUtils::parseValue("0.1", info) == Catch::Approx(0.001f));
+    REQUIRE(*ParameterUtils::parseValue("50%", info) == Catch::Approx(0.5f));
+    REQUIRE(*ParameterUtils::parseValue("150%", info) == Catch::Approx(1.0f));
 }
 
 TEST_CASE("parseValue - Hz accepts kHz and bare number", "[parameter][parse]") {
