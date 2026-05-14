@@ -16,6 +16,10 @@ releaseMs   = hslider("Release [unit:ms] [scale:log] [scaleAnchor:200] [idx:3]",
                       200.0, 10.0, 2000.0, 1.0);
 mix         = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001)
               : si.smooth(ba.tau2pole(0.02));
+outputDb    = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1)
+              : si.smooth(ba.tau2pole(0.02));
+autogain    = nentry("Autogain [idx:6] [style:menu{'Off':0;'On':1}]",
+                     0, 0, 1, 1);
 
 // ============================================================================
 // DSP
@@ -33,13 +37,20 @@ attackS  = max(0.0001, attackMs * 0.001);
 holdS    = max(0.001,  holdMs * 0.001);
 releaseS = max(0.001,  releaseMs * 0.001);
 
+db2lin(db) = pow(10.0, db / 20.0);
+
 limited(l, r) = l, r
   : co.limiter_lad_stereo(LD, ceiling, attackS, holdS, releaseS);
 
 wetL(l, r) = limited(l, r) : _, !;
 wetR(l, r) = limited(l, r) : !, _;
 
-channelBlend(dry, wet) = dry * (1.0 - mix) + wet * mix;
+// Autogain compensates for the headroom shaved off by limiting:
+// add -thresholdDb so peaks reach 0 dBFS again. Stacks with user Output
+// so manual trim still applies.
+autogainDb = autogain * (-thresholdDb);
+
+channelBlend(dry, wet) = (dry * (1.0 - mix) + wet * mix) * db2lin(outputDb + autogainDb);
 
 process(l, r) = channelBlend(l, wetL(l, r)),
                 channelBlend(r, wetR(l, r));

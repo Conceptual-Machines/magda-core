@@ -34,6 +34,8 @@ link = hslider("Link [idx:10]", 1.0, 0.0, 1.0, 0.001)
 sidechainHpfHz = hslider("SC HPF [unit:Hz] [scale:log] [scaleAnchor:120] [idx:11]",
                          20.0, 20.0, 500.0, 1.0)
                  : si.smooth(ba.tau2pole(0.02));
+autogain = nentry("Autogain [idx:14] [style:menu{'Off':0;'On':1}]",
+                  0, 0, 1, 1);
 useSidechain = nentry("Use Sidechain [hidden:1] [idx:63]", 0, 0, 1, 1);
 
 // ============================================================================
@@ -94,8 +96,18 @@ compress(l, r, sc) = internalWetL(l, r) * (1.0 - useSidechain)
                      internalWetR(l, r) * (1.0 - useSidechain)
                      + externalWetR(r, sc) * useSidechain;
 
-channelBlend(dry, wet) = (dry * (1.0 - mix) + wet * mix) * db2lin(makeupDb + outputDb)
-                         : softLimit;
+// Autogain compensates for compression-induced loss assuming peak signal
+// at 0 dBFS: makeup = -(threshold * (1 - 1/ratio)). Added on top of the
+// user's Makeup so the manual knob still works.
+autogainDb = autogain * (-(thresholdDb * (1.0 - (1.0 / max(1.0, ratio)))));
+
+// Soft-limit acts as a safety ceiling on the compressed + makeup signal;
+// Output gain is applied AFTER so the user-facing Output knob isn't
+// gated by the limiter (pre-fix, +12 dB Output only achieved ~+4 dB
+// actual because the tanh-style softLimit clamped everything).
+channelBlend(dry, wet) =
+    softLimit((dry * (1.0 - mix) + wet * mix) * db2lin(makeupDb + autogainDb))
+    * db2lin(outputDb);
 
 wetL(l, r, sc) = compress(l, r, sc) : _, !;
 wetR(l, r, sc) = compress(l, r, sc) : !, _;

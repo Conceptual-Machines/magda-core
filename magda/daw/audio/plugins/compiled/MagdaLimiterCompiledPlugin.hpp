@@ -63,7 +63,9 @@ class MagdaLimiterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
     static constexpr int kHoldSlot = 2;
     static constexpr int kReleaseSlot = 3;
     static constexpr int kMixSlot = 4;
-    static constexpr int kHostSlotCount = 5;
+    static constexpr int kOutputSlot = 5;
+    static constexpr int kAutogainSlot = 6;
+    static constexpr int kHostSlotCount = 7;
 
     te::AutomatableParameter* getSlotParameter(int slotIndex) const;
 

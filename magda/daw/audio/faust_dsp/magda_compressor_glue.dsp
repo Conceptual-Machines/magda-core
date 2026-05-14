@@ -37,6 +37,8 @@ link        = hslider("Link [idx:10]", 1.0, 0.0, 1.0, 0.001);
 fbff        = hslider("FBFF [idx:12]", 0.5, 0.0, 1.0, 0.001);
 style       = nentry("Style [idx:13] [style:menu{'Pre':0;'Post':1}]",
                      0, 0, 1, 1);
+autogain    = nentry("Autogain [idx:14] [style:menu{'Off':0;'On':1}]",
+                     0, 0, 1, 1);
 
 // ============================================================================
 // DSP
@@ -80,8 +82,17 @@ mixR(l, r) = (1.0 - detector) * peakR(l, r) + detector * rmsR(l, r);
 
 compress(l, r) = mixL(l, r), mixR(l, r);
 
-channelBlend(dry, wet) = (dry * (1.0 - mix) + wet * mix) * db2lin(makeupDb + outputDb)
-                         : softLimit;
+// Autogain compensates for compression-induced loss assuming peak signal
+// at 0 dBFS. Brouns' strength already encodes (1 - 1/ratio); reusing it
+// keeps the formula consistent with the FBFF/RMS gain calculators.
+autogainDb = autogain * (-(thresholdDb * strength));
+
+// Soft-limit is a safety ceiling; Output gain comes after so the
+// user-facing Output knob is uncapped (see magda_compressor.dsp for the
+// fix rationale).
+channelBlend(dry, wet) =
+    softLimit((dry * (1.0 - mix) + wet * mix) * db2lin(makeupDb + autogainDb))
+    * db2lin(outputDb);
 
 wetL(l, r) = compress(l, r) : _, !;
 wetR(l, r) = compress(l, r) : !, _;

@@ -176,6 +176,18 @@ void MagdaLimiterCompiledPlugin::buildHostParameters() {
                                .minValue = 0.0f,
                                .maxValue = 1.0f,
                                .defaultValue = 1.0f};
+    hostSlotInfo_[kOutputSlot] = {.name = "Output",
+                                  .unit = "dB",
+                                  .scale = magda::ParameterScale::Linear,
+                                  .minValue = -24.0f,
+                                  .maxValue = 12.0f,
+                                  .defaultValue = 0.0f};
+    hostSlotInfo_[kAutogainSlot].name = "Autogain";
+    hostSlotInfo_[kAutogainSlot].scale = magda::ParameterScale::Discrete;
+    hostSlotInfo_[kAutogainSlot].choices = {"Off", "On"};
+    hostSlotInfo_[kAutogainSlot].minValue = 0.0f;
+    hostSlotInfo_[kAutogainSlot].maxValue = 1.0f;
+    hostSlotInfo_[kAutogainSlot].defaultValue = 0.0f;
 
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
@@ -362,7 +374,8 @@ float MagdaLimiterCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
 
 constexpr AliasSpec kAliases[] = {
     {"threshold", 0, "Threshold"}, {"attack", 1, "Attack"}, {"hold", 2, "Hold"},
-    {"release", 3, "Release"},     {"mix", 4, "Mix"},
+    {"release", 3, "Release"},     {"mix", 4, "Mix"},       {"output", 5, "Output"},
+    {"autogain", 6, "Autogain"},
 };
 
 const CompiledPluginSpec& getMagdaLimiterSpec() {

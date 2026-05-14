@@ -90,7 +90,8 @@ class MagdaCompressorCompiledPlugin : public te::Plugin, public ICompiledFaustPl
     static constexpr int kSidechainHpfSlot = 11;  // Clean only
     static constexpr int kFbffSlot = 12;          // Glue only
     static constexpr int kStyleSlot = 13;         // Glue only — Pre / Post
-    static constexpr int kHostSlotCount = 14;
+    static constexpr int kAutogainSlot = 14;
+    static constexpr int kHostSlotCount = 15;
     static constexpr int kUseSidechainHiddenSlot = 63;
 
     enum class CompressorEngine { Clean = 0, Glue = 1 };

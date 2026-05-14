@@ -307,6 +307,12 @@ void MagdaCompressorCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kStyleSlot].minValue = 0.0f;
     hostSlotInfo_[kStyleSlot].maxValue = 1.0f;
     hostSlotInfo_[kStyleSlot].defaultValue = 0.0f;
+    hostSlotInfo_[kAutogainSlot].name = "Autogain";
+    hostSlotInfo_[kAutogainSlot].scale = magda::ParameterScale::Discrete;
+    hostSlotInfo_[kAutogainSlot].choices = {"Off", "On"};
+    hostSlotInfo_[kAutogainSlot].minValue = 0.0f;
+    hostSlotInfo_[kAutogainSlot].maxValue = 1.0f;
+    hostSlotInfo_[kAutogainSlot].defaultValue = 0.0f;
 
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
@@ -508,13 +514,14 @@ float MagdaCompressorCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
 }
 
 constexpr AliasSpec kAliases[] = {
-    {"engine", 0, "Engine"},   {"threshold", 1, "Threshold"},
-    {"ratio", 2, "Ratio"},     {"attack", 3, "Attack"},
-    {"release", 4, "Release"}, {"knee", 5, "Knee"},
-    {"makeup", 6, "Makeup"},   {"mix", 7, "Mix"},
-    {"output", 8, "Output"},   {"detector", 9, "Detector"},
-    {"link", 10, "Link"},      {"sc_hpf", 11, "SC HPF"},
-    {"fbff", 12, "FBFF"},      {"style", 13, "Style"},
+    {"engine", 0, "Engine"},      {"threshold", 1, "Threshold"},
+    {"ratio", 2, "Ratio"},        {"attack", 3, "Attack"},
+    {"release", 4, "Release"},    {"knee", 5, "Knee"},
+    {"makeup", 6, "Makeup"},      {"mix", 7, "Mix"},
+    {"output", 8, "Output"},      {"detector", 9, "Detector"},
+    {"link", 10, "Link"},         {"sc_hpf", 11, "SC HPF"},
+    {"fbff", 12, "FBFF"},         {"style", 13, "Style"},
+    {"autogain", 14, "Autogain"},
 };
 
 const CompiledPluginSpec& getMagdaCompressorSpec() {
