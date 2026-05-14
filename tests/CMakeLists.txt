@@ -100,6 +100,13 @@ set(TEST_SOURCES
     test_selection_manager_listeners.cpp
     # Configurable user data paths
     test_app_paths.cpp
+    # Media database (issue #768) — Phase A: SQLite skeleton
+    test_media_database.cpp
+    # Media database (issue #768) — Phase B: scanner + path rules
+    test_media_db_scan.cpp
+    test_media_db_path_rules.cpp
+    # Media database (issue #768) — Phase C: audio features
+    test_media_db_audio_features.cpp
 )
 
 # Create test executable

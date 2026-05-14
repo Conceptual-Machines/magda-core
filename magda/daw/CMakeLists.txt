@@ -313,6 +313,7 @@ add_subdirectory(api)
 add_subdirectory(interfaces)
 add_subdirectory(profiling)
 add_subdirectory(ui)
+add_subdirectory(media_db)
 
 # =============================================================================
 # Linking, compile defs, includes
