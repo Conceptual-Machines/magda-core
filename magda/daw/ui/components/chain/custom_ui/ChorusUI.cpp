@@ -59,11 +59,10 @@ ChorusUI::ChorusUI() {
             onParameterChanged(2, static_cast<float>(value));
     };
 
-    // Mix: 0.0–1.0, displayed as "XX% wet"
-    mix_.slider.setRange(0.0, 1.0, 0.01);
-    mix_.slider.setValueFormatter([](double value) -> juce::String {
-        return juce::String(juce::roundToInt(value * 100.0)) + "% wet";
-    });
+    // Mix: 0.0–1.0, displayed as wet percent.
+    mix_.slider.setRange(0.0, 1.0, 0.001);
+    mix_.slider.setValueFormatter(
+        [](double value) -> juce::String { return juce::String(value * 100.0, 1) + "% wet"; });
     mix_.slider.setValueParser([](const juce::String& text) -> double {
         return text.trim().replace("% wet", "").replace("%", "").trim().getDoubleValue() / 100.0;
     });

@@ -1554,6 +1554,7 @@ void FourOscUI::LFOTab::rebuildModRows() {
 
         row.depthSlider = std::make_unique<TextSlider>(TextSlider::Format::Decimal);
         row.depthSlider->setRange(-100.0, 100.0, 0.1);
+        row.depthSlider->setShowFillIndicator(false);
         row.depthSlider->setValueFormatter(
             [](double v) { return juce::String(juce::roundToInt(v)); });
         row.depthSlider->setValueParser([](const juce::String& s) { return s.getDoubleValue(); });
@@ -1677,6 +1678,7 @@ void FourOscUI::ModEnvTab::rebuildModRows() {
 
         row.depthSlider = std::make_unique<TextSlider>(TextSlider::Format::Decimal);
         row.depthSlider->setRange(-100.0, 100.0, 0.1);
+        row.depthSlider->setShowFillIndicator(false);
         row.depthSlider->setValueFormatter(
             [](double v) { return juce::String(juce::roundToInt(v)); });
         row.depthSlider->setValueParser([](const juce::String& s) { return s.getDoubleValue(); });

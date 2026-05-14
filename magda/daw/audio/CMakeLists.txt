@@ -74,6 +74,11 @@ magda_compile_faust_dsp(
     MAGDA_COMPRESSOR_GENERATED_CPP
 )
 magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_compressor_glue.dsp"
+    MagdaCompressorGlueDsp
+    MAGDA_COMPRESSOR_GLUE_GENERATED_CPP
+)
+magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_mod.dsp"
     MagdaModDsp
     MAGDA_MOD_GENERATED_CPP
@@ -98,6 +103,16 @@ magda_compile_faust_dsp(
     MagdaFreqShiftDsp
     MAGDA_FREQ_SHIFT_GENERATED_CPP
 )
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_limiter.dsp"
+    MagdaLimiterDsp
+    MAGDA_LIMITER_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_clipper.dsp"
+    MagdaClipperDsp
+    MAGDA_CLIPPER_GENERATED_CPP
+)
 # A phony target that just depends on every generated DSP .cpp; making
 # magda_daw depend on it forces the custom commands to fire before any
 # wrapper TU is compiled.
@@ -116,11 +131,14 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_MULTIBAND_GENERATED_CPP}"
         "${MAGDA_PHASER_GENERATED_CPP}"
         "${MAGDA_COMPRESSOR_GENERATED_CPP}"
+        "${MAGDA_COMPRESSOR_GLUE_GENERATED_CPP}"
         "${MAGDA_MOD_GENERATED_CPP}"
         "${MAGDA_CHORUS_GENERATED_CPP}"
         "${MAGDA_FLANGER_GENERATED_CPP}"
         "${MAGDA_RING_MOD_GENERATED_CPP}"
         "${MAGDA_FREQ_SHIFT_GENERATED_CPP}"
+        "${MAGDA_LIMITER_GENERATED_CPP}"
+        "${MAGDA_CLIPPER_GENERATED_CPP}"
 )
 add_dependencies(magda_daw magda_compiled_dsps)
 target_include_directories(magda_daw PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
@@ -152,6 +170,10 @@ target_sources(magda_daw PRIVATE
     plugins/compiled/MagdaRingModCompiledPlugin.hpp
     plugins/compiled/MagdaFreqShiftCompiledPlugin.cpp
     plugins/compiled/MagdaFreqShiftCompiledPlugin.hpp
+    plugins/compiled/MagdaLimiterCompiledPlugin.cpp
+    plugins/compiled/MagdaLimiterCompiledPlugin.hpp
+    plugins/compiled/MagdaClipperCompiledPlugin.cpp
+    plugins/compiled/MagdaClipperCompiledPlugin.hpp
     plugins/compiled/CompiledPluginRegistry.cpp
     plugins/compiled/CompiledPluginRegistry.hpp
     plugins/compiled/CompiledFaustHost.hpp

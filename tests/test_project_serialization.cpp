@@ -117,6 +117,38 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         // Cleanup
     }
 
+    SECTION("Save As serializes migrated media paths") {
+        auto& projectManager = ProjectManager::getInstance();
+        REQUIRE(projectManager.newProject());
+
+        auto trackId = TrackManager::getInstance().createTrack("Audio Track", TrackType::Audio);
+
+        auto sourceFile =
+            projectManager.getRecordingsDirectory().getChildFile("unsaved_recording.wav");
+        REQUIRE(sourceFile.getParentDirectory().createDirectory());
+        REQUIRE(sourceFile.replaceWithText("placeholder audio"));
+
+        auto clipId = ClipManager::getInstance().createAudioClipBeats(
+            trackId, 0.0, 4.0, sourceFile.getFullPathName(), ClipView::Arrangement, 120.0);
+        REQUIRE(clipId != INVALID_CLIP_ID);
+
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
+        REQUIRE(projectManager.saveProjectAs(tempFile));
+
+        auto expectedFile = actualFile.getParentDirectory()
+                                .getChildFile(actualFile.getFileNameWithoutExtension() + "_Media")
+                                .getChildFile("recordings")
+                                .getChildFile(sourceFile.getFileName());
+
+        StagedProjectData staged;
+        REQUIRE(ProjectSerializer::loadAndStage(actualFile, staged));
+        REQUIRE(staged.clips.size() == 1);
+        REQUIRE(staged.clips[0].isAudio());
+        REQUIRE(staged.clips[0].audio().source.filePath == expectedFile.getFullPathName());
+        REQUIRE(expectedFile.existsAsFile());
+    }
+
     SECTION("Project info serialization roundtrip") {
         ProjectInfo info;
         info.name = "Test Project";

@@ -21,6 +21,8 @@ const CompiledPresentationSpec& getMagdaChorusPresentation();
 const CompiledPresentationSpec& getMagdaFlangerPresentation();
 const CompiledPresentationSpec& getMagdaRingModPresentation();
 const CompiledPresentationSpec& getMagdaFreqShiftPresentation();
+const CompiledPresentationSpec& getMagdaLimiterPresentation();
+const CompiledPresentationSpec& getMagdaClipperPresentation();
 
 namespace {
 
@@ -31,7 +33,8 @@ const CompiledPresentationSpec* const kAllPresentations[] = {
     &getMagdaPhaserPresentation(),    &getMagdaCompressorPresentation(),
     &getMagdaModPresentation(),       &getMagdaChorusPresentation(),
     &getMagdaFlangerPresentation(),   &getMagdaRingModPresentation(),
-    &getMagdaFreqShiftPresentation(),
+    &getMagdaFreqShiftPresentation(), &getMagdaLimiterPresentation(),
+    &getMagdaClipperPresentation(),
 };
 
 }  // namespace

@@ -56,6 +56,7 @@ void LFOCurveEditorContent::setupControls() {
     rateSlider_.setRange(0.01, 20.0, 0.01);
     rateSlider_.setValue(1.0, juce::dontSendNotification);
     rateSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    rateSlider_.setShowFillIndicator(false);
     rateSlider_.onValueChanged = [this](double value) {
         if (modInfo_) {
             modInfo_->rate = static_cast<float>(value);

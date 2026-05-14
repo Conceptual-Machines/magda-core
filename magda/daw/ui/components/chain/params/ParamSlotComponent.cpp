@@ -32,6 +32,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     valueSlider_.setValue(0.5, juce::dontSendNotification);
     valueSlider_.setTextColour(juce::Colours::white);
     valueSlider_.setBackgroundColour(juce::Colours::transparentBlack);
+    valueSlider_.setShowFillIndicator(false);
     valueSlider_.onValueChanged = [this](double value) {
         if (onValueChanged) {
             onValueChanged(value);

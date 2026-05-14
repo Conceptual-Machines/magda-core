@@ -86,10 +86,9 @@ ImpulseResponseUI::ImpulseResponseUI() {
     };
 
     // Mix: 0–100%
-    mix_.slider.setRange(0.0, 1.0, 0.01);
-    mix_.slider.setValueFormatter([](double value) -> juce::String {
-        return juce::String(juce::roundToInt(value * 100.0)) + "%";
-    });
+    mix_.slider.setRange(0.0, 1.0, 0.001);
+    mix_.slider.setValueFormatter(
+        [](double value) -> juce::String { return juce::String(value * 100.0, 1) + "%"; });
     mix_.slider.setValueParser([](const juce::String& text) -> double {
         return text.trim().replace("%", "").trim().getDoubleValue() / 100.0;
     });

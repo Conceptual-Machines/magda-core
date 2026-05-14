@@ -11,17 +11,40 @@
 
 namespace magda {
 
+namespace {
+daw::ui::ValueLabelControl::TintState toControlTintState(AutomationVisualState state) {
+    switch (state) {
+        case AutomationVisualState::Overridden:
+            return daw::ui::ValueLabelControl::TintState::Overridden;
+        case AutomationVisualState::Active:
+            return daw::ui::ValueLabelControl::TintState::Automated;
+        case AutomationVisualState::None:
+        default:
+            return daw::ui::ValueLabelControl::TintState::None;
+    }
+}
+}  // namespace
+
 DraggableValueLabel::DraggableValueLabel(Format format) : format_(format) {
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    valueControl_.onMouseDown = [this](const juce::MouseEvent& e) { mouseDown(e); };
+    valueControl_.onMouseDrag = [this](const juce::MouseEvent& e) { mouseDrag(e); };
+    valueControl_.onMouseUp = [this](const juce::MouseEvent& e) { mouseUp(e); };
+    valueControl_.onMouseDoubleClick = [this](const juce::MouseEvent& e) { mouseDoubleClick(e); };
+    valueControl_.onMouseWheel = [this](const juce::MouseEvent& e,
+                                        const juce::MouseWheelDetails& wheel) {
+        mouseWheelMove(e, wheel);
+    };
+    valueControl_.onEditCommit = [this](const juce::String& text) { finishEditing(text); };
+    valueControl_.onEditCancel = [this]() { cancelEditing(); };
+    addAndMakeVisible(valueControl_);
+    syncValueControl();
 }
 
 DraggableValueLabel::~DraggableValueLabel() {
     if (listeningToAutomation_) {
         AutomationManager::getInstance().removeListener(this);
         listeningToAutomation_ = false;
-    }
-    if (editor_) {
-        editor_ = nullptr;
     }
 }
 
@@ -30,17 +53,19 @@ void DraggableValueLabel::setRange(double min, double max, double defaultValue) 
     maxValue_ = max;
     defaultValue_ = juce::jlimit(min, max, defaultValue);
     value_ = juce::jlimit(minValue_, maxValue_, value_);
-    repaint();
+    syncValueControl();
 }
 
 void DraggableValueLabel::setValue(double newValue, juce::NotificationType notification) {
     newValue = juce::jlimit(minValue_, maxValue_, newValue);
     if (std::abs(newValue - value_) > 0.0001) {
         value_ = newValue;
-        repaint();
+        syncValueControl();
         if (notification != juce::dontSendNotification && onValueChange) {
             onValueChange();
         }
+    } else {
+        syncValueControl();
     }
 }
 
@@ -241,102 +266,28 @@ double DraggableValueLabel::parseValue(const juce::String& text) const {
 }
 
 void DraggableValueLabel::paint(juce::Graphics& g) {
-    if (getWidth() < 1 || getHeight() < 1)
-        return;
+    juce::ignoreUnused(g);
+}
 
-    auto bounds = getLocalBounds().toFloat();
-    float alpha = isEnabled() ? 1.0f : 0.4f;
-
-    // Background
-    if (drawBackground_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withMultipliedAlpha(alpha));
-        g.fillRoundedRectangle(bounds, 2.0f);
-    }
-
-    // Fill indicator
-    if (showFillIndicator_) {
-        auto fillBase = customFillColour_.value_or(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        float fillAlpha = customFillColour_ ? fillBase.getFloatAlpha() : 0.3f;
-        g.setColour(fillBase.withAlpha(fillAlpha * alpha));
-
-        if (format_ == Format::Pan) {
-            // Pan: draw from center outward
-            float centerX = bounds.getCentreX();
-            float normalizedPan = static_cast<float>(value_);  // -1 to +1
-
-            if (std::abs(normalizedPan) < 0.01f) {
-                // Center: draw thin line
-                g.fillRect(centerX - 1.0f, bounds.getY(), 2.0f, bounds.getHeight());
-            } else if (normalizedPan < 0) {
-                // Left: draw from center to left
-                float fillWidth = centerX * (-normalizedPan);
-                g.fillRect(centerX - fillWidth, bounds.getY(), fillWidth, bounds.getHeight());
-            } else {
-                // Right: draw from center to right
-                float fillWidth = (bounds.getWidth() - centerX) * normalizedPan;
-                g.fillRect(centerX, bounds.getY(), fillWidth, bounds.getHeight());
-            }
-        } else {
-            // Other formats: fill from left based on normalized value
-            double normalizedValue = (value_ - minValue_) / (maxValue_ - minValue_);
-            normalizedValue = juce::jlimit(0.0, 1.0, normalizedValue);
-
-            if (normalizedValue > 0.0) {
-                float fillWidth = static_cast<float>(bounds.getWidth() * normalizedValue);
-                auto fillBounds = bounds.withWidth(fillWidth);
-                g.fillRoundedRectangle(fillBounds, 2.0f);
-            }
-        }
-    }
-
-    // Automation tint: purple when the lane is driving the parameter,
-    // grey when the user has taken over (override / touch-suppressed).
-    const bool hasTint = automationVisualState_ != AutomationVisualState::None;
-    const juce::Colour tintColour = automationVisualState_ == AutomationVisualState::Overridden
-                                        ? juce::Colour(DarkTheme::TEXT_DISABLED)
-                                        : juce::Colour(DarkTheme::ACCENT_PURPLE);
-
-    if (hasTint && drawBackground_) {
-        g.setColour(tintColour.withAlpha(0.18f * alpha));
-        g.fillRoundedRectangle(bounds, 2.0f);
-    }
-
-    // Border: automation tint wins over drag/co-edit so the state reads at
-    // a glance. coEditing_ paints the same blue as a real drag — it signals
-    // "this label is also being changed right now" during a multi-track edit.
-    if (drawBorder_) {
-        juce::Colour borderColour;
-        if (hasTint)
-            borderColour = tintColour;
-        else if (isDragging_ || coEditing_)
-            borderColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
-        else
-            borderColour = DarkTheme::getColour(DarkTheme::BORDER);
-        g.setColour(borderColour.withMultipliedAlpha(alpha));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, hasTint ? 1.5f : 1.0f);
-    }
-
-    // Text
-    if (!isEditing_) {
-        g.setColour(customTextColour_.value_or(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY))
-                        .withMultipliedAlpha(alpha));
-        g.setFont(FontManager::getInstance().getUIFont(fontSize_));
-        auto displayText = textOverride_.isNotEmpty() ? textOverride_ : formatValue(value_);
-        g.drawText(displayText, bounds.reduced(2, 0), justification_, false);
-    }
+void DraggableValueLabel::resized() {
+    valueControl_.setBounds(getLocalBounds());
 }
 
 void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
-    if (isEditing_) {
+    if (valueControl_.isEditing()) {
         return;
     }
 
-    if (e.mods.isPopupMenu() && onRightClick) {
-        onRightClick();
+    if (e.mods.isPopupMenu()) {
+        if (e.mods.isShiftDown())
+            startEditing();
+        else if (onRightClick)
+            onRightClick();
         return;
     }
 
     isDragging_ = true;
+    valueControl_.setDragging(true);
     overrideLatchedThisGesture_ = false;
     dragStartValue_ = value_;
     dragStartY_ = e.y;
@@ -365,7 +316,7 @@ void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
         AutomationManager::getInstance().setTouchBaseline(automationTarget_, normalized);
     }
 
-    repaint();
+    syncValueControl();
 }
 
 void DraggableValueLabel::latchAutomationOverride() {
@@ -427,6 +378,7 @@ void DraggableValueLabel::mouseDrag(const juce::MouseEvent& e) {
 void DraggableValueLabel::mouseUp(const juce::MouseEvent& /*e*/) {
     bool wasDragging = isDragging_;
     isDragging_ = false;
+    valueControl_.setDragging(false);
 
     // Release the transient flags; the lane stays in bypass (override) state
     // until the user explicitly re-enables it from the lane header.
@@ -437,13 +389,23 @@ void DraggableValueLabel::mouseUp(const juce::MouseEvent& /*e*/) {
         mgr.clearTouchBaseline(automationTarget_);
     }
 
-    repaint();
+    syncValueControl();
     if (wasDragging && onDragEnd)
         onDragEnd(dragStartValue_);
 }
 
-void DraggableValueLabel::mouseDoubleClick(const juce::MouseEvent& /*e*/) {
-    if (doubleClickResets_) {
+void DraggableValueLabel::mouseDoubleClick(const juce::MouseEvent& e) {
+    const bool wasDragging = isDragging_;
+    isDragging_ = false;
+    valueControl_.setDragging(false);
+    if (wasDragging && hasAutomationTarget_) {
+        auto& mgr = AutomationManager::getInstance();
+        mgr.setTargetUserTouched(automationTarget_, false);
+        mgr.setTargetTouchSuppressed(automationTarget_, false);
+        mgr.clearTouchBaseline(automationTarget_);
+    }
+
+    if (doubleClickResets_ && !e.mods.isShiftDown()) {
         if (value_ != defaultValue_)
             latchAutomationOverride();
         setValue(defaultValue_);
@@ -460,59 +422,59 @@ void DraggableValueLabel::mouseWheelMove(const juce::MouseEvent& e,
     juce::Component::mouseWheelMove(e, wheel);
 }
 
-void DraggableValueLabel::startEditing() {
-    if (isEditing_) {
-        return;
-    }
+void DraggableValueLabel::syncValueControl() {
+    valueControl_.setRange(minValue_, maxValue_);
+    valueControl_.setValue(value_);
+    valueControl_.setDisplayText(formatValue(value_));
+    valueControl_.setFillMode(format_ == Format::Pan
+                                  ? daw::ui::ValueLabelControl::FillMode::PanCentre
+                                  : daw::ui::ValueLabelControl::FillMode::LeftToRight);
+    valueControl_.setShowFillIndicator(showFillIndicator_);
+    valueControl_.setDrawBackground(drawBackground_);
+    valueControl_.setDrawBorder(drawBorder_);
+    valueControl_.setFontSize(fontSize_);
+    valueControl_.setJustification(justification_);
+    valueControl_.setDragging(isDragging_);
+    valueControl_.setCoEditing(coEditing_);
+    valueControl_.setTintState(toControlTintState(automationVisualState_));
 
-    isEditing_ = true;
+    if (customTextColour_)
+        valueControl_.setTextColour(*customTextColour_);
+    else
+        valueControl_.clearTextColour();
 
-    editor_ = std::make_unique<juce::TextEditor>();
-    editor_->setBounds(getLocalBounds().reduced(1));
-    editor_->setFont(FontManager::getInstance().getUIFont(10.0f));
-    editor_->setText(formatValue(value_), false);
-    editor_->selectAll();
-    editor_->setJustification(juce::Justification::centred);
-    editor_->setColour(juce::TextEditor::backgroundColourId,
-                       DarkTheme::getColour(DarkTheme::SURFACE));
-    editor_->setColour(juce::TextEditor::textColourId,
-                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    editor_->setColour(juce::TextEditor::highlightColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    editor_->setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
-    editor_->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+    if (customFillColour_)
+        valueControl_.setFillColour(*customFillColour_);
+    else
+        valueControl_.clearFillColour();
 
-    editor_->onReturnKey = [this]() { finishEditing(); };
-    editor_->onEscapeKey = [this]() { cancelEditing(); };
-    editor_->onFocusLost = [this]() { finishEditing(); };
-
-    addAndMakeVisible(*editor_);
-    editor_->grabKeyboardFocus();
-    repaint();
+    if (textOverride_.isNotEmpty())
+        valueControl_.setTextOverride(textOverride_);
+    else
+        valueControl_.clearTextOverride();
 }
 
-void DraggableValueLabel::finishEditing() {
-    if (!isEditing_ || !editor_) {
+void DraggableValueLabel::startEditing() {
+    if (valueControl_.isEditing()) {
         return;
     }
 
-    double newValue = parseValue(editor_->getText());
-    isEditing_ = false;
-    editor_ = nullptr;
+    valueControl_.showEditor(formatValue(value_));
+}
+
+void DraggableValueLabel::finishEditing(const juce::String& text) {
+    double newValue = parseValue(text);
     if (newValue != value_)
         latchAutomationOverride();
     setValue(newValue);
-    repaint();
 }
 
 void DraggableValueLabel::cancelEditing() {
-    if (!isEditing_) {
+    if (!valueControl_.isEditing()) {
         return;
     }
 
-    isEditing_ = false;
-    editor_ = nullptr;
-    repaint();
+    valueControl_.cancelEditing();
 }
 
 }  // namespace magda

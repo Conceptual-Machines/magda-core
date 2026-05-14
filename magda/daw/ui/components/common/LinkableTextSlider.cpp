@@ -20,6 +20,7 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
     magda::ControllerRegistry::getInstance().addListener(this);
 
     setInterceptsMouseClicks(true, true);
+    slider_.setShowFillIndicator(false);
 
     slider_.onValueChanged = [this](double value) {
         if (onValueChanged) {

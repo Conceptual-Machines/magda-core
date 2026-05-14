@@ -68,6 +68,7 @@ PadDeviceSlot::PadDeviceSlot() {
     gainSlider_.setFormat(TextSlider::Format::Decibels);
     gainSlider_.setRange(-60.0, 12.0, 0.1);
     gainSlider_.setValue(0.0, juce::dontSendNotification);
+    gainSlider_.setShowFillIndicator(false);
     gainSlider_.onValueChanged = [this](double value) {
         if (onGainDbChanged)
             onGainDbChanged(static_cast<float>(value));

@@ -127,6 +127,7 @@ MacroKnobComponent::MacroKnobComponent(int macroIndex) : macroIndex_(macroIndex)
     valueSlider_.setRange(0.0, 1.0, 0.01);
     valueSlider_.setValue(currentMacro_.value, juce::dontSendNotification);
     valueSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    valueSlider_.setShowFillIndicator(false);
     valueSlider_.onValueChanged = [this](double value) {
         currentMacro_.value = static_cast<float>(value);
         if (onValueChanged) {

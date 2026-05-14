@@ -8,10 +8,15 @@
 #include "faust/dsp/dsp.h"
 #include "faust/gui/UI.h"
 #include "faust/gui/meta.h"
-#include "magda_compressor.generated.cpp"
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+
+// Both engine DSPs are #included into THIS translation unit only — each
+// generated `.cpp` defines a self-contained class, so co-locating them lets
+// us instantiate both without conflicts. Mirrors the MagdaFilter wrapper.
+#include "magda_compressor.generated.cpp"
+#include "magda_compressor_glue.generated.cpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -19,7 +24,12 @@ const char* MagdaCompressorCompiledPlugin::xmlTypeName = "magda_compressor";
 
 namespace {
 
-struct CompressorHarvest {
+// ============================================================================
+// EngineHarvester — stripped-down UI that records each control's idx, kind,
+// and zone pointer. Same shape the MagdaFilter wrapper uses.
+// ============================================================================
+
+struct EngineHarvest {
     struct Control {
         int idx = -1;
         FaustParamSlot::Kind kind = FaustParamSlot::Kind::Continuous;
@@ -28,9 +38,9 @@ struct CompressorHarvest {
     std::vector<Control> controls;
 };
 
-class CompressorHarvester : public ::UI {
+class EngineHarvester : public ::UI {
   public:
-    CompressorHarvest harvest;
+    EngineHarvest harvest;
 
     void openTabBox(const char*) override {}
     void openHorizontalBox(const char*) override {}
@@ -79,7 +89,7 @@ class CompressorHarvester : public ::UI {
             }
         }
 
-        CompressorHarvest::Control c;
+        EngineHarvest::Control c;
         c.idx = merged.slotIndex;
         c.kind = merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind;
         c.zone = zone;
@@ -89,7 +99,7 @@ class CompressorHarvester : public ::UI {
     std::map<FAUSTFLOAT*, ControlMetadata> pendingByZone_;
 };
 
-const CompressorHarvest::Control* findByIdx(const CompressorHarvest& h, int idx) {
+const EngineHarvest::Control* findByIdx(const EngineHarvest& h, int idx) {
     for (const auto& c : h.controls)
         if (c.idx == idx)
             return &c;
@@ -113,6 +123,9 @@ float ampToDb(float amp) {
     return 20.0f * std::log10(std::max(amp, 1.0e-6f));
 }
 
+// Static transfer-curve gain reduction for the curve view. Both engines
+// respond similarly to threshold/ratio/knee at steady state, so a single
+// formula is good enough for the visualisation.
 float gainReductionForLevel(float levelDb, float thresholdDb, float ratio, float kneeDb) {
     ratio = std::max(1.0f, ratio);
     kneeDb = std::max(0.0f, kneeDb);
@@ -140,7 +153,11 @@ float gainReductionForLevel(float levelDb, float thresholdDb, float ratio, float
 
 MagdaCompressorCompiledPlugin::MagdaCompressorCompiledPlugin(const te::PluginCreationInfo& info)
     : te::Plugin(info) {
-    dsp_ = std::make_unique<MagdaCompressorDsp>();
+    engines_[static_cast<size_t>(CompressorEngine::Clean)].dsp =
+        std::make_unique<MagdaCompressorDsp>();
+    engines_[static_cast<size_t>(CompressorEngine::Glue)].dsp =
+        std::make_unique<MagdaCompressorGlueDsp>();
+
     constexpr int kProvisionalSampleRate = 44100;
     rebuildEngineState(kProvisionalSampleRate);
     buildHostParameters();
@@ -175,26 +192,42 @@ void MagdaCompressorCompiledPlugin::getChannelNames(juce::StringArray* ins,
 }
 
 void MagdaCompressorCompiledPlugin::rebuildEngineState(int sampleRate) {
-    if (!dsp_)
-        return;
-    dsp_->init(sampleRate);
-    numInputs_ = dsp_->getNumInputs();
-    numOutputs_ = dsp_->getNumOutputs();
+    for (size_t engineIdx = 0; engineIdx < engines_.size(); ++engineIdx) {
+        auto& e = engines_[engineIdx];
+        if (!e.dsp)
+            continue;
+        e.dsp->init(sampleRate);
+        e.numInputs = e.dsp->getNumInputs();
+        e.numOutputs = e.dsp->getNumOutputs();
 
-    CompressorHarvester harvester;
-    dsp_->buildUserInterface(&harvester);
+        EngineHarvester harvester;
+        e.dsp->buildUserInterface(&harvester);
 
-    zones_.fill(nullptr);
-    useSidechainZone_ = nullptr;
-    for (int i = 0; i < kHostSlotCount; ++i) {
-        if (auto* c = findByIdx(harvester.harvest, i))
-            zones_[static_cast<size_t>(i)] = c->zone;
+        e.zones.fill(nullptr);
+        e.useSidechainZone = nullptr;
+
+        // Slot 0 (Engine) lives only in the wrapper — no DSP zone. All other
+        // slots are looked up by their `[idx:N]` annotation, with N == host
+        // slot index. Engines that don't expose a given slot simply yield
+        // nullptr, and the audio path skips writing it.
+        for (int i = 1; i < kHostSlotCount; ++i) {
+            if (auto* c = findByIdx(harvester.harvest, i))
+                e.zones[static_cast<size_t>(i)] = c->zone;
+        }
+        if (auto* c = findByIdx(harvester.harvest, kUseSidechainHiddenSlot))
+            e.useSidechainZone = c->zone;
     }
-    if (auto* c = findByIdx(harvester.harvest, kUseSidechainHiddenSlot))
-        useSidechainZone_ = c->zone;
 }
 
 void MagdaCompressorCompiledPlugin::buildHostParameters() {
+    hostSlotInfo_[kEngineSlot].name = "Engine";
+    hostSlotInfo_[kEngineSlot].scale = magda::ParameterScale::Discrete;
+    hostSlotInfo_[kEngineSlot].choices = {"Clean", "Glue"};
+    hostSlotInfo_[kEngineSlot].minValue = 0.0f;
+    hostSlotInfo_[kEngineSlot].maxValue =
+        static_cast<float>(hostSlotInfo_[kEngineSlot].choices.size() - 1);
+    hostSlotInfo_[kEngineSlot].defaultValue = 0.0f;
+
     hostSlotInfo_[kThresholdSlot] = {.name = "Threshold",
                                      .unit = "dB",
                                      .scale = magda::ParameterScale::Linear,
@@ -243,12 +276,14 @@ void MagdaCompressorCompiledPlugin::buildHostParameters() {
                                   .minValue = -24.0f,
                                   .maxValue = 12.0f,
                                   .defaultValue = 0.0f};
+
     hostSlotInfo_[kDetectorSlot].name = "Detector";
     hostSlotInfo_[kDetectorSlot].scale = magda::ParameterScale::Discrete;
     hostSlotInfo_[kDetectorSlot].choices = {"Peak", "RMS"};
     hostSlotInfo_[kDetectorSlot].minValue = 0.0f;
     hostSlotInfo_[kDetectorSlot].maxValue = 1.0f;
     hostSlotInfo_[kDetectorSlot].defaultValue = 0.0f;
+
     hostSlotInfo_[kLinkSlot] = {.name = "Link",
                                 .scale = magda::ParameterScale::Linear,
                                 .minValue = 0.0f,
@@ -261,6 +296,23 @@ void MagdaCompressorCompiledPlugin::buildHostParameters() {
                                         .maxValue = 500.0f,
                                         .defaultValue = 20.0f,
                                         .scaleAnchor = 120.0f};
+    hostSlotInfo_[kFbffSlot] = {.name = "FBFF",
+                                .scale = magda::ParameterScale::Linear,
+                                .minValue = 0.0f,
+                                .maxValue = 1.0f,
+                                .defaultValue = 0.5f};
+    hostSlotInfo_[kStyleSlot].name = "Style";
+    hostSlotInfo_[kStyleSlot].scale = magda::ParameterScale::Discrete;
+    hostSlotInfo_[kStyleSlot].choices = {"Pre", "Post"};
+    hostSlotInfo_[kStyleSlot].minValue = 0.0f;
+    hostSlotInfo_[kStyleSlot].maxValue = 1.0f;
+    hostSlotInfo_[kStyleSlot].defaultValue = 0.0f;
+    hostSlotInfo_[kAutogainSlot].name = "Autogain";
+    hostSlotInfo_[kAutogainSlot].scale = magda::ParameterScale::Discrete;
+    hostSlotInfo_[kAutogainSlot].choices = {"Off", "On"};
+    hostSlotInfo_[kAutogainSlot].minValue = 0.0f;
+    hostSlotInfo_[kAutogainSlot].maxValue = 1.0f;
+    hostSlotInfo_[kAutogainSlot].defaultValue = 0.0f;
 
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
@@ -293,10 +345,16 @@ void MagdaCompressorCompiledPlugin::buildHostParameters() {
 
 void MagdaCompressorCompiledPlugin::initialise(const te::PluginInitialisationInfo& info) {
     rebuildEngineState(static_cast<int>(info.sampleRate));
-    scratchIn_.setSize(numInputs_, info.blockSizeSamples, false, true, true);
-    scratchOut_.setSize(numOutputs_, info.blockSizeSamples, false, true, true);
-    inPtrs_.assign(static_cast<size_t>(numInputs_), nullptr);
-    outPtrs_.assign(static_cast<size_t>(numOutputs_), nullptr);
+
+    int maxIn = 0, maxOut = 0;
+    for (const auto& e : engines_) {
+        maxIn = std::max(maxIn, e.numInputs);
+        maxOut = std::max(maxOut, e.numOutputs);
+    }
+    scratchIn_.setSize(maxIn, info.blockSizeSamples, false, true, true);
+    scratchOut_.setSize(maxOut, info.blockSizeSamples, false, true, true);
+    inPtrs_.assign(static_cast<size_t>(maxIn), nullptr);
+    outPtrs_.assign(static_cast<size_t>(maxOut), nullptr);
 }
 
 void MagdaCompressorCompiledPlugin::deinitialise() {
@@ -307,48 +365,68 @@ void MagdaCompressorCompiledPlugin::deinitialise() {
 }
 
 void MagdaCompressorCompiledPlugin::reset() {
-    if (dsp_)
-        dsp_->instanceClear();
+    for (auto& e : engines_)
+        if (e.dsp)
+            e.dsp->instanceClear();
 }
 
 void MagdaCompressorCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!fc.destBuffer || fc.bufferNumSamples <= 0 || !dsp_)
+    if (!fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
 
-    auto writeSlot = [&](int slot) {
-        if (auto* zone = zones_[static_cast<size_t>(slot)]) {
-            const auto& s = hostSlotInfo_[static_cast<size_t>(slot)];
-            const auto info = parameterInfoForSlot(s);
-            const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
-            *zone = static_cast<FAUSTFLOAT>(magda::ParameterUtils::normalizedToReal(norm, info));
-        }
+    // Read all slot values up front (normalized 0..1, denormalized once).
+    auto realForSlot = [&](int slot) -> float {
+        const auto& s = hostSlotInfo_[static_cast<size_t>(slot)];
+        const auto info = parameterInfoForSlot(s);
+        const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
+        return magda::ParameterUtils::normalizedToReal(norm, info);
     };
-    for (int i = 0; i < kHostSlotCount; ++i)
-        writeSlot(i);
 
-    if (useSidechainZone_ != nullptr)
-        *useSidechainZone_ = getSidechainSourceID().isValid() ? FAUSTFLOAT(1) : FAUSTFLOAT(0);
+    const float engineNorm = hostParams_[kEngineSlot]->getCurrentValue();
+    const int engineIndex = juce::jlimit(
+        0, kEngineCount - 1,
+        static_cast<int>(std::round(engineNorm * static_cast<float>(kEngineCount - 1))));
+    activeEngine_.store(engineIndex);
+
+    // Write shared zones into BOTH engines so an engine swap preserves the
+    // user's settings on first sample of the new engine.
+    for (int slot = 1; slot < kHostSlotCount; ++slot) {
+        const float real = realForSlot(slot);
+        for (auto& e : engines_) {
+            if (auto* zone = e.zones[static_cast<size_t>(slot)])
+                *zone = static_cast<FAUSTFLOAT>(real);
+        }
+    }
+
+    auto& active = engines_[static_cast<size_t>(engineIndex)];
+    if (active.useSidechainZone != nullptr)
+        *active.useSidechainZone = getSidechainSourceID().isValid() ? FAUSTFLOAT(1) : FAUSTFLOAT(0);
+
+    if (!active.dsp)
+        return;
 
     const int numSamples = fc.bufferNumSamples;
     const int startSample = fc.bufferStartSample;
     const int hostChannels = fc.destBuffer->getNumChannels();
-    if (hostChannels <= 0 || numInputs_ <= 0 || numOutputs_ <= 0)
+    const int numInputs = active.numInputs;
+    const int numOutputs = active.numOutputs;
+    if (hostChannels <= 0 || numInputs <= 0 || numOutputs <= 0)
         return;
 
-    if (scratchIn_.getNumChannels() < numInputs_ || scratchIn_.getNumSamples() < numSamples)
-        scratchIn_.setSize(numInputs_, numSamples, false, true, true);
-    if (scratchOut_.getNumChannels() < numOutputs_ || scratchOut_.getNumSamples() < numSamples)
-        scratchOut_.setSize(numOutputs_, numSamples, false, true, true);
-    if (static_cast<int>(inPtrs_.size()) < numInputs_)
-        inPtrs_.resize(static_cast<size_t>(numInputs_), nullptr);
-    if (static_cast<int>(outPtrs_.size()) < numOutputs_)
-        outPtrs_.resize(static_cast<size_t>(numOutputs_), nullptr);
+    if (scratchIn_.getNumChannels() < numInputs || scratchIn_.getNumSamples() < numSamples)
+        scratchIn_.setSize(numInputs, numSamples, false, true, true);
+    if (scratchOut_.getNumChannels() < numOutputs || scratchOut_.getNumSamples() < numSamples)
+        scratchOut_.setSize(numOutputs, numSamples, false, true, true);
+    if (static_cast<int>(inPtrs_.size()) < numInputs)
+        inPtrs_.resize(static_cast<size_t>(numInputs), nullptr);
+    if (static_cast<int>(outPtrs_.size()) < numOutputs)
+        outPtrs_.resize(static_cast<size_t>(numOutputs), nullptr);
 
     float inputPeak = 0.0f;
     float keyPeak = 0.0f;
     const bool externalSidechain = getSidechainSourceID().isValid();
 
-    for (int ch = 0; ch < numInputs_; ++ch) {
+    for (int ch = 0; ch < numInputs; ++ch) {
         float* dst = scratchIn_.getWritePointer(ch);
         if (ch < hostChannels) {
             const float* src = fc.destBuffer->getReadPointer(ch, startSample);
@@ -367,16 +445,16 @@ void MagdaCompressorCompiledPlugin::applyToBuffer(const te::PluginRenderContext&
                 keyPeak = std::max(keyPeak, std::fabs(dst[i]));
         }
     }
-    for (int ch = 0; ch < numOutputs_; ++ch) {
+    for (int ch = 0; ch < numOutputs; ++ch) {
         outPtrs_[static_cast<size_t>(ch)] = (ch < hostChannels)
                                                 ? fc.destBuffer->getWritePointer(ch, startSample)
                                                 : scratchOut_.getWritePointer(ch);
     }
 
-    dsp_->compute(numSamples, inPtrs_.data(), outPtrs_.data());
+    active.dsp->compute(numSamples, inPtrs_.data(), outPtrs_.data());
 
     float outputPeak = 0.0f;
-    const int channelsToSanitise = std::min(hostChannels, numOutputs_);
+    const int channelsToSanitise = std::min(hostChannels, numOutputs);
     for (int ch = 0; ch < channelsToSanitise; ++ch) {
         float* out = fc.destBuffer->getWritePointer(ch, startSample);
         for (int i = 0; i < numSamples; ++i) {
@@ -385,22 +463,12 @@ void MagdaCompressorCompiledPlugin::applyToBuffer(const te::PluginRenderContext&
             outputPeak = std::max(outputPeak, std::fabs(out[i]));
         }
     }
-    for (int ch = numOutputs_; ch < hostChannels; ++ch)
+    for (int ch = numOutputs; ch < hostChannels; ++ch)
         fc.destBuffer->clear(ch, startSample, numSamples);
 
-    auto readDisplaySlot = [&](int slot, float fallback) {
-        if (slot < 0 || slot >= kHostSlotCount)
-            return fallback;
-        if (auto* param = hostParams_[static_cast<size_t>(slot)].get()) {
-            const auto info = parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slot)]);
-            return magda::ParameterUtils::normalizedToReal(param->getCurrentValue(), info);
-        }
-        return fallback;
-    };
-
-    const float thresholdDb = readDisplaySlot(kThresholdSlot, -18.0f);
-    const float ratio = readDisplaySlot(kRatioSlot, 4.0f);
-    const float kneeDb = readDisplaySlot(kKneeSlot, 6.0f);
+    const float thresholdDb = realForSlot(kThresholdSlot);
+    const float ratio = realForSlot(kRatioSlot);
+    const float kneeDb = realForSlot(kKneeSlot);
     const float keyDb = ampToDb(keyPeak);
 
     inputPeakDb_.store(ampToDb(inputPeak), std::memory_order_relaxed);
@@ -425,6 +493,10 @@ const MagdaCompressorCompiledPlugin::HostSlotInfo& MagdaCompressorCompiledPlugin
     return hostSlotInfo_[static_cast<size_t>(slotIndex)];
 }
 
+int MagdaCompressorCompiledPlugin::activeEngineIndex() const {
+    return activeEngine_.load(std::memory_order_relaxed);
+}
+
 float MagdaCompressorCompiledPlugin::displayValueToNativeValue(int slotIndex,
                                                                float displayValue) const {
     if (slotIndex < 0 || slotIndex >= kHostSlotCount)
@@ -442,17 +514,14 @@ float MagdaCompressorCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
 }
 
 constexpr AliasSpec kAliases[] = {
-    {"threshold", 0, "Threshold"},
-    {"ratio", 1, "Ratio"},
-    {"attack", 2, "Attack"},
-    {"release", 3, "Release"},
-    {"knee", 4, "Knee"},
-    {"makeup", 5, "Makeup"},
-    {"mix", 6, "Mix"},
-    {"output", 7, "Output"},
-    {"detector", 8, "Detector"},
-    {"link", 9, "Link"},
-    {"sc_hpf", 10, "SC HPF"},
+    {"engine", 0, "Engine"},      {"threshold", 1, "Threshold"},
+    {"ratio", 2, "Ratio"},        {"attack", 3, "Attack"},
+    {"release", 4, "Release"},    {"knee", 5, "Knee"},
+    {"makeup", 6, "Makeup"},      {"mix", 7, "Mix"},
+    {"output", 8, "Output"},      {"detector", 9, "Detector"},
+    {"link", 10, "Link"},         {"sc_hpf", 11, "SC HPF"},
+    {"fbff", 12, "FBFF"},         {"style", 13, "Style"},
+    {"autogain", 14, "Autogain"},
 };
 
 const CompiledPluginSpec& getMagdaCompressorSpec() {
@@ -460,9 +529,12 @@ const CompiledPluginSpec& getMagdaCompressorSpec() {
         .pluginId = MagdaCompressorCompiledPlugin::xmlTypeName,
         .displayName = "Compressor",
         .browserCategory = "Dynamics",
-        .description = "Compiled Faust compressor with peak/RMS detection, soft knee, "
-                       "stereo link, audio sidechain input, parallel mix, and output safety "
-                       "limiting.",
+        .description =
+            "Compiled Faust compressor with selectable engines.\n"
+            "Clean: feed-forward, peak/RMS detection, soft knee, stereo link, "
+            "sidechain HPF, external audio sidechain, parallel mix, output safety limiting.\n"
+            "Glue: Brouns FBFF compressor with exposed character controls "
+            "(Detector Peak/RMS, Style Pre/Post, FBFF blend). No external sidechain.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaCompressorCompiledPlugin(info);
         },

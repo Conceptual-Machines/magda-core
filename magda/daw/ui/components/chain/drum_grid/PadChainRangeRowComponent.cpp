@@ -19,6 +19,7 @@ PadChainRangeRowComponent::PadChainRangeRowComponent(int padIndex) : padIndex_(p
     auto setupNoteSlider = [this](TextSlider& slider) {
         slider.setRange(0.0, 127.0, 1.0);
         slider.setValue(60.0, juce::dontSendNotification);
+        slider.setShowFillIndicator(false);
         slider.setValueFormatter([](double v) { return midiNoteToName(static_cast<int>(v)); });
         slider.setValueParser([](const juce::String& text) {
             // Try parsing as note name first

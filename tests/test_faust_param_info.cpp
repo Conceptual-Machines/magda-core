@@ -3,6 +3,7 @@
 #include "../magda/daw/audio/plugins/FaustParamInfo.hpp"
 
 using namespace magda::daw::audio;
+using magda::DisplayFormat;
 using magda::ParameterScale;
 
 namespace {
@@ -91,6 +92,11 @@ TEST_CASE("paramInfoFromSlot - continuous unit propagates", "[faust][paraminfo]"
     slot.unit = "Hz";
     auto info = paramInfoFromSlot(slot);
     REQUIRE(info.unit == "Hz");
+}
+
+TEST_CASE("paramInfoFromSlot - unit range Mix displays as percent", "[faust][paraminfo]") {
+    auto info = paramInfoFromSlot(makeContinuousSlot(0, "Mix", 0.0f, 1.0f));
+    REQUIRE(info.displayFormat == DisplayFormat::Percent);
 }
 
 TEST_CASE("paramInfoFromSlot - paramIndex preserved", "[faust][paraminfo]") {
