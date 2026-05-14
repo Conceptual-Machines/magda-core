@@ -3,6 +3,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <array>
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -69,6 +70,17 @@ class MagdaLimiterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
     float displayValueToNativeValue(int slotIndex, float displayValue) const;
     float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
 
+    // Audio-thread metering taps, read by the curve view via 33 ms timer.
+    float getInputPeakDb() const {
+        return inputPeakDb_.load(std::memory_order_relaxed);
+    }
+    float getOutputPeakDb() const {
+        return outputPeakDb_.load(std::memory_order_relaxed);
+    }
+    float getGainReductionDb() const {
+        return gainReductionDb_.load(std::memory_order_relaxed);
+    }
+
     using HostSlotInfo = CompiledHostSlotInfo;
     const HostSlotInfo& getSlotInfo(int slotIndex) const;
 
@@ -107,6 +119,10 @@ class MagdaLimiterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
     juce::AudioBuffer<float> scratchOut_;
     std::vector<float*> inPtrs_;
     std::vector<float*> outPtrs_;
+
+    std::atomic<float> inputPeakDb_{-120.0f};
+    std::atomic<float> outputPeakDb_{-120.0f};
+    std::atomic<float> gainReductionDb_{0.0f};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaLimiterCompiledPlugin)
 };

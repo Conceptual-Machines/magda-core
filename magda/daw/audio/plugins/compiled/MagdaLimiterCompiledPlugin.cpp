@@ -274,11 +274,14 @@ void MagdaLimiterCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc
     if (static_cast<int>(outPtrs_.size()) < numOutputs_)
         outPtrs_.resize(static_cast<size_t>(numOutputs_), nullptr);
 
+    float inputPeak = 0.0f;
     for (int ch = 0; ch < numInputs_; ++ch) {
         float* dst = scratchIn_.getWritePointer(ch);
         if (ch < hostChannels) {
             const float* src = fc.destBuffer->getReadPointer(ch, startSample);
             std::copy(src, src + numSamples, dst);
+            for (int i = 0; i < numSamples; ++i)
+                inputPeak = std::max(inputPeak, std::fabs(dst[i]));
         } else {
             std::fill(dst, dst + numSamples, 0.0f);
         }
@@ -292,14 +295,25 @@ void MagdaLimiterCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc
 
     dsp_->compute(numSamples, inPtrs_.data(), outPtrs_.data());
 
+    float outputPeak = 0.0f;
     const int channelsToSanitise = std::min(hostChannels, numOutputs_);
     for (int ch = 0; ch < channelsToSanitise; ++ch) {
         float* out = fc.destBuffer->getWritePointer(ch, startSample);
         for (int i = 0; i < numSamples; ++i) {
             const float sample = out[i];
             out[i] = std::isfinite(sample) ? juce::jlimit(-16.0f, 16.0f, sample) : 0.0f;
+            outputPeak = std::max(outputPeak, std::fabs(out[i]));
         }
     }
+
+    // Metering taps for the curve view. GR is the per-block dB difference;
+    // the limiter only attenuates, so input - output is non-negative.
+    auto ampToDb = [](float amp) { return 20.0f * std::log10(std::max(amp, 1.0e-6f)); };
+    const float inDb = ampToDb(inputPeak);
+    const float outDb = ampToDb(outputPeak);
+    inputPeakDb_.store(inDb, std::memory_order_relaxed);
+    outputPeakDb_.store(outDb, std::memory_order_relaxed);
+    gainReductionDb_.store(std::max(0.0f, inDb - outDb), std::memory_order_relaxed);
 }
 
 te::AutomatableParameter* MagdaLimiterCompiledPlugin::getSlotParameter(int slotIndex) const {

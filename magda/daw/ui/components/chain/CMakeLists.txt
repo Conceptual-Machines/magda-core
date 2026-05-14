@@ -46,6 +46,7 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledFlangerCurveView.cpp
     compiled/CompiledRingModCurveView.cpp
     compiled/CompiledFreqShiftCurveView.cpp
+    compiled/CompiledLimiterCurveView.cpp
     compiled/CompiledPluginPresentation.cpp
     compiled/MagdaDriveCurveView.cpp
     custom_ui/ToneGeneratorUI.cpp
@@ -125,6 +126,7 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledFlangerCurveView.hpp
     compiled/CompiledRingModCurveView.hpp
     compiled/CompiledFreqShiftCurveView.hpp
+    compiled/CompiledLimiterCurveView.hpp
     compiled/CompiledPluginPresentation.hpp
     compiled/MagdaDriveCurveView.hpp
     custom_ui/ToneGeneratorUI.hpp
