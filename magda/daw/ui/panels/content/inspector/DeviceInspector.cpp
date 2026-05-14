@@ -205,15 +205,20 @@ void DeviceInspector::updateFromSelectedChainNode() {
     chainNodeNameValue_.setText(nameStr, juce::dontSendNotification);
 
     if (metadata != nullptr) {
-        categoryValue_.setText(metadata->category, juce::dontSendNotification);
-        descriptionValue_.setText(metadata->description, false);
-        descriptionValue_.setTooltip(metadata->description);
-        categoryLabel_.setVisible(juce::String(metadata->category).isNotEmpty());
-        categoryValue_.setVisible(juce::String(metadata->category).isNotEmpty());
-        descriptionLabel_.setVisible(juce::String(metadata->description).isNotEmpty());
-        descriptionValue_.setVisible(juce::String(metadata->description).isNotEmpty());
+        // Spec literals are UTF-8 (em-dash, ring operator, ...). juce::String's
+        // default const char* ctor asserts on non-7-bit bytes, so go via
+        // fromUTF8 here. Same pattern for category and codename for safety.
+        const juce::String category = juce::String::fromUTF8(metadata->category);
+        const juce::String description = juce::String::fromUTF8(metadata->description);
+        categoryValue_.setText(category, juce::dontSendNotification);
+        descriptionValue_.setText(description, false);
+        descriptionValue_.setTooltip(description);
+        categoryLabel_.setVisible(category.isNotEmpty());
+        categoryValue_.setVisible(category.isNotEmpty());
+        descriptionLabel_.setVisible(description.isNotEmpty());
+        descriptionValue_.setVisible(description.isNotEmpty());
 
-        const juce::String codename(metadata->codename);
+        const juce::String codename = juce::String::fromUTF8(metadata->codename);
         codenameValue_.setText(codename, juce::dontSendNotification);
         codenameLabel_.setVisible(codename.isNotEmpty());
         codenameValue_.setVisible(codename.isNotEmpty());

@@ -42,6 +42,8 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
     if (traits.compiledPresentation != nullptr && traits.compiledPresentation->createPanel) {
         storage.compiledPanel = traits.compiledPresentation->createPanel(device.pluginId);
         storage.compiledPanel->setOnParameterChanged(std::move(callbacks.onParameterChanged));
+        if (callbacks.onLayoutChanged)
+            storage.compiledPanel->setOnLayoutChanged(callbacks.onLayoutChanged);
 
         if (auto plugin = getLivePlugin(device.id))
             storage.compiledPanel->bindPlugin(plugin.get());

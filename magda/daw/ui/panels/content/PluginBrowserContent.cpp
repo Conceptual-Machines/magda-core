@@ -359,8 +359,9 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     list.push_back(PluginBrowserInfo::createInternal(audio::StepSequencerPlugin::getPluginName(),
                                                      audio::StepSequencerPlugin::xmlTypeName, false,
                                                      "MIDI"));
-    list.push_back(PluginBrowserInfo::createInternal("Equaliser", "eq", false, "EQ"));
-    list.push_back(PluginBrowserInfo::createInternal("Reverb", "reverb", false, "Reverb"));
+    // TE Equaliser is superseded by the compiled-Faust magda_eq device (it
+    // still registers as an InternalPluginRegistry entry so projects that
+    // saved it continue to load).
     list.push_back(PluginBrowserInfo::createInternal("Lowpass", "lowpass", false, "Filter"));
     // Compiled-Faust devices come from the registry — displayName / category /
     // pluginId live with the wrapper. Adding a new compiled device picks up
@@ -369,7 +370,6 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
         list.push_back(PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId, false,
                                                          spec->browserCategory));
     }
-    list.push_back(PluginBrowserInfo::createInternal("Pitch Shift", "pitchshift", false, "Pitch"));
     list.push_back(
         PluginBrowserInfo::createInternal("IR Reverb", "impulseresponse", false, "Reverb"));
     list.push_back(PluginBrowserInfo::createInternal("Utility", "utility", false, "Utility"));

@@ -14,15 +14,16 @@ namespace magda::daw::ui {
  *
  * Cell count + per-row count are constructor args so each compiled device
  * (filter = 5 cells, saturator = 6, …) packs its row tightly without a
- * per-device subclass. Cell-hiding is data-driven: a Discrete cell whose
- * plugin advertises ≤ 1 choice is hidden as functionally inert. That lets
- * a plugin like the filter (Ladder engine has only "LP") stop the dropdown
- * from showing without the layout knowing anything about engines.
+ * per-device subclass. Cell-hiding is data-driven: a ParameterInfo can mark
+ * itself hidden for runtime cases, and a Discrete cell whose plugin advertises
+ * ≤ 1 choice is hidden as functionally inert. That lets plugins like the
+ * filter (Ladder engine has only "LP") and Dimension (Rate only applies to
+ * the Dimension engine) adjust the grid without layout engine knowledge.
  */
 class CompiledFaustDeviceLayout final : public DeviceParamLayout {
   public:
-    CompiledFaustDeviceLayout(int cellCount, int cellsPerRow)
-        : cellCount_(cellCount), cellsPerRow_(cellsPerRow) {}
+    CompiledFaustDeviceLayout(int cellCount, int cellsPerRow, bool columnMajor = false)
+        : cellCount_(cellCount), cellsPerRow_(cellsPerRow), columnMajor_(columnMajor) {}
 
     int cellCount() const override {
         return cellCount_;
@@ -40,6 +41,7 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
   private:
     int cellCount_;
     int cellsPerRow_;
+    bool columnMajor_;
 };
 
 }  // namespace magda::daw::ui

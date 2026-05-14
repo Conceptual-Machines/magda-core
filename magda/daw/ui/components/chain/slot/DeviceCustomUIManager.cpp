@@ -253,7 +253,8 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         eqUI_->updateFromParameters(device.parameters);
     if (compressorUI_ && isLegacyTeCompressorPluginId(device.pluginId))
         compressorUI_->updateFromParameters(device.parameters);
-    if (reverbUI_ && device.pluginId.containsIgnoreCase("reverb"))
+    if (reverbUI_ && device.pluginId.containsIgnoreCase("reverb") &&
+        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Reverb))
         reverbUI_->updateFromParameters(device.parameters);
     if (delayUI_ && device.pluginId.containsIgnoreCase("delay"))
         delayUI_->updateFromParameters(device.parameters);
@@ -897,7 +898,8 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         };
         parent->addAndMakeVisible(*compressorUI_);
         update(device);
-    } else if (device.pluginId.containsIgnoreCase("reverb")) {
+    } else if (device.pluginId.containsIgnoreCase("reverb") &&
+               !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Reverb)) {
         reverbUI_ = std::make_unique<ReverbUI>();
         reverbUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
             if (cb.onParameterChanged)
@@ -1226,7 +1228,8 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         compressorUI_->updateFromParameters(device.parameters);
     }
 
-    if (reverbUI_ && device.pluginId.containsIgnoreCase("reverb")) {
+    if (reverbUI_ && device.pluginId.containsIgnoreCase("reverb") &&
+        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Reverb)) {
         reverbUI_->updateFromParameters(device.parameters);
     }
 

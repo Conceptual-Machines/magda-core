@@ -25,8 +25,8 @@ struct ParameterLearnHighlightState {
 
 void updateCachedParameterValue(magda::DeviceInfo& device, int paramIndex, float newValue);
 
-void refreshEngineAwareCompiledModeSlot(magda::DeviceInfo& device, magda::DeviceId deviceId,
-                                        int changedParamIndex, ParamHostComponent& paramGrid);
+bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device, magda::DeviceId deviceId,
+                                     int changedParamIndex, ParamHostComponent& paramGrid);
 
 void applyLearnModeParameterHighlight(magda::DeviceInfo& device, ParamHostComponent& paramGrid,
                                       int paramIndex, float newValue,
