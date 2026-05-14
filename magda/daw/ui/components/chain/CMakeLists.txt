@@ -51,6 +51,7 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledReverbCurveView.cpp
     compiled/CompiledEqCurveView.cpp
     compiled/CompiledDimensionView.cpp
+    compiled/CompiledPitchPresentation.cpp
     compiled/CompiledPluginPresentation.cpp
     compiled/MagdaDriveCurveView.cpp
     custom_ui/ToneGeneratorUI.cpp
