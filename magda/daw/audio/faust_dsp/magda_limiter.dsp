@@ -32,25 +32,28 @@ autogain    = nentry("Autogain [idx:6] [style:menu{'Off':0;'On':1}]",
 // compiled DSPs (one per LD value) and is deferred.
 LD = 0.005;
 
-ceiling  = pow(10.0, thresholdDb / 20.0);
 attackS  = max(0.0001, attackMs * 0.001);
 holdS    = max(0.001,  holdMs * 0.001);
 releaseS = max(0.001,  releaseMs * 0.001);
 
 db2lin(db) = pow(10.0, db / 20.0);
 
-limited(l, r) = l, r
-  : co.limiter_lad_stereo(LD, ceiling, attackS, holdS, releaseS);
+// Autogain reinterprets Threshold as a "drive amount" instead of a
+// passive ceiling: input gets pushed up by -thresholdDb, the ceiling is
+// fixed at 0 dBFS, and the limiter always tries to normalise output to
+// 0 dB. With Autogain off, the limiter is a passive brickwall — peaks
+// above thresholdDb get pulled down, signal below is untouched.
+preGainLin   = db2lin(autogain * (-thresholdDb));
+userCeiling  = pow(10.0, thresholdDb / 20.0);
+ceilingLin   = autogain * 1.0 + (1.0 - autogain) * userCeiling;
+
+limited(l, r) = (l * preGainLin), (r * preGainLin)
+  : co.limiter_lad_stereo(LD, ceilingLin, attackS, holdS, releaseS);
 
 wetL(l, r) = limited(l, r) : _, !;
 wetR(l, r) = limited(l, r) : !, _;
 
-// Autogain compensates for the headroom shaved off by limiting:
-// add -thresholdDb so peaks reach 0 dBFS again. Stacks with user Output
-// so manual trim still applies.
-autogainDb = autogain * (-thresholdDb);
-
-channelBlend(dry, wet) = (dry * (1.0 - mix) + wet * mix) * db2lin(outputDb + autogainDb);
+channelBlend(dry, wet) = (dry * (1.0 - mix) + wet * mix) * db2lin(outputDb);
 
 process(l, r) = channelBlend(l, wetL(l, r)),
                 channelBlend(r, wetR(l, r));
