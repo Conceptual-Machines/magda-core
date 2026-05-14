@@ -7,29 +7,31 @@ import("stdfaust.lib");
 // User controls
 // ============================================================================
 
-thresholdDb = hslider("Threshold [unit:dB] [idx:0]", -18.0, -60.0, 0.0, 0.1)
+// idx values are 1-based: idx 0 is reserved for the host-side Engine slot
+// (Clean / Glue), which lives in the wrapper, not in any DSP.
+thresholdDb = hslider("Threshold [unit:dB] [idx:1]", -18.0, -60.0, 0.0, 0.1)
               : si.smooth(ba.tau2pole(0.02));
-ratio = hslider("Ratio [idx:1]", 4.0, 1.0, 20.0, 0.01)
+ratio = hslider("Ratio [idx:2]", 4.0, 1.0, 20.0, 0.01)
         : si.smooth(ba.tau2pole(0.02));
-attackMs = hslider("Attack [unit:ms] [scale:log] [scaleAnchor:10] [idx:2]",
+attackMs = hslider("Attack [unit:ms] [scale:log] [scaleAnchor:10] [idx:3]",
                    10.0, 0.1, 200.0, 0.1)
            : si.smooth(ba.tau2pole(0.02));
-releaseMs = hslider("Release [unit:ms] [scale:log] [scaleAnchor:100] [idx:3]",
+releaseMs = hslider("Release [unit:ms] [scale:log] [scaleAnchor:100] [idx:4]",
                     120.0, 5.0, 1000.0, 1.0)
             : si.smooth(ba.tau2pole(0.02));
-kneeDb = hslider("Knee [unit:dB] [idx:4]", 6.0, 0.0, 24.0, 0.1)
+kneeDb = hslider("Knee [unit:dB] [idx:5]", 6.0, 0.0, 24.0, 0.1)
          : si.smooth(ba.tau2pole(0.02));
-makeupDb = hslider("Makeup [unit:dB] [idx:5]", 0.0, 0.0, 24.0, 0.1)
+makeupDb = hslider("Makeup [unit:dB] [idx:6]", 0.0, 0.0, 24.0, 0.1)
            : si.smooth(ba.tau2pole(0.02));
-mix = hslider("Mix [idx:6]", 1.0, 0.0, 1.0, 0.001)
+mix = hslider("Mix [idx:7]", 1.0, 0.0, 1.0, 0.001)
       : si.smooth(ba.tau2pole(0.02));
-outputDb = hslider("Output [unit:dB] [idx:7]", 0.0, -24.0, 12.0, 0.1)
+outputDb = hslider("Output [unit:dB] [idx:8]", 0.0, -24.0, 12.0, 0.1)
            : si.smooth(ba.tau2pole(0.02));
-detector = nentry("Detector [idx:8] [style:menu{'Peak':0;'RMS':1}]",
+detector = nentry("Detector [idx:9] [style:menu{'Peak':0;'RMS':1}]",
                   0, 0, 1, 1);
-link = hslider("Link [idx:9]", 1.0, 0.0, 1.0, 0.001)
+link = hslider("Link [idx:10]", 1.0, 0.0, 1.0, 0.001)
        : si.smooth(ba.tau2pole(0.02));
-sidechainHpfHz = hslider("SC HPF [unit:Hz] [scale:log] [scaleAnchor:120] [idx:10]",
+sidechainHpfHz = hslider("SC HPF [unit:Hz] [scale:log] [scaleAnchor:120] [idx:11]",
                          20.0, 20.0, 500.0, 1.0)
                  : si.smooth(ba.tau2pole(0.02));
 useSidechain = nentry("Use Sidechain [hidden:1] [idx:63]", 0, 0, 1, 1);

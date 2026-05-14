@@ -74,6 +74,11 @@ magda_compile_faust_dsp(
     MAGDA_COMPRESSOR_GENERATED_CPP
 )
 magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_compressor_glue.dsp"
+    MagdaCompressorGlueDsp
+    MAGDA_COMPRESSOR_GLUE_GENERATED_CPP
+)
+magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_mod.dsp"
     MagdaModDsp
     MAGDA_MOD_GENERATED_CPP
@@ -116,6 +121,7 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_MULTIBAND_GENERATED_CPP}"
         "${MAGDA_PHASER_GENERATED_CPP}"
         "${MAGDA_COMPRESSOR_GENERATED_CPP}"
+        "${MAGDA_COMPRESSOR_GLUE_GENERATED_CPP}"
         "${MAGDA_MOD_GENERATED_CPP}"
         "${MAGDA_CHORUS_GENERATED_CPP}"
         "${MAGDA_FLANGER_GENERATED_CPP}"
