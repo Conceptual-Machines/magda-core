@@ -71,6 +71,12 @@ class CompiledCompressorCurveView final : public juce::Component,
     float keyPeakDb_ = -120.0f;
     float outputPeakDb_ = -120.0f;
     float gainReductionDb_ = 0.0f;
+    // Displayed values — envelope-follower smoothed (fast attack, slow
+    // release) so the crosshair lines and meters move with peak-meter feel
+    // rather than block-rate jitter from the audio thread.
+    float smoothedInputPeakDb_ = -120.0f;
+    float smoothedKeyPeakDb_ = -120.0f;
+    float smoothedOutputPeakDb_ = -120.0f;
     float smoothedGainReductionDb_ = 0.0f;
     bool externalSidechain_ = false;
 

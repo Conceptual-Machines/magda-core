@@ -131,8 +131,18 @@ void CompiledCompressorCurveView::timerCallback() {
         output = valueForSlot(deviceSnapshot_, Comp::kOutputSlot, output);
     }
 
-    smoothedGainReductionDb_ =
-        smoothedGainReductionDb_ * 0.72f + juce::jlimit(0.0f, 36.0f, gainReductionDb_) * 0.28f;
+    // Peak-meter style smoothing: fast rise, slow fall. Each tick is ~33ms;
+    // attack coefficient 0.45 reaches ~98% in two ticks (~66ms), release
+    // coefficient 0.88 lets values fall over ~250ms — gives the crosshair
+    // lines a natural meter feel instead of per-block jitter.
+    auto envelope = [](float& smoothed, float incoming, float attackCoeff, float releaseCoeff) {
+        const float coeff = incoming > smoothed ? attackCoeff : releaseCoeff;
+        smoothed = smoothed * coeff + incoming * (1.0f - coeff);
+    };
+    envelope(smoothedInputPeakDb_, juce::jmax(-120.0f, inputPeakDb_), 0.45f, 0.88f);
+    envelope(smoothedKeyPeakDb_, juce::jmax(-120.0f, keyPeakDb_), 0.45f, 0.88f);
+    envelope(smoothedOutputPeakDb_, juce::jmax(-120.0f, outputPeakDb_), 0.45f, 0.88f);
+    envelope(smoothedGainReductionDb_, juce::jlimit(0.0f, 36.0f, gainReductionDb_), 0.4f, 0.85f);
 
     const bool moved = std::fabs(threshold - thresholdDb_) > 0.001f ||
                        std::fabs(ratio - ratio_) > 0.001f || std::fabs(knee - kneeDb_) > 0.001f ||
@@ -304,27 +314,27 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
         g.strokePath(curve, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved,
                                                  juce::PathStrokeType::rounded));
 
+        // Float-coord drawing for the crosshair lines: drawHorizontalLine /
+        // drawVerticalLine snap to integer pixels, so even a perfectly
+        // smoothed dB value will jump in 1-pixel steps. drawLine uses
+        // sub-pixel positioning + antialiasing for continuous motion.
         const float thresholdX = dbToX(thresholdDb_);
         const bool thresholdHot =
             hoveredHandle_ == Handle::Threshold || draggedHandle_ == Handle::Threshold;
         g.setColour(grColour.withAlpha(thresholdHot ? 0.95f : 0.7f));
-        g.drawVerticalLine(static_cast<int>(std::round(thresholdX)), plotArea_.getY(),
-                           plotArea_.getBottom());
+        g.drawLine(thresholdX, plotArea_.getY(), thresholdX, plotArea_.getBottom(), 1.0f);
         g.fillEllipse(thresholdX - 4.0f, dbToY(thresholdDb_) - 4.0f, 8.0f, 8.0f);
 
-        const float keyX = dbToX(keyPeakDb_);
+        const float keyX = dbToX(smoothedKeyPeakDb_);
         g.setColour(keyColour.withAlpha(0.8f));
-        g.drawVerticalLine(static_cast<int>(std::round(keyX)), plotArea_.getY(),
-                           plotArea_.getBottom());
+        g.drawLine(keyX, plotArea_.getY(), keyX, plotArea_.getBottom(), 1.0f);
 
-        const float inY = dbToY(inputPeakDb_);
-        const float outY = dbToY(outputPeakDb_);
+        const float inY = dbToY(smoothedInputPeakDb_);
+        const float outY = dbToY(smoothedOutputPeakDb_);
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.65f));
-        g.drawHorizontalLine(static_cast<int>(std::round(inY)), plotArea_.getX(),
-                             plotArea_.getRight());
+        g.drawLine(plotArea_.getX(), inY, plotArea_.getRight(), inY, 1.0f);
         g.setColour(accent.withAlpha(0.65f));
-        g.drawHorizontalLine(static_cast<int>(std::round(outY)), plotArea_.getX(),
-                             plotArea_.getRight());
+        g.drawLine(plotArea_.getX(), outY, plotArea_.getRight(), outY, 1.0f);
     }
 
     auto font = FontManager::getInstance().getUIFont(9.0f);
@@ -350,13 +360,13 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
     g.setColour(border.withAlpha(0.25f));
     g.fillRoundedRectangle(peakMeter, 2.0f);
     const float out01 =
-        juce::jmap(juce::jlimit(kMinDb, 0.0f, outputPeakDb_), kMinDb, 0.0f, 0.0f, 1.0f);
+        juce::jmap(juce::jlimit(kMinDb, 0.0f, smoothedOutputPeakDb_), kMinDb, 0.0f, 0.0f, 1.0f);
     auto outFill = peakMeter.withTrimmedTop(peakMeter.getHeight() * (1.0f - out01));
     g.setColour(accent.withAlpha(0.8f));
     g.fillRoundedRectangle(outFill, 2.0f);
 
     const float key01 =
-        juce::jmap(juce::jlimit(kMinDb, 0.0f, keyPeakDb_), kMinDb, 0.0f, 0.0f, 1.0f);
+        juce::jmap(juce::jlimit(kMinDb, 0.0f, smoothedKeyPeakDb_), kMinDb, 0.0f, 0.0f, 1.0f);
     const float keyY = peakMeter.getBottom() - peakMeter.getHeight() * key01;
     g.setColour(keyColour.withAlpha(0.9f));
     g.drawLine(peakMeter.getX(), keyY, peakMeter.getRight(), keyY, 1.4f);
@@ -369,7 +379,8 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
     g.drawFittedText("-" + juce::String(smoothedGainReductionDb_, 1),
                      grMeter.withTrimmedBottom(-17.0f).toNearestInt(),
                      juce::Justification::centredBottom, 1);
-    g.drawFittedText(formatDb(outputPeakDb_), peakMeter.withTrimmedBottom(-17.0f).toNearestInt(),
+    g.drawFittedText(formatDb(smoothedOutputPeakDb_),
+                     peakMeter.withTrimmedBottom(-17.0f).toNearestInt(),
                      juce::Justification::centredBottom, 1);
 }
 
