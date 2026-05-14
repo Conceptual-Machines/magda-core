@@ -111,6 +111,8 @@ set(TEST_SOURCES
     test_media_db_clap_encoder.cpp
     # Media database (issue #768) — Phase D2: CLAP text encoder
     test_media_db_clap_text_encoder.cpp
+    # Media database (issue #768) — Phase D3: RoBERTa tokenizer
+    test_media_db_roberta_tokenizer.cpp
 )
 
 # Create test executable

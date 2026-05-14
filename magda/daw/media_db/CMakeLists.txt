@@ -8,6 +8,7 @@ target_sources(magda_daw PRIVATE
     MediaDatabase.cpp
     MelSpectrogram.cpp
     PathRules.cpp
+    RobertaTokenizer.cpp
     Scan.cpp
 )
 
