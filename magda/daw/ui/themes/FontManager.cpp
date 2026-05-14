@@ -1,6 +1,16 @@
 #include "FontManager.hpp"
 
+#include "core/Config.hpp"
+
 namespace magda {
+
+namespace {
+
+float scaledFontSize(float size) {
+    return size * static_cast<float>(Config::getInstance().getUIFontScale());
+}
+
+}  // namespace
 
 FontManager& FontManager::getInstance() {
     static FontManager instance;
@@ -106,6 +116,7 @@ juce::Font FontManager::withCJKFallback(juce::Font font) const {
 }
 
 juce::Font FontManager::getInterFont(float size, Weight weight) const {
+    size = scaledFontSize(size);
     juce::Typeface* typeface = nullptr;
 
     switch (weight) {
@@ -166,6 +177,7 @@ juce::Font FontManager::getTimeFont(float size) const {
 }
 
 juce::Font FontManager::getMicrogrammaFont(float size) const {
+    size = scaledFontSize(size);
     if (microgrammaBold) {
         return withCJKFallback(juce::Font(microgrammaBold).withHeight(size));
     }
@@ -176,6 +188,7 @@ juce::Font FontManager::getMicrogrammaFont(float size) const {
 }
 
 juce::Font FontManager::getMonoFont(float size) const {
+    size = scaledFontSize(size);
     if (jetBrainsMonoRegular) {
         return withCJKFallback(juce::Font(jetBrainsMonoRegular).withHeight(size));
     }

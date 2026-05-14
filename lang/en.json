@@ -372,6 +372,7 @@
 
     "scale.label": "UI Scale",
     "scale.auto": "Auto (from display DPI)",
+    "font_scale.label": "Font Size",
 
     "tab.general": "General",
     "tab.ui": "UI",
