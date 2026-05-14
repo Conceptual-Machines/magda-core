@@ -13,8 +13,10 @@ mix         = hslider("Mix [idx:1]", 0.3, 0.0, 1.0, 0.001)
             : si.smooth(ba.tau2pole(0.02));
 predelayMs  = hslider("Predelay [unit:ms] [idx:2]", 20.0, 0.0, 250.0, 0.1)
             : si.smooth(ba.tau2pole(0.05));
-decay       = hslider("Decay [idx:3]", 50.0, 0.0, 100.0, 0.1);
-damping     = hslider("Damping [idx:4]", 30.0, 0.0, 100.0, 0.1);
+decay       = hslider("Decay [idx:3]", 50.0, 0.0, 100.0, 0.1)
+            : si.smooth(ba.tau2pole(0.1));
+damping     = hslider("Damping [idx:4]", 30.0, 0.0, 100.0, 0.1)
+            : si.smooth(ba.tau2pole(0.05));
 lowCutHz    = hslider("Low Cut [unit:Hz] [scale:log] [scaleAnchor:80] [idx:5]",
                       40.0, 20.0, 500.0, 1.0)
             : si.smooth(ba.tau2pole(0.05));
@@ -30,15 +32,16 @@ outputDb    = hslider("Output [unit:dB] [idx:8]", 0.0, -24.0, 12.0, 0.1)
 // DSP
 // ============================================================================
 
-// Decay 0..100 → 0.5..15.0 s mid-band T60. The min of 0.5 s keeps zita's
-// internal `|g|<1` constraint safely satisfied at every sample rate.
-t60m  = (0.5 + decay * 0.145) : si.smooth(ba.tau2pole(0.1));
+// Decay 0..100 → 1.0..15.0 s mid-band T60. The min keeps zita's internal
+// `|g|<1` filter constraint comfortably satisfied; smoothing happens on
+// the slider so the t60 itself is never zero.
+t60m  = 1.0 + decay * 0.14;
 // Low-band decay slightly longer for warmth.
 t60dc = t60m * 1.2;
 
 // Damping 0..100 → mid/high crossover 14k..1k Hz (more damping = lower f2,
 // faster HF rolloff in the tail).
-f2 = (14000.0 - damping * 130.0) : si.smooth(ba.tau2pole(0.05));
+f2 = 14000.0 - damping * 130.0;
 // Low/mid crossover — fixed at zita-rev1 default.
 F1 = 200.0;
 

@@ -22,6 +22,7 @@ enum class LegacyUiKind {
     Delay,
     Chorus,
     Phaser,
+    Reverb,
 };
 
 /**
