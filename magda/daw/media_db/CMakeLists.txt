@@ -4,6 +4,7 @@
 target_sources(magda_daw PRIVATE
     AudioFeatures.cpp
     ClapAudioEncoder.cpp
+    ClapTextEncoder.cpp
     MediaDatabase.cpp
     MelSpectrogram.cpp
     PathRules.cpp
