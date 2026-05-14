@@ -19,10 +19,8 @@ namespace magda::daw::audio::compiled {
  * @brief Compiled-Faust multi-mode antialiased clipper.
  *
  * Static nonlinearity device — no envelope, attack, or release. The user
- * picks one of six ADAA curves from aa.lib (Hard / Soft / Tanh /
- * Hyperbolic / Sine / Cubic) and drives the input into it. With Autogain
- * on, the Drive amount is compensated at the output so character
- * changes don't translate to loudness changes during A/B.
+ * picks one of five ADAA curves from aa.lib (Hard / Soft / Tanh /
+ * Hyperbolic / Sine) and drives the input into it.
  */
 class MagdaClipperCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
   public:
@@ -60,11 +58,10 @@ class MagdaClipperCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
     static constexpr int kDriveSlot = 0;
     static constexpr int kModeSlot = 1;
     static constexpr int kOutputSlot = 2;
-    static constexpr int kAutogainSlot = 3;
-    static constexpr int kHostSlotCount = 4;
+    static constexpr int kHostSlotCount = 3;
 
-    enum class ClipperMode { Hard = 0, Soft, Tanh, Hyperbolic, Sine, Cubic };
-    static constexpr int kModeCount = 6;
+    enum class ClipperMode { Hard = 0, Soft, Tanh, Hyperbolic, Sine };
+    static constexpr int kModeCount = 5;
 
     te::AutomatableParameter* getSlotParameter(int slotIndex) const;
 

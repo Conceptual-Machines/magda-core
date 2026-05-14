@@ -58,14 +58,6 @@ float clipSinArctan(float x) {
     return x / std::sqrt(1.0f + x * x);
 }
 
-float clipCubic(float x) {
-    if (x >= 1.0f)
-        return 2.0f / 3.0f;
-    if (x <= -1.0f)
-        return -2.0f / 3.0f;
-    return x - (x * x * x) / 3.0f;
-}
-
 float clipForMode(int mode, float x) {
     switch (mode) {
         case 0:
@@ -78,8 +70,6 @@ float clipForMode(int mode, float x) {
             return clipHyperbolic(x);
         case 4:
             return clipSinArctan(x);
-        case 5:
-            return clipCubic(x);
         default:
             return clipHard(x);
     }
@@ -231,8 +221,8 @@ void CompiledClipperCurveView::paint(juce::Graphics& g) {
 const CompiledPresentationSpec& getMagdaClipperPresentation() {
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaClipperCompiledPlugin::xmlTypeName,
-        .layoutCellCount = 4,
-        .layoutCellsPerRow = 4,
+        .layoutCellCount = 3,
+        .layoutCellsPerRow = 3,
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledClipperCurveView>(pluginId);
         },

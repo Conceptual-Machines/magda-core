@@ -152,7 +152,7 @@ void MagdaClipperCompiledPlugin::buildHostParameters() {
                                  .defaultValue = 0.0f};
     hostSlotInfo_[kModeSlot].name = "Mode";
     hostSlotInfo_[kModeSlot].scale = magda::ParameterScale::Discrete;
-    hostSlotInfo_[kModeSlot].choices = {"Hard", "Soft", "Tanh", "Hyperbolic", "Sine", "Cubic"};
+    hostSlotInfo_[kModeSlot].choices = {"Hard", "Soft", "Tanh", "Hyperbolic", "Sine"};
     hostSlotInfo_[kModeSlot].minValue = 0.0f;
     hostSlotInfo_[kModeSlot].maxValue = static_cast<float>(kModeCount - 1);
     hostSlotInfo_[kModeSlot].defaultValue = 0.0f;
@@ -162,13 +162,6 @@ void MagdaClipperCompiledPlugin::buildHostParameters() {
                                   .minValue = -24.0f,
                                   .maxValue = 12.0f,
                                   .defaultValue = 0.0f};
-    hostSlotInfo_[kAutogainSlot].name = "Autogain";
-    hostSlotInfo_[kAutogainSlot].scale = magda::ParameterScale::Discrete;
-    hostSlotInfo_[kAutogainSlot].choices = {"Off", "On"};
-    hostSlotInfo_[kAutogainSlot].minValue = 0.0f;
-    hostSlotInfo_[kAutogainSlot].maxValue = 1.0f;
-    hostSlotInfo_[kAutogainSlot].defaultValue = 1.0f;
-
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
 
@@ -246,7 +239,7 @@ void MagdaClipperCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc
                 info.scaleAnchor = s.scaleAnchor;
             // Discrete params need choices populated — normalizedToReal
             // returns 0 when choices is empty, which silently breaks
-            // dropdowns like Mode and Autogain.
+            // dropdowns like Mode.
             info.choices = s.choices;
             const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
             *zone = static_cast<FAUSTFLOAT>(magda::ParameterUtils::normalizedToReal(norm, info));
@@ -351,7 +344,6 @@ constexpr AliasSpec kAliases[] = {
     {"drive", 0, "Drive"},
     {"mode", 1, "Mode"},
     {"output", 2, "Output"},
-    {"autogain", 3, "Autogain"},
 };
 
 const CompiledPluginSpec& getMagdaClipperSpec() {
@@ -359,11 +351,10 @@ const CompiledPluginSpec& getMagdaClipperSpec() {
         .pluginId = MagdaClipperCompiledPlugin::xmlTypeName,
         .displayName = "Clipper",
         .browserCategory = "Distortion",
-        .description = "Antialiased multi-mode clipper. Six ADAA curves: Hard "
+        .description = "Antialiased multi-mode clipper. Five ADAA curves: Hard "
                        "(brickwall), Soft (quadratic), Tanh (tube-style), Hyperbolic, "
-                       "Sine (sin∘atan), Cubic (analog cubic). Drive pushes input "
-                       "into the curve; Autogain compensates for level so character "
-                       "changes don't shift loudness.",
+                       "Sine (sin∘atan). Drive pushes input "
+                       "into the curve; Output trims the clipped signal.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaClipperCompiledPlugin(info);
         },
