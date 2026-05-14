@@ -342,6 +342,7 @@
     "language.restart_required": "更改语言后需要重启软件才能完全生效。",
     "scale.label": "界面缩放",
     "scale.auto": "自动（根据显示 DPI）",
+    "font_scale.label": "",
     "tab.general": "通用",
     "tab.ui": "界面",
     "tab.colours": "颜色",
