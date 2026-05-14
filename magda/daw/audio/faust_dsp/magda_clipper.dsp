@@ -36,12 +36,23 @@ clipper(x) = clipHard(x), clipSoft(x), clipTanh(x),
              clipHyper(x), clipSine(x), clipCubic(x)
              : ba.selectn(6, int(mode));
 
-// Autogain: when on, pull -drive dB out of the output stage so cranking
-// Drive changes character without changing perceived loudness. Default is
-// On — the natural use-case for a clipper is "push into the curve",
-// auto-compensated.
-autogainDb = autogain * (-drive);
+// 200 ms RMS envelope follower. Long enough to capture programme material
+// average level (not transients), short enough to follow musical sections.
+rmsEnv(x) = x * x : si.smooth(ba.tau2pole(0.2)) : sqrt : max(0.000001);
 
-processOne(x) = (x * driveLin : clipper) * db2lin(outputDb + autogainDb);
+// Dynamic auto-makeup: input RMS / output RMS, clamped to a sane range so
+// silence doesn't push the makeup to infinity and so very heavy clipping
+// (which raises RMS via harmonic content) doesn't gouge the output below
+// 1/8 of input loudness. With Autogain off the factor is 1.0 — clean
+// passthrough of the clipped signal, no compensation.
+processOne(x) = clipped * factor * db2lin(outputDb)
+with {
+    drivenIn = x * driveLin;
+    clipped = clipper(drivenIn);
+    inLvl   = rmsEnv(x);
+    outLvl  = rmsEnv(clipped);
+    makeup  = min(8.0, max(0.125, inLvl / outLvl));
+    factor  = autogain * makeup + (1.0 - autogain);
+};
 
 process = processOne, processOne;
