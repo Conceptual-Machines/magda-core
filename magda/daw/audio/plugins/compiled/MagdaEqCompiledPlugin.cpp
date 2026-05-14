@@ -202,10 +202,10 @@ void MagdaEqCompiledPlugin::buildHostParameters() {
         hostSlotInfo_[typeSlot] = {
             .name = prefix + " Type",
             .scale = magda::ParameterScale::Discrete,
-            .choices = {"HP", "LowShelf", "Bell", "HighShelf", "LP", "Notch"},
             .minValue = 0.0f,
             .maxValue = static_cast<float>(kBandTypeCount - 1),
-            .defaultValue = defaults.type};
+            .defaultValue = defaults.type,
+            .choices = {"HP", "LowShelf", "Bell", "HighShelf", "LP", "Notch"}};
 
         const int freqSlot = bandSlot(band, kBandFreqOffset);
         hostSlotInfo_[freqSlot] = {.name = prefix + " Freq",
