@@ -22,15 +22,15 @@ namespace magda::daw::audio::compiled {
  *  - Clean: hand-rolled FF compressor (peak/RMS detector, soft knee, stereo
  *    link, sidechain HPF, external audio sidechain, parallel mix, soft-limit
  *    output stage). Backed by magda_compressor.dsp.
- *  - Glue: Brouns FBFF compressor with user-exposed FF↔FB blend; peak
- *    detector only, no sidechain HPF, no external sidechain. Backed by
- *    magda_compressor_glue.dsp.
+ *  - Glue: Brouns FBFF compressor with user-exposed Peak/RMS detector,
+ *    Pre/Post style, and FF↔FB blend; no sidechain HPF, no external
+ *    sidechain. Backed by magda_compressor_glue.dsp.
  *
  * Both engine DSPs are instantiated; only the active one runs compute() per
  * audio callback. Shared zones (threshold/ratio/attack/release/etc.) are
  * written into both engines every block so swapping engines preserves the
- * user's settings. Engine-specific zones (Detector/SC HPF on Clean, FBFF on
- * Glue) are written only when present on the active engine.
+ * user's settings. Engine-specific zones (SC HPF on Clean, FBFF/Style on
+ * Glue) are written only when present on each engine.
  */
 class MagdaCompressorCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
   public:
@@ -85,7 +85,7 @@ class MagdaCompressorCompiledPlugin : public te::Plugin, public ICompiledFaustPl
     static constexpr int kMakeupSlot = 6;
     static constexpr int kMixSlot = 7;
     static constexpr int kOutputSlot = 8;
-    static constexpr int kDetectorSlot = 9;  // Clean only
+    static constexpr int kDetectorSlot = 9;
     static constexpr int kLinkSlot = 10;
     static constexpr int kSidechainHpfSlot = 11;  // Clean only
     static constexpr int kFbffSlot = 12;          // Glue only
@@ -146,8 +146,8 @@ class MagdaCompressorCompiledPlugin : public te::Plugin, public ICompiledFaustPl
 
     // Per-engine state. zones_[slotIndex] is the FAUSTFLOAT* into this
     // engine's DSP for that host slot, or null if the engine doesn't expose
-    // that slot (Glue has no Detector / SC HPF; Clean has no FBFF; neither
-    // exposes Engine).
+    // that slot (Glue has no SC HPF; Clean has no FBFF/Style; neither exposes
+    // Engine).
     struct EngineState {
         std::unique_ptr<::dsp> dsp;
         std::array<FAUSTFLOAT*, kHostSlotCount> zones{};
@@ -172,10 +172,6 @@ class MagdaCompressorCompiledPlugin : public te::Plugin, public ICompiledFaustPl
     std::atomic<float> outputPeakDb_{-120.0f};
     std::atomic<float> gainReductionDb_{0.0f};
     std::atomic<bool> usingExternalSidechain_{false};
-
-    // Audio-thread-only counter for throttled DBG logging. Not atomic
-    // because applyToBuffer is the sole writer.
-    uint32_t debugTraceCounter_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaCompressorCompiledPlugin)
 };
