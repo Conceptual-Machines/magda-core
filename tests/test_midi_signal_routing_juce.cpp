@@ -51,6 +51,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         testInstrumentRackConsumesMidi();
         testStepSequencerDefaultsToReplacingMidi();
         testRackSyncWiresNestedRackAsGraphNode();
+        testRackTypeRejectsRecursiveRackInstances();
         testRackSyncBypassedChainPreservesMidi();
         testRackSyncMutedChainSuppressesMidiOutput();
         testRackSyncRoutesChainOutputIndexToRackPins();
@@ -220,7 +221,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         magda::ChainInfo nestedChain;
         nestedChain.id = 9105;
-        auto nestedDevice = makeInternalDevice(9106, "Nested Filter", "filter");
+        auto nestedDevice = makeInternalDevice(9106, "Nested Lowpass", "lowpass");
         nestedChain.elements.push_back(magda::makeDeviceElement(nestedDevice));
         nested.chains.push_back(std::move(nestedChain));
 
@@ -277,6 +278,42 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         }
 
         rackSync.removeRack(outer.id);
+    }
+
+    void testRackTypeRejectsRecursiveRackInstances() {
+        beginTest("RackType rejects recursive rack instances");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
+        expect(edit != nullptr, "Test edit must be created");
+        if (!edit)
+            return;
+
+        auto rackA = edit->getRackList().addNewRack();
+        auto rackB = edit->getRackList().addNewRack();
+        expect(rackA != nullptr, "Rack A must be created");
+        expect(rackB != nullptr, "Rack B must be created");
+        if (rackA == nullptr || rackB == nullptr)
+            return;
+
+        rackA->rackName = "A";
+        rackB->rackName = "B";
+
+        auto instanceB = edit->getPluginCache().createNewPlugin(te::RackInstance::create(*rackB));
+        expect(instanceB != nullptr, "Rack B instance must be created");
+        expect(rackA->addPlugin(instanceB, {0.5f, 0.5f}, false),
+               "Rack A should accept acyclic nested rack B");
+
+        auto instanceA = edit->getPluginCache().createNewPlugin(te::RackInstance::create(*rackA));
+        expect(instanceA != nullptr, "Rack A instance must be created");
+        expect(!rackB->addPlugin(instanceA, {0.5f, 0.5f}, false),
+               "Rack B should reject adding A because A already contains B");
+
+        auto selfInstanceA =
+            edit->getPluginCache().createNewPlugin(te::RackInstance::create(*rackA));
+        expect(selfInstanceA != nullptr, "Self rack instance must be created");
+        expect(!rackA->addPlugin(selfInstanceA, {0.5f, 0.5f}, false),
+               "Rack A should reject a RackInstance of itself");
     }
 
     void testRackSyncBypassedChainPreservesMidi() {
