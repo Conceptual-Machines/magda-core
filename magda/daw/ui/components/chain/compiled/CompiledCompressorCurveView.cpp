@@ -387,7 +387,7 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
 const CompiledPresentationSpec& getMagdaCompressorPresentation() {
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName,
-        .layoutCellCount = 11,
+        .layoutCellCount = 15,
         .layoutCellsPerRow = 6,
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledCompressorCurveView>(pluginId);

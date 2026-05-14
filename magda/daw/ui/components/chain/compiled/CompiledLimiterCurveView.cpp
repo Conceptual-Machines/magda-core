@@ -294,8 +294,8 @@ void CompiledLimiterCurveView::paint(juce::Graphics& g) {
 const CompiledPresentationSpec& getMagdaLimiterPresentation() {
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaLimiterCompiledPlugin::xmlTypeName,
-        .layoutCellCount = 5,
-        .layoutCellsPerRow = 5,
+        .layoutCellCount = 7,
+        .layoutCellsPerRow = 7,
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledLimiterCurveView>(pluginId);
         },
