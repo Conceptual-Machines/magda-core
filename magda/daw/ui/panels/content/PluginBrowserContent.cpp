@@ -360,7 +360,6 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
                                                      audio::StepSequencerPlugin::xmlTypeName, false,
                                                      "MIDI"));
     list.push_back(PluginBrowserInfo::createInternal("Equaliser", "eq", false, "EQ"));
-    list.push_back(PluginBrowserInfo::createInternal("Reverb", "reverb", false, "Reverb"));
     list.push_back(PluginBrowserInfo::createInternal("Lowpass", "lowpass", false, "Filter"));
     // Compiled-Faust devices come from the registry — displayName / category /
     // pluginId live with the wrapper. Adding a new compiled device picks up
