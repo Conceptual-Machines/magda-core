@@ -1,5 +1,6 @@
 #include <juce_core/juce_core.h>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "../magda/daw/core/RackInfo.hpp"
@@ -633,6 +634,62 @@ TEST_CASE("TrackManager: Set Device Bypassed by Path", "[trackmanager][device][p
     }
 }
 
+TEST_CASE("TrackManager: Parameter writes follow device id after top-level reorder",
+          "[trackmanager][device][path][parameter]") {
+    TrackManagerTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Test Track");
+
+    DeviceInfo saturator;
+    saturator.name = "Saturator";
+    saturator.pluginId = "magda_saturator";
+    saturator.format = PluginFormat::Internal;
+    ParameterInfo drive;
+    drive.paramIndex = 0;
+    drive.name = "Drive";
+    drive.minValue = 0.0f;
+    drive.maxValue = 24.0f;
+    drive.currentValue = 0.0f;
+    drive.teMinValue = 0.0f;
+    drive.teMaxValue = 1.0f;
+    saturator.parameters.push_back(drive);
+
+    DeviceInfo delay;
+    delay.name = "Delay";
+    delay.pluginId = "magda_delay";
+    delay.format = PluginFormat::Internal;
+    ParameterInfo time;
+    time.paramIndex = 0;
+    time.name = "Time";
+    time.minValue = 1.0f;
+    time.maxValue = 2000.0f;
+    time.currentValue = 250.0f;
+    time.teMinValue = 0.0f;
+    time.teMaxValue = 1.0f;
+    delay.parameters.push_back(time);
+
+    const auto saturatorId = fixture.tm().addDeviceToTrack(trackId, saturator);
+    const auto delayId = fixture.tm().addDeviceToTrack(trackId, delay);
+    REQUIRE(saturatorId != INVALID_DEVICE_ID);
+    REQUIRE(delayId != INVALID_DEVICE_ID);
+
+    fixture.tm().moveNode(trackId, 1, 0);
+
+    const auto saturatorPath = ChainNodePath::topLevelDevice(trackId, saturatorId);
+    fixture.tm().setDeviceParameterValue(saturatorPath, 0, ParameterModelValue{12.0f});
+
+    const auto* liveSaturator = fixture.tm().getDeviceInChainByPath(saturatorPath);
+    const auto* liveDelay =
+        fixture.tm().getDeviceInChainByPath(ChainNodePath::topLevelDevice(trackId, delayId));
+
+    REQUIRE(liveSaturator != nullptr);
+    REQUIRE(liveDelay != nullptr);
+    REQUIRE(liveSaturator->name == "Saturator");
+    REQUIRE(liveDelay->name == "Delay");
+    REQUIRE(liveSaturator->parameters[0].currentValue == Catch::Approx(12.0f));
+    REQUIRE(liveDelay->parameters[0].currentValue == Catch::Approx(250.0f));
+}
+
 // ============================================================================
 // Nested Rack Operations Tests
 // ============================================================================
@@ -759,6 +816,37 @@ TEST_CASE("TrackManager: Remove Nested Rack by Path", "[trackmanager][nested_rac
         r2 = fixture.tm().getRackByPath(chainPath1.withRack(rack2));
         REQUIRE(r2->chains[0].elements.empty());
     }
+}
+
+TEST_CASE("TrackManager: setSidechainSource reaches devices in nested racks",
+          "[trackmanager][sidechain][nested_rack]") {
+    TrackManagerTestFixture fixture;
+
+    auto sourceTrackId = fixture.tm().createTrack("Source");
+    auto destTrackId = fixture.tm().createTrack("Destination");
+    auto rackId = fixture.tm().addRackToTrack(destTrackId, "Top Rack");
+
+    auto* rack = fixture.tm().getRack(destTrackId, rackId);
+    REQUIRE(rack != nullptr);
+    auto chainPath = ChainNodePath::chain(destTrackId, rackId, rack->chains[0].id);
+
+    auto nestedRackId = fixture.tm().addRackToChainByPath(chainPath, "Nested Rack");
+    auto* nestedRack = fixture.tm().getRackByPath(chainPath.withRack(nestedRackId));
+    REQUIRE(nestedRack != nullptr);
+    auto nestedChainPath = chainPath.withRack(nestedRackId).withChain(nestedRack->chains[0].id);
+
+    DeviceInfo device;
+    device.name = "Nested Compressor";
+    auto nestedDeviceId = fixture.tm().addDeviceToChainByPath(nestedChainPath, device);
+    REQUIRE(nestedDeviceId != INVALID_DEVICE_ID);
+
+    fixture.tm().setSidechainSource(nestedDeviceId, sourceTrackId, SidechainConfig::Type::Audio);
+
+    auto nestedDevicePath = nestedChainPath.withDevice(nestedDeviceId);
+    auto* nestedDevice = fixture.tm().getDeviceInChainByPath(nestedDevicePath);
+    REQUIRE(nestedDevice != nullptr);
+    REQUIRE(nestedDevice->sidechain.type == SidechainConfig::Type::Audio);
+    REQUIRE(nestedDevice->sidechain.sourceTrackId == sourceTrackId);
 }
 
 // ============================================================================

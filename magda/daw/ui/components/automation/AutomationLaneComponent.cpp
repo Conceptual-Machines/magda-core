@@ -195,14 +195,6 @@ void AutomationLaneComponent::automationLaneSelectionChanged(
     syncSelectionState();
 }
 
-void AutomationLaneComponent::setPixelsPerSecond(double pps) {
-    pixelsPerSecond_ = pps;
-    if (curveEditor_) {
-        curveEditor_->setPixelsPerSecond(pps);
-    }
-    updateClipPositions();
-}
-
 void AutomationLaneComponent::setPixelsPerBeat(double ppb) {
     pixelsPerBeat_ = ppb;
     if (curveEditor_) {
@@ -247,12 +239,11 @@ void AutomationLaneComponent::rebuildContent() {
     if (lane->isAbsolute()) {
         // Absolute lane: single curve editor
         curveEditor_ = std::make_unique<AutomationCurveEditor>(laneId_);
-        curveEditor_->setPixelsPerSecond(pixelsPerSecond_);
         curveEditor_->setPixelsPerBeat(pixelsPerBeat_);
         curveEditor_->setTempoBPM(tempoBPM_);
-        curveEditor_->snapTimeToGrid = [this](double x) {
-            if (snapTimeToGrid)
-                return snapTimeToGrid(x);
+        curveEditor_->snapBeatToGrid = [this](double x) {
+            if (snapBeatToGrid)
+                return snapBeatToGrid(x);
             return x;
         };
         curveEditor_->getGridSpacingBeats = [this]() -> double {
@@ -286,8 +277,8 @@ void AutomationLaneComponent::rebuildClipComponents() {
         if (!clip)
             continue;
 
-        auto cc = std::make_unique<AutomationClipComponent>(clipId, this);
-        cc->setPixelsPerSecond(pixelsPerSecond_);
+        auto cc = std::make_unique<AutomationClipComponent>(clipId);
+        cc->setPixelsPerBeat(pixelsPerBeat_);
         addAndMakeVisible(cc.get());
         clipComponents_.push_back(std::move(cc));
     }
@@ -305,8 +296,8 @@ void AutomationLaneComponent::updateClipPositions() {
         if (!clip)
             continue;
 
-        int x = SCALE_LABEL_WIDTH + static_cast<int>(clip->startTime * pixelsPerBeat_);
-        int width = static_cast<int>(clip->length * pixelsPerBeat_);
+        int x = SCALE_LABEL_WIDTH + static_cast<int>(clip->startBeats * pixelsPerBeat_);
+        int width = static_cast<int>(clip->lengthBeats * pixelsPerBeat_);
         cc->setBounds(x, contentY, juce::jmax(10, width), juce::jmax(10, contentHeight));
     }
 }
@@ -362,8 +353,8 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
     if (lane == nullptr || !lane->isAbsolute() || lane->absolutePoints.size() <= 2)
         return;
 
-    // Snapshot IDs + (time, value) pairs sorted by time. When a filter is
-    // supplied we still sort everything by time, but only points inside the
+    // Snapshot IDs + (beat position, value) pairs sorted by beat position. When a filter is
+    // supplied we still sort everything by beat position, but only points inside the
     // filter are candidates for removal — others are pinned as "keep" so the
     // user's unselected points survive intact.
     struct Entry {
@@ -381,10 +372,10 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
     for (const auto& pt : lane->absolutePoints) {
         bool inScope =
             !hasFilter || std::binary_search(filterSorted.begin(), filterSorted.end(), pt.id);
-        entries.push_back({pt.id, {pt.time, pt.value}, inScope});
+        entries.push_back({pt.id, {pt.beatPosition, pt.value}, inScope});
     }
     std::sort(entries.begin(), entries.end(),
-              [](const Entry& a, const Entry& b) { return a.p.time < b.p.time; });
+              [](const Entry& a, const Entry& b) { return a.p.beatPosition < b.p.beatPosition; });
 
     std::vector<AutomationCurveSimplifier::Point> polyline;
     polyline.reserve(entries.size());

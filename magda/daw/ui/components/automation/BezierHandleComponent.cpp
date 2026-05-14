@@ -59,14 +59,14 @@ void BezierHandleComponent::mouseDrag(const juce::MouseEvent& e) {
     int deltaX = localPos.x - dragStartPos_.x;
     int deltaY = localPos.y - dragStartPos_.y;
 
-    // Convert pixel delta to time/value delta
+    // Convert pixel delta to beat/value delta
     // This requires knowledge of the curve editor's zoom/scale
     // For now, use simple conversion (will be refined by parent)
-    double timeScale = 0.01;   // Seconds per pixel
+    double beatScale = 0.01;   // Beats per pixel
     double valueScale = 0.01;  // Value units per pixel
 
     BezierHandle newHandle = dragStartHandle_;
-    newHandle.time = dragStartHandle_.time + deltaX * timeScale;
+    newHandle.beatOffset = dragStartHandle_.beatOffset + deltaX * beatScale;
     newHandle.value = dragStartHandle_.value - deltaY * valueScale;  // Y is inverted
 
     handle_ = newHandle;

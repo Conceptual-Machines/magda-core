@@ -170,6 +170,7 @@ class MoveMultipleMidiNotesCommand : public UndoableCommand {
     ClipId clipId_;
     std::vector<NoteMove> moves_;
     struct OldValues {
+        size_t noteIndex;
         double startBeat;
         int noteNumber;
     };
@@ -245,6 +246,7 @@ class QuantizeMidiNotesCommand : public UndoableCommand {
     QuantizeMode mode_;
 
     struct OldValues {
+        size_t noteIndex;
         double startBeat;
         double lengthBeats;
     };

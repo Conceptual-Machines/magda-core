@@ -19,6 +19,14 @@ namespace magda {
 
 namespace {
 
+double timelineStartSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineStart(bpm);
+}
+
+double timelineEndSeconds(const ClipInfo& clip, double bpm) {
+    return clip.getTimelineEnd(bpm);
+}
+
 /**
  * Progress window for audio export that runs Tracktion Renderer in background thread
  */
@@ -441,7 +449,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     // Find the extent of all MIDI clips
     for (const auto& clip : clips) {
         if (clip.isMidi()) {
-            double end = clip.startTime + clip.length;
+            double end = timelineEndSeconds(clip, projectTempo);
             if (end > rangeEnd)
                 rangeEnd = end;
         }
@@ -469,7 +477,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     // Collect MIDI clips grouped by track — copy data to avoid dangling pointers
     // during async file chooser
     struct ClipMidiData {
-        double startTime;
+        double startSeconds;
         std::vector<MidiNote> midiNotes;
         std::vector<MidiCCData> midiCCData;
         std::vector<MidiPitchBendData> midiPitchBendData;
@@ -487,8 +495,9 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
             continue;
 
         // Check if clip overlaps with range
-        double clipEnd = clip.startTime + clip.length;
-        if (clipEnd <= rangeStart || clip.startTime >= rangeEnd)
+        const double clipStart = timelineStartSeconds(clip, projectTempo);
+        const double clipEnd = timelineEndSeconds(clip, projectTempo);
+        if (clipEnd <= rangeStart || clipStart >= rangeEnd)
             continue;
 
         auto& td = trackData[clip.trackId];
@@ -496,8 +505,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
             auto* track = trackManager.getTrack(clip.trackId);
             td.trackName = track ? track->name : "Track";
         }
-        td.clips.push_back(
-            {clip.startTime, clip.midiNotes, clip.midiCCData, clip.midiPitchBendData});
+        td.clips.push_back({clipStart, clip.midiNotes, clip.midiCCData, clip.midiPitchBendData});
     }
 
     DBG("Track data count: " << trackData.size());
@@ -564,7 +572,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
         // Helper to add notes/CC/PB from clips to a sequence
         auto addClipDataToSequence = [&](juce::MidiMessageSequence& seq, const ClipMidiData& clip,
                                          int channel, double& maxTick) {
-            double clipStartBeats = secondsToBeats(clip.startTime - capturedRangeStart);
+            double clipStartBeats = secondsToBeats(clip.startSeconds - capturedRangeStart);
 
             for (const auto& note : clip.midiNotes) {
                 double startTick = beatsToTicks(clipStartBeats + note.startBeat);

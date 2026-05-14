@@ -1,20 +1,224 @@
 # Audio thread, plugin hosting, and routing layer.
 # Most of these compile into magda_daw; AudioEngineOptimizer is app-only.
 
+# Compiled-from-Faust DSP (#1214): build-time .dsp → .cpp generation,
+# linked into magda_daw as native plugin code. Each compiled DSP needs
+# a corresponding wrapper TU under plugins/compiled/ that #include's the
+# generated file. Add new entries by:
+#   1. listing the wrapper .cpp in target_sources below
+#   2. invoking magda_compile_faust_dsp() to produce the generated .cpp
+#   3. adding the generated path to target_sources via OBJECT_DEPENDS
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_svf.dsp"
+    MagdaSVFDsp
+    MAGDA_SVF_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_ladder.dsp"
+    MagdaLadderDsp
+    MAGDA_LADDER_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_korg35.dsp"
+    MagdaKorg35Dsp
+    MAGDA_KORG35_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_oberheim.dsp"
+    MagdaOberheimDsp
+    MAGDA_OBERHEIM_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_sk.dsp"
+    MagdaSallenKeyDsp
+    MAGDA_SALLEN_KEY_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_diode.dsp"
+    MagdaDiodeDsp
+    MAGDA_DIODE_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_saturator.dsp"
+    MagdaSaturatorDsp
+    MAGDA_SATURATOR_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_delay.dsp"
+    MagdaDelayDsp
+    MAGDA_DELAY_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_granular_delay.dsp"
+    MagdaGrainDelayDsp
+    MAGDA_GRAIN_DELAY_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_grit.dsp"
+    MagdaGritDsp
+    MAGDA_GRIT_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_multiband.dsp"
+    MagdaMultibandDsp
+    MAGDA_MULTIBAND_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_phaser.dsp"
+    MagdaPhaserDsp
+    MAGDA_PHASER_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_compressor.dsp"
+    MagdaCompressorDsp
+    MAGDA_COMPRESSOR_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_compressor_glue.dsp"
+    MagdaCompressorGlueDsp
+    MAGDA_COMPRESSOR_GLUE_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_mod.dsp"
+    MagdaModDsp
+    MAGDA_MOD_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_chorus.dsp"
+    MagdaChorusDsp
+    MAGDA_CHORUS_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_flanger.dsp"
+    MagdaFlangerDsp
+    MAGDA_FLANGER_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_ring_mod.dsp"
+    MagdaRingModDsp
+    MAGDA_RING_MOD_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_freq_shift.dsp"
+    MagdaFreqShiftDsp
+    MAGDA_FREQ_SHIFT_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_limiter.dsp"
+    MagdaLimiterDsp
+    MAGDA_LIMITER_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_clipper.dsp"
+    MagdaClipperDsp
+    MAGDA_CLIPPER_GENERATED_CPP
+)
+# A phony target that just depends on every generated DSP .cpp; making
+# magda_daw depend on it forces the custom commands to fire before any
+# wrapper TU is compiled.
+add_custom_target(magda_compiled_dsps
+    DEPENDS
+        "${MAGDA_SVF_GENERATED_CPP}"
+        "${MAGDA_LADDER_GENERATED_CPP}"
+        "${MAGDA_KORG35_GENERATED_CPP}"
+        "${MAGDA_OBERHEIM_GENERATED_CPP}"
+        "${MAGDA_SALLEN_KEY_GENERATED_CPP}"
+        "${MAGDA_DIODE_GENERATED_CPP}"
+        "${MAGDA_SATURATOR_GENERATED_CPP}"
+        "${MAGDA_DELAY_GENERATED_CPP}"
+        "${MAGDA_GRAIN_DELAY_GENERATED_CPP}"
+        "${MAGDA_GRIT_GENERATED_CPP}"
+        "${MAGDA_MULTIBAND_GENERATED_CPP}"
+        "${MAGDA_PHASER_GENERATED_CPP}"
+        "${MAGDA_COMPRESSOR_GENERATED_CPP}"
+        "${MAGDA_COMPRESSOR_GLUE_GENERATED_CPP}"
+        "${MAGDA_MOD_GENERATED_CPP}"
+        "${MAGDA_CHORUS_GENERATED_CPP}"
+        "${MAGDA_FLANGER_GENERATED_CPP}"
+        "${MAGDA_RING_MOD_GENERATED_CPP}"
+        "${MAGDA_FREQ_SHIFT_GENERATED_CPP}"
+        "${MAGDA_LIMITER_GENERATED_CPP}"
+        "${MAGDA_CLIPPER_GENERATED_CPP}"
+)
+add_dependencies(magda_daw magda_compiled_dsps)
+target_include_directories(magda_daw PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
+
 target_sources(magda_daw PRIVATE
+    plugins/compiled/MagdaFilterCompiledPlugin.cpp
+    plugins/compiled/MagdaFilterCompiledPlugin.hpp
+    plugins/compiled/MagdaSaturatorCompiledPlugin.cpp
+    plugins/compiled/MagdaSaturatorCompiledPlugin.hpp
+    plugins/compiled/MagdaDelayCompiledPlugin.cpp
+    plugins/compiled/MagdaDelayCompiledPlugin.hpp
+    plugins/compiled/MagdaGrainDelayCompiledPlugin.cpp
+    plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp
+    plugins/compiled/MagdaGritCompiledPlugin.cpp
+    plugins/compiled/MagdaGritCompiledPlugin.hpp
+    plugins/compiled/MagdaMultibandCompiledPlugin.cpp
+    plugins/compiled/MagdaMultibandCompiledPlugin.hpp
+    plugins/compiled/MagdaPhaserCompiledPlugin.cpp
+    plugins/compiled/MagdaPhaserCompiledPlugin.hpp
+    plugins/compiled/MagdaCompressorCompiledPlugin.cpp
+    plugins/compiled/MagdaCompressorCompiledPlugin.hpp
+    plugins/compiled/MagdaModCompiledPlugin.cpp
+    plugins/compiled/MagdaModCompiledPlugin.hpp
+    plugins/compiled/MagdaChorusCompiledPlugin.cpp
+    plugins/compiled/MagdaChorusCompiledPlugin.hpp
+    plugins/compiled/MagdaFlangerCompiledPlugin.cpp
+    plugins/compiled/MagdaFlangerCompiledPlugin.hpp
+    plugins/compiled/MagdaRingModCompiledPlugin.cpp
+    plugins/compiled/MagdaRingModCompiledPlugin.hpp
+    plugins/compiled/MagdaFreqShiftCompiledPlugin.cpp
+    plugins/compiled/MagdaFreqShiftCompiledPlugin.hpp
+    plugins/compiled/MagdaLimiterCompiledPlugin.cpp
+    plugins/compiled/MagdaLimiterCompiledPlugin.hpp
+    plugins/compiled/MagdaClipperCompiledPlugin.cpp
+    plugins/compiled/MagdaClipperCompiledPlugin.hpp
+    plugins/compiled/CompiledPluginRegistry.cpp
+    plugins/compiled/CompiledPluginRegistry.hpp
+    plugins/compiled/CompiledFaustHost.hpp
+    plugins/compiled/CompiledFaustInterface.hpp
     AudioBridge.cpp
+    AudioBridgeMixer.cpp
+    AudioBridgeMixer.hpp
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
     FaustResources.cpp
-    processors/DeviceProcessor.cpp
+    processors/base/DeviceProcessor.cpp
+    processors/base/DeviceProcessor.hpp
+    processors/base/AutomatablePluginProcessor.cpp
+    processors/base/AutomatablePluginProcessor.hpp
+    processors/ParameterInfoBuilder.cpp
+    processors/ParameterInfoBuilder.hpp
+    processors/external/ExternalPluginProcessor.cpp
+    processors/external/ExternalPluginProcessor.hpp
+    processors/internal/MidiDeviceProcessors.cpp
+    processors/internal/MidiDeviceProcessors.hpp
+    processors/internal/NativeDeviceProcessors.cpp
+    processors/internal/NativeDeviceProcessors.hpp
+    processors/te/TeProcessorWrappers.cpp
+    processors/te/TeProcessorWrappers.hpp
+    processors/CompiledFaustProcessor.cpp
+    processors/CompiledFaustProcessor.hpp
+    processors/DeviceProcessor.hpp
+    processors/DeviceProcessorFactory.cpp
+    processors/DeviceProcessorFactory.hpp
     MidiBridge.cpp
     midi/MidiDeviceMatch.cpp
+    midi/MidiInputRouter.cpp
+    midi/MidiInputRouter.hpp
+    sampling/SamplerFileLoader.cpp
+    sampling/SamplerFileLoader.hpp
+    sidechain/SidechainRoutingManager.cpp
+    sidechain/SidechainRoutingManager.hpp
     midi/QwertyMidiKeyboard.cpp
     session/SessionClipScheduler.cpp
     session/SessionClipAudioMonitor.cpp
     session/SessionMonitorPlugin.cpp
     session/SessionRecorder.cpp
+    plugins/InternalPluginRegistry.cpp
+    plugins/InternalPluginRegistry.hpp
     # Phase 1: Pure data managers
     transport/TransportStateManager.cpp
     midi/MidiActivityMonitor.cpp
@@ -32,10 +236,16 @@ target_sources(magda_daw PRIVATE
     racks/InstrumentRackManager.cpp
     racks/RackSyncManager.cpp
     modifiers/ModifierSync.cpp
+    automation/ControlTargetResolver.cpp
+    automation/ControlTargetResolver.hpp
     automation/AutomationPlaybackEngine.cpp
     automation/AutomationRecordingEngine.cpp
     automation/AutomationCurveSimplifier.cpp
+    session/ArrangementClipSyncPlanner.cpp
+    session/ClipEngineIdMap.cpp
+    session/ClipLaunchQuantization.cpp
     session/ClipSynchronizer.cpp
+    session/ClipWarpSynchronizer.cpp
     plugins/SidechainMonitorPlugin.cpp
     plugins/AudioSidechainMonitorPlugin.cpp
     plugins/MidiReceivePlugin.cpp
@@ -74,7 +284,11 @@ target_sources(magda_daw PRIVATE
     racks/InstrumentRackManager.hpp
     racks/RackSyncManager.hpp
     automation/AutomationPlaybackEngine.hpp
+    session/ArrangementClipSyncPlanner.hpp
+    session/ClipEngineIdMap.hpp
+    session/ClipLaunchQuantization.hpp
     session/ClipSynchronizer.hpp
+    session/ClipWarpSynchronizer.hpp
     plugins/SidechainTriggerBus.hpp
     plugins/SidechainMonitorPlugin.hpp
     plugins/AudioSidechainMonitorPlugin.hpp

@@ -4,11 +4,11 @@
 
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
-#include "NodeHeaderStyles.hpp"
 #include "audio/AudioBridge.hpp"
 #include "core/Config.hpp"
 #include "core/PresetManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "layout/NodeHeaderStyles.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -43,10 +43,6 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     modPanelVisible_ = rack.modPanelOpen;
     paramPanelVisible_ = rack.paramPanelOpen;
 
-    // Restore collapsed state from rack state. The model field is the single
-    // source of truth — TrackChainContent's save/restore-state map skips
-    // racks so a freshly-loaded preset's `expanded` value isn't shadowed.
-    setCollapsed(!rack.expanded);
     onCollapsedChanged = [this](bool collapsed) {
         if (auto* rackInfo = magda::TrackManager::getInstance().getRackByPath(rackPath_))
             rackInfo->expanded = !collapsed;
@@ -199,6 +195,15 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
 
     // Build chain rows
     updateFromRack(rack);
+
+    // Restore collapsed state AFTER all child components are created, because
+    // setCollapsed triggers resized() → resizedCollapsed() which lays out
+    // macroButton_ / modButton_. Calling it earlier (when those are still
+    // null) crashes inside Component::setBounds with a null `this`. Same
+    // pattern DeviceSlotComponent uses. The model field is the single source
+    // of truth — TrackChainContent's save/restore-state map skips racks so a
+    // freshly-loaded preset's `expanded` value isn't shadowed.
+    setCollapsed(!rack.expanded);
 
     // Start meter polling timer (~30 FPS)
     startTimerHz(30);

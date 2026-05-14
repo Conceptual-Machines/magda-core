@@ -20,8 +20,9 @@ class LoopMarkerInteraction {
         std::function<void(double start, double end)> onLoopChanged;
         std::function<void()> onRepaint;
         double maxTime = 0.0;
-        int topBorderY = 0;          // Y position of the flag connecting line
-        int topBorderThreshold = 6;  // Vertical hit-test threshold around topBorderY
+        int topBorderY = 0;          // Y position of the flag connecting line (top of strip)
+        int topBorderThreshold = 6;  // How far BELOW topBorderY still counts as the strip body
+                                     // (a small fixed tolerance above the line is added internally)
     };
 
     void setHost(Host host);

@@ -404,19 +404,18 @@ void SessionClipScheduler::updateLaunchTimings(ClipId clipId, const ClipInfo* cl
         bpm = 120.0;
 
     if (clip->isAudio() && clip->autoTempo) {
-        data.clipLengthBeats = clip->lengthBeats;
+        data.clipLengthBeats = clip->getLengthInBeats(bpm);
         data.loopLengthBeats =
-            (clip->loopLengthBeats > 0.0) ? clip->loopLengthBeats : clip->lengthBeats;
+            (clip->loopLengthBeats > 0.0) ? clip->loopLengthBeats : data.clipLengthBeats;
     } else if (clip->isAudio()) {
-        double srcLength =
-            clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
+        double srcLength = clip->getSourceLoopLength() > 0.0
+                               ? clip->getSourceLoopLength()
+                               : clip->timelineToSource(clip->getTimelineLength(bpm));
         double durationSeconds = srcLength / clip->speedRatio;
         data.clipLengthBeats = durationSeconds * bpm / 60.0;
         data.loopLengthBeats = data.clipLengthBeats;
     } else {
-        // MIDI: source length is in seconds
-        double srcLength = clip->getSourceLength();
-        data.clipLengthBeats = srcLength * bpm / 60.0;
+        data.clipLengthBeats = clip->getLengthInBeats(bpm);
         data.loopLengthBeats = data.clipLengthBeats;
     }
 }

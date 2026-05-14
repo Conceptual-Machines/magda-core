@@ -5,6 +5,7 @@
 
 #include <functional>
 
+#include "ValueLabelControl.hpp"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/ParameterInfo.hpp"
@@ -17,30 +18,27 @@ namespace magda::daw::ui {
 /**
  * @brief A text-based slider that displays value as editable text
  *
- * Click to edit, drag to change value. Supports dB and pan formatting.
+ * Drag to change value, double-click to reset, Shift+double-click or Shift+right-click to edit
+ * text.
+ * Supports dB and pan formatting.
  */
-class TextSlider : public juce::Component,
-                   public juce::Label::Listener,
-                   public magda::AutomationManagerListener {
+class TextSlider : public juce::Component, public magda::AutomationManagerListener {
   public:
     enum class Format { Decimal, Decibels, Pan };
     enum class Orientation { Horizontal, Vertical };
 
     TextSlider(Format format = Format::Decimal) : format_(format) {
-        label_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        label_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-        label_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-        label_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
-        label_.setColour(juce::Label::outlineWhenEditingColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        label_.setColour(juce::Label::backgroundWhenEditingColourId,
-                         DarkTheme::getColour(DarkTheme::BACKGROUND));
-        label_.setJustificationType(juce::Justification::centred);
-        label_.setEditable(false, true, false);  // Single-click to edit
-        label_.addListener(this);
-        // Don't let label intercept mouse - we handle all mouse events
-        label_.setInterceptsMouseClicks(false, false);
-        addAndMakeVisible(label_);
+        valueControl_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        valueControl_.setTextColour(DarkTheme::getTextColour());
+        valueControl_.setJustification(juce::Justification::centred);
+        valueControl_.onMouseDown = [this](const juce::MouseEvent& e) { mouseDown(e); };
+        valueControl_.onMouseDrag = [this](const juce::MouseEvent& e) { mouseDrag(e); };
+        valueControl_.onMouseUp = [this](const juce::MouseEvent& e) { mouseUp(e); };
+        valueControl_.onMouseDoubleClick = [this](const juce::MouseEvent& e) {
+            mouseDoubleClick(e);
+        };
+        valueControl_.onEditCommit = [this](const juce::String& text) { commitText(text); };
+        addAndMakeVisible(valueControl_);
 
         updateLabel();
     }
@@ -56,7 +54,9 @@ class TextSlider : public juce::Component,
         minValue_ = min;
         maxValue_ = max;
         interval_ = interval;
-        setValue(juce::jlimit(min, max, value_), juce::dontSendNotification);
+        defaultValue_ = juce::jlimit(minValue_, maxValue_, defaultValue_);
+        value_ = juce::jlimit(minValue_, maxValue_, value_);
+        updateLabel();
     }
 
     /** Set a skew factor for logarithmic-feel drag behaviour.
@@ -80,24 +80,34 @@ class TextSlider : public juce::Component,
      * valueParser (delegating to ParameterUtils::formatValue/parseValue).
      */
     void setParameterInfo(const magda::ParameterInfo& info) {
-        setRange(static_cast<double>(info.minValue), static_cast<double>(info.maxValue));
+        double interval = 0.01;
+        if (info.displayFormat == magda::DisplayFormat::Percent && info.minValue >= -1.0e-6f &&
+            info.maxValue <= 1.0f + 1.0e-6f) {
+            interval = 0.001;
+        }
+        setRange(static_cast<double>(info.minValue), static_cast<double>(info.maxValue), interval);
+        setDefaultValue(static_cast<double>(info.defaultValue));
 
-        // Map scaleAnchor into TextSlider's linear-ratio skew so the drag
-        // behaviour lines up with ParameterUtils' anchor handling. Exact
-        // display/parse still goes through ParameterUtils below, so the
-        // slider and the automation lane cannot disagree on values.
+        // Map scaleAnchor into TextSlider's drag-skew so the slider
+        // matches ParameterUtils' anchor handling. The actual
+        // projection (linear vs log) is selected by `useLogProjection_`
+        // below — without it, scale=Logarithmic + scaleAnchor would
+        // compute a log anchor-ratio and then project linearly, which
+        // lands the anchor at the wrong pixel position.
+        useLogProjection_ =
+            (info.scale == magda::ParameterScale::Logarithmic && info.minValue > 0.0f);
         skewFactor_ = 1.0;
         if (info.scaleAnchor > info.minValue && info.scaleAnchor < info.maxValue &&
             info.maxValue > info.minValue) {
-            // Use log-space anchor ratio for logarithmic params to match
-            // ParameterUtils::normalizedToReal/realToNormalized.
-            double anchorRatio;
-            if (info.scale == magda::ParameterScale::Logarithmic && info.minValue > 0.0f) {
-                anchorRatio = std::log(static_cast<double>(info.scaleAnchor) / info.minValue) /
-                              std::log(static_cast<double>(info.maxValue) / info.minValue);
-            } else {
-                anchorRatio = (info.scaleAnchor - info.minValue) / (info.maxValue - info.minValue);
-            }
+            // The skew is solved so that pow(0.5, 1/skew) = anchorRatio,
+            // i.e. the slider's pixel midpoint maps to the anchor's
+            // position in whichever projected space (linear or log) the
+            // drag handler then uses.
+            const double anchorRatio =
+                useLogProjection_
+                    ? (std::log(static_cast<double>(info.scaleAnchor) / info.minValue) /
+                       std::log(static_cast<double>(info.maxValue) / info.minValue))
+                    : (info.scaleAnchor - info.minValue) / (info.maxValue - info.minValue);
             if (anchorRatio > 0.0 && anchorRatio < 1.0)
                 skewFactor_ = std::log(0.5) / std::log(anchorRatio);
         }
@@ -105,9 +115,11 @@ class TextSlider : public juce::Component,
         paramInfoCopy_ = info;
         hasParamInfo_ = true;
 
-        // A custom UI may have called setValueFormatter to override per-param
-        // formatting (e.g. 4OSC pan wants "0" at centre, not the plugin's
-        // native "0R"). Don't clobber an explicit formatter.
+        // ParameterInfo is the value-space contract for this slider. Reset
+        // any previous parser installed for another parameter so a reused
+        // ParamSlot cannot keep a stale normalized/display assumption after
+        // pagination or chain rebuilds. The formatter is preserved if the
+        // host called setValueFormatter() — see hasExplicitFormatter_.
         if (!hasExplicitFormatter_) {
             valueFormatter_ = [this](double real) {
                 return magda::ParameterUtils::formatValue(static_cast<float>(real), paramInfoCopy_);
@@ -136,6 +148,12 @@ class TextSlider : public juce::Component,
             newValue = minValue_ + interval * std::round((newValue - minValue_) / interval);
         }
 
+        if (!hasExplicitDefaultValue_ && !hasCapturedDefaultValue_ &&
+            notification == juce::dontSendNotification) {
+            defaultValue_ = newValue;
+            hasCapturedDefaultValue_ = true;
+        }
+
         if (std::abs(value_ - newValue) > 1.0e-9) {
             value_ = newValue;
             updateLabel();
@@ -149,25 +167,37 @@ class TextSlider : public juce::Component,
         return value_;
     }
 
+    void setDefaultValue(double defaultValue) {
+        defaultValue_ = juce::jlimit(minValue_, maxValue_, defaultValue);
+        hasExplicitDefaultValue_ = true;
+        hasCapturedDefaultValue_ = true;
+    }
+
     void setFormat(Format format) {
         format_ = format;
         updateLabel();
     }
 
     void setFont(const juce::Font& font) {
-        label_.setFont(font);
+        valueControl_.setFont(font);
     }
 
     void setTextColour(const juce::Colour& colour) {
-        label_.setColour(juce::Label::textColourId, colour);
+        valueControl_.setTextColour(colour);
     }
 
     void setBackgroundColour(const juce::Colour& colour) {
-        label_.setColour(juce::Label::backgroundColourId, colour);
+        juce::ignoreUnused(colour);
+        valueControl_.clearBackgroundColour();
     }
 
     void setRightClickEditsText(bool shouldEdit) {
         rightClickEditsText_ = shouldEdit;
+    }
+
+    void setShowFillIndicator(bool show) {
+        showFillIndicator_ = show;
+        updateLabel();
     }
 
     void setEmptyText(const juce::String& text) {
@@ -180,22 +210,25 @@ class TextSlider : public juce::Component,
         updateLabel();
     }
 
-    // Custom value formatter - takes the slider's real value, returns display string.
-    // This override sticks: setParameterInfo will not replace it with the generic
-    // ParameterUtils formatter, so plugin-UI-specific formatting wins.
+    // Custom value formatter — takes the slider's real value, returns
+    // display string. Sticky against setParameterInfo() so custom UIs
+    // (e.g. FourOscUI's "L50"/"R50" pan label) survive the refresh cycle
+    // DeviceSlotComponent runs whenever the device's ParameterInfo
+    // republishes.
     void setValueFormatter(std::function<juce::String(double)> formatter) {
         valueFormatter_ = std::move(formatter);
         hasExplicitFormatter_ = static_cast<bool>(valueFormatter_);
         updateLabel();
     }
 
-    // Custom value parser - takes user input string, returns normalized value (0-1)
+    // Custom value parser - takes user input string, returns the slider's real value.
     void setValueParser(std::function<double(const juce::String&)> parser) {
         valueParser_ = std::move(parser);
     }
 
     void setOrientation(Orientation o) {
         orientation_ = o;
+        updateLabel();
     }
 
     Orientation getOrientation() const {
@@ -211,12 +244,28 @@ class TextSlider : public juce::Component,
         if (std::abs(meterPeakL_ - peakL) > 0.001f || std::abs(meterPeakR_ - peakR) > 0.001f) {
             meterPeakL_ = peakL;
             meterPeakR_ = peakR;
+            updateLabel();
             repaint();
         }
     }
 
     bool isBeingDragged() const {
         return isLeftButtonDrag_;
+    }
+
+    void cancelGesture() {
+        const bool wasLeftDrag = isLeftButtonDrag_;
+        isLeftButtonDrag_ = false;
+        isShiftDrag_ = false;
+        hasDragged_ = false;
+        overrideLatchedThisGesture_ = false;
+        valueControl_.setDragging(false);
+        if (wasLeftDrag && hasAutomationTarget_) {
+            auto& mgr = magda::AutomationManager::getInstance();
+            mgr.setTargetUserTouched(automationTarget_, false);
+            mgr.setTargetTouchSuppressed(automationTarget_, false);
+            mgr.clearTouchBaseline(automationTarget_);
+        }
     }
 
     // Bind this slider to an automation target so mouseDown/mouseUp automatically
@@ -304,12 +353,11 @@ class TextSlider : public juce::Component,
             g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
             g.drawHorizontalLine(handleY, static_cast<float>(handleRect.getX() + 2),
                                  static_cast<float>(handleRect.getRight() - 2));
-        } else {
-            // Horizontal mode (original behavior)
+        } else if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
             g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-            g.fillRect(bounds);
+            g.fillRoundedRectangle(bounds.toFloat(), 2.0f);
             g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.drawRect(bounds);
+            g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 2.0f, 1.0f);
 
             if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
                 float w = static_cast<float>(bounds.getWidth());
@@ -347,34 +395,11 @@ class TextSlider : public juce::Component,
                 drawHorizontalBar(bounds.getY() + bounds.getHeight() / 2, bounds.getHeight() / 2,
                                   meterPeakR_);
             }
-
-            // Pan fill indicator (draw from center outward)
-            if (format_ == Format::Pan) {
-                float w = static_cast<float>(bounds.getWidth());
-                float centerX = bounds.getX() + w * 0.5f;
-                float panValue = static_cast<float>(value_);
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
-                if (std::abs(panValue) < 0.01f) {
-                    g.fillRect(centerX - 1.0f, static_cast<float>(bounds.getY()), 2.0f,
-                               static_cast<float>(bounds.getHeight()));
-                } else if (panValue < 0) {
-                    float fillW = (w * 0.5f) * (-panValue);
-                    g.fillRect(centerX - fillW, static_cast<float>(bounds.getY()), fillW,
-                               static_cast<float>(bounds.getHeight()));
-                } else {
-                    float fillW = (w * 0.5f) * panValue;
-                    g.fillRect(centerX, static_cast<float>(bounds.getY()), fillW,
-                               static_cast<float>(bounds.getHeight()));
-                }
-            }
-
-            // 0dB tick mark removed - shown on level meters instead
         }
 
-        // Automation highlight: purple tint when the lane is driving the
-        // parameter, grey when the user has taken over. Drawn last so it
-        // sits on top of meter bars and value fills.
-        if (automationVisualState_ != magda::AutomationVisualState::None) {
+        if ((orientation_ == Orientation::Vertical || meterPeakL_ > 0.001f ||
+             meterPeakR_ > 0.001f) &&
+            automationVisualState_ != magda::AutomationVisualState::None) {
             auto boundsF = getLocalBounds().toFloat();
             const juce::Colour tint =
                 automationVisualState_ == magda::AutomationVisualState::Overridden
@@ -388,17 +413,18 @@ class TextSlider : public juce::Component,
     }
 
     void resized() override {
-        label_.setBounds(getLocalBounds());
+        valueControl_.setBounds(getLocalBounds());
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
-        if (!label_.isBeingEdited() && e.mods.isLeftButtonDown()) {
+        if (!valueControl_.isEditing() && e.mods.isLeftButtonDown()) {
             dragStartValue_ = value_;
             dragStartY_ = e.y;
             dragStartX_ = e.x;
             hasDragged_ = false;
             overrideLatchedThisGesture_ = false;
             isLeftButtonDrag_ = true;
+            valueControl_.setDragging(true);
             // Only enter Shift+drag mode if the owner actually wants to take
             // the gesture (e.g. a mod is currently selected for amount edit).
             // Otherwise Shift falls through to the normal drag path so its
@@ -441,11 +467,12 @@ class TextSlider : public juce::Component,
         } else {
             isLeftButtonDrag_ = false;
             isShiftDrag_ = false;
+            valueControl_.setDragging(false);
         }
     }
 
     void mouseDrag(const juce::MouseEvent& e) override {
-        if (label_.isBeingEdited() || !isLeftButtonDrag_)
+        if (valueControl_.isEditing() || !isLeftButtonDrag_)
             return;
 
         // Check if we've moved enough to count as a drag
@@ -503,7 +530,25 @@ class TextSlider : public juce::Component,
                 }
 
                 double newValue;
-                if (skewFactor_ != 1.0) {
+                if (useLogProjection_) {
+                    // Log slider: drag operates in log-normalised space
+                    // [0,1] = log(val/min) / log(max/min). Equal pixel
+                    // movements give equal RATIO changes on the value;
+                    // an optional skew keeps an anchor at the midpoint.
+                    const double logRange = std::log(maxValue_ / minValue_);
+                    const double startNorm = std::log(dragStartValue_ / minValue_) / logRange;
+                    if (skewFactor_ != 1.0) {
+                        const double startSkewed = std::pow(startNorm, skewFactor_);
+                        const double skewedNorm =
+                            juce::jlimit(0.0, 1.0, startSkewed + pixelDelta / pixelRange);
+                        const double unskewed = std::pow(skewedNorm, 1.0 / skewFactor_);
+                        newValue = minValue_ * std::exp(unskewed * logRange);
+                    } else {
+                        const double newNorm =
+                            juce::jlimit(0.0, 1.0, startNorm + pixelDelta / pixelRange);
+                        newValue = minValue_ * std::exp(newNorm * logRange);
+                    }
+                } else if (skewFactor_ != 1.0) {
                     // Skewed drag: work in normalised (0-1) space with skew applied
                     double startNorm = (dragStartValue_ - minValue_) / (maxValue_ - minValue_);
                     double startSkewed = std::pow(startNorm, skewFactor_);
@@ -529,6 +574,7 @@ class TextSlider : public juce::Component,
         // — stop refreshing. (#1108)
         const bool wasLeftDrag = isLeftButtonDrag_;
         isLeftButtonDrag_ = false;
+        valueControl_.setDragging(false);
 
         // Release the transient flags; the lane stays in bypass (override)
         // state until the user explicitly re-enables it from the header.
@@ -557,9 +603,9 @@ class TextSlider : public juce::Component,
 
         if (!hasDragged_) {
             if (e.mods.isPopupMenu()) {
-                if (rightClickEditsText_) {
+                if (rightClickEditsText_ || e.mods.isShiftDown()) {
                     // Right-click to edit text directly
-                    label_.showEditor();
+                    valueControl_.showEditor(currentDisplayText());
                 } else if (onRightClicked) {
                     // Right-click callback (for context menus, etc.)
                     onRightClicked();
@@ -574,46 +620,72 @@ class TextSlider : public juce::Component,
         hasDragged_ = false;
     }
 
-    void mouseDoubleClick(const juce::MouseEvent&) override {
-        // Double-click to edit value
-        label_.showEditor();
-    }
+    void mouseDoubleClick(const juce::MouseEvent& e) override {
+        cancelGesture();
 
-    // Label::Listener
-    void labelTextChanged(juce::Label* labelThatChanged) override {
-        if (labelThatChanged == &label_) {
-            auto text = label_.getText().trim();
-
-            // Use custom parser if provided
-            if (valueParser_) {
-                double newValue = valueParser_(text);
-                setValue(newValue);
-                return;
-            }
-
-            // Default parsing - remove common suffixes
-            if (text.endsWithIgnoreCase("db")) {
-                text = text.dropLastCharacters(2).trim();
-            } else if (text.endsWithIgnoreCase("l") || text.endsWithIgnoreCase("r")) {
-                text = text.dropLastCharacters(1).trim();
-            } else if (text.equalsIgnoreCase("c") || text.equalsIgnoreCase("center")) {
-                setValue(0.0);
-                return;
-            }
-
-            double newValue = text.getDoubleValue();
-            setValue(newValue);
-        }
+        if (e.mods.isShiftDown())
+            valueControl_.showEditor(currentDisplayText());
+        else
+            resetToDefaultValue();
     }
 
   private:
-    juce::Label label_;
+    void commitText(const juce::String& committedText) {
+        auto text = committedText.trim();
+
+        // Use custom parser if provided
+        if (valueParser_) {
+            setValueFromUser(valueParser_(text));
+            return;
+        }
+
+        // Default parsing - remove common suffixes
+        if (text.endsWithIgnoreCase("db")) {
+            text = text.dropLastCharacters(2).trim();
+        } else if (text.endsWithIgnoreCase("l") || text.endsWithIgnoreCase("r")) {
+            text = text.dropLastCharacters(1).trim();
+        } else if (text.equalsIgnoreCase("c") || text.equalsIgnoreCase("center")) {
+            setValueFromUser(0.0);
+            return;
+        }
+
+        setValueFromUser(text.getDoubleValue());
+    }
+
+    void setValueFromUser(double newValue) {
+        if (std::abs(value_ - juce::jlimit(minValue_, maxValue_, newValue)) > 1.0e-9)
+            latchAutomationOverride();
+        setValue(newValue);
+    }
+
+    void resetToDefaultValue() {
+        setValueFromUser(defaultValue_);
+    }
+
+    void latchAutomationOverride() {
+        if (overrideLatchedThisGesture_)
+            return;
+        if (!hasAutomationTarget_ || !isAutomated())
+            return;
+        if (magda::AutomationManager::getInstance().isWriteModeEnabled())
+            return;
+
+        magda::AutomationManager::getInstance().setTargetOverridden(automationTarget_, true);
+        setAutomationVisualState(magda::AutomationVisualState::Overridden);
+        overrideLatchedThisGesture_ = true;
+    }
+
+    ValueLabelControl valueControl_;
     Format format_;
     double value_ = 0.0;
     double minValue_ = 0.0;
     double maxValue_ = 1.0;
+    double defaultValue_ = 0.0;
     double interval_ = 0.01;
     double skewFactor_ = 1.0;
+    bool useLogProjection_ = false;
+    bool hasExplicitDefaultValue_ = false;
+    bool hasCapturedDefaultValue_ = false;
     double dragStartValue_ = 0.0;
     int dragStartX_ = 0;
     int dragStartY_ = 0;
@@ -624,28 +696,32 @@ class TextSlider : public juce::Component,
     float shiftDragStartValue_ = 0.5f;
     Orientation orientation_ = Orientation::Horizontal;
     bool rightClickEditsText_ = true;
+    bool showFillIndicator_ = true;
     juce::String emptyText_ = "-";
     bool showEmptyText_ = false;
     std::function<juce::String(double)>
-        valueFormatter_;  // Custom value formatting (normalized → string)
+        valueFormatter_;  // Custom value formatting (real value -> string)
     std::function<double(const juce::String&)>
-        valueParser_;                     // Custom value parsing (string → normalized)
+        valueParser_;                     // Custom value parsing (string -> real value)
     magda::ParameterInfo paramInfoCopy_;  // Populated by setParameterInfo
     bool hasParamInfo_ = false;
-    bool hasExplicitFormatter_ =
-        false;  // setValueFormatter override; sticky across setParameterInfo
+    // True if a custom formatter was installed via setValueFormatter().
+    // Stops setParameterInfo() from clobbering it on every refresh —
+    // FourOscUI installs format-specific labels (e.g. "L50"/"R50" for pan)
+    // at construction that the generic ParameterUtils formatter cannot
+    // produce. The parser is still replaced — only the display side is
+    // sticky.
+    bool hasExplicitFormatter_ = false;
 
-    void updateLabel() {
+    juce::String currentDisplayText() const {
         // Show empty text instead of value when disabled/empty
         if (showEmptyText_) {
-            label_.setText(emptyText_, juce::dontSendNotification);
-            return;
+            return emptyText_;
         }
 
         // Use custom formatter if provided
         if (valueFormatter_) {
-            label_.setText(valueFormatter_(value_), juce::dontSendNotification);
-            return;
+            return valueFormatter_(value_);
         }
 
         juce::String text;
@@ -675,7 +751,23 @@ class TextSlider : public juce::Component,
                 break;
         }
 
-        label_.setText(text, juce::dontSendNotification);
+        return text;
+    }
+
+    void updateLabel() {
+        valueControl_.setRange(minValue_, maxValue_);
+        valueControl_.setValue(value_);
+        valueControl_.setDisplayText(currentDisplayText());
+        valueControl_.setFillMode(format_ == Format::Pan
+                                      ? ValueLabelControl::FillMode::PanCentre
+                                      : ValueLabelControl::FillMode::LeftToRight);
+        const bool hasMeter = meterPeakL_ > 0.001f || meterPeakR_ > 0.001f;
+        valueControl_.setShowFillIndicator(showFillIndicator_ &&
+                                           orientation_ == Orientation::Horizontal && !hasMeter);
+        valueControl_.setDrawBackground(orientation_ == Orientation::Horizontal && !hasMeter);
+        valueControl_.setDrawBorder(orientation_ == Orientation::Horizontal && !hasMeter);
+        valueControl_.setDragging(isLeftButtonDrag_);
+        valueControl_.setTintState(toControlTintState(automationVisualState_));
     }
 
     float meterPeakL_ = 0.f;
@@ -695,6 +787,7 @@ class TextSlider : public juce::Component,
         if (automationVisualState_ == newState)
             return;
         automationVisualState_ = newState;
+        valueControl_.setTintState(toControlTintState(automationVisualState_));
         repaint();
     }
 
@@ -702,7 +795,20 @@ class TextSlider : public juce::Component,
         if (automationVisualState_ == state)
             return;
         automationVisualState_ = state;
+        valueControl_.setTintState(toControlTintState(automationVisualState_));
         repaint();
+    }
+
+    static ValueLabelControl::TintState toControlTintState(magda::AutomationVisualState state) {
+        switch (state) {
+            case magda::AutomationVisualState::Overridden:
+                return ValueLabelControl::TintState::Overridden;
+            case magda::AutomationVisualState::Active:
+                return ValueLabelControl::TintState::Automated;
+            case magda::AutomationVisualState::None:
+            default:
+                return ValueLabelControl::TintState::None;
+        }
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TextSlider)

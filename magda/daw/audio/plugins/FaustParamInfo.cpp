@@ -1,6 +1,7 @@
 #include "FaustParamInfo.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace magda::daw::audio {
 
@@ -28,6 +29,13 @@ magda::ParameterInfo continuousInfo(const FaustParamSlot& slot) {
     info.defaultValue = slot.defaultValue;
     info.currentValue = slot.defaultValue;
     info.scale = slot.logScale ? magda::ParameterScale::Logarithmic : magda::ParameterScale::Linear;
+    if (slot.label.equalsIgnoreCase("Mix") && std::abs(slot.minValue) < 1.0e-6f &&
+        std::abs(slot.maxValue - 1.0f) < 1.0e-6f)
+        info.displayFormat = magda::DisplayFormat::Percent;
+    if (std::isfinite(slot.scaleAnchor))
+        info.scaleAnchor = slot.scaleAnchor;
+    info.gateSlotIndex = slot.gateSlotIndex;
+    info.gateNegated = slot.gateNegated;
     return info;
 }
 
@@ -42,6 +50,8 @@ magda::ParameterInfo booleanInfo(const FaustParamSlot& slot) {
     info.currentValue = info.defaultValue;
     info.scale = magda::ParameterScale::Boolean;
     info.modulatable = false;  // matches ParameterPresets::boolean
+    info.gateSlotIndex = slot.gateSlotIndex;
+    info.gateNegated = slot.gateNegated;
     return info;
 }
 
@@ -88,13 +98,20 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
     }
     info.defaultValue = static_cast<float>(defaultIndex);
     info.currentValue = info.defaultValue;
+    info.gateSlotIndex = slot.gateSlotIndex;
+    info.gateNegated = slot.gateNegated;
     return info;
 }
 
 }  // namespace
 
 magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
-    if (!slot.active)
+    // Hidden slots are part of the live binding (the host writes to
+    // their zones — e.g. ProjectTempo) but should not appear in the
+    // inspector. Funnel them through the inactive-placeholder path so
+    // the slot index stays addressable for automation lookups while
+    // the param grid filters them out by empty name.
+    if (!slot.active || slot.hidden)
         return placeholderForInactive(slot);
 
     switch (slot.kind) {

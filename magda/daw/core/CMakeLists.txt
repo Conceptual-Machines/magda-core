@@ -34,6 +34,7 @@ target_sources(magda_daw PRIVATE
     ParameterDetector.cpp
     PresetManager.cpp
     PluginPresetScanner.cpp
+    InternalDeviceKind.cpp
     # Parameter alias system (issue #1062)
     aliases/Target.cpp
     aliases/ParamNameNormalize.cpp
@@ -92,6 +93,7 @@ target_sources(magda_daw PRIVATE
     ParameterInfo.hpp
     ParameterDetector.hpp
     ParameterUtils.hpp
+    TempoUtils.hpp
     AutomationTypes.hpp
     AutomationInfo.hpp
     AutomationManager.hpp

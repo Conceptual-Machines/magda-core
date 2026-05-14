@@ -2,8 +2,10 @@
 
 #include <algorithm>
 
+#include "../project/ProjectManager.hpp"
 #include "ClipManager.hpp"
 #include "Config.hpp"
+#include "TempoUtils.hpp"
 #include "TrackInfo.hpp"
 #include "TrackManager.hpp"
 
@@ -369,10 +371,12 @@ void SelectionManager::extendSelectionTo(ClipId targetClipId) {
         return;
     }
 
-    // Calculate the rectangular region between anchor and target
-    double minTime = std::min(anchorClip->startTime, targetClip->startTime);
-    double maxTime = std::max(anchorClip->startTime + anchorClip->length,
-                              targetClip->startTime + targetClip->length);
+    const double bpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+
+    // Calculate the rectangular region between anchor and target. Placement
+    // beats are authoritative; seconds fields are only derived caches.
+    double minTime = std::min(anchorClip->getTimelineStart(bpm), targetClip->getTimelineStart(bpm));
+    double maxTime = std::max(anchorClip->getTimelineEnd(bpm), targetClip->getTimelineEnd(bpm));
 
     TrackId minTrackId = std::min(anchorClip->trackId, targetClip->trackId);
     TrackId maxTrackId = std::max(anchorClip->trackId, targetClip->trackId);
@@ -388,8 +392,9 @@ void SelectionManager::extendSelectionTo(ClipId targetClipId) {
         }
 
         // Check if clip overlaps with time range
-        double clipEnd = clip.startTime + clip.length;
-        if (clip.startTime < maxTime && clipEnd > minTime) {
+        const double clipStart = clip.getTimelineStart(bpm);
+        const double clipEnd = clip.getTimelineEnd(bpm);
+        if (clipStart < maxTime && clipEnd > minTime) {
             clipsInRange.insert(clip.id);
         }
     }
@@ -423,8 +428,14 @@ void SelectionManager::selectTimeRange(double startTime, double endTime,
     selectedClipId_ = INVALID_CLIP_ID;
 
     selectionType_ = SelectionType::TimeRange;
-    timeRangeSelection_.startTime = startTime;
-    timeRangeSelection_.endTime = endTime;
+    if (startTime > endTime)
+        std::swap(startTime, endTime);
+    const double projectBpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    const double bpm = isValidBpm(projectBpm) ? projectBpm : DEFAULT_BPM;
+    timeRangeSelection_.startBeats = startTime * bpm / 60.0;
+    timeRangeSelection_.endBeats = endTime * bpm / 60.0;
+    timeRangeSelection_.startTime = timeRangeSelection_.startBeats * 60.0 / bpm;
+    timeRangeSelection_.endTime = timeRangeSelection_.endBeats * 60.0 / bpm;
     timeRangeSelection_.trackIds = trackIds;
 
     // Sync with managers (clear their selections)
@@ -671,6 +682,59 @@ void SelectionManager::clearSelection() {
     ClipManager::getInstance().clearClipSelection();
 
     notifySelectionTypeChanged(SelectionType::None);
+}
+
+void SelectionManager::clearSelectionForDeletedChainNode(const ChainNodePath& deletedPath) {
+    if (!deletedPath.isValid() || selectionType_ == SelectionType::None)
+        return;
+
+    auto pointsAtDeletedNode = [&deletedPath](const ChainNodePath& selectedPath) {
+        if (!selectedPath.isValid())
+            return false;
+        if (selectedPath == deletedPath)
+            return true;
+
+        const auto deletedDeviceId = deletedPath.getDeviceId();
+        return deletedDeviceId != INVALID_DEVICE_ID &&
+               selectedPath.trackId == deletedPath.trackId &&
+               selectedPath.getDeviceId() == deletedDeviceId;
+    };
+
+    bool shouldClear = false;
+    switch (selectionType_) {
+        case SelectionType::ChainNode:
+            shouldClear = pointsAtDeletedNode(selectedChainNode_);
+            break;
+        case SelectionType::Param:
+            shouldClear = pointsAtDeletedNode(paramSelection_.devicePath);
+            break;
+        case SelectionType::Mod:
+            shouldClear = pointsAtDeletedNode(modSelection_.parentPath);
+            break;
+        case SelectionType::Macro:
+            shouldClear = pointsAtDeletedNode(macroSelection_.parentPath);
+            break;
+        case SelectionType::ModsPanel:
+            shouldClear = pointsAtDeletedNode(modsPanelSelection_.parentPath);
+            break;
+        case SelectionType::MacrosPanel:
+            shouldClear = pointsAtDeletedNode(macrosPanelSelection_.parentPath);
+            break;
+        case SelectionType::Device:
+            shouldClear = deviceSelection_.trackId == deletedPath.trackId &&
+                          deviceSelection_.deviceId == deletedPath.getDeviceId();
+            break;
+        default:
+            break;
+    }
+
+    if (!shouldClear)
+        return;
+
+    if (selectionType_ == SelectionType::ChainNode)
+        clearChainNodeSelection();
+    else
+        clearSelection();
 }
 
 // ============================================================================

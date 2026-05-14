@@ -3,11 +3,13 @@
 #include <juce_core/juce_core.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
+#include "../../core/ChainNodePath.hpp"
 #include "../../core/DeviceInfo.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../core/TypeIds.hpp"
@@ -70,6 +72,13 @@ class RackSyncManager {
      * @return The TE plugin, or nullptr if not found
      */
     te::Plugin* getInnerPlugin(DeviceId deviceId) const;
+
+    /**
+     * @brief Refresh native audio sidechain source routing for rack-internal plugins.
+     */
+    void syncSidechains(
+        const RackInfo& rackInfo,
+        const std::function<te::AudioTrack*(TrackId sourceTrackId)>& resolveSourceTrack);
 
     /**
      * @brief Get the RackInstance plugin on the TE track for a synced rack
@@ -184,6 +193,12 @@ class RackSyncManager {
      * Used by PluginManager::rebuildSidechainLFOCache() to populate the cache.
      */
     void collectLFOModifiers(TrackId trackId, std::vector<te::LFOModifier*>& out) const;
+    void collectLFOModifiersWithModes(TrackId trackId, std::vector<te::LFOModifier*>& out,
+                                      std::vector<LFOTriggerMode>& modes) const;
+    void collectLFOModifiersWithModesForSidechainSource(TrackId destinationTrackId,
+                                                        TrackId sourceTrackId,
+                                                        std::vector<te::LFOModifier*>& out,
+                                                        std::vector<LFOTriggerMode>& modes) const;
 
     /**
      * @brief Copy each rack-internal TE LFO's current phase + value into its
@@ -229,9 +244,11 @@ class RackSyncManager {
         RackId rackId = INVALID_RACK_ID;
         TrackId trackId = INVALID_TRACK_ID;
         te::RackType::Ptr rackType;
-        te::Plugin::Ptr rackInstance;                           // RackInstance on the TE track
-        std::map<DeviceId, te::Plugin::Ptr> innerPlugins;       // plugins inside the rack
-        std::map<ChainId, te::Plugin::Ptr> chainVolPanPlugins;  // per-chain VolumeAndPan
+        te::Plugin::Ptr rackInstance;                                // RackInstance on the TE track
+        std::map<DeviceId, te::Plugin::Ptr> innerPlugins;            // plugins inside the rack
+        std::map<juce::String, te::Plugin::Ptr> chainVolPanPlugins;  // per-chain VolumeAndPan
+        std::map<juce::String, te::RackType::Ptr> nestedRackTypes;
+        std::map<juce::String, te::Plugin::Ptr> nestedRackInstances;
 
         // Phase 2: modulation
         std::map<ModId, te::Modifier::Ptr> innerModifiers;
@@ -253,6 +270,14 @@ class RackSyncManager {
             std::map<ModId, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
         };
         std::map<DeviceId, InnerDeviceModState> innerDeviceMods;
+
+        struct NestedRackModState {
+            std::map<ModId, te::Modifier::Ptr> modifiers;
+            std::map<int, te::MacroParameter*> macroParams;
+            std::map<ModId, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
+            std::map<DeviceId, InnerDeviceModState> innerDeviceMods;
+        };
+        std::map<juce::String, NestedRackModState> nestedRackMods;
     };
 
     /**
@@ -271,6 +296,16 @@ class RackSyncManager {
      */
     void buildConnections(SyncedRack& synced, const RackInfo& rackInfo);
 
+    void loadRackContents(SyncedRack& synced, TrackId trackId, const RackInfo& rackInfo,
+                          const ChainNodePath& rackPath, te::RackType& rackType);
+    void buildConnectionsForRack(SyncedRack& synced, const RackInfo& rackInfo,
+                                 const ChainNodePath& rackPath, te::RackType& rackType);
+    void rebuildConnectionsRecursive(SyncedRack& synced, const RackInfo& rackInfo,
+                                     const ChainNodePath& rackPath, te::RackType& rackType);
+    void updateElementPropertiesRecursive(SyncedRack& synced, const RackInfo& rackInfo,
+                                          const ChainNodePath& rackPath);
+    void clearNestedRackState(SyncedRack& synced);
+
     /**
      * @brief Load chain elements as plugins into the RackType
      */
@@ -288,11 +323,15 @@ class RackSyncManager {
      * duplicated bodies.
      */
     void syncRackModulation(SyncedRack& synced, const RackInfo& rackInfo);
+    void syncRackModulationRecursive(SyncedRack& synced, const RackInfo& rackInfo,
+                                     const ChainNodePath& rackPath, te::RackType& rackType);
 
     /**
      * @brief Drive ModifierSyncWalker in-place properties update for a rack.
      */
     void updateRackModulationProperties(SyncedRack& synced, const RackInfo& rackInfo);
+    void updateRackModulationPropertiesRecursive(SyncedRack& synced, const RackInfo& rackInfo,
+                                                 const ChainNodePath& rackPath);
 
     /**
      * @brief Apply rack bypass state via wet/dry gains

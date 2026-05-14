@@ -11,6 +11,7 @@
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
+#include "AudioBridgeMixer.hpp"
 #include "DeviceMeteringManager.hpp"
 #include "MeteringBuffer.hpp"
 #include "PluginWindowBridge.hpp"
@@ -18,14 +19,17 @@
 #include "WarpMarkerManager.hpp"
 #include "automation/AutomationPlaybackEngine.hpp"
 #include "automation/AutomationRecordingEngine.hpp"
+#include "automation/ControlTargetResolver.hpp"
 #include "midi/MidiActivityMonitor.hpp"
+#include "midi/MidiInputRouter.hpp"
 #include "params/ParameterManager.hpp"
 #include "params/ParameterQueue.hpp"
 #include "plugin_manager/PluginManager.hpp"
-#include "plugins/SidechainTriggerBus.hpp"
-#include "processors/DeviceProcessor.hpp"
+#include "processors/base/DeviceProcessor.hpp"
+#include "sampling/SamplerFileLoader.hpp"
 #include "session/ClipSynchronizer.hpp"
 #include "session/SessionClipAudioMonitor.hpp"
+#include "sidechain/SidechainRoutingManager.hpp"
 #include "transport/TransportStateManager.hpp"
 
 namespace magda {
@@ -501,8 +505,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     void triggerMidiActivity(TrackId trackId) {
         midiActivity_.triggerActivity(trackId);
-        // Write to sidechain trigger bus so updateAllMods() picks up live MIDI too
-        SidechainTriggerBus::getInstance().triggerNoteOn(trackId);
+        // Write to sidechain trigger bus so updateAllMods() picks up live MIDI too.
+        sidechainRouting_.triggerMidiActivity(trackId);
         // LFO retrigger is handled on the audio thread by SidechainMonitorPlugin
         // (which calls PluginManager::triggerSidechainNoteOn). Calling it here
         // from the MIDI thread would double-trigger and race with the audio
@@ -805,18 +809,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Timer callback for metering updates (runs on message thread)
     void timerCallback() override;
 
-    bool isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
-                                const juce::String& liveName) const;
-    void removeSurfaceOnlyMidiInputTargets();
-
     // Create track mapping
     void ensureTrackMapping(TrackId trackId);
-
-    // Plugin creation helpers
-    te::Plugin::Ptr createToneGenerator(te::AudioTrack* track);
-    // Note: createVolumeAndPan removed - track volume is separate infrastructure
-    te::Plugin::Ptr createLevelMeter(te::AudioTrack* track);
-    te::Plugin::Ptr createFourOscSynth(te::AudioTrack* track);
 
     // Convert DeviceInfo to plugin
     te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device);
@@ -825,22 +819,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     te::Engine& engine_;
     te::Edit& edit_;
 
-    // Virtual MIDI device for QWERTY keyboard (lazily created).
-    // qwertyNeedsContextRefresh_ is set when the device is freshly created
-    // during this session — the live playback context's InputDeviceInstance
-    // list needs a rebuild before the device can route to tracks. Cleared
-    // on the first getQwertyMidiDevice() call after the graph is allocated.
-    // See #1054.
-    std::shared_ptr<te::MidiInputDevice> qwertyMidiDevice_;
-    bool qwertyNeedsContextRefresh_ = false;
-
     // Bidirectional mappings
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID
-
-    // MIDI ports owned by Lua/controller scripts. These should never feed
-    // instrument tracks through Tracktion's native live MIDI graph.
-    juce::StringArray surfaceOnlyMidiInputPorts_;
-    mutable juce::CriticalSection surfaceOnlyMidiInputLock_;
 
     // (Session clips use ClipSlot-based mapping via trackId + sceneIndex — no ID maps needed)
 
@@ -860,6 +840,11 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Phase 3 refactoring: Core controllers (extracted from AudioBridge)
     TrackController trackController_;
     PluginManager pluginManager_;
+    AudioBridgeMixer mixer_;
+    MidiInputRouter midiInputRouter_;
+    ControlTargetResolver controlTargetResolver_;
+    SidechainRoutingManager sidechainRouting_;
+    SamplerFileLoader samplerFileLoader_;
     ClipSynchronizer clipSynchronizer_;
     SessionClipAudioMonitor sessionAudioMonitor_;
     SessionMonitorPlugin* sessionMonitorPlugin_ = nullptr;
@@ -883,17 +868,10 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     mutable juce::CriticalSection
         mappingLock_;  // Protects mapping updates (mutable for const getters)
 
-    // Selection-based MIDI routing
-    TrackId lastSelectedTrack_ = INVALID_TRACK_ID;
     void updateMidiRoutingForSelection();
     void resyncAllInputMonitors();
 
-    // Pending MIDI routes (applied when playback context becomes available)
-    std::vector<std::pair<TrackId, juce::String>> pendingMidiRoutes_;
     void applyPendingMidiRoutes();
-
-    // Track playback context to detect restarts that drop MIDI routing
-    te::EditPlaybackContext* lastPlaybackContext_ = nullptr;
 
     // Engine wrapper (owns this AudioBridge, used for ClipInterface access)
     TracktionEngineWrapper* engineWrapper_ = nullptr;

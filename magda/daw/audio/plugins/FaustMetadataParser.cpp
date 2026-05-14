@@ -1,5 +1,7 @@
 #include "FaustMetadataParser.hpp"
 
+#include <cmath>
+
 namespace magda::daw::audio {
 
 namespace {
@@ -8,7 +10,8 @@ namespace {
 // parseFaustLabel to decide whether to strip the `[…]` from the clean
 // label or keep it intact for forward-compatibility.
 bool isKnownKey(const juce::String& key) {
-    return key == "idx" || key == "unit" || key == "scale" || key == "style";
+    return key == "idx" || key == "unit" || key == "scale" || key == "style" || key == "role" ||
+           key == "hidden" || key == "gate" || key == "scaleAnchor" || key == "scaleanchor";
 }
 
 // `[style:menu{'A':0;'B':1}]` payloads — the value passed to
@@ -107,6 +110,49 @@ bool applyFaustAnnotation(const juce::String& key, const juce::String& value,
         // they're purely visual hints we don't act on.
         return true;
     }
+    if (key == "role") {
+        const auto v = value.trim().toLowerCase();
+        if (v == "projecttempo" || v == "project_tempo")
+            metadata.role = FaustControlRole::ProjectTempo;
+        else
+            metadata.role = FaustControlRole::User;
+        return true;
+    }
+    if (key == "hidden") {
+        const auto v = value.trim();
+        // Treat any non-zero / non-"false" value as true. Faust convention
+        // is `[hidden:1]` but be lenient about "true" / "yes" / etc.
+        metadata.hidden =
+            !(v == "0" || v.equalsIgnoreCase("false") || v.equalsIgnoreCase("no") || v.isEmpty());
+        return true;
+    }
+    if (key == "scaleAnchor" || key == "scaleanchor") {
+        // [scaleAnchor:N] — places the slider's drag-midpoint at the
+        // real-units value N. Required for `[scale:log]` to actually
+        // feel logarithmic (without an off-centre anchor, MAGDA's
+        // skewFactor collapses to 1.0 and drag is linear).
+        const float n = value.trim().getFloatValue();
+        if (std::isfinite(n))
+            metadata.scaleAnchor = n;
+        return true;
+    }
+    if (key == "gate") {
+        auto v = value.trim();
+        // `[gate:!N]` — leading `!` negates the condition (param is active
+        // when the gate slot is OFF / < 0.5). The remainder is the slot index.
+        if (v.startsWith("!")) {
+            metadata.gateNegated = true;
+            v = v.substring(1).trim();
+        } else {
+            metadata.gateNegated = false;
+        }
+        // Accept only valid non-negative integers; silently ignore malformed
+        // values so a typo in the .dsp doesn't crash the parser.
+        const int idx = v.getIntValue();
+        if (idx >= 0 || v == "0")
+            metadata.gateSlotIndex = idx;
+        return true;
+    }
     return false;
 }
 
@@ -188,6 +234,26 @@ void mergeFaustMetadata(ControlMetadata& parent, const ControlMetadata& child) {
         parent.isMenuStyle = true;
         parent.menuChoices = child.menuChoices;
     }
+    // Role/hidden follow the same "non-default child wins" rule as the
+    // other tags: a control-level annotation overrides a group-level
+    // default. We can't distinguish "child explicitly said User" from
+    // "child didn't say role" without a tri-state, but the only role
+    // worth inheriting is ProjectTempo and that should always be
+    // declared at the control itself, so the simple override is safe.
+    if (child.role != FaustControlRole::User)
+        parent.role = child.role;
+    if (child.hidden)
+        parent.hidden = true;
+    // Gate: child wins when it explicitly declares a gate (index != -1).
+    // Group-level gate tags are unusual but use the same child-wins rule as
+    // every other annotation so the merge logic stays uniform.
+    if (child.gateSlotIndex != -1) {
+        parent.gateSlotIndex = child.gateSlotIndex;
+        parent.gateNegated = child.gateNegated;
+    }
+    // scaleAnchor: NaN sentinel means "unset", any finite value wins.
+    if (std::isfinite(child.scaleAnchor))
+        parent.scaleAnchor = child.scaleAnchor;
 }
 
 }  // namespace magda::daw::audio

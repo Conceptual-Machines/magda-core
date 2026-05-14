@@ -130,6 +130,27 @@ test-build:
 	fi
 	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_tests
 
+.PHONY: test-juce-build
+test-juce-build:
+	@echo "🔨 Building JUCE tests..."
+	@mkdir -p $(BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
+		echo "📝 Configuring project with tests enabled..."; \
+		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+	fi
+	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_juce_tests
+
+.PHONY: test-juce
+test-juce: test-juce-build
+	@echo "🧪 Running JUCE tests..."
+	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@JUCE_TEST_BIN=$$(find $(BUILD_DIR) -name magda_juce_tests -type f | head -1); \
+	if [ -z "$$JUCE_TEST_BIN" ]; then \
+		echo "❌ magda_juce_tests executable not found"; \
+		exit 1; \
+	fi; \
+	$(TEST_ENV) "$$JUCE_TEST_BIN" $(if $(JUCE_TEST),"$(JUCE_TEST)",)
+
 # Run all tests
 .PHONY: test
 test: test-build
@@ -309,6 +330,8 @@ help:
 	@echo ""
 	@echo "Test targets:"
 	@echo "  test-build     - Build tests only"
+	@echo "  test-juce-build - Build JUCE integration tests only"
+	@echo "  test-juce      - Build and run JUCE integration tests (optional JUCE_TEST=name)"
 	@echo "  test           - Build and run all tests"
 	@echo "  test-ctest     - Run tests via CTest"
 	@echo "  test-verbose   - Run tests with verbose output"

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <juce_events/juce_events.h>
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <map>
@@ -40,7 +41,7 @@ struct WarpMarkerInfo {
 class WarpMarkerManager {
   public:
     WarpMarkerManager() = default;
-    ~WarpMarkerManager() = default;
+    ~WarpMarkerManager();
 
     /**
      * @brief Detect transient times for an audio clip's source file
@@ -132,6 +133,53 @@ class WarpMarkerManager {
   private:
     // Tracks which clips have had detection kicked off (to avoid restarting on every poll)
     std::set<ClipId> detectionStarted_;
+
+    // -------- Coalescing + in-flight guard for setTransientSensitivity --------
+    //
+    // The UI can spam sensitivity changes (slider drag = many calls/sec).
+    // Each call previously triggered a TE detection job, and overlapping
+    // jobs share `te::WarpTimeManager` state — a worker can dereference
+    // data that a newer job replaced and crash inside the TE thread pool
+    // (KERN_INVALID_ADDRESS at offset 0x10).
+    //
+    // The fix lives here, not in the UI, so any future caller benefits:
+    //   1. setTransientSensitivity records the latest value per clip and
+    //      starts/restarts a short coalescing timer (kCoalesceMs).
+    //   2. When the timer fires, only the most recent sensitivity per
+    //      clip is applied, and a TE job is submitted at most once per
+    //      clip per coalescing window.
+    //   3. If a detection is already in flight for a clip, the new value
+    //      is parked in dirtyAfterCompletion_; getTransientTimes() picks
+    //      it up when it observes completion and schedules the rerun.
+    struct PendingDetection {
+        float sensitivity = 0.0f;
+        // Resolved at queue time so the slider hot-path doesn't snapshot the
+        // whole clipIdToEngineId map per tick. Empty engineId means we
+        // couldn't resolve the clip (e.g. it was removed) — apply will skip.
+        std::string engineId;
+        te::Edit* edit = nullptr;
+    };
+
+    static constexpr int kCoalesceMs = 75;
+
+    class CoalescingTimer : public juce::Timer {
+      public:
+        std::function<void()> callback;
+        void timerCallback() override {
+            stopTimer();
+            if (callback)
+                callback();
+        }
+    };
+
+    void applyPendingSensitivities();
+    void applySensitivityNow(te::Edit& edit, const std::string& engineId, ClipId clipId,
+                             float sensitivity);
+
+    std::map<ClipId, PendingDetection> pendingByClip_;
+    std::set<ClipId> detectionInFlight_;
+    std::map<ClipId, PendingDetection> dirtyAfterCompletion_;
+    CoalescingTimer coalescingTimer_;
 };
 
 }  // namespace magda

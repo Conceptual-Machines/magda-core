@@ -2,14 +2,14 @@
 
 #include <BinaryData.h>
 
-#include "AIPanelComponent.hpp"
-#include "MacroEditorPanel.hpp"
-#include "MacroPanelComponent.hpp"
-#include "ModsPanelComponent.hpp"
-#include "ModulatorEditorPanel.hpp"
+#include "ai/AIPanelComponent.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "modulation/MacroEditorPanel.hpp"
+#include "modulation/MacroPanelComponent.hpp"
+#include "modulation/ModsPanelComponent.hpp"
+#include "modulation/ModulatorEditorPanel.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"

@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "../../project/ProjectManager.hpp"
+#include "../components/common/TextSlider.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
@@ -19,9 +20,9 @@
 // ---------------------------------------------------------------------------
 namespace {
 
-void setupSlider(juce::Component& owner, juce::Slider& slider, juce::Label& label,
-                 const juce::String& labelText, double min, double max, double interval,
-                 const juce::String& suffix = "") {
+void setupTextSlider(juce::Component& owner, magda::daw::ui::TextSlider& slider, juce::Label& label,
+                     const juce::String& labelText, double min, double max, double interval,
+                     int decimals = 0, const juce::String& suffix = {}) {
     label.setText(labelText, juce::dontSendNotification);
     label.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
     label.setColour(juce::Label::textColourId,
@@ -30,21 +31,15 @@ void setupSlider(juce::Component& owner, juce::Slider& slider, juce::Label& labe
     owner.addAndMakeVisible(label);
 
     slider.setRange(min, max, interval);
-    slider.setSliderStyle(juce::Slider::LinearHorizontal);
-    slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
-    slider.setTextValueSuffix(suffix);
-    slider.setColour(juce::Slider::backgroundColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::SURFACE));
-    slider.setColour(juce::Slider::thumbColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_BLUE));
-    slider.setColour(juce::Slider::trackColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_BLUE).darker(0.3f));
-    slider.setColour(juce::Slider::textBoxTextColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
-    slider.setColour(juce::Slider::textBoxBackgroundColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::SURFACE));
-    slider.setColour(juce::Slider::textBoxOutlineColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::BORDER));
+    slider.setOrientation(magda::daw::ui::TextSlider::Orientation::Horizontal);
+    slider.setValueFormatter(
+        [decimals, suffix](double value) { return juce::String(value, decimals) + suffix; });
+    slider.setValueParser([suffix](const juce::String& text) {
+        auto trimmed = text.trim();
+        if (suffix.isNotEmpty() && trimmed.endsWithIgnoreCase(suffix))
+            trimmed = trimmed.dropLastCharacters(suffix.length()).trim();
+        return trimmed.getDoubleValue();
+    });
     owner.addAndMakeVisible(slider);
 }
 
@@ -68,6 +63,22 @@ void setupSectionHeader(juce::Component& owner, juce::Label& header, const juce:
     owner.addAndMakeVisible(header);
 }
 
+juce::Rectangle<int> getPreferencesDialogContentSize() {
+    constexpr int preferredW = 760;
+    constexpr int preferredH = 620;
+    constexpr int minW = 520;
+    constexpr int minH = 380;
+
+    if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
+        const int maxW = display->userArea.getWidth() - 48;
+        const int maxH = display->userArea.getHeight() - 96;
+        return {juce::jmax(minW, juce::jmin(preferredW, maxW)),
+                juce::jmax(minH, juce::jmin(preferredH, maxH))};
+    }
+
+    return {preferredW, preferredH};
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -81,19 +92,19 @@ class GeneralPage : public juce::Component {
   public:
     GeneralPage() {
         setupSectionHeader(*this, zoomHeader, tr("preferences.section.zoom"));
-        setupSlider(*this, zoomInSensitivitySlider, zoomInLabel,
-                    tr("preferences.slider.zoom_in_sensitivity"), 5.0, 100.0, 1.0);
-        setupSlider(*this, zoomOutSensitivitySlider, zoomOutLabel,
-                    tr("preferences.slider.zoom_out_sensitivity"), 5.0, 100.0, 1.0);
-        setupSlider(*this, zoomShiftSensitivitySlider, zoomShiftLabel,
-                    tr("preferences.slider.zoom_shift_sensitivity"), 1.0, 50.0, 0.5);
+        setupTextSlider(*this, zoomInSensitivitySlider, zoomInLabel,
+                        tr("preferences.slider.zoom_in_sensitivity"), 5.0, 100.0, 1.0);
+        setupTextSlider(*this, zoomOutSensitivitySlider, zoomOutLabel,
+                        tr("preferences.slider.zoom_out_sensitivity"), 5.0, 100.0, 1.0);
+        setupTextSlider(*this, zoomShiftSensitivitySlider, zoomShiftLabel,
+                        tr("preferences.slider.zoom_shift_sensitivity"), 1.0, 50.0, 0.5, 1);
 
         setupSectionHeader(*this, timelineHeader, tr("preferences.section.timeline"));
-        setupSlider(*this, timelineLengthSlider, timelineLengthLabel,
-                    tr("preferences.slider.default_length"), 16.0, 4096.0, 1.0, " bars");
-        timelineLengthSlider.setSkewFactorFromMidPoint(256.0);
-        setupSlider(*this, viewDurationSlider, viewDurationLabel,
-                    tr("preferences.slider.default_view"), 4.0, 128.0, 1.0, " bars");
+        setupTextSlider(*this, timelineLengthSlider, timelineLengthLabel,
+                        tr("preferences.slider.default_length"), 16.0, 4096.0, 1.0, 0, " bars");
+        timelineLengthSlider.setSkewForCentre(256.0);
+        setupTextSlider(*this, viewDurationSlider, viewDurationLabel,
+                        tr("preferences.slider.default_view"), 4.0, 128.0, 1.0, 0, " bars");
 
         setupSectionHeader(*this, transportHeader, tr("preferences.section.transport"));
         setupToggle(*this, stopUpdatesPlayheadToggle,
@@ -101,8 +112,8 @@ class GeneralPage : public juce::Component {
 
         setupSectionHeader(*this, autoSaveHeader, tr("preferences.section.autosave"));
         setupToggle(*this, autoSaveToggle, tr("preferences.toggle.enable_autosave"));
-        setupSlider(*this, autoSaveIntervalSlider, autoSaveIntervalLabel,
-                    tr("preferences.slider.interval"), 10.0, 300.0, 10.0, " sec");
+        setupTextSlider(*this, autoSaveIntervalSlider, autoSaveIntervalLabel,
+                        tr("preferences.slider.interval"), 10.0, 300.0, 10.0, 0, " sec");
 
         setupSectionHeader(*this, layoutHeader, tr("preferences.section.layout"));
         setupToggle(*this, headersOnRightToggle, tr("preferences.toggle.headers_on_right"));
@@ -145,81 +156,28 @@ class GeneralPage : public juce::Component {
         addAndMakeVisible(scaleCombo);
     }
 
+    int getPreferredHeight(int width) const {
+        const int height =
+            shouldUseSingleColumnLayout(width)
+                ? getSingleColumnPreferredHeight()
+                : juce::jmax(getLeftColumnPreferredHeight(), getRightColumnPreferredHeight());
+
+        return juce::jmax(height, width < 520 ? 760 : 0);
+    }
+
     void resized() override {
         auto bounds = getLocalBounds().reduced(16);
         const int rowH = 32;
-        const int labelW = 180;
         const int sliderH = 24;
         const int headerH = 28;
         const int secGap = 12;
-        const int colGap = 28;
-        const int toggleH = 24;
 
-        const int colW = (bounds.getWidth() - colGap) / 2;
-        auto left = bounds.removeFromLeft(colW);
-        bounds.removeFromLeft(colGap);
-        auto right = bounds;
+        if (!shouldUseSingleColumnLayout(getWidth())) {
+            layoutTwoColumns(bounds, rowH, sliderH, headerH, secGap);
+            return;
+        }
 
-        // Zoom
-        zoomHeader.setBounds(left.removeFromTop(headerH));
-        left.removeFromTop(4);
-        layoutSliderRow(left, zoomInLabel, zoomInSensitivitySlider, rowH, labelW, sliderH);
-        left.removeFromTop(4);
-        layoutSliderRow(left, zoomOutLabel, zoomOutSensitivitySlider, rowH, labelW, sliderH);
-        left.removeFromTop(4);
-        layoutSliderRow(left, zoomShiftLabel, zoomShiftSensitivitySlider, rowH, labelW, sliderH);
-        left.removeFromTop(secGap);
-
-        // Timeline
-        timelineHeader.setBounds(left.removeFromTop(headerH));
-        left.removeFromTop(4);
-        layoutSliderRow(left, timelineLengthLabel, timelineLengthSlider, rowH, labelW, sliderH);
-        left.removeFromTop(4);
-        layoutSliderRow(left, viewDurationLabel, viewDurationSlider, rowH, labelW, sliderH);
-        left.removeFromTop(secGap);
-
-        // Transport
-        transportHeader.setBounds(left.removeFromTop(headerH));
-        left.removeFromTop(4);
-        stopUpdatesPlayheadToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
-        left.removeFromTop(secGap);
-
-        // Auto-Save
-        autoSaveHeader.setBounds(left.removeFromTop(headerH));
-        left.removeFromTop(4);
-        autoSaveToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
-        left.removeFromTop(4);
-        layoutSliderRow(left, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, labelW, sliderH);
-
-        // Layout
-        layoutHeader.setBounds(right.removeFromTop(headerH));
-        right.removeFromTop(4);
-        headersOnRightToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
-        right.removeFromTop(secGap);
-
-        // Behaviour
-        behaviorHeader.setBounds(right.removeFromTop(headerH));
-        right.removeFromTop(4);
-        confirmTrackDeleteToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
-        right.removeFromTop(4);
-        autoMonitorToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
-        right.removeFromTop(4);
-        openMacrosOnSelectToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
-        right.removeFromTop(4);
-        showTooltipsToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
-        right.removeFromTop(secGap);
-
-        // Language
-        languageHeader.setBounds(right.removeFromTop(headerH));
-        right.removeFromTop(4);
-        layoutComboRow(right, languageLabel, languageCombo, toggleH + 8);
-        restartHint.setBounds(right.removeFromTop(18));
-        right.removeFromTop(secGap);
-
-        // UI scale
-        scaleHeader.setBounds(right.removeFromTop(headerH));
-        right.removeFromTop(4);
-        layoutComboRow(right, scaleLabel, scaleCombo, toggleH + 8);
+        layoutSingleColumn(bounds, rowH, sliderH, headerH, secGap);
     }
 
     void loadSettings(Config& config) {
@@ -308,6 +266,180 @@ class GeneralPage : public juce::Component {
     }
 
   private:
+    static constexpr int kTwoColumnMinWidth = 720;
+
+    static bool shouldUseSingleColumnLayout(int width) {
+        return width < kTwoColumnMinWidth;
+    }
+
+    static int getSingleColumnPreferredHeight() {
+        constexpr int padding = 16;
+        constexpr int rowH = 32;
+        constexpr int headerH = 28;
+        constexpr int secGap = 12;
+
+        return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
+               secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
+               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 4) + 12 + secGap + headerH + 4 +
+               rowH + 18 + secGap + headerH + 4 + rowH + padding;
+    }
+
+    static int getLeftColumnPreferredHeight() {
+        constexpr int padding = 16;
+        constexpr int rowH = 32;
+        constexpr int headerH = 28;
+        constexpr int secGap = 12;
+
+        return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
+               secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + padding;
+    }
+
+    static int getRightColumnPreferredHeight() {
+        constexpr int padding = 16;
+        constexpr int rowH = 32;
+        constexpr int headerH = 28;
+        constexpr int secGap = 12;
+
+        return padding + headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 4) + 12 + secGap +
+               headerH + 4 + rowH + 18 + secGap + headerH + 4 + rowH + padding;
+    }
+
+    void layoutSingleColumn(juce::Rectangle<int> bounds, int rowH, int sliderH, int headerH,
+                            int secGap) {
+        // Zoom
+        zoomHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, zoomInLabel, zoomInSensitivitySlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, zoomOutLabel, zoomOutSensitivitySlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, zoomShiftLabel, zoomShiftSensitivitySlider, rowH, sliderH);
+        bounds.removeFromTop(secGap);
+
+        // Timeline
+        timelineHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, timelineLengthLabel, timelineLengthSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, viewDurationLabel, viewDurationSlider, rowH, sliderH);
+        bounds.removeFromTop(secGap);
+
+        // Transport
+        transportHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        stopUpdatesPlayheadToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(secGap);
+
+        // Auto-Save
+        autoSaveHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        autoSaveToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, sliderH);
+        bounds.removeFromTop(secGap);
+
+        // Layout
+        layoutHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        headersOnRightToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(secGap);
+
+        // Behaviour
+        behaviorHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        confirmTrackDeleteToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        autoMonitorToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        openMacrosOnSelectToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        showTooltipsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(secGap);
+
+        // Language
+        languageHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, languageLabel, languageCombo, rowH);
+        restartHint.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(secGap);
+
+        // UI scale
+        scaleHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, scaleLabel, scaleCombo, rowH);
+    }
+
+    void layoutTwoColumns(juce::Rectangle<int> bounds, int rowH, int sliderH, int headerH,
+                          int secGap) {
+        constexpr int colGap = 28;
+
+        const int colW = (bounds.getWidth() - colGap) / 2;
+        auto left = bounds.removeFromLeft(colW);
+        bounds.removeFromLeft(colGap);
+        auto right = bounds;
+
+        // Zoom
+        zoomHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, zoomInLabel, zoomInSensitivitySlider, rowH, sliderH);
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, zoomOutLabel, zoomOutSensitivitySlider, rowH, sliderH);
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, zoomShiftLabel, zoomShiftSensitivitySlider, rowH, sliderH);
+        left.removeFromTop(secGap);
+
+        // Timeline
+        timelineHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, timelineLengthLabel, timelineLengthSlider, rowH, sliderH);
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, viewDurationLabel, viewDurationSlider, rowH, sliderH);
+        left.removeFromTop(secGap);
+
+        // Transport
+        transportHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        stopUpdatesPlayheadToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
+        left.removeFromTop(secGap);
+
+        // Auto-Save
+        autoSaveHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        autoSaveToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, sliderH);
+
+        // Layout
+        layoutHeader.setBounds(right.removeFromTop(headerH));
+        right.removeFromTop(4);
+        headersOnRightToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(secGap);
+
+        // Behaviour
+        behaviorHeader.setBounds(right.removeFromTop(headerH));
+        right.removeFromTop(4);
+        confirmTrackDeleteToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        autoMonitorToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        openMacrosOnSelectToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        showTooltipsToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(secGap);
+
+        // Language
+        languageHeader.setBounds(right.removeFromTop(headerH));
+        right.removeFromTop(4);
+        layoutComboRow(right, languageLabel, languageCombo, rowH);
+        restartHint.setBounds(right.removeFromTop(18));
+        right.removeFromTop(secGap);
+
+        // UI scale
+        scaleHeader.setBounds(right.removeFromTop(headerH));
+        right.removeFromTop(4);
+        layoutComboRow(right, scaleLabel, scaleCombo, rowH);
+    }
+
     void setupComboLabel(juce::Label& label, const juce::String& text) {
         label.setText(text, juce::dontSendNotification);
         label.setFont(FontManager::getInstance().getUIFont(12.0f));
@@ -324,19 +456,26 @@ class GeneralPage : public juce::Component {
         combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
     }
 
-    static void layoutSliderRow(juce::Rectangle<int>& bounds, juce::Label& label,
-                                juce::Slider& slider, int rowH, int labelW, int sliderH) {
+    static void layoutTextSliderRow(juce::Rectangle<int>& bounds, juce::Label& label,
+                                    magda::daw::ui::TextSlider& slider, int rowH, int sliderH) {
+        constexpr int sliderW = 96;
+        constexpr int gap = 12;
         auto row = bounds.removeFromTop(rowH);
-        label.setBounds(row.removeFromLeft(labelW));
-        slider.setBounds(row.reduced(0, (rowH - sliderH) / 2));
+        auto sliderArea = row.removeFromRight(sliderW);
+        row.removeFromRight(gap);
+        label.setBounds(row);
+        slider.setBounds(sliderArea.reduced(0, (rowH - sliderH) / 2));
     }
 
     static void layoutComboRow(juce::Rectangle<int>& bounds, juce::Label& label,
                                juce::ComboBox& combo, int rowH) {
-        const int labelW = juce::jlimit(95, 135, bounds.getWidth() / 3);
+        const int comboW = juce::jlimit(160, 240, bounds.getWidth() / 2);
+        constexpr int gap = 12;
         auto row = bounds.removeFromTop(rowH);
-        label.setBounds(row.removeFromLeft(labelW));
-        combo.setBounds(row.reduced(0, 4));
+        auto comboArea = row.removeFromRight(comboW);
+        row.removeFromRight(gap);
+        label.setBounds(row);
+        combo.setBounds(comboArea.reduced(0, 4));
     }
 
     static int scaleIdForValue(double v) {
@@ -373,13 +512,14 @@ class GeneralPage : public juce::Component {
     }
 
     juce::Label zoomHeader, timelineHeader, transportHeader, autoSaveHeader;
-    juce::Slider zoomInSensitivitySlider, zoomOutSensitivitySlider, zoomShiftSensitivitySlider;
+    magda::daw::ui::TextSlider zoomInSensitivitySlider, zoomOutSensitivitySlider,
+        zoomShiftSensitivitySlider;
     juce::Label zoomInLabel, zoomOutLabel, zoomShiftLabel;
-    juce::Slider timelineLengthSlider, viewDurationSlider;
+    magda::daw::ui::TextSlider timelineLengthSlider, viewDurationSlider;
     juce::Label timelineLengthLabel, viewDurationLabel;
     juce::ToggleButton stopUpdatesPlayheadToggle;
     juce::ToggleButton autoSaveToggle;
-    juce::Slider autoSaveIntervalSlider;
+    magda::daw::ui::TextSlider autoSaveIntervalSlider;
     juce::Label autoSaveIntervalLabel;
     juce::Label layoutHeader, behaviorHeader, languageHeader, scaleHeader;
     juce::ToggleButton headersOnRightToggle;
@@ -447,6 +587,15 @@ class ColoursPage : public juce::Component {
         clipColourModeCombo.setColour(juce::ComboBox::outlineColourId,
                                       DarkTheme::getColour(DarkTheme::BORDER));
         addAndMakeVisible(clipColourModeCombo);
+    }
+
+    int getPreferredHeight(int) const {
+        constexpr int padding = 16;
+        constexpr int headerH = 28;
+        constexpr int colourRowH = 26;
+
+        return padding + headerH + 4 + 18 + 4 + ((colourRowH + 2) * MAX_PALETTE_SIZE) + 4 + 24 +
+               16 + headerH + 4 + 32 + padding;
     }
 
     void resized() override {
@@ -760,6 +909,16 @@ class RenderingPage : public juce::Component {
         addAndMakeVisible(patternHint);
     }
 
+    int getPreferredHeight(int) const {
+        constexpr int padding = 16;
+        constexpr int rowH = 32;
+        constexpr int headerH = 28;
+        constexpr int secGap = 12;
+
+        return padding + headerH + 4 + rowH + 4 + rowH + secGap + headerH + 4 + (rowH * 3) + 8 +
+               secGap + headerH + 4 + rowH + 4 + rowH + 2 + 18 + padding;
+    }
+
     void resized() override {
         auto bounds = getLocalBounds().reduced(16);
         const int rowH = 32;
@@ -1044,6 +1203,16 @@ class PathsPage : public juce::Component {
         renderHint_.setJustificationType(juce::Justification::centredLeft);
         renderHint_.setText(tr("preferences.paths.note.render_hint"), juce::dontSendNotification);
         addAndMakeVisible(renderHint_);
+    }
+
+    int getPreferredHeight(int) const {
+        constexpr int padding = 20;
+        constexpr int rowH = 28;
+        constexpr int gap = 6;
+        constexpr int sectionGap = 18;
+
+        return padding + rowH + gap + rowH + gap + rowH + gap + rowH + sectionGap + rowH + gap +
+               rowH + gap + rowH + gap + rowH + sectionGap + rowH + padding;
     }
 
     void resized() override {
@@ -1496,11 +1665,21 @@ PreferencesDialog::PreferencesDialog() {
     pathsPage = std::make_unique<PathsPage>();
     shortcutsPage = std::make_unique<ShortcutsPage>();
 
+    auto setupPageViewport = [](juce::Viewport& viewport, juce::Component& page) {
+        viewport.setViewedComponent(&page, false);
+        viewport.setScrollBarsShown(true, false, true, false);
+        viewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::all);
+    };
+    setupPageViewport(generalPageViewport, *generalPage);
+    setupPageViewport(coloursPageViewport, *coloursPage);
+    setupPageViewport(renderingPageViewport, *renderingPage);
+    setupPageViewport(pathsPageViewport, *pathsPage);
+
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
-    tabbedComponent.addTab(tr("preferences.tab.general"), tabBg, generalPage.get(), false);
-    tabbedComponent.addTab(tr("preferences.tab.colours"), tabBg, coloursPage.get(), false);
-    tabbedComponent.addTab(tr("preferences.tab.rendering"), tabBg, renderingPage.get(), false);
-    tabbedComponent.addTab(tr("preferences.tab.paths"), tabBg, pathsPage.get(), false);
+    tabbedComponent.addTab(tr("preferences.tab.general"), tabBg, &generalPageViewport, false);
+    tabbedComponent.addTab(tr("preferences.tab.colours"), tabBg, &coloursPageViewport, false);
+    tabbedComponent.addTab(tr("preferences.tab.rendering"), tabBg, &renderingPageViewport, false);
+    tabbedComponent.addTab(tr("preferences.tab.paths"), tabBg, &pathsPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.shortcuts"), tabBg, shortcutsPage.get(), false);
     tabbedComponent.setTabBarDepth(36);
     addAndMakeVisible(tabbedComponent);
@@ -1525,7 +1704,8 @@ PreferencesDialog::PreferencesDialog() {
     addAndMakeVisible(applyButton);
 
     loadCurrentSettings();
-    setSize(760, 620);
+    const auto contentSize = getPreferencesDialogContentSize();
+    setSize(contentSize.getWidth(), contentSize.getHeight());
 }
 
 PreferencesDialog::~PreferencesDialog() {
@@ -1547,6 +1727,7 @@ void PreferencesDialog::resized() {
     // Reserve bottom strip for the button row
     auto bottomStrip = bounds.removeFromBottom(buttonH + (margin * 2));
     tabbedComponent.setBounds(bounds);
+    updatePageViewports();
 
     // Right-align buttons within the bottom strip
     bottomStrip.reduce(margin, margin);
@@ -1558,6 +1739,40 @@ void PreferencesDialog::resized() {
     applyButton.setBounds(bottomStrip.removeFromLeft(buttonW));
     bottomStrip.removeFromLeft(buttonSpacing);
     okButton.setBounds(bottomStrip.removeFromLeft(buttonW));
+}
+
+void PreferencesDialog::updatePageViewports() {
+    auto updateContentSize = [](juce::Viewport& viewport, juce::Component& page,
+                                int preferredHeight) {
+        const int viewW = juce::jmax(1, viewport.getMaximumVisibleWidth());
+        const int viewH = juce::jmax(1, viewport.getMaximumVisibleHeight());
+        page.setSize(viewW, juce::jmax(viewH, preferredHeight));
+    };
+
+    const auto updateAll = [this, &updateContentSize] {
+        if (generalPage) {
+            const int viewW = juce::jmax(1, generalPageViewport.getMaximumVisibleWidth());
+            updateContentSize(generalPageViewport, *generalPage,
+                              generalPage->getPreferredHeight(viewW));
+        }
+        if (coloursPage) {
+            const int viewW = juce::jmax(1, coloursPageViewport.getMaximumVisibleWidth());
+            updateContentSize(coloursPageViewport, *coloursPage,
+                              coloursPage->getPreferredHeight(viewW));
+        }
+        if (renderingPage) {
+            const int viewW = juce::jmax(1, renderingPageViewport.getMaximumVisibleWidth());
+            updateContentSize(renderingPageViewport, *renderingPage,
+                              renderingPage->getPreferredHeight(viewW));
+        }
+        if (pathsPage) {
+            const int viewW = juce::jmax(1, pathsPageViewport.getMaximumVisibleWidth());
+            updateContentSize(pathsPageViewport, *pathsPage, pathsPage->getPreferredHeight(viewW));
+        }
+    };
+
+    updateAll();
+    updateAll();
 }
 
 void PreferencesDialog::loadCurrentSettings() {

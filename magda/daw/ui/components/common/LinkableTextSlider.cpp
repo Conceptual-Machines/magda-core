@@ -1,9 +1,9 @@
 #include "LinkableTextSlider.hpp"
 
-#include "ParamLinkResolver.hpp"
 #include "core/LinkModeManager.hpp"
-#include "ui/components/chain/ParamLinkMenu.hpp"
-#include "ui/components/chain/ParamModulationPainter.hpp"
+#include "ui/components/chain/params/ParamLinkMenu.hpp"
+#include "ui/components/chain/params/ParamLinkResolver.hpp"
+#include "ui/components/chain/params/ParamModulationPainter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -20,6 +20,7 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
     magda::ControllerRegistry::getInstance().addListener(this);
 
     setInterceptsMouseClicks(true, true);
+    slider_.setShowFillIndicator(false);
 
     slider_.onValueChanged = [this](double value) {
         if (onValueChanged) {

@@ -14,7 +14,7 @@
 #include "../../core/TypeIds.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "plugins/DrumGridPlugin.hpp"
-#include "processors/DeviceProcessor.hpp"
+#include "processors/base/DeviceProcessor.hpp"
 #include "racks/InstrumentRackManager.hpp"
 #include "racks/RackSyncManager.hpp"
 
@@ -535,11 +535,6 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Poll for async plugin load completion (TE's background thread instantiation)
     void pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin);
 
-    // Plugin creation helpers
-    te::Plugin::Ptr createToneGenerator(te::AudioTrack* track);
-    te::Plugin::Ptr createLevelMeter(te::AudioTrack* track);
-    te::Plugin::Ptr createFourOscSynth(te::AudioTrack* track);
-
     // Create a TE internal plugin, restoring saved ValueTree state if available.
     // Falls back to creating a fresh plugin from xmlTypeName when no saved state exists.
     te::Plugin::Ptr createInternalPlugin(const juce::String& xmlTypeName,
@@ -639,7 +634,6 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     std::atomic<SidechainCache*> activeCache_{&cacheBuffers_[0]};
     int writeCacheIndex_ =
         1;  // message thread only — starts at 1 so first write goes to inactive buffer
-    int cacheRebuildLogCount_ = 0;  // throttle DBG spam
 
     // When true, skip gating during offline render and block full device resync.
     std::atomic<bool> renderingActive_{false};

@@ -746,6 +746,18 @@ TEST_CASE("formatValue - DisplayFormat Percent", "[parameter][format]") {
     REQUIRE(ParameterUtils::formatValue(100.0f, info) == "100.0%");
 }
 
+TEST_CASE("formatValue - DisplayFormat Percent supports 0..1 fractions", "[parameter][format]") {
+    ParameterInfo info;
+    info.minValue = 0.0f;
+    info.maxValue = 1.0f;
+    info.displayFormat = DisplayFormat::Percent;
+
+    REQUIRE(ParameterUtils::formatValue(0.0f, info) == "0.0%");
+    REQUIRE(ParameterUtils::formatValue(0.001f, info) == "0.1%");
+    REQUIRE(ParameterUtils::formatValue(0.5f, info) == "50.0%");
+    REQUIRE(ParameterUtils::formatValue(1.0f, info) == "100.0%");
+}
+
 TEST_CASE("formatValue - Default dispatches on Hz unit", "[parameter][format]") {
     ParameterInfo info;
     info.minValue = 20.0f;
@@ -810,6 +822,18 @@ TEST_CASE("parseValue - Percent with or without sign", "[parameter][parse]") {
     REQUIRE(*ParameterUtils::parseValue("150%", info) == Catch::Approx(100.0f));
 }
 
+TEST_CASE("parseValue - Percent supports 0..1 fractions", "[parameter][parse]") {
+    ParameterInfo info;
+    info.minValue = 0.0f;
+    info.maxValue = 1.0f;
+    info.displayFormat = DisplayFormat::Percent;
+
+    REQUIRE(*ParameterUtils::parseValue("0.1%", info) == Catch::Approx(0.001f));
+    REQUIRE(*ParameterUtils::parseValue("0.1", info) == Catch::Approx(0.001f));
+    REQUIRE(*ParameterUtils::parseValue("50%", info) == Catch::Approx(0.5f));
+    REQUIRE(*ParameterUtils::parseValue("150%", info) == Catch::Approx(1.0f));
+}
+
 TEST_CASE("parseValue - Hz accepts kHz and bare number", "[parameter][parse]") {
     ParameterInfo info;
     info.minValue = 20.0f;
@@ -824,4 +848,37 @@ TEST_CASE("parseValue - Hz accepts kHz and bare number", "[parameter][parse]") {
     // Clamp
     REQUIRE(*ParameterUtils::parseValue("50000 Hz", info) == Catch::Approx(20000.0f));
     REQUIRE(!ParameterUtils::parseValue("", info).has_value());
+}
+
+TEST_CASE("ParameterUtils - model value conversion keeps display-mapped internals scaled",
+          "[parameter][conversion][model]") {
+    ParameterInfo info;
+    info.minValue = 0.0f;
+    info.maxValue = 24.0f;
+    info.teMinValue = 0.0f;
+    info.teMaxValue = 1.0f;
+
+    auto model =
+        ParameterUtils::normalizedToModelValue(ParameterNormalizedValue::clamped(0.5f), info);
+    REQUIRE(model.value == Catch::Approx(12.0f));
+
+    auto normalized = ParameterUtils::modelToNormalizedValue(ParameterModelValue{12.0f}, info);
+    REQUIRE(normalized.value == Catch::Approx(0.5f));
+}
+
+TEST_CASE("ParameterUtils - model value conversion preserves external native range",
+          "[parameter][conversion][model]") {
+    ParameterInfo info;
+    info.minValue = -48.0f;
+    info.maxValue = 48.0f;
+    info.teMinValue = 0.0f;
+    info.teMaxValue = 1.0f;
+    info.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
+
+    auto model =
+        ParameterUtils::normalizedToModelValue(ParameterNormalizedValue::clamped(0.75f), info);
+    REQUIRE(model.value == Catch::Approx(0.75f));
+
+    auto normalized = ParameterUtils::modelToNormalizedValue(ParameterModelValue{0.25f}, info);
+    REQUIRE(normalized.value == Catch::Approx(0.25f));
 }

@@ -226,6 +226,14 @@ juce_add_binary_data(MagdaAssets
     # in the loader picker even on a fresh install.
     audio/faust_dsp/magda_drive.dsp
     audio/faust_dsp/magda_tremolo.dsp
+    audio/faust_dsp/magda_delay.dsp
+    audio/faust_dsp/magda_granular_delay.dsp
+    audio/faust_dsp/magda_filter_svf.dsp
+    audio/faust_dsp/magda_filter_ladder.dsp
+    audio/faust_dsp/magda_filter_korg35.dsp
+    audio/faust_dsp/magda_filter_oberheim.dsp
+    audio/faust_dsp/magda_filter_sk.dsp
+    audio/faust_dsp/magda_filter_diode.dsp
 )
 
 # =============================================================================

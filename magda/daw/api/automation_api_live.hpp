@@ -13,7 +13,7 @@ class AutomationApiLive : public AutomationApi {
     AutomationLaneInfo* getLane(AutomationLaneId laneId) override;
     const AutomationLaneInfo* getLane(AutomationLaneId laneId) const override;
 
-    AutomationPointId addPoint(AutomationLaneId laneId, double time, double value,
+    AutomationPointId addPoint(AutomationLaneId laneId, double beatPosition, double value,
                                AutomationCurveType curveType) override;
     void clearLanePoints(AutomationLaneId laneId) override;
 

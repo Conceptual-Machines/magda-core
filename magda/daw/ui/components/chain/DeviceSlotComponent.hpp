@@ -2,45 +2,27 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include <unordered_map>
-
-#include "ArpeggiatorUI.hpp"
-#include "ChorusUI.hpp"
-#include "CompressorUI.hpp"
-#include "DelayUI.hpp"
-#include "DrumGridUI.hpp"
-#include "EqualiserUI.hpp"
-#include "FaustCustomUIRegistry.hpp"
-#include "FaustUI.hpp"
-#include "FilterUI.hpp"
-#include "FourOscUI.hpp"
-#include "ImpulseResponseUI.hpp"
 #include "NodeComponent.hpp"
-#include "ParamGridComponent.hpp"
-#include "ParamSlotComponent.hpp"
-#include "PhaserUI.hpp"
-#include "PitchShiftUI.hpp"
-#include "ReverbUI.hpp"
-#include "SamplerUI.hpp"
-#include "StepSequencerUI.hpp"
-#include "ToneGeneratorUI.hpp"
-#include "UtilityUI.hpp"
-#include "audio/plugins/ArpeggiatorPlugin.hpp"
-#include "audio/plugins/MidiChordEnginePlugin.hpp"
-#include "audio/plugins/StepSequencerPlugin.hpp"
+#include "compiled/CompiledPluginPresentation.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
+#include "params/ParamHostComponent.hpp"
+#include "params/ParamSlotComponent.hpp"
+#include "slot/DeviceCustomUIManager.hpp"
+#include "slot/DeviceParameterChangeHandler.hpp"
+#include "slot/DeviceSlotTraits.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
-#include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/components/mixer/MidiNoteStrip.hpp"
-#include "ui/panels/content/ChordPanelContent.hpp"  // relative to magda/daw/
 
 namespace magda::daw::ui {
+
+class FaustCustomView;
+class FaustUI;
 
 /**
  * @brief Device slot component for displaying a device in a chain
@@ -216,12 +198,7 @@ class DeviceSlotComponent : public NodeComponent,
 
   private:
     magda::DeviceInfo device_;
-    bool isDrumGrid_ = false;
-    bool isChordEngine_ = false;
-    bool isArpeggiator_ = false;
-    bool isStepSequencer_ = false;
-    bool isFaust_ = false;
-    bool isTracktionDevice_ = false;
+    DeviceSlotTraits traits_;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 
     // Header controls
@@ -236,40 +213,21 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> onButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
 
-    // Parameter grid (owns slots + pagination)
-    std::unique_ptr<ParamGridComponent> paramGrid_;
+    // Parameter host (owns slots + pagination, delegates layout to a
+    // DeviceParamLayout strategy chosen at construction).
+    std::unique_ptr<ParamHostComponent> paramGrid_;
 
-    // Custom UI for internal devices
-    std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;
-    std::unique_ptr<SamplerUI> samplerUI_;
-    std::unique_ptr<DrumGridUI> drumGridUI_;
-    std::unique_ptr<FourOscUI> fourOscUI_;
-    static constexpr int NO_PENDING_TAB = -1;
-    int pendingCustomUITabIndex_ = NO_PENDING_TAB;
+    DeviceCustomUIManager customUI_;
 
     // Learn-mode debounce: plugins like Vital fire parameterValueChanged for
     // many crosstalk / display parameters when the user touches a single
     // control, which makes the highlighted slot jitter. Lock onto the first
     // param that reports a meaningful change and refuse to switch for a short
     // window so the highlight stays on what the user actually touched.
-    int learnLockedParamIndex_ = -1;
-    juce::uint32 learnLockTimeMs_ = 0;
-    std::unordered_map<int, float> learnLastValueByParam_;
-    std::unique_ptr<EqualiserUI> eqUI_;
-    std::unique_ptr<CompressorUI> compressorUI_;
-    std::unique_ptr<ReverbUI> reverbUI_;
-    std::unique_ptr<DelayUI> delayUI_;
-    std::unique_ptr<ChorusUI> chorusUI_;
-    std::unique_ptr<PhaserUI> phaserUI_;
-    std::unique_ptr<FilterUI> filterUI_;
-    std::unique_ptr<PitchShiftUI> pitchShiftUI_;
-    std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
-    std::unique_ptr<UtilityUI> utilityUI_;
+    ParameterLearnHighlightState learnHighlight_;
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<FaustCustomView> faustCustomView_;
-    std::unique_ptr<ChordPanelContent> chordEngineUI_;
-    std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
-    std::unique_ptr<StepSequencerUI> stepSequencerUI_;
+    std::unique_ptr<CompiledDevicePanel> compiledPanel_;
 
     static constexpr int METER_STRIP_WIDTH = 18;  // wide enough for slider thumb overlay
     magda::LevelMeter levelMeter_;
@@ -284,10 +242,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<juce::TextButton> presetsButton_;
     // Vertical gain slider overlaid on the meter
     std::unique_ptr<juce::Slider> gainSlider_;
-    daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;
-    daw::audio::StepSequencerPlugin* stepSeqPlugin_ = nullptr;
-    int lastArpNote_ = -1;
-    daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
+    int lastMidiNote_ = -1;
     std::array<int, 32> lastChordNotes_{};
     int lastChordCount_ = 0;
 
@@ -329,6 +284,7 @@ class DeviceSlotComponent : public NodeComponent,
     void updateScButtonState();  // Update SC button appearance based on sidechain config
     void showMultiOutMenu();     // Show popup menu for multi-output routing
     void showContextMenu();      // Show right-click context menu
+    void refreshDeviceTraits(const juce::String& pluginId);
 
     // Helper to check if this is an internal device
     bool isInternalDevice() const {

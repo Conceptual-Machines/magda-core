@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <limits>
 
+#include "TempoUtils.hpp"
+
 namespace magda {
 namespace ParameterUtils {
 
@@ -187,6 +189,46 @@ float realToNormalized(float real, const ParameterInfo& info) {
     }
 }
 
+bool infoMatchesTeRange(const ParameterInfo& info) {
+    return std::abs(info.minValue - info.teMinValue) < 1e-6f &&
+           std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
+}
+
+bool isDisplayMappedInternalValue(const ParameterInfo& info) {
+    return std::abs(info.teMinValue) < 1e-6f && std::abs(info.teMaxValue - 1.0f) < 1e-6f &&
+           !infoMatchesTeRange(info) && info.displayText == nullptr;
+}
+
+ParameterModelValue normalizedToModelValue(ParameterNormalizedValue normalized,
+                                           const ParameterInfo& info) {
+    const float teSpan = info.teMaxValue - info.teMinValue;
+    const bool useScaledModel = (infoMatchesTeRange(info) || isDisplayMappedInternalValue(info)) &&
+                                info.maxValue > info.minValue;
+
+    if (useScaledModel)
+        return {normalizedToReal(normalized.value, info)};
+
+    if (teSpan > 0.0f)
+        return {info.teMinValue + normalized.value * teSpan};
+
+    return {normalized.value};
+}
+
+ParameterNormalizedValue modelToNormalizedValue(ParameterModelValue model,
+                                                const ParameterInfo& info) {
+    const float teSpan = info.teMaxValue - info.teMinValue;
+    const bool useScaledModel = (infoMatchesTeRange(info) || isDisplayMappedInternalValue(info)) &&
+                                info.maxValue > info.minValue;
+
+    if (useScaledModel)
+        return ParameterNormalizedValue::clamped(realToNormalized(model.value, info));
+
+    if (teSpan > 0.0f)
+        return ParameterNormalizedValue::clamped((model.value - info.teMinValue) / teSpan);
+
+    return ParameterNormalizedValue::clamped(model.value);
+}
+
 float applyModulation(float baseNormalized, float modValue, float amount, bool bipolar) {
     // modValue is 0-1, convert to -1 to +1 if bipolar
     float modOffset = bipolar ? (modValue * 2.0f - 1.0f) : modValue;
@@ -245,7 +287,7 @@ juce::String formatMidiNote(float value) {
     return juce::String(names[n % 12]) + juce::String(octave);
 }
 
-juce::String formatBars(float beats, int beatsPerBar = 4) {
+juce::String formatBars(float beats, int beatsPerBar = DEFAULT_TIME_SIGNATURE_NUMERATOR) {
     constexpr int TICKS_PER_BEAT = 480;
     int bars = static_cast<int>(std::floor(beats / beatsPerBar));
     float rem = beats - bars * beatsPerBar;
@@ -254,6 +296,10 @@ juce::String formatBars(float beats, int beatsPerBar = 4) {
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%d.%d.%03d", bars + 1, b + 1, ticks);
     return juce::String(buf);
+}
+
+bool storesPercentAsUnitFraction(const ParameterInfo& info) {
+    return info.minValue >= -1.0e-6f && info.maxValue <= 1.0f + 1.0e-6f;
 }
 
 std::optional<float> parseDecibels(juce::String text) {
@@ -411,9 +457,9 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
         case DisplayFormat::Pan:
             return formatPan(realValue);
         case DisplayFormat::Percent:
-            // Stored as 0..100 by convention (matches ParameterPresets::percent).
-            // No scaling; the formatter just tacks on "%".
-            return juce::String(realValue, decimalPlaces) + "%";
+            return juce::String(storesPercentAsUnitFraction(info) ? realValue * 100.0f : realValue,
+                                decimalPlaces) +
+                   "%";
         case DisplayFormat::MidiNote:
             return formatMidiNote(realValue);
         case DisplayFormat::Beats:
@@ -430,7 +476,9 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
     if (info.unit == "ms")
         return formatMs(realValue, decimalPlaces);
     if (info.unit == "%")
-        return juce::String(realValue, decimalPlaces) + "%";
+        return juce::String(storesPercentAsUnitFraction(info) ? realValue * 100.0f : realValue,
+                            decimalPlaces) +
+               "%";
     if (info.unit == "dB")
         return formatDecibels(realValue, decimalPlaces);
     if (info.unit == "st") {
@@ -484,7 +532,10 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
                 t = t.dropLastCharacters(1).trim();
             if (t.isEmpty())
                 return std::nullopt;
-            return clamp(static_cast<float>(t.getDoubleValue()));
+            float parsed = static_cast<float>(t.getDoubleValue());
+            if (storesPercentAsUnitFraction(info))
+                parsed *= 0.01f;
+            return clamp(parsed);
         }
         case DisplayFormat::MidiNote:
             return clamp(parseMidiNote(trimmed));
@@ -499,7 +550,7 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
         case DisplayFormat::BarsBeats: {
             // "bars.beats.ticks", 1-indexed for bars and beats.
             constexpr int TICKS_PER_BEAT = 480;
-            constexpr int beatsPerBar = 4;
+            constexpr int beatsPerBar = DEFAULT_TIME_SIGNATURE_NUMERATOR;
             auto parts = juce::StringArray::fromTokens(trimmed, ".", "");
             if (parts.isEmpty())
                 return std::nullopt;
@@ -528,7 +579,10 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
             t = t.dropLastCharacters(1).trim();
         if (t.isEmpty())
             return std::nullopt;
-        return clamp(static_cast<float>(t.getDoubleValue()));
+        float parsed = static_cast<float>(t.getDoubleValue());
+        if (storesPercentAsUnitFraction(info))
+            parsed *= 0.01f;
+        return clamp(parsed);
     }
     if (info.unit == "st") {
         auto t = trimmed.toLowerCase();

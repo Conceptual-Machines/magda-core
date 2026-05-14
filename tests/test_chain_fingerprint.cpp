@@ -256,21 +256,48 @@ TEST_CASE("computeRackFingerprint - bypassed devices' mods do NOT count",
     REQUIRE(fp == ChainFingerprint{});
 }
 
-TEST_CASE("computeRackFingerprint - non-device chain elements (nested racks) are skipped",
+TEST_CASE("computeRackFingerprint - nested rack mod counts recursively",
           "[modulation][fingerprint][rack]") {
-    // A nested rack inside a rack is not a DeviceInfo; computeRackFingerprint
-    // walks chain.elements via isDevice() so it must skip non-device entries
-    // gracefully. (Recursive nested-rack handling is out of scope here — that
-    // would be a follow-up; the test exists to pin the no-crash invariant.)
     RackInfo outer;
     outer.id = RackId(1);
+
     ChainInfo chain;
     chain.id = ChainId(1);
+
     auto nested = std::make_unique<RackInfo>();
     nested->id = RackId(2);
+    nested->mods.push_back(makeMod(0, true, {modLink(DeviceId(42), 0)}));
     chain.elements.push_back(std::move(nested));
     outer.chains.push_back(std::move(chain));
 
     auto fp = computeRackFingerprint(outer);
-    REQUIRE(fp == ChainFingerprint{});
+    REQUIRE(fp.modCount == 1);
+    REQUIRE(fp.modLinkCount == 1);
+}
+
+TEST_CASE("computeRackFingerprint - nested rack device mod counts recursively",
+          "[modulation][fingerprint][rack]") {
+    RackInfo outer;
+    outer.id = RackId(1);
+
+    ChainInfo outerChain;
+    outerChain.id = ChainId(1);
+
+    auto nested = std::make_unique<RackInfo>();
+    nested->id = RackId(2);
+
+    ChainInfo nestedChain;
+    nestedChain.id = ChainId(2);
+
+    ModArray innerMods;
+    innerMods.push_back(makeMod(0, true, {modLink(DeviceId(42), 0), modLink(DeviceId(42), 1)}));
+    nestedChain.elements.push_back(makeDevice(DeviceId(42), std::move(innerMods)));
+    nested->chains.push_back(std::move(nestedChain));
+
+    outerChain.elements.push_back(std::move(nested));
+    outer.chains.push_back(std::move(outerChain));
+
+    auto fp = computeRackFingerprint(outer);
+    REQUIRE(fp.modCount == 1);
+    REQUIRE(fp.modLinkCount == 2);
 }

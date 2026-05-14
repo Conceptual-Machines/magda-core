@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <memory>
 
 #include "../magda/daw/audio/plugins/SidechainTriggerBus.hpp"
 #include "../magda/daw/core/ModInfo.hpp"
@@ -466,6 +467,58 @@ TEST_CASE("Audio trigger - rack-level mod uses inner device sidechain source",
     REQUIRE(rack->mods[0].triggerCount == 1);
 
     // Cleanup
+    tm.clearAllTracks();
+    bus.clearAll();
+}
+
+TEST_CASE("Audio trigger - rack-level mod uses nested rack sidechain source",
+          "[sidechain][audio-trigger][rack][nested]") {
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+    auto& bus = SidechainTriggerBus::getInstance();
+    bus.clearAll();
+
+    TrackId sourceTrackId = tm.createTrack();
+    TrackId destTrackId = tm.createTrack();
+
+    RackId rackId = tm.addRackToTrack(destTrackId, "OuterRack");
+
+    ChainNodePath rackPath;
+    rackPath.trackId = destTrackId;
+    rackPath.steps.push_back({ChainStepType::Rack, rackId});
+
+    auto* outerRack = tm.getRackByPath(rackPath);
+    REQUIRE(outerRack != nullptr);
+    REQUIRE(!outerRack->chains.empty());
+
+    auto nestedRack = std::make_unique<RackInfo>();
+    nestedRack->id = 9001;
+    nestedRack->name = "NestedRack";
+    nestedRack->chains.emplace_back();
+    nestedRack->chains[0].id = 9002;
+    nestedRack->chains[0].name = "Nested Chain";
+
+    DeviceInfo nestedDevice;
+    nestedDevice.name = "NestedSynth";
+    nestedDevice.sidechain.type = SidechainConfig::Type::Audio;
+    nestedDevice.sidechain.sourceTrackId = sourceTrackId;
+    nestedRack->chains[0].elements.push_back(nestedDevice);
+
+    outerRack->chains[0].elements.push_back(std::move(nestedRack));
+
+    ModInfo rackMod(0);
+    rackMod.triggerMode = LFOTriggerMode::Audio;
+    outerRack->mods.push_back(rackMod);
+
+    bus.setAudioPeakLevel(sourceTrackId, 0.7f);
+    bus.setAudioPeakLevel(destTrackId, 0.0f);
+
+    tm.updateAllMods(0.016, 120.0, false, false, false);
+
+    REQUIRE(outerRack->mods[0].audioGateOpen);
+    REQUIRE(outerRack->mods[0].running);
+    REQUIRE(outerRack->mods[0].triggerCount == 1);
+
     tm.clearAllTracks();
     bus.clearAll();
 }

@@ -138,7 +138,7 @@ endif()
 set(MAGDA_FAUST_BACKEND "interp" CACHE STRING "Faust backend: interp or llvm")
 set_property(CACHE MAGDA_FAUST_BACKEND PROPERTY STRINGS "interp" "llvm")
 
-set(INCLUDE_EXECUTABLE OFF CACHE BOOL "" FORCE)
+set(INCLUDE_EXECUTABLE ON CACHE BOOL "" FORCE)
 set(INCLUDE_STATIC ON CACHE BOOL "" FORCE)
 set(INCLUDE_DYNAMIC OFF CACHE BOOL "" FORCE)
 set(INCLUDE_OSC OFF CACHE BOOL "" FORCE)
@@ -149,7 +149,11 @@ set(INCLUDE_WASM_GLUE OFF CACHE BOOL "" FORCE)
 set(INCLUDE_WASMTIME OFF CACHE BOOL "" FORCE)
 # Default all backends OFF; flip the one we want below.
 set(C_BACKEND       OFF CACHE STRING "" FORCE)
-set(CPP_BACKEND     OFF CACHE STRING "" FORCE)
+# CPP backend powers `faust -lang cpp …` for build-time DSP → native
+# plugin compilation (see #1214). The `COMPILER` token enables the
+# backend in the standalone `faust` executable; we don't need STATIC /
+# DYNAMIC because libfaust isn't asked to emit C++ at runtime.
+set(CPP_BACKEND     "COMPILER" CACHE STRING "" FORCE)
 set(CMAJOR_BACKEND  OFF CACHE STRING "" FORCE)
 set(CSHARP_BACKEND  OFF CACHE STRING "" FORCE)
 set(DLANG_BACKEND   OFF CACHE STRING "" FORCE)
@@ -188,12 +192,53 @@ add_library(faust::libfaust ALIAS staticlib)
 # default with `CharacterSet=NotSet`) the file picks the wide branch,
 # but the Win32 `CreateDirectory` macro resolves to `CreateDirectoryA`
 # (the char* version) — a wchar_t* / char* mismatch and a C2664 build
-# error. Define `_MBCS` for Faust's staticlib only so it takes the
-# narrow branch upstream Faust expects on Windows; other targets are
-# untouched.
-if(MSVC AND TARGET staticlib)
-    target_compile_definitions(staticlib PRIVATE _MBCS)
+# error. Define `_MBCS` for Faust's staticlib AND the `faust` executable
+# (both compile compatibility.cpp) so they take the narrow branch
+# upstream Faust expects on Windows; other targets are untouched.
+if(MSVC)
+    if(TARGET staticlib)
+        target_compile_definitions(staticlib PRIVATE _MBCS)
+    endif()
+    if(TARGET faust)
+        target_compile_definitions(faust PRIVATE _MBCS)
+    endif()
 endif()
+
+# ----------------------------------------------------------------------------
+# magda_compile_faust_dsp(<dsp_file> <class_name> <out_var>)
+#
+# Add a build-time step that runs `faust -lang cpp` on `<dsp_file>`,
+# generating a self-contained C++ class named `<class_name>`. Stores the
+# absolute path of the generated .cpp in `<out_var>` so the caller can
+# add it to `target_sources(...)`.
+#
+# The output lives under `${CMAKE_BINARY_DIR}/compiled_dsps/`. Faust's
+# `-cpp` backend is compiled into the `faust` executable via the
+# `CPP_BACKEND=COMPILER` setting above.
+# ----------------------------------------------------------------------------
+function(magda_compile_faust_dsp DSP_FILE CLASS_NAME OUT_VAR)
+    get_filename_component(DSP_NAME "${DSP_FILE}" NAME_WE)
+    set(GENERATED_DIR "${CMAKE_BINARY_DIR}/compiled_dsps")
+    set(GENERATED_CPP "${GENERATED_DIR}/${DSP_NAME}.generated.cpp")
+
+    file(MAKE_DIRECTORY "${GENERATED_DIR}")
+
+    add_custom_command(
+        OUTPUT "${GENERATED_CPP}"
+        COMMAND $<TARGET_FILE:faust>
+                -lang cpp
+                -cn ${CLASS_NAME}
+                -I "${CMAKE_SOURCE_DIR}/third_party/faust/libraries"
+                -single
+                -o "${GENERATED_CPP}"
+                "${DSP_FILE}"
+        DEPENDS "${DSP_FILE}" faust
+        COMMENT "faust → cpp: ${DSP_NAME}.dsp → ${CLASS_NAME}"
+        VERBATIM
+    )
+
+    set(${OUT_VAR} "${GENERATED_CPP}" PARENT_SCOPE)
+endfunction()
 
 # Catch2 for testing
 if(MAGDA_BUILD_TESTS)

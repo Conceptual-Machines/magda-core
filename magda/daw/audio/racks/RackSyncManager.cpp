@@ -9,6 +9,57 @@
 
 namespace magda {
 
+namespace {
+
+juce::String pathKey(const ChainNodePath& path) {
+    return path.toString();
+}
+
+std::pair<float, float> outputDbForVolumePan(float volumeDb, float pan) {
+    const auto limitedVolume = static_cast<float>(juce::jlimit(
+        te::RackInstance::rackMinDb, te::RackInstance::rackMaxDb, static_cast<double>(volumeDb)));
+    const auto limitedPan = juce::jlimit(-1.0f, 1.0f, pan);
+    const auto leftGain = limitedPan > 0.0f ? 1.0f - limitedPan : 1.0f;
+    const auto rightGain = limitedPan < 0.0f ? 1.0f + limitedPan : 1.0f;
+    const auto leftDb = limitedVolume + juce::Decibels::gainToDecibels(leftGain);
+    const auto rightDb = limitedVolume + juce::Decibels::gainToDecibels(rightGain);
+    return {
+        static_cast<float>(juce::jlimit(te::RackInstance::rackMinDb, te::RackInstance::rackMaxDb,
+                                        static_cast<double>(leftDb))),
+        static_cast<float>(juce::jlimit(te::RackInstance::rackMinDb, te::RackInstance::rackMaxDb,
+                                        static_cast<double>(rightDb)))};
+}
+
+void applyRackInstanceState(te::Plugin::Ptr rackPlugin, const RackInfo& rackInfo) {
+    auto* rackInstance = dynamic_cast<te::RackInstance*>(rackPlugin.get());
+    if (!rackInstance)
+        return;
+
+    if (rackInfo.bypassed) {
+        rackInstance->wetGain->setParameterFromHost(0.0f, juce::dontSendNotification);
+        rackInstance->dryGain->setParameterFromHost(1.0f, juce::dontSendNotification);
+    } else {
+        rackInstance->wetGain->setParameterFromHost(1.0f, juce::dontSendNotification);
+        rackInstance->dryGain->setParameterFromHost(0.0f, juce::dontSendNotification);
+    }
+
+    auto [leftDb, rightDb] = outputDbForVolumePan(rackInfo.volume, rackInfo.pan);
+    rackInstance->leftOutDb->setParameterFromHost(leftDb, juce::dontSendNotification);
+    rackInstance->rightOutDb->setParameterFromHost(rightDb, juce::dontSendNotification);
+}
+
+void ensureRackOutputPair(te::RackType& rackType, int outputIndex) {
+    const auto clampedIndex = juce::jlimit(0, 31, outputIndex);
+    const auto rightPin = 2 + (clampedIndex * 2);
+
+    while (rackType.getOutputNames().size() <= rightPin) {
+        const auto nextPin = rackType.getOutputNames().size();
+        rackType.addOutput(-1, "output " + juce::String(nextPin));
+    }
+}
+
+}  // namespace
+
 RackSyncManager::RackSyncManager(te::Edit& edit, PluginManager& pluginManager)
     : edit_(edit), pluginManager_(pluginManager) {}
 
@@ -121,11 +172,12 @@ void RackSyncManager::resyncRack(TrackId trackId, const RackInfo& rackInfo) {
     }
     synced.innerPlugins.clear();
 
-    for (auto& [chainId, plugin] : synced.chainVolPanPlugins) {
+    for (auto& [_chainKey, plugin] : synced.chainVolPanPlugins) {
         if (plugin)
             plugin->deleteFromParent();
     }
     synced.chainVolPanPlugins.clear();
+    clearNestedRackState(synced);
 
     // Reload chain plugins and rebuild connections
     loadChainPlugins(synced, trackId, rackInfo);
@@ -183,6 +235,15 @@ void RackSyncManager::removeRack(RackId rackId) {
     // Clear LFO callbacks and defer holder destruction
     clearLFOCustomWaveCallbacks(synced.innerModifiers);
     deferCurveSnapshots(synced.curveSnapshots, deferredHolders_);
+    for (auto& [_path, state] : synced.nestedRackMods) {
+        clearLFOCustomWaveCallbacks(state.modifiers);
+        deferCurveSnapshots(state.curveSnapshots, deferredHolders_);
+        for (auto& [_deviceId, devState] : state.innerDeviceMods) {
+            clearLFOCustomWaveCallbacks(devState.modifiers);
+            deferCurveSnapshots(devState.curveSnapshots, deferredHolders_);
+        }
+    }
+    clearNestedRackState(synced);
 
     DBG("RackSyncManager: Removed rack " << rackId);
 
@@ -254,6 +315,49 @@ te::Plugin* RackSyncManager::getInnerPlugin(DeviceId deviceId) const {
     return nullptr;
 }
 
+void RackSyncManager::syncSidechains(
+    const RackInfo& rackInfo,
+    const std::function<te::AudioTrack*(TrackId sourceTrackId)>& resolveSourceTrack) {
+    auto syncedIt = syncedRacks_.find(rackInfo.id);
+    if (syncedIt == syncedRacks_.end())
+        return;
+
+    auto& synced = syncedIt->second;
+
+    std::function<void(const RackInfo&)> syncRack = [&](const RackInfo& rack) {
+        for (const auto& chain : rack.chains) {
+            for (const auto& element : chain.elements) {
+                if (isDevice(element)) {
+                    const auto& device = getDevice(element);
+                    auto pluginIt = synced.innerPlugins.find(device.id);
+                    if (pluginIt == synced.innerPlugins.end() || !pluginIt->second)
+                        continue;
+
+                    auto* plugin = pluginIt->second.get();
+                    if (!plugin->canSidechain())
+                        continue;
+
+                    if (device.sidechain.isActive() &&
+                        device.sidechain.type == SidechainConfig::Type::Audio) {
+                        if (auto* sourceTrack =
+                                resolveSourceTrack(device.sidechain.sourceTrackId)) {
+                            plugin->setSidechainSourceID(sourceTrack->itemID);
+                            plugin->guessSidechainRouting();
+                            continue;
+                        }
+                    }
+
+                    plugin->setSidechainSourceID({});
+                } else if (isRack(element)) {
+                    syncRack(getRack(element));
+                }
+            }
+        }
+    };
+
+    syncRack(rackInfo);
+}
+
 te::Plugin* RackSyncManager::getRackInstance(RackId rackId) const {
     auto it = syncedRacks_.find(rackId);
     if (it != syncedRacks_.end()) {
@@ -321,6 +425,7 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
             ext->flushPluginStateToValueTree();
             stateStr = ext->state.getProperty(te::IDs::state).toString();
         } else {
+            plugin->flushPluginStateToValueTree();
             // Strip MODIFIERASSIGNMENTS so the post-restore syncModifiers
             // adds fresh assignments instead of doubling up on the
             // captured ones (which would re-apply the LFO modulation on
@@ -372,11 +477,44 @@ void RackSyncManager::clear() {
         // Clear LFO callbacks and defer holder destruction
         clearLFOCustomWaveCallbacks(synced.innerModifiers);
         deferCurveSnapshots(synced.curveSnapshots, deferredHolders_);
+        for (auto& [_path, state] : synced.nestedRackMods) {
+            clearLFOCustomWaveCallbacks(state.modifiers);
+            deferCurveSnapshots(state.curveSnapshots, deferredHolders_);
+            for (auto& [_deviceId, devState] : state.innerDeviceMods) {
+                clearLFOCustomWaveCallbacks(devState.modifiers);
+                deferCurveSnapshots(devState.curveSnapshots, deferredHolders_);
+            }
+        }
+        clearNestedRackState(synced);
     }
     syncedRacks_.clear();
     // Note: deferredHolders_ are NOT drained here — this is typically called from
     // PluginManager::clearAllMappings() which drains its own deferred holders after.
     // These will be cleaned up when RackSyncManager is destroyed.
+}
+
+void RackSyncManager::clearNestedRackState(SyncedRack& synced) {
+    for (auto& [_path, rackInstance] : synced.nestedRackInstances) {
+        if (rackInstance)
+            rackInstance->deleteFromParent();
+    }
+    synced.nestedRackInstances.clear();
+
+    for (auto& [_path, rackType] : synced.nestedRackTypes) {
+        if (rackType)
+            edit_.getRackList().removeRackType(rackType);
+    }
+    synced.nestedRackTypes.clear();
+
+    for (auto& [_path, state] : synced.nestedRackMods) {
+        clearLFOCustomWaveCallbacks(state.modifiers);
+        deferCurveSnapshots(state.curveSnapshots, deferredHolders_);
+        for (auto& [_deviceId, devState] : state.innerDeviceMods) {
+            clearLFOCustomWaveCallbacks(devState.modifiers);
+            deferCurveSnapshots(devState.curveSnapshots, deferredHolders_);
+        }
+    }
+    synced.nestedRackMods.clear();
 }
 
 void RackSyncManager::setMacroValue(RackId rackId, int macroIndex, float value) {
@@ -504,7 +642,15 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
 
 void RackSyncManager::loadChainPlugins(SyncedRack& synced, TrackId trackId,
                                        const RackInfo& rackInfo) {
+    loadRackContents(synced, trackId, rackInfo, ChainNodePath::rack(trackId, rackInfo.id),
+                     *synced.rackType);
+}
+
+void RackSyncManager::loadRackContents(SyncedRack& synced, TrackId trackId,
+                                       const RackInfo& rackInfo, const ChainNodePath& rackPath,
+                                       te::RackType& rackType) {
     for (const auto& chain : rackInfo.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
         for (const auto& element : chain.elements) {
             if (isDevice(element)) {
                 const auto& device = getDevice(element);
@@ -512,7 +658,7 @@ void RackSyncManager::loadChainPlugins(SyncedRack& synced, TrackId trackId,
 
                 if (plugin) {
                     // Add plugin to the RackType
-                    if (synced.rackType->addPlugin(plugin, {0.5f, 0.5f}, false)) {
+                    if (rackType.addPlugin(plugin, {0.5f, 0.5f}, false)) {
                         synced.innerPlugins[device.id] = plugin;
 
                         // Register processor for parameter enumeration
@@ -529,16 +675,55 @@ void RackSyncManager::loadChainPlugins(SyncedRack& synced, TrackId trackId,
                                                                       << "' to rack");
                     }
                 }
+            } else if (isRack(element)) {
+                const auto& nestedRack = getRack(element);
+                const auto nestedRackPath = chainPath.withRack(nestedRack.id);
+                const auto nestedKey = pathKey(nestedRackPath);
+
+                auto nestedType = edit_.getRackList().addNewRack();
+                if (!nestedType) {
+                    DBG("RackSyncManager: Failed to create nested RackType for rack "
+                        << nestedRack.id);
+                    continue;
+                }
+                nestedType->rackName =
+                    nestedRack.name.isNotEmpty() ? nestedRack.name : "Nested FX Rack";
+
+                loadRackContents(synced, trackId, nestedRack, nestedRackPath, *nestedType);
+                buildConnectionsForRack(synced, nestedRack, nestedRackPath, *nestedType);
+                syncRackModulationRecursive(synced, nestedRack, nestedRackPath, *nestedType);
+
+                auto nestedInstanceState = te::RackInstance::create(*nestedType);
+                auto nestedInstance = edit_.getPluginCache().createNewPlugin(nestedInstanceState);
+                if (!nestedInstance) {
+                    DBG("RackSyncManager: Failed to create nested RackInstance for rack "
+                        << nestedRack.id);
+                    edit_.getRackList().removeRackType(nestedType);
+                    continue;
+                }
+
+                if (rackType.addPlugin(nestedInstance, {0.65f, 0.5f}, false)) {
+                    applyRackInstanceState(nestedInstance, nestedRack);
+                    synced.nestedRackTypes[nestedKey] = nestedType;
+                    synced.nestedRackInstances[nestedKey] = nestedInstance;
+                    DBG("RackSyncManager: Added nested rack '" << nestedRack.name << "' (rack "
+                                                               << nestedRack.id << ") to rack "
+                                                               << rackInfo.id);
+                } else {
+                    DBG("RackSyncManager: Failed to add nested rack '" << nestedRack.name
+                                                                       << "' to parent rack");
+                    nestedInstance->deleteFromParent();
+                    edit_.getRackList().removeRackType(nestedType);
+                }
             }
-            // TODO: Handle nested racks (recursive RackInfo in chain elements)
         }
 
         // Add a VolumeAndPanPlugin for each chain (for per-chain volume/pan)
         auto volPanPlugin =
             edit_.getPluginCache().createNewPlugin(te::VolumeAndPanPlugin::create());
         if (volPanPlugin) {
-            if (synced.rackType->addPlugin(volPanPlugin, {0.8f, 0.5f}, false)) {
-                synced.chainVolPanPlugins[chain.id] = volPanPlugin;
+            if (rackType.addPlugin(volPanPlugin, {0.8f, 0.5f}, false)) {
+                synced.chainVolPanPlugins[pathKey(chainPath)] = volPanPlugin;
 
                 // Apply chain volume/pan
                 if (auto* volPan = dynamic_cast<te::VolumeAndPanPlugin*>(volPanPlugin.get())) {
@@ -552,7 +737,13 @@ void RackSyncManager::loadChainPlugins(SyncedRack& synced, TrackId trackId,
 }
 
 void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackInfo) {
-    auto& rackType = synced.rackType;
+    buildConnectionsForRack(synced, rackInfo, ChainNodePath::rack(synced.trackId, rackInfo.id),
+                            *synced.rackType);
+}
+
+void RackSyncManager::buildConnectionsForRack(SyncedRack& synced, const RackInfo& rackInfo,
+                                              const ChainNodePath& rackPath,
+                                              te::RackType& rackType) {
     auto rackIOId = te::EditItemID();  // Default = rack I/O
 
     // Determine if any chain is soloed
@@ -567,6 +758,11 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
     bool anyChainConnectedToOutput = false;
 
     for (const auto& chain : rackInfo.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
+        ensureRackOutputPair(rackType, chain.outputIndex);
+        const auto outLeftPin = 1 + (juce::jlimit(0, 31, chain.outputIndex) * 2);
+        const auto outRightPin = outLeftPin + 1;
+
         // Determine if this chain should be active
         bool chainActive = true;
         if (chain.muted)
@@ -576,8 +772,9 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
 
         // Bypassed chain: pass audio straight through to output, skip all plugins
         if (chain.bypassed && chainActive) {
-            rackType->addConnection(rackIOId, 1, rackIOId, 1);  // Left passthrough
-            rackType->addConnection(rackIOId, 2, rackIOId, 2);  // Right passthrough
+            rackType.addConnection(rackIOId, 1, rackIOId, outLeftPin);   // Left passthrough
+            rackType.addConnection(rackIOId, 2, rackIOId, outRightPin);  // Right passthrough
+            rackType.addConnection(rackIOId, 0, rackIOId, 0);            // MIDI passthrough
             anyChainConnectedToOutput = true;
             continue;
         }
@@ -591,12 +788,19 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
                 if (pluginIt != synced.innerPlugins.end() && pluginIt->second) {
                     chainPluginIds.push_back(pluginIt->second->itemID);
                 }
+            } else if (isRack(element)) {
+                const auto& nestedRack = getRack(element);
+                const auto nestedKey = pathKey(chainPath.withRack(nestedRack.id));
+                auto rackIt = synced.nestedRackInstances.find(nestedKey);
+                if (rackIt != synced.nestedRackInstances.end() && rackIt->second) {
+                    chainPluginIds.push_back(rackIt->second->itemID);
+                }
             }
         }
 
         // Add the chain's VolumeAndPan plugin at the end (even for empty chains,
         // so they pass clean audio through with per-chain volume/pan control)
-        auto volPanIt = synced.chainVolPanPlugins.find(chain.id);
+        auto volPanIt = synced.chainVolPanPlugins.find(pathKey(chainPath));
         if (volPanIt != synced.chainVolPanPlugins.end() && volPanIt->second) {
             chainPluginIds.push_back(volPanIt->second->itemID);
         }
@@ -617,7 +821,7 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
         for (size_t idx = 0; idx < chainPluginIds.size(); ++idx) {
             auto pid = chainPluginIds[idx];
             bool found = false;
-            for (auto* p : rackType->getPlugins()) {
+            for (auto* p : rackType.getPlugins()) {
                 if (p->itemID == pid) {
                     found = true;
                     break;
@@ -628,31 +832,25 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
         }
 
         // Connect rack audio input to first plugin (L/R)
-        rackType->addConnection(rackIOId, 1, firstPlugin, 1);
-        rackType->addConnection(rackIOId, 2, firstPlugin, 2);
+        rackType.addConnection(rackIOId, 1, firstPlugin, 1);
+        rackType.addConnection(rackIOId, 2, firstPlugin, 2);
 
         // Connect rack MIDI input to first plugin
-        rackType->addConnection(rackIOId, 0, firstPlugin, 0);
+        rackType.addConnection(rackIOId, 0, firstPlugin, 0);
 
         // Serial connections between consecutive plugins
         for (size_t i = 0; i + 1 < chainPluginIds.size(); ++i) {
             auto src = chainPluginIds[i];
             auto dst = chainPluginIds[i + 1];
-            rackType->addConnection(src, 1, dst, 1);  // Left
-            rackType->addConnection(src, 2, dst, 2);  // Right
-            rackType->addConnection(src, 0, dst, 0);  // MIDI
+            rackType.addConnection(src, 1, dst, 1);  // Left
+            rackType.addConnection(src, 2, dst, 2);  // Right
+            rackType.addConnection(src, 0, dst, 0);  // MIDI
         }
 
-        // Connect last plugin to rack output.
-        // Audio L/R is only wired when the chain is active (mute/solo gating),
-        // but MIDI pin 0 is wired unconditionally so a MIDI plugin at the end
-        // of the chain can still feed downstream MIDI plugins / instruments
-        // when the chain is bypassed — matching TE's standard bypass semantics
-        // (a bypassed plugin passes MIDI through unchanged).
-        rackType->addConnection(lastPlugin, 0, rackIOId, 0);  // MIDI — always
         if (chainActive) {
-            rackType->addConnection(lastPlugin, 1, rackIOId, 1);  // Left
-            rackType->addConnection(lastPlugin, 2, rackIOId, 2);  // Right
+            rackType.addConnection(lastPlugin, 0, rackIOId, 0);            // MIDI
+            rackType.addConnection(lastPlugin, 1, rackIOId, outLeftPin);   // Left
+            rackType.addConnection(lastPlugin, 2, rackIOId, outRightPin);  // Right
             anyChainConnectedToOutput = true;
         }
     }
@@ -661,9 +859,9 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
     // rack is transparent. When chains exist but are all muted/inactive, leave
     // audio disconnected for silence (MIDI is already wired per-chain above).
     if (!anyChainConnectedToOutput && rackInfo.chains.empty()) {
-        rackType->addConnection(rackIOId, 1, rackIOId, 1);  // Audio L
-        rackType->addConnection(rackIOId, 2, rackIOId, 2);  // Audio R
-        rackType->addConnection(rackIOId, 0, rackIOId, 0);  // MIDI
+        rackType.addConnection(rackIOId, 1, rackIOId, 1);  // Audio L
+        rackType.addConnection(rackIOId, 2, rackIOId, 2);  // Audio R
+        rackType.addConnection(rackIOId, 0, rackIOId, 0);  // MIDI
     }
 }
 
@@ -672,41 +870,46 @@ te::Plugin::Ptr RackSyncManager::createPluginForRack(TrackId trackId, const Devi
 }
 
 bool RackSyncManager::structureChanged(const SyncedRack& synced, const RackInfo& rackInfo) const {
-    // Check if number of chains changed
-    if (synced.chainVolPanPlugins.size() != rackInfo.chains.size())
-        return true;
+    std::set<juce::String> expectedChains;
+    std::set<DeviceId> expectedDevices;
+    std::set<juce::String> expectedNestedRacks;
 
-    // Check if the set of devices or their order changed
-    for (const auto& chain : rackInfo.chains) {
-        // Check chain still exists
-        if (synced.chainVolPanPlugins.find(chain.id) == synced.chainVolPanPlugins.end())
-            return true;
-
-        for (const auto& element : chain.elements) {
-            if (isDevice(element)) {
-                const auto& device = getDevice(element);
-                if (synced.innerPlugins.find(device.id) == synced.innerPlugins.end())
-                    return true;
-            }
-        }
-    }
-
-    // Check if any synced device no longer exists in the rack
-    for (const auto& [deviceId, plugin] : synced.innerPlugins) {
-        bool found = false;
-        for (const auto& chain : rackInfo.chains) {
+    std::function<void(const RackInfo&, const ChainNodePath&)> collect;
+    collect = [&](const RackInfo& rack, const ChainNodePath& rackPath) {
+        for (const auto& chain : rack.chains) {
+            const auto chainPath = rackPath.withChain(chain.id);
+            expectedChains.insert(pathKey(chainPath));
             for (const auto& element : chain.elements) {
-                if (isDevice(element) && getDevice(element).id == deviceId) {
-                    found = true;
-                    break;
+                if (isDevice(element)) {
+                    expectedDevices.insert(getDevice(element).id);
+                } else if (isRack(element)) {
+                    const auto& nestedRack = getRack(element);
+                    const auto nestedPath = chainPath.withRack(nestedRack.id);
+                    expectedNestedRacks.insert(pathKey(nestedPath));
+                    collect(nestedRack, nestedPath);
                 }
             }
-            if (found)
-                break;
         }
-        if (!found)
+    };
+    collect(rackInfo, ChainNodePath::rack(synced.trackId, rackInfo.id));
+
+    if (synced.chainVolPanPlugins.size() != expectedChains.size())
+        return true;
+    for (const auto& chainKey : expectedChains)
+        if (synced.chainVolPanPlugins.find(chainKey) == synced.chainVolPanPlugins.end())
             return true;
-    }
+
+    if (synced.innerPlugins.size() != expectedDevices.size())
+        return true;
+    for (auto deviceId : expectedDevices)
+        if (synced.innerPlugins.find(deviceId) == synced.innerPlugins.end())
+            return true;
+
+    if (synced.nestedRackInstances.size() != expectedNestedRacks.size())
+        return true;
+    for (const auto& key : expectedNestedRacks)
+        if (synced.nestedRackInstances.find(key) == synced.nestedRackInstances.end())
+            return true;
 
     return false;
 }
@@ -715,16 +918,8 @@ void RackSyncManager::updateProperties(SyncedRack& synced, const RackInfo& rackI
     // Update rack bypass state
     applyBypassState(synced, rackInfo);
 
-    // Update per-chain volume/pan
-    for (const auto& chain : rackInfo.chains) {
-        auto volPanIt = synced.chainVolPanPlugins.find(chain.id);
-        if (volPanIt != synced.chainVolPanPlugins.end() && volPanIt->second) {
-            if (auto* volPan = dynamic_cast<te::VolumeAndPanPlugin*>(volPanIt->second.get())) {
-                volPan->setVolumeDb(chain.volume);
-                volPan->setPan(chain.pan);
-            }
-        }
-    }
+    const auto rackPath = ChainNodePath::rack(synced.trackId, rackInfo.id);
+    updateElementPropertiesRecursive(synced, rackInfo, rackPath);
 
     // Check if mute/solo state requires connection rebuild
     // (We need to compare against current connection state, but for simplicity
@@ -738,20 +933,7 @@ void RackSyncManager::updateProperties(SyncedRack& synced, const RackInfo& rackI
                 rackType->removeConnection(conn->sourceID, conn->sourcePin, conn->destID,
                                            conn->destPin);
             }
-            buildConnections(synced, rackInfo);
-        }
-    }
-
-    // Update individual device bypass states
-    for (const auto& chain : rackInfo.chains) {
-        for (const auto& element : chain.elements) {
-            if (isDevice(element)) {
-                const auto& device = getDevice(element);
-                auto pluginIt = synced.innerPlugins.find(device.id);
-                if (pluginIt != synced.innerPlugins.end() && pluginIt->second) {
-                    pluginIt->second->setEnabled(!device.bypassed);
-                }
-            }
+            rebuildConnectionsRecursive(synced, rackInfo, rackPath, *rackType);
         }
     }
 
@@ -762,33 +944,73 @@ void RackSyncManager::updateProperties(SyncedRack& synced, const RackInfo& rackI
     DBG("RackSyncManager: Updated properties for rack " << rackInfo.id);
 }
 
+void RackSyncManager::updateElementPropertiesRecursive(SyncedRack& synced, const RackInfo& rackInfo,
+                                                       const ChainNodePath& rackPath) {
+    for (const auto& chain : rackInfo.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
+        auto volPanIt = synced.chainVolPanPlugins.find(pathKey(chainPath));
+        if (volPanIt != synced.chainVolPanPlugins.end() && volPanIt->second) {
+            if (auto* volPan = dynamic_cast<te::VolumeAndPanPlugin*>(volPanIt->second.get())) {
+                volPan->setVolumeDb(chain.volume);
+                volPan->setPan(chain.pan);
+            }
+        }
+
+        for (const auto& element : chain.elements) {
+            if (isDevice(element)) {
+                const auto& device = getDevice(element);
+                auto pluginIt = synced.innerPlugins.find(device.id);
+                if (pluginIt != synced.innerPlugins.end() && pluginIt->second)
+                    pluginIt->second->setEnabled(!device.bypassed);
+            } else if (isRack(element)) {
+                const auto& nestedRack = getRack(element);
+                const auto nestedPath = chainPath.withRack(nestedRack.id);
+                auto instIt = synced.nestedRackInstances.find(pathKey(nestedPath));
+                if (instIt != synced.nestedRackInstances.end())
+                    applyRackInstanceState(instIt->second, nestedRack);
+                updateElementPropertiesRecursive(synced, nestedRack, nestedPath);
+            }
+        }
+    }
+}
+
+void RackSyncManager::rebuildConnectionsRecursive(SyncedRack& synced, const RackInfo& rackInfo,
+                                                  const ChainNodePath& rackPath,
+                                                  te::RackType& rackType) {
+    for (const auto& chain : rackInfo.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
+        for (const auto& element : chain.elements) {
+            if (!isRack(element))
+                continue;
+            const auto& nestedRack = getRack(element);
+            const auto nestedPath = chainPath.withRack(nestedRack.id);
+            auto typeIt = synced.nestedRackTypes.find(pathKey(nestedPath));
+            if (typeIt == synced.nestedRackTypes.end() || !typeIt->second)
+                continue;
+
+            auto connections = typeIt->second->getConnections();
+            for (int i = connections.size(); --i >= 0;) {
+                auto* conn = connections[i];
+                typeIt->second->removeConnection(conn->sourceID, conn->sourcePin, conn->destID,
+                                                 conn->destPin);
+            }
+            rebuildConnectionsRecursive(synced, nestedRack, nestedPath, *typeIt->second);
+        }
+    }
+
+    auto connections = rackType.getConnections();
+    for (int i = connections.size(); --i >= 0;) {
+        auto* conn = connections[i];
+        rackType.removeConnection(conn->sourceID, conn->sourcePin, conn->destID, conn->destPin);
+    }
+    buildConnectionsForRack(synced, rackInfo, rackPath, rackType);
+}
+
 void RackSyncManager::applyBypassState(SyncedRack& synced, const RackInfo& rackInfo) {
     if (!synced.rackInstance)
         return;
 
-    auto* rackInstance = dynamic_cast<te::RackInstance*>(synced.rackInstance.get());
-    if (!rackInstance)
-        return;
-
-    if (rackInfo.bypassed) {
-        // Bypass: dry signal only
-        rackInstance->wetGain->setParameterFromHost(0.0f, juce::dontSendNotification);
-        rackInstance->dryGain->setParameterFromHost(1.0f, juce::dontSendNotification);
-    } else {
-        // Normal: wet signal only (processed through rack)
-        rackInstance->wetGain->setParameterFromHost(1.0f, juce::dontSendNotification);
-        rackInstance->dryGain->setParameterFromHost(0.0f, juce::dontSendNotification);
-    }
-
-    // Apply rack output volume/pan via the RackInstance's output level parameters
-    rackInstance->leftOutDb->setParameterFromHost(
-        static_cast<float>(juce::jlimit(te::RackInstance::rackMinDb, te::RackInstance::rackMaxDb,
-                                        static_cast<double>(rackInfo.volume))),
-        juce::dontSendNotification);
-    rackInstance->rightOutDb->setParameterFromHost(
-        static_cast<float>(juce::jlimit(te::RackInstance::rackMinDb, te::RackInstance::rackMaxDb,
-                                        static_cast<double>(rackInfo.volume))),
-        juce::dontSendNotification);
+    applyRackInstanceState(synced.rackInstance, rackInfo);
 }
 
 // =============================================================================
@@ -812,11 +1034,28 @@ void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rac
     if (!synced.rackType)
         return;
 
+    syncRackModulationRecursive(synced, rackInfo, ChainNodePath::rack(synced.trackId, rackInfo.id),
+                                *synced.rackType);
+
+    // Refresh the structural fingerprint so the next resyncAllModifiers
+    // doesn't take the in-place property path against an out-of-date stored
+    // fingerprint. Without this, a removeMod-triggered structural rebuild
+    // (which goes through updateProperties → syncRackModulation) leaves the
+    // fingerprint stale: a subsequent add+link with the same shape matches
+    // the stale fingerprint, falls into syncProperties, finds an empty
+    // state.modifiers map, and silently drops the new assignment — the
+    // user sees the link wired in the UI but no audio modulation.
+    rackFingerprints_[synced.rackId] = computeRackFingerprint(rackInfo);
+}
+
+void RackSyncManager::syncRackModulationRecursive(SyncedRack& synced, const RackInfo& rackInfo,
+                                                  const ChainNodePath& rackPath,
+                                                  te::RackType& rackType) {
     InnerPluginLookup lookup(synced);
 
     ModifierSyncContext ctx;
-    ctx.modifierList = &synced.rackType->getModifierList();
-    ctx.macroList = &synced.rackType->getMacroParameterListForWriting();
+    ctx.modifierList = &rackType.getModifierList();
+    ctx.macroList = &rackType.getMacroParameterListForWriting();
     ctx.lookup = &lookup;
     ctx.forEachScopePlugin = [&synced](const std::function<void(te::Plugin*)>& visit) {
         for (auto& [pluginId, plugin] : synced.innerPlugins) {
@@ -826,14 +1065,25 @@ void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rac
     };
     ctx.hasCrossTrackSidechain = false;
 
+    const bool isTopLevelRack = rackPath.steps.size() == 1;
+    auto& modifiers =
+        isTopLevelRack ? synced.innerModifiers : synced.nestedRackMods[pathKey(rackPath)].modifiers;
+    auto& curveSnapshots = isTopLevelRack ? synced.curveSnapshots
+                                          : synced.nestedRackMods[pathKey(rackPath)].curveSnapshots;
+    auto& macroParams = isTopLevelRack ? synced.innerMacroParams
+                                       : synced.nestedRackMods[pathKey(rackPath)].macroParams;
+    auto& innerDeviceMods = isTopLevelRack
+                                ? synced.innerDeviceMods
+                                : synced.nestedRackMods[pathKey(rackPath)].innerDeviceMods;
+
     ConstChainNode node;
     node.scope = ChainScope::Rack;
     node.trackId = synced.trackId;
-    node.rackId = synced.rackId;
+    node.rackId = rackInfo.id;
     node.mods = &rackInfo.mods;
     node.macros = &rackInfo.macros;
 
-    ModifierSyncState state{synced.innerModifiers, synced.curveSnapshots, synced.innerMacroParams};
+    ModifierSyncState state{modifiers, curveSnapshots, macroParams};
     ModifierSyncWalker::syncStructure(node, ctx, state, deferredHolders_);
 
     // Sync per-rack-internal-device mods + macros. These are mods attached to
@@ -844,9 +1094,20 @@ void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rac
     // ModId namespace doesn't collide with the rack-scope `innerModifiers`.
     auto innerDeviceIds = std::set<DeviceId>{};
     for (const auto& chain : rackInfo.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
         for (const auto& chainElement : chain.elements) {
+            if (isRack(chainElement)) {
+                const auto& nestedRack = getRack(chainElement);
+                const auto nestedRackPath = chainPath.withRack(nestedRack.id);
+                auto typeIt = synced.nestedRackTypes.find(pathKey(nestedRackPath));
+                if (typeIt != synced.nestedRackTypes.end() && typeIt->second)
+                    syncRackModulationRecursive(synced, nestedRack, nestedRackPath,
+                                                *typeIt->second);
+                continue;
+            }
             if (!isDevice(chainElement))
                 continue;
+
             const auto& device = getDevice(chainElement);
             innerDeviceIds.insert(device.id);
 
@@ -864,7 +1125,7 @@ void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rac
             deviceCtx.forEachScopePlugin = ctx.forEachScopePlugin;
             deviceCtx.hasCrossTrackSidechain = device.sidechain.sourceTrackId != INVALID_TRACK_ID;
 
-            auto& devState = synced.innerDeviceMods[device.id];
+            auto& devState = innerDeviceMods[device.id];
             ModifierSyncState devSyncState{devState.modifiers, devState.curveSnapshots,
                                            devState.macroParams};
             ModifierSyncWalker::syncStructure(deviceNode, deviceCtx, devSyncState,
@@ -872,38 +1133,46 @@ void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rac
         }
     }
     // Drop per-device state for devices that are no longer in the rack.
-    for (auto it = synced.innerDeviceMods.begin(); it != synced.innerDeviceMods.end();) {
+    for (auto it = innerDeviceMods.begin(); it != innerDeviceMods.end();) {
         if (innerDeviceIds.count(it->first) == 0)
-            it = synced.innerDeviceMods.erase(it);
+            it = innerDeviceMods.erase(it);
         else
             ++it;
     }
-
-    // Refresh the structural fingerprint so the next resyncAllModifiers
-    // doesn't take the in-place property path against an out-of-date stored
-    // fingerprint. Without this, a removeMod-triggered structural rebuild
-    // (which goes through updateProperties → syncRackModulation) leaves the
-    // fingerprint stale: a subsequent add+link with the same shape matches
-    // the stale fingerprint, falls into syncProperties, finds an empty
-    // state.modifiers map, and silently drops the new assignment — the
-    // user sees the link wired in the UI but no audio modulation.
-    rackFingerprints_[synced.rackId] = computeRackFingerprint(rackInfo);
 }
 
 void RackSyncManager::updateRackModulationProperties(SyncedRack& synced, const RackInfo& rackInfo) {
+    updateRackModulationPropertiesRecursive(synced, rackInfo,
+                                            ChainNodePath::rack(synced.trackId, rackInfo.id));
+}
+
+void RackSyncManager::updateRackModulationPropertiesRecursive(SyncedRack& synced,
+                                                              const RackInfo& rackInfo,
+                                                              const ChainNodePath& rackPath) {
     InnerPluginLookup lookup(synced);
 
     ModifierSyncContext ctx;
     ctx.lookup = &lookup;
 
+    const bool isTopLevelRack = rackPath.steps.size() == 1;
+    auto& modifiers =
+        isTopLevelRack ? synced.innerModifiers : synced.nestedRackMods[pathKey(rackPath)].modifiers;
+    auto& curveSnapshots = isTopLevelRack ? synced.curveSnapshots
+                                          : synced.nestedRackMods[pathKey(rackPath)].curveSnapshots;
+    auto& macroParams = isTopLevelRack ? synced.innerMacroParams
+                                       : synced.nestedRackMods[pathKey(rackPath)].macroParams;
+    auto& innerDeviceMods = isTopLevelRack
+                                ? synced.innerDeviceMods
+                                : synced.nestedRackMods[pathKey(rackPath)].innerDeviceMods;
+
     ConstChainNode node;
     node.scope = ChainScope::Rack;
     node.trackId = synced.trackId;
-    node.rackId = synced.rackId;
+    node.rackId = rackInfo.id;
     node.mods = &rackInfo.mods;
     node.macros = &rackInfo.macros;
 
-    ModifierSyncState state{synced.innerModifiers, synced.curveSnapshots, synced.innerMacroParams};
+    ModifierSyncState state{modifiers, curveSnapshots, macroParams};
     ModifierSyncWalker::syncProperties(node, ctx, state);
 
     // Note-trigger: the pre-step-2 updateAllModifierProperties also called
@@ -921,18 +1190,25 @@ void RackSyncManager::updateRackModulationProperties(SyncedRack& synced, const R
             triggerLFONoteOnWithReset(lfo);
     };
     for (const auto& modInfo : rackInfo.mods)
-        retriggerIfNeeded(modInfo, synced.innerModifiers);
+        retriggerIfNeeded(modInfo, modifiers);
 
     // Same property update + retrigger pass for each rack-internal device's
     // own mods. Keyed per-DeviceId so each device's ModId namespace is
     // resolved against the right state map.
     for (const auto& chain : rackInfo.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
         for (const auto& chainElement : chain.elements) {
+            if (isRack(chainElement)) {
+                const auto& nestedRack = getRack(chainElement);
+                updateRackModulationPropertiesRecursive(synced, nestedRack,
+                                                        chainPath.withRack(nestedRack.id));
+                continue;
+            }
             if (!isDevice(chainElement))
                 continue;
             const auto& device = getDevice(chainElement);
-            auto devIt = synced.innerDeviceMods.find(device.id);
-            if (devIt == synced.innerDeviceMods.end())
+            auto devIt = innerDeviceMods.find(device.id);
+            if (devIt == innerDeviceMods.end())
                 continue;
 
             ConstChainNode deviceNode;
@@ -967,17 +1243,8 @@ bool RackSyncManager::needsModifierResync(TrackId trackId) const {
         if (it == syncedRacks_.end())
             continue;
 
-        const auto& synced = it->second;
-
-        // Count active rack mods (enabled + has links)
-        int activeModCount = 0;
-        for (const auto& mod : rack.mods) {
-            if (mod.enabled && !mod.links.empty())
-                activeModCount++;
-        }
-
-        int existingCount = static_cast<int>(synced.innerModifiers.size());
-        if (activeModCount != existingCount)
+        auto storedIt = rackFingerprints_.find(rack.id);
+        if (storedIt == rackFingerprints_.end() || computeRackFingerprint(rack) != storedIt->second)
             return true;
     }
 
@@ -1002,9 +1269,185 @@ void RackSyncManager::collectLFOModifiers(TrackId trackId,
         int collected = collectFromMap(synced.innerModifiers);
         for (const auto& [_devId, devState] : synced.innerDeviceMods)
             collected += collectFromMap(devState.modifiers);
+        for (const auto& [_path, nestedState] : synced.nestedRackMods) {
+            collected += collectFromMap(nestedState.modifiers);
+            for (const auto& [_devId, devState] : nestedState.innerDeviceMods)
+                collected += collectFromMap(devState.modifiers);
+        }
         if (collected > 0)
             DBG("RackSyncManager::collectLFOModifiers - rackId=" << rackId << " trackId=" << trackId
                                                                  << " collected=" << collected);
+    }
+}
+
+void RackSyncManager::collectLFOModifiersWithModes(TrackId trackId,
+                                                   std::vector<te::LFOModifier*>& out,
+                                                   std::vector<LFOTriggerMode>& modes) const {
+    auto& tm = TrackManager::getInstance();
+
+    auto collectFromMods = [&](const std::vector<ModInfo>& magdaMods,
+                               const std::map<ModId, te::Modifier::Ptr>& teMods) -> int {
+        int n = 0;
+        for (const auto& modInfo : magdaMods) {
+            if (!modInfo.enabled || modInfo.links.empty())
+                continue;
+            auto it = teMods.find(modInfo.id);
+            if (it == teMods.end() || !it->second)
+                continue;
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(it->second.get())) {
+                out.push_back(lfo);
+                modes.push_back(modInfo.triggerMode);
+                ++n;
+            }
+        }
+        return n;
+    };
+
+    for (const auto& [rackId, synced] : syncedRacks_) {
+        if (synced.trackId != trackId)
+            continue;
+
+        auto* rackInfo = tm.getRack(synced.trackId, rackId);
+        if (!rackInfo)
+            continue;
+
+        auto collectRack =
+            [&](auto&& self, RackInfo& rack, const ChainNodePath& rackPath,
+                const std::map<ModId, te::Modifier::Ptr>& rackMods,
+                const std::map<DeviceId, SyncedRack::InnerDeviceModState>& deviceMods) -> int {
+            int collected = collectFromMods(rack.mods, rackMods);
+
+            for (auto& chain : rack.chains) {
+                const auto chainPath = rackPath.withChain(chain.id);
+                for (auto& element : chain.elements) {
+                    if (isDevice(element)) {
+                        auto& device = getDevice(element);
+                        auto devIt = deviceMods.find(device.id);
+                        if (devIt != deviceMods.end())
+                            collected += collectFromMods(device.mods, devIt->second.modifiers);
+                    } else if (isRack(element)) {
+                        auto& nestedRack = getRack(element);
+                        const auto nestedPath = chainPath.withRack(nestedRack.id);
+                        auto stateIt = synced.nestedRackMods.find(pathKey(nestedPath));
+                        if (stateIt != synced.nestedRackMods.end()) {
+                            collected +=
+                                self(self, nestedRack, nestedPath, stateIt->second.modifiers,
+                                     stateIt->second.innerDeviceMods);
+                        }
+                    }
+                }
+            }
+
+            return collected;
+        };
+
+        int collected =
+            collectRack(collectRack, *rackInfo, ChainNodePath::rack(synced.trackId, rackId),
+                        synced.innerModifiers, synced.innerDeviceMods);
+
+        if (collected > 0)
+            DBG("RackSyncManager::collectLFOModifiersWithModes - rackId="
+                << rackId << " trackId=" << trackId << " collected=" << collected);
+    }
+}
+
+void RackSyncManager::collectLFOModifiersWithModesForSidechainSource(
+    TrackId destinationTrackId, TrackId sourceTrackId, std::vector<te::LFOModifier*>& out,
+    std::vector<LFOTriggerMode>& modes) const {
+    auto& tm = TrackManager::getInstance();
+
+    auto collectFromMods = [&](const std::vector<ModInfo>& magdaMods,
+                               const std::map<ModId, te::Modifier::Ptr>& teMods) -> int {
+        int n = 0;
+        for (const auto& modInfo : magdaMods) {
+            if (!modInfo.enabled || modInfo.links.empty())
+                continue;
+            auto it = teMods.find(modInfo.id);
+            if (it == teMods.end() || !it->second)
+                continue;
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(it->second.get())) {
+                out.push_back(lfo);
+                modes.push_back(modInfo.triggerMode);
+                ++n;
+            }
+        }
+        return n;
+    };
+
+    auto rackContainsSidechainSource = [&](auto&& self, const RackInfo& rack) -> bool {
+        if (rack.sidechain.sourceTrackId == sourceTrackId)
+            return true;
+
+        for (const auto& chain : rack.chains) {
+            for (const auto& element : chain.elements) {
+                if (isDevice(element)) {
+                    if (getDevice(element).sidechain.sourceTrackId == sourceTrackId)
+                        return true;
+                } else if (isRack(element)) {
+                    if (self(self, getRack(element)))
+                        return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    for (const auto& [rackId, synced] : syncedRacks_) {
+        if (synced.trackId != destinationTrackId)
+            continue;
+
+        auto* rackInfo = tm.getRack(synced.trackId, rackId);
+        if (!rackInfo)
+            continue;
+
+        auto collectRack =
+            [&](auto&& self, RackInfo& rack, const ChainNodePath& rackPath,
+                const std::map<ModId, te::Modifier::Ptr>& rackMods,
+                const std::map<DeviceId, SyncedRack::InnerDeviceModState>& deviceMods) -> int {
+            int collected = 0;
+            const auto rackSource = rack.sidechain.sourceTrackId;
+            const bool rackSourceMatches =
+                rackSource == sourceTrackId ||
+                (rackSource == INVALID_TRACK_ID &&
+                 rackContainsSidechainSource(rackContainsSidechainSource, rack));
+
+            if (rackSourceMatches)
+                collected += collectFromMods(rack.mods, rackMods);
+
+            for (auto& chain : rack.chains) {
+                const auto chainPath = rackPath.withChain(chain.id);
+                for (auto& element : chain.elements) {
+                    if (isDevice(element)) {
+                        auto& device = getDevice(element);
+                        if (device.sidechain.sourceTrackId != sourceTrackId)
+                            continue;
+                        auto devIt = deviceMods.find(device.id);
+                        if (devIt != deviceMods.end())
+                            collected += collectFromMods(device.mods, devIt->second.modifiers);
+                    } else if (isRack(element)) {
+                        auto& nestedRack = getRack(element);
+                        const auto nestedPath = chainPath.withRack(nestedRack.id);
+                        auto stateIt = synced.nestedRackMods.find(pathKey(nestedPath));
+                        if (stateIt != synced.nestedRackMods.end()) {
+                            collected +=
+                                self(self, nestedRack, nestedPath, stateIt->second.modifiers,
+                                     stateIt->second.innerDeviceMods);
+                        }
+                    }
+                }
+            }
+
+            return collected;
+        };
+
+        int collected =
+            collectRack(collectRack, *rackInfo, ChainNodePath::rack(synced.trackId, rackId),
+                        synced.innerModifiers, synced.innerDeviceMods);
+
+        if (collected > 0)
+            DBG("RackSyncManager::collectLFOModifiersWithModesForSidechainSource - rackId="
+                << rackId << " dstTrack=" << destinationTrackId << " srcTrack=" << sourceTrackId
+                << " collected=" << collected);
     }
 }
 
@@ -1038,23 +1481,35 @@ void RackSyncManager::syncLFOValuesToVisuals() {
         if (!rackInfo)
             continue;
 
-        // Rack-scope mods.
-        overlayInto(rackInfo->mods, synced.innerModifiers);
+        auto overlayRack =
+            [&](auto&& self, RackInfo& rack, const ChainNodePath& rackPath,
+                const std::map<ModId, te::Modifier::Ptr>& rackMods,
+                const std::map<DeviceId, SyncedRack::InnerDeviceModState>& deviceMods) -> void {
+            overlayInto(rack.mods, rackMods);
 
-        // Per-rack-internal-device mods.
-        if (synced.innerDeviceMods.empty())
-            continue;
-        for (auto& chain : rackInfo->chains) {
-            for (auto& chainElement : chain.elements) {
-                if (!isDevice(chainElement))
-                    continue;
-                auto& device = getDevice(chainElement);
-                auto devIt = synced.innerDeviceMods.find(device.id);
-                if (devIt == synced.innerDeviceMods.end())
-                    continue;
-                overlayInto(device.mods, devIt->second.modifiers);
+            for (auto& chain : rack.chains) {
+                const auto chainPath = rackPath.withChain(chain.id);
+                for (auto& element : chain.elements) {
+                    if (isDevice(element)) {
+                        auto& device = getDevice(element);
+                        auto devIt = deviceMods.find(device.id);
+                        if (devIt != deviceMods.end())
+                            overlayInto(device.mods, devIt->second.modifiers);
+                    } else if (isRack(element)) {
+                        auto& nestedRack = getRack(element);
+                        const auto nestedPath = chainPath.withRack(nestedRack.id);
+                        auto nestedIt = synced.nestedRackMods.find(pathKey(nestedPath));
+                        if (nestedIt != synced.nestedRackMods.end()) {
+                            self(self, nestedRack, nestedPath, nestedIt->second.modifiers,
+                                 nestedIt->second.innerDeviceMods);
+                        }
+                    }
+                }
             }
-        }
+        };
+
+        overlayRack(overlayRack, *rackInfo, ChainNodePath::rack(synced.trackId, rackId),
+                    synced.innerModifiers, synced.innerDeviceMods);
     }
 }
 
@@ -1068,6 +1523,11 @@ void RackSyncManager::ungateAllLFOs() {
         ungate(synced.innerModifiers);
         for (auto& [_devId, devState] : synced.innerDeviceMods)
             ungate(devState.modifiers);
+        for (auto& [_path, nestedState] : synced.nestedRackMods) {
+            ungate(nestedState.modifiers);
+            for (auto& [_devId, devState] : nestedState.innerDeviceMods)
+                ungate(devState.modifiers);
+        }
     }
 }
 
@@ -1082,6 +1542,11 @@ void RackSyncManager::regateTriggeredLFOs() {
         regate(synced.innerModifiers);
         for (auto& [_devId, devState] : synced.innerDeviceMods)
             regate(devState.modifiers);
+        for (auto& [_path, nestedState] : synced.nestedRackMods) {
+            regate(nestedState.modifiers);
+            for (auto& [_devId, devState] : nestedState.innerDeviceMods)
+                regate(devState.modifiers);
+        }
     }
 }
 
@@ -1097,6 +1562,11 @@ void RackSyncManager::triggerLFONoteOn(TrackId trackId) {
         trigger(synced.innerModifiers);
         for (auto& [_devId, devState] : synced.innerDeviceMods)
             trigger(devState.modifiers);
+        for (auto& [_path, nestedState] : synced.nestedRackMods) {
+            trigger(nestedState.modifiers);
+            for (auto& [_devId, devState] : nestedState.innerDeviceMods)
+                trigger(devState.modifiers);
+        }
     }
 }
 

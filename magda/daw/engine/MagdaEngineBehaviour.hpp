@@ -11,6 +11,7 @@
 #include "../audio/plugins/MidiReceivePlugin.hpp"
 #include "../audio/plugins/SidechainMonitorPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
+#include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../project/ProjectManager.hpp"
 
@@ -94,6 +95,11 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == daw::audio::FaustPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating FaustPlugin");
             return new daw::audio::FaustPlugin(info);
+        }
+        // Compiled-Faust plugins go through the registry; one factory per
+        // device lives in its own .cpp (see CompiledPluginRegistry.hpp).
+        if (auto* spec = daw::audio::compiled::findCompiledPluginSpec(type)) {
+            return spec->createPlugin(info);
         }
         if (type == MidiReceivePlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiReceivePlugin");

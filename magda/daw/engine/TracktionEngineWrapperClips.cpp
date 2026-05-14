@@ -2,16 +2,6 @@
 
 namespace magda {
 
-// Helper: Convert beats to seconds using current tempo
-static double beatsToSeconds(double beats, double tempo) {
-    return beats * (60.0 / tempo);
-}
-
-// Helper: Convert seconds to beats using current tempo
-static double secondsToBeats(double seconds, double tempo) {
-    return seconds / (60.0 / tempo);
-}
-
 std::string TracktionEngineWrapper::addMidiClip(const std::string& track_id, double start_time,
                                                 double length, const std::vector<MidiNote>& notes) {
     auto track = findTrackById(track_id);
@@ -37,9 +27,6 @@ std::string TracktionEngineWrapper::addMidiClip(const std::string& track_id, dou
         DBG("addMidiClip: Failed to create MIDI clip");
         return "";
     }
-
-    // Get current tempo for beat-to-seconds conversion
-    double tempo = getTempo();
 
     // Add notes to the clip's sequence
     auto& sequence = midiClipPtr->getSequence();

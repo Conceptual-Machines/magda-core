@@ -1,21 +1,19 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "magda/daw/core/ClipDisplayInfo.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/ClipOperations.hpp"
+#include "magda/daw/core/ClipPropertyCommands.hpp"
 
 /**
- * Tests for waveform editor absolute mode positioning logic
+ * Tests for waveform editor source-relative positioning logic
  *
- * Bug fixed: When a clip was moved on the timeline, the waveform editor
- * in absolute (ABS) mode would show the wrong position because
- * clipStartTime_ wasn't being updated in WaveformGridComponent.
+ * The waveform editor is a view into the source file. Arrangement placement
+ * must not move the displayed waveform.
  *
- * Example: Clip at bar 1-3 (2 bars), move to bar 2-4
- * - Before fix: waveform editor showed bars 1-3 (old position)
- * - After fix: waveform editor shows bars 2-4 (correct position)
- *
- * These tests verify the coordinate conversion logic that the fix relies on.
+ * These tests verify the coordinate conversion logic the editor relies on.
  * The actual UI component (WaveformGridComponent) uses this same math.
  */
 
@@ -40,6 +38,10 @@ class WaveformCoordinateConverter {
         clipStartTime_ = startTime;
         clipLength_ = length;
     }
+    void updateSourcePositions(double sampleStart, double offset) {
+        sampleStart_ = sampleStart;
+        offset_ = offset;
+    }
 
     double getClipStartTime() const {
         return clipStartTime_;
@@ -55,11 +57,22 @@ class WaveformCoordinateConverter {
     double pixelToTime(int x) const {
         return (x - LEFT_PADDING) / horizontalZoom_;
     }
+    double getDisplayStartTime() const {
+        return relativeMode_ ? 0.0 : clipStartTime_ - sampleStart_;
+    }
+    int sampleStartPixel() const {
+        return timeToPixel(getDisplayStartTime() + sampleStart_);
+    }
+    int offsetPixel() const {
+        return timeToPixel(getDisplayStartTime() + offset_);
+    }
 
   private:
     bool relativeMode_ = false;
     double clipStartTime_ = 0.0;
     double clipLength_ = 0.0;
+    double sampleStart_ = 0.0;
+    double offset_ = 0.0;
     double horizontalZoom_ = 100.0;
 };
 
@@ -68,11 +81,11 @@ class WaveformCoordinateConverter {
 using namespace magda;
 
 TEST_CASE("WaveformCoordinateConverter - updateClipPosition updates internal state",
-          "[waveform][grid][absolute]") {
+          "[waveform][grid][relative]") {
     WaveformCoordinateConverter converter;
 
     SECTION("Initial state has zero clip position") {
-        converter.setRelativeMode(false);
+        converter.setRelativeMode(true);
         converter.setHorizontalZoom(100.0);
 
         REQUIRE(converter.getClipStartTime() == 0.0);
@@ -83,7 +96,7 @@ TEST_CASE("WaveformCoordinateConverter - updateClipPosition updates internal sta
     }
 
     SECTION("updateClipPosition updates start time") {
-        converter.setRelativeMode(false);
+        converter.setRelativeMode(true);
         converter.setHorizontalZoom(100.0);
 
         // Clip at bar 1 (0 seconds)
@@ -105,7 +118,7 @@ TEST_CASE("WaveformCoordinateConverter - updateClipPosition updates internal sta
     }
 
     SECTION("updateClipPosition updates length") {
-        converter.setRelativeMode(false);
+        converter.setRelativeMode(true);
         converter.setHorizontalZoom(100.0);
 
         converter.updateClipPosition(0.0, 4.0);
@@ -121,7 +134,7 @@ TEST_CASE("WaveformCoordinateConverter - updateClipPosition updates internal sta
 
 TEST_CASE("WaveformCoordinateConverter - Coordinate conversion", "[waveform][grid][coordinates]") {
     WaveformCoordinateConverter converter;
-    converter.setRelativeMode(false);
+    converter.setRelativeMode(true);
     converter.setHorizontalZoom(100.0);
 
     SECTION("timeToPixel returns correct pixel positions") {
@@ -147,7 +160,7 @@ TEST_CASE("WaveformCoordinateConverter - Coordinate conversion", "[waveform][gri
 
 TEST_CASE("WaveformCoordinateConverter - Different zoom levels", "[waveform][grid][zoom]") {
     WaveformCoordinateConverter converter;
-    converter.setRelativeMode(false);
+    converter.setRelativeMode(true);
 
     SECTION("Zoom 50 pixels per second") {
         converter.setHorizontalZoom(50.0);
@@ -171,69 +184,44 @@ TEST_CASE("WaveformCoordinateConverter - Different zoom levels", "[waveform][gri
     }
 }
 
-TEST_CASE("WaveformCoordinateConverter - Clip move bug scenario", "[waveform][grid][regression]") {
-    /**
-     * This test reproduces the exact bug that was fixed:
-     *
-     * 1. User creates audio clip at bar 1-3 (2 bars at 120 BPM = 4 seconds)
-     * 2. Opens waveform editor in ABS mode
-     * 3. Moves clip to bar 2-4 on the timeline
-     * 4. BUG: Waveform editor still showed bars 1-3 instead of bars 2-4
-     *
-     * Root cause: clipPropertyChanged() wasn't calling updateClipPosition()
-     * on the grid component, so clipStartTime_ kept the old value.
-     *
-     * Fix: Added updateClipPosition() call in clipPropertyChanged()
-     */
-
+TEST_CASE("WaveformCoordinateConverter - clip move does not move source-relative display",
+          "[waveform][grid][relative][regression]") {
     WaveformCoordinateConverter converter;
-    converter.setRelativeMode(false);  // Absolute mode - critical for this bug
+    converter.setRelativeMode(true);
     converter.setHorizontalZoom(100.0);
+    converter.updateSourcePositions(0.0, 0.5);
 
     constexpr double BAR_DURATION = 2.0;  // At 120 BPM
 
-    // Step 1: Clip at bar 1-3 (0s to 4s)
     double clipStartBar1 = 0.0 * BAR_DURATION;
     double clipLength = 2.0 * BAR_DURATION;  // 2 bars = 4 seconds
     converter.updateClipPosition(clipStartBar1, clipLength);
 
-    int pixelAtBar1 = converter.timeToPixel(clipStartBar1);
-    int pixelAtBar3 = converter.timeToPixel(clipStartBar1 + clipLength);
+    const int initialSampleStartX = converter.sampleStartPixel();
+    const int initialOffsetX = converter.offsetPixel();
 
     REQUIRE(converter.getClipStartTime() == 0.0);
-    REQUIRE(pixelAtBar1 == 10);   // Bar 1 at pixel 10
-    REQUIRE(pixelAtBar3 == 410);  // Bar 3 at pixel 410
+    REQUIRE(initialSampleStartX == 10);
+    REQUIRE(initialOffsetX == 60);
 
-    // Step 2: User moves clip to bar 2-4 (2s to 6s)
-    // THIS IS THE CRITICAL STEP - the bug was that this wasn't being called
     double clipStartBar2 = 1.0 * BAR_DURATION;  // Bar 2 = 2 seconds
     converter.updateClipPosition(clipStartBar2, clipLength);
 
-    // Step 3: Verify the converter now reflects the NEW position
-
-    // Clip start should be updated
     REQUIRE(converter.getClipStartTime() == 2.0);
-
-    // Pixel positions should reflect the new clip position
-    int pixelAtNewStart = converter.timeToPixel(clipStartBar2);
-    int pixelAtNewEnd = converter.timeToPixel(clipStartBar2 + clipLength);
-
-    REQUIRE(pixelAtNewStart == 210);  // Bar 2 at pixel 210
-    REQUIRE(pixelAtNewEnd == 610);    // Bar 4 at pixel 610
-
-    // The bug was that pixelAtNewStart would still be 10 (bar 1)
-    // because clipStartTime_ wasn't updated
-    REQUIRE(pixelAtNewStart != pixelAtBar1);
-    REQUIRE(pixelAtNewEnd != pixelAtBar3);
+    REQUIRE(converter.sampleStartPixel() == initialSampleStartX);
+    REQUIRE(converter.offsetPixel() == initialOffsetX);
 }
 
-TEST_CASE("WaveformCoordinateConverter - Multiple moves preserve correct position",
-          "[waveform][grid][regression]") {
+TEST_CASE("WaveformCoordinateConverter - multiple arrangement moves preserve source display",
+          "[waveform][grid][relative][regression]") {
     WaveformCoordinateConverter converter;
-    converter.setRelativeMode(false);
+    converter.setRelativeMode(true);
     converter.setHorizontalZoom(100.0);
+    converter.updateSourcePositions(0.0, 0.5);
 
     double clipLength = 4.0;  // 2 bars at 120 BPM
+    const int expectedSampleStartX = converter.sampleStartPixel();
+    const int expectedOffsetX = converter.offsetPixel();
 
     // Move clip through several positions
     std::vector<double> positions = {0.0, 2.0, 4.0, 8.0, 2.0, 0.0};
@@ -245,13 +233,204 @@ TEST_CASE("WaveformCoordinateConverter - Multiple moves preserve correct positio
         REQUIRE(converter.getClipStartTime() == startTime);
         REQUIRE(converter.getClipLength() == clipLength);
 
-        // Verify coordinate conversion
-        int expectedPixelStart = static_cast<int>(startTime * 100.0) + LEFT_PADDING;
-        int expectedPixelEnd = static_cast<int>((startTime + clipLength) * 100.0) + LEFT_PADDING;
-
-        REQUIRE(converter.timeToPixel(startTime) == expectedPixelStart);
-        REQUIRE(converter.timeToPixel(startTime + clipLength) == expectedPixelEnd);
+        REQUIRE(converter.sampleStartPixel() == expectedSampleStartX);
+        REQUIRE(converter.offsetPixel() == expectedOffsetX);
     }
+}
+
+TEST_CASE("WaveformCoordinateConverter - offset moves independently from sample start",
+          "[waveform][grid][offset][regression]") {
+    WaveformCoordinateConverter converter;
+    converter.setRelativeMode(true);
+    converter.setHorizontalZoom(100.0);
+    converter.updateClipPosition(4.0, 2.0);
+    converter.updateSourcePositions(1.0, 1.0);
+
+    const int initialSampleStartX = converter.sampleStartPixel();
+    const int initialOffsetX = converter.offsetPixel();
+
+    REQUIRE(initialSampleStartX == 110);
+    REQUIRE(initialOffsetX == initialSampleStartX);
+
+    converter.updateSourcePositions(1.0, 1.5);
+
+    REQUIRE(converter.sampleStartPixel() == initialSampleStartX);
+    REQUIRE(converter.offsetPixel() == 160);
+    REQUIRE(converter.offsetPixel() != initialOffsetX);
+}
+
+TEST_CASE("WaveformCoordinateConverter - source-relative view ignores arrangement placement",
+          "[waveform][grid][relative][regression]") {
+    WaveformCoordinateConverter converter;
+    converter.setRelativeMode(true);
+    converter.setHorizontalZoom(100.0);
+    converter.updateSourcePositions(0.0, 0.5);
+
+    converter.updateClipPosition(0.0, 4.0);
+    const int initialSampleStartX = converter.sampleStartPixel();
+    const int initialOffsetX = converter.offsetPixel();
+
+    converter.updateClipPosition(8.0, 4.0);
+
+    REQUIRE(converter.sampleStartPixel() == initialSampleStartX);
+    REQUIRE(converter.offsetPixel() == initialOffsetX);
+}
+
+TEST_CASE("ClipOperations - audio sanitizing preserves sample start",
+          "[clip][audio][offset][regression]") {
+    ClipInfo clip;
+    clip.setAudioContent();
+    clip.audio().source.filePath = "/tmp/magda_offset_regression.wav";
+    clip.loopEnabled = false;
+    clip.autoTempo = false;
+    clip.length = 4.0;
+    clip.speedRatio = 1.0;
+    clip.loopStart = 0.25;
+    clip.offset = 0.75;
+
+    ClipOperations::sanitizeAudioToSourceDuration(clip, 8.0);
+
+    REQUIRE(clip.offset == Catch::Approx(0.75));
+    REQUIRE(clip.loopStart == Catch::Approx(0.25));
+}
+
+TEST_CASE("ClipOperations - audio sanitizing clamps length through beat placement",
+          "[clip][audio][offset][beats][regression]") {
+    ClipInfo clip;
+    clip.setAudioContent();
+    clip.audio().source.filePath = "/tmp/magda_source_sanitize_beats.wav";
+    clip.loopEnabled = false;
+    clip.autoTempo = false;
+    clip.startTime = 2.0;
+    clip.length = 10.0;
+    clip.setPlacementBeats(4.0, 20.0);
+    clip.speedRatio = 1.0;
+    clip.offset = 3.0;
+
+    ClipOperations::sanitizeAudioToSourceDuration(clip, 8.0, 120.0);
+
+    REQUIRE(clip.startTime == Catch::Approx(2.0));
+    REQUIRE(clip.startBeats == Catch::Approx(4.0));
+    REQUIRE(clip.length == Catch::Approx(5.0));
+    REQUIRE(clip.lengthBeats == Catch::Approx(10.0));
+}
+
+TEST_CASE("ClipOperations - non-loop offset drag preserves sample start and clamps clip bounds",
+          "[clip][audio][offset][regression]") {
+    ClipInfo clip;
+    clip.setAudioContent();
+    clip.audio().source.filePath = "/tmp/magda_offset_drag_regression.wav";
+    clip.loopEnabled = false;
+    clip.autoTempo = false;
+    clip.startTime = 4.0;
+    clip.length = 7.75;
+    clip.setPlacementBeats(8.0, 15.5);
+    clip.speedRatio = 1.0;
+    clip.loopStart = 0.25;
+    clip.offset = 0.25;
+
+    ClipOperations::setAudioOffsetPreservingSourceRegion(clip, 0.75, 8.0, 120.0);
+
+    REQUIRE(clip.offset == Catch::Approx(0.75));
+    REQUIRE(clip.loopStart == Catch::Approx(0.25));
+    REQUIRE(clip.startTime == Catch::Approx(4.0));
+    REQUIRE(clip.length == Catch::Approx(7.25));
+    REQUIRE(clip.lengthBeats == Catch::Approx(14.5));
+}
+
+TEST_CASE("ClipDisplayInfo - non-loop source end stays fixed when offset clamps clip length",
+          "[clip][audio][offset][display][regression]") {
+    ClipInfo clip;
+    clip.setAudioContent();
+    clip.audio().source.filePath = "/tmp/magda_offset_display_regression.wav";
+    clip.loopEnabled = false;
+    clip.autoTempo = false;
+    clip.startTime = 0.0;
+    clip.length = 8.0;
+    clip.speedRatio = 1.0;
+    clip.offset = 0.0;
+
+    ClipOperations::setAudioOffsetPreservingSourceRegion(clip, 1.0, 8.0, 120.0);
+
+    const auto displayInfo = ClipDisplayInfo::from(clip, 120.0, 8.0);
+
+    REQUIRE(clip.getTimelineLength(120.0) == Catch::Approx(7.0));
+    REQUIRE(displayInfo.offsetPositionSeconds == Catch::Approx(1.0));
+    REQUIRE(displayInfo.fileExtentTimeline() == Catch::Approx(8.0));
+}
+
+TEST_CASE("ClipOperations - non-loop right resize changes clip length only",
+          "[clip][audio][resize][regression]") {
+    ClipInfo clip;
+    clip.setAudioContent();
+    clip.audio().source.filePath = "/tmp/magda_right_resize_regression.wav";
+    clip.loopEnabled = false;
+    clip.autoTempo = false;
+    clip.startTime = 0.0;
+    clip.length = 2.0;
+    clip.setPlacementBeats(0.0, 4.0);
+    clip.speedRatio = 1.0;
+    clip.loopStart = 0.25;
+    clip.offset = 0.5;
+
+    ClipOperations::resizeContainerFromRight(clip, 3.0, 120.0);
+
+    const auto displayInfo = ClipDisplayInfo::from(clip, 120.0, 8.0);
+
+    REQUIRE(clip.length == Catch::Approx(3.0));
+    REQUIRE(clip.lengthBeats == Catch::Approx(6.0));
+    REQUIRE(clip.offset == Catch::Approx(0.5));
+    REQUIRE(clip.loopStart == Catch::Approx(0.25));
+    REQUIRE(displayInfo.offsetPositionSeconds + clip.getTimelineLength(120.0) ==
+            Catch::Approx(3.5));
+    REQUIRE(displayInfo.fileExtentTimeline() == Catch::Approx(8.0));
+}
+
+TEST_CASE("ClipOperations - phase drag clamps audio offset at zero",
+          "[clip][audio][phase][regression]") {
+    ClipInfo clip;
+    clip.setAudioContent();
+    clip.audio().source.filePath = "/tmp/magda_phase_drag_regression.wav";
+    clip.loopEnabled = true;
+    clip.autoTempo = false;
+    clip.loopStart = -0.25;
+    clip.offset = 0.0;
+
+    ClipOperations::setAudioLoopPhaseClamped(clip, 0.1);
+
+    REQUIRE(clip.offset == Catch::Approx(0.0));
+}
+
+TEST_CASE("SetClipOffsetCommand - non-loop offset clamp restores length on undo",
+          "[clip][audio][offset][undo][regression]") {
+    auto& clipManager = ClipManager::getInstance();
+    clipManager.clearAllClips();
+
+    ClipId clipId =
+        clipManager.createAudioClip(INVALID_TRACK_ID, 0.0, 8.0, "/tmp/magda_offset_undo.wav");
+    auto* clip = clipManager.getClip(clipId);
+    REQUIRE(clip != nullptr);
+
+    clip->loopEnabled = false;
+    clip->autoTempo = false;
+    clip->audio().source.durationSeconds = 8.0;
+    clip->offset = 0.0;
+    clip->length = 8.0;
+    clip->setPlacementBeats(0.0, 16.0);
+
+    SetClipOffsetCommand cmd(clipId, 1.0);
+    cmd.execute();
+
+    REQUIRE(clip->offset == Catch::Approx(1.0));
+    REQUIRE(clip->length == Catch::Approx(7.0));
+
+    cmd.undo();
+
+    clip = clipManager.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->offset == Catch::Approx(0.0));
+    REQUIRE(clip->length == Catch::Approx(8.0));
+    REQUIRE(clip->lengthBeats == Catch::Approx(16.0));
 }
 
 TEST_CASE("ClipManager - Clip position change notifies listeners", "[clip][manager][notify]") {

@@ -23,7 +23,7 @@ class AutomationApi {
     virtual AutomationLaneInfo* getLane(AutomationLaneId laneId) = 0;
     virtual const AutomationLaneInfo* getLane(AutomationLaneId laneId) const = 0;
 
-    virtual AutomationPointId addPoint(AutomationLaneId laneId, double time, double value,
+    virtual AutomationPointId addPoint(AutomationLaneId laneId, double beatPosition, double value,
                                        AutomationCurveType curveType) = 0;
     virtual void clearLanePoints(AutomationLaneId laneId) = 0;
 

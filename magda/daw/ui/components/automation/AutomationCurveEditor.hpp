@@ -21,7 +21,7 @@ namespace magda {
  * Double-click to add point, Delete to remove.
  *
  * Extends CurveEditorBase with automation-specific functionality:
- * - Time-based X coordinate (seconds)
+ * - Beat-based X coordinate
  * - Integration with AutomationManager for data persistence
  * - SelectionManager integration for multi-point selection
  */
@@ -63,12 +63,6 @@ class AutomationCurveEditor : public CurveEditorBase,
     AutomationDrawMode getAutomationDrawMode() const;
 
     // Coordinate conversion
-    void setPixelsPerSecond(double pps) {
-        pixelsPerSecond_ = pps;
-    }
-    double getPixelsPerSecond() const {
-        return pixelsPerSecond_;
-    }
     void setPixelsPerBeat(double ppb);
     void setTempoBPM(double bpm) {
         tempoBPM_ = bpm;
@@ -82,7 +76,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     int xToPixel(double x) const override;
 
     // Snapping (uses base class snapXToGrid)
-    std::function<double(double)> snapTimeToGrid;
+    std::function<double(double)> snapBeatToGrid;
     std::function<double()> getGridSpacingBeats;  // Grid step in beats
 
     // Clip mode (for clip-based automation)
@@ -124,7 +118,6 @@ class AutomationCurveEditor : public CurveEditorBase,
     AutomationLaneId laneId_;
     AutomationClipId clipId_ = INVALID_AUTOMATION_CLIP_ID;
     double clipOffset_ = 0.0;
-    double pixelsPerSecond_ = 100.0;
     double pixelsPerBeat_ = 10.0;
     double tempoBPM_ = 120.0;
 

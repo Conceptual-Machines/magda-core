@@ -5,15 +5,18 @@
 #include <functional>
 #include <optional>
 
+#include "ValueLabelControl.hpp"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
+#include "core/TempoUtils.hpp"
 
 namespace magda {
 
 /**
  * A compact label that displays a value and allows:
  * - Mouse drag to adjust the value
- * - Double-click to enter edit mode for keyboard input
+ * - Double-click to reset to the default value
+ * - Shift+double-click or Shift+right-click to enter edit mode for keyboard input
  *
  * Supports different value formats: dB, pan (L/C/R), percentage, etc.
  */
@@ -55,7 +58,7 @@ class DraggableValueLabel : public juce::Component,
     // Format
     void setFormat(Format format) {
         format_ = format;
-        repaint();
+        syncValueControl();
     }
     Format getFormat() const {
         return format_;
@@ -64,25 +67,25 @@ class DraggableValueLabel : public juce::Component,
     // Beats per bar for BarsBeats format
     void setBeatsPerBar(int beatsPerBar) {
         beatsPerBar_ = beatsPerBar;
-        repaint();
+        syncValueControl();
     }
 
     // Whether BarsBeats displays as 1-indexed position (true) or 0-indexed duration (false)
     void setBarsBeatsIsPosition(bool isPosition) {
         barsBeatsIsPosition_ = isPosition;
-        repaint();
+        syncValueControl();
     }
 
     // Suffix for Raw format
     void setSuffix(const juce::String& suffix) {
         suffix_ = suffix;
-        repaint();
+        syncValueControl();
     }
 
     // Decimal places for display
     void setDecimalPlaces(int places) {
         decimalPlaces_ = places;
-        repaint();
+        syncValueControl();
     }
 
     // Snap to integer values on drag/wheel (shift = fine fractional control)
@@ -93,42 +96,42 @@ class DraggableValueLabel : public juce::Component,
     // Custom text colour (overrides default TEXT_PRIMARY)
     void setTextColour(juce::Colour colour) {
         customTextColour_ = colour;
-        repaint();
+        valueControl_.setTextColour(colour);
     }
 
     // Whether to show the fill/level indicator bar
     void setShowFillIndicator(bool show) {
         showFillIndicator_ = show;
-        repaint();
+        valueControl_.setShowFillIndicator(show);
     }
 
     // Font size for display text
     void setFontSize(float size) {
         fontSize_ = size;
-        repaint();
+        valueControl_.setFontSize(size);
     }
 
     // Whether to draw the background fill
     void setDrawBackground(bool draw) {
         drawBackground_ = draw;
-        repaint();
+        valueControl_.setDrawBackground(draw);
     }
 
     void setJustification(juce::Justification j) {
         justification_ = j;
-        repaint();
+        valueControl_.setJustification(j);
     }
 
     // Whether to draw the border
     void setDrawBorder(bool draw) {
         drawBorder_ = draw;
-        repaint();
+        valueControl_.setDrawBorder(draw);
     }
 
     // Custom fill indicator colour (defaults to ACCENT_BLUE if not set)
     void setFillColour(juce::Colour colour) {
         customFillColour_ = colour;
-        repaint();
+        valueControl_.setFillColour(colour);
     }
 
     // Bind this label to an automation target. The label subscribes to
@@ -169,11 +172,11 @@ class DraggableValueLabel : public juce::Component,
     // Text override: when set, displays this text instead of the formatted value
     void setTextOverride(const juce::String& text) {
         textOverride_ = text;
-        repaint();
+        valueControl_.setTextOverride(text);
     }
     void clearTextOverride() {
         textOverride_.clear();
-        repaint();
+        valueControl_.clearTextOverride();
     }
 
     // Callback when value changes (fires on every drag pixel, wheel tick, or edit commit)
@@ -193,6 +196,7 @@ class DraggableValueLabel : public juce::Component,
 
     // Component overrides
     void paint(juce::Graphics& g) override;
+    void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
@@ -207,7 +211,7 @@ class DraggableValueLabel : public juce::Component,
     double defaultValue_ = 0.0;
     double dragSensitivity_ = 200.0;  // pixels for full range
     int decimalPlaces_ = 1;
-    int beatsPerBar_ = 4;
+    int beatsPerBar_ = DEFAULT_TIME_SIGNATURE_NUMERATOR;
     bool barsBeatsIsPosition_ = true;
     juce::String suffix_;
     bool doubleClickResets_ = true;
@@ -234,7 +238,7 @@ class DraggableValueLabel : public juce::Component,
         if (automationVisualState_ == newState)
             return;
         automationVisualState_ = newState;
-        repaint();
+        syncValueControl();
     }
 
     // Override used by internal mouseDown path to flip visual state
@@ -244,7 +248,7 @@ class DraggableValueLabel : public juce::Component,
         if (automationVisualState_ == state)
             return;
         automationVisualState_ = state;
-        repaint();
+        syncValueControl();
     }
 
   public:
@@ -260,7 +264,7 @@ class DraggableValueLabel : public juce::Component,
         if (coEditing_ == shouldShow)
             return;
         coEditing_ = shouldShow;
-        repaint();
+        valueControl_.setCoEditing(shouldShow);
     }
     bool isCoEditing() const {
         return coEditing_;
@@ -280,13 +284,13 @@ class DraggableValueLabel : public juce::Component,
     void latchAutomationOverride();
 
     // Edit mode
-    bool isEditing_ = false;
-    std::unique_ptr<juce::TextEditor> editor_;
+    daw::ui::ValueLabelControl valueControl_;
 
     juce::String formatValue(double val) const;
     double parseValue(const juce::String& text) const;
+    void syncValueControl();
     void startEditing();
-    void finishEditing();
+    void finishEditing(const juce::String& text);
     void cancelEditing();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DraggableValueLabel)
