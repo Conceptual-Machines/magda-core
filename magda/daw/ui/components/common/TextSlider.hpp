@@ -18,7 +18,9 @@ namespace magda::daw::ui {
 /**
  * @brief A text-based slider that displays value as editable text
  *
- * Click to edit, drag to change value. Supports dB and pan formatting.
+ * Drag to change value, double-click to reset, Shift+double-click or Shift+right-click to edit
+ * text.
+ * Supports dB and pan formatting.
  */
 class TextSlider : public juce::Component, public magda::AutomationManagerListener {
   public:
@@ -52,7 +54,8 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         minValue_ = min;
         maxValue_ = max;
         interval_ = interval;
-        setValue(juce::jlimit(min, max, value_), juce::dontSendNotification);
+        defaultValue_ = juce::jlimit(minValue_, maxValue_, defaultValue_);
+        value_ = juce::jlimit(minValue_, maxValue_, value_);
         updateLabel();
     }
 
@@ -83,6 +86,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
             interval = 0.001;
         }
         setRange(static_cast<double>(info.minValue), static_cast<double>(info.maxValue), interval);
+        setDefaultValue(static_cast<double>(info.defaultValue));
 
         // Map scaleAnchor into TextSlider's drag-skew so the slider
         // matches ParameterUtils' anchor handling. The actual
@@ -144,6 +148,12 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
             newValue = minValue_ + interval * std::round((newValue - minValue_) / interval);
         }
 
+        if (!hasExplicitDefaultValue_ && !hasCapturedDefaultValue_ &&
+            notification == juce::dontSendNotification) {
+            defaultValue_ = newValue;
+            hasCapturedDefaultValue_ = true;
+        }
+
         if (std::abs(value_ - newValue) > 1.0e-9) {
             value_ = newValue;
             updateLabel();
@@ -155,6 +165,12 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
 
     double getValue() const {
         return value_;
+    }
+
+    void setDefaultValue(double defaultValue) {
+        defaultValue_ = juce::jlimit(minValue_, maxValue_, defaultValue);
+        hasExplicitDefaultValue_ = true;
+        hasCapturedDefaultValue_ = true;
     }
 
     void setFormat(Format format) {
@@ -587,7 +603,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
 
         if (!hasDragged_) {
             if (e.mods.isPopupMenu()) {
-                if (rightClickEditsText_) {
+                if (rightClickEditsText_ || e.mods.isShiftDown()) {
                     // Right-click to edit text directly
                     valueControl_.showEditor(currentDisplayText());
                 } else if (onRightClicked) {
@@ -604,9 +620,13 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         hasDragged_ = false;
     }
 
-    void mouseDoubleClick(const juce::MouseEvent&) override {
-        // Double-click to edit value
-        valueControl_.showEditor(currentDisplayText());
+    void mouseDoubleClick(const juce::MouseEvent& e) override {
+        cancelGesture();
+
+        if (e.mods.isShiftDown())
+            valueControl_.showEditor(currentDisplayText());
+        else
+            resetToDefaultValue();
     }
 
   private:
@@ -615,8 +635,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
 
         // Use custom parser if provided
         if (valueParser_) {
-            double newValue = valueParser_(text);
-            setValue(newValue);
+            setValueFromUser(valueParser_(text));
             return;
         }
 
@@ -626,12 +645,34 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         } else if (text.endsWithIgnoreCase("l") || text.endsWithIgnoreCase("r")) {
             text = text.dropLastCharacters(1).trim();
         } else if (text.equalsIgnoreCase("c") || text.equalsIgnoreCase("center")) {
-            setValue(0.0);
+            setValueFromUser(0.0);
             return;
         }
 
-        double newValue = text.getDoubleValue();
+        setValueFromUser(text.getDoubleValue());
+    }
+
+    void setValueFromUser(double newValue) {
+        if (std::abs(value_ - juce::jlimit(minValue_, maxValue_, newValue)) > 1.0e-9)
+            latchAutomationOverride();
         setValue(newValue);
+    }
+
+    void resetToDefaultValue() {
+        setValueFromUser(defaultValue_);
+    }
+
+    void latchAutomationOverride() {
+        if (overrideLatchedThisGesture_)
+            return;
+        if (!hasAutomationTarget_ || !isAutomated())
+            return;
+        if (magda::AutomationManager::getInstance().isWriteModeEnabled())
+            return;
+
+        magda::AutomationManager::getInstance().setTargetOverridden(automationTarget_, true);
+        setAutomationVisualState(magda::AutomationVisualState::Overridden);
+        overrideLatchedThisGesture_ = true;
     }
 
     ValueLabelControl valueControl_;
@@ -639,9 +680,12 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
     double value_ = 0.0;
     double minValue_ = 0.0;
     double maxValue_ = 1.0;
+    double defaultValue_ = 0.0;
     double interval_ = 0.01;
     double skewFactor_ = 1.0;
     bool useLogProjection_ = false;
+    bool hasExplicitDefaultValue_ = false;
+    bool hasCapturedDefaultValue_ = false;
     double dragStartValue_ = 0.0;
     int dragStartX_ = 0;
     int dragStartY_ = 0;

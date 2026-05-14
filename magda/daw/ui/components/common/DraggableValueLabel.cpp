@@ -278,8 +278,11 @@ void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    if (e.mods.isPopupMenu() && onRightClick) {
-        onRightClick();
+    if (e.mods.isPopupMenu()) {
+        if (e.mods.isShiftDown())
+            startEditing();
+        else if (onRightClick)
+            onRightClick();
         return;
     }
 
@@ -391,8 +394,18 @@ void DraggableValueLabel::mouseUp(const juce::MouseEvent& /*e*/) {
         onDragEnd(dragStartValue_);
 }
 
-void DraggableValueLabel::mouseDoubleClick(const juce::MouseEvent& /*e*/) {
-    if (doubleClickResets_) {
+void DraggableValueLabel::mouseDoubleClick(const juce::MouseEvent& e) {
+    const bool wasDragging = isDragging_;
+    isDragging_ = false;
+    valueControl_.setDragging(false);
+    if (wasDragging && hasAutomationTarget_) {
+        auto& mgr = AutomationManager::getInstance();
+        mgr.setTargetUserTouched(automationTarget_, false);
+        mgr.setTargetTouchSuppressed(automationTarget_, false);
+        mgr.clearTouchBaseline(automationTarget_);
+    }
+
+    if (doubleClickResets_ && !e.mods.isShiftDown()) {
         if (value_ != defaultValue_)
             latchAutomationOverride();
         setValue(defaultValue_);
