@@ -3,8 +3,14 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_dsp/juce_dsp.h>
-#include <tracktion_engine/timestretch/tracktion_TempoDetect.h>
+
+// clang-format off
+// tracktion_engine.h MUST come before tracktion_TempoDetect.h: the
+// TempoDetect header uses unqualified SampleCount / AudioScratchBuffer
+// names that are only in scope after the umbrella header is processed.
 #include <tracktion_engine/tracktion_engine.h>
+#include <tracktion_engine/timestretch/tracktion_TempoDetect.h>
+// clang-format on
 
 #include <array>
 #include <cmath>
