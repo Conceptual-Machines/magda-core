@@ -271,21 +271,26 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         };
         addAndMakeVisible(*diskButton_);
 
-        // TODO: Library/DB button — uncomment when database feature is implemented
-        // libraryButton_ = std::make_unique<magda::SvgButton>("Library", BinaryData::database_svg,
-        //                                                     BinaryData::database_svgSize);
-        // libraryButton_->setToggleable(true);
-        // libraryButton_->setClickingTogglesState(true);
-        // libraryButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        // libraryButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        // libraryButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        // libraryButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        // libraryButton_->onClick = [this]() {
-        //     selectButton(libraryButton_.get());
-        //     if (onLocationSelected)
-        //         onLocationSelected(juce::File());
-        // };
-        // addAndMakeVisible(*libraryButton_);
+        // Library/DB button — Phase F1 of media DB (issue #768). Switches the
+        // main content area into "library mode" (media DB) rather than
+        // navigating the filesystem. The DB-mode UI is the placeholder until
+        // F2 lands; the click here only fires the mode-switch callback.
+        libraryButton_ = std::make_unique<magda::SvgButton>("Library", BinaryData::database_svg,
+                                                            BinaryData::database_svgSize);
+        libraryButton_->setToggleable(true);
+        libraryButton_->setClickingTogglesState(true);
+        libraryButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        libraryButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        libraryButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        libraryButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        libraryButton_->setTooltip("Media database");
+        libraryButton_->onClick = [this]() {
+            selectButton(libraryButton_.get());
+            if (onLibrarySelected) {
+                onLibrarySelected();
+            }
+        };
+        addAndMakeVisible(*libraryButton_);
 
         // Favorites viewport for scrolling
         favoritesContent_ = std::make_unique<juce::Component>();
@@ -329,9 +334,8 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         diskButton_->setBounds(centerX, bounds.getY(), iconSize, iconSize);
         bounds.removeFromTop(iconSize + padding);
 
-        // TODO: Library/DB button layout — uncomment when database feature is implemented
-        // libraryButton_->setBounds(centerX, bounds.getY(), iconSize, iconSize);
-        // bounds.removeFromTop(iconSize + padding);
+        libraryButton_->setBounds(centerX, bounds.getY(), iconSize, iconSize);
+        bounds.removeFromTop(iconSize + padding);
 
         // Separator
         separatorY_ = bounds.getY();
@@ -372,6 +376,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
     }
 
     std::function<void(const juce::File&)> onLocationSelected;
+    std::function<void()> onLibrarySelected;  // Fired when the DB / library icon is picked.
 
     bool canAddFavorite() const {
         return static_cast<int>(favoriteButtons_.size()) < kMaxFavorites;
@@ -424,11 +429,10 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
             diskButton_->setToggleState(false, juce::dontSendNotification);
             diskButton_->setActive(false);
         }
-        // TODO: Library/DB button — uncomment when database feature is implemented
-        // if (libraryButton_.get() != selected) {
-        //     libraryButton_->setToggleState(false, juce::dontSendNotification);
-        //     libraryButton_->setActive(false);
-        // }
+        if (libraryButton_.get() != selected) {
+            libraryButton_->setToggleState(false, juce::dontSendNotification);
+            libraryButton_->setActive(false);
+        }
 
         selected->setToggleState(true, juce::dontSendNotification);
         selected->setActive(true);
@@ -436,8 +440,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
 
     std::unique_ptr<magda::SvgButton> projectButton_;
     std::unique_ptr<magda::SvgButton> diskButton_;
-    // TODO: Library/DB button — uncomment when database feature is implemented
-    // std::unique_ptr<magda::SvgButton> libraryButton_;
+    std::unique_ptr<magda::SvgButton> libraryButton_;
 
     static constexpr int kMaxFavorites = 8;
 
@@ -722,9 +725,31 @@ MediaExplorerContent::MediaExplorerContent() {
     // Setup sidebar navigation
     sidebarComponent_ = std::make_unique<SidebarComponent>();
     sidebarComponent_->onLocationSelected = [this](const juce::File& location) {
+        // Switching back to a filesystem location exits library mode.
+        if (libraryMode_) {
+            libraryMode_ = false;
+            dbPlaceholderLabel_.setVisible(false);
+            fileBrowser_->setVisible(true);
+        }
         navigateToDirectory(location);
     };
+    sidebarComponent_->onLibrarySelected = [this]() {
+        libraryMode_ = true;
+        fileBrowser_->setVisible(false);
+        dbPlaceholderLabel_.setVisible(true);
+        resized();
+    };
     addAndMakeVisible(*sidebarComponent_);
+
+    // Library-mode placeholder. F2 swaps this for the real DB browser.
+    dbPlaceholderLabel_.setText("Media database\n\nIndexer and search UI land in Phase F2.",
+                                juce::dontSendNotification);
+    dbPlaceholderLabel_.setJustificationType(juce::Justification::centred);
+    dbPlaceholderLabel_.setColour(juce::Label::textColourId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    dbPlaceholderLabel_.setInterceptsMouseClicks(false, false);
+    dbPlaceholderLabel_.setVisible(false);
+    addAndMakeVisible(dbPlaceholderLabel_);
 
     // Navigate to default directory if configured, otherwise fall back to userMusicDirectory
     auto defaultDir = magda::Config::getInstance().getBrowserDefaultDirectory();
@@ -1071,8 +1096,10 @@ void MediaExplorerContent::resized() {
     sidebarComponent_->setBounds(bounds.removeFromLeft(sidebarWidth));
     bounds.removeFromLeft(8);  // Spacing between sidebar and browser
 
-    // Right: File browser takes all remaining space
+    // Right: File browser (filesystem mode) or placeholder (library mode) —
+    // same bounds either way, visibility is toggled at the click site.
     fileBrowser_->setBounds(bounds);
+    dbPlaceholderLabel_.setBounds(bounds);
 
     // Now layout preview/inspector area
     previewArea.removeFromTop(4);

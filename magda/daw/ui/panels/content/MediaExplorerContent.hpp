@@ -95,6 +95,13 @@ class MediaExplorerContent : public PanelContent,
     std::unique_ptr<juce::FileBrowserComponent> fileBrowser_;
     std::unique_ptr<juce::FileChooser> fileChooser_;  // Persisted for async callbacks
 
+    // Library / DB mode (issue #768 — Phase F1)
+    // When `libraryMode_` is true, the file browser is hidden and the
+    // `dbPlaceholderLabel_` occupies the same bounds. F2 will replace the
+    // placeholder with the actual MediaDbBrowserContent component.
+    bool libraryMode_ = false;
+    juce::Label dbPlaceholderLabel_;
+
     // Active media type filters
     bool audioFilterActive_ = true;
     bool midiFilterActive_ = false;
