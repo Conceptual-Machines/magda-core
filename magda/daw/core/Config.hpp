@@ -327,6 +327,14 @@ class Config {
         browserDefaultDirectory = dir;
     }
 
+    // Last view the media explorer was on at shutdown ("filesystem" / "library").
+    std::string getBrowserLastView() const {
+        return browserLastView;
+    }
+    void setBrowserLastView(const std::string& view) {
+        browserLastView = view;
+    }
+
     // Export Audio Configuration
     std::string getExportFormat() const {
         return exportFormat;
@@ -832,6 +840,11 @@ class Config {
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;
     std::string browserDefaultDirectory = "";  // empty = user home
+
+    // Which view the media explorer should restore on startup.
+    // "filesystem" → file browser at browserDefaultDirectory.
+    // "library"    → DB browser (sample library).
+    std::string browserLastView = "filesystem";
 
     // Auto-update check
     bool autoCheckUpdates = true;          // Check GitHub for newer releases on startup

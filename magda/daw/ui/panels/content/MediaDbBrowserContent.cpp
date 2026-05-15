@@ -273,6 +273,11 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     addAndMakeVisible(bpmMaxBox_);
     addAndMakeVisible(tonalOnly_);
 
+    // Kind selection lives outside this component — see setKindFilter().
+    // The search-bar file-type icons in MediaExplorerContent double as the
+    // kind selector when library mode is active, so we don't duplicate them
+    // here.
+
     // Results table — TableListBox gives us resizable, reorderable column
     // headers with per-cell painting.
     resultsModel_ = std::make_unique<ResultsTableModel>(*this);
@@ -352,12 +357,16 @@ void MediaDbBrowserContent::paint(juce::Graphics& g) {
 void MediaDbBrowserContent::resized() {
     auto bounds = getLocalBounds();
 
-    // Two-row filter strip. Row 1: categorical dropdowns. Row 2: BPM range
-    // + tonal toggle + pop-out. Splitting keeps controls readable at narrow
-    // widths.
+    // Two-row filter strip. Row 1: family / shape / key dropdowns + pop-out.
+    // Row 2: BPM range + tonal. Kind selection is driven externally from the
+    // search-bar icons (see MediaExplorerContent), so no third row.
     auto row1 = bounds.removeFromTop(28);
     row1.removeFromLeft(4);
     row1.removeFromRight(4);
+    if (popOutButton_) {
+        popOutButton_->setBounds(row1.removeFromRight(24).reduced(2));
+        row1.removeFromRight(6);
+    }
     familyFilter_.setBounds(row1.removeFromLeft(110).reduced(2));
     row1.removeFromLeft(6);
     shapeFilter_.setBounds(row1.removeFromLeft(100).reduced(2));
@@ -367,16 +376,11 @@ void MediaDbBrowserContent::resized() {
     auto row2 = bounds.removeFromTop(28);
     row2.removeFromLeft(4);
     row2.removeFromRight(4);
-    if (popOutButton_) {
-        popOutButton_->setBounds(row2.removeFromRight(24).reduced(2));
-        row2.removeFromRight(6);
-    }
-    tonalOnly_.setBounds(row2.removeFromRight(70).reduced(2));
-    row2.removeFromRight(8);
     bpmLabel_.setBounds(row2.removeFromLeft(30));
     bpmMinBox_.setBounds(row2.removeFromLeft(60).reduced(2));
     row2.removeFromLeft(4);
     bpmMaxBox_.setBounds(row2.removeFromLeft(60).reduced(2));
+    tonalOnly_.setBounds(row2.removeFromRight(70).reduced(2));
 
     bounds.removeFromTop(4);
 
@@ -413,6 +417,11 @@ magda::media::QueryFilters MediaDbBrowserContent::currentFilters() const {
     f.family = selectedString(familyFilter_, kFamilies);
     f.shape = selectedString(shapeFilter_, kShapes);
     f.keyRoot = selectedString(keyFilter_, kKeys);
+
+    if (kindFilter_) {
+        f.kind = *kindFilter_;
+    }
+
     if (bpmMinBox_.getText().isNotEmpty()) {
         f.bpmMin = bpmMinBox_.getText().getDoubleValue();
     }
@@ -454,6 +463,14 @@ void MediaDbBrowserContent::runSearch() {
                 : "No results.",
             juce::dontSendNotification);
     }
+}
+
+void MediaDbBrowserContent::setKindFilter(std::optional<std::string> kind) {
+    if (kindFilter_ == kind) {
+        return;
+    }
+    kindFilter_ = std::move(kind);
+    runSearch();
 }
 
 void MediaDbBrowserContent::visibilityChanged() {

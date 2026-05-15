@@ -242,9 +242,10 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
                 projectDir = pm.getCurrentProjectFile().getParentDirectory();
             if (!projectDir.isDirectory())
                 return;
-            selectButton(projectButton_.get());
+            // Don't call selectButton here — applyView() in the parent is the
+            // single writer of sidebar visual selection. We just announce intent.
             if (onLocationSelected)
-                onLocationSelected(projectDir);
+                onLocationSelected(projectDir, SidebarTarget::Project);
         };
         addAndMakeVisible(*projectButton_);
 
@@ -257,18 +258,13 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         diskButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         diskButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         diskButton_->onClick = [this]() {
-            selectButton(diskButton_.get());
-            if (onLocationSelected) {
-                auto defaultDir = magda::Config::getInstance().getBrowserDefaultDirectory();
-                if (!defaultDir.empty()) {
-                    juce::File dir(defaultDir);
-                    if (dir.isDirectory()) {
-                        onLocationSelected(dir);
-                        return;
-                    }
-                }
-                onLocationSelected(juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+            if (!onLocationSelected) {
+                return;
             }
+            // Disk target resolution lives in the parent (it knows how to pick
+            // a sensible startup root the same way). We just send a sentinel
+            // empty File — applyView() picks Music/Home/saved when needed.
+            onLocationSelected(juce::File(), SidebarTarget::Disk);
         };
         addAndMakeVisible(*diskButton_);
 
@@ -286,7 +282,6 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         libraryButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         libraryButton_->setTooltip("Media database");
         libraryButton_->onClick = [this]() {
-            selectButton(libraryButton_.get());
             if (onLibrarySelected) {
                 onLibrarySelected();
             }
@@ -303,8 +298,36 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         // Load favorites from config
         rebuildFavoriteButtons();
 
-        // Set Disk as initially selected
-        selectButton(diskButton_.get());
+        // Note: initial selection is driven by the parent (MediaExplorerContent)
+        // via selectInitialDisk() at the end of its constructor — that way
+        // startup goes through the same code path as a user click, keeping
+        // sidebar state, browser visibility, and file-browser root in lock-step.
+    }
+
+    // Sidebar visual selection — single writer, called only from
+    // MediaExplorerContent::applyView. Button onClick handlers no longer set
+    // visual state themselves, so this method is the sole route to that
+    // state and it always agrees with the current ViewState.
+    void setSidebarVisual(SidebarTarget target, const juce::File& favoriteRoot = {}) {
+        switch (target) {
+            case SidebarTarget::Project:
+                selectButton(projectButton_.get());
+                break;
+            case SidebarTarget::Disk:
+                selectButton(diskButton_.get());
+                break;
+            case SidebarTarget::Library:
+                selectButton(libraryButton_.get());
+                break;
+            case SidebarTarget::Favorite:
+                // No persistent visual highlight on the favorite row — the
+                // disk icon stays neutral and the favorite's own toggle was
+                // already flipped by the click. For startup we just leave
+                // everything de-selected if a favorite is the initial view
+                // (very unlikely path).
+                juce::ignoreUnused(favoriteRoot);
+                break;
+        }
     }
 
     void paint(juce::Graphics& g) override {
@@ -363,7 +386,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
             auto pathCopy = path;
             btn->onClick = [this, pathCopy]() {
                 if (onLocationSelected)
-                    onLocationSelected(juce::File(pathCopy));
+                    onLocationSelected(juce::File(pathCopy), SidebarTarget::Favorite);
             };
 
             btn->onRightClick = [this, pathCopy]() { showFavoriteContextMenu(pathCopy); };
@@ -376,7 +399,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         repaint();
     }
 
-    std::function<void(const juce::File&)> onLocationSelected;
+    std::function<void(const juce::File&, SidebarTarget)> onLocationSelected;
     std::function<void()> onLibrarySelected;  // Fired when the DB / library icon is picked.
 
     bool canAddFavorite() const {
@@ -538,34 +561,19 @@ MediaExplorerContent::MediaExplorerContent() {
     setupFilter(audioFilterButton_, "Audio", BinaryData::audio_db_off_svg,
                 BinaryData::audio_db_off_svgSize, BinaryData::audio_db_on_svg,
                 BinaryData::audio_db_on_svgSize, audioFilterActive_, "Show audio files");
-    audioFilterButton_->onClick = [this]() {
-        audioFilterActive_ = audioFilterButton_->getToggleState();
-        magda::Config::getInstance().setBrowserFilterAudio(audioFilterActive_);
-        magda::Config::getInstance().save();
-        updateMediaFilter();
-    };
+    audioFilterButton_->onClick = [this]() { onTypeIconClicked(audioFilterButton_.get()); };
     addAndMakeVisible(*audioFilterButton_);
 
     setupFilter(midiFilterButton_, "MIDI", BinaryData::midi_db_off_svg,
                 BinaryData::midi_db_off_svgSize, BinaryData::midi_db_on_svg,
                 BinaryData::midi_db_on_svgSize, midiFilterActive_, "Show MIDI files");
-    midiFilterButton_->onClick = [this]() {
-        midiFilterActive_ = midiFilterButton_->getToggleState();
-        magda::Config::getInstance().setBrowserFilterMidi(midiFilterActive_);
-        magda::Config::getInstance().save();
-        updateMediaFilter();
-    };
+    midiFilterButton_->onClick = [this]() { onTypeIconClicked(midiFilterButton_.get()); };
     addAndMakeVisible(*midiFilterButton_);
 
     setupFilter(presetFilterButton_, "Presets", BinaryData::presets_db_off_svg,
                 BinaryData::presets_db_off_svgSize, BinaryData::presets_db_on_svg,
                 BinaryData::presets_db_on_svgSize, presetFilterActive_, "Show MAGDA presets");
-    presetFilterButton_->onClick = [this]() {
-        presetFilterActive_ = presetFilterButton_->getToggleState();
-        magda::Config::getInstance().setBrowserFilterPreset(presetFilterActive_);
-        magda::Config::getInstance().save();
-        updateMediaFilter();
-    };
+    presetFilterButton_->onClick = [this]() { onTypeIconClicked(presetFilterButton_.get()); };
     addAndMakeVisible(*presetFilterButton_);
 
     // View toggle buttons removed - not needed for now
@@ -744,42 +752,37 @@ MediaExplorerContent::MediaExplorerContent() {
 
     // Setup sidebar navigation
     sidebarComponent_ = std::make_unique<SidebarComponent>();
-    sidebarComponent_->onLocationSelected = [this](const juce::File& location) {
-        // Switching back to a filesystem location exits library mode.
-        if (libraryMode_) {
-            libraryMode_ = false;
-            if (dbBrowser_) {
-                dbBrowser_->setVisible(false);
-            }
-            fileBrowser_->setVisible(true);
-        }
-        navigateToDirectory(location);
+    sidebarComponent_->onLocationSelected = [this](const juce::File& location,
+                                                   SidebarTarget target) {
+        // Disk sends an empty File to indicate "you decide"; everything else
+        // sends an explicit path. Both paths funnel into applyView.
+        juce::File root = location.isDirectory() ? location : pickStartupFilesystemRoot();
+        applyView({ViewState::Mode::Filesystem, target, root});
     };
     sidebarComponent_->onLibrarySelected = [this]() {
-        libraryMode_ = true;
-        fileBrowser_->setVisible(false);
-        if (dbBrowser_) {
-            dbBrowser_->setVisible(true);
-            dbBrowser_->setQueryText(searchTerm_);
-            dbBrowser_->refresh();
-        }
-        resized();
+        applyView({ViewState::Mode::Library, SidebarTarget::Library, juce::File{}});
     };
     addAndMakeVisible(*sidebarComponent_);
 
     // Real DB browser (Phase F2). Hidden until library mode activates.
+    // addChildComponent (not addAndMakeVisible) is required here:
+    // addAndMakeVisible forces visibility=true, which would defeat the
+    // setVisible(false) and leave the DB browser painted over the file
+    // browser at startup.
     dbBrowser_ = std::make_unique<MediaDbBrowserContent>();
     dbBrowser_->onFileSelected = [this](const juce::File& f) { loadFileForPreview(f); };
+    addChildComponent(*dbBrowser_);
     dbBrowser_->setVisible(false);
-    addAndMakeVisible(*dbBrowser_);
 
-    // Navigate to default directory if configured, otherwise fall back to userMusicDirectory
-    auto defaultDir = magda::Config::getInstance().getBrowserDefaultDirectory();
-    if (!defaultDir.empty()) {
-        juce::File dir(defaultDir);
-        if (dir.isDirectory()) {
-            navigateToDirectory(dir);
-        }
+    // Single source of truth: applyView writes sidebar visual + browser
+    // visibility + file-browser root + db-browser kind filter + type-icon
+    // toggle states from one place. The same code path serves startup and
+    // every subsequent click. Run it once with the computed initial view —
+    // restoring the user's last-used view (filesystem / library) from Config.
+    if (magda::Config::getInstance().getBrowserLastView() == "library") {
+        applyView({ViewState::Mode::Library, SidebarTarget::Library, juce::File{}});
+    } else {
+        applyView({ViewState::Mode::Filesystem, SidebarTarget::Disk, pickStartupFilesystemRoot()});
     }
 
     // Setup audio preview
@@ -809,6 +812,142 @@ MediaExplorerContent::~MediaExplorerContent() {
     transportSource_.reset();
     readerSource_.reset();
     previewCallback_.reset();
+}
+
+juce::File MediaExplorerContent::pickStartupFilesystemRoot() const {
+    // Saved default → user's Music folder → home. Returns the first that
+    // exists as a directory.
+    auto defaultDir = magda::Config::getInstance().getBrowserDefaultDirectory();
+    if (!defaultDir.empty()) {
+        juce::File configured(defaultDir);
+        if (configured.isDirectory()) {
+            return configured;
+        }
+    }
+    auto music = juce::File::getSpecialLocation(juce::File::userMusicDirectory);
+    if (music.isDirectory()) {
+        return music;
+    }
+    return juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+}
+
+void MediaExplorerContent::applyView(ViewState target) {
+    // The ONE writer of view state. Touches everything that depends on the
+    // mode/sidebar/root so nothing can drift out of sync:
+    //   1. Sidebar visual selection
+    //   2. file-browser / db-browser visibility
+    //   3. file-browser root (Filesystem mode only)
+    //   4. db-browser kind filter (cleared on every transition)
+    //   5. type-icon toggle states (file-mode booleans vs library-mode radio)
+
+    // 1. Sidebar visual selection.
+    if (sidebarComponent_) {
+        sidebarComponent_->setSidebarVisual(target.sidebar, target.filesystemRoot);
+    }
+
+    // 2–5. Mode-specific application.
+    if (target.mode == ViewState::Mode::Filesystem) {
+        if (dbBrowser_) {
+            dbBrowser_->setVisible(false);
+            dbBrowser_->setKindFilter(std::nullopt);
+        }
+        if (fileBrowser_) {
+            fileBrowser_->setVisible(true);
+            if (target.filesystemRoot.isDirectory()) {
+                fileBrowser_->setRoot(target.filesystemRoot);
+            }
+        }
+        // Restore the file-mode toggle visuals from the persisted booleans
+        // (these reflect the user's last file-mode filter choice in Config).
+        if (audioFilterButton_) {
+            audioFilterButton_->setToggleState(audioFilterActive_, juce::dontSendNotification);
+        }
+        if (midiFilterButton_) {
+            midiFilterButton_->setToggleState(midiFilterActive_, juce::dontSendNotification);
+        }
+        if (presetFilterButton_) {
+            presetFilterButton_->setToggleState(presetFilterActive_, juce::dontSendNotification);
+        }
+    } else {  // Library
+        if (fileBrowser_) {
+            fileBrowser_->setVisible(false);
+        }
+        if (dbBrowser_) {
+            dbBrowser_->setKindFilter(std::nullopt);
+            dbBrowser_->setVisible(true);
+            dbBrowser_->setQueryText(searchTerm_);
+            dbBrowser_->refresh();
+        }
+        // All icons off — library-mode radio starts at "All kinds".
+        if (audioFilterButton_) {
+            audioFilterButton_->setToggleState(false, juce::dontSendNotification);
+        }
+        if (midiFilterButton_) {
+            midiFilterButton_->setToggleState(false, juce::dontSendNotification);
+        }
+        if (presetFilterButton_) {
+            presetFilterButton_->setToggleState(false, juce::dontSendNotification);
+        }
+    }
+
+    currentView_ = target;
+
+    // Persist the mode so the next launch restores the same view.
+    const char* persistedMode =
+        (target.mode == ViewState::Mode::Library) ? "library" : "filesystem";
+    if (magda::Config::getInstance().getBrowserLastView() != persistedMode) {
+        magda::Config::getInstance().setBrowserLastView(persistedMode);
+        magda::Config::getInstance().save();
+    }
+
+    resized();
+}
+
+void MediaExplorerContent::onTypeIconClicked(magda::SvgButton* clicked) {
+    if (!clicked) {
+        return;
+    }
+    const bool nowOn = clicked->getToggleState();  // setClickingTogglesState flipped it already
+
+    if (inLibraryMode()) {
+        // Radio: when one activates, the others go off. All-off means
+        // "any kind" (no filter).
+        if (nowOn) {
+            for (auto* other :
+                 {audioFilterButton_.get(), midiFilterButton_.get(), presetFilterButton_.get()}) {
+                if (other != clicked) {
+                    other->setToggleState(false, juce::dontSendNotification);
+                }
+            }
+        }
+        std::optional<std::string> kind;
+        if (audioFilterButton_ && audioFilterButton_->getToggleState()) {
+            kind = "audio";
+        } else if (midiFilterButton_ && midiFilterButton_->getToggleState()) {
+            kind = "clip";
+        } else if (presetFilterButton_ && presetFilterButton_->getToggleState()) {
+            kind = "preset";
+        }
+        if (dbBrowser_) {
+            dbBrowser_->setKindFilter(kind);
+        }
+        return;
+    }
+
+    // File mode: existing multi-toggle behaviour. Each icon toggles its
+    // own file-type filter independently and persists to Config.
+    if (clicked == audioFilterButton_.get()) {
+        audioFilterActive_ = nowOn;
+        magda::Config::getInstance().setBrowserFilterAudio(audioFilterActive_);
+    } else if (clicked == midiFilterButton_.get()) {
+        midiFilterActive_ = nowOn;
+        magda::Config::getInstance().setBrowserFilterMidi(midiFilterActive_);
+    } else if (clicked == presetFilterButton_.get()) {
+        presetFilterActive_ = nowOn;
+        magda::Config::getInstance().setBrowserFilterPreset(presetFilterActive_);
+    }
+    magda::Config::getInstance().save();
+    updateMediaFilter();
 }
 
 void MediaExplorerContent::setAudioEngine(magda::AudioEngine* engine) {

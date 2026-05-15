@@ -17,6 +17,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "../../../media_db/MediaDbQuery.hpp"
@@ -42,6 +43,10 @@ class MediaDbBrowserContent : public juce::Component {
     // progresses. Called from the file-browser's folder-right-click menu — the
     // DB browser no longer has its own "Index folder" button.
     void startIndexing(const juce::File& dir);
+
+    // External kind selector hook. Pass "audio" / "clip" / "preset", or
+    // nullopt to clear the filter. Re-runs the search.
+    void setKindFilter(std::optional<std::string> kind);
 
     // Fired when the user clicks a result row.
     std::function<void(const juce::File&)> onFileSelected;
@@ -69,6 +74,12 @@ class MediaDbBrowserContent : public juce::Component {
     juce::TextEditor bpmMaxBox_;
     juce::ToggleButton tonalOnly_{"tonal"};
     std::unique_ptr<magda::SvgButton> popOutButton_;
+
+    // Externally-driven kind filter. The DB browser doesn't own a kind
+    // selector of its own — MediaExplorerContent reuses the search-bar
+    // file-type icons for that, calling setKindFilter() to push the choice
+    // here. nullopt == "All kinds".
+    std::optional<std::string> kindFilter_;
 
     // Results
     std::unique_ptr<ResultsTableModel> resultsModel_;
