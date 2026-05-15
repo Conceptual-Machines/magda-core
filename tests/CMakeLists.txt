@@ -113,6 +113,8 @@ set(TEST_SOURCES
     test_media_db_clap_text_encoder.cpp
     # Media database (issue #768) — Phase D3: RoBERTa tokenizer
     test_media_db_roberta_tokenizer.cpp
+    # Media database (issue #768) — Phase E1: MediaDbIndexer
+    test_media_db_indexer.cpp
 )
 
 # Create test executable

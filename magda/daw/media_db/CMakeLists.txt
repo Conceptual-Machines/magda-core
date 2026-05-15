@@ -6,6 +6,7 @@ target_sources(magda_daw PRIVATE
     ClapAudioEncoder.cpp
     ClapTextEncoder.cpp
     MediaDatabase.cpp
+    MediaDbIndexer.cpp
     MelSpectrogram.cpp
     PathRules.cpp
     RobertaTokenizer.cpp
