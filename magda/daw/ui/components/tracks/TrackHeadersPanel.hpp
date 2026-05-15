@@ -86,7 +86,8 @@ class TrackHeadersPanel : public juce::Component,
     // Ghost-header preview: paints one phantom track-header row per label below
     // the last real (non-master) track. Called during drag-to-create flows from
     // both file drops and device drops. Pass an empty StringArray to clear.
-    void setGhostHeaders(const juce::StringArray& labels);
+    void setGhostHeaders(const juce::StringArray& labels,
+                         const juce::StringArray& detailLabels = {});
 
     // Track management
     void selectTrack(int index);
@@ -278,6 +279,7 @@ class TrackHeadersPanel : public juce::Component,
 
     // Ghost-header preview (file/device drags that will spawn new tracks)
     juce::StringArray ghostHeaderLabels_;
+    juce::StringArray ghostHeaderDetailLabels_;
 
     // Routing device management
     void populateAudioInputOptions(RoutingSelector* selector, TrackId trackId = INVALID_TRACK_ID);
