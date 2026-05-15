@@ -66,8 +66,41 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
 
     DeviceTargetLookup lookup(*this);
 
+    auto forEachPlugin = [&, this](const std::function<void(te::Plugin*)>& visit) {
+        for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
+            if (auto* plugin = teTrack->pluginList[pi])
+                visit(plugin);
+        }
+        for (const auto& el : trackInfo->chainElements) {
+            if (!isDevice(el))
+                continue;
+            const auto& dev = getDevice(el);
+            if (dev.isInstrument) {
+                if (auto* inner = instrumentRackManager_.getInnerPlugin(dev.id))
+                    visit(inner);
+            }
+        }
+        for (const auto& [drumGridDevId, padDevIds] : drumGridPadDevices_) {
+            auto sdIt = syncedDevices_.find(drumGridDevId);
+            if (sdIt == syncedDevices_.end() || sdIt->second.trackId != trackId)
+                continue;
+            for (auto padDevId : padDevIds) {
+                te::Plugin::Ptr plugin;
+                {
+                    juce::ScopedLock lock(pluginLock_);
+                    auto pIt = syncedDevices_.find(padDevId);
+                    if (pIt != syncedDevices_.end())
+                        plugin = pIt->second.plugin;
+                }
+                if (plugin)
+                    visit(plugin.get());
+            }
+        }
+    };
+
     ModifierSyncContext ctx;
     ctx.lookup = &lookup;
+    ctx.forEachScopePlugin = forEachPlugin;
 
     // Per-device: in-place LFO + assignment depth update.
     for (const auto& element : trackInfo->chainElements) {

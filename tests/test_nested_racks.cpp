@@ -945,6 +945,100 @@ TEST_CASE("WrapChainElementsInRackCommand: wraps multiple selected devices",
     REQUIRE(getDevice(restored[3]).id == dId);
 }
 
+TEST_CASE("WrapChainElementsInRackCommand: retargets moved device modulation links",
+          "[trackmanager][device][rack][modulation][path]") {
+    TrackManagerTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Test Track");
+
+    DeviceInfo synth;
+    synth.pluginId = "4OSC Synth";
+    synth.format = PluginFormat::Internal;
+    synth.name = "4OSC Synth";
+    auto synthId = fixture.tm().addDeviceToTrack(trackId, synth);
+
+    DeviceInfo filter;
+    filter.pluginId = "magda_filter";
+    filter.format = PluginFormat::Internal;
+    filter.name = "Filter";
+    filter.mods.push_back(ModInfo(0));
+    auto filterId = fixture.tm().addDeviceToTrack(trackId, filter);
+    REQUIRE(synthId != INVALID_DEVICE_ID);
+    REQUIRE(filterId != INVALID_DEVICE_ID);
+
+    auto oldFilterPath = ChainNodePath::topLevelDevice(trackId, filterId);
+    auto oldCutoffTarget = ControlTarget::pluginParam(oldFilterPath, 0);
+    auto* topLevelFilter = fixture.tm().getDeviceInChainByPath(oldFilterPath);
+    REQUIRE(topLevelFilter != nullptr);
+    topLevelFilter->mods[0].addLink(oldCutoffTarget, 0.5f);
+
+    WrapChainElementsInRackCommand command({ChainNodePath::topLevelDevice(trackId, synthId),
+                                            ChainNodePath::topLevelDevice(trackId, filterId)},
+                                           "Selection Rack");
+    command.execute();
+    REQUIRE(command.didWrap());
+
+    const auto& wrapped = fixture.tm().getChainElements(trackId);
+    REQUIRE(wrapped.size() == 1);
+    REQUIRE(isRack(wrapped[0]));
+
+    const auto& rack = getRack(wrapped[0]);
+    REQUIRE(rack.chains.size() == 1);
+    auto chainPath = ChainNodePath::rack(trackId, rack.id).withChain(rack.chains[0].id);
+    auto newFilterPath = chainPath.withDevice(filterId);
+    auto* rackFilter = fixture.tm().getDeviceInChainByPath(newFilterPath);
+    REQUIRE(rackFilter != nullptr);
+    REQUIRE(rackFilter->mods.size() == 1);
+    REQUIRE(rackFilter->mods[0].links.size() == 1);
+    REQUIRE(rackFilter->mods[0].links[0].target.devicePath == newFilterPath);
+
+    fixture.tm().removeModLink(newFilterPath, 0, ControlTarget::pluginParam(newFilterPath, 0));
+    REQUIRE(rackFilter->mods[0].links.empty());
+}
+
+TEST_CASE("TrackManager: cross-track moves retarget moved links and clear source links",
+          "[trackmanager][device][path][move][tracks][modulation]") {
+    TrackManagerTestFixture fixture;
+
+    auto sourceTrackId = fixture.tm().createTrack("Source");
+    auto destinationTrackId = fixture.tm().createTrack("Destination");
+
+    DeviceInfo filter;
+    filter.pluginId = "magda_filter";
+    filter.format = PluginFormat::Internal;
+    filter.name = "Filter";
+    filter.mods.push_back(ModInfo(0));
+    auto filterId = fixture.tm().addDeviceToTrack(sourceTrackId, filter);
+    REQUIRE(filterId != INVALID_DEVICE_ID);
+
+    auto oldFilterPath = ChainNodePath::topLevelDevice(sourceTrackId, filterId);
+    auto oldTarget = ControlTarget::pluginParam(oldFilterPath, 0);
+    auto* sourceFilter = fixture.tm().getDeviceInChainByPath(oldFilterPath);
+    REQUIRE(sourceFilter != nullptr);
+    sourceFilter->mods[0].addLink(oldTarget, 0.5f);
+
+    auto* sourceTrack = fixture.tm().getTrack(sourceTrackId);
+    REQUIRE(sourceTrack != nullptr);
+    sourceTrack->mods.push_back(ModInfo(0));
+    sourceTrack->mods[0].addLink(oldTarget, 0.5f);
+
+    ChainNodePath destinationChainPath;
+    destinationChainPath.trackId = destinationTrackId;
+    REQUIRE(fixture.tm().moveChainElement(oldFilterPath, destinationChainPath, 0));
+
+    auto newFilterPath = ChainNodePath::topLevelDevice(destinationTrackId, filterId);
+    auto* destinationFilter = fixture.tm().getDeviceInChainByPath(newFilterPath);
+    REQUIRE(destinationFilter != nullptr);
+    REQUIRE(destinationFilter->mods.size() == 1);
+    REQUIRE(destinationFilter->mods[0].links.size() == 1);
+    REQUIRE(destinationFilter->mods[0].links[0].target.devicePath == newFilterPath);
+
+    sourceTrack = fixture.tm().getTrack(sourceTrackId);
+    REQUIRE(sourceTrack != nullptr);
+    REQUIRE(sourceTrack->mods.size() == 1);
+    REQUIRE(sourceTrack->mods[0].links.empty());
+}
+
 TEST_CASE("TrackManager: Move selected-order devices to another track",
           "[trackmanager][device][path][move][tracks]") {
     TrackManagerTestFixture fixture;

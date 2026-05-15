@@ -1257,6 +1257,12 @@ void RackSyncManager::updateRackModulationPropertiesRecursive(SyncedRack& synced
 
     ModifierSyncContext ctx;
     ctx.lookup = &lookup;
+    ctx.forEachScopePlugin = [&synced](const std::function<void(te::Plugin*)>& visit) {
+        for (auto& [_pluginId, plugin] : synced.innerPlugins) {
+            if (plugin)
+                visit(plugin.get());
+        }
+    };
 
     const bool isTopLevelRack = rackPath.steps.size() == 1;
     auto& modifiers =

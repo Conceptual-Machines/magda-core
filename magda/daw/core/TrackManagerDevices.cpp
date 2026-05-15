@@ -476,6 +476,133 @@ static ChainNodePath getParentChainPathForElementPath(const ChainNodePath& eleme
     return parent;
 }
 
+using DevicePathMap = std::map<DeviceId, ChainNodePath>;
+
+static void retargetMovedTarget(ControlTarget& target, const DevicePathMap& movedPaths) {
+    const auto deviceId = target.devicePath.getDeviceId();
+    if (deviceId == INVALID_DEVICE_ID)
+        return;
+
+    auto it = movedPaths.find(deviceId);
+    if (it != movedPaths.end())
+        target.devicePath = it->second;
+}
+
+static void retargetMovedLinks(MacroArray& macros, ModArray& mods,
+                               const DevicePathMap& movedPaths) {
+    for (auto& macro : macros) {
+        for (auto& link : macro.links)
+            retargetMovedTarget(link.target, movedPaths);
+    }
+
+    for (auto& mod : mods) {
+        for (auto& link : mod.links)
+            retargetMovedTarget(link.target, movedPaths);
+    }
+}
+
+static void collectMovedDevicePaths(const ChainElement& element, const ChainNodePath& elementPath,
+                                    DevicePathMap& movedPaths) {
+    if (magda::isDevice(element)) {
+        movedPaths[magda::getDevice(element).id] = elementPath;
+        return;
+    }
+
+    const auto& rack = magda::getRack(element);
+    auto rackPath = elementPath;
+    for (const auto& chain : rack.chains) {
+        auto chainPath = rackPath.withChain(chain.id);
+        for (const auto& child : chain.elements) {
+            if (magda::isDevice(child)) {
+                collectMovedDevicePaths(child, chainPath.withDevice(magda::getDevice(child).id),
+                                        movedPaths);
+            } else if (magda::isRack(child)) {
+                collectMovedDevicePaths(child, chainPath.withRack(magda::getRack(child).id),
+                                        movedPaths);
+            }
+        }
+    }
+}
+
+static void retargetLinksInElements(std::vector<ChainElement>& elements,
+                                    const DevicePathMap& movedPaths) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            retargetMovedLinks(device.macros, device.mods, movedPaths);
+        } else if (magda::isRack(element)) {
+            auto& rack = magda::getRack(element);
+            retargetMovedLinks(rack.macros, rack.mods, movedPaths);
+            for (auto& chain : rack.chains)
+                retargetLinksInElements(chain.elements, movedPaths);
+        }
+    }
+}
+
+static void retargetMovedLinksInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
+    retargetMovedLinks(track.macros, track.mods, movedPaths);
+    retargetLinksInElements(track.chainElements, movedPaths);
+}
+
+static bool targetPointsAtMovedDevice(const ControlTarget& target,
+                                      const DevicePathMap& movedPaths) {
+    const auto deviceId = target.devicePath.getDeviceId();
+    return deviceId != INVALID_DEVICE_ID && movedPaths.find(deviceId) != movedPaths.end();
+}
+
+static void removeMovedTargets(MacroArray& macros, ModArray& mods,
+                               const DevicePathMap& movedPaths) {
+    for (auto& macro : macros) {
+        macro.links.erase(std::remove_if(macro.links.begin(), macro.links.end(),
+                                         [&movedPaths](const MacroLink& link) {
+                                             return targetPointsAtMovedDevice(link.target,
+                                                                              movedPaths);
+                                         }),
+                          macro.links.end());
+    }
+
+    for (auto& mod : mods) {
+        mod.links.erase(std::remove_if(mod.links.begin(), mod.links.end(),
+                                       [&movedPaths](const ModLink& link) {
+                                           return targetPointsAtMovedDevice(link.target,
+                                                                            movedPaths);
+                                       }),
+                        mod.links.end());
+    }
+}
+
+static void removeMovedTargetsInElements(std::vector<ChainElement>& elements,
+                                         const DevicePathMap& movedPaths) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            removeMovedTargets(device.macros, device.mods, movedPaths);
+        } else if (magda::isRack(element)) {
+            auto& rack = magda::getRack(element);
+            removeMovedTargets(rack.macros, rack.mods, movedPaths);
+            for (auto& chain : rack.chains)
+                removeMovedTargetsInElements(chain.elements, movedPaths);
+        }
+    }
+}
+
+static void removeMovedTargetsInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
+    removeMovedTargets(track.macros, track.mods, movedPaths);
+    removeMovedTargetsInElements(track.chainElements, movedPaths);
+}
+
+static ChainNodePath getInsertedElementPath(const ChainNodePath& destinationChainPath,
+                                            const ChainElement& element) {
+    if (magda::isDevice(element)) {
+        const auto deviceId = magda::getDevice(element).id;
+        if (destinationChainPath.steps.empty())
+            return ChainNodePath::topLevelDevice(destinationChainPath.trackId, deviceId);
+        return destinationChainPath.withDevice(deviceId);
+    }
+
+    return destinationChainPath.withRack(magda::getRack(element).id);
+}
+
 static void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>& elements,
                                      TrackId targetTrackId) {
     PresetIdRemap remap;
@@ -683,6 +810,19 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
     insertIndex = std::clamp(insertIndex, 0, static_cast<int>(destinationElements->size()));
     destinationElements->insert(destinationElements->begin() + insertIndex, std::move(element));
 
+    DevicePathMap movedPaths;
+    auto& insertedElement = (*destinationElements)[static_cast<size_t>(insertIndex)];
+    collectMovedDevicePaths(
+        insertedElement, getInsertedElementPath(destinationChainPath, insertedElement), movedPaths);
+    if (sameContainer || sourceElementPath.trackId == destinationChainPath.trackId) {
+        if (auto* track = getTrack(destinationChainPath.trackId))
+            retargetMovedLinksInTrack(*track, movedPaths);
+    } else {
+        retargetLinksInElements(*destinationElements, movedPaths);
+        if (auto* sourceTrack = getTrack(sourceElementPath.trackId))
+            removeMovedTargetsInTrack(*sourceTrack, movedPaths);
+    }
+
     logMoveElementState((*destinationElements)[static_cast<size_t>(insertIndex)],
                         "afterInsert/destination");
     DBG("[ChainMove] notifying sourceTrack=" << sourceElementPath.trackId
@@ -814,6 +954,13 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
         std::clamp(orderedPaths.front().first, 0, static_cast<int>(sourceElements->size()));
     rack.chains.push_back(std::move(chain));
     sourceElements->insert(sourceElements->begin() + insertIndex, makeRackElement(std::move(rack)));
+
+    DevicePathMap movedPaths;
+    auto& insertedRack = (*sourceElements)[static_cast<size_t>(insertIndex)];
+    collectMovedDevicePaths(insertedRack, sourceChainPath.withRack(magda::getRack(insertedRack).id),
+                            movedPaths);
+    if (auto* track = getTrack(sourceChainPath.trackId))
+        retargetMovedLinksInTrack(*track, movedPaths);
 
     notifyTrackDevicesChanged(sourceChainPath.trackId);
     return magda::getRack((*sourceElements)[static_cast<size_t>(insertIndex)]).id;

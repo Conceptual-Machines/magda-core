@@ -292,6 +292,7 @@ void PluginManager::captureAllPluginStates() {
                 sd.plugin->flushPluginStateToValueTree();
                 auto stateCopy = sd.plugin->state.createCopy();
                 stripTracktionIdsRecursive(stateCopy);
+                stripModifierAssignmentsRecursive(stateCopy);
                 if (auto xml = stateCopy.createXml())
                     stateStr = xml->toString();
             }
@@ -343,6 +344,7 @@ void PluginManager::capturePluginState(DeviceId deviceId) {
         plugin->flushPluginStateToValueTree();
         auto stateCopy = plugin->state.createCopy();
         stripTracktionIdsRecursive(stateCopy);
+        stripModifierAssignmentsRecursive(stateCopy);
         if (auto xml = stateCopy.createXml())
             stateStr = xml->toString();
         DBG("capturePluginState: internal plugin, state length=" << stateStr.length());

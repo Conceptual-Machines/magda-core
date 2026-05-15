@@ -418,6 +418,42 @@ TEST_CASE("MIDI trigger - cross-track sidechain routes source track MIDI",
     bus.clearAll();
 }
 
+TEST_CASE("MIDI trigger - looping device mod stops on all-notes-off", "[sidechain][midi-trigger]") {
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+    SidechainTriggerBus::getInstance().clearAll();
+
+    TrackId trackId = tm.createTrack();
+    DeviceInfo device;
+    device.name = "Synth";
+    DeviceId deviceId = tm.addDeviceToTrack(trackId, device);
+
+    auto devicePath = ChainNodePath::topLevelDevice(trackId, deviceId);
+    tm.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    tm.setModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
+
+    auto& mod = tm.getDeviceInChainByPath(devicePath)->mods[0];
+    mod.rate = 1.0f;
+
+    tm.triggerMidiNoteOn(trackId);
+    tm.updateAllMods(0.1, 120.0, false, false, false);
+    REQUIRE(mod.running);
+    REQUIRE(mod.phase > 0.0f);
+
+    tm.triggerMidiNoteOff(trackId);
+    tm.updateAllMods(0.1, 120.0, false, false, false);
+    REQUIRE_FALSE(mod.running);
+    REQUIRE(mod.value == Catch::Approx(0.0f));
+
+    const float stoppedPhase = mod.phase;
+    tm.updateAllMods(0.25, 120.0, false, false, false);
+    REQUIRE_FALSE(mod.running);
+    REQUIRE(mod.phase == Catch::Approx(stoppedPhase));
+
+    tm.clearAllTracks();
+    SidechainTriggerBus::getInstance().clearAll();
+}
+
 // ============================================================================
 // Rack-level Sidechain Tests
 // ============================================================================
@@ -521,6 +557,42 @@ TEST_CASE("Audio trigger - rack-level mod uses nested rack sidechain source",
 
     tm.clearAllTracks();
     bus.clearAll();
+}
+
+TEST_CASE("MIDI trigger - looping rack-level mod stops on all-notes-off",
+          "[sidechain][midi-trigger][rack]") {
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+    SidechainTriggerBus::getInstance().clearAll();
+
+    TrackId trackId = tm.createTrack();
+    RackId rackId = tm.addRackToTrack(trackId, "TestRack");
+    auto rackPath = ChainNodePath::rack(trackId, rackId);
+    auto* rack = tm.getRackByPath(rackPath);
+    REQUIRE(rack != nullptr);
+
+    rack->mods.emplace_back(0);
+    rack->mods[0].triggerMode = LFOTriggerMode::MIDI;
+    rack->mods[0].rate = 1.0f;
+
+    auto& mod = rack->mods[0];
+    tm.triggerMidiNoteOn(trackId);
+    tm.updateAllMods(0.1, 120.0, false, false, false);
+    REQUIRE(mod.running);
+    REQUIRE(mod.phase > 0.0f);
+
+    tm.triggerMidiNoteOff(trackId);
+    tm.updateAllMods(0.1, 120.0, false, false, false);
+    REQUIRE_FALSE(mod.running);
+    REQUIRE(mod.value == Catch::Approx(0.0f));
+
+    const float stoppedPhase = mod.phase;
+    tm.updateAllMods(0.25, 120.0, false, false, false);
+    REQUIRE_FALSE(mod.running);
+    REQUIRE(mod.phase == Catch::Approx(stoppedPhase));
+
+    tm.clearAllTracks();
+    SidechainTriggerBus::getInstance().clearAll();
 }
 
 // ============================================================================
