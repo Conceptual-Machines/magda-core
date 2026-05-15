@@ -856,20 +856,17 @@ void RackSyncManager::buildConnectionsForRack(SyncedRack& synced, const RackInfo
                     const bool usesMidiSidechain =
                         device.sidechain.type == SidechainConfig::Type::MIDI &&
                         device.sidechain.sourceTrackId != INVALID_TRACK_ID;
-                    const bool receivesChainMidi =
-                        !usesMidiSidechain &&
-                        (device.isInstrument || device.deviceType == DeviceType::MIDI ||
-                         device.canReceiveMidi || pluginIt->second->takesMidiInput());
+                    const bool receivesChainMidi = !usesMidiSidechain;
+                    const bool transformsMidi = receivesChainMidi && !device.isInstrument;
                     chainPluginNodes.push_back({pluginIt->second->itemID, device.isInstrument,
-                                                device.deviceType == DeviceType::MIDI,
-                                                receivesChainMidi});
+                                                transformsMidi, receivesChainMidi});
                 }
             } else if (isRack(element)) {
                 const auto& nestedRack = getRack(element);
                 const auto nestedKey = pathKey(chainPath.withRack(nestedRack.id));
                 auto rackIt = synced.nestedRackInstances.find(nestedKey);
                 if (rackIt != synced.nestedRackInstances.end() && rackIt->second) {
-                    chainPluginNodes.push_back({rackIt->second->itemID, false, false, true});
+                    chainPluginNodes.push_back({rackIt->second->itemID, false, true, true});
                 }
             }
         }

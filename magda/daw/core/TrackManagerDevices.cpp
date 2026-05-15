@@ -464,6 +464,50 @@ static std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& 
     return nullptr;
 }
 
+static ChainNodePath getParentChainPathForElementPath(const ChainNodePath& elementPath) {
+    ChainNodePath parent;
+    parent.trackId = elementPath.trackId;
+    if (elementPath.topLevelDeviceId != INVALID_DEVICE_ID)
+        return parent;
+
+    parent.steps = elementPath.steps;
+    if (!parent.steps.empty())
+        parent.steps.pop_back();
+    return parent;
+}
+
+static void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>& elements,
+                                     TrackId targetTrackId) {
+    PresetIdRemap remap;
+    remap.trackId = targetTrackId;
+
+    std::function<void(std::vector<ChainElement>&)> reassignIds;
+    reassignIds = [&](std::vector<ChainElement>& items) {
+        for (auto& element : items) {
+            if (magda::isDevice(element)) {
+                auto& device = magda::getDevice(element);
+                const auto oldId = device.id;
+                device.id = tm.allocateDeviceId();
+                remap.devices[oldId] = device.id;
+            } else if (magda::isRack(element)) {
+                auto& rack = magda::getRack(element);
+                const auto oldRackId = rack.id;
+                rack.id = tm.allocateRackId();
+                remap.racks[oldRackId] = rack.id;
+                for (auto& chain : rack.chains) {
+                    const auto oldChainId = chain.id;
+                    chain.id = tm.allocateChainId();
+                    remap.chains[oldChainId] = chain.id;
+                    reassignIds(chain.elements);
+                }
+            }
+        }
+    };
+
+    reassignIds(elements);
+    remapPresetLinksRecursive(elements, remap);
+}
+
 static bool chainPathContainsRack(const ChainNodePath& destinationChainPath,
                                   const ChainNodePath& sourceRackPath) {
     if (sourceRackPath.steps.empty() || sourceRackPath.steps.back().type != ChainStepType::Rack ||
@@ -650,6 +694,129 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         notifyTrackDevicesChanged(destinationChainPath.trackId);
 
     return true;
+}
+
+std::vector<ChainElement> TrackManager::copyChainElements(
+    const std::vector<ChainNodePath>& paths) const {
+    std::vector<ChainElement> copied;
+    std::vector<ChainNodePath> uniquePaths;
+    for (const auto& path : paths) {
+        if (path.isValid() &&
+            std::find(uniquePaths.begin(), uniquePaths.end(), path) == uniquePaths.end())
+            uniquePaths.push_back(path);
+    }
+
+    auto& mutableThis = const_cast<TrackManager&>(*this);
+    std::stable_sort(
+        uniquePaths.begin(), uniquePaths.end(), [&mutableThis](const auto& a, const auto& b) {
+            const auto parentA = getParentChainPathForElementPath(a);
+            const auto parentB = getParentChainPathForElementPath(b);
+            if (parentA == parentB)
+                return mutableThis.getChainElementIndex(a) < mutableThis.getChainElementIndex(b);
+            if (parentA.trackId != parentB.trackId)
+                return parentA.trackId < parentB.trackId;
+            return parentA.toString() < parentB.toString();
+        });
+
+    for (const auto& path : uniquePaths) {
+        const auto parentPath = getParentChainPathForElementPath(path);
+        auto* elements = getElementContainerForChainPath(mutableThis, parentPath);
+        if (elements == nullptr)
+            continue;
+
+        const auto type =
+            path.topLevelDeviceId != INVALID_DEVICE_ID
+                ? ChainStepType::Device
+                : (!path.steps.empty() ? path.steps.back().type : ChainStepType::Device);
+        const auto id = path.topLevelDeviceId != INVALID_DEVICE_ID
+                            ? path.topLevelDeviceId
+                            : (!path.steps.empty() ? path.steps.back().id : INVALID_DEVICE_ID);
+        auto it = std::find_if(elements->begin(), elements->end(), [type, id](const auto& element) {
+            if (type == ChainStepType::Device)
+                return magda::isDevice(element) && magda::getDevice(element).id == id;
+            return magda::isRack(element) && magda::getRack(element).id == id;
+        });
+        if (it != elements->end())
+            copied.push_back(deepCopyElement(*it));
+    }
+
+    return copied;
+}
+
+bool TrackManager::insertChainElementsByPath(const ChainNodePath& destinationChainPath,
+                                             std::vector<ChainElement> elements, int insertIndex,
+                                             bool reassignIds) {
+    auto* destinationElements = getElementContainerForChainPath(*this, destinationChainPath);
+    if (destinationElements == nullptr || elements.empty())
+        return false;
+
+    if (reassignIds)
+        reassignCopiedElementIds(*this, elements, destinationChainPath.trackId);
+
+    insertIndex = std::clamp(insertIndex, 0, static_cast<int>(destinationElements->size()));
+    destinationElements->insert(destinationElements->begin() + insertIndex,
+                                std::make_move_iterator(elements.begin()),
+                                std::make_move_iterator(elements.end()));
+    notifyTrackDevicesChanged(destinationChainPath.trackId);
+    return true;
+}
+
+RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& paths,
+                                             const juce::String& rackName) {
+    if (paths.empty())
+        return INVALID_RACK_ID;
+
+    const auto sourceChainPath = getParentChainPathForElementPath(paths.front());
+    auto* sourceElements = getElementContainerForChainPath(*this, sourceChainPath);
+    if (sourceElements == nullptr)
+        return INVALID_RACK_ID;
+
+    std::vector<std::pair<int, ChainNodePath>> orderedPaths;
+    for (const auto& path : paths) {
+        if (!path.isValid() || getParentChainPathForElementPath(path) != sourceChainPath)
+            return INVALID_RACK_ID;
+
+        const int index = getChainElementIndex(path);
+        if (index >= 0)
+            orderedPaths.push_back({index, path});
+    }
+
+    if (orderedPaths.empty())
+        return INVALID_RACK_ID;
+
+    std::stable_sort(orderedPaths.begin(), orderedPaths.end(),
+                     [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    RackInfo rack;
+    rack.id = allocateRackId();
+    rack.name = rackName.isEmpty() ? "Rack" : rackName;
+    ChainInfo chain;
+    chain.id = allocateChainId();
+    chain.name = "Chain 1";
+
+    if (audioEngine_) {
+        if (auto* bridge = audioEngine_->getAudioBridge()) {
+            ChainNodePath destinationPath = sourceChainPath;
+            destinationPath.steps.push_back({ChainStepType::Rack, rack.id});
+            destinationPath.steps.push_back({ChainStepType::Chain, chain.id});
+            for (const auto& [_, path] : orderedPaths)
+                bridge->getPluginManager().prepareForChainElementMove(path, destinationPath);
+        }
+    }
+
+    for (const auto& [index, _] : orderedPaths)
+        chain.elements.push_back(std::move((*sourceElements)[static_cast<size_t>(index)]));
+
+    for (auto it = orderedPaths.rbegin(); it != orderedPaths.rend(); ++it)
+        sourceElements->erase(sourceElements->begin() + it->first);
+
+    const int insertIndex =
+        std::clamp(orderedPaths.front().first, 0, static_cast<int>(sourceElements->size()));
+    rack.chains.push_back(std::move(chain));
+    sourceElements->insert(sourceElements->begin() + insertIndex, makeRackElement(std::move(rack)));
+
+    notifyTrackDevicesChanged(sourceChainPath.trackId);
+    return magda::getRack((*sourceElements)[static_cast<size_t>(insertIndex)]).id;
 }
 
 int TrackManager::getChainElementIndex(const ChainNodePath& elementPath) {
@@ -1408,8 +1575,13 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
                       << ", id=" << rackPath.steps[i].id);
     }
 
+    if (rackPath.steps.size() == 1 && rackPath.steps.back().type == ChainStepType::Rack) {
+        removeRackFromTrack(rackPath.trackId, rackPath.steps.back().id);
+        return;
+    }
+
     if (rackPath.steps.size() < 2) {
-        DBG("removeRackFromChainByPath FAILED - path too short (need at least Chain > Rack)!");
+        DBG("removeRackFromChainByPath FAILED - path too short (need Rack or Chain > Rack)!");
         return;
     }
 

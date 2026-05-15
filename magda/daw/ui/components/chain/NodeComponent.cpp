@@ -30,6 +30,15 @@ juce::String encodeStepIds(const magda::ChainNodePath& path) {
         values.add(juce::String(step.id));
     return values.joinIntoString(",");
 }
+
+void writePathToDragInfo(juce::DynamicObject& obj, const magda::ChainNodePath& path,
+                         const juce::String& suffix = {}) {
+    obj.setProperty("trackId" + suffix, path.trackId);
+    obj.setProperty("topLevelDeviceId" + suffix, path.topLevelDeviceId);
+    obj.setProperty("isTrackLevel" + suffix, path.isTrackLevel);
+    obj.setProperty("stepTypes" + suffix, encodeStepTypes(path));
+    obj.setProperty("stepIds" + suffix, encodeStepIds(path));
+}
 }  // namespace
 
 NodeComponent::NodeComponent() {
@@ -981,14 +990,17 @@ void NodeComponent::refreshControllerIndicators() {
 void NodeComponent::selectionTypeChanged(magda::SelectionType newType) {
     // If selection type changed away from ChainNode/Device, deselect this node.
     // Both ChainNode and Device represent a selected device in the chain.
-    if (newType != magda::SelectionType::ChainNode && newType != magda::SelectionType::Device) {
+    if (newType != magda::SelectionType::ChainNode &&
+        newType != magda::SelectionType::MultiChainNode &&
+        newType != magda::SelectionType::Device) {
         setSelected(false);
     }
 }
 
-void NodeComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
+void NodeComponent::chainNodeSelectionChanged(const magda::ChainNodePath& /*path*/) {
     // Update our selection state based on whether we match the selected path
-    bool shouldBeSelected = nodePath_.isValid() && nodePath_ == path;
+    auto& selection = magda::SelectionManager::getInstance();
+    bool shouldBeSelected = nodePath_.isValid() && selection.isChainNodeSelected(nodePath_);
     setSelected(shouldBeSelected);
     // The focused.macro resolver depends on the live focus — when focus
     // shifts to/from this node (or any sibling), recheck the automap dot.
@@ -1034,13 +1046,19 @@ void NodeComponent::mouseDrag(const juce::MouseEvent& e) {
         isDragging_ = true;
         if (nodePath_.isValid()) {
             if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this)) {
+                auto& selection = magda::SelectionManager::getInstance();
+                auto paths = selection.isChainNodeSelected(nodePath_)
+                                 ? selection.getSelectedChainNodes()
+                                 : std::vector<magda::ChainNodePath>{nodePath_};
+                if (paths.empty())
+                    paths.push_back(nodePath_);
+
                 auto* dragInfo = new juce::DynamicObject();
-                dragInfo->setProperty("type", "chainElement");
-                dragInfo->setProperty("trackId", nodePath_.trackId);
-                dragInfo->setProperty("topLevelDeviceId", nodePath_.topLevelDeviceId);
-                dragInfo->setProperty("isTrackLevel", nodePath_.isTrackLevel);
-                dragInfo->setProperty("stepTypes", encodeStepTypes(nodePath_));
-                dragInfo->setProperty("stepIds", encodeStepIds(nodePath_));
+                dragInfo->setProperty("type", paths.size() > 1 ? "chainElements" : "chainElement");
+                dragInfo->setProperty("pathCount", static_cast<int>(paths.size()));
+                writePathToDragInfo(*dragInfo, paths.front());
+                for (int i = 0; i < static_cast<int>(paths.size()); ++i)
+                    writePathToDragInfo(*dragInfo, paths[static_cast<size_t>(i)], juce::String(i));
 
                 auto snapshot = createComponentSnapshot(getLocalBounds());
                 container->startDragging(juce::var(dragInfo), this, juce::ScaledImage(snapshot),
@@ -1096,13 +1114,20 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
                 // would delete *this* while we're still inside mouseUp. Guard
                 // with a SafePointer and bail if we got destroyed mid-dispatch.
                 juce::Component::SafePointer<NodeComponent> safeThis(this);
-                magda::SelectionManager::getInstance().selectChainNode(nodePath_);
+                auto& selection = magda::SelectionManager::getInstance();
+                const bool additive =
+                    e.mods.isCommandDown() || e.mods.isCtrlDown() || e.mods.isShiftDown();
+                if (additive)
+                    selection.toggleChainNodeSelection(nodePath_);
+                else
+                    selection.selectChainNode(nodePath_);
                 if (safeThis == nullptr)
                     return;
 
                 // If was already selected, toggle collapse — but only when collapsed
                 // (to expand) or when the click is on the header bar (to collapse)
-                if (wasAlreadySelected && (wasCollapsed || e.getPosition().y < getHeaderHeight())) {
+                if (!additive && wasAlreadySelected &&
+                    (wasCollapsed || e.getPosition().y < getHeaderHeight())) {
                     setCollapsed(!wasCollapsed);
                 }
             }

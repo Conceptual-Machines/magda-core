@@ -23,7 +23,8 @@ namespace magda::daw::ui {
 namespace {
 bool dragObjectToChainNodePath(const juce::DynamicObject& obj, magda::ChainNodePath& path) {
     path = {};
-    if (obj.getProperty("type").toString() != "chainElement")
+    const auto type = obj.getProperty("type").toString();
+    if (type != "chainElement" && type != "chainElements")
         return false;
 
     path.trackId = static_cast<magda::TrackId>(static_cast<int>(obj.getProperty("trackId")));
@@ -47,6 +48,53 @@ bool dragObjectToChainNodePath(const juce::DynamicObject& obj, magda::ChainNodeP
     }
 
     return path.isValid();
+}
+
+bool dragObjectToChainNodePathAt(const juce::DynamicObject& obj, int index,
+                                 magda::ChainNodePath& path) {
+    path = {};
+    const auto suffix = juce::String(index);
+
+    path.trackId =
+        static_cast<magda::TrackId>(static_cast<int>(obj.getProperty("trackId" + suffix)));
+    path.topLevelDeviceId = static_cast<magda::DeviceId>(
+        static_cast<int>(obj.getProperty("topLevelDeviceId" + suffix)));
+    path.isTrackLevel = static_cast<bool>(obj.getProperty("isTrackLevel" + suffix));
+
+    auto stepTypes =
+        juce::StringArray::fromTokens(obj.getProperty("stepTypes" + suffix).toString(), ",", "");
+    auto stepIds =
+        juce::StringArray::fromTokens(obj.getProperty("stepIds" + suffix).toString(), ",", "");
+    if (stepTypes.size() != stepIds.size())
+        return false;
+
+    for (int i = 0; i < stepTypes.size(); ++i) {
+        const int typeValue = stepTypes[i].getIntValue();
+        if (typeValue < static_cast<int>(magda::ChainStepType::Rack) ||
+            typeValue > static_cast<int>(magda::ChainStepType::Device))
+            return false;
+        path.steps.push_back(
+            {static_cast<magda::ChainStepType>(typeValue), stepIds[i].getIntValue()});
+    }
+
+    return path.isValid();
+}
+
+std::vector<magda::ChainNodePath> dragObjectToChainNodePaths(const juce::DynamicObject& obj) {
+    std::vector<magda::ChainNodePath> paths;
+    const auto count = static_cast<int>(obj.getProperty("pathCount"));
+    for (int i = 0; i < count; ++i) {
+        magda::ChainNodePath path;
+        if (dragObjectToChainNodePathAt(obj, i, path))
+            paths.push_back(path);
+    }
+
+    if (paths.empty()) {
+        magda::ChainNodePath path;
+        if (dragObjectToChainNodePath(obj, path))
+            paths.push_back(path);
+    }
+    return paths;
 }
 }  // namespace
 
@@ -163,7 +211,7 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         }
         if (auto* obj = details.description.getDynamicObject()) {
             auto type = obj->getProperty("type").toString();
-            return type == "plugin" || type == "chainElement";
+            return type == "plugin" || type == "chainElement" || type == "chainElements";
         }
         return false;
     }
@@ -201,18 +249,18 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
 
         if (auto* obj = details.description.getDynamicObject()) {
             const auto type = obj->getProperty("type").toString();
-            if (type == "chainElement") {
-                magda::ChainNodePath sourcePath;
-                if (dragObjectToChainNodePath(*obj, sourcePath)) {
+            if (type == "chainElement" || type == "chainElements") {
+                auto sourcePaths = dragObjectToChainNodePaths(*obj);
+                if (!sourcePaths.empty()) {
                     owner_.dropInsertIndex_ = -1;
                     owner_.stopTimer();
                     owner_.resized();
                     repaint();
 
                     juce::MessageManager::callAsync(
-                        [sourcePath, chainPath, insertIndex, safeOwner, shouldScrollToEnd]() {
-                            auto command = std::make_unique<magda::MoveChainElementCommand>(
-                                sourcePath, chainPath, insertIndex);
+                        [sourcePaths, chainPath, insertIndex, safeOwner, shouldScrollToEnd]() {
+                            auto command = std::make_unique<magda::MoveChainElementsCommand>(
+                                sourcePaths, chainPath, insertIndex);
                             auto* moveCommand = command.get();
                             magda::UndoManager::getInstance().executeCommand(std::move(command));
                             if (moveCommand->didMove() && shouldScrollToEnd && safeOwner != nullptr)

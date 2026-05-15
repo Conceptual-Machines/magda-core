@@ -147,6 +147,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
          TE::ImpulseResponsePlugin::xmlTypeName},
         {InternalDeviceKind::TeVolumeAndPan, "utility", TE::VolumeAndPanPlugin::xmlTypeName},
         {InternalDeviceKind::TeFourOsc, "4osc", TE::FourOscPlugin::xmlTypeName},
+        {InternalDeviceKind::TeFourOsc, "4OSC Synth", nullptr},
         {InternalDeviceKind::TeToneGenerator, "tone", TE::ToneGeneratorPlugin::xmlTypeName},
         {InternalDeviceKind::TeLevelMeter, "meter", TE::LevelMeterPlugin::xmlTypeName},
         // MAGDA daw::audio:: plugins

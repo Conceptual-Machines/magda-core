@@ -124,6 +124,12 @@ class TrackManager {
     DeviceId allocateDeviceId() {
         return nextDeviceId_++;
     }
+    RackId allocateRackId() {
+        return nextRackId_++;
+    }
+    ChainId allocateChainId() {
+        return nextChainId_++;
+    }
     // Ensure the counter is above a restored ID (prevents collisions on project load)
     void ensureDeviceIdAbove(DeviceId id) {
         nextDeviceId_ = std::max(nextDeviceId_, id + 1);
@@ -310,6 +316,12 @@ class TrackManager {
     void moveElementInChainByPath(const ChainNodePath& chainPath, int fromIndex, int toIndex);
     bool moveChainElement(const ChainNodePath& sourceElementPath,
                           const ChainNodePath& destinationChainPath, int insertIndex);
+    std::vector<ChainElement> copyChainElements(const std::vector<ChainNodePath>& paths) const;
+    bool insertChainElementsByPath(const ChainNodePath& destinationChainPath,
+                                   std::vector<ChainElement> elements, int insertIndex,
+                                   bool reassignIds = true);
+    RackId wrapChainElementsInRack(const std::vector<ChainNodePath>& paths,
+                                   const juce::String& rackName = "Rack");
     int getChainElementIndex(const ChainNodePath& elementPath);
     DeviceInfo* getDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId,
                                  DeviceId deviceId);

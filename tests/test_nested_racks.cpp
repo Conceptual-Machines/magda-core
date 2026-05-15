@@ -769,6 +769,182 @@ TEST_CASE("MoveChainElementCommand: undo and redo route through chain move",
     REQUIRE(fixture.tm().getDeviceInChainByPath(chainPath.withDevice(filterId)) != nullptr);
 }
 
+TEST_CASE("MoveChainElementsCommand: moves multiple devices as one undo step",
+          "[trackmanager][device][path][move][undo]") {
+    TrackManagerTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Test Track");
+
+    DeviceInfo a;
+    a.name = "A";
+    a.pluginId = "magda_delay";
+    a.format = PluginFormat::Internal;
+    DeviceInfo b = a;
+    b.name = "B";
+    DeviceInfo c = a;
+    c.name = "C";
+    DeviceInfo d = a;
+    d.name = "D";
+
+    auto aId = fixture.tm().addDeviceToTrack(trackId, a);
+    auto bId = fixture.tm().addDeviceToTrack(trackId, b);
+    auto cId = fixture.tm().addDeviceToTrack(trackId, c);
+    auto dId = fixture.tm().addDeviceToTrack(trackId, d);
+    REQUIRE(aId != INVALID_DEVICE_ID);
+    REQUIRE(bId != INVALID_DEVICE_ID);
+    REQUIRE(cId != INVALID_DEVICE_ID);
+    REQUIRE(dId != INVALID_DEVICE_ID);
+
+    ChainNodePath topLevel;
+    topLevel.trackId = trackId;
+    MoveChainElementsCommand command(
+        {ChainNodePath::topLevelDevice(trackId, bId), ChainNodePath::topLevelDevice(trackId, cId)},
+        topLevel, 4);
+    command.execute();
+    REQUIRE(command.didMove());
+
+    const auto& moved = fixture.tm().getChainElements(trackId);
+    REQUIRE(getDevice(moved[0]).id == aId);
+    REQUIRE(getDevice(moved[1]).id == dId);
+    REQUIRE(getDevice(moved[2]).id == bId);
+    REQUIRE(getDevice(moved[3]).id == cId);
+
+    command.undo();
+    const auto& restored = fixture.tm().getChainElements(trackId);
+    REQUIRE(getDevice(restored[0]).id == aId);
+    REQUIRE(getDevice(restored[1]).id == bId);
+    REQUIRE(getDevice(restored[2]).id == cId);
+    REQUIRE(getDevice(restored[3]).id == dId);
+}
+
+TEST_CASE("MoveChainElementsCommand: undoes same-chain move toward front",
+          "[trackmanager][device][path][move][undo]") {
+    TrackManagerTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Test Track");
+
+    DeviceInfo device;
+    device.pluginId = "magda_delay";
+    device.format = PluginFormat::Internal;
+    device.name = "A";
+    auto aId = fixture.tm().addDeviceToTrack(trackId, device);
+    device.name = "B";
+    auto bId = fixture.tm().addDeviceToTrack(trackId, device);
+    device.name = "C";
+    auto cId = fixture.tm().addDeviceToTrack(trackId, device);
+    device.name = "D";
+    auto dId = fixture.tm().addDeviceToTrack(trackId, device);
+
+    ChainNodePath topLevel;
+    topLevel.trackId = trackId;
+    MoveChainElementsCommand command(
+        {ChainNodePath::topLevelDevice(trackId, bId), ChainNodePath::topLevelDevice(trackId, cId)},
+        topLevel, 0);
+    command.execute();
+    REQUIRE(command.didMove());
+
+    const auto& moved = fixture.tm().getChainElements(trackId);
+    REQUIRE(getDevice(moved[0]).id == bId);
+    REQUIRE(getDevice(moved[1]).id == cId);
+    REQUIRE(getDevice(moved[2]).id == aId);
+    REQUIRE(getDevice(moved[3]).id == dId);
+
+    command.undo();
+    const auto& restored = fixture.tm().getChainElements(trackId);
+    REQUIRE(getDevice(restored[0]).id == aId);
+    REQUIRE(getDevice(restored[1]).id == bId);
+    REQUIRE(getDevice(restored[2]).id == cId);
+    REQUIRE(getDevice(restored[3]).id == dId);
+}
+
+TEST_CASE("PasteChainElementsCommand: copies selected devices to another track",
+          "[trackmanager][device][path][copy][undo]") {
+    TrackManagerTestFixture fixture;
+
+    auto sourceTrackId = fixture.tm().createTrack("Source");
+    auto destinationTrackId = fixture.tm().createTrack("Destination");
+
+    DeviceInfo device;
+    device.pluginId = "magda_delay";
+    device.format = PluginFormat::Internal;
+    device.name = "Delay";
+    auto delayId = fixture.tm().addDeviceToTrack(sourceTrackId, device);
+    device.name = "Reverb";
+    auto reverbId = fixture.tm().addDeviceToTrack(sourceTrackId, device);
+
+    auto copied =
+        fixture.tm().copyChainElements({ChainNodePath::topLevelDevice(sourceTrackId, delayId),
+                                        ChainNodePath::topLevelDevice(sourceTrackId, reverbId)});
+    REQUIRE(copied.size() == 2);
+
+    ChainNodePath destinationChainPath;
+    destinationChainPath.trackId = destinationTrackId;
+    PasteChainElementsCommand command(destinationChainPath, std::move(copied), 0);
+    command.execute();
+    REQUIRE(command.didPaste());
+
+    const auto& sourceElements = fixture.tm().getChainElements(sourceTrackId);
+    const auto& destinationElements = fixture.tm().getChainElements(destinationTrackId);
+    REQUIRE(sourceElements.size() == 2);
+    REQUIRE(destinationElements.size() == 2);
+    REQUIRE(getDevice(sourceElements[0]).id == delayId);
+    REQUIRE(getDevice(sourceElements[1]).id == reverbId);
+    REQUIRE(getDevice(destinationElements[0]).name == "Delay");
+    REQUIRE(getDevice(destinationElements[1]).name == "Reverb");
+    REQUIRE(getDevice(destinationElements[0]).id != delayId);
+    REQUIRE(getDevice(destinationElements[1]).id != reverbId);
+
+    command.undo();
+    REQUIRE(fixture.tm().getChainElements(destinationTrackId).empty());
+    REQUIRE(fixture.tm().getChainElements(sourceTrackId).size() == 2);
+}
+
+TEST_CASE("WrapChainElementsInRackCommand: wraps multiple selected devices",
+          "[trackmanager][device][rack][path][undo]") {
+    TrackManagerTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Test Track");
+
+    DeviceInfo device;
+    device.pluginId = "magda_delay";
+    device.format = PluginFormat::Internal;
+    device.name = "A";
+    auto aId = fixture.tm().addDeviceToTrack(trackId, device);
+    device.name = "B";
+    auto bId = fixture.tm().addDeviceToTrack(trackId, device);
+    device.name = "C";
+    auto cId = fixture.tm().addDeviceToTrack(trackId, device);
+    device.name = "D";
+    auto dId = fixture.tm().addDeviceToTrack(trackId, device);
+
+    WrapChainElementsInRackCommand command(
+        {ChainNodePath::topLevelDevice(trackId, cId), ChainNodePath::topLevelDevice(trackId, bId)},
+        "Selection Rack");
+    command.execute();
+    REQUIRE(command.didWrap());
+
+    const auto& wrapped = fixture.tm().getChainElements(trackId);
+    REQUIRE(wrapped.size() == 3);
+    REQUIRE(getDevice(wrapped[0]).id == aId);
+    REQUIRE(isRack(wrapped[1]));
+    REQUIRE(getDevice(wrapped[2]).id == dId);
+
+    const auto& rack = getRack(wrapped[1]);
+    REQUIRE(rack.name == "Selection Rack");
+    REQUIRE(rack.chains.size() == 1);
+    REQUIRE(rack.chains[0].elements.size() == 2);
+    REQUIRE(getDevice(rack.chains[0].elements[0]).id == bId);
+    REQUIRE(getDevice(rack.chains[0].elements[1]).id == cId);
+
+    command.undo();
+    const auto& restored = fixture.tm().getChainElements(trackId);
+    REQUIRE(restored.size() == 4);
+    REQUIRE(getDevice(restored[0]).id == aId);
+    REQUIRE(getDevice(restored[1]).id == bId);
+    REQUIRE(getDevice(restored[2]).id == cId);
+    REQUIRE(getDevice(restored[3]).id == dId);
+}
+
 TEST_CASE("TrackManager: Move selected-order devices to another track",
           "[trackmanager][device][path][move][tracks]") {
     TrackManagerTestFixture fixture;
