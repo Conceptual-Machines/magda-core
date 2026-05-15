@@ -434,15 +434,8 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         if (std::abs(rampVal) > 0.001f && seq.length > 1) {
             int cyc = juce::jlimit(1, 8, rampCycles.get());
             double tLinear = static_cast<double>(stepInCycle) / static_cast<double>(seq.length);
-            double tCurved;
-            if (cyc <= 1) {
-                tCurved = applyRampCurve(tLinear, rampVal, skewVal, hardAngleVal);
-            } else {
-                double segLen = 1.0 / static_cast<double>(cyc);
-                int seg = std::min(static_cast<int>(tLinear / segLen), cyc - 1);
-                double tLocal = (tLinear - seg * segLen) / segLen;
-                tCurved = (seg + applyRampCurve(tLocal, rampVal, skewVal, hardAngleVal)) * segLen;
-            }
+            double tCurved =
+                StepClock::applyRampCurveWithCycles(tLinear, rampVal, skewVal, cyc, hardAngleVal);
             return cycleStart + tCurved * cycleBeats;
         }
         return cycleStart + stepInCycle * stepBeats;

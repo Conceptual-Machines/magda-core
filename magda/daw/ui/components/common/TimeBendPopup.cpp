@@ -1,6 +1,5 @@
 #include "TimeBendPopup.hpp"
 
-#include "audio/transport/StepClock.hpp"
 #include "core/ClipManager.hpp"
 
 namespace magda::daw::ui {
@@ -25,11 +24,7 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     // Capture original positions for preview/restore
     auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
     if (clip && clip->isMidi()) {
-        originalStartBeats_.reserve(noteIndices_.size());
-        for (size_t index : noteIndices_) {
-            if (index < clip->midiNotes.size())
-                originalStartBeats_.push_back(clip->midiNotes[index].startBeat);
-        }
+        originalStartBeats_ = magda::collectMidiNoteStartBeats(*clip, noteIndices_);
     }
 
     // Curve display
@@ -157,11 +152,14 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
                            DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.6f));
     applyButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
     applyButton_.onClick = [this] {
+        if (!syncSelectionFromManager())
+            return;
+
         applied_ = true;
         // Restore originals so the command captures them for undo
         restoreOriginals();
         if (onApply)
-            onApply(curveDisplay_.getDepth(), curveDisplay_.getSkew(),
+            onApply(clipId_, noteIndices_, curveDisplay_.getDepth(), curveDisplay_.getSkew(),
                     juce::roundToInt(cyclesSlider_.getValue()),
                     static_cast<float>(quantizeSlider_.getValue()),
                     juce::roundToInt(quantizeSubSlider_.getValue()), curveDisplay_.getHardAngle());
@@ -197,6 +195,9 @@ TimeBendPopup::~TimeBendPopup() {
 
 void TimeBendPopup::applyPreview(float depth, float skew, int cycles, float quantize,
                                  int quantizeSub, bool hardAngle) {
+    if (!syncSelectionFromManager())
+        return;
+
     auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
     if (!clip || !clip->isMidi() || originalStartBeats_.size() < 2)
         return;
@@ -207,38 +208,39 @@ void TimeBendPopup::applyPreview(float depth, float skew, int cycles, float quan
         return;
     }
 
-    // Find span from originals
-    double minBeat = *std::min_element(originalStartBeats_.begin(), originalStartBeats_.end());
-    double maxBeat = *std::max_element(originalStartBeats_.begin(), originalStartBeats_.end());
-    double span = maxBeat - minBeat;
-    if (span < 1e-9)
+    const auto bentStarts = magda::calculateBentMidiNoteStartBeats(
+        *clip, originalStartBeats_, depth, skew, cycles, quantize, quantizeSub, hardAngle);
+    if (bentStarts.empty())
         return;
 
-    // Apply curve to each note (with cycles)
-    int c = std::max(1, cycles);
-    double segLen = 1.0 / static_cast<double>(c);
-    for (size_t i = 0; i < noteIndices_.size() && i < originalStartBeats_.size(); ++i) {
-        size_t index = noteIndices_[i];
-        if (index >= clip->midiNotes.size())
+    for (const auto& bent : bentStarts) {
+        if (bent.noteIndex >= clip->midiNotes.size())
             continue;
-        double t = (originalStartBeats_[i] - minBeat) / span;
-        int seg = std::min(static_cast<int>(t / segLen), c - 1);
-        double tLocal = (t - seg * segLen) / segLen;
-        double tLocalEased = daw::audio::StepClock::applyRampCurve(tLocal, depth, skew, hardAngle);
-        double tEased = (seg + tLocalEased) * segLen;
-        double newBeat = minBeat + tEased * span;
-
-        // Apply quantize snap
-        if (quantize > 0.0f && quantizeSub > 0) {
-            double gridSpacing = span / static_cast<double>(quantizeSub);
-            double snapped = std::round((newBeat - minBeat) / gridSpacing) * gridSpacing + minBeat;
-            newBeat += (snapped - newBeat) * static_cast<double>(quantize);
-        }
-
-        clip->midiNotes[index].startBeat = newBeat;
+        clip->midiNotes[bent.noteIndex].startBeat = bent.startBeat;
     }
 
     magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+}
+
+bool TimeBendPopup::syncSelectionFromManager() {
+    const auto& selection = magda::SelectionManager::getInstance().getNoteSelection();
+    if (!selection.isValid() || selection.noteIndices.size() < 2)
+        return originalStartBeats_.size() >= 2;
+
+    if (selection.clipId == clipId_ && selection.noteIndices == noteIndices_)
+        return originalStartBeats_.size() >= 2;
+
+    restoreOriginals();
+
+    clipId_ = selection.clipId;
+    noteIndices_ = selection.noteIndices;
+    originalStartBeats_.clear();
+
+    auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
+    if (clip && clip->isMidi())
+        originalStartBeats_ = magda::collectMidiNoteStartBeats(*clip, noteIndices_);
+
+    return originalStartBeats_.size() >= 2;
 }
 
 void TimeBendPopup::restoreOriginals() {
@@ -246,10 +248,9 @@ void TimeBendPopup::restoreOriginals() {
     if (!clip || !clip->isMidi())
         return;
 
-    for (size_t i = 0; i < noteIndices_.size() && i < originalStartBeats_.size(); ++i) {
-        size_t index = noteIndices_[i];
-        if (index < clip->midiNotes.size())
-            clip->midiNotes[index].startBeat = originalStartBeats_[i];
+    for (const auto& original : originalStartBeats_) {
+        if (original.noteIndex < clip->midiNotes.size())
+            clip->midiNotes[original.noteIndex].startBeat = original.startBeat;
     }
 
     magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);

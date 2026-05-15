@@ -482,10 +482,12 @@ void BottomPanel::setupHeaderControls() {
         auto clipId = noteSel.clipId;
         auto indices = noteSel.noteIndices;
         auto popup = std::make_unique<daw::ui::TimeBendPopup>(clipId, indices);
-        popup->onApply = [clipId, indices](float depth, float skew, int cycles, float quantize,
-                                           int quantizeSub, bool hardAngle) {
-            auto cmd = std::make_unique<BendNoteTimingCommand>(clipId, indices, depth, skew, cycles,
-                                                               quantize, quantizeSub, hardAngle);
+        popup->onApply = [](magda::ClipId applyClipId, std::vector<size_t> applyIndices,
+                            float depth, float skew, int cycles, float quantize, int quantizeSub,
+                            bool hardAngle) {
+            auto cmd = std::make_unique<BendNoteTimingCommand>(applyClipId, std::move(applyIndices),
+                                                               depth, skew, cycles, quantize,
+                                                               quantizeSub, hardAngle);
             UndoManager::getInstance().executeCommand(std::move(cmd));
         };
         daw::ui::TimeBendPopup::showAbove(std::move(popup), bendButton_.get());

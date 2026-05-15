@@ -11,6 +11,19 @@ namespace magda {
  */
 enum class QuantizeMode { StartOnly, LengthOnly, StartAndLength };
 
+struct MidiNoteStartBeat {
+    size_t noteIndex;
+    double startBeat;
+};
+
+std::vector<MidiNoteStartBeat> collectMidiNoteStartBeats(const ClipInfo& clip,
+                                                         const std::vector<size_t>& noteIndices);
+
+std::vector<MidiNoteStartBeat> calculateBentMidiNoteStartBeats(
+    const ClipInfo& clip, const std::vector<MidiNoteStartBeat>& originalStartBeats, float depth,
+    float skew, int cycles = 1, float quantize = 0.0f, int quantizeSub = 64,
+    bool hardAngle = false);
+
 /**
  * @brief Command for adding a MIDI note to a clip
  */
@@ -784,7 +797,7 @@ class BendNoteTimingCommand : public UndoableCommand {
     float quantize_;
     int quantizeSub_;
     bool hardAngle_;
-    std::vector<double> oldStartBeats_;
+    std::vector<MidiNoteStartBeat> oldStartBeats_;
     bool executed_ = false;
 };
 

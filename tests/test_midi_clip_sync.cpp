@@ -462,6 +462,59 @@ TEST_CASE("MIDI quantize undo restores valid notes when invalid indices are skip
     REQUIRE(clip->midiNotes[1].lengthBeats == Catch::Approx(0.7));
 }
 
+TEST_CASE("BendNoteTimingCommand bends raw MIDI note starts and undoes exactly",
+          "[midi][commands][timebend][trim]") {
+    using namespace magda;
+
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    ClipId clipId = cm.createMidiClipBeats(1, 0.0, 4.0);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+
+    REQUIRE(cm.addMidiNote(clipId, {60, 100, 0.5, 1.0}));
+    REQUIRE(cm.addMidiNote(clipId, {61, 100, 1.5, 0.5}));
+    REQUIRE(cm.addMidiNote(clipId, {62, 100, 3.0, 0.5}));
+    clip->midiTrimOffset = 1.0;
+
+    BendNoteTimingCommand cmd(clipId, {0, 1, 2}, 0.25f, 0.0f, 1, 0.0f, 64, true);
+    cmd.execute();
+
+    REQUIRE(clip->midiNotes[0].startBeat == Catch::Approx(1.0));
+    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(2.0));
+    REQUIRE(clip->midiNotes[2].startBeat == Catch::Approx(3.0));
+
+    cmd.undo();
+
+    REQUIRE(clip->midiNotes[0].startBeat == Catch::Approx(0.5));
+    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(1.5));
+    REQUIRE(clip->midiNotes[2].startBeat == Catch::Approx(3.0));
+}
+
+TEST_CASE("BendNoteTimingCommand preserves non-zero selected span", "[midi][commands][timebend]") {
+    using namespace magda;
+
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    ClipId clipId = cm.createMidiClipBeats(1, 0.0, 8.0);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+
+    REQUIRE(cm.addMidiNote(clipId, {60, 100, 2.0, 0.5}));
+    REQUIRE(cm.addMidiNote(clipId, {61, 100, 4.0, 0.5}));
+    REQUIRE(cm.addMidiNote(clipId, {62, 100, 6.0, 0.5}));
+
+    BendNoteTimingCommand cmd(clipId, {0, 1, 2}, 0.25f, 0.0f, 1, 0.0f, 64, true);
+    cmd.execute();
+
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes[0].startBeat == Catch::Approx(2.0));
+    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(5.0));
+    REQUIRE(clip->midiNotes[2].startBeat == Catch::Approx(6.0));
+}
+
 TEST_CASE("MoveMidiNoteBetweenClipsCommand keeps source note when destination insert cannot run",
           "[midi][undo][commands]") {
     using namespace magda;
