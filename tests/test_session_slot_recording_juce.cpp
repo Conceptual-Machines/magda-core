@@ -1,3 +1,4 @@
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
 #include <tracktion_engine/tracktion_engine.h>
@@ -21,6 +22,59 @@ te::TimeRange beatRange(te::Edit& edit, double startBeat, double endBeat) {
             edit.tempoSequence.toTime(te::BeatPosition::fromBeats(endBeat))};
 }
 
+te::InputDeviceInstance* findRecordingWaveInputForSlot(te::Edit& edit, te::ClipSlot& slot) {
+    auto* context = edit.getCurrentPlaybackContext();
+    if (context == nullptr)
+        return nullptr;
+
+    for (auto* input : context->getAllInputs()) {
+        if (dynamic_cast<te::MidiInputDevice*>(&input->owner) != nullptr)
+            continue;
+
+        for (auto targetId : input->getTargets()) {
+            if (targetId == slot.itemID && input->isRecordingEnabled(slot.itemID))
+                return input;
+        }
+    }
+
+    return nullptr;
+}
+
+juce::File testScratchDirectory() {
+    auto envTmp = juce::SystemStats::getEnvironmentVariable("TMPDIR", {});
+    auto root = envTmp.isNotEmpty() ? juce::File(envTmp)
+                                    : juce::File::getSpecialLocation(juce::File::tempDirectory);
+    root = root.getChildFile("magda_juce_tests");
+    root.createDirectory();
+    return root;
+}
+
+std::unique_ptr<juce::TemporaryFile> createSineWavFile(double sampleRate, double lengthBeats,
+                                                       double bpm, float frequency = 220.0f) {
+    const int numSamples = static_cast<int>(std::round(sampleRate * lengthBeats * 60.0 / bpm));
+    juce::AudioBuffer<float> buffer(1, numSamples);
+    float phase = 0.0f;
+    const float phaseInc =
+        static_cast<float>(frequency * juce::MathConstants<double>::twoPi / sampleRate);
+    for (int i = 0; i < numSamples; ++i) {
+        buffer.setSample(0, i, std::sin(phase));
+        phase += phaseInc;
+    }
+
+    auto targetFile = testScratchDirectory().getNonexistentChildFile("session_slot_take", ".wav");
+    auto file = std::make_unique<juce::TemporaryFile>(targetFile);
+    juce::WavAudioFormat wavFormat;
+    JUCE_BEGIN_IGNORE_WARNINGS_MSVC(4996)
+    JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wdeprecated-declarations")
+    std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(
+        new juce::FileOutputStream(file->getFile()), sampleRate, 1, 16, {}, 0));
+    JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+    JUCE_END_IGNORE_WARNINGS_MSVC
+    if (writer)
+        writer->writeFromAudioSampleBuffer(buffer, 0, numSamples);
+    return file;
+}
+
 }  // namespace
 
 class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
@@ -30,6 +84,7 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
 
     void runTest() override {
         testTeSlotRecordingFinalizesToMagdaSessionClip();
+        testTeSlotAudioRecordingFinalizesToMagdaSessionClip();
     }
 
   private:
@@ -65,8 +120,10 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
         }
 
         ~Fixture() {
-            if (bridge != nullptr)
+            if (bridge != nullptr) {
                 bridge->setSessionSlotMidiRecordingTarget(trackId, sceneIndex, false);
+                bridge->setSessionSlotAudioRecordingTarget(trackId, sceneIndex, false);
+            }
 
             wrapper.stop();
             ClipManager::getInstance().clearAllClips();
@@ -176,6 +233,98 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
                                       "TE slot clip loop should match the snapped bar length");
         } else {
             expect(false, "TE slot clip should still be a MidiClip");
+        }
+    }
+
+    void testTeSlotAudioRecordingFinalizesToMagdaSessionClip() {
+        beginTest("TE ClipSlot audio recording finalizes into a Magda session clip");
+
+        Fixture fixture;
+        expect(fixture.bridge != nullptr, "AudioBridge must exist");
+        expect(fixture.edit != nullptr, "Tracktion edit must exist");
+        if (fixture.bridge == nullptr || fixture.edit == nullptr)
+            return;
+
+        const auto sourceTrackId = TrackManager::getInstance().createTrack("Session Source");
+        fixture.bridge->createAudioTrack(sourceTrackId, "Session Source");
+        const auto trackInput = "track:" + juce::String(sourceTrackId);
+        TrackManager::getInstance().setTrackAudioInput(fixture.trackId, trackInput);
+        fixture.bridge->setTrackAudioInput(fixture.trackId, trackInput);
+        fixture.bridge->syncAllArmedTracksToTE();
+
+        fixture.wrapper.armSessionSlotRecording(fixture.trackId, fixture.sceneIndex);
+        fixture.wrapper.beginArmedSessionSlotRecordings();
+        expect(fixture.wrapper.isSessionSlotRecording(fixture.trackId, fixture.sceneIndex),
+               "Wrapper should mark the audio slot as actively recording");
+
+        auto* slot = fixture.getSlot();
+        expect(slot != nullptr, "TE ClipSlot must exist");
+        if (slot == nullptr)
+            return;
+
+        auto* input = findRecordingWaveInputForSlot(*fixture.edit, *slot);
+        expect(input != nullptr, "A wave input must be armed directly against the TE ClipSlot");
+        if (input == nullptr)
+            return;
+
+        auto audioFile = createSineWavFile(44100.0, 1.5, 120.0);
+        expect(audioFile != nullptr && audioFile->getFile().existsAsFile(),
+               "Test wave file should exist");
+        if (audioFile == nullptr || !audioFile->getFile().existsAsFile())
+            return;
+
+        auto clipRef = te::insertWaveClip(*slot, "Session Audio Take", audioFile->getFile(),
+                                          te::ClipPosition{beatRange(*fixture.edit, 0.0, 1.5)},
+                                          te::DeleteExistingClips::no);
+        expect(clipRef != nullptr, "TE should create a wave clip directly in the slot");
+        if (!clipRef)
+            return;
+
+        expect(fixture.wrapper.finalizeSessionSlotAudioRecording(fixture.trackId, *clipRef),
+               "Recorded TE audio slot clip should finalize through the session recording path");
+
+        const auto sessionClipId =
+            ClipManager::getInstance().getClipInSlot(fixture.trackId, fixture.sceneIndex);
+        expect(sessionClipId != INVALID_CLIP_ID,
+               "Recorded TE audio slot clip should be mirrored into ClipManager");
+        expect(!fixture.wrapper.isSessionSlotRecording(fixture.trackId, fixture.sceneIndex),
+               "Slot recording state should clear after finalization");
+        expectEquals(ClipManager::getInstance().getArrangementClips().size(),
+                     static_cast<size_t>(0),
+                     "Session slot recording must not create an arrangement clip");
+
+        const auto* clip = ClipManager::getInstance().getClip(sessionClipId);
+        expect(clip != nullptr, "Mirrored Magda clip must exist");
+        if (clip == nullptr)
+            return;
+
+        expect(clip->view == ClipView::Session, "Mirrored clip must be a session clip");
+        expectEquals(clip->trackId, fixture.trackId);
+        expectEquals(clip->sceneIndex, fixture.sceneIndex);
+        expect(clip->isAudio(), "Mirrored clip must be audio");
+        expect(clip->loopEnabled, "Recorded session clip should loop");
+        expect(clip->autoTempo, "Recorded session audio should follow the project tempo");
+        expectEquals(clip->audio().source.filePath, audioFile->getFile().getFullPathName());
+        expectWithinAbsoluteError(clip->placement.lengthBeats, 4.0, 0.0001,
+                                  "Clip length should snap to a full 4/4 bar");
+        expectWithinAbsoluteError(clip->loopLengthBeats, 4.0, 0.0001,
+                                  "Loop length should match snapped clip length");
+        expectWithinAbsoluteError(clip->audio().interpretation.bpm, 120.0, 0.0001,
+                                  "Recorded source BPM should match the project");
+        expectWithinAbsoluteError(clip->audio().interpretation.totalBeats, 4.0, 0.0001,
+                                  "Recorded source beats should match the snapped bar length");
+
+        auto* teClip = slot->getClip();
+        expect(teClip == clipRef.get(), "The TE slot clip should remain in the ClipSlot");
+        if (auto* teAudioClip = dynamic_cast<te::WaveAudioClip*>(teClip)) {
+            expect(teAudioClip->getAutoTempo(), "TE slot audio clip should use auto tempo");
+            expectWithinAbsoluteError(teAudioClip->getLengthBeats().inBeats(), 4.0, 0.0001,
+                                      "TE slot audio clip length should also be bar-snapped");
+            expectWithinAbsoluteError(
+                teAudioClip->getLoopLengthBeats().inBeats(), 4.0, 0.0001,
+                "TE slot audio clip loop should match the snapped bar length");
+        } else {
+            expect(false, "TE slot clip should still be a WaveAudioClip");
         }
     }
 };

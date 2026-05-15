@@ -684,6 +684,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     juce::String getTrackAudioInput(TrackId trackId) const;
 
+    bool setSessionSlotAudioRecordingTarget(TrackId trackId, int sceneIndex, bool enabled);
+
     // =========================================================================
     // MIDI Routing (for live instrument playback)
     // =========================================================================

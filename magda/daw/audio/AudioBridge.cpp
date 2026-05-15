@@ -1099,6 +1099,11 @@ juce::String AudioBridge::getTrackAudioInput(TrackId trackId) const {
     return trackController_.getTrackAudioInput(trackId);
 }
 
+bool AudioBridge::setSessionSlotAudioRecordingTarget(TrackId trackId, int sceneIndex,
+                                                     bool enabled) {
+    return trackController_.setSessionSlotAudioRecordingTarget(trackId, sceneIndex, enabled);
+}
+
 // =============================================================================
 // MIDI Routing (for live instrument playback)
 // =============================================================================

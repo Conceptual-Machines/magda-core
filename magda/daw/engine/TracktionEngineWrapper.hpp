@@ -552,6 +552,7 @@ class TracktionEngineWrapper : public AudioEngine,
     std::unordered_map<TrackId, SessionSlotRecordingTarget> sessionSlotRecordingTargets_;
     bool hasActiveSessionSlotRecordings() const;
     void finishSessionSlotRecordings();
+    bool finalizeSessionSlotAudioRecording(TrackId trackId, tracktion::WaveAudioClip& audioClip);
     bool finalizeSessionSlotMidiRecording(TrackId trackId, tracktion::MidiClip& midiClip);
     ClipId createEmptySessionSlotRecordingClip(TrackId trackId, int sceneIndex);
 

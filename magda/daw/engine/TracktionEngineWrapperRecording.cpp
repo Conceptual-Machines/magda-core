@@ -96,19 +96,36 @@ void TracktionEngineWrapper::recordingFinished(
         // Handle audio (wave) clips
         auto* audioClip = dynamic_cast<tracktion::WaveAudioClip*>(clip);
         if (audioClip) {
-            if (!hasAudioInput) {
+            TrackId audioTrackId = trackId;
+            if (auto* slot = audioClip->getClipSlot())
+                audioTrackId = audioBridge_->getTrackIdForTeTrack(slot->track.itemID);
+
+            if (audioTrackId == INVALID_TRACK_ID) {
+                if (auto* teTrack = dynamic_cast<tracktion::AudioTrack*>(audioClip->getTrack()))
+                    audioTrackId = audioBridge_->getTrackIdForTeTrack(teTrack->itemID);
+            }
+
+            const auto* audioTrackInfo = TrackManager::getInstance().getTrack(audioTrackId);
+            const bool audioTrackHasInput =
+                audioTrackInfo && !audioTrackInfo->audioInputDevice.isEmpty();
+
+            if (!audioTrackHasInput) {
                 DBG("  skipping audio clip — track has no audio input configured");
                 audioClip->removeFromParent();
                 continue;
             }
+
+            if (audioTrackId == INVALID_TRACK_ID)
+                continue;
+
+            trackId = audioTrackId;
+
+            if (finalizeSessionSlotAudioRecording(trackId, *audioClip))
+                continue;
+
             juce::String audioFilePath = audioClip->getOriginalFile().getFullPathName();
             double startSeconds = audioClip->getPosition().getStart().inSeconds();
             double lengthSeconds = audioClip->getPosition().getLength().inSeconds();
-
-            if (trackId == INVALID_TRACK_ID) {
-                if (auto* teTrack = dynamic_cast<tracktion::AudioTrack*>(audioClip->getTrack()))
-                    trackId = audioBridge_->getTrackIdForTeTrack(teTrack->itemID);
-            }
 
             if (lengthSeconds <= 0.0 || audioFilePath.isEmpty() || trackId == INVALID_TRACK_ID) {
                 audioClip->removeFromParent();
@@ -352,8 +369,20 @@ void TracktionEngineWrapper::beginArmedSessionSlotRecordings() {
             continue;
         }
 
-        if (!audioBridge_ ||
-            !audioBridge_->setSessionSlotMidiRecordingTarget(trackId, target.sceneIndex, true)) {
+        const bool hasMidiInput = !trackInfo->midiInputDevice.isEmpty();
+        const bool hasAudioInput = !trackInfo->audioInputDevice.isEmpty();
+
+        bool armedTarget = false;
+        if (audioBridge_) {
+            if (hasMidiInput)
+                armedTarget |= audioBridge_->setSessionSlotMidiRecordingTarget(
+                    trackId, target.sceneIndex, true);
+            if (hasAudioInput)
+                armedTarget |= audioBridge_->setSessionSlotAudioRecordingTarget(
+                    trackId, target.sceneIndex, true);
+        }
+
+        if (!armedTarget) {
             ++it;
             continue;
         }
@@ -386,9 +415,19 @@ void TracktionEngineWrapper::finishSessionSlotRecordings() {
             continue;
         }
 
-        createEmptySessionSlotRecordingClip(trackId, target.sceneIndex);
-        if (audioBridge_)
-            audioBridge_->setSessionSlotMidiRecordingTarget(trackId, target.sceneIndex, false);
+        const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+        const bool hasMidiInput = trackInfo && !trackInfo->midiInputDevice.isEmpty();
+        const bool hasAudioInput = trackInfo && !trackInfo->audioInputDevice.isEmpty();
+
+        if (hasMidiInput)
+            createEmptySessionSlotRecordingClip(trackId, target.sceneIndex);
+
+        if (audioBridge_) {
+            if (hasMidiInput || !trackInfo)
+                audioBridge_->setSessionSlotMidiRecordingTarget(trackId, target.sceneIndex, false);
+            if (hasAudioInput || !trackInfo)
+                audioBridge_->setSessionSlotAudioRecordingTarget(trackId, target.sceneIndex, false);
+        }
         it = sessionSlotRecordingTargets_.erase(it);
     }
 }
@@ -414,6 +453,74 @@ ClipId TracktionEngineWrapper::createEmptySessionSlotRecordingClip(TrackId track
     SelectionManager::getInstance().selectClip(clipId);
     clipManager.forceNotifyClipPropertyChanged(clipId);
     return clipId;
+}
+
+bool TracktionEngineWrapper::finalizeSessionSlotAudioRecording(
+    TrackId trackId, tracktion::WaveAudioClip& audioClip) {
+    auto targetIt = sessionSlotRecordingTargets_.find(trackId);
+    if (targetIt == sessionSlotRecordingTargets_.end() || !targetIt->second.active)
+        return false;
+
+    auto* slot = audioClip.getClipSlot();
+    if (!slot || slot->getIndex() != targetIt->second.sceneIndex)
+        return false;
+
+    const auto audioFile = audioClip.getOriginalFile();
+    if (!audioFile.existsAsFile())
+        return false;
+
+    double lengthBeats = audioClip.getLengthBeats().inBeats();
+    lengthBeats = snapLengthToBars(*this, lengthBeats);
+
+    const double projectBpm = getTempo() > 0.0 ? getTempo() : 120.0;
+    if (auto* edit = currentEdit_.get()) {
+        auto end = edit->tempoSequence.toTime(tracktion::BeatPosition::fromBeats(lengthBeats));
+        audioClip.setLength(tracktion::toDuration(end), false);
+
+        auto waveInfo = audioClip.getWaveInfo();
+        auto& loopInfo = audioClip.getLoopInfo();
+        loopInfo.setBpm(projectBpm, waveInfo);
+        loopInfo.setNumBeats(lengthBeats);
+        audioClip.setAutoTempo(true);
+        audioClip.setLoopRangeBeats({tracktion::BeatPosition::fromBeats(0.0),
+                                     tracktion::BeatPosition::fromBeats(lengthBeats)});
+
+        if (auto launchHandle = audioClip.getLaunchHandle())
+            launchHandle->setLooping(tracktion::BeatDuration::fromBeats(lengthBeats));
+    }
+
+    auto& clipManager = ClipManager::getInstance();
+    ClipId clipId = clipManager.getClipInSlot(trackId, targetIt->second.sceneIndex);
+    if (clipId == INVALID_CLIP_ID) {
+        clipId = clipManager.createAudioClipBeats(
+            trackId, 0.0, lengthBeats, audioFile.getFullPathName(), ClipView::Session, projectBpm);
+        if (clipId != INVALID_CLIP_ID)
+            clipManager.setClipSceneIndex(clipId, targetIt->second.sceneIndex);
+    }
+
+    if (auto* clipInfo = clipManager.getClip(clipId)) {
+        clipInfo->setPlacementBeats(0.0, lengthBeats);
+        clipInfo->deriveTimesFromBeats(projectBpm);
+        clipInfo->autoTempo = true;
+        clipInfo->loopEnabled = true;
+        clipInfo->loopStartBeats = 0.0;
+        clipInfo->loopLengthBeats = lengthBeats;
+        clipInfo->loopStart = 0.0;
+        clipInfo->loopLength = clipInfo->getTimelineLength(projectBpm);
+        clipInfo->audio().interpretation.bpm = projectBpm;
+        clipInfo->audio().interpretation.totalBeats = lengthBeats;
+        clipInfo->audio().interpretation.totalBeatsLocked = true;
+        clipManager.forceNotifyClipPropertyChanged(clipId);
+        SelectionManager::getInstance().selectClip(clipId);
+    }
+
+    activeRecordingClips_[trackId] = clipId;
+    recordingPreviews_.erase(trackId);
+    if (audioBridge_)
+        audioBridge_->setSessionSlotAudioRecordingTarget(trackId, targetIt->second.sceneIndex,
+                                                         false);
+    sessionSlotRecordingTargets_.erase(targetIt);
+    return true;
 }
 
 bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
