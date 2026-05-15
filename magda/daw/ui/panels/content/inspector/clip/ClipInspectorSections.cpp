@@ -1183,16 +1183,11 @@ void ClipInspector::initSessionLaunchSection() {
     clipPropsContainer_.addChildComponent(followActionDelayLabel_);
 
     followActionDelaySlider_.setRange(0.0, 64.0, 0.25);
-    followActionDelaySlider_.setSliderStyle(juce::Slider::LinearHorizontal);
-    followActionDelaySlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 20);
-    followActionDelaySlider_.setColour(juce::Slider::trackColourId,
-                                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    followActionDelaySlider_.setColour(juce::Slider::backgroundColourId,
-                                       DarkTheme::getColour(DarkTheme::SURFACE));
-    followActionDelaySlider_.onValueChange = [this]() {
+    followActionDelaySlider_.setOrientation(TextSlider::Orientation::Horizontal);
+    followActionDelaySlider_.setDefaultValue(0.0);
+    followActionDelaySlider_.onValueChanged = [this](double delayBeats) {
         if (selectedClipIds_.empty())
             return;
-        const double delayBeats = followActionDelaySlider_.getValue();
         magda::ClipBatchEdit batch("Set Clip Follow Delay", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
@@ -1210,16 +1205,17 @@ void ClipInspector::initSessionLaunchSection() {
     clipPropsContainer_.addChildComponent(followActionLoopCountLabel_);
 
     followActionLoopCountSlider_.setRange(1.0, 64.0, 1.0);
-    followActionLoopCountSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
-    followActionLoopCountSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 20);
-    followActionLoopCountSlider_.setColour(juce::Slider::trackColourId,
-                                           DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    followActionLoopCountSlider_.setColour(juce::Slider::backgroundColourId,
-                                           DarkTheme::getColour(DarkTheme::SURFACE));
-    followActionLoopCountSlider_.onValueChange = [this]() {
+    followActionLoopCountSlider_.setOrientation(TextSlider::Orientation::Horizontal);
+    followActionLoopCountSlider_.setDefaultValue(1.0);
+    followActionLoopCountSlider_.setValueFormatter(
+        [](double value) { return juce::String(static_cast<int>(std::round(value))); });
+    followActionLoopCountSlider_.setValueParser([](const juce::String& text) {
+        return static_cast<double>(static_cast<int>(std::round(text.getDoubleValue())));
+    });
+    followActionLoopCountSlider_.onValueChanged = [this](double value) {
         if (selectedClipIds_.empty())
             return;
-        const int loopCount = static_cast<int>(std::round(followActionLoopCountSlider_.getValue()));
+        const int loopCount = static_cast<int>(std::round(value));
         magda::ClipBatchEdit batch("Set Clip Follow Loops", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             batch.execute(std::make_unique<magda::SetClipPropertyCommand>(

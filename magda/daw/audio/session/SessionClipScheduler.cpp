@@ -76,9 +76,14 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
             return;
         }
 
-        // Session clips always loop
-        if (!clip->loopEnabled)
-            cm.getClip(clipId)->loopEnabled = true;
+        // Session clips always loop. Route through ClipManager so Tracktion
+        // state is resynced before launch if an old project has loop disabled.
+        if (!clip->loopEnabled) {
+            cm.setClipLoopEnabled(clipId, true);
+            clip = cm.getClip(clipId);
+            if (!clip || clip->view != ClipView::Session)
+                return;
+        }
 
         // Ensure the audio-thread monitor plugin is installed
         audioBridge_.ensureSessionMonitorPlugin();

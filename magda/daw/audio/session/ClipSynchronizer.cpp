@@ -57,8 +57,12 @@ te::FollowAction toTracktionFollowAction(FollowAction action) {
     return te::FollowAction::none;
 }
 
+bool isSessionLooping(const ClipInfo& clip) {
+    return clip.view == ClipView::Session || clip.loopEnabled;
+}
+
 double followActionBaseLengthBeats(const ClipInfo& clip, double bpm) {
-    if (clip.loopEnabled) {
+    if (isSessionLooping(clip)) {
         if (clip.isAudio() && clip.autoTempo) {
             auto [_, loopLengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, bpm);
             if (loopLengthBeats > 0.0)
@@ -125,7 +129,7 @@ bool syncFollowActionToTracktionClip(te::Clip& teClip, const ClipInfo& clip, dou
 
     const double baseBeats = followActionBaseLengthBeats(clip, bpm);
     const int loopCount = juce::jmax(1, clip.followActionLoopCount);
-    const double durationBeats = (clip.loopEnabled ? baseBeats * loopCount : baseBeats) +
+    const double durationBeats = (isSessionLooping(clip) ? baseBeats * loopCount : baseBeats) +
                                  juce::jmax(0.0, clip.followActionDelayBeats);
     const auto duration = te::BeatDuration::fromBeats(juce::jmax(0.0, durationBeats));
     if (std::abs(teClip.followActionBeats.get().inBeats() - duration.inBeats()) > 0.0001) {

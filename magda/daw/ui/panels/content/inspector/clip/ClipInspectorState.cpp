@@ -445,8 +445,8 @@ void ClipInspector::updateFromSelectedClip() {
             isSessionClip && clip->followAction != magda::FollowAction::None;
         followActionDelayLabel_.setVisible(showFollowControls);
         followActionDelaySlider_.setVisible(showFollowControls);
-        followActionLoopCountLabel_.setVisible(showFollowControls && clip->loopEnabled);
-        followActionLoopCountSlider_.setVisible(showFollowControls && clip->loopEnabled);
+        followActionLoopCountLabel_.setVisible(showFollowControls);
+        followActionLoopCountSlider_.setVisible(showFollowControls);
 
         if (isSessionClip) {
             launchQuantizeCombo_.setSelectedId(static_cast<int>(clip->launchQuantize) + 1,
