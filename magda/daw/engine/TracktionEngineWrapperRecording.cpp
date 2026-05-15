@@ -248,6 +248,152 @@ void TracktionEngineWrapper::drainRecordingNoteQueue() {
     }
 }
 
+void TracktionEngineWrapper::armSessionSlotRecording(TrackId trackId, int sceneIndex) {
+    if (trackId == INVALID_TRACK_ID || sceneIndex < 0)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+    if (clipManager.getClipInSlot(trackId, sceneIndex) != INVALID_CLIP_ID)
+        return;
+
+    auto it = sessionSlotRecordingTargets_.find(trackId);
+    if (it != sessionSlotRecordingTargets_.end() && it->second.sceneIndex == sceneIndex &&
+        !it->second.active) {
+        sessionSlotRecordingTargets_.erase(it);
+        recordingPreviews_.erase(trackId);
+        return;
+    }
+
+    SessionSlotRecordingTarget target;
+    target.sceneIndex = sceneIndex;
+    sessionSlotRecordingTargets_[trackId] = target;
+}
+
+bool TracktionEngineWrapper::isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const {
+    auto it = sessionSlotRecordingTargets_.find(trackId);
+    return it != sessionSlotRecordingTargets_.end() && it->second.sceneIndex == sceneIndex;
+}
+
+bool TracktionEngineWrapper::isSessionSlotRecording(TrackId trackId, int sceneIndex) const {
+    auto it = sessionSlotRecordingTargets_.find(trackId);
+    return it != sessionSlotRecordingTargets_.end() && it->second.sceneIndex == sceneIndex &&
+           it->second.active;
+}
+
+bool TracktionEngineWrapper::hasActiveSessionSlotRecordings() const {
+    for (const auto& [trackId, target] : sessionSlotRecordingTargets_) {
+        juce::ignoreUnused(trackId);
+        if (target.active)
+            return true;
+    }
+    return false;
+}
+
+void TracktionEngineWrapper::beginArmedSessionSlotRecordings(double positionSeconds) {
+    if (sessionSlotRecordingTargets_.empty())
+        return;
+
+    bool startedAny = false;
+    auto& clipManager = ClipManager::getInstance();
+
+    for (auto it = sessionSlotRecordingTargets_.begin();
+         it != sessionSlotRecordingTargets_.end();) {
+        TrackId trackId = it->first;
+        auto& target = it->second;
+
+        if (target.active) {
+            ++it;
+            continue;
+        }
+
+        if (clipManager.getClipInSlot(trackId, target.sceneIndex) != INVALID_CLIP_ID) {
+            it = sessionSlotRecordingTargets_.erase(it);
+            continue;
+        }
+
+        const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+        if (!trackInfo || !trackInfo->recordArmed) {
+            ++it;
+            continue;
+        }
+
+        target.active = true;
+        target.startTime = positionSeconds;
+
+        RecordingPreview preview;
+        preview.trackId = trackId;
+        preview.startTime = positionSeconds;
+        preview.currentLength = 0.0;
+        preview.isAudioRecording = false;
+        recordingPreviews_[trackId] = std::move(preview);
+        startedAny = true;
+        ++it;
+    }
+
+    if (startedAny)
+        recordingNoteQueue_.clear();
+}
+
+void TracktionEngineWrapper::commitSessionSlotRecordings(double stopPositionSeconds) {
+    if (!hasActiveSessionSlotRecordings())
+        return;
+
+    drainRecordingNoteQueue();
+
+    const double tempo = getTempo() > 0.0 ? getTempo() : 120.0;
+    const double beatsPerSecond = tempo / 60.0;
+    auto& clipManager = ClipManager::getInstance();
+
+    for (auto it = sessionSlotRecordingTargets_.begin();
+         it != sessionSlotRecordingTargets_.end();) {
+        TrackId trackId = it->first;
+        const auto target = it->second;
+
+        if (!target.active) {
+            ++it;
+            continue;
+        }
+
+        auto previewIt = recordingPreviews_.find(trackId);
+        const double measuredLengthSeconds =
+            previewIt != recordingPreviews_.end() ? previewIt->second.currentLength : 0.0;
+        const double transportLengthSeconds =
+            juce::jmax(0.0, stopPositionSeconds - target.startTime);
+        const double lengthSeconds = juce::jmax(measuredLengthSeconds, transportLengthSeconds);
+        const double lengthBeats = juce::jmax(0.25, lengthSeconds * beatsPerSecond);
+
+        ClipId clipId =
+            clipManager.createMidiClipBeats(trackId, 0.0, lengthBeats, ClipView::Session);
+        if (clipId != INVALID_CLIP_ID) {
+            clipManager.setClipSceneIndex(clipId, target.sceneIndex);
+            if (auto* clip = clipManager.getClip(clipId)) {
+                clip->midiNotes.clear();
+                if (previewIt != recordingPreviews_.end()) {
+                    for (auto note : previewIt->second.notes) {
+                        if (note.startBeat >= lengthBeats)
+                            continue;
+                        if (note.lengthBeats < 0.0)
+                            note.lengthBeats = lengthBeats - note.startBeat;
+                        if (note.startBeat + note.lengthBeats > lengthBeats)
+                            note.lengthBeats = lengthBeats - note.startBeat;
+                        if (note.lengthBeats >= 0.01)
+                            clip->midiNotes.push_back(note);
+                    }
+                }
+                clip->loopEnabled = true;
+                clip->loopLengthBeats = clip->placement.lengthBeats;
+                clip->loopLength = clip->getTimelineLength(tempo);
+            }
+            clipManager.forceNotifyClipPropertyChanged(clipId);
+            if (audioBridge_)
+                audioBridge_->syncSessionClipToSlot(clipId);
+        }
+
+        recordingPreviews_.erase(trackId);
+        it = sessionSlotRecordingTargets_.erase(it);
+    }
+}
+
 void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
     pendingFinalizeMidi_.erase(trackId);
 

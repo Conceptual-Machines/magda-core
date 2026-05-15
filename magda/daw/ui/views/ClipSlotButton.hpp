@@ -35,6 +35,8 @@ class ClipSlotButton : public juce::TextButton {
     bool blinkOn = false;       // Toggled by SessionView timer for queued blink
     bool isSelected = false;
     bool trackIsRecordArmed = false;
+    bool slotRecordArmed = false;
+    bool slotIsRecording = false;
     double clipLength = 0.0;           // Clip duration in seconds (for progress bar)
     double sessionPlayheadPos = -1.0;  // Looped playhead position in seconds
 
@@ -286,9 +288,22 @@ class ClipSlotButton : public juce::TextButton {
 
             if (trackIsRecordArmed) {
                 float radius = 5.0f;
-                g.setColour(DarkTheme::getColour(DarkTheme::STATUS_DANGER));
-                g.fillEllipse(centre.getX() - radius, centre.getY() - radius, radius * 2.0f,
-                              radius * 2.0f);
+                auto recordColour = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
+                if (slotIsRecording && !blinkOn)
+                    recordColour = recordColour.withAlpha(0.35f);
+
+                if (slotRecordArmed || slotIsRecording) {
+                    g.setColour(recordColour.withAlpha(slotIsRecording ? 0.95f : 0.25f));
+                    g.fillEllipse(centre.getX() - radius, centre.getY() - radius, radius * 2.0f,
+                                  radius * 2.0f);
+                    g.setColour(recordColour);
+                    g.drawEllipse(centre.getX() - radius - 2.0f, centre.getY() - radius - 2.0f,
+                                  (radius + 2.0f) * 2.0f, (radius + 2.0f) * 2.0f, 1.5f);
+                } else {
+                    g.setColour(recordColour.withAlpha(0.7f));
+                    g.fillEllipse(centre.getX() - radius, centre.getY() - radius, radius * 2.0f,
+                                  radius * 2.0f);
+                }
             } else {
                 // Stop square. While a quantized row-stop is in flight,
                 // blink the icon on each beat — same affordance as the

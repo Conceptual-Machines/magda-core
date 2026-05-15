@@ -377,6 +377,7 @@ void TracktionEngineWrapper::onTransportStop(double returnPosition) {
     // transport.stop() triggers recordingFinished() synchronously per device,
     // which populates activeRecordingClips_ for cross-device dedup.
     stop();
+    commitSessionSlotRecordings(stopPosition);
 
     // For any track that was recording but got 0 clips from TE (blank MIDI recording),
     // create an empty MIDI clip ourselves — but only if the track has MIDI input configured.
@@ -436,6 +437,11 @@ void TracktionEngineWrapper::onTransportRecord(double position) {
         // Clip triggering is handled by the session UI, not the transport.
         if (sessionRecorder_)
             sessionRecorder_->setArmed(true);
+        beginArmedSessionSlotRecordings(position);
+        if (hasActiveSessionSlotRecordings() && !isPlaying()) {
+            locate(position);
+            play();
+        }
     } else {
         // Arrangement mode: arm session recorder + start transport + TE recording
         // so MIDI/audio input is captured on armed tracks.
@@ -456,6 +462,8 @@ void TracktionEngineWrapper::onTransportStopRecording() {
         sessionRecorder_->commitIfNeeded();
         sessionRecorder_->setArmed(false);
     }
+
+    commitSessionSlotRecordings(getCurrentPosition());
 
     // If TE is actually recording (arrangement mode used transport.record()),
     // stop it and handle the clip creation for blank MIDI tracks.

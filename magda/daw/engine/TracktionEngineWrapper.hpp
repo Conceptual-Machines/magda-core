@@ -78,6 +78,10 @@ class TracktionEngineWrapper : public AudioEngine,
     bool isSessionTrackStopPending(TrackId trackId) const override;
     double getAudioThreadTransportSeconds() const override;
     void deactivateAllSessionClips() override;
+    void armSessionSlotRecording(TrackId trackId, int sceneIndex) override;
+    void beginArmedSessionSlotRecordings(double positionSeconds) override;
+    bool isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const override;
+    bool isSessionSlotRecording(TrackId trackId, int sceneIndex) const override;
     void setTempo(double bpm) override;
     double getTempo() const override;
     void setTimeSignature(int numerator, int denominator) override;
@@ -540,6 +544,15 @@ class TracktionEngineWrapper : public AudioEngine,
     std::atomic<double> transportPositionForMidi_{0.0};
     std::unordered_map<TrackId, RecordingPreview> recordingPreviews_;
     void drainRecordingNoteQueue();
+
+    struct SessionSlotRecordingTarget {
+        int sceneIndex = -1;
+        bool active = false;
+        double startTime = 0.0;
+    };
+    std::unordered_map<TrackId, SessionSlotRecordingTarget> sessionSlotRecordingTargets_;
+    bool hasActiveSessionSlotRecordings() const;
+    void commitSessionSlotRecordings(double stopPositionSeconds);
 
     // Device loading state
     bool devicesLoading_ = true;  // Start as loading until first scan completes

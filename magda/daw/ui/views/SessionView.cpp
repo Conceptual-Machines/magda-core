@@ -2424,6 +2424,36 @@ void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, in
         if (audioEngine_)
             audioEngine_->stopSessionTrack(visibleTrackIds_[trackIndex]);
     };
+    slot.onEmptySlotRecordClick = [this, trackIndex, sceneIndex]() {
+        if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size()))
+            return;
+        if (!audioEngine_)
+            return;
+
+        const TrackId trackId = visibleTrackIds_[trackIndex];
+        audioEngine_->armSessionSlotRecording(trackId, sceneIndex);
+        updateClipSlotAppearance(trackIndex, sceneIndex);
+
+        if (!audioEngine_->isSessionSlotRecordArmed(trackId, sceneIndex))
+            return;
+
+        if (timelineController_) {
+            const auto& state = timelineController_->getState();
+            if (state.playhead.isRecording) {
+                audioEngine_->beginArmedSessionSlotRecordings(state.playhead.playbackPosition);
+                if (!audioEngine_->isPlaying()) {
+                    audioEngine_->locate(state.playhead.playbackPosition);
+                    audioEngine_->play();
+                }
+            } else {
+                timelineController_->dispatch(StartRecordEvent{});
+            }
+        } else {
+            audioEngine_->beginArmedSessionSlotRecordings(audioEngine_->getCurrentPosition());
+        }
+
+        updateClipSlotAppearance(trackIndex, sceneIndex);
+    };
     slot.onDoubleClick = [this, trackIndex, sceneIndex]() {
         openClipEditor(trackIndex, sceneIndex);
     };
@@ -3098,6 +3128,8 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         slot->hasChildClips = anyClips;
         slot->childClipIsPlaying = anyPlaying;
         slot->hasClip = false;
+        slot->slotRecordArmed = false;
+        slot->slotIsRecording = false;
         slot->setButtonText("");
         slot->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
         slot->repaint();
@@ -3123,6 +3155,8 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             slot->clipId = clipId;
             slot->clipIsPlaying = (playState == SessionClipPlayState::Playing);
             slot->clipIsQueued = (playState == SessionClipPlayState::Queued);
+            slot->slotRecordArmed = false;
+            slot->slotIsRecording = false;
             slot->isSelected = SelectionManager::getInstance().isClipSelected(clipId);
             // Issue #1157: read through the accessor — for autoTempo clips
             // this computes lengthBeats × 60 / projectBPM live, so the slot
@@ -3159,6 +3193,10 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         slot->clipId = INVALID_CLIP_ID;
         slot->clipIsPlaying = false;
         slot->clipIsQueued = false;
+        slot->slotRecordArmed =
+            audioEngine_ != nullptr && audioEngine_->isSessionSlotRecordArmed(trackId, sceneIndex);
+        slot->slotIsRecording =
+            audioEngine_ != nullptr && audioEngine_->isSessionSlotRecording(trackId, sceneIndex);
         slot->stopIsQueued =
             audioEngine_ != nullptr && audioEngine_->isSessionTrackStopPending(trackId);
         slot->isSelected = false;
@@ -3429,6 +3467,9 @@ void SessionView::timerCallback() {
                 if (!slot)
                     continue;
                 if (slot->clipIsQueued) {
+                    slot->blinkOn = newBlinkOn;
+                    slot->repaint();
+                } else if (!slot->hasClip && slot->slotIsRecording) {
                     slot->blinkOn = newBlinkOn;
                     slot->repaint();
                 } else if (!slot->hasClip && !slot->trackIsRecordArmed) {
