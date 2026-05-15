@@ -24,6 +24,7 @@
 #include "core/UndoManager.hpp"
 #include "state/PanelController.hpp"
 #include "ui/components/common/TimeBendPopup.hpp"
+#include "ui/components/common/Toast.hpp"
 
 namespace magda {
 
@@ -442,6 +443,23 @@ void BottomPanel::setupHeaderControls() {
     };
     addChildComponent(snapButton_.get());
 
+    // Note slice button (dual icon: off=grey, on=blue when notes selected)
+    sliceButton_ = std::make_unique<SvgButton>(
+        "NoteSlice", BinaryData::note_slice_off_svg, BinaryData::note_slice_off_svgSize,
+        BinaryData::note_slice_on_svg, BinaryData::note_slice_on_svgSize);
+    sliceButton_->setTooltip("Slice selected notes");
+    sliceButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    sliceButton_->setBorderThickness(1.0f);
+    sliceButton_->setCornerRadius(3.0f);
+    sliceButton_->onClick = []() {
+        const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
+        if (!noteSel.isValid() || noteSel.noteIndices.empty())
+            return;
+
+        daw::ui::Toast::showGlobal("Slice preview is not implemented yet");
+    };
+    addChildComponent(sliceButton_.get());
+
     // Time bend button (dual icon: off=grey, on=blue when notes selected)
     bendButton_ = std::make_unique<SvgButton>(
         "TimeBend", BinaryData::time_bend_off_svg, BinaryData::time_bend_off_svgSize,
@@ -490,8 +508,10 @@ void BottomPanel::paint(juce::Graphics& g) {
 
         // Update bend button active state based on note selection
         const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
-        bool hasNotes = noteSel.isValid() && noteSel.noteIndices.size() >= 2;
-        bendButton_->setActive(hasNotes);
+        bool hasAnyNotes = noteSel.isValid() && !noteSel.noteIndices.empty();
+        bool hasBendNotes = noteSel.isValid() && noteSel.noteIndices.size() >= 2;
+        sliceButton_->setActive(hasAnyNotes);
+        bendButton_->setActive(hasBendNotes);
     }
 
     // Vertical border on the left of the collapsed side panel strip
@@ -890,6 +910,7 @@ void BottomPanel::addMidiControlsToHeader() {
     if (showEditorTabs_) {
         headerBar_->addAndMakeVisible(pianoRollTab_.get());
         headerBar_->addAndMakeVisible(drumGridTab_.get());
+        headerBar_->addAndMakeVisible(sliceButton_.get());
         headerBar_->addAndMakeVisible(bendButton_.get());
     }
 }
@@ -904,6 +925,7 @@ void BottomPanel::removeMidiControlsFromHeader() {
     addChildComponent(snapButton_.get());
     addChildComponent(pianoRollTab_.get());
     addChildComponent(drumGridTab_.get());
+    addChildComponent(sliceButton_.get());
     addChildComponent(bendButton_.get());
 }
 
@@ -940,11 +962,17 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
         tabX += iconSize + 4;
         drumGridTab_->setBounds(tabX, tabY, iconSize, iconSize);
 
-        // Time bend button centered horizontally in header
-        bendButton_->setBounds((headerBounds.getCentreX() - iconSize / 2), tabY, iconSize,
-                               iconSize);
+        // Note tools centered horizontally in header
+        const int toolGap = 4;
+        const int toolsWidth = iconSize * 2 + toolGap;
+        int toolX = headerBounds.getCentreX() - toolsWidth / 2;
+        sliceButton_->setBounds(toolX, tabY, iconSize, iconSize);
+        toolX += iconSize + toolGap;
+        bendButton_->setBounds(toolX, tabY, iconSize, iconSize);
+        sliceButton_->setVisible(true);
         bendButton_->setVisible(true);
     } else {
+        sliceButton_->setVisible(false);
         bendButton_->setVisible(false);
     }
 }
