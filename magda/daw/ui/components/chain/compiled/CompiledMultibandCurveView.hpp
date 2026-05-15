@@ -48,6 +48,10 @@ class CompiledMultibandCurveView final : public juce::Component,
     void setOnParameterChanged(std::function<void(int, float)> cb) override {
         onParameterChanged = std::move(cb);
     }
+    void setOnLayoutChanged(std::function<void()> cb) override {
+        onLayoutChanged_ = std::move(cb);
+    }
+    bool wantsFullBody() const override;
     int preferredHeight() const override {
         return getPreferredHeight();
     }
@@ -62,6 +66,7 @@ class CompiledMultibandCurveView final : public juce::Component,
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseMove(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
   private:
     enum class Handle {
@@ -97,6 +102,11 @@ class CompiledMultibandCurveView final : public juce::Component,
     /// the cursor isn't close enough to any editable line.
     Handle pickHandle(float x, float y) const;
 
+    /// Returns the band index (0=low, 1=mid, 2=high) for a given x position,
+    /// or -1 if outside the plot area.
+    int bandAtX(float x) const;
+    int ratioSlotForBand(int band) const;
+
     magda::daw::audio::compiled::MagdaMultibandCompiledPlugin* compiledPlugin_ = nullptr;
     magda::DeviceInfo deviceSnapshot_;
 
@@ -104,10 +114,16 @@ class CompiledMultibandCurveView final : public juce::Component,
     float highXoHz_ = 2500.0f;
     std::array<float, 3> threshAboveDb_{{-24.0f, -24.0f, -24.0f}};
     std::array<float, 3> threshBelowDb_{{-48.0f, -48.0f, -48.0f}};
-    std::array<float, 3> ratios_{{4.0f, 4.0f, 4.0f}};
+    std::array<float, 3> ratios_{{8.0f, 8.0f, 8.0f}};
     Handle hoveredHandle_ = Handle::None;
     Handle draggedHandle_ = Handle::None;
     juce::Rectangle<float> plotArea_;
+
+    juce::Rectangle<float> collapseButtonArea_;
+    bool collapseButtonHovered_ = false;
+    int ratioScrollBand_ = -1;  // band receiving scroll ratio, -1 = none
+
+    std::function<void()> onLayoutChanged_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompiledMultibandCurveView)
 };

@@ -13,6 +13,8 @@ namespace {
 constexpr float kPlotPadX = 8.0f;
 constexpr float kPlotPadY = 8.0f;
 constexpr int kPollMs = 33;
+constexpr float kCollapseButtonSize = 18.0f;
+constexpr float kCollapseButtonMargin = 4.0f;
 constexpr float kMinFreq = 20.0f;
 constexpr float kMaxFreq = 20000.0f;
 constexpr float kHandlePickPx = 8.0f;  // mouse must be within 8 px of a line
@@ -145,6 +147,36 @@ void CompiledMultibandCurveView::resampleFromPlugin() {
     ratios_ = {{valueForSlot(deviceSnapshot_, Mb::kLowRatioSlot, ratios_[0]),
                 valueForSlot(deviceSnapshot_, Mb::kMidRatioSlot, ratios_[1]),
                 valueForSlot(deviceSnapshot_, Mb::kHighRatioSlot, ratios_[2])}};
+}
+
+bool CompiledMultibandCurveView::wantsFullBody() const {
+    return compiledPlugin_ != nullptr && compiledPlugin_->isCurveCollapsed();
+}
+
+int CompiledMultibandCurveView::bandAtX(float x) const {
+    if (!plotArea_.getWidth())
+        return -1;
+    if (x < plotArea_.getX() || x > plotArea_.getRight())
+        return -1;
+    if (x < freqToX(lowXoHz_))
+        return 0;
+    if (x < freqToX(highXoHz_))
+        return 1;
+    return 2;
+}
+
+int CompiledMultibandCurveView::ratioSlotForBand(int band) const {
+    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
+    switch (band) {
+        case 0:
+            return Mb::kLowRatioSlot;
+        case 1:
+            return Mb::kMidRatioSlot;
+        case 2:
+            return Mb::kHighRatioSlot;
+        default:
+            return -1;
+    }
 }
 
 float CompiledMultibandCurveView::xToFreq(float x) const {
@@ -280,6 +312,21 @@ CompiledMultibandCurveView::Handle CompiledMultibandCurveView::pickHandle(float 
 void CompiledMultibandCurveView::mouseMove(const juce::MouseEvent& e) {
     if (draggedHandle_ != Handle::None)
         return;
+
+    const bool overChevron = collapseButtonArea_.contains(e.position);
+    if (overChevron != collapseButtonHovered_) {
+        collapseButtonHovered_ = overChevron;
+        repaint();
+    }
+    if (overChevron) {
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+        if (hoveredHandle_ != Handle::None) {
+            hoveredHandle_ = Handle::None;
+            repaint();
+        }
+        return;
+    }
+
     const auto picked = pickHandle(static_cast<float>(e.x), static_cast<float>(e.y));
     if (picked != hoveredHandle_) {
         hoveredHandle_ = picked;
@@ -292,14 +339,35 @@ void CompiledMultibandCurveView::mouseMove(const juce::MouseEvent& e) {
 }
 
 void CompiledMultibandCurveView::mouseExit(const juce::MouseEvent&) {
+    bool needsRepaint = false;
     if (hoveredHandle_ != Handle::None && draggedHandle_ == Handle::None) {
         hoveredHandle_ = Handle::None;
         setMouseCursor(juce::MouseCursor::NormalCursor);
-        repaint();
+        needsRepaint = true;
     }
+    if (collapseButtonHovered_) {
+        collapseButtonHovered_ = false;
+        needsRepaint = true;
+    }
+    if (ratioScrollBand_ != -1) {
+        ratioScrollBand_ = -1;
+        needsRepaint = true;
+    }
+    if (needsRepaint)
+        repaint();
 }
 
 void CompiledMultibandCurveView::mouseDown(const juce::MouseEvent& e) {
+    if (collapseButtonArea_.contains(e.position)) {
+        if (compiledPlugin_ != nullptr) {
+            compiledPlugin_->setCurveCollapsed(!compiledPlugin_->isCurveCollapsed());
+            if (onLayoutChanged_)
+                onLayoutChanged_();
+            repaint();
+        }
+        return;
+    }
+
     const auto picked = pickHandle(static_cast<float>(e.x), static_cast<float>(e.y));
     if (picked == Handle::None)
         return;
@@ -382,6 +450,31 @@ void CompiledMultibandCurveView::mouseUp(const juce::MouseEvent& e) {
                               ? juce::MouseCursor::UpDownResizeCursor
                               : juce::MouseCursor::LeftRightResizeCursor));
     repaint();
+}
+
+void CompiledMultibandCurveView::mouseWheelMove(const juce::MouseEvent& e,
+                                                const juce::MouseWheelDetails& wheel) {
+    const int band = bandAtX(static_cast<float>(e.x));
+    if (band < 0)
+        return;
+
+    const int slot = ratioSlotForBand(band);
+    if (slot < 0)
+        return;
+
+    constexpr float kRatioStep = 0.5f;
+    constexpr float kRatioMin = 1.0f;
+    constexpr float kRatioMax = 20.0f;
+    const auto index = static_cast<size_t>(band);
+    const float delta = wheel.deltaY > 0.0f ? kRatioStep : -kRatioStep;
+    const float newRatio = juce::jlimit(kRatioMin, kRatioMax, ratios_[index] + delta);
+    if (std::fabs(newRatio - ratios_[index]) > 0.01f) {
+        ratios_[index] = newRatio;
+        ratioScrollBand_ = band;
+        if (onParameterChanged)
+            onParameterChanged(slot, newRatio);
+        repaint();
+    }
 }
 
 void CompiledMultibandCurveView::paint(juce::Graphics& g) {
@@ -518,6 +611,59 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
     };
     drawLabel(lowX, lowXoHz_, Handle::LowXo);
     drawLabel(highX, highXoHz_, Handle::HighXo);
+
+    // Ratio labels — shown for the band being scrolled, or as small
+    // permanent labels when no threshold/crossover handle is active.
+    g.setFont(10.0f);
+    for (int band = 0; band < 3; ++band) {
+        const float x0 = bandEdges[static_cast<size_t>(band)];
+        const float x1 = bandEdges[static_cast<size_t>(band + 1)];
+        if (x1 <= x0 + 2.0f)
+            continue;
+        const auto index = static_cast<size_t>(band);
+        const bool isScrollBand = (ratioScrollBand_ == band);
+        const float alpha = isScrollBand ? 0.95f : 0.45f;
+        g.setColour(bandColours[index].withAlpha(alpha));
+        const juce::String label = isScrollBand ? ("R: " + juce::String(ratios_[index], 1))
+                                                : juce::String(ratios_[index], 1);
+        const float cx = (x0 + x1) * 0.5f;
+        const int textW = isScrollBand ? 52 : 36;
+        const float lx = juce::jlimit(plot.getX() + 2.0f, plot.getRight() - textW - 2.0f,
+                                      cx - static_cast<float>(textW) * 0.5f);
+        g.drawText(
+            label,
+            juce::Rectangle<float>(lx, plot.getBottom() - 16.0f, static_cast<float>(textW), 14.0f)
+                .toNearestInt(),
+            juce::Justification::centred);
+    }
+
+    // Collapse toggle — chevron in the top-right corner of the plot area.
+    collapseButtonArea_ = juce::Rectangle<float>(
+        plot.getRight() - kCollapseButtonSize - kCollapseButtonMargin,
+        plot.getY() + kCollapseButtonMargin, kCollapseButtonSize, kCollapseButtonSize);
+
+    const bool collapsed = compiledPlugin_ != nullptr && compiledPlugin_->isCurveCollapsed();
+    const auto chevronColour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
+                                   .withAlpha(collapseButtonHovered_ ? 0.95f : 0.55f);
+    if (collapseButtonHovered_) {
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.08f));
+        g.fillRoundedRectangle(collapseButtonArea_, 3.0f);
+    }
+    const auto centre = collapseButtonArea_.getCentre();
+    const float armLen = kCollapseButtonSize * 0.28f;
+    juce::Path chevron;
+    if (collapsed) {
+        chevron.startNewSubPath(centre.x - armLen, centre.y + armLen * 0.5f);
+        chevron.lineTo(centre.x, centre.y - armLen * 0.5f);
+        chevron.lineTo(centre.x + armLen, centre.y + armLen * 0.5f);
+    } else {
+        chevron.startNewSubPath(centre.x - armLen, centre.y - armLen * 0.5f);
+        chevron.lineTo(centre.x, centre.y + armLen * 0.5f);
+        chevron.lineTo(centre.x + armLen, centre.y - armLen * 0.5f);
+    }
+    g.setColour(chevronColour);
+    g.strokePath(chevron, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
 }
 
 const CompiledPresentationSpec& getMagdaMultibandPresentation() {

@@ -86,6 +86,13 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     using HostSlotInfo = CompiledHostSlotInfo;
     const HostSlotInfo& getSlotInfo(int slotIndex) const;
 
+    bool isCurveCollapsed() const {
+        return curveCollapsed_.get();
+    }
+    void setCurveCollapsed(bool collapsed) {
+        curveCollapsed_ = collapsed;
+    }
+
     // ICompiledFaustPlugin
     int hostSlotCount() const override {
         return kHostSlotCount;
@@ -116,6 +123,7 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
     std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
     std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
+    juce::CachedValue<bool> curveCollapsed_;
 
     juce::AudioBuffer<float> scratchIn_;
     juce::AudioBuffer<float> scratchOut_;

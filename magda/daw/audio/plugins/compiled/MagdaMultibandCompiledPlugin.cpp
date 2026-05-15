@@ -230,7 +230,7 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
                                                     .scale = magda::ParameterScale::Linear,
                                                     .minValue = 1.0f,
                                                     .maxValue = 20.0f,
-                                                    .defaultValue = 4.0f};
+                                                    .defaultValue = 8.0f};
     };
 
     setThreshAbove(kLowThreshAboveSlot, "Low Thresh Above");
@@ -242,6 +242,9 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
     setThreshAbove(kHighThreshAboveSlot, "High Thresh Above");
     setThreshBelow(kHighThreshBelowSlot, "High Thresh Below");
     setRatio(kHighRatioSlot, "High Ratio");
+
+    curveCollapsed_.referTo(state, juce::Identifier("magda_multiband_curve_collapsed"),
+                            getUndoManager(), true);
 
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
