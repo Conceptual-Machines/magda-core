@@ -495,6 +495,7 @@ void PluginManager::purgeStaleEntries() {
     // Purge stale entries from maps
     int purged = 0;
     std::vector<te::Plugin::Ptr> pluginsToDelete;
+    std::vector<te::Plugin*> monitorPluginsToDelete;
     {
         juce::ScopedLock lock(pluginLock_);
 
@@ -522,7 +523,7 @@ void PluginManager::purgeStaleEntries() {
         for (auto it = sidechainMonitors_.begin(); it != sidechainMonitors_.end();) {
             if (validTrackIds.find(it->first) == validTrackIds.end()) {
                 if (it->second)
-                    pluginsToDelete.push_back(it->second);
+                    monitorPluginsToDelete.push_back(it->second.get());
                 it = sidechainMonitors_.erase(it);
             } else {
                 ++it;
@@ -533,6 +534,10 @@ void PluginManager::purgeStaleEntries() {
     // Delete plugins outside the lock to avoid blocking and re-entrancy
     for (auto& plugin : pluginsToDelete) {
         plugin->deleteFromParent();
+    }
+    for (auto* plugin : monitorPluginsToDelete) {
+        if (plugin)
+            plugin->deleteFromParent();
     }
 
     // Remove stale synced racks

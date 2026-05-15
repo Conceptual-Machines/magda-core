@@ -86,6 +86,7 @@ void PluginManager::syncAllPlugins() {
     {
         std::vector<DeviceId> orphanDevices;
         std::vector<te::Plugin::Ptr> pluginsToDelete;
+        std::vector<te::Plugin*> monitorPluginsToDelete;
         {
             juce::ScopedLock lock(pluginLock_);
             deferredHolders_.clear();  // Drain previous cycle's deferred holders
@@ -115,7 +116,7 @@ void PluginManager::syncAllPlugins() {
                                                [&](const auto& t) { return t.id == it->first; });
                 if (!trackExists) {
                     if (it->second)
-                        pluginsToDelete.push_back(it->second);
+                        monitorPluginsToDelete.push_back(it->second.get());
                     it = sidechainMonitors_.erase(it);
                 } else {
                     ++it;
@@ -131,6 +132,9 @@ void PluginManager::syncAllPlugins() {
         }
         for (auto& plugin : pluginsToDelete)
             plugin->deleteFromParent();
+        for (auto* plugin : monitorPluginsToDelete)
+            if (plugin)
+                plugin->deleteFromParent();
 
         if (!orphanDevices.empty())
             DBG("syncAllPlugins: removed " << (int)orphanDevices.size() << " orphan devices");
