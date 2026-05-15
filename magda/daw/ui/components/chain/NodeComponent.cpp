@@ -39,6 +39,37 @@ void writePathToDragInfo(juce::DynamicObject& obj, const magda::ChainNodePath& p
     obj.setProperty("stepTypes" + suffix, encodeStepTypes(path));
     obj.setProperty("stepIds" + suffix, encodeStepIds(path));
 }
+
+juce::Image createChainNodeDragImage(const juce::String& label, int itemCount) {
+    constexpr int width = 188;
+    constexpr int height = 42;
+    juce::Image image(juce::Image::ARGB, width, height, true);
+    juce::Graphics g(image);
+
+    auto bounds = image.getBounds().toFloat().reduced(1.0f);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    const auto bg = DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.92f);
+
+    g.setColour(bg);
+    g.fillRoundedRectangle(bounds, 6.0f);
+    g.setColour(accent.withAlpha(0.95f));
+    g.drawRoundedRectangle(bounds, 6.0f, 1.5f);
+    g.fillRoundedRectangle(bounds.removeFromLeft(5.0f), 3.0f);
+
+    auto textArea = image.getBounds().reduced(12, 6);
+    textArea.removeFromLeft(6);
+    g.setColour(juce::Colours::white.withAlpha(0.95f));
+    g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
+    g.drawFittedText(label.isNotEmpty() ? label : "Chain Item", textArea.removeFromTop(17),
+                     juce::Justification::centredLeft, 1);
+
+    const auto detail = itemCount == 1 ? "1 item" : juce::String(itemCount) + " items";
+    g.setColour(juce::Colours::white.withAlpha(0.68f));
+    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+    g.drawFittedText(detail, textArea, juce::Justification::centredLeft, 1);
+
+    return image;
+}
 }  // namespace
 
 NodeComponent::NodeComponent() {
@@ -1060,8 +1091,10 @@ void NodeComponent::mouseDrag(const juce::MouseEvent& e) {
                 for (int i = 0; i < static_cast<int>(paths.size()); ++i)
                     writePathToDragInfo(*dragInfo, paths[static_cast<size_t>(i)], juce::String(i));
 
-                auto snapshot = createComponentSnapshot(getLocalBounds());
-                container->startDragging(juce::var(dragInfo), this, juce::ScaledImage(snapshot),
+                const auto label =
+                    paths.size() > 1 ? juce::String(paths.size()) + " Chain Items" : getNodeName();
+                auto dragImage = createChainNodeDragImage(label, static_cast<int>(paths.size()));
+                container->startDragging(juce::var(dragInfo), this, juce::ScaledImage(dragImage),
                                          true);
             }
         }
