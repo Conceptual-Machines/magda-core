@@ -770,7 +770,14 @@ MediaExplorerContent::MediaExplorerContent() {
     // setVisible(false) and leave the DB browser painted over the file
     // browser at startup.
     dbBrowser_ = std::make_unique<MediaDbBrowserContent>();
-    dbBrowser_->onFileSelected = [this](const juce::File& f) { loadFileForPreview(f); };
+    dbBrowser_->onFileSelected = [this](const juce::File& f) {
+        loadFileForPreview(f);
+        // Match the file-browser's selectionChanged path: respect the Auto
+        // toggle so picking a DB row auto-plays when the user wants it.
+        if (autoPlayButton_.getToggleState()) {
+            playPreview();
+        }
+    };
     addChildComponent(*dbBrowser_);
     dbBrowser_->setVisible(false);
 

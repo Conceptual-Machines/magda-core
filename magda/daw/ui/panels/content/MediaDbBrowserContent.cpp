@@ -439,19 +439,33 @@ void MediaDbBrowserContent::runSearch() {
     if (!ctx.ensureInitialized()) {
         results_.clear();
         resultsTable_.updateContent();
+        resultsTable_.repaint();
         emptyState_.setText("Failed to open the media database.", juce::dontSendNotification);
         emptyState_.setVisible(true);
         resultsTable_.setVisible(false);
         return;
     }
 
-    magda::media::MediaDbQuery query(ctx.db(), ctx.textEncoder(), ctx.tokenizer());
+    // Lazy-load gate: ctx.textEncoder() / ctx.tokenizer() each trigger an
+    // ONNX model load on first call (~480 MB on the text side). Filter-only
+    // queries don't need them — only call the accessors when there's actual
+    // search text to embed. Avoids a multi-second UI freeze when the user
+    // just changes a categorical filter.
     const auto filters = currentFilters();
+    const bool hasText = !queryText_.isEmpty();
     const std::optional<std::string> text =
-        queryText_.isEmpty() ? std::nullopt : std::optional<std::string>{queryText_.toStdString()};
+        hasText ? std::optional<std::string>{queryText_.toStdString()} : std::nullopt;
+    magda::media::ClapTextEncoder* textEnc = hasText ? ctx.textEncoder() : nullptr;
+    magda::media::RobertaTokenizer* tok = hasText ? ctx.tokenizer() : nullptr;
+    magda::media::MediaDbQuery query(ctx.db(), textEnc, tok);
     results_ = query.search(text, filters, /*limit=*/200);
 
+    // updateContent() refreshes the row count but doesn't always invalidate
+    // the paint region — explicit repaint() makes the new results show up
+    // without needing an external paint trigger (window focus, scroll, etc).
     resultsTable_.updateContent();
+    resultsTable_.repaint();
+
     const bool empty = results_.empty();
     resultsTable_.setVisible(!empty);
     emptyState_.setVisible(empty);
