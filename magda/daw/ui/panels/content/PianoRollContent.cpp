@@ -156,11 +156,10 @@ PianoRollContent::~PianoRollContent() {
 
 void PianoRollContent::setupGridCallbacks() {
     // Handle note addition
-    gridComponent_->onNoteAdded = [this](magda::ClipId clipId, double beat, int noteNumber,
-                                         int velocity) {
-        double defaultLength = gridComponent_->getGridResolutionBeats();
+    gridComponent_->onNoteAdded = [](magda::ClipId clipId, double beat, int noteNumber,
+                                     double lengthBeats, int velocity) {
         auto cmd = std::make_unique<magda::AddMidiNoteCommand>(clipId, beat, noteNumber,
-                                                               defaultLength, velocity);
+                                                               lengthBeats, velocity);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
         // Note: UI refresh handled via ClipManagerListener::clipPropertyChanged()
     };
