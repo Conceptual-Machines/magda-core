@@ -328,6 +328,9 @@ struct ClipInfo {
     // Session launch properties
     LaunchMode launchMode = LaunchMode::Trigger;
     LaunchQuantize launchQuantize = LaunchQuantize::OneBar;
+    FollowAction followAction = FollowAction::None;
+    double followActionDelayBeats = 0.0;
+    int followActionLoopCount = 1;
 
     // Per-clip playhead position (seconds, looped).
     // Updated by SessionClipScheduler from audio-thread data.

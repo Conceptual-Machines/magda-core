@@ -172,6 +172,12 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     juce::ComboBox launchModeCombo_;
     juce::Label launchQuantizeLabel_;
     juce::ComboBox launchQuantizeCombo_;
+    juce::Label followActionLabel_;
+    juce::ComboBox followActionCombo_;
+    juce::Label followActionDelayLabel_;
+    juce::Slider followActionDelaySlider_;
+    juce::Label followActionLoopCountLabel_;
+    juce::Slider followActionLoopCountSlider_;
     // Scrollable container for clip properties
     juce::Viewport clipPropsViewport_;
     class ClipPropsContainer : public juce::Component {

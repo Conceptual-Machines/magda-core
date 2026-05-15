@@ -39,6 +39,109 @@ double timelineLengthBeats(const ClipInfo& clip, double bpm) {
     return clip.getTimelineLength(resolvedBpm) * resolvedBpm / 60.0;
 }
 
+te::FollowAction toTracktionFollowAction(FollowAction action) {
+    switch (action) {
+        case FollowAction::None:
+            return te::FollowAction::none;
+        case FollowAction::PlayNext:
+            return te::FollowAction::trackNext;
+        case FollowAction::PlayPrevious:
+            return te::FollowAction::trackPrevious;
+        case FollowAction::PlayRandom:
+            return te::FollowAction::trackAny;
+        case FollowAction::Stop:
+            return te::FollowAction::globalStop;
+        case FollowAction::PlayAgain:
+            return te::FollowAction::globalPlayAgain;
+    }
+    return te::FollowAction::none;
+}
+
+double followActionBaseLengthBeats(const ClipInfo& clip, double bpm) {
+    if (clip.loopEnabled) {
+        if (clip.isAudio() && clip.autoTempo) {
+            auto [_, loopLengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, bpm);
+            if (loopLengthBeats > 0.0)
+                return loopLengthBeats;
+        }
+
+        if (clip.loopLengthBeats > 0.0)
+            return clip.loopLengthBeats;
+
+        const double sourceLength = clip.getSourceLength(bpm);
+        const double speed = clip.speedRatio > 0.0 ? clip.speedRatio : 1.0;
+        if (sourceLength > 0.0)
+            return (sourceLength / speed) * bpm / 60.0;
+    }
+
+    return timelineLengthBeats(clip, bpm);
+}
+
+bool syncFollowActionToTracktionClip(te::Clip& teClip, const ClipInfo& clip, double bpm) {
+    bool changed = false;
+    auto* followActions = teClip.getFollowActions();
+    if (!followActions)
+        return false;
+
+    auto removeAllActions = [&] {
+        std::vector<te::FollowActions::Action*> actions(followActions->getActions().begin(),
+                                                        followActions->getActions().end());
+        for (auto* action : actions) {
+            followActions->removeAction(*action);
+            changed = true;
+        }
+    };
+
+    const auto desiredAction = toTracktionFollowAction(clip.followAction);
+
+    if (desiredAction == te::FollowAction::none) {
+        removeAllActions();
+        return changed;
+    }
+
+    auto actions = followActions->getActions();
+    if (actions.size() != 1) {
+        removeAllActions();
+        auto& action = followActions->addAction();
+        action.action = desiredAction;
+        action.weight = 1.0;
+        changed = true;
+    } else {
+        auto* action = actions.front();
+        if (action->action.get() != desiredAction) {
+            action->action = desiredAction;
+            changed = true;
+        }
+        if (std::abs(action->weight.get() - 1.0) > 0.0001) {
+            action->weight = 1.0;
+            changed = true;
+        }
+    }
+
+    if (teClip.followActionDurationType.get() != te::Clip::FollowActionDurationType::beats) {
+        teClip.followActionDurationType = te::Clip::FollowActionDurationType::beats;
+        changed = true;
+    }
+
+    const double baseBeats = followActionBaseLengthBeats(clip, bpm);
+    const int loopCount = juce::jmax(1, clip.followActionLoopCount);
+    const double durationBeats = (clip.loopEnabled ? baseBeats * loopCount : baseBeats) +
+                                 juce::jmax(0.0, clip.followActionDelayBeats);
+    const auto duration = te::BeatDuration::fromBeats(juce::jmax(0.0, durationBeats));
+    if (std::abs(teClip.followActionBeats.get().inBeats() - duration.inBeats()) > 0.0001) {
+        teClip.followActionBeats = duration;
+        changed = true;
+    }
+
+    const double loops = static_cast<double>(loopCount);
+    if (std::abs(teClip.followActionNumLoops.get() - loops) > 0.0001) {
+        teClip.followActionNumLoops = loops;
+        changed = true;
+    }
+
+    return changed;
+}
+
 }  // namespace
 
 void ClipSynchronizer::reallocateAndNotify() {
@@ -190,6 +293,8 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
         return false;
     }
     if (clip->view == ClipView::Session) {
+        bool needsGraphReallocation = false;
+
         // Session clip property changed (e.g. sceneIndex set after creation).
         // Try to sync it to a slot if not already synced.
         if (clip->sceneIndex >= 0) {
@@ -221,6 +326,9 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                     if (lq) {
                         lq->type = clip_launch::toTracktionLaunchQType(clip->launchQuantize);
                     }
+                    needsGraphReallocation =
+                        syncFollowActionToTracktionClip(*teClip, *clip, syncBPM) ||
+                        needsGraphReallocation;
 
                     // AutoTempo handling for audio clips
                     bool isAutoTempoAudio = clip->isAudio() && clip->autoTempo;
@@ -351,7 +459,7 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                 }  // if (teClip)
             }      // else (already synced)
         }          // if (sceneIndex >= 0)
-        return false;
+        return needsGraphReallocation;
     }
 
     return syncArrangementClipToEngine(clipId);
@@ -627,6 +735,8 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         if (auto* lq = audioClipPtr->getLaunchQuantisation()) {
             lq->type = clip_launch::toTracktionLaunchQType(clip->launchQuantize);
         }
+        syncFollowActionToTracktionClip(*audioClipPtr, *clip,
+                                        edit_.tempoSequence.getBpmAt(te::TimePosition()));
 
         // Sync session-applicable audio properties at creation
         {
@@ -752,6 +862,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         if (auto* lq = midiClipPtr->getLaunchQuantisation()) {
             lq->type = clip_launch::toTracktionLaunchQType(clip->launchQuantize);
         }
+        syncFollowActionToTracktionClip(*midiClipPtr, *clip, projectBpm);
 
         // Set LaunchHandle looping state at creation time
         if (auto lh = midiClipPtr->getLaunchHandle()) {

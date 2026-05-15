@@ -812,6 +812,27 @@ void ClipManager::setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize) 
     }
 }
 
+void ClipManager::setClipFollowAction(ClipId clipId, FollowAction action) {
+    if (auto* clip = getClip(clipId)) {
+        clip->followAction = action;
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::setClipFollowActionDelayBeats(ClipId clipId, double delayBeats) {
+    if (auto* clip = getClip(clipId)) {
+        clip->followActionDelayBeats = juce::jmax(0.0, delayBeats);
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::setClipFollowActionLoopCount(ClipId clipId, int loopCount) {
+    if (auto* clip = getClip(clipId)) {
+        clip->followActionLoopCount = juce::jmax(1, loopCount);
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
 void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
     if (auto* clip = getClip(clipId)) {
         if (clip->isAudio() && clip->warpEnabled != enabled) {
@@ -2204,6 +2225,9 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                     newClip->loopEnabled = true;
                     newClip->launchMode = clipData.launchMode;
                     newClip->launchQuantize = clipData.launchQuantize;
+                    newClip->followAction = clipData.followAction;
+                    newClip->followActionDelayBeats = clipData.followActionDelayBeats;
+                    newClip->followActionLoopCount = clipData.followActionLoopCount;
 
                     if (!crossViewToSession) {
                         // Reset extended loops to base loop length for

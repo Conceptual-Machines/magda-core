@@ -439,10 +439,24 @@ void ClipInspector::updateFromSelectedClip() {
         launchModeCombo_.setVisible(false);
         launchQuantizeLabel_.setVisible(isSessionClip);
         launchQuantizeCombo_.setVisible(isSessionClip);
+        followActionLabel_.setVisible(isSessionClip);
+        followActionCombo_.setVisible(isSessionClip);
+        const bool showFollowControls =
+            isSessionClip && clip->followAction != magda::FollowAction::None;
+        followActionDelayLabel_.setVisible(showFollowControls);
+        followActionDelaySlider_.setVisible(showFollowControls);
+        followActionLoopCountLabel_.setVisible(showFollowControls && clip->loopEnabled);
+        followActionLoopCountSlider_.setVisible(showFollowControls && clip->loopEnabled);
 
         if (isSessionClip) {
             launchQuantizeCombo_.setSelectedId(static_cast<int>(clip->launchQuantize) + 1,
                                                juce::dontSendNotification);
+            followActionCombo_.setSelectedId(static_cast<int>(clip->followAction) + 1,
+                                             juce::dontSendNotification);
+            followActionDelaySlider_.setValue(clip->followActionDelayBeats,
+                                              juce::dontSendNotification);
+            followActionLoopCountSlider_.setValue(clip->followActionLoopCount,
+                                                  juce::dontSendNotification);
         }
 
         // ====================================================================
@@ -616,6 +630,12 @@ void ClipInspector::showClipControls(bool show) {
         launchModeCombo_.setVisible(false);
         launchQuantizeLabel_.setVisible(false);
         launchQuantizeCombo_.setVisible(false);
+        followActionLabel_.setVisible(false);
+        followActionCombo_.setVisible(false);
+        followActionDelayLabel_.setVisible(false);
+        followActionDelaySlider_.setVisible(false);
+        followActionLoopCountLabel_.setVisible(false);
+        followActionLoopCountSlider_.setVisible(false);
         if (fadesSection_)
             fadesSection_->setVisible(false);
 

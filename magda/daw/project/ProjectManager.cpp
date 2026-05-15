@@ -465,9 +465,23 @@ juce::File ProjectManager::getBouncesDirectory() const {
 void ProjectManager::createTempMediaDirectory() {
     auto tempRoot =
         juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile(kTempRootDir);
+    tempRoot.createDirectory();
+
+    if (!tempRoot.isDirectory()) {
+        tempRoot = juce::File("/tmp").getChildFile(kTempRootDir);
+        tempRoot.createDirectory();
+    }
+
     juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
-    mediaDirectory_ = tempRoot.getChildFile(kTempPrefix + timestamp);
+    mediaDirectory_ = tempRoot.getNonexistentChildFile(kTempPrefix + timestamp, {});
     mediaDirectory_.createDirectory();
+
+    if (!mediaDirectory_.isDirectory()) {
+        auto fallbackRoot = juce::File("/tmp").getChildFile(kTempRootDir);
+        fallbackRoot.createDirectory();
+        mediaDirectory_ = fallbackRoot.getNonexistentChildFile(kTempPrefix + timestamp, {});
+        mediaDirectory_.createDirectory();
+    }
 }
 
 void ProjectManager::ensureMediaSubdirectories(const juce::File& mediaRoot) {

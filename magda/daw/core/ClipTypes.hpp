@@ -74,6 +74,11 @@ enum class LaunchQuantize {
 };
 
 /**
+ * @brief Follow action for session clips
+ */
+enum class FollowAction { None, PlayNext, PlayPrevious, PlayRandom, Stop, PlayAgain };
+
+/**
  * @brief Get display name for launch mode
  */
 inline const char* getLaunchModeName(LaunchMode mode) {
@@ -109,6 +114,27 @@ inline const char* getLaunchQuantizeName(LaunchQuantize q) {
             return "1/8";
         case LaunchQuantize::SixteenthBar:
             return "1/16";
+    }
+    return "Unknown";
+}
+
+/**
+ * @brief Get display name for follow action
+ */
+inline const char* getFollowActionName(FollowAction action) {
+    switch (action) {
+        case FollowAction::None:
+            return "None";
+        case FollowAction::PlayNext:
+            return "Play Next";
+        case FollowAction::PlayPrevious:
+            return "Play Previous";
+        case FollowAction::PlayRandom:
+            return "Play Random";
+        case FollowAction::Stop:
+            return "Stop";
+        case FollowAction::PlayAgain:
+            return "Play Again";
     }
     return "Unknown";
 }

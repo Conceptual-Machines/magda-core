@@ -282,6 +282,45 @@ void SessionClipScheduler::processStateEvents() {
         // discard — we read LaunchHandle state directly below
     }
 
+    // TE follow actions can start a different LaunchHandle from inside the
+    // audio graph. Adopt those handles back into Magda's track state so the UI
+    // and playhead monitor follow the clip that is actually sounding.
+    bool adoptedFollowActionClip = false;
+    for (const auto& clip : cm.getSessionClips()) {
+        auto* teClip = audioBridge_.getSessionTeClip(clip.id);
+        if (!teClip)
+            continue;
+
+        auto handle = teClip->getLaunchHandle();
+        if (!handle)
+            continue;
+
+        auto playState = handle->getPlayingStatus();
+        auto queuedState = handle->getQueuedStatus();
+        const bool isPlaying = playState == te::LaunchHandle::PlayState::playing;
+        const bool isQueued =
+            queuedState && *queuedState == te::LaunchHandle::QueueState::playQueued;
+        if (!isPlaying && !isQueued)
+            continue;
+
+        auto* track = tm.getTrack(clip.trackId);
+        if (!track || track->activeSessionClipId == clip.id)
+            continue;
+
+        track->activeSessionClipId = clip.id;
+        updateLaunchTimings(clip.id, &clip);
+        retainLaunchHandle(clip.id);
+        sendMonitorCommand(clip.id);
+        lastNotifiedState_[clip.id] =
+            isPlaying ? SessionClipPlayState::Playing : SessionClipPlayState::Queued;
+        playheadClipId_ = clip.id;
+        stopPendingTracks_.erase(clip.trackId);
+        cm.notifyClipPlaybackStateChanged(clip.id);
+        adoptedFollowActionClip = true;
+    }
+    if (adoptedFollowActionClip)
+        syncTrackPlaybackModes();
+
     bool transportPlaying = edit_.getTransport().isPlaying();
 
     // Transport just stopped — stop all LaunchHandles so clips reset to start.
