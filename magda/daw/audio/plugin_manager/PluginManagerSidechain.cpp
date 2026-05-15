@@ -101,6 +101,15 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
     if (sidechain::elementsHaveMidiTriggeredMod(trackInfo->chainElements))
         return true;
 
+    const auto topLevelRoutingPlan =
+        routing::compileTrackChainRouting(trackId, trackInfo->chainElements);
+    for (const auto& node : topLevelRoutingPlan.nodes) {
+        if (node.kind == routing::ChainRoutingNodeKind::Device &&
+            node.usesExternalMidiSidechain()) {
+            return true;
+        }
+    }
+
     // Check if this track is a MIDI sidechain source for any other track
     for (const auto& track : TrackManager::getInstance().getTracks()) {
         if (sidechain::elementsUseSource(track.chainElements, trackId, SidechainConfig::Type::MIDI))
