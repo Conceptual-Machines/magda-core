@@ -148,35 +148,16 @@ void MagdaMultibandCompiledPlugin::rebuildEngineState(int sampleRate) {
 }
 
 void MagdaMultibandCompiledPlugin::buildHostParameters() {
-    // Slot 0: Low XO (log Hz, 40..500, anchored at 200 Hz).
-    hostSlotInfo_[kLowXoSlot] = {.name = "Low XO",
-                                 .unit = "Hz",
-                                 .scale = magda::ParameterScale::Logarithmic,
-                                 .minValue = 40.0f,
-                                 .maxValue = 500.0f,
-                                 .defaultValue = 120.0f,
-                                 .scaleAnchor = 200.0f};
-    // Slot 1: High XO (log Hz, 500..8000, anchored at 2 kHz).
-    hostSlotInfo_[kHighXoSlot] = {.name = "High XO",
-                                  .unit = "Hz",
-                                  .scale = magda::ParameterScale::Logarithmic,
-                                  .minValue = 500.0f,
-                                  .maxValue = 8000.0f,
-                                  .defaultValue = 2500.0f,
-                                  .scaleAnchor = 2000.0f};
-    // Slot 2: Depth (master compression amount, 0..1).
     hostSlotInfo_[kDepthSlot] = {.name = "Depth",
                                  .scale = magda::ParameterScale::Linear,
                                  .minValue = 0.0f,
                                  .maxValue = 1.0f,
                                  .defaultValue = 1.0f};
-    // Slot 3: Time (attack/release scaling, 0..1).
     hostSlotInfo_[kTimeSlot] = {.name = "Time",
                                 .scale = magda::ParameterScale::Linear,
                                 .minValue = 0.0f,
                                 .maxValue = 1.0f,
                                 .defaultValue = 0.4f};
-    // Slots 4-6: per-band makeup (dB, ±24).
     hostSlotInfo_[kLowGainSlot] = {.name = "Low Gain",
                                    .unit = "dB",
                                    .scale = magda::ParameterScale::Linear,
@@ -195,19 +176,34 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
                                     .minValue = -24.0f,
                                     .maxValue = 24.0f,
                                     .defaultValue = 0.0f};
-    // Slot 7: Mix (parallel-compression dry/wet blend).
     hostSlotInfo_[kMixSlot] = {.name = "Mix",
                                .scale = magda::ParameterScale::Linear,
                                .minValue = 0.0f,
                                .maxValue = 1.0f,
                                .defaultValue = 1.0f};
-    // Slot 8: Output (dB, -24..+12).
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
                                   .unit = "dB",
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
                                   .maxValue = 12.0f,
                                   .defaultValue = 0.0f};
+
+    // Crossover frequencies: editor-only, placed last so layoutCellCount=27
+    // hides them from the param grid while still exposing them as automatable.
+    hostSlotInfo_[kLowXoSlot] = {.name = "Low XO",
+                                 .unit = "Hz",
+                                 .scale = magda::ParameterScale::Logarithmic,
+                                 .minValue = 40.0f,
+                                 .maxValue = 500.0f,
+                                 .defaultValue = 120.0f,
+                                 .scaleAnchor = 200.0f};
+    hostSlotInfo_[kHighXoSlot] = {.name = "High XO",
+                                  .unit = "Hz",
+                                  .scale = magda::ParameterScale::Logarithmic,
+                                  .minValue = 500.0f,
+                                  .maxValue = 8000.0f,
+                                  .defaultValue = 2500.0f,
+                                  .scaleAnchor = 2000.0f};
 
     auto setThreshAbove = [this](int slot, juce::String name) {
         hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
@@ -225,6 +221,14 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
                                                     .maxValue = 0.0f,
                                                     .defaultValue = -48.0f};
     };
+    auto setThreshExpand = [this](int slot, juce::String name) {
+        hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
+                                                    .unit = "dB",
+                                                    .scale = magda::ParameterScale::Linear,
+                                                    .minValue = -80.0f,
+                                                    .maxValue = 0.0f,
+                                                    .defaultValue = -72.0f};
+    };
     auto setRatio = [this](int slot, juce::String name) {
         hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
                                                     .scale = magda::ParameterScale::Linear,
@@ -232,16 +236,48 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
                                                     .maxValue = 20.0f,
                                                     .defaultValue = 8.0f};
     };
+    auto setExpandRatio = [this](int slot, juce::String name) {
+        hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
+                                                    .scale = magda::ParameterScale::Linear,
+                                                    .minValue = 1.0f,
+                                                    .maxValue = 20.0f,
+                                                    .defaultValue = 1.0f};
+    };
 
     setThreshAbove(kLowThreshAboveSlot, "Low Thresh Above");
     setThreshBelow(kLowThreshBelowSlot, "Low Thresh Below");
-    setRatio(kLowRatioSlot, "Low Ratio");
+    setRatio(kLowRatioAboveSlot, "Low Ratio Above");
     setThreshAbove(kMidThreshAboveSlot, "Mid Thresh Above");
     setThreshBelow(kMidThreshBelowSlot, "Mid Thresh Below");
-    setRatio(kMidRatioSlot, "Mid Ratio");
+    setRatio(kMidRatioAboveSlot, "Mid Ratio Above");
     setThreshAbove(kHighThreshAboveSlot, "High Thresh Above");
     setThreshBelow(kHighThreshBelowSlot, "High Thresh Below");
-    setRatio(kHighRatioSlot, "High Ratio");
+    setRatio(kHighRatioAboveSlot, "High Ratio Above");
+
+    // Slot 18-19: second stage.
+    hostSlotInfo_[kDepth2Slot] = {.name = "Depth 2",
+                                  .scale = magda::ParameterScale::Linear,
+                                  .minValue = 0.0f,
+                                  .maxValue = 1.0f,
+                                  .defaultValue = 0.3f};
+    hostSlotInfo_[kTime2Slot] = {.name = "Time 2",
+                                 .scale = magda::ParameterScale::Linear,
+                                 .minValue = 0.0f,
+                                 .maxValue = 1.0f,
+                                 .defaultValue = 0.2f};
+
+    // Slots 20-22: separate below-threshold (upward comp) ratios.
+    setRatio(kLowRatioBelowSlot, "Low Ratio Below");
+    setRatio(kMidRatioBelowSlot, "Mid Ratio Below");
+    setRatio(kHighRatioBelowSlot, "High Ratio Below");
+
+    // Slots 23-28: per-band expander (threshold + expansion ratio).
+    setThreshExpand(kLowThreshExpandSlot, "Low Thresh Expand");
+    setExpandRatio(kLowExpandRatioSlot, "Low Expand Ratio");
+    setThreshExpand(kMidThreshExpandSlot, "Mid Thresh Expand");
+    setExpandRatio(kMidExpandRatioSlot, "Mid Expand Ratio");
+    setThreshExpand(kHighThreshExpandSlot, "High Thresh Expand");
+    setExpandRatio(kHighExpandRatioSlot, "High Expand Ratio");
 
     curveCollapsed_.referTo(state, juce::Identifier("magda_multiband_curve_collapsed"),
                             getUndoManager(), true);
@@ -427,24 +463,35 @@ float MagdaMultibandCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
 }
 
 constexpr AliasSpec kAliases[] = {
-    {"low_xo", 0, "Low XO"},
-    {"high_xo", 1, "High XO"},
-    {"depth", 2, "Depth"},
-    {"time", 3, "Time"},
-    {"low_gain", 4, "Low Gain"},
-    {"mid_gain", 5, "Mid Gain"},
-    {"high_gain", 6, "High Gain"},
-    {"mix", 7, "Mix"},
-    {"output", 8, "Output"},
-    {"low_thresh_above", 9, "Low Thresh Above"},
-    {"low_thresh_below", 10, "Low Thresh Below"},
-    {"low_ratio", 11, "Low Ratio"},
-    {"mid_thresh_above", 12, "Mid Thresh Above"},
-    {"mid_thresh_below", 13, "Mid Thresh Below"},
-    {"mid_ratio", 14, "Mid Ratio"},
-    {"high_thresh_above", 15, "High Thresh Above"},
-    {"high_thresh_below", 16, "High Thresh Below"},
-    {"high_ratio", 17, "High Ratio"},
+    {"depth", 0, "Depth"},
+    {"time", 1, "Time"},
+    {"low_gain", 2, "Low Gain"},
+    {"mid_gain", 3, "Mid Gain"},
+    {"high_gain", 4, "High Gain"},
+    {"mix", 5, "Mix"},
+    {"output", 6, "Output"},
+    {"low_thresh_above", 7, "Low Thresh Above"},
+    {"low_thresh_below", 8, "Low Thresh Below"},
+    {"low_ratio_above", 9, "Low Ratio Above"},
+    {"mid_thresh_above", 10, "Mid Thresh Above"},
+    {"mid_thresh_below", 11, "Mid Thresh Below"},
+    {"mid_ratio_above", 12, "Mid Ratio Above"},
+    {"high_thresh_above", 13, "High Thresh Above"},
+    {"high_thresh_below", 14, "High Thresh Below"},
+    {"high_ratio_above", 15, "High Ratio Above"},
+    {"depth2", 16, "Depth 2"},
+    {"time2", 17, "Time 2"},
+    {"low_ratio_below", 18, "Low Ratio Below"},
+    {"mid_ratio_below", 19, "Mid Ratio Below"},
+    {"high_ratio_below", 20, "High Ratio Below"},
+    {"low_thresh_expand", 21, "Low Thresh Expand"},
+    {"low_expand_ratio", 22, "Low Expand Ratio"},
+    {"mid_thresh_expand", 23, "Mid Thresh Expand"},
+    {"mid_expand_ratio", 24, "Mid Expand Ratio"},
+    {"high_thresh_expand", 25, "High Thresh Expand"},
+    {"high_expand_ratio", 26, "High Expand Ratio"},
+    {"low_xo", 27, "Low XO"},
+    {"high_xo", 28, "High XO"},
 };
 
 const CompiledPluginSpec& getMagdaMultibandSpec() {

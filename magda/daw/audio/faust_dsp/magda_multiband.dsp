@@ -1,80 +1,62 @@
 declare name "MagdaMultiband";
-declare description "OTT-style 3-band compressor: Linkwitz-Riley splits, parallel upward + downward compression per band, per-band gain.";
+declare description "OTT-style 3-band compressor: LR4 splits, parallel upward + downward compression per band, per-band expander, two stages in series.";
 
 import("stdfaust.lib");
 
 // ============================================================================
 // User controls
+// Slots 0-26 are shown in the param grid.
+// Slots 27-28 (crossover frequencies) are editor-only -- dragged directly
+// on the curve view and therefore hidden from the knob grid.
 // ============================================================================
 
-// Low / mid crossover (Hz). Defaults around the classic OTT split points.
-xoLow = hslider("Low XO [unit:Hz] [scale:log] [scaleAnchor:200] [idx:0]", 120, 40, 500, 1)
-        : si.smooth(ba.tau2pole(0.05));
+// Stage 1 master depth / time.
+depth = hslider("Depth [idx:0]", 1.0, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.05));
+time  = hslider("Time [idx:1]",  0.4, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.05));
 
-// Mid / high crossover (Hz). Constrained > xoLow at the host level so the
-// LR4 cascade stays well-behaved.
-xoHigh = hslider("High XO [unit:Hz] [scale:log] [scaleAnchor:2000] [idx:1]", 2500, 500, 8000, 1)
+// Per-band post-compression makeup.
+lowGainDb  = hslider("Low Gain [unit:dB] [idx:2]",  0.0, -24.0, 24.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+midGainDb  = hslider("Mid Gain [unit:dB] [idx:3]",  0.0, -24.0, 24.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+highGainDb = hslider("High Gain [unit:dB] [idx:4]", 0.0, -24.0, 24.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+
+mix       = hslider("Mix [idx:5]",           1.0,  0.0,  1.0, 0.001) : si.smooth(ba.tau2pole(0.05));
+outGainDb = hslider("Output [unit:dB] [idx:6]", 0.0, -24.0, 12.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+
+// Per-band thresholds and ratios.
+lowThreshAboveDb  = hslider("Low Thresh Above [unit:dB] [idx:7]",   -24.0, -60.0,   0.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+lowThreshBelowDb  = hslider("Low Thresh Below [unit:dB] [idx:8]",   -48.0, -80.0,   0.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+lowRatioAbove     = hslider("Low Ratio Above [idx:9]",                8.0,   1.0,  20.0, 0.01) : si.smooth(ba.tau2pole(0.05));
+
+midThreshAboveDb  = hslider("Mid Thresh Above [unit:dB] [idx:10]",  -24.0, -60.0,   0.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+midThreshBelowDb  = hslider("Mid Thresh Below [unit:dB] [idx:11]",  -48.0, -80.0,   0.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+midRatioAbove     = hslider("Mid Ratio Above [idx:12]",               8.0,   1.0,  20.0, 0.01) : si.smooth(ba.tau2pole(0.05));
+
+highThreshAboveDb = hslider("High Thresh Above [unit:dB] [idx:13]", -24.0, -60.0,   0.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+highThreshBelowDb = hslider("High Thresh Below [unit:dB] [idx:14]", -48.0, -80.0,   0.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+highRatioAbove    = hslider("High Ratio Above [idx:15]",              8.0,   1.0,  20.0, 0.01) : si.smooth(ba.tau2pole(0.05));
+
+// Stage 2 master depth / time.
+depth2 = hslider("Depth 2 [idx:16]", 0.3, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.05));
+time2  = hslider("Time 2 [idx:17]",  0.2, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.05));
+
+// Separate below-threshold (upward) ratios.
+lowRatioBelow  = hslider("Low Ratio Below [idx:18]",  8.0, 1.0, 20.0, 0.01) : si.smooth(ba.tau2pole(0.05));
+midRatioBelow  = hslider("Mid Ratio Below [idx:19]",  8.0, 1.0, 20.0, 0.01) : si.smooth(ba.tau2pole(0.05));
+highRatioBelow = hslider("High Ratio Below [idx:20]", 8.0, 1.0, 20.0, 0.01) : si.smooth(ba.tau2pole(0.05));
+
+// Per-band expander. expandRatio=1.0 means off.
+lowThreshExpandDb  = hslider("Low Thresh Expand [unit:dB] [idx:21]",  -72.0, -80.0, 0.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+lowExpandRatio     = hslider("Low Expand Ratio [idx:22]",               1.0,   1.0, 20.0, 0.01) : si.smooth(ba.tau2pole(0.05));
+midThreshExpandDb  = hslider("Mid Thresh Expand [unit:dB] [idx:23]",  -72.0, -80.0, 0.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+midExpandRatio     = hslider("Mid Expand Ratio [idx:24]",               1.0,   1.0, 20.0, 0.01) : si.smooth(ba.tau2pole(0.05));
+highThreshExpandDb = hslider("High Thresh Expand [unit:dB] [idx:25]", -72.0, -80.0, 0.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+highExpandRatio    = hslider("High Expand Ratio [idx:26]",              1.0,   1.0, 20.0, 0.01) : si.smooth(ba.tau2pole(0.05));
+
+// Crossover frequencies -- editor-only, hidden from the param grid.
+xoLow  = hslider("Low XO [unit:Hz] [scale:log] [scaleAnchor:200] [idx:27]", 120, 40, 500, 1)
          : si.smooth(ba.tau2pole(0.05));
-
-// Master compression amount. Per-band thresholds/ratios define the actual
-// curves; Depth scales the resulting up/down gain change so it can still act
-// as a global "less/more OTT" macro.
-depth = hslider("Depth [idx:2]", 1.0, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.05));
-
-// Master attack/release scaling. 0 = snappy (3 ms attack), 1 = slow & smooth
-// (80 ms attack, near-1 s release). Same envelope across all bands.
-time = hslider("Time [idx:3]", 0.4, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.05));
-
-// Per-band post-compression makeup. Lets the user re-balance the spectrum
-// after the dynamics stage so heavier compression doesn't sound dull.
-lowGainDb = hslider("Low Gain [unit:dB] [idx:4]", 0.0, -24.0, 24.0, 0.1)
-            : si.smooth(ba.tau2pole(0.05));
-midGainDb = hslider("Mid Gain [unit:dB] [idx:5]", 0.0, -24.0, 24.0, 0.1)
-            : si.smooth(ba.tau2pole(0.05));
-highGainDb = hslider("High Gain [unit:dB] [idx:6]", 0.0, -24.0, 24.0, 0.1)
-             : si.smooth(ba.tau2pole(0.05));
-
-// Wet/dry blend. 1 = fully compressed, 0 = uncompressed crossover-summed
-// signal. The dry side intentionally passes through the same splitter as
-// the wet side, otherwise partial Mix settings comb-filter against the
-// crossover phase response.
-mix = hslider("Mix [idx:7]", 1.0, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.05));
-
-// Final output trim (after the wet/dry blend).
-outGainDb = hslider("Output [unit:dB] [idx:8]", 0.0, -24.0, 12.0, 0.1)
-            : si.smooth(ba.tau2pole(0.05));
-
-// Per-band dynamics. "Threshold Above" starts downward compression when the
-// detector is louder than the threshold. "Threshold Below" starts upward
-// compression when the detector is quieter than the threshold. Keeping the
-// below threshold lower than the above threshold leaves a neutral window
-// between the two curves.
-lowThreshAboveDb = hslider("Low Thresh Above [unit:dB] [idx:9]",
-                           -24.0, -60.0, 0.0, 0.1)
-                   : si.smooth(ba.tau2pole(0.05));
-lowThreshBelowDb = hslider("Low Thresh Below [unit:dB] [idx:10]",
-                           -48.0, -80.0, 0.0, 0.1)
-                   : si.smooth(ba.tau2pole(0.05));
-lowRatio = hslider("Low Ratio [idx:11]", 4.0, 1.0, 20.0, 0.01)
-           : si.smooth(ba.tau2pole(0.05));
-
-midThreshAboveDb = hslider("Mid Thresh Above [unit:dB] [idx:12]",
-                           -24.0, -60.0, 0.0, 0.1)
-                   : si.smooth(ba.tau2pole(0.05));
-midThreshBelowDb = hslider("Mid Thresh Below [unit:dB] [idx:13]",
-                           -48.0, -80.0, 0.0, 0.1)
-                   : si.smooth(ba.tau2pole(0.05));
-midRatio = hslider("Mid Ratio [idx:14]", 4.0, 1.0, 20.0, 0.01)
-           : si.smooth(ba.tau2pole(0.05));
-
-highThreshAboveDb = hslider("High Thresh Above [unit:dB] [idx:15]",
-                            -24.0, -60.0, 0.0, 0.1)
-                    : si.smooth(ba.tau2pole(0.05));
-highThreshBelowDb = hslider("High Thresh Below [unit:dB] [idx:16]",
-                            -48.0, -80.0, 0.0, 0.1)
-                    : si.smooth(ba.tau2pole(0.05));
-highRatio = hslider("High Ratio [idx:17]", 4.0, 1.0, 20.0, 0.01)
-            : si.smooth(ba.tau2pole(0.05));
+xoHigh = hslider("High XO [unit:Hz] [scale:log] [scaleAnchor:2000] [idx:28]", 2500, 500, 8000, 1)
+         : si.smooth(ba.tau2pole(0.05));
 
 // ============================================================================
 // DSP
@@ -82,67 +64,60 @@ highRatio = hslider("High Ratio [idx:17]", 4.0, 1.0, 20.0, 0.01)
 
 db2lin(db) = pow(10.0, db / 20.0);
 
-// Time maps to attack/release in seconds.
-//   time = 0 → attack 3 ms, release 30 ms (transient-safe)
-//   time = 1 → attack 80 ms, release ~800 ms (vibe / glue)
-attS = 0.003 + 0.077 * time;
-relS = 0.030 + 0.770 * time;
+attS(t) = 0.003 + 0.077 * t;
+relS(t) = 0.030 + 0.770 * t;
 
-// Peak detector with asymmetric smoothing. si.lag_ud takes attack/release
-// time constants in seconds — internally converts to one-pole coefficients.
-envFollow(x) = abs(x) : si.lag_ud(attS, relS);
+envFollow(t, x) = abs(x) : si.lag_ud(attS(t), relS(t));
 
-// Static curve (in dB) for the parallel up + down compression. Both halves
-// share the same threshold and ratio; they sum because they're on opposite
-// sides of the threshold.
-//   levelDb > threshDb  → downGainDb is negative (attenuation)
-//   levelDb < threshDb  → upGainDb is positive  (boost)
-//   levelDb = threshDb  → both terms are zero (continuous at the knee)
-downGainDb(threshAboveDb, ratio_, levelDb) =
-    max(0.0, levelDb - threshAboveDb) * (1.0 / ratio_ - 1.0);
-upGainDb(threshBelowDb, ratio_, levelDb) =
-    max(0.0, threshBelowDb - levelDb) * (1.0 - 1.0 / ratio_);
-combinedGainDb(threshAboveDb, threshBelowDb, ratio_, levelDb) =
-    (downGainDb(threshAboveDb, ratio_, levelDb)
-     + upGainDb(threshBelowDb, ratio_, levelDb)) * depth;
+downGainDb(threshAboveDb, ratioAbove_, levelDb) =
+    max(0.0, levelDb - threshAboveDb) * (1.0 / max(1.0, ratioAbove_) - 1.0);
 
-// OTT-style per-band stage: feed-forward gain modulation. The detector
-// sees the band's own signal, the gain control is applied right back to
-// it. No upward-compression-only-when-quiet gating — combinedGainDb is
-// continuous.
-ottBand(threshAboveDb, threshBelowDb, ratio_, x) =
-    x * (envFollow(x) : ba.linear2db
-         : combinedGainDb(threshAboveDb, threshBelowDb, max(1.0, ratio_))
+upGainDb(threshBelowDb, ratioBelow_, levelDb) =
+    max(0.0, threshBelowDb - levelDb) * (1.0 - 1.0 / max(1.0, ratioBelow_));
+
+// Expander: negative gain (attenuation) below threshExpandDb.
+expandGainDb(threshExpandDb, expandRatio_, levelDb) =
+    max(0.0, threshExpandDb - levelDb) * (1.0 / max(1.0, expandRatio_) - 1.0);
+
+combinedGainDb(threshAboveDb, threshBelowDb, threshExpandDb,
+               ratioAbove_, ratioBelow_, expandRatio_, d, levelDb) =
+    (downGainDb(threshAboveDb, ratioAbove_, levelDb)
+     + upGainDb(threshBelowDb, ratioBelow_, levelDb)
+     + expandGainDb(threshExpandDb, expandRatio_, levelDb)) * d;
+
+ottBand(threshAboveDb, threshBelowDb, threshExpandDb,
+        ratioAbove_, ratioBelow_, expandRatio_, d, t, x) =
+    x * (envFollow(t, x)
+         : ba.linear2db
+         : combinedGainDb(threshAboveDb, threshBelowDb, threshExpandDb,
+                          ratioAbove_, ratioBelow_, expandRatio_, d)
          : db2lin);
 
-// Linkwitz-Riley 4th-order: two cascaded 2nd-order Butterworth sections.
-// Summing the LP and HP outputs is approximately bit-flat in magnitude
-// (the small residual phase ripple is the trade for using a clean two-stage
-// crossover instead of an allpass-corrected one).
 lp_lr4(fc) = fi.lowpass(2, fc) : fi.lowpass(2, fc);
 hp_lr4(fc) = fi.highpass(2, fc) : fi.highpass(2, fc);
+band3split  = _ <: lp_lr4(xoLow), (hp_lr4(xoLow) <: lp_lr4(xoHigh), hp_lr4(xoHigh));
 
-// 1-in 3-out 3-band split. Stage 1 separates low from (mid+high); stage 2
-// then splits the high side into mid and high.
-band3split = _ <: lp_lr4(xoLow), (hp_lr4(xoLow) <: lp_lr4(xoHigh), hp_lr4(xoHigh));
+wetStage1(x) = x : band3split
+    : (ottBand(lowThreshAboveDb,  lowThreshBelowDb,  lowThreshExpandDb,
+               lowRatioAbove,  lowRatioBelow,  lowExpandRatio,  depth, time),
+       ottBand(midThreshAboveDb,  midThreshBelowDb,  midThreshExpandDb,
+               midRatioAbove,  midRatioBelow,  midExpandRatio,  depth, time),
+       ottBand(highThreshAboveDb, highThreshBelowDb, highThreshExpandDb,
+               highRatioAbove, highRatioBelow, highExpandRatio, depth, time))
+    : *(db2lin(lowGainDb)), *(db2lin(midGainDb)), *(db2lin(highGainDb))
+    :> _;
 
-// Per-channel wet path: split → compress each band → makeup → sum.
-wet(x) = x : band3split
-       : (ottBand(lowThreshAboveDb, lowThreshBelowDb, lowRatio),
-          ottBand(midThreshAboveDb, midThreshBelowDb, midRatio),
-          ottBand(highThreshAboveDb, highThreshBelowDb, highRatio))
-       : *(db2lin(lowGainDb)), *(db2lin(midGainDb)), *(db2lin(highGainDb))
-       :> _;
+wetStage2(x) = x : band3split
+    : (ottBand(lowThreshAboveDb,  lowThreshBelowDb,  lowThreshExpandDb,
+               lowRatioAbove,  lowRatioBelow,  lowExpandRatio,  depth2, time2),
+       ottBand(midThreshAboveDb,  midThreshBelowDb,  midThreshExpandDb,
+               midRatioAbove,  midRatioBelow,  midExpandRatio,  depth2, time2),
+       ottBand(highThreshAboveDb, highThreshBelowDb, highThreshExpandDb,
+               highRatioAbove, highRatioBelow, highExpandRatio, depth2, time2))
+    :> _;
 
-// Phase-matched dry path for parallel blend. A raw passthrough dry signal
-// does not share the crossover phase response, so partial Mix settings
-// produce audible combing. Recombining the unprocessed bands keeps dry and
-// wet aligned.
 drySplit(x) = x : band3split :> _;
 
-// Per-channel pipeline: blend phase-matched dry and wet, apply output trim.
-channel(x) = ((1.0 - mix) * drySplit(x) + mix * wet(x)) * db2lin(outGainDb);
+channel(x) = ((1.0 - mix) * drySplit(x) + mix * (wetStage1(x) : wetStage2)) * db2lin(outGainDb);
 
-// Stereo: process L and R independently. Detector decisions are per-channel
-// (not stereo-linked) — fine for v1, easy to upgrade later.
 process = par(i, 2, channel);
