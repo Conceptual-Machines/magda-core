@@ -70,6 +70,22 @@ class AudioEngine : public AudioEngineListener {
     /** Stop all session clips, clear active state, revert to arrangement. */
     virtual void deactivateAllSessionClips() = 0;
 
+    /** Mark an empty session slot as the target for recording. */
+    virtual void armSessionSlotRecording(TrackId /*trackId*/, int /*sceneIndex*/) {}
+
+    /** Begin any armed session slot recordings. */
+    virtual void beginArmedSessionSlotRecordings() {}
+
+    /** True if the given empty session slot is armed as a recording target. */
+    virtual bool isSessionSlotRecordArmed(TrackId /*trackId*/, int /*sceneIndex*/) const {
+        return false;
+    }
+
+    /** True while the given session slot is actively recording. */
+    virtual bool isSessionSlotRecording(TrackId /*trackId*/, int /*sceneIndex*/) const {
+        return false;
+    }
+
     // ===== Tempo =====
     virtual void setTempo(double bpm) = 0;
     virtual double getTempo() const = 0;

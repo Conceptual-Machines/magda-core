@@ -145,6 +145,8 @@ class TrackController {
      */
     void setTrackAudioInput(TrackId trackId, const juce::String& deviceId);
 
+    bool setSessionSlotAudioRecordingTarget(TrackId trackId, int sceneIndex, bool enabled);
+
     /**
      * @brief Get current audio input source for a track
      * @param trackId The MAGDA track ID

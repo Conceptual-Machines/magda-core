@@ -22,6 +22,7 @@ class MidiInputRouter {
     void enableAllMidiInputDevices();
     void setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId);
     juce::String getTrackMidiInput(TrackId trackId) const;
+    bool setSessionSlotMidiRecordingTarget(TrackId trackId, int sceneIndex, bool enabled);
 
     void setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName);
     void clearSurfaceOnlyMidiInputPorts();

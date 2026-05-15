@@ -255,6 +255,102 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
     }
 }
 
+bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sceneIndex,
+                                                        bool enabled) {
+    auto* track = trackController_.getAudioTrack(trackId);
+    auto* playbackContext = edit_.getCurrentPlaybackContext();
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (!track || !playbackContext || !trackInfo || sceneIndex < 0)
+        return false;
+
+    edit_.getSceneList().ensureNumberOfScenes(sceneIndex + 1);
+    track->getClipSlotList().ensureNumberOfSlots(sceneIndex + 1);
+
+    auto slots = track->getClipSlotList().getClipSlots();
+    if (sceneIndex >= slots.size() || slots[sceneIndex] == nullptr)
+        return false;
+
+    auto* slot = slots[sceneIndex];
+    bool changedRouting = false;
+    bool armedSlot = false;
+
+    auto shouldUseDevice =
+        [this, configured = trackInfo->midiInputDevice](const te::MidiInputDevice& midiDevice) {
+            if (configured.isEmpty())
+                return false;
+            if (midiDevice.getName() == "All MIDI Ins")
+                return false;
+            if (isSurfaceOnlyMidiInput(midiDevice.getDeviceID(), midiDevice.getName()))
+                return false;
+            if (configured == "all")
+                return true;
+            return magda::midi::matches(configured, midiDevice.getDeviceID(), midiDevice.getName());
+        };
+
+    const auto teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
+
+    for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+        auto* midiDevice = dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner);
+        if (!midiDevice || !shouldUseDevice(*midiDevice))
+            continue;
+
+        if (enabled) {
+            if (!midiDevice->isEnabled())
+                midiDevice->setEnabled(true);
+
+            midiDevice->setMonitorMode(teMonitorMode);
+
+            auto hadSlotTarget = false;
+            for (auto targetID : inputDeviceInstance->getTargets()) {
+                if (targetID == slot->itemID) {
+                    hadSlotTarget = true;
+                    break;
+                }
+            }
+
+            if (!hadSlotTarget) {
+                auto result = inputDeviceInstance->setTarget(slot->itemID, false, nullptr);
+                if (!result.has_value())
+                    continue;
+                changedRouting = true;
+            }
+
+            inputDeviceInstance->setRecordingEnabled(track->itemID, false);
+            inputDeviceInstance->setRecordingEnabled(slot->itemID, true);
+            armedSlot = true;
+        } else {
+            bool hadSlotTarget = false;
+            for (auto targetID : inputDeviceInstance->getTargets()) {
+                if (targetID == slot->itemID) {
+                    hadSlotTarget = true;
+                    break;
+                }
+            }
+
+            if (hadSlotTarget) {
+                inputDeviceInstance->setRecordingEnabled(slot->itemID, false);
+                if (inputDeviceInstance->removeTarget(slot->itemID, nullptr))
+                    changedRouting = true;
+            }
+
+            bool hasTrackTarget = false;
+            for (auto targetID : inputDeviceInstance->getTargets()) {
+                if (targetID == track->itemID) {
+                    hasTrackTarget = true;
+                    break;
+                }
+            }
+            if (hasTrackTarget)
+                inputDeviceInstance->setRecordingEnabled(track->itemID, trackInfo->recordArmed);
+        }
+    }
+
+    if (changedRouting && playbackContext->isPlaybackGraphAllocated())
+        playbackContext->reallocate();
+
+    return enabled ? armedSlot : true;
+}
+
 void MidiInputRouter::setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName) {
     {
         juce::ScopedLock lock(surfaceOnlyMidiInputLock_);
