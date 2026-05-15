@@ -9,6 +9,7 @@
 
 #include "../../panels/state/PanelController.hpp"
 #include "../../state/TimelineEvents.hpp"
+#include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../tracks/TrackContentPanel.hpp"
@@ -233,7 +234,15 @@ size_t ClipComponent::computeWaveformHash(const ClipInfo& clip) {
 }
 
 void ClipComponent::timerCallback() {
-    stopTimer();
+    if (mouseIsOver_) {
+        const auto mods = juce::ModifierKeys::currentModifiers;
+        updateCursor(mods.isAltDown(), mods.isShiftDown(),
+                     mods.isCommandDown() || mods.isCtrlDown());
+        startTimer(50);
+    } else {
+        stopTimer();
+    }
+
     repaint();
 }
 
@@ -985,7 +994,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
 
     // Cmd/Ctrl-click acts as an eraser for the clip under the cursor. If the
     // clicked clip is part of a multi-selection, erase the selected group.
-    if (e.mods.isCommandDown()) {
+    if (e.mods.isLeftButtonDown() && (e.mods.isCommandDown() || e.mods.isCtrlDown())) {
         std::vector<ClipId> clipIds;
         const auto& selected = selectionManager.getSelectedClips();
         if (selected.count(clipId_) && selected.size() > 1) {
@@ -2157,8 +2166,9 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
         hoverVolumeHandle_ = false;
     }
 
-    // Always update cursor to check for Alt key (blade mode) and Shift key (stretch mode)
-    updateCursor(e.mods.isAltDown(), e.mods.isShiftDown());
+    // Always update cursor to check modifier-driven tools.
+    updateCursor(e.mods.isAltDown(), e.mods.isShiftDown(),
+                 e.mods.isCommandDown() || e.mods.isCtrlDown());
 
     if (hoverLeftEdge_ != wasHoverLeft || hoverRightEdge_ != wasHoverRight ||
         hoverFadeIn_ != wasHoverFadeIn || hoverFadeOut_ != wasHoverFadeOut ||
@@ -2167,13 +2177,21 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
     }
 }
 
+void ClipComponent::mouseEnter(const juce::MouseEvent& e) {
+    mouseIsOver_ = true;
+    startTimer(50);
+    updateCursor(e.mods.isAltDown(), e.mods.isShiftDown(),
+                 e.mods.isCommandDown() || e.mods.isCtrlDown());
+}
+
 void ClipComponent::mouseExit(const juce::MouseEvent& /*e*/) {
+    mouseIsOver_ = false;
     hoverLeftEdge_ = false;
     hoverRightEdge_ = false;
     hoverFadeIn_ = false;
     hoverFadeOut_ = false;
     hoverVolumeHandle_ = false;
-    updateCursor(false, false);
+    updateCursor(false, false, false);
     repaint();
 }
 
@@ -2330,7 +2348,12 @@ bool ClipComponent::isOnVolumeHandle(int x, int y) const {
     return std::abs(static_cast<float>(y) - lineY) <= 6.0f;
 }
 
-void ClipComponent::updateCursor(bool isAltDown, bool isShiftDown) {
+void ClipComponent::updateCursor(bool isAltDown, bool isShiftDown, bool isEraseDown) {
+    if (isEraseDown) {
+        setMouseCursor(CursorManager::getInstance().getEraseCursor());
+        return;
+    }
+
     // Alt key = blade/scissors mode
     if (isAltDown) {
         setMouseCursor(juce::MouseCursor::CrosshairCursor);

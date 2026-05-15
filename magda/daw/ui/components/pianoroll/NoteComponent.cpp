@@ -1,5 +1,6 @@
 #include "NoteComponent.hpp"
 
+#include "../../themes/CursorManager.hpp"
 #include "NoteGridHost.hpp"
 #include "core/ClipManager.hpp"
 #include "core/TrackManager.hpp"
@@ -64,20 +65,20 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         }
     }
 
+    // Cmd/Ctrl-click acts as an eraser for the note under the cursor. The parent
+    // grid expands this to the selected note group when appropriate.
+    if (e.mods.isLeftButtonDown() && (e.mods.isCommandDown() || e.mods.isCtrlDown())) {
+        if (onNoteDeleted)
+            onNoteDeleted(noteIndex_);
+        dragMode_ = DragMode::None;
+        return;
+    }
+
     // Right-click: forward to parent for context menu
     if (e.mods.isPopupMenu()) {
         if (onRightClick) {
             onRightClick(noteIndex_, e);
         }
-        return;
-    }
-
-    // Cmd/Ctrl-click acts as an eraser for the note under the cursor. The parent
-    // grid expands this to the selected note group when appropriate.
-    if (e.mods.isCommandDown()) {
-        if (onNoteDeleted)
-            onNoteDeleted(noteIndex_);
-        dragMode_ = DragMode::None;
         return;
     }
 
@@ -373,7 +374,10 @@ bool NoteComponent::isOnRightEdge(int x) const {
 }
 
 void NoteComponent::updateCursor() {
-    if (hoverLeftEdge_ || hoverRightEdge_) {
+    if (juce::ModifierKeys::currentModifiers.isCommandDown() ||
+        juce::ModifierKeys::currentModifiers.isCtrlDown()) {
+        setMouseCursor(CursorManager::getInstance().getEraseCursor());
+    } else if (hoverLeftEdge_ || hoverRightEdge_) {
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
     } else if (isSelected_ && juce::ModifierKeys::currentModifiers.isShiftDown()) {
         setMouseCursor(juce::MouseCursor::CopyingCursor);

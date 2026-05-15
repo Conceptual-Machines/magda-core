@@ -12,6 +12,7 @@ CursorManager::CursorManager() {
     zoomInCursor = createZoomCursor(ZoomGlyph::Plus);
     zoomOutCursor = createZoomCursor(ZoomGlyph::Minus);
     noteDrawCursor = createNoteDrawCursor();
+    eraseCursor = createEraseCursor();
 }
 
 juce::MouseCursor CursorManager::createZoomCursor(ZoomGlyph glyph) {
@@ -108,6 +109,45 @@ juce::MouseCursor CursorManager::createNoteDrawCursor() {
 
     // Hotspot at pencil tip.
     return juce::MouseCursor(img, 5, 22);
+}
+
+juce::MouseCursor CursorManager::createEraseCursor() {
+    const int size = 28;
+    juce::Image img(juce::Image::ARGB, size, size, true);
+    juce::Graphics g(img);
+
+    juce::Path eraser;
+    eraser.startNewSubPath(6.0f, 18.5f);
+    eraser.lineTo(15.5f, 9.0f);
+    eraser.lineTo(23.0f, 16.5f);
+    eraser.lineTo(15.0f, 24.5f);
+    eraser.lineTo(9.0f, 24.5f);
+    eraser.closeSubPath();
+
+    juce::Path cut;
+    cut.startNewSubPath(12.0f, 12.5f);
+    cut.lineTo(19.5f, 20.0f);
+
+    g.setColour(juce::Colours::white);
+    g.strokePath(eraser, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved,
+                                              juce::PathStrokeType::rounded));
+
+    g.setColour(juce::Colour(0xFFFF6666));
+    g.fillPath(eraser);
+    g.setColour(juce::Colours::black);
+    g.strokePath(eraser, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved,
+                                              juce::PathStrokeType::rounded));
+    g.strokePath(cut, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved,
+                                           juce::PathStrokeType::rounded));
+
+    g.setColour(juce::Colours::white);
+    g.drawLine(5.0f, 5.0f, 12.0f, 12.0f, 4.2f);
+    g.drawLine(12.0f, 5.0f, 5.0f, 12.0f, 4.2f);
+    g.setColour(juce::Colours::black);
+    g.drawLine(5.0f, 5.0f, 12.0f, 12.0f, 2.0f);
+    g.drawLine(12.0f, 5.0f, 5.0f, 12.0f, 2.0f);
+
+    return juce::MouseCursor(img, 8, 20);
 }
 
 }  // namespace magda
