@@ -24,6 +24,29 @@ static constexpr int kStaleTempDays = 7;
 static const char* const kAutosaveExtension = ".autosave";
 static constexpr int kDefaultAutoSaveIntervalMs = 60000;
 
+namespace {
+
+juce::File getWritableTempRoot() {
+    auto envTmp = juce::SystemStats::getEnvironmentVariable("TMPDIR", {});
+    if (envTmp.isNotEmpty()) {
+        auto envRoot = juce::File(envTmp);
+        if (envRoot.createDirectory())
+            return envRoot;
+    }
+
+    auto systemRoot = juce::File::getSpecialLocation(juce::File::tempDirectory);
+    if (systemRoot.createDirectory())
+        return systemRoot;
+
+    auto privateTmp = juce::File("/private/tmp");
+    if (privateTmp.createDirectory())
+        return privateTmp;
+
+    return systemRoot;
+}
+
+}  // namespace
+
 ProjectManager& ProjectManager::getInstance() {
     static ProjectManager instance;
     return instance;
@@ -463,10 +486,10 @@ juce::File ProjectManager::getBouncesDirectory() const {
 }
 
 void ProjectManager::createTempMediaDirectory() {
-    auto tempRoot =
-        juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile(kTempRootDir);
+    auto tempRoot = getWritableTempRoot().getChildFile(kTempRootDir);
     juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
-    mediaDirectory_ = tempRoot.getChildFile(kTempPrefix + timestamp);
+    tempRoot.createDirectory();
+    mediaDirectory_ = tempRoot.getNonexistentChildFile(kTempPrefix + timestamp, {});
     mediaDirectory_.createDirectory();
 }
 

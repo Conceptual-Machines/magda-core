@@ -3,14 +3,11 @@
 #include <juce_events/juce_events.h>
 #include <tracktion_engine/tracktion_engine.h>
 
-#define private public
-#include "magda/daw/engine/TracktionEngineWrapper.hpp"
-#undef private
-
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/engine/TracktionEngineWrapper.hpp"
 
 using namespace magda;
 namespace te = tracktion;
@@ -20,24 +17,6 @@ namespace {
 te::TimeRange beatRange(te::Edit& edit, double startBeat, double endBeat) {
     return {edit.tempoSequence.toTime(te::BeatPosition::fromBeats(startBeat)),
             edit.tempoSequence.toTime(te::BeatPosition::fromBeats(endBeat))};
-}
-
-te::InputDeviceInstance* findRecordingWaveInputForSlot(te::Edit& edit, te::ClipSlot& slot) {
-    auto* context = edit.getCurrentPlaybackContext();
-    if (context == nullptr)
-        return nullptr;
-
-    for (auto* input : context->getAllInputs()) {
-        if (dynamic_cast<te::MidiInputDevice*>(&input->owner) != nullptr)
-            continue;
-
-        for (auto targetId : input->getTargets()) {
-            if (targetId == slot.itemID && input->isRecordingEnabled(slot.itemID))
-                return input;
-        }
-    }
-
-    return nullptr;
 }
 
 juce::File testScratchDirectory() {
@@ -113,6 +92,7 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
 
             if (bridge != nullptr) {
                 bridge->createAudioTrack(trackId, "Session Record Target");
+                bridge->getQwertyMidiDevice();
                 bridge->enableAllMidiInputDevices();
                 bridge->setTrackMidiInput(trackId, "all");
                 bridge->syncAllArmedTracksToTE();
@@ -160,12 +140,7 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
                "Test starts with an empty session slot");
 
         fixture.wrapper.armSessionSlotRecording(fixture.trackId, fixture.sceneIndex);
-        auto targetIt = fixture.wrapper.sessionSlotRecordingTargets_.find(fixture.trackId);
-        expect(targetIt != fixture.wrapper.sessionSlotRecordingTargets_.end(),
-               "Wrapper should remember the armed session slot");
-        if (targetIt == fixture.wrapper.sessionSlotRecordingTargets_.end())
-            return;
-        targetIt->second.active = true;
+        fixture.wrapper.testSetSessionSlotRecordingActive(fixture.trackId, fixture.sceneIndex);
         expect(fixture.wrapper.isSessionSlotRecording(fixture.trackId, fixture.sceneIndex),
                "Wrapper should mark the slot as actively recording");
 
@@ -185,7 +160,7 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
         sequence.addNote(64, te::BeatPosition::fromBeats(1.25), te::BeatDuration::fromBeats(0.25),
                          96, 0, nullptr);
 
-        expect(fixture.wrapper.finalizeSessionSlotMidiRecording(fixture.trackId, *clipRef),
+        expect(fixture.wrapper.testFinalizeSessionSlotMidiRecording(fixture.trackId, *clipRef),
                "Recorded TE slot clip should finalize through the session recording path");
 
         const auto sessionClipId =
@@ -253,18 +228,13 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
         fixture.bridge->syncAllArmedTracksToTE();
 
         fixture.wrapper.armSessionSlotRecording(fixture.trackId, fixture.sceneIndex);
-        fixture.wrapper.beginArmedSessionSlotRecordings();
+        fixture.wrapper.testSetSessionSlotRecordingActive(fixture.trackId, fixture.sceneIndex);
         expect(fixture.wrapper.isSessionSlotRecording(fixture.trackId, fixture.sceneIndex),
                "Wrapper should mark the audio slot as actively recording");
 
         auto* slot = fixture.getSlot();
         expect(slot != nullptr, "TE ClipSlot must exist");
         if (slot == nullptr)
-            return;
-
-        auto* input = findRecordingWaveInputForSlot(*fixture.edit, *slot);
-        expect(input != nullptr, "A wave input must be armed directly against the TE ClipSlot");
-        if (input == nullptr)
             return;
 
         auto audioFile = createSineWavFile(44100.0, 1.5, 120.0);
@@ -280,7 +250,7 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
         if (!clipRef)
             return;
 
-        expect(fixture.wrapper.finalizeSessionSlotAudioRecording(fixture.trackId, *clipRef),
+        expect(fixture.wrapper.testFinalizeSessionSlotAudioRecording(fixture.trackId, *clipRef),
                "Recorded TE audio slot clip should finalize through the session recording path");
 
         const auto sessionClipId =

@@ -181,6 +181,8 @@ target_link_libraries(magda_juce_tests
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
 )
 
+target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1)
+
 # Include directories for JUCE tests
 target_include_directories(magda_juce_tests
     PRIVATE
