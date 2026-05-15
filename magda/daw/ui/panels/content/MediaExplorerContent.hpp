@@ -10,6 +10,8 @@
 
 namespace magda::daw::ui {
 
+class MediaDbBrowserContent;  // forward decl — defined in MediaDbBrowserContent.hpp
+
 /**
  * @brief Media explorer panel content
  *
@@ -95,12 +97,13 @@ class MediaExplorerContent : public PanelContent,
     std::unique_ptr<juce::FileBrowserComponent> fileBrowser_;
     std::unique_ptr<juce::FileChooser> fileChooser_;  // Persisted for async callbacks
 
-    // Library / DB mode (issue #768 — Phase F1)
+    // Library / DB mode (issue #768 — Phase F1+F2)
     // When `libraryMode_` is true, the file browser is hidden and the
-    // `dbPlaceholderLabel_` occupies the same bounds. F2 will replace the
-    // placeholder with the actual MediaDbBrowserContent component.
+    // dbBrowser_ component occupies the same bounds. The shared search box
+    // pushes its text into the DB browser via setQueryText() so one input
+    // serves both modes.
     bool libraryMode_ = false;
-    juce::Label dbPlaceholderLabel_;
+    std::unique_ptr<MediaDbBrowserContent> dbBrowser_;
 
     // Active media type filters
     bool audioFilterActive_ = true;

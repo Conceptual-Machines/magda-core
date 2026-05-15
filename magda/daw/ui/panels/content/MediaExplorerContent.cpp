@@ -8,6 +8,7 @@
 #include "../../themes/FontManager.hpp"
 #include "AudioThumbnailManager.hpp"
 #include "BinaryData.h"
+#include "MediaDbBrowserContent.hpp"
 
 namespace magda::daw::ui {
 
@@ -728,7 +729,9 @@ MediaExplorerContent::MediaExplorerContent() {
         // Switching back to a filesystem location exits library mode.
         if (libraryMode_) {
             libraryMode_ = false;
-            dbPlaceholderLabel_.setVisible(false);
+            if (dbBrowser_) {
+                dbBrowser_->setVisible(false);
+            }
             fileBrowser_->setVisible(true);
         }
         navigateToDirectory(location);
@@ -736,20 +739,20 @@ MediaExplorerContent::MediaExplorerContent() {
     sidebarComponent_->onLibrarySelected = [this]() {
         libraryMode_ = true;
         fileBrowser_->setVisible(false);
-        dbPlaceholderLabel_.setVisible(true);
+        if (dbBrowser_) {
+            dbBrowser_->setVisible(true);
+            dbBrowser_->setQueryText(searchTerm_);
+            dbBrowser_->refresh();
+        }
         resized();
     };
     addAndMakeVisible(*sidebarComponent_);
 
-    // Library-mode placeholder. F2 swaps this for the real DB browser.
-    dbPlaceholderLabel_.setText("Media database\n\nIndexer and search UI land in Phase F2.",
-                                juce::dontSendNotification);
-    dbPlaceholderLabel_.setJustificationType(juce::Justification::centred);
-    dbPlaceholderLabel_.setColour(juce::Label::textColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    dbPlaceholderLabel_.setInterceptsMouseClicks(false, false);
-    dbPlaceholderLabel_.setVisible(false);
-    addAndMakeVisible(dbPlaceholderLabel_);
+    // Real DB browser (Phase F2). Hidden until library mode activates.
+    dbBrowser_ = std::make_unique<MediaDbBrowserContent>();
+    dbBrowser_->onFileSelected = [this](const juce::File& f) { loadFileForPreview(f); };
+    dbBrowser_->setVisible(false);
+    addAndMakeVisible(*dbBrowser_);
 
     // Navigate to default directory if configured, otherwise fall back to userMusicDirectory
     auto defaultDir = magda::Config::getInstance().getBrowserDefaultDirectory();
@@ -984,6 +987,11 @@ void MediaExplorerContent::updateMediaFilter() {
         fileBrowser_->setFileFilter(mediaFileFilter_.get());
         fileBrowser_->refresh();
     }
+    // Mirror the search text into the DB browser. It only re-queries if the
+    // text actually changed, so this is cheap when filesystem mode is active.
+    if (dbBrowser_) {
+        dbBrowser_->setQueryText(searchTerm_);
+    }
 }
 
 juce::String MediaExplorerContent::getMediaFilterPattern() const {
@@ -1096,10 +1104,12 @@ void MediaExplorerContent::resized() {
     sidebarComponent_->setBounds(bounds.removeFromLeft(sidebarWidth));
     bounds.removeFromLeft(8);  // Spacing between sidebar and browser
 
-    // Right: File browser (filesystem mode) or placeholder (library mode) —
+    // Right: File browser (filesystem mode) or DB browser (library mode) —
     // same bounds either way, visibility is toggled at the click site.
     fileBrowser_->setBounds(bounds);
-    dbPlaceholderLabel_.setBounds(bounds);
+    if (dbBrowser_) {
+        dbBrowser_->setBounds(bounds);
+    }
 
     // Now layout preview/inspector area
     previewArea.removeFromTop(4);
