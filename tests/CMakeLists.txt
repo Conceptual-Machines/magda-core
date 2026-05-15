@@ -115,6 +115,8 @@ set(TEST_SOURCES
     test_media_db_roberta_tokenizer.cpp
     # Media database (issue #768) — Phase E1: MediaDbIndexer
     test_media_db_indexer.cpp
+    # Media database (issue #768) — Phase E2: MediaDbQuery (hybrid search)
+    test_media_db_query.cpp
 )
 
 # Create test executable
