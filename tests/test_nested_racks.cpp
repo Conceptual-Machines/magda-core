@@ -5,6 +5,7 @@
 
 #include "../magda/daw/core/RackInfo.hpp"
 #include "../magda/daw/core/SelectionManager.hpp"
+#include "../magda/daw/core/TrackCommands.hpp"
 #include "../magda/daw/core/TrackManager.hpp"
 
 using namespace magda;
@@ -731,6 +732,41 @@ TEST_CASE("TrackManager: Move chain elements between track and rack chains",
     REQUIRE(isRack(restoredTopLevelElements[0]));
     REQUIRE(isDevice(restoredTopLevelElements[1]));
     REQUIRE(getDevice(restoredTopLevelElements[1]).id == delayId);
+}
+
+TEST_CASE("MoveChainElementCommand: undo and redo route through chain move",
+          "[trackmanager][device][path][move][undo]") {
+    TrackManagerTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Test Track");
+    auto rackId = fixture.tm().addRackToTrack(trackId, "Rack");
+    auto* rack = fixture.tm().getRack(trackId, rackId);
+    REQUIRE(rack != nullptr);
+    auto chainId = rack->chains[0].id;
+    auto chainPath = ChainNodePath::chain(trackId, rackId, chainId);
+
+    DeviceInfo filter;
+    filter.name = "Filter";
+    filter.pluginId = "magda_filter";
+    filter.format = PluginFormat::Internal;
+
+    auto filterId = fixture.tm().addDeviceToTrack(trackId, filter);
+    REQUIRE(filterId != INVALID_DEVICE_ID);
+
+    MoveChainElementCommand command(ChainNodePath::topLevelDevice(trackId, filterId), chainPath, 0);
+    command.execute();
+    REQUIRE(command.didMove());
+    REQUIRE(fixture.tm().getDeviceInChainByPath(chainPath.withDevice(filterId)) != nullptr);
+    REQUIRE(fixture.tm().getDeviceInChainByPath(ChainNodePath::topLevelDevice(trackId, filterId)) ==
+            nullptr);
+
+    command.undo();
+    REQUIRE(fixture.tm().getDeviceInChainByPath(ChainNodePath::topLevelDevice(trackId, filterId)) !=
+            nullptr);
+    REQUIRE(fixture.tm().getDeviceInChainByPath(chainPath.withDevice(filterId)) == nullptr);
+
+    command.execute();
+    REQUIRE(fixture.tm().getDeviceInChainByPath(chainPath.withDevice(filterId)) != nullptr);
 }
 
 TEST_CASE("TrackManager: Move selected-order devices to another track",

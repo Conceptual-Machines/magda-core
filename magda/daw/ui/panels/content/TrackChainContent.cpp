@@ -16,6 +16,7 @@
 #include "core/ModInfo.hpp"
 #include "core/PresetManager.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
@@ -30,6 +31,36 @@
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+bool dragObjectToChainNodePath(const juce::DynamicObject& obj, magda::ChainNodePath& path) {
+    path = {};
+    if (obj.getProperty("type").toString() != "chainElement")
+        return false;
+
+    path.trackId = static_cast<magda::TrackId>(static_cast<int>(obj.getProperty("trackId")));
+    path.topLevelDeviceId =
+        static_cast<magda::DeviceId>(static_cast<int>(obj.getProperty("topLevelDeviceId")));
+    path.isTrackLevel = static_cast<bool>(obj.getProperty("isTrackLevel"));
+
+    auto stepTypes =
+        juce::StringArray::fromTokens(obj.getProperty("stepTypes").toString(), ",", "");
+    auto stepIds = juce::StringArray::fromTokens(obj.getProperty("stepIds").toString(), ",", "");
+    if (stepTypes.size() != stepIds.size())
+        return false;
+
+    for (int i = 0; i < stepTypes.size(); ++i) {
+        const int typeValue = stepTypes[i].getIntValue();
+        if (typeValue < static_cast<int>(magda::ChainStepType::Rack) ||
+            typeValue > static_cast<int>(magda::ChainStepType::Device))
+            return false;
+        path.steps.push_back(
+            {static_cast<magda::ChainStepType>(typeValue), stepIds[i].getIntValue()});
+    }
+
+    return path.isValid();
+}
+}  // namespace
 
 //==============================================================================
 // GainMeterComponent - Vertical gain slider with peak meter background
@@ -342,12 +373,12 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
 
     // DragAndDropTarget implementation
     bool isInterestedInDragSource(const SourceDetails& details) override {
-        // Accept plugin drops if we have a track selected
         if (owner_.selectedTrackId_ == magda::INVALID_TRACK_ID) {
             return false;
         }
         if (auto* obj = details.description.getDynamicObject()) {
-            return obj->getProperty("type").toString() == "plugin";
+            auto type = obj->getProperty("type").toString();
+            return type == "plugin" || type == "chainElement";
         }
         return false;
     }
@@ -373,6 +404,49 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
 
     void itemDropped(const SourceDetails& details) override {
         if (auto* obj = details.description.getDynamicObject()) {
+            int insertIndex = owner_.dropInsertIndex_ >= 0
+                                  ? owner_.dropInsertIndex_
+                                  : static_cast<int>(nodeComponents_->size());
+            const bool shouldScrollToEnd = insertIndex >= static_cast<int>(nodeComponents_->size());
+            const auto type = obj->getProperty("type").toString();
+
+            if (type == "chainElement") {
+                magda::ChainNodePath sourcePath;
+                if (dragObjectToChainNodePath(*obj, sourcePath)) {
+                    magda::ChainNodePath destinationPath;
+                    destinationPath.trackId = owner_.selectedTrackId_;
+                    auto safeOwner = juce::Component::SafePointer<TrackChainContent>(&owner_);
+
+                    owner_.scrollToEndAfterNextDeviceChange_ = shouldScrollToEnd;
+                    owner_.suppressNextImplicitScrollToEnd_ = !shouldScrollToEnd;
+                    owner_.dropInsertIndex_ = -1;
+                    owner_.stopTimer();
+                    owner_.resized();
+                    repaint();
+
+                    juce::MessageManager::callAsync(
+                        [safeOwner, sourcePath, destinationPath, insertIndex]() {
+                            auto command = std::make_unique<magda::MoveChainElementCommand>(
+                                sourcePath, destinationPath, insertIndex);
+                            auto* moveCommand = command.get();
+                            magda::UndoManager::getInstance().executeCommand(std::move(command));
+                            if (!moveCommand->didMove() && safeOwner != nullptr) {
+                                safeOwner->scrollToEndAfterNextDeviceChange_ = false;
+                                safeOwner->suppressNextImplicitScrollToEnd_ = false;
+                            }
+                        });
+                    return;
+                }
+            }
+
+            if (type != "plugin") {
+                owner_.dropInsertIndex_ = -1;
+                owner_.stopTimer();
+                owner_.resized();
+                repaint();
+                return;
+            }
+
             // Create DeviceInfo from dropped plugin
             magda::DeviceInfo device;
             device.name = obj->getProperty("name").toString().toStdString();
@@ -401,11 +475,6 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
                 device.format = magda::PluginFormat::Internal;
             }
 
-            // Insert at the drop position
-            int insertIndex = owner_.dropInsertIndex_ >= 0
-                                  ? owner_.dropInsertIndex_
-                                  : static_cast<int>(nodeComponents_->size());
-            const bool shouldScrollToEnd = insertIndex >= static_cast<int>(nodeComponents_->size());
             owner_.scrollToEndAfterNextDeviceChange_ = shouldScrollToEnd;
             owner_.suppressNextImplicitScrollToEnd_ = !shouldScrollToEnd;
             magda::TrackManager::getInstance().addDeviceToTrack(owner_.selectedTrackId_, device,
@@ -1792,31 +1861,10 @@ void TrackChainContent::rebuildNodeComponents() {
                 dragGhostImage_ = juce::Image();
                 stopTimer();
 
-                int nodeCount = static_cast<int>(nodeComponents_.size());
-                int fromIndex = dragOriginalIndex_;
-                int insertIndex = dragInsertIndex_;
-
                 draggedNode_ = nullptr;
                 dragOriginalIndex_ = -1;
                 dragInsertIndex_ = -1;
 
-                if (fromIndex >= 0 && insertIndex >= 0 && fromIndex != insertIndex) {
-                    int targetIndex = insertIndex;
-                    if (insertIndex > fromIndex)
-                        targetIndex = insertIndex - 1;
-                    targetIndex = juce::jlimit(0, nodeCount - 1, targetIndex);
-                    if (targetIndex != fromIndex) {
-                        // Defer the move so the component isn't destroyed
-                        // while its mouseUp handler is still on the call stack
-                        int trackId = selectedTrackId_;
-                        juce::MessageManager::callAsync([trackId, fromIndex, targetIndex]() {
-                            magda::TrackManager::getInstance().moveNode(trackId, fromIndex,
-                                                                        targetIndex);
-                        });
-                        return;
-                    }
-                }
-                // No move — just re-layout to remove drag indicators
                 resized();
                 chainContainer_->repaint();
             };
@@ -1876,23 +1924,9 @@ void TrackChainContent::rebuildNodeComponents() {
                 dragGhostImage_ = juce::Image();
                 stopTimer();
 
-                int nodeCount = static_cast<int>(nodeComponents_.size());
-                if (dragOriginalIndex_ >= 0 && dragInsertIndex_ >= 0 &&
-                    dragOriginalIndex_ != dragInsertIndex_) {
-                    int targetIndex = dragInsertIndex_;
-                    if (dragInsertIndex_ > dragOriginalIndex_) {
-                        targetIndex = dragInsertIndex_ - 1;
-                    }
-                    targetIndex = juce::jlimit(0, nodeCount - 1, targetIndex);
-                    if (targetIndex != dragOriginalIndex_) {
-                        magda::TrackManager::getInstance().moveNode(
-                            selectedTrackId_, dragOriginalIndex_, targetIndex);
-                    }
-                }
                 draggedNode_ = nullptr;
                 dragOriginalIndex_ = -1;
                 dragInsertIndex_ = -1;
-                // Re-layout and repaint to remove left padding and indicator
                 resized();
                 chainContainer_->repaint();
             };

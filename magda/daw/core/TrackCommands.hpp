@@ -125,6 +125,38 @@ class RemoveDeviceFromTrackCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for moving a chain element within/between track and rack chains.
+ */
+class MoveChainElementCommand : public UndoableCommand {
+  public:
+    MoveChainElementCommand(const ChainNodePath& sourceElementPath,
+                            const ChainNodePath& destinationChainPath, int insertIndex);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Move Chain Element";
+    }
+
+    bool didMove() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath buildMovedPath(const ChainNodePath& destinationChainPath) const;
+
+    ChainNodePath sourceElementPath_;
+    ChainNodePath destinationChainPath_;
+    ChainNodePath undoChainPath_;
+    ChainNodePath movedElementPath_;
+    int insertIndex_ = 0;
+    int undoIndex_ = -1;
+    ChainStepType sourceType_ = ChainStepType::Device;
+    int sourceId_ = INVALID_DEVICE_ID;
+    bool executed_ = false;
+};
+
+/**
  * @brief Command for creating a new track with a device (single undo step)
  */
 class CreateTrackWithDeviceCommand : public UndoableCommand {

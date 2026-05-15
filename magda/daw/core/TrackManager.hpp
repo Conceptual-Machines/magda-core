@@ -310,6 +310,7 @@ class TrackManager {
     void moveElementInChainByPath(const ChainNodePath& chainPath, int fromIndex, int toIndex);
     bool moveChainElement(const ChainNodePath& sourceElementPath,
                           const ChainNodePath& destinationChainPath, int insertIndex);
+    int getChainElementIndex(const ChainNodePath& elementPath);
     DeviceInfo* getDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId,
                                  DeviceId deviceId);
     DeviceInfo* getDeviceInChainByPath(const ChainNodePath& devicePath);

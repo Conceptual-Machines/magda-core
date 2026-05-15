@@ -10,6 +10,7 @@
 #include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
 #include "magda/daw/audio/racks/InstrumentRackManager.hpp"
 #include "magda/daw/core/RackInfo.hpp"
+#include "magda/daw/core/TrackManager.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 namespace te = tracktion;
@@ -55,6 +56,9 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         testRackSyncBypassedChainPreservesMidi();
         testRackSyncMutedChainSuppressesMidiOutput();
         testRackSyncRoutesChainOutputIndexToRackPins();
+        testRackSyncInstrumentInjectsAudioAndPassesMidiToFx();
+        testRackSyncMidiSidechainFxDoesNotReceiveChainMidi();
+        testMoveDeviceIntoRackRemovesTrackRuntimePlugin();
     }
 
   private:
@@ -184,6 +188,27 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         device.format = magda::PluginFormat::Internal;
         device.pluginId = pluginId;
         return device;
+    }
+
+    static magda::DeviceInfo makeInternalInstrument(magda::DeviceId id, const juce::String& name,
+                                                    const juce::String& pluginId) {
+        auto device = makeInternalDevice(id, name, pluginId);
+        device.isInstrument = true;
+        device.deviceType = magda::DeviceType::Instrument;
+        return device;
+    }
+
+    static int countTrackPluginMappings(te::AudioTrack* track, magda::PluginManager& pluginManager,
+                                        magda::DeviceId deviceId) {
+        if (track == nullptr)
+            return 0;
+
+        int count = 0;
+        for (int i = 0; i < track->pluginList.size(); ++i) {
+            if (pluginManager.getDeviceIdForPlugin(track->pluginList[i]) == deviceId)
+                ++count;
+        }
+        return count;
     }
 
     te::RackType* syncTestRack(magda::RackInfo& rack, magda::TrackId trackId) {
@@ -422,6 +447,158 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
                "Chain right output should route to output pair 2 right");
 
         rackSync.removeRack(rack.id);
+    }
+
+    void testRackSyncInstrumentInjectsAudioAndPassesMidiToFx() {
+        beginTest("Rack sync treats instruments as audio injectors with MIDI thru");
+
+        magda::RackInfo rack;
+        rack.id = 9500;
+        rack.name = "Instrument FX Rack";
+
+        magda::ChainInfo chain;
+        chain.id = 9501;
+        auto instrument = makeInternalInstrument(9502, "4OSC Synth", "4OSC Synth");
+        auto triggeredFx = makeInternalDevice(9503, "Filter", "magda_filter");
+        triggeredFx.canReceiveMidi = true;
+        chain.elements.push_back(magda::makeDeviceElement(instrument));
+        chain.elements.push_back(magda::makeDeviceElement(triggeredFx));
+        rack.chains.push_back(std::move(chain));
+
+        auto* rackType = syncTestRack(rack, 950);
+        if (!rackType)
+            return;
+
+        auto& rackSync = magda::test::getSharedEngine()
+                             .getAudioBridge()
+                             ->getPluginManager()
+                             .getRackSyncManager();
+        auto* instrumentPlugin = rackSync.getInnerPlugin(instrument.id);
+        auto* fxPlugin = rackSync.getInnerPlugin(triggeredFx.id);
+        expect(instrumentPlugin != nullptr, "Instrument should be loaded into the rack");
+        expect(fxPlugin != nullptr, "Triggered FX should be loaded into the rack");
+        if (!instrumentPlugin || !fxPlugin)
+            return;
+
+        const auto rackIO = te::EditItemID();
+        expect(hasConnection(*rackType, rackIO, 0, instrumentPlugin->itemID, 0),
+               "Rack MIDI input should feed the instrument");
+        expect(hasConnection(*rackType, rackIO, 0, fxPlugin->itemID, 0),
+               "Rack MIDI input should continue to downstream MIDI-triggered FX");
+        expect(!hasConnection(*rackType, instrumentPlugin->itemID, 0, fxPlugin->itemID, 0),
+               "Instrument MIDI output should not be required for MIDI thru");
+
+        expect(!hasConnection(*rackType, rackIO, 1, instrumentPlugin->itemID, 1),
+               "Rack audio should not be processed by the instrument as if it were FX");
+        expect(!hasConnection(*rackType, rackIO, 2, instrumentPlugin->itemID, 2),
+               "Rack audio should not be processed by the instrument as if it were FX");
+        expect(hasConnection(*rackType, rackIO, 1, fxPlugin->itemID, 1),
+               "Rack left audio should reach the first downstream audio processor");
+        expect(hasConnection(*rackType, rackIO, 2, fxPlugin->itemID, 2),
+               "Rack right audio should reach the first downstream audio processor");
+        expect(hasConnection(*rackType, instrumentPlugin->itemID, 1, fxPlugin->itemID, 1),
+               "Instrument left audio should be injected into the downstream FX");
+        expect(hasConnection(*rackType, instrumentPlugin->itemID, 2, fxPlugin->itemID, 2),
+               "Instrument right audio should be injected into the downstream FX");
+
+        rackSync.removeRack(rack.id);
+    }
+
+    void testRackSyncMidiSidechainFxDoesNotReceiveChainMidi() {
+        beginTest("Rack sync excludes MIDI-sidechained FX from chain MIDI");
+
+        magda::RackInfo rack;
+        rack.id = 9600;
+        rack.name = "MIDI Sidechain Rack";
+
+        magda::ChainInfo chain;
+        chain.id = 9601;
+        auto instrument = makeInternalInstrument(9602, "4OSC Synth", "4OSC Synth");
+        auto sidechainedFx = makeInternalDevice(9603, "Filter", "magda_filter");
+        sidechainedFx.canReceiveMidi = true;
+        sidechainedFx.sidechain.type = magda::SidechainConfig::Type::MIDI;
+        sidechainedFx.sidechain.sourceTrackId = 12345;
+        chain.elements.push_back(magda::makeDeviceElement(instrument));
+        chain.elements.push_back(magda::makeDeviceElement(sidechainedFx));
+        rack.chains.push_back(std::move(chain));
+
+        auto* rackType = syncTestRack(rack, 960);
+        if (!rackType)
+            return;
+
+        auto& rackSync = magda::test::getSharedEngine()
+                             .getAudioBridge()
+                             ->getPluginManager()
+                             .getRackSyncManager();
+        auto* instrumentPlugin = rackSync.getInnerPlugin(instrument.id);
+        auto* fxPlugin = rackSync.getInnerPlugin(sidechainedFx.id);
+        expect(instrumentPlugin != nullptr, "Instrument should be loaded into the rack");
+        expect(fxPlugin != nullptr, "MIDI-sidechained FX should be loaded into the rack");
+        if (!instrumentPlugin || !fxPlugin)
+            return;
+
+        const auto rackIO = te::EditItemID();
+        expect(hasConnection(*rackType, rackIO, 0, instrumentPlugin->itemID, 0),
+               "Rack MIDI input should still feed the instrument");
+        expect(!hasConnection(*rackType, rackIO, 0, fxPlugin->itemID, 0),
+               "MIDI-sidechained FX should not receive chain MIDI");
+        expect(!hasConnection(*rackType, instrumentPlugin->itemID, 0, fxPlugin->itemID, 0),
+               "MIDI-sidechained FX should not receive instrument MIDI");
+        expect(hasConnection(*rackType, rackIO, 1, fxPlugin->itemID, 1),
+               "Sidechain mode should not change normal audio routing");
+        expect(hasConnection(*rackType, instrumentPlugin->itemID, 1, fxPlugin->itemID, 1),
+               "Sidechain mode should not change instrument audio injection");
+
+        rackSync.removeRack(rack.id);
+    }
+
+    void testMoveDeviceIntoRackRemovesTrackRuntimePlugin() {
+        beginTest("Moving a device into a rack detaches its old track plugin");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        magda::test::resetTransport(wrapper);
+
+        auto* bridge = wrapper.getAudioBridge();
+        expect(bridge != nullptr, "AudioBridge must exist");
+        if (!bridge)
+            return;
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(&wrapper);
+
+        const auto trackId = trackManager.createTrack("Move Runtime");
+        const auto rackId = trackManager.addRackToTrack(trackId, "Rack");
+        auto* rack = trackManager.getRack(trackId, rackId);
+        expect(rack != nullptr, "Rack must exist");
+        if (!rack)
+            return;
+
+        const auto chainPath = magda::ChainNodePath::chain(trackId, rackId, rack->chains[0].id);
+        auto filter = makeInternalDevice(magda::INVALID_DEVICE_ID, "Filter", "magda_filter");
+        const auto filterId = trackManager.addDeviceToTrack(trackId, filter);
+        expect(filterId != magda::INVALID_DEVICE_ID, "Filter must be added");
+        if (filterId == magda::INVALID_DEVICE_ID)
+            return;
+
+        bridge->syncTrackPlugins(trackId);
+        auto& pluginManager = bridge->getPluginManager();
+        auto* teTrack = bridge->getAudioTrack(trackId);
+        expectEquals(countTrackPluginMappings(teTrack, pluginManager, filterId), 1,
+                     "Filter starts as exactly one top-level TE plugin");
+
+        expect(trackManager.moveChainElement(
+                   magda::ChainNodePath::topLevelDevice(trackId, filterId), chainPath, 0),
+               "Move into rack must succeed");
+        bridge->syncTrackPlugins(trackId);
+
+        expectEquals(countTrackPluginMappings(teTrack, pluginManager, filterId), 0,
+                     "Moved rack device must not leave a stale top-level TE plugin");
+        expect(pluginManager.getRackSyncManager().getInnerPlugin(filterId) != nullptr,
+               "Moved device must exist as a rack inner plugin");
+
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(nullptr);
     }
 
     void testStepSequencerDefaultsToReplacingMidi() {

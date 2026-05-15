@@ -489,10 +489,55 @@ static bool elementContainsInstrument(const ChainElement& element) {
     return false;
 }
 
+static juce::String describeMoveParams(const DeviceInfo& device, int maxParams = 8) {
+    juce::String text;
+    const int count = std::min(maxParams, static_cast<int>(device.parameters.size()));
+    for (int i = 0; i < count; ++i) {
+        const auto& p = device.parameters[static_cast<size_t>(i)];
+        if (i > 0)
+            text << " | ";
+        text << "#" << i << "(" << p.paramIndex << ") " << p.name << "=" << p.currentValue;
+    }
+    if (static_cast<int>(device.parameters.size()) > count)
+        text << " | ...";
+    return text;
+}
+
+static void logMoveDeviceState(const DeviceInfo& device, const juce::String& label) {
+    DBG("[ChainMove] " << label << " device id=" << device.id << " name='" << device.name
+                       << "' pluginId='" << device.pluginId << "' stateLen="
+                       << device.pluginState.length() << " params=" << device.parameters.size()
+                       << " gainDb=" << device.gainDb << " bypassed=" << (int)device.bypassed);
+    DBG("[ChainMove] " << label << " params: " << describeMoveParams(device));
+}
+
+static void logMoveElementState(const ChainElement& element, const juce::String& label) {
+    if (magda::isDevice(element)) {
+        logMoveDeviceState(magda::getDevice(element), label);
+        return;
+    }
+
+    const auto& rack = magda::getRack(element);
+    DBG("[ChainMove] " << label << " rack id=" << rack.id << " name='" << rack.name
+                       << "' chains=" << rack.chains.size());
+    for (const auto& chain : rack.chains) {
+        int index = 0;
+        for (const auto& child : chain.elements) {
+            logMoveElementState(child, label + " rackChain=" + juce::String(chain.id) +
+                                           " child=" + juce::String(index++));
+        }
+    }
+}
+
 bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
                                     const ChainNodePath& destinationChainPath, int insertIndex) {
+    DBG("[ChainMove] request source=" << sourceElementPath.toString()
+                                      << " destination=" << destinationChainPath.toString()
+                                      << " requestedIndex=" << insertIndex);
+
     if (sourceElementPath.trackId == INVALID_TRACK_ID ||
         destinationChainPath.trackId == INVALID_TRACK_ID) {
+        DBG("[ChainMove] rejected: invalid source/destination track");
         return false;
     }
 
@@ -512,6 +557,7 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         sourceChainPath.steps.assign(sourceElementPath.steps.begin(),
                                      sourceElementPath.steps.end() - 1);
     } else {
+        DBG("[ChainMove] rejected: source path does not point at device/rack");
         return false;
     }
 
@@ -523,8 +569,12 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
 
     auto* sourceElements = getElementContainerForChainPath(*this, sourceChainPath);
     auto* destinationElements = getElementContainerForChainPath(*this, destinationChainPath);
-    if (sourceElements == nullptr || destinationElements == nullptr)
+    if (sourceElements == nullptr || destinationElements == nullptr) {
+        DBG("[ChainMove] rejected: source/destination container missing sourceContainer="
+            << (int)(sourceElements != nullptr)
+            << " destinationContainer=" << (int)(destinationElements != nullptr));
         return false;
+    }
 
     auto sourceIt = std::find_if(
         sourceElements->begin(), sourceElements->end(),
@@ -533,8 +583,11 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
                 return magda::isDevice(element) && magda::getDevice(element).id == sourceId;
             return magda::isRack(element) && magda::getRack(element).id == sourceId;
         });
-    if (sourceIt == sourceElements->end())
+    if (sourceIt == sourceElements->end()) {
+        DBG("[ChainMove] rejected: source element not found type=" << static_cast<int>(sourceType)
+                                                                   << " id=" << sourceId);
         return false;
+    }
 
     if (auto* destinationTrack = getTrack(destinationChainPath.trackId)) {
         const bool destinationCannotHostInstruments = destinationTrack->type == TrackType::Aux ||
@@ -553,10 +606,31 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
     const int destinationSize = static_cast<int>(destinationElements->size());
     insertIndex = std::clamp(insertIndex, 0, destinationSize);
 
-    if (sameContainer && (insertIndex == sourceIndex || insertIndex == sourceIndex + 1))
+    DBG("[ChainMove] resolved sourceIndex=" << sourceIndex << " destinationSize=" << destinationSize
+                                            << " clampedIndex=" << insertIndex
+                                            << " sameContainer=" << (int)sameContainer);
+
+    if (sameContainer && (insertIndex == sourceIndex || insertIndex == sourceIndex + 1)) {
+        DBG("[ChainMove] no-op: same-container adjacent drop");
         return false;
+    }
+
+    if (audioEngine_) {
+        if (auto* bridge = audioEngine_->getAudioBridge()) {
+            DBG("[ChainMove] preparing live plugin runtime before model move");
+            bridge->getPluginManager().prepareForChainElementMove(sourceElementPath,
+                                                                  destinationChainPath);
+        } else {
+            DBG("[ChainMove] no AudioBridge available for pre-move capture");
+        }
+    } else {
+        DBG("[ChainMove] no AudioEngine available for pre-move capture");
+    }
+
+    logMoveElementState(*sourceIt, "afterCapture/source");
 
     ChainElement element = std::move(*sourceIt);
+    logMoveElementState(element, "movingElement");
     sourceElements->erase(sourceElements->begin() + sourceIndex);
 
     if (sameContainer && insertIndex > sourceIndex)
@@ -565,11 +639,54 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
     insertIndex = std::clamp(insertIndex, 0, static_cast<int>(destinationElements->size()));
     destinationElements->insert(destinationElements->begin() + insertIndex, std::move(element));
 
+    logMoveElementState((*destinationElements)[static_cast<size_t>(insertIndex)],
+                        "afterInsert/destination");
+    DBG("[ChainMove] notifying sourceTrack=" << sourceElementPath.trackId
+                                             << " destinationTrack=" << destinationChainPath.trackId
+                                             << " finalIndex=" << insertIndex);
+
     notifyTrackDevicesChanged(sourceElementPath.trackId);
     if (destinationChainPath.trackId != sourceElementPath.trackId)
         notifyTrackDevicesChanged(destinationChainPath.trackId);
 
     return true;
+}
+
+int TrackManager::getChainElementIndex(const ChainNodePath& elementPath) {
+    ChainNodePath containerPath;
+    containerPath.trackId = elementPath.trackId;
+
+    ChainStepType sourceType = ChainStepType::Device;
+    int sourceId = INVALID_DEVICE_ID;
+
+    if (elementPath.topLevelDeviceId != INVALID_DEVICE_ID) {
+        sourceType = ChainStepType::Device;
+        sourceId = elementPath.topLevelDeviceId;
+    } else if (!elementPath.steps.empty() &&
+               (elementPath.steps.back().type == ChainStepType::Device ||
+                elementPath.steps.back().type == ChainStepType::Rack)) {
+        sourceType = elementPath.steps.back().type;
+        sourceId = elementPath.steps.back().id;
+        containerPath.steps.assign(elementPath.steps.begin(), elementPath.steps.end() - 1);
+    } else {
+        return -1;
+    }
+
+    auto* elements = getElementContainerForChainPath(*this, containerPath);
+    if (elements == nullptr)
+        return -1;
+
+    for (int i = 0; i < static_cast<int>(elements->size()); ++i) {
+        const auto& element = (*elements)[static_cast<size_t>(i)];
+        if (sourceType == ChainStepType::Device) {
+            if (isDevice(element) && magda::getDevice(element).id == sourceId)
+                return i;
+        } else if (isRack(element) && magda::getRack(element).id == sourceId) {
+            return i;
+        }
+    }
+
+    return -1;
 }
 
 void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) {

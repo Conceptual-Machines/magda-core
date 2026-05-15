@@ -10,6 +10,8 @@
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackCommands.hpp"
+#include "core/UndoManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
@@ -17,6 +19,36 @@
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+bool dragObjectToChainNodePath(const juce::DynamicObject& obj, magda::ChainNodePath& path) {
+    path = {};
+    if (obj.getProperty("type").toString() != "chainElement")
+        return false;
+
+    path.trackId = static_cast<magda::TrackId>(static_cast<int>(obj.getProperty("trackId")));
+    path.topLevelDeviceId =
+        static_cast<magda::DeviceId>(static_cast<int>(obj.getProperty("topLevelDeviceId")));
+    path.isTrackLevel = static_cast<bool>(obj.getProperty("isTrackLevel"));
+
+    auto stepTypes =
+        juce::StringArray::fromTokens(obj.getProperty("stepTypes").toString(), ",", "");
+    auto stepIds = juce::StringArray::fromTokens(obj.getProperty("stepIds").toString(), ",", "");
+    if (stepTypes.size() != stepIds.size())
+        return false;
+
+    for (int i = 0; i < stepTypes.size(); ++i) {
+        const int typeValue = stepTypes[i].getIntValue();
+        if (typeValue < static_cast<int>(magda::ChainStepType::Rack) ||
+            typeValue > static_cast<int>(magda::ChainStepType::Device))
+            return false;
+        path.steps.push_back(
+            {static_cast<magda::ChainStepType>(typeValue), stepIds[i].getIntValue()});
+    }
+
+    return path.isValid();
+}
+}  // namespace
 
 //==============================================================================
 // ZoomableViewport - Viewport that supports Cmd+scroll for zooming
@@ -130,7 +162,8 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
             return false;
         }
         if (auto* obj = details.description.getDynamicObject()) {
-            return obj->getProperty("type").toString() == "plugin";
+            auto type = obj->getProperty("type").toString();
+            return type == "plugin" || type == "chainElement";
         }
         return false;
     }
@@ -167,6 +200,36 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         auto safeOwner = juce::Component::SafePointer<ChainPanel>(&owner_);
 
         if (auto* obj = details.description.getDynamicObject()) {
+            const auto type = obj->getProperty("type").toString();
+            if (type == "chainElement") {
+                magda::ChainNodePath sourcePath;
+                if (dragObjectToChainNodePath(*obj, sourcePath)) {
+                    owner_.dropInsertIndex_ = -1;
+                    owner_.stopTimer();
+                    owner_.resized();
+                    repaint();
+
+                    juce::MessageManager::callAsync(
+                        [sourcePath, chainPath, insertIndex, safeOwner, shouldScrollToEnd]() {
+                            auto command = std::make_unique<magda::MoveChainElementCommand>(
+                                sourcePath, chainPath, insertIndex);
+                            auto* moveCommand = command.get();
+                            magda::UndoManager::getInstance().executeCommand(std::move(command));
+                            if (moveCommand->didMove() && shouldScrollToEnd && safeOwner != nullptr)
+                                safeOwner->scrollToEndAsync();
+                        });
+                    return;
+                }
+            }
+
+            if (type != "plugin") {
+                owner_.dropInsertIndex_ = -1;
+                owner_.stopTimer();
+                owner_.resized();
+                repaint();
+                return;
+            }
+
             device.name = obj->getProperty("name").toString().toStdString();
             device.manufacturer = obj->getProperty("manufacturer").toString().toStdString();
             auto uniqueId = obj->getProperty("uniqueId").toString();
@@ -629,32 +692,10 @@ void ChainPanel::rebuildElementSlots() {
             safeThis->dragGhostImage_ = juce::Image();
             safeThis->stopTimer();
 
-            int elementCount = static_cast<int>(safeThis->elementSlots_.size());
-            int fromIndex = safeThis->dragOriginalIndex_;
-            int insertIndex = safeThis->dragInsertIndex_;
-
             safeThis->draggedElement_ = nullptr;
             safeThis->dragOriginalIndex_ = -1;
             safeThis->dragInsertIndex_ = -1;
 
-            if (fromIndex >= 0 && insertIndex >= 0 && fromIndex != insertIndex) {
-                int targetIndex = insertIndex;
-                if (insertIndex > fromIndex)
-                    targetIndex = insertIndex - 1;
-                targetIndex = juce::jlimit(0, elementCount - 1, targetIndex);
-                if (targetIndex != fromIndex) {
-                    // Defer the move so the component isn't destroyed
-                    // while its mouseUp handler is still on the call stack
-                    auto chainPath = safeThis->chainPath_;
-                    juce::MessageManager::callAsync([chainPath, fromIndex, targetIndex]() {
-                        magda::TrackManager::getInstance().moveElementInChainByPath(
-                            chainPath, fromIndex, targetIndex);
-                    });
-                    return;
-                }
-            }
-
-            // No move — just re-layout to remove drag indicators
             safeThis->resized();
             safeThis->elementSlotsContainer_->repaint();
         };

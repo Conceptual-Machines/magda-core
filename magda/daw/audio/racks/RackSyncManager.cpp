@@ -58,6 +58,58 @@ void ensureRackOutputPair(te::RackType& rackType, int outputIndex) {
     }
 }
 
+te::Plugin* findRackPlugin(te::RackType& rackType, te::EditItemID id) {
+    for (auto* plugin : rackType.getPlugins()) {
+        if (plugin && plugin->itemID == id)
+            return plugin;
+    }
+    return nullptr;
+}
+
+int getAudioInputCount(te::RackType& rackType, te::EditItemID id) {
+    if (auto* plugin = findRackPlugin(rackType, id)) {
+        juce::StringArray inputs;
+        plugin->getChannelNames(&inputs, nullptr);
+        return inputs.size();
+    }
+    return 2;
+}
+
+int getAudioOutputCount(te::RackType& rackType, te::EditItemID id) {
+    if (auto* plugin = findRackPlugin(rackType, id)) {
+        juce::StringArray outputs;
+        plugin->getChannelNames(nullptr, &outputs);
+        return outputs.size();
+    }
+    return 2;
+}
+
+juce::String describeRackEndpoint(te::EditItemID id, int pin) {
+    const auto rawId = id.getRawID();
+    return juce::String(rawId == 0 ? "rackIO" : juce::String(rawId)) + ":" + juce::String(pin);
+}
+
+bool addRackConnection(te::RackType& rackType, te::EditItemID src, int sourcePin,
+                       te::EditItemID dst, int destPin, const juce::String& reason) {
+    const auto ok = rackType.addConnection(src, sourcePin, dst, destPin);
+    DBG("[RackGraph] " << (ok ? "connect " : "FAILED ") << describeRackEndpoint(src, sourcePin)
+                       << " -> " << describeRackEndpoint(dst, destPin) << " " << reason);
+    return ok;
+}
+
+struct ChainPluginNode {
+    te::EditItemID id;
+    bool isInstrument = false;
+    bool transformsMidi = false;
+    bool receivesChainMidi = true;
+};
+
+struct AudioBusSource {
+    te::EditItemID id;
+    int leftPin = 1;
+    int rightPin = 2;
+};
+
 }  // namespace
 
 RackSyncManager::RackSyncManager(te::Edit& edit, PluginManager& pluginManager)
@@ -203,22 +255,32 @@ void RackSyncManager::updateRackProperties(const RackInfo& rackInfo) {
 }
 
 void RackSyncManager::removeRack(RackId rackId) {
+    removeRackInternal(rackId, true);
+}
+
+void RackSyncManager::removeRackForMove(RackId rackId) {
+    removeRackInternal(rackId, false);
+}
+
+void RackSyncManager::removeRackInternal(RackId rackId, bool clearDeviceState) {
     auto it = syncedRacks_.find(rackId);
     if (it == syncedRacks_.end())
         return;
 
     auto& synced = it->second;
 
-    // Clear saved plugin state so re-adding the same device gets fresh defaults
-    auto& trackManager = TrackManager::getInstance();
-    for (auto& [deviceId, plugin] : synced.innerPlugins) {
-        if (auto* devInfo = trackManager.getDevice(synced.trackId, deviceId)) {
-            DBG("removeRack: clearing pluginState for deviceId="
-                << deviceId
-                << " stateWas=" << (devInfo->pluginState.isNotEmpty() ? "non-empty" : "empty"));
-            devInfo->pluginState.clear();
-        } else {
-            DBG("removeRack: no devInfo for deviceId=" << deviceId << " (already removed?)");
+    if (clearDeviceState) {
+        // Clear saved plugin state so re-adding the same device gets fresh defaults
+        auto& trackManager = TrackManager::getInstance();
+        for (auto& [deviceId, plugin] : synced.innerPlugins) {
+            if (auto* devInfo = trackManager.getDevice(synced.trackId, deviceId)) {
+                DBG("removeRack: clearing pluginState for deviceId="
+                    << deviceId
+                    << " stateWas=" << (devInfo->pluginState.isNotEmpty() ? "non-empty" : "empty"));
+                devInfo->pluginState.clear();
+            } else {
+                DBG("removeRack: no devInfo for deviceId=" << deviceId << " (already removed?)");
+            }
         }
     }
 
@@ -441,6 +503,11 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
         for (auto& chain : rackInfo->chains) {
             if (auto* devInfo = findInChains(chain.elements, deviceId)) {
                 devInfo->pluginState = stateStr;
+                pluginManager_.refreshDeviceParameters(deviceId);
+                DBG("[ChainMove] captureAll rack device id="
+                    << deviceId << " name='" << devInfo->name << "' rack=" << synced.rackId
+                    << " stateLen=" << stateStr.length()
+                    << " params=" << devInfo->parameters.size());
                 break;
             }
         }
@@ -780,20 +847,29 @@ void RackSyncManager::buildConnectionsForRack(SyncedRack& synced, const RackInfo
         }
 
         // Collect device plugins in this chain (in order)
-        std::vector<te::EditItemID> chainPluginIds;
+        std::vector<ChainPluginNode> chainPluginNodes;
         for (const auto& element : chain.elements) {
             if (isDevice(element)) {
                 const auto& device = getDevice(element);
                 auto pluginIt = synced.innerPlugins.find(device.id);
                 if (pluginIt != synced.innerPlugins.end() && pluginIt->second) {
-                    chainPluginIds.push_back(pluginIt->second->itemID);
+                    const bool usesMidiSidechain =
+                        device.sidechain.type == SidechainConfig::Type::MIDI &&
+                        device.sidechain.sourceTrackId != INVALID_TRACK_ID;
+                    const bool receivesChainMidi =
+                        !usesMidiSidechain &&
+                        (device.isInstrument || device.deviceType == DeviceType::MIDI ||
+                         device.canReceiveMidi || pluginIt->second->takesMidiInput());
+                    chainPluginNodes.push_back({pluginIt->second->itemID, device.isInstrument,
+                                                device.deviceType == DeviceType::MIDI,
+                                                receivesChainMidi});
                 }
             } else if (isRack(element)) {
                 const auto& nestedRack = getRack(element);
                 const auto nestedKey = pathKey(chainPath.withRack(nestedRack.id));
                 auto rackIt = synced.nestedRackInstances.find(nestedKey);
                 if (rackIt != synced.nestedRackInstances.end() && rackIt->second) {
-                    chainPluginIds.push_back(rackIt->second->itemID);
+                    chainPluginNodes.push_back({rackIt->second->itemID, false, false, true});
                 }
             }
         }
@@ -802,13 +878,22 @@ void RackSyncManager::buildConnectionsForRack(SyncedRack& synced, const RackInfo
         // so they pass clean audio through with per-chain volume/pan control)
         auto volPanIt = synced.chainVolPanPlugins.find(pathKey(chainPath));
         if (volPanIt != synced.chainVolPanPlugins.end() && volPanIt->second) {
-            chainPluginIds.push_back(volPanIt->second->itemID);
+            chainPluginNodes.push_back({volPanIt->second->itemID, false, false, false});
         }
 
-        if (chainPluginIds.empty())
+        if (chainPluginNodes.empty())
             continue;
 
-        // Wire serial connections: rack input → first plugin → ... → last plugin → rack output
+        std::vector<te::EditItemID> chainPluginIds;
+        chainPluginIds.reserve(chainPluginNodes.size());
+        for (const auto& node : chainPluginNodes)
+            chainPluginIds.push_back(node.id);
+
+        // Wire an explicit chain audio bus and MIDI bus:
+        // - effects/nested racks process the current audio bus
+        // - instruments inject generated audio into the current audio bus
+        // - MIDI processors replace the MIDI bus
+        // - instruments and MIDI-triggered FX receive MIDI without stopping it
         auto firstPlugin = chainPluginIds.front();
         auto lastPlugin = chainPluginIds.back();
 
@@ -831,26 +916,48 @@ void RackSyncManager::buildConnectionsForRack(SyncedRack& synced, const RackInfo
                                               << " foundInRack=" << (int)found);
         }
 
-        // Connect rack audio input to first plugin (L/R)
-        rackType.addConnection(rackIOId, 1, firstPlugin, 1);
-        rackType.addConnection(rackIOId, 2, firstPlugin, 2);
+        std::vector<AudioBusSource> audioBusSources = {{rackIOId, 1, 2}};
+        te::EditItemID midiBusSource = rackIOId;
 
-        // Connect rack MIDI input to first plugin
-        rackType.addConnection(rackIOId, 0, firstPlugin, 0);
+        for (const auto& node : chainPluginNodes) {
+            const auto inputChannels = getAudioInputCount(rackType, node.id);
+            const auto outputChannels = getAudioOutputCount(rackType, node.id);
 
-        // Serial connections between consecutive plugins
-        for (size_t i = 0; i + 1 < chainPluginIds.size(); ++i) {
-            auto src = chainPluginIds[i];
-            auto dst = chainPluginIds[i + 1];
-            rackType.addConnection(src, 1, dst, 1);  // Left
-            rackType.addConnection(src, 2, dst, 2);  // Right
-            rackType.addConnection(src, 0, dst, 0);  // MIDI
+            if (node.receivesChainMidi)
+                addRackConnection(rackType, midiBusSource, 0, node.id, 0, "chain midi bus");
+            if (node.transformsMidi && node.receivesChainMidi)
+                midiBusSource = node.id;
+
+            if (node.isInstrument) {
+                if (outputChannels >= 1) {
+                    audioBusSources.push_back({node.id, 1, outputChannels >= 2 ? 2 : 1});
+                }
+                continue;
+            }
+
+            if (inputChannels > 0) {
+                for (const auto& source : audioBusSources) {
+                    addRackConnection(rackType, source.id, source.leftPin, node.id, 1,
+                                      "chain audio bus left");
+                    if (inputChannels >= 2) {
+                        addRackConnection(rackType, source.id, source.rightPin, node.id, 2,
+                                          "chain audio bus right");
+                    }
+                }
+                audioBusSources.clear();
+                if (outputChannels >= 1)
+                    audioBusSources.push_back({node.id, 1, outputChannels >= 2 ? 2 : 1});
+            }
         }
 
         if (chainActive) {
-            rackType.addConnection(lastPlugin, 0, rackIOId, 0);            // MIDI
-            rackType.addConnection(lastPlugin, 1, rackIOId, outLeftPin);   // Left
-            rackType.addConnection(lastPlugin, 2, rackIOId, outRightPin);  // Right
+            addRackConnection(rackType, midiBusSource, 0, rackIOId, 0, "chain output midi");
+            for (const auto& source : audioBusSources) {
+                addRackConnection(rackType, source.id, source.leftPin, rackIOId, outLeftPin,
+                                  "chain output left");
+                addRackConnection(rackType, source.id, source.rightPin, rackIOId, outRightPin,
+                                  "chain output right");
+            }
             anyChainConnectedToOutput = true;
         }
     }

@@ -259,6 +259,66 @@ void RemoveDeviceFromTrackCommand::undo() {
 }
 
 // ============================================================================
+// MoveChainElementCommand
+// ============================================================================
+
+MoveChainElementCommand::MoveChainElementCommand(const ChainNodePath& sourceElementPath,
+                                                 const ChainNodePath& destinationChainPath,
+                                                 int insertIndex)
+    : sourceElementPath_(sourceElementPath),
+      destinationChainPath_(destinationChainPath),
+      insertIndex_(insertIndex) {}
+
+ChainNodePath MoveChainElementCommand::buildMovedPath(
+    const ChainNodePath& destinationChainPath) const {
+    if (sourceType_ == ChainStepType::Device) {
+        if (destinationChainPath.steps.empty())
+            return ChainNodePath::topLevelDevice(destinationChainPath.trackId, sourceId_);
+        return destinationChainPath.withDevice(sourceId_);
+    }
+
+    return destinationChainPath.withRack(sourceId_);
+}
+
+void MoveChainElementCommand::execute() {
+    auto& tm = TrackManager::getInstance();
+
+    if (sourceElementPath_.topLevelDeviceId != INVALID_DEVICE_ID) {
+        sourceType_ = ChainStepType::Device;
+        sourceId_ = sourceElementPath_.topLevelDeviceId;
+        undoChainPath_ = {};
+        undoChainPath_.trackId = sourceElementPath_.trackId;
+    } else if (!sourceElementPath_.steps.empty() &&
+               (sourceElementPath_.steps.back().type == ChainStepType::Device ||
+                sourceElementPath_.steps.back().type == ChainStepType::Rack)) {
+        sourceType_ = sourceElementPath_.steps.back().type;
+        sourceId_ = sourceElementPath_.steps.back().id;
+        undoChainPath_ = sourceElementPath_;
+        undoChainPath_.steps.pop_back();
+    } else {
+        executed_ = false;
+        return;
+    }
+
+    undoIndex_ = tm.getChainElementIndex(sourceElementPath_);
+    if (undoIndex_ < 0) {
+        executed_ = false;
+        return;
+    }
+
+    executed_ = tm.moveChainElement(sourceElementPath_, destinationChainPath_, insertIndex_);
+    if (executed_)
+        movedElementPath_ = buildMovedPath(destinationChainPath_);
+}
+
+void MoveChainElementCommand::undo() {
+    if (!executed_)
+        return;
+
+    TrackManager::getInstance().moveChainElement(movedElementPath_, undoChainPath_, undoIndex_);
+}
+
+// ============================================================================
 // CreateTrackWithDeviceCommand
 // ============================================================================
 

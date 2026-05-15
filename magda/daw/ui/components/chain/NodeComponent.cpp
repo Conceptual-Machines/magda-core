@@ -16,6 +16,22 @@
 
 namespace magda::daw::ui {
 
+namespace {
+juce::String encodeStepTypes(const magda::ChainNodePath& path) {
+    juce::StringArray values;
+    for (const auto& step : path.steps)
+        values.add(juce::String(static_cast<int>(step.type)));
+    return values.joinIntoString(",");
+}
+
+juce::String encodeStepIds(const magda::ChainNodePath& path) {
+    juce::StringArray values;
+    for (const auto& step : path.steps)
+        values.add(juce::String(step.id));
+    return values.joinIntoString(",");
+}
+}  // namespace
+
 NodeComponent::NodeComponent() {
     // Register as SelectionManager listener for centralized selection
     magda::SelectionManager::getInstance().addListener(this);
@@ -1011,10 +1027,26 @@ void NodeComponent::mouseDrag(const juce::MouseEvent& e) {
 
     auto currentPos = e.getEventRelativeTo(parent).getPosition();
     int deltaX = std::abs(currentPos.x - dragStartPos_.x);
+    int deltaY = std::abs(currentPos.y - dragStartPos_.y);
 
     // Check threshold before starting drag
-    if (!isDragging_ && deltaX > DRAG_THRESHOLD) {
+    if (!isDragging_ && (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD)) {
         isDragging_ = true;
+        if (nodePath_.isValid()) {
+            if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this)) {
+                auto* dragInfo = new juce::DynamicObject();
+                dragInfo->setProperty("type", "chainElement");
+                dragInfo->setProperty("trackId", nodePath_.trackId);
+                dragInfo->setProperty("topLevelDeviceId", nodePath_.topLevelDeviceId);
+                dragInfo->setProperty("isTrackLevel", nodePath_.isTrackLevel);
+                dragInfo->setProperty("stepTypes", encodeStepTypes(nodePath_));
+                dragInfo->setProperty("stepIds", encodeStepIds(nodePath_));
+
+                auto snapshot = createComponentSnapshot(getLocalBounds());
+                container->startDragging(juce::var(dragInfo), this, juce::ScaledImage(snapshot),
+                                         true);
+            }
+        }
         if (onDragStart)
             onDragStart(this, e);
     }

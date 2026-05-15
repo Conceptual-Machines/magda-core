@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 
+#include "../../core/ChainNodePath.hpp"
 #include "../../core/DeviceInfo.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TypeIds.hpp"
@@ -130,6 +131,17 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * never touches devices on other tracks.
      */
     void syncTrackPlugins(TrackId trackId);
+
+    /**
+     * @brief Prepare the live TE graph for an explicit chain-element move.
+     *
+     * Captures live plugin state, then detaches runtime mappings that cannot be
+     * carried across the requested source/destination containers. This is used
+     * by TrackManager::moveChainElement, including undo/redo commands, so scope
+     * transitions don't leave a stale plugin in the old chain.
+     */
+    void prepareForChainElementMove(const ChainNodePath& sourceElementPath,
+                                    const ChainNodePath& destinationChainPath);
 
     /**
      * @brief Clean up all PluginManager state for a deleted track
@@ -531,6 +543,9 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Internal device → plugin conversion (used by syncTrackPlugins)
     te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device,
                                        int insertIndex = -1);
+
+    void detachDeviceRuntimeForChainMove(TrackId trackId, DeviceId deviceId);
+    void detachRackRuntimeForChainMove(RackId rackId);
 
     // Poll for async plugin load completion (TE's background thread instantiation)
     void pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin);
