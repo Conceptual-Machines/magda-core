@@ -983,18 +983,31 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Handle Cmd/Ctrl+click for toggle selection
+    // Cmd/Ctrl-click acts as an eraser for the clip under the cursor. If the
+    // clicked clip is part of a multi-selection, erase the selected group.
     if (e.mods.isCommandDown()) {
-        selectionManager.toggleClipSelection(clipId_);
-        // Update local state
-        isSelected_ = selectionManager.isClipSelected(clipId_);
+        std::vector<ClipId> clipIds;
+        const auto& selected = selectionManager.getSelectedClips();
+        if (selected.count(clipId_) && selected.size() > 1) {
+            clipIds.assign(selected.begin(), selected.end());
+        } else {
+            clipIds.push_back(clipId_);
+        }
 
-        // Open editor panel for updated selection
-        ensureEditorOpen(clipId_);
-
-        // Don't start dragging on Cmd+click - it's just for selection
         dragMode_ = DragMode::None;
-        repaint();
+        juce::MessageManager::callAsync([clipIds = std::move(clipIds)]() {
+            if (clipIds.size() > 1)
+                UndoManager::getInstance().beginCompoundOperation("Delete Clips");
+
+            for (auto id : clipIds) {
+                UndoManager::getInstance().executeCommand(std::make_unique<DeleteClipCommand>(id));
+            }
+
+            if (clipIds.size() > 1)
+                UndoManager::getInstance().endCompoundOperation();
+
+            SelectionManager::getInstance().clearSelection();
+        });
         return;
     }
 

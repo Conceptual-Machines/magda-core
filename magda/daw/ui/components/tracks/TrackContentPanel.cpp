@@ -7,6 +7,7 @@
 
 #include "../../panels/state/PanelController.hpp"
 #include "../../state/TimelineEvents.hpp"
+#include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../utils/TimelineUtils.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
@@ -14,6 +15,7 @@
 #include "Config.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TempoUtils.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "project/ProjectManager.hpp"
@@ -316,6 +318,8 @@ void TrackContentPanel::paint(juce::Graphics& g) {
 void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
     // Draw recording previews on top of any existing clip components
     paintRecordingPreviews(g);
+
+    paintClipDrawPreview(g);
 
     // Draw edit cursor line on top of clips
     paintEditCursor(g);
@@ -969,6 +973,33 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
     bool inUpperZone = isInUpperTrackZone(event.y);
     bool onClip = getClipComponentAt(event.x, event.y) != nullptr;
 
+    bool onSelectionEdge = false;
+    bool selectionEdgeIsLeft = false;
+    onSelectionEdge = isOnSelectionEdge(event.x, event.y, selectionEdgeIsLeft);
+
+    if (!onClip && event.mods.isShiftDown() && isInSelectableArea(event.x, event.y) &&
+        !onSelectionEdge && !isOnExistingSelection(event.x, event.y)) {
+        int trackIndex = getTrackIndexAtY(event.y);
+        if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
+            selectTrack(trackIndex);
+            isDrawingClip_ = true;
+            drawingClipTrackIndex_ = trackIndex;
+            drawingClipTrackId_ = visibleTrackIds_[trackIndex];
+            drawingClipStartBeat_ = snappedBeatForPixel(event.x);
+            drawingClipEndBeat_ = drawingClipStartBeat_;
+            setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
+            currentDragType_ = DragType::None;
+            isCreatingSelection = false;
+            isMovingSelection = false;
+            SelectionManager::getInstance().clearSelection();
+            if (onTimeSelectionChanged)
+                onTimeSelectionChanged(-1.0, -1.0, {});
+            repaintVisible();
+            grabKeyboardFocus();
+            return;
+        }
+    }
+
     // Select track based on click position - but ONLY in upper zone
     // (Lower zone is for timeline operations, shouldn't affect track selection)
     if (inUpperZone) {
@@ -1091,6 +1122,12 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
 }
 
 void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
+    if (isDrawingClip_) {
+        drawingClipEndBeat_ = snappedBeatForPixel(event.x);
+        repaintVisible();
+        return;
+    }
+
     if (currentDragType_ == DragType::ResizeSelectionLeft ||
         currentDragType_ == DragType::ResizeSelectionRight) {
         // Resizing time selection edge
@@ -1233,6 +1270,22 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         if (getClipComponentAt(event.x, event.y) == nullptr) {
             showEmptySpaceContextMenu(event);
         }
+        return;
+    }
+
+    if (isDrawingClip_) {
+        if (drawingClipTrackId_ != INVALID_TRACK_ID) {
+            drawingClipEndBeat_ = snappedBeatForPixel(event.x);
+            createMidiClipFromBeatRange(drawingClipTrackId_, drawingClipStartBeat_,
+                                        drawingClipEndBeat_);
+        }
+
+        isDrawingClip_ = false;
+        drawingClipTrackId_ = INVALID_TRACK_ID;
+        drawingClipTrackIndex_ = -1;
+        drawingClipStartBeat_ = 0.0;
+        drawingClipEndBeat_ = 0.0;
+        repaintVisible();
         return;
     }
 
@@ -1538,6 +1591,74 @@ void TrackContentPanel::createMidiClipAtPosition(TrackId trackId, double startTi
     }
 }
 
+double TrackContentPanel::snappedBeatForPixel(int x) const {
+    const double maxBeats =
+        isValidBpm(tempoBPM) ? juce::jmax(0.0, timelineLength * tempoBPM / 60.0) : 0.0;
+    double beat = juce::jlimit(0.0, maxBeats, pixelToBeats(x));
+
+    if (snapBeatsToGrid) {
+        beat = snapBeatsToGrid(beat);
+    } else if (snapTimeToGrid && isValidBpm(tempoBPM)) {
+        beat = snapTimeToGrid(beat * 60.0 / tempoBPM) * tempoBPM / 60.0;
+    }
+
+    return juce::jlimit(0.0, maxBeats, beat);
+}
+
+void TrackContentPanel::createMidiClipFromBeatRange(TrackId trackId, double startBeat,
+                                                    double endBeat) {
+    if (trackId == INVALID_TRACK_ID)
+        return;
+
+    double start = juce::jmin(startBeat, endBeat);
+    double end = juce::jmax(startBeat, endBeat);
+    double length = end - start;
+
+    const double oneBarBeats = juce::jmax(1.0, static_cast<double>(timeSignatureNumerator));
+    if (length <= 0.000001) {
+        length = oneBarBeats;
+    } else {
+        const double gridBeats = getGridSpacingBeats ? getGridSpacingBeats() : 0.0;
+        const double minBeats = gridBeats > 0.0 ? gridBeats : 1.0 / 16.0;
+        length = juce::jmax(minBeats, length);
+    }
+
+    auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId, BeatPosition{start},
+                                                   BeatDuration{length});
+    UndoManager::getInstance().executeCommand(std::move(cmd));
+
+    const double startTime = isValidBpm(tempoBPM) ? start * 60.0 / tempoBPM : 0.0;
+    auto clipId = ClipManager::getInstance().getClipAtPosition(trackId, startTime);
+    if (clipId != INVALID_CLIP_ID) {
+        SelectionManager::getInstance().selectClip(clipId);
+    }
+}
+
+void TrackContentPanel::paintClipDrawPreview(juce::Graphics& g) {
+    if (!isDrawingClip_ || drawingClipTrackIndex_ < 0 ||
+        drawingClipTrackIndex_ >= static_cast<int>(trackLanes.size())) {
+        return;
+    }
+
+    const auto trackArea = getTrackLaneArea(drawingClipTrackIndex_);
+    double start = juce::jmin(drawingClipStartBeat_, drawingClipEndBeat_);
+    double end = juce::jmax(drawingClipStartBeat_, drawingClipEndBeat_);
+    if (end - start <= 0.000001)
+        end = start + juce::jmax(1.0, static_cast<double>(timeSignatureNumerator));
+
+    const int x = beatsToPixel(start);
+    const int right = beatsToPixel(end);
+    const int width = juce::jmax(10, right - x);
+    const auto rect =
+        juce::Rectangle<int>(x, trackArea.getY() + 2, width, trackArea.getHeight() - 4);
+
+    const auto colour = juce::Colour(Config::getDefaultColour(drawingClipTrackIndex_));
+    g.setColour(colour.withAlpha(0.28f));
+    g.fillRoundedRectangle(rect.toFloat(), 3.0f);
+    g.setColour(colour.brighter(0.25f).withAlpha(0.9f));
+    g.drawRoundedRectangle(rect.toFloat(), 3.0f, 1.0f);
+}
+
 void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event) {
     int trackIndex = getTrackIndexAtY(event.y);
     if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size()))
@@ -1702,7 +1823,11 @@ void TrackContentPanel::updateCursorForPosition(int x, int y, bool shiftHeld) {
         }
         // Empty space in upper zone - crosshair for marquee selection
         if (isInSelectableArea(x, y)) {
-            setMouseCursor(juce::MouseCursor::CrosshairCursor);
+            if (shiftHeld) {
+                setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
+            } else {
+                setMouseCursor(juce::MouseCursor::CrosshairCursor);
+            }
         } else {
             setMouseCursor(juce::MouseCursor::NormalCursor);
         }
@@ -1724,7 +1849,11 @@ void TrackContentPanel::updateCursorForPosition(int x, int y, bool shiftHeld) {
                 }
             } else {
                 // Empty space - I-beam for creating time selection
-                setMouseCursor(juce::MouseCursor::IBeamCursor);
+                if (shiftHeld) {
+                    setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
+                } else {
+                    setMouseCursor(juce::MouseCursor::IBeamCursor);
+                }
             }
         } else {
             setMouseCursor(juce::MouseCursor::NormalCursor);
