@@ -446,6 +446,132 @@ static ChainInfo* getChainFromPath(TrackManager& tm, const ChainNodePath& chainP
     }
     return nullptr;
 }
+
+static std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& tm,
+                                                                  const ChainNodePath& chainPath) {
+    if (chainPath.trackId == INVALID_TRACK_ID)
+        return nullptr;
+
+    if (chainPath.steps.empty()) {
+        if (auto* track = tm.getTrack(chainPath.trackId))
+            return &track->chainElements;
+        return nullptr;
+    }
+
+    if (auto* chain = getChainFromPath(tm, chainPath))
+        return &chain->elements;
+
+    return nullptr;
+}
+
+static bool chainPathContainsRack(const ChainNodePath& destinationChainPath,
+                                  const ChainNodePath& sourceRackPath) {
+    if (sourceRackPath.steps.empty() || sourceRackPath.steps.back().type != ChainStepType::Rack ||
+        destinationChainPath.steps.size() <= sourceRackPath.steps.size()) {
+        return false;
+    }
+
+    return std::equal(sourceRackPath.steps.begin(), sourceRackPath.steps.end(),
+                      destinationChainPath.steps.begin());
+}
+
+static bool elementContainsInstrument(const ChainElement& element) {
+    if (magda::isDevice(element))
+        return magda::getDevice(element).isInstrument;
+
+    const auto& rack = magda::getRack(element);
+    for (const auto& chain : rack.chains) {
+        for (const auto& child : chain.elements) {
+            if (elementContainsInstrument(child))
+                return true;
+        }
+    }
+    return false;
+}
+
+bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
+                                    const ChainNodePath& destinationChainPath, int insertIndex) {
+    if (sourceElementPath.trackId == INVALID_TRACK_ID ||
+        destinationChainPath.trackId == INVALID_TRACK_ID) {
+        return false;
+    }
+
+    ChainNodePath sourceChainPath;
+    sourceChainPath.trackId = sourceElementPath.trackId;
+    ChainStepType sourceType = ChainStepType::Device;
+    int sourceId = INVALID_DEVICE_ID;
+
+    if (sourceElementPath.topLevelDeviceId != INVALID_DEVICE_ID) {
+        sourceType = ChainStepType::Device;
+        sourceId = sourceElementPath.topLevelDeviceId;
+    } else if (!sourceElementPath.steps.empty() &&
+               (sourceElementPath.steps.back().type == ChainStepType::Device ||
+                sourceElementPath.steps.back().type == ChainStepType::Rack)) {
+        sourceType = sourceElementPath.steps.back().type;
+        sourceId = sourceElementPath.steps.back().id;
+        sourceChainPath.steps.assign(sourceElementPath.steps.begin(),
+                                     sourceElementPath.steps.end() - 1);
+    } else {
+        return false;
+    }
+
+    if (sourceType == ChainStepType::Rack &&
+        chainPathContainsRack(destinationChainPath, sourceElementPath)) {
+        DBG("moveChainElement rejected recursive rack move");
+        return false;
+    }
+
+    auto* sourceElements = getElementContainerForChainPath(*this, sourceChainPath);
+    auto* destinationElements = getElementContainerForChainPath(*this, destinationChainPath);
+    if (sourceElements == nullptr || destinationElements == nullptr)
+        return false;
+
+    auto sourceIt = std::find_if(
+        sourceElements->begin(), sourceElements->end(),
+        [sourceType, sourceId](const ChainElement& element) {
+            if (sourceType == ChainStepType::Device)
+                return magda::isDevice(element) && magda::getDevice(element).id == sourceId;
+            return magda::isRack(element) && magda::getRack(element).id == sourceId;
+        });
+    if (sourceIt == sourceElements->end())
+        return false;
+
+    if (auto* destinationTrack = getTrack(destinationChainPath.trackId)) {
+        const bool destinationCannotHostInstruments = destinationTrack->type == TrackType::Aux ||
+                                                      destinationTrack->type == TrackType::Group ||
+                                                      destinationTrack->type == TrackType::Master;
+        if (destinationCannotHostInstruments && elementContainsInstrument(*sourceIt)) {
+            DBG("moveChainElement rejected instrument move to non-instrument destination track");
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    const bool sameContainer = sourceElements == destinationElements;
+    const int sourceIndex = static_cast<int>(std::distance(sourceElements->begin(), sourceIt));
+    const int destinationSize = static_cast<int>(destinationElements->size());
+    insertIndex = std::clamp(insertIndex, 0, destinationSize);
+
+    if (sameContainer && (insertIndex == sourceIndex || insertIndex == sourceIndex + 1))
+        return false;
+
+    ChainElement element = std::move(*sourceIt);
+    sourceElements->erase(sourceElements->begin() + sourceIndex);
+
+    if (sameContainer && insertIndex > sourceIndex)
+        --insertIndex;
+
+    insertIndex = std::clamp(insertIndex, 0, static_cast<int>(destinationElements->size()));
+    destinationElements->insert(destinationElements->begin() + insertIndex, std::move(element));
+
+    notifyTrackDevicesChanged(sourceElementPath.trackId);
+    if (destinationChainPath.trackId != sourceElementPath.trackId)
+        notifyTrackDevicesChanged(destinationChainPath.trackId);
+
+    return true;
+}
+
 void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) {
     // Handle top-level device (uses topLevelDeviceId field)
     if (devicePath.topLevelDeviceId != INVALID_DEVICE_ID) {

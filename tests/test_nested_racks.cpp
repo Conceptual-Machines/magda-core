@@ -690,6 +690,105 @@ TEST_CASE("TrackManager: Parameter writes follow device id after top-level reord
     REQUIRE(liveDelay->parameters[0].currentValue == Catch::Approx(250.0f));
 }
 
+TEST_CASE("TrackManager: Move chain elements between track and rack chains",
+          "[trackmanager][device][path][move]") {
+    TrackManagerTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Test Track");
+    auto rackId = fixture.tm().addRackToTrack(trackId, "Rack");
+    auto* rack = fixture.tm().getRack(trackId, rackId);
+    REQUIRE(rack != nullptr);
+    auto chainId = rack->chains[0].id;
+    auto chainPath = ChainNodePath::chain(trackId, rackId, chainId);
+
+    DeviceInfo delay;
+    delay.name = "Delay";
+    delay.pluginId = "magda_delay";
+    delay.format = PluginFormat::Internal;
+    delay.gainDb = -6.0f;
+
+    auto delayId = fixture.tm().addDeviceToTrack(trackId, delay);
+    REQUIRE(delayId != INVALID_DEVICE_ID);
+
+    REQUIRE(fixture.tm().moveChainElement(ChainNodePath::topLevelDevice(trackId, delayId),
+                                          chainPath, 0));
+
+    const auto& topLevelElements = fixture.tm().getChainElements(trackId);
+    REQUIRE(topLevelElements.size() == 1);
+    REQUIRE(isRack(topLevelElements[0]));
+
+    auto* movedIntoRack = fixture.tm().getDeviceInChainByPath(chainPath.withDevice(delayId));
+    REQUIRE(movedIntoRack != nullptr);
+    REQUIRE(movedIntoRack->name == "Delay");
+    REQUIRE(movedIntoRack->gainDb == Catch::Approx(-6.0f));
+
+    ChainNodePath topLevelChainPath;
+    topLevelChainPath.trackId = trackId;
+    REQUIRE(fixture.tm().moveChainElement(chainPath.withDevice(delayId), topLevelChainPath, 1));
+
+    const auto& restoredTopLevelElements = fixture.tm().getChainElements(trackId);
+    REQUIRE(restoredTopLevelElements.size() == 2);
+    REQUIRE(isRack(restoredTopLevelElements[0]));
+    REQUIRE(isDevice(restoredTopLevelElements[1]));
+    REQUIRE(getDevice(restoredTopLevelElements[1]).id == delayId);
+}
+
+TEST_CASE("TrackManager: Move selected-order devices to another track",
+          "[trackmanager][device][path][move][tracks]") {
+    TrackManagerTestFixture fixture;
+
+    auto sourceTrackId = fixture.tm().createTrack("Source");
+    auto destinationTrackId = fixture.tm().createTrack("Destination");
+
+    DeviceInfo delay;
+    delay.name = "Delay";
+    delay.pluginId = "magda_delay";
+    delay.format = PluginFormat::Internal;
+
+    DeviceInfo reverb;
+    reverb.name = "Reverb";
+    reverb.pluginId = "magda_reverb";
+    reverb.format = PluginFormat::Internal;
+
+    auto delayId = fixture.tm().addDeviceToTrack(sourceTrackId, delay);
+    auto reverbId = fixture.tm().addDeviceToTrack(sourceTrackId, reverb);
+    REQUIRE(delayId != INVALID_DEVICE_ID);
+    REQUIRE(reverbId != INVALID_DEVICE_ID);
+
+    ChainNodePath destinationChainPath;
+    destinationChainPath.trackId = destinationTrackId;
+
+    REQUIRE(fixture.tm().moveChainElement(ChainNodePath::topLevelDevice(sourceTrackId, delayId),
+                                          destinationChainPath, 0));
+    REQUIRE(fixture.tm().moveChainElement(ChainNodePath::topLevelDevice(sourceTrackId, reverbId),
+                                          destinationChainPath, 1));
+
+    const auto& sourceElements = fixture.tm().getChainElements(sourceTrackId);
+    const auto& destinationElements = fixture.tm().getChainElements(destinationTrackId);
+    REQUIRE(sourceElements.empty());
+    REQUIRE(destinationElements.size() == 2);
+    REQUIRE(isDevice(destinationElements[0]));
+    REQUIRE(isDevice(destinationElements[1]));
+    REQUIRE(getDevice(destinationElements[0]).id == delayId);
+    REQUIRE(getDevice(destinationElements[1]).id == reverbId);
+}
+
+TEST_CASE("TrackManager: Reject moving a rack inside itself", "[trackmanager][rack][path][move]") {
+    TrackManagerTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Test Track");
+    auto rackId = fixture.tm().addRackToTrack(trackId, "Rack");
+    auto* rack = fixture.tm().getRack(trackId, rackId);
+    REQUIRE(rack != nullptr);
+
+    auto rackPath = ChainNodePath::rack(trackId, rackId);
+    auto chainPath = rackPath.withChain(rack->chains[0].id);
+
+    REQUIRE_FALSE(fixture.tm().moveChainElement(rackPath, chainPath, 0));
+    REQUIRE(fixture.tm().getChainElements(trackId).size() == 1);
+    REQUIRE(fixture.tm().getRackByPath(rackPath) != nullptr);
+}
+
 // ============================================================================
 // Nested Rack Operations Tests
 // ============================================================================

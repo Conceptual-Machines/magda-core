@@ -90,6 +90,20 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         if (!elementSlots_)
             return;
 
+        auto appendZone =
+            juce::Rectangle<int>(owner_.calculateAppendZoneX(), 0,
+                                 owner_.getScaledWidth(ChainPanel::APPEND_ZONE_WIDTH), getHeight());
+        const bool appendHighlighted =
+            owner_.dragInsertIndex_ == static_cast<int>(elementSlots_->size()) ||
+            owner_.dropInsertIndex_ == static_cast<int>(elementSlots_->size());
+        auto appendColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                .withAlpha(appendHighlighted ? 0.18f : 0.07f);
+        g.setColour(appendColour);
+        g.fillRoundedRectangle(appendZone.reduced(4, 6).toFloat(), 3.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                        .withAlpha(appendHighlighted ? 0.75f : 0.28f));
+        g.drawRoundedRectangle(appendZone.reduced(4, 6).toFloat(), 3.0f, 1.0f);
+
         // Draw insertion indicator during drag (reorder or drop)
         if (owner_.dragInsertIndex_ >= 0 || owner_.dropInsertIndex_ >= 0) {
             int indicatorIndex =
@@ -149,6 +163,8 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         auto chainPath = owner_.chainPath_;
         int insertIndex = owner_.dropInsertIndex_ >= 0 ? owner_.dropInsertIndex_
                                                        : static_cast<int>(elementSlots_->size());
+        bool shouldScrollToEnd = insertIndex >= static_cast<int>(elementSlots_->size());
+        auto safeOwner = juce::Component::SafePointer<ChainPanel>(&owner_);
 
         if (auto* obj = details.description.getDynamicObject()) {
             device.name = obj->getProperty("name").toString().toStdString();
@@ -188,6 +204,8 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
             // This may destroy 'this' and owner_ — do not access any members after
             magda::TrackManager::getInstance().addDeviceToChainByPath(chainPath, device,
                                                                       insertIndex);
+            if (shouldScrollToEnd && safeOwner != nullptr)
+                safeOwner->scrollToEndAsync();
             return;
         }
 
@@ -298,8 +316,10 @@ void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
         x += slotWidth + scaledArrowWidth;
     }
 
-    // Add device button after all slots (not scaled)
-    addDeviceButton_.setBounds(x, (containerHeight - 20) / 2, 20, 20);
+    // Add device button in the reserved append zone after all slots.
+    int appendZoneWidth = getScaledWidth(APPEND_ZONE_WIDTH);
+    addDeviceButton_.setBounds(x + juce::jmax(0, (appendZoneWidth - 20) / 2),
+                               (containerHeight - 20) / 2, 20, 20);
 }
 
 int ChainPanel::calculateTotalContentWidth() const {
@@ -311,7 +331,7 @@ int ChainPanel::calculateTotalContentWidth() const {
     for (const auto& slot : elementSlots_) {
         totalWidth += getScaledWidth(slot->getPreferredWidth()) + scaledArrowWidth;
     }
-    totalWidth += 30;  // Space for add device button (not scaled)
+    totalWidth += getScaledWidth(APPEND_ZONE_WIDTH);
     return totalWidth;
 }
 
@@ -746,7 +766,23 @@ void ChainPanel::onAddDeviceClicked() {
             safeThis->rebuildElementSlots();
             safeThis->resized();
             safeThis->repaint();
+            safeThis->scrollToEndAsync();
         }
+    });
+}
+
+void ChainPanel::scrollToEndAsync() {
+    auto safeThis = juce::Component::SafePointer<ChainPanel>(this);
+    juce::MessageManager::callAsync([safeThis]() {
+        if (safeThis == nullptr || safeThis->elementViewport_ == nullptr ||
+            safeThis->elementSlotsContainer_ == nullptr)
+            return;
+
+        safeThis->resized();
+        const int maxX = juce::jmax(0, safeThis->elementSlotsContainer_->getWidth() -
+                                           safeThis->elementViewport_->getWidth());
+        safeThis->elementViewport_->setViewPosition(maxX,
+                                                    safeThis->elementViewport_->getViewPositionY());
     });
 }
 
@@ -799,9 +835,17 @@ int ChainPanel::calculateInsertIndex(int mouseX) const {
 }
 
 int ChainPanel::calculateIndicatorX(int index) const {
+    if (elementSlots_.empty() && index == 0) {
+        return calculateAppendZoneX();
+    }
+
     // Before first element - center in the drag padding area
     if (index == 0) {
         return DRAG_LEFT_PADDING / 2;
+    }
+
+    if (index == static_cast<int>(elementSlots_.size())) {
+        return calculateAppendZoneX();
     }
 
     // After previous element (use scaled arrow width)
@@ -812,6 +856,18 @@ int ChainPanel::calculateIndicatorX(int index) const {
 
     // Fallback
     return DRAG_LEFT_PADDING / 2;
+}
+
+int ChainPanel::calculateAppendZoneX() const {
+    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
+    int x = isDraggingOrDropping ? DRAG_LEFT_PADDING : 0;
+    int scaledArrowWidth = getScaledWidth(ARROW_WIDTH);
+
+    for (const auto& slot : elementSlots_) {
+        x += getScaledWidth(slot->getPreferredWidth()) + scaledArrowWidth;
+    }
+
+    return x;
 }
 
 void ChainPanel::timerCallback() {
