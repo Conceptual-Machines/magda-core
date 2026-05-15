@@ -1,0 +1,14 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Selected MIDI note body -->
+  <rect x="3.5" y="9" width="17" height="6" rx="2" stroke="#B3B3B3" stroke-width="1.5" fill="none"/>
+  <!-- Slice guide lines -->
+  <line x1="8" y1="6" x2="8" y2="18" stroke="#B3B3B3" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="12" y1="6" x2="12" y2="18" stroke="#B3B3B3" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="16" y1="6" x2="16" y2="18" stroke="#B3B3B3" stroke-width="1.2" stroke-linecap="round"/>
+  <!-- Small subdivision ticks, echoing the TimeBend timing marks -->
+  <line x1="5" y1="20" x2="5" y2="22" stroke="#B3B3B3" stroke-width="1" stroke-linecap="round"/>
+  <line x1="9" y1="20" x2="9" y2="22" stroke="#B3B3B3" stroke-width="1" stroke-linecap="round"/>
+  <line x1="13" y1="20" x2="13" y2="22" stroke="#B3B3B3" stroke-width="1" stroke-linecap="round"/>
+  <line x1="17" y1="20" x2="17" y2="22" stroke="#B3B3B3" stroke-width="1" stroke-linecap="round"/>
+  <line x1="21" y1="20" x2="21" y2="22" stroke="#B3B3B3" stroke-width="1" stroke-linecap="round"/>
+</svg>
