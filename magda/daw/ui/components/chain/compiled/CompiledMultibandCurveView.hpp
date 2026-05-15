@@ -69,13 +69,19 @@ class CompiledMultibandCurveView final : public juce::Component,
         HighXo,
         LowThreshAbove,
         LowThreshBelow,
-        LowThreshExpand,
+        LowThreshExpandBelow,
+        LowThreshExpandAbove,
+        LowLimit,
         MidThreshAbove,
         MidThreshBelow,
-        MidThreshExpand,
+        MidThreshExpandBelow,
+        MidThreshExpandAbove,
+        MidLimit,
         HighThreshAbove,
         HighThreshBelow,
-        HighThreshExpand,
+        HighThreshExpandBelow,
+        HighThreshExpandAbove,
+        HighLimit,
     };
 
     void timerCallback() override;
@@ -105,10 +111,13 @@ class CompiledMultibandCurveView final : public juce::Component,
     float highXoHz_ = 2500.0f;
     std::array<float, 3> threshAboveDb_{{-24.0f, -24.0f, -24.0f}};
     std::array<float, 3> threshBelowDb_{{-48.0f, -48.0f, -48.0f}};
-    std::array<float, 3> threshExpandDb_{{-72.0f, -72.0f, -72.0f}};
+    std::array<float, 3> threshExpandBelowDb_{{-72.0f, -72.0f, -72.0f}};
+    std::array<float, 3> threshExpandAboveDb_{{0.0f, 0.0f, 0.0f}};
     std::array<float, 3> ratiosAbove_{{8.0f, 8.0f, 8.0f}};
     std::array<float, 3> ratiosBelow_{{8.0f, 8.0f, 8.0f}};
-    std::array<float, 3> expandRatios_{{1.0f, 1.0f, 1.0f}};
+    std::array<float, 3> expandRatiosBelow_{{1.0f, 1.0f, 1.0f}};
+    std::array<float, 3> expandRatiosAbove_{{1.0f, 1.0f, 1.0f}};
+    std::array<float, 3> limitDb_{{0.0f, 0.0f, 0.0f}};
     Handle hoveredHandle_ = Handle::None;
     Handle draggedHandle_ = Handle::None;
     juce::Rectangle<float> plotArea_;
@@ -116,7 +125,7 @@ class CompiledMultibandCurveView final : public juce::Component,
     juce::Rectangle<float> collapseButtonArea_;
     bool collapseButtonHovered_ = false;
     // Which band is receiving a ratio scroll.  -1 = no active scroll.
-    // ratioScrollZone_: 0 = above, 1 = below, 2 = expand.
+    // ratioScrollZone_: 0 = ratioAbove, 1 = ratioBelow, 2 = expandRatioBelow, 3 = expandRatioAbove.
     int ratioScrollBand_ = -1;
     int ratioScrollZone_ = 0;
 
