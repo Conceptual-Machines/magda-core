@@ -812,6 +812,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
   private:
     // Timer callback for metering updates (runs on message thread)
     void timerCallback() override;
+    void refreshInputMeterClients(const std::map<TrackId, te::AudioTrack*>& trackMapping);
 
     // Create track mapping
     void ensureTrackMapping(TrackId trackId);
@@ -867,6 +868,12 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     std::atomic<float> masterPeakR_{0.0f};
     te::LevelMeasurer::Client masterMeterClient_;
     bool masterMeterRegistered_{false};  // Whether master meter client is registered
+
+    struct InputMeterClientEntry {
+        te::LevelMeasurer::Client client;
+        te::LevelMeasurer* measurer = nullptr;
+    };
+    std::map<TrackId, InputMeterClientEntry> inputMeterClients_;
 
     // Synchronization
     mutable juce::CriticalSection
