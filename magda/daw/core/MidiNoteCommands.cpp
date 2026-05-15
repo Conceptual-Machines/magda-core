@@ -854,6 +854,8 @@ void SliceMidiNotesCommand::execute() {
 
     std::vector<MidiNote> slicedNotes;
     slicedNotes.reserve(originalNotes_.size() * static_cast<size_t>(subdivisions_));
+    slicedNoteIndices_.clear();
+    slicedNoteIndices_.reserve(noteIndices_.size() * static_cast<size_t>(subdivisions_));
 
     for (size_t index = 0; index < originalNotes_.size(); ++index) {
         const auto& note = originalNotes_[index];
@@ -868,6 +870,7 @@ void SliceMidiNotesCommand::execute() {
             auto sliced = note;
             sliced.startBeat = note.startBeat + sliceLength * static_cast<double>(slice);
             sliced.lengthBeats = sliceLength;
+            slicedNoteIndices_.push_back(slicedNotes.size());
             slicedNotes.push_back(sliced);
         }
     }
@@ -890,6 +893,7 @@ void SliceMidiNotesCommand::undo() {
     }
 
     clip->midiNotes = originalNotes_;
+    slicedNoteIndices_.clear();
     clipManager.forceNotifyClipPropertyChanged(clipId_);
 }
 

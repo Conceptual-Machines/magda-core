@@ -461,7 +461,9 @@ void BottomPanel::setupHeaderControls() {
         auto popup = std::make_unique<daw::ui::NoteSlicePopup>(clipId, indices.size());
         popup->onApply = [clipId, indices](int subdivisions) {
             auto cmd = std::make_unique<SliceMidiNotesCommand>(clipId, indices, subdivisions);
+            auto* cmdPtr = cmd.get();
             UndoManager::getInstance().executeCommand(std::move(cmd));
+            SelectionManager::getInstance().selectNotes(clipId, cmdPtr->getSlicedNoteIndices());
         };
         daw::ui::NoteSlicePopup::showAbove(std::move(popup), sliceButton_.get());
     };

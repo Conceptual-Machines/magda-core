@@ -326,11 +326,16 @@ class SliceMidiNotesCommand : public UndoableCommand {
         return "Slice MIDI Notes";
     }
 
+    const std::vector<size_t>& getSlicedNoteIndices() const {
+        return slicedNoteIndices_;
+    }
+
   private:
     ClipId clipId_;
     std::vector<size_t> noteIndices_;
     int subdivisions_;
     std::vector<MidiNote> originalNotes_;
+    std::vector<size_t> slicedNoteIndices_;
     bool executed_ = false;
 };
 

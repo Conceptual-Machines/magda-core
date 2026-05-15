@@ -515,6 +515,34 @@ TEST_CASE("BendNoteTimingCommand preserves non-zero selected span", "[midi][comm
     REQUIRE(clip->midiNotes[2].startBeat == Catch::Approx(6.0));
 }
 
+TEST_CASE("SliceMidiNotesCommand reports every new slice index", "[midi][commands][slice]") {
+    using namespace magda;
+
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    ClipId clipId = cm.createMidiClipBeats(1, 0.0, 8.0);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+
+    REQUIRE(cm.addMidiNote(clipId, {60, 100, 0.0, 1.0}));
+    REQUIRE(cm.addMidiNote(clipId, {61, 100, 2.0, 1.0}));
+    REQUIRE(cm.addMidiNote(clipId, {62, 100, 4.0, 1.0}));
+
+    SliceMidiNotesCommand cmd(clipId, {0, 2}, 4);
+    cmd.execute();
+
+    const auto& sliced = cmd.getSlicedNoteIndices();
+    REQUIRE(sliced == std::vector<size_t>{0, 1, 2, 3, 5, 6, 7, 8});
+
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes.size() == 9);
+    REQUIRE(clip->midiNotes[4].noteNumber == 61);
+
+    cmd.undo();
+    REQUIRE(cmd.getSlicedNoteIndices().empty());
+    REQUIRE(clip->midiNotes.size() == 3);
+}
+
 TEST_CASE("MoveMidiNoteBetweenClipsCommand keeps source note when destination insert cannot run",
           "[midi][undo][commands]") {
     using namespace magda;
