@@ -301,6 +301,27 @@ class AddMultipleMidiNotesCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for slicing selected MIDI notes into equal subdivisions.
+ */
+class SliceMidiNotesCommand : public UndoableCommand {
+  public:
+    SliceMidiNotesCommand(ClipId clipId, std::vector<size_t> noteIndices, int subdivisions);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Slice MIDI Notes";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<size_t> noteIndices_;
+    int subdivisions_;
+    std::vector<MidiNote> originalNotes_;
+    bool executed_ = false;
+};
+
+/**
  * @brief Command for transposing all notes in a MIDI clip by a given number of semitones
  */
 class TransposeMidiClipCommand : public UndoableCommand {

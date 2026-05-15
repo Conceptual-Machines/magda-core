@@ -138,6 +138,9 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/waveform/time_bend.svg
     ../../assets/icons/waveform/time_bend_off.svg
     ../../assets/icons/waveform/time_bend_on.svg
+    ../../assets/icons/waveform/note_slice.svg
+    ../../assets/icons/waveform/note_slice_off.svg
+    ../../assets/icons/waveform/note_slice_on.svg
     ../../assets/icons/waveform/bezier.svg
     ../../assets/icons/waveform/bend-in-out.svg
     ../../assets/icons/waveform/curve.svg
