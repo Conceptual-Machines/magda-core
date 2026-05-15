@@ -6,7 +6,9 @@
 #include "../../../media_db/MediaDbContext.hpp"
 #include "../../../media_db/MediaDbIndexer.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -14,7 +16,7 @@ namespace {
 
 juce::String prettyDuration(std::optional<double> seconds) {
     if (!seconds) {
-        return "–";
+        return "-";
     }
     const double s = *seconds;
     if (s < 1.0) {
@@ -25,7 +27,7 @@ juce::String prettyDuration(std::optional<double> seconds) {
 
 juce::String prettyBpm(std::optional<double> bpm) {
     if (!bpm) {
-        return "–";
+        return "-";
     }
     return juce::String(static_cast<int>(std::round(*bpm)));
 }
@@ -33,7 +35,7 @@ juce::String prettyBpm(std::optional<double> bpm) {
 juce::String prettyKey(const std::optional<std::string>& root,
                        const std::optional<std::string>& scale) {
     if (!root) {
-        return "–";
+        return "-";
     }
     juce::String out(*root);
     if (scale && !scale->empty()) {
@@ -72,11 +74,14 @@ class MediaDbBrowserContent::ResultsListModel : public juce::ListBoxModel {
 
         auto bounds = juce::Rectangle<int>(8, 0, width - 16, height);
 
-        // Right-side meta strip: bpm · key · duration
+        // Right-side meta strip: bpm | key | duration. ASCII separator
+        // because JUCE's TTF rendering eats non-Latin1 codepoints unless we
+        // route the strings through CharPointer_UTF8::CharPointer_UTF8 ctors,
+        // and "|" reads fine at 11pt.
         const auto& font = FontManager::getInstance().getUIFont(11.0F);
         g.setFont(font);
-        const juce::String meta = prettyBpm(r.bpm) + " bpm · " + prettyKey(r.keyRoot, r.keyScale) +
-                                  " · " + prettyDuration(r.durationS);
+        const juce::String meta = prettyBpm(r.bpm) + " bpm | " + prettyKey(r.keyRoot, r.keyScale) +
+                                  " | " + prettyDuration(r.durationS);
         const int metaW = font.getStringWidth(meta) + 8;
         auto metaArea = bounds.removeFromRight(metaW);
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
@@ -130,10 +135,17 @@ class MediaDbBrowserContent::ResultsListModel : public juce::ListBoxModel {
 // ===========================================================================
 
 MediaDbBrowserContent::MediaDbBrowserContent() {
-    // Filter strip
-    auto styleLabel = [](juce::Label& l, const juce::String& text) {
+    // Style mirrors PluginBrowserContent's compact filter strip:
+    // SmallComboBoxLookAndFeel on dropdowns + explicit theme colours on
+    // each control. Labels and the index button share FileBrowserLookAndFeel
+    // because it carries the matching theme-font overrides.
+    auto& comboLnf = SmallComboBoxLookAndFeel::getInstance();
+    auto& fbLnf = FileBrowserLookAndFeel::getInstance();
+    const auto uiFont = FontManager::getInstance().getUIFont(11.0F);
+
+    auto styleLabel = [&](juce::Label& l, const juce::String& text) {
         l.setText(text, juce::dontSendNotification);
-        l.setFont(FontManager::getInstance().getUIFont(11.0F));
+        l.setFont(uiFont);
         l.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         l.setJustificationType(juce::Justification::centredRight);
     };
@@ -141,12 +153,20 @@ MediaDbBrowserContent::MediaDbBrowserContent() {
     styleLabel(shapeLabel_, "shape");
     styleLabel(bpmLabel_, "bpm");
 
+    auto styleCombo = [&](juce::ComboBox& cb) {
+        cb.setColour(juce::ComboBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        cb.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+        cb.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+        cb.setLookAndFeel(&comboLnf);
+    };
+
     familyFilter_.addItem("all", 1);
     for (const auto* f :
          {"drum", "bass", "lead", "pad", "keys", "guitar", "orchestral", "vocal", "fx"}) {
         familyFilter_.addItem(f, familyFilter_.getNumItems() + 1);
     }
     familyFilter_.setSelectedId(1, juce::dontSendNotification);
+    styleCombo(familyFilter_);
     familyFilter_.onChange = [this]() { runSearch(); };
 
     shapeFilter_.addItem("any", 1);
@@ -154,20 +174,29 @@ MediaDbBrowserContent::MediaDbBrowserContent() {
         shapeFilter_.addItem(s, shapeFilter_.getNumItems() + 1);
     }
     shapeFilter_.setSelectedId(1, juce::dontSendNotification);
+    styleCombo(shapeFilter_);
     shapeFilter_.onChange = [this]() { runSearch(); };
 
-    auto setupBpm = [this](juce::TextEditor& e, const juce::String& placeholder) {
-        e.setTextToShowWhenEmpty(placeholder,
-                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6F));
+    auto setupBpm = [&](juce::TextEditor& e, const juce::String& placeholder) {
+        e.setTextToShowWhenEmpty(placeholder, DarkTheme::getSecondaryTextColour());
+        e.setColour(juce::TextEditor::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        e.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+        e.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
         e.setInputRestrictions(4, "0123456789.");
+        e.setFont(uiFont);
         e.onReturnKey = [this]() { runSearch(); };
         e.onFocusLost = [this]() { runSearch(); };
     };
     setupBpm(bpmMinBox_, "min");
     setupBpm(bpmMaxBox_, "max");
 
+    tonalOnly_.setLookAndFeel(&fbLnf);
     tonalOnly_.onClick = [this]() { runSearch(); };
 
+    indexButton_.setLookAndFeel(&fbLnf);
+    indexButton_.setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    indexButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
     indexButton_.onClick = [this]() { onIndexFolderClicked(); };
 
     addAndMakeVisible(familyLabel_);
@@ -191,7 +220,7 @@ MediaDbBrowserContent::MediaDbBrowserContent() {
     addAndMakeVisible(resultsList_);
 
     // Empty state
-    emptyState_.setText("No samples indexed yet.\nClick \"Index folder…\" to add one.",
+    emptyState_.setText("No samples indexed yet.\nClick \"Index folder...\" to add one.",
                         juce::dontSendNotification);
     emptyState_.setFont(FontManager::getInstance().getUIFont(13.0F));
     emptyState_.setJustificationType(juce::Justification::centred);
@@ -200,12 +229,35 @@ MediaDbBrowserContent::MediaDbBrowserContent() {
     emptyState_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(emptyState_);
 
-    // First-time query if context is ready
-    runSearch();
+    // Indexing status. Hidden until a scan starts.
+    statusLabel_.setFont(FontManager::getInstance().getUIFont(10.0F));
+    statusLabel_.setJustificationType(juce::Justification::centredLeft);
+    statusLabel_.setColour(juce::Label::textColourId,
+                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    statusLabel_.setMinimumHorizontalScale(1.0F);  // truncate long paths, don't shrink the font
+    statusLabel_.setInterceptsMouseClicks(false, false);
+    statusLabel_.setVisible(false);
+    addAndMakeVisible(statusLabel_);
+
+    // Defer the first query until the library icon is actually clicked.
+    // Opening SQLite + loading CLAP models can take seconds; doing it during
+    // app startup would freeze the splash. setQueryText()/refresh() trigger
+    // runSearch() lazily once the user enters library mode.
 }
 
 MediaDbBrowserContent::~MediaDbBrowserContent() {
+    // Drain in-flight indexing jobs. removeAllJobs(true, ...) signals
+    // cancellation and waits up to the timeout for the worker to exit.
+    if (indexPool_) {
+        indexPool_->removeAllJobs(true, 5000);
+    }
     resultsList_.setModel(nullptr);
+    familyFilter_.setLookAndFeel(nullptr);
+    shapeFilter_.setLookAndFeel(nullptr);
+    bpmMinBox_.setLookAndFeel(nullptr);
+    bpmMaxBox_.setLookAndFeel(nullptr);
+    tonalOnly_.setLookAndFeel(nullptr);
+    indexButton_.setLookAndFeel(nullptr);
 }
 
 void MediaDbBrowserContent::paint(juce::Graphics& g) {
@@ -234,6 +286,14 @@ void MediaDbBrowserContent::resized() {
     familyLabel_.setBounds(strip.removeFromRight(44));
 
     bounds.removeFromTop(4);
+    // Status strip lives at the bottom of the content area when indexing.
+    // It shares the area with the results list, but on a separate row.
+    if (statusLabel_.isVisible()) {
+        statusLabel_.setBounds(bounds.removeFromBottom(18).reduced(8, 2));
+    } else {
+        statusLabel_.setBounds(bounds.getX() + 8, bounds.getBottom() - 18, bounds.getWidth() - 16,
+                               18);
+    }
     resultsList_.setBounds(bounds);
     emptyState_.setBounds(bounds);
 }
@@ -293,13 +353,17 @@ void MediaDbBrowserContent::runSearch() {
     emptyState_.setVisible(empty);
     if (empty) {
         emptyState_.setText(queryText_.isEmpty()
-                                ? "No samples indexed yet.\nClick \"Index folder…\" to add one."
+                                ? "No samples indexed yet.\nClick \"Index folder...\" to add one."
                                 : "No results.",
                             juce::dontSendNotification);
     }
 }
 
 void MediaDbBrowserContent::onIndexFolderClicked() {
+    if (indexing_) {
+        return;  // Already running — ignore double clicks.
+    }
+
     fileChooser_ = std::make_unique<juce::FileChooser>(
         "Choose a folder to index", juce::File::getSpecialLocation(juce::File::userMusicDirectory));
 
@@ -311,14 +375,61 @@ void MediaDbBrowserContent::onIndexFolderClicked() {
             return;
         }
 
-        auto& ctx = magda::media::MediaDbContext::getInstance();
-        if (!ctx.ensureInitialized()) {
-            return;
+        if (!indexPool_) {
+            indexPool_ = std::make_unique<juce::ThreadPool>(1);
         }
-        magda::media::MediaDbIndexer indexer(ctx.db(), ctx.audioEncoder());
-        // Synchronous for F2; F3 moves this to a JUCE ThreadPool.
-        indexer.indexDirectory(std::filesystem::path(dir.getFullPathName().toStdString()));
-        runSearch();
+
+        indexing_ = true;
+        indexButton_.setEnabled(false);
+        indexButton_.setButtonText("Indexing...");
+        statusLabel_.setText("Preparing scan...", juce::dontSendNotification);
+        statusLabel_.setVisible(true);
+        resized();
+
+        const auto path = std::filesystem::path(dir.getFullPathName().toStdString());
+        const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+
+        indexPool_->addJob([self, path]() {
+            // Background thread. Open a fresh DB connection here so we don't
+            // share the UI-thread MediaDbContext::db() handle across threads
+            // — SQLite multi-thread mode requires one connection per thread.
+            // WAL mode (set in schema) lets this writer coexist with the
+            // UI's reader connection.
+            try {
+                magda::media::MediaDatabase bgDb(
+                    magda::media::MediaDbContext::getInstance().dbPath());
+                magda::media::MediaDbIndexer indexer(
+                    bgDb, magda::media::MediaDbContext::getInstance().audioEncoder());
+                indexer.setProgress(
+                    [self](int done, int total, const std::filesystem::path& current) {
+                        // Fired per-file on the indexer thread; marshal the
+                        // text update to the UI thread via callAsync.
+                        const auto status = juce::String("Indexing ") +
+                                            juce::String(current.filename().string()) + " (" +
+                                            juce::String(done) + "/" + juce::String(total) + ")";
+                        juce::MessageManager::callAsync([self, status]() {
+                            if (self != nullptr) {
+                                self->statusLabel_.setText(status, juce::dontSendNotification);
+                            }
+                        });
+                    });
+                indexer.indexDirectory(path);
+            } catch (const std::exception&) {
+                // Swallow — bounce back to the UI either way.
+            }
+
+            juce::MessageManager::callAsync([self]() {
+                if (self == nullptr) {
+                    return;
+                }
+                self->indexing_ = false;
+                self->indexButton_.setEnabled(true);
+                self->indexButton_.setButtonText("Index folder...");
+                self->statusLabel_.setVisible(false);
+                self->resized();
+                self->runSearch();
+            });
+        });
     });
 }
 

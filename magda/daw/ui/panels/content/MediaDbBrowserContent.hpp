@@ -56,17 +56,23 @@ class MediaDbBrowserContent : public juce::Component {
     juce::TextEditor bpmMinBox_;
     juce::TextEditor bpmMaxBox_;
     juce::ToggleButton tonalOnly_{"tonal"};
-    juce::TextButton indexButton_{"Index folder…"};
+    juce::TextButton indexButton_{"Index folder..."};
 
     // Results
     std::unique_ptr<ResultsListModel> resultsModel_;
     juce::ListBox resultsList_;
     juce::Label emptyState_;
+    juce::Label statusLabel_;  // "Indexing path/to/x.wav (N/M)" during a scan
 
     // State
     juce::String queryText_;
     std::vector<magda::media::QueryResult> results_;
     std::unique_ptr<juce::FileChooser> fileChooser_;  // persisted for async callback
+
+    // Single-thread pool so indexing doesn't block the message thread. The
+    // pool is created lazily on first index click so app startup pays nothing.
+    std::unique_ptr<juce::ThreadPool> indexPool_;
+    bool indexing_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MediaDbBrowserContent)
 };

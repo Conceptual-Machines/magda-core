@@ -34,10 +34,13 @@ class MediaDbIndexer {
         int failed = 0;    // unreadable or decode-failed
     };
 
-    // Progress callback fired roughly once per file. (done, total) where
-    // total is the prescanned file count. Called from the same thread that
-    // called indexDirectory().
-    using ProgressFn = std::function<void(int done, int total)>;
+    // Progress callback fired once per file. (done, total, currentPath)
+    // where total is the prescanned file count and currentPath is the file
+    // that was just processed. Called from the same thread that called
+    // indexDirectory() — the caller is responsible for marshalling to the
+    // UI thread if needed.
+    using ProgressFn =
+        std::function<void(int done, int total, const std::filesystem::path& current)>;
 
     // db: required. encoder: nullable, controls whether we compute audio
     // embeddings during this scan.

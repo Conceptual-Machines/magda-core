@@ -178,7 +178,7 @@ TEST_CASE("indexer: progress callback fires for each file", "[media_db][indexer]
     MediaDbIndexer indexer(db, nullptr);
     int lastDone = -1;
     int lastTotal = -1;
-    indexer.setProgress([&](int done, int total) {
+    indexer.setProgress([&](int done, int total, const std::filesystem::path&) {
         lastDone = done;
         lastTotal = total;
     });

@@ -312,6 +312,12 @@ class Config {
     void setBrowserFilterMidi(bool enabled) {
         browserFilterMidi = enabled;
     }
+    bool getBrowserFilterPreset() const {
+        return browserFilterPreset;
+    }
+    void setBrowserFilterPreset(bool enabled) {
+        browserFilterPreset = enabled;
+    }
 
     // Browser Default Directory
     std::string getBrowserDefaultDirectory() const {
@@ -819,8 +825,9 @@ class Config {
     bool stopUpdatesPlayhead = false;
 
     // Browser filter settings (media explorer)
-    bool browserFilterAudio = true;  // Show audio files by default
-    bool browserFilterMidi = false;  // Hide MIDI files by default
+    bool browserFilterAudio = true;    // Show audio files by default
+    bool browserFilterMidi = false;    // Hide MIDI files by default
+    bool browserFilterPreset = false;  // Hide MAGDA presets by default
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;

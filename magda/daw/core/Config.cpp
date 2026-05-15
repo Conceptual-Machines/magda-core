@@ -170,6 +170,7 @@ void Config::save() {
     // Browser
     root->setProperty("browserFilterAudio", browserFilterAudio);
     root->setProperty("browserFilterMidi", browserFilterMidi);
+    root->setProperty("browserFilterPreset", browserFilterPreset);
     root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
 
     juce::Array<juce::var> favArray;
@@ -528,6 +529,7 @@ void Config::load() {
 
     browserFilterAudio = getBool("browserFilterAudio", browserFilterAudio);
     browserFilterMidi = getBool("browserFilterMidi", browserFilterMidi);
+    browserFilterPreset = getBool("browserFilterPreset", browserFilterPreset);
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserFavorites = getStringArray("browserFavorites");
 

@@ -472,7 +472,7 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
         }
         ++done;
         if (progress_) {
-            progress_(done, total);
+            progress_(done, total, f.path);
         }
     });
 

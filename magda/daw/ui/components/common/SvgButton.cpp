@@ -51,8 +51,12 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         return;
 
     if (dualIconMode) {
-        // Dual-icon mode: use pre-baked off/on images
-        auto* iconToDraw = (active || shouldDrawButtonAsDown) ? svgIconOn.get() : svgIconOff.get();
+        // Dual-icon mode: use pre-baked off/on images. Toggleable buttons
+        // also count `getToggleState()` so callers using setClickingTogglesState
+        // get the on-icon for free without having to also call setActive().
+        const bool drawOn =
+            active || shouldDrawButtonAsDown || (getToggleState() && isToggleable());
+        auto* iconToDraw = drawOn ? svgIconOn.get() : svgIconOff.get();
 
         if (!iconToDraw) {
             return;

@@ -64,35 +64,19 @@ bool MediaDbContext::ensureInitialized() {
         db_.reset();
         return false;
     }
-
-    loadOptionalAi();
+    // Encoders / tokenizer are loaded lazily — the audio one only when
+    // indexing starts, the text one + tokenizer only when a text query
+    // runs. See audioEncoder() / textEncoder() / tokenizer() below.
     return true;
 }
 
 void MediaDbContext::loadOptionalAi() {
-    // Each piece is optional. A user without the AI Audio Pack still gets
-    // filename + metadata + FTS search.
-    if (std::filesystem::exists(audioModelPath())) {
-        try {
-            audioEnc_ = std::make_unique<ClapAudioEncoder>(audioModelPath());
-        } catch (const std::exception&) {
-            audioEnc_.reset();
-        }
-    }
-    if (std::filesystem::exists(textModelPath())) {
-        try {
-            textEnc_ = std::make_unique<ClapTextEncoder>(textModelPath());
-        } catch (const std::exception&) {
-            textEnc_.reset();
-        }
-    }
-    if (std::filesystem::exists(tokenizerJsonPath())) {
-        try {
-            tokenizer_ = std::make_unique<RobertaTokenizer>(tokenizerJsonPath());
-        } catch (const std::exception&) {
-            tokenizer_.reset();
-        }
-    }
+    // Retained for completeness but no longer called from ensureInitialized().
+    // Useful if a future "preload models" toggle in preferences wants to
+    // warm everything up at startup.
+    (void)audioEncoder();
+    (void)textEncoder();
+    (void)tokenizer();
 }
 
 void MediaDbContext::shutdown() {
@@ -107,10 +91,12 @@ bool MediaDbContext::isReady() const noexcept {
     return db_ != nullptr;
 }
 bool MediaDbContext::hasAudioEncoder() const noexcept {
-    return audioEnc_ != nullptr;
+    // "Has" means "model file is present on disk" — whether or not it's
+    // been loaded yet. The lazy load happens on first audioEncoder() call.
+    return std::filesystem::exists(audioModelPath());
 }
 bool MediaDbContext::hasTextSearch() const noexcept {
-    return textEnc_ != nullptr && tokenizer_ != nullptr;
+    return std::filesystem::exists(textModelPath()) && std::filesystem::exists(tokenizerJsonPath());
 }
 
 MediaDatabase& MediaDbContext::db() {
@@ -120,13 +106,53 @@ MediaDatabase& MediaDbContext::db() {
     return *db_;
 }
 
+// The next three accessors are lazy: they bring the model into memory the
+// first time someone asks. ORT session construction reads the .onnx file
+// (~100 MB for audio, ~480 MB for text) plus mmaps/allocates working
+// buffers, so deferring keeps app launch cheap and lets MAGDA hold zero
+// model state when the user only browses by filename / filters.
 ClapAudioEncoder* MediaDbContext::audioEncoder() noexcept {
+    if (audioEnc_) {
+        return audioEnc_.get();
+    }
+    if (!std::filesystem::exists(audioModelPath())) {
+        return nullptr;
+    }
+    try {
+        audioEnc_ = std::make_unique<ClapAudioEncoder>(audioModelPath());
+    } catch (const std::exception&) {
+        audioEnc_.reset();
+    }
     return audioEnc_.get();
 }
+
 ClapTextEncoder* MediaDbContext::textEncoder() noexcept {
+    if (textEnc_) {
+        return textEnc_.get();
+    }
+    if (!std::filesystem::exists(textModelPath())) {
+        return nullptr;
+    }
+    try {
+        textEnc_ = std::make_unique<ClapTextEncoder>(textModelPath());
+    } catch (const std::exception&) {
+        textEnc_.reset();
+    }
     return textEnc_.get();
 }
+
 RobertaTokenizer* MediaDbContext::tokenizer() noexcept {
+    if (tokenizer_) {
+        return tokenizer_.get();
+    }
+    if (!std::filesystem::exists(tokenizerJsonPath())) {
+        return nullptr;
+    }
+    try {
+        tokenizer_ = std::make_unique<RobertaTokenizer>(tokenizerJsonPath());
+    } catch (const std::exception&) {
+        tokenizer_.reset();
+    }
     return tokenizer_.get();
 }
 

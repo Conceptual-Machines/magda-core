@@ -170,6 +170,13 @@ juce_add_binary_data(MagdaAssets
     ../../assets/midi.svg
     ../../assets/icons/browser/AUDIO.svg
     ../../assets/icons/browser/MIDI.svg
+    # Media-explorer filter icons (issue #768) — three coloured backdrops
+    ../../assets/icons/media_db/audio_db_off.svg
+    ../../assets/icons/media_db/audio_db_on.svg
+    ../../assets/icons/media_db/midi_db_off.svg
+    ../../assets/icons/media_db/midi_db_on.svg
+    ../../assets/icons/media_db/presets_db_off.svg
+    ../../assets/icons/media_db/presets_db_on.svg
     # Mixer fader icons
     ../../assets/icons/fader/fader_thumb.svg
     ../../assets/icons/fader/fader_track.svg
