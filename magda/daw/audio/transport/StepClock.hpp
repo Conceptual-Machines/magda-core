@@ -101,6 +101,10 @@ class StepClock {
      *  hardAngle = false → quadratic bezier (smooth curve through control point). */
     static double applyRampCurve(double t, float depth, float skew, bool hardAngle = false);
 
+    /** Apply the timing curve with repeated curve cycles in the unit interval. */
+    static double applyRampCurveWithCycles(double t, float depth, float skew, int cycles = 1,
+                                           bool hardAngle = false);
+
   private:
     double sampleRate_ = 44100.0;
 

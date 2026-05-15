@@ -204,3 +204,25 @@ TEST_CASE("StepClock applyRampCurve skew shifts the inflection point", "[stepclo
     double valNegSkew = StepClock::applyRampCurve(0.3, depth, -0.5f);
     REQUIRE(valNegSkew > valPosSkew);
 }
+
+TEST_CASE("StepClock applyRampCurveWithCycles matches single-cycle curve",
+          "[stepclock][ramp][cycles]") {
+    for (double t : {0.0, 0.1, 0.25, 0.5, 0.9, 1.0}) {
+        REQUIRE(StepClock::applyRampCurveWithCycles(t, 0.4f, -0.2f, 1, false) ==
+                Approx(StepClock::applyRampCurve(t, 0.4f, -0.2f, false)).margin(0.000001));
+    }
+}
+
+TEST_CASE("StepClock applyRampCurveWithCycles preserves repeated segment boundaries",
+          "[stepclock][ramp][cycles]") {
+    REQUIRE(StepClock::applyRampCurveWithCycles(0.0, 0.5f, 0.0f, 4, true) ==
+            Approx(0.0).margin(0.000001));
+    REQUIRE(StepClock::applyRampCurveWithCycles(0.25, 0.5f, 0.0f, 4, true) ==
+            Approx(0.25).margin(0.000001));
+    REQUIRE(StepClock::applyRampCurveWithCycles(0.5, 0.5f, 0.0f, 4, true) ==
+            Approx(0.5).margin(0.000001));
+    REQUIRE(StepClock::applyRampCurveWithCycles(0.75, 0.5f, 0.0f, 4, true) ==
+            Approx(0.75).margin(0.000001));
+    REQUIRE(StepClock::applyRampCurveWithCycles(1.0, 0.5f, 0.0f, 4, true) ==
+            Approx(1.0).margin(0.000001));
+}

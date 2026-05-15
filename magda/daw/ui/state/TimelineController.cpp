@@ -794,27 +794,25 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
                 continue;
 
             // Legacy migration: old projects may have meaningful startTime/length
-            // caches while placement is still at its default value. Convert that
-            // cache into beat placement before refreshing derived seconds.
+            // caches while placement is still at its default value. Once a clip
+            // has explicit beat placement, never derive beats back from the
+            // seconds cache on tempo changes; the cache may be stale.
             constexpr double eps = 0.000001;
             double startBeats = mutableClip->placement.startBeat;
             double lengthBeats = mutableClip->placement.lengthBeats;
 
+            const bool hasBeatStart = startBeats > eps || mutableClip->startBeats > eps;
+            const bool hasBeatLength = lengthBeats > eps || mutableClip->lengthBeats > eps;
+
             if (startBeats <= eps && mutableClip->startBeats > eps)
                 startBeats = mutableClip->startBeats;
-            if (startBeats <= eps && mutableClip->startTime > eps)
+            if (!hasBeatStart && mutableClip->startTime > eps)
                 startBeats = magda::TimelineUtils::secondsToBeats(mutableClip->startTime, oldBpm);
 
             if (lengthBeats <= eps && mutableClip->lengthBeats > eps)
                 lengthBeats = mutableClip->lengthBeats;
 
-            const double placementLengthSeconds =
-                magda::TimelineUtils::beatsToSeconds(lengthBeats, oldBpm);
-            const bool hasLegacyLengthCache =
-                mutableClip->length > eps &&
-                (lengthBeats <= eps ||
-                 std::abs(mutableClip->length - placementLengthSeconds) > eps);
-            if (hasLegacyLengthCache)
+            if (!hasBeatLength && mutableClip->length > eps)
                 lengthBeats = magda::TimelineUtils::secondsToBeats(mutableClip->length, oldBpm);
 
             mutableClip->setPlacementBeats(startBeats, lengthBeats);

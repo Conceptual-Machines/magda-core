@@ -670,33 +670,42 @@ TEST_CASE("Beats-only edits never drift through float round-trips", "[clip][bpm]
     }
 }
 
-TEST_CASE("Tempo change migrates legacy timeline cache into beat placement",
-          "[clip][bpm][legacy]") {
+TEST_CASE("Tempo change never lets stale seconds resize beat-placed clips", "[clip][bpm][legacy]") {
     ClipManager::getInstance().shutdown();
 
     magda::TimelineController controller;
     controller.dispatch(magda::SetTempoEvent{120.0});
 
-    ClipInfo legacy;
-    legacy.id = 42;
-    legacy.trackId = 1;
-    legacy.setMidiContent();
-    legacy.view = ClipView::Arrangement;
-    legacy.startTime = 5.0;
-    legacy.length = 3.0;
-    legacy.startBeats = 0.0;
-    legacy.lengthBeats = 4.0;
-    legacy.setPlacementBeats(0.0, 4.0);
-    ClipManager::getInstance().restoreClip(legacy);
+    ClipInfo clip;
+    clip.id = 42;
+    clip.trackId = 1;
+    clip.setMidiContent();
+    clip.view = ClipView::Arrangement;
+    clip.setPlacementBeats(8.0, 4.0);
+    clip.deriveTimesFromBeats(120.0);
+
+    // Simulate a stale seconds cache: this can happen while older UI/engine
+    // bridges still mirror beat placement into seconds asynchronously.
+    clip.length = 3.0;
+    ClipManager::getInstance().restoreClip(clip);
 
     controller.dispatch(magda::SetTempoEvent{60.0});
 
-    const auto* migrated = ClipManager::getInstance().getClip(legacy.id);
-    REQUIRE(migrated != nullptr);
-    REQUIRE(migrated->placement.startBeat == Approx(10.0));
-    REQUIRE(migrated->placement.lengthBeats == Approx(6.0));
-    REQUIRE(migrated->startTime == Approx(10.0));
-    REQUIRE(migrated->length == Approx(6.0));
+    const auto* updated = ClipManager::getInstance().getClip(clip.id);
+    REQUIRE(updated != nullptr);
+    REQUIRE(updated->placement.startBeat == Approx(8.0));
+    REQUIRE(updated->placement.lengthBeats == Approx(4.0));
+    REQUIRE(updated->startTime == Approx(8.0));
+    REQUIRE(updated->length == Approx(4.0));
+
+    controller.dispatch(magda::SetTempoEvent{90.0});
+
+    updated = ClipManager::getInstance().getClip(clip.id);
+    REQUIRE(updated != nullptr);
+    REQUIRE(updated->placement.startBeat == Approx(8.0));
+    REQUIRE(updated->placement.lengthBeats == Approx(4.0));
+    REQUIRE(updated->startTime == Approx(8.0 * 60.0 / 90.0));
+    REQUIRE(updated->length == Approx(4.0 * 60.0 / 90.0));
 
     controller.dispatch(magda::SetTempoEvent{120.0});
     ClipManager::getInstance().shutdown();

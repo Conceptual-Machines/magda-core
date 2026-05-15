@@ -303,6 +303,11 @@ class PianoRollGridComponent : public juce::Component,
     double drawingNoteStartBeat_ = 0.0;  // clip-relative
     double drawingNoteEndBeat_ = 0.0;    // clip-relative
     int drawingNoteNumber_ = 60;
+    double defaultNoteLengthBeats_ = 0.0;  // <= 0 follows current grid
+    int defaultNoteVelocity_ = 100;
+    double getDefaultNoteLengthBeats() const;
+    void addDefaultNoteMenuItems(juce::PopupMenu& menu) const;
+    bool handleDefaultNoteMenuResult(int result);
 
     // Pending selection to apply after next refresh
     ClipId pendingSelectClipId_ = INVALID_CLIP_ID;
