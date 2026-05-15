@@ -49,7 +49,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
     MidiSignalRoutingTest() : juce::UnitTest("MIDI Signal Routing Tests", "magda") {}
 
     void runTest() override {
-        testInstrumentRackConsumesMidi();
+        testInstrumentRackPassesMidiThrough();
         testStepSequencerDefaultsToReplacingMidi();
         testRackSyncWiresNestedRackAsGraphNode();
         testRackTypeRejectsRecursiveRackInstances();
@@ -62,8 +62,8 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
     }
 
   private:
-    void testInstrumentRackConsumesMidi() {
-        beginTest("Instrument wrapper passes audio through but consumes MIDI");
+    void testInstrumentRackPassesMidiThrough() {
+        beginTest("Instrument wrapper passes audio and MIDI through");
 
         auto& wrapper = magda::test::getSharedEngine();
         auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
@@ -104,8 +104,8 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         expect(hasConnection(rackType, rackIO, 0, synthId, 0),
                "Rack MIDI input must feed the instrument");
-        expect(!hasMidiOutputConnection(rackType),
-               "Instrument wrapper must not expose MIDI at the rack output");
+        expect(hasConnection(rackType, rackIO, 0, rackIO, 0),
+               "Instrument wrapper must pass MIDI to later track-chain devices");
 
         expect(hasConnection(rackType, rackIO, 1, rackIO, 1),
                "Rack must preserve left audio passthrough");

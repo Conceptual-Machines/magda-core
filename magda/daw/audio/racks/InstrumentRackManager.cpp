@@ -76,8 +76,10 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
     // MIDI: rack input pin 0 --> synth pin 0
     rackType->addConnection(rackIOId, 0, synthId, 0);
 
-    // MIDI stops at instruments. Audio passes through so clips remain audible,
-    // but MIDI must stay sequential so a second synth does not also play it.
+    // Keep MIDI flowing to later track-chain devices. MIDI-triggered FX such
+    // as ShaperBox need the original note stream even when an instrument sits
+    // before them in the chain.
+    rackType->addConnection(rackIOId, 0, rackIOId, 0);
 
     // Audio passthrough: rack input pin 1 --> rack output pin 1 (left)
     rackType->addConnection(rackIOId, 1, rackIOId, 1);
@@ -158,7 +160,8 @@ te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr in
     // MIDI: rack input pin 0 --> synth pin 0
     rackType->addConnection(rackIOId, 0, synthId, 0);
 
-    // MIDI stops at instruments (see wrapInstrument).
+    // Keep MIDI flowing to later track-chain devices (see wrapInstrument).
+    rackType->addConnection(rackIOId, 0, rackIOId, 0);
 
     // Audio passthrough: rack input pin 1 --> rack output pin 1 (left)
     rackType->addConnection(rackIOId, 1, rackIOId, 1);
