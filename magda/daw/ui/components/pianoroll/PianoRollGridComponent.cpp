@@ -254,7 +254,7 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     if (isDrawingNote_ && drawingNoteClipId_ != INVALID_CLIP_ID) {
         const double startBeat = std::min(drawingNoteStartBeat_, drawingNoteEndBeat_);
         const double endBeat = std::max(drawingNoteStartBeat_, drawingNoteEndBeat_);
-        const double length = juce::jmax(gridResolutionBeats_, endBeat - startBeat);
+        const double length = juce::jmax(getDefaultNoteLengthBeats(), endBeat - startBeat);
 
         MidiNote previewNote;
         previewNote.startBeat = startBeat;
@@ -482,6 +482,8 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
             menu.addItem(12, "Duplicate", hasSelection);
             menu.addItem(13, "Delete", hasSelection);
             menu.addSeparator();
+            addDefaultNoteMenuItems(menu);
+            menu.addSeparator();
 
             // Quantize submenu
             {
@@ -539,6 +541,8 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
                     onDuplicateNotes(clipId_, indices);
                 else if (result == 13 && onDeleteNotes)
                     onDeleteNotes(clipId_, indices);
+                else if (handleDefaultNoteMenuResult(result))
+                    return;
                 else if (result >= 1 && result <= 3 && onQuantizeNotes) {
                     // Current Grid
                     const QuantizeMode modes[] = {QuantizeMode::StartOnly, QuantizeMode::LengthOnly,
@@ -581,7 +585,7 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
             isDrawingNote_ = true;
             drawingNoteClipId_ = insertPos->clipId;
             drawingNoteStartBeat_ = insertPos->beat;
-            drawingNoteEndBeat_ = insertPos->beat + juce::jmax(1.0 / 16.0, gridResolutionBeats_);
+            drawingNoteEndBeat_ = insertPos->beat + getDefaultNoteLengthBeats();
             drawingNoteNumber_ = insertPos->noteNumber;
             setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
             repaint();
@@ -617,9 +621,8 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
         MidiNote note;
         note.startBeat = std::min(drawingNoteStartBeat_, drawingNoteEndBeat_);
         note.noteNumber = drawingNoteNumber_;
-        note.lengthBeats = juce::jmax(
-            1.0 / 16.0, juce::jmax(gridResolutionBeats_,
-                                   std::abs(drawingNoteEndBeat_ - drawingNoteStartBeat_)));
+        note.lengthBeats = juce::jmax(getDefaultNoteLengthBeats(),
+                                      std::abs(drawingNoteEndBeat_ - drawingNoteStartBeat_));
 
         isDrawingNote_ = false;
         drawingNoteClipId_ = INVALID_CLIP_ID;
@@ -627,7 +630,8 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
         if (onNoteAdded && clipId != INVALID_CLIP_ID) {
             const auto* clip = ClipManager::getInstance().getClip(clipId);
             if (clip && ClipOperations::clipMidiNoteToVisibleRange(*clip, note)) {
-                onNoteAdded(clipId, note.startBeat, note.noteNumber, note.lengthBeats, 100);
+                onNoteAdded(clipId, note.startBeat, note.noteNumber, note.lengthBeats,
+                            defaultNoteVelocity_);
             }
         }
 
@@ -773,7 +777,7 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
         MidiNote previewNote;
         previewNote.startBeat = insertPos->beat;
         previewNote.noteNumber = insertPos->noteNumber;
-        previewNote.lengthBeats = getGridResolutionBeats();
+        previewNote.lengthBeats = getDefaultNoteLengthBeats();
 
         const auto* targetClip = ClipManager::getInstance().getClip(insertPos->clipId);
         if (targetClip != nullptr &&
@@ -782,7 +786,7 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
         }
 
         onNoteAdded(insertPos->clipId, previewNote.startBeat, previewNote.noteNumber,
-                    previewNote.lengthBeats, 100);
+                    previewNote.lengthBeats, defaultNoteVelocity_);
     }
 }
 
@@ -989,6 +993,64 @@ void PianoRollGridComponent::setGridResolutionBeats(double beats) {
         gridResolutionBeats_ = beats;
         repaint();
     }
+}
+
+double PianoRollGridComponent::getDefaultNoteLengthBeats() const {
+    if (defaultNoteLengthBeats_ > 0.0)
+        return defaultNoteLengthBeats_;
+    return juce::jmax(1.0 / 16.0, gridResolutionBeats_);
+}
+
+void PianoRollGridComponent::addDefaultNoteMenuItems(juce::PopupMenu& menu) const {
+    juce::PopupMenu lengthMenu;
+    lengthMenu.addItem(100, "Current Grid", true, defaultNoteLengthBeats_ <= 0.0);
+
+    struct LengthOption {
+        int id;
+        const char* name;
+        double beats;
+    };
+    const LengthOption lengths[] = {
+        {101, "1/1", 4.0},   {102, "1/2", 2.0},    {103, "1/4", 1.0},       {104, "1/8", 0.5},
+        {105, "1/16", 0.25}, {106, "1/32", 0.125}, {107, "1/8T", 1.0 / 3.0}};
+    for (const auto& option : lengths)
+        lengthMenu.addItem(option.id, option.name, true,
+                           std::abs(defaultNoteLengthBeats_ - option.beats) < 0.000001);
+    menu.addSubMenu("Default Length", lengthMenu);
+
+    juce::PopupMenu velocityMenu;
+    const int velocities[] = {127, 120, 100, 96, 80, 64, 48, 32, 16};
+    for (int velocity : velocities)
+        velocityMenu.addItem(200 + velocity, juce::String(velocity), true,
+                             defaultNoteVelocity_ == velocity);
+    menu.addSubMenu("Default Velocity", velocityMenu);
+}
+
+bool PianoRollGridComponent::handleDefaultNoteMenuResult(int result) {
+    if (result == 100) {
+        defaultNoteLengthBeats_ = 0.0;
+        return true;
+    }
+
+    struct LengthOption {
+        int id;
+        double beats;
+    };
+    const LengthOption lengths[] = {{101, 4.0},  {102, 2.0},   {103, 1.0},      {104, 0.5},
+                                    {105, 0.25}, {106, 0.125}, {107, 1.0 / 3.0}};
+    for (const auto& option : lengths) {
+        if (result == option.id) {
+            defaultNoteLengthBeats_ = option.beats;
+            return true;
+        }
+    }
+
+    if (result >= 201 && result <= 327) {
+        defaultNoteVelocity_ = juce::jlimit(1, 127, result - 200);
+        return true;
+    }
+
+    return false;
 }
 
 void PianoRollGridComponent::setSnapEnabled(bool enabled) {
@@ -1846,6 +1908,8 @@ void PianoRollGridComponent::createNoteComponents() {
                 menu.addItem(12, "Duplicate", hasSelection);
                 menu.addItem(13, "Delete", hasSelection);
                 menu.addSeparator();
+                addDefaultNoteMenuItems(menu);
+                menu.addSeparator();
 
                 // Quantize submenu
                 {
@@ -1898,6 +1962,8 @@ void PianoRollGridComponent::createNoteComponents() {
                             onDuplicateNotes(clipId, indices);
                         else if (result == 13 && onDeleteNotes)
                             onDeleteNotes(clipId, indices);
+                        else if (handleDefaultNoteMenuResult(result))
+                            return;
                         else if (result >= 1 && result <= 3 && onQuantizeNotes) {
                             const QuantizeMode modes[] = {QuantizeMode::StartOnly,
                                                           QuantizeMode::LengthOnly,
