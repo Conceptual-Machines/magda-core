@@ -926,6 +926,7 @@ void ClipInspector::initClipPropertiesSection() {
     autoPitchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     launchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     launchQuantizeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+    followActionCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
 
     // Loop start
     clipLoopStartLabel_.setText("start", juce::dontSendNotification);
@@ -1144,6 +1145,86 @@ void ClipInspector::initSessionLaunchSection() {
         }
     };
     clipPropsContainer_.addChildComponent(launchQuantizeCombo_);
+
+    followActionLabel_.setText("Follow Action", juce::dontSendNotification);
+    followActionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    followActionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipPropsContainer_.addChildComponent(followActionLabel_);
+
+    followActionCombo_.addItem("None", 1);
+    followActionCombo_.addItem("Play Next", 2);
+    followActionCombo_.addItem("Play Previous", 3);
+    followActionCombo_.addItem("Play Random", 4);
+    followActionCombo_.addItem("Stop", 5);
+    followActionCombo_.addItem("Play Again", 6);
+    followActionCombo_.setColour(juce::ComboBox::backgroundColourId,
+                                 DarkTheme::getColour(DarkTheme::SURFACE));
+    followActionCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    followActionCombo_.setColour(juce::ComboBox::outlineColourId,
+                                 DarkTheme::getColour(DarkTheme::SEPARATOR));
+    followActionCombo_.onChange = [this]() {
+        if (selectedClipIds_.empty())
+            return;
+        auto action = static_cast<magda::FollowAction>(followActionCombo_.getSelectedId() - 1);
+        magda::ClipBatchEdit batch("Set Clip Follow Action", selectedClipIds_.size());
+        for (auto cid : selectedClipIds_) {
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Follow Action", [action](auto& manager, magda::ClipId id) {
+                    manager.setClipFollowAction(id, action);
+                }));
+        }
+    };
+    clipPropsContainer_.addChildComponent(followActionCombo_);
+
+    followActionDelayLabel_.setText("Follow Delay (beats)", juce::dontSendNotification);
+    followActionDelayLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    followActionDelayLabel_.setColour(juce::Label::textColourId,
+                                      DarkTheme::getSecondaryTextColour());
+    clipPropsContainer_.addChildComponent(followActionDelayLabel_);
+
+    followActionDelaySlider_.setRange(0.0, 64.0, 0.25);
+    followActionDelaySlider_.setOrientation(TextSlider::Orientation::Horizontal);
+    followActionDelaySlider_.setDefaultValue(0.0);
+    followActionDelaySlider_.onValueChanged = [this](double delayBeats) {
+        if (selectedClipIds_.empty())
+            return;
+        magda::ClipBatchEdit batch("Set Clip Follow Delay", selectedClipIds_.size());
+        for (auto cid : selectedClipIds_) {
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Follow Delay", [delayBeats](auto& manager, magda::ClipId id) {
+                    manager.setClipFollowActionDelayBeats(id, delayBeats);
+                }));
+        }
+    };
+    clipPropsContainer_.addChildComponent(followActionDelaySlider_);
+
+    followActionLoopCountLabel_.setText("Follow Loops", juce::dontSendNotification);
+    followActionLoopCountLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    followActionLoopCountLabel_.setColour(juce::Label::textColourId,
+                                          DarkTheme::getSecondaryTextColour());
+    clipPropsContainer_.addChildComponent(followActionLoopCountLabel_);
+
+    followActionLoopCountSlider_.setRange(1.0, 64.0, 1.0);
+    followActionLoopCountSlider_.setOrientation(TextSlider::Orientation::Horizontal);
+    followActionLoopCountSlider_.setDefaultValue(1.0);
+    followActionLoopCountSlider_.setValueFormatter(
+        [](double value) { return juce::String(static_cast<int>(std::round(value))); });
+    followActionLoopCountSlider_.setValueParser([](const juce::String& text) {
+        return static_cast<double>(static_cast<int>(std::round(text.getDoubleValue())));
+    });
+    followActionLoopCountSlider_.onValueChanged = [this](double value) {
+        if (selectedClipIds_.empty())
+            return;
+        const int loopCount = static_cast<int>(std::round(value));
+        magda::ClipBatchEdit batch("Set Clip Follow Loops", selectedClipIds_.size());
+        for (auto cid : selectedClipIds_) {
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, "Set Clip Follow Loops", [loopCount](auto& manager, magda::ClipId id) {
+                    manager.setClipFollowActionLoopCount(id, loopCount);
+                }));
+        }
+    };
+    clipPropsContainer_.addChildComponent(followActionLoopCountSlider_);
 }
 
 // ========================================================================

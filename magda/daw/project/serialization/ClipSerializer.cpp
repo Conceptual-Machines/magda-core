@@ -20,6 +20,9 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("sceneIndex", clip.sceneIndex);
     obj->setProperty("launchMode", static_cast<int>(clip.launchMode));
     obj->setProperty("launchQuantize", static_cast<int>(clip.launchQuantize));
+    obj->setProperty("followAction", static_cast<int>(clip.followAction));
+    obj->setProperty("followActionDelayBeats", clip.followActionDelayBeats);
+    obj->setProperty("followActionLoopCount", clip.followActionLoopCount);
 
     auto* placementObj = new juce::DynamicObject();
     placementObj->setProperty("startBeat", clip.placement.startBeat);
@@ -220,6 +223,15 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.launchMode = static_cast<LaunchMode>(static_cast<int>(obj->getProperty("launchMode")));
     outClip.launchQuantize =
         static_cast<LaunchQuantize>(static_cast<int>(obj->getProperty("launchQuantize")));
+    if (!obj->getProperty("followAction").isVoid())
+        outClip.followAction =
+            static_cast<FollowAction>(static_cast<int>(obj->getProperty("followAction")));
+    if (!obj->getProperty("followActionDelayBeats").isVoid())
+        outClip.followActionDelayBeats =
+            juce::jmax(0.0, static_cast<double>(obj->getProperty("followActionDelayBeats")));
+    if (!obj->getProperty("followActionLoopCount").isVoid())
+        outClip.followActionLoopCount =
+            juce::jmax(1, static_cast<int>(obj->getProperty("followActionLoopCount")));
 
     // Per-clip grid settings
     outClip.gridAutoGrid = static_cast<bool>(obj->getProperty("gridAutoGrid"));
