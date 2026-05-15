@@ -1,3 +1,4 @@
+#include <map>
 #include <set>
 #include <unordered_set>
 #include <vector>
@@ -86,6 +87,8 @@ void PluginManager::syncAllPlugins() {
     {
         std::vector<DeviceId> orphanDevices;
         std::vector<te::Plugin::Ptr> pluginsToDelete;
+        std::vector<te::Plugin*> midiPluginsToDelete;
+        std::vector<te::Plugin*> monitorPluginsToDelete;
         {
             juce::ScopedLock lock(pluginLock_);
             deferredHolders_.clear();  // Drain previous cycle's deferred holders
@@ -99,7 +102,9 @@ void PluginManager::syncAllPlugins() {
                     if (it->second.plugin)
                         pluginToDevice_.erase(it->second.plugin.get());
                     if (it->second.midiReceivePlugin)
-                        pluginsToDelete.push_back(it->second.midiReceivePlugin);
+                        midiPluginsToDelete.push_back(it->second.midiReceivePlugin.get());
+                    if (it->second.midiRestorePlugin)
+                        midiPluginsToDelete.push_back(it->second.midiRestorePlugin.get());
                     orphanDevices.push_back(it->first);
                     if (it->second.plugin)
                         pluginsToDelete.push_back(it->second.plugin);
@@ -115,7 +120,7 @@ void PluginManager::syncAllPlugins() {
                                                [&](const auto& t) { return t.id == it->first; });
                 if (!trackExists) {
                     if (it->second)
-                        pluginsToDelete.push_back(it->second);
+                        monitorPluginsToDelete.push_back(it->second.get());
                     it = sidechainMonitors_.erase(it);
                 } else {
                     ++it;
@@ -129,8 +134,14 @@ void PluginManager::syncAllPlugins() {
             if (instrumentRackManager_.getInnerPlugin(deviceId) != nullptr)
                 instrumentRackManager_.unwrap(deviceId);
         }
+        for (auto* plugin : midiPluginsToDelete)
+            if (plugin)
+                plugin->deleteFromParent();
         for (auto& plugin : pluginsToDelete)
             plugin->deleteFromParent();
+        for (auto* plugin : monitorPluginsToDelete)
+            if (plugin)
+                plugin->deleteFromParent();
 
         if (!orphanDevices.empty())
             DBG("syncAllPlugins: removed " << (int)orphanDevices.size() << " orphan devices");
@@ -613,6 +624,12 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         }
     }
 
+    // Device reordering above moves only MAGDA-visible plugins. MIDI sidechain
+    // helper plugins must be snapped back around their target after that pass
+    // so a sidechained FX receives source MIDI, then downstream devices receive
+    // the original chain MIDI again.
+    syncSidechains(trackId, teTrack);
+
     // Register DrumGrid pad plugins in syncedDevices_ for macro/mod linking
     {
         std::vector<std::pair<DeviceId, daw::audio::DrumGridPlugin*>> drumGrids;
@@ -647,7 +664,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 void PluginManager::cleanupTrackPlugins(TrackId trackId) {
     // 1. Collect DeviceIds belonging to this track using stored trackId
     std::vector<DeviceId> deviceIds;
-    std::vector<te::Plugin::Ptr> pluginsToDelete;
+    std::map<DeviceId, te::Plugin::Ptr> pluginsToDelete;
+    std::vector<te::Plugin*> midiPluginsToDelete;
     {
         juce::ScopedLock lock(pluginLock_);
         for (const auto& [deviceId, sd] : syncedDevices_) {
@@ -656,9 +674,11 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
 
             deviceIds.push_back(deviceId);
             if (sd.plugin)
-                pluginsToDelete.push_back(sd.plugin);
+                pluginsToDelete[deviceId] = sd.plugin;
             if (sd.midiReceivePlugin)
-                pluginsToDelete.push_back(sd.midiReceivePlugin);
+                midiPluginsToDelete.push_back(sd.midiReceivePlugin.get());
+            if (sd.midiRestorePlugin)
+                midiPluginsToDelete.push_back(sd.midiRestorePlugin.get());
         }
 
         // 2. Erase map entries for collected DeviceIds
@@ -695,16 +715,17 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
     for (size_t i = 0; i < deviceIds.size(); ++i) {
         pluginWindowBridge_.closeWindowsForDevice(deviceIds[i]);
 
-        // Remove any MidiReceivePlugin for this device
-        removeMidiReceive(trackId, deviceIds[i]);
-
         // Unwrap instrument racks
         if (instrumentRackManager_.getInnerPlugin(deviceIds[i]) != nullptr) {
             instrumentRackManager_.unwrap(deviceIds[i]);
-        } else if (pluginsToDelete[i]) {
-            pluginsToDelete[i]->deleteFromParent();
+        } else if (auto it = pluginsToDelete.find(deviceIds[i]); it != pluginsToDelete.end()) {
+            if (it->second)
+                it->second->deleteFromParent();
         }
     }
+    for (auto* plugin : midiPluginsToDelete)
+        if (plugin)
+            plugin->deleteFromParent();
 
     // 4. Remove sidechain monitor for this track
     removeSidechainMonitor(trackId);
@@ -737,14 +758,24 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
                         midiReceiveToRemove.push_back(deviceId);
                 }
             }
+            if (sd.midiRestorePlugin) {
+                if (auto* rx = dynamic_cast<MidiReceivePlugin*>(sd.midiRestorePlugin.get())) {
+                    if (rx->getSourceTrackId() == trackId)
+                        midiReceiveToRemove.push_back(deviceId);
+                }
+            }
         }
         for (auto devId : midiReceiveToRemove) {
             auto it = syncedDevices_.find(devId);
             if (it != syncedDevices_.end()) {
-                auto plugin = it->second.midiReceivePlugin;
+                auto* plugin = it->second.midiReceivePlugin.get();
+                auto* restorePlugin = it->second.midiRestorePlugin.get();
                 it->second.midiReceivePlugin = nullptr;
+                it->second.midiRestorePlugin = nullptr;
                 if (plugin)
                     plugin->deleteFromParent();
+                if (restorePlugin)
+                    restorePlugin->deleteFromParent();
             }
         }
     }

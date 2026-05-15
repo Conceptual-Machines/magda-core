@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <utility>
 
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
@@ -64,6 +65,28 @@ std::vector<ChainNodePath> dragObjectToChainNodePaths(const juce::DynamicObject&
             paths.push_back(path);
     }
     return paths;
+}
+
+juce::String describeDraggedChainSelection(const juce::DynamicObject& obj) {
+    const int count = std::max(1, static_cast<int>(obj.getProperty("pathCount")));
+    if (count == 1)
+        return "1 selected chain item";
+    return juce::String(count) + " selected chain items";
+}
+
+std::pair<juce::String, juce::String> buildNewTrackGhostText(const juce::DynamicObject& obj) {
+    const auto type = obj.getProperty("type").toString();
+    const bool copy = juce::ModifierKeys::getCurrentModifiersRealtime().isAltDown();
+
+    if (type == "chainElement" || type == "chainElements") {
+        return {copy ? "Copy to New Track" : "Move to New Track",
+                describeDraggedChainSelection(obj)};
+    }
+
+    auto name = obj.getProperty("name").toString();
+    if (name.isEmpty())
+        name = "Plugin";
+    return {"Create New Track", "Add " + name};
 }
 
 // Shared base for the automation-lane header buttons (snap beat grid / snap value
@@ -1368,21 +1391,48 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
         for (int i = 0; i < ghostHeaderLabels_.size(); ++i) {
             const int y0 = topY + i * ghostHeight;
             const auto tint = juce::Colour(Config::getDefaultColour(baseIndex + i));
+            const bool isNewTrackDropTarget = pluginDragActive_ && pluginDropTrackIndex_ < 0;
+            const auto outlineColour =
+                isNewTrackDropTarget ? juce::Colours::deepskyblue : tint.withAlpha(0.7f);
 
             juce::Rectangle<int> headerRect(0, y0, w, ghostHeight);
-            g.setColour(tint.withAlpha(0.18f));
+            g.setColour(tint.withAlpha(isNewTrackDropTarget ? 0.24f : 0.18f));
             g.fillRect(headerRect);
-            g.setColour(tint.withAlpha(0.7f));
-            g.drawRect(headerRect, 1);
+            g.setColour(outlineColour.withAlpha(isNewTrackDropTarget ? 0.9f : 0.7f));
+            g.drawRect(headerRect.reduced(isNewTrackDropTarget ? 2 : 0),
+                       isNewTrackDropTarget ? 2 : 1);
 
             // Accent stripe on the left so it reads as a track header.
-            g.setColour(tint);
-            g.fillRect(0, y0, 4, ghostHeight);
+            g.setColour(isNewTrackDropTarget ? juce::Colours::deepskyblue : tint);
+            g.fillRect(0, y0, isNewTrackDropTarget ? 6 : 4, ghostHeight);
 
-            g.setColour(tint.brighter(0.4f));
+            auto textArea = headerRect.reduced(14, 10);
+            if (isNewTrackDropTarget) {
+                auto badge = textArea.removeFromLeft(26).withSizeKeepingCentre(20, 20);
+                g.setColour(juce::Colours::deepskyblue.withAlpha(0.18f));
+                g.fillRoundedRectangle(badge.toFloat(), 4.0f);
+                g.setColour(juce::Colours::deepskyblue.withAlpha(0.95f));
+                g.drawRoundedRectangle(badge.toFloat(), 4.0f, 1.5f);
+                g.setFont(juce::Font(juce::FontOptions(17.0f).withStyle("Bold")));
+                g.drawFittedText("+", badge, juce::Justification::centred, 1);
+                textArea.removeFromLeft(6);
+            }
+
+            g.setColour(isNewTrackDropTarget ? juce::Colours::white : tint.brighter(0.4f));
             g.setFont(juce::Font(juce::FontOptions(13.0f).withStyle("Bold")));
-            g.drawFittedText(ghostHeaderLabels_[i], headerRect.reduced(12, 4),
-                             juce::Justification::centredLeft, 1);
+            const auto detail =
+                i < ghostHeaderDetailLabels_.size() ? ghostHeaderDetailLabels_[i] : juce::String();
+            if (detail.isNotEmpty()) {
+                auto titleArea = textArea.removeFromTop(22);
+                g.drawFittedText(ghostHeaderLabels_[i], titleArea, juce::Justification::centredLeft,
+                                 1);
+                g.setColour(juce::Colours::white.withAlpha(0.7f));
+                g.setFont(juce::Font(juce::FontOptions(11.0f)));
+                g.drawFittedText(detail, textArea, juce::Justification::centredLeft, 1);
+            } else {
+                g.drawFittedText(ghostHeaderLabels_[i], textArea, juce::Justification::centredLeft,
+                                 1);
+            }
         }
     }
 
@@ -1413,10 +1463,22 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
             // Targeting an existing track: highlight it. The hovered-track
             // rectangle is the only indicator — no redundant horizontal line.
             auto area = getTrackHeaderArea(pluginDropTrackIndex_);
-            g.setColour(juce::Colours::yellow.withAlpha(0.12f));
+            g.setColour(juce::Colours::yellow.withAlpha(0.10f));
             g.fillRect(area);
-            g.setColour(juce::Colours::yellow.withAlpha(0.6f));
+            g.setColour(juce::Colours::yellow.withAlpha(0.65f));
             g.drawRect(area, 1);
+
+            auto pill = area.reduced(10, 8).removeFromTop(20);
+            pill.setLeft(juce::jmax(pill.getX(), pill.getRight() - 78));
+            g.setColour(juce::Colours::yellow.withAlpha(0.16f));
+            g.fillRoundedRectangle(pill.toFloat(), 4.0f);
+            g.setColour(juce::Colours::yellow.withAlpha(0.85f));
+            g.drawRoundedRectangle(pill.toFloat(), 4.0f, 1.0f);
+            g.setFont(juce::Font(juce::FontOptions(10.0f).withStyle("Bold")));
+            g.drawFittedText(juce::ModifierKeys::getCurrentModifiersRealtime().isAltDown()
+                                 ? "COPY HERE"
+                                 : "MOVE HERE",
+                             pill.reduced(5, 1), juce::Justification::centred, 1);
         }
     }
 }
@@ -1425,10 +1487,12 @@ void TrackHeadersPanel::resized() {
     updateTrackHeaderLayout();
 }
 
-void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels) {
-    if (ghostHeaderLabels_ == labels)
+void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels,
+                                        const juce::StringArray& detailLabels) {
+    if (ghostHeaderLabels_ == labels && ghostHeaderDetailLabels_ == detailLabels)
         return;
     ghostHeaderLabels_ = labels;
+    ghostHeaderDetailLabels_ = detailLabels;
     repaint();
 }
 
@@ -4122,13 +4186,12 @@ void TrackHeadersPanel::itemDragEnter(const SourceDetails& details) {
 
     // Ghost header for the new track that a drop on empty area would create.
     if (pluginDropTrackIndex_ < 0) {
-        juce::String label = "New Track";
         if (auto* obj = details.description.getDynamicObject()) {
-            auto name = obj->getProperty("name").toString();
-            if (name.isNotEmpty())
-                label = name;
+            const auto text = buildNewTrackGhostText(*obj);
+            setGhostHeaders({text.first}, {text.second});
+        } else {
+            setGhostHeaders({"Create New Track"});
         }
-        setGhostHeaders({label});
     } else {
         setGhostHeaders({});
     }
@@ -4148,18 +4211,15 @@ void TrackHeadersPanel::itemDragMove(const SourceDetails& details) {
         }
     }
 
-    if ((prev < 0) != (pluginDropTrackIndex_ < 0)) {
-        if (pluginDropTrackIndex_ < 0) {
-            juce::String label = "New Track";
-            if (auto* obj = details.description.getDynamicObject()) {
-                auto name = obj->getProperty("name").toString();
-                if (name.isNotEmpty())
-                    label = name;
-            }
-            setGhostHeaders({label});
+    if (pluginDropTrackIndex_ < 0) {
+        if (auto* obj = details.description.getDynamicObject()) {
+            const auto text = buildNewTrackGhostText(*obj);
+            setGhostHeaders({text.first}, {text.second});
         } else {
-            setGhostHeaders({});
+            setGhostHeaders({"Create New Track"});
         }
+    } else if (prev < 0) {
+        setGhostHeaders({});
     }
 
     if (pluginDropTrackIndex_ != prev)

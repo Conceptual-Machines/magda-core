@@ -1,6 +1,7 @@
 #include "racks/RackSyncManager.hpp"
 
 #include "TracktionHelpers.hpp"
+#include "core/ChainRoutingModel.hpp"
 #include "core/TrackManager.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
@@ -848,25 +849,24 @@ void RackSyncManager::buildConnectionsForRack(SyncedRack& synced, const RackInfo
 
         // Collect device plugins in this chain (in order)
         std::vector<ChainPluginNode> chainPluginNodes;
-        for (const auto& element : chain.elements) {
-            if (isDevice(element)) {
-                const auto& device = getDevice(element);
-                auto pluginIt = synced.innerPlugins.find(device.id);
+        const auto routingPlan =
+            routing::compileRackChainRouting(synced.trackId, rackInfo.id, chain);
+
+        for (const auto& node : routingPlan.nodes) {
+            if (node.kind == routing::ChainRoutingNodeKind::Device) {
+                auto pluginIt = synced.innerPlugins.find(node.deviceId);
                 if (pluginIt != synced.innerPlugins.end() && pluginIt->second) {
-                    const bool usesMidiSidechain =
-                        device.sidechain.type == SidechainConfig::Type::MIDI &&
-                        device.sidechain.sourceTrackId != INVALID_TRACK_ID;
-                    const bool receivesChainMidi = !usesMidiSidechain;
-                    const bool transformsMidi = receivesChainMidi && !device.isInstrument;
-                    chainPluginNodes.push_back({pluginIt->second->itemID, device.isInstrument,
-                                                transformsMidi, receivesChainMidi});
+                    chainPluginNodes.push_back({pluginIt->second->itemID, node.injectsAudio(),
+                                                node.replacesChainMidi(),
+                                                node.receivesChainMidi()});
                 }
-            } else if (isRack(element)) {
-                const auto& nestedRack = getRack(element);
-                const auto nestedKey = pathKey(chainPath.withRack(nestedRack.id));
+            } else if (node.kind == routing::ChainRoutingNodeKind::Rack) {
+                const auto nestedKey = pathKey(chainPath.withRack(node.rackId));
                 auto rackIt = synced.nestedRackInstances.find(nestedKey);
                 if (rackIt != synced.nestedRackInstances.end() && rackIt->second) {
-                    chainPluginNodes.push_back({rackIt->second->itemID, false, true, true});
+                    chainPluginNodes.push_back({rackIt->second->itemID, false,
+                                                node.replacesChainMidi(),
+                                                node.receivesChainMidi()});
                 }
             }
         }

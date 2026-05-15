@@ -601,6 +601,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
             curveSnapshots;                              // ModId-only (device scope implicit)
         std::map<int, te::MacroParameter*> macroParams;  // Can be empty
         te::Plugin::Ptr midiReceivePlugin;               // Can be null
+        te::Plugin::Ptr midiRestorePlugin;               // Can be null
         bool isPendingLoad = false;                      // In-flight async load
     };
     std::map<DeviceId, SyncedDevice> syncedDevices_;

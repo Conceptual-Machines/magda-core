@@ -2,6 +2,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "../../core/ChainRoutingModel.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../core/SidechainTraversal.hpp"
 #include "../../core/TrackManager.hpp"
@@ -35,6 +36,16 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
     if (!trackInfo || !teTrack)
         return;
 
+    const auto topLevelRoutingPlan =
+        routing::compileTrackChainRouting(trackId, trackInfo->chainElements);
+    auto findTopLevelRoutingNode = [&](DeviceId deviceId) -> const routing::ChainRoutingNode* {
+        for (const auto& node : topLevelRoutingPlan.nodes) {
+            if (node.kind == routing::ChainRoutingNodeKind::Device && node.deviceId == deviceId)
+                return &node;
+        }
+        return nullptr;
+    };
+
     auto syncTopLevelDevice = [&](const DeviceInfo& device) {
         auto plugin = getPlugin(device.id);
 
@@ -53,8 +64,9 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
         }
 
         // --- MIDI sidechain (MidiReceivePlugin injection) ---
-        if (device.sidechain.isActive() && device.sidechain.type == SidechainConfig::Type::MIDI) {
-            ensureMidiReceive(trackId, device.id, device.sidechain.sourceTrackId);
+        if (const auto* route = findTopLevelRoutingNode(device.id);
+            route != nullptr && route->usesExternalMidiSidechain()) {
+            ensureMidiReceive(trackId, device.id, route->midiSidechainSourceTrackId);
         } else {
             removeMidiReceive(trackId, device.id);
         }
@@ -88,6 +100,15 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
     // chain still listens on this track's MIDI bus for retrigger.
     if (sidechain::elementsHaveMidiTriggeredMod(trackInfo->chainElements))
         return true;
+
+    const auto topLevelRoutingPlan =
+        routing::compileTrackChainRouting(trackId, trackInfo->chainElements);
+    for (const auto& node : topLevelRoutingPlan.nodes) {
+        if (node.kind == routing::ChainRoutingNodeKind::Device &&
+            node.usesExternalMidiSidechain()) {
+            return true;
+        }
+    }
 
     // Check if this track is a MIDI sidechain source for any other track
     for (const auto& track : TrackManager::getInstance().getTracks()) {
@@ -163,7 +184,7 @@ void PluginManager::removeSidechainMonitor(TrackId sourceTrackId) {
         return;
 
     DBG("PluginManager::removeSidechainMonitor - removing monitor from track " << sourceTrackId);
-    auto plugin = it->second;
+    auto* plugin = it->second.get();
     sidechainMonitors_.erase(it);
 
     if (plugin)
@@ -279,7 +300,7 @@ void PluginManager::removeAudioSidechainMonitor(TrackId sourceTrackId) {
 
     DBG("PluginManager::removeAudioSidechainMonitor - removing audio monitor from track "
         << sourceTrackId);
-    auto plugin = it->second;
+    auto* plugin = it->second.get();
     audioSidechainMonitors_.erase(it);
 
     if (plugin)

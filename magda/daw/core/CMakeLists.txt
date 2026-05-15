@@ -69,6 +69,7 @@ target_sources(magda_daw PRIVATE
     TrackManager.hpp
     TrackTypes.hpp
     RackInfo.hpp
+    ChainRoutingModel.hpp
     ChainNode.hpp
     TrackViewSettings.hpp
     ClipTypes.hpp
