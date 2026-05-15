@@ -5,10 +5,13 @@
 #include <sqlite3.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <ctime>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "AudioFeatures.hpp"
@@ -393,6 +396,100 @@ std::string buildTagText(const std::vector<std::pair<std::string, float>>& tags)
     return out;
 }
 
+// ---- Per-file pipeline --------------------------------------------------
+//
+// Same logic in both serial and parallel modes: takes a raw sqlite3* (so
+// workers can pass their own connection) plus an encoder pointer (shared —
+// ORT Session::Run is documented thread-safe) and mutates the supplied Stats.
+
+void processOneFile(sqlite3* sqlDb, ClapAudioEncoder* encoder, const ScannedFile& f,
+                    MediaDbIndexer::Stats& stats) {
+    try {
+        const auto hash = hashFilePrefix(f.path);
+        const auto existing = lookupExisting(sqlDb, f.path.string());
+        if (existing && unchanged(*existing, f, hash)) {
+            ++stats.skipped;
+            return;
+        }
+
+        std::optional<AudioFeatures> feats;
+        if (f.kind == "audio") {
+            feats = extractFeatures(f.path);
+        }
+
+        const std::string family = deriveFamily(f.path);
+        const std::string shape = feats ? deriveShape(*feats) : std::string{"unknown"};
+        const int tonal = feats ? deriveTonal(*feats) : 0;
+        if (feats) {
+            applyPolicies(*feats, shape, family);
+        }
+
+        const std::int64_t fileId = upsertFile(sqlDb, f, hash, feats, shape, family, tonal);
+        if (fileId < 0) {
+            ++stats.failed;
+            return;
+        }
+
+        const auto tags = pathTags(f.path);
+        replaceTags(sqlDb, fileId, tags, "path");
+
+        if (encoder && f.kind == "audio") {
+            if (auto mono = loadMono48k(f.path)) {
+                try {
+                    auto emb = encoder->embed(mono->data(), static_cast<int>(mono->size()));
+                    if (!emb.empty()) {
+                        upsertEmbedding(sqlDb, fileId, encoder->modelId(), emb);
+                    }
+                } catch (const ClapEncoderError&) {
+                    // Embedding failure is non-fatal: keep the row,
+                    // search will fall back to FTS-only for this file.
+                }
+            }
+        }
+
+        upsertFts(sqlDb, fileId, buildPathText(f.path), buildTagText(tags));
+
+        if (existing) {
+            ++stats.updated;
+        } else {
+            ++stats.inserted;
+        }
+    } catch (...) {
+        ++stats.failed;
+    }
+}
+
+// ---- Thread-count heuristics --------------------------------------------
+
+constexpr int kParallelThreshold = 64;  // below this, serial wins on setup cost
+constexpr size_t kBatchSize = 50;       // files per transaction per worker
+
+int decideThreadCount(int requested, size_t fileCount, const std::filesystem::path& dbPath) {
+    // In-memory DBs can't be opened from a second thread against the same
+    // store, so workers can't see each other's writes. Force serial.
+    if (dbPath == ":memory:" || dbPath.string() == ":memory:") {
+        return 1;
+    }
+    if (fileCount < kParallelThreshold) {
+        return 1;
+    }
+    int n = requested;
+    if (n <= 0) {
+        const unsigned hw = std::thread::hardware_concurrency();
+        n = hw == 0 ? 2 : static_cast<int>(hw) - 1;
+        if (n < 1) {
+            n = 1;
+        }
+    }
+    // Never spawn more workers than there is work for, accounting for the
+    // batch size (one worker per batch slot, capped).
+    const int maxUseful = static_cast<int>((fileCount + kBatchSize - 1) / kBatchSize);
+    if (n > maxUseful) {
+        n = maxUseful;
+    }
+    return std::max(n, 1);
+}
+
 }  // namespace
 
 // ---- Public --------------------------------------------------------------
@@ -404,80 +501,108 @@ void MediaDbIndexer::setProgress(ProgressFn fn) {
     progress_ = std::move(fn);
 }
 
-MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path& root) {
-    Stats stats;
-    sqlite3* sqlDb = db_.handle();
+MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path& root,
+                                                     int numThreads) {
+    // Pre-scan into a vector so we have a stable list to slice for workers
+    // and a total count for progress. Cheap relative to the indexing pass.
+    std::vector<ScannedFile> files;
+    walk(root, [&](const ScannedFile& f) { files.push_back(f); });
+    const int total = static_cast<int>(files.size());
 
-    // Pre-scan for progress total. (One extra walk; cheap vs the indexing
-    // pass that follows.)
-    int total = 0;
-    walk(root, [&](const ScannedFile&) { ++total; });
-    int done = 0;
+    const int workers = decideThreadCount(numThreads, files.size(), db_.path());
 
-    MediaDatabase::Transaction txn(db_);
+    // ---- Serial path ----------------------------------------------------
+    if (workers <= 1) {
+        Stats stats;
+        sqlite3* sqlDb = db_.handle();
+        MediaDatabase::Transaction txn(db_);
+        int done = 0;
+        for (const auto& f : files) {
+            processOneFile(sqlDb, encoder_, f, stats);
+            ++done;
+            if (progress_) {
+                progress_(done, total, f.path);
+            }
+        }
+        txn.commit();
+        return stats;
+    }
 
-    walk(root, [&](const ScannedFile& f) {
+    // ---- Parallel path --------------------------------------------------
+    //
+    // Each worker owns its own MediaDatabase connection against the same
+    // file. SQLite WAL serialises writers behind a single lock but lets
+    // readers proceed; per-batch transactions keep the writer-lock window
+    // small. The atomic index is a fetch_add work-queue — load-balanced
+    // even when files have very different processing costs.
+
+    std::atomic<size_t> nextIdx{0};
+    std::atomic<int> doneCounter{0};
+    std::mutex progressMutex;
+    std::mutex statsMutex;
+
+    Stats aggregate;
+    const std::filesystem::path dbPath = db_.path();
+    ClapAudioEncoder* encoder = encoder_;
+    ProgressFn& progressRef = progress_;
+
+    auto runWorker = [&]() {
         try {
-            const auto hash = hashFilePrefix(f.path);
-            const auto existing = lookupExisting(sqlDb, f.path.string());
-            if (existing && unchanged(*existing, f, hash)) {
-                ++stats.skipped;
-            } else {
-                std::optional<AudioFeatures> feats;
-                if (f.kind == "audio") {
-                    feats = extractFeatures(f.path);
+            MediaDatabase localDb(dbPath);
+            sqlite3* sqlDb = localDb.handle();
+            // Per-connection PRAGMAs for write throughput under contention.
+            // journal_mode is per-database (not per-connection) and persists,
+            // but setting it here is harmless if already WAL.
+            sqlite3_exec(sqlDb, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+            sqlite3_exec(sqlDb, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+            sqlite3_exec(sqlDb, "PRAGMA busy_timeout=10000", nullptr, nullptr, nullptr);
+
+            Stats local;
+            while (true) {
+                const size_t batchStart = nextIdx.fetch_add(kBatchSize);
+                if (batchStart >= files.size()) {
+                    break;
                 }
+                const size_t batchEnd = std::min(batchStart + kBatchSize, files.size());
 
-                const std::string family = deriveFamily(f.path);
-                const std::string shape = feats ? deriveShape(*feats) : std::string{"unknown"};
-                const int tonal = feats ? deriveTonal(*feats) : 0;
-                if (feats) {
-                    applyPolicies(*feats, shape, family);
-                }
-
-                const std::int64_t fileId = upsertFile(sqlDb, f, hash, feats, shape, family, tonal);
-                if (fileId < 0) {
-                    ++stats.failed;
-                    return;
-                }
-
-                const auto tags = pathTags(f.path);
-                replaceTags(sqlDb, fileId, tags, "path");
-
-                if (encoder_ && f.kind == "audio") {
-                    if (auto mono = loadMono48k(f.path)) {
-                        try {
-                            auto emb =
-                                encoder_->embed(mono->data(), static_cast<int>(mono->size()));
-                            if (!emb.empty()) {
-                                upsertEmbedding(sqlDb, fileId, encoder_->modelId(), emb);
-                            }
-                        } catch (const ClapEncoderError&) {
-                            // Embedding failure is non-fatal: keep the row,
-                            // search will fall back to FTS-only for this file.
+                try {
+                    MediaDatabase::Transaction txn(localDb);
+                    for (size_t i = batchStart; i < batchEnd; ++i) {
+                        processOneFile(sqlDb, encoder, files[i], local);
+                        const int nowDone = ++doneCounter;
+                        if (progressRef) {
+                            std::lock_guard<std::mutex> lock(progressMutex);
+                            progressRef(nowDone, total, files[i].path);
                         }
                     }
-                }
-
-                upsertFts(sqlDb, fileId, buildPathText(f.path), buildTagText(tags));
-
-                if (existing) {
-                    ++stats.updated;
-                } else {
-                    ++stats.inserted;
+                    txn.commit();
+                } catch (const MediaDatabaseError&) {
+                    // Whole batch lost — count as failed but keep going.
+                    local.failed += static_cast<int>(batchEnd - batchStart);
                 }
             }
-        } catch (...) {
-            ++stats.failed;
-        }
-        ++done;
-        if (progress_) {
-            progress_(done, total, f.path);
-        }
-    });
 
-    txn.commit();
-    return stats;
+            std::lock_guard<std::mutex> lock(statsMutex);
+            aggregate.inserted += local.inserted;
+            aggregate.updated += local.updated;
+            aggregate.skipped += local.skipped;
+            aggregate.failed += local.failed;
+        } catch (const MediaDatabaseError&) {
+            // This worker couldn't even open a connection. Other workers
+            // will still drain the queue; we silently drop this thread.
+        }
+    };
+
+    std::vector<std::thread> threads;
+    threads.reserve(static_cast<size_t>(workers));
+    for (int i = 0; i < workers; ++i) {
+        threads.emplace_back(runWorker);
+    }
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    return aggregate;
 }
 
 }  // namespace magda::media

@@ -123,7 +123,9 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
     void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
                           bool shouldDrawButtonAsHighlighted,
                           bool shouldDrawButtonAsDown) override {
-        float fontSize = juce::jmin(15.0f, static_cast<float>(button.getHeight()) * 0.75f);
+        // Cap at 11pt to match the rest of the filter-strip controls
+        // (combo boxes, labels). 15pt looked oversized next to them.
+        float fontSize = juce::jmin(11.0f, static_cast<float>(button.getHeight()) * 0.55f);
         float tickWidth = fontSize * 1.1f;
 
         drawTickBox(g, button, 4.0f, (static_cast<float>(button.getHeight()) - tickWidth) * 0.5f,

@@ -43,6 +43,13 @@ class MediaDatabase {
         return db_;
     }
 
+    // The path this connection was opened against (literally `:memory:` for
+    // in-memory DBs). Lets the parallel indexer clone-open per-thread
+    // connections to the same file under WAL.
+    [[nodiscard]] const std::filesystem::path& path() const noexcept {
+        return path_;
+    }
+
     // Run one or more semicolon-separated statements with no result set.
     // Throws MediaDatabaseError on failure.
     void execute(const std::string& sql);
@@ -71,6 +78,7 @@ class MediaDatabase {
 
   private:
     sqlite3* db_ = nullptr;
+    std::filesystem::path path_;
 };
 
 }  // namespace magda::media

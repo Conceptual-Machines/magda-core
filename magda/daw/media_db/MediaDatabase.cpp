@@ -25,7 +25,7 @@ void execOrThrow(sqlite3* db, const char* sql, const char* context) {
 
 }  // namespace
 
-MediaDatabase::MediaDatabase(const std::filesystem::path& dbPath) {
+MediaDatabase::MediaDatabase(const std::filesystem::path& dbPath) : path_(dbPath) {
     int rc = sqlite3_open(dbPath.string().c_str(), &db_);
     if (rc != SQLITE_OK) {
         std::string err = lastError(db_);
@@ -51,7 +51,8 @@ MediaDatabase::~MediaDatabase() {
     }
 }
 
-MediaDatabase::MediaDatabase(MediaDatabase&& other) noexcept : db_(other.db_) {
+MediaDatabase::MediaDatabase(MediaDatabase&& other) noexcept
+    : db_(other.db_), path_(std::move(other.path_)) {
     other.db_ = nullptr;
 }
 
@@ -61,6 +62,7 @@ MediaDatabase& MediaDatabase::operator=(MediaDatabase&& other) noexcept {
             sqlite3_close(db_);
         }
         db_ = other.db_;
+        path_ = std::move(other.path_);
         other.db_ = nullptr;
     }
     return *this;

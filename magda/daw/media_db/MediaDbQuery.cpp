@@ -94,6 +94,9 @@ int bindAll(sqlite3_stmt* stmt, int startIdx, const BuiltWhere& w) {
 
 // Turn a free-text query into an FTS5 MATCH expression: tokens joined by OR
 // with prefix matching, e.g. "kick drum" -> "\"kick\"* OR \"drum\"*".
+// Single-char tokens are kept (FTS5 supports any-length prefix terms) so
+// incremental typing doesn't blank the result list on the first keystroke.
+// Empty tokens (e.g. lone punctuation) are dropped.
 std::string buildFtsQuery(const std::string& text) {
     static const std::regex kStrip(R"([^\w\-])");
     std::stringstream ss(text);
@@ -101,7 +104,7 @@ std::string buildFtsQuery(const std::string& text) {
     std::string out;
     while (ss >> token) {
         std::string cleaned = std::regex_replace(token, kStrip, "");
-        if (cleaned.size() < 2) {
+        if (cleaned.empty()) {
             continue;
         }
         if (!out.empty()) {

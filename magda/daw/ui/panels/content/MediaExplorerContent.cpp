@@ -1297,7 +1297,7 @@ void MediaExplorerContent::selectionChanged() {
 }
 
 void MediaExplorerContent::fileClicked(const juce::File& file, const juce::MouseEvent& e) {
-    // Right-click on a directory: offer to add as favorite
+    // Right-click on a directory: favorites + index actions.
     if (e.mods.isPopupMenu() && file.isDirectory()) {
         juce::PopupMenu menu;
         auto favorites = magda::Config::getInstance().getBrowserFavorites();
@@ -1312,8 +1312,10 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
         } else {
             menu.addItem(0, "Favorites full (max 8)", false);
         }
+        menu.addSeparator();
+        menu.addItem(3, "Index this folder for sample library");
 
-        menu.showMenuAsync(juce::PopupMenu::Options(), [this, path](int result) {
+        menu.showMenuAsync(juce::PopupMenu::Options(), [this, path, file](int result) {
             if (result == 1) {
                 auto favs = magda::Config::getInstance().getBrowserFavorites();
                 favs.erase(std::remove(favs.begin(), favs.end(), path), favs.end());
@@ -1326,6 +1328,8 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
                 magda::Config::getInstance().setBrowserFavorites(favs);
                 magda::Config::getInstance().save();
                 sidebarComponent_->rebuildFavoriteButtons();
+            } else if (result == 3 && dbBrowser_) {
+                dbBrowser_->startIndexing(file);
             }
         });
         return;

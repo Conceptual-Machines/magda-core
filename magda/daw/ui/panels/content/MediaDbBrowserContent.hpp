@@ -20,12 +20,16 @@
 #include <vector>
 
 #include "../../../media_db/MediaDbQuery.hpp"
+#include "../../components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
 
 class MediaDbBrowserContent : public juce::Component {
   public:
-    MediaDbBrowserContent();
+    // isPopOutInstance: true when this is the content of a detached pop-out
+    // window (suppresses its own pop-out button and skips the empty-state hint
+    // about indexing — the docked instance owns that path).
+    explicit MediaDbBrowserContent(bool isPopOutInstance = false);
     ~MediaDbBrowserContent() override;
 
     // Push the current search box text. Triggers a query refresh.
@@ -34,40 +38,50 @@ class MediaDbBrowserContent : public juce::Component {
     // Re-run the current query. Useful after indexing finishes or filters change.
     void refresh();
 
+    // Kick off a background scan of `dir` and update the status label as it
+    // progresses. Called from the file-browser's folder-right-click menu — the
+    // DB browser no longer has its own "Index folder" button.
+    void startIndexing(const juce::File& dir);
+
     // Fired when the user clicks a result row.
     std::function<void(const juce::File&)> onFileSelected;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void visibilityChanged() override;
 
   private:
-    class ResultsListModel;
+    class ResultsTableModel;
+    class PopOutWindow;
 
     void runSearch();
-    void onIndexFolderClicked();
+    void openPopOutWindow();
     magda::media::QueryFilters currentFilters() const;
 
-    // Filter strip
-    juce::Label familyLabel_;
+    // Filter strip — two rows.
+    // Row 1: family / shape / key dropdowns
+    // Row 2: BPM range + tonal toggle + pop-out
     juce::ComboBox familyFilter_;
-    juce::Label shapeLabel_;
     juce::ComboBox shapeFilter_;
+    juce::ComboBox keyFilter_;
     juce::Label bpmLabel_;
     juce::TextEditor bpmMinBox_;
     juce::TextEditor bpmMaxBox_;
     juce::ToggleButton tonalOnly_{"tonal"};
-    juce::TextButton indexButton_{"Index folder..."};
+    std::unique_ptr<magda::SvgButton> popOutButton_;
 
     // Results
-    std::unique_ptr<ResultsListModel> resultsModel_;
-    juce::ListBox resultsList_;
+    std::unique_ptr<ResultsTableModel> resultsModel_;
+    juce::TableListBox resultsTable_;  // resizable, reorderable column header
     juce::Label emptyState_;
     juce::Label statusLabel_;  // "Indexing path/to/x.wav (N/M)" during a scan
 
     // State
     juce::String queryText_;
     std::vector<magda::media::QueryResult> results_;
-    std::unique_ptr<juce::FileChooser> fileChooser_;  // persisted for async callback
+    bool isPopOutInstance_ = false;
+    juce::Component::SafePointer<PopOutWindow>
+        popOutWindow_;  // tracked so re-clicks focus existing
 
     // Single-thread pool so indexing doesn't block the message thread. The
     // pool is created lazily on first index click so app startup pays nothing.

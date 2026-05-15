@@ -36,9 +36,10 @@ class MediaDbIndexer {
 
     // Progress callback fired once per file. (done, total, currentPath)
     // where total is the prescanned file count and currentPath is the file
-    // that was just processed. Called from the same thread that called
-    // indexDirectory() — the caller is responsible for marshalling to the
-    // UI thread if needed.
+    // that was just processed. In parallel mode the callback may be invoked
+    // from any worker thread; calls are serialised behind an internal mutex
+    // so the callee sees one at a time, but the callee is still responsible
+    // for marshalling to the UI thread if it touches UI.
     using ProgressFn =
         std::function<void(int done, int total, const std::filesystem::path& current)>;
 
@@ -49,9 +50,18 @@ class MediaDbIndexer {
     void setProgress(ProgressFn fn);
 
     // Synchronously walk `root`, indexing every classifying file.
-    // Wraps the whole walk in a single transaction for write throughput;
-    // a single file's failure is logged and skipped, not rolled back.
-    Stats indexDirectory(const std::filesystem::path& root);
+    //
+    // numThreads:
+    //   0  → auto: max(1, hardware_concurrency() - 1), leaves a core free.
+    //   1  → serial, single transaction wraps the whole walk.
+    //   >1 → parallel: each worker opens its own MediaDatabase against the
+    //        same file under WAL, pulls batches off an atomic work-queue,
+    //        and commits per batch (~50 files).
+    //
+    // Forced to 1 automatically when the DB is in-memory (workers can't
+    // share state across connections) or when the scan has fewer than ~64
+    // files (setup cost dominates).
+    Stats indexDirectory(const std::filesystem::path& root, int numThreads = 0);
 
   private:
     MediaDatabase& db_;
