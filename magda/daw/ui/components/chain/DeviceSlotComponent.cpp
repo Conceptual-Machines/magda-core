@@ -1907,7 +1907,10 @@ void DeviceSlotComponent::showMultiOutMenu() {
 
 void DeviceSlotComponent::showContextMenu() {
     juce::PopupMenu menu;
-    menu.addItem(1, "Add to New Rack");
+    auto& selection = magda::SelectionManager::getInstance();
+    const bool hasMultiSelection =
+        selection.isChainNodeSelected(nodePath_) && selection.getSelectedChainNodes().size() > 1;
+    menu.addItem(1, hasMultiSelection ? "Add Selection to New Rack" : "Add to New Rack");
 
     // Classification override — let user correct mis-classified plugins
     // Read fresh device info (device_ may be stale)
@@ -1934,53 +1937,55 @@ void DeviceSlotComponent::showContextMenu() {
     auto path = nodePath_;
     auto deviceId = device_.id;
     auto callback = onDeviceDeleted;
+    auto selectedPaths = hasMultiSelection ? selection.getSelectedChainNodes()
+                                           : std::vector<magda::ChainNodePath>{path};
 
-    menu.showMenuAsync(
-        juce::PopupMenu::Options(), [safeThis, path, deviceId, callback](int result) {
-            if (safeThis == nullptr || result == 0)
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, path, deviceId, callback,
+                                                    selectedPaths](int result) {
+        if (safeThis == nullptr || result == 0)
+            return;
+
+        if (result == 1) {
+            // Add to New Rack
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::WrapChainElementsInRackCommand>(selectedPaths));
+        } else if (result >= 200 && result <= 202) {
+            // Classification override
+            auto& tm = magda::TrackManager::getInstance();
+            auto* device = tm.getDevice(path.trackId, deviceId);
+            if (!device)
                 return;
 
-            if (result == 1) {
-                // Add to New Rack
-                auto& tm = magda::TrackManager::getInstance();
-                tm.wrapDeviceInRackByPath(path);
-            } else if (result >= 200 && result <= 202) {
-                // Classification override
-                auto& tm = magda::TrackManager::getInstance();
-                auto* device = tm.getDevice(path.trackId, deviceId);
-                if (!device)
-                    return;
-
-                switch (result) {
-                    case 200:
-                        device->deviceType = magda::DeviceType::Instrument;
-                        device->isInstrument = true;
-                        break;
-                    case 201:
-                        device->deviceType = magda::DeviceType::Effect;
-                        device->isInstrument = false;
-                        break;
-                    case 202:
-                        device->deviceType = magda::DeviceType::MIDI;
-                        device->isInstrument = false;
-                        break;
-                }
-                tm.notifyTrackDevicesChanged(path.trackId);
-            } else if (result == 100) {
-                // Delete — same deferred logic as onDeleteClicked
-                juce::MessageManager::callAsync([path, callback]() {
-                    if (path.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
-                        magda::UndoManager::getInstance().executeCommand(
-                            std::make_unique<magda::RemoveDeviceFromTrackCommand>(
-                                path.trackId, path.topLevelDeviceId));
-                    } else {
-                        magda::TrackManager::getInstance().removeDeviceFromChainByPath(path);
-                    }
-                    if (callback)
-                        callback();
-                });
+            switch (result) {
+                case 200:
+                    device->deviceType = magda::DeviceType::Instrument;
+                    device->isInstrument = true;
+                    break;
+                case 201:
+                    device->deviceType = magda::DeviceType::Effect;
+                    device->isInstrument = false;
+                    break;
+                case 202:
+                    device->deviceType = magda::DeviceType::MIDI;
+                    device->isInstrument = false;
+                    break;
             }
-        });
+            tm.notifyTrackDevicesChanged(path.trackId);
+        } else if (result == 100) {
+            // Delete — same deferred logic as onDeleteClicked
+            juce::MessageManager::callAsync([path, callback]() {
+                if (path.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::RemoveDeviceFromTrackCommand>(
+                            path.trackId, path.topLevelDeviceId));
+                } else {
+                    magda::TrackManager::getInstance().removeDeviceFromChainByPath(path);
+                }
+                if (callback)
+                    callback();
+            });
+        }
+    });
 }
 
 // =============================================================================

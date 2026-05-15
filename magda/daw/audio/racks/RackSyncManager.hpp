@@ -67,6 +67,11 @@ class RackSyncManager {
     void removeRack(RackId rackId);
 
     /**
+     * @brief Detach a rack during an explicit chain move while preserving captured device state.
+     */
+    void removeRackForMove(RackId rackId);
+
+    /**
      * @brief Find a plugin inside any synced rack (for parameter access)
      * @param deviceId The MAGDA device ID of the inner plugin
      * @return The TE plugin, or nullptr if not found
@@ -347,6 +352,8 @@ class RackSyncManager {
     PluginManager& pluginManager_;
 
     std::map<RackId, SyncedRack> syncedRacks_;
+
+    void removeRackInternal(RackId rackId, bool clearDeviceState);
 
     // Per-rack structural fingerprint. Compared in resyncAllModifiers to skip
     // a full TE-modifier teardown+rebuild when only properties (rate, depth,

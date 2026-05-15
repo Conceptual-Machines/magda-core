@@ -29,6 +29,43 @@ namespace magda {
 // dB conversion helpers for volume
 namespace {
 
+bool dragObjectToChainNodePathAt(const juce::DynamicObject& obj, int index, ChainNodePath& path) {
+    path = {};
+    const auto suffix = juce::String(index);
+    path.trackId = static_cast<TrackId>(static_cast<int>(obj.getProperty("trackId" + suffix)));
+    path.topLevelDeviceId =
+        static_cast<DeviceId>(static_cast<int>(obj.getProperty("topLevelDeviceId" + suffix)));
+    path.isTrackLevel = static_cast<bool>(obj.getProperty("isTrackLevel" + suffix));
+
+    auto stepTypes =
+        juce::StringArray::fromTokens(obj.getProperty("stepTypes" + suffix).toString(), ",", "");
+    auto stepIds =
+        juce::StringArray::fromTokens(obj.getProperty("stepIds" + suffix).toString(), ",", "");
+    if (stepTypes.size() != stepIds.size())
+        return false;
+
+    for (int i = 0; i < stepTypes.size(); ++i) {
+        const int typeValue = stepTypes[i].getIntValue();
+        if (typeValue < static_cast<int>(ChainStepType::Rack) ||
+            typeValue > static_cast<int>(ChainStepType::Device))
+            return false;
+        path.steps.push_back({static_cast<ChainStepType>(typeValue), stepIds[i].getIntValue()});
+    }
+
+    return path.isValid();
+}
+
+std::vector<ChainNodePath> dragObjectToChainNodePaths(const juce::DynamicObject& obj) {
+    std::vector<ChainNodePath> paths;
+    const int count = std::max(1, static_cast<int>(obj.getProperty("pathCount")));
+    for (int i = 0; i < count; ++i) {
+        ChainNodePath path;
+        if (dragObjectToChainNodePathAt(obj, i, path))
+            paths.push_back(path);
+    }
+    return paths;
+}
+
 // Shared base for the automation-lane header buttons (snap beat grid / snap value
 // / arm / bypass / delete). All five share the same rounded-rect chrome —
 // same corner radius, fill, and 1px darker border as SmallButtonLookAndFeel
@@ -4065,7 +4102,8 @@ bool TrackHeadersPanel::keyPressed(const juce::KeyPress& key) {
 
 bool TrackHeadersPanel::isInterestedInDragSource(const SourceDetails& details) {
     if (auto* obj = details.description.getDynamicObject()) {
-        return obj->getProperty("type").toString() == "plugin";
+        const auto type = obj->getProperty("type").toString();
+        return type == "plugin" || type == "chainElement" || type == "chainElements";
     }
     return false;
 }
@@ -4155,6 +4193,50 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
             targetIndex = i;
             break;
         }
+    }
+
+    const auto type = obj->getProperty("type").toString();
+    if (type == "chainElement" || type == "chainElements") {
+        auto sourcePaths = dragObjectToChainNodePaths(*obj);
+        auto& tm = TrackManager::getInstance();
+        const bool copy = juce::ModifierKeys::getCurrentModifiersRealtime().isAltDown();
+
+        if (!sourcePaths.empty()) {
+            TrackId targetTrackId = INVALID_TRACK_ID;
+            std::unique_ptr<CompoundOperationScope> compoundScope;
+            if (targetIndex >= 0 && targetIndex < static_cast<int>(visibleTrackIds_.size())) {
+                targetTrackId = visibleTrackIds_[targetIndex];
+            } else {
+                compoundScope = std::make_unique<CompoundOperationScope>(
+                    copy ? "Copy Devices to New Track" : "Move Devices to New Track");
+                auto create = std::make_unique<CreateTrackCommand>(TrackType::Audio, "Track");
+                auto* createPtr = create.get();
+                UndoManager::getInstance().executeCommand(std::move(create));
+                targetTrackId = createPtr->getCreatedTrackId();
+            }
+
+            if (targetTrackId != INVALID_TRACK_ID) {
+                ChainNodePath destinationPath;
+                destinationPath.trackId = targetTrackId;
+                const int insertIndex = static_cast<int>(tm.getChainElements(targetTrackId).size());
+
+                if (copy) {
+                    auto elements = tm.copyChainElements(sourcePaths);
+                    auto command = std::make_unique<PasteChainElementsCommand>(
+                        destinationPath, std::move(elements), insertIndex);
+                    UndoManager::getInstance().executeCommand(std::move(command));
+                } else {
+                    auto command = std::make_unique<MoveChainElementsCommand>(
+                        sourcePaths, destinationPath, insertIndex);
+                    UndoManager::getInstance().executeCommand(std::move(command));
+                }
+                tm.setSelectedTrack(targetTrackId);
+            }
+        }
+
+        pluginDropTrackIndex_ = -1;
+        repaint();
+        return;
     }
 
     auto device = TrackManager::deviceInfoFromPluginObject(*obj);

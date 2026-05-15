@@ -125,6 +125,121 @@ class RemoveDeviceFromTrackCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for moving a chain element within/between track and rack chains.
+ */
+class MoveChainElementCommand : public UndoableCommand {
+  public:
+    MoveChainElementCommand(const ChainNodePath& sourceElementPath,
+                            const ChainNodePath& destinationChainPath, int insertIndex);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Move Chain Element";
+    }
+
+    bool didMove() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath buildMovedPath(const ChainNodePath& destinationChainPath) const;
+
+    ChainNodePath sourceElementPath_;
+    ChainNodePath destinationChainPath_;
+    ChainNodePath undoChainPath_;
+    ChainNodePath movedElementPath_;
+    int insertIndex_ = 0;
+    int undoIndex_ = -1;
+    ChainStepType sourceType_ = ChainStepType::Device;
+    int sourceId_ = INVALID_DEVICE_ID;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for moving multiple chain elements as one undoable step.
+ */
+class MoveChainElementsCommand : public UndoableCommand {
+  public:
+    MoveChainElementsCommand(std::vector<ChainNodePath> sourceElementPaths,
+                             const ChainNodePath& destinationChainPath, int insertIndex);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Move Chain Elements";
+    }
+
+    bool didMove() const {
+        return executed_;
+    }
+
+  private:
+    struct MovedElementRecord {
+        ChainNodePath originalPath;
+        ChainNodePath originalParentPath;
+        int originalIndex = -1;
+        ChainStepType type = ChainStepType::Device;
+        int id = INVALID_DEVICE_ID;
+    };
+
+    std::vector<ChainNodePath> sourceElementPaths_;
+    ChainNodePath destinationChainPath_;
+    int insertIndex_ = 0;
+    std::vector<std::unique_ptr<MoveChainElementCommand>> commands_;
+    std::vector<MovedElementRecord> movedElements_;
+    bool executed_ = false;
+};
+
+class PasteChainElementsCommand : public UndoableCommand {
+  public:
+    PasteChainElementsCommand(const ChainNodePath& destinationChainPath,
+                              std::vector<ChainElement> elements, int insertIndex);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Paste Chain Elements";
+    }
+
+    bool didPaste() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath destinationChainPath_;
+    std::vector<ChainElement> templateElements_;
+    std::vector<ChainNodePath> insertedPaths_;
+    int insertIndex_ = 0;
+    bool executed_ = false;
+};
+
+class WrapChainElementsInRackCommand : public UndoableCommand {
+  public:
+    explicit WrapChainElementsInRackCommand(std::vector<ChainNodePath> sourceElementPaths,
+                                            juce::String rackName = "Rack");
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Add Devices to New Rack";
+    }
+
+    bool didWrap() const {
+        return executed_;
+    }
+
+  private:
+    std::vector<ChainNodePath> sourceElementPaths_;
+    juce::String rackName_;
+    ChainNodePath sourceChainPath_;
+    RackId rackId_ = INVALID_RACK_ID;
+    ChainId chainId_ = INVALID_CHAIN_ID;
+    int sourceIndex_ = -1;
+    bool executed_ = false;
+};
+
+/**
  * @brief Command for creating a new track with a device (single undo step)
  */
 class CreateTrackWithDeviceCommand : public UndoableCommand {

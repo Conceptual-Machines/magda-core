@@ -668,6 +668,7 @@ void SelectionManager::clearSelection() {
     noteSelection_ = NoteSelection{};
     deviceSelection_ = DeviceSelection{};
     selectedChainNode_ = ChainNodePath{};
+    selectedChainNodes_.clear();
     modSelection_ = ModSelection{};
     macroSelection_ = MacroSelection{};
     modsPanelSelection_ = ModsPanelSelection{};
@@ -867,6 +868,9 @@ void SelectionManager::selectChainNode(const ChainNodePath& path, const juce::St
 
     selectionType_ = SelectionType::ChainNode;
     selectedChainNode_ = path;
+    selectedChainNodes_.clear();
+    if (path.isValid())
+        selectedChainNodes_.push_back(path);
     chainNodeDisplayName_ = displayName;
     chainNodeDisplayType_ = displayType;
 
@@ -888,12 +892,96 @@ void SelectionManager::selectChainNode(const ChainNodePath& path, const juce::St
     }
 }
 
+void SelectionManager::toggleChainNodeSelection(const ChainNodePath& path) {
+    if (!path.isValid()) {
+        return;
+    }
+
+    if (selectionType_ != SelectionType::ChainNode &&
+        selectionType_ != SelectionType::MultiChainNode) {
+        selectChainNode(path);
+        return;
+    }
+
+    auto it = std::find(selectedChainNodes_.begin(), selectedChainNodes_.end(), path);
+    if (it != selectedChainNodes_.end()) {
+        selectedChainNodes_.erase(it);
+    } else {
+        selectedChainNodes_.push_back(path);
+    }
+
+    if (selectedChainNodes_.empty()) {
+        clearChainNodeSelection();
+        return;
+    }
+
+    selectionType_ =
+        selectedChainNodes_.size() > 1 ? SelectionType::MultiChainNode : SelectionType::ChainNode;
+    selectedChainNode_ = selectedChainNodes_.back();
+    chainNodeDisplayName_.clear();
+    chainNodeDisplayType_.clear();
+
+    const bool trackChanged = alignPrimaryTrackToOwner(selectedChainNode_.trackId);
+    ClipManager::getInstance().clearClipSelection();
+
+    notifySelectionTypeChanged(selectionType_);
+    notifyChainNodeSelectionChanged(selectedChainNode_);
+    if (trackChanged)
+        notifyTrackSelectionChanged(selectedTrackId_);
+}
+
+void SelectionManager::selectChainNodes(const std::vector<ChainNodePath>& paths) {
+    selectedChainNodes_.clear();
+    for (const auto& path : paths) {
+        if (path.isValid() && std::find(selectedChainNodes_.begin(), selectedChainNodes_.end(),
+                                        path) == selectedChainNodes_.end()) {
+            selectedChainNodes_.push_back(path);
+        }
+    }
+
+    if (selectedChainNodes_.empty()) {
+        clearChainNodeSelection();
+        return;
+    }
+
+    const auto newType =
+        selectedChainNodes_.size() > 1 ? SelectionType::MultiChainNode : SelectionType::ChainNode;
+    const bool typeChanged = selectionType_ != newType;
+
+    selectedClipId_ = INVALID_CLIP_ID;
+    selectedClipIds_.clear();
+    timeRangeSelection_ = TimeRangeSelection{};
+    noteSelection_ = NoteSelection{};
+    deviceSelection_ = DeviceSelection{};
+    modSelection_ = ModSelection{};
+    macroSelection_ = MacroSelection{};
+    modsPanelSelection_ = ModsPanelSelection{};
+    macrosPanelSelection_ = MacrosPanelSelection{};
+    paramSelection_ = ParamSelection{};
+
+    selectionType_ = newType;
+    selectedChainNode_ = selectedChainNodes_.back();
+    chainNodeDisplayName_.clear();
+    chainNodeDisplayType_.clear();
+
+    const bool trackChanged = alignPrimaryTrackToOwner(selectedChainNode_.trackId);
+    ClipManager::getInstance().clearClipSelection();
+
+    if (typeChanged)
+        notifySelectionTypeChanged(selectionType_);
+    notifyChainNodeSelectionChanged(selectedChainNode_);
+    if (trackChanged)
+        notifyTrackSelectionChanged(selectedTrackId_);
+}
+
 void SelectionManager::clearChainNodeSelection() {
-    if (selectionType_ != SelectionType::ChainNode) {
+    if (selectionType_ != SelectionType::ChainNode &&
+        selectionType_ != SelectionType::MultiChainNode) {
         return;
     }
 
     selectedChainNode_ = ChainNodePath{};
+    selectedChainNodes_.clear();
 
     // Return to track selection if we have a track
     if (selectedTrackId_ != INVALID_TRACK_ID) {
@@ -944,6 +1032,7 @@ void SelectionManager::selectMod(const ChainNodePath& parentPath, int modIndex) 
     noteSelection_ = NoteSelection{};
     deviceSelection_ = DeviceSelection{};
     selectedChainNode_ = ChainNodePath{};
+    selectedChainNodes_.clear();
     macroSelection_ = MacroSelection{};
     modsPanelSelection_ = ModsPanelSelection{};
     macrosPanelSelection_ = MacrosPanelSelection{};
@@ -1009,6 +1098,7 @@ void SelectionManager::selectMacro(const ChainNodePath& parentPath, int macroInd
     noteSelection_ = NoteSelection{};
     deviceSelection_ = DeviceSelection{};
     selectedChainNode_ = ChainNodePath{};
+    selectedChainNodes_.clear();
     modSelection_ = ModSelection{};
     modsPanelSelection_ = ModsPanelSelection{};
     macrosPanelSelection_ = MacrosPanelSelection{};
@@ -1080,6 +1170,7 @@ void SelectionManager::selectParam(const ChainNodePath& devicePath, int paramInd
     noteSelection_ = NoteSelection{};
     deviceSelection_ = DeviceSelection{};
     selectedChainNode_ = ChainNodePath{};
+    selectedChainNodes_.clear();
     modSelection_ = ModSelection{};
     macroSelection_ = MacroSelection{};
     modsPanelSelection_ = ModsPanelSelection{};
@@ -1144,6 +1235,7 @@ void SelectionManager::selectModsPanel(const ChainNodePath& parentPath) {
     noteSelection_ = NoteSelection{};
     deviceSelection_ = DeviceSelection{};
     selectedChainNode_ = ChainNodePath{};
+    selectedChainNodes_.clear();
     modSelection_ = ModSelection{};
     macroSelection_ = MacroSelection{};
     macrosPanelSelection_ = MacrosPanelSelection{};
@@ -1207,6 +1299,7 @@ void SelectionManager::selectMacrosPanel(const ChainNodePath& parentPath) {
     noteSelection_ = NoteSelection{};
     deviceSelection_ = DeviceSelection{};
     selectedChainNode_ = ChainNodePath{};
+    selectedChainNodes_.clear();
     modSelection_ = ModSelection{};
     macroSelection_ = MacroSelection{};
     modsPanelSelection_ = ModsPanelSelection{};
@@ -1270,6 +1363,7 @@ void SelectionManager::selectAutomationLane(AutomationLaneId laneId) {
     noteSelection_ = NoteSelection{};
     deviceSelection_ = DeviceSelection{};
     selectedChainNode_ = ChainNodePath{};
+    selectedChainNodes_.clear();
     modSelection_ = ModSelection{};
     macroSelection_ = MacroSelection{};
     modsPanelSelection_ = ModsPanelSelection{};
@@ -1338,6 +1432,7 @@ void SelectionManager::selectAutomationClip(AutomationClipId clipId, AutomationL
     noteSelection_ = NoteSelection{};
     deviceSelection_ = DeviceSelection{};
     selectedChainNode_ = ChainNodePath{};
+    selectedChainNodes_.clear();
     modSelection_ = ModSelection{};
     macroSelection_ = MacroSelection{};
     modsPanelSelection_ = ModsPanelSelection{};
@@ -1402,6 +1497,7 @@ void SelectionManager::selectAutomationPoint(AutomationLaneId laneId, Automation
     noteSelection_ = NoteSelection{};
     deviceSelection_ = DeviceSelection{};
     selectedChainNode_ = ChainNodePath{};
+    selectedChainNodes_.clear();
     modSelection_ = ModSelection{};
     macroSelection_ = MacroSelection{};
     modsPanelSelection_ = ModsPanelSelection{};
@@ -1447,6 +1543,7 @@ void SelectionManager::selectAutomationPoints(AutomationLaneId laneId,
     noteSelection_ = NoteSelection{};
     deviceSelection_ = DeviceSelection{};
     selectedChainNode_ = ChainNodePath{};
+    selectedChainNodes_.clear();
     modSelection_ = ModSelection{};
     macroSelection_ = MacroSelection{};
     modsPanelSelection_ = ModsPanelSelection{};

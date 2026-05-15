@@ -446,6 +446,563 @@ static ChainInfo* getChainFromPath(TrackManager& tm, const ChainNodePath& chainP
     }
     return nullptr;
 }
+
+static std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& tm,
+                                                                  const ChainNodePath& chainPath) {
+    if (chainPath.trackId == INVALID_TRACK_ID)
+        return nullptr;
+
+    if (chainPath.steps.empty()) {
+        if (auto* track = tm.getTrack(chainPath.trackId))
+            return &track->chainElements;
+        return nullptr;
+    }
+
+    if (auto* chain = getChainFromPath(tm, chainPath))
+        return &chain->elements;
+
+    return nullptr;
+}
+
+static ChainNodePath getParentChainPathForElementPath(const ChainNodePath& elementPath) {
+    ChainNodePath parent;
+    parent.trackId = elementPath.trackId;
+    if (elementPath.topLevelDeviceId != INVALID_DEVICE_ID)
+        return parent;
+
+    parent.steps = elementPath.steps;
+    if (!parent.steps.empty())
+        parent.steps.pop_back();
+    return parent;
+}
+
+using DevicePathMap = std::map<DeviceId, ChainNodePath>;
+
+static void retargetMovedTarget(ControlTarget& target, const DevicePathMap& movedPaths) {
+    const auto deviceId = target.devicePath.getDeviceId();
+    if (deviceId == INVALID_DEVICE_ID)
+        return;
+
+    auto it = movedPaths.find(deviceId);
+    if (it != movedPaths.end())
+        target.devicePath = it->second;
+}
+
+static void retargetMovedLinks(MacroArray& macros, ModArray& mods,
+                               const DevicePathMap& movedPaths) {
+    for (auto& macro : macros) {
+        for (auto& link : macro.links)
+            retargetMovedTarget(link.target, movedPaths);
+    }
+
+    for (auto& mod : mods) {
+        for (auto& link : mod.links)
+            retargetMovedTarget(link.target, movedPaths);
+    }
+}
+
+static void collectMovedDevicePaths(const ChainElement& element, const ChainNodePath& elementPath,
+                                    DevicePathMap& movedPaths) {
+    if (magda::isDevice(element)) {
+        movedPaths[magda::getDevice(element).id] = elementPath;
+        return;
+    }
+
+    const auto& rack = magda::getRack(element);
+    auto rackPath = elementPath;
+    for (const auto& chain : rack.chains) {
+        auto chainPath = rackPath.withChain(chain.id);
+        for (const auto& child : chain.elements) {
+            if (magda::isDevice(child)) {
+                collectMovedDevicePaths(child, chainPath.withDevice(magda::getDevice(child).id),
+                                        movedPaths);
+            } else if (magda::isRack(child)) {
+                collectMovedDevicePaths(child, chainPath.withRack(magda::getRack(child).id),
+                                        movedPaths);
+            }
+        }
+    }
+}
+
+static void retargetLinksInElements(std::vector<ChainElement>& elements,
+                                    const DevicePathMap& movedPaths) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            retargetMovedLinks(device.macros, device.mods, movedPaths);
+        } else if (magda::isRack(element)) {
+            auto& rack = magda::getRack(element);
+            retargetMovedLinks(rack.macros, rack.mods, movedPaths);
+            for (auto& chain : rack.chains)
+                retargetLinksInElements(chain.elements, movedPaths);
+        }
+    }
+}
+
+static void retargetMovedLinksInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
+    retargetMovedLinks(track.macros, track.mods, movedPaths);
+    retargetLinksInElements(track.chainElements, movedPaths);
+}
+
+static bool targetPointsAtMovedDevice(const ControlTarget& target,
+                                      const DevicePathMap& movedPaths) {
+    const auto deviceId = target.devicePath.getDeviceId();
+    return deviceId != INVALID_DEVICE_ID && movedPaths.find(deviceId) != movedPaths.end();
+}
+
+static void removeMovedTargets(MacroArray& macros, ModArray& mods,
+                               const DevicePathMap& movedPaths) {
+    for (auto& macro : macros) {
+        macro.links.erase(std::remove_if(macro.links.begin(), macro.links.end(),
+                                         [&movedPaths](const MacroLink& link) {
+                                             return targetPointsAtMovedDevice(link.target,
+                                                                              movedPaths);
+                                         }),
+                          macro.links.end());
+    }
+
+    for (auto& mod : mods) {
+        mod.links.erase(std::remove_if(mod.links.begin(), mod.links.end(),
+                                       [&movedPaths](const ModLink& link) {
+                                           return targetPointsAtMovedDevice(link.target,
+                                                                            movedPaths);
+                                       }),
+                        mod.links.end());
+    }
+}
+
+static void removeMovedTargetsInElements(std::vector<ChainElement>& elements,
+                                         const DevicePathMap& movedPaths) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            removeMovedTargets(device.macros, device.mods, movedPaths);
+        } else if (magda::isRack(element)) {
+            auto& rack = magda::getRack(element);
+            removeMovedTargets(rack.macros, rack.mods, movedPaths);
+            for (auto& chain : rack.chains)
+                removeMovedTargetsInElements(chain.elements, movedPaths);
+        }
+    }
+}
+
+static void removeMovedTargetsInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
+    removeMovedTargets(track.macros, track.mods, movedPaths);
+    removeMovedTargetsInElements(track.chainElements, movedPaths);
+}
+
+static ChainNodePath getInsertedElementPath(const ChainNodePath& destinationChainPath,
+                                            const ChainElement& element) {
+    if (magda::isDevice(element)) {
+        const auto deviceId = magda::getDevice(element).id;
+        if (destinationChainPath.steps.empty())
+            return ChainNodePath::topLevelDevice(destinationChainPath.trackId, deviceId);
+        return destinationChainPath.withDevice(deviceId);
+    }
+
+    return destinationChainPath.withRack(magda::getRack(element).id);
+}
+
+static void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>& elements,
+                                     TrackId targetTrackId) {
+    PresetIdRemap remap;
+    remap.trackId = targetTrackId;
+
+    std::function<void(std::vector<ChainElement>&)> reassignIds;
+    reassignIds = [&](std::vector<ChainElement>& items) {
+        for (auto& element : items) {
+            if (magda::isDevice(element)) {
+                auto& device = magda::getDevice(element);
+                const auto oldId = device.id;
+                device.id = tm.allocateDeviceId();
+                remap.devices[oldId] = device.id;
+            } else if (magda::isRack(element)) {
+                auto& rack = magda::getRack(element);
+                const auto oldRackId = rack.id;
+                rack.id = tm.allocateRackId();
+                remap.racks[oldRackId] = rack.id;
+                for (auto& chain : rack.chains) {
+                    const auto oldChainId = chain.id;
+                    chain.id = tm.allocateChainId();
+                    remap.chains[oldChainId] = chain.id;
+                    reassignIds(chain.elements);
+                }
+            }
+        }
+    };
+
+    reassignIds(elements);
+    remapPresetLinksRecursive(elements, remap);
+}
+
+static bool chainPathContainsRack(const ChainNodePath& destinationChainPath,
+                                  const ChainNodePath& sourceRackPath) {
+    if (sourceRackPath.steps.empty() || sourceRackPath.steps.back().type != ChainStepType::Rack ||
+        destinationChainPath.steps.size() <= sourceRackPath.steps.size()) {
+        return false;
+    }
+
+    return std::equal(sourceRackPath.steps.begin(), sourceRackPath.steps.end(),
+                      destinationChainPath.steps.begin());
+}
+
+static bool elementContainsInstrument(const ChainElement& element) {
+    if (magda::isDevice(element))
+        return magda::getDevice(element).isInstrument;
+
+    const auto& rack = magda::getRack(element);
+    for (const auto& chain : rack.chains) {
+        for (const auto& child : chain.elements) {
+            if (elementContainsInstrument(child))
+                return true;
+        }
+    }
+    return false;
+}
+
+static juce::String describeMoveParams(const DeviceInfo& device, int maxParams = 8) {
+    juce::String text;
+    const int count = std::min(maxParams, static_cast<int>(device.parameters.size()));
+    for (int i = 0; i < count; ++i) {
+        const auto& p = device.parameters[static_cast<size_t>(i)];
+        if (i > 0)
+            text << " | ";
+        text << "#" << i << "(" << p.paramIndex << ") " << p.name << "=" << p.currentValue;
+    }
+    if (static_cast<int>(device.parameters.size()) > count)
+        text << " | ...";
+    return text;
+}
+
+static void logMoveDeviceState(const DeviceInfo& device, const juce::String& label) {
+    DBG("[ChainMove] " << label << " device id=" << device.id << " name='" << device.name
+                       << "' pluginId='" << device.pluginId << "' stateLen="
+                       << device.pluginState.length() << " params=" << device.parameters.size()
+                       << " gainDb=" << device.gainDb << " bypassed=" << (int)device.bypassed);
+    DBG("[ChainMove] " << label << " params: " << describeMoveParams(device));
+}
+
+static void logMoveElementState(const ChainElement& element, const juce::String& label) {
+    if (magda::isDevice(element)) {
+        logMoveDeviceState(magda::getDevice(element), label);
+        return;
+    }
+
+    const auto& rack = magda::getRack(element);
+    DBG("[ChainMove] " << label << " rack id=" << rack.id << " name='" << rack.name
+                       << "' chains=" << rack.chains.size());
+    for (const auto& chain : rack.chains) {
+        int index = 0;
+        for (const auto& child : chain.elements) {
+            logMoveElementState(child, label + " rackChain=" + juce::String(chain.id) +
+                                           " child=" + juce::String(index++));
+        }
+    }
+}
+
+bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
+                                    const ChainNodePath& destinationChainPath, int insertIndex) {
+    DBG("[ChainMove] request source=" << sourceElementPath.toString()
+                                      << " destination=" << destinationChainPath.toString()
+                                      << " requestedIndex=" << insertIndex);
+
+    if (sourceElementPath.trackId == INVALID_TRACK_ID ||
+        destinationChainPath.trackId == INVALID_TRACK_ID) {
+        DBG("[ChainMove] rejected: invalid source/destination track");
+        return false;
+    }
+
+    ChainNodePath sourceChainPath;
+    sourceChainPath.trackId = sourceElementPath.trackId;
+    ChainStepType sourceType = ChainStepType::Device;
+    int sourceId = INVALID_DEVICE_ID;
+
+    if (sourceElementPath.topLevelDeviceId != INVALID_DEVICE_ID) {
+        sourceType = ChainStepType::Device;
+        sourceId = sourceElementPath.topLevelDeviceId;
+    } else if (!sourceElementPath.steps.empty() &&
+               (sourceElementPath.steps.back().type == ChainStepType::Device ||
+                sourceElementPath.steps.back().type == ChainStepType::Rack)) {
+        sourceType = sourceElementPath.steps.back().type;
+        sourceId = sourceElementPath.steps.back().id;
+        sourceChainPath.steps.assign(sourceElementPath.steps.begin(),
+                                     sourceElementPath.steps.end() - 1);
+    } else {
+        DBG("[ChainMove] rejected: source path does not point at device/rack");
+        return false;
+    }
+
+    if (sourceType == ChainStepType::Rack &&
+        chainPathContainsRack(destinationChainPath, sourceElementPath)) {
+        DBG("moveChainElement rejected recursive rack move");
+        return false;
+    }
+
+    auto* sourceElements = getElementContainerForChainPath(*this, sourceChainPath);
+    auto* destinationElements = getElementContainerForChainPath(*this, destinationChainPath);
+    if (sourceElements == nullptr || destinationElements == nullptr) {
+        DBG("[ChainMove] rejected: source/destination container missing sourceContainer="
+            << (int)(sourceElements != nullptr)
+            << " destinationContainer=" << (int)(destinationElements != nullptr));
+        return false;
+    }
+
+    auto sourceIt = std::find_if(
+        sourceElements->begin(), sourceElements->end(),
+        [sourceType, sourceId](const ChainElement& element) {
+            if (sourceType == ChainStepType::Device)
+                return magda::isDevice(element) && magda::getDevice(element).id == sourceId;
+            return magda::isRack(element) && magda::getRack(element).id == sourceId;
+        });
+    if (sourceIt == sourceElements->end()) {
+        DBG("[ChainMove] rejected: source element not found type=" << static_cast<int>(sourceType)
+                                                                   << " id=" << sourceId);
+        return false;
+    }
+
+    if (auto* destinationTrack = getTrack(destinationChainPath.trackId)) {
+        const bool destinationCannotHostInstruments = destinationTrack->type == TrackType::Aux ||
+                                                      destinationTrack->type == TrackType::Group ||
+                                                      destinationTrack->type == TrackType::Master;
+        if (destinationCannotHostInstruments && elementContainsInstrument(*sourceIt)) {
+            DBG("moveChainElement rejected instrument move to non-instrument destination track");
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    const bool sameContainer = sourceElements == destinationElements;
+    const int sourceIndex = static_cast<int>(std::distance(sourceElements->begin(), sourceIt));
+    const int destinationSize = static_cast<int>(destinationElements->size());
+    insertIndex = std::clamp(insertIndex, 0, destinationSize);
+
+    DBG("[ChainMove] resolved sourceIndex=" << sourceIndex << " destinationSize=" << destinationSize
+                                            << " clampedIndex=" << insertIndex
+                                            << " sameContainer=" << (int)sameContainer);
+
+    if (sameContainer && (insertIndex == sourceIndex || insertIndex == sourceIndex + 1)) {
+        DBG("[ChainMove] no-op: same-container adjacent drop");
+        return false;
+    }
+
+    if (audioEngine_) {
+        if (auto* bridge = audioEngine_->getAudioBridge()) {
+            DBG("[ChainMove] preparing live plugin runtime before model move");
+            bridge->getPluginManager().prepareForChainElementMove(sourceElementPath,
+                                                                  destinationChainPath);
+        } else {
+            DBG("[ChainMove] no AudioBridge available for pre-move capture");
+        }
+    } else {
+        DBG("[ChainMove] no AudioEngine available for pre-move capture");
+    }
+
+    logMoveElementState(*sourceIt, "afterCapture/source");
+
+    ChainElement element = std::move(*sourceIt);
+    logMoveElementState(element, "movingElement");
+    sourceElements->erase(sourceElements->begin() + sourceIndex);
+
+    if (sameContainer && insertIndex > sourceIndex)
+        --insertIndex;
+
+    insertIndex = std::clamp(insertIndex, 0, static_cast<int>(destinationElements->size()));
+    destinationElements->insert(destinationElements->begin() + insertIndex, std::move(element));
+
+    DevicePathMap movedPaths;
+    auto& insertedElement = (*destinationElements)[static_cast<size_t>(insertIndex)];
+    collectMovedDevicePaths(
+        insertedElement, getInsertedElementPath(destinationChainPath, insertedElement), movedPaths);
+    if (sameContainer || sourceElementPath.trackId == destinationChainPath.trackId) {
+        if (auto* track = getTrack(destinationChainPath.trackId))
+            retargetMovedLinksInTrack(*track, movedPaths);
+    } else {
+        retargetLinksInElements(*destinationElements, movedPaths);
+        if (auto* sourceTrack = getTrack(sourceElementPath.trackId))
+            removeMovedTargetsInTrack(*sourceTrack, movedPaths);
+    }
+
+    logMoveElementState((*destinationElements)[static_cast<size_t>(insertIndex)],
+                        "afterInsert/destination");
+    DBG("[ChainMove] notifying sourceTrack=" << sourceElementPath.trackId
+                                             << " destinationTrack=" << destinationChainPath.trackId
+                                             << " finalIndex=" << insertIndex);
+
+    notifyTrackDevicesChanged(sourceElementPath.trackId);
+    if (destinationChainPath.trackId != sourceElementPath.trackId)
+        notifyTrackDevicesChanged(destinationChainPath.trackId);
+
+    return true;
+}
+
+std::vector<ChainElement> TrackManager::copyChainElements(
+    const std::vector<ChainNodePath>& paths) const {
+    std::vector<ChainElement> copied;
+    std::vector<ChainNodePath> uniquePaths;
+    for (const auto& path : paths) {
+        if (path.isValid() &&
+            std::find(uniquePaths.begin(), uniquePaths.end(), path) == uniquePaths.end())
+            uniquePaths.push_back(path);
+    }
+
+    auto& mutableThis = const_cast<TrackManager&>(*this);
+    std::stable_sort(
+        uniquePaths.begin(), uniquePaths.end(), [&mutableThis](const auto& a, const auto& b) {
+            const auto parentA = getParentChainPathForElementPath(a);
+            const auto parentB = getParentChainPathForElementPath(b);
+            if (parentA == parentB)
+                return mutableThis.getChainElementIndex(a) < mutableThis.getChainElementIndex(b);
+            if (parentA.trackId != parentB.trackId)
+                return parentA.trackId < parentB.trackId;
+            return parentA.toString() < parentB.toString();
+        });
+
+    for (const auto& path : uniquePaths) {
+        const auto parentPath = getParentChainPathForElementPath(path);
+        auto* elements = getElementContainerForChainPath(mutableThis, parentPath);
+        if (elements == nullptr)
+            continue;
+
+        const auto type =
+            path.topLevelDeviceId != INVALID_DEVICE_ID
+                ? ChainStepType::Device
+                : (!path.steps.empty() ? path.steps.back().type : ChainStepType::Device);
+        const auto id = path.topLevelDeviceId != INVALID_DEVICE_ID
+                            ? path.topLevelDeviceId
+                            : (!path.steps.empty() ? path.steps.back().id : INVALID_DEVICE_ID);
+        auto it = std::find_if(elements->begin(), elements->end(), [type, id](const auto& element) {
+            if (type == ChainStepType::Device)
+                return magda::isDevice(element) && magda::getDevice(element).id == id;
+            return magda::isRack(element) && magda::getRack(element).id == id;
+        });
+        if (it != elements->end())
+            copied.push_back(deepCopyElement(*it));
+    }
+
+    return copied;
+}
+
+bool TrackManager::insertChainElementsByPath(const ChainNodePath& destinationChainPath,
+                                             std::vector<ChainElement> elements, int insertIndex,
+                                             bool reassignIds) {
+    auto* destinationElements = getElementContainerForChainPath(*this, destinationChainPath);
+    if (destinationElements == nullptr || elements.empty())
+        return false;
+
+    if (reassignIds)
+        reassignCopiedElementIds(*this, elements, destinationChainPath.trackId);
+
+    insertIndex = std::clamp(insertIndex, 0, static_cast<int>(destinationElements->size()));
+    destinationElements->insert(destinationElements->begin() + insertIndex,
+                                std::make_move_iterator(elements.begin()),
+                                std::make_move_iterator(elements.end()));
+    notifyTrackDevicesChanged(destinationChainPath.trackId);
+    return true;
+}
+
+RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& paths,
+                                             const juce::String& rackName) {
+    if (paths.empty())
+        return INVALID_RACK_ID;
+
+    const auto sourceChainPath = getParentChainPathForElementPath(paths.front());
+    auto* sourceElements = getElementContainerForChainPath(*this, sourceChainPath);
+    if (sourceElements == nullptr)
+        return INVALID_RACK_ID;
+
+    std::vector<std::pair<int, ChainNodePath>> orderedPaths;
+    for (const auto& path : paths) {
+        if (!path.isValid() || getParentChainPathForElementPath(path) != sourceChainPath)
+            return INVALID_RACK_ID;
+
+        const int index = getChainElementIndex(path);
+        if (index >= 0)
+            orderedPaths.push_back({index, path});
+    }
+
+    if (orderedPaths.empty())
+        return INVALID_RACK_ID;
+
+    std::stable_sort(orderedPaths.begin(), orderedPaths.end(),
+                     [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    RackInfo rack;
+    rack.id = allocateRackId();
+    rack.name = rackName.isEmpty() ? "Rack" : rackName;
+    ChainInfo chain;
+    chain.id = allocateChainId();
+    chain.name = "Chain 1";
+
+    if (audioEngine_) {
+        if (auto* bridge = audioEngine_->getAudioBridge()) {
+            ChainNodePath destinationPath = sourceChainPath;
+            destinationPath.steps.push_back({ChainStepType::Rack, rack.id});
+            destinationPath.steps.push_back({ChainStepType::Chain, chain.id});
+            for (const auto& [_, path] : orderedPaths)
+                bridge->getPluginManager().prepareForChainElementMove(path, destinationPath);
+        }
+    }
+
+    for (const auto& [index, _] : orderedPaths)
+        chain.elements.push_back(std::move((*sourceElements)[static_cast<size_t>(index)]));
+
+    for (auto it = orderedPaths.rbegin(); it != orderedPaths.rend(); ++it)
+        sourceElements->erase(sourceElements->begin() + it->first);
+
+    const int insertIndex =
+        std::clamp(orderedPaths.front().first, 0, static_cast<int>(sourceElements->size()));
+    rack.chains.push_back(std::move(chain));
+    sourceElements->insert(sourceElements->begin() + insertIndex, makeRackElement(std::move(rack)));
+
+    DevicePathMap movedPaths;
+    auto& insertedRack = (*sourceElements)[static_cast<size_t>(insertIndex)];
+    collectMovedDevicePaths(insertedRack, sourceChainPath.withRack(magda::getRack(insertedRack).id),
+                            movedPaths);
+    if (auto* track = getTrack(sourceChainPath.trackId))
+        retargetMovedLinksInTrack(*track, movedPaths);
+
+    notifyTrackDevicesChanged(sourceChainPath.trackId);
+    return magda::getRack((*sourceElements)[static_cast<size_t>(insertIndex)]).id;
+}
+
+int TrackManager::getChainElementIndex(const ChainNodePath& elementPath) {
+    ChainNodePath containerPath;
+    containerPath.trackId = elementPath.trackId;
+
+    ChainStepType sourceType = ChainStepType::Device;
+    int sourceId = INVALID_DEVICE_ID;
+
+    if (elementPath.topLevelDeviceId != INVALID_DEVICE_ID) {
+        sourceType = ChainStepType::Device;
+        sourceId = elementPath.topLevelDeviceId;
+    } else if (!elementPath.steps.empty() &&
+               (elementPath.steps.back().type == ChainStepType::Device ||
+                elementPath.steps.back().type == ChainStepType::Rack)) {
+        sourceType = elementPath.steps.back().type;
+        sourceId = elementPath.steps.back().id;
+        containerPath.steps.assign(elementPath.steps.begin(), elementPath.steps.end() - 1);
+    } else {
+        return -1;
+    }
+
+    auto* elements = getElementContainerForChainPath(*this, containerPath);
+    if (elements == nullptr)
+        return -1;
+
+    for (int i = 0; i < static_cast<int>(elements->size()); ++i) {
+        const auto& element = (*elements)[static_cast<size_t>(i)];
+        if (sourceType == ChainStepType::Device) {
+            if (isDevice(element) && magda::getDevice(element).id == sourceId)
+                return i;
+        } else if (isRack(element) && magda::getRack(element).id == sourceId) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
 void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) {
     // Handle top-level device (uses topLevelDeviceId field)
     if (devicePath.topLevelDeviceId != INVALID_DEVICE_ID) {
@@ -1165,8 +1722,13 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
                       << ", id=" << rackPath.steps[i].id);
     }
 
+    if (rackPath.steps.size() == 1 && rackPath.steps.back().type == ChainStepType::Rack) {
+        removeRackFromTrack(rackPath.trackId, rackPath.steps.back().id);
+        return;
+    }
+
     if (rackPath.steps.size() < 2) {
-        DBG("removeRackFromChainByPath FAILED - path too short (need at least Chain > Rack)!");
+        DBG("removeRackFromChainByPath FAILED - path too short (need Rack or Chain > Rack)!");
         return;
     }
 

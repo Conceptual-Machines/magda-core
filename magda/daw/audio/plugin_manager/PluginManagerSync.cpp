@@ -31,6 +31,22 @@
 
 namespace magda {
 
+namespace {
+juce::String describeChainMoveParams(const DeviceInfo& device, int maxParams = 8) {
+    juce::String text;
+    const int count = std::min(maxParams, static_cast<int>(device.parameters.size()));
+    for (int i = 0; i < count; ++i) {
+        const auto& p = device.parameters[static_cast<size_t>(i)];
+        if (i > 0)
+            text << " | ";
+        text << "#" << i << "(" << p.paramIndex << ") " << p.name << "=" << p.currentValue;
+    }
+    if (static_cast<int>(device.parameters.size()) > count)
+        text << " | ...";
+    return text;
+}
+}  // namespace
+
 // =============================================================================
 // Plugin Synchronization
 // =============================================================================
@@ -1493,6 +1509,11 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
     auto processor = createDeviceProcessorForPlugin(deviceId, plugin, device.pluginId);
 
     if (processor) {
+        DBG("[ChainMove] restore rack processor device id="
+            << deviceId << " name='" << device.name << "' stateLen=" << device.pluginState.length()
+            << " params=" << device.parameters.size());
+        DBG("[ChainMove] restore rack input params: " << describeChainMoveParams(device));
+
         // Restore parameter values from DeviceInfo onto the newly created plugin
         processor->syncFromDeviceInfo(device);
 
@@ -1500,6 +1521,7 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
         // (needed for UI controls to function — setDeviceParameterValue checks params.size())
         DeviceInfo tempInfo;
         processor->populateParameters(tempInfo);
+        DBG("[ChainMove] restore rack after sync params: " << describeChainMoveParams(tempInfo));
         TrackManager::getInstance().updateDeviceParameters(deviceId, tempInfo.parameters);
         AutoAliasGenerator::regenerateForDevice(deviceId);
 
@@ -1724,11 +1746,17 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             }
 
             // Sync state from DeviceInfo (only applies if it has values)
+            DBG("[ChainMove] restore track processor device id="
+                << device.id << " name='" << device.name << "' track=" << trackId << " stateLen="
+                << device.pluginState.length() << " params=" << device.parameters.size());
+            DBG("[ChainMove] restore track input params: " << describeChainMoveParams(device));
             processor->syncFromDeviceInfo(device);
 
             // Populate parameters back to TrackManager
             DeviceInfo tempInfo;
             processor->populateParameters(tempInfo);
+            DBG("[ChainMove] restore track after sync params: "
+                << describeChainMoveParams(tempInfo));
             TrackManager::getInstance().updateDeviceParameters(device.id, tempInfo.parameters);
             AutoAliasGenerator::regenerateForDevice(device.id);
 
