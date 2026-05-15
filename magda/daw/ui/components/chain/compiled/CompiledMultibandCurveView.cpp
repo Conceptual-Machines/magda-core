@@ -529,11 +529,12 @@ void CompiledMultibandCurveView::mouseWheelMove(const juce::MouseEvent& e,
     const float yBelow = dbToY(threshBelowDb_[idx]);
     const float mouseY = static_cast<float>(e.y);
 
-    // Scroll above the "above" threshold adjusts ratioAbove;
-    // scroll below the "below" threshold adjusts ratioBelow.
+    const float yExpand = dbToY(threshExpandDb_[idx]);
+
     const bool inAboveZone = mouseY < yAbove;
-    const bool inBelowZone = mouseY > yBelow;
-    if (!inAboveZone && !inBelowZone)
+    const bool inBelowZone = mouseY > yBelow && mouseY < yExpand;
+    const bool inExpandZone = mouseY > yExpand;
+    if (!inAboveZone && !inBelowZone && !inExpandZone)
         return;
 
     constexpr float kRatioStep = 0.5f;
@@ -541,24 +542,38 @@ void CompiledMultibandCurveView::mouseWheelMove(const juce::MouseEvent& e,
     constexpr float kRatioMax = 20.0f;
     const float delta = wheel.deltaY > 0.0f ? kRatioStep : -kRatioStep;
 
+    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
     if (inAboveZone) {
         const float newRatio = juce::jlimit(kRatioMin, kRatioMax, ratiosAbove_[idx] + delta);
         if (std::fabs(newRatio - ratiosAbove_[idx]) > 0.01f) {
             ratiosAbove_[idx] = newRatio;
             ratioScrollBand_ = band;
-            ratioScrollAbove_ = true;
+            ratioScrollZone_ = 0;
             if (onParameterChanged)
                 onParameterChanged(ratioSlotForBand(band, true), newRatio);
             repaint();
         }
-    } else {
+    } else if (inBelowZone) {
         const float newRatio = juce::jlimit(kRatioMin, kRatioMax, ratiosBelow_[idx] + delta);
         if (std::fabs(newRatio - ratiosBelow_[idx]) > 0.01f) {
             ratiosBelow_[idx] = newRatio;
             ratioScrollBand_ = band;
-            ratioScrollAbove_ = false;
+            ratioScrollZone_ = 1;
             if (onParameterChanged)
                 onParameterChanged(ratioSlotForBand(band, false), newRatio);
+            repaint();
+        }
+    } else {
+        const int erSlot = (band == 0)   ? Mb::kLowExpandRatioSlot
+                           : (band == 1) ? Mb::kMidExpandRatioSlot
+                                         : Mb::kHighExpandRatioSlot;
+        const float newRatio = juce::jlimit(kRatioMin, kRatioMax, expandRatios_[idx] + delta);
+        if (std::fabs(newRatio - expandRatios_[idx]) > 0.01f) {
+            expandRatios_[idx] = newRatio;
+            ratioScrollBand_ = band;
+            ratioScrollZone_ = 2;
+            if (onParameterChanged)
+                onParameterChanged(erSlot, newRatio);
             repaint();
         }
     }
@@ -727,10 +742,9 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
         const bool isScrollBand = (ratioScrollBand_ == band);
         const float cx = (x0 + x1) * 0.5f;
 
-        // Two small labels: ratioAbove near the top, ratioBelow near the bottom
-        // of the neutral zone.
-        auto drawRatioLabel = [&](float ratio, bool isAbove, float yRef) {
-            const bool isActive = isScrollBand && (ratioScrollAbove_ == isAbove);
+        // Small ratio labels per zone, amplified during scroll.
+        auto drawRatioLabel = [&](float ratio, int zone, float yRef) {
+            const bool isActive = isScrollBand && (ratioScrollZone_ == zone);
             const float alpha = isActive ? 0.95f : 0.40f;
             g.setColour(bandColours2[idx].withAlpha(alpha));
             const juce::String label =
@@ -747,8 +761,10 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
         };
         const float yAbove = dbToY(threshAboveDb_[idx]);
         const float yBelow = dbToY(threshBelowDb_[idx]);
-        drawRatioLabel(ratiosAbove_[idx], true, yAbove - 2.0f);
-        drawRatioLabel(ratiosBelow_[idx], false, yBelow + 16.0f);
+        const float yExpand = dbToY(threshExpandDb_[idx]);
+        drawRatioLabel(ratiosAbove_[idx], 0, yAbove - 2.0f);
+        drawRatioLabel(ratiosBelow_[idx], 1, yBelow + 16.0f);
+        drawRatioLabel(expandRatios_[idx], 2, yExpand + 16.0f);
     }
 
     // Collapse toggle — chevron in the top-right corner.
@@ -783,7 +799,7 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
 const CompiledPresentationSpec& getMagdaMultibandPresentation() {
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin::xmlTypeName,
-        .layoutCellCount = 27,
+        .layoutCellCount = 9,
         .layoutCellsPerRow = 10,
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledMultibandCurveView>(pluginId);

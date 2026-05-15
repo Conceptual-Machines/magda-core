@@ -115,10 +115,10 @@ class CompiledMultibandCurveView final : public juce::Component,
 
     juce::Rectangle<float> collapseButtonArea_;
     bool collapseButtonHovered_ = false;
-    // Which band is receiving a ratio scroll, and whether it is the above or
-    // below ratio.  Both -1 = no active scroll.
+    // Which band is receiving a ratio scroll.  -1 = no active scroll.
+    // ratioScrollZone_: 0 = above, 1 = below, 2 = expand.
     int ratioScrollBand_ = -1;
-    bool ratioScrollAbove_ = true;
+    int ratioScrollZone_ = 0;
 
     std::function<void()> onLayoutChanged_;
 
