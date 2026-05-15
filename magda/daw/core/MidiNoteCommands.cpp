@@ -761,6 +761,71 @@ void AddMultipleMidiNotesCommand::undo() {
 }
 
 // ============================================================================
+// SliceMidiNotesCommand
+// ============================================================================
+
+SliceMidiNotesCommand::SliceMidiNotesCommand(ClipId clipId, std::vector<size_t> noteIndices,
+                                             int subdivisions)
+    : clipId_(clipId),
+      noteIndices_(std::move(noteIndices)),
+      subdivisions_(std::max(2, subdivisions)) {}
+
+void SliceMidiNotesCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || !clip->isMidi() || noteIndices_.empty()) {
+        return;
+    }
+
+    if (!executed_)
+        originalNotes_ = clip->midiNotes;
+
+    std::sort(noteIndices_.begin(), noteIndices_.end());
+    noteIndices_.erase(std::unique(noteIndices_.begin(), noteIndices_.end()), noteIndices_.end());
+
+    std::vector<MidiNote> slicedNotes;
+    slicedNotes.reserve(originalNotes_.size() * static_cast<size_t>(subdivisions_));
+
+    for (size_t index = 0; index < originalNotes_.size(); ++index) {
+        const auto& note = originalNotes_[index];
+        if (!std::binary_search(noteIndices_.begin(), noteIndices_.end(), index) ||
+            note.lengthBeats <= 0.0) {
+            slicedNotes.push_back(note);
+            continue;
+        }
+
+        const double sliceLength = note.lengthBeats / static_cast<double>(subdivisions_);
+        for (int slice = 0; slice < subdivisions_; ++slice) {
+            auto sliced = note;
+            sliced.startBeat = note.startBeat + sliceLength * static_cast<double>(slice);
+            sliced.lengthBeats = sliceLength;
+            slicedNotes.push_back(sliced);
+        }
+    }
+
+    clip->midiNotes = std::move(slicedNotes);
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void SliceMidiNotesCommand::undo() {
+    if (!executed_) {
+        return;
+    }
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || !clip->isMidi()) {
+        return;
+    }
+
+    clip->midiNotes = originalNotes_;
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
 // TransposeMidiClipCommand
 // ============================================================================
 

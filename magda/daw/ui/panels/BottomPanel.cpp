@@ -23,8 +23,8 @@
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "state/PanelController.hpp"
+#include "ui/components/common/NoteSlicePopup.hpp"
 #include "ui/components/common/TimeBendPopup.hpp"
-#include "ui/components/common/Toast.hpp"
 
 namespace magda {
 
@@ -451,12 +451,19 @@ void BottomPanel::setupHeaderControls() {
     sliceButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     sliceButton_->setBorderThickness(1.0f);
     sliceButton_->setCornerRadius(3.0f);
-    sliceButton_->onClick = []() {
+    sliceButton_->onClick = [this]() {
         const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
         if (!noteSel.isValid() || noteSel.noteIndices.empty())
             return;
 
-        daw::ui::Toast::showGlobal("Slice preview is not implemented yet");
+        auto clipId = noteSel.clipId;
+        auto indices = noteSel.noteIndices;
+        auto popup = std::make_unique<daw::ui::NoteSlicePopup>(clipId, indices.size());
+        popup->onApply = [clipId, indices](int subdivisions) {
+            auto cmd = std::make_unique<SliceMidiNotesCommand>(clipId, indices, subdivisions);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+        };
+        daw::ui::NoteSlicePopup::showAbove(std::move(popup), sliceButton_.get());
     };
     addChildComponent(sliceButton_.get());
 
