@@ -42,6 +42,7 @@ class ClipComponent : public juce::Component, public ClipManagerListener, privat
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseMove(const juce::MouseEvent& e) override;
+    void mouseEnter(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
 
@@ -193,7 +194,7 @@ class ClipComponent : public juce::Component, public ClipManagerListener, privat
     bool isOnFadeInHandle(int x, int y) const;
     bool isOnFadeOutHandle(int x, int y) const;
     bool isOnVolumeHandle(int x, int y) const;
-    void updateCursor(bool isAltDown = false, bool isShiftDown = false);
+    void updateCursor(bool isAltDown = false, bool isShiftDown = false, bool isEraseDown = false);
 
     // Helper to get current clip info
     const ClipInfo* getClipInfo() const;
@@ -209,6 +210,7 @@ class ClipComponent : public juce::Component, public ClipManagerListener, privat
     int cachedHeight_ = 0;
     size_t cachedClipHash_ = 0;
     bool waveformCacheDirty_ = true;
+    bool mouseIsOver_ = false;
 
     static size_t computeWaveformHash(const ClipInfo& clip);
     void paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip,

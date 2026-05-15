@@ -44,20 +44,10 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
         float tickY0 = y0 + h - TICK_H;
         float tickY1 = y0 + h;
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.35f));
-        int c = std::max(1, cycles_);
         for (int i = 0; i < numTicks_; ++i) {
             double t = static_cast<double>(i) / static_cast<double>(numTicks_);
-            double curved;
-            if (c <= 1) {
-                curved = daw::audio::StepClock::applyRampCurve(t, depth_, skew_, hardAngle_);
-            } else {
-                double segLen = 1.0 / static_cast<double>(c);
-                int seg = std::min(static_cast<int>(t / segLen), c - 1);
-                double tLocal = (t - seg * segLen) / segLen;
-                double tLocalCurved =
-                    daw::audio::StepClock::applyRampCurve(tLocal, depth_, skew_, hardAngle_);
-                curved = (seg + tLocalCurved) * segLen;
-            }
+            double curved = daw::audio::StepClock::applyRampCurveWithCycles(t, depth_, skew_,
+                                                                            cycles_, hardAngle_);
             curved = juce::jlimit(0.0, 1.0, curved);
             float tx = x0 + static_cast<float>(curved) * w;
             g.drawLine(tx, tickY0, tx, tickY1, 1.0f);
@@ -72,18 +62,8 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
 
         // Apply curve with cycles to get the x position
         float pos = playbackPos_;
-        float curvedPos;
-        if (cycles_ <= 1) {
-            curvedPos = static_cast<float>(
-                daw::audio::StepClock::applyRampCurve(pos, depth_, skew_, hardAngle_));
-        } else {
-            float segLen = 1.0f / static_cast<float>(cycles_);
-            int seg = std::min(static_cast<int>(pos / segLen), cycles_ - 1);
-            float tLocal = (pos - seg * segLen) / segLen;
-            float tLocalCurved = static_cast<float>(
-                daw::audio::StepClock::applyRampCurve(tLocal, depth_, skew_, hardAngle_));
-            curvedPos = (seg + tLocalCurved) * segLen;
-        }
+        float curvedPos = static_cast<float>(daw::audio::StepClock::applyRampCurveWithCycles(
+            pos, depth_, skew_, cycles_, hardAngle_));
         curvedPos = juce::jlimit(0.0f, 1.0f, curvedPos);
         float sweepX = x0 + curvedPos * w;
 

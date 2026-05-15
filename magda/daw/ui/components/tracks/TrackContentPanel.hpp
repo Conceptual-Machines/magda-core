@@ -304,7 +304,17 @@ class TrackContentPanel : public juce::Component,
     void updateClipComponentPositions();
     void createClipFromTimeSelection();  // Called on double-click with selection
     void createMidiClipAtPosition(TrackId trackId, double startTime);
+    void createMidiClipFromBeatRange(TrackId trackId, double startBeat, double endBeat);
+    double snappedBeatForPixel(int x) const;
     ClipComponent* getClipComponentAt(int x, int y) const;
+
+    // Shift-drag clip drawing
+    bool isDrawingClip_ = false;
+    TrackId drawingClipTrackId_ = INVALID_TRACK_ID;
+    int drawingClipTrackIndex_ = -1;
+    double drawingClipStartBeat_ = 0.0;
+    double drawingClipEndBeat_ = 0.0;
+    void paintClipDrawPreview(juce::Graphics& g);
 
     // Automation lane management
     struct AutomationLaneEntry {
