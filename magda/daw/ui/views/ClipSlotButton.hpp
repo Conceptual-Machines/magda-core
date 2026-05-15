@@ -289,11 +289,19 @@ class ClipSlotButton : public juce::TextButton {
             if (trackIsRecordArmed) {
                 float radius = 5.0f;
                 auto recordColour = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
-                if (slotIsRecording && !blinkOn)
-                    recordColour = recordColour.withAlpha(0.35f);
 
-                if (slotRecordArmed || slotIsRecording) {
-                    g.setColour(recordColour.withAlpha(slotIsRecording ? 0.95f : 0.25f));
+                if (slotIsRecording) {
+                    auto contentArea = getLocalBounds().withTrimmedLeft(PLAY_BUTTON_WIDTH);
+                    g.setColour(recordColour.withAlpha(0.18f));
+                    g.fillRoundedRectangle(contentArea.reduced(3).toFloat(), 4.0f);
+                    g.setColour(recordColour.withAlpha(0.9f));
+                    g.fillRect(getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH).reduced(6, 4));
+                    g.setColour(findColour(juce::TextButton::textColourOffId));
+                    g.setFont(FontManager::getInstance().getUIFont(9.0f));
+                    g.drawText("Recording", contentArea.reduced(6, 0),
+                               juce::Justification::centredLeft, true);
+                } else if (slotRecordArmed) {
+                    g.setColour(recordColour.withAlpha(0.25f));
                     g.fillEllipse(centre.getX() - radius, centre.getY() - radius, radius * 2.0f,
                                   radius * 2.0f);
                     g.setColour(recordColour);

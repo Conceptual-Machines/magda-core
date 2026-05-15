@@ -1123,6 +1123,10 @@ juce::String AudioBridge::getTrackMidiInput(TrackId trackId) const {
     return midiInputRouter_.getTrackMidiInput(trackId);
 }
 
+bool AudioBridge::setSessionSlotMidiRecordingTarget(TrackId trackId, int sceneIndex, bool enabled) {
+    return midiInputRouter_.setSessionSlotMidiRecordingTarget(trackId, sceneIndex, enabled);
+}
+
 // =============================================================================
 // Plugin Editor Windows (delegates to PluginWindowManager)
 // =============================================================================

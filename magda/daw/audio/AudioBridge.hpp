@@ -716,6 +716,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     juce::String getTrackMidiInput(TrackId trackId) const;
 
+    bool setSessionSlotMidiRecordingTarget(TrackId trackId, int sceneIndex, bool enabled);
+
     /**
      * @brief Set record arm state on the TE InputDeviceInstance for a track
      * @param trackId The MAGDA track ID

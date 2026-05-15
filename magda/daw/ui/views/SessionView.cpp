@@ -2440,7 +2440,7 @@ void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, in
         if (timelineController_) {
             const auto& state = timelineController_->getState();
             if (state.playhead.isRecording) {
-                audioEngine_->beginArmedSessionSlotRecordings(state.playhead.playbackPosition);
+                audioEngine_->beginArmedSessionSlotRecordings();
                 if (!audioEngine_->isPlaying()) {
                     audioEngine_->locate(state.playhead.playbackPosition);
                     audioEngine_->play();
@@ -2449,7 +2449,7 @@ void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, in
                 timelineController_->dispatch(StartRecordEvent{});
             }
         } else {
-            audioEngine_->beginArmedSessionSlotRecordings(audioEngine_->getCurrentPosition());
+            audioEngine_->beginArmedSessionSlotRecordings();
         }
 
         updateClipSlotAppearance(trackIndex, sceneIndex);

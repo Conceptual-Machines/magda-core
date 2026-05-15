@@ -73,8 +73,8 @@ class AudioEngine : public AudioEngineListener {
     /** Mark an empty session slot as the target for MIDI recording. */
     virtual void armSessionSlotRecording(TrackId /*trackId*/, int /*sceneIndex*/) {}
 
-    /** Begin any armed session slot recordings at the given transport position. */
-    virtual void beginArmedSessionSlotRecordings(double /*positionSeconds*/) {}
+    /** Begin any armed session slot recordings. */
+    virtual void beginArmedSessionSlotRecordings() {}
 
     /** True if the given empty session slot is armed as a MIDI recording target. */
     virtual bool isSessionSlotRecordArmed(TrackId /*trackId*/, int /*sceneIndex*/) const {
