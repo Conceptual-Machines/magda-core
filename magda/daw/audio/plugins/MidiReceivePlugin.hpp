@@ -13,7 +13,8 @@ namespace te = tracktion;
  *
  * Inserted just before a destination plugin (e.g. Shaperbox) when that device has
  * SidechainConfig::Type::MIDI set. Reads MIDI messages broadcast by the source track's
- * SidechainMonitorPlugin via MidiBroadcastBus and merges them into the local MIDI buffer.
+ * SidechainMonitorPlugin via MidiBroadcastBus and either merges them into the local MIDI
+ * buffer or replaces the buffer entirely.
  *
  * Audio passes through unchanged.
  *
@@ -82,10 +83,17 @@ class MidiReceivePlugin : public te::Plugin {
         return sourceTrackId_;
     }
 
+    void setReplaceExistingMidi(bool replace);
+    bool getReplaceExistingMidi() const {
+        return replaceExistingMidi_;
+    }
+
     juce::CachedValue<int> sourceTrackIdValue;
+    juce::CachedValue<bool> replaceExistingMidiValue;
 
   private:
     TrackId sourceTrackId_ = INVALID_TRACK_ID;
+    bool replaceExistingMidi_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiReceivePlugin)
 };

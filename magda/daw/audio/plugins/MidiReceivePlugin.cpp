@@ -9,7 +9,9 @@ const char* MidiReceivePlugin::xmlTypeName = "midireceive";
 MidiReceivePlugin::MidiReceivePlugin(const te::PluginCreationInfo& info) : te::Plugin(info) {
     auto um = getUndoManager();
     sourceTrackIdValue.referTo(state, juce::Identifier("sourceTrackId"), um, INVALID_TRACK_ID);
+    replaceExistingMidiValue.referTo(state, juce::Identifier("replaceExistingMidi"), um, false);
     sourceTrackId_ = sourceTrackIdValue.get();
+    replaceExistingMidi_ = replaceExistingMidiValue.get();
 }
 
 MidiReceivePlugin::~MidiReceivePlugin() {
@@ -27,6 +29,9 @@ void MidiReceivePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         return;
 
     const auto& srcMessages = MidiBroadcastBus::getInstance().getMessages(sourceTrackId_);
+    if (replaceExistingMidi_)
+        fc.bufferForMidiMessages->clear();
+
     if (srcMessages.isEmpty())
         return;
 
@@ -45,11 +50,17 @@ void MidiReceivePlugin::getChannelNames(juce::StringArray* ins, juce::StringArra
 
 void MidiReceivePlugin::restorePluginStateFromValueTree(const juce::ValueTree&) {
     sourceTrackId_ = sourceTrackIdValue.get();
+    replaceExistingMidi_ = replaceExistingMidiValue.get();
 }
 
 void MidiReceivePlugin::setSourceTrackId(TrackId trackId) {
     sourceTrackId_ = trackId;
     sourceTrackIdValue = trackId;
+}
+
+void MidiReceivePlugin::setReplaceExistingMidi(bool replace) {
+    replaceExistingMidi_ = replace;
+    replaceExistingMidiValue = replace;
 }
 
 }  // namespace magda

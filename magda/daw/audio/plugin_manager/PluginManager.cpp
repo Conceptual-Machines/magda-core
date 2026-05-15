@@ -192,24 +192,12 @@ DeviceId PluginManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
 // =============================================================================
 
 void PluginManager::ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackId sourceTrackId) {
-    // Already have one for this device? Update its source track if needed.
-    auto it = syncedDevices_.find(deviceId);
-    if (it != syncedDevices_.end() && it->second.midiReceivePlugin) {
-        if (auto* rx = dynamic_cast<MidiReceivePlugin*>(it->second.midiReceivePlugin.get())) {
-            if (rx->getSourceTrackId() != sourceTrackId) {
-                rx->setSourceTrackId(sourceTrackId);
-                auto* sourceTeTrack = trackController_.getAudioTrack(sourceTrackId);
-                if (sourceTeTrack) {
-                    it->second.midiReceivePlugin->setSidechainSourceID(sourceTeTrack->itemID);
-                    it->second.midiReceivePlugin->guessSidechainRouting();
-                }
-            }
-        }
-        return;
-    }
-
     auto* teTrack = trackController_.getAudioTrack(trackId);
     if (!teTrack)
+        return;
+
+    auto it = syncedDevices_.find(deviceId);
+    if (it == syncedDevices_.end())
         return;
 
     // Find the target device's TE plugin to insert before it
@@ -224,44 +212,108 @@ void PluginManager::ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackI
         }
     }
 
-    // Create MidiReceivePlugin via TE plugin cache
-    juce::ValueTree pluginState(te::IDs::PLUGIN);
-    pluginState.setProperty(te::IDs::type, MidiReceivePlugin::xmlTypeName, nullptr);
-    pluginState.setProperty(juce::Identifier("sourceTrackId"), sourceTrackId, nullptr);
+    auto makeMidiReceivePlugin = [&](TrackId midiSourceTrackId,
+                                     bool replaceExistingMidi) -> te::Plugin::Ptr {
+        juce::ValueTree pluginState(te::IDs::PLUGIN);
+        pluginState.setProperty(te::IDs::type, MidiReceivePlugin::xmlTypeName, nullptr);
+        pluginState.setProperty(juce::Identifier("sourceTrackId"), midiSourceTrackId, nullptr);
+        pluginState.setProperty(juce::Identifier("replaceExistingMidi"), replaceExistingMidi,
+                                nullptr);
 
-    auto plugin = edit_.getPluginCache().createNewPlugin(pluginState);
-    if (plugin) {
-        if (auto* rx = dynamic_cast<MidiReceivePlugin*>(plugin.get()))
-            rx->setSourceTrackId(sourceTrackId);
+        auto plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+        if (auto* rx = dynamic_cast<MidiReceivePlugin*>(plugin.get())) {
+            rx->setSourceTrackId(midiSourceTrackId);
+            rx->setReplaceExistingMidi(replaceExistingMidi);
+        }
+        return plugin;
+    };
+
+    auto configureSidechainDependency = [&](te::Plugin::Ptr plugin, TrackId midiSourceTrackId) {
+        if (!plugin || midiSourceTrackId == trackId)
+            return;
 
         // Set sidechain source to create a graph dependency on the source track.
         // This ensures TE processes the source track (with SidechainMonitorPlugin)
-        // before this plugin, so MidiBroadcastBus contains current-block MIDI — zero latency.
-        auto* sourceTeTrack = trackController_.getAudioTrack(sourceTrackId);
+        // before this plugin, so MidiBroadcastBus contains current-block MIDI.
+        auto* sourceTeTrack = trackController_.getAudioTrack(midiSourceTrackId);
         if (sourceTeTrack) {
             plugin->setSidechainSourceID(sourceTeTrack->itemID);
             plugin->guessSidechainRouting();
         }
+    };
 
-        teTrack->pluginList.insertPlugin(plugin, insertPos, nullptr);
-        syncedDevices_[deviceId].trackId = trackId;
-        syncedDevices_[deviceId].midiReceivePlugin = plugin;
+    if (!it->second.midiReceivePlugin) {
+        it->second.midiReceivePlugin = makeMidiReceivePlugin(sourceTrackId, true);
+        if (it->second.midiReceivePlugin)
+            teTrack->pluginList.insertPlugin(it->second.midiReceivePlugin, insertPos, nullptr);
         DBG("PluginManager::ensureMidiReceive - inserted MidiReceivePlugin for device "
             << deviceId << " source=" << sourceTrackId << " at pos=" << insertPos);
+    } else if (auto* rx = dynamic_cast<MidiReceivePlugin*>(it->second.midiReceivePlugin.get())) {
+        rx->setSourceTrackId(sourceTrackId);
+        rx->setReplaceExistingMidi(true);
     }
+
+    configureSidechainDependency(it->second.midiReceivePlugin, sourceTrackId);
+
+    if (targetPlugin) {
+        const int targetPos = teTrack->pluginList.indexOf(targetPlugin.get());
+        const int currentReceivePos =
+            teTrack->pluginList.indexOf(it->second.midiReceivePlugin.get());
+        if (currentReceivePos >= 0 && targetPos >= 0 && currentReceivePos != targetPos - 1) {
+            auto& listState = teTrack->pluginList.state;
+            const int receiveChild = listState.indexOf(it->second.midiReceivePlugin->state);
+            const int targetChild = listState.indexOf(targetPlugin->state);
+            if (receiveChild >= 0 && targetChild >= 0)
+                listState.moveChild(receiveChild, targetChild, nullptr);
+        }
+    }
+
+    if (!it->second.midiRestorePlugin) {
+        it->second.midiRestorePlugin = makeMidiReceivePlugin(trackId, true);
+        if (it->second.midiRestorePlugin) {
+            const int targetPos =
+                targetPlugin ? teTrack->pluginList.indexOf(targetPlugin.get()) : -1;
+            teTrack->pluginList.insertPlugin(it->second.midiRestorePlugin,
+                                             targetPos >= 0 ? targetPos + 1 : -1, nullptr);
+        }
+        DBG("PluginManager::ensureMidiReceive - inserted chain MIDI restore for device "
+            << deviceId << " source=" << trackId);
+    } else if (auto* rx = dynamic_cast<MidiReceivePlugin*>(it->second.midiRestorePlugin.get())) {
+        rx->setSourceTrackId(trackId);
+        rx->setReplaceExistingMidi(true);
+    }
+
+    if (targetPlugin && it->second.midiRestorePlugin) {
+        const int targetPos = teTrack->pluginList.indexOf(targetPlugin.get());
+        const int currentRestorePos =
+            teTrack->pluginList.indexOf(it->second.midiRestorePlugin.get());
+        if (currentRestorePos >= 0 && targetPos >= 0 && currentRestorePos != targetPos + 1) {
+            auto& listState = teTrack->pluginList.state;
+            const int restoreChild = listState.indexOf(it->second.midiRestorePlugin->state);
+            const int targetChild = listState.indexOf(targetPlugin->state);
+            if (restoreChild >= 0 && targetChild >= 0)
+                listState.moveChild(restoreChild, targetChild + 1, nullptr);
+        }
+    }
+
+    it->second.trackId = trackId;
 }
 
 void PluginManager::removeMidiReceive(TrackId /*trackId*/, DeviceId deviceId) {
     auto it = syncedDevices_.find(deviceId);
-    if (it == syncedDevices_.end() || !it->second.midiReceivePlugin)
+    if (it == syncedDevices_.end())
         return;
 
     DBG("PluginManager::removeMidiReceive - removing for device " << deviceId);
-    auto plugin = it->second.midiReceivePlugin;
+    auto* plugin = it->second.midiReceivePlugin.get();
+    auto* restorePlugin = it->second.midiRestorePlugin.get();
     it->second.midiReceivePlugin = nullptr;
+    it->second.midiRestorePlugin = nullptr;
 
     if (plugin)
         plugin->deleteFromParent();
+    if (restorePlugin)
+        restorePlugin->deleteFromParent();
 }
 
 // =============================================================================
@@ -495,6 +547,8 @@ void PluginManager::purgeStaleEntries() {
     // Purge stale entries from maps
     int purged = 0;
     std::vector<te::Plugin::Ptr> pluginsToDelete;
+    std::vector<te::Plugin*> midiPluginsToDelete;
+    std::vector<te::Plugin*> monitorPluginsToDelete;
     {
         juce::ScopedLock lock(pluginLock_);
 
@@ -510,7 +564,9 @@ void PluginManager::purgeStaleEntries() {
                 if (it->second.plugin)
                     pluginToDevice_.erase(it->second.plugin.get());
                 if (it->second.midiReceivePlugin)
-                    pluginsToDelete.push_back(it->second.midiReceivePlugin);
+                    midiPluginsToDelete.push_back(it->second.midiReceivePlugin.get());
+                if (it->second.midiRestorePlugin)
+                    midiPluginsToDelete.push_back(it->second.midiRestorePlugin.get());
                 it = syncedDevices_.erase(it);
                 ++purged;
             } else {
@@ -522,7 +578,7 @@ void PluginManager::purgeStaleEntries() {
         for (auto it = sidechainMonitors_.begin(); it != sidechainMonitors_.end();) {
             if (validTrackIds.find(it->first) == validTrackIds.end()) {
                 if (it->second)
-                    pluginsToDelete.push_back(it->second);
+                    monitorPluginsToDelete.push_back(it->second.get());
                 it = sidechainMonitors_.erase(it);
             } else {
                 ++it;
@@ -531,8 +587,16 @@ void PluginManager::purgeStaleEntries() {
     }
 
     // Delete plugins outside the lock to avoid blocking and re-entrancy
+    for (auto* plugin : midiPluginsToDelete) {
+        if (plugin)
+            plugin->deleteFromParent();
+    }
     for (auto& plugin : pluginsToDelete) {
         plugin->deleteFromParent();
+    }
+    for (auto* plugin : monitorPluginsToDelete) {
+        if (plugin)
+            plugin->deleteFromParent();
     }
 
     // Remove stale synced racks
