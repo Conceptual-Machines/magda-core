@@ -21,6 +21,7 @@
 #include "MagdaReverbCompiledPlugin.hpp"
 #include "MagdaRingModCompiledPlugin.hpp"
 #include "MagdaSaturatorCompiledPlugin.hpp"
+#include "MagdaUtilityCompiledPlugin.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
 #include "processors/CompiledFaustProcessor.hpp"
 
@@ -52,6 +53,7 @@ const CompiledPluginSpec& getMagdaEqSpec();
 const CompiledPluginSpec& getMagdaDimensionSpec();
 const CompiledPluginSpec& getMagdaPitchSpec();
 const CompiledPluginSpec& getMagdaBitcrusherSpec();
+const CompiledPluginSpec& getMagdaUtilitySpec();
 
 namespace {
 
@@ -63,6 +65,7 @@ const CompiledPluginSpec* const kAllSpecs[] = {
     &getMagdaFreqShiftSpec(),  &getMagdaLimiterSpec(),    &getMagdaGateExpanderSpec(),
     &getMagdaClipperSpec(),    &getMagdaReverbSpec(),     &getMagdaEqSpec(),
     &getMagdaDimensionSpec(),  &getMagdaPitchSpec(),      &getMagdaBitcrusherSpec(),
+    &getMagdaUtilitySpec(),
 };
 
 }  // namespace
