@@ -3,14 +3,9 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <array>
-#include <memory>
-#include <vector>
 
-#include "../FaustParamPool.hpp"
 #include "CompiledFaustInterface.hpp"
 #include "core/ParameterInfo.hpp"
-
-class dsp;
 
 namespace magda::daw::audio::compiled {
 
@@ -83,21 +78,17 @@ class MagdaUtilityCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
 
   private:
     void buildHostParameters();
-    void rebuildEngineState(int sampleRate);
+    float slotDisplayValue(int slotIndex) const;
 
-    std::unique_ptr<::dsp> dsp_;
-    int numInputs_ = 0;
-    int numOutputs_ = 0;
-
-    std::array<FAUSTFLOAT*, kHostSlotCount> zones_{};
     std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
     std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
     std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
 
-    juce::AudioBuffer<float> scratchIn_;
-    juce::AudioBuffer<float> scratchOut_;
-    std::vector<float*> inPtrs_;
-    std::vector<float*> outPtrs_;
+    int sampleRate_ = 44100;
+    float lowMonoLpL1_ = 0.0f;
+    float lowMonoLpL2_ = 0.0f;
+    float lowMonoLpR1_ = 0.0f;
+    float lowMonoLpR2_ = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaUtilityCompiledPlugin)
 };

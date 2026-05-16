@@ -109,8 +109,12 @@ bool prepareDeviceSlotContentFrame(juce::Rectangle<int>& contentArea,
                                    bool collapsed, bool internalDevice, bool pluginPresetsAvailable,
                                    DeviceSlotContentFrameControls controls, int meterStripWidth,
                                    int contentHeaderHeight) {
+    const bool skipContentHeader =
+        traits.isFaust || (traits.compiledPresentation != nullptr &&
+                           traits.compiledPresentation->layoutCellCount == 0);
+
     if (!collapsed) {
-        if (!traits.isFaust) {
+        if (!skipContentHeader) {
             auto secondHeaderArea = contentArea.removeFromTop(contentHeaderHeight);
             layoutPluginPresetButton(secondHeaderArea, traits, pluginPresetsAvailable,
                                      controls.pluginPresetsButton);

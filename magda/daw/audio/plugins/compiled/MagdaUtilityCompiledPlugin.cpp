@@ -2,15 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
-#include <map>
 
 #include "core/ParameterUtils.hpp"
-#include "faust/dsp/dsp.h"
-#include "faust/gui/UI.h"
-#include "faust/gui/meta.h"
-#include "magda_utility.generated.cpp"
-#include "plugins/FaustMetadataParser.hpp"
-#include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
@@ -18,79 +11,6 @@ namespace magda::daw::audio::compiled {
 const char* MagdaUtilityCompiledPlugin::xmlTypeName = "magda_utility";
 
 namespace {
-
-struct UtilHarvest {
-    struct Control {
-        int idx = -1;
-        FaustParamSlot::Kind kind = FaustParamSlot::Kind::Continuous;
-        FAUSTFLOAT* zone = nullptr;
-    };
-    std::vector<Control> controls;
-};
-
-class UtilHarvester : public ::UI {
-  public:
-    UtilHarvest harvest;
-
-    void openTabBox(const char*) override {}
-    void openHorizontalBox(const char*) override {}
-    void openVerticalBox(const char*) override {}
-    void closeBox() override {}
-
-    void addButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Boolean, label, zone);
-    }
-    void addCheckButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Boolean, label, zone);
-    }
-    void addVerticalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT,
-                           FAUSTFLOAT) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone);
-    }
-    void addHorizontalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT, FAUSTFLOAT,
-                             FAUSTFLOAT, FAUSTFLOAT) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone);
-    }
-    void addNumEntry(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT,
-                     FAUSTFLOAT) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone);
-    }
-    void addHorizontalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
-    void addVerticalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
-    void addSoundfile(const char*, const char*, Soundfile**) override {}
-
-    void declare(FAUSTFLOAT* zone, const char* key, const char* value) override {
-        if (zone == nullptr)
-            return;
-        const auto k = juce::String::fromUTF8(key != nullptr ? key : "").toLowerCase();
-        const auto v = juce::String::fromUTF8(value != nullptr ? value : "");
-        applyFaustAnnotation(k, v, pendingByZone_[zone]);
-    }
-
-  private:
-    void emitControl(FaustParamSlot::Kind kind, const char* rawLabel, FAUSTFLOAT* zone) {
-        const auto parsed =
-            parseFaustLabel(juce::String::fromUTF8(rawLabel != nullptr ? rawLabel : ""));
-        ControlMetadata merged = parsed.metadata;
-        if (zone != nullptr) {
-            if (auto it = pendingByZone_.find(zone); it != pendingByZone_.end()) {
-                mergeFaustMetadata(merged, it->second);
-                pendingByZone_.erase(it);
-            }
-        }
-        harvest.controls.push_back(
-            {merged.slotIndex, merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind, zone});
-    }
-
-    std::map<FAUSTFLOAT*, ControlMetadata> pendingByZone_;
-};
-
-const UtilHarvest::Control* findByIdx(const UtilHarvest& h, int idx) {
-    for (const auto& c : h.controls)
-        if (c.idx == idx)
-            return &c;
-    return nullptr;
-}
 
 magda::ParameterInfo parameterInfoForSlot(const CompiledHostSlotInfo& s) {
     magda::ParameterInfo info;
@@ -105,12 +25,20 @@ magda::ParameterInfo parameterInfoForSlot(const CompiledHostSlotInfo& s) {
     return info;
 }
 
+float onePoleAlpha(float cutoffHz, int sampleRate) {
+    const float sr = static_cast<float>(std::max(1, sampleRate));
+    const float cutoff = juce::jlimit(20.0f, sr * 0.45f, cutoffHz);
+    return 1.0f - std::exp(-2.0f * juce::MathConstants<float>::pi * cutoff / sr);
+}
+
+float sanitise(float sample) {
+    return std::isfinite(sample) ? juce::jlimit(-16.0f, 16.0f, sample) : 0.0f;
+}
+
 }  // namespace
 
 MagdaUtilityCompiledPlugin::MagdaUtilityCompiledPlugin(const te::PluginCreationInfo& info)
     : te::Plugin(info) {
-    dsp_ = std::make_unique<MagdaUtilityDsp>();
-    rebuildEngineState(44100);
     buildHostParameters();
 }
 
@@ -132,23 +60,6 @@ juce::String MagdaUtilityCompiledPlugin::getShortName(int) {
 }
 juce::String MagdaUtilityCompiledPlugin::getSelectableDescription() {
     return "Utility";
-}
-
-void MagdaUtilityCompiledPlugin::rebuildEngineState(int sampleRate) {
-    if (!dsp_)
-        return;
-    dsp_->init(sampleRate);
-    numInputs_ = dsp_->getNumInputs();
-    numOutputs_ = dsp_->getNumOutputs();
-
-    UtilHarvester harvester;
-    dsp_->buildUserInterface(&harvester);
-
-    zones_.fill(nullptr);
-    for (int i = 0; i < kHostSlotCount; ++i) {
-        if (auto* c = findByIdx(harvester.harvest, i))
-            zones_[static_cast<size_t>(i)] = c->zone;
-    }
 }
 
 void MagdaUtilityCompiledPlugin::buildHostParameters() {
@@ -176,22 +87,22 @@ void MagdaUtilityCompiledPlugin::buildHostParameters() {
                                        .defaultValue = 120.0f,
                                        .scaleAnchor = 120.0f};
     hostSlotInfo_[kMonoSlot] = {.name = "Mono",
-                                .scale = magda::ParameterScale::Discrete,
+                                .scale = magda::ParameterScale::Boolean,
                                 .minValue = 0.0f,
                                 .maxValue = 1.0f,
                                 .defaultValue = 0.0f};
     hostSlotInfo_[kLowMonoSlot] = {.name = "Low Mono",
-                                   .scale = magda::ParameterScale::Discrete,
+                                   .scale = magda::ParameterScale::Boolean,
                                    .minValue = 0.0f,
                                    .maxValue = 1.0f,
                                    .defaultValue = 0.0f};
     hostSlotInfo_[kFlipLSlot] = {.name = "Flip L",
-                                 .scale = magda::ParameterScale::Discrete,
+                                 .scale = magda::ParameterScale::Boolean,
                                  .minValue = 0.0f,
                                  .maxValue = 1.0f,
                                  .defaultValue = 0.0f};
     hostSlotInfo_[kFlipRSlot] = {.name = "Flip R",
-                                 .scale = magda::ParameterScale::Discrete,
+                                 .scale = magda::ParameterScale::Boolean,
                                  .minValue = 0.0f,
                                  .maxValue = 1.0f,
                                  .defaultValue = 0.0f};
@@ -226,77 +137,91 @@ void MagdaUtilityCompiledPlugin::buildHostParameters() {
 }
 
 void MagdaUtilityCompiledPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    rebuildEngineState(static_cast<int>(info.sampleRate));
-    scratchIn_.setSize(numInputs_, info.blockSizeSamples, false, true, true);
-    scratchOut_.setSize(numOutputs_, info.blockSizeSamples, false, true, true);
-    inPtrs_.assign(static_cast<size_t>(numInputs_), nullptr);
-    outPtrs_.assign(static_cast<size_t>(numOutputs_), nullptr);
+    sampleRate_ = std::max(1, static_cast<int>(std::round(info.sampleRate)));
+    reset();
 }
 
-void MagdaUtilityCompiledPlugin::deinitialise() {
-    scratchIn_.setSize(0, 0);
-    scratchOut_.setSize(0, 0);
-    inPtrs_.clear();
-    outPtrs_.clear();
-}
+void MagdaUtilityCompiledPlugin::deinitialise() {}
 
 void MagdaUtilityCompiledPlugin::reset() {
-    if (dsp_)
-        dsp_->instanceClear();
+    lowMonoLpL1_ = 0.0f;
+    lowMonoLpL2_ = 0.0f;
+    lowMonoLpR1_ = 0.0f;
+    lowMonoLpR2_ = 0.0f;
+}
+
+float MagdaUtilityCompiledPlugin::slotDisplayValue(int slotIndex) const {
+    if (slotIndex < 0 || slotIndex >= kHostSlotCount ||
+        !hostParams_[static_cast<size_t>(slotIndex)])
+        return 0.0f;
+    const auto info = parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slotIndex)]);
+    return magda::ParameterUtils::normalizedToReal(
+        hostParams_[static_cast<size_t>(slotIndex)]->getCurrentValue(), info);
 }
 
 void MagdaUtilityCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!fc.destBuffer || fc.bufferNumSamples <= 0 || !dsp_)
+    if (!fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
-
-    for (int slot = 0; slot < kHostSlotCount; ++slot) {
-        if (auto* zone = zones_[static_cast<size_t>(slot)]) {
-            const auto info = parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slot)]);
-            const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
-            *zone = static_cast<FAUSTFLOAT>(magda::ParameterUtils::normalizedToReal(norm, info));
-        }
-    }
 
     const int numSamples = fc.bufferNumSamples;
     const int startSample = fc.bufferStartSample;
     const int hostChannels = fc.destBuffer->getNumChannels();
-    if (hostChannels <= 0 || numInputs_ <= 0 || numOutputs_ <= 0)
+    if (hostChannels <= 0)
         return;
 
-    if (scratchIn_.getNumChannels() < numInputs_ || scratchIn_.getNumSamples() < numSamples)
-        scratchIn_.setSize(numInputs_, numSamples, false, true, true);
-    if (scratchOut_.getNumChannels() < numOutputs_ || scratchOut_.getNumSamples() < numSamples)
-        scratchOut_.setSize(numOutputs_, numSamples, false, true, true);
-    if (static_cast<int>(inPtrs_.size()) < numInputs_)
-        inPtrs_.resize(static_cast<size_t>(numInputs_), nullptr);
-    if (static_cast<int>(outPtrs_.size()) < numOutputs_)
-        outPtrs_.resize(static_cast<size_t>(numOutputs_), nullptr);
+    const float gainDb = slotDisplayValue(kGainSlot);
+    const float gain = gainDb <= -59.99f ? 0.0f : juce::Decibels::decibelsToGain(gainDb);
+    const float pan = juce::jlimit(-1.0f, 1.0f, slotDisplayValue(kPanSlot));
+    const float width = juce::jlimit(0.0f, 2.0f, slotDisplayValue(kWidthSlot));
+    const float lowMonoFreq = slotDisplayValue(kLowMonoFreqSlot);
+    const bool mono = slotDisplayValue(kMonoSlot) >= 0.5f;
+    const bool lowMono = slotDisplayValue(kLowMonoSlot) >= 0.5f && !mono;
+    const float flipL = slotDisplayValue(kFlipLSlot) >= 0.5f ? -1.0f : 1.0f;
+    const float flipR = slotDisplayValue(kFlipRSlot) >= 0.5f ? -1.0f : 1.0f;
+    const float panGainL = pan <= 0.0f ? 1.0f : 1.0f - pan;
+    const float panGainR = pan >= 0.0f ? 1.0f : 1.0f + pan;
+    const float lowMonoAlpha = onePoleAlpha(lowMonoFreq, sampleRate_);
 
-    for (int ch = 0; ch < numInputs_; ++ch) {
-        float* dst = scratchIn_.getWritePointer(ch);
-        if (ch < hostChannels) {
-            const float* src = fc.destBuffer->getReadPointer(ch, startSample);
-            std::copy(src, src + numSamples, dst);
-        } else {
-            std::fill(dst, dst + numSamples, 0.0f);
+    float* left = fc.destBuffer->getWritePointer(0, startSample);
+    float* right = hostChannels > 1 ? fc.destBuffer->getWritePointer(1, startSample) : nullptr;
+
+    for (int i = 0; i < numSamples; ++i) {
+        float l = left[i] * flipL * gain;
+        float r = (right != nullptr ? right[i] : left[i]) * flipR * gain;
+
+        const float mid = 0.5f * (l + r);
+        const float side = 0.5f * (l - r);
+        l = mid + side * width;
+        r = mid - side * width;
+
+        if (mono) {
+            l = mid;
+            r = mid;
+        } else if (lowMono) {
+            lowMonoLpL1_ += lowMonoAlpha * (l - lowMonoLpL1_);
+            lowMonoLpL2_ += lowMonoAlpha * (lowMonoLpL1_ - lowMonoLpL2_);
+            lowMonoLpR1_ += lowMonoAlpha * (r - lowMonoLpR1_);
+            lowMonoLpR2_ += lowMonoAlpha * (lowMonoLpR1_ - lowMonoLpR2_);
+
+            const float lowL = lowMonoLpL2_;
+            const float lowR = lowMonoLpR2_;
+            const float lowMid = 0.5f * (lowL + lowR);
+            l = lowMid + (l - lowL);
+            r = lowMid + (r - lowR);
         }
-        inPtrs_[static_cast<size_t>(ch)] = dst;
-    }
-    for (int ch = 0; ch < numOutputs_; ++ch) {
-        outPtrs_[static_cast<size_t>(ch)] = (ch < hostChannels)
-                                                ? fc.destBuffer->getWritePointer(ch, startSample)
-                                                : scratchOut_.getWritePointer(ch);
+
+        l *= panGainL;
+        r *= panGainR;
+
+        left[i] = sanitise(l);
+        if (right != nullptr)
+            right[i] = sanitise(r);
     }
 
-    dsp_->compute(numSamples, inPtrs_.data(), outPtrs_.data());
-
-    const int channelsToSanitise = std::min(hostChannels, numOutputs_);
-    for (int ch = 0; ch < channelsToSanitise; ++ch) {
+    for (int ch = 2; ch < hostChannels; ++ch) {
         float* out = fc.destBuffer->getWritePointer(ch, startSample);
-        for (int i = 0; i < numSamples; ++i) {
-            const float sample = out[i];
-            out[i] = std::isfinite(sample) ? juce::jlimit(-16.0f, 16.0f, sample) : 0.0f;
-        }
+        for (int i = 0; i < numSamples; ++i)
+            out[i] = sanitise(out[i] * gain);
     }
 }
 
@@ -347,6 +272,7 @@ const CompiledPluginSpec& getMagdaUtilitySpec() {
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaUtilityCompiledPlugin(info);
         },
+        .aliasKey = "utility",
         .aliases = kUtilAliases,
         .aliasCount = static_cast<int>(sizeof(kUtilAliases) / sizeof(kUtilAliases[0])),
     };

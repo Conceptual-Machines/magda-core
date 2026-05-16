@@ -372,7 +372,6 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     }
     list.push_back(
         PluginBrowserInfo::createInternal("IR Reverb", "impulseresponse", false, "Reverb"));
-    list.push_back(PluginBrowserInfo::createInternal("Utility", "utility", false, "Utility"));
     list.push_back(PluginBrowserInfo::createInternal(audio::FaustPlugin::getPluginName(),
                                                      audio::FaustPlugin::xmlTypeName, false,
                                                      "Experimental"));

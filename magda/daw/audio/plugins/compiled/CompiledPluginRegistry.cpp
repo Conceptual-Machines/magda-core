@@ -78,6 +78,9 @@ const CompiledPluginSpec* findCompiledPluginSpec(const juce::String& pluginId) {
     for (const auto* spec : kAllSpecs) {
         if (pluginId.equalsIgnoreCase(spec->pluginId))
             return spec;
+
+        if (spec->aliasKey != nullptr && pluginId.equalsIgnoreCase(spec->aliasKey))
+            return spec;
     }
     return nullptr;
 }

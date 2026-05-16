@@ -19,6 +19,7 @@ struct ModulationPaintContext {
     float currentParamValue = 0.0f;
     bool isInLinkMode = false;
     bool isLinkModeDrag = false;
+    bool vertical = false;
     float linkModeDragCurrentAmount = 0.5f;
     magda::ModSelection activeMod;
     magda::MacroSelection activeMacro;

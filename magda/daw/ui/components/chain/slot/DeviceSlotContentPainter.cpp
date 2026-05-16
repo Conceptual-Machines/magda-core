@@ -8,14 +8,20 @@ namespace magda::daw::ui {
 
 namespace {
 
+bool skipsContentHeader(const DeviceSlotContentPaintState& state) {
+    return state.traits.isFaust || (state.traits.compiledPresentation != nullptr &&
+                                    state.traits.compiledPresentation->layoutCellCount == 0);
+}
+
 void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
                      const DeviceSlotContentPaintState& state, int meterStripWidth,
                      int contentHeaderHeight, int paginationHeight, int faustHeaderHeight) {
     if (state.collapsed)
         return;
 
+    const bool skipContentHeader = skipsContentHeader(state);
     const int lineX = contentArea.getRight() - meterStripWidth - 4;
-    const int meterTop = contentArea.getY() + (state.traits.isFaust ? 0 : contentHeaderHeight);
+    const int meterTop = contentArea.getY() + (skipContentHeader ? 0 : contentHeaderHeight);
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawVerticalLine(lineX, static_cast<float>(meterTop + 2),
                        static_cast<float>(contentArea.getBottom() - 2));
@@ -23,7 +29,7 @@ void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
     const float left = static_cast<float>(contentArea.getX() + 2);
     const float right = static_cast<float>(contentArea.getRight() - 2);
     const int headerBottom = contentArea.getY() + contentHeaderHeight;
-    if (!state.traits.isFaust) {
+    if (!skipContentHeader) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawHorizontalLine(headerBottom, left, right);
     }
@@ -123,7 +129,7 @@ void paintDeviceSlotContent(juce::Graphics& g, juce::Rectangle<int> contentArea,
     if (paintLoadState(g, contentArea, state.loadState))
         return;
 
-    if (state.traits.isFaust)
+    if (skipsContentHeader(state))
         return;
 
     auto headerArea = contentArea.removeFromTop(contentHeaderHeight);

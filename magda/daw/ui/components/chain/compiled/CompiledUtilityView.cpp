@@ -1,15 +1,14 @@
 #include "compiled/CompiledUtilityView.hpp"
 
+#include <cmath>
+
 #include "audio/plugins/compiled/MagdaUtilityCompiledPlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
-#include "ui/themes/FontManager.hpp"
+#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
-
-constexpr int kPollMs = 100;
-
 float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallback) {
     for (const auto& param : device.parameters)
         if (param.paramIndex == slotIndex)
@@ -17,103 +16,123 @@ float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallbac
     return fallback;
 }
 
-void styleSlider(juce::Slider& s) {
-    s.setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    s.setColour(juce::Slider::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    s.setColour(juce::Slider::thumbColourId, juce::Colours::white);
-    s.setColour(juce::Slider::rotarySliderFillColourId,
-                DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    s.setColour(juce::Slider::rotarySliderOutlineColourId,
-                DarkTheme::getColour(DarkTheme::SURFACE));
+const magda::ParameterInfo* parameterForSlot(const magda::DeviceInfo& device, int slotIndex) {
+    for (const auto& param : device.parameters)
+        if (param.paramIndex == slotIndex)
+            return &param;
+    return nullptr;
 }
 
+juce::String formatGainDb(double value) {
+    if (value <= -59.99)
+        return "-inf";
+    if (std::abs(value) < 0.05)
+        return "0.0";
+    return juce::String(value > 0.0 ? "+" : "") + juce::String(value, 1);
+}
+
+void styleNameLabel(juce::Label& label, const juce::String& text) {
+    label.setText(text, juce::dontSendNotification);
+    label.setFont(juce::Font(juce::FontOptions{9.0f}));
+    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setJustificationType(juce::Justification::centred);
+    label.setMinimumHorizontalScale(0.72f);
+    label.setInterceptsMouseClicks(false, false);
+}
+
+void styleReadoutLabel(juce::Label& label) {
+    label.setFont(juce::Font(juce::FontOptions{10.0f}));
+    label.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    label.setJustificationType(juce::Justification::centred);
+    label.setMinimumHorizontalScale(0.72f);
+    label.setInterceptsMouseClicks(false, false);
+}
 }  // namespace
-
-juce::Font CompiledUtilityView::ButtonLaf::getTextButtonFont(juce::TextButton&, int) {
-    return FontManager::getInstance().getUIFont(10.0f);
-}
 
 CompiledUtilityView::CompiledUtilityView(juce::String /*pluginId*/) {
     using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
 
-    gainSlider_.setSliderStyle(juce::Slider::LinearVertical);
-    gainSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    gainSlider_.setRange(-60.0, 12.0, 0.1);
-    gainSlider_.setValue(0.0, juce::dontSendNotification);
-    gainSlider_.setDoubleClickReturnValue(true, 0.0);
-    styleSlider(gainSlider_);
-    gainSlider_.onValueChange = [this]() {
-        if (onParameterChanged)
-            onParameterChanged(Util::kGainSlot, static_cast<float>(gainSlider_.getValue()));
-        repaint();
-    };
-    addAndMakeVisible(gainSlider_);
+    const auto fillColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f);
 
-    panSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
-    panSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    panSlider_.setRange(-1.0, 1.0, 0.01);
-    panSlider_.setValue(0.0, juce::dontSendNotification);
-    panSlider_.setDoubleClickReturnValue(true, 0.0);
-    styleSlider(panSlider_);
-    panSlider_.onValueChange = [this]() {
-        if (onParameterChanged)
-            onParameterChanged(Util::kPanSlot, static_cast<float>(panSlider_.getValue()));
-        repaint();
+    gainFader_.setRange(-60.0, 12.0, 0.0);
+    gainFader_.setValue(0.0, juce::dontSendNotification);
+    gainFader_.setFillColour(fillColour);
+    gainFader_.setVertical(true);
+    gainFader_.setShowText(false);
+    gainFader_.onValueChange = [this]() {
+        const auto v = gainFader_.getValue();
+        gainValue_.setText(formatGainDb(v), juce::dontSendNotification);
+        writeParameter(Util::kGainSlot, static_cast<float>(v));
     };
-    addAndMakeVisible(panSlider_);
+    addAndMakeVisible(gainFader_);
 
-    widthSlider_.setSliderStyle(juce::Slider::Rotary);
-    widthSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    widthSlider_.setRange(0.0, 2.0, 0.01);
-    widthSlider_.setValue(1.0, juce::dontSendNotification);
-    widthSlider_.setDoubleClickReturnValue(true, 1.0);
-    styleSlider(widthSlider_);
-    widthSlider_.onValueChange = [this]() {
-        if (onParameterChanged)
-            onParameterChanged(Util::kWidthSlot, static_cast<float>(widthSlider_.getValue()));
-        repaint();
+    styleReadoutLabel(gainValue_);
+    gainValue_.setText(formatGainDb(0.0), juce::dontSendNotification);
+    addAndMakeVisible(gainValue_);
+
+    panLabel_.setRange(-1.0, 1.0, 0.0);
+    panLabel_.setValue(0.0, juce::dontSendNotification);
+    panLabel_.setFontSize(9.0f);
+    panLabel_.setFillColour(fillColour);
+    panLabel_.onValueChange = [this]() {
+        writeParameter(Util::kPanSlot, static_cast<float>(panLabel_.getValue()));
     };
-    addAndMakeVisible(widthSlider_);
+    addAndMakeVisible(panLabel_);
 
-    lowXoverSlider_.setSliderStyle(juce::Slider::Rotary);
-    lowXoverSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    lowXoverSlider_.setRange(20.0, 500.0, 1.0);
-    lowXoverSlider_.setSkewFactorFromMidPoint(80.0);
-    lowXoverSlider_.setValue(120.0, juce::dontSendNotification);
-    lowXoverSlider_.setDoubleClickReturnValue(true, 120.0);
-    styleSlider(lowXoverSlider_);
-    lowXoverSlider_.onValueChange = [this]() {
-        if (onParameterChanged)
-            onParameterChanged(Util::kLowMonoFreqSlot,
-                               static_cast<float>(lowXoverSlider_.getValue()));
-        repaint();
+    widthLabel_.setRange(0.0, 2.0, 1.0);
+    widthLabel_.setValue(1.0, juce::dontSendNotification);
+    widthLabel_.setFontSize(9.0f);
+    widthLabel_.setDecimalPlaces(2);
+    widthLabel_.setFillColour(fillColour);
+    widthLabel_.onValueChange = [this]() {
+        writeParameter(Util::kWidthSlot, static_cast<float>(widthLabel_.getValue()));
     };
-    addAndMakeVisible(lowXoverSlider_);
+    addAndMakeVisible(widthLabel_);
 
+    xoverLabel_.setRange(20.0, 500.0, 120.0);
+    xoverLabel_.setValue(120.0, juce::dontSendNotification);
+    xoverLabel_.setFontSize(9.0f);
+    xoverLabel_.setSuffix(" Hz");
+    xoverLabel_.setFillColour(fillColour);
+    xoverLabel_.onValueChange = [this]() {
+        writeParameter(Util::kLowMonoFreqSlot, static_cast<float>(xoverLabel_.getValue()));
+    };
+    addAndMakeVisible(xoverLabel_);
+
+    styleNameLabel(gainName_, "GAIN");
+    styleNameLabel(panName_, "PAN");
+    styleNameLabel(widthName_, "WIDTH");
+    styleNameLabel(xoverName_, "XOVER");
+    addAndMakeVisible(gainName_);
+    addAndMakeVisible(panName_);
+    addAndMakeVisible(widthName_);
+    addAndMakeVisible(xoverName_);
+
+    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
     const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
-    const auto accentBg = accent.withAlpha(0.25f);
     const auto inactive = DarkTheme::getSecondaryTextColour();
     const auto bg = DarkTheme::getColour(DarkTheme::BACKGROUND);
 
     for (int i = 0; i < 4; ++i) {
         auto& btn = btns_[static_cast<size_t>(i)];
-        btn.setLookAndFeel(&buttonLaf_);
-        btn.setButtonText(kLabels[static_cast<size_t>(i)]);
+        btn.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+        btn.setButtonText(kBtnLabels[static_cast<size_t>(i)]);
         btn.setClickingTogglesState(true);
-        btn.setColour(juce::TextButton::buttonColourId, bg);
-        btn.setColour(juce::TextButton::buttonOnColourId, accentBg);
+        btn.setColour(juce::TextButton::buttonColourId, surface);
+        btn.setColour(juce::TextButton::buttonOnColourId, accent);
         btn.setColour(juce::TextButton::textColourOffId, inactive);
-        btn.setColour(juce::TextButton::textColourOnId, accent);
+        btn.setColour(juce::TextButton::textColourOnId, bg);
         const int slot = Util::kMonoSlot + i;
         btn.onClick = [this, slot, i]() {
             const bool on = btns_[static_cast<size_t>(i)].getToggleState();
-            if (onParameterChanged)
-                onParameterChanged(slot, on ? 1.0f : 0.0f);
+            writeParameter(slot, on ? 1.0f : 0.0f);
         };
         addAndMakeVisible(btn);
     }
 
-    startTimer(kPollMs);
+    configureLinkSlots();
+    addAndMakeVisible(gainLinkSlot_);
+    addAndMakeVisible(panLinkSlot_);
 }
 
 CompiledUtilityView::~CompiledUtilityView() {
@@ -121,157 +140,217 @@ CompiledUtilityView::~CompiledUtilityView() {
         btn.setLookAndFeel(nullptr);
 }
 
-void CompiledUtilityView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaUtilityCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
-}
-
 void CompiledUtilityView::updateFromDevice(const magda::DeviceInfo& device) {
     deviceSnapshot_ = device;
     syncFromDevice();
 }
 
+void CompiledUtilityView::updateFromDevice(const magda::DeviceInfo& device,
+                                           const ParamLinkContext* linkContext) {
+    deviceSnapshot_ = device;
+    if (linkContext != nullptr) {
+        linkContext_ = *linkContext;
+        hasLinkContext_ = true;
+    } else {
+        hasLinkContext_ = false;
+    }
+    syncFromDevice();
+    refreshLinkSlotContext();
+}
+
+void CompiledUtilityView::writeParameter(int slotIndex, float displayValue) {
+    if (compiledPlugin_ != nullptr) {
+        if (auto* param = compiledPlugin_->getSlotParameter(slotIndex)) {
+            const float normalized =
+                compiledPlugin_->displayValueToNativeValue(slotIndex, displayValue);
+            param->setParameterFromHost(normalized, juce::sendNotificationSync);
+        }
+    }
+
+    if (onParameterChanged)
+        onParameterChanged(slotIndex, displayValue);
+}
+
 void CompiledUtilityView::syncFromDevice() {
     using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
-    gainSlider_.setValue(valueForSlot(deviceSnapshot_, Util::kGainSlot, 0.0f),
+    const auto gain = valueForSlot(deviceSnapshot_, Util::kGainSlot, 0.0f);
+    gainFader_.setValue(gain, juce::dontSendNotification);
+    gainValue_.setText(formatGainDb(gain), juce::dontSendNotification);
+    panLabel_.setValue(valueForSlot(deviceSnapshot_, Util::kPanSlot, 0.0f),
+                       juce::dontSendNotification);
+    widthLabel_.setValue(valueForSlot(deviceSnapshot_, Util::kWidthSlot, 1.0f),
                          juce::dontSendNotification);
-    panSlider_.setValue(valueForSlot(deviceSnapshot_, Util::kPanSlot, 0.0f),
-                        juce::dontSendNotification);
-    widthSlider_.setValue(valueForSlot(deviceSnapshot_, Util::kWidthSlot, 1.0f),
-                          juce::dontSendNotification);
-    lowXoverSlider_.setValue(valueForSlot(deviceSnapshot_, Util::kLowMonoFreqSlot, 120.0f),
-                             juce::dontSendNotification);
+    xoverLabel_.setValue(valueForSlot(deviceSnapshot_, Util::kLowMonoFreqSlot, 120.0f),
+                         juce::dontSendNotification);
     for (int i = 0; i < 4; ++i) {
         const bool on = valueForSlot(deviceSnapshot_, Util::kMonoSlot + i, 0.0f) >= 0.5f;
         btns_[static_cast<size_t>(i)].setToggleState(on, juce::dontSendNotification);
     }
-    repaint();
+    updateLinkSlotValues();
 }
 
-void CompiledUtilityView::timerCallback() {
+void CompiledUtilityView::configureLinkSlots() {
     using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
-    if (compiledPlugin_ == nullptr)
-        return;
 
-    auto readFloat = [this](int slot, float fallback) -> float {
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
-        return fallback;
+    auto configure = [this](ParamSlotComponent& slot, int slotIndex, const char* name,
+                            bool verticalOverlay) {
+        slot.setOverlayOnly(true);
+        slot.setLinkOverlayVertical(verticalOverlay);
+        slot.setParamIndex(slotIndex);
+        slot.setParamName(name);
+
+        slot.onModLinkedWithAmount = [this](int, magda::ControlTarget target, float amount) {
+            if (onLinkRequested)
+                onLinkRequested(target.paramIndex, amount);
+        };
+        slot.onModAmountChanged = [this](int, magda::ControlTarget target, float amount) {
+            if (onLinkAmountChanged)
+                onLinkAmountChanged(target.paramIndex, amount);
+        };
+        slot.onMacroLinked = [this](int, magda::ControlTarget target) {
+            if (onLinkRequested)
+                onLinkRequested(target.paramIndex, 0.3f);
+        };
+        slot.onMacroLinkedWithAmount = [this](int, magda::ControlTarget target, float amount) {
+            if (onLinkRequested)
+                onLinkRequested(target.paramIndex, amount);
+        };
+        slot.onMacroAmountChanged = [this](int, magda::ControlTarget target, float amount) {
+            if (onLinkAmountChanged)
+                onLinkAmountChanged(target.paramIndex, amount);
+        };
     };
 
-    gainSlider_.setValue(readFloat(Util::kGainSlot, 0.0f), juce::dontSendNotification);
-    panSlider_.setValue(readFloat(Util::kPanSlot, 0.0f), juce::dontSendNotification);
-    widthSlider_.setValue(readFloat(Util::kWidthSlot, 1.0f), juce::dontSendNotification);
-    lowXoverSlider_.setValue(readFloat(Util::kLowMonoFreqSlot, 120.0f), juce::dontSendNotification);
-    for (int i = 0; i < 4; ++i) {
-        const bool on = readFloat(Util::kMonoSlot + i, 0.0f) >= 0.5f;
-        auto& btn = btns_[static_cast<size_t>(i)];
-        if (btn.getToggleState() != on)
-            btn.setToggleState(on, juce::dontSendNotification);
-    }
-    repaint();
+    configure(gainLinkSlot_, Util::kGainSlot, "Gain", true);
+    configure(panLinkSlot_, Util::kPanSlot, "Pan", false);
 }
 
-void CompiledUtilityView::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+void CompiledUtilityView::refreshLinkSlotContext() {
+    auto apply = [this](ParamSlotComponent& slot) {
+        slot.setDeviceId(hasLinkContext_ ? linkContext_.deviceId : magda::INVALID_DEVICE_ID);
+        slot.setDevicePath(hasLinkContext_ ? linkContext_.devicePath : magda::ChainNodePath{});
+        slot.setAvailableMods(hasLinkContext_ ? linkContext_.deviceMods : nullptr);
+        slot.setAvailableRackMods(hasLinkContext_ ? linkContext_.rackMods : nullptr);
+        slot.setAvailableTrackMods(hasLinkContext_ ? linkContext_.trackMods : nullptr);
+        slot.setAvailableMacros(hasLinkContext_ ? linkContext_.deviceMacros : nullptr);
+        slot.setAvailableRackMacros(hasLinkContext_ ? linkContext_.rackMacros : nullptr);
+        slot.setAvailableTrackMacros(hasLinkContext_ ? linkContext_.trackMacros : nullptr);
+        slot.setSelectedModIndex(hasLinkContext_ ? linkContext_.selectedModIndex : -1);
+        slot.setSelectedMacroIndex(hasLinkContext_ ? linkContext_.selectedMacroIndex : -1);
+    };
 
-    const auto labelCol = DarkTheme::getSecondaryTextColour();
-    const auto font = FontManager::getInstance().getUIFont(9.0f);
-    g.setFont(font);
-    g.setColour(labelCol);
+    apply(gainLinkSlot_);
+    apply(panLinkSlot_);
+    gainLinkSlot_.refreshLinkModeState();
+    panLinkSlot_.refreshLinkModeState();
+    updateLinkSlotValues();
+}
 
-    // GAIN label above slider, value below
-    {
-        auto b = gainSlider_.getBounds();
-        g.drawText("GAIN", 0, b.getY() - 13, getWidth(), 12, juce::Justification::centred);
-        const juce::String val = juce::String(gainSlider_.getValue(), 1) + " dB";
-        g.drawText(val, 0, b.getBottom() + 1, getWidth(), 12, juce::Justification::centred);
-    }
+void CompiledUtilityView::updateLinkSlotValues() {
+    using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
 
-    // PAN label and value above pan slider
-    {
-        auto b = panSlider_.getBounds();
-        const int labelY = b.getY() - 13;
-        g.drawText("PAN", b.getX(), labelY, b.getWidth(), 12, juce::Justification::centredLeft);
-        const float v = static_cast<float>(panSlider_.getValue());
-        juce::String val;
-        if (std::fabs(v) < 0.005f)
-            val = "C";
-        else if (v < 0)
-            val = "L " + juce::String(-v * 100.0f, 0) + "%";
-        else
-            val = "R " + juce::String(v * 100.0f, 0) + "%";
-        g.drawText(val, b.getX(), labelY, b.getWidth(), 12, juce::Justification::centredRight);
-    }
+    auto update = [this](ParamSlotComponent& slot, int slotIndex, float fallback, bool& infoSet) {
+        if (!infoSet) {
+            if (auto* param = parameterForSlot(deviceSnapshot_, slotIndex)) {
+                infoSet = true;
+                slot.setParameterInfo(*param);
+            }
+        }
+        slot.setParamValue(valueForSlot(deviceSnapshot_, slotIndex, fallback));
+        slot.repaint();
+    };
 
-    // WIDTH label and value above width knob
-    {
-        auto b = widthSlider_.getBounds();
-        const int labelY = b.getY() - 13;
-        g.drawText("WIDTH", b.getX(), labelY, b.getWidth(), 12, juce::Justification::centredLeft);
-        g.drawText(juce::String(widthSlider_.getValue(), 2), b.getX(), labelY, b.getWidth(), 12,
-                   juce::Justification::centredRight);
-    }
-
-    // XOVER label and value above low xover knob
-    {
-        auto b = lowXoverSlider_.getBounds();
-        const int labelY = b.getY() - 13;
-        g.drawText("XOVER", b.getX(), labelY, b.getWidth(), 12, juce::Justification::centredLeft);
-        g.drawText(juce::String(static_cast<int>(lowXoverSlider_.getValue())) + " Hz", b.getX(),
-                   labelY, b.getWidth(), 12, juce::Justification::centredRight);
-    }
+    update(gainLinkSlot_, Util::kGainSlot, 0.0f, gainLinkInfoSet_);
+    update(panLinkSlot_, Util::kPanSlot, 0.0f, panLinkInfoSet_);
 }
 
 void CompiledUtilityView::resized() {
-    // Layout (top to bottom), total target height = 220px
-    // [5px pad]
-    // [12px GAIN label]
-    // [72px gain fader]
-    // [12px gain value text]
-    // [12px PAN label]
-    // [20px pan slider]
-    // [12px WIDTH/XOVER labels]
-    // [42px knob row]
-    // [28px button row]
-    // [5px pad]
-    constexpr int kPad = 5;
-    constexpr int kGainLabelH = 12;
-    constexpr int kGainH = 72;
-    constexpr int kGainValH = 12;
-    constexpr int kPanLabelH = 12;
-    constexpr int kPanH = 20;
-    constexpr int kKnobLabelH = 12;
-    constexpr int kKnobH = 42;
-    constexpr int kBtnH = 28;
-    constexpr int kGainW = 20;
+    constexpr int kPad = 6;
+    constexpr int kLabelH = 11;
+    constexpr int kControlH = 17;
+    constexpr int kButtonH = 17;
+    constexpr int kGap = 5;
+    constexpr int kFaderW = 30;
+    constexpr int kReadoutH = 16;
+    constexpr int kTopInset = 3;
 
-    auto b = getLocalBounds().reduced(kPad);
+    auto body = getLocalBounds().reduced(kPad);
+    if (body.isEmpty())
+        return;
 
-    b.removeFromTop(kGainLabelH);
-    auto gainArea = b.removeFromTop(kGainH);
-    gainSlider_.setBounds(gainArea.withWidth(kGainW).withX(gainArea.getCentreX() - kGainW / 2));
-    b.removeFromTop(kGainValH);
+    const int contentW = body.getWidth();
+    const int halfW = contentW / 2;
+    const int labelledControlH = kLabelH + 2 + kControlH;
+    body.removeFromTop(kTopInset);
 
-    b.removeFromTop(kPanLabelH);
-    panSlider_.setBounds(b.removeFromTop(kPanH));
+    auto takeTop = [](juce::Rectangle<int>& area, int height) {
+        return area.removeFromTop(juce::jmin(height, area.getHeight()));
+    };
 
-    b.removeFromTop(kKnobLabelH);
-    auto knobRow = b.removeFromTop(kKnobH);
-    const int halfW = knobRow.getWidth() / 2;
-    widthSlider_.setBounds(knobRow.removeFromLeft(halfW));
-    lowXoverSlider_.setBounds(knobRow);
+    auto takeBottom = [](juce::Rectangle<int>& area, int height) {
+        return area.removeFromBottom(juce::jmin(height, area.getHeight()));
+    };
 
-    auto btnRow = b.removeFromTop(kBtnH);
-    const int btnW = btnRow.getWidth() / 4;
-    for (int i = 0; i < 4; ++i)
-        btns_[static_cast<size_t>(i)].setBounds(
-            btnRow.removeFromLeft(i < 3 ? btnW : btnRow.getWidth()).reduced(1, 0));
+    auto dropTop = [&takeTop](juce::Rectangle<int>& area, int height) { takeTop(area, height); };
+
+    auto dropBottom = [&takeBottom](juce::Rectangle<int>& area, int height) {
+        takeBottom(area, height);
+    };
+
+    auto layoutLabeledControl = [&](juce::Label& name, juce::Component& value,
+                                    juce::Rectangle<int> area) {
+        name.setBounds(takeTop(area, kLabelH));
+        dropTop(area, 2);
+        value.setBounds(area);
+    };
+
+    auto layoutSplitControls = [&](juce::Label& nameA, juce::Component& valueA, juce::Label& nameB,
+                                   juce::Component& valueB, juce::Rectangle<int> area) {
+        auto left = area.removeFromLeft(halfW - 1);
+        area.removeFromLeft(2);
+        layoutLabeledControl(nameA, valueA, left);
+        layoutLabeledControl(nameB, valueB, area);
+    };
+
+    auto placeButtonRow = [&](juce::Rectangle<int> row, int leftIdx, int rightIdx) {
+        auto left = row.removeFromLeft(halfW - 1);
+        row.removeFromLeft(2);
+        btns_[static_cast<size_t>(leftIdx)].setBounds(left.reduced(1, 0));
+        btns_[static_cast<size_t>(rightIdx)].setBounds(row.reduced(1, 0));
+    };
+
+    auto lower = body;
+    auto buttonRow2 = takeBottom(lower, kButtonH);
+    dropBottom(lower, 3);
+    auto buttonRow1 = takeBottom(lower, kButtonH);
+    dropBottom(lower, kGap);
+    auto stereoBlock = takeBottom(lower, labelledControlH);
+    dropBottom(lower, kGap);
+    auto panBlock = takeBottom(lower, labelledControlH);
+    dropBottom(lower, kGap);
+    auto gainValueBlock = takeBottom(lower, kReadoutH);
+
+    auto gainBlock = lower;
+    gainName_.setBounds(takeTop(gainBlock, kLabelH));
+    dropTop(gainBlock, 3);
+    auto faderArea = gainBlock;
+    const int faderX = faderArea.getCentreX() - kFaderW / 2;
+    gainFader_.setBounds(faderX, faderArea.getY(), kFaderW, faderArea.getHeight());
+    gainLinkSlot_.setBounds(gainFader_.getBounds());
+
+    gainValue_.setBounds(gainValueBlock);
+    layoutLabeledControl(panName_, panLabel_, panBlock);
+    panLinkSlot_.setBounds(panLabel_.getBounds());
+    layoutSplitControls(widthName_, widthLabel_, xoverName_, xoverLabel_, stereoBlock);
+    placeButtonRow(buttonRow1, 0, 1);
+    placeButtonRow(buttonRow2, 2, 3);
+    gainLinkSlot_.toFront(false);
+    panLinkSlot_.toFront(false);
 }
 
 void CompiledUtilityView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaUtilityCompiledPlugin*>(plugin));
+    compiledPlugin_ =
+        dynamic_cast<magda::daw::audio::compiled::MagdaUtilityCompiledPlugin*>(plugin);
 }
 
 const CompiledPresentationSpec& getMagdaUtilityPresentation() {
@@ -285,6 +364,7 @@ const CompiledPresentationSpec& getMagdaUtilityPresentation() {
         .suppressLegacyUis = {},
         .visualMinFractionNumerator = 1,
         .visualMinFractionDenominator = 1,
+        .preferredSlotWidth = 160,
     };
     return kSpec;
 }

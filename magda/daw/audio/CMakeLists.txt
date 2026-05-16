@@ -114,11 +114,6 @@ magda_compile_faust_dsp(
     MAGDA_GATE_EXPANDER_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_utility.dsp"
-    MagdaUtilityDsp
-    MAGDA_UTILITY_GENERATED_CPP
-)
-magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_clipper.dsp"
     MagdaClipperDsp
     MAGDA_CLIPPER_GENERATED_CPP
@@ -204,7 +199,6 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_FREQ_SHIFT_GENERATED_CPP}"
         "${MAGDA_LIMITER_GENERATED_CPP}"
         "${MAGDA_GATE_EXPANDER_GENERATED_CPP}"
-        "${MAGDA_UTILITY_GENERATED_CPP}"
         "${MAGDA_CLIPPER_GENERATED_CPP}"
         "${MAGDA_REVERB_PLATE_GENERATED_CPP}"
         "${MAGDA_REVERB_HALL_GENERATED_CPP}"
