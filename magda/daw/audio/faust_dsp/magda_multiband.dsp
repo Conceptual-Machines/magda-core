@@ -125,6 +125,8 @@ wet(x) = x : band3split :
     :> _;
 
 driveInput(x) = x * db2lin(inputGainDb);
-channel(x) = ((1.0 - mix) * driveInput(x) + mix * wet(driveInput(x))) * db2lin(outGainDb);
+splitDry(x) = x : band3split :> _;
+channel(x) = ((1.0 - mix) * splitDry(driveInput(x)) + mix * wet(driveInput(x))) *
+             db2lin(outGainDb);
 
 process = par(i, 2, channel);

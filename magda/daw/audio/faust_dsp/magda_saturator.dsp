@@ -39,7 +39,7 @@ tone = hslider("Tone [idx:3]", 0.0, -1.0, 1.0, 0.001);
 // transient detail while adding harmonic warmth.
 mix = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001);
 
-// Output trim after the saturator chain (wet only — keeps dry as reference).
+// Output trim after the dry/wet blend.
 output_db = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 6.0, 0.1)
             : si.smooth(ba.tau2pole(0.02));
 
@@ -100,16 +100,14 @@ tone_tilt(x) = x * (1.0 - ma.fabs(tone))
 // 4. DC-block to remove the bias-induced offset (and any DC the asymmetric
 //    flavors generate on their own)
 // 5. Tilt-EQ
-// 6. Apply output trim
 //
 // Wet is then crossfaded with the untouched dry input via Mix.
 sat_chain(x) = (x * drive_lin + bias)
              : nl(int(mode))
              : fi.dcblockerat(20.0)
-             : tone_tilt
-             : *(output_lin);
+             : tone_tilt;
 
-channel(x) = (x * (1.0 - mix) + sat_chain(x) * mix) : soft_limit;
+channel(x) = ((x * (1.0 - mix) + sat_chain(x) * mix) * output_lin) : soft_limit;
 
 // Output safety net. Below the knee (~-1.4 dBFS) the signal passes through
 // unchanged so quiet/normal material isn't coloured; above the knee a tanh

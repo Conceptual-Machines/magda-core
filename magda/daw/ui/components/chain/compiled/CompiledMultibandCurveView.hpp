@@ -57,11 +57,22 @@ class CompiledMultibandCurveView final : public juce::Component,
         None,
         LowXo,
         HighXo,
-        LowThreshold,
+        Attack,
+        Release,
+        LowLowerThreshold,
+        LowUpperThreshold,
+        LowBelowRatio,
+        LowAboveRatio,
         LowLimit,
-        MidThreshold,
+        MidLowerThreshold,
+        MidUpperThreshold,
+        MidBelowRatio,
+        MidAboveRatio,
         MidLimit,
-        HighThreshold,
+        HighLowerThreshold,
+        HighUpperThreshold,
+        HighBelowRatio,
+        HighAboveRatio,
         HighLimit,
     };
 
@@ -74,12 +85,18 @@ class CompiledMultibandCurveView final : public juce::Component,
     float yToDb(float y) const;
 
     int bandAtX(float x) const;
-    static int thresholdSlotForBand(int band);
-    static int ratioSlotForBand(int band);
+    static int lowerThresholdSlotForBand(int band);
+    static int upperThresholdSlotForBand(int band);
+    static int belowRatioSlotForBand(int band);
+    static int aboveRatioSlotForBand(int band);
     static int rangeSlotForBand(int band);
     static int limitSlotForBand(int band);
     static int bandForHandle(Handle h);
     static bool isLimitHandle(Handle h);
+    static bool isUpperThresholdHandle(Handle h);
+    static bool isRatioHandle(Handle h);
+    static bool isAboveRatioHandle(Handle h);
+    static bool isTimingHandle(Handle h);
     int slotForHandle(Handle h) const;
     Handle pickHandle(float x, float y) const;
 
@@ -88,18 +105,28 @@ class CompiledMultibandCurveView final : public juce::Component,
 
     float lowXoHz_ = 120.0f;
     float highXoHz_ = 2500.0f;
-    std::array<float, 3> thresholdDb_{{-42.0f, -36.0f, -45.0f}};
-    std::array<float, 3> ratio_{{8.0f, 8.0f, 8.0f}};
+    float attackMs_ = 3.0f;
+    float releaseMs_ = 120.0f;
+    std::array<float, 3> lowerThresholdDb_{{-48.0f, -48.0f, -48.0f}};
+    std::array<float, 3> upperThresholdDb_{{-24.0f, -24.0f, -24.0f}};
+    std::array<float, 3> belowRatio_{{8.0f, 8.0f, 8.0f}};
+    std::array<float, 3> aboveRatio_{{8.0f, 8.0f, 8.0f}};
     std::array<float, 3> rangeDb_{{24.0f, 24.0f, 24.0f}};
     std::array<float, 3> limitDb_{{0.0f, 0.0f, 0.0f}};
 
     Handle hoveredHandle_ = Handle::None;
     Handle draggedHandle_ = Handle::None;
+    float dragStartValue_ = 0.0f;
     juce::Rectangle<float> plotArea_;
+    juce::Rectangle<float> attackArea_;
+    juce::Rectangle<float> releaseArea_;
+    std::array<juce::Rectangle<float>, 3> belowRatioAreas_{};
+    std::array<juce::Rectangle<float>, 3> aboveRatioAreas_{};
 
     juce::Rectangle<float> collapseButtonArea_;
     bool collapseButtonHovered_ = false;
     int ratioScrollBand_ = -1;
+    bool ratioScrollAbove_ = true;
     bool rangeScrollActive_ = false;
 
     std::function<void()> onLayoutChanged_;

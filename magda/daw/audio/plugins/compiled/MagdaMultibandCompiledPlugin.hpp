@@ -45,33 +45,42 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
         return 0.0;
     }
 
-    // Slots 0-8 are the compact grid controls.
-    // Slots 9-20 are per-band curve controls edited from the custom panel.
-    // Slots 21-22 are crossover frequencies.
+    // Slots 0-11 are the compact grid controls.
+    // Slots 12-29 are per-band curve controls edited from the custom panel.
+    // Slots 30-31 are crossover frequencies.
     static constexpr int kAmountSlot = 0;
     static constexpr int kAttackSlot = 1;
     static constexpr int kReleaseSlot = 2;
     static constexpr int kInputSlot = 3;
-    static constexpr int kLowGainSlot = 4;
-    static constexpr int kMidGainSlot = 5;
-    static constexpr int kHighGainSlot = 6;
-    static constexpr int kMixSlot = 7;
-    static constexpr int kOutputSlot = 8;
-    static constexpr int kLowThresholdSlot = 9;
-    static constexpr int kLowRatioSlot = 10;
-    static constexpr int kLowRangeSlot = 11;
-    static constexpr int kLowLimitSlot = 12;
-    static constexpr int kMidThresholdSlot = 13;
-    static constexpr int kMidRatioSlot = 14;
-    static constexpr int kMidRangeSlot = 15;
-    static constexpr int kMidLimitSlot = 16;
-    static constexpr int kHighThresholdSlot = 17;
-    static constexpr int kHighRatioSlot = 18;
-    static constexpr int kHighRangeSlot = 19;
-    static constexpr int kHighLimitSlot = 20;
-    static constexpr int kLowXoSlot = 21;
-    static constexpr int kHighXoSlot = 22;
-    static constexpr int kHostSlotCount = 23;
+    static constexpr int kOutputSlot = 4;
+    static constexpr int kMixSlot = 5;
+    static constexpr int kLowInputSlot = 6;
+    static constexpr int kMidInputSlot = 7;
+    static constexpr int kHighInputSlot = 8;
+    static constexpr int kLowGainSlot = 9;
+    static constexpr int kMidGainSlot = 10;
+    static constexpr int kHighGainSlot = 11;
+    static constexpr int kLowLowerThresholdSlot = 12;
+    static constexpr int kLowUpperThresholdSlot = 13;
+    static constexpr int kLowBelowRatioSlot = 14;
+    static constexpr int kLowAboveRatioSlot = 15;
+    static constexpr int kLowRangeSlot = 16;
+    static constexpr int kLowLimitSlot = 17;
+    static constexpr int kMidLowerThresholdSlot = 18;
+    static constexpr int kMidUpperThresholdSlot = 19;
+    static constexpr int kMidBelowRatioSlot = 20;
+    static constexpr int kMidAboveRatioSlot = 21;
+    static constexpr int kMidRangeSlot = 22;
+    static constexpr int kMidLimitSlot = 23;
+    static constexpr int kHighLowerThresholdSlot = 24;
+    static constexpr int kHighUpperThresholdSlot = 25;
+    static constexpr int kHighBelowRatioSlot = 26;
+    static constexpr int kHighAboveRatioSlot = 27;
+    static constexpr int kHighRangeSlot = 28;
+    static constexpr int kHighLimitSlot = 29;
+    static constexpr int kLowXoSlot = 30;
+    static constexpr int kHighXoSlot = 31;
+    static constexpr int kHostSlotCount = 32;
 
     te::AutomatableParameter* getSlotParameter(int slotIndex) const;
 
