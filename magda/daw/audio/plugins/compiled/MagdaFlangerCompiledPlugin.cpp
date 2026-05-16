@@ -446,8 +446,11 @@ const CompiledPluginSpec& getMagdaFlangerSpec() {
         .pluginId = MagdaFlangerCompiledPlugin::xmlTypeName,
         .displayName = "Flanger",
         .browserCategory = "Modulation",
-        .description = "Compiled Faust stereo flanger with short modulated delay, heavy feedback "
-                       "for the classic comb-sweep character, and sync- or free-rate LFO.",
+        .description = "Compiled Faust stereo flanger. Short modulated delay per channel "
+                       "(~3 ms +/- 2.5 ms) with a heavy feedback loop for the classic "
+                       "comb-filter sweep. "
+                       "Rate runs free in Hz or locks to tempo Division; "
+                       "Depth, Feedback, Mix and Width round out the controls.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaFlangerCompiledPlugin(info);
         },

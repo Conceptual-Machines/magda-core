@@ -378,7 +378,14 @@ const CompiledPluginSpec& getMagdaGritSpec() {
         .pluginId = MagdaGritCompiledPlugin::xmlTypeName,
         .displayName = "Grit",
         .browserCategory = "Distortion",
-        .description = "Compiled Faust bit-depth and sample-rate reduction effect.",
+        .description =
+            "Compiled Faust texture generator. Ring-modulates the input with a tone "
+            "or filtered-noise carrier for Erosion-style grit.\n"
+            "<b>Noise</b>: shared mono bandpass-filtered noise on both channels.\n"
+            "<b>Wide Noise</b>: decorrelated stereo noise for spatial texture.\n"
+            "<b>Sine</b>: tonal sine carrier at the Frequency knob for metallic ring-mod.\n"
+            "Frequency is the carrier centre (or BPF centre in the noise modes); "
+            "Width sets the bandpass Q; Amount blends the wet against the dry.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaGritCompiledPlugin(info);
         },

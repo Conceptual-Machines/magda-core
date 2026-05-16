@@ -533,16 +533,17 @@ const CompiledPluginSpec& getMagdaFilterSpec() {
         .pluginId = MagdaFilterCompiledPlugin::xmlTypeName,
         .displayName = "Filter",
         .browserCategory = "Filter",
-        .description = "Compiled Faust multimode filter.\n"
-                       "SVF: clean 2-pole LP/BP/HP/Notch for precise shaping.\n"
-                       "Ladder: classic 4-pole low-pass with driven resonance.\n"
-                       "Korg 35: MS-style LP/HP character with sharper analog bite.\n"
-                       "Oberheim: SEM-style LP/BP/HP/Notch with broad musical sweeps.\n"
-                       "Sallen-Key: smooth 2nd-order LP/BP/HP response.\n"
-                       "Diode: resonant 4-pole diode ladder with input drive.\n"
-                       "Warning: high resonance can create very loud peaks or "
-                       "self-oscillation. "
-                       "Keep monitoring levels conservative to protect speakers and ears.",
+        .description =
+            "Compiled Faust multimode filter.\n"
+            "<b>SVF</b>: clean 2-pole LP/BP/HP/Notch for precise shaping.\n"
+            "<b>Ladder</b>: classic 4-pole low-pass with driven resonance.\n"
+            "<b>Korg 35</b>: MS-style LP/HP character with sharper analog bite.\n"
+            "<b>Oberheim</b>: SEM-style LP/BP/HP/Notch with broad musical sweeps.\n"
+            "<b>Sallen-Key</b>: smooth 2nd-order LP/BP/HP response.\n"
+            "<b>Diode</b>: resonant 4-pole diode ladder with input drive.\n"
+            "<warning>Warning: high resonance can create very loud peaks or "
+            "self-oscillation. "
+            "Keep monitoring levels conservative to protect speakers and ears.</warning>",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaFilterCompiledPlugin(info);
         },

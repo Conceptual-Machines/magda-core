@@ -404,10 +404,14 @@ const CompiledPluginSpec& getMagdaLimiterSpec() {
         .pluginId = MagdaLimiterCompiledPlugin::xmlTypeName,
         .displayName = "Limiter",
         .browserCategory = "Dynamics",
-        .description = "Compiled Faust stereo lookahead brickwall limiter. Sanfilippo design with "
-                       "5 ms lookahead, peak-holder, and tau-smoothed attack/release. Threshold "
-                       "sets the output ceiling in dB; peaks above it are attenuated with minimal "
-                       "coloration, signal below passes through unchanged.",
+        .description = "Compiled Faust stereo lookahead brickwall limiter. "
+                       "Sanfilippo co.limiter_lad_stereo design with 5 ms lookahead, "
+                       "peak-holder and tau-smoothed Attack / Hold / Release envelope. "
+                       "Threshold sets the output ceiling in dB; peaks above it are attenuated "
+                       "with minimal coloration, signal below passes through unchanged. "
+                       "Autogain mode reinterprets Threshold as a drive amount, pushing into "
+                       "the limiter for loudness with automatic make-up. "
+                       "Mix and Output blend and trim.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaLimiterCompiledPlugin(info);
         },

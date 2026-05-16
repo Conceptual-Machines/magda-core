@@ -531,7 +531,14 @@ const CompiledPluginSpec& getMagdaMultibandSpec() {
         .pluginId = MagdaMultibandCompiledPlugin::xmlTypeName,
         .displayName = "Multiband Compressor",
         .browserCategory = "Dynamics",
-        .description = "Compiled Faust multiband compressor with editable band thresholds.",
+        .description =
+            "Compiled Faust 3-band OTT-style compressor. "
+            "Linkwitz-Riley 4th-order crossovers split the signal into Low / Mid / High; "
+            "each band runs two serial OTT stages (up-and-down compression plus "
+            "up-and-down expansion), then an instantaneous brickwall limiter. "
+            "Depth scales the overall amount, Time scales attack/release; "
+            "per-band thresholds, ratios, expander knees and limit ceilings are editable. "
+            "Mix and Output blend and trim.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaMultibandCompiledPlugin(info);
         },

@@ -342,9 +342,13 @@ const CompiledPluginSpec& getMagdaBitcrusherSpec() {
         .pluginId = MagdaBitcrusherCompiledPlugin::xmlTypeName,
         .displayName = "Bitcrusher",
         .browserCategory = "Distortion",
-        .description = "Compiled Faust lo-fi bitcrusher. Reduces sample rate (Rate) and bit depth "
-                       "(Bits); Drive shifts the quantization landing point for crunchier or "
-                       "softer attacks; Tone tames the aliasing with a post-crush low-pass.",
+        .description =
+            "Compiled Faust lo-fi bitcrusher. "
+            "Rate reduces sample rate via dual sample-and-hold (100 Hz to 48 kHz). "
+            "Bits applies mid-tread quantization from 1 to 16 bits. "
+            "Drive shifts the quantization landing point for crunchier or softer attacks. "
+            "Tone tames aliasing with a post-crush low-pass. "
+            "Mix and Output blend and trim.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaBitcrusherCompiledPlugin(info);
         },

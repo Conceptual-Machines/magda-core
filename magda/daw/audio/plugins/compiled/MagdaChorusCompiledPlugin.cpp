@@ -469,8 +469,11 @@ const CompiledPluginSpec& getMagdaChorusSpec() {
         .pluginId = MagdaChorusCompiledPlugin::xmlTypeName,
         .displayName = "Chorus",
         .browserCategory = "Modulation",
-        .description = "Compiled Faust stereo chorus with 1 to 3 modulated voices per channel. "
-                       "Free Hz or tempo-synced rate, depth, feedback, mix, and stereo width.",
+        .description =
+            "Compiled Faust stereo chorus with one to three modulated voices per channel. "
+            "Voices share a single LFO with per-voice phase offsets for spread. "
+            "Rate runs free in Hz or locks to tempo Division. "
+            "Depth, Feedback, Mix and Width complete the controls.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaChorusCompiledPlugin(info);
         },

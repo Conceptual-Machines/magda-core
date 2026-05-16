@@ -399,10 +399,11 @@ const CompiledPluginSpec& getMagdaDimensionSpec() {
         .pluginId = MagdaDimensionCompiledPlugin::xmlTypeName,
         .displayName = "Dimension",
         .browserCategory = "Stereo",
-        .description = "Compiled Faust stereo widener with three selectable engines.\n"
-                       "Dimension: Roland Dimension D-style anti-phase modulated delays.\n"
-                       "Haas: short fixed delay on one channel — classic psychoacoustic cue.\n"
-                       "M/S: pure mid-side side-channel gain, no time smear.",
+        .description =
+            "Compiled Faust stereo widener with three selectable engines.\n"
+            "<b>Dimension</b>: Roland Dimension D-style anti-phase modulated delays.\n"
+            "<b>Haas</b>: short fixed delay on one channel, classic psychoacoustic cue.\n"
+            "<b>M/S</b>: pure mid-side side-channel gain, no time smear.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaDimensionCompiledPlugin(info);
         },

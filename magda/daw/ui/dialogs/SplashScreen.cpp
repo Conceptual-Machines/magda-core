@@ -45,6 +45,16 @@ class SplashScreen::ContentComponent : public juce::Component {
                                          juce::Colour(DarkTheme::TEXT_DIM));
             }
         }
+
+        // Load Faust wordmark logo (same SVG used in the Faust device header)
+        if (auto xml = juce::XmlDocument::parse(juce::String::fromUTF8(
+                BinaryData::fausttextlogo_svg, BinaryData::fausttextlogo_svgSize))) {
+            faustLogo_ = juce::Drawable::createFromSVG(*xml);
+            if (faustLogo_) {
+                faustLogo_->replaceColour(juce::Colour(0xFFD9D9D9),
+                                          juce::Colour(DarkTheme::TEXT_DIM));
+            }
+        }
     }
 
     void paint(juce::Graphics& g) override {
@@ -118,15 +128,22 @@ class SplashScreen::ContentComponent : public juce::Component {
         const juce::String tracktionName = "Tracktion Engine";  // brand — do not translate
         const juce::String madeWith = tr("splash.credits.made_with");
         const juce::String juceName = "JUCE";  // brand — do not translate
+        const juce::String dspBy = tr("splash.credits.dsp_by");
+
+        // Faust wordmark SVG viewBox is 160x28. Sized smaller than the round JUCE/TE
+        // icons so the bold all-caps wordmark doesn't visually outweigh them.
+        const int faustLogoH = 9;
+        const int faustLogoW = faustLogoH * 160 / 28;
 
         int powW = measure(poweredBy);
         int teW = measure(tracktionName);
         int dotW = measure("|");
         int madeW = measure(madeWith);
         int juceW = measure(juceName);
+        int dspW = measure(dspBy);
 
         int totalW = powW + gap + teW + gap + logoSize + dotGap + dotW + dotGap + madeW + gap +
-                     juceW + gap + logoSize;
+                     juceW + gap + logoSize + dotGap + dotW + dotGap + dspW + gap + faustLogoW;
         auto centred = row.withSizeKeepingCentre(totalW, 20);
 
         g.drawText(poweredBy, centred.removeFromLeft(powW), juce::Justification::centred);
@@ -146,6 +163,14 @@ class SplashScreen::ContentComponent : public juce::Component {
         if (juceLogo_)
             juceLogo_->drawWithin(g, centred.removeFromLeft(logoSize).toFloat(),
                                   juce::RectanglePlacement::centred, 1.0f);
+        centred.removeFromLeft(dotGap);
+        g.drawText("|", centred.removeFromLeft(dotW), juce::Justification::centred);
+        centred.removeFromLeft(dotGap);
+        g.drawText(dspBy, centred.removeFromLeft(dspW), juce::Justification::centred);
+        centred.removeFromLeft(gap);
+        if (faustLogo_)
+            faustLogo_->drawWithin(g, centred.removeFromLeft(faustLogoW).toFloat(),
+                                   juce::RectanglePlacement::centred, 1.0f);
     }
 
     void setStatus(const juce::String& text) {
@@ -157,6 +182,7 @@ class SplashScreen::ContentComponent : public juce::Component {
     std::unique_ptr<juce::Drawable> logo_;
     std::unique_ptr<juce::Drawable> teLogo_;
     std::unique_ptr<juce::Drawable> juceLogo_;
+    std::unique_ptr<juce::Drawable> faustLogo_;
     juce::String statusText_;
 };
 

@@ -470,9 +470,13 @@ const CompiledPluginSpec& getMagdaModSpec() {
         .pluginId = MagdaModCompiledPlugin::xmlTypeName,
         .displayName = "Mod",
         .browserCategory = "Modulation",
-        .description = "Compiled Faust modulation: tremolo, vibrato, or auto-pan, sharing one LFO. "
-                       "Free Hz or tempo-synced (musical division). "
-                       "Sine, triangle, square, or sample-and-hold shape.",
+        .description = "Compiled Faust modulation effect with a shared LFO.\n"
+                       "<b>Tremolo</b>: amplitude modulation, equal on both channels.\n"
+                       "<b>Vibrato</b>: pitch modulation via short modulated delay.\n"
+                       "<b>Autopan</b>: equal-power pan between L and R.\n"
+                       "All three mode bodies run in parallel for glitch-free switching. "
+                       "LFO Shape selects Sine, Triangle, Square or Sample-and-hold; "
+                       "Rate runs free in Hz or locks to tempo Division.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaModCompiledPlugin(info);
         },

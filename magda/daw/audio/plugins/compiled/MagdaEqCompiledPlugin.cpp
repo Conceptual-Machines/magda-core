@@ -444,9 +444,12 @@ const CompiledPluginSpec& getMagdaEqSpec() {
         .pluginId = MagdaEqCompiledPlugin::xmlTypeName,
         .displayName = "EQ",
         .browserCategory = "EQ",
-        .description = "Compiled Faust 8-band parametric EQ.\n"
-                       "Each band's filter type is switchable between HP, LowShelf, Bell, "
-                       "HighShelf, LP and Notch.",
+        .description = "Compiled Faust 8-band parametric equaliser. Per-band Type selects "
+                       "<b>HP</b>, <b>LowShelf</b>, <b>Bell</b>, <b>HighShelf</b>, "
+                       "<b>LP</b>, or <b>Notch</b>. "
+                       "All six filter shapes are instantiated in parallel per band, so Type "
+                       "switching is glitch-free at audio rate. "
+                       "Each band exposes Freq, Gain, Q; Output trims the final sum.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaEqCompiledPlugin(info);
         },

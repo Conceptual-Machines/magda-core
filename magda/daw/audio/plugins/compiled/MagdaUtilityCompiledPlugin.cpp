@@ -268,7 +268,11 @@ const CompiledPluginSpec& getMagdaUtilitySpec() {
         .displayName = "Utility",
         .browserCategory = "Utility",
         .description =
-            "Stereo utility: gain, pan, stereo width, mono, low mono, per-channel polarity flip.",
+            "Stereo utility stage. Gain trims level; Pan shifts the stereo image; "
+            "Width adjusts the M/S spread. Mono folds the signal down for compatibility checks; "
+            "Low Mono sums only the bass below the Low Mono Freq cutoff, "
+            "tightening sub content while preserving stereo highs. "
+            "Flip L / Flip R invert per-channel polarity for phase tweaks.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaUtilityCompiledPlugin(info);
         },
