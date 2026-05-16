@@ -22,7 +22,7 @@ midGainDb  = hslider("Mid Gain [unit:dB] [idx:5]",  0.0, -24.0, 24.0, 0.1) : si.
 highGainDb = hslider("High Gain [unit:dB] [idx:6]", 0.0, -24.0, 24.0, 0.1) : si.smooth(ba.tau2pole(0.05));
 
 mix       = hslider("Mix [idx:7]",              1.0, 0.0, 1.0,   0.001) : si.smooth(ba.tau2pole(0.05));
-outGainDb = hslider("Output [unit:dB] [idx:8]", 0.0, -24.0, 12.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+outGainDb = hslider("Output [unit:dB] [idx:8]", 0.0, -24.0, 24.0, 0.1) : si.smooth(ba.tau2pole(0.05));
 
 // Per-band editor controls — low band (slots 9-17).
 lowThreshAboveDb       = hslider("Low Thresh Above [unit:dB] [idx:9]",         -24.0, -60.0,  0.0,  0.1) : si.smooth(ba.tau2pole(0.05));

@@ -197,7 +197,7 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
                                   .unit = "dB",
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
-                                  .maxValue = 12.0f,
+                                  .maxValue = 24.0f,
                                   .defaultValue = 0.0f};
 
     // Slots 9-35: per-band controls (edited on the curve view).

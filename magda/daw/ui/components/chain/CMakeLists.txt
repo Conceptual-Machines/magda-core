@@ -53,6 +53,7 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledDimensionView.cpp
     compiled/CompiledPitchEditorView.cpp
     compiled/CompiledBitcrusherEditorView.cpp
+    compiled/CompiledGateCurveView.cpp
     compiled/CompiledPluginPresentation.cpp
     compiled/MagdaDriveCurveView.cpp
     custom_ui/ToneGeneratorUI.cpp
@@ -139,6 +140,7 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledDimensionView.hpp
     compiled/CompiledPitchEditorView.hpp
     compiled/CompiledBitcrusherEditorView.hpp
+    compiled/CompiledGateCurveView.hpp
     compiled/CompiledPluginPresentation.hpp
     compiled/MagdaDriveCurveView.hpp
     custom_ui/ToneGeneratorUI.hpp
