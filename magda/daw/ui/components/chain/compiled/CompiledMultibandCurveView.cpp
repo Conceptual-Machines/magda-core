@@ -400,15 +400,6 @@ CompiledMultibandCurveView::Handle CompiledMultibandCurveView::pickHandle(float 
     Handle nearest = Handle::None;
     float nearestDist = kThresholdPickPx + 1.0f;
     for (int band = 0; band < 3; ++band) {
-        if (attackAreas_[static_cast<size_t>(band)].contains(x, y))
-            return attackHandles[static_cast<size_t>(band)];
-        if (releaseAreas_[static_cast<size_t>(band)].contains(x, y))
-            return releaseHandles[static_cast<size_t>(band)];
-        if (aboveRatioAreas_[static_cast<size_t>(band)].contains(x, y))
-            return aboveRatioHandles[static_cast<size_t>(band)];
-        if (belowRatioAreas_[static_cast<size_t>(band)].contains(x, y))
-            return belowRatioHandles[static_cast<size_t>(band)];
-
         const float x0 = bandEdges[static_cast<size_t>(band)] - 2.0f;
         const float x1 = bandEdges[static_cast<size_t>(band + 1)] + 2.0f;
         if (x < x0 || x > x1)
@@ -426,6 +417,21 @@ CompiledMultibandCurveView::Handle CompiledMultibandCurveView::pickHandle(float 
     }
     if (nearest != Handle::None)
         return nearest;
+
+    for (int band = 0; band < 3; ++band) {
+        const auto idx = static_cast<size_t>(band);
+        if (x < bandEdges[idx] || x > bandEdges[idx + 1])
+            continue;
+
+        if (attackAreas_[idx].contains(x, y))
+            return attackHandles[idx];
+        if (releaseAreas_[idx].contains(x, y))
+            return releaseHandles[idx];
+        if (aboveRatioAreas_[idx].contains(x, y))
+            return aboveRatioHandles[idx];
+        if (belowRatioAreas_[idx].contains(x, y))
+            return belowRatioHandles[idx];
+    }
 
     const float dLow = std::fabs(x - lowX);
     const float dHigh = std::fabs(x - highX);
@@ -767,8 +773,17 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
         const juce::String rangeText =
             rangeActive ? "RNG " + juce::String(rangeDb_[idx], 0) : juce::String(rangeDb_[idx], 0);
         const float cx = (x0 + x1) * 0.5f;
-        aboveRatioAreas_[idx] = juce::Rectangle<float>(cx - 27.0f, yUpper - 19.0f, 54.0f, 15.0f);
-        belowRatioAreas_[idx] = juce::Rectangle<float>(cx - 27.0f, yLower + 4.0f, 54.0f, 15.0f);
+        auto makeBandPillArea = [&](float y) {
+            constexpr float preferredWidth = 54.0f;
+            constexpr float height = 15.0f;
+            const float width = std::max(0.0f, std::min(preferredWidth, x1 - x0 - 6.0f));
+            const float minLeft = x0 + 3.0f;
+            const float maxLeft = std::max(minLeft, x1 - 3.0f - width);
+            const float left = juce::jlimit(minLeft, maxLeft, cx - width * 0.5f);
+            return juce::Rectangle<float>(left, y, width, height);
+        };
+        aboveRatioAreas_[idx] = makeBandPillArea(yUpper - 19.0f);
+        belowRatioAreas_[idx] = makeBandPillArea(yLower + 4.0f);
         const float timingWidth = std::max(0.0f, std::min(70.0f, x1 - x0 - 8.0f));
         const float timingX = x0 + 4.0f;
         attackAreas_[idx] =

@@ -85,10 +85,17 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
 
             if (target.devicePath.isValid()) {
                 auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
-                if (resolved.valid && resolved.rack && target.paramIndex >= 0 &&
-                    target.paramIndex < static_cast<int>(resolved.rack->macros.size())) {
-                    return static_cast<double>(
-                        resolved.rack->macros[static_cast<size_t>(target.paramIndex)].value);
+                if (resolved.valid && target.paramIndex >= 0) {
+                    if (resolved.rack &&
+                        target.paramIndex < static_cast<int>(resolved.rack->macros.size())) {
+                        return static_cast<double>(
+                            resolved.rack->macros[static_cast<size_t>(target.paramIndex)].value);
+                    }
+                    if (resolved.device &&
+                        target.paramIndex < static_cast<int>(resolved.device->macros.size())) {
+                        return static_cast<double>(
+                            resolved.device->macros[static_cast<size_t>(target.paramIndex)].value);
+                    }
                 }
             }
 

@@ -804,6 +804,10 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         if (transportPanel)
             transportPanel->setPlaybackState(playing);
     };
+    positionTimer_->onRecordStateChanged = [this](bool recording) {
+        if (transportPanel)
+            transportPanel->setRecordingState(recording);
+    };
     positionTimer_->onSessionPlayheadUpdate =
         [this](const std::unordered_map<ClipId, double>& clipPositions) {
             if (sessionView)

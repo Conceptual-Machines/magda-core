@@ -185,6 +185,10 @@ bool AutomationRecordingEngine::shouldRecord() const {
     return isRecording_ && edit_.getTransport().isPlaying();
 }
 
+bool AutomationRecordingEngine::shouldIgnoreAutomationWriteback() {
+    return AutomationManager::getInstance().isApplyingAutomationWrite();
+}
+
 bool AutomationRecordingEngine::requiresUserTouched() const {
     return mode_ == AutomationMode::Touch || mode_ == AutomationMode::Latch;
 }
@@ -614,6 +618,9 @@ void AutomationRecordingEngine::onModParameterValueChanged(TrackId trackId,
 
 void AutomationRecordingEngine::onMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId,
                                                     int macroIndex, float value) {
+    if (shouldIgnoreAutomationWriteback())
+        return;
+
     if (!shouldRecord())
         return;
 

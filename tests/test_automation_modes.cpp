@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/core/AutomationManager.hpp"
@@ -108,4 +109,36 @@ TEST_CASE("AutomationManager: getUserTouchedTargets reflects current set",
 
     mgr.setTargetUserTouched(panTarget(trackId), false);
     REQUIRE(mgr.getUserTouchedTargets().empty());
+}
+
+TEST_CASE("AutomationManager seeds device macro lanes from the live macro value",
+          "[automation][macro][playback]") {
+    resetState();
+
+    auto& trackManager = TrackManager::getInstance();
+    auto trackId = trackManager.createTrack("T", TrackType::Audio);
+
+    DeviceInfo device;
+    device.name = "Filter";
+    auto deviceId = trackManager.addDeviceToTrack(trackId, device);
+    REQUIRE(deviceId != INVALID_DEVICE_ID);
+
+    auto devicePath = ChainNodePath::topLevelDevice(trackId, deviceId);
+    trackManager.setMacroValue(devicePath, 0, 0.0f);
+
+    AutomationTarget target;
+    target.kind = ControlTarget::Kind::DeviceMacro;
+    target.devicePath = devicePath;
+    target.paramIndex = 0;
+
+    auto& autoMgr = AutomationManager::getInstance();
+    auto current = autoMgr.getCurrentTargetValue(target);
+    REQUIRE(current.has_value());
+    REQUIRE(*current == Catch::Approx(0.0));
+
+    auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+    auto* lane = autoMgr.getLane(laneId);
+    REQUIRE(lane != nullptr);
+    REQUIRE(lane->absolutePoints.size() == 1);
+    REQUIRE(lane->absolutePoints.front().value == Catch::Approx(0.0));
 }

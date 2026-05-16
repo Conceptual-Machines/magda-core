@@ -80,6 +80,84 @@ class CompiledMultibandCurveView final : public juce::Component,
         HighLimit,
     };
 
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+  public:
+    enum class MagdaTestHandleKind {
+        None,
+        Crossover,
+        LowerThreshold,
+        UpperThreshold,
+        BelowRatio,
+        AboveRatio,
+        Attack,
+        Release,
+        Limit,
+    };
+
+    struct MagdaTestPickedHandle {
+        int band = -1;
+        MagdaTestHandleKind kind = MagdaTestHandleKind::None;
+    };
+
+    MagdaTestPickedHandle magdaTestPickHandle(float x, float y) const {
+        const auto handle = pickHandle(x, y);
+        MagdaTestPickedHandle result{bandForHandle(handle), MagdaTestHandleKind::None};
+        switch (handle) {
+            case Handle::LowXo:
+            case Handle::HighXo:
+                result.kind = MagdaTestHandleKind::Crossover;
+                break;
+            case Handle::LowLowerThreshold:
+            case Handle::MidLowerThreshold:
+            case Handle::HighLowerThreshold:
+                result.kind = MagdaTestHandleKind::LowerThreshold;
+                break;
+            case Handle::LowUpperThreshold:
+            case Handle::MidUpperThreshold:
+            case Handle::HighUpperThreshold:
+                result.kind = MagdaTestHandleKind::UpperThreshold;
+                break;
+            case Handle::LowBelowRatio:
+            case Handle::MidBelowRatio:
+            case Handle::HighBelowRatio:
+                result.kind = MagdaTestHandleKind::BelowRatio;
+                break;
+            case Handle::LowAboveRatio:
+            case Handle::MidAboveRatio:
+            case Handle::HighAboveRatio:
+                result.kind = MagdaTestHandleKind::AboveRatio;
+                break;
+            case Handle::LowAttack:
+            case Handle::MidAttack:
+            case Handle::HighAttack:
+                result.kind = MagdaTestHandleKind::Attack;
+                break;
+            case Handle::LowRelease:
+            case Handle::MidRelease:
+            case Handle::HighRelease:
+                result.kind = MagdaTestHandleKind::Release;
+                break;
+            case Handle::LowLimit:
+            case Handle::MidLimit:
+            case Handle::HighLimit:
+                result.kind = MagdaTestHandleKind::Limit;
+                break;
+            case Handle::None:
+                break;
+        }
+        return result;
+    }
+
+    float magdaTestXForFrequency(float hz) const {
+        return freqToX(hz);
+    }
+    float magdaTestYForDb(float db) const {
+        return dbToY(db);
+    }
+
+  private:
+#endif
+
     void timerCallback() override;
     void resampleFromPlugin();
 

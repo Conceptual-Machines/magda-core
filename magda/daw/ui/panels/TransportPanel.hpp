@@ -91,6 +91,7 @@ class TransportPanel : public juce::Component {
 
     // Sync play state from external sources (e.g., SessionClipScheduler starting transport)
     void setPlaybackState(bool playing);
+    void setRecordingState(bool recording);
 
     // Update arrangement button state based on whether any track is in session mode
     void setAnyTrackInSessionMode(bool anyInSession);

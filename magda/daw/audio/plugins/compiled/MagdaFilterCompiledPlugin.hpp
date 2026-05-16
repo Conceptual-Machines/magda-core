@@ -149,6 +149,7 @@ class MagdaFilterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin
         FAUSTFLOAT* driveZone = nullptr;
         FAUSTFLOAT* modeZone = nullptr;       // null if engine has no mode
         std::vector<float> modeChoiceValues;  // sorted underlying values for mode
+        int sampleRate = 44100;
         int numInputs = 0;
         int numOutputs = 0;
     };

@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 #include "../../core/AutomationInfo.hpp"
+#include "../../core/AutomationManager.hpp"
 #include "../../core/ChainNode.hpp"
 #include "../../core/TypeIds.hpp"
 
@@ -71,8 +72,15 @@ class AutomationRecordingEngine {
     void onModParameterValueChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
                                     int paramIndex, float value);
 
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+    static bool magdaTestShouldIgnoreAutomationWriteback() {
+        return AutomationManager::getInstance().isApplyingAutomationWrite();
+    }
+#endif
+
   private:
     bool shouldRecord() const;
+    static bool shouldIgnoreAutomationWriteback();
     // True when the active mode requires the user to be physically holding the
     // target (Touch / Latch). Write mode records on any change; Off doesn't get
     // here because shouldRecord() already returns false.

@@ -46,6 +46,83 @@ juce::String describeChainMoveParams(const DeviceInfo& device, int maxParams = 8
         text << " | ...";
     return text;
 }
+
+void clearAutomationCurve(te::AutomatableParameter* param) {
+    if (!param)
+        return;
+
+    param->getCurve().clear(nullptr);
+    param->updateStream();
+}
+
+void removeSourceFromPlugin(te::Plugin* plugin, te::AutomatableParameter::ModifierSource& source) {
+    if (!plugin)
+        return;
+
+    for (auto* param : plugin->getAutomatableParameters()) {
+        if (param)
+            param->removeModifier(source);
+    }
+}
+
+void removeSourceFromPlugins(const std::vector<te::Plugin*>& plugins,
+                             te::AutomatableParameter::ModifierSource& source) {
+    for (auto* plugin : plugins)
+        removeSourceFromPlugin(plugin, source);
+}
+
+void removeSourceFromModifierParams(const std::map<ModId, te::Modifier::Ptr>& modifiers,
+                                    te::AutomatableParameter::ModifierSource& source) {
+    for (const auto& [_modId, modifier] : modifiers) {
+        if (!modifier)
+            continue;
+
+        for (auto* param : modifier->getAutomatableParameters()) {
+            if (param)
+                param->removeModifier(source);
+        }
+    }
+}
+
+void clearModifierParameterCurves(te::Modifier& modifier) {
+    for (auto* param : modifier.getAutomatableParameters())
+        clearAutomationCurve(param);
+}
+
+void teardownModifierMap(std::map<ModId, te::Modifier::Ptr>& modifiers,
+                         const std::vector<te::Plugin*>& scopePlugins,
+                         te::ModifierList* modifierList) {
+    for (auto& [_modId, modifier] : modifiers) {
+        if (!modifier)
+            continue;
+
+        clearModifierParameterCurves(*modifier);
+        removeSourceFromPlugins(scopePlugins, *modifier);
+        removeSourceFromModifierParams(modifiers, *modifier);
+
+        if (modifierList && modifier->state.getParent().isValid())
+            modifierList->state.removeChild(modifier->state, nullptr);
+    }
+    modifiers.clear();
+}
+
+void teardownMacroMap(std::map<int, te::MacroParameter*>& macros,
+                      const std::map<ModId, te::Modifier::Ptr>& modifiers,
+                      const std::vector<te::Plugin*>& scopePlugins,
+                      te::MacroParameterList* macroList) {
+    for (auto& [_macroIdx, macroParam] : macros) {
+        if (!macroParam)
+            continue;
+
+        clearAutomationCurve(macroParam);
+        removeSourceFromPlugins(scopePlugins, *macroParam);
+        removeSourceFromModifierParams(modifiers, *macroParam);
+
+        if (macroList && macroParam->state.getParent() == macroList->state)
+            macroList->removeMacroParameter(*macroParam);
+    }
+    macros.clear();
+}
 }  // namespace
 
 // =============================================================================
@@ -94,7 +171,20 @@ void PluginManager::syncAllPlugins() {
             deferredHolders_.clear();  // Drain previous cycle's deferred holders
             for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
                 if (validDeviceIds.find(it->first) == validDeviceIds.end()) {
+                    std::vector<te::Plugin*> scopePlugins;
+                    for (const auto& [_deviceId, sd] : syncedDevices_) {
+                        if (sd.trackId == it->second.trackId && sd.plugin)
+                            scopePlugins.push_back(sd.plugin.get());
+                    }
+                    auto* teTrack = trackController_.getAudioTrack(it->second.trackId);
+                    auto* modifierList = teTrack ? teTrack->getModifierList() : nullptr;
+                    auto* macroList =
+                        teTrack ? &teTrack->getMacroParameterListForWriting() : nullptr;
+
                     clearLFOCustomWaveCallbacks(it->second.modifiers);
+                    teardownMacroMap(it->second.macroParams, it->second.modifiers, scopePlugins,
+                                     macroList);
+                    teardownModifierMap(it->second.modifiers, scopePlugins, modifierList);
                     deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
                     if (auto* dg =
                             dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get()))
@@ -237,11 +327,22 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
         // Remove from mappings while under lock
         deferredHolders_.clear();  // Drain previous cycle's deferred holders
+        std::vector<te::Plugin*> scopePlugins;
+        for (const auto& [_deviceId, sd] : syncedDevices_) {
+            if (sd.trackId == trackId && sd.plugin)
+                scopePlugins.push_back(sd.plugin.get());
+        }
+        auto* modifierList = teTrack ? teTrack->getModifierList() : nullptr;
+        auto* macroList = teTrack ? &teTrack->getMacroParameterListForWriting() : nullptr;
         for (auto deviceId : toRemove) {
             auto it = syncedDevices_.find(deviceId);
             if (it != syncedDevices_.end()) {
-                // Clear LFO callbacks before destroying CurveSnapshotHolders
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
+                teardownMacroMap(it->second.macroParams, it->second.modifiers, scopePlugins,
+                                 macroList);
+                teardownModifierMap(it->second.modifiers, scopePlugins, modifierList);
+
+                // Clear LFO callbacks before destroying CurveSnapshotHolders
                 deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
                 if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get())) {
                     dg->removeListener(this);
@@ -666,6 +767,7 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
     std::vector<DeviceId> deviceIds;
     std::map<DeviceId, te::Plugin::Ptr> pluginsToDelete;
     std::vector<te::Plugin*> midiPluginsToDelete;
+    auto* teTrack = trackController_.getAudioTrack(trackId);
     {
         juce::ScopedLock lock(pluginLock_);
         for (const auto& [deviceId, sd] : syncedDevices_) {
@@ -681,13 +783,27 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
                 midiPluginsToDelete.push_back(sd.midiRestorePlugin.get());
         }
 
+        std::vector<te::Plugin*> scopePlugins;
+        scopePlugins.reserve(deviceIds.size());
+        for (const auto& [deviceId, sd] : syncedDevices_) {
+            if (sd.trackId == trackId && sd.plugin)
+                scopePlugins.push_back(sd.plugin.get());
+        }
+
+        auto* modifierList = teTrack ? teTrack->getModifierList() : nullptr;
+        auto* macroList = teTrack ? &teTrack->getMacroParameterListForWriting() : nullptr;
+
         // 2. Erase map entries for collected DeviceIds
         deferredHolders_.clear();  // Drain previous cycle's deferred holders
         for (auto deviceId : deviceIds) {
             auto it = syncedDevices_.find(deviceId);
             if (it != syncedDevices_.end()) {
-                // Clear LFO callbacks before destroying CurveSnapshotHolders
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
+                teardownMacroMap(it->second.macroParams, it->second.modifiers, scopePlugins,
+                                 macroList);
+                teardownModifierMap(it->second.modifiers, scopePlugins, modifierList);
+
+                // Clear LFO callbacks before destroying CurveSnapshotHolders
                 deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
                 if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get())) {
                     dg->removeListener(this);
@@ -708,6 +824,20 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
                     pluginToDevice_.erase(it->second.plugin.get());
                 syncedDevices_.erase(it);
             }
+        }
+
+        auto tmIt = trackModStates_.find(trackId);
+        auto tmpIt = trackMacroParams_.find(trackId);
+        if (tmpIt != trackMacroParams_.end()) {
+            static const std::map<ModId, te::Modifier::Ptr> emptyModifiers;
+            const auto& trackModifiers =
+                tmIt != trackModStates_.end() ? tmIt->second.modifiers : emptyModifiers;
+            teardownMacroMap(tmpIt->second, trackModifiers, scopePlugins, macroList);
+        }
+        if (tmIt != trackModStates_.end()) {
+            clearLFOCustomWaveCallbacks(tmIt->second.modifiers);
+            teardownModifierMap(tmIt->second.modifiers, scopePlugins, modifierList);
+            deferCurveSnapshots(tmIt->second.curveSnapshots, deferredHolders_);
         }
     }
 
@@ -737,8 +867,6 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
     {
         auto tmIt = trackModStates_.find(trackId);
         if (tmIt != trackModStates_.end()) {
-            clearLFOCustomWaveCallbacks(tmIt->second.modifiers);
-            deferCurveSnapshots(tmIt->second.curveSnapshots, deferredHolders_);
             trackModStates_.erase(tmIt);
         }
     }

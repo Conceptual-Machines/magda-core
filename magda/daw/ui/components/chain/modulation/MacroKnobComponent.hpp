@@ -122,6 +122,9 @@ class MacroKnobComponent : public juce::Component,
 
     void refreshAutomapState();
     void updateAutomationTarget();
+    magda::AutomationTarget makeAutomationTarget() const;
+    void beginAutomationGesture();
+    void endAutomationGesture();
 
     void showLinkMenu();
     void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);

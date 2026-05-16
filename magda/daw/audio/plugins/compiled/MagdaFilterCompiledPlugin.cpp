@@ -124,6 +124,17 @@ const EngineHarvest::Control* findByIdx(const EngineHarvest& h, int idx) {
     return nullptr;
 }
 
+float clampSallenKeyCutoffHz(float cutoffHz, int sampleRate, float minCutoffHz) {
+    if (sampleRate <= 0)
+        return cutoffHz;
+
+    constexpr float kStableNyquistFraction = 0.84f;
+    const float maxCutoffHz = static_cast<float>(sampleRate) * 0.5f * kStableNyquistFraction;
+    if (maxCutoffHz <= minCutoffHz)
+        return minCutoffHz;
+    return juce::jlimit(minCutoffHz, maxCutoffHz, cutoffHz);
+}
+
 }  // namespace
 
 // ============================================================================
@@ -170,6 +181,7 @@ void MagdaFilterCompiledPlugin::rebuildEngineState(int sampleRate) {
         auto& e = engines_[engineIdx];
         if (!e.dsp)
             continue;
+        e.sampleRate = sampleRate;
         e.dsp->init(sampleRate);
         e.numInputs = e.dsp->getNumInputs();
         e.numOutputs = e.dsp->getNumOutputs();
@@ -350,8 +362,14 @@ void MagdaFilterCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc)
 
     for (int e = 0; e < engineCount; ++e) {
         auto& engine = engines_[e];
-        if (engine.cutoffZone)
-            *engine.cutoffZone = static_cast<FAUSTFLOAT>(cutoffHz);
+        if (engine.cutoffZone) {
+            float engineCutoffHz = cutoffHz;
+            if (e == static_cast<int>(FilterFamily::SallenKey)) {
+                engineCutoffHz = clampSallenKeyCutoffHz(cutoffHz, engine.sampleRate,
+                                                        hostSlotInfo_[kCutoffSlot].minValue);
+            }
+            *engine.cutoffZone = static_cast<FAUSTFLOAT>(engineCutoffHz);
+        }
         if (engine.resZone)
             *engine.resZone = static_cast<FAUSTFLOAT>(resReal);
         if (engine.driveZone)

@@ -572,21 +572,12 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
         (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip.getTimelineLength(tempo);
     double clipLengthInBeats = displayLength * beatsPerSecond;
 
-    int minNote = 127, maxNote = 0;
-    for (const auto& note : clip.midiNotes) {
-        minNote = juce::jmin(minNote, note.noteNumber);
-        maxNote = juce::jmax(maxNote, note.noteNumber);
-    }
-    int rawRange = maxNote - minNote;
-    int padding = juce::jmax(6, rawRange / 4);
-    minNote = juce::jmax(0, minNote - padding);
-    maxNote = juce::jmin(127, maxNote + padding);
-    int noteRange = juce::jmax(12, maxNote - minNote);
-    double beatRange = juce::jmax(1.0, clipLengthInBeats);
-
     double midiSrcLength =
         clip.loopLength > 0.0 ? clip.loopLength : displayLength * clip.speedRatio;
-    double loopLengthBeats = midiSrcLength > 0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats;
+    double loopLengthBeats =
+        clip.loopLengthBeats > 0.0
+            ? clip.loopLengthBeats
+            : (midiSrcLength > 0.0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats);
 
     double midiOffset;
     if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
@@ -596,21 +587,61 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
         midiOffset = clip.loopEnabled ? clip.midiOffset : clip.midiTrimOffset;
     }
 
+    double loopStart = clip.loopStart * beatsPerSecond;
+    double loopEnd = loopStart + loopLengthBeats;
+
+    auto noteCanDisplay = [&](const MidiNote& note) {
+        const double noteStart = note.startBeat;
+        const double noteEnd = note.startBeat + note.lengthBeats;
+
+        if (clip.loopEnabled && loopLengthBeats > 0.0)
+            return noteEnd > loopStart && noteStart < loopEnd;
+
+        const double displayStart = note.startBeat - midiOffset;
+        const double displayEnd = displayStart + note.lengthBeats;
+        return displayEnd > 0.0 && displayStart < clipLengthInBeats;
+    };
+
+    int minNote = 127, maxNote = 0;
+    bool hasVisibleNote = false;
+    for (const auto& note : clip.midiNotes) {
+        if (!noteCanDisplay(note))
+            continue;
+
+        minNote = juce::jmin(minNote, note.noteNumber);
+        maxNote = juce::jmax(maxNote, note.noteNumber);
+        hasVisibleNote = true;
+    }
+
+    if (!hasVisibleNote)
+        return;
+
+    int rawRange = maxNote - minNote;
+    int padding = juce::jmax(6, rawRange / 4);
+    minNote = juce::jmax(0, minNote - padding);
+    maxNote = juce::jmin(127, maxNote + padding);
+    int noteRange = juce::jmax(12, maxNote - minNote);
+    double beatRange = juce::jmax(1.0, clipLengthInBeats);
+
     if (clip.loopEnabled && loopLengthBeats > 0.0) {
-        double loopStart = clip.loopStart * beatsPerSecond;
-        double loopEnd = loopStart + loopLengthBeats;
         int numRepetitions = static_cast<int>(std::ceil(clipLengthInBeats / loopLengthBeats));
 
         for (int rep = 0; rep < numRepetitions; ++rep) {
             for (const auto& note : clip.midiNotes) {
+                double sourceStart = juce::jmax(note.startBeat, loopStart);
+                double sourceEnd = juce::jmin(note.startBeat + note.lengthBeats, loopEnd);
+                double sourceLength = sourceEnd - sourceStart;
+                if (sourceLength <= 0.0)
+                    continue;
+
                 double noteBeat =
-                    loopStart + wrapPhase(note.startBeat - midiOffset - loopStart, loopLengthBeats);
+                    loopStart + wrapPhase(sourceStart - midiOffset - loopStart, loopLengthBeats);
 
                 if (noteBeat < loopStart || noteBeat >= loopEnd)
                     continue;
 
                 double displayStart = (noteBeat - loopStart) + rep * loopLengthBeats;
-                double displayEnd = displayStart + note.lengthBeats;
+                double displayEnd = displayStart + sourceLength;
 
                 double repEnd = (rep + 1) * loopLengthBeats;
                 displayEnd = juce::jmin(displayEnd, repEnd);

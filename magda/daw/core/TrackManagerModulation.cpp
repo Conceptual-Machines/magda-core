@@ -228,7 +228,11 @@ void TrackManager::setMacroValue(const ChainNodePath& path, int macroIndex, floa
     if (!indexInRange(node.macros, macroIndex))
         return;
     float clampedValue = juce::jlimit(0.0f, 1.0f, value);
-    (*node.macros)[macroIndex].value = clampedValue;
+    auto& macro = (*node.macros)[macroIndex];
+    if (std::abs(macro.value - clampedValue) <= 1.0e-6f)
+        return;
+
+    macro.value = clampedValue;
     notifyMacroValueChanged(path.trackId, node.scope, node.notifyId(), macroIndex, clampedValue);
 }
 

@@ -31,6 +31,9 @@ class PlaybackPositionTimer : private juce::Timer {
     /** Callback fired on the message thread when play state changes. */
     std::function<void(bool)> onPlayStateChanged;
 
+    /** Callback fired on the message thread when record state changes. */
+    std::function<void(bool)> onRecordStateChanged;
+
     /** Callback fired each tick with per-clip playhead positions (clip ID → seconds).
         Only called when at least one session clip has an active playhead. */
     std::function<void(const std::unordered_map<ClipId, double>&)> onSessionPlayheadUpdate;
