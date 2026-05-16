@@ -29,8 +29,8 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
             continue;
         }
 
-        // Highlight currently playing note
-        bool isPressed = (note == currentPlayingNote_ && isPlayingNote_);
+        const bool isPressed = note >= 0 && note < static_cast<int>(pressedNotes_.size()) &&
+                               pressedNotes_[static_cast<size_t>(note)];
 
         if (isPressed) {
             // Highlight color for pressed key
@@ -79,6 +79,31 @@ void PianoRollKeyboard::setScrollOffset(int offsetY) {
     }
 }
 
+void PianoRollKeyboard::setNotePressed(int noteNumber, bool pressed) {
+    if (noteNumber < 0 || noteNumber >= static_cast<int>(pressedNotes_.size()))
+        return;
+
+    auto& state = pressedNotes_[static_cast<size_t>(noteNumber)];
+    if (state != pressed) {
+        state = pressed;
+        repaint();
+    }
+}
+
+void PianoRollKeyboard::clearPressedNotes() {
+    bool changed = false;
+    for (auto& pressed : pressedNotes_) {
+        changed = changed || pressed;
+        pressed = false;
+    }
+
+    currentPlayingNote_ = -1;
+    isPlayingNote_ = false;
+
+    if (changed)
+        repaint();
+}
+
 bool PianoRollKeyboard::isBlackKey(int noteNumber) const {
     int note = noteNumber % 12;
     return note == 1 || note == 3 || note == 6 || note == 8 || note == 10;
@@ -111,6 +136,7 @@ void PianoRollKeyboard::mouseDown(const juce::MouseEvent& event) {
     // Start note preview
     currentPlayingNote_ = yToNoteNumber(event.y);
     isPlayingNote_ = true;
+    setNotePressed(currentPlayingNote_, true);
 
     DBG("Piano keyboard: Note pressed - " << currentPlayingNote_);
 
@@ -135,9 +161,9 @@ void PianoRollKeyboard::mouseDrag(const juce::MouseEvent& event) {
             if (isPlayingNote_ && onNotePreview) {
                 DBG("Piano keyboard: Stopping note due to drag");
                 onNotePreview(currentPlayingNote_, 0, false);  // Note off
+                setNotePressed(currentPlayingNote_, false);
                 isPlayingNote_ = false;
                 currentPlayingNote_ = -1;
-                repaint();  // Redraw to remove highlight
             }
 
             // Vertical drag = scroll (along keyboard), horizontal drag = zoom
@@ -175,9 +201,9 @@ void PianoRollKeyboard::mouseUp(const juce::MouseEvent& /*event*/) {
     if (isPlayingNote_ && onNotePreview) {
         DBG("Piano keyboard: Note released - " << currentPlayingNote_);
         onNotePreview(currentPlayingNote_, 0, false);  // Note off
+        setNotePressed(currentPlayingNote_, false);
         isPlayingNote_ = false;
         currentPlayingNote_ = -1;
-        repaint();  // Redraw to remove highlight
     }
 
     dragMode_ = DragMode::None;

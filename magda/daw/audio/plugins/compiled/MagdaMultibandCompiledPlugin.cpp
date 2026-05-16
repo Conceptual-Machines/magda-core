@@ -13,7 +13,7 @@ const char* MagdaMultibandCompiledPlugin::xmlTypeName = "magda_multiband";
 namespace {
 
 constexpr float kMinRatio = 0.05f;
-constexpr float kMaxRatio = 20.0f;
+constexpr float kMaxRatio = 100.0f;
 constexpr float kMinLevelDb = -100.0f;
 constexpr double kBiquadQ = 0.7071067811865476;
 
@@ -237,8 +237,24 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
         hostSlotInfo_[slot] = {.name = std::move(name),
                                .scale = magda::ParameterScale::Linear,
                                .minValue = 0.05f,
-                               .maxValue = 20.0f,
+                               .maxValue = kMaxRatio,
                                .defaultValue = 8.0f};
+    };
+    auto setTiming = [this](int attackSlot, int releaseSlot, const juce::String& bandName) {
+        hostSlotInfo_[attackSlot] = {.name = bandName + " Attack",
+                                     .unit = "ms",
+                                     .scale = magda::ParameterScale::Logarithmic,
+                                     .minValue = 0.1f,
+                                     .maxValue = 100.0f,
+                                     .defaultValue = 3.0f,
+                                     .scaleAnchor = 10.0f};
+        hostSlotInfo_[releaseSlot] = {.name = bandName + " Release",
+                                      .unit = "ms",
+                                      .scale = magda::ParameterScale::Logarithmic,
+                                      .minValue = 5.0f,
+                                      .maxValue = 1000.0f,
+                                      .defaultValue = 120.0f,
+                                      .scaleAnchor = 100.0f};
     };
     auto setBand = [this, setThreshold,
                     setRatio](int lowerThresholdSlot, int upperThresholdSlot, int belowRatioSlot,
@@ -264,10 +280,13 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
 
     setBand(kLowLowerThresholdSlot, kLowUpperThresholdSlot, kLowBelowRatioSlot, kLowAboveRatioSlot,
             kLowRangeSlot, kLowLimitSlot, "Low", -48.0f, -24.0f);
+    setTiming(kLowAttackSlot, kLowReleaseSlot, "Low");
     setBand(kMidLowerThresholdSlot, kMidUpperThresholdSlot, kMidBelowRatioSlot, kMidAboveRatioSlot,
             kMidRangeSlot, kMidLimitSlot, "Mid", -48.0f, -24.0f);
+    setTiming(kMidAttackSlot, kMidReleaseSlot, "Mid");
     setBand(kHighLowerThresholdSlot, kHighUpperThresholdSlot, kHighBelowRatioSlot,
             kHighAboveRatioSlot, kHighRangeSlot, kHighLimitSlot, "High", -48.0f, -24.0f);
+    setTiming(kHighAttackSlot, kHighReleaseSlot, "High");
 
     hostSlotInfo_[kLowXoSlot] = {.name = "Low XO",
                                  .unit = "Hz",
@@ -384,6 +403,14 @@ void MagdaMultibandCompiledPlugin::applyToBuffer(const te::PluginRenderContext& 
     const std::array<float, 3> limits{slotDisplayValue(kLowLimitSlot),
                                       slotDisplayValue(kMidLimitSlot),
                                       slotDisplayValue(kHighLimitSlot)};
+    const float attackScale = juce::jlimit(0.1f, 10.0f, attackMs / 3.0f);
+    const float releaseScale = juce::jlimit(0.1f, 10.0f, releaseMs / 120.0f);
+    const std::array<float, 3> bandAttackMs{slotDisplayValue(kLowAttackSlot) * attackScale,
+                                            slotDisplayValue(kMidAttackSlot) * attackScale,
+                                            slotDisplayValue(kHighAttackSlot) * attackScale};
+    const std::array<float, 3> bandReleaseMs{slotDisplayValue(kLowReleaseSlot) * releaseScale,
+                                             slotDisplayValue(kMidReleaseSlot) * releaseScale,
+                                             slotDisplayValue(kHighReleaseSlot) * releaseScale};
     const std::array<float, 3> bandInputGains{dbToGain(slotDisplayValue(kLowInputSlot)),
                                               dbToGain(slotDisplayValue(kMidInputSlot)),
                                               dbToGain(slotDisplayValue(kHighInputSlot))};
@@ -391,8 +418,12 @@ void MagdaMultibandCompiledPlugin::applyToBuffer(const te::PluginRenderContext& 
                                          dbToGain(slotDisplayValue(kMidGainSlot)),
                                          dbToGain(slotDisplayValue(kHighGainSlot))};
 
-    const float attackCoeff = coefficientForMs(attackMs, sampleRate_);
-    const float releaseCoeff = coefficientForMs(releaseMs, sampleRate_);
+    const std::array<float, 3> attackCoeffs{coefficientForMs(bandAttackMs[0], sampleRate_),
+                                            coefficientForMs(bandAttackMs[1], sampleRate_),
+                                            coefficientForMs(bandAttackMs[2], sampleRate_)};
+    const std::array<float, 3> releaseCoeffs{coefficientForMs(bandReleaseMs[0], sampleRate_),
+                                             coefficientForMs(bandReleaseMs[1], sampleRate_),
+                                             coefficientForMs(bandReleaseMs[2], sampleRate_)};
     const float gainSmoothCoeff = coefficientForMs(5.0f, sampleRate_);
     const int startSample = fc.bufferStartSample;
     const int numSamples = fc.bufferNumSamples;
@@ -415,7 +446,7 @@ void MagdaMultibandCompiledPlugin::applyToBuffer(const te::PluginRenderContext& 
                 const auto idx = static_cast<size_t>(band);
                 const float drivenBand = bands[idx] * bandInputGains[idx];
                 const float detector = std::abs(drivenBand);
-                const float envCoeff = detector > env[idx] ? attackCoeff : releaseCoeff;
+                const float envCoeff = detector > env[idx] ? attackCoeffs[idx] : releaseCoeffs[idx];
                 env[idx] = envCoeff * env[idx] + (1.0f - envCoeff) * detector;
 
                 const float levelDb = std::max(kMinLevelDb, gainToDb(env[idx]));
@@ -489,20 +520,26 @@ constexpr AliasSpec kAliases[] = {
     {"low_above_ratio", 15, "Low Above Ratio"},
     {"low_range", 16, "Low Range"},
     {"low_limit", 17, "Low Limit"},
-    {"mid_lower_threshold", 18, "Mid Lower Threshold"},
-    {"mid_upper_threshold", 19, "Mid Upper Threshold"},
-    {"mid_below_ratio", 20, "Mid Below Ratio"},
-    {"mid_above_ratio", 21, "Mid Above Ratio"},
-    {"mid_range", 22, "Mid Range"},
-    {"mid_limit", 23, "Mid Limit"},
-    {"high_lower_threshold", 24, "High Lower Threshold"},
-    {"high_upper_threshold", 25, "High Upper Threshold"},
-    {"high_below_ratio", 26, "High Below Ratio"},
-    {"high_above_ratio", 27, "High Above Ratio"},
-    {"high_range", 28, "High Range"},
-    {"high_limit", 29, "High Limit"},
-    {"low_xo", 30, "Low XO"},
-    {"high_xo", 31, "High XO"},
+    {"low_attack", 18, "Low Attack"},
+    {"low_release", 19, "Low Release"},
+    {"mid_lower_threshold", 20, "Mid Lower Threshold"},
+    {"mid_upper_threshold", 21, "Mid Upper Threshold"},
+    {"mid_below_ratio", 22, "Mid Below Ratio"},
+    {"mid_above_ratio", 23, "Mid Above Ratio"},
+    {"mid_range", 24, "Mid Range"},
+    {"mid_limit", 25, "Mid Limit"},
+    {"mid_attack", 26, "Mid Attack"},
+    {"mid_release", 27, "Mid Release"},
+    {"high_lower_threshold", 28, "High Lower Threshold"},
+    {"high_upper_threshold", 29, "High Upper Threshold"},
+    {"high_below_ratio", 30, "High Below Ratio"},
+    {"high_above_ratio", 31, "High Above Ratio"},
+    {"high_range", 32, "High Range"},
+    {"high_limit", 33, "High Limit"},
+    {"high_attack", 34, "High Attack"},
+    {"high_release", 35, "High Release"},
+    {"low_xo", 36, "Low XO"},
+    {"high_xo", 37, "High XO"},
 };
 
 const CompiledPluginSpec& getMagdaMultibandSpec() {

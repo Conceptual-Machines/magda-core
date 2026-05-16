@@ -57,22 +57,26 @@ class CompiledMultibandCurveView final : public juce::Component,
         None,
         LowXo,
         HighXo,
-        Attack,
-        Release,
         LowLowerThreshold,
         LowUpperThreshold,
         LowBelowRatio,
         LowAboveRatio,
+        LowAttack,
+        LowRelease,
         LowLimit,
         MidLowerThreshold,
         MidUpperThreshold,
         MidBelowRatio,
         MidAboveRatio,
+        MidAttack,
+        MidRelease,
         MidLimit,
         HighLowerThreshold,
         HighUpperThreshold,
         HighBelowRatio,
         HighAboveRatio,
+        HighAttack,
+        HighRelease,
         HighLimit,
     };
 
@@ -91,12 +95,15 @@ class CompiledMultibandCurveView final : public juce::Component,
     static int aboveRatioSlotForBand(int band);
     static int rangeSlotForBand(int band);
     static int limitSlotForBand(int band);
+    static int attackSlotForBand(int band);
+    static int releaseSlotForBand(int band);
     static int bandForHandle(Handle h);
     static bool isLimitHandle(Handle h);
     static bool isUpperThresholdHandle(Handle h);
     static bool isRatioHandle(Handle h);
     static bool isAboveRatioHandle(Handle h);
     static bool isTimingHandle(Handle h);
+    static bool isReleaseTimingHandle(Handle h);
     int slotForHandle(Handle h) const;
     Handle pickHandle(float x, float y) const;
 
@@ -105,8 +112,8 @@ class CompiledMultibandCurveView final : public juce::Component,
 
     float lowXoHz_ = 120.0f;
     float highXoHz_ = 2500.0f;
-    float attackMs_ = 3.0f;
-    float releaseMs_ = 120.0f;
+    std::array<float, 3> attackMs_{{3.0f, 3.0f, 3.0f}};
+    std::array<float, 3> releaseMs_{{120.0f, 120.0f, 120.0f}};
     std::array<float, 3> lowerThresholdDb_{{-48.0f, -48.0f, -48.0f}};
     std::array<float, 3> upperThresholdDb_{{-24.0f, -24.0f, -24.0f}};
     std::array<float, 3> belowRatio_{{8.0f, 8.0f, 8.0f}};
@@ -118,8 +125,8 @@ class CompiledMultibandCurveView final : public juce::Component,
     Handle draggedHandle_ = Handle::None;
     float dragStartValue_ = 0.0f;
     juce::Rectangle<float> plotArea_;
-    juce::Rectangle<float> attackArea_;
-    juce::Rectangle<float> releaseArea_;
+    std::array<juce::Rectangle<float>, 3> attackAreas_{};
+    std::array<juce::Rectangle<float>, 3> releaseAreas_{};
     std::array<juce::Rectangle<float>, 3> belowRatioAreas_{};
     std::array<juce::Rectangle<float>, 3> aboveRatioAreas_{};
 
