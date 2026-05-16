@@ -210,16 +210,16 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
         cb.setLookAndFeel(&comboLnf);
     };
 
-    // Default item carries the label so we don't need a separate juce::Label
-    // (those were overflowing the strip on narrow widths). Id 1 means
-    // "filter inactive" — see currentFilters(). Item IDs are 1..N matching
-    // their index in kFamilies / kShapes / kKeys so the reader can look the
-    // value up directly without going through ComboBox::getItemText.
-    familyFilter_.addItem("family: all", 1);
+    // Family — editable combo. Predefined values appear in the dropdown
+    // for quick picking, but the user can also type a custom string to
+    // match arbitrary family values written by the indexer (or external
+    // tools). Empty text = no filter. Different from shape/key which are
+    // strict closed sets.
     for (size_t i = 1; i < kFamilies.size(); ++i) {
-        familyFilter_.addItem(kFamilies[i], static_cast<int>(i + 1));
+        familyFilter_.addItem(kFamilies[i], static_cast<int>(i));
     }
-    familyFilter_.setSelectedId(1, juce::dontSendNotification);
+    familyFilter_.setEditableText(true);
+    familyFilter_.setTextWhenNothingSelected("family: all");
     styleCombo(familyFilter_);
     familyFilter_.onChange = [this]() { runSearch(); };
 
@@ -414,7 +414,13 @@ magda::media::QueryFilters MediaDbBrowserContent::currentFilters() const {
     // getItemText(getSelectedItemIndex()) have both been seen to lag the
     // selectedId update on first interaction, causing a stale or empty
     // filter on the first call to onChange.
-    f.family = selectedString(familyFilter_, kFamilies);
+    // Family is an editable combo — read the editor text directly so custom
+    // values typed by the user are honoured. Empty / whitespace-only text
+    // means "no filter".
+    const auto familyText = familyFilter_.getText().trim();
+    if (familyText.isNotEmpty()) {
+        f.family = familyText.toStdString();
+    }
     f.shape = selectedString(shapeFilter_, kShapes);
     f.keyRoot = selectedString(keyFilter_, kKeys);
 
