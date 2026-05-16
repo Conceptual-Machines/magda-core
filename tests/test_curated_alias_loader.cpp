@@ -210,7 +210,8 @@ TEST_CASE("CuratedAliasLoader - internal plugin aliases load from code without J
     // Plugins added in the InternalPluginAliases expansion are also present.
     REQUIRE(reg.lookupStored("reverb.room_size").has_value());
     REQUIRE(reg.lookupStored("delay.feedback").has_value());
-    REQUIRE(reg.lookupStored("utility.volume").has_value());
+    REQUIRE(reg.lookupStored("utility.gain").has_value());
+    REQUIRE_FALSE(reg.lookupStored("utility.volume").has_value());
 
     reg.clearLayer(AliasLayer::Curated);
 }
