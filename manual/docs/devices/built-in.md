@@ -1,6 +1,6 @@
 # Built-in Devices
 
-MAGDA includes its own custom devices as well as processors from the Tracktion Engine.
+MAGDA ships with its own native MIDI devices, instruments, and effects. All built-in devices are managed through the same rack wrapper layer that hosts third-party plugins, so macros, modulators, and presets behave identically across the device set.
 
 ## MIDI Devices
 
@@ -20,27 +20,13 @@ MAGDA includes its own custom devices as well as processors from the Tracktion E
 
 ## Effects
 
-These processors are provided by the Tracktion Engine and are available in every MAGDA installation:
-
-| Device | Description |
-|--------|-------------|
-| **EQ** | Parametric equalizer |
-| **Compressor** | Dynamics compressor |
-| **Reverb** | Algorithmic reverb |
-| **Delay** | Tempo-synced delay |
-| **Chorus** | Chorus/ensemble effect |
-| **Phaser** | Phaser effect |
-| **Filter** | Multimode filter (low-pass, high-pass, band-pass) |
-| **Pitch Shift** | Real-time pitch shifting |
-| **IR Reverb** | Convolution reverb using impulse responses |
-| **Utility** | Gain, phase invert, stereo width |
-| **Test Tone** | Signal generator for testing and calibration |
+The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped with every MAGDA installation. See [Effects](effects.md) for the full list, grouped by category.
 
 ## External Plugins
 
 In addition to built-in devices, MAGDA supports external plugins in the following formats:
 
-- **VST3** — Cross-platform
-- **Audio Units (AU)** — macOS only
+- **VST3** - Cross-platform
+- **Audio Units (AU)** - macOS only
 
 Use the [Plugin Browser](../panels/browsers.md) to find and add plugins to your tracks.

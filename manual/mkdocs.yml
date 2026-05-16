@@ -63,13 +63,16 @@ nav:
       - Editors: panels/editors.md
       - Chord Panel: panels/chord-panel.md
   - Devices:
-      - Built-in Devices: devices/built-in.md
-      - Arpeggiator: devices/arpeggiator.md
-      - Chord Engine: devices/chord-engine.md
-      - Drum Grid: devices/drum-grid.md
-      - 4OSC Synth: devices/4osc.md
-      - Sampler: devices/sampler.md
-      - Step Sequencer: devices/step-sequencer.md
+      - Overview: devices/built-in.md
+      - MIDI Devices:
+          - Arpeggiator: devices/arpeggiator.md
+          - Chord Engine: devices/chord-engine.md
+          - Step Sequencer: devices/step-sequencer.md
+      - Instruments:
+          - 4OSC Synth: devices/4osc.md
+          - Drum Grid: devices/drum-grid.md
+          - Sampler: devices/sampler.md
+      - Effects: devices/effects.md
   - Modulation:
       - Overview: modulation/overview.md
       - Modulators: modulation/modulators.md
