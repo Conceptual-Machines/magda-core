@@ -38,7 +38,6 @@ with {
 };
 
 db2lin(db) = pow(10.0, db / 20.0);
-dryWetMix(d, w) = (1.0 - mix) * d + mix * w;
 
 process(l, r) = wL, wR
 with {
@@ -47,6 +46,9 @@ with {
     widened = applyWidth(rawL, rawR);
     wetLw = widened : _, !;
     wetRw = widened : !, _;
-    wL = dryWetMix(l, wetLw) * db2lin(outDb);
-    wR = dryWetMix(r, wetRw) * db2lin(outDb);
+    wetMid = (wetLw + wetRw) * 0.5;
+    sideReturnL = wetLw - wetMid;
+    sideReturnR = wetRw - wetMid;
+    wL = (l + mix * sideReturnL) * db2lin(outDb);
+    wR = (r + mix * sideReturnR) * db2lin(outDb);
 };

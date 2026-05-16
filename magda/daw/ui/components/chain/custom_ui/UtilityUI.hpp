@@ -13,7 +13,7 @@ namespace magda::daw::ui {
 /**
  * @brief Custom UI for the Utility plugin (Gain, Pan, Phase Invert)
  *
- * Single-row layout: Gain | Pan | Phase Invert
+ * Compact fader layout: vertical gain with pan along the bottom.
  */
 class UtilityUI : public juce::Component {
   public:

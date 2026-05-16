@@ -177,7 +177,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (impulseResponseUI_)
         return 350;
     if (utilityUI_)
-        return 300;
+        return 190;
     if (stepSequencerUI_)
         return 500;
     if (chordEngineUI_)

@@ -22,6 +22,7 @@ static void setupLabelStatic(juce::Label& label, const juce::String& text,
 UtilityUI::UtilityUI() {
     setupSlider(gain_, "GAIN");
     setupSlider(pan_, "PAN");
+    gain_.slider.setOrientation(TextSlider::Orientation::Vertical);
 
     // Gain: slider position 0..1, displayed as dB via volumeFaderPositionToDB
     gain_.slider.setRange(0.0, 1.0, 0.001);
@@ -113,31 +114,25 @@ void UtilityUI::paint(juce::Graphics& g) {
 
 void UtilityUI::resized() {
     auto area = getLocalBounds().reduced(6);
-    int labelHeight = 14;
-    int sliderHeight = 18;
-    int totalWidth = area.getWidth();
-    int gainColWidth = totalWidth * 50 / 100;
-    int panColWidth = totalWidth * 35 / 100;
-    int phaseColWidth = totalWidth - gainColWidth - panColWidth;
+    constexpr int labelHeight = 14;
+    constexpr int panHeight = 34;
+    constexpr int phaseWidth = 46;
 
-    auto row = area;
+    auto top = area;
+    auto panArea = top.removeFromBottom(panHeight);
+    top.removeFromBottom(4);
 
-    // Gain slider
-    auto gainCol = row.removeFromLeft(gainColWidth).reduced(2, 0);
-    gain_.label.setBounds(gainCol.removeFromTop(labelHeight));
-    gain_.slider.setBounds(gainCol.removeFromTop(sliderHeight));
-
-    // Pan slider
-    auto panCol = row.removeFromLeft(panColWidth).reduced(2, 0);
-    pan_.label.setBounds(panCol.removeFromTop(labelHeight));
-    pan_.slider.setBounds(panCol.removeFromTop(sliderHeight));
-
-    // Phase button — compact column
-    auto phaseCol = row.reduced(2, 0);
+    auto phaseCol = top.removeFromRight(phaseWidth).reduced(2, 0);
     phaseLabel_.setBounds(phaseCol.removeFromTop(labelHeight));
-    auto phaseArea = phaseCol.removeFromTop(sliderHeight);
-    int phaseSize = juce::jmin(phaseArea.getWidth(), phaseArea.getHeight());
-    phaseButton_->setBounds(phaseArea.withSizeKeepingCentre(phaseSize, phaseSize));
+    const int phaseSize = juce::jmin(phaseCol.getWidth(), phaseCol.getHeight(), 22);
+    phaseButton_->setBounds(phaseCol.withSizeKeepingCentre(phaseSize, phaseSize));
+
+    auto gainCol = top.reduced(2, 0);
+    gain_.label.setBounds(gainCol.removeFromTop(labelHeight));
+    gain_.slider.setBounds(gainCol.reduced(0, 1));
+
+    pan_.label.setBounds(panArea.removeFromTop(labelHeight));
+    pan_.slider.setBounds(panArea.reduced(2, 0));
 }
 
 std::vector<LinkableTextSlider*> UtilityUI::getLinkableSliders() {
