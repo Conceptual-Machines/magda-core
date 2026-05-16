@@ -167,8 +167,7 @@ void CompiledGateCurveView::mouseWheelMove(const juce::MouseEvent& e,
     if (!plotArea_.contains(e.position))
         return;
 
-    const float delta = wheel.deltaY * 5.0f;
-    const float newRatio = juce::jlimit(1.0f, 50.0f, ratio_ + delta);
+    const float newRatio = juce::jlimit(1.0f, 50.0f, ratio_ * std::pow(2.0f, wheel.deltaY * 1.5f));
     if (std::fabs(newRatio - ratio_) > 0.01f) {
         ratio_ = newRatio;
         if (onParameterChanged)
@@ -252,8 +251,8 @@ void CompiledGateCurveView::paint(juce::Graphics& g) {
 const CompiledPresentationSpec& getMagdaGatePresentation() {
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaGateExpanderCompiledPlugin::xmlTypeName,
-        .layoutCellCount = 4,
-        .layoutCellsPerRow = 2,
+        .layoutCellCount = 6,
+        .layoutCellsPerRow = 3,
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledGateCurveView>(pluginId);
         },

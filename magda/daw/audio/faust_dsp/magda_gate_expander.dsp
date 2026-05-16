@@ -11,7 +11,7 @@ outputDb  = hslider("Output [unit:dB] [idx:3]",                                 
 
 // Curve-editor controls (slots 4-6) — hidden from knob grid.
 thresholdDb = hslider("Threshold [unit:dB] [idx:4]", -40.0, -80.0,  0.0, 0.1) : si.smooth(ba.tau2pole(0.02));
-ratio       = hslider("Ratio [idx:5]",                  4.0,   1.0, 50.0, 0.01) : si.smooth(ba.tau2pole(0.02));
+ratio       = hslider("Ratio [scale:log] [scaleAnchor:4] [idx:5]", 4.0, 1.0, 50.0, 0.01) : si.smooth(ba.tau2pole(0.02));
 rangeDb     = hslider("Range [unit:dB] [idx:6]",        60.0,  0.0, 80.0, 0.1)  : si.smooth(ba.tau2pole(0.02));
 
 db2lin(db) = pow(10.0, db / 20.0);
