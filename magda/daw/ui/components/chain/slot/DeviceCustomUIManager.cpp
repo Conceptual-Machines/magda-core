@@ -28,7 +28,6 @@
 #include "custom_ui/SamplerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "custom_ui/ToneGeneratorUI.hpp"
-#include "custom_ui/UtilityUI.hpp"
 #include "drum_grid/DrumGridUI.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
@@ -101,8 +100,6 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return pitchShiftUI_.get();
     if (impulseResponseUI_)
         return impulseResponseUI_.get();
-    if (utilityUI_)
-        return utilityUI_.get();
     if (faustUI_)
         return faustUI_.get();
     if (chordEngineUI_)
@@ -137,8 +134,6 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return pitchShiftUI_->getLinkableSliders();
     if (impulseResponseUI_)
         return impulseResponseUI_->getLinkableSliders();
-    if (utilityUI_)
-        return utilityUI_->getLinkableSliders();
     if (samplerUI_)
         return samplerUI_->getLinkableSliders();
     if (arpeggiatorUI_)
@@ -151,8 +146,7 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 bool DeviceCustomUIManager::hasAnyUI() const {
     return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
            reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-           impulseResponseUI_ || utilityUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ ||
-           stepSequencerUI_;
+           impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -176,8 +170,6 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 200;
     if (impulseResponseUI_)
         return 350;
-    if (utilityUI_)
-        return 190;
     if (stepSequencerUI_)
         return 500;
     if (chordEngineUI_)
@@ -268,8 +260,6 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         pitchShiftUI_->updateFromParameters(device.parameters);
     if (impulseResponseUI_ && device.pluginId.containsIgnoreCase("impulseresponse"))
         impulseResponseUI_->updateFromParameters(device.parameters);
-    if (utilityUI_ && device.pluginId.containsIgnoreCase("utility"))
-        utilityUI_->updateFromParameters(device.parameters);
     if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc"))
         fourOscUI_->updateFromParameters(device.parameters);
 }
@@ -742,7 +732,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
             addInternalFxEntry(internals, "Filter", "lowpass");
             addInternalFxEntry(internals, "Pitch Shift", "pitchshift");
             addInternalFxEntry(internals, "IR Reverb", "impulseresponse");
-            addInternalFxEntry(internals, "Utility", "utility");
+            addCompiledInternalFxEntry(internals, "Utility");
             int itemId = 1;
             for (const auto& entry : internals)
                 internalMenu.addItem(itemId++, entry.name);
@@ -1018,14 +1008,6 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
 
         parent->addAndMakeVisible(*impulseResponseUI_);
         update(device);
-    } else if (device.pluginId.containsIgnoreCase("utility")) {
-        utilityUI_ = std::make_unique<UtilityUI>();
-        utilityUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-        parent->addAndMakeVisible(*utilityUI_);
-        update(device);
     } else if (device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
         chordEngineUI_ = std::make_unique<ChordPanelContent>();
         parent->addAndMakeVisible(*chordEngineUI_);
@@ -1265,10 +1247,6 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
                 }
             }
         }
-    }
-
-    if (utilityUI_ && device.pluginId.containsIgnoreCase("utility")) {
-        utilityUI_->updateFromParameters(device.parameters);
     }
 }
 

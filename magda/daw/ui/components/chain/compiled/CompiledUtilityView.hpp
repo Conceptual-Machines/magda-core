@@ -19,10 +19,7 @@ class CompiledUtilityView final : public juce::Component,
                                   private juce::Timer {
   public:
     explicit CompiledUtilityView(juce::String pluginId);
-
-    int getPreferredHeight() const {
-        return 48;
-    }
+    ~CompiledUtilityView() override;
 
     void setCompiledPlugin(magda::daw::audio::compiled::MagdaUtilityCompiledPlugin* plugin);
     void updateFromDevice(const magda::DeviceInfo& device) override;
@@ -35,7 +32,7 @@ class CompiledUtilityView final : public juce::Component,
         onParameterChanged = std::move(cb);
     }
     int preferredHeight() const override {
-        return getPreferredHeight();
+        return 220;
     }
 
     std::function<void(int slotIndex, float displayValue)> onParameterChanged;
@@ -45,13 +42,21 @@ class CompiledUtilityView final : public juce::Component,
 
   private:
     void timerCallback() override;
-    void resampleFromDevice();
-    void updateButtonState(int btnIdx, bool on);
+    void syncFromDevice();
+
+    struct ButtonLaf : public juce::LookAndFeel_V4 {
+        juce::Font getTextButtonFont(juce::TextButton&, int) override;
+    };
 
     magda::daw::audio::compiled::MagdaUtilityCompiledPlugin* compiledPlugin_ = nullptr;
     magda::DeviceInfo deviceSnapshot_;
+    ButtonLaf buttonLaf_;
 
-    // 4 toggle buttons corresponding to slots 4-7: Mono, Low Mono, Flip L, Flip R
+    juce::Slider gainSlider_;
+    juce::Slider panSlider_;
+    juce::Slider widthSlider_;
+    juce::Slider lowXoverSlider_;
+
     std::array<juce::TextButton, 4> btns_;
     static constexpr std::array<const char*, 4> kLabels{"MONO", "LOW MONO", "FLIP L", "FLIP R"};
 
