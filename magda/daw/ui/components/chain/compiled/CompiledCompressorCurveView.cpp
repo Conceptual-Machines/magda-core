@@ -384,6 +384,21 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
                      juce::Justification::centredBottom, 1);
 }
 
+void CompiledCompressorCurveView::mouseWheelMove(const juce::MouseEvent& e,
+                                                 const juce::MouseWheelDetails& wheel) {
+    using Comp = magda::daw::audio::compiled::MagdaCompressorCompiledPlugin;
+    if (!plotArea_.contains(e.position))
+        return;
+
+    const float newRatio = juce::jlimit(1.0f, 50.0f, ratio_ * std::pow(2.0f, wheel.deltaY * 1.5f));
+    if (std::fabs(newRatio - ratio_) > 0.01f) {
+        ratio_ = newRatio;
+        if (onParameterChanged)
+            onParameterChanged(Comp::kRatioSlot, ratio_);
+        repaint();
+    }
+}
+
 const CompiledPresentationSpec& getMagdaCompressorPresentation() {
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName,

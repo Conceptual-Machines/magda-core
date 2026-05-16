@@ -18,8 +18,8 @@ namespace magda::daw::audio::compiled {
  * @brief Compiled-Faust OTT-style 3-band compressor.
  *
  * Linkwitz-Riley splits the input into low / mid / high bands; each band
- * runs feed-forward parallel up + down compression; the three bands are
- * makeup-gained and summed back to stereo.
+ * applies input drive, runs feed-forward parallel up + down compression;
+ * the three bands are makeup-gained and summed back to stereo.
  *
  * Single-engine compiled plugin — all host controls map 1:1 to
  * Faust slots pinned by [idx:N].
@@ -59,12 +59,12 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
 
     // Slot ordering matches the [idx:N] pins inside magda_multiband.dsp.
     // Slots 0-8: knob-only controls shown in the param grid.
-    // Slots 9-26: per-band controls edited on the curve view (hidden from grid).
-    // Slots 27-28: crossover frequencies, editor-only.
+    // Slots 9-35: per-band controls edited on the curve view (hidden from grid).
+    // Slots 36-37: crossover frequencies, editor-only.
     static constexpr int kDepthSlot = 0;
     static constexpr int kTimeSlot = 1;
-    static constexpr int kDepth2Slot = 2;
-    static constexpr int kTime2Slot = 3;
+    static constexpr int kAttackSlot = 2;
+    static constexpr int kInputSlot = 3;
     static constexpr int kLowGainSlot = 4;
     static constexpr int kMidGainSlot = 5;
     static constexpr int kHighGainSlot = 6;
@@ -74,23 +74,32 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     static constexpr int kLowThreshBelowSlot = 10;
     static constexpr int kLowRatioAboveSlot = 11;
     static constexpr int kLowRatioBelowSlot = 12;
-    static constexpr int kLowThreshExpandSlot = 13;
-    static constexpr int kLowExpandRatioSlot = 14;
-    static constexpr int kMidThreshAboveSlot = 15;
-    static constexpr int kMidThreshBelowSlot = 16;
-    static constexpr int kMidRatioAboveSlot = 17;
-    static constexpr int kMidRatioBelowSlot = 18;
-    static constexpr int kMidThreshExpandSlot = 19;
-    static constexpr int kMidExpandRatioSlot = 20;
-    static constexpr int kHighThreshAboveSlot = 21;
-    static constexpr int kHighThreshBelowSlot = 22;
-    static constexpr int kHighRatioAboveSlot = 23;
-    static constexpr int kHighRatioBelowSlot = 24;
-    static constexpr int kHighThreshExpandSlot = 25;
-    static constexpr int kHighExpandRatioSlot = 26;
-    static constexpr int kLowXoSlot = 27;   // editor-only, not in param grid
-    static constexpr int kHighXoSlot = 28;  // editor-only, not in param grid
-    static constexpr int kHostSlotCount = 29;
+    static constexpr int kLowThreshExpandBelowSlot = 13;
+    static constexpr int kLowExpandRatioBelowSlot = 14;
+    static constexpr int kLowThreshExpandAboveSlot = 15;
+    static constexpr int kLowExpandRatioAboveSlot = 16;
+    static constexpr int kLowLimitSlot = 17;
+    static constexpr int kMidThreshAboveSlot = 18;
+    static constexpr int kMidThreshBelowSlot = 19;
+    static constexpr int kMidRatioAboveSlot = 20;
+    static constexpr int kMidRatioBelowSlot = 21;
+    static constexpr int kMidThreshExpandBelowSlot = 22;
+    static constexpr int kMidExpandRatioBelowSlot = 23;
+    static constexpr int kMidThreshExpandAboveSlot = 24;
+    static constexpr int kMidExpandRatioAboveSlot = 25;
+    static constexpr int kMidLimitSlot = 26;
+    static constexpr int kHighThreshAboveSlot = 27;
+    static constexpr int kHighThreshBelowSlot = 28;
+    static constexpr int kHighRatioAboveSlot = 29;
+    static constexpr int kHighRatioBelowSlot = 30;
+    static constexpr int kHighThreshExpandBelowSlot = 31;
+    static constexpr int kHighExpandRatioBelowSlot = 32;
+    static constexpr int kHighThreshExpandAboveSlot = 33;
+    static constexpr int kHighExpandRatioAboveSlot = 34;
+    static constexpr int kHighLimitSlot = 35;
+    static constexpr int kLowXoSlot = 36;   // editor-only, not in param grid
+    static constexpr int kHighXoSlot = 37;  // editor-only, not in param grid
+    static constexpr int kHostSlotCount = 38;
 
     te::AutomatableParameter* getSlotParameter(int slotIndex) const;
 

@@ -45,7 +45,7 @@ struct CompiledPluginSpec {
 /// All compiled-plugin specs known to MAGDA, in stable iteration order.
 std::span<const CompiledPluginSpec* const> getAllCompiledPluginSpecs();
 
-/// Returns null if `pluginId` doesn't match any compiled plugin.
+/// Returns null if `pluginId` doesn't match any compiled plugin id or load alias.
 const CompiledPluginSpec* findCompiledPluginSpec(const juce::String& pluginId);
 
 /// Creates the runtime processor for a compiled plugin instance.

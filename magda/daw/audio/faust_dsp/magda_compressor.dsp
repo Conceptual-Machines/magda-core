@@ -11,7 +11,7 @@ import("stdfaust.lib");
 // (Clean / Glue), which lives in the wrapper, not in any DSP.
 thresholdDb = hslider("Threshold [unit:dB] [idx:1]", -18.0, -60.0, 0.0, 0.1)
               : si.smooth(ba.tau2pole(0.02));
-ratio = hslider("Ratio [idx:2]", 4.0, 1.0, 20.0, 0.01)
+ratio = hslider("Ratio [scale:log] [scaleAnchor:4] [idx:2]", 4.0, 1.0, 50.0, 0.01)
         : si.smooth(ba.tau2pole(0.02));
 attackMs = hslider("Attack [unit:ms] [scale:log] [scaleAnchor:10] [idx:3]",
                    10.0, 0.1, 200.0, 0.1)

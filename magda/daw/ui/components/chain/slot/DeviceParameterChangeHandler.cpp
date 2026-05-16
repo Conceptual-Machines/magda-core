@@ -83,7 +83,8 @@ bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device, magda::DeviceId 
                                 *paramIt = refreshedInfo;
 
                             if (!layoutNeedsRefresh && slotIndex == modeSlot &&
-                                changedParamIndex != modeSlot) {
+                                changedParamIndex != modeSlot &&
+                                modeSlot < paramGrid.getSlotCount()) {
                                 if (auto* slot = paramGrid.getSlot(modeSlot))
                                     slot->setParameterInfo(refreshedInfo);
                             }
@@ -94,7 +95,7 @@ bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device, magda::DeviceId 
         }
     }
 
-    if (modeSlot < 0)
+    if (modeSlot < 0 || modeSlot >= paramGrid.getSlotCount())
         return layoutNeedsRefresh;
 
     const auto cell = paramGrid.getLayout().cellFor(device, modeSlot, paramGrid.getCurrentPage());
@@ -133,6 +134,9 @@ void applyLearnModeParameterHighlight(magda::DeviceInfo& device, ParamHostCompon
         return;
 
     const int cellsPerPage = paramGrid.getSlotCount();
+    if (cellsPerPage <= 0)
+        return;
+
     const int targetPage = visibleIndex / cellsPerPage;
     if (targetPage != paramGrid.getCurrentPage()) {
         const int totalPages = juce::jmax(1, paramGrid.getLayout().totalPages(device));

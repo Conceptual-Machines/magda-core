@@ -15,7 +15,7 @@ namespace magda::daw::ui {
  */
 class ValueLabelControl : public juce::Component {
   public:
-    enum class FillMode { LeftToRight, PanCentre };
+    enum class FillMode { LeftToRight, PanCentre, BottomToTop };
     enum class TintState { None, Automated, Overridden };
 
     ValueLabelControl();
@@ -42,6 +42,8 @@ class ValueLabelControl : public juce::Component {
     void setDragging(bool dragging);
     void setCoEditing(bool coEditing);
     void setTintState(TintState state);
+    void setVertical(bool vertical);
+    void setShowText(bool show);
 
     bool isEditing() const;
     void showEditor(const juce::String& initialText);
@@ -78,6 +80,8 @@ class ValueLabelControl : public juce::Component {
     bool drawBorder_ = true;
     bool dragging_ = false;
     bool coEditing_ = false;
+    bool vertical_ = false;
+    bool showText_ = true;
     juce::Font font_;
     juce::Justification justification_ = juce::Justification::centred;
     std::optional<juce::Colour> customTextColour_;

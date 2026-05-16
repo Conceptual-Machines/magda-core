@@ -235,10 +235,11 @@ void MagdaCompressorCompiledPlugin::buildHostParameters() {
                                      .maxValue = 0.0f,
                                      .defaultValue = -18.0f};
     hostSlotInfo_[kRatioSlot] = {.name = "Ratio",
-                                 .scale = magda::ParameterScale::Linear,
+                                 .scale = magda::ParameterScale::Logarithmic,
                                  .minValue = 1.0f,
-                                 .maxValue = 20.0f,
-                                 .defaultValue = 4.0f};
+                                 .maxValue = 50.0f,
+                                 .defaultValue = 4.0f,
+                                 .scaleAnchor = 4.0f};
     hostSlotInfo_[kAttackSlot] = {.name = "Attack",
                                   .unit = "ms",
                                   .scale = magda::ParameterScale::Logarithmic,

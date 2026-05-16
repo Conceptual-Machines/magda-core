@@ -10,6 +10,7 @@
 #include "MagdaFilterCompiledPlugin.hpp"
 #include "MagdaFlangerCompiledPlugin.hpp"
 #include "MagdaFreqShiftCompiledPlugin.hpp"
+#include "MagdaGateExpanderCompiledPlugin.hpp"
 #include "MagdaGrainDelayCompiledPlugin.hpp"
 #include "MagdaGritCompiledPlugin.hpp"
 #include "MagdaLimiterCompiledPlugin.hpp"
@@ -20,6 +21,7 @@
 #include "MagdaReverbCompiledPlugin.hpp"
 #include "MagdaRingModCompiledPlugin.hpp"
 #include "MagdaSaturatorCompiledPlugin.hpp"
+#include "MagdaUtilityCompiledPlugin.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
 #include "processors/CompiledFaustProcessor.hpp"
 
@@ -44,12 +46,14 @@ const CompiledPluginSpec& getMagdaFlangerSpec();
 const CompiledPluginSpec& getMagdaRingModSpec();
 const CompiledPluginSpec& getMagdaFreqShiftSpec();
 const CompiledPluginSpec& getMagdaLimiterSpec();
+const CompiledPluginSpec& getMagdaGateExpanderSpec();
 const CompiledPluginSpec& getMagdaClipperSpec();
 const CompiledPluginSpec& getMagdaReverbSpec();
 const CompiledPluginSpec& getMagdaEqSpec();
 const CompiledPluginSpec& getMagdaDimensionSpec();
 const CompiledPluginSpec& getMagdaPitchSpec();
 const CompiledPluginSpec& getMagdaBitcrusherSpec();
+const CompiledPluginSpec& getMagdaUtilitySpec();
 
 namespace {
 
@@ -58,9 +62,10 @@ const CompiledPluginSpec* const kAllSpecs[] = {
     &getMagdaGrainDelaySpec(), &getMagdaGritSpec(),       &getMagdaMultibandSpec(),
     &getMagdaPhaserSpec(),     &getMagdaCompressorSpec(), &getMagdaModSpec(),
     &getMagdaChorusSpec(),     &getMagdaFlangerSpec(),    &getMagdaRingModSpec(),
-    &getMagdaFreqShiftSpec(),  &getMagdaLimiterSpec(),    &getMagdaClipperSpec(),
-    &getMagdaReverbSpec(),     &getMagdaEqSpec(),         &getMagdaDimensionSpec(),
-    &getMagdaPitchSpec(),      &getMagdaBitcrusherSpec(),
+    &getMagdaFreqShiftSpec(),  &getMagdaLimiterSpec(),    &getMagdaGateExpanderSpec(),
+    &getMagdaClipperSpec(),    &getMagdaReverbSpec(),     &getMagdaEqSpec(),
+    &getMagdaDimensionSpec(),  &getMagdaPitchSpec(),      &getMagdaBitcrusherSpec(),
+    &getMagdaUtilitySpec(),
 };
 
 }  // namespace
@@ -72,6 +77,9 @@ std::span<const CompiledPluginSpec* const> getAllCompiledPluginSpecs() {
 const CompiledPluginSpec* findCompiledPluginSpec(const juce::String& pluginId) {
     for (const auto* spec : kAllSpecs) {
         if (pluginId.equalsIgnoreCase(spec->pluginId))
+            return spec;
+
+        if (spec->aliasKey != nullptr && pluginId.equalsIgnoreCase(spec->aliasKey))
             return spec;
     }
     return nullptr;

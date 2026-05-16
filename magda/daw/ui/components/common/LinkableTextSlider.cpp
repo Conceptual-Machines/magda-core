@@ -205,6 +205,10 @@ void LinkableTextSlider::setBackgroundColour(const juce::Colour& colour) {
     slider_.setBackgroundColour(colour);
 }
 
+void LinkableTextSlider::setOrientation(TextSlider::Orientation orientation) {
+    slider_.setOrientation(orientation);
+}
+
 TextSlider& LinkableTextSlider::getSlider() {
     return slider_;
 }
@@ -514,13 +518,10 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
                                            availableRackMods_, availableTrackMods_);
 
         float initialAmount = 0.0f;
-        bool isLinked = false;
-
         if (modPtr) {
             magda::ControlTarget thisTarget =
                 magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
             if (const auto* existingLink = modPtr->getLink(thisTarget)) {
-                isLinked = true;
                 initialAmount = existingLink->amount;
             }
         }
