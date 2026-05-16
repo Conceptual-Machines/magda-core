@@ -25,7 +25,12 @@ driveLin = db2lin(drive);
 // static nonlinearities — no envelope, no attack/release. Each is dirt
 // cheap to evaluate, so Pattern A (run all, select one) is fine here.
 clipHard(x)  = aa.hardclip(x);
-clipSoft(x)  = aa.softclipQuadratic1(x);
+// softclipQuadratic1 has slope 2 in its linear region (|x|<1/3), so it
+// adds ~+6 dB to low-level signal vs. the other four shapes (all of which
+// have unity slope at zero). Pre-scale the input by 0.5 to gain-match the
+// other modes — the curve still clips at +/-1 output, the soft knee just
+// engages at a higher input level.
+clipSoft(x)  = aa.softclipQuadratic1(x * 0.5);
 clipTanh(x)  = aa.tanh1(x);
 clipHyper(x) = aa.hyperbolic(x);
 clipSine(x)  = aa.sinarctan(x);

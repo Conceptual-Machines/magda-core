@@ -117,6 +117,8 @@ struct TrackInfo {
           childIds(other.childIds),
           volume(other.volume),
           pan(other.pan),
+          manualVolume(other.manualVolume),
+          manualPan(other.manualPan),
           muted(other.muted),
           soloed(other.soloed),
           recordArmed(other.recordArmed),
@@ -155,6 +157,8 @@ struct TrackInfo {
             childIds = other.childIds;
             volume = other.volume;
             pan = other.pan;
+            manualVolume = other.manualVolume;
+            manualPan = other.manualPan;
             muted = other.muted;
             soloed = other.soloed;
             recordArmed = other.recordArmed;

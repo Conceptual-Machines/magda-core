@@ -565,10 +565,17 @@ juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& data) {
     SER(maxValue);
     SER(defaultValue);
     SER(currentValue);
+    SER(teMinValue);
+    SER(teMaxValue);
     SER(scale);
     SER(skewFactor);
+    SER(scaleAnchor);
+    SER(displayFormat);
     SER(modulatable);
     SER(bipolarModulation);
+    SER(gateSlotIndex);
+    SER(gateNegated);
+    SER(hidden);
 
     // Choices (vector of strings — stays manual)
     juce::Array<juce::var> choicesArray;
@@ -576,6 +583,21 @@ juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& data) {
         choicesArray.add(choice);
     }
     obj->setProperty("choices", juce::var(choicesArray));
+
+    juce::Array<juce::var> labelTicksArray;
+    for (const auto& [value, label] : data.labelTicks) {
+        auto* tickObj = new juce::DynamicObject();
+        tickObj->setProperty("value", value);
+        tickObj->setProperty("label", label);
+        labelTicksArray.add(juce::var(tickObj));
+    }
+    obj->setProperty("labelTicks", juce::var(labelTicksArray));
+
+    juce::Array<juce::var> valueTableArray;
+    for (const auto& value : data.valueTable) {
+        valueTableArray.add(value);
+    }
+    obj->setProperty("valueTable", juce::var(valueTableArray));
 
     return juce::var(obj);
 }
@@ -598,12 +620,47 @@ bool ProjectSerializer::deserializeParameterInfo(const juce::var& json, Paramete
     DESER(modulatable);
     DESER(bipolarModulation);
 
+    if (obj->hasProperty("teMinValue"))
+        DESER(teMinValue);
+    if (obj->hasProperty("teMaxValue"))
+        DESER(teMaxValue);
+    if (obj->hasProperty("scaleAnchor"))
+        DESER(scaleAnchor);
+    if (obj->hasProperty("displayFormat"))
+        DESER(displayFormat);
+    if (obj->hasProperty("gateSlotIndex"))
+        DESER(gateSlotIndex);
+    if (obj->hasProperty("gateNegated"))
+        DESER(gateNegated);
+    if (obj->hasProperty("hidden"))
+        DESER(hidden);
+
     // Choices (vector of strings — stays manual)
     auto choicesVar = obj->getProperty("choices");
     if (choicesVar.isArray()) {
         auto* arr = choicesVar.getArray();
         for (const auto& choiceVar : *arr) {
             data.choices.push_back(choiceVar.toString());
+        }
+    }
+
+    auto labelTicksVar = obj->getProperty("labelTicks");
+    if (labelTicksVar.isArray()) {
+        auto* arr = labelTicksVar.getArray();
+        for (const auto& tickVar : *arr) {
+            if (auto* tickObj = tickVar.getDynamicObject()) {
+                data.labelTicks.emplace_back(
+                    static_cast<float>(static_cast<double>(tickObj->getProperty("value"))),
+                    tickObj->getProperty("label").toString());
+            }
+        }
+    }
+
+    auto valueTableVar = obj->getProperty("valueTable");
+    if (valueTableVar.isArray()) {
+        auto* arr = valueTableVar.getArray();
+        for (const auto& valueVar : *arr) {
+            data.valueTable.push_back(valueVar.toString());
         }
     }
 

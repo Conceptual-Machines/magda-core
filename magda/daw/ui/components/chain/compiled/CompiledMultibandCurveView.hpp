@@ -14,15 +14,6 @@ class MagdaMultibandCompiledPlugin;
 
 namespace magda::daw::ui {
 
-/**
- * @brief Spectrum band visual for the compiled multiband compressor with
- *        draggable crossover, threshold, and expander handles.
- *
- * Plots three colour-tinted bands on a log-frequency axis.  The two vertical
- * lines are the Low / High crossover frequencies.  Per band: two horizontal
- * lines for the above/below thresholds plus expander thresholds above and
- * below those. Scroll wheel over each zone adjusts the matching ratio.
- */
 class CompiledMultibandCurveView final : public juce::Component,
                                          public CompiledDevicePanel,
                                          private juce::Timer {
@@ -66,20 +57,11 @@ class CompiledMultibandCurveView final : public juce::Component,
         None,
         LowXo,
         HighXo,
-        LowThreshAbove,
-        LowThreshBelow,
-        LowThreshExpandBelow,
-        LowThreshExpandAbove,
+        LowThreshold,
         LowLimit,
-        MidThreshAbove,
-        MidThreshBelow,
-        MidThreshExpandBelow,
-        MidThreshExpandAbove,
+        MidThreshold,
         MidLimit,
-        HighThreshAbove,
-        HighThreshBelow,
-        HighThreshExpandBelow,
-        HighThreshExpandAbove,
+        HighThreshold,
         HighLimit,
     };
 
@@ -91,42 +73,34 @@ class CompiledMultibandCurveView final : public juce::Component,
     float dbToY(float db) const;
     float yToDb(float y) const;
 
-    static bool isThresholdHandle(Handle h);
-    static bool isExpandHandle(Handle h);
-    static int thresholdBandIndex(Handle h);
-    static bool isAboveThresholdHandle(Handle h);
-    static int thresholdSlotForHandle(Handle h);
-
-    Handle pickHandle(float x, float y) const;
-
     int bandAtX(float x) const;
-    // Returns the ratio slot for a band (above=true → ratioAbove, above=false → ratioBelow).
-    int ratioSlotForBand(int band, bool above) const;
+    static int thresholdSlotForBand(int band);
+    static int ratioSlotForBand(int band);
+    static int rangeSlotForBand(int band);
+    static int limitSlotForBand(int band);
+    static int bandForHandle(Handle h);
+    static bool isLimitHandle(Handle h);
+    int slotForHandle(Handle h) const;
+    Handle pickHandle(float x, float y) const;
 
     magda::daw::audio::compiled::MagdaMultibandCompiledPlugin* compiledPlugin_ = nullptr;
     magda::DeviceInfo deviceSnapshot_;
 
     float lowXoHz_ = 120.0f;
     float highXoHz_ = 2500.0f;
-    std::array<float, 3> threshAboveDb_{{-24.0f, -24.0f, -24.0f}};
-    std::array<float, 3> threshBelowDb_{{-48.0f, -48.0f, -48.0f}};
-    std::array<float, 3> threshExpandBelowDb_{{-72.0f, -72.0f, -72.0f}};
-    std::array<float, 3> threshExpandAboveDb_{{0.0f, 0.0f, 0.0f}};
-    std::array<float, 3> ratiosAbove_{{8.0f, 8.0f, 8.0f}};
-    std::array<float, 3> ratiosBelow_{{8.0f, 8.0f, 8.0f}};
-    std::array<float, 3> expandRatiosBelow_{{1.0f, 1.0f, 1.0f}};
-    std::array<float, 3> expandRatiosAbove_{{1.0f, 1.0f, 1.0f}};
+    std::array<float, 3> thresholdDb_{{-42.0f, -36.0f, -45.0f}};
+    std::array<float, 3> ratio_{{8.0f, 8.0f, 8.0f}};
+    std::array<float, 3> rangeDb_{{24.0f, 24.0f, 24.0f}};
     std::array<float, 3> limitDb_{{0.0f, 0.0f, 0.0f}};
+
     Handle hoveredHandle_ = Handle::None;
     Handle draggedHandle_ = Handle::None;
     juce::Rectangle<float> plotArea_;
 
     juce::Rectangle<float> collapseButtonArea_;
     bool collapseButtonHovered_ = false;
-    // Which band is receiving a ratio scroll.  -1 = no active scroll.
-    // ratioScrollZone_: 0 = ratioAbove, 1 = ratioBelow, 2 = expandRatioBelow, 3 = expandRatioAbove.
     int ratioScrollBand_ = -1;
-    int ratioScrollZone_ = 0;
+    bool rangeScrollActive_ = false;
 
     std::function<void()> onLayoutChanged_;
 

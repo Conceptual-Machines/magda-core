@@ -2,15 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
-#include <map>
 
 #include "core/ParameterUtils.hpp"
-#include "faust/dsp/dsp.h"
-#include "faust/gui/UI.h"
-#include "faust/gui/meta.h"
-#include "magda_multiband.generated.cpp"
-#include "plugins/FaustMetadataParser.hpp"
-#include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
@@ -19,95 +12,131 @@ const char* MagdaMultibandCompiledPlugin::xmlTypeName = "magda_multiband";
 
 namespace {
 
-// Same idx-based harvest as the rest of the compiled-Faust pack — every
-// host control is identified by its [idx:N] annotation in the .dsp.
-struct MultibandHarvest {
-    struct Control {
-        int idx = -1;
-        FaustParamSlot::Kind kind = FaustParamSlot::Kind::Continuous;
-        FAUSTFLOAT* zone = nullptr;
-        std::vector<std::pair<float, juce::String>> choices;
-    };
-    std::vector<Control> controls;
-};
+constexpr float kMinRatioMagnitude = 0.05f;
+constexpr float kMinLevelDb = -100.0f;
+constexpr double kBiquadQ = 0.7071067811865476;
 
-class MultibandHarvester : public ::UI {
-  public:
-    MultibandHarvest harvest;
+magda::ParameterInfo parameterInfoForSlot(const CompiledHostSlotInfo& s) {
+    magda::ParameterInfo info;
+    info.minValue = s.minValue;
+    info.maxValue = s.maxValue;
+    info.defaultValue = s.defaultValue;
+    info.unit = s.unit;
+    info.scale = s.scale;
+    if (std::isfinite(s.scaleAnchor))
+        info.scaleAnchor = s.scaleAnchor;
+    info.choices = s.choices;
+    return info;
+}
 
-    void openTabBox(const char*) override {}
-    void openHorizontalBox(const char*) override {}
-    void openVerticalBox(const char*) override {}
-    void closeBox() override {}
+float dbToGain(float db) {
+    return std::pow(10.0f, db / 20.0f);
+}
 
-    void addButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Boolean, label, zone);
-    }
-    void addCheckButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Boolean, label, zone);
-    }
-    void addVerticalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT,
-                           FAUSTFLOAT) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone);
-    }
-    void addHorizontalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT, FAUSTFLOAT,
-                             FAUSTFLOAT, FAUSTFLOAT) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone);
-    }
-    void addNumEntry(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT,
-                     FAUSTFLOAT) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone);
-    }
-    void addHorizontalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
-    void addVerticalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
-    void addSoundfile(const char*, const char*, Soundfile**) override {}
+float gainToDb(float gain) {
+    return 20.0f * std::log10(std::max(gain, 1.0e-5f));
+}
 
-    void declare(FAUSTFLOAT* zone, const char* key, const char* value) override {
-        if (zone == nullptr)
-            return;
-        const auto k = juce::String::fromUTF8(key != nullptr ? key : "").toLowerCase();
-        const auto v = juce::String::fromUTF8(value != nullptr ? value : "");
-        applyFaustAnnotation(k, v, pendingByZone_[zone]);
-    }
+float coefficientForMs(float ms, double sampleRate) {
+    return std::exp(-1.0f / (std::max(0.01f, ms) * 0.001f * static_cast<float>(sampleRate)));
+}
 
-  private:
-    void emitControl(FaustParamSlot::Kind kind, const char* rawLabel, FAUSTFLOAT* zone) {
-        const auto parsed =
-            parseFaustLabel(juce::String::fromUTF8(rawLabel != nullptr ? rawLabel : ""));
-        ControlMetadata merged = parsed.metadata;
-        if (zone != nullptr) {
-            if (auto it = pendingByZone_.find(zone); it != pendingByZone_.end()) {
-                mergeFaustMetadata(merged, it->second);
-                pendingByZone_.erase(it);
-            }
-        }
+float safeRatio(float ratio) {
+    if (std::abs(ratio) >= kMinRatioMagnitude)
+        return ratio;
+    return ratio < 0.0f ? -kMinRatioMagnitude : kMinRatioMagnitude;
+}
 
-        MultibandHarvest::Control c;
-        c.idx = merged.slotIndex;
-        c.kind = merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind;
-        c.zone = zone;
-        c.choices = merged.menuChoices;
-        harvest.controls.push_back(std::move(c));
-    }
-
-    std::map<FAUSTFLOAT*, ControlMetadata> pendingByZone_;
-};
-
-const MultibandHarvest::Control* findByIdx(const MultibandHarvest& h, int idx) {
-    for (const auto& c : h.controls)
-        if (c.idx == idx)
-            return &c;
-    return nullptr;
+float dynamicsGainDb(float levelDb, float thresholdDb, float ratio, float rangeDb, float amount) {
+    ratio = safeRatio(ratio);
+    const float targetLevelDb = thresholdDb + (levelDb - thresholdDb) / ratio;
+    const float unclampedGainDb = targetLevelDb - levelDb;
+    return juce::jlimit(-rangeDb, rangeDb, unclampedGainDb) * amount;
 }
 
 }  // namespace
 
+void MagdaMultibandCompiledPlugin::Biquad::setLowPass(double sampleRate, double frequency) {
+    frequency = juce::jlimit(10.0, sampleRate * 0.45, frequency);
+    const double omega = 2.0 * juce::MathConstants<double>::pi * frequency / sampleRate;
+    const double sinOmega = std::sin(omega);
+    const double cosOmega = std::cos(omega);
+    const double alpha = sinOmega / (2.0 * kBiquadQ);
+    const double a0 = 1.0 + alpha;
+
+    b0 = (1.0 - cosOmega) * 0.5 / a0;
+    b1 = (1.0 - cosOmega) / a0;
+    b2 = b0;
+    a1 = (-2.0 * cosOmega) / a0;
+    a2 = (1.0 - alpha) / a0;
+}
+
+void MagdaMultibandCompiledPlugin::Biquad::setHighPass(double sampleRate, double frequency) {
+    frequency = juce::jlimit(10.0, sampleRate * 0.45, frequency);
+    const double omega = 2.0 * juce::MathConstants<double>::pi * frequency / sampleRate;
+    const double sinOmega = std::sin(omega);
+    const double cosOmega = std::cos(omega);
+    const double alpha = sinOmega / (2.0 * kBiquadQ);
+    const double a0 = 1.0 + alpha;
+
+    b0 = (1.0 + cosOmega) * 0.5 / a0;
+    b1 = -(1.0 + cosOmega) / a0;
+    b2 = b0;
+    a1 = (-2.0 * cosOmega) / a0;
+    a2 = (1.0 - alpha) / a0;
+}
+
+void MagdaMultibandCompiledPlugin::Biquad::reset() {
+    z1 = 0.0;
+    z2 = 0.0;
+}
+
+float MagdaMultibandCompiledPlugin::Biquad::process(float x) {
+    const double y = b0 * x + z1;
+    z1 = b1 * x - a1 * y + z2;
+    z2 = b2 * x - a2 * y;
+    return static_cast<float>(std::isfinite(y) ? y : 0.0);
+}
+
+void MagdaMultibandCompiledPlugin::CrossoverState::setCoefficients(double sampleRate, double lowHz,
+                                                                   double highHz) {
+    lowHz = juce::jlimit(40.0, 500.0, lowHz);
+    highHz = juce::jlimit(std::max(500.0, lowHz + 10.0), 8000.0, highHz);
+
+    lowLp1.setLowPass(sampleRate, lowHz);
+    lowLp2.setLowPass(sampleRate, lowHz);
+    splitHp1.setHighPass(sampleRate, lowHz);
+    splitHp2.setHighPass(sampleRate, lowHz);
+    midLp1.setLowPass(sampleRate, highHz);
+    midLp2.setLowPass(sampleRate, highHz);
+    highHp1.setHighPass(sampleRate, highHz);
+    highHp2.setHighPass(sampleRate, highHz);
+}
+
+void MagdaMultibandCompiledPlugin::CrossoverState::reset() {
+    lowLp1.reset();
+    lowLp2.reset();
+    splitHp1.reset();
+    splitHp2.reset();
+    midLp1.reset();
+    midLp2.reset();
+    highHp1.reset();
+    highHp2.reset();
+}
+
+void MagdaMultibandCompiledPlugin::CrossoverState::split(float input, float& low, float& mid,
+                                                         float& high) {
+    low = lowLp2.process(lowLp1.process(input));
+    const float aboveLow = splitHp2.process(splitHp1.process(input));
+    mid = midLp2.process(midLp1.process(aboveLow));
+    high = highHp2.process(highHp1.process(aboveLow));
+}
+
 MagdaMultibandCompiledPlugin::MagdaMultibandCompiledPlugin(const te::PluginCreationInfo& info)
     : te::Plugin(info) {
-    dsp_ = std::make_unique<MagdaMultibandDsp>();
-    constexpr int kProvisionalSampleRate = 44100;
-    rebuildEngineState(kProvisionalSampleRate);
     buildHostParameters();
+    updateCrossoverCoefficients(hostSlotInfo_[kLowXoSlot].defaultValue,
+                                hostSlotInfo_[kHighXoSlot].defaultValue);
 }
 
 MagdaMultibandCompiledPlugin::~MagdaMultibandCompiledPlugin() {
@@ -118,52 +147,38 @@ MagdaMultibandCompiledPlugin::~MagdaMultibandCompiledPlugin() {
 }
 
 juce::String MagdaMultibandCompiledPlugin::getName() const {
-    return "Multiband Compressor";
+    return "Multiband Dynamics";
 }
 juce::String MagdaMultibandCompiledPlugin::getPluginType() {
     return xmlTypeName;
 }
 juce::String MagdaMultibandCompiledPlugin::getShortName(int) {
-    return "Multiband";
+    return "Dynamics";
 }
 juce::String MagdaMultibandCompiledPlugin::getSelectableDescription() {
-    return "Multiband Compressor";
-}
-
-void MagdaMultibandCompiledPlugin::rebuildEngineState(int sampleRate) {
-    if (!dsp_)
-        return;
-    dsp_->init(sampleRate);
-    numInputs_ = dsp_->getNumInputs();
-    numOutputs_ = dsp_->getNumOutputs();
-
-    MultibandHarvester harvester;
-    dsp_->buildUserInterface(&harvester);
-
-    zones_.fill(nullptr);
-    for (int i = 0; i < kHostSlotCount; ++i) {
-        if (auto* c = findByIdx(harvester.harvest, i))
-            zones_[static_cast<size_t>(i)] = c->zone;
-    }
+    return "Multiband Dynamics";
 }
 
 void MagdaMultibandCompiledPlugin::buildHostParameters() {
-    // Slots 0-8: knob-only controls.
-    hostSlotInfo_[kDepthSlot] = {.name = "Depth",
-                                 .scale = magda::ParameterScale::Linear,
-                                 .minValue = 0.0f,
-                                 .maxValue = 1.0f,
-                                 .defaultValue = 1.0f};
-    hostSlotInfo_[kTimeSlot] = {.name = "Time",
-                                .scale = magda::ParameterScale::Linear,
-                                .minValue = 0.0f,
-                                .maxValue = 1.0f,
-                                .defaultValue = 0.4f};
-    hostSlotInfo_[kAttackSlot] = {.name = "Attack",
+    hostSlotInfo_[kAmountSlot] = {.name = "Amount",
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = 0.0f,
                                   .maxValue = 1.0f,
-                                  .defaultValue = 0.0f};
+                                  .defaultValue = 0.8f};
+    hostSlotInfo_[kAttackSlot] = {.name = "Attack",
+                                  .unit = "ms",
+                                  .scale = magda::ParameterScale::Logarithmic,
+                                  .minValue = 0.1f,
+                                  .maxValue = 100.0f,
+                                  .defaultValue = 3.0f,
+                                  .scaleAnchor = 10.0f};
+    hostSlotInfo_[kReleaseSlot] = {.name = "Release",
+                                   .unit = "ms",
+                                   .scale = magda::ParameterScale::Logarithmic,
+                                   .minValue = 5.0f,
+                                   .maxValue = 1000.0f,
+                                   .defaultValue = 120.0f,
+                                   .scaleAnchor = 100.0f};
     hostSlotInfo_[kInputSlot] = {.name = "Input",
                                  .unit = "dB",
                                  .scale = magda::ParameterScale::Linear,
@@ -200,93 +215,37 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
                                   .maxValue = 24.0f,
                                   .defaultValue = 0.0f};
 
-    // Slots 9-35: per-band controls (edited on the curve view).
-    auto setThreshAbove = [this](int slot, juce::String name) {
-        hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
-                                                    .unit = "dB",
-                                                    .scale = magda::ParameterScale::Linear,
-                                                    .minValue = -60.0f,
-                                                    .maxValue = 0.0f,
-                                                    .defaultValue = -24.0f};
-    };
-    auto setThreshBelow = [this](int slot, juce::String name) {
-        hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
-                                                    .unit = "dB",
-                                                    .scale = magda::ParameterScale::Linear,
-                                                    .minValue = -80.0f,
-                                                    .maxValue = 0.0f,
-                                                    .defaultValue = -48.0f};
-    };
-    auto setThreshExpandBelow = [this](int slot, juce::String name) {
-        hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
-                                                    .unit = "dB",
-                                                    .scale = magda::ParameterScale::Linear,
-                                                    .minValue = -80.0f,
-                                                    .maxValue = 0.0f,
-                                                    .defaultValue = -72.0f};
-    };
-    auto setThreshExpandAbove = [this](int slot, juce::String name) {
-        hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
-                                                    .unit = "dB",
-                                                    .scale = magda::ParameterScale::Linear,
-                                                    .minValue = -60.0f,
-                                                    .maxValue = 0.0f,
-                                                    .defaultValue = 0.0f};
-    };
-    auto setRatio = [this](int slot, juce::String name) {
-        hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
-                                                    .scale = magda::ParameterScale::Linear,
-                                                    .minValue = 1.0f,
-                                                    .maxValue = 50.0f,
-                                                    .defaultValue = 8.0f};
-    };
-    auto setExpandRatio = [this](int slot, juce::String name) {
-        hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
-                                                    .scale = magda::ParameterScale::Linear,
-                                                    .minValue = 1.0f,
-                                                    .maxValue = 50.0f,
-                                                    .defaultValue = 1.0f};
-    };
-    auto setLimit = [this](int slot, juce::String name) {
-        hostSlotInfo_[static_cast<size_t>(slot)] = {.name = std::move(name),
-                                                    .unit = "dB",
-                                                    .scale = magda::ParameterScale::Linear,
-                                                    .minValue = -24.0f,
-                                                    .maxValue = 12.0f,
-                                                    .defaultValue = 0.0f};
+    auto setBand = [this](int thresholdSlot, int ratioSlot, int rangeSlot, int limitSlot,
+                          juce::String bandName, float thresholdDefault) {
+        hostSlotInfo_[thresholdSlot] = {.name = bandName + " Threshold",
+                                        .unit = "dB",
+                                        .scale = magda::ParameterScale::Linear,
+                                        .minValue = -80.0f,
+                                        .maxValue = 0.0f,
+                                        .defaultValue = thresholdDefault};
+        hostSlotInfo_[ratioSlot] = {.name = bandName + " Ratio",
+                                    .scale = magda::ParameterScale::Linear,
+                                    .minValue = -20.0f,
+                                    .maxValue = 20.0f,
+                                    .defaultValue = 8.0f};
+        hostSlotInfo_[rangeSlot] = {.name = bandName + " Range",
+                                    .unit = "dB",
+                                    .scale = magda::ParameterScale::Linear,
+                                    .minValue = 0.0f,
+                                    .maxValue = 48.0f,
+                                    .defaultValue = 24.0f};
+        hostSlotInfo_[limitSlot] = {.name = bandName + " Limit",
+                                    .unit = "dB",
+                                    .scale = magda::ParameterScale::Linear,
+                                    .minValue = -24.0f,
+                                    .maxValue = 12.0f,
+                                    .defaultValue = 0.0f};
     };
 
-    setThreshAbove(kLowThreshAboveSlot, "Low Thresh Above");
-    setThreshBelow(kLowThreshBelowSlot, "Low Thresh Below");
-    setRatio(kLowRatioAboveSlot, "Low Ratio Above");
-    setRatio(kLowRatioBelowSlot, "Low Ratio Below");
-    setThreshExpandBelow(kLowThreshExpandBelowSlot, "Low Thresh Expand Below");
-    setExpandRatio(kLowExpandRatioBelowSlot, "Low Expand Ratio Below");
-    setThreshExpandAbove(kLowThreshExpandAboveSlot, "Low Thresh Expand Above");
-    setExpandRatio(kLowExpandRatioAboveSlot, "Low Expand Ratio Above");
-    setLimit(kLowLimitSlot, "Low Limit");
+    setBand(kLowThresholdSlot, kLowRatioSlot, kLowRangeSlot, kLowLimitSlot, "Low", -42.0f);
+    setBand(kMidThresholdSlot, kMidRatioSlot, kMidRangeSlot, kMidLimitSlot, "Mid", -36.0f);
+    setBand(kHighThresholdSlot, kHighRatioSlot, kHighRangeSlot, kHighLimitSlot, "High", -45.0f);
 
-    setThreshAbove(kMidThreshAboveSlot, "Mid Thresh Above");
-    setThreshBelow(kMidThreshBelowSlot, "Mid Thresh Below");
-    setRatio(kMidRatioAboveSlot, "Mid Ratio Above");
-    setRatio(kMidRatioBelowSlot, "Mid Ratio Below");
-    setThreshExpandBelow(kMidThreshExpandBelowSlot, "Mid Thresh Expand Below");
-    setExpandRatio(kMidExpandRatioBelowSlot, "Mid Expand Ratio Below");
-    setThreshExpandAbove(kMidThreshExpandAboveSlot, "Mid Thresh Expand Above");
-    setExpandRatio(kMidExpandRatioAboveSlot, "Mid Expand Ratio Above");
-    setLimit(kMidLimitSlot, "Mid Limit");
-
-    setThreshAbove(kHighThreshAboveSlot, "High Thresh Above");
-    setThreshBelow(kHighThreshBelowSlot, "High Thresh Below");
-    setRatio(kHighRatioAboveSlot, "High Ratio Above");
-    setRatio(kHighRatioBelowSlot, "High Ratio Below");
-    setThreshExpandBelow(kHighThreshExpandBelowSlot, "High Thresh Expand Below");
-    setExpandRatio(kHighExpandRatioBelowSlot, "High Expand Ratio Below");
-    setThreshExpandAbove(kHighThreshExpandAboveSlot, "High Thresh Expand Above");
-    setExpandRatio(kHighExpandRatioAboveSlot, "High Expand Ratio Above");
-    setLimit(kHighLimitSlot, "High Limit");
-
-    // Slots 36-37: crossover frequencies, editor-only.
     hostSlotInfo_[kLowXoSlot] = {.name = "Low XO",
                                  .unit = "Hz",
                                  .scale = magda::ParameterScale::Logarithmic,
@@ -308,27 +267,13 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
 
-    auto buildInfo = [](const HostSlotInfo& s) {
-        magda::ParameterInfo info;
-        info.minValue = s.minValue;
-        info.maxValue = s.maxValue;
-        info.defaultValue = s.defaultValue;
-        info.unit = s.unit;
-        info.scale = s.scale;
-        if (std::isfinite(s.scaleAnchor))
-            info.scaleAnchor = s.scaleAnchor;
-        info.choices = s.choices;
-        return info;
-    };
-
     for (int i = 0; i < kHostSlotCount; ++i) {
         const auto& slot = hostSlotInfo_[i];
         const juce::String id = "magda_multiband_" + slot.name.toLowerCase().replace(" ", "_");
-        const juce::Identifier identifier(id);
-        const auto info = buildInfo(slot);
+        const auto info = parameterInfoForSlot(slot);
         const float defaultNormalized =
             magda::ParameterUtils::realToNormalized(slot.defaultValue, info);
-        hostCached_[i].referTo(state, identifier, undoManager, defaultNormalized);
+        hostCached_[i].referTo(state, juce::Identifier(id), undoManager, defaultNormalized);
 
         auto param = addParam(
             id, slot.name, normalisedRange,
@@ -348,97 +293,116 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
 }
 
 void MagdaMultibandCompiledPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    rebuildEngineState(static_cast<int>(info.sampleRate));
-    scratchIn_.setSize(numInputs_, info.blockSizeSamples, false, true, true);
-    scratchOut_.setSize(numOutputs_, info.blockSizeSamples, false, true, true);
-    inPtrs_.assign(static_cast<size_t>(numInputs_), nullptr);
-    outPtrs_.assign(static_cast<size_t>(numOutputs_), nullptr);
+    sampleRate_ = info.sampleRate > 0.0 ? info.sampleRate : 44100.0;
+    updateCrossoverCoefficients(slotDisplayValue(kLowXoSlot), slotDisplayValue(kHighXoSlot));
+    reset();
 }
 
-void MagdaMultibandCompiledPlugin::deinitialise() {
-    scratchIn_.setSize(0, 0);
-    scratchOut_.setSize(0, 0);
-    inPtrs_.clear();
-    outPtrs_.clear();
-}
+void MagdaMultibandCompiledPlugin::deinitialise() {}
 
 void MagdaMultibandCompiledPlugin::reset() {
-    if (dsp_)
-        dsp_->instanceClear();
+    for (auto& c : crossovers_)
+        c.reset();
+    for (auto& channel : envelopes_)
+        channel.fill(0.0f);
+    for (auto& channel : gainDb_)
+        channel.fill(0.0f);
+}
+
+float MagdaMultibandCompiledPlugin::slotDisplayValue(int slotIndex) const {
+    if (slotIndex < 0 || slotIndex >= kHostSlotCount)
+        return 0.0f;
+    if (auto* p = hostParams_[static_cast<size_t>(slotIndex)].get())
+        return nativeValueToDisplayValue(slotIndex, p->getCurrentValue());
+    return hostSlotInfo_[static_cast<size_t>(slotIndex)].defaultValue;
+}
+
+void MagdaMultibandCompiledPlugin::updateCrossoverCoefficients(float lowXoHz, float highXoHz) {
+    lowXoHz = juce::jlimit(40.0f, 500.0f, lowXoHz);
+    highXoHz = juce::jlimit(std::max(500.0f, lowXoHz + 10.0f), 8000.0f, highXoHz);
+    for (auto& c : crossovers_)
+        c.setCoefficients(sampleRate_, lowXoHz, highXoHz);
 }
 
 void MagdaMultibandCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!fc.destBuffer || fc.bufferNumSamples <= 0 || !dsp_)
+    if (!fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
 
-    auto writeSlot = [&](int slot) {
-        if (auto* zone = zones_[static_cast<size_t>(slot)]) {
-            const auto& s = hostSlotInfo_[static_cast<size_t>(slot)];
-            magda::ParameterInfo info;
-            info.minValue = s.minValue;
-            info.maxValue = s.maxValue;
-            info.scale = s.scale;
-            if (std::isfinite(s.scaleAnchor))
-                info.scaleAnchor = s.scaleAnchor;
-            const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
-            *zone = static_cast<FAUSTFLOAT>(magda::ParameterUtils::normalizedToReal(norm, info));
-        }
-    };
-    for (int i = 0; i < kHostSlotCount; ++i)
-        writeSlot(i);
+    const int hostChannels = std::min(2, fc.destBuffer->getNumChannels());
+    if (hostChannels <= 0)
+        return;
 
-    // Enforce Low XO < High XO at the audio boundary so the LR4 cascade
-    // never sees an inverted split. The clamp is gentle (1 Hz minimum gap)
-    // so the user can still drag the two markers right next to each other
-    // without the bands collapsing.
-    if (auto* lo = zones_[kLowXoSlot]; lo != nullptr) {
-        if (auto* hi = zones_[kHighXoSlot]; hi != nullptr) {
-            if (*lo >= *hi - 1.0f)
-                *lo = *hi - 1.0f;
-        }
-    }
+    const float amount = juce::jlimit(0.0f, 1.0f, slotDisplayValue(kAmountSlot));
+    const float attackMs = slotDisplayValue(kAttackSlot);
+    const float releaseMs = slotDisplayValue(kReleaseSlot);
+    const float inputGain = dbToGain(slotDisplayValue(kInputSlot));
+    const float outputGain = dbToGain(slotDisplayValue(kOutputSlot));
+    const float mix = juce::jlimit(0.0f, 1.0f, slotDisplayValue(kMixSlot));
+    const float lowXoHz = slotDisplayValue(kLowXoSlot);
+    const float highXoHz = slotDisplayValue(kHighXoSlot);
 
-    const int numSamples = fc.bufferNumSamples;
+    updateCrossoverCoefficients(lowXoHz, highXoHz);
+
+    const std::array<float, 3> thresholds{slotDisplayValue(kLowThresholdSlot),
+                                          slotDisplayValue(kMidThresholdSlot),
+                                          slotDisplayValue(kHighThresholdSlot)};
+    const std::array<float, 3> ratios{slotDisplayValue(kLowRatioSlot),
+                                      slotDisplayValue(kMidRatioSlot),
+                                      slotDisplayValue(kHighRatioSlot)};
+    const std::array<float, 3> ranges{slotDisplayValue(kLowRangeSlot),
+                                      slotDisplayValue(kMidRangeSlot),
+                                      slotDisplayValue(kHighRangeSlot)};
+    const std::array<float, 3> limits{slotDisplayValue(kLowLimitSlot),
+                                      slotDisplayValue(kMidLimitSlot),
+                                      slotDisplayValue(kHighLimitSlot)};
+    const std::array<float, 3> bandGains{dbToGain(slotDisplayValue(kLowGainSlot)),
+                                         dbToGain(slotDisplayValue(kMidGainSlot)),
+                                         dbToGain(slotDisplayValue(kHighGainSlot))};
+
+    const float attackCoeff = coefficientForMs(attackMs, sampleRate_);
+    const float releaseCoeff = coefficientForMs(releaseMs, sampleRate_);
+    const float gainSmoothCoeff = coefficientForMs(5.0f, sampleRate_);
     const int startSample = fc.bufferStartSample;
-    const int hostChannels = fc.destBuffer->getNumChannels();
-    if (hostChannels <= 0 || numInputs_ <= 0 || numOutputs_ <= 0)
-        return;
+    const int numSamples = fc.bufferNumSamples;
 
-    if (scratchIn_.getNumChannels() < numInputs_ || scratchIn_.getNumSamples() < numSamples)
-        scratchIn_.setSize(numInputs_, numSamples, false, true, true);
-    if (scratchOut_.getNumChannels() < numOutputs_ || scratchOut_.getNumSamples() < numSamples)
-        scratchOut_.setSize(numOutputs_, numSamples, false, true, true);
-    if (static_cast<int>(inPtrs_.size()) < numInputs_)
-        inPtrs_.resize(static_cast<size_t>(numInputs_), nullptr);
-    if (static_cast<int>(outPtrs_.size()) < numOutputs_)
-        outPtrs_.resize(static_cast<size_t>(numOutputs_), nullptr);
+    for (int ch = 0; ch < hostChannels; ++ch) {
+        float* buffer = fc.destBuffer->getWritePointer(ch, startSample);
+        auto& crossover = crossovers_[static_cast<size_t>(ch)];
+        auto& env = envelopes_[static_cast<size_t>(ch)];
+        auto& smoothedGainDb = gainDb_[static_cast<size_t>(ch)];
 
-    for (int ch = 0; ch < numInputs_; ++ch) {
-        float* dst = scratchIn_.getWritePointer(ch);
-        if (ch < hostChannels) {
-            const float* src = fc.destBuffer->getReadPointer(ch, startSample);
-            std::copy(src, src + numSamples, dst);
-        } else {
-            std::fill(dst, dst + numSamples, 0.0f);
-        }
-        inPtrs_[static_cast<size_t>(ch)] = dst;
-    }
-    for (int ch = 0; ch < numOutputs_; ++ch) {
-        outPtrs_[static_cast<size_t>(ch)] = (ch < hostChannels)
-                                                ? fc.destBuffer->getWritePointer(ch, startSample)
-                                                : scratchOut_.getWritePointer(ch);
-    }
-
-    dsp_->compute(numSamples, inPtrs_.data(), outPtrs_.data());
-
-    const int channelsToSanitise = std::min(hostChannels, numOutputs_);
-    for (int ch = 0; ch < channelsToSanitise; ++ch) {
-        float* out = fc.destBuffer->getWritePointer(ch, startSample);
         for (int i = 0; i < numSamples; ++i) {
-            const float sample = out[i];
-            out[i] = std::isfinite(sample) ? juce::jlimit(-16.0f, 16.0f, sample) : 0.0f;
+            const float dry = buffer[i] * inputGain;
+            float low = 0.0f, mid = 0.0f, high = 0.0f;
+            crossover.split(dry, low, mid, high);
+            std::array<float, 3> bands{low, mid, high};
+
+            float wet = 0.0f;
+            for (int band = 0; band < 3; ++band) {
+                const auto idx = static_cast<size_t>(band);
+                const float detector = std::abs(bands[idx]);
+                const float envCoeff = detector > env[idx] ? attackCoeff : releaseCoeff;
+                env[idx] = envCoeff * env[idx] + (1.0f - envCoeff) * detector;
+
+                const float levelDb = std::max(kMinLevelDb, gainToDb(env[idx]));
+                const float targetGainDb =
+                    dynamicsGainDb(levelDb, thresholds[idx], ratios[idx], ranges[idx], amount);
+                smoothedGainDb[idx] =
+                    gainSmoothCoeff * smoothedGainDb[idx] + (1.0f - gainSmoothCoeff) * targetGainDb;
+
+                float processed = bands[idx] * dbToGain(smoothedGainDb[idx]) * bandGains[idx];
+                const float ceiling = dbToGain(limits[idx]);
+                processed = juce::jlimit(-ceiling, ceiling, processed);
+                wet += processed;
+            }
+
+            const float out = ((1.0f - mix) * dry + mix * wet) * outputGain;
+            buffer[i] = std::isfinite(out) ? juce::jlimit(-16.0f, 16.0f, out) : 0.0f;
         }
     }
+
+    for (int ch = hostChannels; ch < fc.destBuffer->getNumChannels(); ++ch)
+        fc.destBuffer->clear(ch, startSample, numSamples);
 }
 
 te::AutomatableParameter* MagdaMultibandCompiledPlugin::getSlotParameter(int slotIndex) const {
@@ -459,14 +423,7 @@ float MagdaMultibandCompiledPlugin::displayValueToNativeValue(int slotIndex,
                                                               float displayValue) const {
     if (slotIndex < 0 || slotIndex >= kHostSlotCount)
         return displayValue;
-    const auto& s = hostSlotInfo_[static_cast<size_t>(slotIndex)];
-    magda::ParameterInfo info;
-    info.minValue = s.minValue;
-    info.maxValue = s.maxValue;
-    info.scale = s.scale;
-    if (std::isfinite(s.scaleAnchor))
-        info.scaleAnchor = s.scaleAnchor;
-    info.choices = s.choices;
+    const auto info = parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slotIndex)]);
     return magda::ParameterUtils::realToNormalized(displayValue, info);
 }
 
@@ -474,71 +431,34 @@ float MagdaMultibandCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
                                                               float nativeValue) const {
     if (slotIndex < 0 || slotIndex >= kHostSlotCount)
         return nativeValue;
-    const auto& s = hostSlotInfo_[static_cast<size_t>(slotIndex)];
-    magda::ParameterInfo info;
-    info.minValue = s.minValue;
-    info.maxValue = s.maxValue;
-    info.scale = s.scale;
-    if (std::isfinite(s.scaleAnchor))
-        info.scaleAnchor = s.scaleAnchor;
-    info.choices = s.choices;
+    const auto info = parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slotIndex)]);
     return magda::ParameterUtils::normalizedToReal(nativeValue, info);
 }
 
 constexpr AliasSpec kAliases[] = {
-    {"depth", 0, "Depth"},
-    {"time", 1, "Time"},
-    {"attack", 2, "Attack"},
-    {"input", 3, "Input"},
-    {"low_gain", 4, "Low Gain"},
-    {"mid_gain", 5, "Mid Gain"},
-    {"high_gain", 6, "High Gain"},
-    {"mix", 7, "Mix"},
-    {"output", 8, "Output"},
-    {"low_thresh_above", 9, "Low Thresh Above"},
-    {"low_thresh_below", 10, "Low Thresh Below"},
-    {"low_ratio_above", 11, "Low Ratio Above"},
-    {"low_ratio_below", 12, "Low Ratio Below"},
-    {"low_thresh_expand_below", 13, "Low Thresh Expand Below"},
-    {"low_expand_ratio_below", 14, "Low Expand Ratio Below"},
-    {"low_thresh_expand_above", 15, "Low Thresh Expand Above"},
-    {"low_expand_ratio_above", 16, "Low Expand Ratio Above"},
-    {"low_limit", 17, "Low Limit"},
-    {"mid_thresh_above", 18, "Mid Thresh Above"},
-    {"mid_thresh_below", 19, "Mid Thresh Below"},
-    {"mid_ratio_above", 20, "Mid Ratio Above"},
-    {"mid_ratio_below", 21, "Mid Ratio Below"},
-    {"mid_thresh_expand_below", 22, "Mid Thresh Expand Below"},
-    {"mid_expand_ratio_below", 23, "Mid Expand Ratio Below"},
-    {"mid_thresh_expand_above", 24, "Mid Thresh Expand Above"},
-    {"mid_expand_ratio_above", 25, "Mid Expand Ratio Above"},
-    {"mid_limit", 26, "Mid Limit"},
-    {"high_thresh_above", 27, "High Thresh Above"},
-    {"high_thresh_below", 28, "High Thresh Below"},
-    {"high_ratio_above", 29, "High Ratio Above"},
-    {"high_ratio_below", 30, "High Ratio Below"},
-    {"high_thresh_expand_below", 31, "High Thresh Expand Below"},
-    {"high_expand_ratio_below", 32, "High Expand Ratio Below"},
-    {"high_thresh_expand_above", 33, "High Thresh Expand Above"},
-    {"high_expand_ratio_above", 34, "High Expand Ratio Above"},
-    {"high_limit", 35, "High Limit"},
-    {"low_xo", 36, "Low XO"},
-    {"high_xo", 37, "High XO"},
+    {"amount", 0, "Amount"},          {"attack", 1, "Attack"},
+    {"release", 2, "Release"},        {"input", 3, "Input"},
+    {"low_gain", 4, "Low Gain"},      {"mid_gain", 5, "Mid Gain"},
+    {"high_gain", 6, "High Gain"},    {"mix", 7, "Mix"},
+    {"output", 8, "Output"},          {"low_threshold", 9, "Low Threshold"},
+    {"low_ratio", 10, "Low Ratio"},   {"low_range", 11, "Low Range"},
+    {"low_limit", 12, "Low Limit"},   {"mid_threshold", 13, "Mid Threshold"},
+    {"mid_ratio", 14, "Mid Ratio"},   {"mid_range", 15, "Mid Range"},
+    {"mid_limit", 16, "Mid Limit"},   {"high_threshold", 17, "High Threshold"},
+    {"high_ratio", 18, "High Ratio"}, {"high_range", 19, "High Range"},
+    {"high_limit", 20, "High Limit"}, {"low_xo", 21, "Low XO"},
+    {"high_xo", 22, "High XO"},
 };
 
 const CompiledPluginSpec& getMagdaMultibandSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaMultibandCompiledPlugin::xmlTypeName,
-        .displayName = "Multiband Compressor",
+        .displayName = "Multiband Dynamics",
         .browserCategory = "Dynamics",
         .description =
-            "Compiled Faust 3-band OTT-style compressor. "
-            "Linkwitz-Riley 4th-order crossovers split the signal into Low / Mid / High; "
-            "each band runs two serial OTT stages (up-and-down compression plus "
-            "up-and-down expansion), then an instantaneous brickwall limiter. "
-            "Depth scales the overall amount, Time scales attack/release; "
-            "per-band thresholds, ratios, expander knees and limit ceilings are editable. "
-            "Mix and Output blend and trim.",
+            "Native 3-band dynamics processor with one transfer curve per band. "
+            "Positive ratios compress toward the threshold, sub-1 ratios expand away, "
+            "and negative ratios invert the curve around the threshold with range limiting.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaMultibandCompiledPlugin(info);
         },
