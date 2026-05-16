@@ -1,5 +1,6 @@
 #include "automation/AutomationPlaybackEngine.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "../../core/AutomationManager.hpp"
@@ -399,8 +400,9 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
 
     auto addTEPoint = [&](double beat, double normalizedValue) {
         float teValue = convertValue(normalizedValue);
-        auto teTime = edit_.tempoSequence.toTime(te::BeatPosition::fromBeats(beat));
-        curve.addPoint(teTime, teValue, 0.0f, nullptr);
+        // Store as beats so tempo changes shift the curve with the grid
+        // instead of leaving it pinned at seconds offsets from bake time.
+        curve.addPoint(te::EditPosition{te::BeatPosition::fromBeats(beat)}, teValue, 0.0f, nullptr);
     };
 
     if (sourcePoints && !sourcePoints->empty()) {
@@ -466,6 +468,14 @@ float AutomationPlaybackEngine::convertToTEValue(const AutomationTarget& target,
                                                  te::AutomatableParameter* param,
                                                  double magdaNormalized) const {
     switch (target.kind) {
+        case ControlTarget::Kind::DeviceMacro:
+            // Macros are stored as 0..1 on both sides — no display/percent
+            // scale conversion. Going through the percent ParameterInfo
+            // fallback would write 100 to TE for a 1.0 MAGDA value, and the
+            // inverse writeback would then divide by 100, pinning the UI
+            // knob near zero throughout playback.
+            return juce::jlimit(0.0f, 1.0f, static_cast<float>(magdaNormalized));
+
         case ControlTarget::Kind::TrackVolume:
         case ControlTarget::Kind::SendLevel: {
             // MAGDA 0-1 (FaderDB scale) → dB → TE fader position. Same
@@ -539,27 +549,7 @@ void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneI
         return;
     const auto& target = lane->target;
     if (target.kind == ControlTarget::Kind::DeviceMacro) {
-        auto& trackMgr = TrackManager::getInstance();
-        AutomationManager::AutomationWriteScope writeScope;
-        const float value = static_cast<float>(previewValue);
-        if (target.devicePath.isValid()) {
-            switch (target.devicePath.getType()) {
-                case ChainNodeType::Rack:
-                    trackMgr.setMacroValue(target.devicePath, target.paramIndex, value);
-                    break;
-                case ChainNodeType::TopLevelDevice:
-                case ChainNodeType::Device:
-                    trackMgr.setMacroValue(target.devicePath, target.paramIndex, value);
-                    break;
-                default:
-                    trackMgr.setMacroValue(ChainNodePath::trackLevel(target.devicePath.trackId),
-                                           target.paramIndex, value);
-                    break;
-            }
-        } else {
-            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.devicePath.trackId),
-                                   target.paramIndex, value);
-        }
+        writeMacroValueFromCurve(target, previewValue, true);
     } else if (target.kind == ControlTarget::Kind::ModParam && target.modParamIndex == 0) {
         writeModRateFromCurve(target, previewValue);
 
@@ -595,6 +585,10 @@ double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& targ
                                                     te::AutomatableParameter* param,
                                                     float teValue) const {
     switch (target.kind) {
+        case ControlTarget::Kind::DeviceMacro:
+            // Mirror of convertToTEValue: macros are 0..1 on both sides.
+            return juce::jlimit(0.0, 1.0, static_cast<double>(teValue));
+
         case ControlTarget::Kind::TrackVolume:
         case ControlTarget::Kind::SendLevel: {
             // TE fader position → dB → MAGDA 0-1 (FaderDB scale). Mirror of
@@ -684,6 +678,12 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
         return;
 
     const auto& target = it->second.target;
+    if (target.kind == ControlTarget::Kind::DeviceMacro &&
+        std::find(macroWritebacksInProgress_.begin(), macroWritebacksInProgress_.end(), target) !=
+            macroWritebacksInProgress_.end()) {
+        return;
+    }
+
     double normalized = convertFromTEValue(target, &param, param.getCurrentValue());
     AutomationManager::getInstance().notifyValueChanged(it->second.laneId, normalized);
 
@@ -717,36 +717,48 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
         }
     } else if (target.kind == ControlTarget::Kind::DeviceMacro) {
         // Mirror the curve value back into MacroInfo.value so the knob UI
-        // (which reads from TrackManager) follows the curve. AudioBridge
-        // gates the re-push to TE on AutomationWriteScope so we don't fight
-        // the curve TE just evaluated.
-        auto& trackMgr = TrackManager::getInstance();
-        AutomationManager::AutomationWriteScope writeScope;
-        const float value = static_cast<float>(normalized);
-        if (target.devicePath.isValid()) {
-            switch (target.devicePath.getType()) {
-                case ChainNodeType::Rack:
-                    trackMgr.setMacroValue(target.devicePath, target.paramIndex, value);
-                    break;
-                case ChainNodeType::TopLevelDevice:
-                case ChainNodeType::Device:
-                    trackMgr.setMacroValue(target.devicePath, target.paramIndex, value);
-                    break;
-                default:
-                    trackMgr.setMacroValue(ChainNodePath::trackLevel(target.devicePath.trackId),
-                                           target.paramIndex, value);
-                    break;
-            }
-        } else {
-            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.devicePath.trackId),
-                                   target.paramIndex, value);
-        }
+        // (which reads from TrackManager) follows the curve. The TE macro
+        // param already holds this value when currentValueChanged fires; only
+        // drag preview needs to seed it manually.
+        writeMacroValueFromCurve(target, normalized, false);
     } else if (target.kind == ControlTarget::Kind::ModParam && target.modParamIndex == 0) {
         // Mirror the curve value back into MAGDA's mod state. The lane is
         // mode-aware — Hz value or sync division depending on tempoSync.
         // AudioBridge::deviceModifiersChanged checks AutomationWriteScope and
         // skips its resync to avoid fighting the live TE curve.
         writeModRateFromCurve(target, normalized);
+    }
+}
+
+void AutomationPlaybackEngine::writeMacroValueFromCurve(const AutomationTarget& target,
+                                                        double normalized,
+                                                        bool updateTracktionMacroParam) {
+    auto& trackMgr = TrackManager::getInstance();
+    const float value = juce::jlimit(0.0f, 1.0f, static_cast<float>(normalized));
+    const auto path = target.devicePath.isValid()
+                          ? target.devicePath
+                          : ChainNodePath::trackLevel(target.devicePath.trackId);
+
+    auto node = static_cast<const TrackManager&>(trackMgr).resolveChainNode(path);
+    if (!node.valid())
+        return;
+
+    AutomationManager::AutomationWriteScope writeScope;
+    trackMgr.setMacroValue(path, target.paramIndex, value);
+
+    if (auto* macroParam = dynamic_cast<te::MacroParameter*>(
+            bridge_.getPluginManager().findMacroParameterForAutomation(path.trackId, path,
+                                                                       target.paramIndex))) {
+        if (updateTracktionMacroParam) {
+            macroWritebacksInProgress_.push_back(target);
+            macroParam->setParameterFromHost(value, juce::sendNotificationSync);
+            macroWritebacksInProgress_.pop_back();
+        }
+
+        auto position = edit_.getTransport().getPosition();
+        for (auto param : te::getAllParametersBeingModifiedBy(edit_, *macroParam))
+            if (param)
+                param->updateFromAutomationSources(position);
     }
 }
 
