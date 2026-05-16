@@ -29,7 +29,7 @@ float gateOutputDb(float inputDb, float thresholdDb, float ratio, float rangeDb)
     if (inputDb >= thresholdDb)
         return inputDb;
     const float over = thresholdDb - inputDb;
-    const float attenuation = std::min(rangeDb, over * (1.0f - 1.0f / std::max(1.0f, ratio)));
+    const float attenuation = std::min(rangeDb, over * (std::max(1.0f, ratio) - 1.0f));
     return inputDb - attenuation;
 }
 

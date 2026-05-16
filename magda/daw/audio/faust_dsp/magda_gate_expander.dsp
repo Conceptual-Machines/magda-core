@@ -23,7 +23,7 @@ detector(l, r) = max(abs(l), abs(r)) : si.lag_ud(attackS, releaseS) : max(ma.EPS
 // Below threshold, ratio controls how aggressively the signal closes. Range
 // caps attenuation so low ratios can be used as an expander and high ratios
 // become a practical gate.
-gainDb(levelDb) = 0.0 - min(rangeDb, max(0.0, thresholdDb - levelDb) * (1.0 - (1.0 / max(1.0, ratio))));
+gainDb(levelDb) = 0.0 - min(rangeDb, max(0.0, thresholdDb - levelDb) * (max(1.0, ratio) - 1.0));
 
 process(l, r) = outL, outR
 with {
