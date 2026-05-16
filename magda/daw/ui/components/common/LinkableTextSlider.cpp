@@ -205,6 +205,10 @@ void LinkableTextSlider::setBackgroundColour(const juce::Colour& colour) {
     slider_.setBackgroundColour(colour);
 }
 
+void LinkableTextSlider::setOrientation(TextSlider::Orientation orientation) {
+    slider_.setOrientation(orientation);
+}
+
 TextSlider& LinkableTextSlider::getSlider() {
     return slider_;
 }

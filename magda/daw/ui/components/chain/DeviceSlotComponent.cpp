@@ -2012,6 +2012,95 @@ void DeviceSlotComponent::createCustomUI() {
     callbacks.onParamModulationChanged = [this]() { updateParamModulation(); };
     callbacks.onUpdateModsPanel = [this]() { updateModsPanel(); };
     callbacks.onUpdateMacroPanel = [this]() { updateMacroPanel(); };
+    callbacks.onCompiledParamLinkRequested = [this](int paramIndex, float amount) {
+        if (!nodePath_.isValid())
+            return;
+
+        const auto target = magda::ControlTarget::pluginParam(nodePath_, paramIndex);
+        amount = juce::jlimit(-1.0f, 1.0f, amount);
+        auto& linkMode = magda::LinkModeManager::getInstance();
+
+        if (linkMode.getLinkModeType() == magda::LinkModeType::Mod) {
+            const auto selection = linkMode.getModInLinkMode();
+            if (!selection.isValid())
+                return;
+
+            const auto ownerPath =
+                selection.parentPath.getType() == magda::ChainNodeType::Track
+                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
+                    : selection.parentPath;
+            magda::TrackManager::getInstance().setModTarget(ownerPath, selection.modIndex, target);
+            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, selection.modIndex,
+                                                                target, amount);
+            if (selection.parentPath == nodePath_) {
+                updateModsPanel();
+                if (!modPanelVisible_) {
+                    modButton_->setToggleState(true, juce::dontSendNotification);
+                    modButton_->setActive(true);
+                    setModPanelVisible(true);
+                }
+                magda::SelectionManager::getInstance().selectMod(nodePath_, selection.modIndex);
+            }
+            updateParamModulation();
+            return;
+        }
+
+        if (linkMode.getLinkModeType() == magda::LinkModeType::Macro) {
+            const auto selection = linkMode.getMacroInLinkMode();
+            if (!selection.isValid())
+                return;
+
+            const auto ownerPath =
+                selection.parentPath.getType() == magda::ChainNodeType::Track
+                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
+                    : selection.parentPath;
+            magda::TrackManager::getInstance().setMacroTarget(ownerPath, selection.macroIndex,
+                                                              target);
+            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, selection.macroIndex,
+                                                                  target, amount);
+            if (selection.parentPath == nodePath_) {
+                updateMacroPanel();
+                if (!paramPanelVisible_) {
+                    macroButton_->setToggleState(true, juce::dontSendNotification);
+                    macroButton_->setActive(true);
+                    setParamPanelVisible(true);
+                }
+            }
+            updateParamModulation();
+        }
+    };
+    callbacks.onCompiledParamLinkAmountChanged = [this](int paramIndex, float amount) {
+        if (!nodePath_.isValid())
+            return;
+
+        const auto target = magda::ControlTarget::pluginParam(nodePath_, paramIndex);
+        amount = juce::jlimit(-1.0f, 1.0f, amount);
+        auto& linkMode = magda::LinkModeManager::getInstance();
+
+        if (linkMode.getLinkModeType() == magda::LinkModeType::Mod) {
+            const auto selection = linkMode.getModInLinkMode();
+            if (!selection.isValid())
+                return;
+            const auto ownerPath =
+                selection.parentPath.getType() == magda::ChainNodeType::Track
+                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
+                    : selection.parentPath;
+            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, selection.modIndex,
+                                                                target, amount);
+            updateParamModulation();
+        } else if (linkMode.getLinkModeType() == magda::LinkModeType::Macro) {
+            const auto selection = linkMode.getMacroInLinkMode();
+            if (!selection.isValid())
+                return;
+            const auto ownerPath =
+                selection.parentPath.getType() == magda::ChainNodeType::Track
+                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
+                    : selection.parentPath;
+            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, selection.macroIndex,
+                                                                  target, amount);
+            updateParamModulation();
+        }
+    };
     callbacks.getNodePath = [this]() { return nodePath_; };
 
     const auto createdKind = createDeviceSlotInlineUi(device_, traits_, nodePath_, *this,

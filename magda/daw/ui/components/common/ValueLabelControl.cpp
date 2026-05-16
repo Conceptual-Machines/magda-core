@@ -11,6 +11,13 @@ ValueLabelControl::ValueLabelControl() : font_(FontManager::getInstance().getUIF
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
 }
 
+void ValueLabelControl::setShowText(bool show) {
+    if (showText_ == show)
+        return;
+    showText_ = show;
+    repaint();
+}
+
 void ValueLabelControl::setRange(double min, double max) {
     minValue_ = min;
     maxValue_ = max;
@@ -117,6 +124,11 @@ void ValueLabelControl::setTintState(TintState state) {
     repaint();
 }
 
+void ValueLabelControl::setVertical(bool vertical) {
+    vertical_ = vertical;
+    repaint();
+}
+
 bool ValueLabelControl::isEditing() const {
     return editor_ != nullptr;
 }
@@ -201,6 +213,14 @@ void ValueLabelControl::paint(juce::Graphics& g) {
                 const float fillWidth = (bounds.getRight() - centreX) * normalizedPan;
                 g.fillRect(centreX, bounds.getY(), fillWidth, bounds.getHeight());
             }
+        } else if (fillMode_ == FillMode::BottomToTop && maxValue_ > minValue_) {
+            const double norm =
+                juce::jlimit(0.0, 1.0, (value_ - minValue_) / (maxValue_ - minValue_));
+            if (norm > 0.0) {
+                float fillH = static_cast<float>(bounds.getHeight() * norm);
+                g.fillRoundedRectangle(bounds.getX(), bounds.getBottom() - fillH, bounds.getWidth(),
+                                       fillH, 2.0f);
+            }
         } else if (maxValue_ > minValue_) {
             const double normalizedValue =
                 juce::jlimit(0.0, 1.0, (value_ - minValue_) / (maxValue_ - minValue_));
@@ -236,12 +256,23 @@ void ValueLabelControl::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, hasTint ? 1.5f : 1.0f);
     }
 
-    if (!editor_) {
+    if (!editor_ && showText_) {
         g.setColour(customTextColour_.value_or(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY))
                         .withMultipliedAlpha(alpha));
         g.setFont(font_);
         const auto text = textOverride_.isNotEmpty() ? textOverride_ : displayText_;
-        g.drawText(text, bounds.reduced(2.0f, 0.0f), justification_, false);
+        if (vertical_) {
+            g.saveState();
+            g.addTransform(juce::AffineTransform::rotation(
+                -juce::MathConstants<float>::halfPi, bounds.getCentreX(), bounds.getCentreY()));
+            auto rotBounds = juce::Rectangle<float>(bounds.getCentreX() - bounds.getHeight() * 0.5f,
+                                                    bounds.getCentreY() - bounds.getWidth() * 0.5f,
+                                                    bounds.getHeight(), bounds.getWidth());
+            g.drawText(text, rotBounds.reduced(2.0f, 1.0f), justification_, false);
+            g.restoreState();
+        } else {
+            g.drawText(text, bounds.reduced(2.0f, 0.0f), justification_, false);
+        }
     }
 }
 

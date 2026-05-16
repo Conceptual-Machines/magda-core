@@ -58,8 +58,8 @@ const InternalDeviceMetadata kMetadata[] = {
      "Pitch shifting effect for transposition and special effects."},
     {InternalDeviceKind::TeImpulseResponse, "IR Reverb", "", "Reverb",
      "Convolution-style response loader for captured spaces and resonant bodies."},
-    {InternalDeviceKind::TeVolumeAndPan, "Utility", "", "Utility",
-     "Gain and pan utility for simple level and stereo placement changes."},
+    {InternalDeviceKind::TeVolumeAndPan, "Legacy Volume/Pan", "", "Legacy",
+     "Legacy Tracktion volume and pan device, kept for old project loads."},
     {InternalDeviceKind::TeFourOsc, "4OSC Synth", "", "Synth",
      "Four-oscillator subtractive instrument with modulation and macro-friendly controls."},
     {InternalDeviceKind::TeToneGenerator, "Test Tone", "", "Utility",
@@ -106,6 +106,9 @@ struct CompiledMetadataCache {
         for (size_t i = 0; i < specs.size(); ++i) {
             if (pluginId.equalsIgnoreCase(specs[i]->pluginId))
                 return &metadata[i];
+
+            if (specs[i]->aliasKey != nullptr && pluginId.equalsIgnoreCase(specs[i]->aliasKey))
+                return &metadata[i];
         }
 
         return nullptr;
@@ -145,7 +148,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::TePitchShift, "pitchshift", TE::PitchShiftPlugin::xmlTypeName},
         {InternalDeviceKind::TeImpulseResponse, "impulseresponse",
          TE::ImpulseResponsePlugin::xmlTypeName},
-        {InternalDeviceKind::TeVolumeAndPan, "utility", TE::VolumeAndPanPlugin::xmlTypeName},
+        {InternalDeviceKind::TeVolumeAndPan, nullptr, TE::VolumeAndPanPlugin::xmlTypeName},
         {InternalDeviceKind::TeFourOsc, "4osc", TE::FourOscPlugin::xmlTypeName},
         {InternalDeviceKind::TeFourOsc, "4OSC Synth", nullptr},
         {InternalDeviceKind::TeToneGenerator, "tone", TE::ToneGeneratorPlugin::xmlTypeName},

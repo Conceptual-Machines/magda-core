@@ -53,6 +53,8 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledDimensionView.cpp
     compiled/CompiledPitchEditorView.cpp
     compiled/CompiledBitcrusherEditorView.cpp
+    compiled/CompiledGateCurveView.cpp
+    compiled/CompiledUtilityView.cpp
     compiled/CompiledPluginPresentation.cpp
     compiled/MagdaDriveCurveView.cpp
     custom_ui/ToneGeneratorUI.cpp
@@ -66,7 +68,6 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FilterUI.cpp
     custom_ui/PitchShiftUI.cpp
     custom_ui/ImpulseResponseUI.cpp
-    custom_ui/UtilityUI.cpp
     custom_ui/FaustUI.cpp
     custom_ui/FaustCodeEditorWindow.cpp
     custom_ui/FaustCustomUIRegistry.cpp
@@ -139,6 +140,8 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledDimensionView.hpp
     compiled/CompiledPitchEditorView.hpp
     compiled/CompiledBitcrusherEditorView.hpp
+    compiled/CompiledGateCurveView.hpp
+    compiled/CompiledUtilityView.hpp
     compiled/CompiledPluginPresentation.hpp
     compiled/MagdaDriveCurveView.hpp
     custom_ui/ToneGeneratorUI.hpp
@@ -152,7 +155,6 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FilterUI.hpp
     custom_ui/PitchShiftUI.hpp
     custom_ui/ImpulseResponseUI.hpp
-    custom_ui/UtilityUI.hpp
     custom_ui/FaustUI.hpp
     custom_ui/FaustCodeEditorWindow.hpp
     custom_ui/FaustCustomUIRegistry.hpp

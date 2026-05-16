@@ -122,6 +122,16 @@ class DraggableValueLabel : public juce::Component,
         valueControl_.setJustification(j);
     }
 
+    // Vertical mode: fill grows bottom-to-top, text rendered rotated 90 degrees CCW
+    void setVertical(bool vertical);
+
+    // Hide the value text entirely; the fill / border / interaction stay.
+    // Used to render a "naked" fader where the readout sits in a separate label.
+    void setShowText(bool show) {
+        showText_ = show;
+        valueControl_.setShowText(show);
+    }
+
     // Whether to draw the border
     void setDrawBorder(bool draw) {
         drawBorder_ = draw;
@@ -216,6 +226,8 @@ class DraggableValueLabel : public juce::Component,
     juce::String suffix_;
     bool doubleClickResets_ = true;
     bool snapToInteger_ = false;
+    bool vertical_ = false;
+    bool showText_ = true;
     std::optional<juce::Colour> customTextColour_;
     std::optional<juce::Colour> customFillColour_;
     bool showFillIndicator_ = true;

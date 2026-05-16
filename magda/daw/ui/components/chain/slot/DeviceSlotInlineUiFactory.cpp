@@ -42,6 +42,10 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
     if (traits.compiledPresentation != nullptr && traits.compiledPresentation->createPanel) {
         storage.compiledPanel = traits.compiledPresentation->createPanel(device.pluginId);
         storage.compiledPanel->setOnParameterChanged(std::move(callbacks.onParameterChanged));
+        storage.compiledPanel->setOnLinkRequested(
+            std::move(callbacks.onCompiledParamLinkRequested));
+        storage.compiledPanel->setOnLinkAmountChanged(
+            std::move(callbacks.onCompiledParamLinkAmountChanged));
         if (callbacks.onLayoutChanged)
             storage.compiledPanel->setOnLayoutChanged(callbacks.onLayoutChanged);
 

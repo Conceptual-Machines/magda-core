@@ -227,6 +227,8 @@ void ParamSlotComponent::modLinkModeChanged(bool active, const magda::ModSelecti
     }
 
     valueSlider_.setInterceptsMouseClicks(!isInLinkMode_, !isInLinkMode_);
+    if (overlayOnly_)
+        setInterceptsMouseClicks(isInLinkMode_, isInLinkMode_);
 
     if (isMouseOver()) {
         setMouseCursor(isInLinkMode_ ? juce::MouseCursor::PointingHandCursor
@@ -256,6 +258,8 @@ void ParamSlotComponent::macroLinkModeChanged(bool active, const magda::MacroSel
     }
 
     valueSlider_.setInterceptsMouseClicks(!isInLinkMode_, !isInLinkMode_);
+    if (overlayOnly_)
+        setInterceptsMouseClicks(isInLinkMode_, isInLinkMode_);
 
     if (isMouseOver()) {
         setMouseCursor(isInLinkMode_ ? juce::MouseCursor::PointingHandCursor
@@ -363,8 +367,9 @@ void ParamSlotComponent::handleLinkModeClick() {
 
 void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmount) {
     if (!linkModeSlider_) {
-        linkModeSlider_ = std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal,
-                                                         juce::Slider::TextBoxRight);
+        linkModeSlider_ = std::make_unique<juce::Slider>(
+            linkOverlayVertical_ ? juce::Slider::LinearVertical : juce::Slider::LinearHorizontal,
+            juce::Slider::TextBoxRight);
         linkModeSlider_->setRange(0.0, 100.0, 1.0);
         linkModeSlider_->setTextValueSuffix("%");
         linkModeSlider_->setColour(juce::Slider::backgroundColourId,
@@ -393,6 +398,14 @@ void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmo
         DBG("  Created NEW slider widget");
     } else {
         DBG("  Reusing existing slider widget, visible=" << (linkModeSlider_->isVisible() ? 1 : 0));
+    }
+
+    linkModeSlider_->setSliderStyle(linkOverlayVertical_ ? juce::Slider::LinearVertical
+                                                         : juce::Slider::LinearHorizontal);
+    if (linkOverlayVertical_) {
+        linkModeSlider_->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 44, 16);
+    } else {
+        linkModeSlider_->setTextBoxStyle(juce::Slider::TextBoxRight, false, 52, 18);
     }
 
     auto accentColor = activeMod_.isValid() ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)
@@ -446,6 +459,27 @@ void ParamSlotComponent::refreshAutomationTarget() {
 
 bool ParamSlotComponent::isBeingDragged() const {
     return valueSlider_.isBeingDragged();
+}
+
+void ParamSlotComponent::setOverlayOnly(bool overlayOnly) {
+    overlayOnly_ = overlayOnly;
+    nameLabel_.setVisible(!overlayOnly);
+    valueSlider_.setVisible(!overlayOnly);
+    setInterceptsMouseClicks(!overlayOnly || isInLinkMode_, !overlayOnly || isInLinkMode_);
+    resized();
+    repaint();
+}
+
+void ParamSlotComponent::refreshLinkModeState() {
+    auto& manager = magda::LinkModeManager::getInstance();
+    if (manager.getLinkModeType() == magda::LinkModeType::Mod) {
+        modLinkModeChanged(true, manager.getModInLinkMode());
+    } else if (manager.getLinkModeType() == magda::LinkModeType::Macro) {
+        macroLinkModeChanged(true, manager.getMacroInLinkMode());
+    } else {
+        modLinkModeChanged(false, {});
+        macroLinkModeChanged(false, {});
+    }
 }
 
 void ParamSlotComponent::cancelGesture() {
@@ -517,6 +551,9 @@ void ParamSlotComponent::setFonts(const juce::Font& labelFont, const juce::Font&
 // ============================================================================
 
 void ParamSlotComponent::paint(juce::Graphics& g) {
+    if (overlayOnly_)
+        return;
+
     // Draw cell background for toggle/combo widgets (TextSlider draws its own)
     if ((boolToggle_ && boolToggle_->isVisible()) ||
         (discreteCombo_ && discreteCombo_->isVisible())) {
@@ -590,6 +627,7 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
     paintCtx.currentParamValue = normalizedParamValue;
     paintCtx.isInLinkMode = isInLinkMode_;
     paintCtx.isLinkModeDrag = isLinkModeDrag_;
+    paintCtx.vertical = linkOverlayVertical_;
     paintCtx.linkModeDragCurrentAmount = linkModeDragCurrentAmount_;
     paintCtx.activeMod = activeMod_;
     paintCtx.activeMacro = activeMacro_;
@@ -603,6 +641,19 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
 
 void ParamSlotComponent::resized() {
     auto bounds = getLocalBounds();
+
+    if (overlayOnly_) {
+        nameLabel_.setVisible(false);
+        valueSlider_.setVisible(false);
+        valueSlider_.setBounds(bounds);
+        if (discreteCombo_)
+            discreteCombo_->setVisible(false);
+        if (boolToggle_)
+            boolToggle_->setVisible(false);
+        if (linkModeSlider_ != nullptr)
+            linkModeSlider_->setBounds(bounds.reduced(2));
+        return;
+    }
 
     int labelHeight = juce::jmin(12, getHeight() / 3);
     nameLabel_.setBounds(bounds.removeFromTop(labelHeight));
@@ -671,13 +722,11 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
                                                availableRackMods_, availableTrackMods_);
 
             float initialAmount = 0.0f;
-            bool isLinked = false;
 
             if (modPtr) {
                 magda::ControlTarget thisTarget =
                     magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
                 if (const auto* existingLink = modPtr->getLink(thisTarget)) {
-                    isLinked = true;
                     initialAmount = existingLink->amount;
                 }
             }

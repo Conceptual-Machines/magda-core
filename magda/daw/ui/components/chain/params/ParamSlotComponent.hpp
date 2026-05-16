@@ -42,6 +42,11 @@ class ParamSlotComponent : public juce::Component,
     void setShowEmptyText(bool show);  // Show "-" instead of value for empty slots
     void setFonts(const juce::Font& labelFont, const juce::Font& valueFont);
     bool isBeingDragged() const;  // Check if user is actively dragging this parameter
+    void setOverlayOnly(bool overlayOnly);
+    void setLinkOverlayVertical(bool vertical) {
+        linkOverlayVertical_ = vertical;
+    }
+    void refreshLinkModeState();
 
     // Set the actual parameter index (mapped from visibility filter)
     void setParamIndex(int paramIndex) {
@@ -240,6 +245,8 @@ class ParamSlotComponent : public juce::Component,
     // MIDI Learn state
     bool isInMidiLearnMode_ = false;
     bool hasMidiBinding_ = false;  // Persistent badge for already-mapped params
+    bool overlayOnly_ = false;
+    bool linkOverlayVertical_ = false;
 
     // Link mode drag state (for setting modulation amount via drag)
     bool isLinkModeDrag_ = false;
