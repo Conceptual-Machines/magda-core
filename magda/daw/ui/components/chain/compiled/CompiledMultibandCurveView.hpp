@@ -20,9 +20,8 @@ namespace magda::daw::ui {
  *
  * Plots three colour-tinted bands on a log-frequency axis.  The two vertical
  * lines are the Low / High crossover frequencies.  Per band: two horizontal
- * lines for the above/below thresholds plus an optional expander threshold
- * below those.  Scroll wheel on the above-threshold zone adjusts ratioAbove;
- * scroll on the below-threshold zone adjusts ratioBelow.
+ * lines for the above/below thresholds plus expander thresholds above and
+ * below those. Scroll wheel over each zone adjusts the matching ratio.
  */
 class CompiledMultibandCurveView final : public juce::Component,
                                          public CompiledDevicePanel,

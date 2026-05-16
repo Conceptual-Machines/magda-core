@@ -529,9 +529,11 @@ void CompiledMultibandCurveView::mouseDrag(const juce::MouseEvent& e) {
         };
 
         if (isAboveThresholdHandle(draggedHandle_)) {
-            // Must stay above threshBelow.
+            // Above compression sits between below compression and expand-above.
             const float floor = std::max(kThreshAboveMin, threshBelowDb_[idx] + kMinThresholdGapDb);
-            emit(threshAboveDb_[idx], juce::jlimit(floor, kThreshAboveMax, rawDb));
+            const float ceiling =
+                std::min(kThreshAboveMax, threshExpandAboveDb_[idx] - kMinThresholdGapDb);
+            emit(threshAboveDb_[idx], juce::jlimit(floor, std::max(floor, ceiling), rawDb));
         } else if (draggedHandle_ == Handle::LowThreshExpandBelow ||
                    draggedHandle_ == Handle::MidThreshExpandBelow ||
                    draggedHandle_ == Handle::HighThreshExpandBelow) {
@@ -542,10 +544,9 @@ void CompiledMultibandCurveView::mouseDrag(const juce::MouseEvent& e) {
         } else if (draggedHandle_ == Handle::LowThreshExpandAbove ||
                    draggedHandle_ == Handle::MidThreshExpandAbove ||
                    draggedHandle_ == Handle::HighThreshExpandAbove) {
-            // Expand-above: must stay below threshAbove.
-            const float ceiling =
-                std::min(kThreshAboveMax, threshAboveDb_[idx] - kMinThresholdGapDb);
-            emit(threshExpandAboveDb_[idx], juce::jlimit(kThreshAboveMin, ceiling, rawDb));
+            // Expand-above is the top zone, so it must stay above threshAbove.
+            const float floor = std::max(kThreshAboveMin, threshAboveDb_[idx] + kMinThresholdGapDb);
+            emit(threshExpandAboveDb_[idx], juce::jlimit(floor, kThreshExpandMax, rawDb));
         } else if (draggedHandle_ == Handle::LowLimit || draggedHandle_ == Handle::MidLimit ||
                    draggedHandle_ == Handle::HighLimit) {
             emit(limitDb_[idx], juce::jlimit(kLimMin, kLimMax, rawDb));
@@ -717,6 +718,33 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
     const std::array<Handle, 3> limitHandles{
         {Handle::LowLimit, Handle::MidLimit, Handle::HighLimit}};
 
+    auto typeLabelForHandle = [](Handle h) -> juce::String {
+        switch (h) {
+            case Handle::LowThreshExpandAbove:
+            case Handle::MidThreshExpandAbove:
+            case Handle::HighThreshExpandAbove:
+                return "EXP+";
+            case Handle::LowThreshAbove:
+            case Handle::MidThreshAbove:
+            case Handle::HighThreshAbove:
+                return "COMP-";
+            case Handle::LowThreshBelow:
+            case Handle::MidThreshBelow:
+            case Handle::HighThreshBelow:
+                return "COMP+";
+            case Handle::LowThreshExpandBelow:
+            case Handle::MidThreshExpandBelow:
+            case Handle::HighThreshExpandBelow:
+                return "EXP-";
+            case Handle::LowLimit:
+            case Handle::MidLimit:
+            case Handle::HighLimit:
+                return "LIM";
+            default:
+                return {};
+        }
+    };
+
     auto drawThreshLine = [&](float x0, float x1, float y, Handle h, juce::Colour colour,
                               float baseAlpha, float baseThickness) {
         const bool active = h == hoveredHandle_ || h == draggedHandle_;
@@ -728,10 +756,13 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
                                juce::Colour colour) {
         if (h != hoveredHandle_ && h != draggedHandle_)
             return;
-        const auto text = juce::String(db, 1) + " dB";
+        const auto type = typeLabelForHandle(h);
+        const auto text = type.isNotEmpty() ? type + " " + juce::String(db, 1) + " dB"
+                                            : juce::String(db, 1) + " dB";
         g.setColour(colour.withAlpha(0.95f));
         g.setFont(11.0f);
-        constexpr int textW = 56, textH = 14;
+        const int textW = type.isNotEmpty() ? 92 : 56;
+        constexpr int textH = 14;
         const float lx = juce::jlimit(plot.getX() + 2.0f, plot.getRight() - textW - 2.0f,
                                       (x0 + x1 - static_cast<float>(textW)) * 0.5f);
         const float ly =

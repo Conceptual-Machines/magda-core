@@ -18,8 +18,8 @@ namespace magda::daw::audio::compiled {
  * @brief Compiled-Faust OTT-style 3-band compressor.
  *
  * Linkwitz-Riley splits the input into low / mid / high bands; each band
- * runs feed-forward parallel up + down compression; the three bands are
- * makeup-gained and summed back to stereo.
+ * applies input drive, runs feed-forward parallel up + down compression;
+ * the three bands are makeup-gained and summed back to stereo.
  *
  * Single-engine compiled plugin — all host controls map 1:1 to
  * Faust slots pinned by [idx:N].
@@ -64,7 +64,7 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     static constexpr int kDepthSlot = 0;
     static constexpr int kTimeSlot = 1;
     static constexpr int kAttackSlot = 2;
-    static constexpr int kDepth2Slot = 3;
+    static constexpr int kInputSlot = 3;
     static constexpr int kLowGainSlot = 4;
     static constexpr int kMidGainSlot = 5;
     static constexpr int kHighGainSlot = 6;

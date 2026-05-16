@@ -164,11 +164,12 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
                                   .minValue = 0.0f,
                                   .maxValue = 1.0f,
                                   .defaultValue = 0.0f};
-    hostSlotInfo_[kDepth2Slot] = {.name = "Depth 2",
-                                  .scale = magda::ParameterScale::Linear,
-                                  .minValue = 0.0f,
-                                  .maxValue = 1.0f,
-                                  .defaultValue = 0.3f};
+    hostSlotInfo_[kInputSlot] = {.name = "Input",
+                                 .unit = "dB",
+                                 .scale = magda::ParameterScale::Linear,
+                                 .minValue = -24.0f,
+                                 .maxValue = 24.0f,
+                                 .defaultValue = 0.0f};
     hostSlotInfo_[kLowGainSlot] = {.name = "Low Gain",
                                    .unit = "dB",
                                    .scale = magda::ParameterScale::Linear,
@@ -488,7 +489,7 @@ constexpr AliasSpec kAliases[] = {
     {"depth", 0, "Depth"},
     {"time", 1, "Time"},
     {"attack", 2, "Attack"},
-    {"depth2", 3, "Depth 2"},
+    {"input", 3, "Input"},
     {"low_gain", 4, "Low Gain"},
     {"mid_gain", 5, "Mid Gain"},
     {"high_gain", 6, "High Gain"},

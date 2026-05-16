@@ -14,7 +14,7 @@ import("stdfaust.lib");
 depth  = hslider("Depth [idx:0]",   1.0, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.05));
 time   = hslider("Time [idx:1]",    0.4, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.05));
 attack = hslider("Attack [idx:2]",  0.0, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.05));
-depth2 = hslider("Depth 2 [idx:3]", 0.3, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.05));
+inputGainDb = hslider("Input [unit:dB] [idx:3]", 0.0, -24.0, 24.0, 0.1) : si.smooth(ba.tau2pole(0.02));
 
 // Per-band post-compression makeup gain.
 lowGainDb  = hslider("Low Gain [unit:dB] [idx:4]",  0.0, -24.0, 24.0, 0.1) : si.smooth(ba.tau2pole(0.05));
@@ -67,9 +67,9 @@ xoHigh = hslider("High XO [unit:Hz] [scale:log] [scaleAnchor:2000] [idx:37]", 25
 
 db2lin(db) = pow(10.0, db / 20.0);
 
-// Attack knob: 0.1ms (min) to 50ms (max). Time knob: release 10ms-500ms.
+// Attack knob: 0.1ms (min) to 50ms (max). Time knob: release 5ms-250ms.
 attS(a) = 0.0001 + 0.0499 * a;
-relS(t) = 0.010  + 0.490  * t;
+relS(t) = 0.005  + 0.245  * t;
 
 envFollow(x) = abs(x) : si.lag_ud(attS(attack), relS(time));
 
@@ -101,13 +101,17 @@ lp_lr4(fc) = fi.lowpass(2, fc) : fi.lowpass(2, fc);
 hp_lr4(fc) = fi.highpass(2, fc) : fi.highpass(2, fc);
 band3split  = _ <: lp_lr4(xoLow), (hp_lr4(xoLow) <: lp_lr4(xoHigh), hp_lr4(xoHigh));
 
+// Second stage is internal and tracks Depth. This keeps one main intensity
+// control while making new instances hit closer to OTT-style multiband action.
+stage2Depth = min(1.0, depth * 0.75);
+
 // Two OTT stages in series within the same band, then limit, then makeup.
 bandProcess(thrAbove, thrBelow, thrExpBelow, thrExpAbove,
             rAbove, rBelow, rExpBelow, rExpAbove, gainDb, limDb, x) =
     x : ottBand(thrAbove, thrBelow, thrExpBelow, thrExpAbove,
                 rAbove, rBelow, rExpBelow, rExpAbove, depth)
       : ottBand(thrAbove, thrBelow, thrExpBelow, thrExpAbove,
-                rAbove, rBelow, rExpBelow, rExpAbove, depth2)
+                rAbove, rBelow, rExpBelow, rExpAbove, stage2Depth)
       : hardLimit(limDb)
       : *(db2lin(gainDb));
 
@@ -120,6 +124,7 @@ wet(x) = x : band3split :
                  highRatioAbove, highRatioBelow, highExpandRatioBelow, highExpandRatioAbove, highGainDb, highLimitDb))
     :> _;
 
-channel(x) = ((1.0 - mix) * x + mix * wet(x)) * db2lin(outGainDb);
+driveInput(x) = x * db2lin(inputGainDb);
+channel(x) = ((1.0 - mix) * driveInput(x) + mix * wet(driveInput(x))) * db2lin(outGainDb);
 
 process = par(i, 2, channel);
