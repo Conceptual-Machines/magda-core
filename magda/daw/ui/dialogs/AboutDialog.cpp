@@ -120,11 +120,13 @@ class AboutDialog::ContentComponent : public juce::Component {
             return juce::roundToInt(ga.getBoundingBox(0, -1, false).getWidth()) + 1;
         };
 
-        const juce::String poweredBy = tr("about.credits.powered_by");
-        const juce::String tracktionName = "Tracktion Engine";  // brand — do not translate
-        const juce::String madeWith = tr("about.credits.made_with");
-        const juce::String juceName = "JUCE";  // brand — do not translate
-        const juce::String dspBy = tr("about.credits.dsp_by");
+        // Credit line is intentionally English-only — brand attributions stay
+        // as-shipped in every locale, so these are literals rather than tr keys.
+        const juce::String poweredBy = "powered by";
+        const juce::String tracktionName = "Tracktion Engine";
+        const juce::String madeWith = "made with";
+        const juce::String juceName = "JUCE";
+        const juce::String dspBy = "DSP by";
 
         // Faust wordmark SVG viewBox is 160x28. Sized smaller than the round JUCE/TE
         // icons so the bold all-caps wordmark doesn't visually outweigh them.
