@@ -357,8 +357,38 @@ jobs:
       if: success()
       run: echo "✅ macOS build and tests completed successfully"
 
+  # Decide whether the Windows job runs on the self-hosted runner (magda-luca)
+  # or falls back to windows-latest. The self-hosted runner is preferred; if
+  # it's offline we use the GitHub-hosted runner so PRs don't block on Luca's
+  # machine being on.
+  pick-windows-runner:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.skip-cpp-build != 'true'
+    outputs:
+      labels: ${{ steps.pick.outputs.labels }}
+    steps:
+      - name: Pick Windows runner
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.RUNNER_STATUS_PAT }}
+        run: |
+          set -euo pipefail
+          status=$(gh api "repos/${{ github.repository }}/actions/runners" \
+            --jq '.runners[] | select(any(.labels[]; .name == "magda-luca")) | .status' \
+            | head -n1)
+          if [ "$status" = "online" ]; then
+            echo 'labels=["self-hosted","Windows","magda-luca"]' >> "$GITHUB_OUTPUT"
+            echo "Using self-hosted runner: magda-luca"
+          else
+            echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
+            echo "Falling back to windows-latest (magda-luca status: '${status:-not-found}')"
+          fi
+
   build-and-test-windows:
-    runs-on: windows-latest
+    needs: pick-windows-runner
+    runs-on: ${{ fromJSON(needs.pick-windows-runner.outputs.labels) }}
     if: |
       github.event_name != 'workflow_dispatch' ||
       github.event.inputs.skip-cpp-build != 'true'
@@ -421,8 +451,10 @@ jobs:
           exit 1
         }
 
+    # Keep build dirs on self-hosted so incremental builds work; only wipe on
+    # GitHub-hosted runners where the VM is thrown away anyway.
     - name: Clean up build directories
-      if: always()
+      if: always() && runner.environment == 'github-hosted'
       run: |
         Remove-Item -Recurse -Force build-debug -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force build-release -ErrorAction SilentlyContinue
