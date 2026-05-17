@@ -537,6 +537,14 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
     std::vector<MidiCCData> recordedCC;
     std::vector<MidiPitchBendData> recordedPB;
 
+    // Defensive cap: an un-terminated note in TE's MidiList would otherwise
+    // come through with a huge length, and the clip-length extension below
+    // (jmax over note.startBeat + note.lengthBeats) would then stretch the
+    // session slot to match — producing a perma-on note. Clamp each note to
+    // TE's reported recording window so the worst case is a slightly-too-long
+    // note that releases on the loop boundary instead of running forever.
+    const double recordingEndBeats = midiClip.getLengthInBeats().inBeats();
+
     auto& midiList = midiClip.getSequence();
     for (auto* note : midiList.getNotes()) {
         if (!note)
@@ -546,6 +554,15 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
         mn.velocity = note->getVelocity();
         mn.startBeat = note->getStartBeat().inBeats();
         mn.lengthBeats = note->getLengthBeats().inBeats();
+
+        if (recordingEndBeats > 0.0) {
+            if (mn.startBeat >= recordingEndBeats)
+                continue;  // Note starts past the recording window — skip.
+            const double maxLength = recordingEndBeats - mn.startBeat;
+            if (mn.lengthBeats > maxLength || mn.lengthBeats <= 0.0)
+                mn.lengthBeats = maxLength;
+        }
+
         recordedNotes.push_back(mn);
     }
 
