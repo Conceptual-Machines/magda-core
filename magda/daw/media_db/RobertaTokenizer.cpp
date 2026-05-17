@@ -182,7 +182,13 @@ RobertaTokenizer::RobertaTokenizer(const std::filesystem::path& path) {
     if (auto* vocabObj = modelObj->getProperty("vocab").getDynamicObject()) {
         impl_->vocab.reserve(static_cast<size_t>(vocabObj->getProperties().size()));
         for (const auto& kv : vocabObj->getProperties()) {
-            impl_->vocab.emplace(kv.name.toString().toStdString(), static_cast<int64_t>(kv.value));
+            // Cast via juce::int64 first: juce::var has overloads to both
+            // int and int64, and Linux's int64_t (= long int) doesn't
+            // uniquely match either, so the direct static_cast<int64_t>(var)
+            // is ambiguous on Linux. macOS / Windows pick juce::int64 (=
+            // long long == int64_t) without complaining.
+            impl_->vocab.emplace(kv.name.toString().toStdString(),
+                                 static_cast<int64_t>(static_cast<juce::int64>(kv.value)));
         }
     }
 
