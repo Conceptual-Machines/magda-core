@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "magda/agents/compact_executor.hpp"
 #include "magda/agents/compact_parser.hpp"
+#include "magda/agents/instruction_executor.hpp"
 #include "magda/daw/api/magda_api_live.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
@@ -12,7 +12,7 @@
 using namespace magda;
 
 /**
- * Implicit-context tests for CompactExecutor.
+ * Implicit-context tests for InstructionExecutor.
  *
  * Verifies the three gaps fixed in this branch:
  *   1. MUTE/SOLO with no target → operate on the selected track.
@@ -50,7 +50,7 @@ std::vector<Instruction> parseOrFail(CompactParser& p, const juce::String& text)
 // MUTE / SOLO — implicit (no arg)
 // ============================================================================
 
-TEST_CASE("CompactExecutor: bare MUTE mutes the selected track", "[compact][context]") {
+TEST_CASE("InstructionExecutor: bare MUTE mutes the selected track", "[compact][context]") {
     resetState();
     auto bass = makeTrack("Bass");
     auto lead = makeTrack("Lead");
@@ -58,7 +58,7 @@ TEST_CASE("CompactExecutor: bare MUTE mutes the selected track", "[compact][cont
 
     CompactParser parser;
     MagdaApiLive api;
-    CompactExecutor exec(api);
+    InstructionExecutor exec(api);
     REQUIRE(exec.execute(parseOrFail(parser, "MUTE")));
 
     auto& tm = TrackManager::getInstance();
@@ -66,7 +66,7 @@ TEST_CASE("CompactExecutor: bare MUTE mutes the selected track", "[compact][cont
     REQUIRE_FALSE(tm.getTrack(lead)->muted);
 }
 
-TEST_CASE("CompactExecutor: bare SOLO solos the selected track", "[compact][context]") {
+TEST_CASE("InstructionExecutor: bare SOLO solos the selected track", "[compact][context]") {
     resetState();
     auto bass = makeTrack("Bass");
     auto lead = makeTrack("Lead");
@@ -74,7 +74,7 @@ TEST_CASE("CompactExecutor: bare SOLO solos the selected track", "[compact][cont
 
     CompactParser parser;
     MagdaApiLive api;
-    CompactExecutor exec(api);
+    InstructionExecutor exec(api);
     REQUIRE(exec.execute(parseOrFail(parser, "SOLO")));
 
     auto& tm = TrackManager::getInstance();
@@ -82,14 +82,14 @@ TEST_CASE("CompactExecutor: bare SOLO solos the selected track", "[compact][cont
     REQUIRE_FALSE(tm.getTrack(bass)->soloed);
 }
 
-TEST_CASE("CompactExecutor: bare MUTE with no selection fails with a helpful error",
+TEST_CASE("InstructionExecutor: bare MUTE with no selection fails with a helpful error",
           "[compact][context]") {
     resetState();
     makeTrack("Anything");
 
     CompactParser parser;
     MagdaApiLive api;
-    CompactExecutor exec(api);
+    InstructionExecutor exec(api);
     REQUIRE_FALSE(exec.execute(parseOrFail(parser, "MUTE")));
     REQUIRE(exec.getError().isNotEmpty());
 }
@@ -98,7 +98,8 @@ TEST_CASE("CompactExecutor: bare MUTE with no selection fails with a helpful err
 // MUTE / SOLO — by index
 // ============================================================================
 
-TEST_CASE("CompactExecutor: MUTE 2 mutes the second track by 1-based index", "[compact][context]") {
+TEST_CASE("InstructionExecutor: MUTE 2 mutes the second track by 1-based index",
+          "[compact][context]") {
     resetState();
     auto t1 = makeTrack("A");
     auto t2 = makeTrack("B");
@@ -106,7 +107,7 @@ TEST_CASE("CompactExecutor: MUTE 2 mutes the second track by 1-based index", "[c
 
     CompactParser parser;
     MagdaApiLive api;
-    CompactExecutor exec(api);
+    InstructionExecutor exec(api);
     REQUIRE(exec.execute(parseOrFail(parser, "MUTE 2")));
 
     auto& tm = TrackManager::getInstance();
@@ -119,7 +120,7 @@ TEST_CASE("CompactExecutor: MUTE 2 mutes the second track by 1-based index", "[c
 // MUTE / SOLO — by name (multi-match preserved)
 // ============================================================================
 
-TEST_CASE("CompactExecutor: MUTE <name> mutes every track with matching name",
+TEST_CASE("InstructionExecutor: MUTE <name> mutes every track with matching name",
           "[compact][context]") {
     resetState();
     auto d1 = makeTrack("Drums");
@@ -128,7 +129,7 @@ TEST_CASE("CompactExecutor: MUTE <name> mutes every track with matching name",
 
     CompactParser parser;
     MagdaApiLive api;
-    CompactExecutor exec(api);
+    InstructionExecutor exec(api);
     REQUIRE(exec.execute(parseOrFail(parser, "MUTE Drums")));
 
     auto& tm = TrackManager::getInstance();
@@ -141,7 +142,7 @@ TEST_CASE("CompactExecutor: MUTE <name> mutes every track with matching name",
 // SELECT advances currentTrackId_
 // ============================================================================
 
-TEST_CASE("CompactExecutor: SELECT TRACKS advances currentTrackId for follow-up MUTE",
+TEST_CASE("InstructionExecutor: SELECT TRACKS advances currentTrackId for follow-up MUTE",
           "[compact][context][select]") {
     resetState();
     auto kick = makeTrack("Kick");
@@ -150,7 +151,7 @@ TEST_CASE("CompactExecutor: SELECT TRACKS advances currentTrackId for follow-up 
 
     CompactParser parser;
     MagdaApiLive api;
-    CompactExecutor exec(api);
+    InstructionExecutor exec(api);
 
     // After SELECT, bare MUTE mutes every selected track via the
     // SELECT-driven bulk path (no implicit single-track resolution needed).
@@ -162,14 +163,14 @@ TEST_CASE("CompactExecutor: SELECT TRACKS advances currentTrackId for follow-up 
     REQUIRE_FALSE(tm.getTrack(bass)->muted);
 }
 
-TEST_CASE("CompactExecutor: SELECT with empty match does not crash follow-up MUTE",
+TEST_CASE("InstructionExecutor: SELECT with empty match does not crash follow-up MUTE",
           "[compact][context][select]") {
     resetState();
     makeTrack("Bass");
 
     CompactParser parser;
     MagdaApiLive api;
-    CompactExecutor exec(api);
+    InstructionExecutor exec(api);
     // Predicate matches nothing. SELECT succeeds with an empty set; the
     // follow-up bare MUTE has no implicit track context and fails. The
     // batch executor still returns true when at least one instruction
@@ -185,7 +186,7 @@ TEST_CASE("CompactExecutor: SELECT with empty match does not crash follow-up MUT
 // Explicit SET still works unchanged (regression cover)
 // ============================================================================
 
-TEST_CASE("CompactExecutor: bare SET targets the selected track", "[compact][context]") {
+TEST_CASE("InstructionExecutor: bare SET targets the selected track", "[compact][context]") {
     resetState();
     auto bass = makeTrack("Bass");
     auto lead = makeTrack("Lead");
@@ -193,7 +194,7 @@ TEST_CASE("CompactExecutor: bare SET targets the selected track", "[compact][con
 
     CompactParser parser;
     MagdaApiLive api;
-    CompactExecutor exec(api);
+    InstructionExecutor exec(api);
     REQUIRE(exec.execute(parseOrFail(parser, "SET mute=true")));
 
     auto& tm = TrackManager::getInstance();

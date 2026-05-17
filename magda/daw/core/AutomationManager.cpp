@@ -443,6 +443,16 @@ std::optional<double> AutomationManager::getCurrentTargetValue(
     return getCurrentTargetValueImpl(target);
 }
 
+void AutomationManager::clearAllTouchSuppression() {
+    for (auto& lane : lanes_) {
+        if (!lane.touchSuppressed)
+            continue;
+        lane.touchSuppressed = false;
+        if (touchSuppressionListener_)
+            touchSuppressionListener_(lane.id, false);
+    }
+}
+
 void AutomationManager::setTargetTouchSuppressed(const AutomationTarget& target, bool suppressed) {
     AutomationLaneId laneId = getLaneForTarget(target);
     if (laneId == INVALID_AUTOMATION_LANE_ID)

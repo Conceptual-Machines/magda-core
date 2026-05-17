@@ -11,6 +11,23 @@ namespace magda {
 
 namespace te = tracktion;
 
+struct ModifierAssignmentMapping {
+    float value = 0.0f;
+    float offset = 0.0f;
+};
+
+inline ModifierAssignmentMapping mapLinkAssignment(float amount, bool bipolar) {
+    return {bipolar ? amount * 2.0f : amount, bipolar ? -amount : 0.0f};
+}
+
+template <typename Link>
+inline te::AutomatableParameter::ModifierAssignment::Ptr addLinkModifier(
+    te::AutomatableParameter& param, te::AutomatableParameter::ModifierSource& source,
+    const Link& link) {
+    const auto mapping = mapLinkAssignment(link.amount, link.bipolar);
+    return param.addModifier(source, mapping.value, mapping.offset);
+}
+
 inline float mapWaveform(LFOWaveform waveform) {
     switch (waveform) {
         case LFOWaveform::Sine:

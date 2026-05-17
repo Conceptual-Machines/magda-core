@@ -19,9 +19,9 @@ class MagdaApi;
  * Skips the DSL text round-trip: compact LLM output → IR → MagdaApi calls.
  * Must be called on the message thread (host writes notify UI listeners).
  */
-class CompactExecutor {
+class InstructionExecutor {
   public:
-    explicit CompactExecutor(MagdaApi& api) : api_(api) {}
+    explicit InstructionExecutor(MagdaApi& api) : api_(api) {}
 
     /**
      * @brief Execute a list of IR instructions.
@@ -98,6 +98,11 @@ class CompactExecutor {
     int currentClipId_ = -1;
     int seedClipId_ = -1;
     bool autoCreatedClip_ = false;
+    // Latest beat that pending NOTE/CHORD/ARP instructions reach in this
+    // execute() call. autoCreateClip() uses this to size the new clip to fit
+    // the music instead of capping at a fixed 4 bars (otherwise an 8-chord
+    // progression loops the first bar forever).
+    double pendingContentEndBeats_ = 0.0;
     juce::String error_;
     juce::StringArray results_;
 

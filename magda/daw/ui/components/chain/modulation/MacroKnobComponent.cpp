@@ -408,6 +408,8 @@ void MacroKnobComponent::mouseDrag(const juce::MouseEvent& e) {
         // Drag up = increase, drag down = decrease
         float deltaY = static_cast<float>(dragStartPos_.y - e.getPosition().y);
         float sensitivity = 0.005f;  // Adjust for feel
+        if (e.mods.isShiftDown())
+            sensitivity *= 0.1f;  // Shift: 10x finer for precise values
         float newValue = juce::jlimit(0.0f, 1.0f, dragStartValue_ + deltaY * sensitivity);
 
         if (newValue != currentMacro_.value) {

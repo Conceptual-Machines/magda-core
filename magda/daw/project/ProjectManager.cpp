@@ -676,7 +676,10 @@ bool ProjectManager::showUnsavedChangesDialog() {
         "Cancel");
 
     if (result == 0) {
-        // Cancel — abort the operation
+        // Cancel — abort the operation. Empty lastError_ so callers can
+        // distinguish "user cancelled" from "save actually failed" and
+        // suppress the spurious error dialog they would otherwise show.
+        lastError_.clear();
         return false;
     }
 
@@ -690,12 +693,27 @@ bool ProjectManager::showUnsavedChangesDialog() {
                 return false;
             }
         } else {
-            // No file path — can't save without a file chooser (synchronous context).
-            // Treat as cancel so the user can use Save As first.
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::AlertWindow::InfoIcon, "Save Required",
-                "Please use File > Save As to save your project first.");
-            return false;
+            // Untitled project: run the Save-As file picker inline rather than
+            // dead-ending with a "use Save As first" prompt and aborting the
+            // outer New/Open/Close flow. JUCE_MODAL_LOOPS_PERMITTED is on for
+            // this build, so a modal FileChooser is fine here.
+            juce::FileChooser chooser(
+                "Save Project As",
+                juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.mgd", true);
+            if (!chooser.browseForFileToSave(true)) {
+                // User cancelled the chooser — treat as overall cancel.
+                lastError_.clear();
+                return false;
+            }
+            auto file = chooser.getResult();
+            if (!file.getFileExtension().equalsIgnoreCase(".mgd"))
+                file = file.withFileExtension("mgd");
+            if (!saveProjectAs(file)) {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "Save Failed",
+                                                       "Could not save project: " + lastError_);
+                return false;
+            }
         }
     }
 

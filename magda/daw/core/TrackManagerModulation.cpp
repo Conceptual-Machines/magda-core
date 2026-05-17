@@ -17,6 +17,7 @@ struct ModTickInputs {
     float audioPeakLevel = 0.0f;
     double deltaTime = 0.0;
     double bpm = 120.0;
+    bool transportPlaying = false;
     bool transportJustStarted = false;
     bool transportJustLooped = false;
     bool transportJustStopped = false;
@@ -596,6 +597,7 @@ void TrackManager::triggerMidiNoteOff(TrackId trackId) {
 
 TrackManager::TransportSnapshot TrackManager::consumeTransportState() {
     return {transportBpm_.load(std::memory_order_acquire),
+            transportPlaying_.load(std::memory_order_acquire),
             transportJustStarted_.exchange(false, std::memory_order_acq_rel),
             transportJustLooped_.exchange(false, std::memory_order_acq_rel),
             transportJustStopped_.exchange(false, std::memory_order_acq_rel)};
@@ -618,7 +620,8 @@ void TrackManager::updateTransportState(bool playing, double bpm, bool justStart
 // ============================================================================
 
 void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJustStarted,
-                                 bool transportJustLooped, bool transportJustStopped) {
+                                 bool transportJustLooped, bool transportJustStopped,
+                                 bool transportPlaying) {
     // Snapshot MIDI trigger counts (thread-safe)
     std::map<TrackId, int> noteOnsThisTick;
     std::map<TrackId, int> noteOffsThisTick;
@@ -701,15 +704,15 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
     // scopeMacros / scopeMods are the SAME-scope macros / mods that may
     // target this mod's rate via a ModParam-kind link — used to compute the
     // effective rate so the UI animation matches what the audio LFO does.
-    auto updateMod = [deltaTime, bpm, transportJustStarted, transportJustLooped,
-                      transportJustStopped](ModInfo& mod, bool midiTriggered, bool midiNoteOff,
-                                            float audioPeakLevel,
-                                            const std::vector<MacroInfo>& scopeMacros,
-                                            const std::vector<ModInfo>& scopeMods) -> bool {
+    auto updateMod =
+        [deltaTime, bpm, transportJustStarted, transportJustLooped, transportJustStopped,
+         transportPlaying](ModInfo& mod, bool midiTriggered, bool midiNoteOff, float audioPeakLevel,
+                           const std::vector<MacroInfo>& scopeMacros,
+                           const std::vector<ModInfo>& scopeMods) -> bool {
         bool wasRunning = mod.running;
         ModTickInputs inputs{
-            midiTriggered, midiNoteOff,          audioPeakLevel,      deltaTime,
-            bpm,           transportJustStarted, transportJustLooped, transportJustStopped};
+            midiTriggered,    midiNoteOff,          audioPeakLevel,      deltaTime,           bpm,
+            transportPlaying, transportJustStarted, transportJustLooped, transportJustStopped};
         // Skip disabled mods - set value to 0 so they don't affect modulation
         if (!mod.enabled) {
             mod.value = 0.0f;
@@ -733,6 +736,11 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
             if (shouldStopRunning(mod, inputs))
                 mod.running = false;
+
+            if (mod.triggerMode == LFOTriggerMode::Transport && inputs.transportPlaying &&
+                !inputs.transportJustStopped && !mod.running) {
+                mod.running = true;
+            }
 
             if (mod.triggerMode == LFOTriggerMode::Transport && transportJustStopped &&
                 !mod.running) {

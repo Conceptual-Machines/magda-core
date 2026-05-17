@@ -498,7 +498,8 @@ class TrackManager {
     // bpm parameter is used for tempo-synced LFOs (default 120 if not provided)
     // transportJustStarted/Looped flags trigger phase reset for Transport trigger mode
     void updateAllMods(double deltaTime, double bpm = 120.0, bool transportJustStarted = false,
-                       bool transportJustLooped = false, bool transportJustStopped = false);
+                       bool transportJustLooped = false, bool transportJustStopped = false,
+                       bool transportPlaying = false);
 
     /**
      * @brief Signal that a MIDI note-on was received on a track
@@ -522,6 +523,7 @@ class TrackManager {
 
     struct TransportSnapshot {
         double bpm;
+        bool playing;
         bool justStarted;
         bool justLooped;
         bool justStopped;

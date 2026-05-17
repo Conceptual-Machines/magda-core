@@ -6,9 +6,9 @@
 #include <atomic>
 
 #include "agent_interface.hpp"
-#include "compact_executor.hpp"
 #include "compact_parser.hpp"
 #include "dsl_interpreter.hpp"
+#include "instruction_executor.hpp"
 
 namespace magda {
 
@@ -95,7 +95,7 @@ class DAWAgent : public AgentInterface {
 
     MagdaApi& api_;
     CompactParser parser_;
-    CompactExecutor executor_;
+    InstructionExecutor executor_;
     dsl::Interpreter interpreter_;
     std::atomic<bool> running_{false};
     std::atomic<bool> shouldStop_{false};

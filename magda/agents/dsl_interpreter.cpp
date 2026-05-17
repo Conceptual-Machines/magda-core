@@ -349,7 +349,7 @@ bool Interpreter::execute(const char* dslCode) {
 
     // Seed implicit context from the UI selection so a bare statement like
     // `fx("reverb")` or `note(...)` targets the selected track/clip. Matches
-    // CompactExecutor's behaviour — the two paths must stay in sync or the
+    // InstructionExecutor's behaviour — the two paths must stay in sync or the
     // same request succeeds in one and fails in the other.
     auto& sm = api_.selection();
     auto selectedTrack = sm.getSelectedTrack();

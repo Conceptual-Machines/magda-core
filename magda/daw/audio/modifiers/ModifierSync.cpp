@@ -225,13 +225,13 @@ void ModifierSyncWalker::syncStructure(
                         continue;
                     if (auto* targetParam =
                             resolveSameScopeModParam(link, *node.mods, state.modifiers))
-                        targetParam->addModifier(sourceMod, link.amount);
+                        addLinkModifier(*targetParam, sourceMod, link);
                     continue;
                 }
 
                 if (auto* param = resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(),
                                                          link.target.paramIndex))
-                    param->addModifier(sourceMod, link.amount);
+                    addLinkModifier(*param, sourceMod, link);
             }
         }
     }
@@ -259,9 +259,7 @@ void ModifierSyncWalker::syncStructure(
                     if (auto* targetParam =
                             node.mods ? resolveSameScopeModParam(link, *node.mods, state.modifiers)
                                       : nullptr) {
-                        const float offset = link.bipolar ? -link.amount : 0.0f;
-                        const float value = link.bipolar ? link.amount * 2.0f : link.amount;
-                        targetParam->addModifier(*macroParam, value, offset);
+                        addLinkModifier(*targetParam, *macroParam, link);
                     }
                     continue;
                 }
@@ -271,9 +269,7 @@ void ModifierSyncWalker::syncStructure(
                 if (!param)
                     continue;
 
-                const float offset = link.bipolar ? -link.amount : 0.0f;
-                const float value = link.bipolar ? link.amount * 2.0f : link.amount;
-                param->addModifier(*macroParam, value, offset);
+                addLinkModifier(*param, *macroParam, link);
             }
         }
     }
@@ -338,7 +334,7 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 if (!param)
                     continue;
 
-                param->addModifier(*modifier, link.amount);
+                addLinkModifier(*param, *modifier, link);
             }
         }
     }
@@ -367,9 +363,7 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 if (!param)
                     continue;
 
-                const float offset = link.bipolar ? -link.amount : 0.0f;
-                const float value = link.bipolar ? link.amount * 2.0f : link.amount;
-                param->addModifier(*macroParam, value, offset);
+                addLinkModifier(*param, *macroParam, link);
             }
         }
     }

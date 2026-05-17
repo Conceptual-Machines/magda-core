@@ -97,6 +97,11 @@ void AutomationPlaybackEngine::process() {
         // so curves are ready before the next play. The 10ms deferred iterator
         // rebuild will complete long before the user presses play again.
         // Manual fader control still works because playbackActive_ is false.
+        // Release any touchSuppressed flag a UI gesture may have left behind
+        // (component destroyed mid-drag, modal opened, etc.) — otherwise the
+        // upcoming bake skips that lane and the parameter silently stops
+        // following automation until the user re-touches the control.
+        AutomationManager::getInstance().clearAllTouchSuppression();
         clearAllLanes();
         bakeAllLanes();
         AutomationManager::getInstance().setPlaybackActive(false);
@@ -420,16 +425,25 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
                     addTEPoint(preStepBeat, autoMgr.getValueAtBeat(lane.id, preStepBeat));
             }
 
-            // Bezier: tessellate the segment between the previous and current
-            // point, so TE's linear interpolation follows the curved shape.
-            if (i > 0 && (*sourcePoints)[i - 1].curveType == AutomationCurveType::Bezier) {
+            // Tessellate any non-straight segment so TE's linear iterator
+            // follows the shape. Bezier always needs it; Linear segments need
+            // it whenever tension is non-zero (the UI bends the slope via
+            // interpolateWithTension, which without tessellation would be
+            // baked as just the two endpoints and play back as a straight
+            // ramp regardless of the visible curve).
+            if (i > 0) {
                 const auto& prev = (*sourcePoints)[i - 1];
-                const double span = point.beatPosition - prev.beatPosition;
-                if (span > 0.0) {
-                    for (int s = 1; s < kBezierSegments; ++s) {
-                        double t = static_cast<double>(s) / kBezierSegments;
-                        double beat = prev.beatPosition + span * t;
-                        addTEPoint(beat, autoMgr.getValueAtBeat(lane.id, beat));
+                const bool isBezier = prev.curveType == AutomationCurveType::Bezier;
+                const bool isCurvedLinear = prev.curveType == AutomationCurveType::Linear &&
+                                            std::abs(prev.tension) >= 0.001;
+                if (isBezier || isCurvedLinear) {
+                    const double span = point.beatPosition - prev.beatPosition;
+                    if (span > 0.0) {
+                        for (int s = 1; s < kBezierSegments; ++s) {
+                            double t = static_cast<double>(s) / kBezierSegments;
+                            double beat = prev.beatPosition + span * t;
+                            addTEPoint(beat, autoMgr.getValueAtBeat(lane.id, beat));
+                        }
                     }
                 }
             }

@@ -10,12 +10,12 @@
 
 #include "../../../../agents/automation_agent.hpp"
 #include "../../../../agents/command_agent.hpp"
-#include "../../../../agents/compact_executor.hpp"
 #include "../../../../agents/controller_profile_agent.hpp"
 #include "../../../../agents/daw_agent.hpp"
 #include "../../../../agents/dsl_interpreter.hpp"
 #include "../../../../agents/four_osc_agent.hpp"
 #include "../../../../agents/four_osc_apply.hpp"
+#include "../../../../agents/instruction_executor.hpp"
 #include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/llm_presets.hpp"
@@ -585,7 +585,7 @@ void AIChatConsoleContent::RequestThread::run() {
                             response += "\n";
                         response += musicDesc;
                     }
-                    magda::CompactExecutor executor(*safeThis->magdaApi_);
+                    magda::InstructionExecutor executor(*safeThis->magdaApi_);
                     // Hand the command agent's freshly-created clip (if any)
                     // explicitly to the music executor. Otherwise it will
                     // auto-create a new clip — we never want it to silently
@@ -1605,7 +1605,7 @@ void AIChatConsoleContent::buildAliasList() {
     allAliases_.clear();
 
     // Internal plugins — single source of truth in internal_plugins.hpp,
-    // shared with the DSL interpreter and CompactExecutor so the autocomplete
+    // shared with the DSL interpreter and InstructionExecutor so the autocomplete
     // dropdown lists exactly the aliases the agent layer accepts.
     for (const auto& entry : magda::getInternalPlugins()) {
         allAliases_.push_back(

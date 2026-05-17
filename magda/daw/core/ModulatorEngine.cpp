@@ -8,9 +8,9 @@ void ModulatorEngine::updateAllMods(double deltaTime) {
     auto& tm = TrackManager::getInstance();
 
     // Consume transport state (one-shot flags are cleared on read)
-    auto [bpm, justStarted, justLooped, justStopped] = tm.consumeTransportState();
+    auto [bpm, playing, justStarted, justLooped, justStopped] = tm.consumeTransportState();
 
-    tm.updateAllMods(deltaTime, bpm, justStarted, justLooped, justStopped);
+    tm.updateAllMods(deltaTime, bpm, justStarted, justLooped, justStopped, playing);
 }
 
 }  // namespace magda

@@ -58,7 +58,7 @@ set(TEST_SOURCES
     test_automation_agent.cpp
     test_automation_modes.cpp
     test_automation_singleton.cpp
-    test_compact_executor_context.cpp
+    test_instruction_executor_context.cpp
     # Faust pool refactor (Phase 1: metadata parser)
     test_faust_metadata_parser.cpp
     test_faust_param_pool.cpp
