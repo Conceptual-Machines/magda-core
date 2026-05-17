@@ -13,6 +13,7 @@ CursorManager::CursorManager() {
     zoomOutCursor = createZoomCursor(ZoomGlyph::Minus);
     noteDrawCursor = createNoteDrawCursor();
     eraseCursor = createEraseCursor();
+    noteRepeatCursor = createNoteRepeatCursor();
 }
 
 juce::MouseCursor CursorManager::createZoomCursor(ZoomGlyph glyph) {
@@ -148,6 +149,51 @@ juce::MouseCursor CursorManager::createEraseCursor() {
     g.drawLine(12.0f, 5.0f, 5.0f, 12.0f, 2.0f);
 
     return juce::MouseCursor(img, 8, 20);
+}
+
+juce::MouseCursor CursorManager::createNoteRepeatCursor() {
+    const int size = 28;
+    juce::Image img(juce::Image::ARGB, size, size, true);
+    juce::Graphics g(img);
+
+    // Three small drum cells trailing right, suggesting a single stamp that
+    // repeats. Hotspot sits on the leftmost cell (the origin of the repeat).
+    auto makeCell = [](float x, float y, float w, float h) {
+        juce::Path p;
+        p.addRoundedRectangle(x, y, w, h, 1.2f);
+        return p;
+    };
+
+    juce::Path c1 = makeCell(5.0f, 10.5f, 5.0f, 7.0f);
+    juce::Path c2 = makeCell(12.0f, 10.5f, 5.0f, 7.0f);
+    juce::Path c3 = makeCell(19.0f, 10.5f, 5.0f, 7.0f);
+
+    // White outline pass for visibility on dark and light backgrounds.
+    const auto outlineStroke =
+        juce::PathStrokeType(3.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    g.setColour(juce::Colours::white);
+    g.strokePath(c1, outlineStroke);
+    g.strokePath(c2, outlineStroke);
+    g.strokePath(c3, outlineStroke);
+
+    // Fill in a warm accent so the repeater reads as a third distinct tool
+    // alongside the blue pencil and the red eraser. STATUS_WARNING orange
+    // from the theme palette.
+    g.setColour(juce::Colour(0xFFFFAA44));
+    g.fillPath(c1);
+    g.fillPath(c2);
+    g.fillPath(c3);
+
+    // Crisp black hairline outline.
+    g.setColour(juce::Colours::black);
+    const auto hairline =
+        juce::PathStrokeType(1.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    g.strokePath(c1, hairline);
+    g.strokePath(c2, hairline);
+    g.strokePath(c3, hairline);
+
+    // Hotspot at the centre of the leftmost cell — the click point lands there.
+    return juce::MouseCursor(img, 7, 14);
 }
 
 }  // namespace magda
