@@ -465,8 +465,13 @@ const CompiledPluginSpec& getMagdaRingModSpec() {
         .displayName = "Ring Mod",
         .browserCategory = "Modulation",
         .description =
-            "Compiled Faust stereo ring modulator. Multiply by a sine, triangle, or square "
-            "carrier from 1 Hz (tremolo) to 5 kHz (metallic clang). Sync- or free-rate.",
+            "Compiled Faust stereo ring modulator. Multiplies the input by an internal carrier "
+            "from 1 Hz (slow tremolo) to 5 kHz (metallic clang).\n"
+            "<b>Sine</b>: pure tonal carrier, cleanest sideband structure.\n"
+            "<b>Triangle</b>: softer overtone series than square.\n"
+            "<b>Square</b>: rich odd-harmonic spectrum, aggressive sideband stack.\n"
+            "Rate runs free in Hz or locks to tempo Division. "
+            "Width offsets the carrier phase per channel; Mix blends wet against dry.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaRingModCompiledPlugin(info);
         },

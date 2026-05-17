@@ -657,7 +657,7 @@ void TransportPanel::setupTransportButtons() {
     recordButton->onClick = [this]() {
         isRecording = !isRecording;
         recordButton->setActive(isRecording);
-        if (isRecording && onRecord) {
+        if (onRecord) {
             onRecord();
         }
         repaint();
@@ -1303,6 +1303,14 @@ void TransportPanel::setPlaybackState(bool playing) {
         DBG("[TransportPanel] setPlaybackState: " << (int)isPlaying << " -> " << (int)playing);
         isPlaying = playing;
         playButton->setActive(isPlaying);
+    }
+}
+
+void TransportPanel::setRecordingState(bool recording) {
+    if (isRecording != recording) {
+        DBG("[TransportPanel] setRecordingState: " << (int)isRecording << " -> " << (int)recording);
+        isRecording = recording;
+        recordButton->setActive(isRecording);
     }
 }
 

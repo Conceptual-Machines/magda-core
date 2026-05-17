@@ -58,7 +58,7 @@ set(TEST_SOURCES
     test_automation_agent.cpp
     test_automation_modes.cpp
     test_automation_singleton.cpp
-    test_compact_executor_context.cpp
+    test_instruction_executor_context.cpp
     # Faust pool refactor (Phase 1: metadata parser)
     test_faust_metadata_parser.cpp
     test_faust_param_pool.cpp
@@ -169,6 +169,8 @@ target_sources(magda_juce_tests PRIVATE
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
     test_clip_inspector_juce.cpp
+    test_multiband_curve_view_juce.cpp
+    ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorSections.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorLifecycle.cpp
@@ -182,6 +184,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/common/SvgButton.cpp
     ../magda/daw/ui/themes/FontManager.cpp
     test_automation_modes_juce.cpp
+    test_arrangement_transport_loop_juce.cpp
 )
 
 # Link required libraries for JUCE tests
@@ -212,6 +215,13 @@ target_include_directories(magda_juce_tests
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/panels/content
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/state
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/components
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/components/chain
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/components/common
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/components/common/curve
 )
+
+add_test(NAME arrangement_transport_loop_juce
+         COMMAND magda_juce_tests "Arrangement Transport Loop Tests")
+
+add_test(NAME multiband_curve_view_juce
+         COMMAND magda_juce_tests "Multiband Curve View Tests")

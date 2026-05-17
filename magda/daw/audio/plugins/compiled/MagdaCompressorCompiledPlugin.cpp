@@ -532,9 +532,9 @@ const CompiledPluginSpec& getMagdaCompressorSpec() {
         .browserCategory = "Dynamics",
         .description =
             "Compiled Faust compressor with selectable engines.\n"
-            "Clean: feed-forward, peak/RMS detection, soft knee, stereo link, "
+            "<b>Clean</b>: feed-forward, peak/RMS detection, soft knee, stereo link, "
             "sidechain HPF, external audio sidechain, parallel mix, output safety limiting.\n"
-            "Glue: Brouns FBFF compressor with exposed character controls "
+            "<b>Glue</b>: Brouns FBFF compressor with exposed character controls "
             "(Detector Peak/RMS, Style Pre/Post, FBFF blend). No external sidechain.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaCompressorCompiledPlugin(info);

@@ -351,10 +351,15 @@ const CompiledPluginSpec& getMagdaClipperSpec() {
         .pluginId = MagdaClipperCompiledPlugin::xmlTypeName,
         .displayName = "Clipper",
         .browserCategory = "Distortion",
-        .description = "Antialiased multi-mode clipper. Five ADAA curves: Hard "
-                       "(brickwall), Soft (quadratic), Tanh (tube-style), Hyperbolic, "
-                       "Sine (sin∘atan). Drive pushes input "
-                       "into the curve; Output trims the clipped signal.",
+        .description = "Compiled Faust antialiased clipper with five selectable static curves "
+                       "from the aa.* ADAA library.\n"
+                       "<b>Hard</b>: brickwall clip ceiling.\n"
+                       "<b>Soft</b>: quadratic knee for warmer breakup.\n"
+                       "<b>Tanh</b>: hyperbolic tube-style curve.\n"
+                       "<b>Hyperbolic</b>: smooth rational saturation.\n"
+                       "<b>Sine</b>: sin(atan(x)) for asymmetric, harmonically rich clipping.\n"
+                       "All five are instantiated in parallel for glitch-free Mode switching. "
+                       "Drive pushes the input into the curve; Output trims the result.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaClipperCompiledPlugin(info);
         },

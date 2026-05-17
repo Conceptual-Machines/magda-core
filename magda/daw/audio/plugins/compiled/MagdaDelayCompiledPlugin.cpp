@@ -473,7 +473,10 @@ const CompiledPluginSpec& getMagdaDelaySpec() {
         .pluginId = MagdaDelayCompiledPlugin::xmlTypeName,
         .displayName = "Delay",
         .browserCategory = "Delay",
-        .description = "Compiled Faust stereo delay with sync, tone, feedback, and crossfeed.",
+        .description = "Compiled Faust stereo digital delay with fractional-sample interpolation. "
+                       "Time spans 1 ms to 2 s; Sync locks to musical Division. "
+                       "Feedback recirculates with Tone shaping the regen path. "
+                       "Cross routes feedback across channels for ping-pong patterns.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaDelayCompiledPlugin(info);
         },

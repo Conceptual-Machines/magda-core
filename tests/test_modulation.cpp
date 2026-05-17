@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "../magda/daw/audio/modifiers/ModifierHelpers.hpp"
 #include "../magda/daw/core/MacroInfo.hpp"
 #include "../magda/daw/core/ModInfo.hpp"
 #include "../magda/daw/core/TrackManager.hpp"
@@ -14,6 +15,16 @@ ControlTarget testPluginParam(DeviceId deviceId, int paramIndex, TrackId trackId
 }
 
 }  // namespace
+
+TEST_CASE("Modifier assignment mapping preserves bipolar link semantics", "[modulation][bipolar]") {
+    auto unipolar = mapLinkAssignment(0.25f, false);
+    REQUIRE(unipolar.value == Catch::Approx(0.25f));
+    REQUIRE(unipolar.offset == Catch::Approx(0.0f));
+
+    auto bipolar = mapLinkAssignment(0.25f, true);
+    REQUIRE(bipolar.value == Catch::Approx(0.5f));
+    REQUIRE(bipolar.offset == Catch::Approx(-0.25f));
+}
 
 // ============================================================================
 // MacroInfo Tests
@@ -476,6 +487,18 @@ TEST_CASE("TrackManager - Device mod operations", "[modulation][mod][integration
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
         REQUIRE(device->mods[1].name == "LFO 1");
+    }
+
+    SECTION("Transport synced LFO visual sim starts when transport is already playing") {
+        trackManager.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+        trackManager.setModTriggerMode(devicePath, 0, LFOTriggerMode::Transport);
+        trackManager.setModTempoSync(devicePath, 0, true);
+
+        trackManager.updateAllMods(0.1, 120.0, false, false, false, true);
+
+        auto* device = trackManager.getDeviceInChainByPath(devicePath);
+        REQUIRE(device->mods[0].running);
+        REQUIRE(device->mods[0].phase > 0.0f);
     }
 
     // Cleanup

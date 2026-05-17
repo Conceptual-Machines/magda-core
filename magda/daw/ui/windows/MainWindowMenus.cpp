@@ -82,13 +82,14 @@ void MainWindow::setupMenuCallbacks() {
             mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
         auto& projectManager = ProjectManager::getInstance();
         if (!projectManager.newProject()) {
-            auto message = tr("dialogs.error.new_project");
             const auto lastError = projectManager.getLastError();
-            if (lastError.isNotEmpty())
-                message += juce::String("\n\n") + lastError;
-
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                   tr("dialogs.new_project"), message);
+            // Empty lastError = user cancelled the unsaved-changes prompt;
+            // no error to report, just abort silently.
+            if (lastError.isNotEmpty()) {
+                auto message = tr("dialogs.error.new_project") + juce::String("\n\n") + lastError;
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       tr("dialogs.new_project"), message);
+            }
         } else {
             // Reset timeline/transport to defaults
             if (mainComponent && mainComponent->mainView) {
@@ -144,9 +145,13 @@ void MainWindow::setupMenuCallbacks() {
             mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
         auto& projectManager = ProjectManager::getInstance();
         if (!projectManager.closeProject()) {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::AlertWindow::WarningIcon, tr("dialogs.close_project"),
-                tr("dialogs.error.close_failed") + " " + projectManager.getLastError());
+            const auto lastError = projectManager.getLastError();
+            // Empty lastError = user cancelled the unsaved-changes prompt.
+            if (lastError.isNotEmpty()) {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, tr("dialogs.close_project"),
+                    tr("dialogs.error.close_failed") + " " + lastError);
+            }
         } else {
             // Reset timeline/transport to defaults
             if (mainComponent && mainComponent->mainView) {

@@ -55,20 +55,8 @@ DeviceInspector::DeviceInspector() {
     descriptionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addChildComponent(descriptionLabel_);
 
-    descriptionValue_.setMultiLine(true);
-    descriptionValue_.setReadOnly(true);
-    descriptionValue_.setScrollbarsShown(true);
-    descriptionValue_.setCaretVisible(false);
-    descriptionValue_.setPopupMenuEnabled(false);
-    descriptionValue_.setWantsKeyboardFocus(false);
-    descriptionValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    descriptionValue_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-    descriptionValue_.setColour(juce::TextEditor::backgroundColourId,
-                                juce::Colours::transparentBlack);
-    descriptionValue_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
-    descriptionValue_.setColour(juce::TextEditor::focusedOutlineColourId,
-                                juce::Colours::transparentBlack);
-    descriptionValue_.setIndents(0, 0);
+    descriptionValue_.setBaseFont(FontManager::getInstance().getUIFont(12.0f));
+    descriptionValue_.setBaseColour(DarkTheme::getTextColour());
     addChildComponent(descriptionValue_);
 }
 
@@ -211,8 +199,8 @@ void DeviceInspector::updateFromSelectedChainNode() {
         const juce::String category = juce::String::fromUTF8(metadata->category);
         const juce::String description = juce::String::fromUTF8(metadata->description);
         categoryValue_.setText(category, juce::dontSendNotification);
-        descriptionValue_.setText(description, false);
-        descriptionValue_.setTooltip(description);
+        descriptionValue_.setStyledText(description);
+        descriptionValue_.setTooltip(stripStyleTags(description));
         categoryLabel_.setVisible(category.isNotEmpty());
         categoryValue_.setVisible(category.isNotEmpty());
         descriptionLabel_.setVisible(description.isNotEmpty());
@@ -231,7 +219,7 @@ void DeviceInspector::updateFromSelectedChainNode() {
         descriptionValue_.setVisible(false);
         categoryValue_.setText({}, juce::dontSendNotification);
         codenameValue_.setText({}, juce::dontSendNotification);
-        descriptionValue_.clear();
+        descriptionValue_.setStyledText({});
         descriptionValue_.setTooltip({});
     }
 

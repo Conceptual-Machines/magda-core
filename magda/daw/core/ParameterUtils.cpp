@@ -487,6 +487,16 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
     }
     if (info.unit.isNotEmpty())
         return juce::String(realValue, decimalPlaces) + " " + info.unit;
+
+    // Bare 0..1 linear params display as 0..100% with the caller's decimal
+    // precision (default 1 → 0.1% steps). Keeps Faust FX bank knobs out of
+    // the raw "0.50" UX without forcing every plugin to opt in by setting
+    // unit/displayFormat manually.
+    if (info.scale == ParameterScale::Linear && info.minValue >= -1.0e-6f &&
+        info.maxValue <= 1.0f + 1.0e-6f) {
+        return juce::String(realValue * 100.0f, decimalPlaces) + "%";
+    }
+
     return juce::String(realValue, decimalPlaces);
 }
 
@@ -592,6 +602,20 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
             return std::nullopt;
         return clamp(static_cast<float>(t.getDoubleValue()));
     }
+    // Bare 0..1 linear params accept percent input ("50", "50%") and store
+    // the unit fraction. Mirrors the format-side auto-percent above.
+    if (info.unit.isEmpty() && info.scale == ParameterScale::Linear && info.minValue >= -1.0e-6f &&
+        info.maxValue <= 1.0f + 1.0e-6f) {
+        auto t = trimmed;
+        if (t.endsWith("%"))
+            t = t.dropLastCharacters(1).trim();
+        if (t.isEmpty())
+            return std::nullopt;
+        if (!t.containsAnyOf("0123456789."))
+            return std::nullopt;
+        return clamp(static_cast<float>(t.getDoubleValue()) * 0.01f);
+    }
+
     // Strip matching unit suffix if any, then a bare number.
     auto t = trimmed;
     if (info.unit.isNotEmpty() && t.endsWithIgnoreCase(info.unit))

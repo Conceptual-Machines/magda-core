@@ -1,4 +1,4 @@
-#include "compact_executor.hpp"
+#include "instruction_executor.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -25,14 +25,14 @@ namespace magda {
 // Helpers
 // ============================================================================
 
-int CompactExecutor::findTrackByName(const juce::String& name) const {
+int InstructionExecutor::findTrackByName(const juce::String& name) const {
     for (const auto& track : api_.tracks().getTracks())
         if (track.name.equalsIgnoreCase(name))
             return track.id;
     return -1;
 }
 
-int CompactExecutor::resolveTrackRef(const TrackRef& ref) {
+int InstructionExecutor::resolveTrackRef(const TrackRef& ref) {
     if (ref.isImplicit()) {
         if (currentTrackId_ < 0) {
             error_ = "No current track context (use TRACK first or specify a ref)";
@@ -56,7 +56,7 @@ int CompactExecutor::resolveTrackRef(const TrackRef& ref) {
     return id;
 }
 
-double CompactExecutor::barsToTime(double bar) const {
+double InstructionExecutor::barsToTime(double bar) const {
     double bpm = 120.0;
     auto* engine = api_.tracks().getAudioEngine();
     if (engine)
@@ -64,7 +64,7 @@ double CompactExecutor::barsToTime(double bar) const {
     return (bar - 1.0) * 4.0 * 60.0 / bpm;
 }
 
-double CompactExecutor::barsToLength(double bars) const {
+double InstructionExecutor::barsToLength(double bars) const {
     double bpm = 120.0;
     auto* engine = api_.tracks().getAudioEngine();
     if (engine)
@@ -72,7 +72,7 @@ double CompactExecutor::barsToLength(double bars) const {
     return bars * 4.0 * 60.0 / bpm;
 }
 
-double CompactExecutor::barsToBeats(double bars) const {
+double InstructionExecutor::barsToBeats(double bars) const {
     // Use the project's time-signature numerator. Hard-coding 4 here was
     // the source of the seconds↔beats round-trip drift under non-4/4 sigs.
     int beatsPerBar = api_.project().getCurrentProjectInfo().timeSignatureNumerator;
@@ -85,13 +85,41 @@ double CompactExecutor::barsToBeats(double bars) const {
 // Main execute
 // ============================================================================
 
-bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
+bool InstructionExecutor::execute(const std::vector<Instruction>& instructions) {
     error_ = {};
     results_.clear();
     currentTrackId_ = -1;
     currentClipId_ = -1;
     autoCreatedClip_ = false;
+    pendingContentEndBeats_ = 0.0;
     clearActiveSelection();
+
+    // Pre-scan instructions for the latest beat reached by any note-producing
+    // op, so autoCreateClip() can size the new clip to actually fit the
+    // music. Without this an LLM that emits an 8-chord 64-beat progression
+    // gets stuffed into a hardcoded 4-bar clip and loops the first bar.
+    for (const auto& inst : instructions) {
+        switch (inst.opcode) {
+            case OpCode::Note: {
+                const auto& n = std::get<NoteOp>(inst.payload);
+                pendingContentEndBeats_ = std::max(pendingContentEndBeats_, n.beat + n.length);
+                break;
+            }
+            case OpCode::Chord: {
+                const auto& c = std::get<ChordOp>(inst.payload);
+                pendingContentEndBeats_ = std::max(pendingContentEndBeats_, c.beat + c.length);
+                break;
+            }
+            case OpCode::Arp: {
+                const auto& a = std::get<ArpOp>(inst.payload);
+                const double span = a.beats > 0.0 ? a.beats : a.step;
+                pendingContentEndBeats_ = std::max(pendingContentEndBeats_, a.beat + span);
+                break;
+            }
+            default:
+                break;
+        }
+    }
 
     // Inherit only the selected track from UI context — intentionally do NOT
     // inherit the selected clip. The music agent should always produce a fresh
@@ -117,7 +145,7 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
             if (clipInfo->trackId != INVALID_TRACK_ID)
                 currentTrackId_ = clipInfo->trackId;
         } else {
-            DBG("CompactExecutor: ignoring stale seedClipId=" + juce::String(seedClipId_) +
+            DBG("InstructionExecutor: ignoring stale seedClipId=" + juce::String(seedClipId_) +
                 " (clip no longer exists)");
             seedClipId_ = -1;
         }
@@ -139,7 +167,7 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
         }
     }
 
-    DBG("CompactExecutor: currentTrack=" + juce::String(currentTrackId_) +
+    DBG("InstructionExecutor: currentTrack=" + juce::String(currentTrackId_) +
         " currentClip=" + juce::String(currentClipId_) +
         " selectedClips=" + juce::String(static_cast<int>(selectedClips_.size())));
 
@@ -188,14 +216,14 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
         if (ok) {
             succeeded++;
         } else {
-            DBG("CompactExecutor: instruction " + juce::String(succeeded + failed) +
+            DBG("InstructionExecutor: instruction " + juce::String(succeeded + failed) +
                 " (opcode=" + juce::String(static_cast<int>(inst.opcode)) + ") FAILED: " + error_);
             results_.add("[!] " + error_);
             failed++;
         }
     }
 
-    DBG("CompactExecutor: execute done - succeeded=" + juce::String(succeeded) +
+    DBG("InstructionExecutor: execute done - succeeded=" + juce::String(succeeded) +
         " failed=" + juce::String(failed) + " currentClip=" + juce::String(currentClipId_));
 
     if (succeeded == 0 && failed > 0) {
@@ -206,32 +234,38 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
     return true;
 }
 
-bool CompactExecutor::autoCreateClip() {
+bool InstructionExecutor::autoCreateClip() {
     if (currentTrackId_ < 0) {
         error_ = "No track context - use TRACK first or select a track";
-        DBG("CompactExecutor::autoCreateClip FAIL: " + error_);
+        DBG("InstructionExecutor::autoCreateClip FAIL: " + error_);
         return false;
     }
 
-    // Create a default clip at bar 1, 4 bars long. Beats-authoritative: pass
-    // beats directly so the clip's musical position survives tempo / time-sig
-    // changes and skips the seconds↔beats round-trip.
+    // Create a clip at bar 1 sized to the pending content, with a 4-bar
+    // floor so an empty / single-note add still gets a usable clip. Round
+    // the content span up to the next whole bar so the clip lines up with
+    // the bar grid rather than ending mid-bar. Beats-authoritative: pass
+    // beats directly so the clip's musical position survives tempo /
+    // time-sig changes and skips the seconds<->beats round-trip.
+    const double beatsPerBar = barsToBeats(1.0);
+    const double minLength = barsToBeats(4.0);
+    double contentBars = beatsPerBar > 0.0 ? std::ceil(pendingContentEndBeats_ / beatsPerBar) : 4.0;
     double startBeats = barsToBeats(0.0);  // bar 1 == beat 0
-    double lengthBeats = barsToBeats(4.0);
+    double lengthBeats = std::max(minLength, barsToBeats(contentBars));
 
-    DBG("CompactExecutor::autoCreateClip creating MIDI clip on track " +
+    DBG("InstructionExecutor::autoCreateClip creating MIDI clip on track " +
         juce::String(currentTrackId_) + " startBeats=" + juce::String(startBeats, 3) +
         " lenBeats=" + juce::String(lengthBeats, 3));
 
     auto clipId = api_.clips().createMidiClipBeats(currentTrackId_, startBeats, lengthBeats);
     if (clipId < 0) {
         error_ = "Failed to auto-create clip";
-        DBG("CompactExecutor::autoCreateClip FAIL: createMidiClip returned -1 for track " +
+        DBG("InstructionExecutor::autoCreateClip FAIL: createMidiClip returned -1 for track " +
             juce::String(currentTrackId_));
         return false;
     }
 
-    DBG("CompactExecutor::autoCreateClip OK: clipId=" + juce::String(clipId));
+    DBG("InstructionExecutor::autoCreateClip OK: clipId=" + juce::String(clipId));
 
     currentClipId_ = clipId;
     autoCreatedClip_ = true;
@@ -243,7 +277,7 @@ bool CompactExecutor::autoCreateClip() {
 // Instruction executors
 // ============================================================================
 
-bool CompactExecutor::executeTrack(const TrackOp& op) {
+bool InstructionExecutor::executeTrack(const TrackOp& op) {
     auto& tm = api_.tracks();
 
     // TRACK FX <alias> — resolve plugin, name track after it, add plugin
@@ -289,7 +323,7 @@ bool CompactExecutor::executeTrack(const TrackOp& op) {
     return true;
 }
 
-bool CompactExecutor::executeDel(const DelOp& op) {
+bool InstructionExecutor::executeDel(const DelOp& op) {
     // If active selection from SELECT, delete all selected items
     if (op.target.isImplicit() && hasActiveSelection()) {
         auto& tm = api_.tracks();
@@ -323,7 +357,7 @@ bool CompactExecutor::executeDel(const DelOp& op) {
     return true;
 }
 
-bool CompactExecutor::executeMute(const MuteOp& op) {
+bool InstructionExecutor::executeMute(const MuteOp& op) {
     auto& tm = api_.tracks();
 
     // If an active track selection from SELECT is present, mute all selected
@@ -360,7 +394,7 @@ bool CompactExecutor::executeMute(const MuteOp& op) {
     return true;
 }
 
-bool CompactExecutor::executeSolo(const SoloOp& op) {
+bool InstructionExecutor::executeSolo(const SoloOp& op) {
     auto& tm = api_.tracks();
 
     if (!selectedTracks_.empty() && op.target.isImplicit()) {
@@ -391,7 +425,7 @@ bool CompactExecutor::executeSolo(const SoloOp& op) {
     return true;
 }
 
-void CompactExecutor::applySetProps(int trackId, const juce::StringPairArray& props) {
+void InstructionExecutor::applySetProps(int trackId, const juce::StringPairArray& props) {
     auto& tm = api_.tracks();
     for (const auto& key : props.getAllKeys()) {
         auto val = props.getValue(key, "");
@@ -411,7 +445,7 @@ void CompactExecutor::applySetProps(int trackId, const juce::StringPairArray& pr
     }
 }
 
-bool CompactExecutor::executeSet(const SetOp& op) {
+bool InstructionExecutor::executeSet(const SetOp& op) {
     // If active track selection from SELECT, apply to all
     if (op.target.isImplicit() && !selectedTracks_.empty()) {
         for (auto trackId : selectedTracks_)
@@ -451,7 +485,7 @@ bool CompactExecutor::executeSet(const SetOp& op) {
     return true;
 }
 
-bool CompactExecutor::executeClip(const ClipOp& op) {
+bool InstructionExecutor::executeClip(const ClipOp& op) {
     int trackId = resolveTrackRef(op.target);
     if (trackId < 0)
         return false;
@@ -484,7 +518,7 @@ bool CompactExecutor::executeClip(const ClipOp& op) {
     return true;
 }
 
-bool CompactExecutor::executeFx(const FxOp& op) {
+bool InstructionExecutor::executeFx(const FxOp& op) {
     int trackId = resolveTrackRef(op.target);
     if (trackId < 0)
         return false;
@@ -568,7 +602,7 @@ bool CompactExecutor::executeFx(const FxOp& op) {
     return true;
 }
 
-bool CompactExecutor::executeSelect(const SelectOp& op) {
+bool InstructionExecutor::executeSelect(const SelectOp& op) {
     auto& sm = api_.selection();
 
     if (op.target == SelectOp::Target::Tracks) {
@@ -703,7 +737,7 @@ bool CompactExecutor::executeSelect(const SelectOp& op) {
     return true;
 }
 
-bool CompactExecutor::executeArp(const ArpOp& op) {
+bool InstructionExecutor::executeArp(const ArpOp& op) {
     if (currentClipId_ < 0) {
         if (!autoCreateClip())
             return false;
@@ -775,7 +809,7 @@ bool CompactExecutor::executeArp(const ArpOp& op) {
     return true;
 }
 
-bool CompactExecutor::executeChord(const ChordOp& op) {
+bool InstructionExecutor::executeChord(const ChordOp& op) {
     if (currentClipId_ < 0) {
         if (!autoCreateClip())
             return false;
@@ -809,7 +843,7 @@ bool CompactExecutor::executeChord(const ChordOp& op) {
     return true;
 }
 
-bool CompactExecutor::executeNote(const NoteOp& op) {
+bool InstructionExecutor::executeNote(const NoteOp& op) {
     if (currentClipId_ < 0) {
         if (!autoCreateClip())
             return false;

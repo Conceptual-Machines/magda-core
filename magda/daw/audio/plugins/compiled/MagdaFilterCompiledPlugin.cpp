@@ -124,6 +124,17 @@ const EngineHarvest::Control* findByIdx(const EngineHarvest& h, int idx) {
     return nullptr;
 }
 
+float clampSallenKeyCutoffHz(float cutoffHz, int sampleRate, float minCutoffHz) {
+    if (sampleRate <= 0)
+        return cutoffHz;
+
+    constexpr float kStableNyquistFraction = 0.84f;
+    const float maxCutoffHz = static_cast<float>(sampleRate) * 0.5f * kStableNyquistFraction;
+    if (maxCutoffHz <= minCutoffHz)
+        return minCutoffHz;
+    return juce::jlimit(minCutoffHz, maxCutoffHz, cutoffHz);
+}
+
 }  // namespace
 
 // ============================================================================
@@ -170,6 +181,7 @@ void MagdaFilterCompiledPlugin::rebuildEngineState(int sampleRate) {
         auto& e = engines_[engineIdx];
         if (!e.dsp)
             continue;
+        e.sampleRate = sampleRate;
         e.dsp->init(sampleRate);
         e.numInputs = e.dsp->getNumInputs();
         e.numOutputs = e.dsp->getNumOutputs();
@@ -350,8 +362,14 @@ void MagdaFilterCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc)
 
     for (int e = 0; e < engineCount; ++e) {
         auto& engine = engines_[e];
-        if (engine.cutoffZone)
-            *engine.cutoffZone = static_cast<FAUSTFLOAT>(cutoffHz);
+        if (engine.cutoffZone) {
+            float engineCutoffHz = cutoffHz;
+            if (e == static_cast<int>(FilterFamily::SallenKey)) {
+                engineCutoffHz = clampSallenKeyCutoffHz(cutoffHz, engine.sampleRate,
+                                                        hostSlotInfo_[kCutoffSlot].minValue);
+            }
+            *engine.cutoffZone = static_cast<FAUSTFLOAT>(engineCutoffHz);
+        }
         if (engine.resZone)
             *engine.resZone = static_cast<FAUSTFLOAT>(resReal);
         if (engine.driveZone)
@@ -533,16 +551,17 @@ const CompiledPluginSpec& getMagdaFilterSpec() {
         .pluginId = MagdaFilterCompiledPlugin::xmlTypeName,
         .displayName = "Filter",
         .browserCategory = "Filter",
-        .description = "Compiled Faust multimode filter.\n"
-                       "SVF: clean 2-pole LP/BP/HP/Notch for precise shaping.\n"
-                       "Ladder: classic 4-pole low-pass with driven resonance.\n"
-                       "Korg 35: MS-style LP/HP character with sharper analog bite.\n"
-                       "Oberheim: SEM-style LP/BP/HP/Notch with broad musical sweeps.\n"
-                       "Sallen-Key: smooth 2nd-order LP/BP/HP response.\n"
-                       "Diode: resonant 4-pole diode ladder with input drive.\n"
-                       "Warning: high resonance can create very loud peaks or "
-                       "self-oscillation. "
-                       "Keep monitoring levels conservative to protect speakers and ears.",
+        .description =
+            "Compiled Faust multimode filter.\n"
+            "<b>SVF</b>: clean 2-pole LP/BP/HP/Notch for precise shaping.\n"
+            "<b>Ladder</b>: classic 4-pole low-pass with driven resonance.\n"
+            "<b>Korg 35</b>: MS-style LP/HP character with sharper analog bite.\n"
+            "<b>Oberheim</b>: SEM-style LP/BP/HP/Notch with broad musical sweeps.\n"
+            "<b>Sallen-Key</b>: smooth 2nd-order LP/BP/HP response.\n"
+            "<b>Diode</b>: resonant 4-pole diode ladder with input drive.\n"
+            "<warning>Warning: high resonance can create very loud peaks or "
+            "self-oscillation. "
+            "Keep monitoring levels conservative to protect speakers and ears.</warning>",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaFilterCompiledPlugin(info);
         },

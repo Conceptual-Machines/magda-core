@@ -19,22 +19,32 @@ Displayed when a track is selected. Shows:
 
 Displayed when a clip is selected. Shows:
 
-- **Clip name** — Click to rename
-- **Clip color** — Click the color swatch to choose a custom color
-- **Position** — Start time, end time, and phase offset on the timeline
-- **Loop settings** — Loop on/off, loop start, loop length
+- **Clip name** - Click to rename
+- **Clip color** - Click the color swatch to choose a custom color
+- **Position** - Start, end, and length on the timeline (beats)
+- **Loop settings** - Loop on/off, loop start, loop end, phase / offset (beats)
 
 ### Audio Properties
 
-For audio clips, the inspector shows additional controls:
+For audio clips, the inspector shows additional controls. Position and loop fields are expressed in **beats** rather than seconds; the only seconds value in the clip model is the source file's on-disk duration, shown as a read-only reference.
 
-- **Warp / Beat** — Toggle time-stretch mode; select algorithm (e.g. SoundTouch HQ)
-- **Tempo** — Source BPM and beat length detection
-- **Transient Detection** — Sensitivity slider for transient markers
-- **Pitch** — Transpose in semitones
-- **Mix** — Volume, pan, and gain controls
-- **Reverse** — Reverse the clip audio
-- **Launch Quantize** — Quantize setting for Session View clip launching
+- **Playback** - Source BPM (editable), total beats, and Auto Tempo toggle. With Auto Tempo on, the clip stretches so its beat count stays fixed as the project tempo changes; with it off, the clip plays at its native sample rate
+- **Warp** - Enable per-segment time-stretching via warp markers
+- **Transient Detection** - Sensitivity slider for transient markers
+- **Pitch** - Transpose in semitones; Auto-Pitch mode (Off, Pitch Track, Chord Mono, Chord Poly); Analog Pitch toggle for resampling instead of time-stretch
+- **Mix** - Volume, gain, pan, and reverse
+- **Channels** - Channel routing for stereo / mono interpretation
+- **Fades** - In / out length and curve
+
+### Session Launch & Follow
+
+When a clip lives in Session View, the inspector adds:
+
+- **Launch Mode** - Trigger (one-shot) or Toggle
+- **Launch Quantize** - Bar / beat snap for launch timing
+- **Follow Action** - Action when the clip ends: None, Play Next, Play Previous, Play Random, Stop, Play Again
+- **Follow Delay (beats)** - Delay between the clip ending and the follow action firing (0 - 64 beats)
+- **Follow Loops** - Number of loops the clip plays before the follow action fires
 
 ## Note Inspector
 

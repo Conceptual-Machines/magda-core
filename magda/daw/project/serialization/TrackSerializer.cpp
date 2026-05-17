@@ -27,11 +27,14 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     // Mixer state
     obj->setProperty("volume", track.volume);
     obj->setProperty("pan", track.pan);
+    obj->setProperty("manualVolume", track.manualVolume);
+    obj->setProperty("manualPan", track.manualPan);
     obj->setProperty("muted", track.muted);
     obj->setProperty("soloed", track.soloed);
     obj->setProperty("recordArmed", track.recordArmed);
     obj->setProperty("inputMonitor", static_cast<int>(track.inputMonitor));
     obj->setProperty("frozen", track.frozen);
+    obj->setProperty("playbackMode", static_cast<int>(track.playbackMode));
     if (track.activeSessionClipId != INVALID_CLIP_ID)
         obj->setProperty("activeSessionClipId", track.activeSessionClipId);
 
@@ -127,9 +130,15 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
 
     // Mixer state
     outTrack.volume = obj->getProperty("volume");
-    outTrack.manualVolume = outTrack.volume;
+    outTrack.manualVolume =
+        obj->hasProperty("manualVolume")
+            ? static_cast<float>(static_cast<double>(obj->getProperty("manualVolume")))
+            : outTrack.volume;
     outTrack.pan = obj->getProperty("pan");
-    outTrack.manualPan = outTrack.pan;
+    outTrack.manualPan =
+        obj->hasProperty("manualPan")
+            ? static_cast<float>(static_cast<double>(obj->getProperty("manualPan")))
+            : outTrack.pan;
     outTrack.muted = obj->getProperty("muted");
     outTrack.soloed = obj->getProperty("soloed");
     outTrack.recordArmed = obj->getProperty("recordArmed");
@@ -143,6 +152,10 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     // Frozen state (backward compatible - defaults to false)
     if (obj->hasProperty("frozen")) {
         outTrack.frozen = static_cast<bool>(obj->getProperty("frozen"));
+    }
+    if (obj->hasProperty("playbackMode")) {
+        outTrack.playbackMode =
+            static_cast<TrackPlaybackMode>(static_cast<int>(obj->getProperty("playbackMode")));
     }
     if (obj->hasProperty("activeSessionClipId")) {
         outTrack.activeSessionClipId = static_cast<int>(obj->getProperty("activeSessionClipId"));
@@ -315,6 +328,7 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("modPanelOpen", device.modPanelOpen);
     obj->setProperty("gainPanelOpen", device.gainPanelOpen);
     obj->setProperty("paramPanelOpen", device.paramPanelOpen);
+    obj->setProperty("aiPanelOpen", device.aiPanelOpen);
 
     // Parameters
     juce::Array<juce::var> paramsArray;
@@ -421,6 +435,8 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     outDevice.modPanelOpen = obj->getProperty("modPanelOpen");
     outDevice.gainPanelOpen = obj->getProperty("gainPanelOpen");
     outDevice.paramPanelOpen = obj->getProperty("paramPanelOpen");
+    if (obj->hasProperty("aiPanelOpen"))
+        outDevice.aiPanelOpen = static_cast<bool>(obj->getProperty("aiPanelOpen"));
 
     // Parameters
     auto paramsVar = obj->getProperty("parameters");

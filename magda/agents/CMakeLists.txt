@@ -15,8 +15,8 @@ dsl_grammar.hpp
     internal_plugins.hpp
     compact_parser.hpp
     compact_parser.cpp
-    compact_executor.hpp
-    compact_executor.cpp
+    instruction_executor.hpp
+    instruction_executor.cpp
     llm_config_utils.hpp
     llm_presets.hpp
     llm_presets.cpp

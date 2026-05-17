@@ -110,6 +110,12 @@ class AutomationPlaybackEngine : public AutomationManagerListener,
     // currentValueChanged writeback so the two paths agree.
     void writeModRateFromCurve(const AutomationTarget& target, double normalized);
 
+    // Push a macro curve value into MAGDA state and update linked TE targets.
+    // Drag preview also seeds the TE macro param; playback callbacks skip that
+    // because TE has already written the macro before notifying us.
+    void writeMacroValueFromCurve(const AutomationTarget& target, double normalized,
+                                  bool updateTracktionMacroParam);
+
     // Register this engine as a TE listener on every parameter we just baked,
     // and unregister from any parameter we used to bake but no longer do. This
     // keeps the listenedParams_ map in sync with bakedTargets_.
@@ -143,6 +149,12 @@ class AutomationPlaybackEngine : public AutomationManagerListener,
         AutomationTarget target;
     };
     std::unordered_map<te::AutomatableParameter*, ListenedParamInfo> listenedParams_;
+
+    // Guards the synchronous setParameterFromHost path used for drag preview.
+    // That call immediately fires currentValueChanged on the same macro param;
+    // the outer preview path already published the value, so the nested callback
+    // must not run another MAGDA/TE writeback cycle.
+    std::vector<AutomationTarget> macroWritebacksInProgress_;
 };
 
 }  // namespace magda

@@ -165,6 +165,16 @@ class AutomationManager : public TrackManagerListener {
      */
     void setTargetTouchSuppressed(const AutomationTarget& target, bool suppressed);
 
+    /**
+     * Release any touchSuppressed flag left on any lane. Safety net for the
+     * case where a UI gesture's end-callback didn't fire (component destroyed
+     * mid-drag, modal opened, exception) and the lane stayed suppressed —
+     * the next bake would skip it and the parameter would silently stop
+     * following automation. Call at safe boundaries (transport stop) when no
+     * gesture should be in flight.
+     */
+    void clearAllTouchSuppression();
+
     // Tracks which automation targets the user is actively manipulating via
     // a mouse/touch gesture. Unlike touchSuppressed, this is set even when no
     // lane exists yet, so the recording engine can tell "user is touching" from

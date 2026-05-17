@@ -393,7 +393,17 @@ const CompiledPluginSpec& getMagdaSaturatorSpec() {
         .pluginId = MagdaSaturatorCompiledPlugin::xmlTypeName,
         .displayName = "Saturator",
         .browserCategory = "Distortion",
-        .description = "Compiled Faust waveshaper with drive, mode, bias, tone, mix, and output.",
+        .description =
+            "Compiled Faust waveshaper with six selectable curves.\n"
+            "<b>Tanh</b>: smooth hyperbolic, the classic warm saturation.\n"
+            "<b>Soft</b>: gentle polynomial knee with a rolled-off top.\n"
+            "<b>Hard</b>: instant clip ceiling for square-edged distortion.\n"
+            "<b>Fold</b>: wavefolder, peaks reflect back for metallic overtones.\n"
+            "<b>Tube</b>: asymmetric curve (1.4x positive, 1.0x negative) "
+            "for valve-style even harmonics.\n"
+            "<b>Tape</b>: tanh with an odd-order compression term, tape-style headroom.\n"
+            "Drive pushes the input, Bias shifts the operating point, "
+            "Tone tilts the post-shape EQ, Mix blends dry.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaSaturatorCompiledPlugin(info);
         },

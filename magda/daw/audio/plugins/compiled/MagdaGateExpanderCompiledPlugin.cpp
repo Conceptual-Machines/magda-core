@@ -342,7 +342,12 @@ const CompiledPluginSpec& getMagdaGateExpanderSpec() {
         .pluginId = MagdaGateExpanderCompiledPlugin::xmlTypeName,
         .displayName = "Gate",
         .browserCategory = "Dynamics",
-        .description = "Stereo linked gate/downward expander with range, timing, mix, and output.",
+        .description =
+            "Compiled Faust stereo gate / downward expander with a linked peak detector. "
+            "Threshold sets where the gate opens; Ratio shapes the slope; "
+            "Range bounds the deepest cut. "
+            "Attack and Release shape the envelope; "
+            "Mix blends the gated signal back against dry for parallel gating.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaGateExpanderCompiledPlugin(info);
         },

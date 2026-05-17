@@ -10,9 +10,11 @@ Displayed when a MIDI clip is selected. Provides a grid for editing notes:
 
 - **Horizontal axis** — Time (bars and beats)
 - **Vertical axis** — Pitch (MIDI note numbers, with piano keyboard on the left)
-- **Click** to add a note
+- **Double-click** an empty cell to add a default-length note at that position and pitch
+- ++shift++ **+ drag** on empty grid to draw a note of variable length. The drag distance sets the note length. Acts as a pencil tool.
 - **Drag** a note to move it in time or pitch
 - **Drag edges** to resize note length
+- ++cmd++ **+ click** a note to delete it directly. If the note is part of a multi-selection, the whole group is erased. Acts as a rubber tool.
 - **Velocity lane** at the bottom for editing note velocities
 
 !!! note "Header controls"

@@ -14,15 +14,6 @@ class MagdaMultibandCompiledPlugin;
 
 namespace magda::daw::ui {
 
-/**
- * @brief Spectrum band visual for the compiled multiband compressor with
- *        draggable crossover, threshold, and expander handles.
- *
- * Plots three colour-tinted bands on a log-frequency axis.  The two vertical
- * lines are the Low / High crossover frequencies.  Per band: two horizontal
- * lines for the above/below thresholds plus expander thresholds above and
- * below those. Scroll wheel over each zone adjusts the matching ratio.
- */
 class CompiledMultibandCurveView final : public juce::Component,
                                          public CompiledDevicePanel,
                                          private juce::Timer {
@@ -66,22 +57,106 @@ class CompiledMultibandCurveView final : public juce::Component,
         None,
         LowXo,
         HighXo,
-        LowThreshAbove,
-        LowThreshBelow,
-        LowThreshExpandBelow,
-        LowThreshExpandAbove,
+        LowLowerThreshold,
+        LowUpperThreshold,
+        LowBelowRatio,
+        LowAboveRatio,
+        LowAttack,
+        LowRelease,
         LowLimit,
-        MidThreshAbove,
-        MidThreshBelow,
-        MidThreshExpandBelow,
-        MidThreshExpandAbove,
+        MidLowerThreshold,
+        MidUpperThreshold,
+        MidBelowRatio,
+        MidAboveRatio,
+        MidAttack,
+        MidRelease,
         MidLimit,
-        HighThreshAbove,
-        HighThreshBelow,
-        HighThreshExpandBelow,
-        HighThreshExpandAbove,
+        HighLowerThreshold,
+        HighUpperThreshold,
+        HighBelowRatio,
+        HighAboveRatio,
+        HighAttack,
+        HighRelease,
         HighLimit,
     };
+
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+  public:
+    enum class MagdaTestHandleKind {
+        None,
+        Crossover,
+        LowerThreshold,
+        UpperThreshold,
+        BelowRatio,
+        AboveRatio,
+        Attack,
+        Release,
+        Limit,
+    };
+
+    struct MagdaTestPickedHandle {
+        int band = -1;
+        MagdaTestHandleKind kind = MagdaTestHandleKind::None;
+    };
+
+    MagdaTestPickedHandle magdaTestPickHandle(float x, float y) const {
+        const auto handle = pickHandle(x, y);
+        MagdaTestPickedHandle result{bandForHandle(handle), MagdaTestHandleKind::None};
+        switch (handle) {
+            case Handle::LowXo:
+            case Handle::HighXo:
+                result.kind = MagdaTestHandleKind::Crossover;
+                break;
+            case Handle::LowLowerThreshold:
+            case Handle::MidLowerThreshold:
+            case Handle::HighLowerThreshold:
+                result.kind = MagdaTestHandleKind::LowerThreshold;
+                break;
+            case Handle::LowUpperThreshold:
+            case Handle::MidUpperThreshold:
+            case Handle::HighUpperThreshold:
+                result.kind = MagdaTestHandleKind::UpperThreshold;
+                break;
+            case Handle::LowBelowRatio:
+            case Handle::MidBelowRatio:
+            case Handle::HighBelowRatio:
+                result.kind = MagdaTestHandleKind::BelowRatio;
+                break;
+            case Handle::LowAboveRatio:
+            case Handle::MidAboveRatio:
+            case Handle::HighAboveRatio:
+                result.kind = MagdaTestHandleKind::AboveRatio;
+                break;
+            case Handle::LowAttack:
+            case Handle::MidAttack:
+            case Handle::HighAttack:
+                result.kind = MagdaTestHandleKind::Attack;
+                break;
+            case Handle::LowRelease:
+            case Handle::MidRelease:
+            case Handle::HighRelease:
+                result.kind = MagdaTestHandleKind::Release;
+                break;
+            case Handle::LowLimit:
+            case Handle::MidLimit:
+            case Handle::HighLimit:
+                result.kind = MagdaTestHandleKind::Limit;
+                break;
+            case Handle::None:
+                break;
+        }
+        return result;
+    }
+
+    float magdaTestXForFrequency(float hz) const {
+        return freqToX(hz);
+    }
+    float magdaTestYForDb(float db) const {
+        return dbToY(db);
+    }
+
+  private:
+#endif
 
     void timerCallback() override;
     void resampleFromPlugin();
@@ -91,42 +166,53 @@ class CompiledMultibandCurveView final : public juce::Component,
     float dbToY(float db) const;
     float yToDb(float y) const;
 
-    static bool isThresholdHandle(Handle h);
-    static bool isExpandHandle(Handle h);
-    static int thresholdBandIndex(Handle h);
-    static bool isAboveThresholdHandle(Handle h);
-    static int thresholdSlotForHandle(Handle h);
-
-    Handle pickHandle(float x, float y) const;
-
     int bandAtX(float x) const;
-    // Returns the ratio slot for a band (above=true → ratioAbove, above=false → ratioBelow).
-    int ratioSlotForBand(int band, bool above) const;
+    static int lowerThresholdSlotForBand(int band);
+    static int upperThresholdSlotForBand(int band);
+    static int belowRatioSlotForBand(int band);
+    static int aboveRatioSlotForBand(int band);
+    static int rangeSlotForBand(int band);
+    static int limitSlotForBand(int band);
+    static int attackSlotForBand(int band);
+    static int releaseSlotForBand(int band);
+    static int bandForHandle(Handle h);
+    static bool isLimitHandle(Handle h);
+    static bool isUpperThresholdHandle(Handle h);
+    static bool isRatioHandle(Handle h);
+    static bool isAboveRatioHandle(Handle h);
+    static bool isTimingHandle(Handle h);
+    static bool isReleaseTimingHandle(Handle h);
+    int slotForHandle(Handle h) const;
+    Handle pickHandle(float x, float y) const;
 
     magda::daw::audio::compiled::MagdaMultibandCompiledPlugin* compiledPlugin_ = nullptr;
     magda::DeviceInfo deviceSnapshot_;
 
     float lowXoHz_ = 120.0f;
     float highXoHz_ = 2500.0f;
-    std::array<float, 3> threshAboveDb_{{-24.0f, -24.0f, -24.0f}};
-    std::array<float, 3> threshBelowDb_{{-48.0f, -48.0f, -48.0f}};
-    std::array<float, 3> threshExpandBelowDb_{{-72.0f, -72.0f, -72.0f}};
-    std::array<float, 3> threshExpandAboveDb_{{0.0f, 0.0f, 0.0f}};
-    std::array<float, 3> ratiosAbove_{{8.0f, 8.0f, 8.0f}};
-    std::array<float, 3> ratiosBelow_{{8.0f, 8.0f, 8.0f}};
-    std::array<float, 3> expandRatiosBelow_{{1.0f, 1.0f, 1.0f}};
-    std::array<float, 3> expandRatiosAbove_{{1.0f, 1.0f, 1.0f}};
+    std::array<float, 3> attackMs_{{3.0f, 3.0f, 3.0f}};
+    std::array<float, 3> releaseMs_{{120.0f, 120.0f, 120.0f}};
+    std::array<float, 3> lowerThresholdDb_{{-48.0f, -48.0f, -48.0f}};
+    std::array<float, 3> upperThresholdDb_{{-24.0f, -24.0f, -24.0f}};
+    std::array<float, 3> belowRatio_{{8.0f, 8.0f, 8.0f}};
+    std::array<float, 3> aboveRatio_{{8.0f, 8.0f, 8.0f}};
+    std::array<float, 3> rangeDb_{{24.0f, 24.0f, 24.0f}};
     std::array<float, 3> limitDb_{{0.0f, 0.0f, 0.0f}};
+
     Handle hoveredHandle_ = Handle::None;
     Handle draggedHandle_ = Handle::None;
+    float dragStartValue_ = 0.0f;
     juce::Rectangle<float> plotArea_;
+    std::array<juce::Rectangle<float>, 3> attackAreas_{};
+    std::array<juce::Rectangle<float>, 3> releaseAreas_{};
+    std::array<juce::Rectangle<float>, 3> belowRatioAreas_{};
+    std::array<juce::Rectangle<float>, 3> aboveRatioAreas_{};
 
     juce::Rectangle<float> collapseButtonArea_;
     bool collapseButtonHovered_ = false;
-    // Which band is receiving a ratio scroll.  -1 = no active scroll.
-    // ratioScrollZone_: 0 = ratioAbove, 1 = ratioBelow, 2 = expandRatioBelow, 3 = expandRatioAbove.
     int ratioScrollBand_ = -1;
-    int ratioScrollZone_ = 0;
+    bool ratioScrollAbove_ = true;
+    bool rangeScrollActive_ = false;
 
     std::function<void()> onLayoutChanged_;
 

@@ -386,9 +386,9 @@ const CompiledPluginSpec& getMagdaPitchSpec() {
         .displayName = "Pitch",
         .browserCategory = "Pitch",
         .description = "Compiled Faust pitch shifter with three selectable engines.\n"
-                       "Shifter: single voice, full plus/minus 24 semitones.\n"
-                       "Detuner: two voices hard-panned L/R for chorus-style thickening.\n"
-                       "Harmonizer: shifted voice summed with dry at a chosen interval.\n"
+                       "<b>Shifter</b>: single voice, full plus/minus 24 semitones.\n"
+                       "<b>Detuner</b>: two voices hard-panned L/R for chorus-style thickening.\n"
+                       "<b>Harmonizer</b>: shifted voice summed with dry at a chosen interval.\n"
                        "All three use ef.transpose; transient smear and grain are by design.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaPitchCompiledPlugin(info);

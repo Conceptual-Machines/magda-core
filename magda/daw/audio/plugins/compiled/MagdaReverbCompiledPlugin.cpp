@@ -416,9 +416,9 @@ const CompiledPluginSpec& getMagdaReverbSpec() {
         .displayName = "Reverb",
         .browserCategory = "Reverb",
         .description = "Compiled Faust reverb with three selectable engines.\n"
-                       "Plate: Dattorro diffusion network for studio-plate ambience.\n"
-                       "Hall: Zita 8-tap FDN for smooth large-space tails.\n"
-                       "Room: Freeverb Schroeder/Moorer network for small-space ambience.",
+                       "<b>Plate</b>: Dattorro diffusion network for studio-plate ambience.\n"
+                       "<b>Hall</b>: Zita 8-tap FDN for smooth large-space tails.\n"
+                       "<b>Room</b>: Freeverb Schroeder/Moorer network for small-space ambience.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaReverbCompiledPlugin(info);
         },

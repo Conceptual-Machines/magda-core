@@ -375,7 +375,12 @@ const CompiledPluginSpec& getMagdaPhaserSpec() {
         .pluginId = MagdaPhaserCompiledPlugin::xmlTypeName,
         .displayName = "Phaser",
         .browserCategory = "Modulation",
-        .description = "Compiled Faust phaser with selectable stages, feedback, and sweep window.",
+        .description = "Compiled Faust stereo phaser with a sweeping notch comb. "
+                       "Stages selects 2, 4, 6, or 8 notches; all four counts are instantiated "
+                       "in parallel, so switching is glitch-free. "
+                       "Rate and Depth drive the sweep; Feedback intensifies the resonance; "
+                       "Min Hz and Max Hz bound the sweep window. "
+                       "Mix blends wet against dry.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaPhaserCompiledPlugin(info);
         },

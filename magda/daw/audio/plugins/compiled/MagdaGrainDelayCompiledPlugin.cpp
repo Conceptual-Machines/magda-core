@@ -446,7 +446,11 @@ const CompiledPluginSpec& getMagdaGrainDelaySpec() {
         .displayName = "Grain Delay",
         .browserCategory = "Delay",
         .description =
-            "Compiled Faust granular delay for smeared repeats, pitch motion, and texture.",
+            "Compiled Faust granular delay. A feedback delay line is read through a 4-voice "
+            "Hann-windowed grain bank with 25% overlap. "
+            "Pitch shifts via per-grain read-offset drift; Spray jitters the per-grain position. "
+            "Time spans the base delay, locking to musical Division when Sync is on. "
+            "Feedback recirculates through the grain bank; Mix blends wet against dry.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaGrainDelayCompiledPlugin(info);
         },

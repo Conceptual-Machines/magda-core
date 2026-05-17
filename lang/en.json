@@ -229,15 +229,11 @@
   },
 
   "about": {
-    "version_prefix": "Version ",
-    "credits.powered_by": "powered by",
-    "credits.made_with": "made with"
+    "version_prefix": "Version "
   },
 
   "splash": {
-    "version_prefix": "Version ",
-    "credits.powered_by": "powered by",
-    "credits.made_with": "made with"
+    "version_prefix": "Version "
   },
 
   "chain_tree": {

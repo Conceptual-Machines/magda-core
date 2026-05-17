@@ -3,26 +3,14 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <array>
-#include <memory>
-#include <vector>
 
-#include "../FaustParamPool.hpp"
 #include "CompiledFaustInterface.hpp"
 #include "core/ParameterInfo.hpp"
-
-class dsp;
 
 namespace magda::daw::audio::compiled {
 
 /**
- * @brief Compiled-Faust OTT-style 3-band compressor.
- *
- * Linkwitz-Riley splits the input into low / mid / high bands; each band
- * applies input drive, runs feed-forward parallel up + down compression;
- * the three bands are makeup-gained and summed back to stereo.
- *
- * Single-engine compiled plugin — all host controls map 1:1 to
- * Faust slots pinned by [idx:N].
+ * @brief Native 3-band dynamics processor with a single flexible transfer curve per band.
  */
 class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
   public:
@@ -57,48 +45,47 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
         return 0.0;
     }
 
-    // Slot ordering matches the [idx:N] pins inside magda_multiband.dsp.
-    // Slots 0-8: knob-only controls shown in the param grid.
-    // Slots 9-35: per-band controls edited on the curve view (hidden from grid).
-    // Slots 36-37: crossover frequencies, editor-only.
-    static constexpr int kDepthSlot = 0;
-    static constexpr int kTimeSlot = 1;
-    static constexpr int kAttackSlot = 2;
+    // Slots 0-11 are the compact grid controls.
+    // Slots 12-35 are per-band curve controls edited from the custom panel.
+    // Slots 36-37 are crossover frequencies.
+    static constexpr int kAmountSlot = 0;
+    static constexpr int kAttackSlot = 1;
+    static constexpr int kReleaseSlot = 2;
     static constexpr int kInputSlot = 3;
-    static constexpr int kLowGainSlot = 4;
-    static constexpr int kMidGainSlot = 5;
-    static constexpr int kHighGainSlot = 6;
-    static constexpr int kMixSlot = 7;
-    static constexpr int kOutputSlot = 8;
-    static constexpr int kLowThreshAboveSlot = 9;
-    static constexpr int kLowThreshBelowSlot = 10;
-    static constexpr int kLowRatioAboveSlot = 11;
-    static constexpr int kLowRatioBelowSlot = 12;
-    static constexpr int kLowThreshExpandBelowSlot = 13;
-    static constexpr int kLowExpandRatioBelowSlot = 14;
-    static constexpr int kLowThreshExpandAboveSlot = 15;
-    static constexpr int kLowExpandRatioAboveSlot = 16;
+    static constexpr int kOutputSlot = 4;
+    static constexpr int kMixSlot = 5;
+    static constexpr int kLowInputSlot = 6;
+    static constexpr int kMidInputSlot = 7;
+    static constexpr int kHighInputSlot = 8;
+    static constexpr int kLowGainSlot = 9;
+    static constexpr int kMidGainSlot = 10;
+    static constexpr int kHighGainSlot = 11;
+    static constexpr int kLowLowerThresholdSlot = 12;
+    static constexpr int kLowUpperThresholdSlot = 13;
+    static constexpr int kLowBelowRatioSlot = 14;
+    static constexpr int kLowAboveRatioSlot = 15;
+    static constexpr int kLowRangeSlot = 16;
     static constexpr int kLowLimitSlot = 17;
-    static constexpr int kMidThreshAboveSlot = 18;
-    static constexpr int kMidThreshBelowSlot = 19;
-    static constexpr int kMidRatioAboveSlot = 20;
-    static constexpr int kMidRatioBelowSlot = 21;
-    static constexpr int kMidThreshExpandBelowSlot = 22;
-    static constexpr int kMidExpandRatioBelowSlot = 23;
-    static constexpr int kMidThreshExpandAboveSlot = 24;
-    static constexpr int kMidExpandRatioAboveSlot = 25;
-    static constexpr int kMidLimitSlot = 26;
-    static constexpr int kHighThreshAboveSlot = 27;
-    static constexpr int kHighThreshBelowSlot = 28;
-    static constexpr int kHighRatioAboveSlot = 29;
-    static constexpr int kHighRatioBelowSlot = 30;
-    static constexpr int kHighThreshExpandBelowSlot = 31;
-    static constexpr int kHighExpandRatioBelowSlot = 32;
-    static constexpr int kHighThreshExpandAboveSlot = 33;
-    static constexpr int kHighExpandRatioAboveSlot = 34;
-    static constexpr int kHighLimitSlot = 35;
-    static constexpr int kLowXoSlot = 36;   // editor-only, not in param grid
-    static constexpr int kHighXoSlot = 37;  // editor-only, not in param grid
+    static constexpr int kLowAttackSlot = 18;
+    static constexpr int kLowReleaseSlot = 19;
+    static constexpr int kMidLowerThresholdSlot = 20;
+    static constexpr int kMidUpperThresholdSlot = 21;
+    static constexpr int kMidBelowRatioSlot = 22;
+    static constexpr int kMidAboveRatioSlot = 23;
+    static constexpr int kMidRangeSlot = 24;
+    static constexpr int kMidLimitSlot = 25;
+    static constexpr int kMidAttackSlot = 26;
+    static constexpr int kMidReleaseSlot = 27;
+    static constexpr int kHighLowerThresholdSlot = 28;
+    static constexpr int kHighUpperThresholdSlot = 29;
+    static constexpr int kHighBelowRatioSlot = 30;
+    static constexpr int kHighAboveRatioSlot = 31;
+    static constexpr int kHighRangeSlot = 32;
+    static constexpr int kHighLimitSlot = 33;
+    static constexpr int kHighAttackSlot = 34;
+    static constexpr int kHighReleaseSlot = 35;
+    static constexpr int kLowXoSlot = 36;
+    static constexpr int kHighXoSlot = 37;
     static constexpr int kHostSlotCount = 38;
 
     te::AutomatableParameter* getSlotParameter(int slotIndex) const;
@@ -135,23 +122,39 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
 
   private:
     void buildHostParameters();
-    void rebuildEngineState(int sampleRate);
+    float slotDisplayValue(int slotIndex) const;
+    void updateCrossoverCoefficients(float lowXoHz, float highXoHz);
 
-    std::unique_ptr<::dsp> dsp_;
-    int numInputs_ = 0;
-    int numOutputs_ = 0;
+    struct Biquad {
+        void setLowPass(double sampleRate, double frequency);
+        void setHighPass(double sampleRate, double frequency);
+        void reset();
+        float process(float x);
 
-    std::array<FAUSTFLOAT*, kHostSlotCount> zones_{};
+        double b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0;
+        double z1 = 0.0, z2 = 0.0;
+    };
+
+    struct CrossoverState {
+        void setCoefficients(double sampleRate, double lowHz, double highHz);
+        void reset();
+        void split(float input, float& low, float& mid, float& high);
+
+        Biquad lowLp1, lowLp2;
+        Biquad splitHp1, splitHp2;
+        Biquad midLp1, midLp2;
+        Biquad highHp1, highHp2;
+    };
 
     std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
     std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
     std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
     juce::CachedValue<bool> curveCollapsed_;
 
-    juce::AudioBuffer<float> scratchIn_;
-    juce::AudioBuffer<float> scratchOut_;
-    std::vector<float*> inPtrs_;
-    std::vector<float*> outPtrs_;
+    double sampleRate_ = 44100.0;
+    std::array<CrossoverState, 2> crossovers_;
+    std::array<std::array<float, 3>, 2> envelopes_{};
+    std::array<std::array<float, 3>, 2> gainDb_{};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaMultibandCompiledPlugin)
 };

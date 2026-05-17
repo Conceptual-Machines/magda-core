@@ -19,21 +19,21 @@ constexpr float kMinFreq = 20.0f;
 constexpr float kMaxFreq = 20000.0f;
 constexpr float kHandlePickPx = 8.0f;
 constexpr float kThresholdPickPx = 6.0f;
-
 constexpr float kLowXoMin = 40.0f;
 constexpr float kLowXoMax = 500.0f;
 constexpr float kHighXoMin = 500.0f;
 constexpr float kHighXoMax = 8000.0f;
-constexpr float kMinXoGapHz = 5.0f;
-constexpr float kThreshAboveMin = -60.0f;
-constexpr float kThreshAboveMax = 0.0f;
-constexpr float kThreshBelowMin = -80.0f;
-constexpr float kThreshBelowMax = 0.0f;
-constexpr float kThreshExpandMin = -80.0f;
-constexpr float kThreshExpandMax = 0.0f;
-constexpr float kLimMin = -24.0f;
-constexpr float kLimMax = 12.0f;
-constexpr float kMinThresholdGapDb = 1.0f;
+constexpr float kMinXoGapHz = 10.0f;
+constexpr float kDbMin = -80.0f;
+constexpr float kDbMax = 12.0f;
+constexpr float kAttackMinMs = 0.1f;
+constexpr float kAttackMaxMs = 100.0f;
+constexpr float kReleaseMinMs = 5.0f;
+constexpr float kReleaseMaxMs = 1000.0f;
+constexpr float kRatioMin = 0.05f;
+constexpr float kRatioMax = 100.0f;
+constexpr float kRangeMin = 0.0f;
+constexpr float kRangeMax = 48.0f;
 
 float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallback) {
     for (const auto& param : device.parameters)
@@ -48,6 +48,32 @@ float logLerp(float t, float lo, float hi) {
 
 float invLogLerp(float v, float lo, float hi) {
     return std::log(juce::jlimit(lo, hi, v) / lo) / std::log(hi / lo);
+}
+
+juce::String ratioLabel(float ratio) {
+    ratio = juce::jlimit(kRatioMin, kRatioMax, ratio);
+    if (std::abs(ratio - 1.0f) < 0.02f)
+        return "1:1";
+    if (ratio >= 1.0f)
+        return juce::String(ratio, ratio < 10.0f ? 1 : 0) + ":1";
+    const float inverse = 1.0f / ratio;
+    return "1:" + juce::String(inverse, inverse < 10.0f ? 1 : 0);
+}
+
+float adjustRatio(float ratio, float octaves) {
+    return juce::jlimit(kRatioMin, kRatioMax, ratio * std::pow(2.0f, octaves));
+}
+
+float adjustTimeMs(float value, float octaves, float minValue, float maxValue) {
+    return juce::jlimit(minValue, maxValue, value * std::pow(2.0f, octaves));
+}
+
+juce::String timeLabel(float ms) {
+    if (ms < 10.0f)
+        return juce::String(ms, 1) + " ms";
+    if (ms < 100.0f)
+        return juce::String(ms, 0) + " ms";
+    return juce::String(static_cast<int>(std::round(ms))) + " ms";
 }
 
 }  // namespace
@@ -72,109 +98,85 @@ void CompiledMultibandCurveView::updateFromDevice(const magda::DeviceInfo& devic
 void CompiledMultibandCurveView::timerCallback() {
     using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
 
-    float low = lowXoHz_;
-    float high = highXoHz_;
-    auto threshAbove = threshAboveDb_;
-    auto threshBelow = threshBelowDb_;
-    auto threshExpandBelow = threshExpandBelowDb_;
-    auto threshExpandAbove = threshExpandAboveDb_;
-    auto ratiosAbove = ratiosAbove_;
-    auto ratiosBelow = ratiosBelow_;
-    auto expandRatiosBelow = expandRatiosBelow_;
-    auto expandRatiosAbove = expandRatiosAbove_;
-    auto limitDb = limitDb_;
-
     auto readSlot = [this](int slot, float fallback) {
         if (compiledPlugin_ == nullptr)
-            return fallback;
+            return valueForSlot(deviceSnapshot_, slot, fallback);
         if (auto* p = compiledPlugin_->getSlotParameter(slot))
             return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
         return fallback;
     };
-    auto readDevice = [this](int slot, float fallback) {
-        return valueForSlot(deviceSnapshot_, slot, fallback);
+
+    const float low = readSlot(Mb::kLowXoSlot, lowXoHz_);
+    const float high = readSlot(Mb::kHighXoSlot, highXoHz_);
+    std::array<float, 3> attack{
+        readSlot(Mb::kLowAttackSlot, attackMs_[0]),
+        readSlot(Mb::kMidAttackSlot, attackMs_[1]),
+        readSlot(Mb::kHighAttackSlot, attackMs_[2]),
     };
-    const bool hasPlugin = compiledPlugin_ != nullptr;
-
-    low = hasPlugin ? readSlot(Mb::kLowXoSlot, low) : readDevice(Mb::kLowXoSlot, low);
-    high = hasPlugin ? readSlot(Mb::kHighXoSlot, high) : readDevice(Mb::kHighXoSlot, high);
-
-    for (int b = 0; b < 3; ++b) {
-        const auto idx = static_cast<size_t>(b);
-        const int aboveSlot = (b == 0)   ? Mb::kLowThreshAboveSlot
-                              : (b == 1) ? Mb::kMidThreshAboveSlot
-                                         : Mb::kHighThreshAboveSlot;
-        const int belowSlot = (b == 0)   ? Mb::kLowThreshBelowSlot
-                              : (b == 1) ? Mb::kMidThreshBelowSlot
-                                         : Mb::kHighThreshBelowSlot;
-        const int expBelowSlot = (b == 0)   ? Mb::kLowThreshExpandBelowSlot
-                                 : (b == 1) ? Mb::kMidThreshExpandBelowSlot
-                                            : Mb::kHighThreshExpandBelowSlot;
-        const int expAboveSlot = (b == 0)   ? Mb::kLowThreshExpandAboveSlot
-                                 : (b == 1) ? Mb::kMidThreshExpandAboveSlot
-                                            : Mb::kHighThreshExpandAboveSlot;
-        const int raSlot = (b == 0)   ? Mb::kLowRatioAboveSlot
-                           : (b == 1) ? Mb::kMidRatioAboveSlot
-                                      : Mb::kHighRatioAboveSlot;
-        const int rbSlot = (b == 0)   ? Mb::kLowRatioBelowSlot
-                           : (b == 1) ? Mb::kMidRatioBelowSlot
-                                      : Mb::kHighRatioBelowSlot;
-        const int erbSlot = (b == 0)   ? Mb::kLowExpandRatioBelowSlot
-                            : (b == 1) ? Mb::kMidExpandRatioBelowSlot
-                                       : Mb::kHighExpandRatioBelowSlot;
-        const int eraSlot = (b == 0)   ? Mb::kLowExpandRatioAboveSlot
-                            : (b == 1) ? Mb::kMidExpandRatioAboveSlot
-                                       : Mb::kHighExpandRatioAboveSlot;
-        const int limSlot = (b == 0)   ? Mb::kLowLimitSlot
-                            : (b == 1) ? Mb::kMidLimitSlot
-                                       : Mb::kHighLimitSlot;
-
-        threshAbove[idx] = hasPlugin ? readSlot(aboveSlot, threshAbove[idx])
-                                     : readDevice(aboveSlot, threshAbove[idx]);
-        threshBelow[idx] = hasPlugin ? readSlot(belowSlot, threshBelow[idx])
-                                     : readDevice(belowSlot, threshBelow[idx]);
-        threshExpandBelow[idx] = hasPlugin ? readSlot(expBelowSlot, threshExpandBelow[idx])
-                                           : readDevice(expBelowSlot, threshExpandBelow[idx]);
-        threshExpandAbove[idx] = hasPlugin ? readSlot(expAboveSlot, threshExpandAbove[idx])
-                                           : readDevice(expAboveSlot, threshExpandAbove[idx]);
-        ratiosAbove[idx] =
-            hasPlugin ? readSlot(raSlot, ratiosAbove[idx]) : readDevice(raSlot, ratiosAbove[idx]);
-        ratiosBelow[idx] =
-            hasPlugin ? readSlot(rbSlot, ratiosBelow[idx]) : readDevice(rbSlot, ratiosBelow[idx]);
-        expandRatiosBelow[idx] = hasPlugin ? readSlot(erbSlot, expandRatiosBelow[idx])
-                                           : readDevice(erbSlot, expandRatiosBelow[idx]);
-        expandRatiosAbove[idx] = hasPlugin ? readSlot(eraSlot, expandRatiosAbove[idx])
-                                           : readDevice(eraSlot, expandRatiosAbove[idx]);
-        limitDb[idx] =
-            hasPlugin ? readSlot(limSlot, limitDb[idx]) : readDevice(limSlot, limitDb[idx]);
-    }
+    std::array<float, 3> release{
+        readSlot(Mb::kLowReleaseSlot, releaseMs_[0]),
+        readSlot(Mb::kMidReleaseSlot, releaseMs_[1]),
+        readSlot(Mb::kHighReleaseSlot, releaseMs_[2]),
+    };
+    std::array<float, 3> lowerThreshold{
+        readSlot(Mb::kLowLowerThresholdSlot, lowerThresholdDb_[0]),
+        readSlot(Mb::kMidLowerThresholdSlot, lowerThresholdDb_[1]),
+        readSlot(Mb::kHighLowerThresholdSlot, lowerThresholdDb_[2]),
+    };
+    std::array<float, 3> upperThreshold{
+        readSlot(Mb::kLowUpperThresholdSlot, upperThresholdDb_[0]),
+        readSlot(Mb::kMidUpperThresholdSlot, upperThresholdDb_[1]),
+        readSlot(Mb::kHighUpperThresholdSlot, upperThresholdDb_[2]),
+    };
+    std::array<float, 3> belowRatio{
+        readSlot(Mb::kLowBelowRatioSlot, belowRatio_[0]),
+        readSlot(Mb::kMidBelowRatioSlot, belowRatio_[1]),
+        readSlot(Mb::kHighBelowRatioSlot, belowRatio_[2]),
+    };
+    std::array<float, 3> aboveRatio{
+        readSlot(Mb::kLowAboveRatioSlot, aboveRatio_[0]),
+        readSlot(Mb::kMidAboveRatioSlot, aboveRatio_[1]),
+        readSlot(Mb::kHighAboveRatioSlot, aboveRatio_[2]),
+    };
+    std::array<float, 3> range{
+        readSlot(Mb::kLowRangeSlot, rangeDb_[0]),
+        readSlot(Mb::kMidRangeSlot, rangeDb_[1]),
+        readSlot(Mb::kHighRangeSlot, rangeDb_[2]),
+    };
+    std::array<float, 3> limit{
+        readSlot(Mb::kLowLimitSlot, limitDb_[0]),
+        readSlot(Mb::kMidLimitSlot, limitDb_[1]),
+        readSlot(Mb::kHighLimitSlot, limitDb_[2]),
+    };
 
     bool changed = std::fabs(low - lowXoHz_) > 0.5f || std::fabs(high - highXoHz_) > 0.5f;
     for (int b = 0; b < 3 && !changed; ++b) {
-        const auto idx = static_cast<size_t>(b);
-        changed = std::fabs(threshAbove[idx] - threshAboveDb_[idx]) > 0.05f ||
-                  std::fabs(threshBelow[idx] - threshBelowDb_[idx]) > 0.05f ||
-                  std::fabs(threshExpandBelow[idx] - threshExpandBelowDb_[idx]) > 0.05f ||
-                  std::fabs(threshExpandAbove[idx] - threshExpandAboveDb_[idx]) > 0.05f ||
-                  std::fabs(ratiosAbove[idx] - ratiosAbove_[idx]) > 0.01f ||
-                  std::fabs(ratiosBelow[idx] - ratiosBelow_[idx]) > 0.01f ||
-                  std::fabs(expandRatiosBelow[idx] - expandRatiosBelow_[idx]) > 0.01f ||
-                  std::fabs(expandRatiosAbove[idx] - expandRatiosAbove_[idx]) > 0.01f ||
-                  std::fabs(limitDb[idx] - limitDb_[idx]) > 0.05f;
+        changed =
+            std::fabs(lowerThreshold[static_cast<size_t>(b)] -
+                      lowerThresholdDb_[static_cast<size_t>(b)]) > 0.05f ||
+            std::fabs(upperThreshold[static_cast<size_t>(b)] -
+                      upperThresholdDb_[static_cast<size_t>(b)]) > 0.05f ||
+            std::fabs(belowRatio[static_cast<size_t>(b)] - belowRatio_[static_cast<size_t>(b)]) >
+                0.01f ||
+            std::fabs(aboveRatio[static_cast<size_t>(b)] - aboveRatio_[static_cast<size_t>(b)]) >
+                0.01f ||
+            std::fabs(range[static_cast<size_t>(b)] - rangeDb_[static_cast<size_t>(b)]) > 0.05f ||
+            std::fabs(limit[static_cast<size_t>(b)] - limitDb_[static_cast<size_t>(b)]) > 0.05f ||
+            std::fabs(attack[static_cast<size_t>(b)] - attackMs_[static_cast<size_t>(b)]) > 0.05f ||
+            std::fabs(release[static_cast<size_t>(b)] - releaseMs_[static_cast<size_t>(b)]) > 0.5f;
     }
 
     if (changed) {
         lowXoHz_ = low;
         highXoHz_ = high;
-        threshAboveDb_ = threshAbove;
-        threshBelowDb_ = threshBelow;
-        threshExpandBelowDb_ = threshExpandBelow;
-        threshExpandAboveDb_ = threshExpandAbove;
-        ratiosAbove_ = ratiosAbove;
-        ratiosBelow_ = ratiosBelow;
-        expandRatiosBelow_ = expandRatiosBelow;
-        expandRatiosAbove_ = expandRatiosAbove;
-        limitDb_ = limitDb;
+        attackMs_ = attack;
+        releaseMs_ = release;
+        lowerThresholdDb_ = lowerThreshold;
+        upperThresholdDb_ = upperThreshold;
+        belowRatio_ = belowRatio;
+        aboveRatio_ = aboveRatio;
+        rangeDb_ = range;
+        limitDb_ = limit;
         repaint();
     }
 }
@@ -183,86 +185,40 @@ void CompiledMultibandCurveView::resampleFromPlugin() {
     using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
     lowXoHz_ = valueForSlot(deviceSnapshot_, Mb::kLowXoSlot, lowXoHz_);
     highXoHz_ = valueForSlot(deviceSnapshot_, Mb::kHighXoSlot, highXoHz_);
-    for (int b = 0; b < 3; ++b) {
-        const auto idx = static_cast<size_t>(b);
-        const int aboveSlot = (b == 0)   ? Mb::kLowThreshAboveSlot
-                              : (b == 1) ? Mb::kMidThreshAboveSlot
-                                         : Mb::kHighThreshAboveSlot;
-        const int belowSlot = (b == 0)   ? Mb::kLowThreshBelowSlot
-                              : (b == 1) ? Mb::kMidThreshBelowSlot
-                                         : Mb::kHighThreshBelowSlot;
-        const int expBelowSlot = (b == 0)   ? Mb::kLowThreshExpandBelowSlot
-                                 : (b == 1) ? Mb::kMidThreshExpandBelowSlot
-                                            : Mb::kHighThreshExpandBelowSlot;
-        const int expAboveSlot = (b == 0)   ? Mb::kLowThreshExpandAboveSlot
-                                 : (b == 1) ? Mb::kMidThreshExpandAboveSlot
-                                            : Mb::kHighThreshExpandAboveSlot;
-        const int raSlot = (b == 0)   ? Mb::kLowRatioAboveSlot
-                           : (b == 1) ? Mb::kMidRatioAboveSlot
-                                      : Mb::kHighRatioAboveSlot;
-        const int rbSlot = (b == 0)   ? Mb::kLowRatioBelowSlot
-                           : (b == 1) ? Mb::kMidRatioBelowSlot
-                                      : Mb::kHighRatioBelowSlot;
-        const int erbSlot = (b == 0)   ? Mb::kLowExpandRatioBelowSlot
-                            : (b == 1) ? Mb::kMidExpandRatioBelowSlot
-                                       : Mb::kHighExpandRatioBelowSlot;
-        const int eraSlot = (b == 0)   ? Mb::kLowExpandRatioAboveSlot
-                            : (b == 1) ? Mb::kMidExpandRatioAboveSlot
-                                       : Mb::kHighExpandRatioAboveSlot;
-        const int limSlot = (b == 0)   ? Mb::kLowLimitSlot
-                            : (b == 1) ? Mb::kMidLimitSlot
-                                       : Mb::kHighLimitSlot;
-
-        threshAboveDb_[idx] = valueForSlot(deviceSnapshot_, aboveSlot, threshAboveDb_[idx]);
-        threshBelowDb_[idx] = valueForSlot(deviceSnapshot_, belowSlot, threshBelowDb_[idx]);
-        threshExpandBelowDb_[idx] =
-            valueForSlot(deviceSnapshot_, expBelowSlot, threshExpandBelowDb_[idx]);
-        threshExpandAboveDb_[idx] =
-            valueForSlot(deviceSnapshot_, expAboveSlot, threshExpandAboveDb_[idx]);
-        ratiosAbove_[idx] = valueForSlot(deviceSnapshot_, raSlot, ratiosAbove_[idx]);
-        ratiosBelow_[idx] = valueForSlot(deviceSnapshot_, rbSlot, ratiosBelow_[idx]);
-        expandRatiosBelow_[idx] = valueForSlot(deviceSnapshot_, erbSlot, expandRatiosBelow_[idx]);
-        expandRatiosAbove_[idx] = valueForSlot(deviceSnapshot_, eraSlot, expandRatiosAbove_[idx]);
-        limitDb_[idx] = valueForSlot(deviceSnapshot_, limSlot, limitDb_[idx]);
-    }
+    attackMs_[0] = valueForSlot(deviceSnapshot_, Mb::kLowAttackSlot, attackMs_[0]);
+    attackMs_[1] = valueForSlot(deviceSnapshot_, Mb::kMidAttackSlot, attackMs_[1]);
+    attackMs_[2] = valueForSlot(deviceSnapshot_, Mb::kHighAttackSlot, attackMs_[2]);
+    releaseMs_[0] = valueForSlot(deviceSnapshot_, Mb::kLowReleaseSlot, releaseMs_[0]);
+    releaseMs_[1] = valueForSlot(deviceSnapshot_, Mb::kMidReleaseSlot, releaseMs_[1]);
+    releaseMs_[2] = valueForSlot(deviceSnapshot_, Mb::kHighReleaseSlot, releaseMs_[2]);
+    lowerThresholdDb_[0] =
+        valueForSlot(deviceSnapshot_, Mb::kLowLowerThresholdSlot, lowerThresholdDb_[0]);
+    lowerThresholdDb_[1] =
+        valueForSlot(deviceSnapshot_, Mb::kMidLowerThresholdSlot, lowerThresholdDb_[1]);
+    lowerThresholdDb_[2] =
+        valueForSlot(deviceSnapshot_, Mb::kHighLowerThresholdSlot, lowerThresholdDb_[2]);
+    upperThresholdDb_[0] =
+        valueForSlot(deviceSnapshot_, Mb::kLowUpperThresholdSlot, upperThresholdDb_[0]);
+    upperThresholdDb_[1] =
+        valueForSlot(deviceSnapshot_, Mb::kMidUpperThresholdSlot, upperThresholdDb_[1]);
+    upperThresholdDb_[2] =
+        valueForSlot(deviceSnapshot_, Mb::kHighUpperThresholdSlot, upperThresholdDb_[2]);
+    belowRatio_[0] = valueForSlot(deviceSnapshot_, Mb::kLowBelowRatioSlot, belowRatio_[0]);
+    belowRatio_[1] = valueForSlot(deviceSnapshot_, Mb::kMidBelowRatioSlot, belowRatio_[1]);
+    belowRatio_[2] = valueForSlot(deviceSnapshot_, Mb::kHighBelowRatioSlot, belowRatio_[2]);
+    aboveRatio_[0] = valueForSlot(deviceSnapshot_, Mb::kLowAboveRatioSlot, aboveRatio_[0]);
+    aboveRatio_[1] = valueForSlot(deviceSnapshot_, Mb::kMidAboveRatioSlot, aboveRatio_[1]);
+    aboveRatio_[2] = valueForSlot(deviceSnapshot_, Mb::kHighAboveRatioSlot, aboveRatio_[2]);
+    rangeDb_[0] = valueForSlot(deviceSnapshot_, Mb::kLowRangeSlot, rangeDb_[0]);
+    rangeDb_[1] = valueForSlot(deviceSnapshot_, Mb::kMidRangeSlot, rangeDb_[1]);
+    rangeDb_[2] = valueForSlot(deviceSnapshot_, Mb::kHighRangeSlot, rangeDb_[2]);
+    limitDb_[0] = valueForSlot(deviceSnapshot_, Mb::kLowLimitSlot, limitDb_[0]);
+    limitDb_[1] = valueForSlot(deviceSnapshot_, Mb::kMidLimitSlot, limitDb_[1]);
+    limitDb_[2] = valueForSlot(deviceSnapshot_, Mb::kHighLimitSlot, limitDb_[2]);
 }
 
 bool CompiledMultibandCurveView::wantsFullBody() const {
     return compiledPlugin_ != nullptr && compiledPlugin_->isCurveCollapsed();
-}
-
-int CompiledMultibandCurveView::bandAtX(float x) const {
-    if (plotArea_.getWidth() <= 0.0f || x < plotArea_.getX() || x > plotArea_.getRight())
-        return -1;
-    if (x < freqToX(lowXoHz_))
-        return 0;
-    if (x < freqToX(highXoHz_))
-        return 1;
-    return 2;
-}
-
-int CompiledMultibandCurveView::ratioSlotForBand(int band, bool above) const {
-    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
-    if (above) {
-        switch (band) {
-            case 0:
-                return Mb::kLowRatioAboveSlot;
-            case 1:
-                return Mb::kMidRatioAboveSlot;
-            case 2:
-                return Mb::kHighRatioAboveSlot;
-        }
-    } else {
-        switch (band) {
-            case 0:
-                return Mb::kLowRatioBelowSlot;
-            case 1:
-                return Mb::kMidRatioBelowSlot;
-            case 2:
-                return Mb::kHighRatioBelowSlot;
-        }
-    }
-    return -1;
 }
 
 float CompiledMultibandCurveView::xToFreq(float x) const {
@@ -278,62 +234,99 @@ float CompiledMultibandCurveView::freqToX(float hz) const {
 float CompiledMultibandCurveView::dbToY(float db) const {
     if (plotArea_.getHeight() <= 0.0f)
         return 0.0f;
-    const float t = juce::jlimit(0.0f, 1.0f, (-db) / 80.0f);
+    const float t = 1.0f - (juce::jlimit(kDbMin, kDbMax, db) - kDbMin) / (kDbMax - kDbMin);
     return plotArea_.getY() + t * plotArea_.getHeight();
 }
 
 float CompiledMultibandCurveView::yToDb(float y) const {
     if (plotArea_.getHeight() <= 0.0f)
         return 0.0f;
-    return -80.0f * juce::jlimit(0.0f, 1.0f, (y - plotArea_.getY()) / plotArea_.getHeight());
+    const float t = juce::jlimit(0.0f, 1.0f, (y - plotArea_.getY()) / plotArea_.getHeight());
+    return kDbMax - t * (kDbMax - kDbMin);
 }
 
-bool CompiledMultibandCurveView::isThresholdHandle(Handle h) {
-    switch (h) {
-        case Handle::LowThreshAbove:
-        case Handle::LowThreshBelow:
-        case Handle::MidThreshAbove:
-        case Handle::MidThreshBelow:
-        case Handle::HighThreshAbove:
-        case Handle::HighThreshBelow:
-            return true;
-        default:
-            return false;
-    }
+int CompiledMultibandCurveView::bandAtX(float x) const {
+    if (plotArea_.getWidth() <= 0.0f || x < plotArea_.getX() || x > plotArea_.getRight())
+        return -1;
+    if (x < freqToX(lowXoHz_))
+        return 0;
+    if (x < freqToX(highXoHz_))
+        return 1;
+    return 2;
 }
 
-bool CompiledMultibandCurveView::isExpandHandle(Handle h) {
-    switch (h) {
-        case Handle::LowThreshExpandBelow:
-        case Handle::LowThreshExpandAbove:
-        case Handle::MidThreshExpandBelow:
-        case Handle::MidThreshExpandAbove:
-        case Handle::HighThreshExpandBelow:
-        case Handle::HighThreshExpandAbove:
-            return true;
-        default:
-            return false;
-    }
+int CompiledMultibandCurveView::lowerThresholdSlotForBand(int band) {
+    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
+    return band == 0   ? Mb::kLowLowerThresholdSlot
+           : band == 1 ? Mb::kMidLowerThresholdSlot
+                       : Mb::kHighLowerThresholdSlot;
 }
 
-int CompiledMultibandCurveView::thresholdBandIndex(Handle h) {
+int CompiledMultibandCurveView::upperThresholdSlotForBand(int band) {
+    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
+    return band == 0   ? Mb::kLowUpperThresholdSlot
+           : band == 1 ? Mb::kMidUpperThresholdSlot
+                       : Mb::kHighUpperThresholdSlot;
+}
+
+int CompiledMultibandCurveView::belowRatioSlotForBand(int band) {
+    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
+    return band == 0   ? Mb::kLowBelowRatioSlot
+           : band == 1 ? Mb::kMidBelowRatioSlot
+                       : Mb::kHighBelowRatioSlot;
+}
+
+int CompiledMultibandCurveView::aboveRatioSlotForBand(int band) {
+    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
+    return band == 0   ? Mb::kLowAboveRatioSlot
+           : band == 1 ? Mb::kMidAboveRatioSlot
+                       : Mb::kHighAboveRatioSlot;
+}
+
+int CompiledMultibandCurveView::rangeSlotForBand(int band) {
+    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
+    return band == 0 ? Mb::kLowRangeSlot : band == 1 ? Mb::kMidRangeSlot : Mb::kHighRangeSlot;
+}
+
+int CompiledMultibandCurveView::limitSlotForBand(int band) {
+    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
+    return band == 0 ? Mb::kLowLimitSlot : band == 1 ? Mb::kMidLimitSlot : Mb::kHighLimitSlot;
+}
+
+int CompiledMultibandCurveView::attackSlotForBand(int band) {
+    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
+    return band == 0 ? Mb::kLowAttackSlot : band == 1 ? Mb::kMidAttackSlot : Mb::kHighAttackSlot;
+}
+
+int CompiledMultibandCurveView::releaseSlotForBand(int band) {
+    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
+    return band == 0 ? Mb::kLowReleaseSlot : band == 1 ? Mb::kMidReleaseSlot : Mb::kHighReleaseSlot;
+}
+
+int CompiledMultibandCurveView::bandForHandle(Handle h) {
     switch (h) {
-        case Handle::LowThreshAbove:
-        case Handle::LowThreshBelow:
-        case Handle::LowThreshExpandBelow:
-        case Handle::LowThreshExpandAbove:
+        case Handle::LowLowerThreshold:
+        case Handle::LowUpperThreshold:
+        case Handle::LowBelowRatio:
+        case Handle::LowAboveRatio:
+        case Handle::LowAttack:
+        case Handle::LowRelease:
         case Handle::LowLimit:
             return 0;
-        case Handle::MidThreshAbove:
-        case Handle::MidThreshBelow:
-        case Handle::MidThreshExpandBelow:
-        case Handle::MidThreshExpandAbove:
+        case Handle::MidLowerThreshold:
+        case Handle::MidUpperThreshold:
+        case Handle::MidBelowRatio:
+        case Handle::MidAboveRatio:
+        case Handle::MidAttack:
+        case Handle::MidRelease:
         case Handle::MidLimit:
             return 1;
-        case Handle::HighThreshAbove:
-        case Handle::HighThreshBelow:
-        case Handle::HighThreshExpandBelow:
-        case Handle::HighThreshExpandAbove:
+        case Handle::HighLowerThreshold:
+        case Handle::HighUpperThreshold:
+        case Handle::HighBelowRatio:
+        case Handle::HighAboveRatio:
+        case Handle::HighAttack:
+        case Handle::HighRelease:
         case Handle::HighLimit:
             return 2;
         default:
@@ -341,47 +334,45 @@ int CompiledMultibandCurveView::thresholdBandIndex(Handle h) {
     }
 }
 
-bool CompiledMultibandCurveView::isAboveThresholdHandle(Handle h) {
-    return h == Handle::LowThreshAbove || h == Handle::MidThreshAbove ||
-           h == Handle::HighThreshAbove;
+bool CompiledMultibandCurveView::isLimitHandle(Handle h) {
+    return h == Handle::LowLimit || h == Handle::MidLimit || h == Handle::HighLimit;
 }
 
-int CompiledMultibandCurveView::thresholdSlotForHandle(Handle h) {
-    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
-    switch (h) {
-        case Handle::LowThreshAbove:
-            return Mb::kLowThreshAboveSlot;
-        case Handle::LowThreshBelow:
-            return Mb::kLowThreshBelowSlot;
-        case Handle::LowThreshExpandBelow:
-            return Mb::kLowThreshExpandBelowSlot;
-        case Handle::LowThreshExpandAbove:
-            return Mb::kLowThreshExpandAboveSlot;
-        case Handle::LowLimit:
-            return Mb::kLowLimitSlot;
-        case Handle::MidThreshAbove:
-            return Mb::kMidThreshAboveSlot;
-        case Handle::MidThreshBelow:
-            return Mb::kMidThreshBelowSlot;
-        case Handle::MidThreshExpandBelow:
-            return Mb::kMidThreshExpandBelowSlot;
-        case Handle::MidThreshExpandAbove:
-            return Mb::kMidThreshExpandAboveSlot;
-        case Handle::MidLimit:
-            return Mb::kMidLimitSlot;
-        case Handle::HighThreshAbove:
-            return Mb::kHighThreshAboveSlot;
-        case Handle::HighThreshBelow:
-            return Mb::kHighThreshBelowSlot;
-        case Handle::HighThreshExpandBelow:
-            return Mb::kHighThreshExpandBelowSlot;
-        case Handle::HighThreshExpandAbove:
-            return Mb::kHighThreshExpandAboveSlot;
-        case Handle::HighLimit:
-            return Mb::kHighLimitSlot;
-        default:
-            return -1;
-    }
+bool CompiledMultibandCurveView::isUpperThresholdHandle(Handle h) {
+    return h == Handle::LowUpperThreshold || h == Handle::MidUpperThreshold ||
+           h == Handle::HighUpperThreshold;
+}
+
+bool CompiledMultibandCurveView::isRatioHandle(Handle h) {
+    return h == Handle::LowBelowRatio || h == Handle::LowAboveRatio || h == Handle::MidBelowRatio ||
+           h == Handle::MidAboveRatio || h == Handle::HighBelowRatio || h == Handle::HighAboveRatio;
+}
+
+bool CompiledMultibandCurveView::isAboveRatioHandle(Handle h) {
+    return h == Handle::LowAboveRatio || h == Handle::MidAboveRatio || h == Handle::HighAboveRatio;
+}
+
+bool CompiledMultibandCurveView::isTimingHandle(Handle h) {
+    return h == Handle::LowAttack || h == Handle::LowRelease || h == Handle::MidAttack ||
+           h == Handle::MidRelease || h == Handle::HighAttack || h == Handle::HighRelease;
+}
+
+bool CompiledMultibandCurveView::isReleaseTimingHandle(Handle h) {
+    return h == Handle::LowRelease || h == Handle::MidRelease || h == Handle::HighRelease;
+}
+
+int CompiledMultibandCurveView::slotForHandle(Handle h) const {
+    const int band = bandForHandle(h);
+    if (band < 0)
+        return -1;
+    if (isLimitHandle(h))
+        return limitSlotForBand(band);
+    if (isRatioHandle(h))
+        return isAboveRatioHandle(h) ? aboveRatioSlotForBand(band) : belowRatioSlotForBand(band);
+    if (isTimingHandle(h))
+        return isReleaseTimingHandle(h) ? releaseSlotForBand(band) : attackSlotForBand(band);
+    return isUpperThresholdHandle(h) ? upperThresholdSlotForBand(band)
+                                     : lowerThresholdSlotForBand(band);
 }
 
 CompiledMultibandCurveView::Handle CompiledMultibandCurveView::pickHandle(float x, float y) const {
@@ -391,29 +382,28 @@ CompiledMultibandCurveView::Handle CompiledMultibandCurveView::pickHandle(float 
     const float lowX = freqToX(lowXoHz_);
     const float highX = freqToX(highXoHz_);
     const std::array<float, 4> bandEdges{{plotArea_.getX(), lowX, highX, plotArea_.getRight()}};
-
-    const std::array<Handle, 3> aboveHandles{
-        {Handle::LowThreshAbove, Handle::MidThreshAbove, Handle::HighThreshAbove}};
-    const std::array<Handle, 3> belowHandles{
-        {Handle::LowThreshBelow, Handle::MidThreshBelow, Handle::HighThreshBelow}};
-    const std::array<Handle, 3> expandBelowHandles{{Handle::LowThreshExpandBelow,
-                                                    Handle::MidThreshExpandBelow,
-                                                    Handle::HighThreshExpandBelow}};
-    const std::array<Handle, 3> expandAboveHandles{{Handle::LowThreshExpandAbove,
-                                                    Handle::MidThreshExpandAbove,
-                                                    Handle::HighThreshExpandAbove}};
+    const std::array<Handle, 3> lowerThresholdHandles{
+        {Handle::LowLowerThreshold, Handle::MidLowerThreshold, Handle::HighLowerThreshold}};
+    const std::array<Handle, 3> upperThresholdHandles{
+        {Handle::LowUpperThreshold, Handle::MidUpperThreshold, Handle::HighUpperThreshold}};
     const std::array<Handle, 3> limitHandles{
         {Handle::LowLimit, Handle::MidLimit, Handle::HighLimit}};
+    const std::array<Handle, 3> belowRatioHandles{
+        {Handle::LowBelowRatio, Handle::MidBelowRatio, Handle::HighBelowRatio}};
+    const std::array<Handle, 3> aboveRatioHandles{
+        {Handle::LowAboveRatio, Handle::MidAboveRatio, Handle::HighAboveRatio}};
+    const std::array<Handle, 3> attackHandles{
+        {Handle::LowAttack, Handle::MidAttack, Handle::HighAttack}};
+    const std::array<Handle, 3> releaseHandles{
+        {Handle::LowRelease, Handle::MidRelease, Handle::HighRelease}};
 
     Handle nearest = Handle::None;
     float nearestDist = kThresholdPickPx + 1.0f;
-
     for (int band = 0; band < 3; ++band) {
         const float x0 = bandEdges[static_cast<size_t>(band)] - 2.0f;
         const float x1 = bandEdges[static_cast<size_t>(band + 1)] + 2.0f;
         if (x < x0 || x > x1)
             continue;
-        const auto idx = static_cast<size_t>(band);
         auto check = [&](float lineY, Handle h) {
             const float d = std::fabs(y - lineY);
             if (d <= kThresholdPickPx && d < nearestDist) {
@@ -421,20 +411,33 @@ CompiledMultibandCurveView::Handle CompiledMultibandCurveView::pickHandle(float 
                 nearestDist = d;
             }
         };
-        check(dbToY(threshAboveDb_[idx]), aboveHandles[idx]);
-        check(dbToY(threshBelowDb_[idx]), belowHandles[idx]);
-        check(dbToY(threshExpandBelowDb_[idx]), expandBelowHandles[idx]);
-        check(dbToY(threshExpandAboveDb_[idx]), expandAboveHandles[idx]);
-        check(dbToY(limitDb_[idx]), limitHandles[idx]);
+        check(dbToY(lowerThresholdDb_[static_cast<size_t>(band)]), lowerThresholdHandles[band]);
+        check(dbToY(upperThresholdDb_[static_cast<size_t>(band)]), upperThresholdHandles[band]);
+        check(dbToY(limitDb_[static_cast<size_t>(band)]), limitHandles[band]);
     }
     if (nearest != Handle::None)
         return nearest;
+
+    for (int band = 0; band < 3; ++band) {
+        const auto idx = static_cast<size_t>(band);
+        if (x < bandEdges[idx] || x > bandEdges[idx + 1])
+            continue;
+
+        if (attackAreas_[idx].contains(x, y))
+            return attackHandles[idx];
+        if (releaseAreas_[idx].contains(x, y))
+            return releaseHandles[idx];
+        if (aboveRatioAreas_[idx].contains(x, y))
+            return aboveRatioHandles[idx];
+        if (belowRatioAreas_[idx].contains(x, y))
+            return belowRatioHandles[idx];
+    }
 
     const float dLow = std::fabs(x - lowX);
     const float dHigh = std::fabs(x - highX);
     if (dLow > kHandlePickPx && dHigh > kHandlePickPx)
         return Handle::None;
-    return (dLow <= dHigh) ? Handle::LowXo : Handle::HighXo;
+    return dLow <= dHigh ? Handle::LowXo : Handle::HighXo;
 }
 
 void CompiledMultibandCurveView::mouseMove(const juce::MouseEvent& e) {
@@ -448,42 +451,28 @@ void CompiledMultibandCurveView::mouseMove(const juce::MouseEvent& e) {
     }
     if (overChevron) {
         setMouseCursor(juce::MouseCursor::PointingHandCursor);
-        if (hoveredHandle_ != Handle::None) {
-            hoveredHandle_ = Handle::None;
-            repaint();
-        }
+        hoveredHandle_ = Handle::None;
         return;
     }
 
     const auto picked = pickHandle(static_cast<float>(e.x), static_cast<float>(e.y));
     if (picked != hoveredHandle_) {
         hoveredHandle_ = picked;
-        const bool isVertical =
-            isThresholdHandle(picked) || isExpandHandle(picked) || thresholdBandIndex(picked) >= 0;
+        const bool vertical = bandForHandle(picked) >= 0 || isTimingHandle(picked);
         setMouseCursor(picked == Handle::None ? juce::MouseCursor::NormalCursor
-                       : isVertical           ? juce::MouseCursor::UpDownResizeCursor
+                       : vertical             ? juce::MouseCursor::UpDownResizeCursor
                                               : juce::MouseCursor::LeftRightResizeCursor);
         repaint();
     }
 }
 
 void CompiledMultibandCurveView::mouseExit(const juce::MouseEvent&) {
-    bool needsRepaint = false;
-    if (hoveredHandle_ != Handle::None && draggedHandle_ == Handle::None) {
-        hoveredHandle_ = Handle::None;
-        setMouseCursor(juce::MouseCursor::NormalCursor);
-        needsRepaint = true;
-    }
-    if (collapseButtonHovered_) {
-        collapseButtonHovered_ = false;
-        needsRepaint = true;
-    }
-    if (ratioScrollBand_ != -1) {
-        ratioScrollBand_ = -1;
-        needsRepaint = true;
-    }
-    if (needsRepaint)
-        repaint();
+    hoveredHandle_ = Handle::None;
+    collapseButtonHovered_ = false;
+    ratioScrollBand_ = -1;
+    rangeScrollActive_ = false;
+    setMouseCursor(juce::MouseCursor::NormalCursor);
+    repaint();
 }
 
 void CompiledMultibandCurveView::mouseDown(const juce::MouseEvent& e) {
@@ -497,15 +486,23 @@ void CompiledMultibandCurveView::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    const auto picked = pickHandle(static_cast<float>(e.x), static_cast<float>(e.y));
-    if (picked == Handle::None)
+    draggedHandle_ = pickHandle(static_cast<float>(e.x), static_cast<float>(e.y));
+    hoveredHandle_ = draggedHandle_;
+    if (isTimingHandle(draggedHandle_)) {
+        const int timingBand = bandForHandle(draggedHandle_);
+        if (timingBand >= 0) {
+            const auto idx = static_cast<size_t>(timingBand);
+            dragStartValue_ =
+                isReleaseTimingHandle(draggedHandle_) ? releaseMs_[idx] : attackMs_[idx];
+        }
         return;
-    draggedHandle_ = picked;
-    hoveredHandle_ = picked;
-    const bool isVertical =
-        isThresholdHandle(picked) || isExpandHandle(picked) || thresholdBandIndex(picked) >= 0;
-    setMouseCursor(isVertical ? juce::MouseCursor::UpDownResizeCursor
-                              : juce::MouseCursor::LeftRightResizeCursor);
+    }
+    const int band = bandForHandle(draggedHandle_);
+    if (band >= 0 && isRatioHandle(draggedHandle_)) {
+        dragStartValue_ = isAboveRatioHandle(draggedHandle_)
+                              ? aboveRatio_[static_cast<size_t>(band)]
+                              : belowRatio_[static_cast<size_t>(band)];
+    }
 }
 
 void CompiledMultibandCurveView::mouseDrag(const juce::MouseEvent& e) {
@@ -513,161 +510,164 @@ void CompiledMultibandCurveView::mouseDrag(const juce::MouseEvent& e) {
     if (draggedHandle_ == Handle::None)
         return;
 
-    const int band = thresholdBandIndex(draggedHandle_);
-    if (band >= 0) {
-        const auto idx = static_cast<size_t>(band);
-        const float rawDb = yToDb(static_cast<float>(e.y));
-        const int slot = thresholdSlotForHandle(draggedHandle_);
-
-        auto emit = [&](float& stored, float clamped) {
-            if (std::fabs(clamped - stored) > 0.05f) {
-                stored = clamped;
-                if (slot >= 0 && onParameterChanged)
-                    onParameterChanged(slot, clamped);
-                repaint();
-            }
-        };
-
-        if (isAboveThresholdHandle(draggedHandle_)) {
-            // Above compression sits between below compression and expand-above.
-            const float floor = std::max(kThreshAboveMin, threshBelowDb_[idx] + kMinThresholdGapDb);
-            const float ceiling =
-                std::min(kThreshAboveMax, threshExpandAboveDb_[idx] - kMinThresholdGapDb);
-            emit(threshAboveDb_[idx], juce::jlimit(floor, std::max(floor, ceiling), rawDb));
-        } else if (draggedHandle_ == Handle::LowThreshExpandBelow ||
-                   draggedHandle_ == Handle::MidThreshExpandBelow ||
-                   draggedHandle_ == Handle::HighThreshExpandBelow) {
-            // Expand-below: must stay below threshBelow.
-            const float ceiling =
-                std::min(kThreshExpandMax, threshBelowDb_[idx] - kMinThresholdGapDb);
-            emit(threshExpandBelowDb_[idx], juce::jlimit(kThreshExpandMin, ceiling, rawDb));
-        } else if (draggedHandle_ == Handle::LowThreshExpandAbove ||
-                   draggedHandle_ == Handle::MidThreshExpandAbove ||
-                   draggedHandle_ == Handle::HighThreshExpandAbove) {
-            // Expand-above is the top zone, so it must stay above threshAbove.
-            const float floor = std::max(kThreshAboveMin, threshAboveDb_[idx] + kMinThresholdGapDb);
-            emit(threshExpandAboveDb_[idx], juce::jlimit(floor, kThreshExpandMax, rawDb));
-        } else if (draggedHandle_ == Handle::LowLimit || draggedHandle_ == Handle::MidLimit ||
-                   draggedHandle_ == Handle::HighLimit) {
-            emit(limitDb_[idx], juce::jlimit(kLimMin, kLimMax, rawDb));
-        } else {
-            // threshBelow: must stay below threshAbove and above threshExpandBelow.
-            const float ceiling =
-                std::min(kThreshBelowMax, threshAboveDb_[idx] - kMinThresholdGapDb);
-            const float floor =
-                std::max(kThreshBelowMin, threshExpandBelowDb_[idx] + kMinThresholdGapDb);
-            emit(threshBelowDb_[idx], juce::jlimit(floor, ceiling, rawDb));
+    if (isTimingHandle(draggedHandle_)) {
+        const int timingBand = bandForHandle(draggedHandle_);
+        if (timingBand < 0)
+            return;
+        const auto idx = static_cast<size_t>(timingBand);
+        const bool release = isReleaseTimingHandle(draggedHandle_);
+        const float dragOctaves = -static_cast<float>(e.getDistanceFromDragStartY()) / 90.0f;
+        const float next =
+            adjustTimeMs(dragStartValue_, dragOctaves, release ? kReleaseMinMs : kAttackMinMs,
+                         release ? kReleaseMaxMs : kAttackMaxMs);
+        auto& target = release ? releaseMs_[idx] : attackMs_[idx];
+        const float epsilon = release ? 0.5f : 0.05f;
+        if (std::fabs(next - target) > epsilon) {
+            target = next;
+            if (onParameterChanged)
+                onParameterChanged(
+                    release ? releaseSlotForBand(timingBand) : attackSlotForBand(timingBand), next);
+            repaint();
         }
         return;
     }
 
-    // Crossover drag.
-    const float rawHz = xToFreq(static_cast<float>(e.x));
     if (draggedHandle_ == Handle::LowXo) {
         const float ceiling = std::min(kLowXoMax, highXoHz_ - kMinXoGapHz);
-        const float clamped = juce::jlimit(kLowXoMin, ceiling, rawHz);
-        if (std::fabs(clamped - lowXoHz_) > 0.5f) {
-            lowXoHz_ = clamped;
+        const float hz = juce::jlimit(kLowXoMin, ceiling, xToFreq(static_cast<float>(e.x)));
+        if (std::fabs(hz - lowXoHz_) > 0.5f) {
+            lowXoHz_ = hz;
             if (onParameterChanged)
-                onParameterChanged(Mb::kLowXoSlot, clamped);
+                onParameterChanged(Mb::kLowXoSlot, hz);
             repaint();
         }
-    } else {
-        const float floor_ = std::max(kHighXoMin, lowXoHz_ + kMinXoGapHz);
-        const float clamped = juce::jlimit(floor_, kHighXoMax, rawHz);
-        if (std::fabs(clamped - highXoHz_) > 0.5f) {
-            highXoHz_ = clamped;
+        return;
+    }
+    if (draggedHandle_ == Handle::HighXo) {
+        const float floor = std::max(kHighXoMin, lowXoHz_ + kMinXoGapHz);
+        const float hz = juce::jlimit(floor, kHighXoMax, xToFreq(static_cast<float>(e.x)));
+        if (std::fabs(hz - highXoHz_) > 0.5f) {
+            highXoHz_ = hz;
             if (onParameterChanged)
-                onParameterChanged(Mb::kHighXoSlot, clamped);
+                onParameterChanged(Mb::kHighXoSlot, hz);
             repaint();
         }
+        return;
+    }
+
+    const int band = bandForHandle(draggedHandle_);
+    const int slot = slotForHandle(draggedHandle_);
+    if (band < 0 || slot < 0)
+        return;
+    const auto idx = static_cast<size_t>(band);
+    if (isRatioHandle(draggedHandle_)) {
+        auto& ratio = isAboveRatioHandle(draggedHandle_) ? aboveRatio_[idx] : belowRatio_[idx];
+        const float dragOctaves = -static_cast<float>(e.getDistanceFromDragStartY()) / 80.0f;
+        const float next = adjustRatio(dragStartValue_, dragOctaves);
+        if (std::fabs(next - ratio) > 0.01f) {
+            ratio = next;
+            ratioScrollBand_ = band;
+            ratioScrollAbove_ = isAboveRatioHandle(draggedHandle_);
+            rangeScrollActive_ = false;
+            if (onParameterChanged)
+                onParameterChanged(slot, next);
+            repaint();
+        }
+        return;
+    }
+
+    float db = juce::jlimit(kDbMin, kDbMax, yToDb(static_cast<float>(e.y)));
+    auto& target = isLimitHandle(draggedHandle_)            ? limitDb_[idx]
+                   : isUpperThresholdHandle(draggedHandle_) ? upperThresholdDb_[idx]
+                                                            : lowerThresholdDb_[idx];
+    if (!isLimitHandle(draggedHandle_)) {
+        constexpr float kMinThresholdGapDb = 1.0f;
+        if (isUpperThresholdHandle(draggedHandle_))
+            db = std::max(db, lowerThresholdDb_[idx] + kMinThresholdGapDb);
+        else
+            db = std::min(db, upperThresholdDb_[idx] - kMinThresholdGapDb);
+    }
+    if (std::fabs(db - target) > 0.05f) {
+        target = db;
+        if (onParameterChanged)
+            onParameterChanged(slot, db);
+        repaint();
     }
 }
 
 void CompiledMultibandCurveView::mouseUp(const juce::MouseEvent& e) {
     draggedHandle_ = Handle::None;
     hoveredHandle_ = pickHandle(static_cast<float>(e.x), static_cast<float>(e.y));
-    const bool isVertical = isThresholdHandle(hoveredHandle_) || isExpandHandle(hoveredHandle_) ||
-                            thresholdBandIndex(hoveredHandle_) >= 0;
-    setMouseCursor(hoveredHandle_ == Handle::None ? juce::MouseCursor::NormalCursor
-                   : isVertical                   ? juce::MouseCursor::UpDownResizeCursor
-                                                  : juce::MouseCursor::LeftRightResizeCursor);
     repaint();
 }
 
 void CompiledMultibandCurveView::mouseWheelMove(const juce::MouseEvent& e,
                                                 const juce::MouseWheelDetails& wheel) {
+    const float direction = wheel.deltaY > 0.0f ? 1.0f : -1.0f;
+    auto adjustTiming = [&](int band, bool release) {
+        const auto idx = static_cast<size_t>(band);
+        auto& target = release ? releaseMs_[idx] : attackMs_[idx];
+        const float step = e.mods.isAltDown() ? 0.125f : 0.25f;
+        const float next =
+            adjustTimeMs(target, direction * step, release ? kReleaseMinMs : kAttackMinMs,
+                         release ? kReleaseMaxMs : kAttackMaxMs);
+        const float epsilon = release ? 0.5f : 0.05f;
+        if (std::fabs(next - target) > epsilon) {
+            target = next;
+            if (onParameterChanged)
+                onParameterChanged(release ? releaseSlotForBand(band) : attackSlotForBand(band),
+                                   next);
+            repaint();
+        }
+    };
+    for (int band = 0; band < 3; ++band) {
+        const auto idx = static_cast<size_t>(band);
+        if (attackAreas_[idx].contains(e.position)) {
+            adjustTiming(band, false);
+            return;
+        }
+        if (releaseAreas_[idx].contains(e.position)) {
+            adjustTiming(band, true);
+            return;
+        }
+    }
+
     const int band = bandAtX(static_cast<float>(e.x));
     if (band < 0)
         return;
 
+    const bool adjustRange = e.mods.isShiftDown();
     const auto idx = static_cast<size_t>(band);
-    const float mouseY = static_cast<float>(e.y);
-    const float yExpandAbove = dbToY(threshExpandAboveDb_[idx]);
-    const float yAbove = dbToY(threshAboveDb_[idx]);
-    const float yBelow = dbToY(threshBelowDb_[idx]);
-    const float yExpandBelow = dbToY(threshExpandBelowDb_[idx]);
 
-    // Zones from top to bottom: expandAbove → above → below → expandBelow
-    const bool inExpandAboveZone = mouseY < yExpandAbove;
-    const bool inAboveZone = mouseY >= yExpandAbove && mouseY < yAbove;
-    const bool inBelowZone = mouseY >= yBelow && mouseY < yExpandBelow;
-    const bool inExpandBelowZone = mouseY >= yExpandBelow;
-    if (!inExpandAboveZone && !inAboveZone && !inBelowZone && !inExpandBelowZone)
+    if (adjustRange) {
+        const float next = juce::jlimit(kRangeMin, kRangeMax, rangeDb_[idx] + direction);
+        if (std::fabs(next - rangeDb_[idx]) > 0.01f) {
+            rangeDb_[idx] = next;
+            ratioScrollBand_ = band;
+            rangeScrollActive_ = true;
+            if (onParameterChanged)
+                onParameterChanged(rangeSlotForBand(band), next);
+            repaint();
+        }
         return;
+    }
 
-    constexpr float kRatioStep = 0.5f;
-    constexpr float kRatioMin = 1.0f;
-    constexpr float kRatioMax = 50.0f;
-    const float delta = wheel.deltaY > 0.0f ? kRatioStep : -kRatioStep;
-
-    using Mb = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
-    if (inAboveZone) {
-        const float newRatio = juce::jlimit(kRatioMin, kRatioMax, ratiosAbove_[idx] + delta);
-        if (std::fabs(newRatio - ratiosAbove_[idx]) > 0.01f) {
-            ratiosAbove_[idx] = newRatio;
-            ratioScrollBand_ = band;
-            ratioScrollZone_ = 0;
-            if (onParameterChanged)
-                onParameterChanged(ratioSlotForBand(band, true), newRatio);
-            repaint();
-        }
-    } else if (inBelowZone) {
-        const float newRatio = juce::jlimit(kRatioMin, kRatioMax, ratiosBelow_[idx] + delta);
-        if (std::fabs(newRatio - ratiosBelow_[idx]) > 0.01f) {
-            ratiosBelow_[idx] = newRatio;
-            ratioScrollBand_ = band;
-            ratioScrollZone_ = 1;
-            if (onParameterChanged)
-                onParameterChanged(ratioSlotForBand(band, false), newRatio);
-            repaint();
-        }
-    } else if (inExpandBelowZone) {
-        const int erbSlot = (band == 0)   ? Mb::kLowExpandRatioBelowSlot
-                            : (band == 1) ? Mb::kMidExpandRatioBelowSlot
-                                          : Mb::kHighExpandRatioBelowSlot;
-        const float newRatio = juce::jlimit(kRatioMin, kRatioMax, expandRatiosBelow_[idx] + delta);
-        if (std::fabs(newRatio - expandRatiosBelow_[idx]) > 0.01f) {
-            expandRatiosBelow_[idx] = newRatio;
-            ratioScrollBand_ = band;
-            ratioScrollZone_ = 2;
-            if (onParameterChanged)
-                onParameterChanged(erbSlot, newRatio);
-            repaint();
-        }
-    } else {
-        const int eraSlot = (band == 0)   ? Mb::kLowExpandRatioAboveSlot
-                            : (band == 1) ? Mb::kMidExpandRatioAboveSlot
-                                          : Mb::kHighExpandRatioAboveSlot;
-        const float newRatio = juce::jlimit(kRatioMin, kRatioMax, expandRatiosAbove_[idx] + delta);
-        if (std::fabs(newRatio - expandRatiosAbove_[idx]) > 0.01f) {
-            expandRatiosAbove_[idx] = newRatio;
-            ratioScrollBand_ = band;
-            ratioScrollZone_ = 3;
-            if (onParameterChanged)
-                onParameterChanged(eraSlot, newRatio);
-            repaint();
-        }
+    const float step = e.mods.isAltDown() ? 0.125f : 0.25f;
+    const float y = static_cast<float>(e.y);
+    const float upperY = dbToY(upperThresholdDb_[idx]);
+    const float lowerY = dbToY(lowerThresholdDb_[idx]);
+    const bool aboveZone = y < (upperY + lowerY) * 0.5f;
+    auto& ratio = aboveZone ? aboveRatio_[idx] : belowRatio_[idx];
+    const float next = adjustRatio(ratio, direction * step);
+    if (std::fabs(next - ratio) > 0.01f) {
+        ratio = next;
+        ratioScrollBand_ = band;
+        ratioScrollAbove_ = aboveZone;
+        rangeScrollActive_ = false;
+        if (onParameterChanged)
+            onParameterChanged(
+                aboveZone ? aboveRatioSlotForBand(band) : belowRatioSlotForBand(band), next);
+        repaint();
     }
 }
 
@@ -686,206 +686,194 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
     juce::Graphics::ScopedSaveState clipGuard(g);
     g.reduceClipRegion(plot.toNearestInt());
 
-    // Decade grid.
     g.setColour(juce::Colours::white.withAlpha(0.06f));
-    for (float decade : {100.0f, 1000.0f, 10000.0f}) {
-        const float x = freqToX(decade);
-        g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
-    }
+    for (float decade : {100.0f, 1000.0f, 10000.0f})
+        g.drawVerticalLine(static_cast<int>(std::round(freqToX(decade))), plot.getY(),
+                           plot.getBottom());
+    for (float db : {-60.0f, -36.0f, -12.0f, 0.0f})
+        g.drawHorizontalLine(static_cast<int>(std::round(dbToY(db))), plot.getX(), plot.getRight());
 
     const float lowX = freqToX(lowXoHz_);
     const float highX = freqToX(highXoHz_);
     const std::array<float, 4> bandEdges{{plot.getX(), lowX, highX, plot.getRight()}};
-
-    // Line colours: orange=compAbove, cyan=compBelow, purple=expand thresholds, red=limiter.
-    const auto aboveColour = juce::Colour(0xFFFF8C00);   // orange
-    const auto belowColour = juce::Colour(0xFF00D4FF);   // cyan
-    const auto expandColour = juce::Colour(0xFFAA55FF);  // purple
-    const auto limitColour = juce::Colour(0xFFFF3333);   // red
-    const auto xoColour = juce::Colours::white;
-
-    // Band border tints on the crossover lines.
-    const std::array<Handle, 3> aboveHandles{
-        {Handle::LowThreshAbove, Handle::MidThreshAbove, Handle::HighThreshAbove}};
-    const std::array<Handle, 3> belowHandles{
-        {Handle::LowThreshBelow, Handle::MidThreshBelow, Handle::HighThreshBelow}};
-    const std::array<Handle, 3> expBelowHandles{{Handle::LowThreshExpandBelow,
-                                                 Handle::MidThreshExpandBelow,
-                                                 Handle::HighThreshExpandBelow}};
-    const std::array<Handle, 3> expAboveHandles{{Handle::LowThreshExpandAbove,
-                                                 Handle::MidThreshExpandAbove,
-                                                 Handle::HighThreshExpandAbove}};
+    const std::array<juce::Colour, 3> bandColours{
+        {juce::Colour(0xFF43A0FF), juce::Colour(0xFFFFB347), juce::Colour(0xFFAA66FF)}};
+    const std::array<juce::String, 3> bandNames{{"LOW", "MID", "HIGH"}};
+    const std::array<Handle, 3> lowerThresholdHandles{
+        {Handle::LowLowerThreshold, Handle::MidLowerThreshold, Handle::HighLowerThreshold}};
+    const std::array<Handle, 3> upperThresholdHandles{
+        {Handle::LowUpperThreshold, Handle::MidUpperThreshold, Handle::HighUpperThreshold}};
     const std::array<Handle, 3> limitHandles{
         {Handle::LowLimit, Handle::MidLimit, Handle::HighLimit}};
+    const std::array<Handle, 3> belowRatioHandles{
+        {Handle::LowBelowRatio, Handle::MidBelowRatio, Handle::HighBelowRatio}};
+    const std::array<Handle, 3> aboveRatioHandles{
+        {Handle::LowAboveRatio, Handle::MidAboveRatio, Handle::HighAboveRatio}};
+    const std::array<Handle, 3> attackHandles{
+        {Handle::LowAttack, Handle::MidAttack, Handle::HighAttack}};
+    const std::array<Handle, 3> releaseHandles{
+        {Handle::LowRelease, Handle::MidRelease, Handle::HighRelease}};
 
-    auto typeLabelForHandle = [](Handle h) -> juce::String {
-        switch (h) {
-            case Handle::LowThreshExpandAbove:
-            case Handle::MidThreshExpandAbove:
-            case Handle::HighThreshExpandAbove:
-                return "EXP+";
-            case Handle::LowThreshAbove:
-            case Handle::MidThreshAbove:
-            case Handle::HighThreshAbove:
-                return "COMP-";
-            case Handle::LowThreshBelow:
-            case Handle::MidThreshBelow:
-            case Handle::HighThreshBelow:
-                return "COMP+";
-            case Handle::LowThreshExpandBelow:
-            case Handle::MidThreshExpandBelow:
-            case Handle::HighThreshExpandBelow:
-                return "EXP-";
-            case Handle::LowLimit:
-            case Handle::MidLimit:
-            case Handle::HighLimit:
-                return "LIM";
-            default:
-                return {};
+    for (int band = 0; band < 3; ++band) {
+        const auto idx = static_cast<size_t>(band);
+        const float x0 = bandEdges[idx];
+        const float x1 = bandEdges[idx + 1];
+        if (x1 <= x0 + 2.0f)
+            continue;
+
+        const auto colour = bandColours[idx];
+        const float yLower = dbToY(lowerThresholdDb_[idx]);
+        const float yUpper = dbToY(upperThresholdDb_[idx]);
+        const float yRangeTop = dbToY(upperThresholdDb_[idx] + rangeDb_[idx]);
+        const float yRangeBottom = dbToY(lowerThresholdDb_[idx] - rangeDb_[idx]);
+        const float yLimit = dbToY(limitDb_[idx]);
+        const bool lowerHot = hoveredHandle_ == lowerThresholdHandles[idx] ||
+                              draggedHandle_ == lowerThresholdHandles[idx];
+        const bool upperHot = hoveredHandle_ == upperThresholdHandles[idx] ||
+                              draggedHandle_ == upperThresholdHandles[idx];
+        const bool limitHot =
+            hoveredHandle_ == limitHandles[idx] || draggedHandle_ == limitHandles[idx];
+        const bool aboveRatioHot =
+            hoveredHandle_ == aboveRatioHandles[idx] || draggedHandle_ == aboveRatioHandles[idx];
+        const bool belowRatioHot =
+            hoveredHandle_ == belowRatioHandles[idx] || draggedHandle_ == belowRatioHandles[idx];
+        const bool attackHot =
+            hoveredHandle_ == attackHandles[idx] || draggedHandle_ == attackHandles[idx];
+        const bool releaseHot =
+            hoveredHandle_ == releaseHandles[idx] || draggedHandle_ == releaseHandles[idx];
+
+        g.setColour(colour.withAlpha(0.08f));
+        g.fillRect(juce::Rectangle<float>(x0 + 1.0f, plot.getY(), x1 - x0 - 2.0f,
+                                          std::max(0.0f, yUpper - plot.getY())));
+        g.fillRect(juce::Rectangle<float>(x0 + 1.0f, yLower, x1 - x0 - 2.0f,
+                                          std::max(0.0f, plot.getBottom() - yLower)));
+        g.setColour(colour.withAlpha(0.05f));
+        g.fillRect(juce::Rectangle<float>(x0 + 1.0f, std::min(yRangeTop, yRangeBottom),
+                                          x1 - x0 - 2.0f, std::fabs(yRangeBottom - yRangeTop)));
+
+        g.setColour(colour.withAlpha(0.85f));
+        g.drawLine(x0 + 2.0f, yUpper, x1 - 2.0f, yUpper, upperHot ? 2.4f : 1.6f);
+        g.drawLine(x0 + 2.0f, yLower, x1 - 2.0f, yLower, lowerHot ? 2.4f : 1.6f);
+
+        g.setColour(juce::Colours::red.withAlpha(limitHot ? 0.95f : 0.55f));
+        g.drawLine(x0 + 2.0f, yLimit, x1 - 2.0f, yLimit, limitHot ? 2.0f : 1.1f);
+
+        g.setFont(10.0f);
+        g.setColour(juce::Colours::white.withAlpha(0.34f));
+        g.drawText(
+            bandNames[idx],
+            juce::Rectangle<float>(x0 + 4.0f, plot.getY() + 3.0f, 38.0f, 12.0f).toNearestInt(),
+            juce::Justification::centredLeft);
+
+        const bool ratioActive = ratioScrollBand_ == band && !rangeScrollActive_;
+        const bool rangeActive = ratioScrollBand_ == band && rangeScrollActive_;
+        const bool ratioEngaged = ratioActive || aboveRatioHot || belowRatioHot;
+        const juce::String aboveRatioText = ratioLabel(aboveRatio_[idx]);
+        const juce::String belowRatioText = ratioLabel(belowRatio_[idx]);
+        const juce::String rangeText =
+            rangeActive ? "RNG " + juce::String(rangeDb_[idx], 0) : juce::String(rangeDb_[idx], 0);
+        const float cx = (x0 + x1) * 0.5f;
+        auto makeBandPillArea = [&](float y) {
+            constexpr float preferredWidth = 54.0f;
+            constexpr float height = 15.0f;
+            const float width = std::max(0.0f, std::min(preferredWidth, x1 - x0 - 6.0f));
+            const float minLeft = x0 + 3.0f;
+            const float maxLeft = std::max(minLeft, x1 - 3.0f - width);
+            const float left = juce::jlimit(minLeft, maxLeft, cx - width * 0.5f);
+            return juce::Rectangle<float>(left, y, width, height);
+        };
+        aboveRatioAreas_[idx] = makeBandPillArea(yUpper - 19.0f);
+        belowRatioAreas_[idx] = makeBandPillArea(yLower + 4.0f);
+        const float timingWidth = std::max(0.0f, std::min(70.0f, x1 - x0 - 8.0f));
+        const float timingX = x0 + 4.0f;
+        attackAreas_[idx] =
+            juce::Rectangle<float>(timingX, plot.getY() + 18.0f, timingWidth, 14.0f);
+        releaseAreas_[idx] = attackAreas_[idx].translated(0.0f, 15.0f);
+
+        auto drawRatioPill = [&](juce::Rectangle<float> area, const juce::String& text, bool active,
+                                 bool hot) {
+            if (hot || active) {
+                g.setColour(colour.withAlpha(hot ? 0.28f : 0.16f));
+                g.fillRoundedRectangle(area, 3.0f);
+                g.setColour(colour.withAlpha(0.85f));
+                g.drawRoundedRectangle(area, 3.0f, 1.0f);
+            }
+            g.setColour(colour.withAlpha((hot || active) ? 0.98f : 0.62f));
+            g.drawText(text, area.toNearestInt(), juce::Justification::centred);
+        };
+
+        drawRatioPill(aboveRatioAreas_[idx], "A " + aboveRatioText,
+                      ratioActive && ratioScrollAbove_, aboveRatioHot);
+        drawRatioPill(belowRatioAreas_[idx], "B " + belowRatioText,
+                      ratioActive && !ratioScrollAbove_, belowRatioHot);
+
+        auto drawTimingPill = [&](juce::Rectangle<float> area, const juce::String& text, bool hot) {
+            if (hot) {
+                g.setColour(colour.withAlpha(0.24f));
+                g.fillRoundedRectangle(area, 3.0f);
+                g.setColour(colour.withAlpha(0.85f));
+                g.drawRoundedRectangle(area, 3.0f, 1.0f);
+            }
+            g.setColour(colour.withAlpha(hot ? 0.98f : 0.62f));
+            g.drawText(text, area.toNearestInt(), juce::Justification::centred);
+        };
+        drawTimingPill(attackAreas_[idx], "A " + timeLabel(attackMs_[idx]), attackHot);
+        drawTimingPill(releaseAreas_[idx], "R " + timeLabel(releaseMs_[idx]), releaseHot);
+
+        g.setColour(colour.withAlpha(rangeActive ? 0.95f : 0.35f));
+        g.drawText(rangeText + " dB",
+                   juce::Rectangle<float>(cx - 28.0f, (yUpper + yLower) * 0.5f - 6.0f, 56.0f, 12.0f)
+                       .toNearestInt(),
+                   juce::Justification::centred);
+
+        if ((lowerHot || upperHot || limitHot) && !ratioEngaged && !attackHot && !releaseHot) {
+            const float valueDb = upperHot   ? upperThresholdDb_[idx]
+                                  : lowerHot ? lowerThresholdDb_[idx]
+                                             : limitDb_[idx];
+            const auto label = juce::String(upperHot   ? "UP "
+                                            : lowerHot ? "LOW "
+                                                       : "LIM ") +
+                               juce::String(valueDb, 1) + " dB";
+            float yLabel = valueDb > -34.0f ? dbToY(valueDb) + 3.0f : dbToY(valueDb) - 15.0f;
+            auto labelArea = juce::Rectangle<float>(x0 + 4.0f, yLabel, x1 - x0 - 8.0f, 13.0f);
+            if (labelArea.intersects(aboveRatioAreas_[idx]) ||
+                labelArea.intersects(belowRatioAreas_[idx])) {
+                if (upperHot)
+                    yLabel = yUpper + 5.0f;
+                else if (lowerHot)
+                    yLabel = yLower - 18.0f;
+                labelArea.setY(
+                    juce::jlimit(plot.getY(), plot.getBottom() - labelArea.getHeight(), yLabel));
+            }
+            g.setColour(((upperHot || lowerHot) ? colour : juce::Colours::red).withAlpha(0.95f));
+            g.drawText(label, labelArea.toNearestInt(), juce::Justification::centred);
+        }
+    }
+
+    auto drawXo = [&](float x, Handle h, float hz) {
+        const bool active = hoveredHandle_ == h || draggedHandle_ == h;
+        g.setColour(juce::Colours::white.withAlpha(active ? 0.95f : 0.5f));
+        g.fillRect(juce::Rectangle<float>(x - (active ? 1.0f : 0.5f), plot.getY(),
+                                          active ? 2.0f : 1.0f, plot.getHeight()));
+        if (active) {
+            const auto text = hz >= 1000.0f
+                                  ? juce::String(hz / 1000.0f, 2) + " kHz"
+                                  : juce::String(static_cast<int>(std::round(hz))) + " Hz";
+            g.setFont(11.0f);
+            g.drawText(
+                text,
+                juce::Rectangle<float>(x - 32.0f, plot.getY() + 2.0f, 64.0f, 14.0f).toNearestInt(),
+                juce::Justification::centred);
         }
     };
+    drawXo(lowX, Handle::LowXo, lowXoHz_);
+    drawXo(highX, Handle::HighXo, highXoHz_);
 
-    auto drawThreshLine = [&](float x0, float x1, float y, Handle h, juce::Colour colour,
-                              float baseAlpha, float baseThickness) {
-        const bool active = h == hoveredHandle_ || h == draggedHandle_;
-        g.setColour(colour.withAlpha(active ? 1.0f : baseAlpha));
-        g.drawLine(x0 + 2.0f, y, x1 - 2.0f, y, active ? baseThickness + 0.8f : baseThickness);
-    };
-
-    auto drawThreshLabel = [&](float x0, float x1, float y, float db, Handle h,
-                               juce::Colour colour) {
-        if (h != hoveredHandle_ && h != draggedHandle_)
-            return;
-        const auto type = typeLabelForHandle(h);
-        const auto text = type.isNotEmpty() ? type + " " + juce::String(db, 1) + " dB"
-                                            : juce::String(db, 1) + " dB";
-        g.setColour(colour.withAlpha(0.95f));
-        g.setFont(11.0f);
-        const int textW = type.isNotEmpty() ? 92 : 56;
-        constexpr int textH = 14;
-        const float lx = juce::jlimit(plot.getX() + 2.0f, plot.getRight() - textW - 2.0f,
-                                      (x0 + x1 - static_cast<float>(textW)) * 0.5f);
-        const float ly =
-            juce::jlimit(plot.getY() + 2.0f, plot.getBottom() - textH - 2.0f, y - textH - 2.0f);
-        g.drawText(
-            text,
-            juce::Rectangle<float>(lx, ly, static_cast<float>(textW), static_cast<float>(textH))
-                .toNearestInt(),
-            juce::Justification::centred);
-    };
-
-    for (int band = 0; band < 3; ++band) {
-        const float x0 = bandEdges[static_cast<size_t>(band)];
-        const float x1 = bandEdges[static_cast<size_t>(band + 1)];
-        if (x1 <= x0 + 2.0f)
-            continue;
-        const auto idx = static_cast<size_t>(band);
-        const float yAbove = dbToY(threshAboveDb_[idx]);
-        const float yBelow = dbToY(threshBelowDb_[idx]);
-        const float yExpBelow = dbToY(threshExpandBelowDb_[idx]);
-        const float yExpAbove = dbToY(threshExpandAboveDb_[idx]);
-        const float yLimit = dbToY(limitDb_[idx]);
-
-        // Compressor zone border — faint dashed-effect via thin rect outline.
-        g.setColour(aboveColour.withAlpha(0.12f));
-        g.drawRect(juce::Rectangle<float>(x0 + 1.0f, plot.getY(), x1 - x0 - 2.0f,
-                                          juce::jmax(0.0f, yAbove - plot.getY())),
-                   0.5f);
-        g.setColour(belowColour.withAlpha(0.12f));
-        g.drawRect(juce::Rectangle<float>(x0 + 1.0f, yBelow, x1 - x0 - 2.0f,
-                                          juce::jmax(0.0f, yExpBelow - yBelow)),
-                   0.5f);
-
-        // Threshold lines.
-        drawThreshLine(x0, x1, yAbove, aboveHandles[idx], aboveColour, 0.80f, 1.5f);
-        drawThreshLine(x0, x1, yBelow, belowHandles[idx], belowColour, 0.80f, 1.5f);
-        drawThreshLine(x0, x1, yExpBelow, expBelowHandles[idx], expandColour, 0.55f, 1.0f);
-        drawThreshLine(x0, x1, yExpAbove, expAboveHandles[idx], expandColour, 0.55f, 1.0f);
-        drawThreshLine(x0, x1, yLimit, limitHandles[idx], limitColour, 0.65f, 1.2f);
-
-        drawThreshLabel(x0, x1, yAbove, threshAboveDb_[idx], aboveHandles[idx], aboveColour);
-        drawThreshLabel(x0, x1, yBelow, threshBelowDb_[idx], belowHandles[idx], belowColour);
-        drawThreshLabel(x0, x1, yExpBelow, threshExpandBelowDb_[idx], expBelowHandles[idx],
-                        expandColour);
-        drawThreshLabel(x0, x1, yExpAbove, threshExpandAboveDb_[idx], expAboveHandles[idx],
-                        expandColour);
-        drawThreshLabel(x0, x1, yLimit, limitDb_[idx], limitHandles[idx], limitColour);
-    }
-
-    // Crossover lines.
-    auto drawXoLine = [&](float x, Handle which) {
-        const bool active = (which == hoveredHandle_) || (which == draggedHandle_);
-        g.setColour(xoColour.withAlpha(active ? 0.90f : 0.50f));
-        const float thickness = active ? 2.0f : 1.0f;
-        g.fillRect(
-            juce::Rectangle<float>(x - thickness * 0.5f, plot.getY(), thickness, plot.getHeight()));
-    };
-    drawXoLine(lowX, Handle::LowXo);
-    drawXoLine(highX, Handle::HighXo);
-
-    // Frequency labels on active crossover handles.
-    auto drawXoLabel = [&](float x, float hz, Handle which) {
-        if (which != hoveredHandle_ && which != draggedHandle_)
-            return;
-        const auto text = (hz >= 1000.0f) ? juce::String(hz / 1000.0f, 2) + " kHz"
-                                          : juce::String(static_cast<int>(std::round(hz))) + " Hz";
-        g.setColour(xoColour);
-        g.setFont(11.0f);
-        constexpr int textW = 64, textH = 14;
-        const float lx =
-            juce::jlimit(plot.getX() + 2.0f, plot.getRight() - textW - 2.0f, x - textW * 0.5f);
-        g.drawText(text,
-                   juce::Rectangle<float>(lx, plot.getY() + 2.0f, textW, textH).toNearestInt(),
-                   juce::Justification::centred);
-    };
-    drawXoLabel(lowX, lowXoHz_, Handle::LowXo);
-    drawXoLabel(highX, highXoHz_, Handle::HighXo);
-
-    // Ratio labels — amplified during scroll.
-    g.setFont(10.0f);
-    for (int band = 0; band < 3; ++band) {
-        const float x0 = bandEdges[static_cast<size_t>(band)];
-        const float x1 = bandEdges[static_cast<size_t>(band + 1)];
-        if (x1 <= x0 + 2.0f)
-            continue;
-        const auto idx = static_cast<size_t>(band);
-        const bool isScrollBand = (ratioScrollBand_ == band);
-        const float cx = (x0 + x1) * 0.5f;
-
-        auto drawRatioLabel = [&](float ratio, int zone, float yRef, juce::Colour col) {
-            const bool isActive = isScrollBand && (ratioScrollZone_ == zone);
-            const float alpha = isActive ? 0.95f : 0.38f;
-            g.setColour(col.withAlpha(alpha));
-            const juce::String label =
-                isActive ? ("R: " + juce::String(ratio, 1)) : juce::String(ratio, 1);
-            const int textW = isActive ? 52 : 32;
-            const float lx = juce::jlimit(plot.getX() + 2.0f, plot.getRight() - textW - 2.0f,
-                                          cx - static_cast<float>(textW) * 0.5f);
-            const float ly =
-                juce::jlimit(plot.getY() + 2.0f, plot.getBottom() - 14.0f, yRef - 14.0f);
-            g.drawText(
-                label,
-                juce::Rectangle<float>(lx, ly, static_cast<float>(textW), 12.0f).toNearestInt(),
-                juce::Justification::centred);
-        };
-        const float yExpAbove = dbToY(threshExpandAboveDb_[idx]);
-        const float yAbove = dbToY(threshAboveDb_[idx]);
-        const float yBelow = dbToY(threshBelowDb_[idx]);
-        const float yExpBelow = dbToY(threshExpandBelowDb_[idx]);
-        drawRatioLabel(expandRatiosAbove_[idx], 3, yExpAbove - 2.0f, expandColour);
-        drawRatioLabel(ratiosAbove_[idx], 0, yAbove - 2.0f, aboveColour);
-        drawRatioLabel(ratiosBelow_[idx], 1, yBelow + 16.0f, belowColour);
-        drawRatioLabel(expandRatiosBelow_[idx], 2, yExpBelow + 16.0f, expandColour);
-    }
-
-    // Collapse toggle.
     collapseButtonArea_ = juce::Rectangle<float>(
         plot.getRight() - kCollapseButtonSize - kCollapseButtonMargin,
         plot.getY() + kCollapseButtonMargin, kCollapseButtonSize, kCollapseButtonSize);
 
     const bool collapsed = compiledPlugin_ != nullptr && compiledPlugin_->isCurveCollapsed();
-    const auto chevronColour =
-        juce::Colours::white.withAlpha(collapseButtonHovered_ ? 0.95f : 0.50f);
     if (collapseButtonHovered_) {
         g.setColour(juce::Colours::white.withAlpha(0.08f));
         g.fillRoundedRectangle(collapseButtonArea_, 3.0f);
@@ -902,7 +890,7 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
         chevron.lineTo(centre.x, centre.y + armLen * 0.5f);
         chevron.lineTo(centre.x + armLen, centre.y - armLen * 0.5f);
     }
-    g.setColour(chevronColour);
+    g.setColour(juce::Colours::white.withAlpha(collapseButtonHovered_ ? 0.95f : 0.5f));
     g.strokePath(chevron, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
                                                juce::PathStrokeType::rounded));
 }
@@ -910,7 +898,7 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
 const CompiledPresentationSpec& getMagdaMultibandPresentation() {
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin::xmlTypeName,
-        .layoutCellCount = 9,
+        .layoutCellCount = 12,
         .layoutCellsPerRow = 3,
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledMultibandCurveView>(pluginId);

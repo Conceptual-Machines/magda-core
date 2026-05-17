@@ -5,6 +5,7 @@
 #include <set>
 
 #include "../../components/pianoroll/PhaseMarker.hpp"
+#include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "AudioBridge.hpp"
@@ -637,7 +638,7 @@ class DrumGridClipGrid : public juce::Component,
 
     void mouseMove(const juce::MouseEvent& e) override {
         if (e.mods.isShiftDown()) {
-            setMouseCursor(juce::MouseCursor::CopyingCursor);
+            setMouseCursor(magda::CursorManager::getInstance().getNoteRepeatCursor());
         } else if (e.mods.isAltDown() && isNearGridLine(e.x)) {
             setMouseCursor(juce::MouseCursor::IBeamCursor);
         } else {
@@ -789,7 +790,7 @@ class DrumGridClipGrid : public juce::Component,
                 repeatStampRow_ = row;
                 repeatStampStartBeat_ = emptyClickBeat_;
                 repeatStampEndBeat_ = emptyClickBeat_;
-                setMouseCursor(juce::MouseCursor::CopyingCursor);
+                setMouseCursor(magda::CursorManager::getInstance().getNoteRepeatCursor());
                 repaint();
                 return;
             }

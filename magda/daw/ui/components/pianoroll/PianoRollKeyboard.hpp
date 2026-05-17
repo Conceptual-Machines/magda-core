@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <functional>
 
 namespace magda {
@@ -29,6 +30,8 @@ class PianoRollKeyboard : public juce::Component {
     void setNoteHeight(int height);
     void setNoteRange(int minNote, int maxNote);
     void setScrollOffset(int offsetY);
+    void setNotePressed(int noteNumber, bool pressed);
+    void clearPressedNotes();
 
     int getNoteHeight() const {
         return noteHeight_;
@@ -56,6 +59,7 @@ class PianoRollKeyboard : public juce::Component {
     static constexpr int DRAG_THRESHOLD = 3;
 
     // Note preview state
+    std::array<bool, 128> pressedNotes_{};
     int currentPlayingNote_ = -1;
     bool isPlayingNote_ = false;
 

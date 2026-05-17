@@ -2,6 +2,7 @@
 
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/automation/AutomationRecordingEngine.hpp"
+#include "magda/daw/core/AutomationManager.hpp"
 
 using namespace magda;
 
@@ -16,6 +17,7 @@ class AutomationModesTest final : public juce::UnitTest {
         testSetModeRoundTrip();
         testSetWriteEnabledShim();
         testIsWriteEnabledForAllModes();
+        testMacroAutomationWritebackGuard();
     }
 
   private:
@@ -68,6 +70,17 @@ class AutomationModesTest final : public juce::UnitTest {
         expect(rec.isWriteEnabled());
         rec.setMode(AutomationMode::Latch);
         expect(rec.isWriteEnabled());
+    }
+
+    void testMacroAutomationWritebackGuard() {
+        beginTest("macro automation writebacks are not recordable user edits");
+
+        expect(!AutomationRecordingEngine::magdaTestShouldIgnoreAutomationWriteback());
+        {
+            AutomationManager::AutomationWriteScope writeScope;
+            expect(AutomationRecordingEngine::magdaTestShouldIgnoreAutomationWriteback());
+        }
+        expect(!AutomationRecordingEngine::magdaTestShouldIgnoreAutomationWriteback());
     }
 };
 

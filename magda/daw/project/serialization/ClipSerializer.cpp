@@ -7,6 +7,29 @@ namespace magda {
 // Clip serialization helpers
 // ============================================================================
 
+namespace {
+
+juce::var serializeMidiCurveHandle(const MidiCurveHandle& handle) {
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("dx", handle.dx);
+    obj->setProperty("dy", handle.dy);
+    obj->setProperty("linked", handle.linked);
+    return juce::var(obj);
+}
+
+void deserializeMidiCurveHandle(const juce::var& json, MidiCurveHandle& handle) {
+    if (auto* obj = json.getDynamicObject()) {
+        if (obj->hasProperty("dx"))
+            handle.dx = obj->getProperty("dx");
+        if (obj->hasProperty("dy"))
+            handle.dy = obj->getProperty("dy");
+        if (obj->hasProperty("linked"))
+            handle.linked = static_cast<bool>(obj->getProperty("linked"));
+    }
+}
+
+}  // namespace
+
 juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     auto* obj = new juce::DynamicObject();
 
@@ -75,6 +98,12 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         obj->setProperty("midiOffset", clip.midiOffset);
     if (clip.midiTrimOffset != 0.0)
         obj->setProperty("midiTrimOffset", clip.midiTrimOffset);
+    if (clip.isMidi()) {
+        if (clip.loopStartBeats != 0.0)
+            obj->setProperty("loopStartBeats", clip.loopStartBeats);
+        if (clip.loopLengthBeats > 0.0)
+            obj->setProperty("loopLengthBeats", clip.loopLengthBeats);
+    }
 
     // Groove/Shuffle/Swing
     if (clip.grooveTemplate.isNotEmpty())
@@ -278,6 +307,15 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     // MIDI offset
     outClip.midiOffset = obj->getProperty("midiOffset");
     outClip.midiTrimOffset = obj->getProperty("midiTrimOffset");
+    if (outClip.isMidi()) {
+        if (obj->hasProperty("loopStartBeats"))
+            outClip.loopStartBeats = obj->getProperty("loopStartBeats");
+        if (obj->hasProperty("loopLengthBeats"))
+            outClip.loopLengthBeats = obj->getProperty("loopLengthBeats");
+
+        if (outClip.loopLength <= 0.0 && outClip.loopLengthBeats > 0.0 && projectTempo > 0.0)
+            outClip.loopLength = outClip.loopLengthBeats * 60.0 / projectTempo;
+    }
 
     // Groove/Shuffle/Swing
     outClip.grooveTemplate = obj->getProperty("grooveTemplate").toString();
@@ -467,6 +505,10 @@ juce::var ProjectSerializer::serializeMidiCCData(const MidiCCData& data) {
     SER(controller);
     SER(value);
     SER(beatPosition);
+    SER(curveType);
+    SER(tension);
+    obj->setProperty("inHandle", serializeMidiCurveHandle(data.inHandle));
+    obj->setProperty("outHandle", serializeMidiCurveHandle(data.outHandle));
     return juce::var(obj);
 }
 
@@ -479,6 +521,12 @@ bool ProjectSerializer::deserializeMidiCCData(const juce::var& json, MidiCCData&
     DESER(controller);
     DESER(value);
     DESER(beatPosition);
+    if (obj->hasProperty("curveType"))
+        DESER(curveType);
+    if (obj->hasProperty("tension"))
+        DESER(tension);
+    deserializeMidiCurveHandle(obj->getProperty("inHandle"), data.inHandle);
+    deserializeMidiCurveHandle(obj->getProperty("outHandle"), data.outHandle);
     return true;
 }
 
@@ -486,6 +534,10 @@ juce::var ProjectSerializer::serializeMidiPitchBendData(const MidiPitchBendData&
     auto* obj = new juce::DynamicObject();
     SER(value);
     SER(beatPosition);
+    SER(curveType);
+    SER(tension);
+    obj->setProperty("inHandle", serializeMidiCurveHandle(data.inHandle));
+    obj->setProperty("outHandle", serializeMidiCurveHandle(data.outHandle));
     return juce::var(obj);
 }
 
@@ -498,6 +550,12 @@ bool ProjectSerializer::deserializeMidiPitchBendData(const juce::var& json,
     auto* obj = json.getDynamicObject();
     DESER(value);
     DESER(beatPosition);
+    if (obj->hasProperty("curveType"))
+        DESER(curveType);
+    if (obj->hasProperty("tension"))
+        DESER(tension);
+    deserializeMidiCurveHandle(obj->getProperty("inHandle"), data.inHandle);
+    deserializeMidiCurveHandle(obj->getProperty("outHandle"), data.outHandle);
     return true;
 }
 

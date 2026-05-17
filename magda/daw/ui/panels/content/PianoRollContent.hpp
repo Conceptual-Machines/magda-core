@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 
 #include "MidiEditorContent.hpp"
@@ -9,6 +10,8 @@ namespace magda {
 class PianoRollGridComponent;
 class PianoRollKeyboard;
 class SvgButton;
+class MidiBridge;
+struct MidiNoteEvent;
 }  // namespace magda
 
 namespace magda::daw::ui {
@@ -124,8 +127,15 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
     std::unique_ptr<magda::SvgButton> velocityToggle_;
 
+    magda::MidiBridge* monitoredMidiBridge_ = nullptr;
+    std::function<void(magda::TrackId, const magda::MidiNoteEvent&)> previousMidiNoteCallback_;
+    bool midiNoteMonitorInstalled_ = false;
+
     // Grid component management
     void setupGridCallbacks();
+    void installMidiNoteMonitor();
+    void uninstallMidiNoteMonitor();
+    void handleMidiNoteEvent(magda::TrackId trackId, const magda::MidiNoteEvent& event);
     void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
     void drawChordRow(juce::Graphics& g, juce::Rectangle<int> area);
     void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);

@@ -180,6 +180,37 @@ void MacroKnobComponent::updateAutomationTarget() {
     valueSlider_.setAutomationTarget(target);
 }
 
+magda::AutomationTarget MacroKnobComponent::makeAutomationTarget() const {
+    magda::AutomationTarget target;
+    target.kind = magda::ControlTarget::Kind::DeviceMacro;
+    target.devicePath = parentPath_;
+    target.paramIndex = macroIndex_;
+    return target;
+}
+
+void MacroKnobComponent::beginAutomationGesture() {
+    auto target = makeAutomationTarget();
+    if (!target.isValid())
+        return;
+
+    auto& mgr = magda::AutomationManager::getInstance();
+    if (mgr.getLaneForTarget(target) != magda::INVALID_AUTOMATION_LANE_ID)
+        mgr.setTargetTouchSuppressed(target, true);
+    mgr.setTargetUserTouched(target, true);
+    mgr.setTouchBaseline(target, static_cast<double>(dragStartValue_));
+}
+
+void MacroKnobComponent::endAutomationGesture() {
+    auto target = makeAutomationTarget();
+    if (!target.isValid())
+        return;
+
+    auto& mgr = magda::AutomationManager::getInstance();
+    mgr.setTargetUserTouched(target, false);
+    mgr.setTargetTouchSuppressed(target, false);
+    mgr.clearTouchBaseline(target);
+}
+
 void MacroKnobComponent::refreshAutomapState() {
     auto& reg = magda::BindingRegistry::getInstance();
     bool active =
@@ -361,6 +392,7 @@ void MacroKnobComponent::mouseDown(const juce::MouseEvent& e) {
         if (getKnobBounds().contains(e.getPosition())) {
             isKnobDragging_ = true;
             dragStartValue_ = currentMacro_.value;
+            beginAutomationGesture();
         } else {
             isKnobDragging_ = false;
         }
@@ -376,6 +408,8 @@ void MacroKnobComponent::mouseDrag(const juce::MouseEvent& e) {
         // Drag up = increase, drag down = decrease
         float deltaY = static_cast<float>(dragStartPos_.y - e.getPosition().y);
         float sensitivity = 0.005f;  // Adjust for feel
+        if (e.mods.isShiftDown())
+            sensitivity *= 0.1f;  // Shift: 10x finer for precise values
         float newValue = juce::jlimit(0.0f, 1.0f, dragStartValue_ + deltaY * sensitivity);
 
         if (newValue != currentMacro_.value) {
@@ -426,6 +460,8 @@ void MacroKnobComponent::mouseUp(const juce::MouseEvent& e) {
         }
     }
     isDragging_ = false;
+    if (isKnobDragging_)
+        endAutomationGesture();
     isKnobDragging_ = false;
     knobValueDragged_ = false;
 }

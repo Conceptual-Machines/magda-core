@@ -48,20 +48,34 @@ Because MAGDA uses a [hybrid track system](tracks.md#hybrid-track-system), any t
 
 ## Session Clip Properties
 
-Both MIDI and audio clips in Session View have additional launch properties:
+Both MIDI and audio clips in Session View have additional launch and follow properties:
 
 | Property | Description |
 |----------|-------------|
 | **Launch Mode** | Trigger (one-shot) or Toggle (on/off) |
 | **Launch Quantize** | Quantize launch timing (None, 8 Bars, 4 Bars, 2 Bars, 1 Bar, 1/2, 1/4, 1/8, 1/16) |
+| **Follow Action** | What happens when the clip finishes: None, Play Next, Play Previous, Play Random, Stop, or Play Again |
+| **Follow Delay** | Delay in beats before the follow action fires (0 - 64 beats, 0.25-beat resolution) |
+| **Follow Loops** | Number of times the clip loops before the follow action fires |
 
 !!! note
-    Session clips do not have an absolute position property — they are not placed on the timeline. Their position is determined by the scene slot they occupy.
+    Session clips do not have an absolute position property; they are not placed on the timeline. Their position is determined by the scene slot they occupy.
+
+### Follow Actions
+
+Follow actions chain session clips together for generative arrangement. Once the clip has played the configured number of loops (plus any follow delay), the chosen action fires:
+
+- **Play Next** triggers the next slot in the same track column
+- **Play Previous** triggers the previous slot in the same track column
+- **Play Random** triggers another slot in the same track column at random
+- **Play Again** retriggers the current clip
+- **Stop** stops session playback
 
 ## Creating Clips
 
 - **Double-click** an empty area on a track to create a new 1-bar MIDI clip at that position
 - **Double-click** over a time selection to create a MIDI clip matching the selection length
+- ++shift++ **+ drag** on an empty track lane to draw a MIDI clip of variable length. The drag distance sets the clip length (snapped to the current grid). Acts as a pencil tool.
 
 ## Selecting Clips
 
@@ -76,6 +90,7 @@ Both MIDI and audio clips in Session View have additional launch properties:
 - **Duplicate** — Hold ++alt++ and drag a clip, or press ++cmd+d++
 - **Split** — Position the playhead and use **Edit > Split Clip** or press ++cmd+e++
 - **Delete** — Select the clip and press ++delete++ or ++backspace++
+- **Erase under cursor** — ++cmd++ **+ click** a clip to delete it directly without selecting first. If the clip is part of a multi-selection, the whole group is erased. Acts as a rubber tool.
 
 ## Cut, Copy, and Paste
 

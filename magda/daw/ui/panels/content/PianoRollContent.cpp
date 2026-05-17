@@ -8,6 +8,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
+#include "audio/MidiBridge.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/MidiNoteCommands.hpp"
@@ -15,6 +16,7 @@
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "engine/AudioEngine.hpp"
 #include "music/ChordEngine.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TimeBendPopup.hpp"
@@ -151,7 +153,59 @@ PianoRollContent::PianoRollContent() {
 }
 
 PianoRollContent::~PianoRollContent() {
+    uninstallMidiNoteMonitor();
     magda::SelectionManager::getInstance().removeListener(this);
+}
+
+void PianoRollContent::installMidiNoteMonitor() {
+    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+    auto* midiBridge = engine != nullptr ? engine->getMidiBridge() : nullptr;
+    if (midiBridge == nullptr)
+        return;
+
+    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ == midiBridge)
+        return;
+
+    uninstallMidiNoteMonitor();
+
+    monitoredMidiBridge_ = midiBridge;
+    previousMidiNoteCallback_ = midiBridge->onNoteEvent;
+    juce::Component::SafePointer<PianoRollContent> safeThis(this);
+    auto previousCallback = previousMidiNoteCallback_;
+
+    midiBridge->onNoteEvent = [safeThis, previousCallback](magda::TrackId trackId,
+                                                           const magda::MidiNoteEvent& event) {
+        if (previousCallback)
+            previousCallback(trackId, event);
+
+        juce::MessageManager::callAsync([safeThis, trackId, event]() {
+            if (auto* self = safeThis.getComponent())
+                self->handleMidiNoteEvent(trackId, event);
+        });
+    };
+    midiNoteMonitorInstalled_ = true;
+}
+
+void PianoRollContent::uninstallMidiNoteMonitor() {
+    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ != nullptr)
+        monitoredMidiBridge_->onNoteEvent = previousMidiNoteCallback_;
+
+    midiNoteMonitorInstalled_ = false;
+    monitoredMidiBridge_ = nullptr;
+    previousMidiNoteCallback_ = nullptr;
+}
+
+void PianoRollContent::handleMidiNoteEvent(magda::TrackId trackId,
+                                           const magda::MidiNoteEvent& event) {
+    if (!midiNoteMonitorInstalled_ || keyboard_ == nullptr ||
+        editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (clip == nullptr || clip->trackId != trackId)
+        return;
+
+    keyboard_->setNotePressed(event.noteNumber, event.isNoteOn && event.velocity > 0);
 }
 
 void PianoRollContent::setupGridCallbacks() {
@@ -899,6 +953,8 @@ void PianoRollContent::setChordRowVisible(bool visible) {
 // ============================================================================
 
 void PianoRollContent::onActivated() {
+    installMidiNoteMonitor();
+
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClip);
@@ -939,7 +995,9 @@ void PianoRollContent::onActivated() {
 }
 
 void PianoRollContent::onDeactivated() {
-    // Nothing to do
+    uninstallMidiNoteMonitor();
+    if (keyboard_)
+        keyboard_->clearPressedNotes();
 }
 
 // ============================================================================
@@ -1049,6 +1107,8 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
         // Selection cleared - clear the piano roll
         editingClipId_ = magda::INVALID_CLIP_ID;
         gridComponent_->setClip(magda::INVALID_CLIP_ID);
+        if (keyboard_)
+            keyboard_->clearPressedNotes();
         updateGridSize();
         updateTimeRuler();
         updateVelocityLane();
@@ -1062,6 +1122,8 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
         const auto* clip = clipManager.getClip(clipId);
         if (clip && clip->isMidi()) {
             editingClipId_ = clipId;
+            if (keyboard_)
+                keyboard_->clearPressedNotes();
 
             magda::TrackId trackId = clip->trackId;
 
@@ -1184,6 +1246,8 @@ void PianoRollContent::multiClipSelectionChanged(const std::unordered_set<magda:
 
     // Update editing clip ID to the first selected clip
     editingClipId_ = selectedMidiClips[0];
+    if (keyboard_)
+        keyboard_->clearPressedNotes();
 
     // Session clips are locked to relative mode
     bool forceRelative = (firstClip->view == magda::ClipView::Session);
@@ -1212,6 +1276,8 @@ void PianoRollContent::setClip(magda::ClipId clipId) {
     if (editingClipId_ != clipId) {
         editingClipId_ = clipId;
         gridComponent_->setClip(clipId);
+        if (keyboard_)
+            keyboard_->clearPressedNotes();
         updateGridSize();
         updateTimeRuler();
         updateVelocityLane();
