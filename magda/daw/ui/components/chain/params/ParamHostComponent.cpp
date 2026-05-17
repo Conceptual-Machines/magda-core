@@ -50,8 +50,8 @@ ParamHostComponent::ParamHostComponent(std::unique_ptr<DeviceParamLayout> layout
     jassert(layout_ != nullptr);
     cellCount_ = layout_->cellCount();
     cellsPerRow_ = layout_->cellsPerRow();
-    jassert(cellCount_ > 0 && cellCount_ <= kMaxCells);
-    jassert(cellsPerRow_ > 0);
+    jassert(cellCount_ >= 0 && cellCount_ <= kMaxCells);
+    jassert((cellCount_ == 0 && cellsPerRow_ == 0) || cellsPerRow_ > 0);
 
     prevPageButton_ = makeNavArrowButton("prev", 0.5f);
     prevPageButton_->onClick = [this]() {
@@ -209,6 +209,11 @@ void ParamHostComponent::setSlotSelected(int slotIndex, bool selected) {
 
 void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::Font& valueFont) {
     auto area = getLocalBounds();
+
+    if (cellCount_ <= 0 || cellsPerRow_ <= 0) {
+        setPaginationVisible(false);
+        return;
+    }
 
     area.removeFromTop(2);
     juce::Rectangle<int> paginationArea;

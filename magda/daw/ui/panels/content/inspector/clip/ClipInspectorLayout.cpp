@@ -337,7 +337,7 @@ void ClipInspector::resized() {
     }
 
     // Separator: after last visible section, before launch controls
-    if (launchQuantizeLabel_.isVisible())
+    if (launchQuantizeLabel_.isVisible() || followActionLabel_.isVisible())
         addSeparator();
 
     // Session clip launch properties
@@ -350,6 +350,24 @@ void ClipInspector::resized() {
         launchQuantizeLabel_.setBounds(addRow(16));
         addSpace(4);
         launchQuantizeCombo_.setBounds(addRow(22).reduced(0, 1));
+    }
+    if (followActionLabel_.isVisible()) {
+        addSpace(8);
+        followActionLabel_.setBounds(addRow(16));
+        addSpace(4);
+        followActionCombo_.setBounds(addRow(22).reduced(0, 1));
+    }
+    if (followActionDelayLabel_.isVisible()) {
+        addSpace(8);
+        followActionDelayLabel_.setBounds(addRow(16));
+        addSpace(4);
+        followActionDelaySlider_.setBounds(addRow(24).reduced(0, 1));
+    }
+    if (followActionLoopCountLabel_.isVisible()) {
+        addSpace(8);
+        followActionLoopCountLabel_.setBounds(addRow(16));
+        addSpace(4);
+        followActionLoopCountSlider_.setBounds(addRow(24).reduced(0, 1));
     }
 
     // Set container bounds to accommodate all content

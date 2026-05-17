@@ -16,6 +16,12 @@ namespace magda {
 
 bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& info) {
     try {
+        auto parentDir = file.getParentDirectory();
+        if (!parentDir.createDirectory()) {
+            lastError_ = "Failed to create project file directory: " + parentDir.getFullPathName();
+            return false;
+        }
+
         // Serialize to JSON
         auto json = serializeProject(info);
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <utility>
 
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
@@ -28,6 +29,65 @@ namespace magda {
 
 // dB conversion helpers for volume
 namespace {
+
+bool dragObjectToChainNodePathAt(const juce::DynamicObject& obj, int index, ChainNodePath& path) {
+    path = {};
+    const auto suffix = juce::String(index);
+    path.trackId = static_cast<TrackId>(static_cast<int>(obj.getProperty("trackId" + suffix)));
+    path.topLevelDeviceId =
+        static_cast<DeviceId>(static_cast<int>(obj.getProperty("topLevelDeviceId" + suffix)));
+    path.isTrackLevel = static_cast<bool>(obj.getProperty("isTrackLevel" + suffix));
+
+    auto stepTypes =
+        juce::StringArray::fromTokens(obj.getProperty("stepTypes" + suffix).toString(), ",", "");
+    auto stepIds =
+        juce::StringArray::fromTokens(obj.getProperty("stepIds" + suffix).toString(), ",", "");
+    if (stepTypes.size() != stepIds.size())
+        return false;
+
+    for (int i = 0; i < stepTypes.size(); ++i) {
+        const int typeValue = stepTypes[i].getIntValue();
+        if (typeValue < static_cast<int>(ChainStepType::Rack) ||
+            typeValue > static_cast<int>(ChainStepType::Device))
+            return false;
+        path.steps.push_back({static_cast<ChainStepType>(typeValue), stepIds[i].getIntValue()});
+    }
+
+    return path.isValid();
+}
+
+std::vector<ChainNodePath> dragObjectToChainNodePaths(const juce::DynamicObject& obj) {
+    std::vector<ChainNodePath> paths;
+    const int count = std::max(1, static_cast<int>(obj.getProperty("pathCount")));
+    for (int i = 0; i < count; ++i) {
+        ChainNodePath path;
+        if (dragObjectToChainNodePathAt(obj, i, path))
+            paths.push_back(path);
+    }
+    return paths;
+}
+
+juce::String describeDraggedChainSelection(const juce::DynamicObject& obj) {
+    const int count = std::max(1, static_cast<int>(obj.getProperty("pathCount")));
+    if (count == 1)
+        return "1 selected chain item";
+    return juce::String(count) + " selected chain items";
+}
+
+std::pair<juce::String, juce::String> buildNewTrackGhostText(const juce::DynamicObject& obj) {
+    const auto type = obj.getProperty("type").toString();
+    const bool copy = juce::ModifierKeys::getCurrentModifiersRealtime().isAltDown();
+
+    if (type == "chainElement" || type == "chainElements") {
+        return {copy ? "Copy to New Track" : "Move to New Track",
+                describeDraggedChainSelection(obj)};
+    }
+
+    auto name = obj.getProperty("name").toString();
+    if (name.isEmpty())
+        name = "Plugin";
+    return {"Create New Track", "Add " + name};
+}
 
 // Shared base for the automation-lane header buttons (snap beat grid / snap value
 // / arm / bypass / delete). All five share the same rounded-rect chrome —
@@ -1331,21 +1391,48 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
         for (int i = 0; i < ghostHeaderLabels_.size(); ++i) {
             const int y0 = topY + i * ghostHeight;
             const auto tint = juce::Colour(Config::getDefaultColour(baseIndex + i));
+            const bool isNewTrackDropTarget = pluginDragActive_ && pluginDropTrackIndex_ < 0;
+            const auto outlineColour =
+                isNewTrackDropTarget ? juce::Colours::deepskyblue : tint.withAlpha(0.7f);
 
             juce::Rectangle<int> headerRect(0, y0, w, ghostHeight);
-            g.setColour(tint.withAlpha(0.18f));
+            g.setColour(tint.withAlpha(isNewTrackDropTarget ? 0.24f : 0.18f));
             g.fillRect(headerRect);
-            g.setColour(tint.withAlpha(0.7f));
-            g.drawRect(headerRect, 1);
+            g.setColour(outlineColour.withAlpha(isNewTrackDropTarget ? 0.9f : 0.7f));
+            g.drawRect(headerRect.reduced(isNewTrackDropTarget ? 2 : 0),
+                       isNewTrackDropTarget ? 2 : 1);
 
             // Accent stripe on the left so it reads as a track header.
-            g.setColour(tint);
-            g.fillRect(0, y0, 4, ghostHeight);
+            g.setColour(isNewTrackDropTarget ? juce::Colours::deepskyblue : tint);
+            g.fillRect(0, y0, isNewTrackDropTarget ? 6 : 4, ghostHeight);
 
-            g.setColour(tint.brighter(0.4f));
+            auto textArea = headerRect.reduced(14, 10);
+            if (isNewTrackDropTarget) {
+                auto badge = textArea.removeFromLeft(26).withSizeKeepingCentre(20, 20);
+                g.setColour(juce::Colours::deepskyblue.withAlpha(0.18f));
+                g.fillRoundedRectangle(badge.toFloat(), 4.0f);
+                g.setColour(juce::Colours::deepskyblue.withAlpha(0.95f));
+                g.drawRoundedRectangle(badge.toFloat(), 4.0f, 1.5f);
+                g.setFont(juce::Font(juce::FontOptions(17.0f).withStyle("Bold")));
+                g.drawFittedText("+", badge, juce::Justification::centred, 1);
+                textArea.removeFromLeft(6);
+            }
+
+            g.setColour(isNewTrackDropTarget ? juce::Colours::white : tint.brighter(0.4f));
             g.setFont(juce::Font(juce::FontOptions(13.0f).withStyle("Bold")));
-            g.drawFittedText(ghostHeaderLabels_[i], headerRect.reduced(12, 4),
-                             juce::Justification::centredLeft, 1);
+            const auto detail =
+                i < ghostHeaderDetailLabels_.size() ? ghostHeaderDetailLabels_[i] : juce::String();
+            if (detail.isNotEmpty()) {
+                auto titleArea = textArea.removeFromTop(22);
+                g.drawFittedText(ghostHeaderLabels_[i], titleArea, juce::Justification::centredLeft,
+                                 1);
+                g.setColour(juce::Colours::white.withAlpha(0.7f));
+                g.setFont(juce::Font(juce::FontOptions(11.0f)));
+                g.drawFittedText(detail, textArea, juce::Justification::centredLeft, 1);
+            } else {
+                g.drawFittedText(ghostHeaderLabels_[i], textArea, juce::Justification::centredLeft,
+                                 1);
+            }
         }
     }
 
@@ -1376,10 +1463,22 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
             // Targeting an existing track: highlight it. The hovered-track
             // rectangle is the only indicator — no redundant horizontal line.
             auto area = getTrackHeaderArea(pluginDropTrackIndex_);
-            g.setColour(juce::Colours::yellow.withAlpha(0.12f));
+            g.setColour(juce::Colours::yellow.withAlpha(0.10f));
             g.fillRect(area);
-            g.setColour(juce::Colours::yellow.withAlpha(0.6f));
+            g.setColour(juce::Colours::yellow.withAlpha(0.65f));
             g.drawRect(area, 1);
+
+            auto pill = area.reduced(10, 8).removeFromTop(20);
+            pill.setLeft(juce::jmax(pill.getX(), pill.getRight() - 78));
+            g.setColour(juce::Colours::yellow.withAlpha(0.16f));
+            g.fillRoundedRectangle(pill.toFloat(), 4.0f);
+            g.setColour(juce::Colours::yellow.withAlpha(0.85f));
+            g.drawRoundedRectangle(pill.toFloat(), 4.0f, 1.0f);
+            g.setFont(juce::Font(juce::FontOptions(10.0f).withStyle("Bold")));
+            g.drawFittedText(juce::ModifierKeys::getCurrentModifiersRealtime().isAltDown()
+                                 ? "COPY HERE"
+                                 : "MOVE HERE",
+                             pill.reduced(5, 1), juce::Justification::centred, 1);
         }
     }
 }
@@ -1388,10 +1487,12 @@ void TrackHeadersPanel::resized() {
     updateTrackHeaderLayout();
 }
 
-void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels) {
-    if (ghostHeaderLabels_ == labels)
+void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels,
+                                        const juce::StringArray& detailLabels) {
+    if (ghostHeaderLabels_ == labels && ghostHeaderDetailLabels_ == detailLabels)
         return;
     ghostHeaderLabels_ = labels;
+    ghostHeaderDetailLabels_ = detailLabels;
     repaint();
 }
 
@@ -4065,7 +4166,8 @@ bool TrackHeadersPanel::keyPressed(const juce::KeyPress& key) {
 
 bool TrackHeadersPanel::isInterestedInDragSource(const SourceDetails& details) {
     if (auto* obj = details.description.getDynamicObject()) {
-        return obj->getProperty("type").toString() == "plugin";
+        const auto type = obj->getProperty("type").toString();
+        return type == "plugin" || type == "chainElement" || type == "chainElements";
     }
     return false;
 }
@@ -4084,13 +4186,12 @@ void TrackHeadersPanel::itemDragEnter(const SourceDetails& details) {
 
     // Ghost header for the new track that a drop on empty area would create.
     if (pluginDropTrackIndex_ < 0) {
-        juce::String label = "New Track";
         if (auto* obj = details.description.getDynamicObject()) {
-            auto name = obj->getProperty("name").toString();
-            if (name.isNotEmpty())
-                label = name;
+            const auto text = buildNewTrackGhostText(*obj);
+            setGhostHeaders({text.first}, {text.second});
+        } else {
+            setGhostHeaders({"Create New Track"});
         }
-        setGhostHeaders({label});
     } else {
         setGhostHeaders({});
     }
@@ -4110,18 +4211,15 @@ void TrackHeadersPanel::itemDragMove(const SourceDetails& details) {
         }
     }
 
-    if ((prev < 0) != (pluginDropTrackIndex_ < 0)) {
-        if (pluginDropTrackIndex_ < 0) {
-            juce::String label = "New Track";
-            if (auto* obj = details.description.getDynamicObject()) {
-                auto name = obj->getProperty("name").toString();
-                if (name.isNotEmpty())
-                    label = name;
-            }
-            setGhostHeaders({label});
+    if (pluginDropTrackIndex_ < 0) {
+        if (auto* obj = details.description.getDynamicObject()) {
+            const auto text = buildNewTrackGhostText(*obj);
+            setGhostHeaders({text.first}, {text.second});
         } else {
-            setGhostHeaders({});
+            setGhostHeaders({"Create New Track"});
         }
+    } else if (prev < 0) {
+        setGhostHeaders({});
     }
 
     if (pluginDropTrackIndex_ != prev)
@@ -4155,6 +4253,50 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
             targetIndex = i;
             break;
         }
+    }
+
+    const auto type = obj->getProperty("type").toString();
+    if (type == "chainElement" || type == "chainElements") {
+        auto sourcePaths = dragObjectToChainNodePaths(*obj);
+        auto& tm = TrackManager::getInstance();
+        const bool copy = juce::ModifierKeys::getCurrentModifiersRealtime().isAltDown();
+
+        if (!sourcePaths.empty()) {
+            TrackId targetTrackId = INVALID_TRACK_ID;
+            std::unique_ptr<CompoundOperationScope> compoundScope;
+            if (targetIndex >= 0 && targetIndex < static_cast<int>(visibleTrackIds_.size())) {
+                targetTrackId = visibleTrackIds_[targetIndex];
+            } else {
+                compoundScope = std::make_unique<CompoundOperationScope>(
+                    copy ? "Copy Devices to New Track" : "Move Devices to New Track");
+                auto create = std::make_unique<CreateTrackCommand>(TrackType::Audio, "Track");
+                auto* createPtr = create.get();
+                UndoManager::getInstance().executeCommand(std::move(create));
+                targetTrackId = createPtr->getCreatedTrackId();
+            }
+
+            if (targetTrackId != INVALID_TRACK_ID) {
+                ChainNodePath destinationPath;
+                destinationPath.trackId = targetTrackId;
+                const int insertIndex = static_cast<int>(tm.getChainElements(targetTrackId).size());
+
+                if (copy) {
+                    auto elements = tm.copyChainElements(sourcePaths);
+                    auto command = std::make_unique<PasteChainElementsCommand>(
+                        destinationPath, std::move(elements), insertIndex);
+                    UndoManager::getInstance().executeCommand(std::move(command));
+                } else {
+                    auto command = std::make_unique<MoveChainElementsCommand>(
+                        sourcePaths, destinationPath, insertIndex);
+                    UndoManager::getInstance().executeCommand(std::move(command));
+                }
+                tm.setSelectedTrack(targetTrackId);
+            }
+        }
+
+        pluginDropTrackIndex_ = -1;
+        repaint();
+        return;
     }
 
     auto device = TrackManager::deviceInfoFromPluginObject(*obj);

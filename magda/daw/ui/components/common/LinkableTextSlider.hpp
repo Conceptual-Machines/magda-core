@@ -43,6 +43,7 @@ class LinkableTextSlider : public juce::Component,
     void setFont(const juce::Font& font);
     void setTextColour(const juce::Colour& colour);
     void setBackgroundColour(const juce::Colour& colour);
+    void setOrientation(TextSlider::Orientation orientation);
     TextSlider& getSlider();
     bool isBeingDragged() const;
 

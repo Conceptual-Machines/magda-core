@@ -10,6 +10,8 @@
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackCommands.hpp"
+#include "core/UndoManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
@@ -17,6 +19,84 @@
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+bool dragObjectToChainNodePath(const juce::DynamicObject& obj, magda::ChainNodePath& path) {
+    path = {};
+    const auto type = obj.getProperty("type").toString();
+    if (type != "chainElement" && type != "chainElements")
+        return false;
+
+    path.trackId = static_cast<magda::TrackId>(static_cast<int>(obj.getProperty("trackId")));
+    path.topLevelDeviceId =
+        static_cast<magda::DeviceId>(static_cast<int>(obj.getProperty("topLevelDeviceId")));
+    path.isTrackLevel = static_cast<bool>(obj.getProperty("isTrackLevel"));
+
+    auto stepTypes =
+        juce::StringArray::fromTokens(obj.getProperty("stepTypes").toString(), ",", "");
+    auto stepIds = juce::StringArray::fromTokens(obj.getProperty("stepIds").toString(), ",", "");
+    if (stepTypes.size() != stepIds.size())
+        return false;
+
+    for (int i = 0; i < stepTypes.size(); ++i) {
+        const int typeValue = stepTypes[i].getIntValue();
+        if (typeValue < static_cast<int>(magda::ChainStepType::Rack) ||
+            typeValue > static_cast<int>(magda::ChainStepType::Device))
+            return false;
+        path.steps.push_back(
+            {static_cast<magda::ChainStepType>(typeValue), stepIds[i].getIntValue()});
+    }
+
+    return path.isValid();
+}
+
+bool dragObjectToChainNodePathAt(const juce::DynamicObject& obj, int index,
+                                 magda::ChainNodePath& path) {
+    path = {};
+    const auto suffix = juce::String(index);
+
+    path.trackId =
+        static_cast<magda::TrackId>(static_cast<int>(obj.getProperty("trackId" + suffix)));
+    path.topLevelDeviceId = static_cast<magda::DeviceId>(
+        static_cast<int>(obj.getProperty("topLevelDeviceId" + suffix)));
+    path.isTrackLevel = static_cast<bool>(obj.getProperty("isTrackLevel" + suffix));
+
+    auto stepTypes =
+        juce::StringArray::fromTokens(obj.getProperty("stepTypes" + suffix).toString(), ",", "");
+    auto stepIds =
+        juce::StringArray::fromTokens(obj.getProperty("stepIds" + suffix).toString(), ",", "");
+    if (stepTypes.size() != stepIds.size())
+        return false;
+
+    for (int i = 0; i < stepTypes.size(); ++i) {
+        const int typeValue = stepTypes[i].getIntValue();
+        if (typeValue < static_cast<int>(magda::ChainStepType::Rack) ||
+            typeValue > static_cast<int>(magda::ChainStepType::Device))
+            return false;
+        path.steps.push_back(
+            {static_cast<magda::ChainStepType>(typeValue), stepIds[i].getIntValue()});
+    }
+
+    return path.isValid();
+}
+
+std::vector<magda::ChainNodePath> dragObjectToChainNodePaths(const juce::DynamicObject& obj) {
+    std::vector<magda::ChainNodePath> paths;
+    const auto count = static_cast<int>(obj.getProperty("pathCount"));
+    for (int i = 0; i < count; ++i) {
+        magda::ChainNodePath path;
+        if (dragObjectToChainNodePathAt(obj, i, path))
+            paths.push_back(path);
+    }
+
+    if (paths.empty()) {
+        magda::ChainNodePath path;
+        if (dragObjectToChainNodePath(obj, path))
+            paths.push_back(path);
+    }
+    return paths;
+}
+}  // namespace
 
 //==============================================================================
 // ZoomableViewport - Viewport that supports Cmd+scroll for zooming
@@ -90,6 +170,20 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         if (!elementSlots_)
             return;
 
+        auto appendZone =
+            juce::Rectangle<int>(owner_.calculateAppendZoneX(), 0,
+                                 owner_.getScaledWidth(ChainPanel::APPEND_ZONE_WIDTH), getHeight());
+        const bool appendHighlighted =
+            owner_.dragInsertIndex_ == static_cast<int>(elementSlots_->size()) ||
+            owner_.dropInsertIndex_ == static_cast<int>(elementSlots_->size());
+        auto appendColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                .withAlpha(appendHighlighted ? 0.18f : 0.07f);
+        g.setColour(appendColour);
+        g.fillRoundedRectangle(appendZone.reduced(4, 6).toFloat(), 3.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                        .withAlpha(appendHighlighted ? 0.75f : 0.28f));
+        g.drawRoundedRectangle(appendZone.reduced(4, 6).toFloat(), 3.0f, 1.0f);
+
         // Draw insertion indicator during drag (reorder or drop)
         if (owner_.dragInsertIndex_ >= 0 || owner_.dropInsertIndex_ >= 0) {
             int indicatorIndex =
@@ -116,7 +210,8 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
             return false;
         }
         if (auto* obj = details.description.getDynamicObject()) {
-            return obj->getProperty("type").toString() == "plugin";
+            auto type = obj->getProperty("type").toString();
+            return type == "plugin" || type == "chainElement" || type == "chainElements";
         }
         return false;
     }
@@ -149,8 +244,40 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         auto chainPath = owner_.chainPath_;
         int insertIndex = owner_.dropInsertIndex_ >= 0 ? owner_.dropInsertIndex_
                                                        : static_cast<int>(elementSlots_->size());
+        bool shouldScrollToEnd = insertIndex >= static_cast<int>(elementSlots_->size());
+        auto safeOwner = juce::Component::SafePointer<ChainPanel>(&owner_);
 
         if (auto* obj = details.description.getDynamicObject()) {
+            const auto type = obj->getProperty("type").toString();
+            if (type == "chainElement" || type == "chainElements") {
+                auto sourcePaths = dragObjectToChainNodePaths(*obj);
+                if (!sourcePaths.empty()) {
+                    owner_.dropInsertIndex_ = -1;
+                    owner_.stopTimer();
+                    owner_.resized();
+                    repaint();
+
+                    juce::MessageManager::callAsync(
+                        [sourcePaths, chainPath, insertIndex, safeOwner, shouldScrollToEnd]() {
+                            auto command = std::make_unique<magda::MoveChainElementsCommand>(
+                                sourcePaths, chainPath, insertIndex);
+                            auto* moveCommand = command.get();
+                            magda::UndoManager::getInstance().executeCommand(std::move(command));
+                            if (moveCommand->didMove() && shouldScrollToEnd && safeOwner != nullptr)
+                                safeOwner->scrollToEndAsync();
+                        });
+                    return;
+                }
+            }
+
+            if (type != "plugin") {
+                owner_.dropInsertIndex_ = -1;
+                owner_.stopTimer();
+                owner_.resized();
+                repaint();
+                return;
+            }
+
             device.name = obj->getProperty("name").toString().toStdString();
             device.manufacturer = obj->getProperty("manufacturer").toString().toStdString();
             auto uniqueId = obj->getProperty("uniqueId").toString();
@@ -188,6 +315,8 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
             // This may destroy 'this' and owner_ — do not access any members after
             magda::TrackManager::getInstance().addDeviceToChainByPath(chainPath, device,
                                                                       insertIndex);
+            if (shouldScrollToEnd && safeOwner != nullptr)
+                safeOwner->scrollToEndAsync();
             return;
         }
 
@@ -298,8 +427,10 @@ void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
         x += slotWidth + scaledArrowWidth;
     }
 
-    // Add device button after all slots (not scaled)
-    addDeviceButton_.setBounds(x, (containerHeight - 20) / 2, 20, 20);
+    // Add device button in the reserved append zone after all slots.
+    int appendZoneWidth = getScaledWidth(APPEND_ZONE_WIDTH);
+    addDeviceButton_.setBounds(x + juce::jmax(0, (appendZoneWidth - 20) / 2),
+                               (containerHeight - 20) / 2, 20, 20);
 }
 
 int ChainPanel::calculateTotalContentWidth() const {
@@ -311,7 +442,7 @@ int ChainPanel::calculateTotalContentWidth() const {
     for (const auto& slot : elementSlots_) {
         totalWidth += getScaledWidth(slot->getPreferredWidth()) + scaledArrowWidth;
     }
-    totalWidth += 30;  // Space for add device button (not scaled)
+    totalWidth += getScaledWidth(APPEND_ZONE_WIDTH);
     return totalWidth;
 }
 
@@ -609,32 +740,10 @@ void ChainPanel::rebuildElementSlots() {
             safeThis->dragGhostImage_ = juce::Image();
             safeThis->stopTimer();
 
-            int elementCount = static_cast<int>(safeThis->elementSlots_.size());
-            int fromIndex = safeThis->dragOriginalIndex_;
-            int insertIndex = safeThis->dragInsertIndex_;
-
             safeThis->draggedElement_ = nullptr;
             safeThis->dragOriginalIndex_ = -1;
             safeThis->dragInsertIndex_ = -1;
 
-            if (fromIndex >= 0 && insertIndex >= 0 && fromIndex != insertIndex) {
-                int targetIndex = insertIndex;
-                if (insertIndex > fromIndex)
-                    targetIndex = insertIndex - 1;
-                targetIndex = juce::jlimit(0, elementCount - 1, targetIndex);
-                if (targetIndex != fromIndex) {
-                    // Defer the move so the component isn't destroyed
-                    // while its mouseUp handler is still on the call stack
-                    auto chainPath = safeThis->chainPath_;
-                    juce::MessageManager::callAsync([chainPath, fromIndex, targetIndex]() {
-                        magda::TrackManager::getInstance().moveElementInChainByPath(
-                            chainPath, fromIndex, targetIndex);
-                    });
-                    return;
-                }
-            }
-
-            // No move — just re-layout to remove drag indicators
             safeThis->resized();
             safeThis->elementSlotsContainer_->repaint();
         };
@@ -746,7 +855,23 @@ void ChainPanel::onAddDeviceClicked() {
             safeThis->rebuildElementSlots();
             safeThis->resized();
             safeThis->repaint();
+            safeThis->scrollToEndAsync();
         }
+    });
+}
+
+void ChainPanel::scrollToEndAsync() {
+    auto safeThis = juce::Component::SafePointer<ChainPanel>(this);
+    juce::MessageManager::callAsync([safeThis]() {
+        if (safeThis == nullptr || safeThis->elementViewport_ == nullptr ||
+            safeThis->elementSlotsContainer_ == nullptr)
+            return;
+
+        safeThis->resized();
+        const int maxX = juce::jmax(0, safeThis->elementSlotsContainer_->getWidth() -
+                                           safeThis->elementViewport_->getWidth());
+        safeThis->elementViewport_->setViewPosition(maxX,
+                                                    safeThis->elementViewport_->getViewPositionY());
     });
 }
 
@@ -799,9 +924,17 @@ int ChainPanel::calculateInsertIndex(int mouseX) const {
 }
 
 int ChainPanel::calculateIndicatorX(int index) const {
+    if (elementSlots_.empty() && index == 0) {
+        return calculateAppendZoneX();
+    }
+
     // Before first element - center in the drag padding area
     if (index == 0) {
         return DRAG_LEFT_PADDING / 2;
+    }
+
+    if (index == static_cast<int>(elementSlots_.size())) {
+        return calculateAppendZoneX();
     }
 
     // After previous element (use scaled arrow width)
@@ -812,6 +945,18 @@ int ChainPanel::calculateIndicatorX(int index) const {
 
     // Fallback
     return DRAG_LEFT_PADDING / 2;
+}
+
+int ChainPanel::calculateAppendZoneX() const {
+    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
+    int x = isDraggingOrDropping ? DRAG_LEFT_PADDING : 0;
+    int scaledArrowWidth = getScaledWidth(ARROW_WIDTH);
+
+    for (const auto& slot : elementSlots_) {
+        x += getScaledWidth(slot->getPreferredWidth()) + scaledArrowWidth;
+    }
+
+    return x;
 }
 
 void ChainPanel::timerCallback() {

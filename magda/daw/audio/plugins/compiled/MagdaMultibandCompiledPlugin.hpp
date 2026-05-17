@@ -18,8 +18,8 @@ namespace magda::daw::audio::compiled {
  * @brief Compiled-Faust OTT-style 3-band compressor.
  *
  * Linkwitz-Riley splits the input into low / mid / high bands; each band
- * runs feed-forward parallel up + down compression; the three bands are
- * makeup-gained and summed back to stereo.
+ * applies input drive, runs feed-forward parallel up + down compression;
+ * the three bands are makeup-gained and summed back to stereo.
  *
  * Single-engine compiled plugin — all host controls map 1:1 to
  * Faust slots pinned by [idx:N].
@@ -58,10 +58,13 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     }
 
     // Slot ordering matches the [idx:N] pins inside magda_multiband.dsp.
-    static constexpr int kLowXoSlot = 0;
-    static constexpr int kHighXoSlot = 1;
-    static constexpr int kDepthSlot = 2;
-    static constexpr int kTimeSlot = 3;
+    // Slots 0-8: knob-only controls shown in the param grid.
+    // Slots 9-35: per-band controls edited on the curve view (hidden from grid).
+    // Slots 36-37: crossover frequencies, editor-only.
+    static constexpr int kDepthSlot = 0;
+    static constexpr int kTimeSlot = 1;
+    static constexpr int kAttackSlot = 2;
+    static constexpr int kInputSlot = 3;
     static constexpr int kLowGainSlot = 4;
     static constexpr int kMidGainSlot = 5;
     static constexpr int kHighGainSlot = 6;
@@ -69,14 +72,34 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     static constexpr int kOutputSlot = 8;
     static constexpr int kLowThreshAboveSlot = 9;
     static constexpr int kLowThreshBelowSlot = 10;
-    static constexpr int kLowRatioSlot = 11;
-    static constexpr int kMidThreshAboveSlot = 12;
-    static constexpr int kMidThreshBelowSlot = 13;
-    static constexpr int kMidRatioSlot = 14;
-    static constexpr int kHighThreshAboveSlot = 15;
-    static constexpr int kHighThreshBelowSlot = 16;
-    static constexpr int kHighRatioSlot = 17;
-    static constexpr int kHostSlotCount = 18;
+    static constexpr int kLowRatioAboveSlot = 11;
+    static constexpr int kLowRatioBelowSlot = 12;
+    static constexpr int kLowThreshExpandBelowSlot = 13;
+    static constexpr int kLowExpandRatioBelowSlot = 14;
+    static constexpr int kLowThreshExpandAboveSlot = 15;
+    static constexpr int kLowExpandRatioAboveSlot = 16;
+    static constexpr int kLowLimitSlot = 17;
+    static constexpr int kMidThreshAboveSlot = 18;
+    static constexpr int kMidThreshBelowSlot = 19;
+    static constexpr int kMidRatioAboveSlot = 20;
+    static constexpr int kMidRatioBelowSlot = 21;
+    static constexpr int kMidThreshExpandBelowSlot = 22;
+    static constexpr int kMidExpandRatioBelowSlot = 23;
+    static constexpr int kMidThreshExpandAboveSlot = 24;
+    static constexpr int kMidExpandRatioAboveSlot = 25;
+    static constexpr int kMidLimitSlot = 26;
+    static constexpr int kHighThreshAboveSlot = 27;
+    static constexpr int kHighThreshBelowSlot = 28;
+    static constexpr int kHighRatioAboveSlot = 29;
+    static constexpr int kHighRatioBelowSlot = 30;
+    static constexpr int kHighThreshExpandBelowSlot = 31;
+    static constexpr int kHighExpandRatioBelowSlot = 32;
+    static constexpr int kHighThreshExpandAboveSlot = 33;
+    static constexpr int kHighExpandRatioAboveSlot = 34;
+    static constexpr int kHighLimitSlot = 35;
+    static constexpr int kLowXoSlot = 36;   // editor-only, not in param grid
+    static constexpr int kHighXoSlot = 37;  // editor-only, not in param grid
+    static constexpr int kHostSlotCount = 38;
 
     te::AutomatableParameter* getSlotParameter(int slotIndex) const;
 
@@ -85,6 +108,13 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
 
     using HostSlotInfo = CompiledHostSlotInfo;
     const HostSlotInfo& getSlotInfo(int slotIndex) const;
+
+    bool isCurveCollapsed() const {
+        return curveCollapsed_.get();
+    }
+    void setCurveCollapsed(bool collapsed) {
+        curveCollapsed_ = collapsed;
+    }
 
     // ICompiledFaustPlugin
     int hostSlotCount() const override {
@@ -116,6 +146,7 @@ class MagdaMultibandCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
     std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
     std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
+    juce::CachedValue<bool> curveCollapsed_;
 
     juce::AudioBuffer<float> scratchIn_;
     juce::AudioBuffer<float> scratchOut_;

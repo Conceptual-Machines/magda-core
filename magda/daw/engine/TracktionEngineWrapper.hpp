@@ -43,6 +43,11 @@ class TracktionEngineWrapper : public AudioEngine,
                                public MixerInterface,
                                public tracktion::TransportControl::Listener,
                                private juce::ChangeListener {
+    struct SessionSlotRecordingTarget {
+        int sceneIndex = -1;
+        bool active = false;
+    };
+
   public:
     // Constants for audio device health checking
     static constexpr int AUDIO_DEVICE_CHECK_SLEEP_MS = 50;
@@ -78,6 +83,27 @@ class TracktionEngineWrapper : public AudioEngine,
     bool isSessionTrackStopPending(TrackId trackId) const override;
     double getAudioThreadTransportSeconds() const override;
     void deactivateAllSessionClips() override;
+    void armSessionSlotRecording(TrackId trackId, int sceneIndex) override;
+    void beginArmedSessionSlotRecordings() override;
+    bool isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const override;
+    bool isSessionSlotRecording(TrackId trackId, int sceneIndex) const override;
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+    void testSetSessionSlotRecordingActive(TrackId trackId, int sceneIndex) {
+        SessionSlotRecordingTarget target;
+        target.sceneIndex = sceneIndex;
+        target.active = true;
+        sessionSlotRecordingTargets_[trackId] = target;
+    }
+
+    bool testFinalizeSessionSlotAudioRecording(TrackId trackId,
+                                               tracktion::WaveAudioClip& audioClip) {
+        return finalizeSessionSlotAudioRecording(trackId, audioClip);
+    }
+
+    bool testFinalizeSessionSlotMidiRecording(TrackId trackId, tracktion::MidiClip& midiClip) {
+        return finalizeSessionSlotMidiRecording(trackId, midiClip);
+    }
+#endif
     void setTempo(double bpm) override;
     double getTempo() const override;
     void setTimeSignature(int numerator, int denominator) override;
@@ -540,6 +566,13 @@ class TracktionEngineWrapper : public AudioEngine,
     std::atomic<double> transportPositionForMidi_{0.0};
     std::unordered_map<TrackId, RecordingPreview> recordingPreviews_;
     void drainRecordingNoteQueue();
+
+    std::unordered_map<TrackId, SessionSlotRecordingTarget> sessionSlotRecordingTargets_;
+    bool hasActiveSessionSlotRecordings() const;
+    void finishSessionSlotRecordings();
+    bool finalizeSessionSlotAudioRecording(TrackId trackId, tracktion::WaveAudioClip& audioClip);
+    bool finalizeSessionSlotMidiRecording(TrackId trackId, tracktion::MidiClip& midiClip);
+    ClipId createEmptySessionSlotRecordingClip(TrackId trackId, int sceneIndex);
 
     // Device loading state
     bool devicesLoading_ = true;  // Start as loading until first scan completes

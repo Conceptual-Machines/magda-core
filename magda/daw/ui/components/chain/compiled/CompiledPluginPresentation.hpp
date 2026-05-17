@@ -43,6 +43,8 @@ class CompiledDevicePanel {
     }
     virtual void bindPlugin(te::Plugin*) = 0;
     virtual void setOnParameterChanged(std::function<void(int slotIndex, float displayValue)>) = 0;
+    virtual void setOnLinkRequested(std::function<void(int slotIndex, float amount)>) {}
+    virtual void setOnLinkAmountChanged(std::function<void(int slotIndex, float amount)>) {}
     virtual int preferredHeight() const = 0;
 
     /// True when the panel wants the host slot to hide its param grid and

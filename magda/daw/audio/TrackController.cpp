@@ -1,6 +1,32 @@
 #include "TrackController.hpp"
 
+#include "../core/TrackManager.hpp"
+
 namespace magda {
+
+namespace {
+
+te::InputDevice::MonitorMode toTeMonitorMode(InputMonitorMode mode) {
+    switch (mode) {
+        case InputMonitorMode::In:
+            return te::InputDevice::MonitorMode::on;
+        case InputMonitorMode::Auto:
+            return te::InputDevice::MonitorMode::automatic;
+        case InputMonitorMode::Off:
+        default:
+            return te::InputDevice::MonitorMode::off;
+    }
+}
+
+bool inputHasTarget(te::InputDeviceInstance& input, te::EditItemID targetID) {
+    for (auto existingTargetID : input.getTargets()) {
+        if (existingTargetID == targetID)
+            return true;
+    }
+    return false;
+}
+
+}  // namespace
 
 TrackController::TrackController(te::Engine& engine, te::Edit& edit)
     : engine_(engine), edit_(edit) {}
@@ -320,6 +346,70 @@ void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& de
             }
         }
     }
+}
+
+bool TrackController::setSessionSlotAudioRecordingTarget(TrackId trackId, int sceneIndex,
+                                                         bool enabled) {
+    auto* track = getAudioTrack(trackId);
+    auto* playbackContext = edit_.getCurrentPlaybackContext();
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (!track || !playbackContext || !trackInfo || sceneIndex < 0)
+        return false;
+
+    edit_.getSceneList().ensureNumberOfScenes(sceneIndex + 1);
+    track->getClipSlotList().ensureNumberOfSlots(sceneIndex + 1);
+
+    auto slots = track->getClipSlotList().getClipSlots();
+    if (sceneIndex >= slots.size() || slots[sceneIndex] == nullptr)
+        return false;
+
+    auto* slot = slots[sceneIndex];
+    bool changedRouting = false;
+    bool armedSlot = false;
+    const auto teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
+
+    for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+        if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner) != nullptr)
+            continue;
+
+        const bool hasTrackTarget = inputHasTarget(*inputDeviceInstance, track->itemID);
+        const bool hasSlotTarget = inputHasTarget(*inputDeviceInstance, slot->itemID);
+
+        if (enabled) {
+            if (!hasTrackTarget)
+                continue;
+
+            if (!inputDeviceInstance->owner.isEnabled())
+                inputDeviceInstance->owner.setEnabled(true);
+
+            inputDeviceInstance->owner.setMonitorMode(teMonitorMode);
+
+            if (!hasSlotTarget) {
+                auto result = inputDeviceInstance->setTarget(slot->itemID, false, nullptr);
+                if (!result.has_value())
+                    continue;
+                changedRouting = true;
+            }
+
+            inputDeviceInstance->setRecordingEnabled(track->itemID, false);
+            inputDeviceInstance->setRecordingEnabled(slot->itemID, true);
+            armedSlot = true;
+        } else {
+            if (hasSlotTarget) {
+                inputDeviceInstance->setRecordingEnabled(slot->itemID, false);
+                if (inputDeviceInstance->removeTarget(slot->itemID, nullptr))
+                    changedRouting = true;
+            }
+
+            if (hasTrackTarget)
+                inputDeviceInstance->setRecordingEnabled(track->itemID, trackInfo->recordArmed);
+        }
+    }
+
+    if (changedRouting && playbackContext->isPlaybackGraphAllocated())
+        playbackContext->reallocate();
+
+    return enabled ? armedSlot : true;
 }
 
 juce::String TrackController::getTrackAudioInput(TrackId trackId) const {

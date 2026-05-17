@@ -84,6 +84,7 @@ enum class SelectionType {
     Note,            // MIDI note(s) selected in piano roll
     Device,          // Device selected in track chain
     ChainNode,       // Any node in the chain view (rack, chain, device)
+    MultiChainNode,  // Multiple nodes in the same chain view context
     Mod,             // Individual modulator selected → show mod editor
     Macro,           // Individual macro selected → show macro editor
     ModsPanel,       // Mods panel selected → show mods panel settings
@@ -647,6 +648,16 @@ class SelectionManager {
                          const juce::String& displayType);
 
     /**
+     * @brief Toggle a chain node in the current multi-selection.
+     */
+    void toggleChainNodeSelection(const ChainNodePath& path);
+
+    /**
+     * @brief Replace the current chain-node selection with ordered paths.
+     */
+    void selectChainNodes(const std::vector<ChainNodePath>& paths);
+
+    /**
      * @brief Clear chain node selection
      */
     void clearChainNodeSelection();
@@ -656,6 +667,15 @@ class SelectionManager {
      */
     const ChainNodePath& getSelectedChainNode() const {
         return selectedChainNode_;
+    }
+
+    const std::vector<ChainNodePath>& getSelectedChainNodes() const {
+        return selectedChainNodes_;
+    }
+
+    bool isChainNodeSelected(const ChainNodePath& path) const {
+        return std::find(selectedChainNodes_.begin(), selectedChainNodes_.end(), path) !=
+               selectedChainNodes_.end();
     }
 
     /**
@@ -676,7 +696,13 @@ class SelectionManager {
      * @brief Check if there's a valid chain node selection
      */
     bool hasChainNodeSelection() const {
-        return selectionType_ == SelectionType::ChainNode && selectedChainNode_.isValid();
+        return (selectionType_ == SelectionType::ChainNode ||
+                selectionType_ == SelectionType::MultiChainNode) &&
+               selectedChainNode_.isValid();
+    }
+
+    bool hasMultipleChainNodeSelection() const {
+        return selectionType_ == SelectionType::MultiChainNode && selectedChainNodes_.size() > 1;
     }
 
     // ========================================================================
@@ -1004,7 +1030,8 @@ class SelectionManager {
     TimeRangeSelection timeRangeSelection_;
     NoteSelection noteSelection_;
     DeviceSelection deviceSelection_;
-    ChainNodePath selectedChainNode_;    // For exclusive chain node selection
+    ChainNodePath selectedChainNode_;  // For exclusive chain node selection
+    std::vector<ChainNodePath> selectedChainNodes_;
     juce::String chainNodeDisplayName_;  // Optional display override (e.g., pad chain plugin name)
     juce::String chainNodeDisplayType_;  // Optional display override (e.g., pad chain plugin type)
     ModSelection modSelection_;

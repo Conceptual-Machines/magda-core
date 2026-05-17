@@ -7,9 +7,12 @@
 #include "magda/daw/audio/plugin_manager/PluginManager.hpp"
 #include "magda/daw/audio/plugins/InstrumentMeterTapPlugin.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
+#include "magda/daw/audio/plugins/MidiReceivePlugin.hpp"
+#include "magda/daw/audio/plugins/SidechainMonitorPlugin.hpp"
 #include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
 #include "magda/daw/audio/racks/InstrumentRackManager.hpp"
 #include "magda/daw/core/RackInfo.hpp"
+#include "magda/daw/core/TrackManager.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 namespace te = tracktion;
@@ -48,18 +51,22 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
     MidiSignalRoutingTest() : juce::UnitTest("MIDI Signal Routing Tests", "magda") {}
 
     void runTest() override {
-        testInstrumentRackConsumesMidi();
+        testInstrumentRackPassesMidiThrough();
         testStepSequencerDefaultsToReplacingMidi();
         testRackSyncWiresNestedRackAsGraphNode();
         testRackTypeRejectsRecursiveRackInstances();
         testRackSyncBypassedChainPreservesMidi();
         testRackSyncMutedChainSuppressesMidiOutput();
         testRackSyncRoutesChainOutputIndexToRackPins();
+        testRackSyncInstrumentInjectsAudioAndPassesMidiToFx();
+        testRackSyncMidiSidechainFxDoesNotReceiveChainMidi();
+        testTopLevelMidiSidechainFxGetsExclusiveSourceMidiAndRestoresChainMidi();
+        testMoveDeviceIntoRackRemovesTrackRuntimePlugin();
     }
 
   private:
-    void testInstrumentRackConsumesMidi() {
-        beginTest("Instrument wrapper passes audio through but consumes MIDI");
+    void testInstrumentRackPassesMidiThrough() {
+        beginTest("Instrument wrapper passes audio and MIDI through");
 
         auto& wrapper = magda::test::getSharedEngine();
         auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
@@ -100,8 +107,8 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         expect(hasConnection(rackType, rackIO, 0, synthId, 0),
                "Rack MIDI input must feed the instrument");
-        expect(!hasMidiOutputConnection(rackType),
-               "Instrument wrapper must not expose MIDI at the rack output");
+        expect(hasConnection(rackType, rackIO, 0, rackIO, 0),
+               "Instrument wrapper must pass MIDI to later track-chain devices");
 
         expect(hasConnection(rackType, rackIO, 1, rackIO, 1),
                "Rack must preserve left audio passthrough");
@@ -184,6 +191,31 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         device.format = magda::PluginFormat::Internal;
         device.pluginId = pluginId;
         return device;
+    }
+
+    static magda::DeviceInfo makeInternalInstrument(magda::DeviceId id, const juce::String& name,
+                                                    const juce::String& pluginId) {
+        auto device = makeInternalDevice(id, name, pluginId);
+        device.isInstrument = true;
+        device.deviceType = magda::DeviceType::Instrument;
+        return device;
+    }
+
+    static int countTrackPluginMappings(te::AudioTrack* track, magda::PluginManager& pluginManager,
+                                        magda::DeviceId deviceId) {
+        if (track == nullptr)
+            return 0;
+
+        int count = 0;
+        for (int i = 0; i < track->pluginList.size(); ++i) {
+            if (pluginManager.getDeviceIdForPlugin(track->pluginList[i]) == deviceId)
+                ++count;
+        }
+        return count;
+    }
+
+    static int pluginIndex(te::AudioTrack* track, te::Plugin* plugin) {
+        return track != nullptr && plugin != nullptr ? track->pluginList.indexOf(plugin) : -1;
     }
 
     te::RackType* syncTestRack(magda::RackInfo& rack, magda::TrackId trackId) {
@@ -422,6 +454,288 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
                "Chain right output should route to output pair 2 right");
 
         rackSync.removeRack(rack.id);
+    }
+
+    void testRackSyncInstrumentInjectsAudioAndPassesMidiToFx() {
+        beginTest("Rack sync treats instruments as audio injectors with MIDI thru");
+
+        magda::RackInfo rack;
+        rack.id = 9500;
+        rack.name = "Instrument FX Rack";
+
+        magda::ChainInfo chain;
+        chain.id = 9501;
+        auto instrument = makeInternalInstrument(9502, "4OSC Synth", "4OSC Synth");
+        auto triggeredFx = makeInternalDevice(9503, "Filter", "magda_filter");
+        triggeredFx.canReceiveMidi = true;
+        chain.elements.push_back(magda::makeDeviceElement(instrument));
+        chain.elements.push_back(magda::makeDeviceElement(triggeredFx));
+        rack.chains.push_back(std::move(chain));
+
+        auto* rackType = syncTestRack(rack, 950);
+        if (!rackType)
+            return;
+
+        auto& rackSync = magda::test::getSharedEngine()
+                             .getAudioBridge()
+                             ->getPluginManager()
+                             .getRackSyncManager();
+        auto* instrumentPlugin = rackSync.getInnerPlugin(instrument.id);
+        auto* fxPlugin = rackSync.getInnerPlugin(triggeredFx.id);
+        expect(instrumentPlugin != nullptr, "Instrument should be loaded into the rack");
+        expect(fxPlugin != nullptr, "Triggered FX should be loaded into the rack");
+        if (!instrumentPlugin || !fxPlugin)
+            return;
+
+        const auto rackIO = te::EditItemID();
+        expect(hasConnection(*rackType, rackIO, 0, instrumentPlugin->itemID, 0),
+               "Rack MIDI input should feed the instrument");
+        expect(hasConnection(*rackType, rackIO, 0, fxPlugin->itemID, 0),
+               "Rack MIDI input should continue to downstream MIDI-triggered FX");
+        expect(!hasConnection(*rackType, instrumentPlugin->itemID, 0, fxPlugin->itemID, 0),
+               "Instrument MIDI output should not be required for MIDI thru");
+
+        expect(!hasConnection(*rackType, rackIO, 1, instrumentPlugin->itemID, 1),
+               "Rack audio should not be processed by the instrument as if it were FX");
+        expect(!hasConnection(*rackType, rackIO, 2, instrumentPlugin->itemID, 2),
+               "Rack audio should not be processed by the instrument as if it were FX");
+        expect(hasConnection(*rackType, rackIO, 1, fxPlugin->itemID, 1),
+               "Rack left audio should reach the first downstream audio processor");
+        expect(hasConnection(*rackType, rackIO, 2, fxPlugin->itemID, 2),
+               "Rack right audio should reach the first downstream audio processor");
+        expect(hasConnection(*rackType, instrumentPlugin->itemID, 1, fxPlugin->itemID, 1),
+               "Instrument left audio should be injected into the downstream FX");
+        expect(hasConnection(*rackType, instrumentPlugin->itemID, 2, fxPlugin->itemID, 2),
+               "Instrument right audio should be injected into the downstream FX");
+
+        rackSync.removeRack(rack.id);
+    }
+
+    void testRackSyncMidiSidechainFxDoesNotReceiveChainMidi() {
+        beginTest("Rack sync excludes MIDI-sidechained FX from chain MIDI");
+
+        magda::RackInfo rack;
+        rack.id = 9600;
+        rack.name = "MIDI Sidechain Rack";
+
+        magda::ChainInfo chain;
+        chain.id = 9601;
+        auto instrument = makeInternalInstrument(9602, "4OSC Synth", "4OSC Synth");
+        auto sidechainedFx = makeInternalDevice(9603, "Filter", "magda_filter");
+        sidechainedFx.canReceiveMidi = true;
+        sidechainedFx.sidechain.type = magda::SidechainConfig::Type::MIDI;
+        sidechainedFx.sidechain.sourceTrackId = 12345;
+        chain.elements.push_back(magda::makeDeviceElement(instrument));
+        chain.elements.push_back(magda::makeDeviceElement(sidechainedFx));
+        rack.chains.push_back(std::move(chain));
+
+        auto* rackType = syncTestRack(rack, 960);
+        if (!rackType)
+            return;
+
+        auto& rackSync = magda::test::getSharedEngine()
+                             .getAudioBridge()
+                             ->getPluginManager()
+                             .getRackSyncManager();
+        auto* instrumentPlugin = rackSync.getInnerPlugin(instrument.id);
+        auto* fxPlugin = rackSync.getInnerPlugin(sidechainedFx.id);
+        expect(instrumentPlugin != nullptr, "Instrument should be loaded into the rack");
+        expect(fxPlugin != nullptr, "MIDI-sidechained FX should be loaded into the rack");
+        if (!instrumentPlugin || !fxPlugin)
+            return;
+
+        const auto rackIO = te::EditItemID();
+        expect(hasConnection(*rackType, rackIO, 0, instrumentPlugin->itemID, 0),
+               "Rack MIDI input should still feed the instrument");
+        expect(!hasConnection(*rackType, rackIO, 0, fxPlugin->itemID, 0),
+               "MIDI-sidechained FX should not receive chain MIDI");
+        expect(!hasConnection(*rackType, instrumentPlugin->itemID, 0, fxPlugin->itemID, 0),
+               "MIDI-sidechained FX should not receive instrument MIDI");
+        expect(hasConnection(*rackType, rackIO, 1, fxPlugin->itemID, 1),
+               "Sidechain mode should not change normal audio routing");
+        expect(hasConnection(*rackType, instrumentPlugin->itemID, 1, fxPlugin->itemID, 1),
+               "Sidechain mode should not change instrument audio injection");
+
+        rackSync.removeRack(rack.id);
+    }
+
+    void testTopLevelMidiSidechainFxGetsExclusiveSourceMidiAndRestoresChainMidi() {
+        beginTest("Top-level MIDI sidechain FX gets exclusive source MIDI and restores chain MIDI");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        magda::test::resetTransport(wrapper);
+
+        auto* bridge = wrapper.getAudioBridge();
+        expect(bridge != nullptr, "AudioBridge must exist");
+        if (!bridge)
+            return;
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(&wrapper);
+
+        const auto sourceTrackId = trackManager.createTrack("MIDI Source");
+        const auto destinationTrackId = trackManager.createTrack("Instrument + Sidechain FX");
+
+        auto instrument =
+            makeInternalInstrument(magda::INVALID_DEVICE_ID, "4OSC Synth", "4OSC Synth");
+        const auto instrumentId = trackManager.addDeviceToTrack(destinationTrackId, instrument);
+
+        auto sidechainedFx =
+            makeInternalDevice(magda::INVALID_DEVICE_ID, "Triggered FX", "magda_filter");
+        sidechainedFx.canReceiveMidi = true;
+        sidechainedFx.sidechain.type = magda::SidechainConfig::Type::MIDI;
+        sidechainedFx.sidechain.sourceTrackId = sourceTrackId;
+        const auto sidechainedFxId =
+            trackManager.addDeviceToTrack(destinationTrackId, sidechainedFx);
+
+        auto downstreamFx =
+            makeInternalDevice(magda::INVALID_DEVICE_ID, "Downstream FX", "magda_filter");
+        downstreamFx.canReceiveMidi = true;
+        const auto downstreamFxId = trackManager.addDeviceToTrack(destinationTrackId, downstreamFx);
+
+        expect(instrumentId != magda::INVALID_DEVICE_ID, "Instrument must be added");
+        expect(sidechainedFxId != magda::INVALID_DEVICE_ID, "Sidechained FX must be added");
+        expect(downstreamFxId != magda::INVALID_DEVICE_ID, "Downstream FX must be added");
+        if (instrumentId == magda::INVALID_DEVICE_ID ||
+            sidechainedFxId == magda::INVALID_DEVICE_ID ||
+            downstreamFxId == magda::INVALID_DEVICE_ID) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
+            return;
+        }
+
+        bridge->syncTrackPlugins(sourceTrackId);
+        bridge->syncTrackPlugins(destinationTrackId);
+
+        auto& pluginManager = bridge->getPluginManager();
+        auto* sourceTeTrack = bridge->getAudioTrack(sourceTrackId);
+        auto* destinationTeTrack = bridge->getAudioTrack(destinationTrackId);
+        expect(sourceTeTrack != nullptr, "Source TE track must exist");
+        expect(destinationTeTrack != nullptr, "Destination TE track must exist");
+        if (!sourceTeTrack || !destinationTeTrack) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
+            return;
+        }
+
+        auto targetPlugin = pluginManager.getPlugin(sidechainedFxId);
+        auto downstreamPlugin = pluginManager.getPlugin(downstreamFxId);
+        expect(targetPlugin != nullptr, "Sidechained FX plugin must exist");
+        expect(downstreamPlugin != nullptr, "Downstream FX plugin must exist");
+        if (!targetPlugin || !downstreamPlugin) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
+            return;
+        }
+
+        magda::MidiReceivePlugin* sidechainReceive = nullptr;
+        magda::MidiReceivePlugin* chainRestore = nullptr;
+        magda::SidechainMonitorPlugin* destinationMonitor = nullptr;
+        for (int i = 0; i < destinationTeTrack->pluginList.size(); ++i) {
+            auto* plugin = destinationTeTrack->pluginList[i];
+            if (auto* rx = dynamic_cast<magda::MidiReceivePlugin*>(plugin)) {
+                if (rx->getSourceTrackId() == sourceTrackId)
+                    sidechainReceive = rx;
+                else if (rx->getSourceTrackId() == destinationTrackId)
+                    chainRestore = rx;
+            } else if (auto* monitor = dynamic_cast<magda::SidechainMonitorPlugin*>(plugin)) {
+                if (monitor->getSourceTrackId() == destinationTrackId)
+                    destinationMonitor = monitor;
+            }
+        }
+
+        expect(sidechainReceive != nullptr,
+               "Destination track must insert a source MIDI receive before the sidechained FX");
+        expect(chainRestore != nullptr,
+               "Destination track must insert a restore MIDI receive after the sidechained FX");
+        expect(destinationMonitor != nullptr,
+               "Destination track must monitor its own chain MIDI for downstream restore");
+
+        if (sidechainReceive && chainRestore) {
+            expect(sidechainReceive->getReplaceExistingMidi(),
+                   "Source MIDI receive must replace original chain MIDI for the target");
+            expect(chainRestore->getReplaceExistingMidi(),
+                   "Restore MIDI receive must replace sidechain MIDI for downstream devices");
+
+            const auto sidechainReceiveIndex = pluginIndex(destinationTeTrack, sidechainReceive);
+            const auto targetIndex = pluginIndex(destinationTeTrack, targetPlugin.get());
+            const auto chainRestoreIndex = pluginIndex(destinationTeTrack, chainRestore);
+            const auto downstreamIndex = pluginIndex(destinationTeTrack, downstreamPlugin.get());
+
+            expect(sidechainReceiveIndex >= 0 && targetIndex >= 0 &&
+                       sidechainReceiveIndex < targetIndex,
+                   "Source MIDI receive must be before the target FX");
+            expect(chainRestoreIndex >= 0 && targetIndex >= 0 && chainRestoreIndex > targetIndex,
+                   "Chain MIDI restore must be after the target FX");
+            expect(downstreamIndex >= 0 && chainRestoreIndex >= 0 &&
+                       chainRestoreIndex < downstreamIndex,
+                   "Downstream FX must be after restored original chain MIDI");
+        }
+
+        magda::SidechainMonitorPlugin* sourceMonitor = nullptr;
+        for (int i = 0; i < sourceTeTrack->pluginList.size(); ++i) {
+            if (auto* monitor =
+                    dynamic_cast<magda::SidechainMonitorPlugin*>(sourceTeTrack->pluginList[i])) {
+                if (monitor->getSourceTrackId() == sourceTrackId) {
+                    sourceMonitor = monitor;
+                    break;
+                }
+            }
+        }
+        expect(sourceMonitor != nullptr, "Source track must monitor MIDI for sidechain broadcast");
+
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(nullptr);
+    }
+
+    void testMoveDeviceIntoRackRemovesTrackRuntimePlugin() {
+        beginTest("Moving a device into a rack detaches its old track plugin");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        magda::test::resetTransport(wrapper);
+
+        auto* bridge = wrapper.getAudioBridge();
+        expect(bridge != nullptr, "AudioBridge must exist");
+        if (!bridge)
+            return;
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(&wrapper);
+
+        const auto trackId = trackManager.createTrack("Move Runtime");
+        const auto rackId = trackManager.addRackToTrack(trackId, "Rack");
+        auto* rack = trackManager.getRack(trackId, rackId);
+        expect(rack != nullptr, "Rack must exist");
+        if (!rack)
+            return;
+
+        const auto chainPath = magda::ChainNodePath::chain(trackId, rackId, rack->chains[0].id);
+        auto filter = makeInternalDevice(magda::INVALID_DEVICE_ID, "Filter", "magda_filter");
+        const auto filterId = trackManager.addDeviceToTrack(trackId, filter);
+        expect(filterId != magda::INVALID_DEVICE_ID, "Filter must be added");
+        if (filterId == magda::INVALID_DEVICE_ID)
+            return;
+
+        bridge->syncTrackPlugins(trackId);
+        auto& pluginManager = bridge->getPluginManager();
+        auto* teTrack = bridge->getAudioTrack(trackId);
+        expectEquals(countTrackPluginMappings(teTrack, pluginManager, filterId), 1,
+                     "Filter starts as exactly one top-level TE plugin");
+
+        expect(trackManager.moveChainElement(
+                   magda::ChainNodePath::topLevelDevice(trackId, filterId), chainPath, 0),
+               "Move into rack must succeed");
+        bridge->syncTrackPlugins(trackId);
+
+        expectEquals(countTrackPluginMappings(teTrack, pluginManager, filterId), 0,
+                     "Moved rack device must not leave a stale top-level TE plugin");
+        expect(pluginManager.getRackSyncManager().getInnerPlugin(filterId) != nullptr,
+               "Moved device must exist as a rack inner plugin");
+
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(nullptr);
     }
 
     void testStepSequencerDefaultsToReplacingMidi() {

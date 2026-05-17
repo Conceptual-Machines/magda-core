@@ -1,5 +1,6 @@
 #include "AudioBridge.hpp"
 
+#include <algorithm>
 #include <unordered_set>
 
 #include "../core/AutomationManager.hpp"
@@ -38,6 +39,37 @@ const DeviceInfo* findDeviceRecursive(const std::vector<ChainElement>& elements,
         }
     }
     return nullptr;
+}
+
+bool inputHasTarget(te::InputDeviceInstance& input, te::EditItemID targetID) {
+    for (auto existingTargetID : input.getTargets()) {
+        if (existingTargetID == targetID)
+            return true;
+    }
+    return false;
+}
+
+MeterData readMeterClient(te::LevelMeasurer::Client& client) {
+    MeterData data;
+
+    auto levelL = client.getAndClearAudioLevel(0);
+    auto levelR = client.getAndClearAudioLevel(1);
+
+    data.peakL = juce::Decibels::decibelsToGain(levelL.dB);
+    data.peakR = juce::Decibels::decibelsToGain(levelR.dB);
+    data.clipped = data.peakL > 1.0f || data.peakR > 1.0f;
+    data.rmsL = data.peakL * 0.7f;
+    data.rmsR = data.peakR * 0.7f;
+
+    return data;
+}
+
+void mergeMeterData(MeterData& dest, const MeterData& src) {
+    dest.peakL = std::max(dest.peakL, src.peakL);
+    dest.peakR = std::max(dest.peakR, src.peakR);
+    dest.rmsL = std::max(dest.rmsL, src.rmsL);
+    dest.rmsR = std::max(dest.rmsR, src.rmsR);
+    dest.clipped = dest.clipped || src.clipped;
 }
 
 }  // namespace
@@ -134,6 +166,14 @@ AudioBridge::~AudioBridge() {
                 trackController_.removeMeterClient(trackId);
             }
         });
+
+        // Unregister live input meter clients
+        for (auto& [trackId, entry] : inputMeterClients_) {
+            juce::ignoreUnused(trackId);
+            if (entry.measurer)
+                entry.measurer->removeClient(entry.client);
+        }
+        inputMeterClients_.clear();
 
         // Clear baked automation curves BEFORE PluginManager mappings are
         // wiped. Once mappings are gone, target resolution can't find any
@@ -841,6 +881,61 @@ void AudioBridge::updateMetering() {
     // For now, we use the timer callback for metering
 }
 
+void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrack*>& trackMapping) {
+    std::map<TrackId, te::LevelMeasurer*> desired;
+
+    if (auto* playbackContext = edit_.getCurrentPlaybackContext()) {
+        for (const auto& [trackId, track] : trackMapping) {
+            if (!track)
+                continue;
+
+            for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+                if (!inputDeviceInstance ||
+                    dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner) != nullptr)
+                    continue;
+
+                if (!inputHasTarget(*inputDeviceInstance, track->itemID))
+                    continue;
+
+                if (!inputDeviceInstance->isLivePlayEnabled(*track))
+                    continue;
+
+                desired[trackId] = &inputDeviceInstance->owner.levelMeasurer;
+                break;
+            }
+        }
+    }
+
+    for (auto& [trackId, measurer] : desired) {
+        if (!measurer)
+            continue;
+
+        auto [it, inserted] = inputMeterClients_.try_emplace(trackId);
+        auto& entry = it->second;
+
+        if (inserted) {
+            entry.measurer = measurer;
+            measurer->addClient(entry.client);
+        } else if (entry.measurer != measurer) {
+            if (entry.measurer)
+                entry.measurer->removeClient(entry.client);
+            entry.measurer = measurer;
+            measurer->addClient(entry.client);
+        }
+    }
+
+    for (auto it = inputMeterClients_.begin(); it != inputMeterClients_.end();) {
+        if (desired.find(it->first) != desired.end()) {
+            ++it;
+            continue;
+        }
+
+        if (it->second.measurer)
+            it->second.measurer->removeClient(it->second.client);
+        it = inputMeterClients_.erase(it);
+    }
+}
+
 void AudioBridge::onMidiDevicesAvailable() {
     midiInputRouter_.onMidiDevicesAvailable();
 }
@@ -898,35 +993,35 @@ void AudioBridge::timerCallback() {
     // Update metering from level measurers (runs at 30 FPS on message thread)
     trackController_.withTrackMapping(
         [this](const std::map<TrackId, te::AudioTrack*>& trackMapping) {
+            refreshInputMeterClients(trackMapping);
+
             trackController_.withMeterClients(
                 [&](std::map<TrackId, TrackController::MeterClientEntry>& meterClients) {
                     for (const auto& [trackId, track] : trackMapping) {
                         if (!track)
                             continue;
 
-                        // Get the meter client for this track
-                        auto clientIt = meterClients.find(trackId);
-                        if (clientIt == meterClients.end())
-                            continue;
-
-                        auto& client = clientIt->second.client;
-
                         MeterData data;
+                        bool hasData = false;
 
-                        // Read and clear audio levels from the client (returns DbTimePair)
-                        auto levelL = client.getAndClearAudioLevel(0);
-                        auto levelR = client.getAndClearAudioLevel(1);
+                        // Track output meter from the TE graph tap.
+                        auto clientIt = meterClients.find(trackId);
+                        if (clientIt != meterClients.end()) {
+                            data = readMeterClient(clientIt->second.client);
+                            hasData = true;
+                        }
 
-                        // Convert from dB to linear gain (allow > 1.0 for headroom)
-                        data.peakL = juce::Decibels::decibelsToGain(levelL.dB);
-                        data.peakR = juce::Decibels::decibelsToGain(levelR.dB);
+                        // Live-monitored input can bypass the track's LevelMeterPlugin tap while
+                        // still feeding the master, so merge the input device meter as well.
+                        auto inputClientIt = inputMeterClients_.find(trackId);
+                        if (inputClientIt != inputMeterClients_.end()) {
+                            auto inputData = readMeterClient(inputClientIt->second.client);
+                            mergeMeterData(data, inputData);
+                            hasData = true;
+                        }
 
-                        // Check for clipping
-                        data.clipped = data.peakL > 1.0f || data.peakR > 1.0f;
-
-                        // RMS would require accumulation over time - simplified for now
-                        data.rmsL = data.peakL * 0.7f;  // Rough approximation
-                        data.rmsR = data.peakR * 0.7f;
+                        if (!hasData)
+                            continue;
 
                         meteringBuffer_.pushLevels(trackId, data);
                         recordingMeteringBuffer_.pushLevels(trackId, data);
@@ -1099,6 +1194,11 @@ juce::String AudioBridge::getTrackAudioInput(TrackId trackId) const {
     return trackController_.getTrackAudioInput(trackId);
 }
 
+bool AudioBridge::setSessionSlotAudioRecordingTarget(TrackId trackId, int sceneIndex,
+                                                     bool enabled) {
+    return trackController_.setSessionSlotAudioRecordingTarget(trackId, sceneIndex, enabled);
+}
+
 // =============================================================================
 // MIDI Routing (for live instrument playback)
 // =============================================================================
@@ -1121,6 +1221,10 @@ void AudioBridge::clearSurfaceOnlyMidiInputPorts() {
 
 juce::String AudioBridge::getTrackMidiInput(TrackId trackId) const {
     return midiInputRouter_.getTrackMidiInput(trackId);
+}
+
+bool AudioBridge::setSessionSlotMidiRecordingTarget(TrackId trackId, int sceneIndex, bool enabled) {
+    return midiInputRouter_.setSessionSlotMidiRecordingTarget(trackId, sceneIndex, enabled);
 }
 
 // =============================================================================

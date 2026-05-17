@@ -189,6 +189,15 @@ class Config {
         uiScale = scale;
     }
 
+    // Font size scale for MAGDA-owned UI fonts. This is independent from
+    // Desktop UI scale, which changes both text and component geometry.
+    double getUIFontScale() const {
+        return uiFontScale;
+    }
+    void setUIFontScale(double scale) {
+        uiFontScale = std::clamp(scale, 0.8, 1.5);
+    }
+
     // Audio Device Configuration
     std::string getPreferredAudioDevice() const {
         return preferredAudioDevice;
@@ -812,6 +821,9 @@ class Config {
 
     // UI scale: 0 = Auto (pick from display DPI), otherwise an explicit factor (1.0, 1.25, …)
     double uiScale = 0.0;
+
+    // UI font scale: multiplier applied by FontManager to app-owned text fonts.
+    double uiFontScale = 1.0;
 
     // Recent projects (most recent first, max 10)
     std::vector<std::string> recentProjects;

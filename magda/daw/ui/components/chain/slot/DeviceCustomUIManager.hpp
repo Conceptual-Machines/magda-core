@@ -34,7 +34,6 @@ class ReverbUI;
 class SamplerUI;
 class StepSequencerUI;
 class ToneGeneratorUI;
-class UtilityUI;
 
 /**
  * @brief Manages all custom UI instances for a DeviceSlotComponent.
@@ -191,7 +190,6 @@ class DeviceCustomUIManager {
     std::unique_ptr<FilterUI> filterUI_;
     std::unique_ptr<PitchShiftUI> pitchShiftUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
-    std::unique_ptr<UtilityUI> utilityUI_;
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;

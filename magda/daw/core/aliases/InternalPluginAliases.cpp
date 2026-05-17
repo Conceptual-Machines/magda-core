@@ -105,15 +105,6 @@ constexpr AliasSpec kPitchShiftAliases[] = {
     {"semitones", 0, "Semitones"},
 };
 
-// ------------------------------------------------------------------
-// Utility ("utility") — UtilityProcessor: volume, pan, polarity.
-// ------------------------------------------------------------------
-constexpr AliasSpec kUtilityAliases[] = {
-    {"volume", 0, "Volume"},
-    {"pan", 1, "Pan"},
-    {"polarity", 2, "Polarity"},
-};
-
 // Plugins not curated yet (4OSC, Sampler, DrumGrid, Arpeggiator,
 // StepSequencer, IR Reverb, Tone Generator). Their AutoGen names are
 // already user-readable so the chained @plugin.param popup works without
@@ -128,7 +119,6 @@ constexpr PluginSpec kPluginSpecs[] = {
     {"phaser", kPhaserAliases, (int)std::size(kPhaserAliases)},
     {"filter", kFilterAliases, (int)std::size(kFilterAliases)},
     {"pitchshift", kPitchShiftAliases, (int)std::size(kPitchShiftAliases)},
-    {"utility", kUtilityAliases, (int)std::size(kUtilityAliases)},
 };
 
 }  // namespace

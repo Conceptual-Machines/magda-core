@@ -217,6 +217,9 @@ class ClipManager {
     void setClipMidiOffset(ClipId clipId, double offsetBeats);
     void setClipLaunchMode(ClipId clipId, LaunchMode mode);
     void setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize);
+    void setClipFollowAction(ClipId clipId, FollowAction action);
+    void setClipFollowActionDelayBeats(ClipId clipId, double delayBeats);
+    void setClipFollowActionLoopCount(ClipId clipId, int loopCount);
 
     // Warp
     /** @brief Enable or disable warp markers on an audio clip */

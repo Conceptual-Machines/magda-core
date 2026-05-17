@@ -37,7 +37,6 @@ constexpr const char* kPhaserAliases[] = {"phaser"};
 constexpr const char* kLowpassAliases[] = {"lowpass"};
 constexpr const char* kPitchShiftAliases[] = {"pitchshift"};
 constexpr const char* kImpulseResponseAliases[] = {"impulseresponse"};
-constexpr const char* kUtilityAliases[] = {"utility"};
 constexpr const char* kFourOscAliases[] = {"4osc"};
 constexpr const char* kToneAliases[] = {"tone", "tonegenerator"};
 constexpr const char* kMeterAliases[] = {"meter", "levelmeter"};
@@ -82,10 +81,10 @@ const InternalPluginSpec kSpecs[] = {
      InternalPluginCreateMode::SavedStateOrFresh, true, true, kImpulseResponseAliases,
      std::size(kImpulseResponseAliases), matches<te::ImpulseResponsePlugin>,
      makeProcessor<ImpulseResponseProcessor>},
-    {InternalDeviceKind::TeVolumeAndPan, te::VolumeAndPanPlugin::xmlTypeName, "Utility", "Utility",
-     "Gain and pan utility for simple level and stereo placement changes.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kUtilityAliases,
-     std::size(kUtilityAliases), matches<te::VolumeAndPanPlugin>, makeProcessor<UtilityProcessor>},
+    {InternalDeviceKind::TeVolumeAndPan, te::VolumeAndPanPlugin::xmlTypeName, "Legacy Volume/Pan",
+     "Legacy", "Legacy Tracktion volume and pan device, kept for old project loads.",
+     InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
+     matches<te::VolumeAndPanPlugin>, makeProcessor<UtilityProcessor>},
     {InternalDeviceKind::TeFourOsc, te::FourOscPlugin::xmlTypeName, "4OSC Synth", "Synth",
      "Four-oscillator subtractive instrument with modulation and macro-friendly controls.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, kFourOscAliases,

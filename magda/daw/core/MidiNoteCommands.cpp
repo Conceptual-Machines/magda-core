@@ -2,11 +2,79 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "ClipOperations.hpp"
 #include "audio/transport/StepClock.hpp"
 
 namespace magda {
+
+std::vector<MidiNoteStartBeat> collectMidiNoteStartBeats(const ClipInfo& clip,
+                                                         const std::vector<size_t>& noteIndices) {
+    std::vector<MidiNoteStartBeat> starts;
+    if (!clip.isMidi())
+        return starts;
+
+    starts.reserve(noteIndices.size());
+    for (size_t index : noteIndices) {
+        if (index < clip.midiNotes.size())
+            starts.push_back({index, clip.midiNotes[index].startBeat});
+    }
+    return starts;
+}
+
+std::vector<MidiNoteStartBeat> calculateBentMidiNoteStartBeats(
+    const ClipInfo& clip, const std::vector<MidiNoteStartBeat>& originalStartBeats, float depth,
+    float skew, int cycles, float quantize, int quantizeSub, bool hardAngle) {
+    std::vector<MidiNoteStartBeat> validStarts;
+    if (!clip.isMidi())
+        return validStarts;
+
+    validStarts.reserve(originalStartBeats.size());
+    for (const auto& original : originalStartBeats) {
+        if (original.noteIndex < clip.midiNotes.size())
+            validStarts.push_back(original);
+    }
+
+    if (validStarts.size() < 2)
+        return {};
+
+    double minBeat = std::numeric_limits<double>::max();
+    double maxBeat = std::numeric_limits<double>::lowest();
+    for (const auto& start : validStarts) {
+        minBeat = std::min(minBeat, start.startBeat);
+        maxBeat = std::max(maxBeat, start.startBeat);
+    }
+
+    const double span = maxBeat - minBeat;
+    if (span < 1e-9)
+        return {};
+
+    std::vector<MidiNoteStartBeat> bentStarts;
+    bentStarts.reserve(validStarts.size());
+    for (const auto& start : validStarts) {
+        const double t = (start.startBeat - minBeat) / span;
+        const double tEased =
+            daw::audio::StepClock::applyRampCurveWithCycles(t, depth, skew, cycles, hardAngle);
+        double newBeat = minBeat + tEased * span;
+
+        if (quantize > 0.0f && quantizeSub > 0) {
+            const double gridSpacing = span / static_cast<double>(quantizeSub);
+            const double snapped =
+                std::round((newBeat - minBeat) / gridSpacing) * gridSpacing + minBeat;
+            newBeat += (snapped - newBeat) * static_cast<double>(quantize);
+        }
+
+        auto constrainedNote = clip.midiNotes[start.noteIndex];
+        constrainedNote.startBeat = newBeat;
+        if (ClipOperations::constrainMidiNoteToVisibleRange(clip, constrainedNote))
+            newBeat = constrainedNote.startBeat;
+
+        bentStarts.push_back({start.noteIndex, newBeat});
+    }
+
+    return bentStarts;
+}
 
 // ============================================================================
 // AddMidiNoteCommand
@@ -757,6 +825,75 @@ void AddMultipleMidiNotesCommand::undo() {
         }
     }
 
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// SliceMidiNotesCommand
+// ============================================================================
+
+SliceMidiNotesCommand::SliceMidiNotesCommand(ClipId clipId, std::vector<size_t> noteIndices,
+                                             int subdivisions)
+    : clipId_(clipId),
+      noteIndices_(std::move(noteIndices)),
+      subdivisions_(std::max(2, subdivisions)) {}
+
+void SliceMidiNotesCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || !clip->isMidi() || noteIndices_.empty()) {
+        return;
+    }
+
+    if (!executed_)
+        originalNotes_ = clip->midiNotes;
+
+    std::sort(noteIndices_.begin(), noteIndices_.end());
+    noteIndices_.erase(std::unique(noteIndices_.begin(), noteIndices_.end()), noteIndices_.end());
+
+    std::vector<MidiNote> slicedNotes;
+    slicedNotes.reserve(originalNotes_.size() * static_cast<size_t>(subdivisions_));
+    slicedNoteIndices_.clear();
+    slicedNoteIndices_.reserve(noteIndices_.size() * static_cast<size_t>(subdivisions_));
+
+    for (size_t index = 0; index < originalNotes_.size(); ++index) {
+        const auto& note = originalNotes_[index];
+        if (!std::binary_search(noteIndices_.begin(), noteIndices_.end(), index) ||
+            note.lengthBeats <= 0.0) {
+            slicedNotes.push_back(note);
+            continue;
+        }
+
+        const double sliceLength = note.lengthBeats / static_cast<double>(subdivisions_);
+        for (int slice = 0; slice < subdivisions_; ++slice) {
+            auto sliced = note;
+            sliced.startBeat = note.startBeat + sliceLength * static_cast<double>(slice);
+            sliced.lengthBeats = sliceLength;
+            slicedNoteIndices_.push_back(slicedNotes.size());
+            slicedNotes.push_back(sliced);
+        }
+    }
+
+    clip->midiNotes = std::move(slicedNotes);
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void SliceMidiNotesCommand::undo() {
+    if (!executed_) {
+        return;
+    }
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || !clip->isMidi()) {
+        return;
+    }
+
+    clip->midiNotes = originalNotes_;
+    slicedNoteIndices_.clear();
     clipManager.forceNotifyClipPropertyChanged(clipId_);
 }
 
@@ -1516,54 +1653,18 @@ void BendNoteTimingCommand::execute() {
 
     // Capture old values on first execute
     if (!executed_) {
-        oldStartBeats_.clear();
-        oldStartBeats_.reserve(noteIndices_.size());
-        for (size_t index : noteIndices_) {
-            if (index < clip->midiNotes.size())
-                oldStartBeats_.push_back(clip->midiNotes[index].startBeat);
-        }
+        oldStartBeats_ = collectMidiNoteStartBeats(*clip, noteIndices_);
     }
 
-    // Find span of selected notes
-    double minBeat = std::numeric_limits<double>::max();
-    double maxBeat = std::numeric_limits<double>::lowest();
-    for (size_t i = 0; i < noteIndices_.size(); ++i) {
-        size_t index = noteIndices_[i];
-        if (index < clip->midiNotes.size()) {
-            double sb = executed_ ? oldStartBeats_[i] : clip->midiNotes[index].startBeat;
-            minBeat = std::min(minBeat, sb);
-            maxBeat = std::max(maxBeat, sb);
-        }
-    }
+    const auto bentStarts = calculateBentMidiNoteStartBeats(
+        *clip, oldStartBeats_, depth_, skew_, cycles_, quantize_, quantizeSub_, hardAngle_);
+    if (bentStarts.empty())
+        return;
 
-    double span = maxBeat - minBeat;
-    if (span < 1e-9)
-        return;  // all notes at same position, nothing to bend
-
-    // Apply curve: remap each note's normalized position (with cycles)
-    double segLen = 1.0 / static_cast<double>(cycles_);
-    for (size_t i = 0; i < noteIndices_.size(); ++i) {
-        size_t index = noteIndices_[i];
-        if (index >= clip->midiNotes.size())
+    for (const auto& bent : bentStarts) {
+        if (bent.noteIndex >= clip->midiNotes.size())
             continue;
-
-        double originalBeat = executed_ ? oldStartBeats_[i] : clip->midiNotes[index].startBeat;
-        double t = (originalBeat - minBeat) / span;
-        int seg = std::min(static_cast<int>(t / segLen), cycles_ - 1);
-        double tLocal = (t - seg * segLen) / segLen;
-        double tLocalEased =
-            daw::audio::StepClock::applyRampCurve(tLocal, depth_, skew_, hardAngle_);
-        double tEased = (seg + tLocalEased) * segLen;
-        double newBeat = minBeat + tEased * span;
-
-        // Apply quantize snap
-        if (quantize_ > 0.0f && quantizeSub_ > 0) {
-            double gridSpacing = span / static_cast<double>(quantizeSub_);
-            double snapped = std::round((newBeat - minBeat) / gridSpacing) * gridSpacing + minBeat;
-            newBeat += (snapped - newBeat) * static_cast<double>(quantize_);
-        }
-
-        clip->midiNotes[index].startBeat = newBeat;
+        clip->midiNotes[bent.noteIndex].startBeat = bent.startBeat;
     }
 
     clipManager.forceNotifyClipPropertyChanged(clipId_);
@@ -1580,10 +1681,9 @@ void BendNoteTimingCommand::undo() {
     if (!clip || !clip->isMidi())
         return;
 
-    for (size_t i = 0; i < noteIndices_.size() && i < oldStartBeats_.size(); ++i) {
-        size_t index = noteIndices_[i];
-        if (index < clip->midiNotes.size())
-            clip->midiNotes[index].startBeat = oldStartBeats_[i];
+    for (const auto& oldStart : oldStartBeats_) {
+        if (oldStart.noteIndex < clip->midiNotes.size())
+            clip->midiNotes[oldStart.noteIndex].startBeat = oldStart.startBeat;
     }
 
     clipManager.forceNotifyClipPropertyChanged(clipId_);

@@ -48,6 +48,11 @@ DraggableValueLabel::~DraggableValueLabel() {
     }
 }
 
+void DraggableValueLabel::setVertical(bool vertical) {
+    vertical_ = vertical;
+    syncValueControl();
+}
+
 void DraggableValueLabel::setRange(double min, double max, double defaultValue) {
     minValue_ = min;
     maxValue_ = max;
@@ -426,9 +431,14 @@ void DraggableValueLabel::syncValueControl() {
     valueControl_.setRange(minValue_, maxValue_);
     valueControl_.setValue(value_);
     valueControl_.setDisplayText(formatValue(value_));
-    valueControl_.setFillMode(format_ == Format::Pan
-                                  ? daw::ui::ValueLabelControl::FillMode::PanCentre
-                                  : daw::ui::ValueLabelControl::FillMode::LeftToRight);
+    if (vertical_) {
+        valueControl_.setFillMode(daw::ui::ValueLabelControl::FillMode::BottomToTop);
+    } else {
+        valueControl_.setFillMode(format_ == Format::Pan
+                                      ? daw::ui::ValueLabelControl::FillMode::PanCentre
+                                      : daw::ui::ValueLabelControl::FillMode::LeftToRight);
+    }
+    valueControl_.setVertical(vertical_);
     valueControl_.setShowFillIndicator(showFillIndicator_);
     valueControl_.setDrawBackground(drawBackground_);
     valueControl_.setDrawBorder(drawBorder_);

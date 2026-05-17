@@ -10,13 +10,16 @@
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
+#include "PluginBrowserContent.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/PresetManager.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
+#include "engine/TracktionEngineWrapper.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/NodeComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
@@ -28,6 +31,84 @@
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+bool dragObjectToChainNodePath(const juce::DynamicObject& obj, magda::ChainNodePath& path) {
+    path = {};
+    const auto type = obj.getProperty("type").toString();
+    if (type != "chainElement" && type != "chainElements")
+        return false;
+
+    path.trackId = static_cast<magda::TrackId>(static_cast<int>(obj.getProperty("trackId")));
+    path.topLevelDeviceId =
+        static_cast<magda::DeviceId>(static_cast<int>(obj.getProperty("topLevelDeviceId")));
+    path.isTrackLevel = static_cast<bool>(obj.getProperty("isTrackLevel"));
+
+    auto stepTypes =
+        juce::StringArray::fromTokens(obj.getProperty("stepTypes").toString(), ",", "");
+    auto stepIds = juce::StringArray::fromTokens(obj.getProperty("stepIds").toString(), ",", "");
+    if (stepTypes.size() != stepIds.size())
+        return false;
+
+    for (int i = 0; i < stepTypes.size(); ++i) {
+        const int typeValue = stepTypes[i].getIntValue();
+        if (typeValue < static_cast<int>(magda::ChainStepType::Rack) ||
+            typeValue > static_cast<int>(magda::ChainStepType::Device))
+            return false;
+        path.steps.push_back(
+            {static_cast<magda::ChainStepType>(typeValue), stepIds[i].getIntValue()});
+    }
+
+    return path.isValid();
+}
+
+bool dragObjectToChainNodePathAt(const juce::DynamicObject& obj, int index,
+                                 magda::ChainNodePath& path) {
+    path = {};
+    const auto suffix = juce::String(index);
+
+    path.trackId =
+        static_cast<magda::TrackId>(static_cast<int>(obj.getProperty("trackId" + suffix)));
+    path.topLevelDeviceId = static_cast<magda::DeviceId>(
+        static_cast<int>(obj.getProperty("topLevelDeviceId" + suffix)));
+    path.isTrackLevel = static_cast<bool>(obj.getProperty("isTrackLevel" + suffix));
+
+    auto stepTypes =
+        juce::StringArray::fromTokens(obj.getProperty("stepTypes" + suffix).toString(), ",", "");
+    auto stepIds =
+        juce::StringArray::fromTokens(obj.getProperty("stepIds" + suffix).toString(), ",", "");
+    if (stepTypes.size() != stepIds.size())
+        return false;
+
+    for (int i = 0; i < stepTypes.size(); ++i) {
+        const int typeValue = stepTypes[i].getIntValue();
+        if (typeValue < static_cast<int>(magda::ChainStepType::Rack) ||
+            typeValue > static_cast<int>(magda::ChainStepType::Device))
+            return false;
+        path.steps.push_back(
+            {static_cast<magda::ChainStepType>(typeValue), stepIds[i].getIntValue()});
+    }
+
+    return path.isValid();
+}
+
+std::vector<magda::ChainNodePath> dragObjectToChainNodePaths(const juce::DynamicObject& obj) {
+    std::vector<magda::ChainNodePath> paths;
+    const auto count = static_cast<int>(obj.getProperty("pathCount"));
+    for (int i = 0; i < count; ++i) {
+        magda::ChainNodePath path;
+        if (dragObjectToChainNodePathAt(obj, i, path))
+            paths.push_back(path);
+    }
+
+    if (paths.empty()) {
+        magda::ChainNodePath path;
+        if (dragObjectToChainNodePath(obj, path))
+            paths.push_back(path);
+    }
+    return paths;
+}
+}  // namespace
 
 //==============================================================================
 // GainMeterComponent - Vertical gain slider with peak meter background
@@ -305,6 +386,20 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
     }
 
     void paint(juce::Graphics& g) override {
+        auto appendZone = juce::Rectangle<int>(
+            owner_.calculateAppendZoneX(), 0,
+            owner_.getScaledWidth(TrackChainContent::APPEND_ZONE_WIDTH), getHeight());
+        const bool appendHighlighted =
+            owner_.dragInsertIndex_ == static_cast<int>(owner_.nodeComponents_.size()) ||
+            owner_.dropInsertIndex_ == static_cast<int>(owner_.nodeComponents_.size());
+        auto appendColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                .withAlpha(appendHighlighted ? 0.18f : 0.06f);
+        g.setColour(appendColour);
+        g.fillRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                        .withAlpha(appendHighlighted ? 0.75f : 0.24f));
+        g.drawRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f, 1.0f);
+
         // Draw insertion indicator during drag (reorder or drop)
         if (owner_.dragInsertIndex_ >= 0 || owner_.dropInsertIndex_ >= 0) {
             int indicatorIndex =
@@ -326,12 +421,12 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
 
     // DragAndDropTarget implementation
     bool isInterestedInDragSource(const SourceDetails& details) override {
-        // Accept plugin drops if we have a track selected
         if (owner_.selectedTrackId_ == magda::INVALID_TRACK_ID) {
             return false;
         }
         if (auto* obj = details.description.getDynamicObject()) {
-            return obj->getProperty("type").toString() == "plugin";
+            auto type = obj->getProperty("type").toString();
+            return type == "plugin" || type == "chainElement" || type == "chainElements";
         }
         return false;
     }
@@ -357,6 +452,49 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
 
     void itemDropped(const SourceDetails& details) override {
         if (auto* obj = details.description.getDynamicObject()) {
+            int insertIndex = owner_.dropInsertIndex_ >= 0
+                                  ? owner_.dropInsertIndex_
+                                  : static_cast<int>(nodeComponents_->size());
+            const bool shouldScrollToEnd = insertIndex >= static_cast<int>(nodeComponents_->size());
+            const auto type = obj->getProperty("type").toString();
+
+            if (type == "chainElement" || type == "chainElements") {
+                auto sourcePaths = dragObjectToChainNodePaths(*obj);
+                if (!sourcePaths.empty()) {
+                    magda::ChainNodePath destinationPath;
+                    destinationPath.trackId = owner_.selectedTrackId_;
+                    auto safeOwner = juce::Component::SafePointer<TrackChainContent>(&owner_);
+
+                    owner_.scrollToEndAfterNextDeviceChange_ = shouldScrollToEnd;
+                    owner_.suppressNextImplicitScrollToEnd_ = !shouldScrollToEnd;
+                    owner_.dropInsertIndex_ = -1;
+                    owner_.stopTimer();
+                    owner_.resized();
+                    repaint();
+
+                    juce::MessageManager::callAsync(
+                        [safeOwner, sourcePaths, destinationPath, insertIndex]() {
+                            auto command = std::make_unique<magda::MoveChainElementsCommand>(
+                                sourcePaths, destinationPath, insertIndex);
+                            auto* moveCommand = command.get();
+                            magda::UndoManager::getInstance().executeCommand(std::move(command));
+                            if (!moveCommand->didMove() && safeOwner != nullptr) {
+                                safeOwner->scrollToEndAfterNextDeviceChange_ = false;
+                                safeOwner->suppressNextImplicitScrollToEnd_ = false;
+                            }
+                        });
+                    return;
+                }
+            }
+
+            if (type != "plugin") {
+                owner_.dropInsertIndex_ = -1;
+                owner_.stopTimer();
+                owner_.resized();
+                repaint();
+                return;
+            }
+
             // Create DeviceInfo from dropped plugin
             magda::DeviceInfo device;
             device.name = obj->getProperty("name").toString().toStdString();
@@ -385,10 +523,8 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
                 device.format = magda::PluginFormat::Internal;
             }
 
-            // Insert at the drop position
-            int insertIndex = owner_.dropInsertIndex_ >= 0
-                                  ? owner_.dropInsertIndex_
-                                  : static_cast<int>(nodeComponents_->size());
+            owner_.scrollToEndAfterNextDeviceChange_ = shouldScrollToEnd;
+            owner_.suppressNextImplicitScrollToEnd_ = !shouldScrollToEnd;
             magda::TrackManager::getInstance().addDeviceToTrack(owner_.selectedTrackId_, device,
                                                                 insertIndex);
 
@@ -488,6 +624,14 @@ TrackChainContent::TrackChainContent()
     chainViewport_->setViewedComponent(chainContainer_.get(), false);
     chainViewport_->setScrollBarsShown(true, true);  // Vertical and horizontal
     addAndMakeVisible(*chainViewport_);
+
+    addDeviceButton_.setButtonText("+");
+    addDeviceButton_.setColour(juce::TextButton::buttonColourId,
+                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.24f));
+    addDeviceButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    addDeviceButton_.onClick = [this]() { onAddDeviceClicked(); };
+    addDeviceButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    chainContainer_->addAndMakeVisible(addDeviceButton_);
 
     // No selection label
     noSelectionLabel_.setText("Select a track to view its signal chain",
@@ -1308,6 +1452,14 @@ void TrackChainContent::layoutChainContent() {
         node->setBounds(x, 0, nodeWidth, chainHeight);
         x += nodeWidth + scaledArrowWidth + scaledSlotSpacing;
     }
+
+    const int appendZoneWidth = getScaledWidth(APPEND_ZONE_WIDTH);
+    constexpr int buttonSize = 20;
+    addDeviceButton_.setVisible(selectedTrackId_ != magda::INVALID_TRACK_ID);
+    addDeviceButton_.setBounds(x + juce::jmax(0, (appendZoneWidth - buttonSize) / 2),
+                               juce::jmax(0, (chainHeight - buttonSize) / 2), buttonSize,
+                               buttonSize);
+    addDeviceButton_.toFront(false);
 }
 
 int TrackChainContent::calculateTotalContentWidth() const {
@@ -1322,6 +1474,8 @@ int TrackChainContent::calculateTotalContentWidth() const {
         totalWidth +=
             getScaledWidth(node->getPreferredWidth()) + scaledArrowWidth + scaledSlotSpacing;
     }
+
+    totalWidth += getScaledWidth(APPEND_ZONE_WIDTH);
 
     return totalWidth;
 }
@@ -1389,9 +1543,22 @@ void TrackChainContent::trackSelectionChanged(magda::TrackId trackId) {
 
 void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
     if (trackId == selectedTrackId_) {
+        const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        const int previousElementCount = static_cast<int>(nodeComponents_.size());
+        const int nextElementCount =
+            track ? static_cast<int>(track->chainElements.size()) : previousElementCount;
+        const bool shouldScrollToEnd =
+            scrollToEndAfterNextDeviceChange_ ||
+            (!suppressNextImplicitScrollToEnd_ && nextElementCount > previousElementCount);
+        scrollToEndAfterNextDeviceChange_ = false;
+        suppressNextImplicitScrollToEnd_ = false;
+
         rebuildNodeComponents();
         updateGlobalModsPanel();
         updateGlobalMacrosPanel();
+
+        if (shouldScrollToEnd)
+            scrollToEndAsync();
     }
 }
 
@@ -1683,6 +1850,7 @@ void TrackChainContent::hideHeaderControls() {
     volumeLabel_.clearAutomationTarget();
     panLabel_.clearAutomationTarget();
     chainBypassButton_->setVisible(false);
+    addDeviceButton_.setVisible(false);
 }
 
 void TrackChainContent::rebuildNodeComponents() {
@@ -1741,31 +1909,10 @@ void TrackChainContent::rebuildNodeComponents() {
                 dragGhostImage_ = juce::Image();
                 stopTimer();
 
-                int nodeCount = static_cast<int>(nodeComponents_.size());
-                int fromIndex = dragOriginalIndex_;
-                int insertIndex = dragInsertIndex_;
-
                 draggedNode_ = nullptr;
                 dragOriginalIndex_ = -1;
                 dragInsertIndex_ = -1;
 
-                if (fromIndex >= 0 && insertIndex >= 0 && fromIndex != insertIndex) {
-                    int targetIndex = insertIndex;
-                    if (insertIndex > fromIndex)
-                        targetIndex = insertIndex - 1;
-                    targetIndex = juce::jlimit(0, nodeCount - 1, targetIndex);
-                    if (targetIndex != fromIndex) {
-                        // Defer the move so the component isn't destroyed
-                        // while its mouseUp handler is still on the call stack
-                        int trackId = selectedTrackId_;
-                        juce::MessageManager::callAsync([trackId, fromIndex, targetIndex]() {
-                            magda::TrackManager::getInstance().moveNode(trackId, fromIndex,
-                                                                        targetIndex);
-                        });
-                        return;
-                    }
-                }
-                // No move — just re-layout to remove drag indicators
                 resized();
                 chainContainer_->repaint();
             };
@@ -1825,23 +1972,9 @@ void TrackChainContent::rebuildNodeComponents() {
                 dragGhostImage_ = juce::Image();
                 stopTimer();
 
-                int nodeCount = static_cast<int>(nodeComponents_.size());
-                if (dragOriginalIndex_ >= 0 && dragInsertIndex_ >= 0 &&
-                    dragOriginalIndex_ != dragInsertIndex_) {
-                    int targetIndex = dragInsertIndex_;
-                    if (dragInsertIndex_ > dragOriginalIndex_) {
-                        targetIndex = dragInsertIndex_ - 1;
-                    }
-                    targetIndex = juce::jlimit(0, nodeCount - 1, targetIndex);
-                    if (targetIndex != dragOriginalIndex_) {
-                        magda::TrackManager::getInstance().moveNode(
-                            selectedTrackId_, dragOriginalIndex_, targetIndex);
-                    }
-                }
                 draggedNode_ = nullptr;
                 dragOriginalIndex_ = -1;
                 dragInsertIndex_ = -1;
-                // Re-layout and repaint to remove left padding and indicator
                 resized();
                 chainContainer_->repaint();
             };
@@ -1928,10 +2061,99 @@ bool TrackChainContent::hasSelectedChain() const {
            selectedRackId_ != magda::INVALID_RACK_ID && selectedChainId_ != magda::INVALID_CHAIN_ID;
 }
 
+void TrackChainContent::onAddDeviceClicked() {
+    if (!hasSelectedTrack())
+        return;
+
+    juce::PopupMenu menu;
+
+    auto internals = magda::daw::ui::PluginBrowserContent::getInternalPlugins();
+    juce::PopupMenu internalMenu;
+    int itemId = 1;
+    for (const auto& entry : internals) {
+        internalMenu.addItem(itemId++, entry.name);
+    }
+    menu.addSubMenu("Internal", internalMenu);
+
+    juce::Array<juce::PluginDescription> externalPlugins;
+    if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
+            magda::TrackManager::getInstance().getAudioEngine())) {
+        auto& knownPlugins = engine->getKnownPluginList();
+        externalPlugins = knownPlugins.getTypes();
+    }
+
+    if (!externalPlugins.isEmpty()) {
+        std::map<juce::String, juce::PopupMenu> byManufacturer;
+        for (int i = 0; i < externalPlugins.size(); ++i) {
+            const auto& desc = externalPlugins[i];
+            auto manufacturer = desc.manufacturerName.isEmpty() ? "Unknown" : desc.manufacturerName;
+            byManufacturer[manufacturer].addItem(1000 + static_cast<int>(i), desc.name);
+        }
+        for (auto& [manufacturer, subMenu] : byManufacturer) {
+            menu.addSubMenu(manufacturer, subMenu);
+        }
+    }
+
+    auto safeThis = juce::Component::SafePointer<TrackChainContent>(this);
+    auto trackId = selectedTrackId_;
+    auto capturedPlugins =
+        std::make_shared<juce::Array<juce::PluginDescription>>(std::move(externalPlugins));
+    auto capturedInternals =
+        std::make_shared<std::vector<magda::daw::ui::PluginBrowserInfo>>(std::move(internals));
+
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, trackId, capturedPlugins,
+                                                    capturedInternals](int result) {
+        if (result == 0)
+            return;
+
+        magda::DeviceInfo device;
+
+        if (result >= 1 && result <= static_cast<int>(capturedInternals->size())) {
+            const auto& entry = (*capturedInternals)[static_cast<size_t>(result - 1)];
+            device.name = entry.name;
+            device.manufacturer = "MAGDA";
+            device.pluginId = entry.uniqueId;
+            device.isInstrument = entry.category == "Instrument";
+            if (entry.subcategory == "MIDI")
+                device.deviceType = magda::DeviceType::MIDI;
+            else if (entry.category == "Instrument")
+                device.deviceType = magda::DeviceType::Instrument;
+            device.format = magda::PluginFormat::Internal;
+        } else if (result >= 1000) {
+            int idx = result - 1000;
+            if (idx < 0 || idx >= static_cast<int>(capturedPlugins->size()))
+                return;
+            const auto& desc = (*capturedPlugins)[idx];
+            device.name = desc.name;
+            device.manufacturer = desc.manufacturerName;
+            device.pluginId = desc.createIdentifierString();
+            device.isInstrument = desc.isInstrument;
+            device.uniqueId = desc.createIdentifierString();
+            device.fileOrIdentifier = desc.fileOrIdentifier;
+            if (desc.pluginFormatName == "VST3")
+                device.format = magda::PluginFormat::VST3;
+            else if (desc.pluginFormatName == "AU" || desc.pluginFormatName == "AudioUnit")
+                device.format = magda::PluginFormat::AU;
+            else if (desc.pluginFormatName == "VST")
+                device.format = magda::PluginFormat::VST;
+            else
+                device.format = magda::PluginFormat::Internal;
+        } else {
+            return;
+        }
+
+        if (safeThis != nullptr) {
+            safeThis->scrollToEndAfterNextDeviceChange_ = true;
+        }
+        magda::TrackManager::getInstance().addDeviceToTrack(trackId, device);
+    });
+}
+
 void TrackChainContent::addDeviceToSelectedTrack(const magda::DeviceInfo& device) {
     if (!hasSelectedTrack()) {
         return;
     }
+    scrollToEndAfterNextDeviceChange_ = true;
     magda::TrackManager::getInstance().addDeviceToTrack(selectedTrackId_, device);
 }
 
@@ -1941,6 +2163,21 @@ void TrackChainContent::addDeviceToSelectedChain(const magda::DeviceInfo& device
     }
     magda::TrackManager::getInstance().addDeviceToChain(selectedTrackId_, selectedRackId_,
                                                         selectedChainId_, device);
+}
+
+void TrackChainContent::scrollToEndAsync() {
+    auto safeThis = juce::Component::SafePointer<TrackChainContent>(this);
+    juce::MessageManager::callAsync([safeThis]() {
+        if (safeThis == nullptr || safeThis->chainViewport_ == nullptr ||
+            safeThis->chainContainer_ == nullptr)
+            return;
+
+        safeThis->layoutChainContent();
+        const int maxX = juce::jmax(0, safeThis->chainContainer_->getWidth() -
+                                           safeThis->chainViewport_->getWidth());
+        safeThis->chainViewport_->setViewPosition(maxX,
+                                                  safeThis->chainViewport_->getViewPositionY());
+    });
 }
 
 void TrackChainContent::clearDeviceSelection() {
@@ -2001,18 +2238,39 @@ int TrackChainContent::calculateInsertIndex(int mouseX) const {
 }
 
 int TrackChainContent::calculateIndicatorX(int index) const {
+    if (nodeComponents_.empty() && index == 0) {
+        return calculateAppendZoneX();
+    }
+
     // Before first element - center in the drag padding area
     if (index == 0) {
         return DRAG_LEFT_PADDING / 2;
     }
 
+    if (index == static_cast<int>(nodeComponents_.size())) {
+        return calculateAppendZoneX();
+    }
+
     // After previous element
     if (index > 0 && index <= static_cast<int>(nodeComponents_.size())) {
-        return nodeComponents_[index - 1]->getRight() + ARROW_WIDTH / 2;
+        return nodeComponents_[index - 1]->getRight() + getScaledWidth(ARROW_WIDTH) / 2;
     }
 
     // Fallback
     return DRAG_LEFT_PADDING / 2;
+}
+
+int TrackChainContent::calculateAppendZoneX() const {
+    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
+    int x = isDraggingOrDropping ? getScaledWidth(DRAG_LEFT_PADDING) : 0;
+    int scaledArrowWidth = getScaledWidth(ARROW_WIDTH);
+    int scaledSlotSpacing = getScaledWidth(SLOT_SPACING);
+
+    for (const auto& node : nodeComponents_) {
+        x += getScaledWidth(node->getPreferredWidth()) + scaledArrowWidth + scaledSlotSpacing;
+    }
+
+    return x;
 }
 
 void TrackChainContent::saveNodeStates() {

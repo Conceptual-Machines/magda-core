@@ -11,6 +11,19 @@ namespace magda {
  */
 enum class QuantizeMode { StartOnly, LengthOnly, StartAndLength };
 
+struct MidiNoteStartBeat {
+    size_t noteIndex;
+    double startBeat;
+};
+
+std::vector<MidiNoteStartBeat> collectMidiNoteStartBeats(const ClipInfo& clip,
+                                                         const std::vector<size_t>& noteIndices);
+
+std::vector<MidiNoteStartBeat> calculateBentMidiNoteStartBeats(
+    const ClipInfo& clip, const std::vector<MidiNoteStartBeat>& originalStartBeats, float depth,
+    float skew, int cycles = 1, float quantize = 0.0f, int quantizeSub = 64,
+    bool hardAngle = false);
+
 /**
  * @brief Command for adding a MIDI note to a clip
  */
@@ -297,6 +310,32 @@ class AddMultipleMidiNotesCommand : public UndoableCommand {
     std::vector<MidiNote> notes_;
     juce::String description_;
     std::vector<size_t> insertedIndices_;  // Indices of inserted notes after execute
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for slicing selected MIDI notes into equal subdivisions.
+ */
+class SliceMidiNotesCommand : public UndoableCommand {
+  public:
+    SliceMidiNotesCommand(ClipId clipId, std::vector<size_t> noteIndices, int subdivisions);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Slice MIDI Notes";
+    }
+
+    const std::vector<size_t>& getSlicedNoteIndices() const {
+        return slicedNoteIndices_;
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<size_t> noteIndices_;
+    int subdivisions_;
+    std::vector<MidiNote> originalNotes_;
+    std::vector<size_t> slicedNoteIndices_;
     bool executed_ = false;
 };
 
@@ -763,7 +802,7 @@ class BendNoteTimingCommand : public UndoableCommand {
     float quantize_;
     int quantizeSub_;
     bool hardAngle_;
-    std::vector<double> oldStartBeats_;
+    std::vector<MidiNoteStartBeat> oldStartBeats_;
     bool executed_ = false;
 };
 

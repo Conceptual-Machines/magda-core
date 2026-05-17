@@ -79,6 +79,19 @@ double StepClock::applyRampCurve(double t, float depth, float skew, bool hardAng
     return juce::jlimit(0.0, 1.0, 2.0 * (1.0 - u) * u * cp + u * u);
 }
 
+double StepClock::applyRampCurveWithCycles(double t, float depth, float skew, int cycles,
+                                           bool hardAngle) {
+    const double clampedT = juce::jlimit(0.0, 1.0, t);
+    const int cycleCount = juce::jmax(1, cycles);
+    if (cycleCount <= 1)
+        return applyRampCurve(clampedT, depth, skew, hardAngle);
+
+    const double segLen = 1.0 / static_cast<double>(cycleCount);
+    const int seg = std::min(static_cast<int>(clampedT / segLen), cycleCount - 1);
+    const double tLocal = (clampedT - seg * segLen) / segLen;
+    return (seg + applyRampCurve(tLocal, depth, skew, hardAngle)) * segLen;
+}
+
 int StepClock::advanceStep(int current, int numSteps, Direction dir) {
     if (numSteps <= 1)
         return 0;
@@ -161,25 +174,15 @@ int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, R
     double blockDurationSecs = static_cast<double>(fc.bufferNumSamples) / sampleRate_;
     bool hasRamp = std::abs(rampDepth) > 0.001f && numSteps > 1;
 
-    int cycles = std::max(1, rampCycles);
-
-    // Helper: apply ramp curve with cycle repetition
-    auto curveWithCycles = [&](double t) -> double {
-        if (cycles == 1)
-            return applyRampCurve(t, rampDepth, rampSkew, hardAngle);
-        double segLen = 1.0 / static_cast<double>(cycles);
-        int seg = std::min(static_cast<int>(t / segLen), cycles - 1);
-        double tLocal = (t - seg * segLen) / segLen;
-        return (seg + applyRampCurve(tLocal, rampDepth, rampSkew, hardAngle)) * segLen;
-    };
-
     // Helper: compute the warped duration for a given step in the cycle
     auto warpedStepDuration = [&](int stepInCycle) -> double {
         if (!hasRamp)
             return stepBeats;
         double t0 = static_cast<double>(stepInCycle) / static_cast<double>(numSteps);
         double t1 = static_cast<double>(stepInCycle + 1) / static_cast<double>(numSteps);
-        return (curveWithCycles(t1) - curveWithCycles(t0)) * cycleBeats;
+        return (applyRampCurveWithCycles(t1, rampDepth, rampSkew, rampCycles, hardAngle) -
+                applyRampCurveWithCycles(t0, rampDepth, rampSkew, rampCycles, hardAngle)) *
+               cycleBeats;
     };
 
     // Initialise on first block — quantise to the nearest cycle grid position

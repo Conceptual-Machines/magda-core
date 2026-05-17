@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "core/ClipInfo.hpp"
+#include "core/MidiNoteCommands.hpp"
+#include "core/SelectionManager.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/RampCurveDisplay.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -32,8 +34,8 @@ class TimeBendPopup : public juce::Component {
 
     /** Called when the user clicks Apply with the chosen depth, skew, cycles, quantize,
      * quantizeSub, and hardAngle. */
-    std::function<void(float depth, float skew, int cycles, float quantize, int quantizeSub,
-                       bool hardAngle)>
+    std::function<void(magda::ClipId clipId, std::vector<size_t> noteIndices, float depth,
+                       float skew, int cycles, float quantize, int quantizeSub, bool hardAngle)>
         onApply;
 
     /** Show as a floating window above the given component. Singleton: any
@@ -47,12 +49,13 @@ class TimeBendPopup : public juce::Component {
     void applyPreview(float depth, float skew, int cycles, float quantize, int quantizeSub,
                       bool hardAngle);
     void restoreOriginals();
+    bool syncSelectionFromManager();
 
     static constexpr int TITLE_BAR_HEIGHT = 22;
 
     magda::ClipId clipId_;
     std::vector<size_t> noteIndices_;
-    std::vector<double> originalStartBeats_;
+    std::vector<magda::MidiNoteStartBeat> originalStartBeats_;
     bool applied_ = false;
 
     RampCurveDisplay curveDisplay_;

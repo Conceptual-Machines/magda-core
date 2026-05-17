@@ -107,6 +107,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<DraggableValueLabel> gridDenominatorLabel_;
     std::unique_ptr<juce::TextButton> autoGridButton_;
     std::unique_ptr<juce::TextButton> snapButton_;
+    std::unique_ptr<SvgButton> sliceButton_;
     std::unique_ptr<SvgButton> bendButton_;
 
     // Header control state

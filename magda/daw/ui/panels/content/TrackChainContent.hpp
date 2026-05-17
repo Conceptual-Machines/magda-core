@@ -171,12 +171,15 @@ class TrackChainContent : public PanelContent,
     void rebuildNodeComponents();
     int calculateTotalContentWidth() const;
     void layoutChainContent();
+    void onAddDeviceClicked();
+    void scrollToEndAsync();
 
     // Viewport for horizontal scrolling of chain content (with zoom support)
     class ZoomableViewport;
     std::unique_ptr<ZoomableViewport> chainViewport_;
     class ChainContainer;
     std::unique_ptr<ChainContainer> chainContainer_;
+    juce::TextButton addDeviceButton_;
 
     // All node components in signal flow order (devices and racks unified)
     std::vector<std::unique_ptr<NodeComponent>> nodeComponents_;
@@ -184,6 +187,7 @@ class TrackChainContent : public PanelContent,
     static constexpr int ARROW_WIDTH = 4;  // Small gap between device slots
     static constexpr int SLOT_SPACING = 8;
     static constexpr int DRAG_LEFT_PADDING = 12;  // Padding during drag for drop indicator
+    static constexpr int APPEND_ZONE_WIDTH = 56;
 
     // Chain selection handling (internal)
     void onChainSelected(magda::TrackId trackId, magda::RackId rackId, magda::ChainId chainId);
@@ -218,6 +222,8 @@ class TrackChainContent : public PanelContent,
 
     // External drop state (plugin drops from browser)
     int dropInsertIndex_ = -1;
+    bool scrollToEndAfterNextDeviceChange_ = false;
+    bool suppressNextImplicitScrollToEnd_ = false;
 
     // State preservation during rebuild - preserves ALL nodes' states
     std::map<juce::String, bool> savedCollapsedStates_;           // path -> collapsed
@@ -233,6 +239,7 @@ class TrackChainContent : public PanelContent,
     int findNodeIndex(NodeComponent* node) const;
     int calculateInsertIndex(int mouseX) const;
     int calculateIndicatorX(int index) const;
+    int calculateAppendZoneX() const;
 
     // Timer callback for detecting stale drop state
     void timerCallback() override;

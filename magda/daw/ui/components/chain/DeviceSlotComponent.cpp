@@ -1907,7 +1907,10 @@ void DeviceSlotComponent::showMultiOutMenu() {
 
 void DeviceSlotComponent::showContextMenu() {
     juce::PopupMenu menu;
-    menu.addItem(1, "Add to New Rack");
+    auto& selection = magda::SelectionManager::getInstance();
+    const bool hasMultiSelection =
+        selection.isChainNodeSelected(nodePath_) && selection.getSelectedChainNodes().size() > 1;
+    menu.addItem(1, hasMultiSelection ? "Add Selection to New Rack" : "Add to New Rack");
 
     // Classification override — let user correct mis-classified plugins
     // Read fresh device info (device_ may be stale)
@@ -1934,53 +1937,55 @@ void DeviceSlotComponent::showContextMenu() {
     auto path = nodePath_;
     auto deviceId = device_.id;
     auto callback = onDeviceDeleted;
+    auto selectedPaths = hasMultiSelection ? selection.getSelectedChainNodes()
+                                           : std::vector<magda::ChainNodePath>{path};
 
-    menu.showMenuAsync(
-        juce::PopupMenu::Options(), [safeThis, path, deviceId, callback](int result) {
-            if (safeThis == nullptr || result == 0)
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, path, deviceId, callback,
+                                                    selectedPaths](int result) {
+        if (safeThis == nullptr || result == 0)
+            return;
+
+        if (result == 1) {
+            // Add to New Rack
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::WrapChainElementsInRackCommand>(selectedPaths));
+        } else if (result >= 200 && result <= 202) {
+            // Classification override
+            auto& tm = magda::TrackManager::getInstance();
+            auto* device = tm.getDevice(path.trackId, deviceId);
+            if (!device)
                 return;
 
-            if (result == 1) {
-                // Add to New Rack
-                auto& tm = magda::TrackManager::getInstance();
-                tm.wrapDeviceInRackByPath(path);
-            } else if (result >= 200 && result <= 202) {
-                // Classification override
-                auto& tm = magda::TrackManager::getInstance();
-                auto* device = tm.getDevice(path.trackId, deviceId);
-                if (!device)
-                    return;
-
-                switch (result) {
-                    case 200:
-                        device->deviceType = magda::DeviceType::Instrument;
-                        device->isInstrument = true;
-                        break;
-                    case 201:
-                        device->deviceType = magda::DeviceType::Effect;
-                        device->isInstrument = false;
-                        break;
-                    case 202:
-                        device->deviceType = magda::DeviceType::MIDI;
-                        device->isInstrument = false;
-                        break;
-                }
-                tm.notifyTrackDevicesChanged(path.trackId);
-            } else if (result == 100) {
-                // Delete — same deferred logic as onDeleteClicked
-                juce::MessageManager::callAsync([path, callback]() {
-                    if (path.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
-                        magda::UndoManager::getInstance().executeCommand(
-                            std::make_unique<magda::RemoveDeviceFromTrackCommand>(
-                                path.trackId, path.topLevelDeviceId));
-                    } else {
-                        magda::TrackManager::getInstance().removeDeviceFromChainByPath(path);
-                    }
-                    if (callback)
-                        callback();
-                });
+            switch (result) {
+                case 200:
+                    device->deviceType = magda::DeviceType::Instrument;
+                    device->isInstrument = true;
+                    break;
+                case 201:
+                    device->deviceType = magda::DeviceType::Effect;
+                    device->isInstrument = false;
+                    break;
+                case 202:
+                    device->deviceType = magda::DeviceType::MIDI;
+                    device->isInstrument = false;
+                    break;
             }
-        });
+            tm.notifyTrackDevicesChanged(path.trackId);
+        } else if (result == 100) {
+            // Delete — same deferred logic as onDeleteClicked
+            juce::MessageManager::callAsync([path, callback]() {
+                if (path.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::RemoveDeviceFromTrackCommand>(
+                            path.trackId, path.topLevelDeviceId));
+                } else {
+                    magda::TrackManager::getInstance().removeDeviceFromChainByPath(path);
+                }
+                if (callback)
+                    callback();
+            });
+        }
+    });
 }
 
 // =============================================================================
@@ -2007,6 +2012,95 @@ void DeviceSlotComponent::createCustomUI() {
     callbacks.onParamModulationChanged = [this]() { updateParamModulation(); };
     callbacks.onUpdateModsPanel = [this]() { updateModsPanel(); };
     callbacks.onUpdateMacroPanel = [this]() { updateMacroPanel(); };
+    callbacks.onCompiledParamLinkRequested = [this](int paramIndex, float amount) {
+        if (!nodePath_.isValid())
+            return;
+
+        const auto target = magda::ControlTarget::pluginParam(nodePath_, paramIndex);
+        amount = juce::jlimit(-1.0f, 1.0f, amount);
+        auto& linkMode = magda::LinkModeManager::getInstance();
+
+        if (linkMode.getLinkModeType() == magda::LinkModeType::Mod) {
+            const auto selection = linkMode.getModInLinkMode();
+            if (!selection.isValid())
+                return;
+
+            const auto ownerPath =
+                selection.parentPath.getType() == magda::ChainNodeType::Track
+                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
+                    : selection.parentPath;
+            magda::TrackManager::getInstance().setModTarget(ownerPath, selection.modIndex, target);
+            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, selection.modIndex,
+                                                                target, amount);
+            if (selection.parentPath == nodePath_) {
+                updateModsPanel();
+                if (!modPanelVisible_) {
+                    modButton_->setToggleState(true, juce::dontSendNotification);
+                    modButton_->setActive(true);
+                    setModPanelVisible(true);
+                }
+                magda::SelectionManager::getInstance().selectMod(nodePath_, selection.modIndex);
+            }
+            updateParamModulation();
+            return;
+        }
+
+        if (linkMode.getLinkModeType() == magda::LinkModeType::Macro) {
+            const auto selection = linkMode.getMacroInLinkMode();
+            if (!selection.isValid())
+                return;
+
+            const auto ownerPath =
+                selection.parentPath.getType() == magda::ChainNodeType::Track
+                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
+                    : selection.parentPath;
+            magda::TrackManager::getInstance().setMacroTarget(ownerPath, selection.macroIndex,
+                                                              target);
+            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, selection.macroIndex,
+                                                                  target, amount);
+            if (selection.parentPath == nodePath_) {
+                updateMacroPanel();
+                if (!paramPanelVisible_) {
+                    macroButton_->setToggleState(true, juce::dontSendNotification);
+                    macroButton_->setActive(true);
+                    setParamPanelVisible(true);
+                }
+            }
+            updateParamModulation();
+        }
+    };
+    callbacks.onCompiledParamLinkAmountChanged = [this](int paramIndex, float amount) {
+        if (!nodePath_.isValid())
+            return;
+
+        const auto target = magda::ControlTarget::pluginParam(nodePath_, paramIndex);
+        amount = juce::jlimit(-1.0f, 1.0f, amount);
+        auto& linkMode = magda::LinkModeManager::getInstance();
+
+        if (linkMode.getLinkModeType() == magda::LinkModeType::Mod) {
+            const auto selection = linkMode.getModInLinkMode();
+            if (!selection.isValid())
+                return;
+            const auto ownerPath =
+                selection.parentPath.getType() == magda::ChainNodeType::Track
+                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
+                    : selection.parentPath;
+            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, selection.modIndex,
+                                                                target, amount);
+            updateParamModulation();
+        } else if (linkMode.getLinkModeType() == magda::LinkModeType::Macro) {
+            const auto selection = linkMode.getMacroInLinkMode();
+            if (!selection.isValid())
+                return;
+            const auto ownerPath =
+                selection.parentPath.getType() == magda::ChainNodeType::Track
+                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
+                    : selection.parentPath;
+            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, selection.macroIndex,
+                                                                  target, amount);
+            updateParamModulation();
+        }
+    };
     callbacks.getNodePath = [this]() { return nodePath_; };
 
     const auto createdKind = createDeviceSlotInlineUi(device_, traits_, nodePath_, *this,

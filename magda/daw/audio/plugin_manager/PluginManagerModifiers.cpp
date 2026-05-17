@@ -66,8 +66,41 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
 
     DeviceTargetLookup lookup(*this);
 
+    auto forEachPlugin = [&, this](const std::function<void(te::Plugin*)>& visit) {
+        for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
+            if (auto* plugin = teTrack->pluginList[pi])
+                visit(plugin);
+        }
+        for (const auto& el : trackInfo->chainElements) {
+            if (!isDevice(el))
+                continue;
+            const auto& dev = getDevice(el);
+            if (dev.isInstrument) {
+                if (auto* inner = instrumentRackManager_.getInnerPlugin(dev.id))
+                    visit(inner);
+            }
+        }
+        for (const auto& [drumGridDevId, padDevIds] : drumGridPadDevices_) {
+            auto sdIt = syncedDevices_.find(drumGridDevId);
+            if (sdIt == syncedDevices_.end() || sdIt->second.trackId != trackId)
+                continue;
+            for (auto padDevId : padDevIds) {
+                te::Plugin::Ptr plugin;
+                {
+                    juce::ScopedLock lock(pluginLock_);
+                    auto pIt = syncedDevices_.find(padDevId);
+                    if (pIt != syncedDevices_.end())
+                        plugin = pIt->second.plugin;
+                }
+                if (plugin)
+                    visit(plugin.get());
+            }
+        }
+    };
+
     ModifierSyncContext ctx;
     ctx.lookup = &lookup;
+    ctx.forEachScopePlugin = forEachPlugin;
 
     // Per-device: in-place LFO + assignment depth update.
     for (const auto& element : trackInfo->chainElements) {
@@ -268,10 +301,6 @@ void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId,
 
     auto* cache = activeCache_.load(std::memory_order_acquire);
     auto& entry = cache->entries[static_cast<size_t>(sourceTrackId)];
-    DBG("[SC-TRIG] triggerSidechainNoteOn srcTrack="
-        << sourceTrackId << " cacheCount=" << entry.count
-        << " modeFilter=" << (modeFilter.has_value() ? (int)modeFilter.value() : -1)
-        << " rendering=" << (int)renderingActive_.load(std::memory_order_relaxed));
     for (int i = 0; i < entry.count; ++i) {
         // Filter by trigger mode if specified
         if (modeFilter.has_value() && entry.trigMode[static_cast<size_t>(i)] != modeFilter.value())
@@ -279,14 +308,6 @@ void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId,
 
         auto* lfo = entry.lfos[static_cast<size_t>(i)];
         bool crossTrack = entry.isCrossTrack[static_cast<size_t>(i)];
-        DBG("[SC-TRIG]   LFO[" << i << "] crossTrack=" << (int)crossTrack
-                               << " gated=" << (int)lfo->isGated()
-                               << " skipNative=" << (int)lfo->getSkipNativeResync() << " syncType="
-                               << juce::roundToInt(lfo->syncTypeParam->getCurrentValue())
-                               << " phase=" << lfo->getCurrentPhase()
-                               << " curValue=" << lfo->getCurrentValue()
-                               << " depth=" << lfo->depthParam->getCurrentValue()
-                               << " rate=" << lfo->rateParam->getCurrentValue());
         // Cross-track: force value=0 for transient gap.
         // Self-track: resync phase but preserve value (no zero gap needed).
         triggerLFONoteOnWithReset(lfo, crossTrack);

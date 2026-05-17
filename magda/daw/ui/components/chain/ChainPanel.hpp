@@ -80,6 +80,7 @@ class ChainPanel : public NodeComponent, private juce::Timer {
     void rebuildElementSlots();
     void onAddDeviceClicked();
     int calculateTotalContentWidth() const;
+    void scrollToEndAsync();
 
     magda::ChainNodePath chainPath_;  // Full path to this chain
     magda::TrackId trackId_;
@@ -108,6 +109,7 @@ class ChainPanel : public NodeComponent, private juce::Timer {
     static constexpr int ARROW_WIDTH =
         4;  // Small gap between device slots (meters act as separators)
     static constexpr int DRAG_LEFT_PADDING = 12;  // Padding during drag for drop indicator
+    static constexpr int APPEND_ZONE_WIDTH = 48;
 
     // Drag-to-reorder state
     NodeComponent* draggedElement_ = nullptr;
@@ -123,6 +125,7 @@ class ChainPanel : public NodeComponent, private juce::Timer {
     int findElementIndex(NodeComponent* element) const;
     int calculateInsertIndex(int mouseX) const;
     int calculateIndicatorX(int index) const;
+    int calculateAppendZoneX() const;
 
     // Timer callback for detecting stale drop state
     void timerCallback() override;

@@ -66,16 +66,11 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
 
                 // Audio-trigger LFOs start gated; the audio thread clears the
                 // gate on each peak (gateSidechainLFOs / triggerNoteOn).
-                //
-                // MIDI-trigger LFOs ask TE to drive the gate from the MIDI
-                // stream itself: held notes ungate, all-notes-off re-gates.
-                // Without this they free-run between notes and the audio
-                // diverges from MAGDA's visual sim — see the MAGDA TE patch
-                // adding setGateOnTriggerSource() to LFOModifier.
+                // MIDI-trigger LFOs are gated in applyLFOProperties from
+                // MAGDA's held-note model so rack and top-level scopes match.
                 if (modInfo.triggerMode == LFOTriggerMode::Audio) {
                     lfo->setGated(true);
                 } else if (modInfo.triggerMode == LFOTriggerMode::MIDI) {
-                    lfo->setGated(true);
                     lfo->setGateOnTriggerSource(true);
                 }
             }
@@ -113,6 +108,30 @@ te::AutomatableParameter* resolveLinkTargetParam(const ModifierSyncContext& ctx,
     return params[static_cast<size_t>(paramIndex)];
 }
 
+template <typename Source>
+void removeSourceAssignments(const ModifierSyncContext& ctx, ModifierSyncState& state,
+                             Source& source) {
+    if (ctx.forEachScopePlugin) {
+        ctx.forEachScopePlugin([&source](te::Plugin* plugin) {
+            if (!plugin)
+                return;
+            for (auto* param : plugin->getAutomatableParameters()) {
+                if (param)
+                    param->removeModifier(source);
+            }
+        });
+    }
+
+    for (auto& [_modId, modifier] : state.modifiers) {
+        if (!modifier)
+            continue;
+        for (auto* param : modifier->getAutomatableParameters()) {
+            if (param)
+                param->removeModifier(source);
+        }
+    }
+}
+
 }  // namespace
 
 // =============================================================================
@@ -133,17 +152,9 @@ void ModifierSyncWalker::syncStructure(
             if (!mod)
                 continue;
 
-            // Scrub modifier assignments from every plugin reachable from this
-            // scope — this catches cross-device assignments wired by track-level
-            // mods, as well as drum-grid pad chain plugins, etc.
-            if (ctx.forEachScopePlugin) {
-                ctx.forEachScopePlugin([&](te::Plugin* plugin) {
-                    if (!plugin)
-                        return;
-                    for (auto* param : plugin->getAutomatableParameters())
-                        param->removeModifier(*mod);
-                });
-            }
+            // Scrub modifier assignments from every target reachable from this
+            // scope, including same-scope modifier params.
+            removeSourceAssignments(ctx, state, *mod);
 
             if (ctx.modifierList)
                 ctx.modifierList->state.removeChild(mod->state, nullptr);
@@ -165,14 +176,7 @@ void ModifierSyncWalker::syncStructure(
             if (!macroParam)
                 continue;
 
-            if (ctx.forEachScopePlugin) {
-                ctx.forEachScopePlugin([&](te::Plugin* plugin) {
-                    if (!plugin)
-                        return;
-                    for (auto* param : plugin->getAutomatableParameters())
-                        param->removeModifier(*macroParam);
-                });
-            }
+            removeSourceAssignments(ctx, state, *macroParam);
 
             ctx.macroList->removeMacroParameter(*macroParam);
         }
@@ -284,7 +288,19 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
     if (!node.valid())
         return;
 
-    // ---- Update LFO properties + mod assignment depths ----
+    // Keep TE modifier objects alive, but rebuild their assignments from the
+    // MAGDA link model. This makes deleted links and target path changes
+    // immediately remove live Tracktion assignments.
+    for (auto& [_modId, modifier] : state.modifiers) {
+        if (modifier)
+            removeSourceAssignments(ctx, state, *modifier);
+    }
+    for (auto& [_macroIdx, macroParam] : state.macroParams) {
+        if (macroParam)
+            removeSourceAssignments(ctx, state, *macroParam);
+    }
+
+    // ---- Update LFO properties + rebuild mod assignments ----
     if (node.mods) {
         for (const auto& modInfo : *node.mods) {
             if (!modInfo.enabled)
@@ -301,10 +317,9 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 if (!snapHolder)
                     snapHolder = std::make_unique<CurveSnapshotHolder>();
                 applyLFOProperties(lfo, modInfo, snapHolder.get());
-                // Note: gate state for MIDI/Audio LFOs is owned by the audio
-                // thread (triggerNoteOn clears, gateSidechainLFOs sets). Don't
-                // touch lfo->setGated() here — it would race with the audio
-                // thread and cause modulation dropouts.
+                // MIDI gate state is part of the MAGDA model and is applied
+                // above. Audio-trigger gate state remains owned by the audio
+                // sidechain path.
             }
 
             for (const auto& link : modInfo.links) {
@@ -323,18 +338,12 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 if (!param)
                     continue;
 
-                for (auto* assignment : param->getAssignments()) {
-                    if (assignment->isForModifierSource(*modifier)) {
-                        assignment->value = link.amount;
-                        assignment->offset = 0.0f;
-                        break;
-                    }
-                }
+                param->addModifier(*modifier, link.amount);
             }
         }
     }
 
-    // ---- Update macro assignment depths ----
+    // ---- Rebuild macro assignments ----
     if (node.macros) {
         for (int macroIdx = 0; macroIdx < static_cast<int>(node.macros->size()); ++macroIdx) {
             auto mpIt = state.macroParams.find(macroIdx);
@@ -358,15 +367,9 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 if (!param)
                     continue;
 
-                for (auto* assignment : param->getAssignments()) {
-                    if (assignment->isForModifierSource(*macroParam)) {
-                        const float offset = link.bipolar ? -link.amount : 0.0f;
-                        const float value = link.bipolar ? link.amount * 2.0f : link.amount;
-                        assignment->value = value;
-                        assignment->offset = offset;
-                        break;
-                    }
-                }
+                const float offset = link.bipolar ? -link.amount : 0.0f;
+                const float value = link.bipolar ? link.amount * 2.0f : link.amount;
+                param->addModifier(*macroParam, value, offset);
             }
         }
     }

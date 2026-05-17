@@ -5,6 +5,7 @@
 #include "../../common/BarsBeatsTicksLabel.hpp"
 #include "../../common/DraggableValueLabel.hpp"
 #include "../../common/SvgButton.hpp"
+#include "../../common/TextSlider.hpp"
 #include "BaseInspector.hpp"
 #include "clip/sections/ClipFadesSection.hpp"
 #include "core/ClipManager.hpp"
@@ -172,6 +173,12 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     juce::ComboBox launchModeCombo_;
     juce::Label launchQuantizeLabel_;
     juce::ComboBox launchQuantizeCombo_;
+    juce::Label followActionLabel_;
+    juce::ComboBox followActionCombo_;
+    juce::Label followActionDelayLabel_;
+    TextSlider followActionDelaySlider_;
+    juce::Label followActionLoopCountLabel_;
+    TextSlider followActionLoopCountSlider_;
     // Scrollable container for clip properties
     juce::Viewport clipPropsViewport_;
     class ClipPropsContainer : public juce::Component {

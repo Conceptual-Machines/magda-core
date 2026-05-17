@@ -125,7 +125,9 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
 
         auto sourceFile =
             projectManager.getRecordingsDirectory().getChildFile("unsaved_recording.wav");
-        REQUIRE(sourceFile.getParentDirectory().createDirectory());
+        auto sourceDir = sourceFile.getParentDirectory();
+        sourceDir.createDirectory();
+        REQUIRE(sourceDir.isDirectory());
         REQUIRE(sourceFile.replaceWithText("placeholder audio"));
 
         auto clipId = ClipManager::getInstance().createAudioClipBeats(
@@ -245,6 +247,54 @@ TEST_CASE("Audio clip serialization separates source facts from interpretation",
     REQUIRE(restored->audio().interpretation.totalBeats == Approx(8.0));
     REQUIRE(restored->audio().interpretation.totalBeatsLocked);
     REQUIRE(restored->loopLengthBeats == Approx(8.0));
+}
+
+TEST_CASE("Session clip follow action settings roundtrip", "[project][serialization][session]") {
+    ProjectTestFixture fixture;
+
+    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Audio);
+
+    ClipInfo clip;
+    clip.id = 91;
+    clip.trackId = trackId;
+    clip.name = "Follow";
+    clip.setMidiContent();
+    clip.view = ClipView::Session;
+    clip.sceneIndex = 2;
+    clip.loopEnabled = true;
+    clip.setPlacementBeats(0.0, 4.0);
+    clip.loopLengthBeats = 4.0;
+    clip.launchQuantize = LaunchQuantize::QuarterBar;
+    clip.followAction = FollowAction::PlayNext;
+    clip.followActionDelayBeats = 0.5;
+    clip.followActionLoopCount = 3;
+    ClipManager::getInstance().restoreClip(clip);
+
+    ProjectInfo info;
+    info.name = "Follow Actions";
+    info.tempo = 120.0;
+
+    auto json = ProjectSerializer::serializeProject(info);
+    auto* rootObj = json.getDynamicObject();
+    REQUIRE(rootObj != nullptr);
+    auto* clips = rootObj->getProperty("clips").getArray();
+    REQUIRE(clips != nullptr);
+    REQUIRE(clips->size() == 1);
+
+    auto* clipObj = clips->getReference(0).getDynamicObject();
+    REQUIRE(clipObj != nullptr);
+    REQUIRE(static_cast<int>(clipObj->getProperty("followAction")) ==
+            static_cast<int>(FollowAction::PlayNext));
+    REQUIRE(static_cast<double>(clipObj->getProperty("followActionDelayBeats")) == Approx(0.5));
+    REQUIRE(static_cast<int>(clipObj->getProperty("followActionLoopCount")) == 3);
+
+    ProjectInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+    auto* restored = ClipManager::getInstance().getClip(clip.id);
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->followAction == FollowAction::PlayNext);
+    REQUIRE(restored->followActionDelayBeats == Approx(0.5));
+    REQUIRE(restored->followActionLoopCount == 3);
 }
 
 TEST_CASE("Clip serialization validates type and audio schema", "[project][serialization][audio]") {

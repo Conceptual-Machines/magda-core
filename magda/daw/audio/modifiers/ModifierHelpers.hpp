@@ -112,12 +112,18 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
     lfo->syncTypeParam->setParameterFromHost(syncType, juce::dontSendNotification);
     lfo->rateTypeParam->setParameterFromHost(rateType, juce::dontSendNotification);
 
-    // Gate-on-trigger-source: TE will drive the gate from MIDI itself only
-    // when this flag is set AND syncType==note. Toggle it whenever the
-    // trigger mode changes at runtime. Note-trigger arms it; switching to
-    // Free / Audio / Transport disarms it (and the setter clears any held
-    // gate so output resumes).
+    // MIDI-triggered LFOs are gated from MAGDA's held-note model, not from
+    // TE's native modifier input. That keeps top-level and rack-contained
+    // LFOs consistent: note-on opens the gate, all-notes-off closes it.
+    //
+    // Audio-triggered LFOs are still gated by the audio sidechain path so
+    // one-shots can continue through release while normal loops close on
+    // the audio gate.
     lfo->setGateOnTriggerSource(modInfo.triggerMode == LFOTriggerMode::MIDI);
+    if (modInfo.triggerMode == LFOTriggerMode::MIDI)
+        lfo->setGated(!modInfo.running);
+    else if (modInfo.triggerMode != LFOTriggerMode::Audio)
+        lfo->setGated(false);
 }
 
 /**

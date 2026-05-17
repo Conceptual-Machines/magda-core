@@ -45,6 +45,7 @@ class CompiledCompressorCurveView final : public juce::Component,
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseMove(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
   private:
     enum class Handle { None, Threshold };
