@@ -211,14 +211,10 @@
     "updates.error_prefix": "无法检查更新："
   },
   "about": {
-    "version_prefix": "版本 ",
-    "credits.powered_by": "Powered by",
-    "credits.made_with": "Made with"
+    "version_prefix": "版本 "
   },
   "splash": {
-    "version_prefix": "版本 ",
-    "credits.powered_by": "Powered by",
-    "credits.made_with": "Made with"
+    "version_prefix": "版本 "
   },
   "chain_tree": {
     "label.click_hint": "点击以在链视图中选中对应项"
@@ -342,6 +338,7 @@
     "language.restart_required": "更改语言后需要重启软件才能完全生效。",
     "scale.label": "界面缩放",
     "scale.auto": "自动（根据显示 DPI）",
+    "font_scale.label": "字号",
     "tab.general": "通用",
     "tab.ui": "界面",
     "tab.colours": "颜色",
