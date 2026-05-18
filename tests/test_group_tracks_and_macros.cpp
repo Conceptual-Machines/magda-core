@@ -1,10 +1,14 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "../magda/daw/core/AutomationInfo.hpp"
 #include "../magda/daw/core/MacroInfo.hpp"
 #include "../magda/daw/core/ModInfo.hpp"
 #include "../magda/daw/core/RackInfo.hpp"
+#include "../magda/daw/core/TrackCommands.hpp"
 #include "../magda/daw/core/TrackManager.hpp"
+#include "../magda/daw/core/UndoManager.hpp"
+#include "../magda/daw/project/serialization/ProjectSerializer.hpp"
 
 using namespace magda;
 
@@ -24,9 +28,11 @@ class GroupMacroTestFixture {
   public:
     GroupMacroTestFixture() {
         TrackManager::getInstance().clearAllTracks();
+        UndoManager::getInstance().clearHistory();
     }
 
     ~GroupMacroTestFixture() {
+        UndoManager::getInstance().clearHistory();
         TrackManager::getInstance().clearAllTracks();
     }
 
@@ -670,6 +676,27 @@ TEST_CASE("Device mod link amount fires deviceModifiersChanged", "[mod][notifica
         REQUIRE(dev->mods[0].getLink(target)->amount == Catch::Approx(0.9f));
     }
 
+    SECTION("setModLinkEnabled toggles existing link without changing amount") {
+        fixture.tm().setModLinkAmount(devicePath, 0, target, 0.7f);
+        spy.modifiersChangedCount = 0;
+
+        fixture.tm().setModLinkEnabled(devicePath, 0, target, false);
+
+        REQUIRE(spy.modifiersChangedCount == 1);
+
+        auto* dev = fixture.tm().getDeviceInChainByPath(devicePath);
+        REQUIRE(dev->mods[0].getLink(target) != nullptr);
+        REQUIRE_FALSE(dev->mods[0].getLink(target)->enabled);
+        REQUIRE(dev->mods[0].getLink(target)->amount == Catch::Approx(0.7f));
+
+        spy.modifiersChangedCount = 0;
+        fixture.tm().setModLinkEnabled(devicePath, 0, target, true);
+
+        REQUIRE(spy.modifiersChangedCount == 1);
+        REQUIRE(dev->mods[0].getLink(target)->enabled);
+        REQUIRE(dev->mods[0].getLink(target)->amount == Catch::Approx(0.7f));
+    }
+
     SECTION("Multiple mod links to different params") {
         ControlTarget target2 = testPluginParam(deviceId, 5, trackId);
 
@@ -1015,4 +1042,89 @@ TEST_CASE("Macro name changes are silent", "[macro][notification]") {
     }
 
     fixture.tm().removeListener(&spy);
+}
+
+TEST_CASE("Macro and mod rename commands undo and redo", "[macro][mod][undo]") {
+    GroupMacroTestFixture fixture;
+    auto& undo = UndoManager::getInstance();
+
+    auto trackId = fixture.tm().createTrack("Test Track");
+    DeviceInfo device;
+    device.name = "TestDevice";
+    auto deviceId = fixture.tm().addDeviceToTrack(trackId, device);
+    auto devicePath = ChainNodePath::topLevelDevice(trackId, deviceId);
+
+    fixture.tm().addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+
+    undo.executeCommand(std::make_unique<SetMacroNameCommand>(devicePath, 0, "Filter Cutoff"));
+    REQUIRE(fixture.tm().getDeviceInChainByPath(devicePath)->macros[0].name == "Filter Cutoff");
+    REQUIRE(undo.getUndoDescription() == "Rename Macro");
+
+    REQUIRE(undo.undo());
+    REQUIRE(fixture.tm().getDeviceInChainByPath(devicePath)->macros[0].name == "Macro 1");
+
+    REQUIRE(undo.redo());
+    REQUIRE(fixture.tm().getDeviceInChainByPath(devicePath)->macros[0].name == "Filter Cutoff");
+
+    undo.executeCommand(std::make_unique<SetModNameCommand>(devicePath, 0, "Slow Sweep"));
+    REQUIRE(fixture.tm().getDeviceInChainByPath(devicePath)->mods[0].name == "Slow Sweep");
+    REQUIRE(undo.getUndoDescription() == "Rename Modulator");
+
+    REQUIRE(undo.undo());
+    REQUIRE(fixture.tm().getDeviceInChainByPath(devicePath)->mods[0].name == "LFO 1");
+
+    REQUIRE(undo.redo());
+    REQUIRE(fixture.tm().getDeviceInChainByPath(devicePath)->mods[0].name == "Slow Sweep");
+}
+
+TEST_CASE("Macro and mod custom names serialize", "[macro][mod][serialization]") {
+    DeviceInfo device;
+    device.name = "TestDevice";
+    device.macros[0].name = "Filter Cutoff";
+    device.mods.push_back(ModInfo(0));
+    device.mods[0].name = "Slow Sweep";
+
+    DeviceInfo restored;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(ProjectSerializer::serializeDeviceInfo(device),
+                                                     restored));
+    REQUIRE(restored.macros[0].name == "Filter Cutoff");
+    REQUIRE(restored.mods[0].name == "Slow Sweep");
+}
+
+TEST_CASE("Automation display names include custom macro and mod names",
+          "[macro][mod][automation]") {
+    GroupMacroTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Test Track");
+    DeviceInfo device;
+    device.name = "TestDevice";
+    auto deviceId = fixture.tm().addDeviceToTrack(trackId, device);
+    auto devicePath = ChainNodePath::topLevelDevice(trackId, deviceId);
+
+    fixture.tm().addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+
+    auto macroTarget = ControlTarget::deviceMacro(devicePath, 0);
+    auto modTarget = ControlTarget::modParam(devicePath, 0, 0);
+
+    REQUIRE(getDisplayNameForTarget(macroTarget) == "Macro 1");
+    REQUIRE(getDisplayNameForTarget(modTarget) == "LFO 1 Rate");
+
+    fixture.tm().setMacroName(devicePath, 0, "Filter Cutoff");
+    fixture.tm().setModName(devicePath, 0, "Slow Sweep");
+
+    REQUIRE(getDisplayNameForTarget(macroTarget) == "Filter Cutoff [Macro 1]");
+    REQUIRE(getDisplayNameForTarget(modTarget) == "Slow Sweep [LFO 1] Rate");
+    REQUIRE(getMacroDisplayName(0, "Filter Cutoff") == "Filter Cutoff [Macro 1]");
+    REQUIRE(getModParameterDisplayName(fixture.tm().getDeviceInChainByPath(devicePath)->mods[0],
+                                       0) == "Slow Sweep [LFO 1] Rate");
+
+    AutomationLaneInfo macroLane;
+    macroLane.target = macroTarget;
+    macroLane.name = "Macro 1";
+    REQUIRE(macroLane.getDisplayName() == "Filter Cutoff [Macro 1]");
+
+    AutomationLaneInfo modLane;
+    modLane.target = modTarget;
+    modLane.name = "Mod 0 Param 0";
+    REQUIRE(modLane.getDisplayName() == "Slow Sweep [LFO 1] Rate");
 }

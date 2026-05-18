@@ -116,6 +116,18 @@ void ModsPanelComponent::ensureKnobCount(int count) {
             }
         };
 
+        knob->onLinkRemoved = [this, i](magda::ControlTarget target) {
+            if (onModLinkRemoved) {
+                onModLinkRemoved(i, target);
+            }
+        };
+
+        knob->onAllLinksCleared = [this, i]() {
+            if (onModAllLinksCleared) {
+                onModAllLinksCleared(i);
+            }
+        };
+
         knob->onNameChanged = [this, i](juce::String name) {
             if (onModNameChanged) {
                 onModNameChanged(i, name);
@@ -147,6 +159,7 @@ void ModsPanelComponent::ensureKnobCount(int count) {
         };
 
         knob->setAvailableTargets(availableDevices_);
+        knob->setDeviceParamNames(deviceParamNames_);
         // Modifier list is shared verbatim; the knob skips its own ModId
         // when building the menu (it has currentMod_.id; the parent panel
         // doesn't, since the knob owns its ModInfo).
@@ -217,6 +230,14 @@ void ModsPanelComponent::setAvailableDevices(
     availableDevices_ = devices;
     for (auto& knob : knobs_) {
         knob->setAvailableTargets(devices);
+    }
+}
+
+void ModsPanelComponent::setDeviceParamNames(
+    const std::map<magda::DeviceId, std::vector<juce::String>>& paramNames) {
+    deviceParamNames_ = paramNames;
+    for (auto& knob : knobs_) {
+        knob->setDeviceParamNames(paramNames);
     }
 }
 
