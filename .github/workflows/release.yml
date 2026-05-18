@@ -16,7 +16,11 @@ concurrency:
 
 jobs:
   build-macos:
-    runs-on: macos-14  # Apple Silicon, can build universal binaries
+    runs-on: macos-15  # Apple Silicon (Xcode 16 / Apple Clang 16+).
+    # macos-14 ships Apple Clang 15, which is missing the C++20 capture-of-
+    # structured-binding support; valid C++20 code that captures `auto& [a, b]`
+    # bindings inside generic lambdas fails to compile there. Binary back-compat
+    # is independently controlled by MACOSX_DEPLOYMENT_TARGET=11.0.
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
