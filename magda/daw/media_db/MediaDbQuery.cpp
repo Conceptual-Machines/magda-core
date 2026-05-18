@@ -63,6 +63,14 @@ BuiltWhere buildWhere(const QueryFilters& f) {
         clauses.emplace_back("tonal = ?");
         w.intBinds.emplace_back("tonal", *f.tonal ? 1 : 0);
     }
+    // Tag filter — FTS5 column-scoped MATCH on tag_text. Multi-token
+    // input is implicit AND in FTS5 (e.g. "drum 808" matches rows whose
+    // tag_text contains both "drum" and "808"). Bound as text just like
+    // any column equality, so bindAll order stays valid.
+    if (f.tags && !f.tags->empty()) {
+        clauses.emplace_back("id IN (SELECT rowid FROM media_fts WHERE tag_text MATCH ?)");
+        w.textBinds.emplace_back("tags", *f.tags);
+    }
 
     w.clause = clauses.front();
     for (size_t i = 1; i < clauses.size(); ++i) {

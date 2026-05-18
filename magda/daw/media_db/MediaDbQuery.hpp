@@ -35,6 +35,12 @@ struct QueryFilters {
     std::optional<std::string> keyRoot;
     std::optional<std::string> keyScale;
     std::optional<std::string> format;  // file extension lowercase
+
+    // Free-text tag filter. Whitespace-separated tokens are AND-combined
+    // (typing "drum 808" → tagged with both drum AND 808). Implemented via
+    // FTS5 column-scoped MATCH on media_fts.tag_text so it scales with
+    // library size.
+    std::optional<std::string> tags;
 };
 
 struct QueryResult {

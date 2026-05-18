@@ -252,16 +252,14 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
         cb.setLookAndFeel(&comboLnf);
     };
 
-    // Family — editable combo. Predefined values appear in the dropdown
-    // for quick picking, but the user can also type a custom string to
-    // match arbitrary family values written by the indexer (or external
-    // tools). Empty text = no filter. Different from shape/key which are
-    // strict closed sets.
+    // Family — strict closed-set dropdown (same shape as key/shape). The
+    // tags free-text field below is for matching anything that doesn't fit
+    // the predefined families.
+    familyFilter_.addItem("family: all", 1);
     for (size_t i = 1; i < kFamilies.size(); ++i) {
-        familyFilter_.addItem(kFamilies[i], static_cast<int>(i));
+        familyFilter_.addItem(kFamilies[i], static_cast<int>(i + 1));
     }
-    familyFilter_.setEditableText(true);
-    familyFilter_.setTextWhenNothingSelected("family: all");
+    familyFilter_.setSelectedId(1, juce::dontSendNotification);
     styleCombo(familyFilter_);
     familyFilter_.onChange = [this]() { runSearch(); };
 
@@ -297,6 +295,18 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     tonalOnly_.setLookAndFeel(&fbLnf);
     tonalOnly_.onClick = [this]() { runSearch(); };
 
+    // Tags free-text filter — whitespace-separated tokens are AND-combined
+    // via FTS5 MATCH against media_fts.tag_text. Updates on Enter / blur,
+    // matching the BPM range editors so we don't query on every keystroke.
+    tagsFilter_.setTextToShowWhenEmpty("tags (e.g. drum 808)", DarkTheme::getSecondaryTextColour());
+    tagsFilter_.setColour(juce::TextEditor::backgroundColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+    tagsFilter_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+    tagsFilter_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+    tagsFilter_.setFont(uiFont);
+    tagsFilter_.onReturnKey = [this]() { runSearch(); };
+    tagsFilter_.onFocusLost = [this]() { runSearch(); };
+
     // Pop-out button — opens this view in its own DocumentWindow. Hidden in
     // the pop-out instance to avoid recursive windows.
     if (!isPopOutInstance_) {
@@ -314,6 +324,7 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     addAndMakeVisible(bpmMinBox_);
     addAndMakeVisible(bpmMaxBox_);
     addAndMakeVisible(tonalOnly_);
+    addAndMakeVisible(tagsFilter_);
 
     // Kind selection lives outside this component — see setKindFilter().
     // The search-bar file-type icons in MediaExplorerContent double as the
@@ -426,7 +437,12 @@ void MediaDbBrowserContent::resized() {
     bpmMinBox_.setBounds(row2.removeFromLeft(60).reduced(2));
     row2.removeFromLeft(4);
     bpmMaxBox_.setBounds(row2.removeFromLeft(60).reduced(2));
-    tonalOnly_.setBounds(row2.removeFromRight(70).reduced(2));
+    row2.removeFromLeft(8);
+    tonalOnly_.setBounds(row2.removeFromLeft(70).reduced(2));
+    row2.removeFromLeft(8);
+    // Tags fills the rest of the row — gives it room to breathe in
+    // popped-out / wide panels and stays at minimum ~140px in narrow ones.
+    tagsFilter_.setBounds(row2.reduced(2));
 
     bounds.removeFromTop(4);
 
@@ -460,13 +476,10 @@ magda::media::QueryFilters MediaDbBrowserContent::currentFilters() const {
     // getItemText(getSelectedItemIndex()) have both been seen to lag the
     // selectedId update on first interaction, causing a stale or empty
     // filter on the first call to onChange.
-    // Family is an editable combo — read the editor text directly so custom
-    // values typed by the user are honoured. Empty / whitespace-only text
-    // means "no filter".
-    const auto familyText = familyFilter_.getText().trim();
-    if (familyText.isNotEmpty()) {
-        f.family = familyText.toStdString();
-    }
+    // Family / shape / key are strict closed-set dropdowns — read by
+    // selectedId so onChange always sees a coherent value (getText() can
+    // briefly lag).
+    f.family = selectedString(familyFilter_, kFamilies);
     f.shape = selectedString(shapeFilter_, kShapes);
     f.keyRoot = selectedString(keyFilter_, kKeys);
 
@@ -482,6 +495,10 @@ magda::media::QueryFilters MediaDbBrowserContent::currentFilters() const {
     }
     if (tonalOnly_.getToggleState()) {
         f.tonal = true;
+    }
+    const auto tagsText = tagsFilter_.getText().trim();
+    if (tagsText.isNotEmpty()) {
+        f.tags = tagsText.toStdString();
     }
     return f;
 }

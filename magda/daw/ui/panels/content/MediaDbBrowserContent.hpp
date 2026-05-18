@@ -73,6 +73,7 @@ class MediaDbBrowserContent : public juce::Component {
     juce::TextEditor bpmMinBox_;
     juce::TextEditor bpmMaxBox_;
     juce::ToggleButton tonalOnly_{"tonal"};
+    juce::TextEditor tagsFilter_;  // free-text tag filter, AND-tokenised
     std::unique_ptr<magda::SvgButton> popOutButton_;
 
     // Externally-driven kind filter. The DB browser doesn't own a kind
