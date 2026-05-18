@@ -6,6 +6,7 @@
 #include <string_view>
 #include <system_error>
 #include <unordered_map>
+#include <vector>
 
 namespace magda::media {
 
@@ -84,28 +85,68 @@ std::optional<ScannedFile> classify(const std::filesystem::path& path) {
 }
 
 void walk(const std::filesystem::path& root, const std::function<void(const ScannedFile&)>& visit) {
-    using Iter = std::filesystem::recursive_directory_iterator;
+    // Manual stack-based recursion instead of recursive_directory_iterator.
+    // The recursive iterator stops the *entire* walk on any per-entry
+    // failure (permission denied not caught by skip_permission_denied,
+    // network-mount blip, vanishing directory, symlink loop, etc.), so a
+    // single bad subtree would leave the rest of the tree un-indexed.
+    // Here each directory is iterated independently with its own
+    // error_code; failures inside one directory only skip that directory's
+    // remaining entries, not the rest of the walk.
     using Opt = std::filesystem::directory_options;
+    constexpr auto kOpts = Opt::follow_directory_symlink | Opt::skip_permission_denied;
 
-    std::error_code rootEc;
-    Iter it(root, Opt::follow_directory_symlink | Opt::skip_permission_denied, rootEc);
-    if (rootEc) {
-        return;
-    }
-    Iter end;
-    while (it != end) {
-        std::error_code stepEc;
-        const auto& entry = *it;
-        if (entry.is_regular_file(stepEc) && !stepEc) {
-            if (auto sf = classify(entry.path())) {
-                visit(*sf);
-            }
+    std::vector<std::filesystem::path> stack;
+    stack.push_back(root);
+
+    while (!stack.empty()) {
+        auto dir = std::move(stack.back());
+        stack.pop_back();
+
+        std::error_code dirEc;
+        std::filesystem::directory_iterator it;
+        try {
+            it = std::filesystem::directory_iterator(dir, kOpts, dirEc);
+        } catch (const std::exception&) {
+            continue;  // can't open this directory; carry on with siblings
         }
-        it.increment(stepEc);
-        if (stepEc) {
-            // Best effort: stop iteration cleanly if the tree changes
-            // underneath us mid-walk.
-            break;
+        if (dirEc) {
+            continue;
+        }
+
+        const std::filesystem::directory_iterator end;
+        while (it != end) {
+            try {
+                const auto& entry = *it;
+
+                std::error_code regEc;
+                if (entry.is_regular_file(regEc) && !regEc) {
+                    if (auto sf = classify(entry.path())) {
+                        try {
+                            visit(*sf);
+                        } catch (...) {
+                            // A single file's processing failure must not
+                            // sink the whole scan; the indexer does its own
+                            // accounting under processOneFile.
+                        }
+                    }
+                } else {
+                    std::error_code dirCheckEc;
+                    if (entry.is_directory(dirCheckEc) && !dirCheckEc) {
+                        stack.push_back(entry.path());
+                    }
+                }
+            } catch (const std::exception&) {
+                // Bad entry — skip and try to keep going in this directory.
+            }
+
+            std::error_code incEc;
+            it.increment(incEc);
+            if (incEc) {
+                // Lost iteration position; abandon this directory but
+                // continue with the rest of the stacked subtree.
+                break;
+            }
         }
     }
 }
