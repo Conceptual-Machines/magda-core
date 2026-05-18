@@ -1,11 +1,72 @@
 #include "modulation/ModKnobComponent.hpp"
 
 #include "BinaryData.h"
+#include "core/AutomationInfo.hpp"
+#include "core/AutomationManager.hpp"
 #include "core/LinkModeManager.hpp"
+#include "core/TrackManager.hpp"
+#include "core/controllers/BindingRegistry.hpp"
+#include "core/controllers/MidiLearnCoordinator.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+bool findDevicePathInElements(const std::vector<magda::ChainElement>& elements,
+                              const magda::ChainNodePath& parentPath, magda::DeviceId deviceId,
+                              magda::ChainNodePath& outPath) {
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            if (device.id == deviceId) {
+                outPath = parentPath.isTrackLevel
+                              ? magda::ChainNodePath::topLevelDevice(parentPath.trackId, deviceId)
+                              : parentPath.withDevice(deviceId);
+                return true;
+            }
+        } else if (magda::isRack(element)) {
+            const auto& rack = magda::getRack(element);
+            auto rackPath = parentPath.isTrackLevel
+                                ? magda::ChainNodePath::rack(parentPath.trackId, rack.id)
+                                : parentPath.withRack(rack.id);
+            for (const auto& chain : rack.chains) {
+                if (findDevicePathInElements(chain.elements, rackPath.withChain(chain.id), deviceId,
+                                             outPath)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+magda::ChainNodePath resolveTargetDevicePath(const magda::ChainNodePath& parentPath,
+                                             magda::DeviceId deviceId) {
+    if (parentPath.getDeviceId() == deviceId)
+        return parentPath;
+
+    auto& tm = magda::TrackManager::getInstance();
+    magda::ChainNodePath resolved;
+    if (parentPath.isTrackLevel) {
+        if (const auto* track = tm.getTrack(parentPath.trackId)) {
+            if (findDevicePathInElements(track->chainElements, parentPath, deviceId, resolved))
+                return resolved;
+        }
+    } else if (parentPath.getType() == magda::ChainNodeType::Rack) {
+        if (const auto* rack = tm.getRackByPath(parentPath)) {
+            for (const auto& chain : rack->chains) {
+                if (findDevicePathInElements(chain.elements, parentPath.withChain(chain.id),
+                                             deviceId, resolved)) {
+                    return resolved;
+                }
+            }
+        }
+    }
+
+    return magda::ChainNodePath::topLevelDevice(parentPath.trackId, deviceId);
+}
+}  // namespace
 
 ModKnobComponent::ModKnobComponent(int modIndex) : modIndex_(modIndex) {
     // Initialize mod with default values
@@ -60,6 +121,11 @@ void ModKnobComponent::setModInfo(const magda::ModInfo& mod, const magda::ModInf
 void ModKnobComponent::setAvailableTargets(
     const std::vector<std::pair<magda::DeviceId, juce::String>>& devices) {
     availableTargets_ = devices;
+}
+
+void ModKnobComponent::setDeviceParamNames(
+    const std::map<magda::DeviceId, std::vector<juce::String>>& paramNames) {
+    deviceParamNames_ = paramNames;
 }
 
 void ModKnobComponent::setSelected(bool selected) {
@@ -225,85 +291,268 @@ void ModKnobComponent::paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int
 void ModKnobComponent::showContextMenu() {
     juce::PopupMenu menu;
 
-    // Enable/Disable option
+    constexpr int kToggleEnabledId = 1;
+    constexpr int kRemoveId = 2;
+    constexpr int kRenameId = 3;
+    constexpr int kDeviceParamBaseId = 1000;
+    constexpr int kUnlinkBaseId = 10000;
+    constexpr int kClearAllId = 20000;
+    constexpr int kShowAutomationLaneId = 30000;
+    constexpr int kModRateBaseId = 40000;
+    constexpr int kLearnId = 50000;
+    constexpr int kClearMidiId = 50001;
+
     bool isEnabled = currentMod_.enabled;
-    menu.addItem(1, isEnabled ? "Disable" : "Enable");
+    menu.addItem(kRenameId, "Rename");
+    menu.addItem(kShowAutomationLaneId, "Show Automation Lane");
+    menu.addItem(kToggleEnabledId, isEnabled ? "Disable" : "Enable");
 
     menu.addSeparator();
 
-    // Modulators submenu — mirror of MacroKnobComponent's Modulators picker:
-    // a mod can drive another mod's Rate. Skip THIS mod's own id to avoid
-    // a self-link. Offset 40000 keeps IDs out of the way of the
-    // Enable/Remove items above.
-    constexpr int kModRateBaseId = 40000;
-    bool addedAnyModItem = false;
-    juce::PopupMenu modsMenu;
-    for (size_t mi = 0; mi < availableModifiers_.size(); ++mi) {
-        const auto& [modId, modName] = availableModifiers_[mi];
-        if (modId == currentMod_.id)
-            continue;  // Skip self
-        juce::PopupMenu perModMenu;
-        magda::ControlTarget t;
-        t.kind = magda::ControlTarget::Kind::ModParam;
-        t.devicePath = parentPath_;
-        t.modId = modId;
-        t.modParamIndex = 0;  // Rate
-        const bool isCurrentTarget = currentMod_.getLink(t) != nullptr;
-        perModMenu.addItem(kModRateBaseId + static_cast<int>(mi), "Rate", true, isCurrentTarget);
-        modsMenu.addSubMenu(modName, perModMenu);
-        addedAnyModItem = true;
+    menu.addSectionHeader("Link to Parameter...");
+    menu.addSeparator();
+
+    if (!availableModifiers_.empty()) {
+        bool addedAnyModItem = false;
+        juce::PopupMenu modsMenu;
+        for (size_t mi = 0; mi < availableModifiers_.size(); ++mi) {
+            const auto& [modId, modName] = availableModifiers_[mi];
+            if (modId == currentMod_.id)
+                continue;
+            juce::PopupMenu perModMenu;
+            magda::ControlTarget t;
+            t.kind = magda::ControlTarget::Kind::ModParam;
+            t.devicePath = parentPath_;
+            t.modId = modId;
+            t.modParamIndex = 0;  // Rate
+            const bool isCurrentTarget = currentMod_.getLink(t) != nullptr;
+            perModMenu.addItem(kModRateBaseId + static_cast<int>(mi), "Rate", true,
+                               isCurrentTarget);
+            modsMenu.addSubMenu(modName, perModMenu);
+            addedAnyModItem = true;
+        }
+        if (addedAnyModItem)
+            menu.addSubMenu("Modulators", modsMenu);
     }
-    if (addedAnyModItem) {
-        menu.addSubMenu("Link to Modulator", modsMenu);
+
+    int itemId = kDeviceParamBaseId;
+    juce::PopupMenu* destination = &menu;
+    juce::PopupMenu chainMenu;
+    juce::String chainTitle;
+    auto flushChain = [&]() {
+        if (destination != &menu) {
+            menu.addSubMenu(chainTitle, chainMenu);
+            chainMenu = juce::PopupMenu{};
+            destination = &menu;
+        }
+    };
+
+    for (const auto& [deviceId, deviceName] : availableTargets_) {
+        if (deviceId == magda::INVALID_DEVICE_ID) {
+            flushChain();
+            chainTitle = deviceName;
+            chainMenu = juce::PopupMenu{};
+            destination = &chainMenu;
+            continue;
+        }
+
+        juce::PopupMenu deviceMenu;
+        auto it = deviceParamNames_.find(deviceId);
+        int paramCount = (it != deviceParamNames_.end()) ? static_cast<int>(it->second.size()) : 16;
+
+        for (int paramIdx = 0; paramIdx < paramCount; ++paramIdx) {
+            juce::String paramName =
+                (it != deviceParamNames_.end() && paramIdx < static_cast<int>(it->second.size()))
+                    ? it->second[static_cast<size_t>(paramIdx)]
+                    : "Parameter " + juce::String(paramIdx + 1);
+
+            magda::ControlTarget t;
+            t.devicePath = resolveTargetDevicePath(parentPath_, deviceId);
+            t.paramIndex = paramIdx;
+            const bool isCurrentTarget = currentMod_.getLink(t) != nullptr;
+            deviceMenu.addItem(itemId, paramName, true, isCurrentTarget);
+            itemId++;
+        }
+
+        destination->addSubMenu(deviceName, deviceMenu);
+    }
+    flushChain();
+
+    menu.addSeparator();
+
+    std::vector<magda::ControlTarget> unlinkTargets;
+    for (const auto& link : currentMod_.links) {
+        if (!link.target.isValid())
+            continue;
+        juce::String paramName;
+        if (link.target.kind == magda::ControlTarget::Kind::ModParam) {
+            paramName = magda::getDisplayNameForTarget(link.target);
+        } else {
+            auto it = deviceParamNames_.find(link.target.deviceId());
+            if (it != deviceParamNames_.end() && link.target.paramIndex >= 0 &&
+                link.target.paramIndex < static_cast<int>(it->second.size())) {
+                paramName = it->second[static_cast<size_t>(link.target.paramIndex)];
+            } else {
+                paramName = "P" + juce::String(link.target.paramIndex + 1);
+            }
+            for (const auto& [devId, devName] : availableTargets_) {
+                if (devId == link.target.deviceId()) {
+                    paramName = devName + " - " + paramName;
+                    break;
+                }
+            }
+        }
+        menu.addItem(kUnlinkBaseId + static_cast<int>(unlinkTargets.size()), "Unlink " + paramName);
+        unlinkTargets.push_back(link.target);
+    }
+
+    if (unlinkTargets.size() > 1)
+        menu.addItem(kClearAllId, "Clear All Links");
+
+    if (parentPath_.isValid() && currentMod_.id != magda::INVALID_MOD_ID) {
+        auto& reg = magda::BindingRegistry::getInstance();
+        auto& learn = magda::MidiLearnCoordinator::getInstance();
+        const auto rateTarget =
+            magda::ControlTarget::modParam(parentPath_, currentMod_.id, /*modParamIndex=*/0);
+        const bool isLearning = learn.isLearning(rateTarget);
+        const int mappingCount = static_cast<int>(reg.findFor(rateTarget).size());
+
         menu.addSeparator();
+        menu.addItem(kLearnId, isLearning ? "Cancel MIDI Learn" : "Learn MIDI");
+        menu.addItem(kClearMidiId,
+                     "Clear MIDI Mapping" +
+                         (mappingCount > 0 ? " (" + juce::String(mappingCount) + ")" : ""),
+                     mappingCount > 0);
     }
 
-    // Remove option (Delete key works when selected)
-    menu.addItem(2, "Remove");
+    menu.addSeparator();
 
-    // Show menu and handle selection
+    menu.addItem(kRemoveId, "Remove");
+
     auto safeThis = juce::Component::SafePointer<ModKnobComponent>(this);
     bool capturedEnabled = isEnabled;
+    auto targets = availableTargets_;      // Capture by value for async safety
+    auto paramNames = deviceParamNames_;   // Capture by value for async safety
     auto modifiers = availableModifiers_;  // Capture by value for async safety
+    auto parentPath = parentPath_;
+    auto modId = currentMod_.id;
+    auto learnDisplayName = magda::getModParameterDisplayName(currentMod_, 0);
 
-    menu.showMenuAsync(juce::PopupMenu::Options(),
-                       [safeThis, capturedEnabled, modifiers](int result) {
-                           if (safeThis == nullptr || result == 0) {
-                               return;
-                           }
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, capturedEnabled, targets, paramNames,
+                                                    modifiers, unlinkTargets, parentPath, modId,
+                                                    learnDisplayName](int result) {
+        if (safeThis == nullptr || result == 0) {
+            return;
+        }
 
-                           if (result == 1) {
-                               // Toggle enable/disable
-                               if (safeThis->onEnableToggled) {
-                                   safeThis->onEnableToggled(!capturedEnabled);
-                               }
-                               return;
-                           }
-                           if (result == 2) {
-                               // Remove
-                               if (safeThis->onRemoveRequested) {
-                                   safeThis->onRemoveRequested();
-                               }
-                               return;
-                           }
+        if (result == kToggleEnabledId) {
+            // Toggle enable/disable
+            if (safeThis->onEnableToggled) {
+                safeThis->onEnableToggled(!capturedEnabled);
+            }
+            return;
+        }
+        if (result == kRenameId) {
+            safeThis->nameLabel_.showEditor();
+            return;
+        }
+        if (result == kShowAutomationLaneId) {
+            auto target = magda::ControlTarget::modParam(parentPath, modId,
+                                                         /*modParamIndex=*/0);
+            auto& mgr = magda::AutomationManager::getInstance();
+            auto laneId = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
+            mgr.setLaneVisible(laneId, true);
+            return;
+        }
+        if (result == kLearnId) {
+            auto& learn = magda::MidiLearnCoordinator::getInstance();
+            auto target = magda::ControlTarget::modParam(parentPath, modId,
+                                                         /*modParamIndex=*/0);
+            if (learn.isLearning(target)) {
+                learn.cancelLearn();
+            } else {
+                learn.beginLearn(target, learnDisplayName);
+            }
+            return;
+        }
+        if (result == kClearMidiId) {
+            magda::MidiLearnCoordinator::getInstance().clearMappings(
+                magda::ControlTarget::modParam(parentPath, modId,
+                                               /*modParamIndex=*/0));
+            return;
+        }
+        if (result == kRemoveId) {
+            // Remove
+            if (safeThis->onRemoveRequested) {
+                safeThis->onRemoveRequested();
+            }
+            return;
+        }
 
-                           // Modulator-rate link selection. The parent's
-                           // onTargetChanged routes through TrackManager::
-                           // setXxxControlTarget, which materialises the link
-                           // (with an audible default amount for ModParam
-                           // kind) and triggers a refresh — so we don't
-                           // need to mutate currentMod_ here.
-                           int modSlot = result - kModRateBaseId;
-                           if (modSlot >= 0 && modSlot < static_cast<int>(modifiers.size())) {
-                               magda::ControlTarget t;
-                               t.kind = magda::ControlTarget::Kind::ModParam;
-                               t.devicePath = safeThis->parentPath_;
-                               t.modId = modifiers[static_cast<size_t>(modSlot)].first;
-                               t.modParamIndex = 0;  // Rate
-                               if (safeThis->onTargetChanged)
-                                   safeThis->onTargetChanged(t);
-                           }
-                       });
+        // Modulator-rate link selection. The parent's
+        // onTargetChanged routes through TrackManager::
+        // setXxxControlTarget, which materialises the link
+        // (with an audible default amount for ModParam
+        // kind) and triggers a refresh — so we don't
+        // need to mutate currentMod_ here.
+        int modSlot = result - kModRateBaseId;
+        if (modSlot >= 0 && modSlot < static_cast<int>(modifiers.size())) {
+            magda::ControlTarget t;
+            t.kind = magda::ControlTarget::Kind::ModParam;
+            t.devicePath = safeThis->parentPath_;
+            t.modId = modifiers[static_cast<size_t>(modSlot)].first;
+            t.modParamIndex = 0;  // Rate
+            if (safeThis->onTargetChanged)
+                safeThis->onTargetChanged(t);
+            return;
+        }
+
+        if (result == kClearAllId) {
+            safeThis->currentMod_.links.clear();
+            safeThis->repaint();
+            if (safeThis->onAllLinksCleared)
+                safeThis->onAllLinksCleared();
+            return;
+        }
+
+        int unlinkIdx = result - kUnlinkBaseId;
+        if (unlinkIdx >= 0 && unlinkIdx < static_cast<int>(unlinkTargets.size())) {
+            auto target = unlinkTargets[static_cast<size_t>(unlinkIdx)];
+            safeThis->currentMod_.removeLink(target);
+            safeThis->repaint();
+            if (safeThis->onLinkRemoved)
+                safeThis->onLinkRemoved(target);
+            return;
+        }
+
+        int itemId = kDeviceParamBaseId;
+        for (const auto& [deviceId, deviceName] : targets) {
+            juce::ignoreUnused(deviceName);
+            if (deviceId == magda::INVALID_DEVICE_ID)
+                continue;
+
+            auto it = paramNames.find(deviceId);
+            int paramCount = (it != paramNames.end()) ? static_cast<int>(it->second.size()) : 16;
+            for (int paramIdx = 0; paramIdx < paramCount; ++paramIdx) {
+                if (itemId == result) {
+                    magda::ControlTarget t;
+                    t.devicePath = resolveTargetDevicePath(parentPath, deviceId);
+                    t.paramIndex = paramIdx;
+                    if (!safeThis->currentMod_.getLink(t)) {
+                        magda::ModLink link;
+                        link.target = t;
+                        link.amount = 0.0f;
+                        safeThis->currentMod_.links.push_back(link);
+                    }
+                    safeThis->repaint();
+                    if (safeThis->onTargetChanged)
+                        safeThis->onTargetChanged(t);
+                    return;
+                }
+                itemId++;
+            }
+        }
+    });
 }
 
 void ModKnobComponent::onNameLabelEdited() {

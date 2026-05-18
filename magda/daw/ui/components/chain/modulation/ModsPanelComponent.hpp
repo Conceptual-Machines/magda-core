@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -63,6 +64,10 @@ class ModsPanelComponent : public PagedControlPanel {
     // Set available devices for linking (devices in this rack/chain)
     void setAvailableDevices(const std::vector<std::pair<magda::DeviceId, juce::String>>& devices);
 
+    // Set parameter names per device (for the link menu)
+    void setDeviceParamNames(
+        const std::map<magda::DeviceId, std::vector<juce::String>>& paramNames);
+
     // Set available modifiers in the same scope so each knob's right-click
     // menu can offer mod->mod-rate links. Each knob filters out itself
     // before populating its own menu.
@@ -79,6 +84,8 @@ class ModsPanelComponent : public PagedControlPanel {
 
     // Callbacks
     std::function<void(int modIndex, magda::ControlTarget target)> onModTargetChanged;
+    std::function<void(int modIndex, magda::ControlTarget target)> onModLinkRemoved;
+    std::function<void(int modIndex)> onModAllLinksCleared;
     std::function<void(int modIndex, juce::String name)> onModNameChanged;
     std::function<void(int modIndex)> onModClicked;  // Opens modulator editor
     std::function<void(int slotIndex, magda::ModType type, magda::LFOWaveform waveform)>
@@ -103,6 +110,7 @@ class ModsPanelComponent : public PagedControlPanel {
     std::vector<std::unique_ptr<ModKnobComponent>> knobs_;
     std::vector<std::unique_ptr<AddModButton>> addButtons_;
     std::vector<std::pair<magda::DeviceId, juce::String>> availableDevices_;
+    std::map<magda::DeviceId, std::vector<juce::String>> deviceParamNames_;
     std::vector<std::pair<magda::ModId, juce::String>> availableModifiers_;
     magda::ChainNodePath parentPath_;
     int currentModCount_ = 0;  // Track how many actual mods exist

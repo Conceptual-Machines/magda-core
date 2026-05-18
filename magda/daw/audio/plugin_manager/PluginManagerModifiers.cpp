@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <set>
 #include <unordered_set>
 #include <vector>
@@ -562,7 +563,10 @@ void PluginManager::rebuildSidechainLFOCache() {
             if (it == syncedDevices_.end())
                 return;
             for (const auto& modInfo : device.mods) {
-                if (!modInfo.enabled || modInfo.links.empty())
+                const bool hasEnabledLinks =
+                    std::any_of(modInfo.links.begin(), modInfo.links.end(),
+                                [](const ModLink& link) { return link.enabled; });
+                if (!modInfo.enabled || !hasEnabledLinks)
                     continue;
                 auto modIt = it->second.modifiers.find(modInfo.id);
                 if (modIt == it->second.modifiers.end() || !modIt->second)
@@ -652,11 +656,14 @@ std::pair<int, int> PluginManager::computeModLinkFingerprint(TrackId trackId,
             continue;
         const auto& device = getDevice(element);
         for (const auto& mod : device.mods) {
-            if (mod.enabled && !mod.links.empty()) {
+            int enabledLinkCount = 0;
+            for (const auto& link : mod.links)
+                enabledLinkCount += link.enabled ? 1 : 0;
+            if (mod.enabled && enabledLinkCount > 0) {
                 ++modCount;
-                linkCount += static_cast<int>(mod.links.size());
+                linkCount += enabledLinkCount;
                 for (const auto& link : mod.links)
-                    bipolarCount += link.bipolar ? 1 : 0;
+                    bipolarCount += (link.enabled && link.bipolar) ? 1 : 0;
             }
         }
         // Device-level macros
@@ -672,11 +679,14 @@ std::pair<int, int> PluginManager::computeModLinkFingerprint(TrackId trackId,
 
     // Track-level mods
     for (const auto& mod : trackInfo->mods) {
-        if (mod.enabled && !mod.links.empty()) {
+        int enabledLinkCount = 0;
+        for (const auto& link : mod.links)
+            enabledLinkCount += link.enabled ? 1 : 0;
+        if (mod.enabled && enabledLinkCount > 0) {
             ++modCount;
-            linkCount += static_cast<int>(mod.links.size());
+            linkCount += enabledLinkCount;
             for (const auto& link : mod.links)
-                bipolarCount += link.bipolar ? 1 : 0;
+                bipolarCount += (link.enabled && link.bipolar) ? 1 : 0;
         }
     }
 

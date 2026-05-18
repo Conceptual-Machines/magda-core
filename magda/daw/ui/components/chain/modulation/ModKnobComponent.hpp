@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <map>
 
 #include "core/LinkModeManager.hpp"
 #include "core/ModInfo.hpp"
@@ -112,6 +113,10 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     // Set available devices for linking (name and deviceId pairs)
     void setAvailableTargets(const std::vector<std::pair<magda::DeviceId, juce::String>>& devices);
 
+    // Set parameter names per device (for the link menu)
+    void setDeviceParamNames(
+        const std::map<magda::DeviceId, std::vector<juce::String>>& paramNames);
+
     // Set available modifiers in the same scope so the right-click menu can
     // expose mod->mod-rate links. The parent should filter out THIS mod
     // (same id) before passing to avoid offering a self-target.
@@ -144,6 +149,8 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
 
     // Callbacks
     std::function<void(magda::ControlTarget)> onTargetChanged;
+    std::function<void(magda::ControlTarget)> onLinkRemoved;
+    std::function<void()> onAllLinksCleared;
     std::function<void(juce::String)> onNameChanged;
     std::function<void()> onClicked;            // Opens modulator editor panel
     std::function<void()> onRemoveRequested;    // Remove this mod
@@ -175,6 +182,7 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     magda::ModInfo currentMod_;
     const magda::ModInfo* liveModPtr_ = nullptr;  // Pointer to live mod for animation
     std::vector<std::pair<magda::DeviceId, juce::String>> availableTargets_;
+    std::map<magda::DeviceId, std::vector<juce::String>> deviceParamNames_;
     std::vector<std::pair<magda::ModId, juce::String>> availableModifiers_;
     bool selected_ = false;
     magda::ChainNodePath parentPath_;  // For drag-and-drop identification

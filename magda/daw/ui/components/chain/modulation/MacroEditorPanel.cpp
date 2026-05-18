@@ -1,5 +1,6 @@
 #include "modulation/MacroEditorPanel.hpp"
 
+#include "core/AutomationInfo.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -201,7 +202,7 @@ void MacroEditorPanel::updateFromMacro() {
             if (modNameResolver_)
                 modName = modNameResolver_(link.target.modId, link.target.modParamIndex);
             if (modName.isEmpty())
-                modName = "Mod " + juce::String(link.target.modId) + " Rate";
+                modName = magda::getDisplayNameForTarget(link.target);
             row.paramName = modName;
         } else if (paramNameResolver_) {
             row.paramName = paramNameResolver_(link.target.deviceId(), link.target.paramIndex);
@@ -260,6 +261,12 @@ void MacroEditorPanel::resized() {
         linkMatrixViewport_.setBounds(bounds);
         linkMatrixContent_.setSize(bounds.getWidth(), linkMatrixContent_.getHeight());
     }
+}
+
+bool MacroEditorPanel::keyPressed(const juce::KeyPress& key) {
+    if (key == juce::KeyPress::returnKey)
+        return true;
+    return false;
 }
 
 void MacroEditorPanel::mouseDown(const juce::MouseEvent& /*e*/) {

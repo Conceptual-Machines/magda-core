@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 
 #include "ai/AIPanelComponent.hpp"
+#include "core/AutomationInfo.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -1195,6 +1196,16 @@ void NodeComponent::initializeModsMacrosPanels() {
     modsPanel_->onModTargetChanged = [this](int modIndex, magda::ControlTarget target) {
         onModTargetChangedInternal(modIndex, target);
     };
+    modsPanel_->onModLinkRemoved = [this](int modIndex, magda::ControlTarget target) {
+        onModLinkRemovedInternal(modIndex, target);
+        updateModsPanel();
+        updateModulatorEditor();
+    };
+    modsPanel_->onModAllLinksCleared = [this](int modIndex) {
+        onModAllLinksClearedInternal(modIndex);
+        updateModsPanel();
+        updateModulatorEditor();
+    };
     modsPanel_->onModNameChanged = [this](int modIndex, juce::String name) {
         onModNameChangedInternal(modIndex, name);
     };
@@ -1267,6 +1278,11 @@ void NodeComponent::initializeModsMacrosPanels() {
 
     // Create modulator editor panel
     modulatorEditorPanel_ = std::make_unique<ModulatorEditorPanel>();
+    modulatorEditorPanel_->onNameChanged = [this](juce::String name) {
+        if (selectedModIndex_ >= 0) {
+            onModNameChangedInternal(selectedModIndex_, name);
+        }
+    };
     modulatorEditorPanel_->onRateChanged = [this](float rate) {
         if (selectedModIndex_ >= 0) {
             onModRateChangedInternal(selectedModIndex_, rate);
@@ -1435,6 +1451,14 @@ void NodeComponent::initializeModsMacrosPanels() {
             updateModulatorEditor();
         };
 
+    // Mod matrix: enable/disable link without losing its amount
+    modulatorEditorPanel_->onModLinkEnabledChanged = [this](int modIndex,
+                                                            magda::ControlTarget target,
+                                                            bool enabled) {
+        magda::TrackManager::getInstance().setModLinkEnabled(nodePath_, modIndex, target, enabled);
+        updateModulatorEditor();
+    };
+
     // Mod matrix: change link amount
     modulatorEditorPanel_->onModLinkAmountChanged =
         [this](int modIndex, magda::ControlTarget target, float amount) {
@@ -1498,9 +1522,7 @@ void NodeComponent::initializeModsMacrosPanels() {
                 return {};
             for (const auto& m : *mods) {
                 if (m.id == modId) {
-                    juce::String paramLabel =
-                        modParamIndex == 0 ? "Rate" : "P" + juce::String(modParamIndex);
-                    return m.name + " " + paramLabel;
+                    return magda::getModParameterDisplayName(m, modParamIndex);
                 }
             }
             return {};
@@ -1524,6 +1546,7 @@ void NodeComponent::updateModsPanel() {
 
     auto devices = getAvailableDevices();
     modsPanel_->setAvailableDevices(devices);
+    modsPanel_->setDeviceParamNames(getDeviceParamNames());
 
     // Same-scope modifiers — each knob's "Link to Modulator" submenu
     // can target another mod's rate. Skip the knob's own ModId is done
@@ -1533,7 +1556,7 @@ void NodeComponent::updateModsPanel() {
         modList.reserve(mods->size());
         for (const auto& m : *mods)
             if (m.enabled)
-                modList.emplace_back(m.id, m.name);
+                modList.emplace_back(m.id, magda::getModDisplayName(m));
     }
     modsPanel_->setAvailableModifiers(modList);
 }
@@ -1548,6 +1571,10 @@ void NodeComponent::refreshPanels() {
         updateMacroPanel();
     if (modPanelVisible_)
         updateModsPanel();
+    if (modulatorEditorVisible_)
+        updateModulatorEditor();
+    if (macroEditorVisible_)
+        updateMacroEditor();
 }
 
 void NodeComponent::updateMacroPanel() {
@@ -1570,7 +1597,7 @@ void NodeComponent::updateMacroPanel() {
         mods.reserve(modsData->size());
         for (const auto& m : *modsData)
             if (m.enabled)
-                mods.emplace_back(m.id, m.name);
+                mods.emplace_back(m.id, magda::getModDisplayName(m));
     }
     macroPanel_->setAvailableModifiers(mods);
 }

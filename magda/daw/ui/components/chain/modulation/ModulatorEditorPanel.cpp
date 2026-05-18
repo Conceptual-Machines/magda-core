@@ -1,7 +1,5 @@
 #include "modulation/ModulatorEditorPanel.hpp"
 
-#include <stdexcept>
-
 #include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
@@ -56,34 +54,6 @@ magda::SyncDivision indexToSyncDivision(int idx) {
         return magda::SyncDivision::Quarter;
     return kSyncDivisionOrder[idx];
 }
-
-// Build the lane label for a mod's Rate parameter, matching the format used by
-// the "Add New Lane" submenu in TrackHeadersPanel: device/rack-scope mods get
-// "<owner>: <mod> Rate"; track-scope mods get just "<mod> Rate" (no track
-// prefix, since the lane already lives under the track header).
-juce::String buildQualifiedModRateName(const magda::ChainNodePath& path,
-                                       const juce::String& modName) {
-    juce::String suffix = modName + " Rate";
-    auto& tm = magda::TrackManager::getInstance();
-    switch (path.getType()) {
-        case magda::ChainNodeType::Track:
-            return suffix;
-        case magda::ChainNodeType::Rack:
-            if (auto* rack = tm.getRackByPath(path))
-                return rack->name + ": " + suffix;
-            break;
-        case magda::ChainNodeType::TopLevelDevice:
-        case magda::ChainNodeType::Device:
-            if (auto* dev = tm.getDeviceInChainByPath(path))
-                return dev->name + ": " + suffix;
-            break;
-        case magda::ChainNodeType::None:
-        case magda::ChainNodeType::Chain:
-            throw std::runtime_error(
-                "buildQualifiedModRateName: mod path has no mod-bearing scope");
-    }
-    throw std::runtime_error("buildQualifiedModRateName: failed to resolve owner for mod path");
-}
 }  // namespace
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -101,12 +71,15 @@ void ModMatrixContent::setLinks(const std::vector<LinkRow>& links) {
     repaint();
 }
 
-bool ModMatrixContent::updateLinkAmount(magda::ControlTarget target, float amount, bool bipolar) {
+bool ModMatrixContent::updateLinkState(magda::ControlTarget target, float amount, bool bipolar,
+                                       bool enabled) {
     for (auto& link : links_) {
         if (link.target == target) {
-            bool changed = (link.amount != amount || link.bipolar != bipolar);
+            bool changed =
+                (link.amount != amount || link.bipolar != bipolar || link.enabled != enabled);
             link.amount = amount;
             link.bipolar = bipolar;
+            link.enabled = enabled;
             return changed;
         }
     }
@@ -130,28 +103,38 @@ void ModMatrixContent::paint(juce::Graphics& g) {
 
         auto remaining = rowBounds.reduced(2, 0);
 
+        const auto rowTextColour =
+            link.enabled ? DarkTheme::getTextColour() : DarkTheme::getSecondaryTextColour();
+
         // Delete button (X) on right - 14px
         auto deleteBounds = remaining.removeFromRight(14);
         g.setColour(DarkTheme::getSecondaryTextColour());
         g.drawText("x", deleteBounds, juce::Justification::centred);
         remaining.removeFromRight(2);
 
+        // Enable toggle - 18px
+        auto enabledBounds = remaining.removeFromRight(18);
+        g.setColour(link.enabled ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)
+                                 : DarkTheme::getSecondaryTextColour());
+        g.drawText(link.enabled ? "On" : "Off", enabledBounds, juce::Justification::centred);
+        remaining.removeFromRight(2);
+
         // Bipolar toggle - 16px
         auto bipolarBounds = remaining.removeFromRight(16);
-        g.setColour(link.bipolar ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)
-                                 : DarkTheme::getSecondaryTextColour());
+        g.setColour(link.enabled && link.bipolar ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)
+                                                 : DarkTheme::getSecondaryTextColour());
         g.drawText(link.bipolar ? "Bi" : "Un", bipolarBounds, juce::Justification::centred);
         remaining.removeFromRight(2);
 
         // Amount - 28px
         auto amountBounds = remaining.removeFromRight(28);
         int percent = static_cast<int>(link.amount * 100);
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(rowTextColour);
         g.drawText(juce::String(percent) + "%", amountBounds, juce::Justification::centredRight);
         remaining.removeFromRight(2);
 
         // Param name takes remaining space
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(rowTextColour);
         g.drawText(link.paramName, remaining, juce::Justification::centredLeft, true);
     }
 
@@ -176,8 +159,17 @@ void ModMatrixContent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Bipolar toggle zone: next 16px + 2px padding
+    // Enable toggle zone: next 18px + 2px padding
     if (x >= width - 36 && x < width - 18) {
+        if (onToggleEnabled) {
+            auto& link = links_[static_cast<size_t>(rowIndex)];
+            onToggleEnabled(link.target, !link.enabled);
+        }
+        return;
+    }
+
+    // Bipolar toggle zone: next 16px + 2px padding
+    if (x >= width - 54 && x < width - 38) {
         if (onToggleBipolar) {
             auto& link = links_[static_cast<size_t>(rowIndex)];
             onToggleBipolar(link.target, !link.bipolar);
@@ -232,6 +224,8 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centred);
     nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
+    nameLabel_.setEditable(false, false, false);
+    nameLabel_.onTextChange = [this]() { onNameLabelEdited(); };
     addAndMakeVisible(nameLabel_);
 
     // Waveform selector (for LFO shapes - hidden when Custom/Curve)
@@ -574,6 +568,11 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
             onModLinkBipolarChanged(selectedModIndex_, target, bipolar);
         }
     };
+    modMatrixContent_.onToggleEnabled = [this](magda::ControlTarget target, bool enabled) {
+        if (selectedModIndex_ >= 0 && onModLinkEnabledChanged) {
+            onModLinkEnabledChanged(selectedModIndex_, target, enabled);
+        }
+    };
     modMatrixContent_.onAmountChanged = [this](magda::ControlTarget target, float amount) {
         if (selectedModIndex_ >= 0 && onModLinkAmountChanged) {
             onModLinkAmountChanged(selectedModIndex_, target, amount);
@@ -670,9 +669,8 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
                         l.target.modId == modId && l.target.modParamIndex == 0) {
                         UnlinkEntry e{SrcKind::Macro, parent, static_cast<int>(i)};
                         unlinks.push_back(e);
-                        juce::String name = macros[i].name.isNotEmpty()
-                                                ? macros[i].name
-                                                : "Macro " + juce::String(i + 1);
+                        juce::String name =
+                            magda::getMacroDisplayName(static_cast<int>(i), macros[i].name);
                         menu.addItem(kUnlinkBaseId + static_cast<int>(unlinks.size() - 1),
                                      "Unlink " + name);
                         break;  // one link per (macro → this rate) at most
@@ -690,8 +688,7 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
                         l.target.modId == modId && l.target.modParamIndex == 0) {
                         UnlinkEntry e{SrcKind::Mod, parent, static_cast<int>(i)};
                         unlinks.push_back(e);
-                        juce::String name =
-                            mods[i].name.isNotEmpty() ? mods[i].name : "Mod " + juce::String(i + 1);
+                        juce::String name = magda::getModDisplayName(mods[i]);
                         menu.addItem(kUnlinkBaseId + static_cast<int>(unlinks.size() - 1),
                                      "Unlink " + name);
                         break;
@@ -743,7 +740,7 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
     auto safeThis = juce::Component::SafePointer<ModulatorEditorPanel>(this);
     auto rateModId = currentMod_.id;
     auto learnPath = ownerDevicePath_;
-    auto learnDisplayName = currentMod_.name + " Rate";
+    auto learnDisplayName = magda::getModParameterDisplayName(currentMod_, 0);
     menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, target, unlinks, rateModId, learnPath,
                                                     learnDisplayName](int result) {
         if (safeThis == nullptr || result == 0)
@@ -809,6 +806,7 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
     selectedModIndex_ = index;
     if (index < 0) {
         nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
+        nameLabel_.setEditable(false, false, false);
         waveformCombo_.setEnabled(false);
         syncToggle_.setEnabled(false);
         syncDivisionSlider_.setEnabled(false);
@@ -825,6 +823,7 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
         triggerModeCombo_.setEnabled(true);
         audioAttackSlider_.setEnabled(true);
         audioReleaseSlider_.setEnabled(true);
+        nameLabel_.setEditable(false, true, false);
         // advancedButton_ enabled state is set in updateFromMod() based on trigger mode
     }
 }
@@ -889,6 +888,23 @@ void ModulatorEditorPanel::updateFromMod() {
 
     // Update layout since curve/LFO mode affects component positions
     resized();
+}
+
+void ModulatorEditorPanel::onNameLabelEdited() {
+    if (selectedModIndex_ < 0)
+        return;
+
+    auto newName = nameLabel_.getText().trim();
+    if (newName.isEmpty()) {
+        newName = magda::ModInfo::getDefaultName(selectedModIndex_, currentMod_.type);
+        nameLabel_.setText(newName, juce::dontSendNotification);
+    }
+
+    if (newName != currentMod_.name) {
+        currentMod_.name = newName;
+        if (onNameChanged)
+            onNameChanged(newName);
+    }
 }
 
 void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
@@ -979,7 +995,7 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
         if (m.id == currentMod_.id)
             continue;
         for (const auto& l : m.links) {
-            if (l.target.kind != magda::ControlTarget::Kind::ModParam ||
+            if (!l.enabled || l.target.kind != magda::ControlTarget::Kind::ModParam ||
                 l.target.modId != currentMod_.id || l.target.modParamIndex != 0)
                 continue;
             float offset = l.bipolar ? (m.value * 2.0f - 1.0f) : m.value;
@@ -1216,6 +1232,12 @@ void ModulatorEditorPanel::resized() {
             juce::jmax(bounds.getHeight(),
                        static_cast<int>(currentMod_.links.size()) * ModMatrixContent::ROW_HEIGHT));
     }
+}
+
+bool ModulatorEditorPanel::keyPressed(const juce::KeyPress& key) {
+    if (key == juce::KeyPress::returnKey)
+        return true;
+    return false;
 }
 
 void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
@@ -1471,8 +1493,11 @@ void ModulatorEditorPanel::updateModMatrix() {
         row.target = link.target;
         row.amount = link.amount;
         row.bipolar = link.bipolar;
+        row.enabled = link.enabled;
 
-        if (paramNameResolver_) {
+        if (link.target.kind == magda::ControlTarget::Kind::ModParam) {
+            row.paramName = magda::getDisplayNameForTarget(link.target);
+        } else if (paramNameResolver_) {
             row.paramName = paramNameResolver_(link.target.deviceId(), link.target.paramIndex);
         } else {
             row.paramName = "P" + juce::String(link.target.paramIndex);
@@ -1499,8 +1524,8 @@ void ModulatorEditorPanel::timerCallback() {
             for (const auto& liveLink : liveMod->links) {
                 if (!liveLink.isValid())
                     continue;
-                if (modMatrixContent_.updateLinkAmount(liveLink.target, liveLink.amount,
-                                                       liveLink.bipolar))
+                if (modMatrixContent_.updateLinkState(liveLink.target, liveLink.amount,
+                                                      liveLink.bipolar, liveLink.enabled))
                     changed = true;
             }
             if (changed)

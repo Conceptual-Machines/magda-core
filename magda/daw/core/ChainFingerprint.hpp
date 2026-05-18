@@ -58,11 +58,15 @@ inline ChainFingerprint fingerprintOf(const ConstChainNode& node) {
 
     if (node.mods) {
         for (const auto& mod : *node.mods) {
-            if (mod.enabled && !mod.links.empty()) {
+            int enabledLinkCount = 0;
+            for (const auto& link : mod.links)
+                enabledLinkCount += link.enabled ? 1 : 0;
+
+            if (mod.enabled && enabledLinkCount > 0) {
                 ++fp.modCount;
-                fp.modLinkCount += static_cast<int>(mod.links.size());
+                fp.modLinkCount += enabledLinkCount;
                 for (const auto& link : mod.links)
-                    fp.bipolarCount += link.bipolar ? 1 : 0;
+                    fp.bipolarCount += (link.enabled && link.bipolar) ? 1 : 0;
             }
         }
     }
