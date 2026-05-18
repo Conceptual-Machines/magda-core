@@ -357,7 +357,10 @@ void AudioClipPropertiesContent::createControls() {
                 u.interpretationTotalBeats = durationSeconds * newBPM / 60.0;
                 u.lockInterpretationTotalBeats = true;
             }
-            magda::ClipManager::getInstance().applyAudioClipBeats(clipId_, u, bpm);
+            auto& mgr = magda::ClipManager::getInstance();
+            mgr.applyAudioClipBeats(clipId_, u, bpm);
+            // Persist the user-asserted BPM on the file in the media DB.
+            mgr.recordUserBpm(clipId_, newBPM);
         } else {
             // Non-autoTempo audio: source interpretation BPM is just stored metadata.
             clip->audio().interpretation.bpm = newBPM;
@@ -369,7 +372,9 @@ void AudioClipPropertiesContent::createControls() {
                         clip->audio().source.durationSeconds = fileDuration;
                 }
             }
-            magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+            auto& mgr = magda::ClipManager::getInstance();
+            mgr.forceNotifyClipPropertyChanged(clipId_);
+            mgr.recordUserBpm(clipId_, newBPM);
         }
     };
     addAndMakeVisible(*bpmValue_);

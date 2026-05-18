@@ -10,6 +10,8 @@
 
 namespace magda::daw::ui {
 
+class MediaDbBrowserContent;  // forward decl — defined in MediaDbBrowserContent.hpp
+
 /**
  * @brief Media explorer panel content
  *
@@ -57,6 +59,10 @@ class MediaExplorerContent : public PanelContent,
     void mouseUp(const juce::MouseEvent& e) override;
 
   private:
+    // Routes a click on the audio/MIDI/preset type icon to either the
+    // file-mode multi-toggle filter or the library-mode radio kind selector.
+    void onTypeIconClicked(magda::SvgButton* clicked);
+
     // Top Bar Components
     juce::ComboBox sourceSelector_;  // Left: Source dropdown (User, Library, etc.)
     juce::TextEditor searchBox_;     // Center-left: Search
@@ -94,6 +100,34 @@ class MediaExplorerContent : public PanelContent,
     std::unique_ptr<juce::FileFilter> mediaFileFilter_;
     std::unique_ptr<juce::FileBrowserComponent> fileBrowser_;
     std::unique_ptr<juce::FileChooser> fileChooser_;  // Persisted for async callbacks
+
+    // Library / DB mode (issue #768 — Phase F1+F2)
+    // The file browser and dbBrowser_ share the same bounds; only one is
+    // visible at a time. Visibility, sidebar highlight, file-browser root,
+    // db-browser kind filter, and type-icon toggle state are *all* derived
+    // from currentView_. Mutation goes through applyView() — never set
+    // those properties directly.
+    std::unique_ptr<MediaDbBrowserContent> dbBrowser_;
+
+    enum class SidebarTarget { Project, Disk, Library, Favorite };
+    struct ViewState {
+        enum class Mode { Filesystem, Library } mode = Mode::Filesystem;
+        SidebarTarget sidebar = SidebarTarget::Disk;
+        juce::File filesystemRoot;  // meaningful when mode == Filesystem
+    };
+    ViewState currentView_;
+    void applyView(ViewState target);
+
+    // Helper: best initial Filesystem root — saved default, then Music,
+    // then Home. Always returns an existing directory.
+    [[nodiscard]] juce::File pickStartupFilesystemRoot() const;
+
+    // Public-facing query equivalent of the old libraryMode_ flag, used by
+    // the type-icon click handler to know whether it's driving DB kind or
+    // file-type filter.
+    [[nodiscard]] bool inLibraryMode() const noexcept {
+        return currentView_.mode == ViewState::Mode::Library;
+    }
 
     // Active media type filters
     bool audioFilterActive_ = true;

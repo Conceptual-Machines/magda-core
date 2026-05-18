@@ -73,6 +73,17 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
         return FontManager::getInstance().getUIFont(11.0f);
     }
 
+    // Text buttons inheriting this LookAndFeel (e.g. "Index folder..." in
+    // the media DB filter strip) need the theme font too — JUCE's default
+    // is the OS system font which sticks out.
+    juce::Font getTextButtonFont(juce::TextButton& /*button*/, int /*buttonHeight*/) override {
+        return FontManager::getInstance().getUIFont(11.0f);
+    }
+
+    juce::Font getLabelFont(juce::Label& /*label*/) override {
+        return FontManager::getInstance().getUIFont(11.0f);
+    }
+
     void drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<int>& area, bool isSeparator,
                            bool isActive, bool isHighlighted, bool isTicked, bool hasSubMenu,
                            const juce::String& text, const juce::String& shortcutKeyText,
@@ -112,7 +123,9 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
     void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
                           bool shouldDrawButtonAsHighlighted,
                           bool shouldDrawButtonAsDown) override {
-        float fontSize = juce::jmin(15.0f, static_cast<float>(button.getHeight()) * 0.75f);
+        // Cap at 11pt to match the rest of the filter-strip controls
+        // (combo boxes, labels). 15pt looked oversized next to them.
+        float fontSize = juce::jmin(11.0f, static_cast<float>(button.getHeight()) * 0.55f);
         float tickWidth = fontSize * 1.1f;
 
         drawTickBox(g, button, 4.0f, (static_cast<float>(button.getHeight()) - tickWidth) * 0.5f,
