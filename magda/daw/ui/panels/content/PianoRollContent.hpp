@@ -100,15 +100,15 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     // Layout constants (PianoRoll-specific)
     static constexpr int SIDEBAR_WIDTH = 32;
     static constexpr int KEYBOARD_WIDTH = 60;
-    static constexpr int DEFAULT_NOTE_HEIGHT = 12;
+    static constexpr int DEFAULT_NOTE_HEIGHT = magda::ClipInfo::DEFAULT_MIDI_EDITOR_ROW_HEIGHT;
     static constexpr int CHORD_ROW_HEIGHT = 24;
     static constexpr int HEADER_HEIGHT = CHORD_ROW_HEIGHT + RULER_HEIGHT;
     static constexpr int MIN_NOTE = 0;    // C-2
     static constexpr int MAX_NOTE = 127;  // G9
 
     // Vertical zoom limits
-    static constexpr int MIN_NOTE_HEIGHT = 6;
-    static constexpr int MAX_NOTE_HEIGHT = 40;
+    static constexpr int MIN_NOTE_HEIGHT = magda::ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT;
+    static constexpr int MAX_NOTE_HEIGHT = magda::ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT;
 
     // Zoom state (vertical — horizontal is in base)
     int noteHeight_ = DEFAULT_NOTE_HEIGHT;
@@ -141,6 +141,9 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
     void detectChordsFromNotes();
     void syncChordAnnotations(magda::ClipId clipId);
+    void setNoteHeight(int height, bool persist);
+    void setNoteHeightAnchored(int height, int anchorNote, int anchorScreenY, bool persist);
+    void loadNoteHeightFromClip(magda::ClipId clipId);
 
     // Helper to get current header height based on chord row visibility
     int getHeaderHeight() const {

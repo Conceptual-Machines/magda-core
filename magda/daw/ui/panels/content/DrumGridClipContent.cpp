@@ -1529,7 +1529,8 @@ class DrumGridRowLabels : public juce::Component {
         if (!padRows_ || padRows_->empty())
             return;
 
-        auto font = magda::FontManager::getInstance().getUIFont(11.0f);
+        auto font = magda::FontManager::getInstance().getUIFont(
+            static_cast<float>(juce::jlimit(8, 12, rowHeight_ - 4)));
         g.setFont(font);
 
         int numRows = static_cast<int>(padRows_->size());
@@ -1550,13 +1551,15 @@ class DrumGridRowLabels : public juce::Component {
 
             const auto& padRow = (*padRows_)[i];
 
-            // Pad name (on the left)
-            g.setColour(padRow.hasChain ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
-                                        : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            g.drawText(padRow.name,
-                       juce::Rectangle<int>(4, y + 1, bounds.getWidth() - PLAY_BTN_WIDTH - 8,
-                                            rowHeight_ - 2),
-                       juce::Justification::centredLeft, true);
+            if (rowHeight_ >= 10) {
+                // Pad name (on the left)
+                g.setColour(padRow.hasChain ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
+                                            : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.drawText(padRow.name,
+                           juce::Rectangle<int>(4, y + 1, bounds.getWidth() - PLAY_BTN_WIDTH - 8,
+                                                rowHeight_ - 2),
+                           juce::Justification::centredLeft, true);
+            }
 
             // Play button (small triangle on the right)
             auto btnBounds = getPlayButtonBounds(i);
@@ -1572,7 +1575,7 @@ class DrumGridRowLabels : public juce::Component {
             }
 
             // Draw play triangle
-            auto triArea = btnBounds.toFloat().reduced(4.0f, 5.0f);
+            auto triArea = btnBounds.toFloat().reduced(4.0f, rowHeight_ >= 10 ? 5.0f : 2.0f);
             juce::Path triangle;
             triangle.addTriangle(triArea.getX(), triArea.getY(), triArea.getX(),
                                  triArea.getBottom(), triArea.getRight(), triArea.getCentreY());
@@ -1667,7 +1670,7 @@ DrumGridClipContent::DrumGridClipContent() {
 
     // Create row labels
     rowLabels_ = std::make_unique<DrumGridRowLabels>();
-    rowLabels_->setRowHeight(ROW_HEIGHT);
+    rowLabels_->setRowHeight(rowHeight_);
     rowLabels_->onNotePreview = [this](int noteNumber, bool isNoteOn) {
         if (editingClipId_ == magda::INVALID_CLIP_ID)
             return;
@@ -1685,7 +1688,7 @@ DrumGridClipContent::DrumGridClipContent() {
     // Create grid component
     gridComponent_ = std::make_unique<DrumGridClipGrid>();
     gridComponent_->setPixelsPerBeat(horizontalZoom_);
-    gridComponent_->setRowHeight(ROW_HEIGHT);
+    gridComponent_->setRowHeight(rowHeight_);
     gridComponent_->setGridResolutionBeats(gridResolutionBeats_);
     gridComponent_->setSnapEnabled(snapEnabled_);
     if (auto* controller = magda::TimelineController::getCurrent()) {
@@ -1856,6 +1859,44 @@ DrumGridClipContent::DrumGridClipContent() {
 
 DrumGridClipContent::~DrumGridClipContent() = default;
 
+void DrumGridClipContent::setRowHeight(int height, bool persist) {
+    const int clampedHeight = juce::jlimit(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT, height);
+    if (clampedHeight == rowHeight_)
+        return;
+
+    rowHeight_ = clampedHeight;
+    if (gridComponent_)
+        gridComponent_->setRowHeight(rowHeight_);
+    if (rowLabels_)
+        rowLabels_->setRowHeight(rowHeight_);
+
+    updateGridSize();
+
+    if (persist && editingClipId_ != magda::INVALID_CLIP_ID) {
+        magda::ClipManager::getInstance().setClipMidiEditorRowHeight(editingClipId_, rowHeight_);
+    }
+}
+
+void DrumGridClipContent::setRowHeightAnchored(int height, int anchorRow, int anchorScreenY,
+                                               bool persist) {
+    const int previousHeight = rowHeight_;
+    setRowHeight(height, persist);
+    if (rowHeight_ == previousHeight || !viewport_)
+        return;
+
+    const int newAnchorY = anchorRow * rowHeight_;
+    const int newScrollY = juce::jmax(0, newAnchorY - anchorScreenY);
+    viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
+}
+
+void DrumGridClipContent::loadRowHeightFromClip(magda::ClipId clipId) {
+    const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    if (clip && clip->isMidi()) {
+        setRowHeight(clip->midiEditorRowHeight > 0 ? clip->midiEditorRowHeight : DEFAULT_ROW_HEIGHT,
+                     false);
+    }
+}
+
 // ============================================================================
 // MidiEditorContent virtual implementations
 // ============================================================================
@@ -1969,6 +2010,16 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
         return;
     }
 
+    // Alt/Option + scroll = vertical zoom (row height)
+    if (e.mods.isAltDown()) {
+        const int mouseYInContent = e.y - RULER_HEIGHT + viewport_->getViewPositionY();
+        const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
+                                           mouseYInContent / juce::jmax(1, rowHeight_));
+        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, e.y - RULER_HEIGHT, true);
+        return;
+    }
+
     // Forward to time ruler area for horizontal scroll
     if (e.y < RULER_HEIGHT && e.x >= SIDEBAR_WIDTH + LABEL_WIDTH) {
         if (timeRuler_->onScrollRequested) {
@@ -2040,6 +2091,7 @@ void DrumGridClipContent::clipSelectionChanged(magda::ClipId clipId) {
 
     const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
     if (clip && clip->isMidi()) {
+        loadRowHeightFromClip(clipId);
         setClip(clipId);
     }
 }
@@ -2053,6 +2105,7 @@ void DrumGridClipContent::setClip(magda::ClipId clipId) {
         return;
 
     editingClipId_ = clipId;
+    loadRowHeightFromClip(editingClipId_);
     findDrumGrid();
     buildPadRows();
 
@@ -2100,13 +2153,13 @@ void DrumGridClipContent::centerOnNotes() {
 
     if (targetRow < 0) {
         // No notes or note not found — scroll to bottom (C-2)
-        int totalHeight = static_cast<int>(padRows_.size()) * ROW_HEIGHT;
+        int totalHeight = static_cast<int>(padRows_.size()) * rowHeight_;
         int scrollY = juce::jmax(0, totalHeight - viewport_->getHeight());
         viewport_->setViewPosition(viewport_->getViewPositionX(), scrollY);
     } else {
         // Center on the target row
-        int rowY = targetRow * ROW_HEIGHT;
-        int scrollY = juce::jmax(0, rowY - (viewport_->getHeight() / 2) + (ROW_HEIGHT / 2));
+        int rowY = targetRow * rowHeight_;
+        int scrollY = juce::jmax(0, rowY - (viewport_->getHeight() / 2) + (rowHeight_ / 2));
         viewport_->setViewPosition(viewport_->getViewPositionX(), scrollY);
     }
 }
@@ -2144,7 +2197,7 @@ void DrumGridClipContent::updateGridSize() {
     int numRows = juce::jmax(1, static_cast<int>(padRows_.size()));
     int gridWidth = juce::jmax(viewport_->getWidth(),
                                static_cast<int>(displayLengthBeats * horizontalZoom_) + 100);
-    int gridHeight = numRows * ROW_HEIGHT;
+    int gridHeight = numRows * rowHeight_;
 
     gridComponent_->setSize(gridWidth, gridHeight);
     gridComponent_->setRelativeMode(relativeTimeMode_);

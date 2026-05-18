@@ -73,20 +73,7 @@ PianoRollContent::PianoRollContent() {
 
     // Set up vertical zoom callback from keyboard (drag up/down to zoom)
     keyboard_->onZoomChanged = [this](int newHeight, int anchorNote, int anchorScreenY) {
-        if (newHeight != noteHeight_) {
-            noteHeight_ = newHeight;
-
-            // Update components
-            gridComponent_->setNoteHeight(noteHeight_);
-            keyboard_->setNoteHeight(noteHeight_);
-            updateGridSize();
-
-            // Adjust scroll to keep anchor note under mouse
-            int newAnchorY = (MAX_NOTE - anchorNote) * noteHeight_;
-            int newScrollY = newAnchorY - anchorScreenY;
-            newScrollY = juce::jmax(0, newScrollY);
-            viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
-        }
+        setNoteHeightAnchored(newHeight, anchorNote, anchorScreenY, true);
     };
 
     // Set up vertical scroll callback from keyboard (drag left/right to scroll)
@@ -147,6 +134,7 @@ PianoRollContent::PianoRollContent() {
 
     // If base found a selected clip, set it up on our grid
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        loadNoteHeightFromClip(editingClipId_);
         gridComponent_->setClip(editingClipId_);
         updateTimeRuler();
     }
@@ -155,6 +143,45 @@ PianoRollContent::PianoRollContent() {
 PianoRollContent::~PianoRollContent() {
     uninstallMidiNoteMonitor();
     magda::SelectionManager::getInstance().removeListener(this);
+}
+
+void PianoRollContent::setNoteHeight(int height, bool persist) {
+    const int clampedHeight = juce::jlimit(MIN_NOTE_HEIGHT, MAX_NOTE_HEIGHT, height);
+    if (clampedHeight == noteHeight_) {
+        return;
+    }
+
+    noteHeight_ = clampedHeight;
+    if (gridComponent_)
+        gridComponent_->setNoteHeight(noteHeight_);
+    if (keyboard_)
+        keyboard_->setNoteHeight(noteHeight_);
+
+    updateGridSize();
+
+    if (persist && editingClipId_ != magda::INVALID_CLIP_ID) {
+        magda::ClipManager::getInstance().setClipMidiEditorRowHeight(editingClipId_, noteHeight_);
+    }
+}
+
+void PianoRollContent::setNoteHeightAnchored(int height, int anchorNote, int anchorScreenY,
+                                             bool persist) {
+    const int previousHeight = noteHeight_;
+    setNoteHeight(height, persist);
+    if (noteHeight_ == previousHeight || !viewport_)
+        return;
+
+    const int newAnchorY = (MAX_NOTE - anchorNote) * noteHeight_;
+    const int newScrollY = juce::jmax(0, newAnchorY - anchorScreenY);
+    viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
+}
+
+void PianoRollContent::loadNoteHeightFromClip(magda::ClipId clipId) {
+    const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    if (clip && clip->isMidi()) {
+        setNoteHeight(
+            clip->midiEditorRowHeight > 0 ? clip->midiEditorRowHeight : DEFAULT_NOTE_HEIGHT, false);
+    }
 }
 
 void PianoRollContent::installMidiNoteMonitor() {
@@ -752,31 +779,12 @@ void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
 
     // Alt/Option + scroll = vertical zoom (note height)
     if (e.mods.isAltDown()) {
-        // Calculate zoom change
-        int heightDelta = wheel.deltaY > 0 ? 2 : -2;
-
         // Calculate anchor point - which note is under the mouse
         int mouseYInContent = e.y - headerHeight + viewport_->getViewPositionY();
         int anchorNote = MAX_NOTE - (mouseYInContent / noteHeight_);
 
-        // Apply zoom
-        int newHeight = noteHeight_ + heightDelta;
-        newHeight = juce::jlimit(MIN_NOTE_HEIGHT, MAX_NOTE_HEIGHT, newHeight);
-
-        if (newHeight != noteHeight_) {
-            noteHeight_ = newHeight;
-
-            // Update components
-            gridComponent_->setNoteHeight(noteHeight_);
-            keyboard_->setNoteHeight(noteHeight_);
-            updateGridSize();
-
-            // Adjust scroll position to keep anchor note under mouse
-            int newAnchorY = (MAX_NOTE - anchorNote) * noteHeight_;
-            int newScrollY = newAnchorY - (e.y - headerHeight);
-            newScrollY = juce::jmax(0, newScrollY);
-            viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
-        }
+        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        setNoteHeightAnchored(noteHeight_ + heightDelta, anchorNote, e.y - headerHeight, true);
         return;
     }
 
@@ -1091,6 +1099,7 @@ void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
                 }
 
                 self->applyClipGridSettings();
+                self->loadNoteHeightFromClip(self->editingClipId_);
                 self->updateGridSize();
                 self->updateTimeRuler();
                 self->updateVelocityLane();
@@ -1124,6 +1133,7 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
             editingClipId_ = clipId;
             if (keyboard_)
                 keyboard_->clearPressedNotes();
+            loadNoteHeightFromClip(editingClipId_);
 
             magda::TrackId trackId = clip->trackId;
 
@@ -1275,6 +1285,7 @@ void PianoRollContent::noteSelectionChanged(const magda::NoteSelection& selectio
 void PianoRollContent::setClip(magda::ClipId clipId) {
     if (editingClipId_ != clipId) {
         editingClipId_ = clipId;
+        loadNoteHeightFromClip(editingClipId_);
         gridComponent_->setClip(clipId);
         if (keyboard_)
             keyboard_->clearPressedNotes();
