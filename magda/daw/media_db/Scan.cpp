@@ -43,20 +43,15 @@ std::string toLower(std::string_view s) {
     return out;
 }
 
-// Convert a std::filesystem::file_time to ns since the unix epoch.
-// std::filesystem::file_time_type uses an unspecified clock; we go via
-// system_clock which is required to be unix-epoch-based on the platforms
-// MAGDA targets. C++20 has file_clock::to_sys; on C++17 we approximate.
-std::int64_t toUnixNs(std::filesystem::file_time_type ft) {
-#if defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L
-    auto sys = std::chrono::clock_cast<std::chrono::system_clock>(ft);
-#else
-    // file_clock and system_clock both have nanosecond precision on the
-    // platforms we ship; the offset between them is constant per platform.
-    auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-        ft - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
-#endif
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(sys.time_since_epoch()).count();
+// Return the file_time's ns count directly. Used as an opaque identifier
+// for "same file state" against the DB row; we never interpret the value
+// as a human timestamp, so the file_clock epoch (vs unix epoch) doesn't
+// matter. clock_cast<system_clock>(file_time) is tempting but on macOS
+// libc++ it samples both clocks at call time, producing a ±1µs wobble
+// across calls of the same untouched file - that broke rescan skip
+// detection.
+std::int64_t toFileTimeNs(std::filesystem::file_time_type ft) {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(ft.time_since_epoch()).count();
 }
 
 }  // namespace
@@ -84,7 +79,7 @@ std::optional<ScannedFile> classify(const std::filesystem::path& path) {
     f.kind = std::string(it->second);
     f.format = ext.empty() ? std::string{} : ext.substr(1);  // strip leading dot
     f.sizeBytes = static_cast<std::int64_t>(sz);
-    f.mtimeNs = toUnixNs(mt);
+    f.mtimeNs = toFileTimeNs(mt);
     return f;
 }
 
