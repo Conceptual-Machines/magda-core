@@ -10,6 +10,7 @@
 #include "TempoUtils.hpp"
 #include "TrackManager.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "media_db/MediaDbMetadata.hpp"
 
 namespace magda {
 
@@ -174,6 +175,18 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
             double live = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
             mgr.applyAudioClipBeats(cid, u, live);
         };
+
+        // Media DB takes precedence: if the file has been indexed, use the
+        // effective BPM (user override > scanner-detected) so dropped
+        // samples land with the BPM the user has already accepted or
+        // edited. Falls through to the live BPM-detection pipeline for
+        // un-indexed files.
+        auto dbMetadata = magda::media::getEffectiveMetadataForFile(
+            std::filesystem::path(audioFilePath.toStdString()));
+        if (dbMetadata && dbMetadata->bpm && *dbMetadata->bpm > 0.0) {
+            applyDetectedBPM(*dbMetadata->bpm);
+            return clip.id;
+        }
 
         auto& thumbs = AudioThumbnailManager::getInstance();
         const double cachedBPM = thumbs.getCachedBPM(audioFilePath);
@@ -1000,6 +1013,21 @@ void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
     u.lengthBeats = newBeats;
 
     applyAudioClipBeats(clipId, u, bpm);
+}
+
+void ClipManager::recordUserBpm(ClipId clipId, double bpm) {
+    if (!isValidBpm(bpm)) {
+        return;
+    }
+    const auto* clip = getClip(clipId);
+    if (!clip || !clip->isAudio()) {
+        return;
+    }
+    const auto& filePath = clip->audio().source.filePath;
+    if (filePath.isEmpty()) {
+        return;
+    }
+    magda::media::setUserBpmForFile(std::filesystem::path(filePath.toStdString()), bpm);
 }
 
 void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update,

@@ -15,7 +15,7 @@ namespace magda::media {
 inline constexpr const char* kSchemaSql = R"SQL(
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
-PRAGMA user_version = 3;
+PRAGMA user_version = 4;
 
 CREATE TABLE IF NOT EXISTS media_file (
     id              INTEGER PRIMARY KEY,
@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS media_file (
     spectral_flatness   REAL,
     transient_density   REAL,
     key_confidence      REAL,
+
+    -- User overrides (NULL = no override). Read path takes COALESCE(_user,
+    -- detected) so the UI sees one effective value. Only the user-edit path
+    -- writes these; the indexer never touches them, so user edits survive
+    -- re-scans of unchanged files and re-encodes alike.
+    bpm_user            REAL,
+    key_root_user       TEXT,
+    key_scale_user      TEXT,
 
     shape   TEXT CHECK (shape  IN ('one-shot','loop','sustained','unknown')),
     family  TEXT CHECK (family IN

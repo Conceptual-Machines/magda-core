@@ -2,6 +2,8 @@
 
 #include <sqlite3.h>
 
+#include <cstring>
+
 #include "Schema.hpp"
 
 namespace magda::media {
@@ -23,6 +25,47 @@ void execOrThrow(sqlite3* db, const char* sql, const char* context) {
     }
 }
 
+// True if `table` has a column named `column`. Used by the migration step
+// to make ALTER TABLE ADD COLUMN idempotent — SQLite doesn't support
+// `ADD COLUMN IF NOT EXISTS`.
+bool columnExists(sqlite3* db, const char* table, const char* column) {
+    sqlite3_stmt* stmt = nullptr;
+    const std::string sql = std::string("PRAGMA table_info(") + table + ")";
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+    bool found = false;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        if (name && std::strcmp(name, column) == 0) {
+            found = true;
+            break;
+        }
+    }
+    sqlite3_finalize(stmt);
+    return found;
+}
+
+// Apply per-version migrations to an already-open DB. New columns introduced
+// in schema bumps are added in place so users keep their indexed data
+// instead of being forced to re-scan after an update.
+void migrate(sqlite3* db) {
+    // v3 → v4: user-override columns on media_file. NULL means "no
+    // override" — read path uses COALESCE(_user, detected) so the UI sees
+    // a single effective value.
+    if (!columnExists(db, "media_file", "bpm_user")) {
+        execOrThrow(db, "ALTER TABLE media_file ADD COLUMN bpm_user REAL", "migrate v4 bpm_user");
+    }
+    if (!columnExists(db, "media_file", "key_root_user")) {
+        execOrThrow(db, "ALTER TABLE media_file ADD COLUMN key_root_user TEXT",
+                    "migrate v4 key_root_user");
+    }
+    if (!columnExists(db, "media_file", "key_scale_user")) {
+        execOrThrow(db, "ALTER TABLE media_file ADD COLUMN key_scale_user TEXT",
+                    "migrate v4 key_scale_user");
+    }
+}
+
 }  // namespace
 
 MediaDatabase::MediaDatabase(const std::filesystem::path& dbPath) : path_(dbPath) {
@@ -35,9 +78,11 @@ MediaDatabase::MediaDatabase(const std::filesystem::path& dbPath) : path_(dbPath
     }
 
     // Apply the schema. CREATE ... IF NOT EXISTS makes this safe to run on
-    // every open, including against an already-initialized file.
+    // every open, including against an already-initialized file. After
+    // creation, run migrate() to bring older schemas up to date in place.
     try {
         execOrThrow(db_, kSchemaSql, "schema init");
+        migrate(db_);
     } catch (...) {
         sqlite3_close(db_);
         db_ = nullptr;

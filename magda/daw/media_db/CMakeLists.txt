@@ -8,6 +8,7 @@ target_sources(magda_daw PRIVATE
     MediaDatabase.cpp
     MediaDbContext.cpp
     MediaDbIndexer.cpp
+    MediaDbMetadata.cpp
     MediaDbQuery.cpp
     MelSpectrogram.cpp
     PathRules.cpp

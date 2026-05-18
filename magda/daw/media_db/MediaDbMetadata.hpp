@@ -1,0 +1,57 @@
+// Two-way binding between the media DB and tracktion clips for
+// user-editable per-file metadata (issue #768).
+//
+// The DB stores two slots per editable property: the scanner-detected
+// value (e.g. `bpm`) and the user override (`bpm_user`). The user-facing
+// "effective" value is COALESCE(user, detected) — so when the user edits
+// a clip's BPM in MAGDA the override is written to the user slot, while
+// the scanner's detected value stays as a fallback for files the user
+// hasn't edited.
+//
+// This header exposes the read/write API. The read path is used by the
+// drop hooks (file → clip). The write path is used by a ValueTree
+// listener attached to clips that watches for property changes.
+
+#pragma once
+
+#include <filesystem>
+#include <optional>
+#include <string>
+
+namespace magda::media {
+
+class MediaDatabase;
+
+struct EffectiveMetadata {
+    std::optional<double> bpm;
+    std::optional<std::string> keyRoot;
+    std::optional<std::string> keyScale;
+};
+
+// Look up a file by absolute path. Returns nullopt if the file isn't in
+// the media DB. Each field is COALESCE(user_override, detected) so the
+// caller gets a single effective value per property.
+[[nodiscard]] std::optional<EffectiveMetadata> getEffectiveMetadata(
+    MediaDatabase& db, const std::filesystem::path& path);
+
+// Write a user override. Pass nullopt to clear the override (effective
+// value falls back to the scanner-detected one). No-op if the file isn't
+// in the DB — the metadata API does not create rows.
+void setUserBpm(MediaDatabase& db, const std::filesystem::path& path, std::optional<double> bpm);
+
+void setUserKey(MediaDatabase& db, const std::filesystem::path& path,
+                std::optional<std::string> root, std::optional<std::string> scale);
+
+// Convenience overloads that go through the singleton MediaDbContext.
+// They open the DB lazily on first call (no-op if already open) and
+// silently no-op on init failure or when the file isn't indexed. UI code
+// can use these without holding a database handle of its own.
+[[nodiscard]] std::optional<EffectiveMetadata> getEffectiveMetadataForFile(
+    const std::filesystem::path& path);
+
+void setUserBpmForFile(const std::filesystem::path& path, std::optional<double> bpm);
+
+void setUserKeyForFile(const std::filesystem::path& path, std::optional<std::string> root,
+                       std::optional<std::string> scale);
+
+}  // namespace magda::media
