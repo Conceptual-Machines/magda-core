@@ -42,7 +42,12 @@ class MediaDbBrowserContent : public juce::Component {
     // Kick off a background scan of `dir` and update the status label as it
     // progresses. Called from the file-browser's folder-right-click menu — the
     // DB browser no longer has its own "Index folder" button.
-    void startIndexing(const juce::File& dir);
+    //
+    // force: when true, the indexer re-derives every file's metadata
+    // ignoring the skip-on-unchanged fast path. Used by the "Re-index"
+    // menu item to refresh tags / family / features on already-indexed
+    // content after a rules / algorithm change.
+    void startIndexing(const juce::File& dir, bool force = false);
 
     // External kind selector hook. Pass "audio" / "clip" / "preset", or
     // nullopt to clear the filter. Re-runs the search.

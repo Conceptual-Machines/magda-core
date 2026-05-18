@@ -61,7 +61,12 @@ class MediaDbIndexer {
     // Forced to 1 automatically when the DB is in-memory (workers can't
     // share state across connections) or when the scan has fewer than ~64
     // files (setup cost dominates).
-    Stats indexDirectory(const std::filesystem::path& root, int numThreads = 0);
+    //
+    // force: when true, bypass the skip-on-unchanged fast path and
+    // re-derive everything (path tags, family, features, embedding) for
+    // every file. Used by the "Re-index folder" menu item to pick up new
+    // keywords / improved algorithms on already-indexed content.
+    Stats indexDirectory(const std::filesystem::path& root, int numThreads = 0, bool force = false);
 
   private:
     MediaDatabase& db_;

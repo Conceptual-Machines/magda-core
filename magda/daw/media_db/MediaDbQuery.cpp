@@ -212,7 +212,9 @@ std::vector<QueryResult> hydrate(sqlite3* db,
         return out;
     }
     // Bulk-fetch with one IN-clause query, then re-order by the input vector.
-    std::string sql = "SELECT id, path, kind, family, shape, bpm, key_root, key_scale, duration_s "
+    std::string sql = "SELECT id, path, kind, family, shape, bpm, key_root, key_scale, duration_s, "
+                      "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
+                      "        WHERE file_id = media_file.id) AS tags "
                       "FROM media_file WHERE id IN (";
     for (size_t i = 0; i < scored.size(); ++i) {
         sql += (i == 0 ? "?" : ",?");
@@ -243,6 +245,19 @@ std::vector<QueryResult> hydrate(sqlite3* db,
         r.keyRoot = optString(stmt, 6);
         r.keyScale = optString(stmt, 7);
         r.durationS = optDouble(stmt, 8);
+        if (auto tagsCsv = optString(stmt, 9)) {
+            std::stringstream ts(*tagsCsv);
+            std::string tag;
+            while (std::getline(ts, tag, ',')) {
+                // GROUP_CONCAT joins with ", " — trim leading space.
+                while (!tag.empty() && tag.front() == ' ') {
+                    tag.erase(tag.begin());
+                }
+                if (!tag.empty()) {
+                    r.tags.push_back(tag);
+                }
+            }
+        }
         byId.emplace(r.fileId, std::move(r));
     }
     sqlite3_finalize(stmt);
@@ -263,7 +278,9 @@ std::vector<QueryResult> hydrate(sqlite3* db,
 
 std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit) {
     const std::string sql =
-        "SELECT id, path, kind, family, shape, bpm, key_root, key_scale, duration_s "
+        "SELECT id, path, kind, family, shape, bpm, key_root, key_scale, duration_s, "
+        "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
+        "        WHERE file_id = media_file.id) AS tags "
         "FROM media_file WHERE " +
         w.clause + " ORDER BY indexed_at DESC LIMIT ?";
 
@@ -290,6 +307,18 @@ std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit)
         r.keyRoot = optString(stmt, 6);
         r.keyScale = optString(stmt, 7);
         r.durationS = optDouble(stmt, 8);
+        if (auto tagsCsv = optString(stmt, 9)) {
+            std::stringstream ts(*tagsCsv);
+            std::string tag;
+            while (std::getline(ts, tag, ',')) {
+                while (!tag.empty() && tag.front() == ' ') {
+                    tag.erase(tag.begin());
+                }
+                if (!tag.empty()) {
+                    r.tags.push_back(tag);
+                }
+            }
+        }
         r.score = std::numeric_limits<float>::quiet_NaN();
         out.push_back(std::move(r));
     }

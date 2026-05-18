@@ -9,6 +9,7 @@
 #include "AudioThumbnailManager.hpp"
 #include "BinaryData.h"
 #include "MediaDbBrowserContent.hpp"
+#include "media_db/MediaDbMetadata.hpp"
 
 namespace magda::daw::ui {
 
@@ -1459,25 +1460,33 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
             menu.addItem(0, "Favorites full (max 8)", false);
         }
         menu.addSeparator();
-        menu.addItem(3, "Index this folder for sample library");
+        // Context-aware label: if any file under this folder is already in
+        // the media DB, this is a Re-index (force re-derivation); otherwise
+        // it's a first-time Index. Range-query against the path index is
+        // O(log N) so this is safe to run on every right-click.
+        const bool alreadyIndexed = magda::media::hasIndexedDescendantOfFolder(
+            std::filesystem::path(file.getFullPathName().toStdString()));
+        menu.addItem(3, alreadyIndexed ? "Re-index this folder for sample library"
+                                       : "Index this folder for sample library");
 
-        menu.showMenuAsync(juce::PopupMenu::Options(), [this, path, file](int result) {
-            if (result == 1) {
-                auto favs = magda::Config::getInstance().getBrowserFavorites();
-                favs.erase(std::remove(favs.begin(), favs.end(), path), favs.end());
-                magda::Config::getInstance().setBrowserFavorites(favs);
-                magda::Config::getInstance().save();
-                sidebarComponent_->rebuildFavoriteButtons();
-            } else if (result == 2) {
-                auto favs = magda::Config::getInstance().getBrowserFavorites();
-                favs.push_back(path);
-                magda::Config::getInstance().setBrowserFavorites(favs);
-                magda::Config::getInstance().save();
-                sidebarComponent_->rebuildFavoriteButtons();
-            } else if (result == 3 && dbBrowser_) {
-                dbBrowser_->startIndexing(file);
-            }
-        });
+        menu.showMenuAsync(
+            juce::PopupMenu::Options(), [this, path, file, alreadyIndexed](int result) {
+                if (result == 1) {
+                    auto favs = magda::Config::getInstance().getBrowserFavorites();
+                    favs.erase(std::remove(favs.begin(), favs.end(), path), favs.end());
+                    magda::Config::getInstance().setBrowserFavorites(favs);
+                    magda::Config::getInstance().save();
+                    sidebarComponent_->rebuildFavoriteButtons();
+                } else if (result == 2) {
+                    auto favs = magda::Config::getInstance().getBrowserFavorites();
+                    favs.push_back(path);
+                    magda::Config::getInstance().setBrowserFavorites(favs);
+                    magda::Config::getInstance().save();
+                    sidebarComponent_->rebuildFavoriteButtons();
+                } else if (result == 3 && dbBrowser_) {
+                    dbBrowser_->startIndexing(file, /*force=*/alreadyIndexed);
+                }
+            });
         return;
     }
 

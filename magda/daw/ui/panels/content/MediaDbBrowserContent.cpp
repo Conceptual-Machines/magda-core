@@ -28,6 +28,7 @@ enum ColumnId {
     kColBpm = 4,
     kColKey = 5,
     kColDuration = 6,
+    kColTags = 7,
 };
 
 // ---- Filter combo value tables -----------------------------------------
@@ -165,6 +166,21 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                 g.drawText(prettyDuration(r.durationS), cell.reduced(6, 2),
                            juce::Justification::centredRight, true);
                 break;
+            case kColTags: {
+                // Comma-joined tag list, single-line, truncated at the cell
+                // edge. Hidden by default in the docked browser; visible in
+                // the pop-out window where there's more horizontal room.
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                juce::String joined;
+                for (const auto& t : r.tags) {
+                    if (joined.isNotEmpty()) {
+                        joined += ", ";
+                    }
+                    joined += juce::String(t);
+                }
+                g.drawText(joined, cell.reduced(6, 2), juce::Justification::centredLeft, true);
+                break;
+            }
             default:
                 break;
         }
@@ -352,8 +368,11 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     header.setColour(juce::TableHeaderComponent::textColourId,
                      DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     header.setColour(juce::TableHeaderComponent::outlineColourId, DarkTheme::getBorderColour());
+    // appearsOnColumnMenu — right-click the header to show/hide any column.
+    // JUCE drives the visibility toggle itself once the flag is set.
     const int flags = juce::TableHeaderComponent::visible | juce::TableHeaderComponent::resizable |
-                      juce::TableHeaderComponent::draggable;
+                      juce::TableHeaderComponent::draggable |
+                      juce::TableHeaderComponent::appearsOnColumnMenu;
     // (id, name, defaultWidth, minWidth, maxWidth, propertyFlags)
     header.addColumn("Name", kColName, 260, 80, -1, flags);
     header.addColumn("Family", kColFamily, 90, 50, -1, flags);
@@ -361,6 +380,13 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     header.addColumn("BPM", kColBpm, 60, 40, -1, flags);
     header.addColumn("Key", kColKey, 60, 40, -1, flags);
     header.addColumn("Duration", kColDuration, 70, 40, -1, flags);
+    header.addColumn("Tags", kColTags, 200, 80, -1, flags);
+
+    // Per-view default visibility: the docked browser stays compact, the
+    // pop-out window (the "extended editor") shows tags. Users can override
+    // either way via the column-header right-click menu — JUCE persists
+    // the choice for the lifetime of the table instance.
+    header.setColumnVisible(kColTags, isPopOutInstance_);
     header.setStretchToFitActive(true);  // expand columns to fill width
 
     addAndMakeVisible(resultsTable_);
@@ -567,7 +593,7 @@ void MediaDbBrowserContent::visibilityChanged() {
     }
 }
 
-void MediaDbBrowserContent::startIndexing(const juce::File& dir) {
+void MediaDbBrowserContent::startIndexing(const juce::File& dir, bool force) {
     if (indexing_ || !dir.isDirectory()) {
         return;  // Already running, or invalid target — ignore.
     }
@@ -577,14 +603,15 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir) {
     }
 
     indexing_ = true;
-    statusLabel_.setText("Preparing scan...", juce::dontSendNotification);
+    statusLabel_.setText(force ? "Preparing re-scan..." : "Preparing scan...",
+                         juce::dontSendNotification);
     statusLabel_.setVisible(true);
     resized();
 
     const auto path = std::filesystem::path(dir.getFullPathName().toStdString());
     const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
 
-    indexPool_->addJob([self, path]() {
+    indexPool_->addJob([self, path, force]() {
         // Background thread. Open a fresh DB connection here so we don't
         // share the UI-thread MediaDbContext::db() handle across threads
         // — SQLite multi-thread mode requires one connection per thread.
@@ -594,19 +621,20 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir) {
             magda::media::MediaDatabase bgDb(magda::media::MediaDbContext::getInstance().dbPath());
             magda::media::MediaDbIndexer indexer(
                 bgDb, magda::media::MediaDbContext::getInstance().audioEncoder());
-            indexer.setProgress([self](int done, int total, const std::filesystem::path& current) {
-                // Fired per-file on the indexer thread; marshal the text
-                // update to the UI thread via callAsync.
-                const auto status = juce::String("Indexing ") +
-                                    juce::String(current.filename().string()) + " (" +
-                                    juce::String(done) + "/" + juce::String(total) + ")";
-                juce::MessageManager::callAsync([self, status]() {
-                    if (self != nullptr) {
-                        self->statusLabel_.setText(status, juce::dontSendNotification);
-                    }
+            indexer.setProgress(
+                [self, force](int done, int total, const std::filesystem::path& current) {
+                    // Fired per-file on the indexer thread; marshal the text
+                    // update to the UI thread via callAsync.
+                    const auto status = juce::String(force ? "Re-indexing " : "Indexing ") +
+                                        juce::String(current.filename().string()) + " (" +
+                                        juce::String(done) + "/" + juce::String(total) + ")";
+                    juce::MessageManager::callAsync([self, status]() {
+                        if (self != nullptr) {
+                            self->statusLabel_.setText(status, juce::dontSendNotification);
+                        }
+                    });
                 });
-            });
-            indexer.indexDirectory(path);
+            indexer.indexDirectory(path, /*numThreads=*/0, force);
         } catch (const std::exception&) {
             // Swallow — bounce back to the UI either way.
         }
