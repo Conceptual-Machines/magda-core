@@ -91,8 +91,15 @@ class MediaDbBrowserContent : public juce::Component {
     juce::String queryText_;
     std::vector<magda::media::QueryResult> results_;
     bool isPopOutInstance_ = false;
+
     juce::Component::SafePointer<PopOutWindow>
         popOutWindow_;  // tracked so re-clicks focus existing
+
+    // Drag-in-flight gate: ListBox can call getDragSourceDescription
+    // repeatedly during a single drag gesture as the drag-threshold is
+    // probed. Without this flag we'd queue multiple
+    // performExternalDragDropOfFiles invocations.
+    bool dragInProgress_ = false;
 
     // Single-thread pool so indexing doesn't block the message thread. The
     // pool is created lazily on first index click so app startup pays nothing.

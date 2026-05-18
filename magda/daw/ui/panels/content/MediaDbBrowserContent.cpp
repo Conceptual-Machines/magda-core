@@ -180,6 +180,48 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         }
     }
 
+    // Kicks off an OS-level file drag for the selected rows and returns
+    // juce::var() to tell ListBox NOT to also start its own internal drag.
+    //
+    // Why OS-level rather than JUCE-internal: the drop targets we care
+    // about (TrackContentPanel, SessionView, Finder, plugin file slots)
+    // are all juce::FileDragAndDropTarget, not juce::DragAndDropTarget —
+    // they only respond to OS file drags. An internal drag would show
+    // the snapshot but no target would accept the drop.
+    //
+    // Why deferred via callAsync: performExternalDragDropOfFiles enters
+    // a modal native run loop and we're sitting inside ListBox's
+    // mouseDrag callback right now. Bouncing through the message queue
+    // gets us out of that nested call before the modal loop starts.
+    juce::var getDragSourceDescription(const juce::SparseSet<int>& selectedRows) override {
+        if (owner_.dragInProgress_ || selectedRows.isEmpty()) {
+            return {};
+        }
+        juce::StringArray paths;
+        for (int i = 0; i < selectedRows.size(); ++i) {
+            const int row = selectedRows[i];
+            if (row < 0 || row >= static_cast<int>(owner_.results_.size())) {
+                continue;
+            }
+            paths.addIfNotAlreadyThere(
+                juce::String(owner_.results_[static_cast<size_t>(row)].path.string()));
+        }
+        if (paths.isEmpty()) {
+            return {};
+        }
+        owner_.dragInProgress_ = true;
+        const juce::Component::SafePointer<MediaDbBrowserContent> src(&owner_);
+        juce::MessageManager::callAsync([paths, src]() {
+            if (src == nullptr) {
+                return;
+            }
+            juce::DragAndDropContainer::performExternalDragDropOfFiles(paths,
+                                                                       /*canMoveFiles=*/false, src);
+            src->dragInProgress_ = false;
+        });
+        return {};  // suppress JUCE's internal drag — we handle it ourselves
+    }
+
   private:
     MediaDbBrowserContent& owner_;
 };
@@ -278,11 +320,15 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     // kind selector when library mode is active, so we don't duplicate them
     // here.
 
-    // Results table — TableListBox gives us resizable, reorderable column
-    // headers with per-cell painting.
+    // Results table — drag-out is wired via
+    // ResultsTableModel::getDragSourceDescription (encodes the row paths
+    // in the drag var) + MediaDbBrowserContent::shouldDropFilesWhenDraggedExternally
+    // (decodes them and asks the OS to drop them as files when the drag
+    // leaves the app window).
     resultsModel_ = std::make_unique<ResultsTableModel>(*this);
     resultsTable_.setModel(resultsModel_.get());
     resultsTable_.setRowHeight(28);
+    resultsTable_.setMultipleSelectionEnabled(true);
     resultsTable_.setHeaderHeight(22);
     resultsTable_.setColour(juce::ListBox::backgroundColourId,
                             DarkTheme::getColour(DarkTheme::BACKGROUND));
