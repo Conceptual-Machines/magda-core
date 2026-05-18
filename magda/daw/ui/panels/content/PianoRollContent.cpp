@@ -66,6 +66,16 @@ PianoRollContent::PianoRollContent() {
     };
     addAndMakeVisible(velocityToggle_.get());
 
+    verticalZoomStrip_ = std::make_unique<VerticalZoomStrip>(MIN_NOTE_HEIGHT, MAX_NOTE_HEIGHT);
+    verticalZoomStrip_->getValue = [this]() { return noteHeight_; };
+    verticalZoomStrip_->onZoomChanged = [this](int newHeight, int anchorScreenY) {
+        const int anchorContentY = anchorScreenY + viewport_->getViewPositionY();
+        const int anchorNote =
+            juce::jlimit(MIN_NOTE, MAX_NOTE, MAX_NOTE - (anchorContentY / noteHeight_));
+        setNoteHeightAnchored(newHeight, anchorNote, anchorScreenY, true);
+    };
+    addAndMakeVisible(verticalZoomStrip_.get());
+
     // Create keyboard component
     keyboard_ = std::make_unique<magda::PianoRollKeyboard>();
     keyboard_->setNoteHeight(noteHeight_);
@@ -118,6 +128,14 @@ PianoRollContent::PianoRollContent() {
     gridComponent_->setLeftPadding(GRID_LEFT_PADDING);
     gridComponent_->setGridResolutionBeats(gridResolutionBeats_);
     gridComponent_->setSnapEnabled(snapEnabled_);
+    gridComponent_->onVerticalZoomRequested = [this](int gridY,
+                                                     const juce::MouseWheelDetails& wheel) {
+        const int anchorScreenY = gridY - viewport_->getViewPositionY();
+        const int anchorNote =
+            juce::jlimit(MIN_NOTE, MAX_NOTE, MAX_NOTE - (gridY / juce::jmax(1, noteHeight_)));
+        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        setNoteHeightAnchored(noteHeight_ + heightDelta, anchorNote, anchorScreenY, true);
+    };
     if (auto* controller = magda::TimelineController::getCurrent()) {
         gridComponent_->setTimeSignatureNumerator(
             controller->getState().tempo.timeSignatureNumerator);
@@ -619,7 +637,7 @@ void PianoRollContent::paint(juce::Graphics& g) {
         auto chordArea = getLocalBounds();
         chordArea.removeFromLeft(SIDEBAR_WIDTH);
         chordArea = chordArea.removeFromTop(CHORD_ROW_HEIGHT);
-        chordArea.removeFromLeft(KEYBOARD_WIDTH);
+        chordArea.removeFromLeft(ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH);
         drawChordRow(g, chordArea);
 
         // Horizontal separator at bottom of chord row — full width
@@ -643,7 +661,7 @@ void PianoRollContent::paintOverChildren(juce::Graphics& g) {
     int rulerTop = showChordRow_ ? CHORD_ROW_HEIGHT : 0;
     int tickLineY = rulerTop + RULER_HEIGHT - LayoutConfig::getInstance().rulerMajorTickHeight;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.fillRect(SIDEBAR_WIDTH, tickLineY, KEYBOARD_WIDTH, 1);
+    g.fillRect(SIDEBAR_WIDTH, tickLineY, ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH, 1);
 }
 
 void PianoRollContent::resized() {
@@ -666,7 +684,7 @@ void PianoRollContent::resized() {
         bounds.removeFromTop(CHORD_ROW_HEIGHT);
         // Position detect button in the keyboard column of the chord row
         int detectSize = 18;
-        int detectX = SIDEBAR_WIDTH + (KEYBOARD_WIDTH - detectSize) / 2;
+        int detectX = SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + (KEYBOARD_WIDTH - detectSize) / 2;
         int detectY = (CHORD_ROW_HEIGHT - detectSize) / 2;
         chordDetectBtn_->setBounds(detectX, detectY, detectSize, detectSize);
         chordDetectBtn_->setVisible(true);
@@ -680,13 +698,13 @@ void PianoRollContent::resized() {
         if (midiDrawer_) {
             // MidiDrawerComponent gets the full width including the left column,
             // so it can place controls (e.g. PB range) in the left margin area.
-            midiDrawer_->setLeftMargin(KEYBOARD_WIDTH);
+            midiDrawer_->setLeftMargin(ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH);
             midiDrawer_->setBounds(drawerArea);
             midiDrawer_->setVisible(true);
         } else if (velocityLane_) {
             // Legacy path: separate header drawn in paint(), lane below
             drawerArea.removeFromTop(VELOCITY_HEADER_HEIGHT);
-            drawerArea.removeFromLeft(KEYBOARD_WIDTH);
+            drawerArea.removeFromLeft(ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH);
             velocityLane_->setBounds(drawerArea);
             velocityLane_->setVisible(true);
         }
@@ -699,8 +717,11 @@ void PianoRollContent::resized() {
 
     // Ruler row
     auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
-    headerArea.removeFromLeft(KEYBOARD_WIDTH);
+    headerArea.removeFromLeft(ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH);
     timeRuler_->setBounds(headerArea);
+
+    auto zoomStripArea = bounds.removeFromLeft(ZOOM_STRIP_WIDTH);
+    verticalZoomStrip_->setBounds(zoomStripArea);
 
     // Keyboard on the left
     auto keyboardArea = bounds.removeFromLeft(KEYBOARD_WIDTH);
@@ -728,7 +749,7 @@ void PianoRollContent::resized() {
 void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
                                       const juce::MouseWheelDetails& wheel) {
     int headerHeight = getHeaderHeight();
-    int leftPanelWidth = SIDEBAR_WIDTH + KEYBOARD_WIDTH;
+    int leftPanelWidth = SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH;
 
     // Check if mouse is over the chord row area (very top, only when visible)
     if (showChordRow_ && e.y < CHORD_ROW_HEIGHT && e.x >= leftPanelWidth) {
@@ -758,7 +779,7 @@ void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
     }
 
     // Check if mouse is over the keyboard area (left side, below header)
-    if (e.x >= SIDEBAR_WIDTH && e.x < leftPanelWidth && e.y >= headerHeight) {
+    if (e.x >= SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH && e.x < leftPanelWidth && e.y >= headerHeight) {
         // Forward to keyboard for vertical scrolling
         if (keyboard_->onScrollRequested) {
             int scrollAmount = static_cast<int>(-wheel.deltaY * 100.0f);

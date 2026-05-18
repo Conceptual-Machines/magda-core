@@ -169,6 +169,7 @@ class DrumGridClipGrid : public juce::Component,
     std::function<void(magda::ClipId, std::vector<size_t>)> onDuplicateNotes;
     std::function<void(magda::ClipId, std::vector<size_t>)> onDeleteNotes;
     std::function<void(double)> onEditCursorSet;
+    std::function<void(int, const juce::MouseWheelDetails&)> onVerticalZoomRequested;
 
     // Refresh note components from clip data
     void refreshNotes() {
@@ -665,6 +666,15 @@ class DrumGridClipGrid : public juce::Component,
             nearPhaseMarker_ = false;
             repaint();
         }
+    }
+
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
+        if (e.mods.isAltDown() && onVerticalZoomRequested) {
+            onVerticalZoomRequested(e.y, wheel);
+            return;
+        }
+
+        juce::Component::mouseWheelMove(e, wheel);
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
@@ -1519,6 +1529,7 @@ class DrumGridRowLabels : public juce::Component {
 
     // Callback: noteNumber, isNoteOn
     std::function<void(int, bool)> onNotePreview;
+    std::function<void(int, const juce::MouseWheelDetails&)> onVerticalZoomRequested;
 
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
@@ -1626,6 +1637,15 @@ class DrumGridRowLabels : public juce::Component {
         }
     }
 
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
+        if (e.mods.isAltDown() && onVerticalZoomRequested) {
+            onVerticalZoomRequested(e.y, wheel);
+            return;
+        }
+
+        juce::Component::mouseWheelMove(e, wheel);
+    }
+
   private:
     static constexpr int PLAY_BTN_WIDTH = 16;
 
@@ -1668,6 +1688,16 @@ DrumGridClipContent::DrumGridClipContent() {
     };
     addAndMakeVisible(controlsToggle_.get());
 
+    verticalZoomStrip_ = std::make_unique<VerticalZoomStrip>(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
+    verticalZoomStrip_->getValue = [this]() { return rowHeight_; };
+    verticalZoomStrip_->onZoomChanged = [this](int newHeight, int anchorScreenY) {
+        const int anchorContentY = anchorScreenY + viewport_->getViewPositionY();
+        const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
+                                           anchorContentY / juce::jmax(1, rowHeight_));
+        setRowHeightAnchored(newHeight, anchorRow, anchorScreenY, true);
+    };
+    addAndMakeVisible(verticalZoomStrip_.get());
+
     // Create row labels
     rowLabels_ = std::make_unique<DrumGridRowLabels>();
     rowLabels_->setRowHeight(rowHeight_);
@@ -1680,6 +1710,14 @@ DrumGridClipContent::DrumGridClipContent() {
                                                            isNoteOn ? 100 : 0, isNoteOn);
         }
     };
+    rowLabels_->onVerticalZoomRequested = [this](int labelsY,
+                                                 const juce::MouseWheelDetails& wheel) {
+        const int anchorContentY = labelsY + viewport_->getViewPositionY();
+        const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
+                                           anchorContentY / juce::jmax(1, rowHeight_));
+        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, labelsY, true);
+    };
     addAndMakeVisible(rowLabels_.get());
 
     // Add DrumGrid-specific components to viewport repaint list
@@ -1691,6 +1729,14 @@ DrumGridClipContent::DrumGridClipContent() {
     gridComponent_->setRowHeight(rowHeight_);
     gridComponent_->setGridResolutionBeats(gridResolutionBeats_);
     gridComponent_->setSnapEnabled(snapEnabled_);
+    gridComponent_->onVerticalZoomRequested = [this](int gridY,
+                                                     const juce::MouseWheelDetails& wheel) {
+        const int anchorScreenY = gridY - viewport_->getViewPositionY();
+        const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
+                                           gridY / juce::jmax(1, rowHeight_));
+        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, anchorScreenY, true);
+    };
     if (auto* controller = magda::TimelineController::getCurrent()) {
         gridComponent_->setTimeSignatureNumerator(
             controller->getState().tempo.timeSignatureNumerator);
@@ -1970,7 +2016,7 @@ void DrumGridClipContent::resized() {
     if (velocityDrawerOpen_) {
         auto drawerArea = bounds.removeFromBottom(drawerHeight_);
         if (midiDrawer_) {
-            midiDrawer_->setLeftMargin(LABEL_WIDTH);
+            midiDrawer_->setLeftMargin(ZOOM_STRIP_WIDTH + LABEL_WIDTH);
             midiDrawer_->setBounds(drawerArea);
             midiDrawer_->setVisible(true);
         }
@@ -1981,8 +2027,11 @@ void DrumGridClipContent::resized() {
 
     // Time ruler at top
     auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
-    headerArea.removeFromLeft(LABEL_WIDTH);  // Align with grid
+    headerArea.removeFromLeft(ZOOM_STRIP_WIDTH + LABEL_WIDTH);  // Align with grid
     timeRuler_->setBounds(headerArea);
+
+    auto zoomStripArea = bounds.removeFromLeft(ZOOM_STRIP_WIDTH);
+    verticalZoomStrip_->setBounds(zoomStripArea);
 
     // Row labels on left
     auto labelsArea = bounds.removeFromLeft(LABEL_WIDTH);
@@ -2005,7 +2054,7 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
     // Cmd/Ctrl + scroll = horizontal zoom (uses shared base method)
     if (e.mods.isCommandDown()) {
         double zoomFactor = 1.0 + (wheel.deltaY * 0.1);
-        int mouseXInViewport = e.x - SIDEBAR_WIDTH - LABEL_WIDTH;
+        int mouseXInViewport = e.x - SIDEBAR_WIDTH - ZOOM_STRIP_WIDTH - LABEL_WIDTH;
         performWheelZoom(zoomFactor, mouseXInViewport);
         return;
     }
@@ -2021,7 +2070,7 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
     }
 
     // Forward to time ruler area for horizontal scroll
-    if (e.y < RULER_HEIGHT && e.x >= SIDEBAR_WIDTH + LABEL_WIDTH) {
+    if (e.y < RULER_HEIGHT && e.x >= SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + LABEL_WIDTH) {
         if (timeRuler_->onScrollRequested) {
             float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
             int scrollAmount = static_cast<int>(-delta * 100.0f);

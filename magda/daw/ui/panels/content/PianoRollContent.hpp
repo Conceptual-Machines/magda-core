@@ -82,7 +82,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
   private:
     // MidiEditorContent virtual implementations
     int getLeftPanelWidth() const override {
-        return SIDEBAR_WIDTH + KEYBOARD_WIDTH;
+        return SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH;
     }
     void updateGridSize() override;
     void setGridPixelsPerBeat(double ppb) override;
@@ -99,6 +99,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
 
     // Layout constants (PianoRoll-specific)
     static constexpr int SIDEBAR_WIDTH = 32;
+    static constexpr int ZOOM_STRIP_WIDTH = 12;
     static constexpr int KEYBOARD_WIDTH = 60;
     static constexpr int DEFAULT_NOTE_HEIGHT = magda::ClipInfo::DEFAULT_MIDI_EDITOR_ROW_HEIGHT;
     static constexpr int CHORD_ROW_HEIGHT = 24;
@@ -123,6 +124,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     // Components (PianoRoll-specific)
     std::unique_ptr<magda::PianoRollGridComponent> gridComponent_;
     std::unique_ptr<magda::PianoRollKeyboard> keyboard_;
+    std::unique_ptr<VerticalZoomStrip> verticalZoomStrip_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
     std::unique_ptr<magda::SvgButton> velocityToggle_;

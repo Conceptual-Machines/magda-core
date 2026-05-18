@@ -73,7 +73,7 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
   private:
     // MidiEditorContent virtual implementations
     int getLeftPanelWidth() const override {
-        return SIDEBAR_WIDTH + LABEL_WIDTH;
+        return SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + LABEL_WIDTH;
     }
     void updateGridSize() override;
     void setGridPixelsPerBeat(double ppb) override;
@@ -91,6 +91,7 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
 
     // Layout constants (DrumGrid-specific)
     static constexpr int SIDEBAR_WIDTH = 32;
+    static constexpr int ZOOM_STRIP_WIDTH = 12;
     static constexpr int LABEL_WIDTH = 120;
     static constexpr int DEFAULT_ROW_HEIGHT = 24;
     static constexpr int MIN_ROW_HEIGHT = magda::ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT;
@@ -107,6 +108,7 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     // Components (DrumGrid-specific)
     std::unique_ptr<DrumGridClipGrid> gridComponent_;
     std::unique_ptr<DrumGridRowLabels> rowLabels_;
+    std::unique_ptr<VerticalZoomStrip> verticalZoomStrip_;
     std::unique_ptr<magda::SvgButton> controlsToggle_;
 
     void buildPadRows();

@@ -210,8 +210,15 @@ void PianoRollKeyboard::mouseUp(const juce::MouseEvent& /*event*/) {
     dragMode_ = DragMode::None;
 }
 
-void PianoRollKeyboard::mouseWheelMove(const juce::MouseEvent& /*event*/,
+void PianoRollKeyboard::mouseWheelMove(const juce::MouseEvent& event,
                                        const juce::MouseWheelDetails& wheel) {
+    if (event.mods.isAltDown() && onZoomChanged) {
+        const int anchorNote = yToNoteNumber(event.y);
+        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        onZoomChanged(juce::jlimit(6, 40, noteHeight_ + heightDelta), anchorNote, event.y);
+        return;
+    }
+
     // Scroll vertically when wheel is used over the keyboard
     if (onScrollRequested) {
         // Convert wheel delta to pixels
