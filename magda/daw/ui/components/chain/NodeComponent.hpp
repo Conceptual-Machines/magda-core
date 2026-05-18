@@ -353,9 +353,12 @@ class NodeComponent : public juce::Component,
     // Contextual link callbacks (when param is selected and mod amount slider is used)
     virtual void onModLinkAmountChangedInternal(int /*modIndex*/, magda::ControlTarget /*target*/,
                                                 float /*amount*/) {}
+    virtual void onModLinkEnabledChangedInternal(int /*modIndex*/, magda::ControlTarget /*target*/,
+                                                 bool /*enabled*/) {}
     virtual void onModNewLinkCreatedInternal(int /*modIndex*/, magda::ControlTarget /*target*/,
                                              float /*amount*/) {}
     virtual void onModLinkRemovedInternal(int /*modIndex*/, magda::ControlTarget /*target*/) {}
+    virtual void onModAllLinksClearedInternal(int /*modIndex*/) {}
     virtual void onMacroValueChangedInternal(int /*macroIndex*/, float /*value*/) {}
     virtual void onMacroTargetChangedInternal(int /*macroIndex*/, magda::ControlTarget /*target*/) {
     }

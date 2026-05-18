@@ -77,6 +77,8 @@ class TrackChainContent : public PanelContent,
     void trackPropertyChanged(int trackId) override;
     void trackSelectionChanged(magda::TrackId trackId) override;
     void trackDevicesChanged(magda::TrackId trackId) override;
+    void deviceModifiersChanged(magda::TrackId trackId) override;
+    void modulationNamesChanged(magda::TrackId trackId) override;
     void macroValueChanged(magda::TrackId trackId, magda::ChainScope scope, int ownerId,
                            int macroIndex, float value) override;
 
@@ -154,6 +156,7 @@ class TrackChainContent : public PanelContent,
     void initGlobalMacrosPanel();
     void updateGlobalModsPanel();
     void updateGlobalMacrosPanel();
+    void refreshVisibleModulationPanels();
     void showGlobalModEditor(int modIndex);
     void hideGlobalModEditor();
     void showGlobalMacroEditor(int macroIndex);

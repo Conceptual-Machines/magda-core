@@ -239,6 +239,46 @@ class WrapChainElementsInRackCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+class SetMacroNameCommand : public UndoableCommand {
+  public:
+    SetMacroNameCommand(const ChainNodePath& path, int macroIndex, const juce::String& newName);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Rename Macro";
+    }
+
+  private:
+    void applyName(const juce::String& name);
+
+    ChainNodePath path_;
+    int macroIndex_ = -1;
+    juce::String oldName_;
+    juce::String newName_;
+    bool valid_ = false;
+};
+
+class SetModNameCommand : public UndoableCommand {
+  public:
+    SetModNameCommand(const ChainNodePath& path, int modIndex, const juce::String& newName);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Rename Modulator";
+    }
+
+  private:
+    void applyName(const juce::String& name);
+
+    ChainNodePath path_;
+    int modIndex_ = -1;
+    juce::String oldName_;
+    juce::String newName_;
+    bool valid_ = false;
+};
+
 /**
  * @brief Command for creating a new track with a device (single undo step)
  */
