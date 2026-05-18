@@ -1514,6 +1514,8 @@ class ShortcutsPage : public juce::Component {
         addSection("Transport and View");
         addShortcut("Play / Stop", "Space", "Global");
         addShortcut("Exit link mode / clear selection", "Escape", "Context");
+        addShortcut("Cycle to next main view", "Tab", "Global");
+        addShortcut("Cycle to previous main view", shiftPrefix() + "Tab", "Global");
         addShortcut("Create loop from selection or clip", "L", "Arrange");
         addShortcut("Reset Zoom to Fit", cmd("0"), "Arrange");
         addShortcut("Toggle Arrangement Lock", "F4", "Arrange");
