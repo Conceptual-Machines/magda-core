@@ -434,7 +434,12 @@ void ClipInspector::initClipPropertiesSection() {
                 u.interpretationTotalBeats = durationSeconds * newBPM / 60.0;
                 u.lockInterpretationTotalBeats = true;
             }
-            magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u, bpm);
+            auto& mgr = magda::ClipManager::getInstance();
+            mgr.applyAudioClipBeats(primaryClipId(), u, bpm);
+            // Persist the user's BPM choice on the file in the media DB so
+            // re-drops of the same sample land with this value, not the
+            // scanner's original guess.
+            mgr.recordUserBpm(primaryClipId(), newBPM);
         } else {
             // Non-autoTempo audio: source interpretation is stored metadata,
             // not playback-affecting, but the inspector reads it for display
@@ -447,7 +452,11 @@ void ClipInspector::initClipPropertiesSection() {
                 clip->audio().interpretation.totalBeats = durationSeconds * newBPM / 60.0;
                 clip->audio().interpretation.totalBeatsLocked = true;
             }
-            magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(primaryClipId());
+            auto& mgr = magda::ClipManager::getInstance();
+            mgr.forceNotifyClipPropertyChanged(primaryClipId());
+            // Same write-back as the autoTempo branch — keep DB in sync
+            // with whatever the user said the file's BPM is.
+            mgr.recordUserBpm(primaryClipId(), newBPM);
         }
 
         clipBpmValue_.setText(juce::String(newBPM, 1), juce::dontSendNotification);

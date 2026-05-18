@@ -266,6 +266,43 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(lua)
 
+# SQLite 3.53.1 — embedded media DB engine (issue #768).
+# Like Lua, the official amalgamation ships no CMakeLists, so FetchContent
+# just populates sqlite3_SOURCE_DIR and the static library is built by
+# third_party/sqlite/CMakeLists.txt with FTS5 and foreign keys enabled.
+FetchContent_Declare(
+    sqlite3
+    URL https://www.sqlite.org/2026/sqlite-amalgamation-3530100.zip
+    URL_HASH SHA3_256=3c07136e4f6b5dd0c395be86455014039597bc65b6851f7111e88f71b6e06114
+)
+FetchContent_MakeAvailable(sqlite3)
+add_subdirectory(third_party/sqlite)
+
+# ONNX Runtime 1.26.0 — CLAP inference engine for the media DB (issue #768).
+# Microsoft ships prebuilt binaries per (OS, arch); we pin one per platform.
+# Intel macOS is intentionally unsupported: upstream dropped osx-x86_64 in 1.26.
+set(ORT_VERSION 1.26.0)
+if(APPLE AND (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64"
+              OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64"))
+    set(ORT_URL  "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-osx-arm64-${ORT_VERSION}.tgz")
+    set(ORT_HASH SHA256=7a1280bbb1701ea514f71828765237e7896e0f2e1cd332f1f70dbd5c3e33aca3)
+elseif(UNIX AND NOT APPLE)
+    set(ORT_URL  "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz")
+    set(ORT_HASH SHA256=1254da24fb389cf39dc0ff3451ab48301740ffbfcbaf646849df92f80ee92c57)
+elseif(WIN32)
+    set(ORT_URL  "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-win-x64-${ORT_VERSION}.zip")
+    set(ORT_HASH SHA256=6ebe99b5564bf4d029b6e93eac9ff423682b6212eade769e9ca3f685eaf500b4)
+else()
+    message(FATAL_ERROR "ONNX Runtime: no prebuilt binary for this platform")
+endif()
+FetchContent_Declare(
+    onnxruntime
+    URL      ${ORT_URL}
+    URL_HASH ${ORT_HASH}
+)
+FetchContent_MakeAvailable(onnxruntime)
+add_subdirectory(third_party/onnxruntime)
+
 # Simple agent system - no external dependencies needed
 
 # Product-based subdirectories

@@ -321,6 +321,12 @@ class Config {
     void setBrowserFilterMidi(bool enabled) {
         browserFilterMidi = enabled;
     }
+    bool getBrowserFilterPreset() const {
+        return browserFilterPreset;
+    }
+    void setBrowserFilterPreset(bool enabled) {
+        browserFilterPreset = enabled;
+    }
 
     // Browser Default Directory
     std::string getBrowserDefaultDirectory() const {
@@ -328,6 +334,14 @@ class Config {
     }
     void setBrowserDefaultDirectory(const std::string& dir) {
         browserDefaultDirectory = dir;
+    }
+
+    // Last view the media explorer was on at shutdown ("filesystem" / "library").
+    std::string getBrowserLastView() const {
+        return browserLastView;
+    }
+    void setBrowserLastView(const std::string& view) {
+        browserLastView = view;
     }
 
     // Export Audio Configuration
@@ -831,12 +845,18 @@ class Config {
     bool stopUpdatesPlayhead = false;
 
     // Browser filter settings (media explorer)
-    bool browserFilterAudio = true;  // Show audio files by default
-    bool browserFilterMidi = false;  // Hide MIDI files by default
+    bool browserFilterAudio = true;    // Show audio files by default
+    bool browserFilterMidi = false;    // Hide MIDI files by default
+    bool browserFilterPreset = false;  // Hide MAGDA presets by default
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;
     std::string browserDefaultDirectory = "";  // empty = user home
+
+    // Which view the media explorer should restore on startup.
+    // "filesystem" → file browser at browserDefaultDirectory.
+    // "library"    → DB browser (sample library).
+    std::string browserLastView = "filesystem";
 
     // Auto-update check
     bool autoCheckUpdates = true;          // Check GitHub for newer releases on startup
