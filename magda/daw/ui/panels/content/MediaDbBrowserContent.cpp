@@ -7,6 +7,7 @@
 #include "../../../media_db/MediaDatabase.hpp"
 #include "../../../media_db/MediaDbContext.hpp"
 #include "../../../media_db/MediaDbIndexer.hpp"
+#include "../../../media_db/SampleTaggerDownloader.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
@@ -565,12 +566,20 @@ void MediaDbBrowserContent::runSearch() {
     resultsTable_.setVisible(!empty);
     emptyState_.setVisible(empty);
     if (empty) {
-        emptyState_.setText(
-            queryText_.isEmpty()
-                ? "No samples in your library yet.\nRight-click a folder in the browser "
-                  "and choose \"Index this folder\"."
-                : "No results.",
-            juce::dontSendNotification);
+        juce::String text;
+        if (queryText_.isEmpty()) {
+            text = "No samples in your library yet.\nRight-click a folder in the browser "
+                   "and choose \"Index this folder\".";
+        } else {
+            text = "No results.";
+            // Subtle hint when text search returns nothing AND the model
+            // isn't installed — explains why text queries are degraded.
+            if (!magda::media::SampleTaggerDownloader::isInstalled()) {
+                text += "\n\nText search is filename / tag only without the AI Sample Tagger.\n"
+                        "Install it from AI Settings → Sample Tagger.";
+            }
+        }
+        emptyState_.setText(text, juce::dontSendNotification);
     }
 }
 
@@ -596,6 +605,22 @@ void MediaDbBrowserContent::visibilityChanged() {
 void MediaDbBrowserContent::startIndexing(const juce::File& dir, bool force) {
     if (indexing_ || !dir.isDirectory()) {
         return;  // Already running, or invalid target — ignore.
+    }
+
+    // Warn if the Sample Tagger isn't installed — indexing still works, but
+    // embeddings won't be computed, so text search will be filename / tag
+    // only. Async (non-blocking) so the scan kicks off either way.
+    if (!magda::media::SampleTaggerDownloader::isInstalled()) {
+        juce::AlertWindow::showAsync(
+            juce::MessageBoxOptions()
+                .withIconType(juce::MessageBoxIconType::InfoIcon)
+                .withTitle("AI Sample Tagger not installed")
+                .withMessage(
+                    "Indexing will run, but without the Sample Tagger the library can only do "
+                    "filename / tag / family / BPM filtering — no semantic text search.\n\n"
+                    "Install it any time from AI Settings → Sample Tagger.")
+                .withButton("OK"),
+            nullptr);
     }
 
     if (!indexPool_) {

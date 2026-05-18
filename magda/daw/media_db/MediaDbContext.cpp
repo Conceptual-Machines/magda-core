@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include "../core/AppPaths.hpp"
+#include "../core/Config.hpp"
 #include "ClapAudioEncoder.hpp"
 #include "ClapTextEncoder.hpp"
 #include "MediaDatabase.hpp"
@@ -31,6 +32,20 @@ std::filesystem::path MediaDbContext::dbPath() const {
 }
 
 std::filesystem::path MediaDbContext::modelsDir() const {
+    // User override: if Config has a non-empty path AND it points at a
+    // real directory, use it. Lets the user keep the ~600 MB Sample
+    // Tagger bundle on an external drive. Falls back to the default
+    // when unset or when the override directory has gone missing
+    // (drive unplugged, etc.) — fallback prevents the downloader and
+    // lazy-load code from chasing dead paths.
+    const auto override = magda::Config::getInstance().getSampleTaggerModelsDir();
+    if (!override.empty()) {
+        std::filesystem::path p(override);
+        std::error_code ec;
+        if (std::filesystem::is_directory(p, ec)) {
+            return p;
+        }
+    }
     return std::filesystem::path(
                magda::paths::dataDir().getChildFile("MediaDB").getFullPathName().toStdString()) /
            "models";

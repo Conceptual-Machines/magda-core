@@ -7,6 +7,8 @@
 #include "../../../agents/llm_presets.hpp"
 #include "../../../agents/model_downloader.hpp"
 #include "../../core/Config.hpp"
+#include "../../media_db/MediaDbContext.hpp"
+#include "../../media_db/SampleTaggerDownloader.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
@@ -1144,6 +1146,219 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 };
 
 // ============================================================================
+// SampleTaggerPage — manage the CLAP audio/text model + RoBERTa tokenizer
+// that power the media DB's semantic search (issue #768).
+// ============================================================================
+
+class AISettingsDialog::SampleTaggerPage : public juce::Component {
+  public:
+    SampleTaggerPage() {
+        statusLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        statusLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        statusLabel_.setJustificationType(juce::Justification::topLeft);
+        addAndMakeVisible(statusLabel_);
+
+        locationCaption_.setText("Models location", juce::dontSendNotification);
+        styleLabel(locationCaption_);
+        addAndMakeVisible(locationCaption_);
+
+        // Read-only — the only sanctioned way to change it is the
+        // Browse button, which validates the directory exists.
+        locationField_.setReadOnly(true);
+        styleEditor(locationField_, "");
+        addAndMakeVisible(locationField_);
+
+        browseButton_.setButtonText("Browse...");
+        browseButton_.onClick = [this]() { browseForLocation(); };
+        addAndMakeVisible(browseButton_);
+
+        resetLocationButton_.setButtonText("Reset");
+        resetLocationButton_.onClick = [this]() {
+            magda::Config::getInstance().setSampleTaggerModelsDir(std::string{});
+            magda::Config::getInstance().save();
+            refreshStatus();
+        };
+        addAndMakeVisible(resetLocationButton_);
+
+        progressBar_.setColour(juce::ProgressBar::backgroundColourId,
+                               DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+        progressBar_.setColour(juce::ProgressBar::foregroundColourId,
+                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        progressBar_.setPercentageDisplay(false);
+        progressBar_.setVisible(false);
+        addAndMakeVisible(progressBar_);
+
+        actionButton_.setButtonText("Download Sample Tagger");
+        actionButton_.onClick = [this]() { handleActionClick(); };
+        addAndMakeVisible(actionButton_);
+
+        refreshStatus();
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(12);
+        const int rowH = 24;
+        const int labelW = 110;
+
+        statusLabel_.setBounds(bounds.removeFromTop(60));
+        bounds.removeFromTop(10);
+
+        auto locRow = bounds.removeFromTop(rowH);
+        locationCaption_.setBounds(locRow.removeFromLeft(labelW));
+        resetLocationButton_.setBounds(locRow.removeFromRight(70).reduced(0, 1));
+        locRow.removeFromRight(4);
+        browseButton_.setBounds(locRow.removeFromRight(90).reduced(0, 1));
+        locRow.removeFromRight(4);
+        locationField_.setBounds(locRow.reduced(0, 1));
+        bounds.removeFromTop(10);
+
+        progressBar_.setBounds(bounds.removeFromTop(22));
+        bounds.removeFromTop(8);
+        actionButton_.setBounds(bounds.removeFromTop(28).removeFromLeft(220));
+    }
+
+    // No-ops: this page has no Config fields — model presence lives on disk.
+    void load(const magda::Config&) {
+        refreshStatus();
+    }
+    void apply(magda::Config&) const {}
+
+  private:
+    void refreshStatus() {
+        const auto currentDir =
+            juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string());
+        locationField_.setText(currentDir, juce::dontSendNotification);
+
+        const bool installed = magda::media::SampleTaggerDownloader::isInstalled();
+        if (installed) {
+            statusLabel_.setText(
+                "Sample Tagger is installed.\n\nThis enables text search ('warm pad', "
+                "'kick 808'…) over your indexed sample library. Click Remove to free disk space "
+                "if you don't use text search.",
+                juce::dontSendNotification);
+            actionButton_.setButtonText("Remove");
+            progressBar_.setVisible(false);
+        } else {
+            const auto totalMb =
+                magda::media::SampleTaggerDownloader::expectedTotalBytes() / (1024.0 * 1024.0);
+            statusLabel_.setText(
+                "Sample Tagger is not installed.\n\nDownload (~" + juce::String(totalMb, 0) +
+                    " MB) to enable text search over indexed samples. Without it, the media "
+                    "library still supports filename / tag / family filtering.",
+                juce::dontSendNotification);
+            actionButton_.setButtonText("Download Sample Tagger");
+            progressBar_.setVisible(false);
+        }
+        actionButton_.setEnabled(true);
+        resized();
+    }
+
+    void browseForLocation() {
+        const auto currentDir = juce::File(
+            juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string()));
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            "Choose a folder for the Sample Tagger models",
+            currentDir.exists() ? currentDir
+                                : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+        fileChooser_->launchAsync(juce::FileBrowserComponent::openMode |
+                                      juce::FileBrowserComponent::canSelectDirectories,
+                                  [this](const juce::FileChooser& fc) {
+                                      const auto picked = fc.getResult();
+                                      if (!picked.isDirectory()) {
+                                          return;  // user cancelled
+                                      }
+                                      magda::Config::getInstance().setSampleTaggerModelsDir(
+                                          picked.getFullPathName().toStdString());
+                                      magda::Config::getInstance().save();
+                                      refreshStatus();
+                                  });
+    }
+
+    void handleActionClick() {
+        if (downloader_.isRunning()) {
+            downloader_.cancel();
+            return;
+        }
+        if (magda::media::SampleTaggerDownloader::isInstalled()) {
+            removeInstalledFiles();
+            refreshStatus();
+            return;
+        }
+        // Start download
+        progressBar_.setVisible(true);
+        progressValue_ = 0.0;
+        actionButton_.setButtonText("Cancel");
+        statusLabel_.setText("Starting download...", juce::dontSendNotification);
+
+        const juce::Component::SafePointer<SampleTaggerPage> self(this);
+        downloader_.start([self](const auto& p) {
+            if (self != nullptr) {
+                self->onProgress(p);
+            }
+        });
+    }
+
+    void onProgress(const magda::media::SampleTaggerDownloader::Progress& p) {
+        using Phase = magda::media::SampleTaggerDownloader::Phase;
+        switch (p.phase) {
+            case Phase::Downloading:
+            case Phase::Verifying: {
+                const auto total = p.totalBytesAll > 0 ? p.totalBytesAll : 1;
+                progressValue_ = static_cast<double>(p.bytesDoneAll) / static_cast<double>(total);
+                const auto mb = [](juce::int64 b) {
+                    return juce::String(b / (1024.0 * 1024.0), 1);
+                };
+                const auto verb = (p.phase == Phase::Verifying ? juce::String("Verifying ")
+                                                               : juce::String("Downloading "));
+                statusLabel_.setText(verb + p.currentFilename + "  (" + mb(p.bytesDoneAll) + " / " +
+                                         mb(p.totalBytesAll) + " MB)",
+                                     juce::dontSendNotification);
+                progressBar_.repaint();
+                break;
+            }
+            case Phase::Done:
+                refreshStatus();
+                break;
+            case Phase::Failed:
+                actionButton_.setButtonText("Retry");
+                statusLabel_.setText(juce::String("Download failed: ") + p.errorMessage,
+                                     juce::dontSendNotification);
+                progressBar_.setVisible(false);
+                break;
+            case Phase::Cancelled:
+                refreshStatus();
+                break;
+            case Phase::Idle:
+                break;
+        }
+    }
+
+    static void removeInstalledFiles() {
+        // Re-use the downloader's manifest by querying isInstalled state; we
+        // don't bother re-implementing the file list here — just nuke the
+        // models dir's known filenames.
+        auto dir = juce::File(
+            juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string()));
+        for (const auto* name : {"clap_audio.onnx", "clap_text.onnx", "tokenizer.json"}) {
+            dir.getChildFile(name).deleteFile();
+        }
+    }
+
+    juce::Label statusLabel_;
+    juce::Label locationCaption_;
+    juce::TextEditor locationField_;
+    juce::TextButton browseButton_;
+    juce::TextButton resetLocationButton_;
+    std::unique_ptr<juce::FileChooser> fileChooser_;
+    // ProgressBar holds a reference to the value, so the value must come
+    // first in the member-decl order to be constructed first.
+    double progressValue_ = 0.0;
+    juce::ProgressBar progressBar_{progressValue_};
+    juce::TextButton actionButton_;
+    magda::media::SampleTaggerDownloader downloader_;
+};
+
+// ============================================================================
 // AISettingsDialog
 // ============================================================================
 
@@ -1153,6 +1368,7 @@ AISettingsDialog::AISettingsDialog() {
     cloudPage_ = std::make_unique<CloudPage>();
     localPage_ = std::make_unique<LocalPage>();
     configPage_ = std::make_unique<ConfigPage>();
+    samplePage_ = std::make_unique<SampleTaggerPage>();
 
     // Wire config page to sibling pages
     configPage_->cloudPage = cloudPage_.get();
@@ -1162,6 +1378,7 @@ AISettingsDialog::AISettingsDialog() {
     tabbedComponent_.addTab("Cloud", tabBg, cloudPage_.get(), false);
     tabbedComponent_.addTab("Local", tabBg, localPage_.get(), false);
     tabbedComponent_.addTab("Config", tabBg, configPage_.get(), false);
+    tabbedComponent_.addTab("Sample Tagger", tabBg, samplePage_.get(), false);
 
     // Refresh config combos when switching to Config tab
     tabbedComponent_.onTabChanged = [this](int tabIndex) {
@@ -1214,6 +1431,7 @@ void AISettingsDialog::loadSettings() {
     cloudPage_->load(config);
     localPage_->load(config);
     configPage_->load(config);
+    samplePage_->load(config);
 }
 
 void AISettingsDialog::applySettings() {
@@ -1221,6 +1439,7 @@ void AISettingsDialog::applySettings() {
     cloudPage_->apply(config);
     localPage_->apply(config);
     configPage_->apply(config);
+    samplePage_->apply(config);
     config.save();
 }
 

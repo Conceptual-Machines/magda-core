@@ -344,6 +344,18 @@ class Config {
         browserLastView = view;
     }
 
+    // User-chosen location for the Sample Tagger ONNX bundle. Empty
+    // string = default (dataDir/MediaDB/models). MediaDbContext::modelsDir()
+    // returns this when set and the directory exists; falls back to the
+    // default otherwise. Lets users keep the ~600 MB bundle on an
+    // external drive without symlinking.
+    std::string getSampleTaggerModelsDir() const {
+        return sampleTaggerModelsDir;
+    }
+    void setSampleTaggerModelsDir(const std::string& dir) {
+        sampleTaggerModelsDir = dir;
+    }
+
     // Export Audio Configuration
     std::string getExportFormat() const {
         return exportFormat;
@@ -857,6 +869,10 @@ class Config {
     // "filesystem" → file browser at browserDefaultDirectory.
     // "library"    → DB browser (sample library).
     std::string browserLastView = "filesystem";
+
+    // Optional override for the Sample Tagger ONNX bundle location.
+    // Empty = use the default dataDir/MediaDB/models.
+    std::string sampleTaggerModelsDir = "";
 
     // Auto-update check
     bool autoCheckUpdates = true;          // Check GitHub for newer releases on startup

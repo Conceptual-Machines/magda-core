@@ -1457,7 +1457,10 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
         } else if (sidebarComponent_->canAddFavorite()) {
             menu.addItem(2, "Add to favorites");
         } else {
-            menu.addItem(0, "Favorites full (max 8)", false);
+            // SectionHeader, not addItem(0, …) — JUCE asserts on id 0
+            // because it's reserved for "user dismissed". Section headers
+            // are the sanctioned way to put non-clickable label text.
+            menu.addSectionHeader("Favorites full (max 8)");
         }
         menu.addSeparator();
         // Context-aware label: if any file under this folder is already in
