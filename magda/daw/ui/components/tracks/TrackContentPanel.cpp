@@ -1229,8 +1229,18 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
             selectionEndTime = snapTimeToGrid(selectionEndTime);
         }
 
-        // Track the current track under the mouse for multi-track selection
+        // Track the current track under the mouse for multi-track selection.
+        // If the drag crosses into an automation lane header strip, keep the
+        // clip-row selection and add that lane as an explicit automation scope.
         selectionEndTrackIndex = getTrackIndexAtY(event.y);
+        std::set<AutomationLaneId> automationLaneIds;
+        int automationTrackIndex = -1;
+        AutomationLaneId automationLaneId = INVALID_AUTOMATION_LANE_ID;
+        if (selectionEndTrackIndex < 0 &&
+            getAutomationLaneStripAtY(event.y, automationTrackIndex, automationLaneId)) {
+            selectionEndTrackIndex = automationTrackIndex;
+            automationLaneIds.insert(automationLaneId);
+        }
 
         // Clamp to valid track range (handle dragging above/below track area)
         if (selectionEndTrackIndex < 0) {
@@ -1259,7 +1269,11 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
         if (onTimeSelectionChanged) {
             double start = juce::jmin(selectionStartTime, selectionEndTime);
             double end = juce::jmax(selectionStartTime, selectionEndTime);
-            onTimeSelectionChanged(start, end, trackIndices);
+            if (!automationLaneIds.empty() && onMixedTimeSelectionChanged) {
+                onMixedTimeSelectionChanged(start, end, trackIndices, automationLaneIds);
+            } else {
+                onTimeSelectionChanged(start, end, trackIndices);
+            }
         }
     }
 }
@@ -1680,7 +1694,7 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
     bool hasTimeSelection = false;
     if (timelineController) {
         const auto& sel = timelineController->getState().selection;
-        hasTimeSelection = sel.isVisuallyActive();
+        hasTimeSelection = sel.isVisuallyActive() && !sel.automationOnly;
     }
 
     juce::PopupMenu menu;
@@ -2304,7 +2318,8 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
 
     // Delete/Backspace: time-selection delete takes priority, then selected clips
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
-        if (timelineController && timelineController->getState().selection.isVisuallyActive()) {
+        if (timelineController && timelineController->getState().selection.isVisuallyActive() &&
+            !timelineController->getState().selection.automationOnly) {
             const auto& state = timelineController->getState();
             const auto& sel = state.selection;
 
@@ -2558,6 +2573,38 @@ bool TrackContentPanel::isAutomationLaneVisible(TrackId trackId, AutomationLaneI
     return false;
 }
 
+bool TrackContentPanel::getAutomationLaneBounds(AutomationLaneId laneId,
+                                                juce::Rectangle<int>& bounds) const {
+    for (const auto& entry : automationLaneComponents_) {
+        if (entry.laneId == laneId && entry.component) {
+            bounds = entry.component->getBounds();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TrackContentPanel::getAutomationLaneStripAtY(int y, int& trackIndex,
+                                                  AutomationLaneId& laneId) const {
+    for (const auto& entry : automationLaneComponents_) {
+        if (!entry.component)
+            continue;
+
+        const auto bounds = entry.component->getBounds();
+        if (y < bounds.getY() || y >= bounds.getY() + AutomationLaneComponent::HEADER_HEIGHT)
+            continue;
+
+        auto trackIt = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), entry.trackId);
+        if (trackIt == visibleTrackIds_.end())
+            return false;
+
+        trackIndex = static_cast<int>(std::distance(visibleTrackIds_.begin(), trackIt));
+        laneId = entry.laneId;
+        return true;
+    }
+    return false;
+}
+
 int TrackContentPanel::getTrackTotalHeight(int trackIndex) const {
     if (trackIndex < 0 || trackIndex >= static_cast<int>(trackLanes.size())) {
         return 0;
@@ -2631,6 +2678,23 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
                 updateClipComponentPositions();
                 resized();
                 repaintVisible();
+            };
+            entry.component->onTimeSelectionChanged = [this, trackId, laneId](AutomationLaneId,
+                                                                              double startBeat,
+                                                                              double endBeat) {
+                if (!onAutomationTimeSelectionChanged || tempoBPM <= 0.0)
+                    return;
+
+                auto trackIt = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), trackId);
+                if (trackIt == visibleTrackIds_.end())
+                    return;
+
+                const int trackIndex =
+                    static_cast<int>(std::distance(visibleTrackIds_.begin(), trackIt));
+                std::set<int> trackIndices{trackIndex};
+                std::set<AutomationLaneId> laneIds{laneId};
+                onAutomationTimeSelectionChanged(startBeat * 60.0 / tempoBPM,
+                                                 endBeat * 60.0 / tempoBPM, trackIndices, laneIds);
             };
 
             addAndMakeVisible(*entry.component);

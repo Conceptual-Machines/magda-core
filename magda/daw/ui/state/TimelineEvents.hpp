@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <set>
+#include <utility>
 #include <variant>
 
 #include "TimelineState.hpp"
@@ -160,9 +161,20 @@ struct SetPlaybackStateEvent {
  * Empty set = all tracks (backward compatible).
  */
 struct SetTimeSelectionEvent {
+    SetTimeSelectionEvent(double startTimeIn, double endTimeIn, std::set<int> trackIndicesIn,
+                          bool automationOnlyIn = false,
+                          std::set<AutomationLaneId> automationLaneIdsIn = {})
+        : startTime(startTimeIn),
+          endTime(endTimeIn),
+          trackIndices(std::move(trackIndicesIn)),
+          automationOnly(automationOnlyIn),
+          automationLaneIds(std::move(automationLaneIdsIn)) {}
+
     double startTime;
     double endTime;
     std::set<int> trackIndices;  // Empty = all tracks
+    bool automationOnly = false;
+    std::set<AutomationLaneId> automationLaneIds;
 };
 
 /**

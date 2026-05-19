@@ -75,6 +75,7 @@ class AutomationLaneComponent : public juce::Component,
 
     // Callbacks for parent coordination
     std::function<void(AutomationLaneId, int)> onHeightChanged;
+    std::function<void(AutomationLaneId, double, double)> onTimeSelectionChanged;
 
     /**
      * @brief Run Ramer–Douglas–Peucker simplification on an absolute automation
@@ -103,6 +104,11 @@ class AutomationLaneComponent : public juce::Component,
     int resizeStartY_ = 0;
     int resizeStartHeight_ = 0;
 
+    // Header strip time-selection state
+    bool isCreatingTimeSelection_ = false;
+    juce::Point<int> timeSelectionAnchor_;
+    double timeSelectionStartBeat_ = 0.0;
+
     // UI components
     std::unique_ptr<AutomationCurveEditor> curveEditor_;
     std::vector<std::unique_ptr<AutomationClipComponent>> clipComponents_;
@@ -121,6 +127,8 @@ class AutomationLaneComponent : public juce::Component,
 
     // Resize helpers
     bool isInResizeArea(int y) const;
+    bool isInTimeSelectionStrip(int x, int y) const;
+    double xToBeat(int x) const;
     juce::Rectangle<int> getResizeHandleArea() const;
 
     // Scale label helpers
