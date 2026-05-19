@@ -103,9 +103,8 @@ struct AudioSourceInterpretation {
     double totalBeats = 0.0;
     bool totalBeatsLocked = false;
     // Musical key the source is interpreted in. Optional — empty = unknown.
-    // Seeded from the media DB on add (when the file is library-indexed)
-    // and persisted back via ClipManager::recordUserKey when the user
-    // edits it in the inspector. keyScale is "major" / "minor" / "" when
+    // Inspector/editor edits live on the clip until the user explicitly saves
+    // them to the media library. keyScale is "major" / "minor" / "" when
     // unknown; keyRoot is "C" / "C#" / ... / "B" or empty.
     std::string keyRoot;
     std::string keyScale;

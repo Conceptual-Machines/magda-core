@@ -314,9 +314,13 @@ void ClipInspector::updateFromSelectedClip() {
             clipKeyRootCombo_.setSelectedId(rootId, juce::dontSendNotification);
             clipKeyLabel_.setVisible(true);
             clipKeyRootCombo_.setVisible(true);
+            saveLibraryButton_.setVisible(true);
+            saveLibraryButton_.setEnabled(
+                magda::ClipManager::getInstance().canSaveClipToLibrary(pid));
         } else {
             clipKeyLabel_.setVisible(false);
             clipKeyRootCombo_.setVisible(false);
+            saveLibraryButton_.setVisible(false);
         }
 
         // Get tempo from TimelineController, fallback to 120 BPM if not available
@@ -649,6 +653,7 @@ void ClipInspector::showClipControls(bool show) {
         stretchModeCombo_.setVisible(false);
         clipKeyLabel_.setVisible(false);
         clipKeyRootCombo_.setVisible(false);
+        saveLibraryButton_.setVisible(false);
         launchModeLabel_.setVisible(false);
         launchModeCombo_.setVisible(false);
         launchQuantizeLabel_.setVisible(false);

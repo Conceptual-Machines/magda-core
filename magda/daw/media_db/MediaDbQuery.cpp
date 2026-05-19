@@ -256,12 +256,15 @@ std::vector<QueryResult> hydrate(sqlite3* db,
         return out;
     }
     // Bulk-fetch with one IN-clause query, then re-order by the input vector.
-    std::string sql = "SELECT id, path, kind, family, shape, COALESCE(bpm_user, bpm) AS bpm, "
-                      "COALESCE(key_root_user, key_root) AS key_root, "
-                      "COALESCE(key_scale_user, key_scale) AS key_scale, duration_s, "
-                      "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
-                      "        WHERE file_id = media_file.id) AS tags "
-                      "FROM media_file WHERE id IN (";
+    std::string sql =
+        "SELECT id, path, kind, family, shape, COALESCE(bpm_user, bpm) AS bpm, "
+        "COALESCE(key_root_user, key_root) AS key_root, "
+        "COALESCE(key_scale_user, key_scale) AS key_scale, duration_s, "
+        "(bpm_user IS NOT NULL OR key_root_user IS NOT NULL OR "
+        " key_scale_user IS NOT NULL OR warp_markers_json IS NOT NULL) AS user_edited, "
+        "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
+        "        WHERE file_id = media_file.id) AS tags "
+        "FROM media_file WHERE id IN (";
     for (size_t i = 0; i < scored.size(); ++i) {
         sql += (i == 0 ? "?" : ",?");
     }
@@ -291,7 +294,8 @@ std::vector<QueryResult> hydrate(sqlite3* db,
         r.keyRoot = optString(stmt, 6);
         r.keyScale = optString(stmt, 7);
         r.durationS = optDouble(stmt, 8);
-        if (auto tagsCsv = optString(stmt, 9)) {
+        r.userEdited = sqlite3_column_int(stmt, 9) != 0;
+        if (auto tagsCsv = optString(stmt, 10)) {
             std::stringstream ts(*tagsCsv);
             std::string tag;
             while (std::getline(ts, tag, ',')) {
@@ -323,13 +327,16 @@ std::vector<QueryResult> hydrate(sqlite3* db,
 // ---- Filter-only browse --------------------------------------------------
 
 std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit, int offset) {
-    const std::string sql = "SELECT id, path, kind, family, shape, COALESCE(bpm_user, bpm) AS bpm, "
-                            "COALESCE(key_root_user, key_root) AS key_root, "
-                            "COALESCE(key_scale_user, key_scale) AS key_scale, duration_s, "
-                            "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
-                            "        WHERE file_id = media_file.id) AS tags "
-                            "FROM media_file WHERE " +
-                            w.clause + " ORDER BY indexed_at DESC LIMIT ? OFFSET ?";
+    const std::string sql =
+        "SELECT id, path, kind, family, shape, COALESCE(bpm_user, bpm) AS bpm, "
+        "COALESCE(key_root_user, key_root) AS key_root, "
+        "COALESCE(key_scale_user, key_scale) AS key_scale, duration_s, "
+        "(bpm_user IS NOT NULL OR key_root_user IS NOT NULL OR "
+        " key_scale_user IS NOT NULL OR warp_markers_json IS NOT NULL) AS user_edited, "
+        "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
+        "        WHERE file_id = media_file.id) AS tags "
+        "FROM media_file WHERE " +
+        w.clause + " ORDER BY indexed_at DESC LIMIT ? OFFSET ?";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -355,7 +362,8 @@ std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit,
         r.keyRoot = optString(stmt, 6);
         r.keyScale = optString(stmt, 7);
         r.durationS = optDouble(stmt, 8);
-        if (auto tagsCsv = optString(stmt, 9)) {
+        r.userEdited = sqlite3_column_int(stmt, 9) != 0;
+        if (auto tagsCsv = optString(stmt, 10)) {
             std::stringstream ts(*tagsCsv);
             std::string tag;
             while (std::getline(ts, tag, ',')) {

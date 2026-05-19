@@ -1,5 +1,6 @@
 #include "MediaDbMetadata.hpp"
 
+#include <juce_core/juce_core.h>
 #include <sqlite3.h>
 
 #include <cctype>
@@ -27,6 +28,38 @@ std::optional<double> optDouble(sqlite3_stmt* stmt, int col) {
         return std::nullopt;
     }
     return sqlite3_column_double(stmt, col);
+}
+
+std::string encodeWarpMarkers(const std::vector<WarpMarkerMetadata>& markers) {
+    juce::Array<juce::var> arr;
+    arr.ensureStorageAllocated(static_cast<int>(markers.size()));
+    for (const auto& marker : markers) {
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("source_sec", marker.sourceSec);
+        obj->setProperty("beat", marker.beat);
+        arr.add(juce::var(obj));
+    }
+    return juce::JSON::toString(juce::var(arr), true).toStdString();
+}
+
+std::optional<std::vector<WarpMarkerMetadata>> decodeWarpMarkers(const std::string& json) {
+    auto parsed = juce::JSON::parse(juce::String(json));
+    auto* arr = parsed.getArray();
+    if (arr == nullptr) {
+        return std::nullopt;
+    }
+
+    std::vector<WarpMarkerMetadata> markers;
+    markers.reserve(static_cast<size_t>(arr->size()));
+    for (const auto& item : *arr) {
+        auto* obj = item.getDynamicObject();
+        if (obj == nullptr) {
+            return std::nullopt;
+        }
+        markers.push_back({static_cast<double>(obj->getProperty("source_sec")),
+                           static_cast<double>(obj->getProperty("beat"))});
+    }
+    return markers;
 }
 
 }  // namespace
@@ -117,6 +150,97 @@ void setUserKeyRoot(MediaDatabase& db, const std::filesystem::path& path,
     sqlite3_finalize(stmt);
 }
 
+bool isFileIndexed(MediaDatabase& db, const std::filesystem::path& path) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db.handle(), "SELECT 1 FROM media_file WHERE path = ? LIMIT 1", -1,
+                           &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+    const std::string p = path.string();
+    sqlite3_bind_text(stmt, 1, p.c_str(), -1, SQLITE_TRANSIENT);
+    const bool found = sqlite3_step(stmt) == SQLITE_ROW;
+    sqlite3_finalize(stmt);
+    return found;
+}
+
+std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkers(
+    MediaDatabase& db, const std::filesystem::path& path) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db.handle(), "SELECT warp_markers_json FROM media_file WHERE path = ?",
+                           -1, &stmt, nullptr) != SQLITE_OK) {
+        return std::nullopt;
+    }
+    const std::string p = path.string();
+    sqlite3_bind_text(stmt, 1, p.c_str(), -1, SQLITE_TRANSIENT);
+
+    std::optional<std::vector<WarpMarkerMetadata>> result;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        if (auto json = optString(stmt, 0)) {
+            result = decodeWarpMarkers(*json);
+        }
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+void setUserWarpMarkers(MediaDatabase& db, const std::filesystem::path& path,
+                        std::optional<std::vector<WarpMarkerMetadata>> markers) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db.handle(),
+                           "UPDATE media_file SET warp_markers_json = ? WHERE path = ?", -1, &stmt,
+                           nullptr) != SQLITE_OK) {
+        return;
+    }
+    std::string json;
+    if (markers) {
+        json = encodeWarpMarkers(*markers);
+        sqlite3_bind_text(stmt, 1, json.c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+        sqlite3_bind_null(stmt, 1);
+    }
+    const std::string p = path.string();
+    sqlite3_bind_text(stmt, 2, p.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+bool saveUserMetadata(MediaDatabase& db, const std::filesystem::path& path,
+                      std::optional<double> bpm, std::optional<std::string> keyRoot,
+                      std::optional<std::vector<WarpMarkerMetadata>> warpMarkers) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db.handle(),
+                           "UPDATE media_file SET bpm_user = ?, key_root_user = ?, "
+                           "warp_markers_json = ? WHERE path = ?",
+                           -1, &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+
+    if (bpm) {
+        sqlite3_bind_double(stmt, 1, *bpm);
+    } else {
+        sqlite3_bind_null(stmt, 1);
+    }
+    if (keyRoot && !keyRoot->empty()) {
+        sqlite3_bind_text(stmt, 2, keyRoot->c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+        sqlite3_bind_null(stmt, 2);
+    }
+
+    std::string json;
+    if (warpMarkers) {
+        json = encodeWarpMarkers(*warpMarkers);
+        sqlite3_bind_text(stmt, 3, json.c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+        sqlite3_bind_null(stmt, 3);
+    }
+
+    const std::string p = path.string();
+    sqlite3_bind_text(stmt, 4, p.c_str(), -1, SQLITE_TRANSIENT);
+    const bool ok = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(db.handle()) > 0;
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
 // ---- Singleton convenience wrappers ------------------------------------
 
 std::optional<EffectiveMetadata> getEffectiveMetadataForFile(const std::filesystem::path& path) {
@@ -150,6 +274,33 @@ void setUserKeyForFile(const std::filesystem::path& path, std::optional<std::str
         return;
     }
     setUserKey(ctx.db(), path, std::move(root), std::move(scale));
+}
+
+bool isFileIndexed(const std::filesystem::path& path) {
+    auto& ctx = MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return false;
+    }
+    return isFileIndexed(ctx.db(), path);
+}
+
+std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkersForFile(
+    const std::filesystem::path& path) {
+    auto& ctx = MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return std::nullopt;
+    }
+    return getUserWarpMarkers(ctx.db(), path);
+}
+
+bool saveUserMetadataForFile(const std::filesystem::path& path, std::optional<double> bpm,
+                             std::optional<std::string> keyRoot,
+                             std::optional<std::vector<WarpMarkerMetadata>> warpMarkers) {
+    auto& ctx = MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return false;
+    }
+    return saveUserMetadata(ctx.db(), path, bpm, std::move(keyRoot), std::move(warpMarkers));
 }
 
 bool hasIndexedDescendant(MediaDatabase& db, const std::filesystem::path& folder) {

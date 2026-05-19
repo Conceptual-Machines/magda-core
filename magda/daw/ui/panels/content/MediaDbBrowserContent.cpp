@@ -212,8 +212,16 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         switch (columnId) {
             case kColName:
                 g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-                g.drawText(juce::String(r.path.filename().string()), cell.reduced(6, 2),
-                           juce::Justification::centredLeft, true);
+                if (r.userEdited) {
+                    const float dotR = 3.0F;
+                    g.setColour(DarkTheme::getAccentColour());
+                    g.fillEllipse(8.0F, static_cast<float>(height) * 0.5F - dotR, dotR * 2.0F,
+                                  dotR * 2.0F);
+                }
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.drawText(juce::String(r.path.filename().string()),
+                           cell.withTrimmedLeft(18).reduced(0, 2), juce::Justification::centredLeft,
+                           true);
                 break;
             case kColFamily:
                 drawPill(juce::String(r.family), DarkTheme::getColour(DarkTheme::ACCENT_BLUE));

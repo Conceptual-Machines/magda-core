@@ -436,10 +436,6 @@ void ClipInspector::initClipPropertiesSection() {
             }
             auto& mgr = magda::ClipManager::getInstance();
             mgr.applyAudioClipBeats(primaryClipId(), u, bpm);
-            // Persist the user's BPM choice on the file in the media DB so
-            // re-drops of the same sample land with this value, not the
-            // scanner's original guess.
-            mgr.recordUserBpm(primaryClipId(), newBPM);
         } else {
             // Non-autoTempo audio: source interpretation is stored metadata,
             // not playback-affecting, but the inspector reads it for display
@@ -454,9 +450,6 @@ void ClipInspector::initClipPropertiesSection() {
             }
             auto& mgr = magda::ClipManager::getInstance();
             mgr.forceNotifyClipPropertyChanged(primaryClipId());
-            // Same write-back as the autoTempo branch — keep DB in sync
-            // with whatever the user said the file's BPM is.
-            mgr.recordUserBpm(primaryClipId(), newBPM);
         }
 
         clipBpmValue_.setText(juce::String(newBPM, 1), juce::dontSendNotification);
@@ -930,8 +923,7 @@ void ClipInspector::initClipPropertiesSection() {
     };
     clipPropsContainer_.addChildComponent(stretchModeCombo_);
 
-    // Source key root. Persists back to media_file.key_root_user via
-    // ClipManager::recordUserKey when the source file is library-indexed.
+    // Source key root. Edits stay on the clip until explicitly saved.
     // ID 1 is the "unknown" sentinel; non-zero IDs map onto kKeyRoots
     // below. Scale (major/minor) is intentionally not exposed.
     clipKeyLabel_.setText("KEY", juce::dontSendNotification);
@@ -966,19 +958,52 @@ void ClipInspector::initClipPropertiesSection() {
             root = kKeyRoots[rootId - 2];
         }
         // Mirror onto every selected audio clip's interpretation so the
-        // inspector reflects the change immediately, then persist to the
-        // media DB via the primary clip's source file.
+        // inspector reflects the change immediately.
         for (auto cid : selectedClipIds_) {
             auto* clip = magda::ClipManager::getInstance().getClip(cid);
             if (clip == nullptr || !clip->isAudio()) {
                 continue;
             }
             clip->audio().interpretation.keyRoot = root;
+            magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(cid);
         }
-        magda::ClipManager::getInstance().recordUserKey(primaryClipId(), root);
     };
 
     clipPropsContainer_.addChildComponent(clipKeyRootCombo_);
+
+    saveLibraryButton_.setButtonText("Save to library");
+    saveLibraryButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    saveLibraryButton_.setTooltip(
+        "Save current clip BPM, key, and warp markers to the media library");
+    saveLibraryButton_.onClick = [this]() {
+        auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
+        if (clip == nullptr || !clip->isAudio()) {
+            return;
+        }
+
+        std::optional<std::vector<magda::ClipInfo::WarpMarker>> markers;
+        if (clip->warpEnabled) {
+            markers = std::vector<magda::ClipInfo::WarpMarker>{};
+            if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
+                if (auto* bridge = engine->getAudioBridge()) {
+                    const auto liveMarkers = bridge->getWarpMarkers(primaryClipId());
+                    markers->reserve(liveMarkers.size());
+                    for (const auto& marker : liveMarkers) {
+                        markers->push_back({marker.sourceTime, marker.warpTime});
+                    }
+                }
+            }
+            if (markers->empty()) {
+                *markers = clip->warpMarkers;
+            }
+        }
+
+        const bool saved = magda::ClipManager::getInstance().saveClipToLibrary(primaryClipId(),
+                                                                               std::move(markers));
+        juce::ignoreUnused(saved);
+        updateFromSelectedClip();
+    };
+    clipPropsContainer_.addChildComponent(saveLibraryButton_);
 
     // Apply themed LookAndFeel to all inspector combo boxes
     stretchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());

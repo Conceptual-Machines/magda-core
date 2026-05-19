@@ -64,6 +64,10 @@ void migrate(sqlite3* db) {
         execOrThrow(db, "ALTER TABLE media_file ADD COLUMN key_scale_user TEXT",
                     "migrate v4 key_scale_user");
     }
+    if (!columnExists(db, "media_file", "warp_markers_json")) {
+        execOrThrow(db, "ALTER TABLE media_file ADD COLUMN warp_markers_json TEXT",
+                    "migrate v5 warp_markers_json");
+    }
 }
 
 }  // namespace

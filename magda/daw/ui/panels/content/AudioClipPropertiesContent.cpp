@@ -112,6 +112,8 @@ AudioClipPropertiesContent::~AudioClipPropertiesContent() {
         stretchModeCombo_->setLookAndFeel(nullptr);
     if (keyRootCombo_)
         keyRootCombo_->setLookAndFeel(nullptr);
+    if (saveLibraryButton_)
+        saveLibraryButton_->setLookAndFeel(nullptr);
 }
 
 void AudioClipPropertiesContent::onActivated() {
@@ -361,8 +363,6 @@ void AudioClipPropertiesContent::createControls() {
             }
             auto& mgr = magda::ClipManager::getInstance();
             mgr.applyAudioClipBeats(clipId_, u, bpm);
-            // Persist the user-asserted BPM on the file in the media DB.
-            mgr.recordUserBpm(clipId_, newBPM);
         } else {
             // Non-autoTempo audio: source interpretation BPM is just stored metadata.
             clip->audio().interpretation.bpm = newBPM;
@@ -376,7 +376,6 @@ void AudioClipPropertiesContent::createControls() {
             }
             auto& mgr = magda::ClipManager::getInstance();
             mgr.forceNotifyClipPropertyChanged(clipId_);
-            mgr.recordUserBpm(clipId_, newBPM);
         }
     };
     addAndMakeVisible(*bpmValue_);
@@ -454,9 +453,43 @@ void AudioClipPropertiesContent::createControls() {
             root = kKeyRoots[rootId - 2];
         }
         clip->audio().interpretation.keyRoot = root;
-        magda::ClipManager::getInstance().recordUserKey(clipId_, root);
+        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
     };
     addAndMakeVisible(*keyRootCombo_);
+
+    saveLibraryButton_ = std::make_unique<juce::TextButton>("Save to library");
+    saveLibraryButton_->setLookAndFeel(&smallLF);
+    saveLibraryButton_->setTooltip(
+        "Save current clip BPM, key, and warp markers to the media library");
+    saveLibraryButton_->onClick = [this]() {
+        auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
+        if (clip == nullptr || !clip->isAudio()) {
+            return;
+        }
+
+        std::optional<std::vector<magda::ClipInfo::WarpMarker>> markers;
+        if (clip->warpEnabled) {
+            markers = std::vector<magda::ClipInfo::WarpMarker>{};
+            if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
+                if (auto* bridge = engine->getAudioBridge()) {
+                    const auto liveMarkers = bridge->getWarpMarkers(clipId_);
+                    markers->reserve(liveMarkers.size());
+                    for (const auto& marker : liveMarkers) {
+                        markers->push_back({marker.sourceTime, marker.warpTime});
+                    }
+                }
+            }
+            if (markers->empty()) {
+                *markers = clip->warpMarkers;
+            }
+        }
+
+        const bool saved =
+            magda::ClipManager::getInstance().saveClipToLibrary(clipId_, std::move(markers));
+        juce::ignoreUnused(saved);
+        updateFromClip();
+    };
+    addAndMakeVisible(*saveLibraryButton_);
 
     // ===================== PITCH SECTION =====================
     pitchSectionLabel_ = makeSectionLabel("Pitch");
@@ -627,6 +660,8 @@ void AudioClipPropertiesContent::updateFromClip() {
     pitchValue_->setEnabled(enabled);
     analogPitchToggle_->setEnabled(enabled && !isAutoTempo && !(hasClip && clip->warpEnabled));
     transientSensValue_->setEnabled(enabled);
+    saveLibraryButton_->setEnabled(enabled &&
+                                   magda::ClipManager::getInstance().canSaveClipToLibrary(clipId_));
     volumeValue_->setEnabled(enabled);
     gainValue_->setEnabled(enabled);
     panValue_->setEnabled(enabled);
@@ -718,6 +753,7 @@ void AudioClipPropertiesContent::resized() {
     layoutLabelValue(addRow(leftCol, ROW_HEIGHT), *beatsLabel_, *beatsValue_, labelW);
     layoutLabelValue(addRow(leftCol, ROW_HEIGHT), *bpmLabel_, *bpmValue_, labelW);
     layoutLabelValue(addRow(leftCol, ROW_HEIGHT), *keyLabel_, *keyRootCombo_, labelW);
+    saveLibraryButton_->setBounds(addRow(leftCol, ROW_HEIGHT));
 
     addSeparator(leftCol);
 

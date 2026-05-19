@@ -300,19 +300,19 @@ class ClipManager {
     void applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update, double projectBPM);
 
     /** @brief Persist a user-asserted BPM for the clip's source file back
-     *         to the media DB so subsequent drops of the same file (in any
-     *         session) start with this value instead of the scanner's
-     *         detected one. Called by inspector UI right after
-     *         applyAudioClipBeats — no-op if the clip's source file isn't
-     *         in the DB (e.g. a file the user dropped without indexing). */
+     *         to the media DB. Prefer saveClipToLibrary for UI entry points
+     *         so all library-editable properties commit atomically. */
     void recordUserBpm(ClipId clipId, double bpm);
 
     /** @brief Persist a user-asserted key root for the clip's source file
-     *         back to the media DB. Mirror of recordUserBpm. Pass an empty
-     *         string to clear the override. No-op when the source file
-     *         isn't in the DB. Scale (major/minor) is intentionally left
-     *         untouched - the UI only exposes root. */
+     *         back to the media DB. Prefer saveClipToLibrary for UI entry
+     *         points so all library-editable properties commit atomically. */
     void recordUserKey(ClipId clipId, const std::string& root);
+
+    [[nodiscard]] bool canSaveClipToLibrary(ClipId clipId) const;
+
+    [[nodiscard]] bool saveClipToLibrary(
+        ClipId clipId, std::optional<std::vector<ClipInfo::WarpMarker>> warpMarkers = std::nullopt);
 
     /** @brief Refresh the seconds-domain cache (length, startTime, offset,
      *         loopStart, loopLength) on a beat-authoritative clip from its

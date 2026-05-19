@@ -75,9 +75,10 @@ class AudioClipPropertiesContent : public PanelContent, public magda::ClipManage
     std::unique_ptr<juce::Label> beatsLabel_;
     std::unique_ptr<DraggableValueLabel> beatsValue_;
     // Source key root. Mirrors the inspector's KEY combo and writes back
-    // to media_file.key_root_user when the file is library-indexed.
+    // to the clip only until the user explicitly saves to the library.
     std::unique_ptr<juce::Label> keyLabel_;
     std::unique_ptr<juce::ComboBox> keyRootCombo_;
+    std::unique_ptr<juce::TextButton> saveLibraryButton_;
 
     // Pitch section
     std::unique_ptr<juce::Label> pitchLabel_;

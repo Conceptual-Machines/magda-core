@@ -220,6 +220,11 @@ void ClipInspector::resized() {
             left.removeFromLeft(4);
             clipKeyRootCombo_.setBounds(left.reduced(0, 1));
         }
+
+        if (saveLibraryButton_.isVisible()) {
+            addSpace(4);
+            saveLibraryButton_.setBounds(addRow(22).reduced(0, 1));
+        }
     }
 
     // Transient sensitivity section (audio clips only)

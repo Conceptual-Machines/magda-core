@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace magda::media {
 
@@ -26,6 +27,11 @@ struct EffectiveMetadata {
     std::optional<double> bpm;
     std::optional<std::string> keyRoot;
     std::optional<std::string> keyScale;
+};
+
+struct WarpMarkerMetadata {
+    double sourceSec = 0.0;
+    double beat = 0.0;
 };
 
 // Look up a file by absolute path. Returns nullopt if the file isn't in
@@ -49,6 +55,18 @@ void setUserKey(MediaDatabase& db, const std::filesystem::path& path,
 void setUserKeyRoot(MediaDatabase& db, const std::filesystem::path& path,
                     std::optional<std::string> root);
 
+[[nodiscard]] bool isFileIndexed(MediaDatabase& db, const std::filesystem::path& path);
+
+[[nodiscard]] std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkers(
+    MediaDatabase& db, const std::filesystem::path& path);
+
+void setUserWarpMarkers(MediaDatabase& db, const std::filesystem::path& path,
+                        std::optional<std::vector<WarpMarkerMetadata>> markers);
+
+[[nodiscard]] bool saveUserMetadata(MediaDatabase& db, const std::filesystem::path& path,
+                                    std::optional<double> bpm, std::optional<std::string> keyRoot,
+                                    std::optional<std::vector<WarpMarkerMetadata>> warpMarkers);
+
 // Convenience overloads that go through the singleton MediaDbContext.
 // They open the DB lazily on first call (no-op if already open) and
 // silently no-op on init failure or when the file isn't indexed. UI code
@@ -62,6 +80,15 @@ void setUserKeyForFile(const std::filesystem::path& path, std::optional<std::str
                        std::optional<std::string> scale);
 
 void setUserKeyRootForFile(const std::filesystem::path& path, std::optional<std::string> root);
+
+[[nodiscard]] bool isFileIndexed(const std::filesystem::path& path);
+
+[[nodiscard]] std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkersForFile(
+    const std::filesystem::path& path);
+
+[[nodiscard]] bool saveUserMetadataForFile(
+    const std::filesystem::path& path, std::optional<double> bpm,
+    std::optional<std::string> keyRoot, std::optional<std::vector<WarpMarkerMetadata>> warpMarkers);
 
 // True if the DB has any indexed file under `folder` (descendant in the
 // path hierarchy, not equal to it). Used by the file-browser folder
