@@ -130,11 +130,73 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         resolveOverlaps(clip.id);
     notifyClipsChanged();
 
+    // Media DB takes precedence over live detection: if the file has been
+    // indexed, use the effective metadata (user override > scanner-
+    // detected) so dropped samples land with the values the user has
+    // already accepted or edited. Runs for BOTH Session and Arrangement
+    // clips - the user expects the library to follow either path.
+    bool seededFromDb = false;
+    if (audioFilePath.isNotEmpty() && juce::File(audioFilePath).existsAsFile()) {
+        const auto dbMetadata = magda::media::getEffectiveMetadataForFile(
+            std::filesystem::path(audioFilePath.toStdString()));
+        if (dbMetadata) {
+            auto& stored = clips_[clip.id];
+            if (dbMetadata->keyRoot) {
+                stored.audio().interpretation.keyRoot = *dbMetadata->keyRoot;
+            }
+            if (dbMetadata->keyScale) {
+                stored.audio().interpretation.keyScale = *dbMetadata->keyScale;
+            }
+            if (dbMetadata->bpm && *dbMetadata->bpm > 0.0) {
+                const double dbBpm = *dbMetadata->bpm;
+                double fileDuration = stored.audio().source.durationSeconds;
+                if (auto* thumb = AudioThumbnailManager::getInstance().getThumbnail(
+                        stored.audio().source.filePath)) {
+                    if (thumb->getTotalLength() > 0.0)
+                        fileDuration = thumb->getTotalLength();
+                }
+                if (fileDuration <= 0.0)
+                    fileDuration = stored.getSourceLength(bpm);
+
+                if (stored.autoTempo) {
+                    // Session-style autoTempo path runs through
+                    // applyAudioClipBeats so totalBeats / loopLengthBeats
+                    // / cached seconds are derived coherently.
+                    AudioClipBeatsUpdate u;
+                    u.interpretationBpm = dbBpm;
+                    if (fileDuration > 0.0) {
+                        u.sourceDurationSeconds = fileDuration;
+                        const double srcBeats = fileDuration * dbBpm / 60.0;
+                        u.interpretationTotalBeats = srcBeats;
+                        if (stored.loopLengthBeats <= 0.0)
+                            u.loopLengthBeats = srcBeats;
+                    }
+                    const double live = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+                    applyAudioClipBeats(clip.id, u, live);
+                } else {
+                    // Arrangement / non-autoTempo: source interpretation is
+                    // stored metadata, not playback-affecting. Write
+                    // directly and keep totalBeats coherent against the
+                    // same file duration.
+                    stored.audio().interpretation.bpm = dbBpm;
+                    if (fileDuration > 0.0) {
+                        if (stored.audio().source.durationSeconds <= 0.0)
+                            stored.audio().source.durationSeconds = fileDuration;
+                        stored.audio().interpretation.totalBeats = fileDuration * dbBpm / 60.0;
+                    }
+                }
+            }
+            seededFromDb = true;
+        }
+    }
+
     // Tracktion loopInfo is authoritative when it carries real file metadata,
     // but it can also report project-default values for freshly inserted clips.
     // Run audio analysis as a fallback and let it replace only unset/defaulted
-    // source interpretation values.
-    if (view == ClipView::Session && audioFilePath.isNotEmpty() &&
+    // source interpretation values. Session-only and only if the DB didn't
+    // already supply a BPM - no point burning a TempoDetect job when we
+    // have a user-blessed answer in the library.
+    if (!seededFromDb && view == ClipView::Session && audioFilePath.isNotEmpty() &&
         juce::File(audioFilePath).existsAsFile()) {
         ClipId cid = clip.id;
         const double creationProjectBPM = bpm;
@@ -153,12 +215,6 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
                 if (thumb->getTotalLength() > 0.0)
                     fileDuration = thumb->getTotalLength();
             }
-            // Fall back to the clip's own source extent (loopLength, set by
-            // createAudioClip from the user-passed length parameter, or the
-            // timeline-derived length for non-looped clips). This mirrors
-            // seedSourceMetadataFromCachedDetection's behaviour for the
-            // arrangement path and matches the contract createAudioClip used
-            // to satisfy by writing source.durationSeconds = length directly.
             if (fileDuration <= 0.0)
                 fileDuration = c->getSourceLength(creationProjectBPM);
 
@@ -175,26 +231,6 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
             double live = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
             mgr.applyAudioClipBeats(cid, u, live);
         };
-
-        // Media DB takes precedence: if the file has been indexed, use the
-        // effective metadata (user override > scanner-detected) so dropped
-        // samples land with the values the user has already accepted or
-        // edited. Falls through to the live BPM-detection pipeline for
-        // un-indexed files.
-        auto dbMetadata = magda::media::getEffectiveMetadataForFile(
-            std::filesystem::path(audioFilePath.toStdString()));
-        if (dbMetadata) {
-            if (dbMetadata->keyRoot) {
-                clip.audio().interpretation.keyRoot = *dbMetadata->keyRoot;
-            }
-            if (dbMetadata->keyScale) {
-                clip.audio().interpretation.keyScale = *dbMetadata->keyScale;
-            }
-        }
-        if (dbMetadata && dbMetadata->bpm && *dbMetadata->bpm > 0.0) {
-            applyDetectedBPM(*dbMetadata->bpm);
-            return clip.id;
-        }
 
         auto& thumbs = AudioThumbnailManager::getInstance();
         const double cachedBPM = thumbs.getCachedBPM(audioFilePath);
