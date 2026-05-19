@@ -1526,6 +1526,15 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 
             // Get final track index from mouse position
             selectionEndTrackIndex = getTrackIndexAtY(event.y);
+            std::set<AutomationLaneId> automationLaneIds;
+            int automationTrackIndex = -1;
+            AutomationLaneId automationLaneId = INVALID_AUTOMATION_LANE_ID;
+            if (selectionEndTrackIndex < 0 &&
+                getAutomationLaneStripAtY(event.y, automationTrackIndex, automationLaneId)) {
+                selectionEndTrackIndex = automationTrackIndex;
+                automationLaneIds.insert(automationLaneId);
+            }
+
             if (selectionEndTrackIndex < 0) {
                 if (event.y < 0) {
                     selectionEndTrackIndex = 0;
@@ -1553,7 +1562,9 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
                     }
                 }
 
-                if (onTimeSelectionChanged) {
+                if (!automationLaneIds.empty() && onMixedTimeSelectionChanged) {
+                    onMixedTimeSelectionChanged(start, end, trackIndices, automationLaneIds);
+                } else if (onTimeSelectionChanged) {
                     onTimeSelectionChanged(start, end, trackIndices);
                 }
 

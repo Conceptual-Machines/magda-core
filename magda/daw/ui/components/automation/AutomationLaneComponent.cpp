@@ -150,8 +150,17 @@ void AutomationLaneComponent::mouseDrag(const juce::MouseEvent& e) {
     }
 }
 
-void AutomationLaneComponent::mouseUp(const juce::MouseEvent& /*e*/) {
+void AutomationLaneComponent::mouseUp(const juce::MouseEvent& e) {
     if (isCreatingTimeSelection_) {
+        double endBeat = xToBeat(e.x);
+        if (snapBeatToGrid)
+            endBeat = snapBeatToGrid(endBeat);
+
+        if (onTimeSelectionChanged) {
+            onTimeSelectionChanged(laneId_, juce::jmin(timeSelectionStartBeat_, endBeat),
+                                   juce::jmax(timeSelectionStartBeat_, endBeat));
+        }
+
         isCreatingTimeSelection_ = false;
         setMouseCursor(juce::MouseCursor::IBeamCursor);
         return;
