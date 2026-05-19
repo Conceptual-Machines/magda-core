@@ -53,6 +53,10 @@ struct QueryResult {
     std::optional<std::string> keyRoot;
     std::optional<std::string> keyScale;
     std::optional<double> durationS;
+    // All tags on this file regardless of source_model (indexer-derived
+    // path tags AND user-added tags appear in the same list). Loaded via
+    // GROUP_CONCAT in the main SELECT.
+    std::vector<std::string> tags;
     float score = 0.0F;  // NaN when no text query (filter-only browse)
 };
 
@@ -72,10 +76,36 @@ class MediaDbQuery {
     MediaDbQuery(MediaDatabase& db, ClapTextEncoder* textEncoder, RobertaTokenizer* tokenizer);
 
     // Run a search. If `text` is empty / nullopt, returns filter-only browse
-    // ordered by indexed_at DESC.
+    // ordered by indexed_at DESC. `offset` skips the first N rows of the
+    // result list — used by the UI's pagination footer to jump between
+    // pages without changing the underlying query.
     std::vector<QueryResult> search(const std::optional<std::string>& text,
-                                    const QueryFilters& filters, int limit = 20,
+                                    const QueryFilters& filters, int limit = 20, int offset = 0,
                                     QueryWeights weights = {}) const;
+
+    // Audio-to-audio similarity. Loads the seed file's CLAP audio embedding
+    // and ranks the filter-matched candidate set by cosine. No text encoder
+    // or tokenizer needed — uses the embeddings already in the DB. The seed
+    // itself is dropped from the result list. Returns empty if the seed has
+    // no embedding (e.g. wasn't indexed with the Sample Tagger installed).
+    std::vector<QueryResult> similarTo(std::int64_t seedFileId, const QueryFilters& filters,
+                                       int limit = 20, int offset = 0) const;
+
+    // Cheap precheck: does this file_id have a row in media_embedding?
+    // Used by the UI to tell "seed has no embedding, re-index needed"
+    // apart from "embedding exists but no neighbours matched filters".
+    [[nodiscard]] bool hasEmbedding(std::int64_t fileId) const;
+
+    // Total number of rows in media_embedding. Used by the similar-sounds
+    // empty state to distinguish "library has no embeddings at all" from
+    // "library has plenty but the filters exclude them".
+    [[nodiscard]] int totalEmbeddings() const;
+
+    // Total number of indexed files. Used by the browser's empty-state copy
+    // to distinguish "library is genuinely empty" from "filters excluded
+    // everything" — without it the UI would lie any time a filter is
+    // active and matches nothing.
+    [[nodiscard]] int totalFiles() const;
 
   private:
     MediaDatabase& db_;

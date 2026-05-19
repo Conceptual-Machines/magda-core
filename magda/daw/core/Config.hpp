@@ -344,6 +344,29 @@ class Config {
         browserLastView = view;
     }
 
+    // User-chosen location for the Sample Tagger ONNX bundle. Empty
+    // string = default (dataDir/MediaDB/models). MediaDbContext::modelsDir()
+    // returns this when set and the directory exists; falls back to the
+    // default otherwise. Lets users keep the ~600 MB bundle on an
+    // external drive without symlinking.
+    std::string getSampleTaggerModelsDir() const {
+        return sampleTaggerModelsDir;
+    }
+    void setSampleTaggerModelsDir(const std::string& dir) {
+        sampleTaggerModelsDir = dir;
+    }
+
+    // Load the Sample Tagger encoders + tokenizer eagerly at app startup
+    // instead of waiting for the first DB query that needs them. Eats
+    // ~700 MB of RAM and a few seconds of init time, but no first-query
+    // hitch later. Off by default.
+    bool getLoadSampleTaggerOnStartup() const {
+        return loadSampleTaggerOnStartup;
+    }
+    void setLoadSampleTaggerOnStartup(bool enabled) {
+        loadSampleTaggerOnStartup = enabled;
+    }
+
     // Export Audio Configuration
     std::string getExportFormat() const {
         return exportFormat;
@@ -857,6 +880,14 @@ class Config {
     // "filesystem" → file browser at browserDefaultDirectory.
     // "library"    → DB browser (sample library).
     std::string browserLastView = "filesystem";
+
+    // Optional override for the Sample Tagger ONNX bundle location.
+    // Empty = use the default dataDir/MediaDB/models.
+    std::string sampleTaggerModelsDir = "";
+
+    // Eagerly load the Sample Tagger encoders + tokenizer at startup
+    // (vs lazy on first query).
+    bool loadSampleTaggerOnStartup = false;
 
     // Auto-update check
     bool autoCheckUpdates = true;          // Check GitHub for newer releases on startup

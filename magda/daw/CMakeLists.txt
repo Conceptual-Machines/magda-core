@@ -352,6 +352,7 @@ endif()
 target_link_libraries(magda_daw
     PUBLIC
     juce::juce_core
+    juce::juce_cryptography  # SHA-256 verification of downloaded model files
     juce::juce_data_structures
     juce::juce_audio_basics
     juce::juce_audio_devices

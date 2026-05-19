@@ -13,6 +13,7 @@ target_sources(magda_daw PRIVATE
     MelSpectrogram.cpp
     PathRules.cpp
     RobertaTokenizer.cpp
+    SampleTaggerDownloader.cpp
     Scan.cpp
 )
 

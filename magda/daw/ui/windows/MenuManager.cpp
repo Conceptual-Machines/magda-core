@@ -64,7 +64,11 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                 juce::PopupMenu recentMenu;
                 auto recentPaths = Config::getInstance().getRecentProjects();
                 if (recentPaths.empty()) {
-                    recentMenu.addItem(0, tr("menu.file.no_recent"), false, false);
+                    // Section header, not addItem(0, ...). JUCE asserts on
+                    // itemID 0 at juce_PopupMenu.cpp:1866 — it's reserved
+                    // for "user dismissed". Section headers are the
+                    // sanctioned non-clickable label form.
+                    recentMenu.addSectionHeader(tr("menu.file.no_recent"));
                 } else {
                     int idx = 0;
                     for (const auto& path : recentPaths) {

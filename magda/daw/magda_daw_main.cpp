@@ -24,6 +24,7 @@
 #include "engine/TracktionEngineWrapper.hpp"
 #include "magda/scripting/LuaController.hpp"
 #include "magda/scripting/LuaScriptStore.hpp"
+#include "media_db/MediaDbContext.hpp"
 #include "project/ProjectManager.hpp"
 #include "scripting_app.hpp"
 #include "ui/dialogs/SplashScreen.hpp"
@@ -76,6 +77,7 @@ class MagdaDAWApplication : public JUCEApplication {
     };
     std::unique_ptr<InitTimer> initTimer_;
     std::thread modelLoadThread_;
+    std::thread sampleTaggerLoadThread_;
 
   public:
     MagdaDAWApplication() = default;
@@ -264,6 +266,17 @@ class MagdaDAWApplication : public JUCEApplication {
                     }
                 });
             }
+
+            // Sample Tagger preload — same idea but for the media-DB
+            // encoders + tokenizer. Background thread keeps startup
+            // responsive. The lazy accessors are no-ops when files
+            // aren't on disk, so the toggle being on without the bundle
+            // installed silently does nothing.
+            if (config.getLoadSampleTaggerOnStartup()) {
+                DBG("Auto-loading Sample Tagger encoders");
+                sampleTaggerLoadThread_ = std::thread(
+                    []() { magda::media::MediaDbContext::getInstance().preloadModels(); });
+            }
         }
 
         // Open project file if passed on command line (e.g. double-click .mgd in file manager)
@@ -310,6 +323,8 @@ class MagdaDAWApplication : public JUCEApplication {
 
         if (modelLoadThread_.joinable())
             modelLoadThread_.join();
+        if (sampleTaggerLoadThread_.joinable())
+            sampleTaggerLoadThread_.join();
 
         // Stop timers first to prevent callbacks during destruction
         DBG("[1] ModulatorEngine shutdown...");
