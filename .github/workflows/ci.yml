@@ -375,6 +375,11 @@ jobs:
           GH_TOKEN: ${{ secrets.RUNNER_STATUS_PAT }}
         run: |
           set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
+            echo "No RUNNER_STATUS_PAT available in this context (e.g. Dependabot PRs do not see repo secrets); falling back to windows-latest"
+            exit 0
+          fi
           status=$(gh api "repos/${{ github.repository }}/actions/runners" \
             --jq '.runners[] | select(any(.labels[]; .name == "magda-luca")) | .status' \
             | head -n1)
