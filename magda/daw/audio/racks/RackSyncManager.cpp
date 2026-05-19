@@ -1413,7 +1413,9 @@ void RackSyncManager::collectLFOModifiersWithModes(TrackId trackId,
         return n;
     };
 
-    for (const auto& [rackId, synced] : syncedRacks_) {
+    for (const auto& entry : syncedRacks_) {
+        const auto& rackId = entry.first;
+        const auto& synced = entry.second;
         if (synced.trackId != trackId)
             continue;
 
@@ -1502,7 +1504,9 @@ void RackSyncManager::collectLFOModifiersWithModesForSidechainSource(
         return false;
     };
 
-    for (const auto& [rackId, synced] : syncedRacks_) {
+    for (const auto& entry : syncedRacks_) {
+        const auto& rackId = entry.first;
+        const auto& synced = entry.second;
         if (synced.trackId != destinationTrackId)
             continue;
 
@@ -1586,7 +1590,9 @@ void RackSyncManager::syncLFOValuesToVisuals() {
             }
         }
     };
-    for (auto& [rackId, synced] : syncedRacks_) {
+    for (auto& entry : syncedRacks_) {
+        const auto& rackId = entry.first;
+        auto& synced = entry.second;
         auto* rackInfo = tm.getRack(synced.trackId, rackId);
         if (!rackInfo)
             continue;
