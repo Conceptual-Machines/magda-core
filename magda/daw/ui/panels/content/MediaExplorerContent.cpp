@@ -526,6 +526,17 @@ MediaExplorerContent::MediaExplorerContent() {
         stopTimer();
         startTimer(300);  // 300 ms debounce
     };
+    // Library-mode (DB) search runs the ONNX text encoder + a cosine scan
+    // over media_embedding — too costly to fire per-keystroke. Trigger it
+    // explicitly on Return. Filesystem-mode filtering still updates as the
+    // user types (cheap glob match). An empty box also re-pushes so clearing
+    // the field restores the unfiltered library view without an extra Enter.
+    searchBox_.onReturnKey = [this]() {
+        searchTerm_ = searchBox_.getText();
+        if (dbBrowser_ != nullptr) {
+            dbBrowser_->setQueryText(searchTerm_);
+        }
+    };
     addAndMakeVisible(searchBox_);
 
     // Setup type filter buttons with icons (issue #768).
@@ -1153,9 +1164,11 @@ void MediaExplorerContent::updateMediaFilter() {
         fileBrowser_->setFileFilter(mediaFileFilter_.get());
         fileBrowser_->refresh();
     }
-    // Mirror the search text into the DB browser. It only re-queries if the
-    // text actually changed, so this is cheap when filesystem mode is active.
-    if (dbBrowser_) {
+    // Library mode no longer auto-syncs the text into the DB browser as the
+    // user types — DB search is Return-triggered (see searchBox_.onReturnKey
+    // above). Empty box is the one exception: clearing the field should
+    // restore the unfiltered library view without an extra Enter press.
+    if (dbBrowser_ != nullptr && searchTerm_.isEmpty()) {
         dbBrowser_->setQueryText(searchTerm_);
     }
 }

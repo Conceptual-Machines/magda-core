@@ -20,6 +20,7 @@
 #include <optional>
 #include <vector>
 
+#include "../../../media_db/MediaDatabase.hpp"
 #include "../../../media_db/MediaDbQuery.hpp"
 #include "../../components/common/SvgButton.hpp"
 
@@ -65,6 +66,10 @@ class MediaDbBrowserContent : public juce::Component {
     class PopOutWindow;
 
     void runSearch();
+    // New-query entry points: resets pagination to the initial page before
+    // calling runSearch(). Distinct from the Show-more path, which keeps the
+    // bumped pageSize_ and just re-runs.
+    void restartSearch();
     void openPopOutWindow();
     magda::media::QueryFilters currentFilters() const;
 
@@ -92,11 +97,21 @@ class MediaDbBrowserContent : public juce::Component {
     juce::TableListBox resultsTable_;  // resizable, reorderable column header
     juce::Label emptyState_;
     juce::Label statusLabel_;  // "Indexing path/to/x.wav (N/M)" during a scan
+    juce::TextButton prevPageBtn_;
+    juce::TextButton nextPageBtn_;
+    juce::Label pageLabel_;  // "Page N"
 
     // State
     juce::String queryText_;
     std::vector<magda::media::QueryResult> results_;
     bool isPopOutInstance_ = false;
+
+    // Pagination. Fixed page size; currentPage_ is 0-based. Prev / Next
+    // buttons in the footer step the page index and re-run the same query
+    // with a different OFFSET. Reset to 0 whenever the query / filters
+    // change (restartSearch).
+    static constexpr int kPageSize = 100;
+    int currentPage_ = 0;
 
     juce::Component::SafePointer<PopOutWindow>
         popOutWindow_;  // tracked so re-clicks focus existing
@@ -121,6 +136,13 @@ class MediaDbBrowserContent : public juce::Component {
     // touching the table.
     std::unique_ptr<juce::ThreadPool> searchPool_;
     std::atomic<int> searchGeneration_{0};
+
+    // Worker-thread-owned SQLite connection. Built lazily on the first
+    // search and reused across queries — opening a fresh connection per
+    // query costs a sqlite3_open + schema check. Touched only by the
+    // single search-pool worker; the dtor drains the pool before the
+    // unique_ptr is destroyed so there's no race.
+    std::unique_ptr<magda::media::MediaDatabase> searchDb_;
     void applySearchResultsToUi();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MediaDbBrowserContent)

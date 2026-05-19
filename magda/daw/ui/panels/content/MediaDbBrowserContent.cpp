@@ -278,7 +278,7 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     }
     familyFilter_.setSelectedId(1, juce::dontSendNotification);
     styleCombo(familyFilter_);
-    familyFilter_.onChange = [this]() { runSearch(); };
+    familyFilter_.onChange = [this]() { restartSearch(); };
 
     shapeFilter_.addItem("shape: any", 1);
     for (size_t i = 1; i < kShapes.size(); ++i) {
@@ -286,7 +286,7 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     }
     shapeFilter_.setSelectedId(1, juce::dontSendNotification);
     styleCombo(shapeFilter_);
-    shapeFilter_.onChange = [this]() { runSearch(); };
+    shapeFilter_.onChange = [this]() { restartSearch(); };
 
     keyFilter_.addItem("key: any", 1);
     for (size_t i = 1; i < kKeys.size(); ++i) {
@@ -294,7 +294,7 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     }
     keyFilter_.setSelectedId(1, juce::dontSendNotification);
     styleCombo(keyFilter_);
-    keyFilter_.onChange = [this]() { runSearch(); };
+    keyFilter_.onChange = [this]() { restartSearch(); };
 
     auto setupBpm = [&](juce::TextEditor& e, const juce::String& placeholder) {
         e.setTextToShowWhenEmpty(placeholder, DarkTheme::getSecondaryTextColour());
@@ -303,14 +303,14 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
         e.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
         e.setInputRestrictions(4, "0123456789.");
         e.setFont(uiFont);
-        e.onReturnKey = [this]() { runSearch(); };
-        e.onFocusLost = [this]() { runSearch(); };
+        e.onReturnKey = [this]() { restartSearch(); };
+        e.onFocusLost = [this]() { restartSearch(); };
     };
     setupBpm(bpmMinBox_, "min");
     setupBpm(bpmMaxBox_, "max");
 
     tonalOnly_.setLookAndFeel(&fbLnf);
-    tonalOnly_.onClick = [this]() { runSearch(); };
+    tonalOnly_.onClick = [this]() { restartSearch(); };
 
     // Tags free-text filter — whitespace-separated tokens are AND-combined
     // via FTS5 MATCH against media_fts.tag_text. Updates on Enter / blur,
@@ -321,8 +321,8 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     tagsFilter_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
     tagsFilter_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
     tagsFilter_.setFont(uiFont);
-    tagsFilter_.onReturnKey = [this]() { runSearch(); };
-    tagsFilter_.onFocusLost = [this]() { runSearch(); };
+    tagsFilter_.onReturnKey = [this]() { restartSearch(); };
+    tagsFilter_.onFocusLost = [this]() { restartSearch(); };
 
     // Pop-out button — opens this view in its own DocumentWindow. Hidden in
     // the pop-out instance to avoid recursive windows.
@@ -402,6 +402,32 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     emptyState_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(emptyState_);
+
+    // Pagination footer. Prev / "Page N" label / Next. Hidden when the
+    // result set fits in a single page (no need for any chrome).
+    prevPageBtn_.setButtonText("< Prev");
+    prevPageBtn_.onClick = [this]() {
+        if (currentPage_ > 0) {
+            --currentPage_;
+            runSearch();
+        }
+    };
+    nextPageBtn_.setButtonText("Next >");
+    nextPageBtn_.onClick = [this]() {
+        ++currentPage_;
+        runSearch();
+    };
+    pageLabel_.setFont(FontManager::getInstance().getUIFont(11.0F));
+    pageLabel_.setJustificationType(juce::Justification::centred);
+    pageLabel_.setColour(juce::Label::textColourId,
+                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    pageLabel_.setInterceptsMouseClicks(false, false);
+    prevPageBtn_.setVisible(false);
+    nextPageBtn_.setVisible(false);
+    pageLabel_.setVisible(false);
+    addAndMakeVisible(prevPageBtn_);
+    addAndMakeVisible(pageLabel_);
+    addAndMakeVisible(nextPageBtn_);
 
     // Indexing status. Hidden until a scan starts.
     statusLabel_.setFont(FontManager::getInstance().getUIFont(10.0F));
@@ -483,6 +509,16 @@ void MediaDbBrowserContent::resized() {
         statusLabel_.setBounds(bounds.getX() + 8, bounds.getBottom() - 18, bounds.getWidth() - 16,
                                18);
     }
+
+    // Pagination footer sits just above the status strip: Prev | Page N | Next.
+    // Hidden when there's only one page worth of results -> no reserved space.
+    if (prevPageBtn_.isVisible()) {
+        auto pager = bounds.removeFromBottom(28).reduced(8, 2);
+        prevPageBtn_.setBounds(pager.removeFromLeft(70));
+        nextPageBtn_.setBounds(pager.removeFromRight(70));
+        pageLabel_.setBounds(pager);
+    }
+
     resultsTable_.setBounds(bounds);
     emptyState_.setBounds(bounds);
 }
@@ -492,10 +528,15 @@ void MediaDbBrowserContent::setQueryText(const juce::String& text) {
         return;
     }
     queryText_ = text;
-    runSearch();
+    restartSearch();
 }
 
 void MediaDbBrowserContent::refresh() {
+    restartSearch();
+}
+
+void MediaDbBrowserContent::restartSearch() {
+    currentPage_ = 0;
     runSearch();
 }
 
@@ -553,7 +594,8 @@ void MediaDbBrowserContent::runSearch() {
     // async hop.
     if (!hasText) {
         magda::media::MediaDbQuery query(ctx.db(), nullptr, nullptr);
-        results_ = query.search(std::nullopt, filters, /*limit=*/200);
+        results_ = query.search(std::nullopt, filters, /*limit=*/kPageSize,
+                                /*offset=*/currentPage_ * kPageSize);
         applySearchResultsToUi();
         return;
     }
@@ -565,13 +607,20 @@ void MediaDbBrowserContent::runSearch() {
     // overwrite the latest result with an older worker's output.
     const int myGen = ++searchGeneration_;
     const auto text = queryText_.toStdString();
+    const int offset = currentPage_ * kPageSize;
 
-    // Loading state on the UI while the worker runs.
+    // Loading state on the UI while the worker runs. If the text encoder
+    // isn't loaded yet the worker will trigger its lazy-load — that's a
+    // multi-second ONNX session build, so we surface it explicitly rather
+    // than calling it "Searching..." and looking hung.
     results_.clear();
     resultsTable_.updateContent();
     resultsTable_.repaint();
     resultsTable_.setVisible(false);
-    emptyState_.setText("Searching...", juce::dontSendNotification);
+    const bool needsModelLoad = magda::media::SampleTaggerDownloader::isInstalled() &&
+                                (!ctx.isTextEncoderLoaded() || !ctx.isTokenizerLoaded());
+    emptyState_.setText(needsModelLoad ? "Loading text-search model (~500 MB)..." : "Searching...",
+                        juce::dontSendNotification);
     emptyState_.setVisible(true);
 
     if (!searchPool_) {
@@ -579,21 +628,28 @@ void MediaDbBrowserContent::runSearch() {
     }
 
     const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
-    searchPool_->addJob([self, myGen, text, filters]() {
+    searchPool_->addJob([self, myGen, text, filters, offset]() {
         std::vector<magda::media::QueryResult> results;
         try {
-            // Fresh DB connection per worker — SQLite multi-thread mode
-            // requires one connection per thread. WAL lets this reader
+            if (self == nullptr) {
+                return;
+            }
+            // Lazily build a worker-owned SQLite connection on first run
+            // and reuse it across queries. SQLite multi-thread mode allows
+            // one connection per thread; the search pool is single-threaded
+            // so the same worker keeps touching this handle. WAL lets it
             // coexist with the UI thread's connection.
             auto& ctx = magda::media::MediaDbContext::getInstance();
-            magda::media::MediaDatabase bgDb(ctx.dbPath());
+            if (!self->searchDb_) {
+                self->searchDb_ = std::make_unique<magda::media::MediaDatabase>(ctx.dbPath());
+            }
             // First call from a worker also pays the lazy-load cost
             // (multi-second). Subsequent calls are cheap; ORT Session::Run
             // is documented thread-safe so a shared encoder pointer is OK.
             auto* textEnc = ctx.textEncoder();
             auto* tok = ctx.tokenizer();
-            magda::media::MediaDbQuery query(bgDb, textEnc, tok);
-            results = query.search(std::optional<std::string>{text}, filters, /*limit=*/200);
+            magda::media::MediaDbQuery query(*self->searchDb_, textEnc, tok);
+            results = query.search(std::optional<std::string>{text}, filters, kPageSize, offset);
         } catch (...) {
             // Swallow — empty result set bounces back to the UI either way.
         }
@@ -636,6 +692,20 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
         }
         emptyState_.setText(text, juce::dontSendNotification);
     }
+
+    // Pagination chrome.
+    // - Show the footer when we're past page 1 OR the current page is full
+    //   (meaning there's probably a next page).
+    // - Prev disabled on page 1; Next disabled when we got a partial page.
+    const bool fullPage = static_cast<int>(results_.size()) >= kPageSize;
+    const bool showPager = currentPage_ > 0 || fullPage;
+    prevPageBtn_.setVisible(showPager);
+    nextPageBtn_.setVisible(showPager);
+    pageLabel_.setVisible(showPager);
+    prevPageBtn_.setEnabled(currentPage_ > 0);
+    nextPageBtn_.setEnabled(fullPage);
+    pageLabel_.setText("Page " + juce::String(currentPage_ + 1), juce::dontSendNotification);
+    resized();  // re-layout: the table shrinks by the footer when shown
 }
 
 void MediaDbBrowserContent::setKindFilter(std::optional<std::string> kind) {
@@ -643,7 +713,7 @@ void MediaDbBrowserContent::setKindFilter(std::optional<std::string> kind) {
         return;
     }
     kindFilter_ = std::move(kind);
-    runSearch();
+    restartSearch();
 }
 
 void MediaDbBrowserContent::visibilityChanged() {
@@ -652,8 +722,27 @@ void MediaDbBrowserContent::visibilityChanged() {
     // current DB state regardless of indexing that happened off-screen — and
     // sidesteps the startup ordering where setVisible(true) → refresh() →
     // resized() could populate before the table had its final bounds.
-    if (isVisible()) {
-        runSearch();
+    if (!isVisible()) {
+        return;
+    }
+    restartSearch();
+
+    // Proactive model preload. The text encoder is ~482 MB and takes a few
+    // seconds to build the ORT session; if we wait for the user's first
+    // text search to trigger it, that first search feels broken. Kick off
+    // preloadModels() on a worker as soon as the user enters library mode,
+    // so by the time they type a query it's likely already done. No-op when
+    // the bundle isn't installed (preloadModels() returns immediately) or
+    // when the encoder is already loaded.
+    if (magda::media::SampleTaggerDownloader::isInstalled()) {
+        auto& ctx = magda::media::MediaDbContext::getInstance();
+        if (!ctx.isTextEncoderLoaded() || !ctx.isTokenizerLoaded()) {
+            if (!searchPool_) {
+                searchPool_ = std::make_unique<juce::ThreadPool>(1);
+            }
+            searchPool_->addJob(
+                []() { magda::media::MediaDbContext::getInstance().preloadModels(); });
+        }
     }
 }
 
@@ -726,7 +815,7 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir, bool force) {
             self->indexing_ = false;
             self->statusLabel_.setVisible(false);
             self->resized();
-            self->runSearch();
+            self->restartSearch();
         });
     });
 }

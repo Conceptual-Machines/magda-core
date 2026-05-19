@@ -60,6 +60,10 @@ CREATE INDEX IF NOT EXISTS idx_media_file_bpm    ON media_file (bpm);
 CREATE INDEX IF NOT EXISTS idx_media_file_key    ON media_file (key_root, key_scale);
 CREATE INDEX IF NOT EXISTS idx_media_file_shape  ON media_file (shape);
 CREATE INDEX IF NOT EXISTS idx_media_file_family ON media_file (family);
+-- Filter-only browse and the two-stage retrieval fallback both want the
+-- N most-recently-indexed rows; without this index that path falls back to
+-- a full table scan + sort.
+CREATE INDEX IF NOT EXISTS idx_media_file_indexed_at ON media_file (indexed_at);
 
 CREATE TABLE IF NOT EXISTS media_embedding (
     file_id         INTEGER NOT NULL REFERENCES media_file(id) ON DELETE CASCADE,

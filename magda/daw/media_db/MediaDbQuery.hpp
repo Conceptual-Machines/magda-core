@@ -76,9 +76,11 @@ class MediaDbQuery {
     MediaDbQuery(MediaDatabase& db, ClapTextEncoder* textEncoder, RobertaTokenizer* tokenizer);
 
     // Run a search. If `text` is empty / nullopt, returns filter-only browse
-    // ordered by indexed_at DESC.
+    // ordered by indexed_at DESC. `offset` skips the first N rows of the
+    // result list — used by the UI's pagination footer to jump between
+    // pages without changing the underlying query.
     std::vector<QueryResult> search(const std::optional<std::string>& text,
-                                    const QueryFilters& filters, int limit = 20,
+                                    const QueryFilters& filters, int limit = 20, int offset = 0,
                                     QueryWeights weights = {}) const;
 
   private:
