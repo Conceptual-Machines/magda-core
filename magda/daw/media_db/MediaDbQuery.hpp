@@ -83,6 +83,14 @@ class MediaDbQuery {
                                     const QueryFilters& filters, int limit = 20, int offset = 0,
                                     QueryWeights weights = {}) const;
 
+    // Audio-to-audio similarity. Loads the seed file's CLAP audio embedding
+    // and ranks the filter-matched candidate set by cosine. No text encoder
+    // or tokenizer needed — uses the embeddings already in the DB. The seed
+    // itself is dropped from the result list. Returns empty if the seed has
+    // no embedding (e.g. wasn't indexed with the Sample Tagger installed).
+    std::vector<QueryResult> similarTo(std::int64_t seedFileId, const QueryFilters& filters,
+                                       int limit = 20, int offset = 0) const;
+
   private:
     MediaDatabase& db_;
     ClapTextEncoder* textEncoder_;

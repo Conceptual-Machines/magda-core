@@ -487,4 +487,74 @@ std::vector<QueryResult> MediaDbQuery::search(const std::optional<std::string>& 
     return hydrate(sql, combined);
 }
 
+std::vector<QueryResult> MediaDbQuery::similarTo(std::int64_t seedFileId,
+                                                 const QueryFilters& filters, int limit,
+                                                 int offset) const {
+    sqlite3* sql = db_.handle();
+    if (limit < 0) {
+        limit = 0;
+    }
+    if (offset < 0) {
+        offset = 0;
+    }
+
+    // Pull the seed's embedding. similarTo is a no-op if the seed wasn't
+    // indexed with an audio model (no embedding row).
+    std::vector<float> seedVec;
+    {
+        sqlite3_stmt* stmt = nullptr;
+        const char* q = "SELECT vector_dim, vector_blob FROM media_embedding WHERE file_id = ?";
+        if (sqlite3_prepare_v2(sql, q, -1, &stmt, nullptr) != SQLITE_OK) {
+            return {};
+        }
+        sqlite3_bind_int64(stmt, 1, seedFileId);
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            const int dim = sqlite3_column_int(stmt, 0);
+            const auto* blob = static_cast<const std::uint8_t*>(sqlite3_column_blob(stmt, 1));
+            const int bytes = sqlite3_column_bytes(stmt, 1);
+            if (dim > 0 && bytes == dim * static_cast<int>(sizeof(float))) {
+                seedVec.resize(static_cast<size_t>(dim));
+                std::memcpy(seedVec.data(), blob, static_cast<size_t>(bytes));
+            }
+        }
+        sqlite3_finalize(stmt);
+    }
+    if (seedVec.empty()) {
+        return {};
+    }
+
+    // Candidate set = filter-matched, capped by recency. Same bound as the
+    // text search path so a huge library doesn't get scanned end to end.
+    const BuiltWhere where = buildWhere(filters);
+    auto candidateIds = candidateIdsByRecency(sql, where, kCandidateCap);
+    if (candidateIds.empty()) {
+        return {};
+    }
+
+    const auto scores = audioScoresOnCandidates(sql, seedVec, candidateIds);
+    if (scores.empty()) {
+        return {};
+    }
+
+    std::vector<std::pair<float, std::int64_t>> ranked;
+    ranked.reserve(scores.size());
+    for (const auto& [id, s] : scores) {
+        if (id == seedFileId) {
+            continue;  // drop the seed from its own neighbours
+        }
+        ranked.emplace_back(s, id);
+    }
+    std::sort(ranked.begin(), ranked.end(),
+              [](const auto& a, const auto& b) { return a.first > b.first; });
+
+    if (offset >= static_cast<int>(ranked.size())) {
+        return {};
+    }
+    ranked.erase(ranked.begin(), ranked.begin() + offset);
+    if (static_cast<int>(ranked.size()) > limit) {
+        ranked.resize(static_cast<size_t>(limit));
+    }
+    return hydrate(sql, ranked);
+}
+
 }  // namespace magda::media

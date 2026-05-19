@@ -256,11 +256,29 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         }
     }
 
-    void cellClicked(int row, int /*columnId*/, const juce::MouseEvent&) override {
+    void cellClicked(int row, int /*columnId*/, const juce::MouseEvent& e) override {
         if (row < 0 || row >= static_cast<int>(owner_.results_.size())) {
             return;
         }
         const auto& r = owner_.results_[static_cast<size_t>(row)];
+
+        // Right-click: context menu. Left/middle: preview / select.
+        if (e.mods.isRightButtonDown() || e.mods.isPopupMenu()) {
+            juce::PopupMenu menu;
+            const auto fileName = juce::String(r.path.filename().string());
+            menu.addItem(1, "Find similar sounds to \"" + fileName + "\"");
+            const juce::Component::SafePointer<MediaDbBrowserContent> self(&owner_);
+            const auto seedId = r.fileId;
+            const auto seedName = fileName;
+            menu.showMenuAsync(juce::PopupMenu::Options{}, [self, seedId, seedName](int choice) {
+                if (self == nullptr || choice != 1) {
+                    return;
+                }
+                self->findSimilarTo(seedId, seedName);
+            });
+            return;
+        }
+
         if (owner_.onFileSelected) {
             owner_.onFileSelected(juce::File(juce::String(r.path.string())));
         }
@@ -613,6 +631,15 @@ void MediaDbBrowserContent::refresh() {
 
 void MediaDbBrowserContent::restartSearch() {
     currentPage_ = 0;
+    similarToFileId_.reset();
+    similarToFileName_.clear();
+    runSearch();
+}
+
+void MediaDbBrowserContent::findSimilarTo(std::int64_t seedFileId, const juce::String& seedName) {
+    similarToFileId_ = seedFileId;
+    similarToFileName_ = seedName;
+    currentPage_ = 0;
     runSearch();
 }
 
@@ -664,14 +691,60 @@ void MediaDbBrowserContent::runSearch() {
 
     const auto filters = currentFilters();
     const bool hasText = !queryText_.isEmpty();
+    const int offset = currentPage_ * kPageSize;
+
+    // Similar-sounds mode. No text encoder needed — uses the seed's audio
+    // embedding already in the DB. Cosine over up to kCandidateCap=5000
+    // candidate embeddings takes tens of ms, so route to the worker.
+    if (similarToFileId_.has_value()) {
+        const auto seedId = *similarToFileId_;
+        const int myGen = ++searchGeneration_;
+        results_.clear();
+        resultsTable_.updateContent();
+        resultsTable_.repaint();
+        resultsTable_.setVisible(false);
+        emptyState_.setText("Finding similar sounds...", juce::dontSendNotification);
+        emptyState_.setVisible(true);
+
+        if (!searchPool_) {
+            searchPool_ = std::make_unique<juce::ThreadPool>(1);
+        }
+        const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+        searchPool_->addJob([self, myGen, seedId, filters, offset]() {
+            std::vector<magda::media::QueryResult> results;
+            try {
+                if (self == nullptr) {
+                    return;
+                }
+                auto& bgCtx = magda::media::MediaDbContext::getInstance();
+                if (!self->searchDb_) {
+                    self->searchDb_ = std::make_unique<magda::media::MediaDatabase>(bgCtx.dbPath());
+                }
+                magda::media::MediaDbQuery query(*self->searchDb_, nullptr, nullptr);
+                results = query.similarTo(seedId, filters, kPageSize, offset);
+            } catch (...) {
+                // Empty result -> UI shows the "No results" empty state.
+            }
+            juce::MessageManager::callAsync([self, myGen, r = std::move(results)]() mutable {
+                if (self == nullptr) {
+                    return;
+                }
+                if (self->searchGeneration_.load() != myGen) {
+                    return;
+                }
+                self->results_ = std::move(r);
+                self->applySearchResultsToUi();
+            });
+        });
+        return;
+    }
 
     // Filter-only fast path — pure SQL on indexed columns, runs in
     // microseconds. Keep it synchronous so the table updates without an
     // async hop.
     if (!hasText) {
         magda::media::MediaDbQuery query(ctx.db(), nullptr, nullptr);
-        results_ = query.search(std::nullopt, filters, /*limit=*/kPageSize,
-                                /*offset=*/currentPage_ * kPageSize);
+        results_ = query.search(std::nullopt, filters, /*limit=*/kPageSize, /*offset=*/offset);
         applySearchResultsToUi();
         return;
     }
@@ -683,7 +756,6 @@ void MediaDbBrowserContent::runSearch() {
     // overwrite the latest result with an older worker's output.
     const int myGen = ++searchGeneration_;
     const auto text = queryText_.toStdString();
-    const int offset = currentPage_ * kPageSize;
 
     // Loading state on the UI while the worker runs. If the text encoder
     // isn't loaded yet the worker will trigger its lazy-load — that's a
@@ -781,6 +853,18 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
     prevPageBtn_->setEnabled(currentPage_ > 0);
     nextPageBtn_->setEnabled(fullPage);
     pageLabel_.setText("Page " + juce::String(currentPage_ + 1), juce::dontSendNotification);
+
+    // Surface similar-mode in the status strip so the user knows why
+    // they're seeing this result set (and how to leave: any filter / text
+    // change clears it via restartSearch).
+    if (similarToFileId_.has_value() && !indexing_) {
+        statusLabel_.setText("Similar to: " + similarToFileName_ + "  -  change any filter to exit",
+                             juce::dontSendNotification);
+        statusLabel_.setVisible(true);
+    } else if (!indexing_) {
+        statusLabel_.setVisible(false);
+    }
+
     resized();  // re-layout: the table shrinks by the footer when shown
 }
 

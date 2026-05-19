@@ -83,10 +83,13 @@ class MediaDbBrowserContent : public juce::Component {
     class PopOutWindow;
 
     void runSearch();
-    // New-query entry points: resets pagination to the initial page before
-    // calling runSearch(). Distinct from the Show-more path, which keeps the
-    // bumped pageSize_ and just re-runs.
+    // New-query entry points: resets pagination to the initial page and
+    // clears similar-sounds mode before calling runSearch().
     void restartSearch();
+    // Enter similar-sounds mode: re-run the query as a cosine search
+    // around the given file's audio embedding instead of text / FTS.
+    // Cleared by the next restartSearch().
+    void findSimilarTo(std::int64_t seedFileId, const juce::String& seedName);
     void openPopOutWindow();
     magda::media::QueryFilters currentFilters() const;
 
@@ -130,6 +133,13 @@ class MediaDbBrowserContent : public juce::Component {
     // change (restartSearch).
     static constexpr int kPageSize = 100;
     int currentPage_ = 0;
+
+    // Similar-sounds mode. When set, runSearch dispatches to
+    // MediaDbQuery::similarTo using the seed file's audio embedding
+    // instead of text/FTS. Any new query/filter clears this via
+    // restartSearch so the user goes back to normal browse.
+    std::optional<std::int64_t> similarToFileId_;
+    juce::String similarToFileName_;  // displayed in the status strip
 
     juce::Component::SafePointer<PopOutWindow>
         popOutWindow_;  // tracked so re-clicks focus existing
