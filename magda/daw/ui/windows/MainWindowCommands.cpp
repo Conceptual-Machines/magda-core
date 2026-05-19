@@ -1223,6 +1223,10 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
 
     // Cmd/Ctrl+D: Duplicate selected track(s) with content (through undo system)
     if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
+        if (mainView && mainView->getTimelineController().getState().selection.isVisuallyActive()) {
+            return false;
+        }
+
         const auto& selectedTracks = SelectionManager::getInstance().getSelectedTracks();
         if (!selectedTracks.empty()) {
             if (selectedTracks.size() > 1) {

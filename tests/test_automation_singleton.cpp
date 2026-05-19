@@ -177,7 +177,7 @@ TEST_CASE("DuplicateAutomationTimeSelectionCommand duplicates visible absolute l
 
     auto* volumeLane = mgr.getLane(volumeLaneId);
     REQUIRE(volumeLane != nullptr);
-    REQUIRE(volumeLane->absolutePoints.size() == 6);
+    REQUIRE(volumeLane->absolutePoints.size() == 7);
 
     auto* duplicatedFirst = findPointAt(volumeLane, 5.0);
     REQUIRE(duplicatedFirst != nullptr);
@@ -192,10 +192,15 @@ TEST_CASE("DuplicateAutomationTimeSelectionCommand duplicates visible absolute l
     REQUIRE(duplicatedSecond != nullptr);
     REQUIRE(duplicatedSecond->value == Catch::Approx(0.75));
 
+    auto* duplicatedEnd = findPointAt(volumeLane, 7.0);
+    REQUIRE(duplicatedEnd != nullptr);
+    REQUIRE(duplicatedEnd->value == Catch::Approx(0.5));
+
     REQUIRE(mgr.getLane(hiddenLaneId)->absolutePoints.size() == 2);
     REQUIRE(mgr.getLane(otherTrackLaneId)->absolutePoints.size() == 2);
 
     cmd.undo();
     REQUIRE(mgr.getLane(volumeLaneId)->absolutePoints.size() == 4);
     REQUIRE(findPointAt(mgr.getLane(volumeLaneId), 5.0) == nullptr);
+    REQUIRE(findPointAt(mgr.getLane(volumeLaneId), 7.0) == nullptr);
 }

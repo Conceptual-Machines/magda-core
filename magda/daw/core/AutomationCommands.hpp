@@ -267,7 +267,7 @@ class DeleteAutomationLaneCommand : public UndoableCommand {
 /**
  * @brief Duplicate absolute automation points in a timeline beat range.
  *
- * Points in [startBeat, endBeat) are copied to destinationStartBeat on
+ * Points in [startBeat, endBeat] are copied to destinationStartBeat on
  * matching visible lanes. If trackIds is empty, all tracks are considered.
  */
 class DuplicateAutomationTimeSelectionCommand : public UndoableCommand {

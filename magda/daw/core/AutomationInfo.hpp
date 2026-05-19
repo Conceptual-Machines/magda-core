@@ -62,6 +62,8 @@ struct AutomationPoint {
     double tension = 0.0;
 
     bool operator<(const AutomationPoint& other) const {
+        if (beatPosition == other.beatPosition)
+            return id < other.id;
         return beatPosition < other.beatPosition;
     }
 

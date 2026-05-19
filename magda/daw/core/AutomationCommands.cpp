@@ -3,6 +3,14 @@
 #include <algorithm>
 
 namespace magda {
+namespace {
+
+bool pointIsInDuplicateRange(double beatPosition, double startBeat, double endBeat) {
+    constexpr double epsilon = 1.0e-9;
+    return beatPosition >= startBeat - epsilon && beatPosition <= endBeat + epsilon;
+}
+
+}  // namespace
 
 // ============================================================================
 // Helper: find a point in a lane or clip
@@ -270,7 +278,7 @@ bool DuplicateAutomationTimeSelectionCommand::canDuplicatePoints() const {
             continue;
 
         for (const auto& point : lane.absolutePoints) {
-            if (point.beatPosition >= startBeat_ && point.beatPosition < endBeat_)
+            if (pointIsInDuplicateRange(point.beatPosition, startBeat_, endBeat_))
                 return true;
         }
     }
@@ -292,7 +300,7 @@ void DuplicateAutomationTimeSelectionCommand::execute() {
             continue;
 
         for (const auto& point : lane.absolutePoints) {
-            if (point.beatPosition >= startBeat_ && point.beatPosition < endBeat_) {
+            if (pointIsInDuplicateRange(point.beatPosition, startBeat_, endBeat_)) {
                 pointsToDuplicate.emplace_back(lane.id, point);
             }
         }

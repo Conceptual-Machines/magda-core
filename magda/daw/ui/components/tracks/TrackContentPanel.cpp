@@ -2296,6 +2296,15 @@ bool TrackContentPanel::checkIfMarqueeNeeded(const juce::Point<int>& currentPoin
 
 bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
     auto& selectionManager = SelectionManager::getInstance();
+    auto forwardToParent = [this, &key]() {
+        auto* parent = getParentComponent();
+        while (parent != nullptr) {
+            if (parent->keyPressed(key))
+                return true;
+            parent = parent->getParentComponent();
+        }
+        return false;
+    };
 
     // Note: Cmd+Z / Cmd+Shift+Z (undo/redo) are handled globally by
     // MainComponent's ApplicationCommandManager key mappings.
@@ -2383,6 +2392,10 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
 
     // Cmd/Ctrl+D: Duplicate selected clips
     if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
+        if (timelineController && timelineController->getState().selection.isVisuallyActive()) {
+            return forwardToParent();
+        }
+
         const auto& selectedClips = selectionManager.getSelectedClips();
         if (!selectedClips.empty()) {
             auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempoBPM);
@@ -2490,15 +2503,7 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
     // Forward unhandled keys up the parent chain for command manager processing
     // Walk up past the Viewport to reach MainView/MainComponent where ApplicationCommandManager
     // lives
-    auto* parent = getParentComponent();
-    while (parent != nullptr) {
-        if (parent->keyPressed(key)) {
-            return true;
-        }
-        parent = parent->getParentComponent();
-    }
-
-    return false;  // Key not handled
+    return forwardToParent();
 }
 
 // ============================================================================
