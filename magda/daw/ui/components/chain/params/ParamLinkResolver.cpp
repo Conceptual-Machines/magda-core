@@ -107,7 +107,7 @@ bool hasActiveLinks(const ParamLinkContext& ctx) {
     // Check device-level mods
     if (ctx.deviceMods) {
         for (const auto& mod : *ctx.deviceMods) {
-            if (mod.getLink(modTarget) != nullptr) {
+            if (const auto* link = mod.getLink(modTarget); link != nullptr && link->enabled) {
                 return true;
             }
         }
@@ -116,7 +116,7 @@ bool hasActiveLinks(const ParamLinkContext& ctx) {
     // Check rack-level mods
     if (ctx.rackMods) {
         for (const auto& mod : *ctx.rackMods) {
-            if (mod.getLink(modTarget) != nullptr) {
+            if (const auto* link = mod.getLink(modTarget); link != nullptr && link->enabled) {
                 return true;
             }
         }
@@ -145,7 +145,7 @@ bool hasActiveLinks(const ParamLinkContext& ctx) {
     // Check track-level mods
     if (ctx.trackMods) {
         for (const auto& mod : *ctx.trackMods) {
-            if (mod.getLink(modTarget) != nullptr) {
+            if (const auto* link = mod.getLink(modTarget); link != nullptr && link->enabled) {
                 return true;
             }
         }
@@ -176,6 +176,8 @@ float computeTotalModModulation(const ParamLinkContext& ctx) {
     if (ctx.deviceMods) {
         for (const auto& mod : *ctx.deviceMods) {
             if (const auto* link = mod.getLink(modTarget)) {
+                if (!link->enabled)
+                    continue;
                 float modOffset = link->bipolar ? (mod.value * 2.0f - 1.0f) : mod.value;
                 total += modOffset * link->amount;
             }
@@ -186,6 +188,8 @@ float computeTotalModModulation(const ParamLinkContext& ctx) {
     if (ctx.rackMods) {
         for (const auto& mod : *ctx.rackMods) {
             if (const auto* link = mod.getLink(modTarget)) {
+                if (!link->enabled)
+                    continue;
                 float modOffset = link->bipolar ? (mod.value * 2.0f - 1.0f) : mod.value;
                 total += modOffset * link->amount;
             }
@@ -196,6 +200,8 @@ float computeTotalModModulation(const ParamLinkContext& ctx) {
     if (ctx.trackMods) {
         for (const auto& mod : *ctx.trackMods) {
             if (const auto* link = mod.getLink(modTarget)) {
+                if (!link->enabled)
+                    continue;
                 float modOffset = link->bipolar ? (mod.value * 2.0f - 1.0f) : mod.value;
                 total += modOffset * link->amount;
             }

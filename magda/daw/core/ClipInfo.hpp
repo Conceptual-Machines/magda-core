@@ -320,10 +320,15 @@ struct ClipInfo {
     int sceneIndex = -1;  // -1 = not in session view (arrangement only)
 
     // Per-clip grid settings (MIDI editor)
+    static constexpr int DEFAULT_MIDI_EDITOR_ROW_HEIGHT = 12;
+    static constexpr int MIN_MIDI_EDITOR_ROW_HEIGHT = 6;
+    static constexpr int MAX_MIDI_EDITOR_ROW_HEIGHT = 40;
+
     bool gridAutoGrid = true;
     int gridNumerator = 1;
     int gridDenominator = 4;
     bool gridSnapEnabled = true;
+    int midiEditorRowHeight = 0;  // 0 = editor default
 
     // Session launch properties
     LaunchMode launchMode = LaunchMode::Trigger;

@@ -14,6 +14,8 @@
 
 namespace magda {
 
+struct ModInfo;
+
 /**
  * @brief Visual state for a control bound to an automation target.
  *
@@ -93,6 +95,12 @@ ParameterInfo getParameterInfoForTarget(const AutomationTarget& target);
  */
 juce::String getDisplayNameForTarget(const AutomationTarget& target);
 
+juce::String formatCustomNameWithDefault(const juce::String& name, const juce::String& defaultName);
+juce::String getMacroDefaultDisplayName(int macroIndex);
+juce::String getMacroDisplayName(int macroIndex, const juce::String& name);
+juce::String getModDisplayName(const ModInfo& mod);
+juce::String getModParameterDisplayName(const ModInfo& mod, int modParamIndex);
+
 /**
  * @brief An automation clip for clip-based automation
  *
@@ -170,7 +178,7 @@ struct AutomationLaneInfo {
     // Was AutomationTarget::paramName before the unification.
     juce::String paramName;
 
-    juce::String name;  // Display name (auto-generated if empty)
+    juce::String name;  // Optional explicit display override
     bool visible = true;
     bool expanded = true;
     bool bypass = false;  // Ignore baked curve during playback
@@ -202,6 +210,17 @@ struct AutomationLaneInfo {
      * @brief Get display name (auto-generate if not set)
      */
     juce::String getDisplayName() const {
+        if (target.kind == ControlTarget::Kind::DeviceMacro) {
+            auto defaultName = "Macro " + juce::String(target.paramIndex + 1);
+            if (name.isEmpty() || name == defaultName)
+                return getDisplayNameForTarget(target);
+        }
+        if (target.kind == ControlTarget::Kind::ModParam) {
+            auto legacyName = "Mod " + juce::String(target.modId) + " Param " +
+                              juce::String(target.modParamIndex);
+            if (name.isEmpty() || name == legacyName)
+                return getDisplayNameForTarget(target);
+        }
         if (name.isNotEmpty())
             return name;
         if (paramName.isNotEmpty())

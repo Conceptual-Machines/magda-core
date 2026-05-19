@@ -240,7 +240,6 @@ AutomationLaneId AutomationManager::createLane(const AutomationTarget& target,
     lane.id = nextLaneId_++;
     lane.target = target;
     lane.type = type;
-    lane.name = getDisplayNameForTarget(target);
 
     // For absolute lanes, add an initial point at the current target value
     if (type == AutomationLaneType::Absolute) {

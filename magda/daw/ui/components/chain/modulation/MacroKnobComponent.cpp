@@ -1,7 +1,5 @@
 #include "modulation/MacroKnobComponent.hpp"
 
-#include <stdexcept>
-
 #include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
@@ -16,43 +14,6 @@
 namespace magda::daw::ui {
 
 namespace {
-// Build the lane label for a macro, matching the "Add New Lane" submenu in
-// TrackHeadersPanel: rack/device-scope macros are prefixed with the owner
-// ("<owner>: <macro>"); track-scope macros are NOT prefixed, because the lane
-// already sits under the track's header and tracks are often auto-named to
-// match their primary device, which would make the prefix look redundant or
-// misleading (e.g. "4OSC Synth: Macro 1" on a track named "4OSC Synth").
-juce::String buildQualifiedMacroName(const magda::ChainNodePath& path, int macroIndex,
-                                     const juce::String& macroName) {
-    juce::String macroDisplay =
-        macroName.isNotEmpty() ? macroName : "Macro " + juce::String(macroIndex + 1);
-
-    juce::String ownerName;
-    auto& tm = magda::TrackManager::getInstance();
-    switch (path.getType()) {
-        case magda::ChainNodeType::Track:
-            return macroDisplay;
-        case magda::ChainNodeType::Rack:
-            if (auto* rack = tm.getRackByPath(path))
-                ownerName = rack->name;
-            break;
-        case magda::ChainNodeType::TopLevelDevice:
-        case magda::ChainNodeType::Device:
-            if (auto* dev = tm.getDeviceInChainByPath(path))
-                ownerName = dev->name;
-            break;
-        case magda::ChainNodeType::None:
-        case magda::ChainNodeType::Chain:
-            throw std::runtime_error(
-                "buildQualifiedMacroName: macro path has no macro-bearing scope");
-    }
-
-    if (ownerName.isEmpty())
-        throw std::runtime_error("buildQualifiedMacroName: failed to resolve owner for macro path");
-
-    return ownerName + ": " + macroDisplay;
-}
-
 bool findDevicePathInElements(const std::vector<magda::ChainElement>& elements,
                               const magda::ChainNodePath& parentPath, magda::DeviceId deviceId,
                               magda::ChainNodePath& outPath) {
@@ -489,6 +450,8 @@ void MacroKnobComponent::showLinkMenu() {
     juce::PopupMenu menu;
 
     constexpr int kShowAutomationLaneId = 30000;
+    constexpr int kRenameId = 60000;
+    menu.addItem(kRenameId, "Rename");
     menu.addItem(kShowAutomationLaneId, "Show Automation Lane");
     menu.addSeparator();
 
@@ -585,18 +548,22 @@ void MacroKnobComponent::showLinkMenu() {
         if (!link.target.isValid())
             continue;
         juce::String paramName;
-        auto it = deviceParamNames_.find(link.target.deviceId());
-        if (it != deviceParamNames_.end() && link.target.paramIndex >= 0 &&
-            link.target.paramIndex < static_cast<int>(it->second.size())) {
-            paramName = it->second[static_cast<size_t>(link.target.paramIndex)];
+        if (link.target.kind == magda::ControlTarget::Kind::ModParam) {
+            paramName = magda::getDisplayNameForTarget(link.target);
         } else {
-            paramName = "P" + juce::String(link.target.paramIndex + 1);
-        }
-        // Find device name for context
-        for (const auto& [devId, devName] : availableTargets_) {
-            if (devId == link.target.deviceId()) {
-                paramName = devName + " - " + paramName;
-                break;
+            auto it = deviceParamNames_.find(link.target.deviceId());
+            if (it != deviceParamNames_.end() && link.target.paramIndex >= 0 &&
+                link.target.paramIndex < static_cast<int>(it->second.size())) {
+                paramName = it->second[static_cast<size_t>(link.target.paramIndex)];
+            } else {
+                paramName = "P" + juce::String(link.target.paramIndex + 1);
+            }
+            // Find device name for context
+            for (const auto& [devId, devName] : availableTargets_) {
+                if (devId == link.target.deviceId()) {
+                    paramName = devName + " - " + paramName;
+                    break;
+                }
             }
         }
         menu.addItem(unlinkBaseId + static_cast<int>(unlinkTargets.size()), "Unlink " + paramName);
@@ -646,6 +613,11 @@ void MacroKnobComponent::showLinkMenu() {
             return;
         }
 
+        if (result == kRenameId) {
+            safeThis->nameLabel_.showEditor();
+            return;
+        }
+
         // MIDI Learn / Clear — keep this branch above the device/param walks so
         // the high-numbered IDs don't get re-interpreted as device-param items.
         constexpr int kLearnId = 50000;
@@ -656,9 +628,7 @@ void MacroKnobComponent::showLinkMenu() {
             if (learn.isLearning(target)) {
                 learn.cancelLearn();
             } else {
-                juce::String name = displayName.isNotEmpty()
-                                        ? displayName
-                                        : "Macro " + juce::String(macroIndex + 1);
+                juce::String name = magda::getMacroDisplayName(macroIndex, displayName);
                 learn.beginLearn(target, name);
             }
             return;

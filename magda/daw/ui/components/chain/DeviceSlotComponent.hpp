@@ -167,9 +167,12 @@ class DeviceSlotComponent : public NodeComponent,
     // Contextual link callbacks (when param is selected and mod amount slider is used)
     void onModLinkAmountChangedInternal(int modIndex, magda::ControlTarget target,
                                         float amount) override;
+    void onModLinkEnabledChangedInternal(int modIndex, magda::ControlTarget target,
+                                         bool enabled) override;
     void onModNewLinkCreatedInternal(int modIndex, magda::ControlTarget target,
                                      float amount) override;
     void onModLinkRemovedInternal(int modIndex, magda::ControlTarget target) override;
+    void onModAllLinksClearedInternal(int modIndex) override;
 
     // SelectionManagerListener overrides — chain-node + binding/controller
     // listeners now live on NodeComponent (the base class), which fans

@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -50,6 +51,7 @@ class PianoRollGridComponent : public juce::Component,
     void mouseMove(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
@@ -171,6 +173,8 @@ class PianoRollGridComponent : public juce::Component,
 
     // Request a note to be selected after the next refresh
     void selectNoteAfterRefresh(ClipId clipId, int noteIndex);
+
+    std::function<void(int, const juce::MouseWheelDetails&)> onVerticalZoomRequested;
 
     // Update visual selection to match SelectionManager state
     void syncSelectionFromManager();

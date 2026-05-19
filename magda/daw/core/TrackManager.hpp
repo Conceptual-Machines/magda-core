@@ -67,6 +67,12 @@ class TrackManagerListener {
         juce::ignoreUnused(trackId);
     }
 
+    // Called when macro/mod display names change. This affects UI labels but
+    // should not rebuild device-chain components.
+    virtual void modulationNamesChanged(TrackId trackId) {
+        juce::ignoreUnused(trackId);
+    }
+
     // Called when an audio-triggered mod fires (gate opens) — sourceTrackId is the sidechain source
     virtual void audioSidechainTriggered(TrackId sourceTrackId) {
         juce::ignoreUnused(sourceTrackId);
@@ -477,6 +483,8 @@ class TrackManager {
                           float amount);
     void setModLinkBipolar(const ChainNodePath& path, int modIndex, ControlTarget target,
                            bool bipolar);
+    void setModLinkEnabled(const ChainNodePath& path, int modIndex, ControlTarget target,
+                           bool enabled);
     void setModName(const ChainNodePath& path, int modIndex, const juce::String& name);
     void setModType(const ChainNodePath& path, int modIndex, ModType type);
     void setModWaveform(const ChainNodePath& path, int modIndex, LFOWaveform waveform);
@@ -490,6 +498,7 @@ class TrackManager {
     void setModAudioAttack(const ChainNodePath& path, int modIndex, float ms);
     void setModAudioRelease(const ChainNodePath& path, int modIndex, float ms);
     void removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target);
+    void clearAllModLinks(const ChainNodePath& path, int modIndex);
     void setModEnabled(const ChainNodePath& path, int modIndex, bool enabled);
     void addModPage(const ChainNodePath& path);
     void removeModPage(const ChainNodePath& path);
@@ -631,6 +640,7 @@ class TrackManager {
      * update UI components).
      */
     void notifyTrackDevicesChanged(TrackId trackId);
+    void notifyModulationNamesChanged(TrackId trackId);
 
   private:
     TrackManager();

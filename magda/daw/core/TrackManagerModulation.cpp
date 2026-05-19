@@ -424,6 +424,17 @@ void TrackManager::setModLinkBipolar(const ChainNodePath& path, int modIndex, Co
     }
 }
 
+void TrackManager::setModLinkEnabled(const ChainNodePath& path, int modIndex, ControlTarget target,
+                                     bool enabled) {
+    auto node = resolveChainNode(path);
+    if (!indexInRange(node.mods, modIndex))
+        return;
+    if (auto* link = (*node.mods)[modIndex].getLink(target)) {
+        link->enabled = enabled;
+        notifyDeviceModifiersChanged(path.trackId);
+    }
+}
+
 void TrackManager::setModName(const ChainNodePath& path, int modIndex, const juce::String& name) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
@@ -530,6 +541,14 @@ void TrackManager::removeModLink(const ChainNodePath& path, int modIndex, Contro
     if (!indexInRange(node.mods, modIndex))
         return;
     (*node.mods)[modIndex].removeLink(target);
+    notifyDeviceModifiersChanged(path.trackId);
+}
+
+void TrackManager::clearAllModLinks(const ChainNodePath& path, int modIndex) {
+    auto node = resolveChainNode(path);
+    if (!indexInRange(node.mods, modIndex))
+        return;
+    (*node.mods)[modIndex].links.clear();
     notifyDeviceModifiersChanged(path.trackId);
 }
 
@@ -782,7 +801,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                     if (m.id == mod.id)
                         continue;
                     for (const auto& l : m.links) {
-                        if (l.target.kind != ControlTarget::Kind::ModParam ||
+                        if (!l.enabled || l.target.kind != ControlTarget::Kind::ModParam ||
                             l.target.modId != mod.id || l.target.modParamIndex != 0)
                             continue;
                         float offset = l.bipolar ? (m.value * 2.0f - 1.0f) : m.value;
