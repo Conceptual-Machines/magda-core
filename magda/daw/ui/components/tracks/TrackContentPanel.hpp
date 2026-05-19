@@ -183,6 +183,7 @@ class TrackContentPanel : public juce::Component,
     void startMultiClipDrag(ClipId anchorClipId, const juce::Point<int>& startPos);
     void updateMultiClipDrag(const juce::Point<int>& currentPos);
     void finishMultiClipDrag();
+    bool duplicateSelectedArrangementClips(bool includeAutomation);
 
     // Ghost clip methods (for Alt+drag visual feedback)
     void setClipGhost(ClipId clipId, const juce::Rectangle<int>& bounds,

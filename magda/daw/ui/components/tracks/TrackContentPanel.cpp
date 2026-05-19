@@ -13,6 +13,7 @@
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../clips/ClipComponent.hpp"
 #include "Config.hpp"
+#include "core/AutomationCommands.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
@@ -1698,7 +1699,9 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
     bool isFrozen = trackInfo && trackInfo->frozen;
 
     auto& clipManager = ClipManager::getInstance();
+    auto& selectionManager = SelectionManager::getInstance();
     bool hasClipboard = clipManager.hasClipsInClipboard();
+    bool hasSelectedClips = !selectionManager.getSelectedClips().empty();
 
     // "Duplicate Time Selection" only makes sense when an active, visible
     // time selection exists. Same gate Cmd+D uses in MainWindowCommands.
@@ -1712,6 +1715,9 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
     menu.addItem(1, "Create MIDI Clip", !isFrozen);
     menu.addSeparator();
     menu.addItem(2, "Paste", !isFrozen && hasClipboard);
+    menu.addItem(5, "Duplicate Selected Clips", !isFrozen && hasSelectedClips);
+    menu.addItem(6, "Duplicate Selected Clips With Automation", !isFrozen && hasSelectedClips);
+    menu.addItem(7, "Duplicate Selected Clips Without Automation", !isFrozen && hasSelectedClips);
     menu.addItem(4, "Duplicate Time Selection", !isFrozen && hasTimeSelection);
     menu.addItem(3, "Select All");
 
@@ -1789,8 +1795,70 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
                     SetTimeSelectionEvent{sel.endTime, sel.endTime + duration, sel.trackIndices});
                 break;
             }
+            case 5:  // Duplicate Selected Clips
+            case 7:  // Duplicate Selected Clips Without Automation
+                if (safeThis)
+                    safeThis->duplicateSelectedArrangementClips(false);
+                break;
+            case 6:  // Duplicate Selected Clips With Automation
+                if (safeThis)
+                    safeThis->duplicateSelectedArrangementClips(true);
+                break;
         }
     });
+}
+
+bool TrackContentPanel::duplicateSelectedArrangementClips(bool includeAutomation) {
+    auto& selectionManager = SelectionManager::getInstance();
+    auto& clipManager = ClipManager::getInstance();
+    const auto selectedClips = selectionManager.getSelectedClips();
+    if (selectedClips.empty())
+        return false;
+
+    auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempoBPM);
+    if (commands.empty())
+        return false;
+
+    const bool compoundOperation = commands.size() > 1 || includeAutomation;
+    if (compoundOperation) {
+        UndoManager::getInstance().beginCompoundOperation(
+            includeAutomation ? "Duplicate Clips With Automation" : "Duplicate Clips");
+    }
+
+    std::unordered_set<ClipId> newClipIds;
+    for (auto& cmd : commands) {
+        const auto sourceClipId = cmd->getSourceClipId();
+        auto* cmdPtr = cmd.get();
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+        const ClipId newId = cmdPtr->getDuplicatedClipId();
+        if (newId != INVALID_CLIP_ID)
+            newClipIds.insert(newId);
+
+        if (!includeAutomation || newId == INVALID_CLIP_ID)
+            continue;
+
+        const auto* sourceClip = clipManager.getClip(sourceClipId);
+        const auto* duplicatedClip = clipManager.getClip(newId);
+        if (!sourceClip || !duplicatedClip)
+            continue;
+
+        const double sourceStartBeat = sourceClip->getStartBeats(tempoBPM);
+        const double sourceEndBeat = sourceClip->getEndBeats(tempoBPM);
+        const double destinationStartBeat = duplicatedClip->getStartBeats(tempoBPM);
+        auto automationCmd = std::make_unique<DuplicateAutomationTimeSelectionCommand>(
+            sourceStartBeat, sourceEndBeat, std::vector<TrackId>{sourceClip->trackId},
+            destinationStartBeat);
+        if (automationCmd->canDuplicatePoints())
+            UndoManager::getInstance().executeCommand(std::move(automationCmd));
+    }
+
+    if (compoundOperation)
+        UndoManager::getInstance().endCompoundOperation();
+
+    if (!newClipIds.empty())
+        selectionManager.selectClips(newClipIds);
+
+    return true;
 }
 
 void TrackContentPanel::timerCallback() {
@@ -2396,36 +2464,7 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
             return forwardToParent();
         }
 
-        const auto& selectedClips = selectionManager.getSelectedClips();
-        if (!selectedClips.empty()) {
-            auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempoBPM);
-            if (commands.empty())
-                return false;
-
-            // Use compound operation to group all duplicates into single undo step
-            if (commands.size() > 1) {
-                UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
-            }
-
-            // Execute commands and collect new IDs
-            std::unordered_set<ClipId> newClipIds;
-            for (auto& cmd : commands) {
-                DuplicateClipCommand* cmdPtr = cmd.get();
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-                ClipId newId = cmdPtr->getDuplicatedClipId();
-                if (newId != INVALID_CLIP_ID) {
-                    newClipIds.insert(newId);
-                }
-            }
-
-            if (commands.size() > 1) {
-                UndoManager::getInstance().endCompoundOperation();
-            }
-
-            // Select the new duplicates
-            if (!newClipIds.empty()) {
-                selectionManager.selectClips(newClipIds);
-            }
+        if (duplicateSelectedArrangementClips(false)) {
             grabKeyboardFocus();  // Keep focus for subsequent operations
             return true;
         }

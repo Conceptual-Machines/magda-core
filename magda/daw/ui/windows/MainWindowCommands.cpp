@@ -9,7 +9,6 @@
 #include "../../core/TrackPropertyCommands.hpp"
 #include "../../core/UIScale.hpp"
 #include "../../core/UndoManager.hpp"
-#include "../debug/DebugDialog.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../views/MainView.hpp"
@@ -125,6 +124,9 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case duplicateClipWithAutomation:
             result.setInfo("Duplicate Clip With Automation",
                            "Duplicate selected clips and automation under them", "Edit", 0);
+            result.addDefaultKeypress('d', juce::ModifierKeys::commandModifier |
+                                               juce::ModifierKeys::shiftModifier |
+                                               juce::ModifierKeys::altModifier);
             break;
         case duplicateClipWithoutAutomation:
             result.setInfo("Duplicate Clip Without Automation",
@@ -1106,16 +1108,6 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
                 controller->dispatch(SetEditCursorEvent{-1.0});
             }
         }
-        return true;
-    }
-
-    // Cmd/Ctrl+Shift+Alt+D: Open Debug Dialog
-    if (key ==
-        juce::KeyPress('d',
-                       juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier |
-                           juce::ModifierKeys::altModifier,
-                       0)) {
-        daw::ui::DebugDialog::show();
         return true;
     }
 
