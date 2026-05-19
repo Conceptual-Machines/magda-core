@@ -2,6 +2,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "core/ClipInfo.hpp"
 
 namespace magda {
 
@@ -181,7 +182,8 @@ void PianoRollKeyboard::mouseDrag(const juce::MouseEvent& event) {
         int newHeight = zoomStartHeight_ + heightDelta;
 
         // Clamp to reasonable limits
-        newHeight = juce::jlimit(6, 40, newHeight);
+        newHeight = juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT,
+                                 ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT, newHeight);
 
         if (onZoomChanged && newHeight != noteHeight_) {
             onZoomChanged(newHeight, zoomAnchorNote_, mouseDownY_);
@@ -215,7 +217,9 @@ void PianoRollKeyboard::mouseWheelMove(const juce::MouseEvent& event,
     if (event.mods.isAltDown() && onZoomChanged) {
         const int anchorNote = yToNoteNumber(event.y);
         const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
-        onZoomChanged(juce::jlimit(6, 40, noteHeight_ + heightDelta), anchorNote, event.y);
+        onZoomChanged(juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT,
+                                   ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT, noteHeight_ + heightDelta),
+                      anchorNote, event.y);
         return;
     }
 
