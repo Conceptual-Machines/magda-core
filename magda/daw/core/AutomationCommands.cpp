@@ -1,6 +1,16 @@
 #include "AutomationCommands.hpp"
 
+#include <algorithm>
+
 namespace magda {
+namespace {
+
+bool pointIsInDuplicateRange(double beatPosition, double startBeat, double endBeat) {
+    constexpr double epsilon = 1.0e-9;
+    return beatPosition >= startBeat - epsilon && beatPosition <= endBeat + epsilon;
+}
+
+}  // namespace
 
 // ============================================================================
 // Helper: find a point in a lane or clip
@@ -239,6 +249,91 @@ void DeleteAutomationLaneCommand::undo() {
         AutomationClipInfo clipCopy = clip;
         mgr.restoreClip(clipCopy);
     }
+}
+
+// ============================================================================
+// DuplicateAutomationTimeSelectionCommand
+// ============================================================================
+
+bool DuplicateAutomationTimeSelectionCommand::shouldDuplicateLane(
+    const AutomationLaneInfo& lane) const {
+    if (!lane.visible || !lane.isAbsolute())
+        return false;
+    if (!laneIds_.empty()) {
+        return std::find(laneIds_.begin(), laneIds_.end(), lane.id) != laneIds_.end();
+    }
+    if (trackIds_.empty())
+        return true;
+    return std::find(trackIds_.begin(), trackIds_.end(), lane.target.devicePath.trackId) !=
+           trackIds_.end();
+}
+
+bool DuplicateAutomationTimeSelectionCommand::canDuplicatePoints() const {
+    if (endBeat_ <= startBeat_)
+        return false;
+
+    const auto& mgr = AutomationManager::getInstance();
+    for (const auto& lane : mgr.getLanes()) {
+        if (!shouldDuplicateLane(lane))
+            continue;
+
+        for (const auto& point : lane.absolutePoints) {
+            if (pointIsInDuplicateRange(point.beatPosition, startBeat_, endBeat_))
+                return true;
+        }
+    }
+    return false;
+}
+
+void DuplicateAutomationTimeSelectionCommand::execute() {
+    insertedPoints_.clear();
+
+    const double duration = endBeat_ - startBeat_;
+    if (duration <= 0.0)
+        return;
+
+    auto& mgr = AutomationManager::getInstance();
+    std::vector<std::pair<AutomationLaneId, AutomationPoint>> pointsToDuplicate;
+
+    for (const auto& lane : mgr.getLanes()) {
+        if (!shouldDuplicateLane(lane))
+            continue;
+
+        for (const auto& point : lane.absolutePoints) {
+            if (pointIsInDuplicateRange(point.beatPosition, startBeat_, endBeat_)) {
+                pointsToDuplicate.emplace_back(lane.id, point);
+            }
+        }
+    }
+
+    if (pointsToDuplicate.empty())
+        return;
+
+    AutomationManager::BatchScope batch;
+    insertedPoints_.reserve(pointsToDuplicate.size());
+
+    for (auto [laneId, point] : pointsToDuplicate) {
+        const double newBeat = destinationStartBeat_ + (point.beatPosition - startBeat_);
+        const auto newId = mgr.addPoint(laneId, newBeat, point.value, point.curveType);
+        if (newId == INVALID_AUTOMATION_POINT_ID)
+            continue;
+
+        mgr.setPointTension(laneId, newId, point.tension);
+        mgr.setPointHandles(laneId, newId, point.inHandle, point.outHandle);
+        insertedPoints_.push_back({laneId, newId});
+    }
+}
+
+void DuplicateAutomationTimeSelectionCommand::undo() {
+    if (insertedPoints_.empty())
+        return;
+
+    auto& mgr = AutomationManager::getInstance();
+    AutomationManager::BatchScope batch;
+    for (auto it = insertedPoints_.rbegin(); it != insertedPoints_.rend(); ++it) {
+        mgr.deletePoint(it->laneId, it->pointId);
+    }
+    insertedPoints_.clear();
 }
 
 }  // namespace magda

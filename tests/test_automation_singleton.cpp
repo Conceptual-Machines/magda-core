@@ -1,5 +1,7 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "magda/daw/core/AutomationCommands.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
@@ -42,6 +44,17 @@ AutomationTarget panTarget(TrackId id) {
     t.kind = ControlTarget::Kind::TrackPan;
     t.devicePath = ChainNodePath::trackLevel(id);
     return t;
+}
+
+const AutomationPoint* findPointAt(const AutomationLaneInfo* lane, double beatPosition) {
+    if (!lane)
+        return nullptr;
+
+    for (const auto& point : lane->absolutePoints) {
+        if (point.beatPosition == Catch::Approx(beatPosition))
+            return &point;
+    }
+    return nullptr;
 }
 
 }  // namespace
@@ -119,4 +132,75 @@ TEST_CASE("AutomationManager::restoreLane skips duplicate targets", "[automation
     REQUIRE(mgr.getLanesForTrack(trackId).size() == 1);
     REQUIRE(mgr.getLane(first) != nullptr);
     REQUIRE(mgr.getLane(first + 1000) == nullptr);
+}
+
+TEST_CASE("DuplicateAutomationTimeSelectionCommand duplicates visible absolute lane points",
+          "[automation][commands][duplicate]") {
+    resetState();
+    auto trackId = makeTrack("T");
+    auto otherTrackId = makeTrack("Other");
+    auto& mgr = AutomationManager::getInstance();
+
+    auto volumeLaneId = mgr.createLane(volumeTarget(trackId), AutomationLaneType::Absolute);
+    auto hiddenLaneId = mgr.createLane(panTarget(trackId), AutomationLaneType::Absolute);
+    auto otherTrackLaneId =
+        mgr.createLane(volumeTarget(otherTrackId), AutomationLaneType::Absolute);
+    REQUIRE(volumeLaneId != INVALID_AUTOMATION_LANE_ID);
+    REQUIRE(hiddenLaneId != INVALID_AUTOMATION_LANE_ID);
+    REQUIRE(otherTrackLaneId != INVALID_AUTOMATION_LANE_ID);
+
+    auto* hiddenLane = mgr.getLane(hiddenLaneId);
+    REQUIRE(hiddenLane != nullptr);
+    hiddenLane->visible = false;
+
+    auto firstPointId = mgr.addPoint(volumeLaneId, 1.0, 0.25, AutomationCurveType::Bezier);
+    mgr.addPoint(volumeLaneId, 2.5, 0.75, AutomationCurveType::Linear);
+    mgr.addPoint(volumeLaneId, 3.0, 0.5, AutomationCurveType::Linear);
+    mgr.addPoint(hiddenLaneId, 1.5, 0.1, AutomationCurveType::Linear);
+    mgr.addPoint(otherTrackLaneId, 1.5, 0.9, AutomationCurveType::Linear);
+
+    BezierHandle inHandle;
+    inHandle.beatOffset = -0.25;
+    inHandle.value = -0.1;
+    BezierHandle outHandle;
+    outHandle.beatOffset = 0.25;
+    outHandle.value = 0.1;
+    outHandle.linked = false;
+    mgr.setPointTension(volumeLaneId, firstPointId, 1.25);
+    mgr.setPointHandles(volumeLaneId, firstPointId, inHandle, outHandle);
+
+    DuplicateAutomationTimeSelectionCommand cmd(1.0, 3.0, {trackId}, 5.0);
+    REQUIRE(cmd.canDuplicatePoints());
+
+    cmd.execute();
+    REQUIRE(cmd.hasDuplicatedPoints());
+
+    auto* volumeLane = mgr.getLane(volumeLaneId);
+    REQUIRE(volumeLane != nullptr);
+    REQUIRE(volumeLane->absolutePoints.size() == 7);
+
+    auto* duplicatedFirst = findPointAt(volumeLane, 5.0);
+    REQUIRE(duplicatedFirst != nullptr);
+    REQUIRE(duplicatedFirst->value == Catch::Approx(0.25));
+    REQUIRE(duplicatedFirst->curveType == AutomationCurveType::Bezier);
+    REQUIRE(duplicatedFirst->tension == Catch::Approx(1.25));
+    REQUIRE(duplicatedFirst->inHandle.beatOffset == Catch::Approx(-0.25));
+    REQUIRE(duplicatedFirst->outHandle.beatOffset == Catch::Approx(0.25));
+    REQUIRE_FALSE(duplicatedFirst->outHandle.linked);
+
+    auto* duplicatedSecond = findPointAt(volumeLane, 6.5);
+    REQUIRE(duplicatedSecond != nullptr);
+    REQUIRE(duplicatedSecond->value == Catch::Approx(0.75));
+
+    auto* duplicatedEnd = findPointAt(volumeLane, 7.0);
+    REQUIRE(duplicatedEnd != nullptr);
+    REQUIRE(duplicatedEnd->value == Catch::Approx(0.5));
+
+    REQUIRE(mgr.getLane(hiddenLaneId)->absolutePoints.size() == 2);
+    REQUIRE(mgr.getLane(otherTrackLaneId)->absolutePoints.size() == 2);
+
+    cmd.undo();
+    REQUIRE(mgr.getLane(volumeLaneId)->absolutePoints.size() == 4);
+    REQUIRE(findPointAt(mgr.getLane(volumeLaneId), 5.0) == nullptr);
+    REQUIRE(findPointAt(mgr.getLane(volumeLaneId), 7.0) == nullptr);
 }
