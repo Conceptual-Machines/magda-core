@@ -686,6 +686,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Adding and Managing Tracks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#multi-track-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      Multi-Track Selection
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1059,7 +1074,7 @@
         
   
   <span class="md-ellipsis">
-    Built-in Devices
+    Overview
     
   </span>
   
@@ -1069,6 +1084,44 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_2" id="__nav_12_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    MIDI Devices
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_2">
+            <span class="md-nav__icon md-icon"></span>
+            MIDI Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1121,11 +1174,79 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/drum-grid/" class="md-nav__link">
+      <a href="../devices/step-sequencer/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Drum Grid
+    Step Sequencer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_3" id="__nav_12_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Instruments
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_3">
+            <span class="md-nav__icon md-icon"></span>
+            Instruments
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../devices/4osc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    4OSC Synth
     
   </span>
   
@@ -1143,11 +1264,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/4osc/" class="md-nav__link">
+      <a href="../devices/drum-grid/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    4OSC Synth
+    Drum Grid
     
   </span>
   
@@ -1180,6 +1301,14 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
@@ -1187,11 +1316,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/step-sequencer/" class="md-nav__link">
+      <a href="../devices/effects/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Step Sequencer
+    Effects
     
   </span>
   
@@ -1500,6 +1629,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../reference/lua-scripting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Lua Scripting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../reference/keyboard-shortcuts/" class="md-nav__link">
         
   
@@ -1659,6 +1810,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Adding and Managing Tracks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#multi-track-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      Multi-Track Selection
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1793,6 +1959,8 @@
 <li>Right-click a track header for options: rename, duplicate, delete, freeze</li>
 <li>Click the track name to rename it</li>
 </ul>
+<h3 id="multi-track-selection">Multi-Track Selection<a class="headerlink" href="#multi-track-selection" title="Permanent link">&para;</a></h3>
+<p>Click a track header to select it. Hold <span class="keys"><kbd class="key-shift">Shift</kbd></span> and click another header to extend the selection to a contiguous range; <span class="keys"><kbd class="key-command">Cmd</kbd></span>-click (<span class="keys"><kbd class="key-control">Ctrl</kbd></span>-click on Windows/Linux) to toggle individual tracks in or out of the selection. Most track-level actions — mute, solo, delete, freeze, group — apply to every selected track in one operation.</p>
 <h2 id="duplicating-tracks">Duplicating Tracks<a class="headerlink" href="#duplicating-tracks" title="Permanent link">&para;</a></h2>
 <p>MAGDA offers three duplication modes, available from the <strong>Track</strong> menu, the track header right-click menu, and via keyboard:</p>
 <table>

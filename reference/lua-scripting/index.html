@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/interface/audio-settings/">
+        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/reference/lua-scripting/">
       
       
-        <link rel="prev" href="../preferences/">
+        <link rel="prev" href="../controller-profile-format/">
       
       
-        <link rel="next" href="../plugin-settings/">
+        <link rel="next" href="../keyboard-shortcuts/">
       
       
       <link rel="icon" href="../../assets/images/magda-lisa.svg">
@@ -24,7 +24,7 @@
     
     
       
-        <title>Audio Settings - MAGDA Manual</title>
+        <title>Lua Scripting - MAGDA Manual</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#audio-settings" class="md-skip">
+        <a href="#lua-scripting-reference" class="md-skip">
           Skip to content
         </a>
       
@@ -113,7 +113,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Audio Settings
+              Lua Scripting
             
           </span>
         </div>
@@ -389,8 +389,6 @@
       
   
   
-    
-  
   
   
     
@@ -402,11 +400,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
@@ -421,7 +419,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             Interface Layout
@@ -435,7 +433,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../overview/" class="md-nav__link">
+      <a href="../../interface/overview/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -457,7 +455,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../menus/" class="md-nav__link">
+      <a href="../../interface/menus/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -479,7 +477,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../preferences/" class="md-nav__link">
+      <a href="../../interface/preferences/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -498,31 +496,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../interface/audio-settings/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -532,62 +509,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#audio-device" class="md-nav__link">
-    <span class="md-ellipsis">
-      Audio Device
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#channel-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      Channel Configuration
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#midi" class="md-nav__link">
-    <span class="md-ellipsis">
-      MIDI
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#preferred-device" class="md-nav__link">
-    <span class="md-ellipsis">
-      Preferred Device
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -600,7 +521,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../plugin-settings/" class="md-nav__link">
+      <a href="../../interface/plugin-settings/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -622,7 +543,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../controllers/" class="md-nav__link">
+      <a href="../../interface/controllers/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1468,8 +1389,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -1479,11 +1402,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" checked>
         
           
           <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
@@ -1498,7 +1421,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_17">
             <span class="md-nav__icon md-icon"></span>
             Reference
@@ -1512,7 +1435,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/dsl/" class="md-nav__link">
+      <a href="../dsl/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1534,7 +1457,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/controller-profile-format/" class="md-nav__link">
+      <a href="../controller-profile-format/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1553,10 +1476,31 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../reference/lua-scripting/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Lua Scripting
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   <span class="md-ellipsis">
@@ -1566,6 +1510,206 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#script-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      Script Lifecycle
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Script Lifecycle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#midi-event-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI Event Shape
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      API Reference
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#magdalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.log
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdaapp" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.app
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdatransport" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.transport
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdaproject" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.project
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdaselection" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.selection
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdatracks" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.tracks
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdaclips" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.clips
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdasession" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.session
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdafocused" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.focused
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdamidi" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.midi
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      Examples
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sustain-pedal-launches-the-selected-session-clip" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sustain pedal launches the selected session clip
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eight-knobs-map-to-track-volumes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Eight knobs map to track volumes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#light-the-play-button-while-the-transport-is-rolling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Light the play button while the transport is rolling
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bundled-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      Bundled Examples
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1578,7 +1722,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/keyboard-shortcuts/" class="md-nav__link">
+      <a href="../keyboard-shortcuts/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1600,7 +1744,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/file-formats/" class="md-nav__link">
+      <a href="../file-formats/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1622,7 +1766,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/troubleshooting/" class="md-nav__link">
+      <a href="../troubleshooting/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1671,36 +1815,180 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#audio-device" class="md-nav__link">
+  <a href="#script-lifecycle" class="md-nav__link">
     <span class="md-ellipsis">
-      Audio Device
+      Script Lifecycle
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Script Lifecycle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#midi-event-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI Event Shape
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#channel-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      Channel Configuration
-    </span>
-  </a>
+        
+      </ul>
+    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#midi" class="md-nav__link">
+  <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
-      MIDI
+      API Reference
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#magdalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.log
     </span>
   </a>
   
 </li>
+        
+          <li class="md-nav__item">
+  <a href="#magdaapp" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.app
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdatransport" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.transport
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdaproject" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.project
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdaselection" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.selection
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdatracks" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.tracks
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdaclips" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.clips
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdasession" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.session
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdafocused" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.focused
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#magdamidi" class="md-nav__link">
+    <span class="md-ellipsis">
+      magda.midi
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
       
         <li class="md-nav__item">
-  <a href="#preferred-device" class="md-nav__link">
+  <a href="#examples" class="md-nav__link">
     <span class="md-ellipsis">
-      Preferred Device
+      Examples
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sustain-pedal-launches-the-selected-session-clip" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sustain pedal launches the selected session clip
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eight-knobs-map-to-track-volumes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Eight knobs map to track volumes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#light-the-play-button-while-the-transport-is-rolling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Light the play button while the transport is rolling
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bundled-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      Bundled Examples
     </span>
   </a>
   
@@ -1725,33 +2013,596 @@
   
 
 
-<h1 id="audio-settings">Audio Settings<a class="headerlink" href="#audio-settings" title="Permanent link">&para;</a></h1>
-<p>Open audio settings from <strong>Settings &gt; Audio Settings</strong>. The dialog is organised into the sections below.</p>
-<h2 id="audio-device">Audio Device<a class="headerlink" href="#audio-device" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>Output device</strong> — Select your audio interface or built-in output</li>
-<li><strong>Input device</strong> — Select the audio input for recording</li>
-<li><strong>Sample rate</strong> — 44100 Hz and 48000 Hz are common choices</li>
-<li><strong>Buffer size</strong> — Lower values reduce latency but increase CPU load</li>
-</ul>
-<div class="admonition tip">
-<p class="admonition-title">Tip</p>
-<p>MAGDA automatically optimizes buffer sizes when switching views: Live mode uses the lowest latency, while Mix and Arrange modes use larger buffers for stability.</p>
+<h1 id="lua-scripting-reference">Lua Scripting Reference<a class="headerlink" href="#lua-scripting-reference" title="Permanent link">&para;</a></h1>
+<p>MAGDA hosts user <strong>Lua 5.4</strong> scripts to drive MIDI controllers and automate the DAW. Every script runs in a sandboxed runtime — no <code>io</code>, <code>os</code>, <code>package</code>, or <code>require</code>; just Lua's standard <code>string</code>, <code>math</code>, <code>table</code>, and <code>coroutine</code> libraries plus the <code>magda.*</code> API.</p>
+<div class="admonition warning">
+<p class="admonition-title">API stability</p>
+<p>The <code>magda.*</code> surface is <strong>unstable in 0.7</strong>. Method names, argument shapes, and which fields are exposed on snapshot tables are likely to change in 0.8 as more controllers are scripted against it. Pin a script to a release if you want it to keep working.</p>
 </div>
-<h2 id="channel-configuration">Channel Configuration<a class="headerlink" href="#channel-configuration" title="Permanent link">&para;</a></h2>
+<p>For an end-to-end overview of how to load scripts and the footer indicator, see <a href="../../interface/controllers/#lua-controller-scripts">Controllers — Lua Controller Scripts</a>.</p>
+<h2 id="script-lifecycle">Script Lifecycle<a class="headerlink" href="#script-lifecycle" title="Permanent link">&para;</a></h2>
+<p>A script is a plain <code>.lua</code> file. Top-level code runs once when the script is loaded; after that, MAGDA dispatches events to three optional callback functions:</p>
+<table>
+<thead>
+<tr>
+<th>Callback</th>
+<th>When it fires</th>
+<th>Arguments</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>on_load()</code></td>
+<td>Once after the script is loaded and the <code>magda</code> table is installed</td>
+<td>none</td>
+</tr>
+<tr>
+<td><code>on_midi(event)</code></td>
+<td>For every incoming MIDI event matching the script's assigned input port (or every event on every input, if the port is left blank)</td>
+<td>the event table — see below</td>
+</tr>
+<tr>
+<td><code>on_tick(dt)</code></td>
+<td>~30 Hz</td>
+<td><code>dt</code> — seconds since the last tick (number)</td>
+</tr>
+</tbody>
+</table>
+<p>All three are called on the message thread. MIDI input arrives on the audio thread but is hopped to the message thread before <code>on_midi</code> fires, so the entire <code>magda.*</code> API is safe to call from anywhere.</p>
+<div class="highlight"><pre><span></span><code><span class="kr">function</span><span class="w"> </span><span class="nf">on_load</span><span class="p">()</span>
+<span class="w">  </span><span class="nv">magda</span><span class="p">.</span><span class="py">log</span><span class="p">.</span><span class="nf">info</span><span class="p">(</span><span class="s2">&quot;script loaded, MAGDA &quot;</span><span class="w"> </span><span class="o">..</span><span class="w"> </span><span class="nv">magda</span><span class="p">.</span><span class="py">app</span><span class="p">.</span><span class="nf">version</span><span class="p">())</span>
+<span class="kr">end</span>
+
+<span class="kr">function</span><span class="w"> </span><span class="nf">on_midi</span><span class="p">(</span><span class="nv">event</span><span class="p">)</span>
+<span class="w">  </span><span class="c1">-- ...</span>
+<span class="kr">end</span>
+
+<span class="kr">function</span><span class="w"> </span><span class="nf">on_tick</span><span class="p">(</span><span class="nv">dt</span><span class="p">)</span>
+<span class="w">  </span><span class="c1">-- e.g. blink an LED every half second</span>
+<span class="kr">end</span>
+</code></pre></div>
+<h3 id="midi-event-shape">MIDI Event Shape<a class="headerlink" href="#midi-event-shape" title="Permanent link">&para;</a></h3>
+<p>The <code>event</code> table passed to <code>on_midi</code> has these fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code></td>
+<td>string</td>
+<td><code>"cc"</code>, <code>"note_on"</code>, <code>"note_off"</code>, <code>"pitch_bend"</code>, <code>"aftertouch"</code>, <code>"program_change"</code>, <code>"sysex"</code>, or <code>"other"</code></td>
+</tr>
+<tr>
+<td><code>channel</code></td>
+<td>integer</td>
+<td>MIDI channel 1..16 (0 for sysex — no channel)</td>
+</tr>
+<tr>
+<td><code>number</code></td>
+<td>integer</td>
+<td>CC number, note number, program number, or 0 (pitch bend, channel-pressure aftertouch, sysex)</td>
+</tr>
+<tr>
+<td><code>value</code></td>
+<td>integer</td>
+<td>CC value 0..127, velocity 0..127, pitch-bend −8192..8191, aftertouch pressure 0..127</td>
+</tr>
+<tr>
+<td><code>bytes</code></td>
+<td>array of integers</td>
+<td>Sysex only — the payload bytes, 1-indexed, <strong>not</strong> including F0/F7 framing</td>
+</tr>
+<tr>
+<td><code>port</code></td>
+<td>string</td>
+<td>Display name of the originating MIDI input</td>
+</tr>
+</tbody>
+</table>
+<h2 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
+<p>Every function below lives under the global <code>magda</code> table. All are message-thread safe.</p>
+<h3 id="magdalog"><code>magda.log</code><a class="headerlink" href="#magdalog" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>magda.log.info(msg)</code></td>
+<td>Log at info level (visible in MAGDA's debug console)</td>
+</tr>
+<tr>
+<td><code>magda.log.warn(msg)</code></td>
+<td>Log at warn level</td>
+</tr>
+<tr>
+<td><code>magda.log.error(msg)</code></td>
+<td>Log at error level</td>
+</tr>
+</tbody>
+</table>
+<h3 id="magdaapp"><code>magda.app</code><a class="headerlink" href="#magdaapp" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>magda.app.version()</code></td>
+<td>string</td>
+<td>MAGDA version (e.g. <code>"0.7.0"</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="magdatransport"><code>magda.transport</code><a class="headerlink" href="#magdatransport" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>magda.transport.play()</code></td>
+<td>—</td>
+<td>Start playback</td>
+</tr>
+<tr>
+<td><code>magda.transport.stop()</code></td>
+<td>—</td>
+<td>Stop playback</td>
+</tr>
+<tr>
+<td><code>magda.transport.set_recording(enabled)</code></td>
+<td>—</td>
+<td>Set the record-arm state of the transport</td>
+</tr>
+<tr>
+<td><code>magda.transport.is_playing()</code></td>
+<td>boolean</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.transport.is_recording()</code></td>
+<td>boolean</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.transport.is_loop_enabled()</code></td>
+<td>boolean</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.transport.set_loop_enabled(enabled)</code></td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.transport.position_beats()</code></td>
+<td>number</td>
+<td>Current playhead position, in beats</td>
+</tr>
+<tr>
+<td><code>magda.transport.set_position_beats(beats)</code></td>
+<td>—</td>
+<td>Move the playhead</td>
+</tr>
+</tbody>
+</table>
+<h3 id="magdaproject"><code>magda.project</code><a class="headerlink" href="#magdaproject" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>magda.project.info()</code></td>
+<td>table</td>
+<td><code>{ name, file_path, tempo, time_sig_num, time_sig_den, sample_rate, loop_enabled }</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="magdaselection"><code>magda.selection</code><a class="headerlink" href="#magdaselection" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>magda.selection.track()</code></td>
+<td>integer or nil</td>
+<td>Selected track id</td>
+</tr>
+<tr>
+<td><code>magda.selection.clip()</code></td>
+<td>integer or nil</td>
+<td>Selected clip id</td>
+</tr>
+<tr>
+<td><code>magda.selection.clips()</code></td>
+<td>array of integers</td>
+<td>All selected clip ids (order unspecified)</td>
+</tr>
+<tr>
+<td><code>magda.selection.has_notes()</code></td>
+<td>boolean</td>
+<td>A note selection is active inside a MIDI editor</td>
+</tr>
+<tr>
+<td><code>magda.selection.note_clip()</code></td>
+<td>integer or nil</td>
+<td>Clip id the note selection lives in</td>
+</tr>
+<tr>
+<td><code>magda.selection.note_indices()</code></td>
+<td>array of integers</td>
+<td>Selected note indices within that clip</td>
+</tr>
+<tr>
+<td><code>magda.selection.select_track(id)</code></td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.selection.select_tracks({id, id, ...})</code></td>
+<td>—</td>
+<td>Multi-select</td>
+</tr>
+<tr>
+<td><code>magda.selection.select_clip(id)</code></td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.selection.select_clips({id, id, ...})</code></td>
+<td>—</td>
+<td>Multi-select</td>
+</tr>
+<tr>
+<td><code>magda.selection.clear_notes()</code></td>
+<td>—</td>
+<td>Clear note selection</td>
+</tr>
+</tbody>
+</table>
+<h3 id="magdatracks"><code>magda.tracks</code><a class="headerlink" href="#magdatracks" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>magda.tracks.create(name [, type])</code></td>
+<td>integer</td>
+<td>Track id; <code>type</code> is <code>"audio"</code> (default), <code>"group"</code>, <code>"aux"</code>, <code>"master"</code>, or <code>"multi_out"</code></td>
+</tr>
+<tr>
+<td><code>magda.tracks.delete(id)</code></td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.tracks.count()</code></td>
+<td>integer</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.tracks.list()</code></td>
+<td>array of tables</td>
+<td>Each table: <code>{ id, name, type, volume, pan, muted, soloed, record_armed, frozen }</code></td>
+</tr>
+<tr>
+<td><code>magda.tracks.get(id)</code></td>
+<td>table or nil</td>
+<td>Same shape as the list entries</td>
+</tr>
+<tr>
+<td><code>magda.tracks.set_name(id, name)</code></td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.tracks.set_volume(id, value)</code></td>
+<td>—</td>
+<td>Linear gain 0..1</td>
+</tr>
+<tr>
+<td><code>magda.tracks.set_pan(id, value)</code></td>
+<td>—</td>
+<td>-1..1</td>
+</tr>
+<tr>
+<td><code>magda.tracks.set_muted(id, bool)</code></td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.tracks.set_soloed(id, bool)</code></td>
+<td>—</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3 id="magdaclips"><code>magda.clips</code><a class="headerlink" href="#magdaclips" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>magda.clips.create_midi(track_id, start_beats, length_beats)</code></td>
+<td>integer</td>
+<td>New MIDI clip id</td>
+</tr>
+<tr>
+<td><code>magda.clips.delete(id)</code></td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.clips.list_on_track(track_id)</code></td>
+<td>array of integers</td>
+<td>Clip ids on that track</td>
+</tr>
+<tr>
+<td><code>magda.clips.list_arrangement()</code></td>
+<td>array of tables</td>
+<td>Each table: <code>{ id, track_id, name, start_beats, length_beats }</code></td>
+</tr>
+<tr>
+<td><code>magda.clips.set_name(id, name)</code></td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.clips.set_groove(id, template_name)</code></td>
+<td>—</td>
+<td>Apply a groove template by name</td>
+</tr>
+<tr>
+<td><code>magda.clips.colour(id)</code></td>
+<td>table or nil</td>
+<td><code>{ r, g, b }</code> with each component 0..127 (7-bit, sysex-ready)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="magdasession"><code>magda.session</code><a class="headerlink" href="#magdasession" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>magda.session.launch_clip(clip_id)</code></td>
+<td>—</td>
+<td>Launch a session clip</td>
+</tr>
+<tr>
+<td><code>magda.session.stop_clip(clip_id)</code></td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.session.stop_track(track_id)</code></td>
+<td>—</td>
+<td>Stop the currently-active session clip on a track</td>
+</tr>
+<tr>
+<td><code>magda.session.stop_all()</code></td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.session.launch_scene(scene_index)</code></td>
+<td>—</td>
+<td>0-based; tracks with empty slots in that row have their active clip stopped (matches the UI scene-button click)</td>
+</tr>
+<tr>
+<td><code>magda.session.active_clip_on_track(track_id)</code></td>
+<td>integer or nil</td>
+<td>Currently-playing session clip on the track</td>
+</tr>
+<tr>
+<td><code>magda.session.clip_in_slot(track_id, scene_index)</code></td>
+<td>integer or nil</td>
+<td>Clip in a specific slot, or nil if empty</td>
+</tr>
+<tr>
+<td><code>magda.session.clip_play_state(clip_id)</code></td>
+<td>string</td>
+<td><code>"stopped"</code>, <code>"queued"</code>, or <code>"playing"</code></td>
+</tr>
+<tr>
+<td><code>magda.session.set_view(scene_offset [, scene_count])</code></td>
+<td>—</td>
+<td>Publish the controller's visible scene window so MAGDA's UI can highlight it</td>
+</tr>
+</tbody>
+</table>
+<h3 id="magdafocused"><code>magda.focused</code><a class="headerlink" href="#magdafocused" title="Permanent link">&para;</a></h3>
+<p>The "focused" device is the device currently shown in the parameter view. Profiles with <code>focused.macro.*</code> resolvers and the AI panel both read it.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>magda.focused.has_focus()</code></td>
+<td>boolean</td>
+<td>A device is focused</td>
+</tr>
+<tr>
+<td><code>magda.focused.name()</code></td>
+<td>string</td>
+<td>Display name of the focused device</td>
+</tr>
+<tr>
+<td><code>magda.focused.macro_name(index)</code></td>
+<td>string</td>
+<td>Name of macro <code>index</code> (0..7)</td>
+</tr>
+<tr>
+<td><code>magda.focused.macro_value(index)</code></td>
+<td>number</td>
+<td>Current value 0..1</td>
+</tr>
+<tr>
+<td><code>magda.focused.set_macro(index, value)</code></td>
+<td>—</td>
+<td>Write a macro value 0..1</td>
+</tr>
+<tr>
+<td><code>magda.focused.cycle_device(direction)</code></td>
+<td>—</td>
+<td>Move focus through the chain — <code>+1</code> next, <code>-1</code> previous</td>
+</tr>
+<tr>
+<td><code>magda.focused.auto_map()</code></td>
+<td>—</td>
+<td>Engage automap so the controller's profile drives the focused device's macros</td>
+</tr>
+<tr>
+<td><code>magda.focused.clear_auto_map()</code></td>
+<td>—</td>
+<td>Disengage automap</td>
+</tr>
+</tbody>
+</table>
+<h3 id="magdamidi"><code>magda.midi</code><a class="headerlink" href="#magdamidi" title="Permanent link">&para;</a></h3>
+<p>For driving feedback (motorised faders, LED rings, screens) back to the controller. The <code>port</code> argument is the display name of a MIDI <strong>output</strong> — pass <code>"@default"</code> (or the empty string) to use the script's assigned output port.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>magda.midi.send(port, status, data1 [, data2])</code></td>
+<td>boolean</td>
+<td>Raw channel-voice message; returns true if the port was found</td>
+</tr>
+<tr>
+<td><code>magda.midi.send_cc(port, channel, number, value)</code></td>
+<td>boolean</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.midi.send_note_on(port, channel, note, velocity)</code></td>
+<td>boolean</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.midi.send_note_off(port, channel, note)</code></td>
+<td>boolean</td>
+<td></td>
+</tr>
+<tr>
+<td><code>magda.midi.send_sysex(port, {byte, byte, ...})</code></td>
+<td>boolean</td>
+<td>F0/F7 framing is added by the binding — pass payload bytes only</td>
+</tr>
+<tr>
+<td><code>magda.midi.outputs()</code></td>
+<td>array of strings</td>
+<td>Names of every connected MIDI output port</td>
+</tr>
+<tr>
+<td><code>magda.midi.default_output()</code></td>
+<td>string</td>
+<td>The script's currently-assigned output port</td>
+</tr>
+</tbody>
+</table>
+<h2 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h2>
+<h3 id="sustain-pedal-launches-the-selected-session-clip">Sustain pedal launches the selected session clip<a class="headerlink" href="#sustain-pedal-launches-the-selected-session-clip" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="kr">function</span><span class="w"> </span><span class="nf">on_midi</span><span class="p">(</span><span class="nv">e</span><span class="p">)</span>
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">type</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="s2">&quot;cc&quot;</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">number</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="mi">64</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
+
+<span class="w">  </span><span class="kd">local</span><span class="w"> </span><span class="nv">track</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nv">magda</span><span class="p">.</span><span class="py">selection</span><span class="p">.</span><span class="nf">track</span><span class="p">()</span>
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="nv">track</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
+
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">value</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="mi">64</span><span class="w"> </span><span class="kr">then</span>
+<span class="w">    </span><span class="kd">local</span><span class="w"> </span><span class="nv">clip</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nv">magda</span><span class="p">.</span><span class="py">selection</span><span class="p">.</span><span class="nf">clip</span><span class="p">()</span>
+<span class="w">    </span><span class="kr">if</span><span class="w"> </span><span class="nv">clip</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="nv">magda</span><span class="p">.</span><span class="py">session</span><span class="p">.</span><span class="nf">launch_clip</span><span class="p">(</span><span class="nv">clip</span><span class="p">)</span><span class="w"> </span><span class="kr">end</span>
+<span class="w">  </span><span class="kr">else</span>
+<span class="w">    </span><span class="nv">magda</span><span class="p">.</span><span class="py">session</span><span class="p">.</span><span class="nf">stop_track</span><span class="p">(</span><span class="nv">track</span><span class="p">)</span>
+<span class="w">  </span><span class="kr">end</span>
+<span class="kr">end</span>
+</code></pre></div>
+<h3 id="eight-knobs-map-to-track-volumes">Eight knobs map to track volumes<a class="headerlink" href="#eight-knobs-map-to-track-volumes" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="kr">function</span><span class="w"> </span><span class="nf">on_midi</span><span class="p">(</span><span class="nv">e</span><span class="p">)</span>
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">type</span><span class="w"> </span><span class="o">~=</span><span class="w"> </span><span class="s2">&quot;cc&quot;</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">number</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">number</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">8</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
+
+<span class="w">  </span><span class="nv">magda</span><span class="p">.</span><span class="py">tracks</span><span class="p">.</span><span class="nf">set_volume</span><span class="p">(</span><span class="nv">e</span><span class="p">.</span><span class="py">number</span><span class="p">,</span><span class="w"> </span><span class="nv">e</span><span class="p">.</span><span class="py">value</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">127.0</span><span class="p">)</span>
+<span class="kr">end</span>
+</code></pre></div>
+<h3 id="light-the-play-button-while-the-transport-is-rolling">Light the play button while the transport is rolling<a class="headerlink" href="#light-the-play-button-while-the-transport-is-rolling" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="kd">local</span><span class="w"> </span><span class="nv">PLAY_NOTE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">60</span>
+<span class="kd">local</span><span class="w"> </span><span class="nv">was_playing</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+
+<span class="kr">function</span><span class="w"> </span><span class="nf">on_tick</span><span class="p">(</span><span class="nv">_dt</span><span class="p">)</span>
+<span class="w">  </span><span class="kd">local</span><span class="w"> </span><span class="nv">playing</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nv">magda</span><span class="p">.</span><span class="py">transport</span><span class="p">.</span><span class="nf">is_playing</span><span class="p">()</span>
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">playing</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nv">was_playing</span><span class="w"> </span><span class="kr">then</span><span class="w"> </span><span class="kr">return</span><span class="w"> </span><span class="kr">end</span>
+<span class="w">  </span><span class="nv">was_playing</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nv">playing</span>
+
+<span class="w">  </span><span class="kr">if</span><span class="w"> </span><span class="nv">playing</span><span class="w"> </span><span class="kr">then</span>
+<span class="w">    </span><span class="nv">magda</span><span class="p">.</span><span class="py">midi</span><span class="p">.</span><span class="nf">send_note_on</span><span class="p">(</span><span class="s2">&quot;@default&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nv">PLAY_NOTE</span><span class="p">,</span><span class="w"> </span><span class="mi">127</span><span class="p">)</span>
+<span class="w">  </span><span class="kr">else</span>
+<span class="w">    </span><span class="nv">magda</span><span class="p">.</span><span class="py">midi</span><span class="p">.</span><span class="nf">send_note_off</span><span class="p">(</span><span class="s2">&quot;@default&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nv">PLAY_NOTE</span><span class="p">)</span>
+<span class="w">  </span><span class="kr">end</span>
+<span class="kr">end</span>
+</code></pre></div>
+<h2 id="bundled-examples">Bundled Examples<a class="headerlink" href="#bundled-examples" title="Permanent link">&para;</a></h2>
+<p>Working scripts ship in the <code>examples/scripts/</code> folder of the repo:</p>
 <ul>
-<li><strong>Active output channels</strong> — Choose which output channels to use (stereo pair or multi-channel)</li>
-<li><strong>Active input channels</strong> — Choose which input channels are available for recording</li>
+<li><code>foot-pedal.lua</code> — sustain-pedal launches the selected session clip</li>
+<li><code>8-knobs.lua</code> — eight CCs drive eight track volumes</li>
+<li><code>launchpad.lua</code> — Novation Launchpad clip launcher with LED feedback</li>
+<li><code>launchkey_mini_mk4.lua</code> — full Launchkey Mini MK4 surface (transport, pads, knobs, sceneswitching)</li>
 </ul>
-<h2 id="midi">MIDI<a class="headerlink" href="#midi" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>MIDI input devices</strong> — Enable or disable connected MIDI controllers and keyboards</li>
-<li><strong>MIDI output devices</strong> — Enable or disable MIDI output to hardware synthesizers</li>
-</ul>
-<h2 id="preferred-device">Preferred Device<a class="headerlink" href="#preferred-device" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>Use as preferred device</strong> — Check this box to remember your device selection and restore it automatically on startup. If the preferred device is unavailable, MAGDA falls back to the system default.</li>
-</ul>
+<p>Copy any of them into your scripts folder (see <a href="../../interface/controllers/#scripts-folder">Controllers — Scripts Folder</a>) and load via the Controllers dialog.</p>
 
 
 

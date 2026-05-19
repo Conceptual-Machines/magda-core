@@ -1016,7 +1016,7 @@
         
   
   <span class="md-ellipsis">
-    Built-in Devices
+    Overview
     
   </span>
   
@@ -1026,6 +1026,44 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_2" id="__nav_12_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    MIDI Devices
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_2">
+            <span class="md-nav__icon md-icon"></span>
+            MIDI Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1078,11 +1116,79 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/drum-grid/" class="md-nav__link">
+      <a href="../../devices/step-sequencer/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Drum Grid
+    Step Sequencer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_3" id="__nav_12_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Instruments
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_3">
+            <span class="md-nav__icon md-icon"></span>
+            Instruments
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/4osc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    4OSC Synth
     
   </span>
   
@@ -1100,11 +1206,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/4osc/" class="md-nav__link">
+      <a href="../../devices/drum-grid/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    4OSC Synth
+    Drum Grid
     
   </span>
   
@@ -1137,6 +1243,14 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
@@ -1144,11 +1258,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/step-sequencer/" class="md-nav__link">
+      <a href="../../devices/effects/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Step Sequencer
+    Effects
     
   </span>
   
@@ -1457,6 +1571,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/lua-scripting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Lua Scripting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/keyboard-shortcuts/" class="md-nav__link">
         
   
@@ -1627,9 +1763,11 @@
 <ul>
 <li><strong>Horizontal axis</strong> — Time (bars and beats)</li>
 <li><strong>Vertical axis</strong> — Pitch (MIDI note numbers, with piano keyboard on the left)</li>
-<li><strong>Click</strong> to add a note</li>
+<li><strong>Double-click</strong> an empty cell to add a default-length note at that position and pitch</li>
+<li><span class="keys"><kbd class="key-shift">Shift</kbd></span> <strong>+ drag</strong> on empty grid to draw a note of variable length. The drag distance sets the note length. Acts as a pencil tool.</li>
 <li><strong>Drag</strong> a note to move it in time or pitch</li>
 <li><strong>Drag edges</strong> to resize note length</li>
+<li><span class="keys"><kbd class="key-command">Cmd</kbd></span> <strong>+ click</strong> a note to delete it directly. If the note is part of a multi-selection, the whole group is erased. Acts as a rubber tool.</li>
 <li><strong>Velocity lane</strong> at the bottom for editing note velocities</li>
 </ul>
 <div class="admonition note">

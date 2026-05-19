@@ -740,6 +740,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Clip Slots">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#selecting-clips" class="md-nav__link">
+    <span class="md-ellipsis">
+      Selecting Clips
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#launch-fade" class="md-nav__link">
+    <span class="md-ellipsis">
+      Launch Fade
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1047,7 +1071,7 @@
         
   
   <span class="md-ellipsis">
-    Built-in Devices
+    Overview
     
   </span>
   
@@ -1057,6 +1081,44 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_2" id="__nav_12_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    MIDI Devices
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_2">
+            <span class="md-nav__icon md-icon"></span>
+            MIDI Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1109,11 +1171,79 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/drum-grid/" class="md-nav__link">
+      <a href="../devices/step-sequencer/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Drum Grid
+    Step Sequencer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_3" id="__nav_12_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Instruments
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_3">
+            <span class="md-nav__icon md-icon"></span>
+            Instruments
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../devices/4osc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    4OSC Synth
     
   </span>
   
@@ -1131,11 +1261,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/4osc/" class="md-nav__link">
+      <a href="../devices/drum-grid/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    4OSC Synth
+    Drum Grid
     
   </span>
   
@@ -1168,6 +1298,14 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
@@ -1175,11 +1313,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/step-sequencer/" class="md-nav__link">
+      <a href="../devices/effects/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Step Sequencer
+    Effects
     
   </span>
   
@@ -1488,6 +1626,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../reference/lua-scripting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Lua Scripting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../reference/keyboard-shortcuts/" class="md-nav__link">
         
   
@@ -1595,6 +1755,30 @@
       Clip Slots
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Clip Slots">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#selecting-clips" class="md-nav__link">
+    <span class="md-ellipsis">
+      Selecting Clips
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#launch-fade" class="md-nav__link">
+    <span class="md-ellipsis">
+      Launch Fade
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1716,7 +1900,17 @@
 <li><strong>Click</strong> an occupied slot to trigger (play) the clip</li>
 <li><strong>Click</strong> a playing slot to stop it</li>
 <li>Only one clip per track plays at a time — triggering a new clip in the same column stops the previous one</li>
+<li>A clip slot has an explicit <strong>play</strong> ▶ and <strong>stop</strong> ■ control on hover for unambiguous launch / stop separate from the clip body click</li>
 </ul>
+<h3 id="selecting-clips">Selecting Clips<a class="headerlink" href="#selecting-clips" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Click</strong> a clip slot to select it</li>
+<li><strong><span class="keys"><kbd class="key-shift">Shift</kbd></span>-click</strong> another slot to extend the selection to a rectangular range</li>
+<li><strong><span class="keys"><kbd class="key-command">Cmd</kbd></span>-click</strong> (<span class="keys"><kbd class="key-control">Ctrl</kbd></span>-click on Windows/Linux) to toggle individual slots in or out of the selection</li>
+<li>Right-click a multi-selection to delete, duplicate, or change properties on every selected clip in one action</li>
+</ul>
+<h3 id="launch-fade">Launch Fade<a class="headerlink" href="#launch-fade" title="Permanent link">&para;</a></h3>
+<p>Each session clip has an optional <strong>launch fade</strong> — a per-clip crossfade applied when the clip launches over the clip it replaces on the same track. Set the fade length in the clip's <a href="../panels/inspector/">Inspector</a> under the launch section. Useful for pad and atmosphere clips where the hard cut between launches is jarring.</p>
 <h2 id="scenes">Scenes<a class="headerlink" href="#scenes" title="Permanent link">&para;</a></h2>
 <p>A scene is a horizontal row across all tracks. Launching a scene triggers all clips in that row simultaneously, which is useful for transitioning between song sections during a live performance.</p>
 <ul>

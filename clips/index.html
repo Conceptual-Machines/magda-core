@@ -674,6 +674,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Session Clip Properties">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#follow-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Follow Actions
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1155,7 +1170,7 @@
         
   
   <span class="md-ellipsis">
-    Built-in Devices
+    Overview
     
   </span>
   
@@ -1165,6 +1180,44 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_2" id="__nav_12_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    MIDI Devices
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_2">
+            <span class="md-nav__icon md-icon"></span>
+            MIDI Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1217,11 +1270,79 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/drum-grid/" class="md-nav__link">
+      <a href="../devices/step-sequencer/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Drum Grid
+    Step Sequencer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_3" id="__nav_12_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Instruments
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_3">
+            <span class="md-nav__icon md-icon"></span>
+            Instruments
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../devices/4osc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    4OSC Synth
     
   </span>
   
@@ -1239,11 +1360,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/4osc/" class="md-nav__link">
+      <a href="../devices/drum-grid/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    4OSC Synth
+    Drum Grid
     
   </span>
   
@@ -1276,6 +1397,14 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
@@ -1283,11 +1412,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/step-sequencer/" class="md-nav__link">
+      <a href="../devices/effects/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Step Sequencer
+    Effects
     
   </span>
   
@@ -1596,6 +1725,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../reference/lua-scripting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Lua Scripting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../reference/keyboard-shortcuts/" class="md-nav__link">
         
   
@@ -1721,6 +1872,21 @@
       Session Clip Properties
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Session Clip Properties">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#follow-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Follow Actions
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1912,7 +2078,7 @@
 <tbody>
 <tr>
 <td><strong>Audio</strong></td>
-<td>Contains a reference to an audio file (WAV, AIFF, FLAC, MP3, OGG) with start/end points and gain</td>
+<td>Contains a reference to an audio file (WAV, AIFF/AIF, FLAC, OGG, MP3 where a platform decoder is available) with start/end points and gain</td>
 </tr>
 <tr>
 <td><strong>MIDI</strong></td>
@@ -2044,7 +2210,7 @@
 </tbody>
 </table>
 <h2 id="session-clip-properties">Session Clip Properties<a class="headerlink" href="#session-clip-properties" title="Permanent link">&para;</a></h2>
-<p>Both MIDI and audio clips in Session View have additional launch properties:</p>
+<p>Both MIDI and audio clips in Session View have additional launch and follow properties:</p>
 <table>
 <thead>
 <tr>
@@ -2061,16 +2227,38 @@
 <td><strong>Launch Quantize</strong></td>
 <td>Quantize launch timing (None, 8 Bars, 4 Bars, 2 Bars, 1 Bar, 1/2, 1/4, 1/8, 1/16)</td>
 </tr>
+<tr>
+<td><strong>Follow Action</strong></td>
+<td>What happens when the clip finishes: None, Play Next, Play Previous, Play Random, Stop, or Play Again</td>
+</tr>
+<tr>
+<td><strong>Follow Delay</strong></td>
+<td>Delay in beats before the follow action fires (0 - 64 beats, 0.25-beat resolution)</td>
+</tr>
+<tr>
+<td><strong>Follow Loops</strong></td>
+<td>Number of times the clip loops before the follow action fires</td>
+</tr>
 </tbody>
 </table>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Session clips do not have an absolute position property — they are not placed on the timeline. Their position is determined by the scene slot they occupy.</p>
+<p>Session clips do not have an absolute position property; they are not placed on the timeline. Their position is determined by the scene slot they occupy.</p>
 </div>
+<h3 id="follow-actions">Follow Actions<a class="headerlink" href="#follow-actions" title="Permanent link">&para;</a></h3>
+<p>Follow actions chain session clips together for generative arrangement. Once the clip has played the configured number of loops (plus any follow delay), the chosen action fires:</p>
+<ul>
+<li><strong>Play Next</strong> triggers the next slot in the same track column</li>
+<li><strong>Play Previous</strong> triggers the previous slot in the same track column</li>
+<li><strong>Play Random</strong> triggers another slot in the same track column at random</li>
+<li><strong>Play Again</strong> retriggers the current clip</li>
+<li><strong>Stop</strong> stops session playback</li>
+</ul>
 <h2 id="creating-clips">Creating Clips<a class="headerlink" href="#creating-clips" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Double-click</strong> an empty area on a track to create a new 1-bar MIDI clip at that position</li>
 <li><strong>Double-click</strong> over a time selection to create a MIDI clip matching the selection length</li>
+<li><span class="keys"><kbd class="key-shift">Shift</kbd></span> <strong>+ drag</strong> on an empty track lane to draw a MIDI clip of variable length. The drag distance sets the clip length (snapped to the current grid). Acts as a pencil tool.</li>
 </ul>
 <h2 id="selecting-clips">Selecting Clips<a class="headerlink" href="#selecting-clips" title="Permanent link">&para;</a></h2>
 <ul>
@@ -2085,6 +2273,7 @@
 <li><strong>Duplicate</strong> — Hold <span class="keys"><kbd class="key-alt">Alt</kbd></span> and drag a clip, or press <span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-d">D</kbd></span></li>
 <li><strong>Split</strong> — Position the playhead and use <strong>Edit &gt; Split Clip</strong> or press <span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-e">E</kbd></span></li>
 <li><strong>Delete</strong> — Select the clip and press <span class="keys"><kbd class="key-delete">Del</kbd></span> or <span class="keys"><kbd class="key-backspace">Backspace</kbd></span></li>
+<li><strong>Erase under cursor</strong> — <span class="keys"><kbd class="key-command">Cmd</kbd></span> <strong>+ click</strong> a clip to delete it directly without selecting first. If the clip is part of a multi-selection, the whole group is erased. Acts as a rubber tool.</li>
 </ul>
 <h2 id="cut-copy-and-paste">Cut, Copy, and Paste<a class="headerlink" href="#cut-copy-and-paste" title="Permanent link">&para;</a></h2>
 <ul>

@@ -920,7 +920,7 @@
         
   
   <span class="md-ellipsis">
-    Built-in Devices
+    Overview
     
   </span>
   
@@ -930,6 +930,44 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_2" id="__nav_12_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    MIDI Devices
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_2">
+            <span class="md-nav__icon md-icon"></span>
+            MIDI Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -982,11 +1020,79 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/drum-grid/" class="md-nav__link">
+      <a href="../../devices/step-sequencer/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Drum Grid
+    Step Sequencer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_3" id="__nav_12_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Instruments
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_3">
+            <span class="md-nav__icon md-icon"></span>
+            Instruments
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/4osc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    4OSC Synth
     
   </span>
   
@@ -1004,11 +1110,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/4osc/" class="md-nav__link">
+      <a href="../../devices/drum-grid/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    4OSC Synth
+    Drum Grid
     
   </span>
   
@@ -1041,6 +1147,14 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
@@ -1048,11 +1162,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/step-sequencer/" class="md-nav__link">
+      <a href="../../devices/effects/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Step Sequencer
+    Effects
     
   </span>
   
@@ -1363,6 +1477,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../lua-scripting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Lua Scripting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../keyboard-shortcuts/" class="md-nav__link">
         
   
@@ -1528,6 +1664,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#waveform-peak-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      Waveform peak cache
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#nuclear-option" class="md-nav__link">
     <span class="md-ellipsis">
       Nuclear option
@@ -1657,6 +1802,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#waveform-peak-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      Waveform peak cache
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#nuclear-option" class="md-nav__link">
     <span class="md-ellipsis">
       Nuclear option
@@ -1729,7 +1883,7 @@
 <tbody>
 <tr>
 <td>macOS</td>
-<td><code>~/Library/Application Support/MAGDA/config.json</code></td>
+<td><code>~/Library/MAGDA/config.json</code></td>
 </tr>
 <tr>
 <td>Windows</td>
@@ -1745,8 +1899,33 @@
 <p>Deleting <code>config.json</code> wipes every user preference: audio device selection, recent projects, browser favourites, AI provider and model settings, UI language, custom track-colour palette, panel layout, and the "check for updates" state. Your projects (<code>.mgd</code> files) and any audio you've rendered are untouched.</p>
 <h3 id="logs">Logs<a class="headerlink" href="#logs" title="Permanent link">&para;</a></h3>
 <p>MAGDA writes a rolling log next to the config file under <code>Logs/magda.log</code>. When filing a bug report, attach the log — it usually contains the last few seconds before a crash.</p>
+<h3 id="waveform-peak-cache">Waveform peak cache<a class="headerlink" href="#waveform-peak-cache" title="Permanent link">&para;</a></h3>
+<p>MAGDA stores generated waveform peak files separately from projects and the configurable MAGDA data folder. These <code>.mpk</code> files are used to draw audio waveforms faster and are safe to delete; MAGDA rebuilds them automatically when the source audio is displayed again.</p>
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>macOS</td>
+<td><code>~/Library/magda/peaks</code></td>
+</tr>
+<tr>
+<td>Windows</td>
+<td><code>%APPDATA%\magda\peaks</code></td>
+</tr>
+<tr>
+<td>Linux</td>
+<td><code>~/.config/magda/peaks</code></td>
+</tr>
+</tbody>
+</table>
+<p>If waveform display looks stale or the cache grows too large, quit MAGDA and delete the <code>peaks</code> folder.</p>
 <h3 id="nuclear-option">Nuclear option<a class="headerlink" href="#nuclear-option" title="Permanent link">&para;</a></h3>
-<p>To wipe everything MAGDA has on disk (config + logs + cached thumbnails), delete the whole <code>MAGDA</code> folder at the platform path above. Project files live elsewhere (wherever you saved them) and are safe.</p>
+<p>To wipe everything MAGDA has on disk, delete the <code>MAGDA</code> config folder at the platform path above and the generated cache folder listed under <strong>Waveform peak cache</strong>. Project files live elsewhere (wherever you saved them) and are safe.</p>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
 <p>If your issue isn't listed here, check the <a href="https://github.com/Conceptual-Machines/magda-core/issues">GitHub Issues</a> page or open a new issue.</p>

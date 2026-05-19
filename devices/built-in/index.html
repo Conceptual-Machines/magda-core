@@ -24,7 +24,7 @@
     
     
       
-        <title>Built-in Devices - MAGDA Manual</title>
+        <title>Overview - MAGDA Manual</title>
       
     
     
@@ -113,7 +113,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Built-in Devices
+              Overview
             
           </span>
         </div>
@@ -933,7 +933,7 @@
           
   
   <span class="md-ellipsis">
-    Built-in Devices
+    Overview
     
   </span>
   
@@ -945,7 +945,7 @@
         
   
   <span class="md-ellipsis">
-    Built-in Devices
+    Overview
     
   </span>
   
@@ -1018,6 +1018,44 @@
   
   
   
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_2" id="__nav_12_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    MIDI Devices
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_2">
+            <span class="md-nav__icon md-icon"></span>
+            MIDI Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../arpeggiator/" class="md-nav__link">
         
@@ -1063,11 +1101,79 @@
   
   
     <li class="md-nav__item">
-      <a href="../drum-grid/" class="md-nav__link">
+      <a href="../step-sequencer/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Drum Grid
+    Step Sequencer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_3" id="__nav_12_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Instruments
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_3">
+            <span class="md-nav__icon md-icon"></span>
+            Instruments
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../4osc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    4OSC Synth
     
   </span>
   
@@ -1085,11 +1191,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../4osc/" class="md-nav__link">
+      <a href="../drum-grid/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    4OSC Synth
+    Drum Grid
     
   </span>
   
@@ -1122,6 +1228,14 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
@@ -1129,11 +1243,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../step-sequencer/" class="md-nav__link">
+      <a href="../effects/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Step Sequencer
+    Effects
     
   </span>
   
@@ -1442,6 +1556,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/lua-scripting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Lua Scripting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/keyboard-shortcuts/" class="md-nav__link">
         
   
@@ -1590,7 +1726,7 @@
 
 
 <h1 id="built-in-devices">Built-in Devices<a class="headerlink" href="#built-in-devices" title="Permanent link">&para;</a></h1>
-<p>MAGDA includes its own custom devices as well as processors from the Tracktion Engine.</p>
+<p>MAGDA ships with its own native MIDI devices, instruments, and effects. All built-in devices are managed through the same rack wrapper layer that hosts third-party plugins, so macros, modulators, and presets behave identically across the device set.</p>
 <h2 id="midi-devices">MIDI Devices<a class="headerlink" href="#midi-devices" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1638,66 +1774,12 @@
 </tbody>
 </table>
 <h2 id="effects">Effects<a class="headerlink" href="#effects" title="Permanent link">&para;</a></h2>
-<p>These processors are provided by the Tracktion Engine and are available in every MAGDA installation:</p>
-<table>
-<thead>
-<tr>
-<th>Device</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>EQ</strong></td>
-<td>Parametric equalizer</td>
-</tr>
-<tr>
-<td><strong>Compressor</strong></td>
-<td>Dynamics compressor</td>
-</tr>
-<tr>
-<td><strong>Reverb</strong></td>
-<td>Algorithmic reverb</td>
-</tr>
-<tr>
-<td><strong>Delay</strong></td>
-<td>Tempo-synced delay</td>
-</tr>
-<tr>
-<td><strong>Chorus</strong></td>
-<td>Chorus/ensemble effect</td>
-</tr>
-<tr>
-<td><strong>Phaser</strong></td>
-<td>Phaser effect</td>
-</tr>
-<tr>
-<td><strong>Filter</strong></td>
-<td>Multimode filter (low-pass, high-pass, band-pass)</td>
-</tr>
-<tr>
-<td><strong>Pitch Shift</strong></td>
-<td>Real-time pitch shifting</td>
-</tr>
-<tr>
-<td><strong>IR Reverb</strong></td>
-<td>Convolution reverb using impulse responses</td>
-</tr>
-<tr>
-<td><strong>Utility</strong></td>
-<td>Gain, phase invert, stereo width</td>
-</tr>
-<tr>
-<td><strong>Test Tone</strong></td>
-<td>Signal generator for testing and calibration</td>
-</tr>
-</tbody>
-</table>
+<p>The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped with every MAGDA installation. See <a href="../effects/">Effects</a> for the full list, grouped by category.</p>
 <h2 id="external-plugins">External Plugins<a class="headerlink" href="#external-plugins" title="Permanent link">&para;</a></h2>
 <p>In addition to built-in devices, MAGDA supports external plugins in the following formats:</p>
 <ul>
-<li><strong>VST3</strong> — Cross-platform</li>
-<li><strong>Audio Units (AU)</strong> — macOS only</li>
+<li><strong>VST3</strong> - Cross-platform</li>
+<li><strong>Audio Units (AU)</strong> - macOS only</li>
 </ul>
 <p>Use the <a href="../../panels/browsers/">Plugin Browser</a> to find and add plugins to your tracks.</p>
 

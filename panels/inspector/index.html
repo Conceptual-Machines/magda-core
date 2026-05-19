@@ -837,6 +837,15 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#session-launch-follow" class="md-nav__link">
+    <span class="md-ellipsis">
+      Session Launch &amp; Follow
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1016,7 +1025,7 @@
         
   
   <span class="md-ellipsis">
-    Built-in Devices
+    Overview
     
   </span>
   
@@ -1026,6 +1035,44 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_2" id="__nav_12_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    MIDI Devices
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_2">
+            <span class="md-nav__icon md-icon"></span>
+            MIDI Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1078,11 +1125,79 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/drum-grid/" class="md-nav__link">
+      <a href="../../devices/step-sequencer/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Drum Grid
+    Step Sequencer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_12_3" id="__nav_12_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Instruments
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12_3">
+            <span class="md-nav__icon md-icon"></span>
+            Instruments
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/4osc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    4OSC Synth
     
   </span>
   
@@ -1100,11 +1215,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/4osc/" class="md-nav__link">
+      <a href="../../devices/drum-grid/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    4OSC Synth
+    Drum Grid
     
   </span>
   
@@ -1137,6 +1252,14 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
@@ -1144,11 +1267,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/step-sequencer/" class="md-nav__link">
+      <a href="../../devices/effects/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Step Sequencer
+    Effects
     
   </span>
   
@@ -1457,6 +1580,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/lua-scripting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Lua Scripting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/keyboard-shortcuts/" class="md-nav__link">
         
   
@@ -1577,6 +1722,15 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#session-launch-follow" class="md-nav__link">
+    <span class="md-ellipsis">
+      Session Launch &amp; Follow
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1635,21 +1789,30 @@
 <h2 id="clip-inspector">Clip Inspector<a class="headerlink" href="#clip-inspector" title="Permanent link">&para;</a></h2>
 <p>Displayed when a clip is selected. Shows:</p>
 <ul>
-<li><strong>Clip name</strong> — Click to rename</li>
-<li><strong>Clip color</strong> — Click the color swatch to choose a custom color</li>
-<li><strong>Position</strong> — Start time, end time, and phase offset on the timeline</li>
-<li><strong>Loop settings</strong> — Loop on/off, loop start, loop length</li>
+<li><strong>Clip name</strong> - Click to rename</li>
+<li><strong>Clip color</strong> - Click the color swatch to choose a custom color</li>
+<li><strong>Position</strong> - Start, end, and length on the timeline (beats)</li>
+<li><strong>Loop settings</strong> - Loop on/off, loop start, loop end, phase / offset (beats)</li>
 </ul>
 <h3 id="audio-properties">Audio Properties<a class="headerlink" href="#audio-properties" title="Permanent link">&para;</a></h3>
-<p>For audio clips, the inspector shows additional controls:</p>
+<p>For audio clips, the inspector shows additional controls. Position and loop fields are expressed in <strong>beats</strong> rather than seconds; the only seconds value in the clip model is the source file's on-disk duration, shown as a read-only reference.</p>
 <ul>
-<li><strong>Warp / Beat</strong> — Toggle time-stretch mode; select algorithm (e.g. SoundTouch HQ)</li>
-<li><strong>Tempo</strong> — Source BPM and beat length detection</li>
-<li><strong>Transient Detection</strong> — Sensitivity slider for transient markers</li>
-<li><strong>Pitch</strong> — Transpose in semitones</li>
-<li><strong>Mix</strong> — Volume, pan, and gain controls</li>
-<li><strong>Reverse</strong> — Reverse the clip audio</li>
-<li><strong>Launch Quantize</strong> — Quantize setting for Session View clip launching</li>
+<li><strong>Playback</strong> - Source BPM (editable), total beats, and Auto Tempo toggle. With Auto Tempo on, the clip stretches so its beat count stays fixed as the project tempo changes; with it off, the clip plays at its native sample rate</li>
+<li><strong>Warp</strong> - Enable per-segment time-stretching via warp markers</li>
+<li><strong>Transient Detection</strong> - Sensitivity slider for transient markers</li>
+<li><strong>Pitch</strong> - Transpose in semitones; Auto-Pitch mode (Off, Pitch Track, Chord Mono, Chord Poly); Analog Pitch toggle for resampling instead of time-stretch</li>
+<li><strong>Mix</strong> - Volume, gain, pan, and reverse</li>
+<li><strong>Channels</strong> - Channel routing for stereo / mono interpretation</li>
+<li><strong>Fades</strong> - In / out length and curve</li>
+</ul>
+<h3 id="session-launch-follow">Session Launch &amp; Follow<a class="headerlink" href="#session-launch-follow" title="Permanent link">&para;</a></h3>
+<p>When a clip lives in Session View, the inspector adds:</p>
+<ul>
+<li><strong>Launch Mode</strong> - Trigger (one-shot) or Toggle</li>
+<li><strong>Launch Quantize</strong> - Bar / beat snap for launch timing</li>
+<li><strong>Follow Action</strong> - Action when the clip ends: None, Play Next, Play Previous, Play Random, Stop, Play Again</li>
+<li><strong>Follow Delay (beats)</strong> - Delay between the clip ending and the follow action firing (0 - 64 beats)</li>
+<li><strong>Follow Loops</strong> - Number of loops the clip plays before the follow action fires</li>
 </ul>
 <h2 id="note-inspector">Note Inspector<a class="headerlink" href="#note-inspector" title="Permanent link">&para;</a></h2>
 <p>Displayed when one or more MIDI notes are selected in the Piano Roll. Shows:</p>
