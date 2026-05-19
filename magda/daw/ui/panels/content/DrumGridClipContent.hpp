@@ -91,7 +91,7 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
 
     // Layout constants (DrumGrid-specific)
     static constexpr int SIDEBAR_WIDTH = 32;
-    static constexpr int ZOOM_STRIP_WIDTH = 12;
+    static constexpr int ZOOM_STRIP_WIDTH = 16;
     static constexpr int LABEL_WIDTH = 120;
     static constexpr int DEFAULT_ROW_HEIGHT = 24;
     static constexpr int MIN_ROW_HEIGHT = magda::ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT;

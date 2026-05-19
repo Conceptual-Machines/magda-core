@@ -99,7 +99,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
 
     // Layout constants (PianoRoll-specific)
     static constexpr int SIDEBAR_WIDTH = 32;
-    static constexpr int ZOOM_STRIP_WIDTH = 12;
+    static constexpr int ZOOM_STRIP_WIDTH = 16;
     static constexpr int KEYBOARD_WIDTH = 60;
     static constexpr int DEFAULT_NOTE_HEIGHT = magda::ClipInfo::DEFAULT_MIDI_EDITOR_ROW_HEIGHT;
     static constexpr int CHORD_ROW_HEIGHT = 24;

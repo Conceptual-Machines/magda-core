@@ -22,7 +22,7 @@ bool MidiEditorContent::velocityDrawerOpen_ = false;
 VerticalZoomStrip::VerticalZoomStrip(int minValue, int maxValue)
     : minValue_(minValue), maxValue_(maxValue) {
     setName("VerticalZoomStrip");
-    setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
+    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
 }
 
 void VerticalZoomStrip::paint(juce::Graphics& g) {
@@ -44,7 +44,7 @@ void VerticalZoomStrip::mouseDown(const juce::MouseEvent& event) {
     mouseDownY_ = event.y;
     startValue_ = getValue ? getValue() : minValue_;
     dragging_ = false;
-    setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
+    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
 }
 
 void VerticalZoomStrip::mouseDrag(const juce::MouseEvent& event) {
@@ -61,12 +61,7 @@ void VerticalZoomStrip::mouseDrag(const juce::MouseEvent& event) {
         minValue_, maxValue_,
         static_cast<int>(std::round(static_cast<double>(startValue_) * std::pow(2.0, exponent))));
 
-    if (yDelta > 0)
-        setMouseCursor(magda::CursorManager::getInstance().getZoomInCursor());
-    else if (yDelta < 0)
-        setMouseCursor(magda::CursorManager::getInstance().getZoomOutCursor());
-    else
-        setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
+    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
 
     if (onZoomChanged)
         onZoomChanged(newValue, mouseDownY_);
@@ -74,11 +69,11 @@ void VerticalZoomStrip::mouseDrag(const juce::MouseEvent& event) {
 
 void VerticalZoomStrip::mouseUp(const juce::MouseEvent& /*event*/) {
     dragging_ = false;
-    setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
+    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
 }
 
 void VerticalZoomStrip::mouseMove(const juce::MouseEvent& /*event*/) {
-    setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
+    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
 }
 
 void VerticalZoomStrip::mouseExit(const juce::MouseEvent& /*event*/) {
