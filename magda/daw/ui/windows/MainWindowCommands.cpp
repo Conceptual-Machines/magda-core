@@ -33,6 +33,20 @@ double timelineEndSeconds(const ClipInfo& clip, double bpm) {
     return clip.getTimelineEnd(bpm);
 }
 
+ViewMode getNextCycledViewMode(ViewMode mode, bool forward) {
+    switch (mode) {
+        case ViewMode::Live:
+            return forward ? ViewMode::Arrange : ViewMode::Mix;
+        case ViewMode::Arrange:
+        case ViewMode::Master:
+            return forward ? ViewMode::Mix : ViewMode::Live;
+        case ViewMode::Mix:
+            return forward ? ViewMode::Live : ViewMode::Arrange;
+    }
+
+    return ViewMode::Arrange;
+}
+
 bool containsTimelineTime(const ClipInfo& clip, double timeSeconds, double bpm) {
     return timeSeconds > timelineStartSeconds(clip, bpm) &&
            timeSeconds < timelineEndSeconds(clip, bpm);
@@ -64,7 +78,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         // Track
         newAudioTrack, newMidiTrack, deleteTrack,
         // View
-        zoom, toggleArrangeSession, uiScaleUp, uiScaleDown,
+        zoom, toggleArrangeSession, cycleViewForward, cycleViewBackward, uiScaleUp, uiScaleDown,
         // Help
         showHelp, about};
 
@@ -211,6 +225,14 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case toggleArrangeSession:
             result.setInfo("Toggle Arrange/Session", "Switch between arrange and session view",
                            "View", 0);
+            break;
+        case cycleViewForward:
+            result.setInfo("Cycle View Forward", "Switch to the next main view", "View", 0);
+            result.addDefaultKeypress(juce::KeyPress::tabKey, 0);
+            break;
+        case cycleViewBackward:
+            result.setInfo("Cycle View Backward", "Switch to the previous main view", "View", 0);
+            result.addDefaultKeypress(juce::KeyPress::tabKey, juce::ModifierKeys::shiftModifier);
             break;
         case uiScaleUp:
             result.setInfo("Increase UI Scale", "Make the UI larger", "View", 0);
@@ -942,6 +964,15 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Group, juce::String(),
                                                             selectedTrack);
             UndoManager::getInstance().executeCommand(std::move(cmd));
+            return true;
+        }
+
+        case cycleViewForward:
+        case cycleViewBackward: {
+            auto& viewModeController = ViewModeController::getInstance();
+            const auto currentMode = viewModeController.getViewMode();
+            viewModeController.setViewMode(
+                getNextCycledViewMode(currentMode, info.commandID == cycleViewForward));
             return true;
         }
 

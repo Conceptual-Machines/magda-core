@@ -44,6 +44,8 @@ enum {
     toggleArrangeSession = 0x4001,
     uiScaleUp = 0x4002,    // Cmd+= / Cmd++: increase global UI scale
     uiScaleDown = 0x4003,  // Cmd+- / Cmd+_: decrease global UI scale
+    cycleViewForward = 0x4004,
+    cycleViewBackward = 0x4005,
 
     // Help menu
     showHelp = 0x5000,
