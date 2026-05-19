@@ -91,6 +91,22 @@ class MediaDbQuery {
     std::vector<QueryResult> similarTo(std::int64_t seedFileId, const QueryFilters& filters,
                                        int limit = 20, int offset = 0) const;
 
+    // Cheap precheck: does this file_id have a row in media_embedding?
+    // Used by the UI to tell "seed has no embedding, re-index needed"
+    // apart from "embedding exists but no neighbours matched filters".
+    [[nodiscard]] bool hasEmbedding(std::int64_t fileId) const;
+
+    // Total number of rows in media_embedding. Used by the similar-sounds
+    // empty state to distinguish "library has no embeddings at all" from
+    // "library has plenty but the filters exclude them".
+    [[nodiscard]] int totalEmbeddings() const;
+
+    // Total number of indexed files. Used by the browser's empty-state copy
+    // to distinguish "library is genuinely empty" from "filters excluded
+    // everything" — without it the UI would lie any time a filter is
+    // active and matches nothing.
+    [[nodiscard]] int totalFiles() const;
+
   private:
     MediaDatabase& db_;
     ClapTextEncoder* textEncoder_;

@@ -135,6 +135,18 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         }
     }
 
+    // While the media DB indexer is running it pushes its progress string
+    // here so the preview area surfaces it even when the user is in the
+    // filesystem browser. Empty -> no indexing in progress; paint reverts
+    // to the normal waveform / "No file selected" behaviour.
+    void setIndexingStatus(const juce::String& text) {
+        if (indexingStatus_ == text) {
+            return;
+        }
+        indexingStatus_ = text;
+        repaint();
+    }
+
     // ChangeListener - called when thumbnail finishes loading
     void changeListenerCallback(juce::ChangeBroadcaster*) override {
         repaint();
@@ -160,6 +172,17 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         // Border
         g.setColour(DarkTheme::getBorderColour());
         g.drawRect(bounds, 1);
+
+        // Indexing status preempts everything else — the user explicitly
+        // asked for scan progress to be visible whether they're on the
+        // filesystem browser or the DB browser, and this panel is the one
+        // shared place above the result lists.
+        if (indexingStatus_.isNotEmpty()) {
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.setFont(FontManager::getInstance().getUIFont(11.0F));
+            g.drawFittedText(indexingStatus_, bounds.reduced(8), juce::Justification::centred, 3);
+            return;
+        }
 
         if (currentFile_.existsAsFile()) {
             auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
@@ -200,6 +223,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
     juce::AudioThumbnail* currentThumbnail_ = nullptr;
     juce::AudioTransportSource* transportSource_ = nullptr;
     double playbackPosition_ = 0.0;
+    juce::String indexingStatus_;
 };
 
 //==============================================================================
@@ -788,6 +812,13 @@ MediaExplorerContent::MediaExplorerContent() {
         // toggle so picking a DB row auto-plays when the user wants it.
         if (autoPlayButton_.getToggleState()) {
             playPreview();
+        }
+    };
+    // Surface indexing progress in the preview area so it's visible from
+    // both the filesystem browser and the DB browser. Empty string clears.
+    dbBrowser_->onIndexingStatus = [this](const juce::String& status) {
+        if (thumbnailComponent_) {
+            thumbnailComponent_->setIndexingStatus(status);
         }
     };
     addChildComponent(*dbBrowser_);

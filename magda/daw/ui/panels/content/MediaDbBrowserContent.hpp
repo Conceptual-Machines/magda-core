@@ -74,6 +74,12 @@ class MediaDbBrowserContent : public juce::Component {
     // Fired when the user clicks a result row.
     std::function<void(const juce::File&)> onFileSelected;
 
+    // Indexing-progress callbacks. Empty string in onIndexingStatus means
+    // "no indexing in progress" — the parent component uses these to
+    // surface scan status in shared UI (e.g. the preview area) so it's
+    // visible regardless of which browser mode the user is on.
+    std::function<void(const juce::String&)> onIndexingStatus;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void visibilityChanged() override;

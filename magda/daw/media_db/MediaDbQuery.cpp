@@ -557,4 +557,44 @@ std::vector<QueryResult> MediaDbQuery::similarTo(std::int64_t seedFileId,
     return hydrate(sql, ranked);
 }
 
+bool MediaDbQuery::hasEmbedding(std::int64_t fileId) const {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.handle(), "SELECT 1 FROM media_embedding WHERE file_id = ? LIMIT 1",
+                           -1, &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+    sqlite3_bind_int64(stmt, 1, fileId);
+    const bool found = sqlite3_step(stmt) == SQLITE_ROW;
+    sqlite3_finalize(stmt);
+    return found;
+}
+
+int MediaDbQuery::totalEmbeddings() const {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.handle(), "SELECT COUNT(*) FROM media_embedding", -1, &stmt,
+                           nullptr) != SQLITE_OK) {
+        return 0;
+    }
+    int n = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        n = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    return n;
+}
+
+int MediaDbQuery::totalFiles() const {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.handle(), "SELECT COUNT(*) FROM media_file", -1, &stmt, nullptr) !=
+        SQLITE_OK) {
+        return 0;
+    }
+    int n = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        n = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    return n;
+}
+
 }  // namespace magda::media

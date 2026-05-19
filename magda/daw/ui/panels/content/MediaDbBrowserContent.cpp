@@ -637,6 +637,30 @@ void MediaDbBrowserContent::restartSearch() {
 }
 
 void MediaDbBrowserContent::findSimilarTo(std::int64_t seedFileId, const juce::String& seedName) {
+    auto& ctx = magda::media::MediaDbContext::getInstance();
+    if (ctx.ensureInitialized()) {
+        magda::media::MediaDbQuery probe(ctx.db(), nullptr, nullptr);
+        if (!probe.hasEmbedding(seedFileId)) {
+            // No CLAP embedding for this file — most likely it was indexed
+            // before the Sample Tagger bundle was installed, so cosine
+            // similarity is impossible. Tell the user instead of silently
+            // returning an empty result list.
+            juce::AlertWindow::showAsync(
+                juce::MessageBoxOptions{}
+                    .withIconType(juce::MessageBoxIconType::InfoIcon)
+                    .withTitle("Find similar sounds")
+                    .withMessage("\"" + seedName +
+                                 "\" has no audio embedding, so similarity search is unavailable.\n"
+                                 "\n"
+                                 "This usually means the file was indexed before the Sample "
+                                 "Tagger bundle was installed. Right-click the folder in the "
+                                 "browser and choose \"Re-index this folder\" to build "
+                                 "embeddings.")
+                    .withButton("OK"),
+                nullptr);
+            return;
+        }
+    }
     similarToFileId_ = seedFileId;
     similarToFileName_ = seedName;
     currentPage_ = 0;
@@ -825,17 +849,39 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
     resultsTable_.setVisible(!empty);
     emptyState_.setVisible(empty);
     if (empty) {
+        // Probe library state once — used by every empty-state branch
+        // below to decide between "library is empty", "filters excluded
+        // everything", and "library has no embeddings for similarity".
+        int libraryRows = -1;
+        int embeddingRows = -1;
+        auto& ctx = magda::media::MediaDbContext::getInstance();
+        if (ctx.ensureInitialized()) {
+            magda::media::MediaDbQuery probe(ctx.db(), nullptr, nullptr);
+            libraryRows = probe.totalFiles();
+            embeddingRows = probe.totalEmbeddings();
+        }
+
         juce::String text;
-        if (queryText_.isEmpty()) {
+        if (libraryRows == 0) {
+            // Library is genuinely empty — overrides every other state.
             text = "No samples in your library yet.\nRight-click a folder in the browser "
                    "and choose \"Index this folder\".";
+        } else if (similarToFileId_.has_value()) {
+            text = "No similar sounds found for \"" + similarToFileName_ + "\".";
+            if (embeddingRows <= 1) {
+                text += "\n\nThe library contains " + juce::String(embeddingRows) +
+                        " audio embedding" + (embeddingRows == 1 ? "" : "s") +
+                        " total.\nRe-index your folders with the Sample Tagger installed "
+                        "to build embeddings for similarity search.";
+            } else {
+                text += "\n\nTry clearing filters - the active filter combination may exclude "
+                        "all potential neighbours.";
+            }
         } else {
-            text = "No results.";
-            // Subtle hint when text search returns nothing AND the model
-            // isn't installed — explains why text queries are degraded.
-            if (!magda::media::SampleTaggerDownloader::isInstalled()) {
-                text += "\n\nText search is filename / tag only without the AI Sample Tagger.\n"
-                        "Install it from AI Settings > Sample Tagger.";
+            text = "No results match the current filters.";
+            if (!queryText_.isEmpty() && !magda::media::SampleTaggerDownloader::isInstalled()) {
+                text += "\n\nText search is filename / tag only without the AI Sample "
+                        "Tagger.\nInstall it from AI Settings > Sample Tagger.";
             }
         }
         emptyState_.setText(text, juce::dontSendNotification);
@@ -932,10 +978,13 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir, bool force) {
     }
 
     indexing_ = true;
-    statusLabel_.setText(force ? "Preparing re-scan..." : "Preparing scan...",
-                         juce::dontSendNotification);
+    const juce::String prepText = force ? "Preparing re-scan..." : "Preparing scan...";
+    statusLabel_.setText(prepText, juce::dontSendNotification);
     statusLabel_.setVisible(true);
     resized();
+    if (onIndexingStatus) {
+        onIndexingStatus(prepText);
+    }
 
     const auto path = std::filesystem::path(dir.getFullPathName().toStdString());
     const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
@@ -960,6 +1009,9 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir, bool force) {
                     juce::MessageManager::callAsync([self, status]() {
                         if (self != nullptr) {
                             self->statusLabel_.setText(status, juce::dontSendNotification);
+                            if (self->onIndexingStatus) {
+                                self->onIndexingStatus(status);
+                            }
                         }
                     });
                 });
@@ -975,6 +1027,9 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir, bool force) {
             self->indexing_ = false;
             self->statusLabel_.setVisible(false);
             self->resized();
+            if (self->onIndexingStatus) {
+                self->onIndexingStatus({});  // empty -> clear preview-area status
+            }
             self->restartSearch();
         });
     });
