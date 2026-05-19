@@ -175,6 +175,7 @@ void Config::save() {
     root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
     root->setProperty("browserLastView", toJuceString(browserLastView));
     root->setProperty("sampleTaggerModelsDir", toJuceString(sampleTaggerModelsDir));
+    root->setProperty("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
 
     juce::Array<juce::var> favArray;
     for (const auto& f : browserFavorites)
@@ -537,6 +538,7 @@ void Config::load() {
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserLastView = getString("browserLastView", browserLastView);
     sampleTaggerModelsDir = getString("sampleTaggerModelsDir", sampleTaggerModelsDir);
+    loadSampleTaggerOnStartup = getBool("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
     browserFavorites = getStringArray("browserFavorites");
 
     // Auto-update check

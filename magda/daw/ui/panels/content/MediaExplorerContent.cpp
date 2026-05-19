@@ -1096,16 +1096,16 @@ void MediaExplorerContent::updateFileInfo(const juce::File& file) {
         int channels = reader->numChannels;
 
         // Format info: type, sample rate, bit depth
-        juce::String format = file.getFileExtension().toUpperCase().substring(1) + " • ";
-        format += juce::String(sampleRate / 1000.0, 1) + " kHz • ";
-        format += juce::String(bitDepth) + "-bit • ";
+        juce::String format = file.getFileExtension().toUpperCase().substring(1) + " | ";
+        format += juce::String(sampleRate / 1000.0, 1) + " kHz | ";
+        format += juce::String(bitDepth) + "-bit | ";
         format += juce::String(channels == 1   ? "Mono"
                                : channels == 2 ? "Stereo"
                                                : juce::String(channels) + "ch");
         formatLabel_.setText(format, juce::dontSendNotification);
 
         // Properties: duration, file size
-        juce::String properties = "Duration: " + formatDuration(duration) + " • ";
+        juce::String properties = "Duration: " + formatDuration(duration) + " | ";
         properties += "Size: " + formatFileSize(file.getSize());
         propertiesLabel_.setText(properties, juce::dontSendNotification);
 
@@ -1398,7 +1398,7 @@ void MediaExplorerContent::selectionChanged() {
         fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
         formatLabel_.setText("MIDI File", juce::dontSendNotification);
         propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()) +
-                                     " • Preview: Coming soon",
+                                     " | Preview: Coming soon",
                                  juce::dontSendNotification);
 
         if (thumbnailComponent_) {
@@ -1412,7 +1412,7 @@ void MediaExplorerContent::selectionChanged() {
         fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
         formatLabel_.setText("Magda Clip", juce::dontSendNotification);
         propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()) +
-                                     " • Preview: Coming soon",
+                                     " | Preview: Coming soon",
                                  juce::dontSendNotification);
 
         if (thumbnailComponent_) {

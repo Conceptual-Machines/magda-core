@@ -36,6 +36,21 @@ class MediaDbContext {
     [[nodiscard]] bool hasAudioEncoder() const noexcept;
     [[nodiscard]] bool hasTextSearch() const noexcept;  // tokenizer + textEncoder both loaded
 
+    // Runtime "loaded into memory" check — distinct from the file-on-disk
+    // checks above. True once the underlying ORT session / tokenizer has
+    // been instantiated (whether by lazy access or explicit preload).
+    [[nodiscard]] bool isAudioEncoderLoaded() const noexcept;
+    [[nodiscard]] bool isTextEncoderLoaded() const noexcept;
+    [[nodiscard]] bool isTokenizerLoaded() const noexcept;
+
+    // Force the lazy-loaded models into memory now. No-op for any file that
+    // isn't on disk. Safe to call from any thread.
+    void preloadModels();
+
+    // Drop the in-memory ORT sessions / tokenizer; files on disk stay.
+    // Subsequent lazy-access reloads on demand.
+    void unloadModels();
+
     MediaDatabase& db();
     ClapAudioEncoder* audioEncoder() noexcept;
     ClapTextEncoder* textEncoder() noexcept;
@@ -56,8 +71,6 @@ class MediaDbContext {
   private:
     MediaDbContext();
     ~MediaDbContext();
-
-    void loadOptionalAi();  // sets audioEnc_/textEnc_/tokenizer_ if files exist
 
     std::unique_ptr<MediaDatabase> db_;
     std::unique_ptr<ClapAudioEncoder> audioEnc_;

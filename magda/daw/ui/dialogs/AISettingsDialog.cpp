@@ -1192,6 +1192,26 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
         actionButton_.onClick = [this]() { handleActionClick(); };
         addAndMakeVisible(actionButton_);
 
+        // Load button — forces the lazy ORT sessions / tokenizer into
+        // memory now, on a background thread so the dialog stays fluid.
+        // Only enabled when the bundle is installed.
+        loadButton_.setButtonText("Load");
+        loadButton_.onClick = [this]() { handleLoadClick(); };
+        addAndMakeVisible(loadButton_);
+
+        // Load-at-startup toggle. When on, app startup kicks off a
+        // background preloadModels() so the first text query doesn't pay
+        // the ~5s load cost.
+        loadOnStartupToggle_.setButtonText("Load on startup");
+        loadOnStartupToggle_.setColour(juce::ToggleButton::textColourId,
+                                       DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        loadOnStartupToggle_.onClick = [this]() {
+            magda::Config::getInstance().setLoadSampleTaggerOnStartup(
+                loadOnStartupToggle_.getToggleState());
+            magda::Config::getInstance().save();
+        };
+        addAndMakeVisible(loadOnStartupToggle_);
+
         refreshStatus();
     }
 
@@ -1214,13 +1234,22 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
 
         progressBar_.setBounds(bounds.removeFromTop(22));
         bounds.removeFromTop(8);
-        actionButton_.setBounds(bounds.removeFromTop(28).removeFromLeft(220));
+
+        auto buttonRow = bounds.removeFromTop(28);
+        actionButton_.setBounds(buttonRow.removeFromLeft(220));
+        buttonRow.removeFromLeft(8);
+        loadButton_.setBounds(buttonRow.removeFromLeft(100));
+        bounds.removeFromTop(10);
+        loadOnStartupToggle_.setBounds(bounds.removeFromTop(22));
     }
 
-    // No-ops: this page has no Config fields — model presence lives on disk.
-    void load(const magda::Config&) {
+    void load(const magda::Config& config) {
+        loadOnStartupToggle_.setToggleState(config.getLoadSampleTaggerOnStartup(),
+                                            juce::dontSendNotification);
         refreshStatus();
     }
+    // apply is a no-op: the load-on-startup toggle persists on click; the
+    // location path persists on Browse/Reset. Nothing batches up here.
     void apply(magda::Config&) const {}
 
   private:
@@ -1230,11 +1259,17 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
         locationField_.setText(currentDir, juce::dontSendNotification);
 
         const bool installed = magda::media::SampleTaggerDownloader::isInstalled();
+        auto& ctx = magda::media::MediaDbContext::getInstance();
+        const bool loaded =
+            ctx.isAudioEncoderLoaded() && ctx.isTextEncoderLoaded() && ctx.isTokenizerLoaded();
+
         if (installed) {
             statusLabel_.setText(
-                "Sample Tagger is installed.\n\nThis enables text search ('warm pad', "
-                "'kick 808'…) over your indexed sample library. Click Remove to free disk space "
-                "if you don't use text search.",
+                juce::String("Sample Tagger is installed (") +
+                    (loaded ? "loaded in memory" : "not loaded - first query will load it") +
+                    ").\n\nThis enables text search ('warm pad', 'kick 808'...) over your indexed "
+                    "sample library. Click Remove to free disk space if you don't use text "
+                    "search.",
                 juce::dontSendNotification);
             actionButton_.setButtonText("Remove");
             progressBar_.setVisible(false);
@@ -1250,7 +1285,34 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
             progressBar_.setVisible(false);
         }
         actionButton_.setEnabled(true);
+        loadButton_.setEnabled(installed && !loaded && !loadInFlight_);
+        loadButton_.setButtonText(loaded ? "Unload" : (loadInFlight_ ? "Loading..." : "Load"));
+        loadButton_.setEnabled(installed && !loadInFlight_);
         resized();
+    }
+
+    void handleLoadClick() {
+        auto& ctx = magda::media::MediaDbContext::getInstance();
+        const bool loaded =
+            ctx.isAudioEncoderLoaded() && ctx.isTextEncoderLoaded() && ctx.isTokenizerLoaded();
+        if (loaded) {
+            ctx.unloadModels();
+            refreshStatus();
+            return;
+        }
+        // Async preload — ORT Session construction is multi-second.
+        loadInFlight_ = true;
+        refreshStatus();
+        const juce::Component::SafePointer<SampleTaggerPage> self(this);
+        juce::Thread::launch([self]() {
+            magda::media::MediaDbContext::getInstance().preloadModels();
+            juce::MessageManager::callAsync([self]() {
+                if (self != nullptr) {
+                    self->loadInFlight_ = false;
+                    self->refreshStatus();
+                }
+            });
+        });
     }
 
     void browseForLocation() {
@@ -1355,6 +1417,9 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
     double progressValue_ = 0.0;
     juce::ProgressBar progressBar_{progressValue_};
     juce::TextButton actionButton_;
+    juce::TextButton loadButton_;
+    juce::ToggleButton loadOnStartupToggle_;
+    bool loadInFlight_ = false;
     magda::media::SampleTaggerDownloader downloader_;
 };
 

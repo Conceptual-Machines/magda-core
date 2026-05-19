@@ -85,13 +85,20 @@ bool MediaDbContext::ensureInitialized() {
     return true;
 }
 
-void MediaDbContext::loadOptionalAi() {
-    // Retained for completeness but no longer called from ensureInitialized().
-    // Useful if a future "preload models" toggle in preferences wants to
-    // warm everything up at startup.
+void MediaDbContext::preloadModels() {
+    // Force the lazy accessors to instantiate now. The "Load on startup"
+    // Config toggle and the AI Settings → Sample Tagger → Load button both
+    // call this; running it on a background thread keeps the UI fluid
+    // (this method itself blocks until each ORT Session is built).
     (void)audioEncoder();
     (void)textEncoder();
     (void)tokenizer();
+}
+
+void MediaDbContext::unloadModels() {
+    audioEnc_.reset();
+    textEnc_.reset();
+    tokenizer_.reset();
 }
 
 void MediaDbContext::shutdown() {
@@ -112,6 +119,16 @@ bool MediaDbContext::hasAudioEncoder() const noexcept {
 }
 bool MediaDbContext::hasTextSearch() const noexcept {
     return std::filesystem::exists(textModelPath()) && std::filesystem::exists(tokenizerJsonPath());
+}
+
+bool MediaDbContext::isAudioEncoderLoaded() const noexcept {
+    return audioEnc_ != nullptr;
+}
+bool MediaDbContext::isTextEncoderLoaded() const noexcept {
+    return textEnc_ != nullptr;
+}
+bool MediaDbContext::isTokenizerLoaded() const noexcept {
+    return tokenizer_ != nullptr;
 }
 
 MediaDatabase& MediaDbContext::db() {

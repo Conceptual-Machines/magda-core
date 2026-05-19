@@ -425,6 +425,9 @@ MediaDbBrowserContent::~MediaDbBrowserContent() {
     if (indexPool_) {
         indexPool_->removeAllJobs(true, 5000);
     }
+    if (searchPool_) {
+        searchPool_->removeAllJobs(true, 5000);
+    }
     resultsTable_.setModel(nullptr);
     familyFilter_.setLookAndFeel(nullptr);
     shapeFilter_.setLookAndFeel(nullptr);
@@ -542,23 +545,75 @@ void MediaDbBrowserContent::runSearch() {
         return;
     }
 
-    // Lazy-load gate: ctx.textEncoder() / ctx.tokenizer() each trigger an
-    // ONNX model load on first call (~480 MB on the text side). Filter-only
-    // queries don't need them — only call the accessors when there's actual
-    // search text to embed. Avoids a multi-second UI freeze when the user
-    // just changes a categorical filter.
     const auto filters = currentFilters();
     const bool hasText = !queryText_.isEmpty();
-    const std::optional<std::string> text =
-        hasText ? std::optional<std::string>{queryText_.toStdString()} : std::nullopt;
-    magda::media::ClapTextEncoder* textEnc = hasText ? ctx.textEncoder() : nullptr;
-    magda::media::RobertaTokenizer* tok = hasText ? ctx.tokenizer() : nullptr;
-    magda::media::MediaDbQuery query(ctx.db(), textEnc, tok);
-    results_ = query.search(text, filters, /*limit=*/200);
 
-    // updateContent() refreshes the row count but doesn't always invalidate
-    // the paint region — explicit repaint() makes the new results show up
-    // without needing an external paint trigger (window focus, scroll, etc).
+    // Filter-only fast path — pure SQL on indexed columns, runs in
+    // microseconds. Keep it synchronous so the table updates without an
+    // async hop.
+    if (!hasText) {
+        magda::media::MediaDbQuery query(ctx.db(), nullptr, nullptr);
+        results_ = query.search(std::nullopt, filters, /*limit=*/200);
+        applySearchResultsToUi();
+        return;
+    }
+
+    // Text-query slow path. The ONNX text encoder lazy-loads (~480 MB) on
+    // first call and runs inference per query — hundreds of milliseconds
+    // to multi-second. Run on a background thread and gate stale results
+    // with searchGeneration_ so a rapid sequence of keystrokes doesn't
+    // overwrite the latest result with an older worker's output.
+    const int myGen = ++searchGeneration_;
+    const auto text = queryText_.toStdString();
+
+    // Loading state on the UI while the worker runs.
+    results_.clear();
+    resultsTable_.updateContent();
+    resultsTable_.repaint();
+    resultsTable_.setVisible(false);
+    emptyState_.setText("Searching...", juce::dontSendNotification);
+    emptyState_.setVisible(true);
+
+    if (!searchPool_) {
+        searchPool_ = std::make_unique<juce::ThreadPool>(1);
+    }
+
+    const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+    searchPool_->addJob([self, myGen, text, filters]() {
+        std::vector<magda::media::QueryResult> results;
+        try {
+            // Fresh DB connection per worker — SQLite multi-thread mode
+            // requires one connection per thread. WAL lets this reader
+            // coexist with the UI thread's connection.
+            auto& ctx = magda::media::MediaDbContext::getInstance();
+            magda::media::MediaDatabase bgDb(ctx.dbPath());
+            // First call from a worker also pays the lazy-load cost
+            // (multi-second). Subsequent calls are cheap; ORT Session::Run
+            // is documented thread-safe so a shared encoder pointer is OK.
+            auto* textEnc = ctx.textEncoder();
+            auto* tok = ctx.tokenizer();
+            magda::media::MediaDbQuery query(bgDb, textEnc, tok);
+            results = query.search(std::optional<std::string>{text}, filters, /*limit=*/200);
+        } catch (...) {
+            // Swallow — empty result set bounces back to the UI either way.
+        }
+
+        juce::MessageManager::callAsync([self, myGen, r = std::move(results)]() mutable {
+            if (self == nullptr) {
+                return;
+            }
+            if (self->searchGeneration_.load() != myGen) {
+                return;  // newer query in flight, drop this stale result
+            }
+            self->results_ = std::move(r);
+            self->applySearchResultsToUi();
+        });
+    });
+}
+
+void MediaDbBrowserContent::applySearchResultsToUi() {
+    // updateContent() refreshes the row count; explicit repaint forces the
+    // paint region invalidation (we've seen this matter on TableListBox).
     resultsTable_.updateContent();
     resultsTable_.repaint();
 
@@ -576,7 +631,7 @@ void MediaDbBrowserContent::runSearch() {
             // isn't installed — explains why text queries are degraded.
             if (!magda::media::SampleTaggerDownloader::isInstalled()) {
                 text += "\n\nText search is filename / tag only without the AI Sample Tagger.\n"
-                        "Install it from AI Settings → Sample Tagger.";
+                        "Install it from AI Settings > Sample Tagger.";
             }
         }
         emptyState_.setText(text, juce::dontSendNotification);
@@ -617,8 +672,8 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir, bool force) {
                 .withTitle("AI Sample Tagger not installed")
                 .withMessage(
                     "Indexing will run, but without the Sample Tagger the library can only do "
-                    "filename / tag / family / BPM filtering — no semantic text search.\n\n"
-                    "Install it any time from AI Settings → Sample Tagger.")
+                    "filename / tag / family / BPM filtering - no semantic text search.\n\n"
+                    "Install it any time from AI Settings > Sample Tagger.")
                 .withButton("OK"),
             nullptr);
     }
@@ -688,7 +743,7 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir, bool force) {
 class MediaDbBrowserContent::PopOutWindow : public juce::DocumentWindow {
   public:
     PopOutWindow()
-        : juce::DocumentWindow("MAGDA — Sample Library",
+        : juce::DocumentWindow("MAGDA - Sample Library",
                                DarkTheme::getColour(DarkTheme::BACKGROUND),
                                juce::DocumentWindow::allButtons) {
         setUsingNativeTitleBar(true);

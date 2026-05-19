@@ -112,6 +112,17 @@ class MediaDbBrowserContent : public juce::Component {
     std::unique_ptr<juce::ThreadPool> indexPool_;
     bool indexing_ = false;
 
+    // Single-thread pool for text-search queries. Text search triggers the
+    // ONNX text encoder which costs multi-second on first load + a few
+    // hundred ms per query — putting it on a worker keeps the UI fluid.
+    // Filter-only queries stay synchronous (cheap SQL). searchGeneration_
+    // drops stale results: an outdated worker callback finds its
+    // generation has been bumped by a newer query and bails before
+    // touching the table.
+    std::unique_ptr<juce::ThreadPool> searchPool_;
+    std::atomic<int> searchGeneration_{0};
+    void applySearchResultsToUi();
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MediaDbBrowserContent)
 };
 
