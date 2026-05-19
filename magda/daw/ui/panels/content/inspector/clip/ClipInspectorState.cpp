@@ -298,6 +298,37 @@ void ClipInspector::updateFromSelectedClip() {
             clipBeatsUnitLabel_.setVisible(false);
         }
 
+        // Show key controls for audio clips. Mirror the clip's source
+        // interpretation key into the combos; empty = "--" (unknown).
+        if (showAudioProps && !isMulti) {
+            const auto& root = clip->audio().interpretation.keyRoot;
+            const auto& scale = clip->audio().interpretation.keyScale;
+            int rootId = 1;
+            static constexpr const char* kRoots[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                                     "F#", "G",  "G#", "A",  "A#", "B"};
+            for (int i = 0; i < 12; ++i) {
+                if (root == kRoots[i]) {
+                    rootId = i + 2;
+                    break;
+                }
+            }
+            int scaleId = 1;
+            if (scale == "major") {
+                scaleId = 2;
+            } else if (scale == "minor") {
+                scaleId = 3;
+            }
+            clipKeyRootCombo_.setSelectedId(rootId, juce::dontSendNotification);
+            clipKeyScaleCombo_.setSelectedId(scaleId, juce::dontSendNotification);
+            clipKeyLabel_.setVisible(true);
+            clipKeyRootCombo_.setVisible(true);
+            clipKeyScaleCombo_.setVisible(true);
+        } else {
+            clipKeyLabel_.setVisible(false);
+            clipKeyRootCombo_.setVisible(false);
+            clipKeyScaleCombo_.setVisible(false);
+        }
+
         // Get tempo from TimelineController, fallback to 120 BPM if not available
         double bpm = 120.0;
         int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
@@ -626,6 +657,9 @@ void ClipInspector::showClipControls(bool show) {
         if (clipStretchValue_)
             clipStretchValue_->setVisible(false);
         stretchModeCombo_.setVisible(false);
+        clipKeyLabel_.setVisible(false);
+        clipKeyRootCombo_.setVisible(false);
+        clipKeyScaleCombo_.setVisible(false);
         launchModeLabel_.setVisible(false);
         launchModeCombo_.setVisible(false);
         launchQuantizeLabel_.setVisible(false);

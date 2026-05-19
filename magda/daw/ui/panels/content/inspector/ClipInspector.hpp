@@ -119,6 +119,11 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     juce::Label clipBpmUnitLabel_;
     std::unique_ptr<magda::DraggableValueLabel> clipBeatsLengthValue_;
     juce::Label clipBeatsUnitLabel_;
+    // Source key (root + scale). Edits also persist to the media DB
+    // when the file is library-indexed via ClipManager::recordUserKey.
+    juce::Label clipKeyLabel_;
+    juce::ComboBox clipKeyRootCombo_;
+    juce::ComboBox clipKeyScaleCombo_;
 
     // Pitch section (audio + MIDI)
     juce::Label pitchSectionLabel_;

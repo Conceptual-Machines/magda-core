@@ -930,8 +930,70 @@ void ClipInspector::initClipPropertiesSection() {
     };
     clipPropsContainer_.addChildComponent(stretchModeCombo_);
 
+    // Source key (root + scale). Persists back to media_file.key_root_user /
+    // key_scale_user via ClipManager::recordUserKey when the source file is
+    // library-indexed. ID 1 is the "unknown" sentinel; non-zero IDs map onto
+    // kKeyRoots / kKeyScales below.
+    clipKeyLabel_.setText("KEY", juce::dontSendNotification);
+    clipKeyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipKeyLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipKeyLabel_.setJustificationType(juce::Justification::centredLeft);
+    clipPropsContainer_.addChildComponent(clipKeyLabel_);
+
+    static constexpr const char* kKeyRoots[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                                "F#", "G",  "G#", "A",  "A#", "B"};
+    static constexpr const char* kKeyScales[] = {"major", "minor"};
+
+    clipKeyRootCombo_.addItem("--", 1);
+    for (int i = 0; i < 12; ++i) {
+        clipKeyRootCombo_.addItem(kKeyRoots[i], i + 2);
+    }
+    clipKeyRootCombo_.setSelectedId(1, juce::dontSendNotification);
+
+    clipKeyScaleCombo_.addItem("--", 1);
+    clipKeyScaleCombo_.addItem("maj", 2);
+    clipKeyScaleCombo_.addItem("min", 3);
+    clipKeyScaleCombo_.setSelectedId(1, juce::dontSendNotification);
+
+    auto pushKey = [this]() {
+        if (selectedClipIds_.empty()) {
+            return;
+        }
+        const int rootId = clipKeyRootCombo_.getSelectedId();
+        const int scaleId = clipKeyScaleCombo_.getSelectedId();
+        std::string root;
+        std::string scale;
+        if (rootId >= 2 && rootId <= 13) {
+            root = kKeyRoots[rootId - 2];
+        }
+        if (scaleId >= 2 && scaleId <= 3) {
+            scale = kKeyScales[scaleId - 2];
+        }
+        // Mirror onto every selected audio clip's interpretation so the
+        // inspector reflects the change immediately, then persist to the
+        // media DB via the primary clip's source file. Other selected
+        // clips that happen to share the same file path get the DB
+        // update too on their next reload.
+        for (auto cid : selectedClipIds_) {
+            auto* clip = magda::ClipManager::getInstance().getClip(cid);
+            if (clip == nullptr || !clip->isAudio()) {
+                continue;
+            }
+            clip->audio().interpretation.keyRoot = root;
+            clip->audio().interpretation.keyScale = scale;
+        }
+        magda::ClipManager::getInstance().recordUserKey(primaryClipId(), root, scale);
+    };
+    clipKeyRootCombo_.onChange = pushKey;
+    clipKeyScaleCombo_.onChange = pushKey;
+
+    clipPropsContainer_.addChildComponent(clipKeyRootCombo_);
+    clipPropsContainer_.addChildComponent(clipKeyScaleCombo_);
+
     // Apply themed LookAndFeel to all inspector combo boxes
     stretchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+    clipKeyRootCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+    clipKeyScaleCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     autoPitchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     launchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     launchQuantizeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());

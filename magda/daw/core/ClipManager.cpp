@@ -177,12 +177,20 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         };
 
         // Media DB takes precedence: if the file has been indexed, use the
-        // effective BPM (user override > scanner-detected) so dropped
-        // samples land with the BPM the user has already accepted or
+        // effective metadata (user override > scanner-detected) so dropped
+        // samples land with the values the user has already accepted or
         // edited. Falls through to the live BPM-detection pipeline for
         // un-indexed files.
         auto dbMetadata = magda::media::getEffectiveMetadataForFile(
             std::filesystem::path(audioFilePath.toStdString()));
+        if (dbMetadata) {
+            if (dbMetadata->keyRoot) {
+                clip.audio().interpretation.keyRoot = *dbMetadata->keyRoot;
+            }
+            if (dbMetadata->keyScale) {
+                clip.audio().interpretation.keyScale = *dbMetadata->keyScale;
+            }
+        }
         if (dbMetadata && dbMetadata->bpm && *dbMetadata->bpm > 0.0) {
             applyDetectedBPM(*dbMetadata->bpm);
             return clip.id;
@@ -1028,6 +1036,27 @@ void ClipManager::recordUserBpm(ClipId clipId, double bpm) {
         return;
     }
     magda::media::setUserBpmForFile(std::filesystem::path(filePath.toStdString()), bpm);
+}
+
+void ClipManager::recordUserKey(ClipId clipId, const std::string& root, const std::string& scale) {
+    const auto* clip = getClip(clipId);
+    if (clip == nullptr || !clip->isAudio()) {
+        return;
+    }
+    const auto& filePath = clip->audio().source.filePath;
+    if (filePath.isEmpty()) {
+        return;
+    }
+    std::optional<std::string> rootOpt;
+    if (!root.empty()) {
+        rootOpt = root;
+    }
+    std::optional<std::string> scaleOpt;
+    if (!scale.empty()) {
+        scaleOpt = scale;
+    }
+    magda::media::setUserKeyForFile(std::filesystem::path(filePath.toStdString()), rootOpt,
+                                    scaleOpt);
 }
 
 void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update,
