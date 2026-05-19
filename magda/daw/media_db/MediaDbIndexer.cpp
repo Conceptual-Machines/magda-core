@@ -403,11 +403,14 @@ std::string buildTagText(const std::vector<std::pair<std::string, float>>& tags)
 // ORT Session::Run is documented thread-safe) and mutates the supplied Stats.
 
 void processOneFile(sqlite3* sqlDb, ClapAudioEncoder* encoder, const ScannedFile& f,
-                    MediaDbIndexer::Stats& stats) {
+                    MediaDbIndexer::Stats& stats, bool force) {
     try {
         const auto hash = hashFilePrefix(f.path);
         const auto existing = lookupExisting(sqlDb, f.path.string());
-        if (existing && unchanged(*existing, f, hash)) {
+        // force=true: caller (e.g. "Re-index folder") wants to re-derive
+        // everything regardless of mtime/size/hash match. Used to refresh
+        // path tags / family / features after the rules change.
+        if (!force && existing && unchanged(*existing, f, hash)) {
             ++stats.skipped;
             return;
         }
@@ -502,7 +505,7 @@ void MediaDbIndexer::setProgress(ProgressFn fn) {
 }
 
 MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path& root,
-                                                     int numThreads) {
+                                                     int numThreads, bool force) {
     // Pre-scan into a vector so we have a stable list to slice for workers
     // and a total count for progress. Cheap relative to the indexing pass.
     std::vector<ScannedFile> files;
@@ -518,7 +521,7 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
         MediaDatabase::Transaction txn(db_);
         int done = 0;
         for (const auto& f : files) {
-            processOneFile(sqlDb, encoder_, f, stats);
+            processOneFile(sqlDb, encoder_, f, stats, force);
             ++done;
             if (progress_) {
                 progress_(done, total, f.path);
@@ -568,7 +571,7 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
                 try {
                     MediaDatabase::Transaction txn(localDb);
                     for (size_t i = batchStart; i < batchEnd; ++i) {
-                        processOneFile(sqlDb, encoder, files[i], local);
+                        processOneFile(sqlDb, encoder, files[i], local, force);
                         const int nowDone = ++doneCounter;
                         if (progressRef) {
                             std::lock_guard<std::mutex> lock(progressMutex);

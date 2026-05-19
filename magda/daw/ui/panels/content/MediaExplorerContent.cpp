@@ -9,6 +9,7 @@
 #include "AudioThumbnailManager.hpp"
 #include "BinaryData.h"
 #include "MediaDbBrowserContent.hpp"
+#include "media_db/MediaDbMetadata.hpp"
 
 namespace magda::daw::ui {
 
@@ -134,6 +135,18 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         }
     }
 
+    // While the media DB indexer is running it pushes its progress string
+    // here so the preview area surfaces it even when the user is in the
+    // filesystem browser. Empty -> no indexing in progress; paint reverts
+    // to the normal waveform / "No file selected" behaviour.
+    void setIndexingStatus(const juce::String& text) {
+        if (indexingStatus_ == text) {
+            return;
+        }
+        indexingStatus_ = text;
+        repaint();
+    }
+
     // ChangeListener - called when thumbnail finishes loading
     void changeListenerCallback(juce::ChangeBroadcaster*) override {
         repaint();
@@ -159,6 +172,17 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         // Border
         g.setColour(DarkTheme::getBorderColour());
         g.drawRect(bounds, 1);
+
+        // Indexing status preempts everything else — the user explicitly
+        // asked for scan progress to be visible whether they're on the
+        // filesystem browser or the DB browser, and this panel is the one
+        // shared place above the result lists.
+        if (indexingStatus_.isNotEmpty()) {
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.setFont(FontManager::getInstance().getUIFont(11.0F));
+            g.drawFittedText(indexingStatus_, bounds.reduced(8), juce::Justification::centred, 3);
+            return;
+        }
 
         if (currentFile_.existsAsFile()) {
             auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
@@ -199,6 +223,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
     juce::AudioThumbnail* currentThumbnail_ = nullptr;
     juce::AudioTransportSource* transportSource_ = nullptr;
     double playbackPosition_ = 0.0;
+    juce::String indexingStatus_;
 };
 
 //==============================================================================
@@ -525,6 +550,17 @@ MediaExplorerContent::MediaExplorerContent() {
         stopTimer();
         startTimer(300);  // 300 ms debounce
     };
+    // Library-mode (DB) search runs the ONNX text encoder + a cosine scan
+    // over media_embedding — too costly to fire per-keystroke. Trigger it
+    // explicitly on Return. Filesystem-mode filtering still updates as the
+    // user types (cheap glob match). An empty box also re-pushes so clearing
+    // the field restores the unfiltered library view without an extra Enter.
+    searchBox_.onReturnKey = [this]() {
+        searchTerm_ = searchBox_.getText();
+        if (dbBrowser_ != nullptr) {
+            dbBrowser_->setQueryText(searchTerm_);
+        }
+    };
     addAndMakeVisible(searchBox_);
 
     // Setup type filter buttons with icons (issue #768).
@@ -776,6 +812,13 @@ MediaExplorerContent::MediaExplorerContent() {
         // toggle so picking a DB row auto-plays when the user wants it.
         if (autoPlayButton_.getToggleState()) {
             playPreview();
+        }
+    };
+    // Surface indexing progress in the preview area so it's visible from
+    // both the filesystem browser and the DB browser. Empty string clears.
+    dbBrowser_->onIndexingStatus = [this](const juce::String& status) {
+        if (thumbnailComponent_) {
+            thumbnailComponent_->setIndexingStatus(status);
         }
     };
     addChildComponent(*dbBrowser_);
@@ -1095,16 +1138,16 @@ void MediaExplorerContent::updateFileInfo(const juce::File& file) {
         int channels = reader->numChannels;
 
         // Format info: type, sample rate, bit depth
-        juce::String format = file.getFileExtension().toUpperCase().substring(1) + " • ";
-        format += juce::String(sampleRate / 1000.0, 1) + " kHz • ";
-        format += juce::String(bitDepth) + "-bit • ";
+        juce::String format = file.getFileExtension().toUpperCase().substring(1) + " | ";
+        format += juce::String(sampleRate / 1000.0, 1) + " kHz | ";
+        format += juce::String(bitDepth) + "-bit | ";
         format += juce::String(channels == 1   ? "Mono"
                                : channels == 2 ? "Stereo"
                                                : juce::String(channels) + "ch");
         formatLabel_.setText(format, juce::dontSendNotification);
 
         // Properties: duration, file size
-        juce::String properties = "Duration: " + formatDuration(duration) + " • ";
+        juce::String properties = "Duration: " + formatDuration(duration) + " | ";
         properties += "Size: " + formatFileSize(file.getSize());
         propertiesLabel_.setText(properties, juce::dontSendNotification);
 
@@ -1152,9 +1195,11 @@ void MediaExplorerContent::updateMediaFilter() {
         fileBrowser_->setFileFilter(mediaFileFilter_.get());
         fileBrowser_->refresh();
     }
-    // Mirror the search text into the DB browser. It only re-queries if the
-    // text actually changed, so this is cheap when filesystem mode is active.
-    if (dbBrowser_) {
+    // Library mode no longer auto-syncs the text into the DB browser as the
+    // user types — DB search is Return-triggered (see searchBox_.onReturnKey
+    // above). Empty box is the one exception: clearing the field should
+    // restore the unfiltered library view without an extra Enter press.
+    if (dbBrowser_ != nullptr && searchTerm_.isEmpty()) {
         dbBrowser_->setQueryText(searchTerm_);
     }
 }
@@ -1397,7 +1442,7 @@ void MediaExplorerContent::selectionChanged() {
         fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
         formatLabel_.setText("MIDI File", juce::dontSendNotification);
         propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()) +
-                                     " • Preview: Coming soon",
+                                     " | Preview: Coming soon",
                                  juce::dontSendNotification);
 
         if (thumbnailComponent_) {
@@ -1411,7 +1456,7 @@ void MediaExplorerContent::selectionChanged() {
         fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
         formatLabel_.setText("Magda Clip", juce::dontSendNotification);
         propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()) +
-                                     " • Preview: Coming soon",
+                                     " | Preview: Coming soon",
                                  juce::dontSendNotification);
 
         if (thumbnailComponent_) {
@@ -1456,28 +1501,39 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
         } else if (sidebarComponent_->canAddFavorite()) {
             menu.addItem(2, "Add to favorites");
         } else {
-            menu.addItem(0, "Favorites full (max 8)", false);
+            // SectionHeader, not addItem(0, …) — JUCE asserts on id 0
+            // because it's reserved for "user dismissed". Section headers
+            // are the sanctioned way to put non-clickable label text.
+            menu.addSectionHeader("Favorites full (max 8)");
         }
         menu.addSeparator();
-        menu.addItem(3, "Index this folder for sample library");
+        // Context-aware label: if any file under this folder is already in
+        // the media DB, this is a Re-index (force re-derivation); otherwise
+        // it's a first-time Index. Range-query against the path index is
+        // O(log N) so this is safe to run on every right-click.
+        const bool alreadyIndexed = magda::media::hasIndexedDescendantOfFolder(
+            std::filesystem::path(file.getFullPathName().toStdString()));
+        menu.addItem(3, alreadyIndexed ? "Re-index this folder for sample library"
+                                       : "Index this folder for sample library");
 
-        menu.showMenuAsync(juce::PopupMenu::Options(), [this, path, file](int result) {
-            if (result == 1) {
-                auto favs = magda::Config::getInstance().getBrowserFavorites();
-                favs.erase(std::remove(favs.begin(), favs.end(), path), favs.end());
-                magda::Config::getInstance().setBrowserFavorites(favs);
-                magda::Config::getInstance().save();
-                sidebarComponent_->rebuildFavoriteButtons();
-            } else if (result == 2) {
-                auto favs = magda::Config::getInstance().getBrowserFavorites();
-                favs.push_back(path);
-                magda::Config::getInstance().setBrowserFavorites(favs);
-                magda::Config::getInstance().save();
-                sidebarComponent_->rebuildFavoriteButtons();
-            } else if (result == 3 && dbBrowser_) {
-                dbBrowser_->startIndexing(file);
-            }
-        });
+        menu.showMenuAsync(
+            juce::PopupMenu::Options(), [this, path, file, alreadyIndexed](int result) {
+                if (result == 1) {
+                    auto favs = magda::Config::getInstance().getBrowserFavorites();
+                    favs.erase(std::remove(favs.begin(), favs.end(), path), favs.end());
+                    magda::Config::getInstance().setBrowserFavorites(favs);
+                    magda::Config::getInstance().save();
+                    sidebarComponent_->rebuildFavoriteButtons();
+                } else if (result == 2) {
+                    auto favs = magda::Config::getInstance().getBrowserFavorites();
+                    favs.push_back(path);
+                    magda::Config::getInstance().setBrowserFavorites(favs);
+                    magda::Config::getInstance().save();
+                    sidebarComponent_->rebuildFavoriteButtons();
+                } else if (result == 3 && dbBrowser_) {
+                    dbBrowser_->startIndexing(file, /*force=*/alreadyIndexed);
+                }
+            });
         return;
     }
 

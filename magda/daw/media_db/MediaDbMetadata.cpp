@@ -123,4 +123,40 @@ void setUserKeyForFile(const std::filesystem::path& path, std::optional<std::str
     setUserKey(ctx.db(), path, std::move(root), std::move(scale));
 }
 
+bool hasIndexedDescendant(MediaDatabase& db, const std::filesystem::path& folder) {
+    // Prefix = folder path with a trailing separator so we match only
+    // descendants (foo/bar/baz.wav), never the folder itself or sibling
+    // entries (foo/barxyz.wav). Upper bound increments the last char so
+    // the range query covers exactly the descendant set.
+    std::string prefix = folder.string();
+    if (prefix.empty()) {
+        return false;
+    }
+    if (prefix.back() != '/' && prefix.back() != '\\') {
+        prefix.push_back('/');
+    }
+    std::string upper = prefix;
+    upper.back() = static_cast<char>(static_cast<unsigned char>(upper.back()) + 1);
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db.handle(),
+                           "SELECT 1 FROM media_file WHERE path >= ? AND path < ? LIMIT 1", -1,
+                           &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, prefix.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, upper.c_str(), -1, SQLITE_TRANSIENT);
+    const bool found = (sqlite3_step(stmt) == SQLITE_ROW);
+    sqlite3_finalize(stmt);
+    return found;
+}
+
+bool hasIndexedDescendantOfFolder(const std::filesystem::path& folder) {
+    auto& ctx = MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return false;
+    }
+    return hasIndexedDescendant(ctx.db(), folder);
+}
+
 }  // namespace magda::media

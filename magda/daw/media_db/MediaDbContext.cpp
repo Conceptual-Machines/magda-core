@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include "../core/AppPaths.hpp"
+#include "../core/Config.hpp"
 #include "ClapAudioEncoder.hpp"
 #include "ClapTextEncoder.hpp"
 #include "MediaDatabase.hpp"
@@ -31,6 +32,20 @@ std::filesystem::path MediaDbContext::dbPath() const {
 }
 
 std::filesystem::path MediaDbContext::modelsDir() const {
+    // User override: if Config has a non-empty path AND it points at a
+    // real directory, use it. Lets the user keep the ~600 MB Sample
+    // Tagger bundle on an external drive. Falls back to the default
+    // when unset or when the override directory has gone missing
+    // (drive unplugged, etc.) — fallback prevents the downloader and
+    // lazy-load code from chasing dead paths.
+    const auto override = magda::Config::getInstance().getSampleTaggerModelsDir();
+    if (!override.empty()) {
+        std::filesystem::path p(override);
+        std::error_code ec;
+        if (std::filesystem::is_directory(p, ec)) {
+            return p;
+        }
+    }
     return std::filesystem::path(
                magda::paths::dataDir().getChildFile("MediaDB").getFullPathName().toStdString()) /
            "models";
@@ -70,13 +85,20 @@ bool MediaDbContext::ensureInitialized() {
     return true;
 }
 
-void MediaDbContext::loadOptionalAi() {
-    // Retained for completeness but no longer called from ensureInitialized().
-    // Useful if a future "preload models" toggle in preferences wants to
-    // warm everything up at startup.
+void MediaDbContext::preloadModels() {
+    // Force the lazy accessors to instantiate now. The "Load on startup"
+    // Config toggle and the AI Settings → Sample Tagger → Load button both
+    // call this; running it on a background thread keeps the UI fluid
+    // (this method itself blocks until each ORT Session is built).
     (void)audioEncoder();
     (void)textEncoder();
     (void)tokenizer();
+}
+
+void MediaDbContext::unloadModels() {
+    audioEnc_.reset();
+    textEnc_.reset();
+    tokenizer_.reset();
 }
 
 void MediaDbContext::shutdown() {
@@ -99,6 +121,34 @@ bool MediaDbContext::hasTextSearch() const noexcept {
     return std::filesystem::exists(textModelPath()) && std::filesystem::exists(tokenizerJsonPath());
 }
 
+bool MediaDbContext::isAudioEncoderLoaded() const noexcept {
+    return audioEnc_ != nullptr;
+}
+bool MediaDbContext::isTextEncoderLoaded() const noexcept {
+    return textEnc_ != nullptr;
+}
+bool MediaDbContext::isTokenizerLoaded() const noexcept {
+    return tokenizer_ != nullptr;
+}
+bool MediaDbContext::isLoadInProgress() const noexcept {
+    return loadInProgress_.load() > 0;
+}
+
+// RAII guard around the loadInProgress_ counter. Increment on entry,
+// decrement on scope exit so the status indicator can show "loading"
+// while any of the three ORT/tokenizer constructions are running.
+namespace {
+struct LoadGuard {
+    std::atomic<int>& counter;
+    explicit LoadGuard(std::atomic<int>& c) : counter(c) {
+        counter.fetch_add(1, std::memory_order_relaxed);
+    }
+    ~LoadGuard() {
+        counter.fetch_sub(1, std::memory_order_relaxed);
+    }
+};
+}  // namespace
+
 MediaDatabase& MediaDbContext::db() {
     if (!db_) {
         throw std::runtime_error("MediaDbContext::db() called before ensureInitialized()");
@@ -118,6 +168,7 @@ ClapAudioEncoder* MediaDbContext::audioEncoder() noexcept {
     if (!std::filesystem::exists(audioModelPath())) {
         return nullptr;
     }
+    LoadGuard guard(loadInProgress_);
     try {
         audioEnc_ = std::make_unique<ClapAudioEncoder>(audioModelPath());
     } catch (const std::exception&) {
@@ -133,6 +184,7 @@ ClapTextEncoder* MediaDbContext::textEncoder() noexcept {
     if (!std::filesystem::exists(textModelPath())) {
         return nullptr;
     }
+    LoadGuard guard(loadInProgress_);
     try {
         textEnc_ = std::make_unique<ClapTextEncoder>(textModelPath());
     } catch (const std::exception&) {
@@ -148,6 +200,7 @@ RobertaTokenizer* MediaDbContext::tokenizer() noexcept {
     if (!std::filesystem::exists(tokenizerJsonPath())) {
         return nullptr;
     }
+    LoadGuard guard(loadInProgress_);
     try {
         tokenizer_ = std::make_unique<RobertaTokenizer>(tokenizerJsonPath());
     } catch (const std::exception&) {

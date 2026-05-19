@@ -125,24 +125,34 @@ std::string buildFtsQuery(const std::string& text) {
 
 // ---- Score gathering -----------------------------------------------------
 
+// Cap on rows pulled from FTS, also reused as the cosine candidate cap so
+// the two pools line up. A common term like "kick" might match tens of
+// thousands of rows in a large library; without this cap ftsScores would
+// load all of them into the map before the cosine stage trims down.
+constexpr int kCandidateCap = 5000;
+
 std::unordered_map<std::int64_t, float> ftsScores(sqlite3* db, const std::string& text,
                                                   const BuiltWhere& w) {
     const std::string fts = buildFtsQuery(text);
     if (fts.empty()) {
         return {};
     }
+    // ORDER BY bm25 ASC because bm25() returns negative values whose lower
+    // magnitude == stronger match; we alias to -bm25 in the SELECT so the
+    // map stores larger-is-better scores like everywhere else.
     const std::string sql = "SELECT f.id, -bm25(media_fts) AS s "
                             "FROM media_fts "
                             "JOIN media_file AS f ON f.id = media_fts.rowid "
                             "WHERE media_fts MATCH ? AND " +
-                            w.clause;
+                            w.clause + " ORDER BY bm25(media_fts) LIMIT ?";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
         return {};
     }
     sqlite3_bind_text(stmt, 1, fts.c_str(), -1, SQLITE_TRANSIENT);
-    bindAll(stmt, 2, w);
+    const int after = bindAll(stmt, 2, w);
+    sqlite3_bind_int(stmt, after, kCandidateCap);
 
     std::unordered_map<std::int64_t, float> scores;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -152,19 +162,30 @@ std::unordered_map<std::int64_t, float> ftsScores(sqlite3* db, const std::string
     return scores;
 }
 
-std::unordered_map<std::int64_t, float> audioScores(sqlite3* db, const std::vector<float>& queryVec,
-                                                    const BuiltWhere& w) {
-    const std::string sql = "SELECT f.id, e.vector_dim, e.vector_blob "
-                            "FROM media_file AS f "
-                            "JOIN media_embedding AS e ON e.file_id = f.id "
-                            "WHERE " +
-                            w.clause;
+// Cosine over an explicit candidate set. Two-stage retrieval keeps this
+// bounded — without it, a 100k-row library would scan every embedding row
+// for every keystroke. Caller picks candidates from FTS hits + a recency
+// fallback (see search() below).
+std::unordered_map<std::int64_t, float> audioScoresOnCandidates(
+    sqlite3* db, const std::vector<float>& queryVec,
+    const std::vector<std::int64_t>& candidateIds) {
+    if (candidateIds.empty()) {
+        return {};
+    }
+    std::string sql = "SELECT file_id, vector_dim, vector_blob "
+                      "FROM media_embedding WHERE file_id IN (";
+    for (size_t i = 0; i < candidateIds.size(); ++i) {
+        sql += (i == 0 ? "?" : ",?");
+    }
+    sql += ")";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
         return {};
     }
-    bindAll(stmt, 1, w);
+    for (size_t i = 0; i < candidateIds.size(); ++i) {
+        sqlite3_bind_int64(stmt, static_cast<int>(i + 1), candidateIds[i]);
+    }
 
     std::unordered_map<std::int64_t, float> scores;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -187,6 +208,29 @@ std::unordered_map<std::int64_t, float> audioScores(sqlite3* db, const std::vect
     }
     sqlite3_finalize(stmt);
     return scores;
+}
+
+// Recency fallback: pick the N most-recently-indexed rows matching the
+// active filters. Used when the FTS side returns nothing (e.g. a purely
+// semantic query like "warm pad" with no filename overlap) — otherwise
+// cosine would have no candidates and the user would see an empty list
+// even though there are embedded files that might match semantically.
+std::vector<std::int64_t> candidateIdsByRecency(sqlite3* db, const BuiltWhere& w, int limit) {
+    const std::string sql =
+        "SELECT id FROM media_file WHERE " + w.clause + " ORDER BY indexed_at DESC LIMIT ?";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        return {};
+    }
+    const int after = bindAll(stmt, 1, w);
+    sqlite3_bind_int(stmt, after, limit);
+
+    std::vector<std::int64_t> ids;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        ids.push_back(sqlite3_column_int64(stmt, 0));
+    }
+    sqlite3_finalize(stmt);
+    return ids;
 }
 
 // ---- Hydrate a list of (score, file_id) into QueryResult rows -----------
@@ -212,7 +256,9 @@ std::vector<QueryResult> hydrate(sqlite3* db,
         return out;
     }
     // Bulk-fetch with one IN-clause query, then re-order by the input vector.
-    std::string sql = "SELECT id, path, kind, family, shape, bpm, key_root, key_scale, duration_s "
+    std::string sql = "SELECT id, path, kind, family, shape, bpm, key_root, key_scale, duration_s, "
+                      "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
+                      "        WHERE file_id = media_file.id) AS tags "
                       "FROM media_file WHERE id IN (";
     for (size_t i = 0; i < scored.size(); ++i) {
         sql += (i == 0 ? "?" : ",?");
@@ -243,6 +289,19 @@ std::vector<QueryResult> hydrate(sqlite3* db,
         r.keyRoot = optString(stmt, 6);
         r.keyScale = optString(stmt, 7);
         r.durationS = optDouble(stmt, 8);
+        if (auto tagsCsv = optString(stmt, 9)) {
+            std::stringstream ts(*tagsCsv);
+            std::string tag;
+            while (std::getline(ts, tag, ',')) {
+                // GROUP_CONCAT joins with ", " — trim leading space.
+                while (!tag.empty() && tag.front() == ' ') {
+                    tag.erase(tag.begin());
+                }
+                if (!tag.empty()) {
+                    r.tags.push_back(tag);
+                }
+            }
+        }
         byId.emplace(r.fileId, std::move(r));
     }
     sqlite3_finalize(stmt);
@@ -261,11 +320,13 @@ std::vector<QueryResult> hydrate(sqlite3* db,
 
 // ---- Filter-only browse --------------------------------------------------
 
-std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit) {
+std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit, int offset) {
     const std::string sql =
-        "SELECT id, path, kind, family, shape, bpm, key_root, key_scale, duration_s "
+        "SELECT id, path, kind, family, shape, bpm, key_root, key_scale, duration_s, "
+        "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
+        "        WHERE file_id = media_file.id) AS tags "
         "FROM media_file WHERE " +
-        w.clause + " ORDER BY indexed_at DESC LIMIT ?";
+        w.clause + " ORDER BY indexed_at DESC LIMIT ? OFFSET ?";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -273,6 +334,7 @@ std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit)
     }
     const int after = bindAll(stmt, 1, w);
     sqlite3_bind_int(stmt, after, limit);
+    sqlite3_bind_int(stmt, after + 1, offset);
 
     std::vector<QueryResult> out;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -290,6 +352,18 @@ std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit)
         r.keyRoot = optString(stmt, 6);
         r.keyScale = optString(stmt, 7);
         r.durationS = optDouble(stmt, 8);
+        if (auto tagsCsv = optString(stmt, 9)) {
+            std::stringstream ts(*tagsCsv);
+            std::string tag;
+            while (std::getline(ts, tag, ',')) {
+                while (!tag.empty() && tag.front() == ' ') {
+                    tag.erase(tag.begin());
+                }
+                if (!tag.empty()) {
+                    r.tags.push_back(tag);
+                }
+            }
+        }
         r.score = std::numeric_limits<float>::quiet_NaN();
         out.push_back(std::move(r));
     }
@@ -306,33 +380,57 @@ MediaDbQuery::MediaDbQuery(MediaDatabase& db, ClapTextEncoder* textEncoder,
     : db_(db), textEncoder_(textEncoder), tokenizer_(tokenizer) {}
 
 std::vector<QueryResult> MediaDbQuery::search(const std::optional<std::string>& text,
-                                              const QueryFilters& filters, int limit,
+                                              const QueryFilters& filters, int limit, int offset,
                                               QueryWeights weights) const {
     sqlite3* sql = db_.handle();
     const BuiltWhere where = buildWhere(filters);
-
-    if (!text || text->empty()) {
-        return filterOnly(sql, where, limit);
+    if (limit < 0) {
+        limit = 0;
+    }
+    if (offset < 0) {
+        offset = 0;
     }
 
-    // Audio cosine for everything embedded that matches filters. Skipped if
-    // either the encoder or tokenizer isn't loaded.
+    if (!text || text->empty()) {
+        return filterOnly(sql, where, limit, offset);
+    }
+
+    // Stage 1: cheap FTS BM25 over path / tag tokens. This is also the
+    // primary candidate source for stage 2.
+    const auto bm25 = ftsScores(sql, *text, where);
+
+    // Stage 2: cosine over a bounded candidate set. The full media_embedding
+    // table can be tens of MB for a real library; scanning it per keystroke
+    // is the dominant search cost. Prefer FTS hits as candidates; if there
+    // are none (purely semantic query with no filename overlap) fall back to
+    // the most-recently-indexed rows matching the filters.
+    std::vector<std::int64_t> cosineCandidates;
+    cosineCandidates.reserve(bm25.size());
+    if (!bm25.empty()) {
+        // FTS already capped at kCandidateCap and ordered by score, so we
+        // can just take the ids directly — no extra sort needed here.
+        cosineCandidates.reserve(bm25.size());
+        for (const auto& [id, _] : bm25) {
+            cosineCandidates.push_back(id);
+        }
+    } else if (textEncoder_ && tokenizer_) {
+        cosineCandidates = candidateIdsByRecency(sql, where, kCandidateCap);
+    }
+
     std::unordered_map<std::int64_t, float> audio;
-    if (textEncoder_ && tokenizer_) {
+    if (textEncoder_ && tokenizer_ && !cosineCandidates.empty()) {
         const auto enc = tokenizer_->encode(*text);
         if (!enc.inputIds.empty()) {
             try {
                 auto qvec = textEncoder_->embedTokens(enc.inputIds, enc.attentionMask);
                 if (!qvec.empty()) {
-                    audio = audioScores(sql, qvec, where);
+                    audio = audioScoresOnCandidates(sql, qvec, cosineCandidates);
                 }
             } catch (const ClapTextEncoderError&) {
                 // Treat semantic side as unavailable for this query.
             }
         }
     }
-
-    const auto bm25 = ftsScores(sql, *text, where);
 
     std::unordered_set<std::int64_t> candidates;
     for (const auto& [id, _] : audio) {
@@ -375,10 +473,128 @@ std::vector<QueryResult> MediaDbQuery::search(const std::optional<std::string>& 
     }
     std::sort(combined.begin(), combined.end(),
               [](const auto& a, const auto& b) { return a.first > b.first; });
+    // Slice [offset, offset + limit] off the ranked list. Cosine over the
+    // candidate set produced the full ordering already; paging is a pure
+    // window into that, so it costs nothing extra except hydrating fewer
+    // rows.
+    if (offset >= static_cast<int>(combined.size())) {
+        return {};
+    }
+    combined.erase(combined.begin(), combined.begin() + offset);
     if (static_cast<int>(combined.size()) > limit) {
         combined.resize(static_cast<size_t>(limit));
     }
     return hydrate(sql, combined);
+}
+
+std::vector<QueryResult> MediaDbQuery::similarTo(std::int64_t seedFileId,
+                                                 const QueryFilters& filters, int limit,
+                                                 int offset) const {
+    sqlite3* sql = db_.handle();
+    if (limit < 0) {
+        limit = 0;
+    }
+    if (offset < 0) {
+        offset = 0;
+    }
+
+    // Pull the seed's embedding. similarTo is a no-op if the seed wasn't
+    // indexed with an audio model (no embedding row).
+    std::vector<float> seedVec;
+    {
+        sqlite3_stmt* stmt = nullptr;
+        const char* q = "SELECT vector_dim, vector_blob FROM media_embedding WHERE file_id = ?";
+        if (sqlite3_prepare_v2(sql, q, -1, &stmt, nullptr) != SQLITE_OK) {
+            return {};
+        }
+        sqlite3_bind_int64(stmt, 1, seedFileId);
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            const int dim = sqlite3_column_int(stmt, 0);
+            const auto* blob = static_cast<const std::uint8_t*>(sqlite3_column_blob(stmt, 1));
+            const int bytes = sqlite3_column_bytes(stmt, 1);
+            if (dim > 0 && bytes == dim * static_cast<int>(sizeof(float))) {
+                seedVec.resize(static_cast<size_t>(dim));
+                std::memcpy(seedVec.data(), blob, static_cast<size_t>(bytes));
+            }
+        }
+        sqlite3_finalize(stmt);
+    }
+    if (seedVec.empty()) {
+        return {};
+    }
+
+    // Candidate set = filter-matched, capped by recency. Same bound as the
+    // text search path so a huge library doesn't get scanned end to end.
+    const BuiltWhere where = buildWhere(filters);
+    auto candidateIds = candidateIdsByRecency(sql, where, kCandidateCap);
+    if (candidateIds.empty()) {
+        return {};
+    }
+
+    const auto scores = audioScoresOnCandidates(sql, seedVec, candidateIds);
+    if (scores.empty()) {
+        return {};
+    }
+
+    std::vector<std::pair<float, std::int64_t>> ranked;
+    ranked.reserve(scores.size());
+    for (const auto& [id, s] : scores) {
+        if (id == seedFileId) {
+            continue;  // drop the seed from its own neighbours
+        }
+        ranked.emplace_back(s, id);
+    }
+    std::sort(ranked.begin(), ranked.end(),
+              [](const auto& a, const auto& b) { return a.first > b.first; });
+
+    if (offset >= static_cast<int>(ranked.size())) {
+        return {};
+    }
+    ranked.erase(ranked.begin(), ranked.begin() + offset);
+    if (static_cast<int>(ranked.size()) > limit) {
+        ranked.resize(static_cast<size_t>(limit));
+    }
+    return hydrate(sql, ranked);
+}
+
+bool MediaDbQuery::hasEmbedding(std::int64_t fileId) const {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.handle(), "SELECT 1 FROM media_embedding WHERE file_id = ? LIMIT 1",
+                           -1, &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+    sqlite3_bind_int64(stmt, 1, fileId);
+    const bool found = sqlite3_step(stmt) == SQLITE_ROW;
+    sqlite3_finalize(stmt);
+    return found;
+}
+
+int MediaDbQuery::totalEmbeddings() const {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.handle(), "SELECT COUNT(*) FROM media_embedding", -1, &stmt,
+                           nullptr) != SQLITE_OK) {
+        return 0;
+    }
+    int n = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        n = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    return n;
+}
+
+int MediaDbQuery::totalFiles() const {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.handle(), "SELECT COUNT(*) FROM media_file", -1, &stmt, nullptr) !=
+        SQLITE_OK) {
+        return 0;
+    }
+    int n = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        n = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    return n;
 }
 
 }  // namespace magda::media

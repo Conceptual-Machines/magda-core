@@ -54,4 +54,17 @@ void setUserBpmForFile(const std::filesystem::path& path, std::optional<double> 
 void setUserKeyForFile(const std::filesystem::path& path, std::optional<std::string> root,
                        std::optional<std::string> scale);
 
+// True if the DB has any indexed file under `folder` (descendant in the
+// path hierarchy, not equal to it). Used by the file-browser folder
+// right-click menu to label its action "Index" vs "Re-index" depending
+// on whether the folder has been scanned before.
+//
+// Implementation uses a range query (path >= folder/, path < folder0)
+// against the unique-index on media_file.path, so it's O(log N) even on
+// libraries with hundreds of thousands of files — much faster than a
+// LIKE-prefix scan.
+[[nodiscard]] bool hasIndexedDescendant(MediaDatabase& db, const std::filesystem::path& folder);
+
+[[nodiscard]] bool hasIndexedDescendantOfFolder(const std::filesystem::path& folder);
+
 }  // namespace magda::media

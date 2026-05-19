@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <filesystem>
 #include <memory>
 
@@ -36,6 +37,26 @@ class MediaDbContext {
     [[nodiscard]] bool hasAudioEncoder() const noexcept;
     [[nodiscard]] bool hasTextSearch() const noexcept;  // tokenizer + textEncoder both loaded
 
+    // Runtime "loaded into memory" check — distinct from the file-on-disk
+    // checks above. True once the underlying ORT session / tokenizer has
+    // been instantiated (whether by lazy access or explicit preload).
+    [[nodiscard]] bool isAudioEncoderLoaded() const noexcept;
+    [[nodiscard]] bool isTextEncoderLoaded() const noexcept;
+    [[nodiscard]] bool isTokenizerLoaded() const noexcept;
+
+    // True while at least one model is currently being instantiated
+    // (preloadModels in progress, or a lazy accessor mid-construction on
+    // some other thread). Polled by the DB browser's status indicator.
+    [[nodiscard]] bool isLoadInProgress() const noexcept;
+
+    // Force the lazy-loaded models into memory now. No-op for any file that
+    // isn't on disk. Safe to call from any thread.
+    void preloadModels();
+
+    // Drop the in-memory ORT sessions / tokenizer; files on disk stay.
+    // Subsequent lazy-access reloads on demand.
+    void unloadModels();
+
     MediaDatabase& db();
     ClapAudioEncoder* audioEncoder() noexcept;
     ClapTextEncoder* textEncoder() noexcept;
@@ -57,13 +78,15 @@ class MediaDbContext {
     MediaDbContext();
     ~MediaDbContext();
 
-    void loadOptionalAi();  // sets audioEnc_/textEnc_/tokenizer_ if files exist
-
     std::unique_ptr<MediaDatabase> db_;
     std::unique_ptr<ClapAudioEncoder> audioEnc_;
     std::unique_ptr<ClapTextEncoder> textEnc_;
     std::unique_ptr<RobertaTokenizer> tokenizer_;
     bool initAttempted_ = false;
+    // Counter rather than bool so concurrent loads (audio + text + tokenizer
+    // from preloadModels, or a worker triggering text-encoder load while
+    // the indexer triggers audio-encoder load) all show as "loading".
+    std::atomic<int> loadInProgress_{0};
 };
 
 }  // namespace magda::media
