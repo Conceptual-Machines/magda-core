@@ -790,6 +790,16 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
     }
 }
 
+void PianoRollGridComponent::mouseWheelMove(const juce::MouseEvent& e,
+                                            const juce::MouseWheelDetails& wheel) {
+    if (e.mods.isAltDown() && onVerticalZoomRequested) {
+        onVerticalZoomRequested(e.y, wheel);
+        return;
+    }
+
+    juce::Component::mouseWheelMove(e, wheel);
+}
+
 bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
     // Handle pending chord confirmation/cancellation
     if (pendingChord_.active) {

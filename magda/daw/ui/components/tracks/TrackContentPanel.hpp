@@ -143,6 +143,7 @@ class TrackContentPanel : public juce::Component,
     void hideAutomationLane(TrackId trackId, AutomationLaneId laneId);
     void toggleAutomationLane(TrackId trackId, AutomationLaneId laneId);
     bool isAutomationLaneVisible(TrackId trackId, AutomationLaneId laneId) const;
+    bool getAutomationLaneBounds(AutomationLaneId laneId, juce::Rectangle<int>& bounds) const;
     int getTrackTotalHeight(int trackIndex) const;  // Track + visible automation lanes
 
     // Beat/pixel conversion (native domain — zoom is ppb)
@@ -162,7 +163,11 @@ class TrackContentPanel : public juce::Component,
     std::function<void(const juce::StringArray&)> onGhostHeadersChanged;
     std::function<void(int, int)> onTrackHeightChanged;
     std::function<void(double, double, std::set<int>)>
-        onTimeSelectionChanged;                             // startTime, endTime, trackIndices
+        onTimeSelectionChanged;  // startTime, endTime, trackIndices
+    std::function<void(double, double, std::set<int>, std::set<AutomationLaneId>)>
+        onMixedTimeSelectionChanged;  // clip selection plus explicit automation lanes
+    std::function<void(double, double, std::set<int>, std::set<AutomationLaneId>)>
+        onAutomationTimeSelectionChanged;                   // automation-only selection
     std::function<void(double)> onPlayheadPositionChanged;  // Called when playhead is set via click
     std::function<void(ClipId)> onClipRenderRequested;      // Render clip to new file
     std::function<void()> onRenderTimeSelectionRequested;   // Render time selection
@@ -178,6 +183,7 @@ class TrackContentPanel : public juce::Component,
     void startMultiClipDrag(ClipId anchorClipId, const juce::Point<int>& startPos);
     void updateMultiClipDrag(const juce::Point<int>& currentPos);
     void finishMultiClipDrag();
+    bool duplicateSelectedArrangementClips(bool includeAutomation);
 
     // Ghost clip methods (for Alt+drag visual feedback)
     void setClipGhost(ClipId clipId, const juce::Rectangle<int>& bounds,
@@ -329,6 +335,7 @@ class TrackContentPanel : public juce::Component,
     void rebuildAutomationLaneComponents();
     void updateAutomationLanePositions();
     int getVisibleAutomationLanesHeight(TrackId trackId) const;
+    bool getAutomationLaneStripAtY(int y, int& trackIndex, AutomationLaneId& laneId) const;
 
     // ========================================================================
     // Marquee Selection State

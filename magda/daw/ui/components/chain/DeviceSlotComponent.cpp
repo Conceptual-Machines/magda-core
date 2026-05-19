@@ -1486,7 +1486,8 @@ void DeviceSlotComponent::onModTargetChangedInternal(int modIndex, magda::Contro
 }
 
 void DeviceSlotComponent::onModNameChangedInternal(int modIndex, const juce::String& name) {
-    magda::TrackManager::getInstance().setModName(nodePath_, modIndex, name);
+    magda::UndoManager::getInstance().executeCommand(
+        std::make_unique<magda::SetModNameCommand>(nodePath_, modIndex, name));
 }
 
 void DeviceSlotComponent::onModTypeChangedInternal(int modIndex, magda::ModType type) {
@@ -1554,7 +1555,8 @@ void DeviceSlotComponent::onMacroTargetChangedInternal(int macroIndex,
 }
 
 void DeviceSlotComponent::onMacroNameChangedInternal(int macroIndex, const juce::String& name) {
-    magda::TrackManager::getInstance().setMacroName(nodePath_, macroIndex, name);
+    magda::UndoManager::getInstance().executeCommand(
+        std::make_unique<magda::SetMacroNameCommand>(nodePath_, macroIndex, name));
 }
 
 void DeviceSlotComponent::onMacroAllLinksClearedInternal(int macroIndex) {
@@ -1608,6 +1610,12 @@ void DeviceSlotComponent::onModLinkAmountChangedInternal(int modIndex, magda::Co
     updateParamModulation();
 }
 
+void DeviceSlotComponent::onModLinkEnabledChangedInternal(int modIndex, magda::ControlTarget target,
+                                                          bool enabled) {
+    magda::TrackManager::getInstance().setModLinkEnabled(nodePath_, modIndex, target, enabled);
+    updateParamModulation();
+}
+
 void DeviceSlotComponent::onModNewLinkCreatedInternal(int modIndex, magda::ControlTarget target,
                                                       float amount) {
     magda::TrackManager::getInstance().setModTarget(nodePath_, modIndex, target);
@@ -1622,6 +1630,12 @@ void DeviceSlotComponent::onModNewLinkCreatedInternal(int modIndex, magda::Contr
 
 void DeviceSlotComponent::onModLinkRemovedInternal(int modIndex, magda::ControlTarget target) {
     magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, target);
+    updateModsPanel();
+    updateParamModulation();
+}
+
+void DeviceSlotComponent::onModAllLinksClearedInternal(int modIndex) {
+    magda::TrackManager::getInstance().clearAllModLinks(nodePath_, modIndex);
     updateModsPanel();
     updateParamModulation();
 }

@@ -106,6 +106,17 @@ void AutomationLaneComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
+    if (isInTimeSelectionStrip(e.x, e.y) && e.mods.isLeftButtonDown()) {
+        isCreatingTimeSelection_ = true;
+        timeSelectionAnchor_ = e.getPosition();
+        timeSelectionStartBeat_ = xToBeat(e.x);
+        if (snapBeatToGrid)
+            timeSelectionStartBeat_ = snapBeatToGrid(timeSelectionStartBeat_);
+        SelectionManager::getInstance().selectAutomationLane(laneId_);
+        setMouseCursor(juce::MouseCursor::IBeamCursor);
+        return;
+    }
+
     // Click on header selects lane
     if (e.y < HEADER_HEIGHT) {
         SelectionManager::getInstance().selectAutomationLane(laneId_);
@@ -113,6 +124,18 @@ void AutomationLaneComponent::mouseDown(const juce::MouseEvent& e) {
 }
 
 void AutomationLaneComponent::mouseDrag(const juce::MouseEvent& e) {
+    if (isCreatingTimeSelection_) {
+        double endBeat = xToBeat(e.x);
+        if (snapBeatToGrid)
+            endBeat = snapBeatToGrid(endBeat);
+
+        if (onTimeSelectionChanged) {
+            onTimeSelectionChanged(laneId_, juce::jmin(timeSelectionStartBeat_, endBeat),
+                                   juce::jmax(timeSelectionStartBeat_, endBeat));
+        }
+        return;
+    }
+
     if (isResizing_) {
         int deltaY = e.y - resizeStartY_;
         int newHeight = juce::jlimit(MIN_LANE_HEIGHT, MAX_LANE_HEIGHT, resizeStartHeight_ + deltaY);
@@ -127,7 +150,22 @@ void AutomationLaneComponent::mouseDrag(const juce::MouseEvent& e) {
     }
 }
 
-void AutomationLaneComponent::mouseUp(const juce::MouseEvent& /*e*/) {
+void AutomationLaneComponent::mouseUp(const juce::MouseEvent& e) {
+    if (isCreatingTimeSelection_) {
+        double endBeat = xToBeat(e.x);
+        if (snapBeatToGrid)
+            endBeat = snapBeatToGrid(endBeat);
+
+        if (onTimeSelectionChanged) {
+            onTimeSelectionChanged(laneId_, juce::jmin(timeSelectionStartBeat_, endBeat),
+                                   juce::jmax(timeSelectionStartBeat_, endBeat));
+        }
+
+        isCreatingTimeSelection_ = false;
+        setMouseCursor(juce::MouseCursor::IBeamCursor);
+        return;
+    }
+
     if (isResizing_) {
         isResizing_ = false;
         setMouseCursor(juce::MouseCursor::NormalCursor);
@@ -137,6 +175,8 @@ void AutomationLaneComponent::mouseUp(const juce::MouseEvent& /*e*/) {
 void AutomationLaneComponent::mouseMove(const juce::MouseEvent& e) {
     if (isInResizeArea(e.y)) {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    } else if (isInTimeSelectionStrip(e.x, e.y)) {
+        setMouseCursor(juce::MouseCursor::IBeamCursor);
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
     }
@@ -144,6 +184,16 @@ void AutomationLaneComponent::mouseMove(const juce::MouseEvent& e) {
 
 bool AutomationLaneComponent::isInResizeArea(int y) const {
     return y >= getHeight() - RESIZE_HANDLE_HEIGHT;
+}
+
+bool AutomationLaneComponent::isInTimeSelectionStrip(int x, int y) const {
+    return y >= 0 && y < HEADER_HEIGHT && x >= SCALE_LABEL_WIDTH;
+}
+
+double AutomationLaneComponent::xToBeat(int x) const {
+    if (pixelsPerBeat_ <= 0.0)
+        return 0.0;
+    return juce::jmax(0.0, static_cast<double>(x - SCALE_LABEL_WIDTH) / pixelsPerBeat_);
 }
 
 bool AutomationLaneComponent::hitTest(int x, int y) {

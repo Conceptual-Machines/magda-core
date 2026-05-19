@@ -239,6 +239,9 @@ class DuplicateClipCommand : public ValidatedCommand {
     ClipId getDuplicatedClipId() const {
         return duplicatedClipId_;
     }
+    ClipId getSourceClipId() const {
+        return sourceClipId_;
+    }
 
   private:
     ClipId sourceClipId_;

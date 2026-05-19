@@ -151,17 +151,19 @@ class ModMatrixContent : public juce::Component {
         juce::String paramName;
         float amount = 0.0f;
         bool bipolar = false;
+        bool enabled = true;
     };
 
     void setLinks(const std::vector<LinkRow>& links);
     bool isDragging() const {
         return draggingRow_ >= 0;
     }
-    bool updateLinkAmount(magda::ControlTarget target, float amount, bool bipolar);
+    bool updateLinkState(magda::ControlTarget target, float amount, bool bipolar, bool enabled);
 
     // Callbacks
     std::function<void(magda::ControlTarget target)> onDeleteLink;
     std::function<void(magda::ControlTarget target, bool bipolar)> onToggleBipolar;
+    std::function<void(magda::ControlTarget target, bool enabled)> onToggleEnabled;
     std::function<void(magda::ControlTarget target, float amount)> onAmountChanged;
 
     void paint(juce::Graphics& g) override;
@@ -226,6 +228,7 @@ class ModulatorEditorPanel : public juce::Component,
 
     // Callbacks
     std::function<void(float rate)> onRateChanged;
+    std::function<void(juce::String name)> onNameChanged;
     std::function<void(magda::LFOWaveform waveform)> onWaveformChanged;
     std::function<void(bool tempoSync)> onTempoSyncChanged;
     std::function<void(magda::SyncDivision division)> onSyncDivisionChanged;
@@ -237,12 +240,15 @@ class ModulatorEditorPanel : public juce::Component,
     std::function<void(int modIndex, magda::ControlTarget target)> onModLinkDeleted;
     std::function<void(int modIndex, magda::ControlTarget target, bool bipolar)>
         onModLinkBipolarChanged;
+    std::function<void(int modIndex, magda::ControlTarget target, bool enabled)>
+        onModLinkEnabledChanged;
     std::function<void(int modIndex, magda::ControlTarget target, float amount)>
         onModLinkAmountChanged;
 
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
+    bool keyPressed(const juce::KeyPress& key) override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
@@ -317,6 +323,7 @@ class ModulatorEditorPanel : public juce::Component,
     TextSlider audioReleaseSlider_{TextSlider::Format::Decimal};
 
     void updateFromMod();
+    void onNameLabelEdited();
     void updateModMatrix();
     void timerCallback() override;
 

@@ -1495,10 +1495,11 @@ class ShortcutsPage : public juce::Component {
         addShortcut("Cut", cmd("X"), "Clips");
         addShortcut("Copy", cmd("C"), "Clips");
         addShortcut("Paste", cmd("V"), "Clips");
-        addShortcut("Duplicate selected clip(s) or track(s)", cmd("D"), "Context");
-        addShortcut("Delete selected item or time selection", "Delete / Backspace", "Context");
-        addShortcut("Select All", cmd("A"), "Context");
-        addShortcut("Split / Trim", cmd("E"), "Clips");
+        addShortcut("Duplicate notes, clips, or time selection", cmd("D"), "Context");
+        addShortcut("Delete notes, clips, tracks, or time selection", "Delete / Backspace",
+                    "Context");
+        addShortcut("Select all notes or arrangement clips", cmd("A"), "Context");
+        addShortcut("Split / Trim arrangement clips", cmd("E"), "Arrange");
         addShortcut("Blade split at edit cursor", "B", "Arrange");
         addShortcut("Join Clips", cmd("J"), "Clips");
         addShortcut("Render Clip", cmd("B"), "Clips");
@@ -1509,14 +1510,16 @@ class ShortcutsPage : public juce::Component {
         addSection("Track");
         addShortcut("New Track", cmd("T"), "Global");
         addShortcut("New Group Track", shiftCmd("T"), "Global");
-        addShortcut("Duplicate Track without content", shiftCmd("D"), "Track selection");
-        addShortcut("Duplicate Track content only", altCmd("D"), "Track selection");
+        addShortcut("Duplicate selected track without clips", shiftCmd("D"), "Track selection");
+        addShortcut("Duplicate selected track clips only", altCmd("D"), "Track selection");
         addShortcut("Toggle Mute", "M", "Track selection");
-        addShortcut("Toggle Solo", "Shift+S", "Track selection");
+        addShortcut("Toggle Solo", shiftPrefix() + "S", "Track selection");
 
         addSection("Transport and View");
         addShortcut("Play / Stop", "Space", "Global");
         addShortcut("Exit link mode / clear selection", "Escape", "Context");
+        addShortcut("Cycle to next main view", "Tab", "Global");
+        addShortcut("Cycle to previous main view", shiftPrefix() + "Tab", "Global");
         addShortcut("Create loop from selection or clip", "L", "Arrange");
         addShortcut("Reset Zoom to Fit", cmd("0"), "Arrange");
         addShortcut("Toggle Arrangement Lock", "F4", "Arrange");
@@ -1529,9 +1532,6 @@ class ShortcutsPage : public juce::Component {
         addShortcut("Send AI message", "Return", "AI tab");
         addShortcut("New line in AI message", "Shift+Return", "AI tab");
         addShortcut("Accept autocomplete", "Tab / Return", "AI tab");
-
-        addSection("Development");
-        addShortcut("Open Debug Dialog", shiftAltCmd("D"), "Global");
     }
 
     void resized() override {
@@ -1590,10 +1590,6 @@ class ShortcutsPage : public juce::Component {
 
     static juce::String altCmd(const juce::String& key) {
         return altPrefix() + commandPrefix() + key;
-    }
-
-    static juce::String shiftAltCmd(const juce::String& key) {
-        return shiftPrefix() + altPrefix() + commandPrefix() + key;
     }
 
     void addSection(const juce::String& title) {

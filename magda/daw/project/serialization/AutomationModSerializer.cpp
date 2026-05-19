@@ -719,6 +719,7 @@ juce::var ProjectSerializer::serializeModLink(const ModLink& data) {
     obj->setProperty("target", juce::var(targetObj));
     SER(amount);
     SER(bipolar);
+    SER(enabled);
     return juce::var(obj);
 }
 
@@ -734,6 +735,8 @@ bool ProjectSerializer::deserializeModLink(const juce::var& json, ModLink& data)
     }
     DESER(amount);
     DESER(bipolar);
+    if (obj->hasProperty("enabled"))
+        DESER(enabled);
     return true;
 }
 

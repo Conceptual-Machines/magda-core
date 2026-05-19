@@ -1689,6 +1689,30 @@ void MainView::setupSelectionCallbacks() {
         }
     };
 
+    trackContentPanel->onMixedTimeSelectionChanged = [this](double start, double end,
+                                                            std::set<int> trackIndices,
+                                                            std::set<AutomationLaneId> laneIds) {
+        if (start < 0 || end < 0) {
+            timelineController->dispatch(ClearTimeSelectionEvent{});
+        } else {
+            timelineController->dispatch(
+                SetTimeSelectionEvent{start, end, trackIndices, false, std::move(laneIds)});
+            timelineController->dispatch(SetPlayheadPositionEvent{start});
+        }
+    };
+
+    trackContentPanel->onAutomationTimeSelectionChanged =
+        [this](double start, double end, std::set<int> trackIndices,
+               std::set<AutomationLaneId> laneIds) {
+            if (start < 0 || end < 0) {
+                timelineController->dispatch(ClearTimeSelectionEvent{});
+            } else {
+                timelineController->dispatch(
+                    SetTimeSelectionEvent{start, end, trackIndices, true, std::move(laneIds)});
+                timelineController->dispatch(SetPlayheadPositionEvent{start});
+            }
+        };
+
     // Set up playhead position callback from track content panel (click to set playhead)
     trackContentPanel->onPlayheadPositionChanged = [this](double position) {
         timelineController->dispatch(SetPlayheadPositionEvent{position});
@@ -1756,44 +1780,89 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     const int selectionWidth = endX - startX;
     const auto edgeColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.8f);
 
-    // Keep the inversion visible across empty track space, clips, and grid lines.
-    if (state.selection.isAllTracks()) {
-        paintTimeSelectionBand(g, {startX, 0, selectionWidth, getHeight()});
+    if (state.selection.automationOnly && !state.selection.automationLaneIds.empty()) {
+        const int scrollY = owner.trackContentViewport->getViewPositionY();
+        for (auto laneId : state.selection.automationLaneIds) {
+            juce::Rectangle<int> laneBounds;
+            if (!owner.trackContentPanel->getAutomationLaneBounds(laneId, laneBounds))
+                continue;
 
-        g.setColour(edgeColour);
-        g.drawLine(static_cast<float>(startX), 0.0f, static_cast<float>(startX),
-                   static_cast<float>(getHeight()), 2.0f);
-        g.drawLine(static_cast<float>(endX), 0.0f, static_cast<float>(endX),
-                   static_cast<float>(getHeight()), 2.0f);
-    } else {
-        int scrollY = owner.trackContentViewport->getViewPositionY();
-        int numTracks = owner.trackContentPanel->getNumTracks();
+            const int drawY = laneBounds.getY() - scrollY;
+            const int drawBottom = drawY + laneBounds.getHeight();
+            if (drawBottom < 0 || drawY > getHeight())
+                continue;
 
-        for (int trackIndex = 0; trackIndex < numTracks; ++trackIndex) {
-            if (state.selection.includesTrack(trackIndex)) {
-                int trackY = owner.trackContentPanel->getTrackYPosition(trackIndex) - scrollY;
-                int trackHeight = owner.trackContentPanel->getTrackHeight(trackIndex);
-                trackHeight = static_cast<int>(trackHeight * owner.verticalZoom);
+            const int clippedY = juce::jmax(0, drawY);
+            const int clippedBottom = juce::jmin(getHeight(), drawBottom);
+            const int drawHeight = clippedBottom - clippedY;
+            if (drawHeight <= 0)
+                continue;
 
-                if (trackY + trackHeight < 0 || trackY > getHeight()) {
-                    continue;
-                }
+            paintTimeSelectionBand(g, {startX, clippedY, selectionWidth, drawHeight});
 
-                int drawY = juce::jmax(0, trackY);
-                int drawBottom = juce::jmin(getHeight(), trackY + trackHeight);
-                int drawHeight = drawBottom - drawY;
+            g.setColour(edgeColour);
+            g.drawLine(static_cast<float>(startX), static_cast<float>(clippedY),
+                       static_cast<float>(startX), static_cast<float>(clippedBottom), 2.0f);
+            g.drawLine(static_cast<float>(endX), static_cast<float>(clippedY),
+                       static_cast<float>(endX), static_cast<float>(clippedBottom), 2.0f);
+        }
+        return;
+    }
 
-                if (drawHeight > 0) {
-                    paintTimeSelectionBand(g, {startX, drawY, selectionWidth, drawHeight});
+    int scrollY = owner.trackContentViewport->getViewPositionY();
+    int numTracks = owner.trackContentPanel->getNumTracks();
 
-                    g.setColour(edgeColour);
-                    g.drawLine(static_cast<float>(startX), static_cast<float>(drawY),
-                               static_cast<float>(startX), static_cast<float>(drawBottom), 2.0f);
-                    g.drawLine(static_cast<float>(endX), static_cast<float>(drawY),
-                               static_cast<float>(endX), static_cast<float>(drawBottom), 2.0f);
-                }
+    // Clip time selections only paint clip rows. Automation-only selections
+    // have their own lane-scoped branch above.
+    for (int trackIndex = 0; trackIndex < numTracks; ++trackIndex) {
+        if (state.selection.includesTrack(trackIndex)) {
+            int trackY = owner.trackContentPanel->getTrackYPosition(trackIndex) - scrollY;
+            int trackHeight = owner.trackContentPanel->getTrackHeight(trackIndex);
+            trackHeight = static_cast<int>(trackHeight * owner.verticalZoom);
+
+            if (trackY + trackHeight < 0 || trackY > getHeight()) {
+                continue;
+            }
+
+            int drawY = juce::jmax(0, trackY);
+            int drawBottom = juce::jmin(getHeight(), trackY + trackHeight);
+            int drawHeight = drawBottom - drawY;
+
+            if (drawHeight > 0) {
+                paintTimeSelectionBand(g, {startX, drawY, selectionWidth, drawHeight});
+
+                g.setColour(edgeColour);
+                g.drawLine(static_cast<float>(startX), static_cast<float>(drawY),
+                           static_cast<float>(startX), static_cast<float>(drawBottom), 2.0f);
+                g.drawLine(static_cast<float>(endX), static_cast<float>(drawY),
+                           static_cast<float>(endX), static_cast<float>(drawBottom), 2.0f);
             }
         }
+    }
+
+    for (auto laneId : state.selection.automationLaneIds) {
+        juce::Rectangle<int> laneBounds;
+        if (!owner.trackContentPanel->getAutomationLaneBounds(laneId, laneBounds))
+            continue;
+
+        const int drawY = laneBounds.getY() - scrollY;
+        const int drawBottom = drawY + laneBounds.getHeight();
+        if (drawBottom < 0 || drawY > getHeight())
+            continue;
+
+        const int clippedY = juce::jmax(0, drawY);
+        const int clippedBottom = juce::jmin(getHeight(), drawBottom);
+        const int drawHeight = clippedBottom - clippedY;
+        if (drawHeight <= 0)
+            continue;
+
+        paintTimeSelectionBand(g, {startX, clippedY, selectionWidth, drawHeight});
+
+        g.setColour(edgeColour);
+        g.drawLine(static_cast<float>(startX), static_cast<float>(clippedY),
+                   static_cast<float>(startX), static_cast<float>(clippedBottom), 2.0f);
+        g.drawLine(static_cast<float>(endX), static_cast<float>(clippedY), static_cast<float>(endX),
+                   static_cast<float>(clippedBottom), 2.0f);
     }
 }
 

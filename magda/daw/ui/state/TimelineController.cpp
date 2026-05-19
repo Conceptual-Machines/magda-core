@@ -452,6 +452,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSel
 
     state.selection.setFromSeconds(start, end, state.tempo.bpm);
     state.selection.trackIndices = e.trackIndices;
+    state.selection.automationOnly = e.automationOnly;
+    state.selection.automationLaneIds = e.automationLaneIds;
     state.selection.visuallyHidden = false;  // New selection is always visible
 
     return ChangeFlags::Selection;

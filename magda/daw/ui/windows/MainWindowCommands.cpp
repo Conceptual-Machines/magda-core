@@ -1,3 +1,4 @@
+#include "../../core/AutomationCommands.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/Config.hpp"
@@ -8,7 +9,6 @@
 #include "../../core/TrackPropertyCommands.hpp"
 #include "../../core/UIScale.hpp"
 #include "../../core/UndoManager.hpp"
-#include "../debug/DebugDialog.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../views/MainView.hpp"
@@ -33,6 +33,20 @@ double timelineEndSeconds(const ClipInfo& clip, double bpm) {
     return clip.getTimelineEnd(bpm);
 }
 
+ViewMode getNextCycledViewMode(ViewMode mode, bool forward) {
+    switch (mode) {
+        case ViewMode::Live:
+            return forward ? ViewMode::Arrange : ViewMode::Mix;
+        case ViewMode::Arrange:
+        case ViewMode::Master:
+            return forward ? ViewMode::Mix : ViewMode::Live;
+        case ViewMode::Mix:
+            return forward ? ViewMode::Live : ViewMode::Arrange;
+    }
+
+    return ViewMode::Arrange;
+}
+
 bool containsTimelineTime(const ClipInfo& clip, double timeSeconds, double bpm) {
     return timeSeconds > timelineStartSeconds(clip, bpm) &&
            timeSeconds < timelineEndSeconds(clip, bpm);
@@ -55,8 +69,9 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
 
     const juce::CommandID allCommands[] = {
         // Edit menu
-        undo, redo, cut, copy, paste, duplicate, deleteCmd, selectAll, splitOrTrim, joinClips,
-        renderClip, renderTimeSelection, setLoopFromClip, toggleClipLoop,
+        undo, redo, cut, copy, paste, duplicate, duplicateClipWithAutomation,
+        duplicateClipWithoutAutomation, deleteCmd, selectAll, splitOrTrim, joinClips, renderClip,
+        renderTimeSelection, setLoopFromClip, toggleClipLoop,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -64,7 +79,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         // Track
         newAudioTrack, newMidiTrack, deleteTrack,
         // View
-        zoom, toggleArrangeSession, uiScaleUp, uiScaleDown,
+        zoom, toggleArrangeSession, cycleViewForward, cycleViewBackward, uiScaleUp, uiScaleDown,
         // Help
         showHelp, about};
 
@@ -105,6 +120,17 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case duplicate:
             result.setInfo("Duplicate", "Duplicate selected clips", "Edit", 0);
             result.addDefaultKeypress('d', juce::ModifierKeys::commandModifier);
+            break;
+        case duplicateClipWithAutomation:
+            result.setInfo("Duplicate Clip With Automation",
+                           "Duplicate selected clips and automation under them", "Edit", 0);
+            result.addDefaultKeypress('d', juce::ModifierKeys::commandModifier |
+                                               juce::ModifierKeys::shiftModifier |
+                                               juce::ModifierKeys::altModifier);
+            break;
+        case duplicateClipWithoutAutomation:
+            result.setInfo("Duplicate Clip Without Automation",
+                           "Duplicate selected clips without copying automation", "Edit", 0);
             break;
 
         case deleteCmd:
@@ -212,6 +238,14 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.setInfo("Toggle Arrange/Session", "Switch between arrange and session view",
                            "View", 0);
             break;
+        case cycleViewForward:
+            result.setInfo("Cycle View Forward", "Switch to the next main view", "View", 0);
+            result.addDefaultKeypress(juce::KeyPress::tabKey, 0);
+            break;
+        case cycleViewBackward:
+            result.setInfo("Cycle View Backward", "Switch to the previous main view", "View", 0);
+            result.addDefaultKeypress(juce::KeyPress::tabKey, juce::ModifierKeys::shiftModifier);
+            break;
         case uiScaleUp:
             result.setInfo("Increase UI Scale", "Make the UI larger", "View", 0);
             result.addDefaultKeypress('=', juce::ModifierKeys::commandModifier);
@@ -272,6 +306,62 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         return sel.isActive() && !sel.visuallyHidden;
     };
 
+    auto duplicateSelectedArrangementClips = [&](bool includeAutomation) -> bool {
+        if (selectedClips.empty())
+            return false;
+
+        std::vector<ClipId> newClips;
+        const double tempo = mainView ? mainView->getTimelineController().getState().tempo.bpm
+                                      : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+        auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempo);
+        if (commands.empty())
+            return false;
+
+        const bool compoundOperation = commands.size() > 1 || includeAutomation;
+        if (compoundOperation) {
+            UndoManager::getInstance().beginCompoundOperation(
+                includeAutomation ? "Duplicate Clips With Automation" : "Duplicate Clips");
+        }
+
+        for (auto& cmd : commands) {
+            const auto sourceClipId = cmd->getSourceClipId();
+            auto* cmdPtr = cmd.get();
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            ClipId newId = cmdPtr->getDuplicatedClipId();
+            if (newId != INVALID_CLIP_ID) {
+                newClips.push_back(newId);
+            }
+
+            if (!includeAutomation || newId == INVALID_CLIP_ID)
+                continue;
+
+            const auto* sourceClip = clipManager.getClip(sourceClipId);
+            const auto* duplicatedClip = clipManager.getClip(newId);
+            if (!sourceClip || !duplicatedClip)
+                continue;
+
+            const double sourceStartBeat = sourceClip->getStartBeats(tempo);
+            const double sourceEndBeat = sourceClip->getEndBeats(tempo);
+            const double destinationStartBeat = duplicatedClip->getStartBeats(tempo);
+            auto automationCmd = std::make_unique<DuplicateAutomationTimeSelectionCommand>(
+                sourceStartBeat, sourceEndBeat, std::vector<TrackId>{sourceClip->trackId},
+                destinationStartBeat);
+            if (automationCmd->canDuplicatePoints()) {
+                UndoManager::getInstance().executeCommand(std::move(automationCmd));
+            }
+        }
+
+        if (compoundOperation) {
+            UndoManager::getInstance().endCompoundOperation();
+        }
+
+        if (!newClips.empty()) {
+            std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+            selectionManager.selectClips(newSelection);
+        }
+        return true;
+    };
+
     switch (info.commandID) {
         case undo:
             UndoManager::getInstance().undo();
@@ -311,6 +401,10 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             // Time selection copy takes priority
             if (hasActiveTimeSelection()) {
                 const auto& state = mainView->getTimelineController().getState();
+                if (state.selection.automationOnly) {
+                    clipManager.clearClipboard();
+                    return true;
+                }
                 auto trackIds = resolveTimeSelectionTrackIds();
                 clipManager.copyTimeRangeToClipboard(
                     state.selection.startTime, state.selection.endTime, trackIds, state.tempo.bpm);
@@ -449,21 +543,54 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 const auto& state = mainView->getTimelineController().getState();
                 const auto& sel = state.selection;
                 auto trackIds = resolveTimeSelectionTrackIds();
-                clipManager.copyTimeRangeToClipboard(sel.startTime, sel.endTime, trackIds,
-                                                     state.tempo.bpm);
-                if (clipManager.hasClipsInClipboard()) {
-                    auto cmd = std::make_unique<PasteClipCommand>(
-                        BeatPosition{sel.endTime * state.tempo.bpm / 60.0});
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                if (!sel.automationOnly) {
+                    clipManager.copyTimeRangeToClipboard(sel.startTime, sel.endTime, trackIds,
+                                                         state.tempo.bpm);
+                } else {
+                    clipManager.clearClipboard();
+                }
+                const bool hasClipsToDuplicate =
+                    !sel.automationOnly && clipManager.hasClipsInClipboard();
+                const double startBeat =
+                    sel.startBeats >= 0.0 ? sel.startBeats : sel.startTime * state.tempo.bpm / 60.0;
+                const double endBeat =
+                    sel.endBeats >= 0.0 ? sel.endBeats : sel.endTime * state.tempo.bpm / 60.0;
+                std::vector<AutomationLaneId> automationLaneIds(sel.automationLaneIds.begin(),
+                                                                sel.automationLaneIds.end());
 
+                auto automationCmd = std::make_unique<DuplicateAutomationTimeSelectionCommand>(
+                    startBeat, endBeat, trackIds, -1.0, automationLaneIds);
+                auto* automationCmdPtr = automationCmd.get();
+                const bool hasAutomationSelection =
+                    sel.automationOnly || !automationLaneIds.empty();
+                const bool hasAutomationToDuplicate =
+                    hasAutomationSelection && automationCmd->canDuplicatePoints();
+                const bool compoundOperation = hasClipsToDuplicate && hasAutomationToDuplicate;
+                if (compoundOperation)
+                    UndoManager::getInstance().beginCompoundOperation("Duplicate Time Selection");
+
+                if (hasClipsToDuplicate) {
+                    auto cmd = std::make_unique<PasteClipCommand>(BeatPosition{endBeat});
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                }
+
+                if (hasAutomationToDuplicate)
+                    UndoManager::getInstance().executeCommand(std::move(automationCmd));
+
+                if (compoundOperation)
+                    UndoManager::getInstance().endCompoundOperation();
+
+                if (hasClipsToDuplicate ||
+                    (hasAutomationToDuplicate && automationCmdPtr->hasDuplicatedPoints())) {
                     // Clear clip selection so the time selection stays as active context
                     selectionManager.clearSelection();
 
                     // Move time selection to the duplicated region
                     double duration = sel.endTime - sel.startTime;
                     auto& timelineController = mainView->getTimelineController();
-                    timelineController.dispatch(SetTimeSelectionEvent{
-                        sel.endTime, sel.endTime + duration, sel.trackIndices});
+                    timelineController.dispatch(
+                        SetTimeSelectionEvent{sel.endTime, sel.endTime + duration, sel.trackIndices,
+                                              sel.automationOnly, sel.automationLaneIds});
                 }
                 return true;
             }
@@ -510,32 +637,18 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     return true;
                 }
 
-                std::vector<ClipId> newClips;
-                const double tempo =
-                    mainView ? mainView->getTimelineController().getState().tempo.bpm
-                             : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-                auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempo);
-                if (commands.size() > 1) {
-                    UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
-                }
-                for (auto& cmd : commands) {
-                    auto* cmdPtr = cmd.get();
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                    ClipId newId = cmdPtr->getDuplicatedClipId();
-                    if (newId != INVALID_CLIP_ID) {
-                        newClips.push_back(newId);
-                    }
-                }
-                if (commands.size() > 1) {
-                    UndoManager::getInstance().endCompoundOperation();
-                }
-                if (!newClips.empty()) {
-                    std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
-                    selectionManager.selectClips(newSelection);
-                }
+                duplicateSelectedArrangementClips(false);
             }
             return true;
         }
+
+        case duplicateClipWithAutomation:
+            duplicateSelectedArrangementClips(true);
+            return true;
+
+        case duplicateClipWithoutAutomation:
+            duplicateSelectedArrangementClips(false);
+            return true;
 
         case deleteCmd: {
             // Note selection takes priority — user is actively editing in the piano roll
@@ -697,7 +810,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 const auto& state = mainView->getTimelineController().getState();
                 double tempo = state.tempo.bpm;
 
-                if (!state.selection.visuallyHidden && state.selection.isActive()) {
+                if (!state.selection.automationOnly && !state.selection.visuallyHidden &&
+                    state.selection.isActive()) {
                     // TIME SELECTION EXISTS → Split clips at selection boundaries
                     double trimStart = state.selection.startTime;
                     double trimEnd = state.selection.endTime;
@@ -945,6 +1059,15 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             return true;
         }
 
+        case cycleViewForward:
+        case cycleViewBackward: {
+            auto& viewModeController = ViewModeController::getInstance();
+            const auto currentMode = viewModeController.getViewMode();
+            viewModeController.setViewMode(
+                getNextCycledViewMode(currentMode, info.commandID == cycleViewForward));
+            return true;
+        }
+
         case uiScaleUp:
         case uiScaleDown: {
             const double current =
@@ -985,16 +1108,6 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
                 controller->dispatch(SetEditCursorEvent{-1.0});
             }
         }
-        return true;
-    }
-
-    // Cmd/Ctrl+Shift+Alt+D: Open Debug Dialog
-    if (key ==
-        juce::KeyPress('d',
-                       juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier |
-                           juce::ModifierKeys::altModifier,
-                       0)) {
-        daw::ui::DebugDialog::show();
         return true;
     }
 
@@ -1102,6 +1215,10 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
 
     // Cmd/Ctrl+D: Duplicate selected track(s) with content (through undo system)
     if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
+        if (mainView && mainView->getTimelineController().getState().selection.isVisuallyActive()) {
+            return false;
+        }
+
         const auto& selectedTracks = SelectionManager::getInstance().getSelectedTracks();
         if (!selectedTracks.empty()) {
             if (selectedTracks.size() > 1) {

@@ -364,6 +364,7 @@ class ClipManager {
     // Per-clip grid settings (MIDI editor)
     void setClipGridSettings(ClipId clipId, bool autoGrid, int numerator, int denominator);
     void setClipSnapEnabled(ClipId clipId, bool enabled);
+    void setClipMidiEditorRowHeight(ClipId clipId, int rowHeight);
 
     // ========================================================================
     // Content-Level Operations (Editor Operations)

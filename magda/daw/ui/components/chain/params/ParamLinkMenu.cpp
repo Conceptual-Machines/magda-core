@@ -1,5 +1,6 @@
 #include "params/ParamLinkMenu.hpp"
 
+#include "core/AutomationInfo.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
 
 namespace magda::daw::ui {
@@ -21,13 +22,16 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
             juce::String modName = "Mod " + juce::String(resolved.modIndex + 1);
             if (resolved.scope == ResolvedModLink::Scope::Track) {
                 if (ctx.trackMods && resolved.modIndex < static_cast<int>(ctx.trackMods->size()))
-                    modName = (*ctx.trackMods)[static_cast<size_t>(resolved.modIndex)].name;
+                    modName = magda::getModDisplayName(
+                        (*ctx.trackMods)[static_cast<size_t>(resolved.modIndex)]);
             } else if (resolved.scope == ResolvedModLink::Scope::Rack) {
                 if (ctx.rackMods && resolved.modIndex < static_cast<int>(ctx.rackMods->size()))
-                    modName = (*ctx.rackMods)[static_cast<size_t>(resolved.modIndex)].name;
+                    modName = magda::getModDisplayName(
+                        (*ctx.rackMods)[static_cast<size_t>(resolved.modIndex)]);
             } else {
                 if (ctx.deviceMods && resolved.modIndex < static_cast<int>(ctx.deviceMods->size()))
-                    modName = (*ctx.deviceMods)[static_cast<size_t>(resolved.modIndex)].name;
+                    modName = magda::getModDisplayName(
+                        (*ctx.deviceMods)[static_cast<size_t>(resolved.modIndex)]);
             }
             int currentAmountPercent = static_cast<int>(resolved.link.amount * 100);
             juce::String label = modName + " (" + juce::String(currentAmountPercent) + "%)";
@@ -44,17 +48,23 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
             if (resolved.scope == ResolvedMacroLink::Scope::Track) {
                 if (ctx.trackMacros &&
                     resolved.macroIndex < static_cast<int>(ctx.trackMacros->size()))
-                    macroName = (*ctx.trackMacros)[static_cast<size_t>(resolved.macroIndex)].name;
+                    macroName = magda::getMacroDisplayName(
+                        resolved.macroIndex,
+                        (*ctx.trackMacros)[static_cast<size_t>(resolved.macroIndex)].name);
                 scopeSuffix = " - Global";
             } else if (resolved.scope == ResolvedMacroLink::Scope::Rack) {
                 if (ctx.rackMacros &&
                     resolved.macroIndex < static_cast<int>(ctx.rackMacros->size()))
-                    macroName = (*ctx.rackMacros)[static_cast<size_t>(resolved.macroIndex)].name;
+                    macroName = magda::getMacroDisplayName(
+                        resolved.macroIndex,
+                        (*ctx.rackMacros)[static_cast<size_t>(resolved.macroIndex)].name);
                 scopeSuffix = " - Rack";
             } else {
                 if (ctx.deviceMacros &&
                     resolved.macroIndex < static_cast<int>(ctx.deviceMacros->size()))
-                    macroName = (*ctx.deviceMacros)[static_cast<size_t>(resolved.macroIndex)].name;
+                    macroName = magda::getMacroDisplayName(
+                        resolved.macroIndex,
+                        (*ctx.deviceMacros)[static_cast<size_t>(resolved.macroIndex)].name);
                 scopeSuffix = " - Device";
             }
             int currentAmountPercent = static_cast<int>(resolved.link.amount * 100);
@@ -77,7 +87,7 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
             bool alreadyLinked = mod.getLink(thisTarget) != nullptr;
 
             if (!alreadyLinked) {
-                modsMenu.addItem(3000 + static_cast<int>(i), mod.name);
+                modsMenu.addItem(3000 + static_cast<int>(i), magda::getModDisplayName(mod));
             }
         }
         if (modsMenu.getNumItems() > 0) {
@@ -97,7 +107,9 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
             for (size_t i = 0; i < ctx.deviceMacros->size(); ++i) {
                 const auto& macro = (*ctx.deviceMacros)[i];
                 bool alreadyLinked = macro.getLink(thisTarget) != nullptr;
-                macrosMenu.addItem(4000 + static_cast<int>(i), macro.name, true, alreadyLinked);
+                macrosMenu.addItem(4000 + static_cast<int>(i),
+                                   magda::getMacroDisplayName(static_cast<int>(i), macro.name),
+                                   true, alreadyLinked);
             }
             hasAnyMacros = true;
         }
@@ -107,7 +119,9 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
             for (size_t i = 0; i < ctx.rackMacros->size(); ++i) {
                 const auto& macro = (*ctx.rackMacros)[i];
                 bool alreadyLinked = macro.getLink(thisTarget) != nullptr;
-                macrosMenu.addItem(4100 + static_cast<int>(i), macro.name, true, alreadyLinked);
+                macrosMenu.addItem(4100 + static_cast<int>(i),
+                                   magda::getMacroDisplayName(static_cast<int>(i), macro.name),
+                                   true, alreadyLinked);
             }
             hasAnyMacros = true;
         }
@@ -117,7 +131,9 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
             for (size_t i = 0; i < ctx.trackMacros->size(); ++i) {
                 const auto& macro = (*ctx.trackMacros)[i];
                 bool alreadyLinked = macro.getLink(thisTarget) != nullptr;
-                macrosMenu.addItem(4200 + static_cast<int>(i), macro.name, true, alreadyLinked);
+                macrosMenu.addItem(4200 + static_cast<int>(i),
+                                   magda::getMacroDisplayName(static_cast<int>(i), macro.name),
+                                   true, alreadyLinked);
             }
             hasAnyMacros = true;
         }
