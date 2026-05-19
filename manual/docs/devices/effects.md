@@ -85,7 +85,7 @@ Parameters live in a stable pool of slots that persist across recompiles, so mac
 
 [`faust-mcp-magda`](https://github.com/Conceptual-Machines/faust-mcp-magda) is an optional companion tool that exposes the Faust compiler and standard library to AI assistants. MAGDA uses it to validate AI-generated Faust code before loading it into this device, so syntax errors and bad library references get caught up front instead of failing at compile time.
 
-Enable it from **Settings > AI Settings**, on the **Config** page, by turning on the **Faust DSP** toggle. When enabled, MAGDA spawns the MCP server in the background via `npx`; no manual install step is needed. `npx` must be available on the system `PATH` (it ships with Node.js).
+Enable it from **Settings > AI Settings**, on the **Config** page, by turning on the **Faust DSP** toggle. When Faust validation is used, MAGDA will start the MCP server on-demand via `npx`; no manual install step is needed. `npx` must be available on the system `PATH` (it ships with Node.js).
 
 The Faust compiler runs in-process via WebAssembly inside the MCP server, so no separate Faust installation is required either.
 
