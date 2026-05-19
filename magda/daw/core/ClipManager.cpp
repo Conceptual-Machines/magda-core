@@ -1434,6 +1434,17 @@ void ClipManager::setClipSnapEnabled(ClipId clipId, bool enabled) {
     }
 }
 
+void ClipManager::setClipMidiEditorRowHeight(ClipId clipId, int rowHeight) {
+    if (auto* clip = getClip(clipId)) {
+        const int clampedHeight = juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT,
+                                               ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT, rowHeight);
+        if (clip->midiEditorRowHeight != clampedHeight) {
+            clip->midiEditorRowHeight = clampedHeight;
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
 // ============================================================================
 // Content-Level Operations (Editor Operations)
 // ============================================================================
@@ -2233,6 +2244,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                 newClip->gridNumerator = clipData.gridNumerator;
                 newClip->gridDenominator = clipData.gridDenominator;
                 newClip->gridSnapEnabled = clipData.gridSnapEnabled;
+                newClip->midiEditorRowHeight = clipData.midiEditorRowHeight;
 
                 // Cross-view translation: pasting into session view
                 if (targetView == ClipView::Session && targetSceneIndex >= 0) {
