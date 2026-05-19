@@ -8,6 +8,7 @@
 #include "../../../media_db/MediaDbContext.hpp"
 #include "../../../media_db/MediaDbIndexer.hpp"
 #include "../../../media_db/SampleTaggerDownloader.hpp"
+#include "../../components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
@@ -97,6 +98,74 @@ juce::String prettyKey(const std::optional<std::string>& root,
 }
 
 }  // namespace
+
+// ===========================================================================
+// ModelStatusIndicator
+// ===========================================================================
+
+ModelStatusIndicator::ModelStatusIndicator() {
+    refresh();
+    startTimerHz(2);  // 500ms polling — cheap, no callback wiring needed
+}
+
+void ModelStatusIndicator::timerCallback() {
+    const auto prev = state_;
+    refresh();
+    if (state_ != prev) {
+        repaint();
+    }
+}
+
+void ModelStatusIndicator::refresh() {
+    if (!magda::media::SampleTaggerDownloader::isInstalled()) {
+        state_ = State::NotInstalled;
+        return;
+    }
+    auto& ctx = magda::media::MediaDbContext::getInstance();
+    if (ctx.isTextEncoderLoaded() && ctx.isTokenizerLoaded()) {
+        state_ = State::Loaded;
+    } else if (ctx.isLoadInProgress()) {
+        state_ = State::Loading;
+    } else {
+        state_ = State::Idle;
+    }
+}
+
+void ModelStatusIndicator::paint(juce::Graphics& g) {
+    const auto bounds = getLocalBounds().toFloat();
+    const float dotR = 4.0F;
+    const auto dotCx = bounds.getX() + 8.0F;
+    const auto dotCy = bounds.getCentreY();
+
+    juce::Colour dotColour;
+    juce::String label;
+    switch (state_) {
+        case State::NotInstalled:
+            dotColour = juce::Colours::grey;
+            label = "Tagger: not installed";
+            break;
+        case State::Idle:
+            dotColour = juce::Colour(0xFFE5B84B);  // amber
+            label = "Tagger: idle";
+            break;
+        case State::Loading:
+            dotColour = juce::Colour(0xFF4FA3E3);  // blue
+            label = "Tagger: loading...";
+            break;
+        case State::Loaded:
+            dotColour = juce::Colour(0xFF6FCF6F);  // green
+            label = "Tagger: loaded";
+            break;
+    }
+
+    g.setColour(dotColour);
+    g.fillEllipse(dotCx - dotR, dotCy - dotR, dotR * 2.0F, dotR * 2.0F);
+
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setFont(FontManager::getInstance().getUIFont(11.0F));
+    const auto textBounds = bounds.withTrimmedLeft(20.0F);
+    g.drawText(label, textBounds, juce::Justification::centredLeft, true);
+}
 
 // ===========================================================================
 // ResultsTableModel — paints one cell of the TableListBox per column
@@ -404,16 +473,18 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     addAndMakeVisible(emptyState_);
 
     // Pagination footer. Prev / "Page N" label / Next. Hidden when the
-    // result set fits in a single page (no need for any chrome).
-    prevPageBtn_.setButtonText("< Prev");
-    prevPageBtn_.onClick = [this]() {
+    // result set fits in a single page (no need for any chrome). Uses the
+    // shared makeNavArrowButton style so it matches device/param paging
+    // arrows elsewhere in the app.
+    prevPageBtn_ = makeNavArrowButton("prev", 0.5F);
+    prevPageBtn_->onClick = [this]() {
         if (currentPage_ > 0) {
             --currentPage_;
             runSearch();
         }
     };
-    nextPageBtn_.setButtonText("Next >");
-    nextPageBtn_.onClick = [this]() {
+    nextPageBtn_ = makeNavArrowButton("next", 0.0F);
+    nextPageBtn_->onClick = [this]() {
         ++currentPage_;
         runSearch();
     };
@@ -422,12 +493,14 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     pageLabel_.setColour(juce::Label::textColourId,
                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     pageLabel_.setInterceptsMouseClicks(false, false);
-    prevPageBtn_.setVisible(false);
-    nextPageBtn_.setVisible(false);
+    prevPageBtn_->setVisible(false);
+    nextPageBtn_->setVisible(false);
     pageLabel_.setVisible(false);
-    addAndMakeVisible(prevPageBtn_);
+    addAndMakeVisible(*prevPageBtn_);
     addAndMakeVisible(pageLabel_);
-    addAndMakeVisible(nextPageBtn_);
+    addAndMakeVisible(*nextPageBtn_);
+
+    addAndMakeVisible(modelStatus_);
 
     // Indexing status. Hidden until a scan starts.
     statusLabel_.setFont(FontManager::getInstance().getUIFont(10.0F));
@@ -510,14 +583,17 @@ void MediaDbBrowserContent::resized() {
                                18);
     }
 
-    // Pagination footer sits just above the status strip: Prev | Page N | Next.
+    // Pagination footer sits just above the status strip: < | Page N | >.
     // Hidden when there's only one page worth of results -> no reserved space.
-    if (prevPageBtn_.isVisible()) {
-        auto pager = bounds.removeFromBottom(28).reduced(8, 2);
-        prevPageBtn_.setBounds(pager.removeFromLeft(70));
-        nextPageBtn_.setBounds(pager.removeFromRight(70));
+    if (prevPageBtn_ != nullptr && prevPageBtn_->isVisible()) {
+        auto pager = bounds.removeFromBottom(20).reduced(8, 2);
+        placeNavArrow(*prevPageBtn_, pager, /*fromLeft=*/true);
+        placeNavArrow(*nextPageBtn_, pager, /*fromLeft=*/false);
         pageLabel_.setBounds(pager);
     }
+
+    // Model status indicator, left-aligned thin row above the pager / table.
+    modelStatus_.setBounds(bounds.removeFromBottom(18).withTrimmedLeft(4));
 
     resultsTable_.setBounds(bounds);
     emptyState_.setBounds(bounds);
@@ -699,11 +775,11 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
     // - Prev disabled on page 1; Next disabled when we got a partial page.
     const bool fullPage = static_cast<int>(results_.size()) >= kPageSize;
     const bool showPager = currentPage_ > 0 || fullPage;
-    prevPageBtn_.setVisible(showPager);
-    nextPageBtn_.setVisible(showPager);
+    prevPageBtn_->setVisible(showPager);
+    nextPageBtn_->setVisible(showPager);
     pageLabel_.setVisible(showPager);
-    prevPageBtn_.setEnabled(currentPage_ > 0);
-    nextPageBtn_.setEnabled(fullPage);
+    prevPageBtn_->setEnabled(currentPage_ > 0);
+    nextPageBtn_->setEnabled(fullPage);
     pageLabel_.setText("Page " + juce::String(currentPage_ + 1), juce::dontSendNotification);
     resized();  // re-layout: the table shrinks by the footer when shown
 }

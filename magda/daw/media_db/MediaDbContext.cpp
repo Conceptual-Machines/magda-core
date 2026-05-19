@@ -130,6 +130,24 @@ bool MediaDbContext::isTextEncoderLoaded() const noexcept {
 bool MediaDbContext::isTokenizerLoaded() const noexcept {
     return tokenizer_ != nullptr;
 }
+bool MediaDbContext::isLoadInProgress() const noexcept {
+    return loadInProgress_.load() > 0;
+}
+
+// RAII guard around the loadInProgress_ counter. Increment on entry,
+// decrement on scope exit so the status indicator can show "loading"
+// while any of the three ORT/tokenizer constructions are running.
+namespace {
+struct LoadGuard {
+    std::atomic<int>& counter;
+    explicit LoadGuard(std::atomic<int>& c) : counter(c) {
+        counter.fetch_add(1, std::memory_order_relaxed);
+    }
+    ~LoadGuard() {
+        counter.fetch_sub(1, std::memory_order_relaxed);
+    }
+};
+}  // namespace
 
 MediaDatabase& MediaDbContext::db() {
     if (!db_) {
@@ -150,6 +168,7 @@ ClapAudioEncoder* MediaDbContext::audioEncoder() noexcept {
     if (!std::filesystem::exists(audioModelPath())) {
         return nullptr;
     }
+    LoadGuard guard(loadInProgress_);
     try {
         audioEnc_ = std::make_unique<ClapAudioEncoder>(audioModelPath());
     } catch (const std::exception&) {
@@ -165,6 +184,7 @@ ClapTextEncoder* MediaDbContext::textEncoder() noexcept {
     if (!std::filesystem::exists(textModelPath())) {
         return nullptr;
     }
+    LoadGuard guard(loadInProgress_);
     try {
         textEnc_ = std::make_unique<ClapTextEncoder>(textModelPath());
     } catch (const std::exception&) {
@@ -180,6 +200,7 @@ RobertaTokenizer* MediaDbContext::tokenizer() noexcept {
     if (!std::filesystem::exists(tokenizerJsonPath())) {
         return nullptr;
     }
+    LoadGuard guard(loadInProgress_);
     try {
         tokenizer_ = std::make_unique<RobertaTokenizer>(tokenizerJsonPath());
     } catch (const std::exception&) {

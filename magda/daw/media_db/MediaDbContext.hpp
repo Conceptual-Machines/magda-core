@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <filesystem>
 #include <memory>
 
@@ -42,6 +43,11 @@ class MediaDbContext {
     [[nodiscard]] bool isAudioEncoderLoaded() const noexcept;
     [[nodiscard]] bool isTextEncoderLoaded() const noexcept;
     [[nodiscard]] bool isTokenizerLoaded() const noexcept;
+
+    // True while at least one model is currently being instantiated
+    // (preloadModels in progress, or a lazy accessor mid-construction on
+    // some other thread). Polled by the DB browser's status indicator.
+    [[nodiscard]] bool isLoadInProgress() const noexcept;
 
     // Force the lazy-loaded models into memory now. No-op for any file that
     // isn't on disk. Safe to call from any thread.
@@ -77,6 +83,10 @@ class MediaDbContext {
     std::unique_ptr<ClapTextEncoder> textEnc_;
     std::unique_ptr<RobertaTokenizer> tokenizer_;
     bool initAttempted_ = false;
+    // Counter rather than bool so concurrent loads (audio + text + tokenizer
+    // from preloadModels, or a worker triggering text-encoder load while
+    // the indexer triggers audio-encoder load) all show as "loading".
+    std::atomic<int> loadInProgress_{0};
 };
 
 }  // namespace magda::media
