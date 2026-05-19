@@ -25,7 +25,6 @@ class AISettingsDialog : public juce::Component {
     class CloudPage;
     class LocalPage;
     class ConfigPage;
-    class SampleTaggerPage;
 
     class TabComponent : public juce::TabbedComponent {
       public:
@@ -41,7 +40,6 @@ class AISettingsDialog : public juce::Component {
     std::unique_ptr<CloudPage> cloudPage_;
     std::unique_ptr<LocalPage> localPage_;
     std::unique_ptr<ConfigPage> configPage_;
-    std::unique_ptr<SampleTaggerPage> samplePage_;
 
     juce::TextButton okBtn_{"OK"};
     juce::TextButton cancelBtn_{"Cancel"};

@@ -1513,8 +1513,7 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
         // O(log N) so this is safe to run on every right-click.
         const bool alreadyIndexed = magda::media::hasIndexedDescendantOfFolder(
             std::filesystem::path(file.getFullPathName().toStdString()));
-        menu.addItem(3, alreadyIndexed ? "Re-index this folder for sample library"
-                                       : "Index this folder for sample library");
+        menu.addItem(3, alreadyIndexed ? "Re-index this folder" : "Index this folder");
 
         menu.showMenuAsync(
             juce::PopupMenu::Options(), [this, path, file, alreadyIndexed](int result) {

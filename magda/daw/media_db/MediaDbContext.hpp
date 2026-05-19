@@ -57,6 +57,18 @@ class MediaDbContext {
     // Subsequent lazy-access reloads on demand.
     void unloadModels();
 
+    // Delete every row in the media DB (files, embeddings, tags, FTS,
+    // metadata). Keeps the schema so the next query path is the normal
+    // "library is empty" branch rather than first-time init. Returns
+    // true on success.
+    bool wipeAll();
+
+    // Force the singleton to release the open DB connection and forget
+    // its initAttempted_ latch. Called by the Preferences UI when the
+    // user changes the media DB directory so the next access opens the
+    // new file instead of continuing to point at the old one.
+    void resetForReopen();
+
     MediaDatabase& db();
     ClapAudioEncoder* audioEncoder() noexcept;
     ClapTextEncoder* textEncoder() noexcept;
