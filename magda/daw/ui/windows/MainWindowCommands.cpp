@@ -80,6 +80,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         newAudioTrack, newMidiTrack, deleteTrack,
         // View
         zoom, toggleArrangeSession, cycleViewForward, cycleViewBackward, uiScaleUp, uiScaleDown,
+        togglePianoRollFullscreen,
         // Help
         showHelp, about};
 
@@ -256,6 +257,13 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.setInfo("Decrease UI Scale", "Make the UI smaller", "View", 0);
             result.addDefaultKeypress('-', juce::ModifierKeys::commandModifier);
             result.addDefaultKeypress('_', juce::ModifierKeys::commandModifier |
+                                               juce::ModifierKeys::shiftModifier);
+            break;
+        case togglePianoRollFullscreen:
+            result.setInfo("Toggle Piano Roll Fullscreen",
+                           "Expand the piano roll to fill the area below the transport bar", "View",
+                           0);
+            result.addDefaultKeypress('p', juce::ModifierKeys::commandModifier |
                                                juce::ModifierKeys::shiftModifier);
             break;
 
@@ -1076,6 +1084,10 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             applyUIScale(stepUIScale(current, direction));
             return true;
         }
+
+        case togglePianoRollFullscreen:
+            toggleEditorFullscreen();
+            return true;
 
         default:
             return false;

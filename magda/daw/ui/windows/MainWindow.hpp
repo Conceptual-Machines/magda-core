@@ -153,6 +153,14 @@ class MainWindow::MainComponent : public juce::Component,
     void showLoadingMessage(const juce::String& message);
     void hideLoadingMessage();
 
+    // Toggle MIDI editor fullscreen mode: expand bottomPanel to fill the
+    // area between transport and footer. Restores the previous height on
+    // exit. Applies to piano roll and drum grid (issue #1282).
+    void toggleEditorFullscreen();
+    bool isEditorFullscreen() const {
+        return editorFullscreen_;
+    }
+
   private:
     // Command manager for keyboard shortcuts and menu commands
     juce::ApplicationCommandManager commandManager;
@@ -176,6 +184,14 @@ class MainWindow::MainComponent : public juce::Component,
     int leftPanelWidth;
     int rightPanelWidth;
     int bottomPanelHeight;
+
+    // MIDI editor fullscreen state (issue #1282): when on, bottomPanel
+    // expands to the maximum height that still leaves the resizer
+    // reachable. prevBottomPanelHeight_ snapshots the height to restore.
+    bool editorFullscreen_ = false;
+    int prevBottomPanelHeight_ = 0;
+    bool prevBottomPanelVisible_ = true;
+    bool prevBottomPanelCollapsed_ = false;
 
     // Resize handles
     class ResizeHandle;

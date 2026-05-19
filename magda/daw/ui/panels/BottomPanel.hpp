@@ -50,6 +50,14 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // Callback for double-click on header — requests optimal panel height
     std::function<void()> onHeaderDoubleClick;
 
+    // Callback when the piano roll's fullscreen toggle is clicked (issue #1282).
+    // MainComponent assigns this to actually flip layout state.
+    std::function<void()> onFullscreenToggleRequested;
+
+    // Reflect the current fullscreen state on the piano roll's toggle icon.
+    // Called by MainComponent after togglePianoRollFullscreen() flips state.
+    void setPianoRollFullscreenActive(bool active);
+
     // ClipManagerListener
     void clipsChanged() override;
     void clipSelectionChanged(ClipId clipId) override;
@@ -80,6 +88,10 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // Editor tab icons for switching between Piano Roll and Drum Grid
     std::unique_ptr<SvgButton> pianoRollTab_;
     std::unique_ptr<SvgButton> drumGridTab_;
+
+    // Fullscreen toggle for MIDI editor views (issue #1282).
+    // Visible whenever the active content is PianoRoll or DrumGridClipView.
+    std::unique_ptr<SvgButton> fullscreenToggle_;
 
     // Centralised header bar — content types populate it via populateHeader()
     class HeaderBar;
@@ -121,6 +133,9 @@ class BottomPanel : public daw::ui::TabbedPanel,
     ScopedListener<TimelineController, TimelineStateListener> timelineListenerGuard_{this};
 
     bool showPluginDropOverlay_ = false;
+
+    // Cached so a piano roll instance created later picks up the right icon.
+    bool pianoRollFullscreenActive_ = false;
 
     // Audio clip properties side panel (right side, resizable)
     std::unique_ptr<daw::ui::AudioClipPropertiesContent> audioPropsPanel_;
