@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "../../../media_db/MediaDatabase.hpp"
+#include "../../../media_db/MediaDbIndexer.hpp"
 #include "../../../media_db/MediaDbQuery.hpp"
 #include "../../components/common/SvgButton.hpp"
 
@@ -57,15 +58,13 @@ class MediaDbBrowserContent : public juce::Component {
     // Re-run the current query. Useful after indexing finishes or filters change.
     void refresh();
 
-    // Kick off a background scan of `dir` and update the status label as it
-    // progresses. Called from the file-browser's folder-right-click menu — the
-    // DB browser no longer has its own "Index folder" button.
-    //
-    // force: when true, the indexer re-derives every file's metadata
-    // ignoring the skip-on-unchanged fast path. Used by the "Re-index"
-    // menu item to refresh tags / family / features on already-indexed
-    // content after a rules / algorithm change.
-    void startIndexing(const juce::File& dir, bool force = false);
+    // Kick off a background scan of `dir` and update the status label as
+    // it progresses. Called from the file-browser's folder-right-click
+    // menu. Mode controls how existing rows are treated — see
+    // MediaDbIndexer::Mode for the three semantics (Incremental, OnlyNew,
+    // ForceAll).
+    void startIndexing(const juce::File& dir, magda::media::MediaDbIndexer::Mode mode =
+                                                  magda::media::MediaDbIndexer::Mode::Incremental);
 
     // External kind selector hook. Pass "audio" / "clip" / "preset", or
     // nullopt to clear the filter. Re-runs the search.

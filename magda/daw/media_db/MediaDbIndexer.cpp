@@ -403,14 +403,24 @@ std::string buildTagText(const std::vector<std::pair<std::string, float>>& tags)
 // ORT Session::Run is documented thread-safe) and mutates the supplied Stats.
 
 void processOneFile(sqlite3* sqlDb, ClapAudioEncoder* encoder, const ScannedFile& f,
-                    MediaDbIndexer::Stats& stats, bool force) {
+                    MediaDbIndexer::Stats& stats, MediaDbIndexer::Mode mode) {
     try {
+        // OnlyNew skips before the prefix hash so existing files become
+        // a single cheap SELECT — useful when the user just wants to
+        // pick up additions on a large library without re-hashing.
+        if (mode == MediaDbIndexer::Mode::OnlyNew) {
+            if (lookupExisting(sqlDb, f.path.string())) {
+                ++stats.skipped;
+                return;
+            }
+        }
         const auto hash = hashFilePrefix(f.path);
         const auto existing = lookupExisting(sqlDb, f.path.string());
-        // force=true: caller (e.g. "Re-index folder") wants to re-derive
-        // everything regardless of mtime/size/hash match. Used to refresh
-        // path tags / family / features after the rules change.
-        if (!force && existing && unchanged(*existing, f, hash)) {
+        // Incremental skip: caller wants to re-derive when mtime/size/hash
+        // changed but leave unchanged rows alone. ForceAll bypasses this
+        // entirely.
+        if (mode == MediaDbIndexer::Mode::Incremental && existing &&
+            unchanged(*existing, f, hash)) {
             ++stats.skipped;
             return;
         }
@@ -505,7 +515,7 @@ void MediaDbIndexer::setProgress(ProgressFn fn) {
 }
 
 MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path& root,
-                                                     int numThreads, bool force) {
+                                                     int numThreads, Mode mode) {
     // Pre-scan into a vector so we have a stable list to slice for workers
     // and a total count for progress. Cheap relative to the indexing pass.
     std::vector<ScannedFile> files;
@@ -521,7 +531,7 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
         MediaDatabase::Transaction txn(db_);
         int done = 0;
         for (const auto& f : files) {
-            processOneFile(sqlDb, encoder_, f, stats, force);
+            processOneFile(sqlDb, encoder_, f, stats, mode);
             ++done;
             if (progress_) {
                 progress_(done, total, f.path);
@@ -571,7 +581,7 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
                 try {
                     MediaDatabase::Transaction txn(localDb);
                     for (size_t i = batchStart; i < batchEnd; ++i) {
-                        processOneFile(sqlDb, encoder, files[i], local, force);
+                        processOneFile(sqlDb, encoder, files[i], local, mode);
                         const int nowDone = ++doneCounter;
                         if (progressRef) {
                             std::lock_guard<std::mutex> lock(progressMutex);

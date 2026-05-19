@@ -43,6 +43,22 @@ class MediaDbIndexer {
     using ProgressFn =
         std::function<void(int done, int total, const std::filesystem::path& current)>;
 
+    // What the scan does with rows that already exist in media_file.
+    enum class Mode {
+        // Default: re-derive any file whose (mtime, size, hash) has drifted
+        // from what we recorded last time. Unchanged files are skipped
+        // cheaply. This is the "Index this folder" / first-time scan.
+        Incremental,
+        // Skip every file whose path is already in the DB — even when its
+        // content has changed. Only previously-unseen files get processed.
+        // This is the "Scan for new files" action.
+        OnlyNew,
+        // Re-derive everything regardless of any cached state. Used by the
+        // "Re-index" action when rules / algorithms have changed and the
+        // user wants the existing rows refreshed.
+        ForceAll,
+    };
+
     // db: required. encoder: nullable, controls whether we compute audio
     // embeddings during this scan.
     MediaDbIndexer(MediaDatabase& db, ClapAudioEncoder* encoder);
@@ -61,12 +77,8 @@ class MediaDbIndexer {
     // Forced to 1 automatically when the DB is in-memory (workers can't
     // share state across connections) or when the scan has fewer than ~64
     // files (setup cost dominates).
-    //
-    // force: when true, bypass the skip-on-unchanged fast path and
-    // re-derive everything (path tags, family, features, embedding) for
-    // every file. Used by the "Re-index folder" menu item to pick up new
-    // keywords / improved algorithms on already-indexed content.
-    Stats indexDirectory(const std::filesystem::path& root, int numThreads = 0, bool force = false);
+    Stats indexDirectory(const std::filesystem::path& root, int numThreads = 0,
+                         Mode mode = Mode::Incremental);
 
   private:
     MediaDatabase& db_;

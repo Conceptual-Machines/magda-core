@@ -952,7 +952,8 @@ void MediaDbBrowserContent::visibilityChanged() {
     }
 }
 
-void MediaDbBrowserContent::startIndexing(const juce::File& dir, bool force) {
+void MediaDbBrowserContent::startIndexing(const juce::File& dir,
+                                          magda::media::MediaDbIndexer::Mode mode) {
     if (indexing_ || !dir.isDirectory()) {
         return;  // Already running, or invalid target — ignore.
     }
@@ -978,7 +979,17 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir, bool force) {
     }
 
     indexing_ = true;
-    const juce::String prepText = force ? "Preparing re-scan..." : "Preparing scan...";
+    auto prepText = [mode]() -> juce::String {
+        switch (mode) {
+            case magda::media::MediaDbIndexer::Mode::ForceAll:
+                return "Preparing re-scan...";
+            case magda::media::MediaDbIndexer::Mode::OnlyNew:
+                return "Scanning for new files...";
+            case magda::media::MediaDbIndexer::Mode::Incremental:
+            default:
+                return "Preparing scan...";
+        }
+    }();
     statusLabel_.setText(prepText, juce::dontSendNotification);
     statusLabel_.setVisible(true);
     resized();
@@ -989,7 +1000,7 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir, bool force) {
     const auto path = std::filesystem::path(dir.getFullPathName().toStdString());
     const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
 
-    indexPool_->addJob([self, path, force]() {
+    indexPool_->addJob([self, path, mode]() {
         // Background thread. Open a fresh DB connection here so we don't
         // share the UI-thread MediaDbContext::db() handle across threads
         // — SQLite multi-thread mode requires one connection per thread.
@@ -999,23 +1010,28 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir, bool force) {
             magda::media::MediaDatabase bgDb(magda::media::MediaDbContext::getInstance().dbPath());
             magda::media::MediaDbIndexer indexer(
                 bgDb, magda::media::MediaDbContext::getInstance().audioEncoder());
-            indexer.setProgress(
-                [self, force](int done, int total, const std::filesystem::path& current) {
-                    // Fired per-file on the indexer thread; marshal the text
-                    // update to the UI thread via callAsync.
-                    const auto status = juce::String(force ? "Re-indexing " : "Indexing ") +
-                                        juce::String(current.filename().string()) + " (" +
-                                        juce::String(done) + "/" + juce::String(total) + ")";
-                    juce::MessageManager::callAsync([self, status]() {
-                        if (self != nullptr) {
-                            self->statusLabel_.setText(status, juce::dontSendNotification);
-                            if (self->onIndexingStatus) {
-                                self->onIndexingStatus(status);
-                            }
+            indexer.setProgress([self, mode](int done, int total,
+                                             const std::filesystem::path& current) {
+                // Fired per-file on the indexer thread; marshal the text
+                // update to the UI thread via callAsync.
+                const char* verb = "Indexing ";
+                if (mode == magda::media::MediaDbIndexer::Mode::ForceAll) {
+                    verb = "Re-indexing ";
+                } else if (mode == magda::media::MediaDbIndexer::Mode::OnlyNew) {
+                    verb = "Scanning ";
+                }
+                const auto status = juce::String(verb) + juce::String(current.filename().string()) +
+                                    " (" + juce::String(done) + "/" + juce::String(total) + ")";
+                juce::MessageManager::callAsync([self, status]() {
+                    if (self != nullptr) {
+                        self->statusLabel_.setText(status, juce::dontSendNotification);
+                        if (self->onIndexingStatus) {
+                            self->onIndexingStatus(status);
                         }
-                    });
+                    }
                 });
-            indexer.indexDirectory(path, /*numThreads=*/0, force);
+            });
+            indexer.indexDirectory(path, /*numThreads=*/0, mode);
         } catch (const std::exception&) {
             // Swallow — bounce back to the UI either way.
         }

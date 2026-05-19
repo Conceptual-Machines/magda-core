@@ -1507,13 +1507,22 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
             menu.addSectionHeader("Favorites full (max 8)");
         }
         menu.addSeparator();
-        // Context-aware label: if any file under this folder is already in
-        // the media DB, this is a Re-index (force re-derivation); otherwise
-        // it's a first-time Index. Range-query against the path index is
-        // O(log N) so this is safe to run on every right-click.
+        // Context-aware: first-time Index when nothing under this folder is
+        // in the DB; otherwise expose the two existing-data modes
+        // (Scan for new files / Re-index everything). Range-query against
+        // the path index is O(log N) so it's safe to run on every right-
+        // click.
         const bool alreadyIndexed = magda::media::hasIndexedDescendantOfFolder(
             std::filesystem::path(file.getFullPathName().toStdString()));
-        menu.addItem(3, alreadyIndexed ? "Re-index this folder" : "Index this folder");
+        if (alreadyIndexed) {
+            menu.addItem(4, "Scan for new files");
+            menu.addItem(3, "Re-index this folder");
+            menu.addItem(6, "Move folder in library...");
+            menu.addSeparator();
+            menu.addItem(5, "Remove from media library");
+        } else {
+            menu.addItem(3, "Index this folder");
+        }
 
         menu.showMenuAsync(
             juce::PopupMenu::Options(), [this, path, file, alreadyIndexed](int result) {
@@ -1530,7 +1539,73 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
                     magda::Config::getInstance().save();
                     sidebarComponent_->rebuildFavoriteButtons();
                 } else if (result == 3 && dbBrowser_) {
-                    dbBrowser_->startIndexing(file, /*force=*/alreadyIndexed);
+                    dbBrowser_->startIndexing(
+                        file, alreadyIndexed ? magda::media::MediaDbIndexer::Mode::ForceAll
+                                             : magda::media::MediaDbIndexer::Mode::Incremental);
+                } else if (result == 4 && dbBrowser_) {
+                    dbBrowser_->startIndexing(file, magda::media::MediaDbIndexer::Mode::OnlyNew);
+                } else if (result == 5 && dbBrowser_) {
+                    const auto folderName = file.getFileName();
+                    const auto fsPath = std::filesystem::path(file.getFullPathName().toStdString());
+                    juce::Component::SafePointer<MediaExplorerContent> self(this);
+                    juce::AlertWindow::showAsync(
+                        juce::MessageBoxOptions{}
+                            .withIconType(juce::MessageBoxIconType::WarningIcon)
+                            .withTitle("Remove folder from media library")
+                            .withMessage("Remove every indexed entry under \"" + folderName +
+                                         "\" from the media library?\n"
+                                         "Your audio files on disk are untouched.")
+                            .withButton("Remove")
+                            .withButton("Cancel"),
+                        [self, fsPath](int choice) {
+                            if (self == nullptr || choice != 1) {
+                                return;
+                            }
+                            magda::media::removeFolderFromLibrary(fsPath);
+                            if (self->dbBrowser_ != nullptr) {
+                                self->dbBrowser_->refresh();
+                            }
+                        });
+                } else if (result == 6 && dbBrowser_) {
+                    const auto fsPath = std::filesystem::path(file.getFullPathName().toStdString());
+                    juce::Component::SafePointer<MediaExplorerContent> self(this);
+                    moveFolderChooser_ = std::make_unique<juce::FileChooser>(
+                        "Choose the folder's new location",
+                        file.getParentDirectory().exists()
+                            ? file.getParentDirectory()
+                            : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+                    moveFolderChooser_->launchAsync(
+                        juce::FileBrowserComponent::openMode |
+                            juce::FileBrowserComponent::canSelectDirectories,
+                        [self, fsPath](const juce::FileChooser& fc) {
+                            if (self == nullptr) {
+                                return;
+                            }
+                            const auto picked = fc.getResult();
+                            if (!picked.isDirectory()) {
+                                return;
+                            }
+                            const auto newPath =
+                                std::filesystem::path(picked.getFullPathName().toStdString());
+                            const int rows = magda::media::moveFolderInLibrary(fsPath, newPath);
+                            if (rows < 0) {
+                                juce::AlertWindow::showAsync(
+                                    juce::MessageBoxOptions{}
+                                        .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                        .withTitle("Move folder in library")
+                                        .withMessage(
+                                            "The move was rolled back. The new location "
+                                            "probably already contains indexed files with the "
+                                            "same names — remove those entries first or pick a "
+                                            "different destination.")
+                                        .withButton("OK"),
+                                    nullptr);
+                                return;
+                            }
+                            if (self->dbBrowser_ != nullptr) {
+                                self->dbBrowser_->refresh();
+                            }
+                        });
                 }
             });
         return;

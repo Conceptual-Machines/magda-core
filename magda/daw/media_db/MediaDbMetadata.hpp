@@ -67,4 +67,27 @@ void setUserKeyForFile(const std::filesystem::path& path, std::optional<std::str
 
 [[nodiscard]] bool hasIndexedDescendantOfFolder(const std::filesystem::path& folder);
 
+// Delete every indexed row whose path lives under `folder`. Cascades drop
+// the associated media_tag / media_embedding / media_metadata entries via
+// ON DELETE CASCADE; media_fts is contentless and gets an explicit DELETE
+// in the same transaction. Returns the number of media_file rows removed.
+// Same range-query semantics as hasIndexedDescendant.
+int removeFolderFromLibrary(MediaDatabase& db, const std::filesystem::path& folder);
+
+int removeFolderFromLibrary(const std::filesystem::path& folder);
+
+// Rewrite media_file.path (and media_fts.path_text) so every row under
+// `oldFolder` ends up rooted at `newFolder`. Useful when the user has
+// physically moved a sample folder on disk and wants the library to
+// follow without re-indexing. Does not move any files on disk. Returns
+// the number of media_file rows updated; 0 on no-op (no descendants).
+// Both transactional: a failed UPDATE (e.g. UNIQUE collision with rows
+// already living at the new prefix) rolls the whole thing back and
+// returns -1.
+int moveFolderInLibrary(MediaDatabase& db, const std::filesystem::path& oldFolder,
+                        const std::filesystem::path& newFolder);
+
+int moveFolderInLibrary(const std::filesystem::path& oldFolder,
+                        const std::filesystem::path& newFolder);
+
 }  // namespace magda::media

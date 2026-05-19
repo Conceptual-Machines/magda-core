@@ -100,6 +100,8 @@ class MediaExplorerContent : public PanelContent,
     std::unique_ptr<juce::FileFilter> mediaFileFilter_;
     std::unique_ptr<juce::FileBrowserComponent> fileBrowser_;
     std::unique_ptr<juce::FileChooser> fileChooser_;  // Persisted for async callbacks
+    // Persisted for the "Move folder in library..." async callback.
+    std::unique_ptr<juce::FileChooser> moveFolderChooser_;
 
     // Library / DB mode (issue #768 — Phase F1+F2)
     // The file browser and dbBrowser_ share the same bounds; only one is

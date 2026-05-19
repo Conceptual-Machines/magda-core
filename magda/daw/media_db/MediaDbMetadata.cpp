@@ -2,6 +2,9 @@
 
 #include <sqlite3.h>
 
+#include <cctype>
+#include <string>
+
 #include "MediaDatabase.hpp"
 #include "MediaDbContext.hpp"
 
@@ -157,6 +160,175 @@ bool hasIndexedDescendantOfFolder(const std::filesystem::path& folder) {
         return false;
     }
     return hasIndexedDescendant(ctx.db(), folder);
+}
+
+int removeFolderFromLibrary(MediaDatabase& db, const std::filesystem::path& folder) {
+    std::string prefix = folder.string();
+    if (prefix.empty()) {
+        return 0;
+    }
+    if (prefix.back() != '/' && prefix.back() != '\\') {
+        prefix.push_back('/');
+    }
+    std::string upper = prefix;
+    upper.back() = static_cast<char>(static_cast<unsigned char>(upper.back()) + 1);
+
+    auto* handle = db.handle();
+    sqlite3_exec(handle, "BEGIN", nullptr, nullptr, nullptr);
+
+    // FTS first — once media_file rows are gone we'd have no rowids to
+    // join against. The contentless FTS table holds path/tag text only,
+    // no FK, so cascades don't reach it.
+    {
+        sqlite3_stmt* stmt = nullptr;
+        sqlite3_prepare_v2(handle,
+                           "DELETE FROM media_fts WHERE rowid IN "
+                           "(SELECT id FROM media_file WHERE path >= ? AND path < ?)",
+                           -1, &stmt, nullptr);
+        sqlite3_bind_text(stmt, 1, prefix.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, upper.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+
+    int removed = 0;
+    {
+        sqlite3_stmt* stmt = nullptr;
+        sqlite3_prepare_v2(handle, "DELETE FROM media_file WHERE path >= ? AND path < ?", -1, &stmt,
+                           nullptr);
+        sqlite3_bind_text(stmt, 1, prefix.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, upper.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt) == SQLITE_DONE) {
+            removed = sqlite3_changes(handle);
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    sqlite3_exec(handle, "COMMIT", nullptr, nullptr, nullptr);
+    return removed;
+}
+
+int removeFolderFromLibrary(const std::filesystem::path& folder) {
+    auto& ctx = MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return 0;
+    }
+    return removeFolderFromLibrary(ctx.db(), folder);
+}
+
+namespace {
+
+// Same normalisation the indexer applies on first insert (see
+// MediaDbIndexer::buildPathText). Reimplemented here so we don't have to
+// expose that helper across modules.
+std::string pathTextFor(const std::string& raw) {
+    std::string out;
+    out.reserve(raw.size());
+    for (char c : raw) {
+        const bool isSep = c == '_' || c == '/' || c == '\\' || c == '-' || c == '.' || c == ',' ||
+                           c == '(' || c == ')';
+        out += isSep ? ' ' : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return out;
+}
+
+}  // namespace
+
+int moveFolderInLibrary(MediaDatabase& db, const std::filesystem::path& oldFolder,
+                        const std::filesystem::path& newFolder) {
+    std::string oldPrefix = oldFolder.string();
+    std::string newPrefix = newFolder.string();
+    if (oldPrefix.empty() || newPrefix.empty()) {
+        return 0;
+    }
+    if (oldPrefix.back() != '/' && oldPrefix.back() != '\\') {
+        oldPrefix.push_back('/');
+    }
+    if (newPrefix.back() != '/' && newPrefix.back() != '\\') {
+        newPrefix.push_back('/');
+    }
+    if (oldPrefix == newPrefix) {
+        return 0;
+    }
+    std::string upper = oldPrefix;
+    upper.back() = static_cast<char>(static_cast<unsigned char>(upper.back()) + 1);
+
+    auto* handle = db.handle();
+    if (sqlite3_exec(handle, "BEGIN", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        return -1;
+    }
+
+    int updatedRows = 0;
+    bool ok = true;
+
+    // Rewrite paths in one statement. substr(path, len(oldPrefix)+1) drops
+    // the old prefix; concat with newPrefix gives the relocated path.
+    {
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(handle,
+                               "UPDATE media_file SET path = ?1 || substr(path, ?2) "
+                               "WHERE path >= ?3 AND path < ?4",
+                               -1, &stmt, nullptr) != SQLITE_OK) {
+            ok = false;
+        } else {
+            sqlite3_bind_text(stmt, 1, newPrefix.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt, 2, static_cast<int>(oldPrefix.size()) + 1);
+            sqlite3_bind_text(stmt, 3, oldPrefix.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 4, upper.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(stmt) == SQLITE_DONE) {
+                updatedRows = sqlite3_changes(handle);
+            } else {
+                ok = false;  // UNIQUE collision or other error
+            }
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    // Refresh media_fts.path_text for the moved rows so a search by folder
+    // name finds them at the new location.
+    if (ok && updatedRows > 0) {
+        std::string newUpper = newPrefix;
+        newUpper.back() = static_cast<char>(static_cast<unsigned char>(newUpper.back()) + 1);
+
+        sqlite3_stmt* selStmt = nullptr;
+        sqlite3_prepare_v2(handle, "SELECT id, path FROM media_file WHERE path >= ? AND path < ?",
+                           -1, &selStmt, nullptr);
+        sqlite3_bind_text(selStmt, 1, newPrefix.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(selStmt, 2, newUpper.c_str(), -1, SQLITE_TRANSIENT);
+
+        sqlite3_stmt* updStmt = nullptr;
+        sqlite3_prepare_v2(handle, "UPDATE media_fts SET path_text = ? WHERE rowid = ?", -1,
+                           &updStmt, nullptr);
+
+        while (sqlite3_step(selStmt) == SQLITE_ROW) {
+            const auto id = sqlite3_column_int64(selStmt, 0);
+            const std::string rawPath =
+                reinterpret_cast<const char*>(sqlite3_column_text(selStmt, 1));
+            const auto pathText = pathTextFor(rawPath);
+            sqlite3_bind_text(updStmt, 1, pathText.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int64(updStmt, 2, id);
+            sqlite3_step(updStmt);
+            sqlite3_reset(updStmt);
+        }
+        sqlite3_finalize(selStmt);
+        sqlite3_finalize(updStmt);
+    }
+
+    if (!ok) {
+        sqlite3_exec(handle, "ROLLBACK", nullptr, nullptr, nullptr);
+        return -1;
+    }
+    sqlite3_exec(handle, "COMMIT", nullptr, nullptr, nullptr);
+    return updatedRows;
+}
+
+int moveFolderInLibrary(const std::filesystem::path& oldFolder,
+                        const std::filesystem::path& newFolder) {
+    auto& ctx = MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return 0;
+    }
+    return moveFolderInLibrary(ctx.db(), oldFolder, newFolder);
 }
 
 }  // namespace magda::media
