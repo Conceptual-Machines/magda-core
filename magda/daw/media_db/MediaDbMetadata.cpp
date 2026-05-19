@@ -99,6 +99,24 @@ void setUserKey(MediaDatabase& db, const std::filesystem::path& path,
     sqlite3_finalize(stmt);
 }
 
+void setUserKeyRoot(MediaDatabase& db, const std::filesystem::path& path,
+                    std::optional<std::string> root) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db.handle(), "UPDATE media_file SET key_root_user = ? WHERE path = ?",
+                           -1, &stmt, nullptr) != SQLITE_OK) {
+        return;
+    }
+    if (root) {
+        sqlite3_bind_text(stmt, 1, root->c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+        sqlite3_bind_null(stmt, 1);
+    }
+    const std::string p = path.string();
+    sqlite3_bind_text(stmt, 2, p.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
 // ---- Singleton convenience wrappers ------------------------------------
 
 std::optional<EffectiveMetadata> getEffectiveMetadataForFile(const std::filesystem::path& path) {
@@ -115,6 +133,14 @@ void setUserBpmForFile(const std::filesystem::path& path, std::optional<double> 
         return;
     }
     setUserBpm(ctx.db(), path, bpm);
+}
+
+void setUserKeyRootForFile(const std::filesystem::path& path, std::optional<std::string> root) {
+    auto& ctx = MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return;
+    }
+    setUserKeyRoot(ctx.db(), path, root);
 }
 
 void setUserKeyForFile(const std::filesystem::path& path, std::optional<std::string> root,

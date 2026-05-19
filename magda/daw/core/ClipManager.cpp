@@ -1038,7 +1038,7 @@ void ClipManager::recordUserBpm(ClipId clipId, double bpm) {
     magda::media::setUserBpmForFile(std::filesystem::path(filePath.toStdString()), bpm);
 }
 
-void ClipManager::recordUserKey(ClipId clipId, const std::string& root, const std::string& scale) {
+void ClipManager::recordUserKey(ClipId clipId, const std::string& root) {
     const auto* clip = getClip(clipId);
     if (clip == nullptr || !clip->isAudio()) {
         return;
@@ -1051,12 +1051,7 @@ void ClipManager::recordUserKey(ClipId clipId, const std::string& root, const st
     if (!root.empty()) {
         rootOpt = root;
     }
-    std::optional<std::string> scaleOpt;
-    if (!scale.empty()) {
-        scaleOpt = scale;
-    }
-    magda::media::setUserKeyForFile(std::filesystem::path(filePath.toStdString()), rootOpt,
-                                    scaleOpt);
+    magda::media::setUserKeyRootForFile(std::filesystem::path(filePath.toStdString()), rootOpt);
 }
 
 void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update,

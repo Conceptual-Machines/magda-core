@@ -256,7 +256,9 @@ std::vector<QueryResult> hydrate(sqlite3* db,
         return out;
     }
     // Bulk-fetch with one IN-clause query, then re-order by the input vector.
-    std::string sql = "SELECT id, path, kind, family, shape, bpm, key_root, key_scale, duration_s, "
+    std::string sql = "SELECT id, path, kind, family, shape, COALESCE(bpm_user, bpm) AS bpm, "
+                      "COALESCE(key_root_user, key_root) AS key_root, "
+                      "COALESCE(key_scale_user, key_scale) AS key_scale, duration_s, "
                       "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
                       "        WHERE file_id = media_file.id) AS tags "
                       "FROM media_file WHERE id IN (";
@@ -321,12 +323,13 @@ std::vector<QueryResult> hydrate(sqlite3* db,
 // ---- Filter-only browse --------------------------------------------------
 
 std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit, int offset) {
-    const std::string sql =
-        "SELECT id, path, kind, family, shape, bpm, key_root, key_scale, duration_s, "
-        "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
-        "        WHERE file_id = media_file.id) AS tags "
-        "FROM media_file WHERE " +
-        w.clause + " ORDER BY indexed_at DESC LIMIT ? OFFSET ?";
+    const std::string sql = "SELECT id, path, kind, family, shape, COALESCE(bpm_user, bpm) AS bpm, "
+                            "COALESCE(key_root_user, key_root) AS key_root, "
+                            "COALESCE(key_scale_user, key_scale) AS key_scale, duration_s, "
+                            "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
+                            "        WHERE file_id = media_file.id) AS tags "
+                            "FROM media_file WHERE " +
+                            w.clause + " ORDER BY indexed_at DESC LIMIT ? OFFSET ?";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {

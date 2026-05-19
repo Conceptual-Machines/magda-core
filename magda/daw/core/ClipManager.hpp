@@ -307,11 +307,12 @@ class ClipManager {
      *         in the DB (e.g. a file the user dropped without indexing). */
     void recordUserBpm(ClipId clipId, double bpm);
 
-    /** @brief Persist a user-asserted key (root + scale) for the clip's
-     *         source file back to the media DB. Mirror of recordUserBpm.
-     *         Pass empty strings to clear the override. No-op when the
-     *         source file isn't in the DB. */
-    void recordUserKey(ClipId clipId, const std::string& root, const std::string& scale);
+    /** @brief Persist a user-asserted key root for the clip's source file
+     *         back to the media DB. Mirror of recordUserBpm. Pass an empty
+     *         string to clear the override. No-op when the source file
+     *         isn't in the DB. Scale (major/minor) is intentionally left
+     *         untouched - the UI only exposes root. */
+    void recordUserKey(ClipId clipId, const std::string& root);
 
     /** @brief Refresh the seconds-domain cache (length, startTime, offset,
      *         loopStart, loopLength) on a beat-authoritative clip from its

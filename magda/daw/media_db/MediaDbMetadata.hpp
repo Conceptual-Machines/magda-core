@@ -42,6 +42,13 @@ void setUserBpm(MediaDatabase& db, const std::filesystem::path& path, std::optio
 void setUserKey(MediaDatabase& db, const std::filesystem::path& path,
                 std::optional<std::string> root, std::optional<std::string> scale);
 
+// Update only the key root override, leaving key_scale_user untouched.
+// Used by inspector UI that exposes root but not scale - blowing away
+// the scale override every time the user picks a new root would be
+// surprising.
+void setUserKeyRoot(MediaDatabase& db, const std::filesystem::path& path,
+                    std::optional<std::string> root);
+
 // Convenience overloads that go through the singleton MediaDbContext.
 // They open the DB lazily on first call (no-op if already open) and
 // silently no-op on init failure or when the file isn't indexed. UI code
@@ -53,6 +60,8 @@ void setUserBpmForFile(const std::filesystem::path& path, std::optional<double> 
 
 void setUserKeyForFile(const std::filesystem::path& path, std::optional<std::string> root,
                        std::optional<std::string> scale);
+
+void setUserKeyRootForFile(const std::filesystem::path& path, std::optional<std::string> root);
 
 // True if the DB has any indexed file under `folder` (descendant in the
 // path hierarchy, not equal to it). Used by the file-browser folder
