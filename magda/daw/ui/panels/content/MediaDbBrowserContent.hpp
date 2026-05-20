@@ -105,6 +105,8 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     void deleteFileIdsWithConfirmation(std::vector<std::int64_t> fileIds);
     void openPopOutWindow();
     magda::media::QueryFilters currentFilters() const;
+    magda::media::QuerySort currentSort() const;
+    void setSortOrder(int columnId, bool ascending);
     void timerCallback() override;
 
     // Filter strip — two rows.
@@ -141,6 +143,7 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     std::vector<magda::media::QueryResult> results_;
     bool isPopOutInstance_ = false;
     std::uint64_t observedMediaRevision_ = 0;
+    magda::media::QuerySort sort_;
 
     // Pagination. Fixed page size; currentPage_ is 0-based. Prev / Next
     // buttons in the footer step the page index and re-run the same query

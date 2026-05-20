@@ -755,6 +755,7 @@ MediaExplorerContent::MediaExplorerContent() {
     fileInfoLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
     fileInfoLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     fileInfoLabel_.setJustificationType(juce::Justification::centredLeft);
+    fileInfoLabel_.setMinimumHorizontalScale(1.0F);
     addAndMakeVisible(fileInfoLabel_);
 
     formatLabel_.setText("", juce::dontSendNotification);
@@ -1149,7 +1150,9 @@ void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
         }
     } else {
         playButton_->setEnabled(false);
-        fileInfoLabel_.setText("Could not load: " + file.getFileName(), juce::dontSendNotification);
+        fileInfoLabel_.setText("Could not load: " + file.getFullPathName(),
+                               juce::dontSendNotification);
+        fileInfoLabel_.setTooltip(file.getFullPathName());
 
         // Clear thumbnail
         if (thumbnailComponent_) {
@@ -1206,6 +1209,7 @@ void MediaExplorerContent::setPreviewLockedForIndexing(bool locked) {
             thumbnailComponent_->setFile(juce::File());
         }
         fileInfoLabel_.setText("Preview locked during media scan", juce::dontSendNotification);
+        fileInfoLabel_.setTooltip({});
         formatLabel_.setText("", juce::dontSendNotification);
         propertiesLabel_.setText("", juce::dontSendNotification);
         return;
@@ -1217,19 +1221,23 @@ void MediaExplorerContent::setPreviewLockedForIndexing(bool locked) {
     stopButton_->setEnabled(false);
     if (!currentPreviewFile_.existsAsFile()) {
         fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
+        fileInfoLabel_.setTooltip({});
     }
 }
 
 void MediaExplorerContent::updateFileInfo(const juce::File& file) {
     if (!file.existsAsFile()) {
         fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
+        fileInfoLabel_.setTooltip({});
         formatLabel_.setText("", juce::dontSendNotification);
         propertiesLabel_.setText("", juce::dontSendNotification);
         return;
     }
 
-    // File name
-    fileInfoLabel_.setText(file.getFileName(), juce::dontSendNotification);
+    // Full path. The label truncates visually, but the tooltip exposes the
+    // complete path when the preview row is narrow.
+    fileInfoLabel_.setText(file.getFullPathName(), juce::dontSendNotification);
+    fileInfoLabel_.setTooltip(file.getFullPathName());
 
     auto* reader = formatManager_.createReaderFor(file);
     if (reader != nullptr) {
@@ -1507,6 +1515,7 @@ void MediaExplorerContent::selectionChanged() {
 
         fileInfoLabel_.setText(juce::String(numSelected) + " files selected",
                                juce::dontSendNotification);
+        fileInfoLabel_.setTooltip({});
         formatLabel_.setText("Multiple files", juce::dontSendNotification);
         propertiesLabel_.setText("Total size: " + formatFileSize(totalBytes),
                                  juce::dontSendNotification);
@@ -1524,6 +1533,7 @@ void MediaExplorerContent::selectionChanged() {
         readerSource_.reset();
         playButton_->setEnabled(false);
         fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
+        fileInfoLabel_.setTooltip({});
         formatLabel_.setText("", juce::dontSendNotification);
         propertiesLabel_.setText("", juce::dontSendNotification);
         if (thumbnailComponent_) {
@@ -1543,7 +1553,8 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         playButton_->setEnabled(false);
 
-        fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
+        fileInfoLabel_.setText(selectedFile.getFullPathName(), juce::dontSendNotification);
+        fileInfoLabel_.setTooltip(selectedFile.getFullPathName());
         formatLabel_.setText("MIDI File", juce::dontSendNotification);
         propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()) +
                                      " | Preview: Coming soon",
@@ -1557,7 +1568,8 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         playButton_->setEnabled(false);
 
-        fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
+        fileInfoLabel_.setText(selectedFile.getFullPathName(), juce::dontSendNotification);
+        fileInfoLabel_.setTooltip(selectedFile.getFullPathName());
         formatLabel_.setText("Magda Clip", juce::dontSendNotification);
         propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()) +
                                      " | Preview: Coming soon",
@@ -1571,7 +1583,8 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         playButton_->setEnabled(false);
 
-        fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
+        fileInfoLabel_.setText(selectedFile.getFullPathName(), juce::dontSendNotification);
+        fileInfoLabel_.setTooltip(selectedFile.getFullPathName());
         formatLabel_.setText("Preset", juce::dontSendNotification);
         propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()),
                                  juce::dontSendNotification);
@@ -1584,7 +1597,8 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         playButton_->setEnabled(false);
 
-        fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
+        fileInfoLabel_.setText(selectedFile.getFullPathName(), juce::dontSendNotification);
+        fileInfoLabel_.setTooltip(selectedFile.getFullPathName());
         formatLabel_.setText("Unknown format", juce::dontSendNotification);
         propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()),
                                  juce::dontSendNotification);

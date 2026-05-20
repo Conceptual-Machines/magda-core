@@ -26,6 +26,8 @@ using magda::media::MediaDbIndexer;
 using magda::media::MediaDbQuery;
 using magda::media::QueryFilters;
 using magda::media::QueryResult;
+using magda::media::QuerySort;
+using magda::media::QuerySortField;
 
 namespace {
 
@@ -139,6 +141,18 @@ TEST_CASE("query: filter-only browse with no text", "[media_db][query]") {
     SECTION("limit caps result count") {
         auto results = q.search(std::nullopt, {}, 2);
         REQUIRE(results.size() == 2);
+    }
+
+    SECTION("name sort orders by displayed filename") {
+        auto asc = q.search(std::nullopt, {}, 5, 0, {}, QuerySort{QuerySortField::Name, true});
+        REQUIRE(asc.size() == 5);
+        REQUIRE(asc.front().path.filename().string() == "808_140bpm.wav");
+        REQUIRE(asc.back().path.filename().string() == "warm_analog.wav");
+
+        auto desc = q.search(std::nullopt, {}, 5, 0, {}, QuerySort{QuerySortField::Name, false});
+        REQUIRE(desc.size() == 5);
+        REQUIRE(desc.front().path.filename().string() == "warm_analog.wav");
+        REQUIRE(desc.back().path.filename().string() == "808_140bpm.wav");
     }
 }
 

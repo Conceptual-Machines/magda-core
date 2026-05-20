@@ -71,6 +71,22 @@ struct QueryWeights {
     float text = 0.55F;
 };
 
+enum class QuerySortField {
+    Default,
+    Name,
+    Family,
+    Shape,
+    Bpm,
+    Key,
+    Duration,
+    Tags,
+};
+
+struct QuerySort {
+    QuerySortField field = QuerySortField::Default;
+    bool ascending = true;
+};
+
 class MediaDbQuery {
   public:
     // db: required. encoder + tokenizer: nullable. When either is null, the
@@ -78,13 +94,14 @@ class MediaDbQuery {
     // which is still useful (the no-AI-pack story).
     MediaDbQuery(MediaDatabase& db, ClapTextEncoder* textEncoder, RobertaTokenizer* tokenizer);
 
-    // Run a search. If `text` is empty / nullopt, returns filter-only browse
-    // ordered by indexed_at DESC. `offset` skips the first N rows of the
-    // result list — used by the UI's pagination footer to jump between
-    // pages without changing the underlying query.
+    // Run a search. If `text` is empty / nullopt and no explicit sort is
+    // provided, returns filter-only browse ordered by indexed_at DESC.
+    // `offset` skips the first N rows of the result list — used by the UI's
+    // pagination footer to jump between pages without changing the underlying
+    // query.
     std::vector<QueryResult> search(const std::optional<std::string>& text,
                                     const QueryFilters& filters, int limit = 20, int offset = 0,
-                                    QueryWeights weights = {}) const;
+                                    QueryWeights weights = {}, QuerySort sort = {}) const;
 
     // Audio-to-audio similarity. Loads the seed file's CLAP audio embedding
     // and ranks the filter-matched candidate set by cosine. No text encoder
@@ -92,7 +109,7 @@ class MediaDbQuery {
     // itself is dropped from the result list. Returns empty if the seed has
     // no embedding (e.g. wasn't indexed with the Sample Tagger installed).
     std::vector<QueryResult> similarTo(std::int64_t seedFileId, const QueryFilters& filters,
-                                       int limit = 20, int offset = 0) const;
+                                       int limit = 20, int offset = 0, QuerySort sort = {}) const;
 
     // Cheap precheck: does this file_id have a row in media_embedding?
     // Used by the UI to tell "seed has no embedding, re-index needed"

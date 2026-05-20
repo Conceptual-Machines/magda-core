@@ -323,6 +323,10 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         return static_cast<int>(owner_.results_.size());
     }
 
+    void sortOrderChanged(int newSortColumnId, bool isForwards) override {
+        owner_.setSortOrder(newSortColumnId, isForwards);
+    }
+
     void paintRowBackground(juce::Graphics& g, int rowNumber, int /*width*/, int /*height*/,
                             bool rowIsSelected) override {
         if (rowIsSelected) {
@@ -663,7 +667,8 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     // JUCE drives the visibility toggle itself once the flag is set.
     const int flags = juce::TableHeaderComponent::visible | juce::TableHeaderComponent::resizable |
                       juce::TableHeaderComponent::draggable |
-                      juce::TableHeaderComponent::appearsOnColumnMenu;
+                      juce::TableHeaderComponent::appearsOnColumnMenu |
+                      juce::TableHeaderComponent::sortable;
     // (id, name, defaultWidth, minWidth, maxWidth, propertyFlags)
     header.addColumn("Name", kColName, 260, 80, -1, flags);
     header.addColumn("Family", kColFamily, 90, 50, -1, flags);
@@ -854,6 +859,44 @@ void MediaDbBrowserContent::restartSearch() {
     currentPage_ = 0;
     similarToFileId_.reset();
     similarToFileName_.clear();
+    runSearch();
+}
+
+magda::media::QuerySort MediaDbBrowserContent::currentSort() const {
+    return sort_;
+}
+
+void MediaDbBrowserContent::setSortOrder(int columnId, bool ascending) {
+    using magda::media::QuerySortField;
+    QuerySortField field = QuerySortField::Default;
+    switch (columnId) {
+        case kColName:
+            field = QuerySortField::Name;
+            break;
+        case kColFamily:
+            field = QuerySortField::Family;
+            break;
+        case kColShape:
+            field = QuerySortField::Shape;
+            break;
+        case kColBpm:
+            field = QuerySortField::Bpm;
+            break;
+        case kColKey:
+            field = QuerySortField::Key;
+            break;
+        case kColDuration:
+            field = QuerySortField::Duration;
+            break;
+        case kColTags:
+            field = QuerySortField::Tags;
+            break;
+        default:
+            field = QuerySortField::Default;
+            break;
+    }
+    sort_ = {field, ascending};
+    currentPage_ = 0;
     runSearch();
 }
 
@@ -1257,6 +1300,7 @@ void MediaDbBrowserContent::runSearch() {
     }
 
     const auto filters = currentFilters();
+    const auto sort = currentSort();
     const bool hasText = !queryText_.isEmpty();
     const int offset = currentPage_ * kPageSize;
 
@@ -1277,7 +1321,7 @@ void MediaDbBrowserContent::runSearch() {
             searchPool_ = std::make_unique<juce::ThreadPool>(1);
         }
         const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
-        searchPool_->addJob([self, myGen, seedId, filters, offset]() {
+        searchPool_->addJob([self, myGen, seedId, filters, offset, sort]() {
             std::vector<magda::media::QueryResult> results;
             try {
                 if (self == nullptr) {
@@ -1288,7 +1332,7 @@ void MediaDbBrowserContent::runSearch() {
                     self->searchDb_ = std::make_unique<magda::media::MediaDatabase>(bgCtx.dbPath());
                 }
                 magda::media::MediaDbQuery query(*self->searchDb_, nullptr, nullptr);
-                results = query.similarTo(seedId, filters, kPageSize, offset);
+                results = query.similarTo(seedId, filters, kPageSize, offset, sort);
             } catch (...) {
                 // Empty result -> UI shows the "No results" empty state.
             }
@@ -1311,7 +1355,8 @@ void MediaDbBrowserContent::runSearch() {
     // async hop.
     if (!hasText) {
         magda::media::MediaDbQuery query(ctx.db(), nullptr, nullptr);
-        results_ = query.search(std::nullopt, filters, /*limit=*/kPageSize, /*offset=*/offset);
+        results_ =
+            query.search(std::nullopt, filters, /*limit=*/kPageSize, /*offset=*/offset, {}, sort);
         applySearchResultsToUi();
         return;
     }
@@ -1343,7 +1388,7 @@ void MediaDbBrowserContent::runSearch() {
     }
 
     const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
-    searchPool_->addJob([self, myGen, text, filters, offset]() {
+    searchPool_->addJob([self, myGen, text, filters, offset, sort]() {
         std::vector<magda::media::QueryResult> results;
         try {
             if (self == nullptr) {
@@ -1364,7 +1409,8 @@ void MediaDbBrowserContent::runSearch() {
             auto* textEnc = ctx.textEncoder();
             auto* tok = ctx.tokenizer();
             magda::media::MediaDbQuery query(*self->searchDb_, textEnc, tok);
-            results = query.search(std::optional<std::string>{text}, filters, kPageSize, offset);
+            results = query.search(std::optional<std::string>{text}, filters, kPageSize, offset, {},
+                                   sort);
         } catch (...) {
             // Swallow — empty result set bounces back to the UI either way.
         }

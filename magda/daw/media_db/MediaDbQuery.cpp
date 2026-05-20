@@ -3,6 +3,7 @@
 #include <sqlite3.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -249,6 +250,131 @@ std::optional<double> optDouble(sqlite3_stmt* stmt, int col) {
     return sqlite3_column_double(stmt, col);
 }
 
+std::string tagsTextForSort(const QueryResult& r) {
+    std::string out;
+    for (const auto& tag : r.tags) {
+        if (!out.empty()) {
+            out += " ";
+        }
+        out += tag;
+    }
+    std::transform(out.begin(), out.end(), out.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return out;
+}
+
+std::string lowerForSort(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+std::string keyForSort(const QueryResult& r) {
+    std::string key = r.keyRoot.value_or("");
+    if (r.keyScale && !r.keyScale->empty()) {
+        key += " " + *r.keyScale;
+    }
+    return lowerForSort(std::move(key));
+}
+
+bool hasSortValue(const QueryResult& r, QuerySortField field) {
+    switch (field) {
+        case QuerySortField::Bpm:
+            return r.bpm.has_value();
+        case QuerySortField::Key:
+            return r.keyRoot.has_value();
+        case QuerySortField::Duration:
+            return r.durationS.has_value();
+        case QuerySortField::Tags:
+            return !r.tags.empty();
+        default:
+            return true;
+    }
+}
+
+void sortResults(std::vector<QueryResult>& rows, QuerySort sort) {
+    if (sort.field == QuerySortField::Default) {
+        return;
+    }
+
+    std::stable_sort(rows.begin(), rows.end(), [sort](const QueryResult& a, const QueryResult& b) {
+        const bool aHas = hasSortValue(a, sort.field);
+        const bool bHas = hasSortValue(b, sort.field);
+        if (aHas != bHas) {
+            return aHas;  // keep missing values at the bottom in both directions
+        }
+        if (!aHas) {
+            return a.fileId < b.fileId;
+        }
+
+        int cmp = 0;
+        switch (sort.field) {
+            case QuerySortField::Name:
+                cmp =
+                    lowerForSort(a.displayName.value_or(a.path.filename().string()))
+                        .compare(lowerForSort(b.displayName.value_or(b.path.filename().string())));
+                break;
+            case QuerySortField::Family:
+                cmp = lowerForSort(a.family).compare(lowerForSort(b.family));
+                break;
+            case QuerySortField::Shape:
+                cmp = lowerForSort(a.shape).compare(lowerForSort(b.shape));
+                break;
+            case QuerySortField::Bpm:
+                cmp = (*a.bpm < *b.bpm) ? -1 : ((*a.bpm > *b.bpm) ? 1 : 0);
+                break;
+            case QuerySortField::Key:
+                cmp = keyForSort(a).compare(keyForSort(b));
+                break;
+            case QuerySortField::Duration:
+                cmp = (*a.durationS < *b.durationS) ? -1 : ((*a.durationS > *b.durationS) ? 1 : 0);
+                break;
+            case QuerySortField::Tags:
+                cmp = tagsTextForSort(a).compare(tagsTextForSort(b));
+                break;
+            case QuerySortField::Default:
+                break;
+        }
+        if (cmp == 0) {
+            return a.fileId < b.fileId;
+        }
+        return sort.ascending ? cmp < 0 : cmp > 0;
+    });
+}
+
+std::string orderByFor(QuerySort sort) {
+    const char* dir = sort.ascending ? "ASC" : "DESC";
+    auto nullable = [&](const std::string& expr) {
+        return expr + " IS NULL ASC, " + expr + " " + dir;
+    };
+    auto nullableLower = [&](const std::string& expr) {
+        return expr + " IS NULL ASC, lower(" + expr + ") " + dir;
+    };
+
+    switch (sort.field) {
+        case QuerySortField::Name:
+            return "lower(COALESCE(display_name, path)) " + std::string(dir);
+        case QuerySortField::Family:
+            return nullableLower("family");
+        case QuerySortField::Shape:
+            return nullableLower("shape");
+        case QuerySortField::Bpm:
+            return nullable("COALESCE(bpm_user, bpm)");
+        case QuerySortField::Key:
+            return "COALESCE(key_root_user, key_root) IS NULL ASC, "
+                   "lower(COALESCE(key_root_user, key_root, '') || ' ' || "
+                   "COALESCE(key_scale_user, key_scale, '')) " +
+                   std::string(dir);
+        case QuerySortField::Duration:
+            return nullable("duration_s");
+        case QuerySortField::Tags:
+            return "tags IS NULL ASC, lower(tags) " + std::string(dir);
+        case QuerySortField::Default:
+            return "indexed_at DESC";
+    }
+    return "indexed_at DESC";
+}
+
 std::vector<QueryResult> hydrate(sqlite3* db,
                                  const std::vector<std::pair<float, std::int64_t>>& scored) {
     std::vector<QueryResult> out;
@@ -333,8 +459,9 @@ std::vector<QueryResult> hydrate(sqlite3* db,
 
 // ---- Filter-only browse --------------------------------------------------
 
-std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit, int offset) {
-    const std::string sql =
+std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit, int offset,
+                                    QuerySort sort) {
+    std::string sql =
         "SELECT id, path, display_name, kind, family, shape, COALESCE(bpm_user, bpm) AS bpm, "
         "COALESCE(key_root_user, key_root) AS key_root, "
         "COALESCE(key_scale_user, key_scale) AS key_scale, duration_s, "
@@ -348,15 +475,21 @@ std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit,
         "       EXISTS (SELECT 1 FROM media_embedding "
         "               WHERE file_id = media_file.id) AS tagged "
         "FROM media_file WHERE " +
-        w.clause + " ORDER BY indexed_at DESC LIMIT ? OFFSET ?";
+        w.clause + " ORDER BY " +
+        (sort.field == QuerySortField::Default ? orderByFor(sort) : "indexed_at DESC");
+    if (sort.field == QuerySortField::Default) {
+        sql += " LIMIT ? OFFSET ?";
+    }
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
         return {};
     }
     const int after = bindAll(stmt, 1, w);
-    sqlite3_bind_int(stmt, after, limit);
-    sqlite3_bind_int(stmt, after + 1, offset);
+    if (sort.field == QuerySortField::Default) {
+        sqlite3_bind_int(stmt, after, limit);
+        sqlite3_bind_int(stmt, after + 1, offset);
+    }
 
     std::vector<QueryResult> out;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -393,6 +526,16 @@ std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit,
         out.push_back(std::move(r));
     }
     sqlite3_finalize(stmt);
+    if (sort.field != QuerySortField::Default) {
+        sortResults(out, sort);
+        if (offset >= static_cast<int>(out.size())) {
+            return {};
+        }
+        out.erase(out.begin(), out.begin() + offset);
+        if (static_cast<int>(out.size()) > limit) {
+            out.resize(static_cast<size_t>(limit));
+        }
+    }
     return out;
 }
 
@@ -406,7 +549,7 @@ MediaDbQuery::MediaDbQuery(MediaDatabase& db, ClapTextEncoder* textEncoder,
 
 std::vector<QueryResult> MediaDbQuery::search(const std::optional<std::string>& text,
                                               const QueryFilters& filters, int limit, int offset,
-                                              QueryWeights weights) const {
+                                              QueryWeights weights, QuerySort sort) const {
     sqlite3* sql = db_.handle();
     const BuiltWhere where = buildWhere(filters);
     if (limit < 0) {
@@ -417,7 +560,7 @@ std::vector<QueryResult> MediaDbQuery::search(const std::optional<std::string>& 
     }
 
     if (!text || text->empty()) {
-        return filterOnly(sql, where, limit, offset);
+        return filterOnly(sql, where, limit, offset, sort);
     }
 
     // Stage 1: cheap FTS BM25 over path / tag tokens. This is also the
@@ -498,6 +641,18 @@ std::vector<QueryResult> MediaDbQuery::search(const std::optional<std::string>& 
     }
     std::sort(combined.begin(), combined.end(),
               [](const auto& a, const auto& b) { return a.first > b.first; });
+    if (sort.field != QuerySortField::Default) {
+        auto sorted = hydrate(sql, combined);
+        sortResults(sorted, sort);
+        if (offset >= static_cast<int>(sorted.size())) {
+            return {};
+        }
+        sorted.erase(sorted.begin(), sorted.begin() + offset);
+        if (static_cast<int>(sorted.size()) > limit) {
+            sorted.resize(static_cast<size_t>(limit));
+        }
+        return sorted;
+    }
     // Slice [offset, offset + limit] off the ranked list. Cosine over the
     // candidate set produced the full ordering already; paging is a pure
     // window into that, so it costs nothing extra except hydrating fewer
@@ -513,8 +668,8 @@ std::vector<QueryResult> MediaDbQuery::search(const std::optional<std::string>& 
 }
 
 std::vector<QueryResult> MediaDbQuery::similarTo(std::int64_t seedFileId,
-                                                 const QueryFilters& filters, int limit,
-                                                 int offset) const {
+                                                 const QueryFilters& filters, int limit, int offset,
+                                                 QuerySort sort) const {
     sqlite3* sql = db_.handle();
     if (limit < 0) {
         limit = 0;
@@ -571,6 +726,18 @@ std::vector<QueryResult> MediaDbQuery::similarTo(std::int64_t seedFileId,
     }
     std::sort(ranked.begin(), ranked.end(),
               [](const auto& a, const auto& b) { return a.first > b.first; });
+    if (sort.field != QuerySortField::Default) {
+        auto sorted = hydrate(sql, ranked);
+        sortResults(sorted, sort);
+        if (offset >= static_cast<int>(sorted.size())) {
+            return {};
+        }
+        sorted.erase(sorted.begin(), sorted.begin() + offset);
+        if (static_cast<int>(sorted.size()) > limit) {
+            sorted.resize(static_cast<size_t>(limit));
+        }
+        return sorted;
+    }
 
     if (offset >= static_cast<int>(ranked.size())) {
         return {};
