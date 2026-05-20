@@ -1,3 +1,4 @@
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 
 #include <catch2/catch_approx.hpp>
@@ -9,6 +10,7 @@
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/Config.hpp"
+#include "magda/daw/core/MidiFileWriter.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/media_db/MediaDbContext.hpp"
 #include "magda/daw/media_db/MediaDbMetadata.hpp"
@@ -465,6 +467,68 @@ TEST_CASE("Saving a MIDI clip to the media library writes and indexes a generate
     clip->midiNotes.front().velocity = 80;
     REQUIRE(ClipManager::getInstance().saveClipToLibrary(clipId));
     REQUIRE(clip->midi().sourceFilePath == firstPath);
+}
+
+TEST_CASE("MidiFileWriter writes MIDI clip data to a stable destination",
+          "[project][serialization][midi][writer]") {
+    ProjectTestFixture fixture;
+    auto midiFilePath = fixture.createTempFile(".mid");
+
+    MidiNote note;
+    note.startBeat = 0.0;
+    note.lengthBeats = 2.0;
+    note.noteNumber = 64;
+    note.velocity = 96;
+
+    MidiCCData cc;
+    cc.controller = 74;
+    cc.value = 90;
+    cc.beatPosition = 1.0;
+
+    MidiPitchBendData pitchBend;
+    pitchBend.value = 9000;
+    pitchBend.beatPosition = 1.5;
+
+    std::vector<magda::daw::ChordMarker> markers = {{0.0, 4.0, "Cmaj7"}};
+
+    REQUIRE(magda::daw::MidiFileWriter::writeToFile(midiFilePath, {note}, {cc}, {pitchBend}, 120.0,
+                                                    "Writer Clip", markers));
+    REQUIRE(midiFilePath.existsAsFile());
+
+    juce::MidiFile midiFile;
+    auto stream = midiFilePath.createInputStream();
+    REQUIRE(stream != nullptr);
+    REQUIRE(midiFile.readFrom(*stream));
+    REQUIRE(midiFile.getNumTracks() == 1);
+
+    const auto* track = midiFile.getTrack(0);
+    REQUIRE(track != nullptr);
+
+    bool sawTrackName = false;
+    bool sawNote = false;
+    bool sawCc = false;
+    bool sawPitchBend = false;
+    bool sawChordMarker = false;
+    for (int i = 0; i < track->getNumEvents(); ++i) {
+        const auto& msg = track->getEventPointer(i)->message;
+        if (msg.isTrackNameEvent() && msg.getTextFromTextMetaEvent() == "Writer Clip")
+            sawTrackName = true;
+        if (msg.isNoteOn() && msg.getNoteNumber() == 64)
+            sawNote = true;
+        if (msg.isController() && msg.getControllerNumber() == 74 && msg.getControllerValue() == 90)
+            sawCc = true;
+        if (msg.isPitchWheel() && msg.getPitchWheelValue() == 9000)
+            sawPitchBend = true;
+        if (msg.isTextMetaEvent() && msg.getMetaEventType() == 6 &&
+            msg.getTextFromTextMetaEvent().startsWith("CHORD:Cmaj7:"))
+            sawChordMarker = true;
+    }
+
+    REQUIRE(sawTrackName);
+    REQUIRE(sawNote);
+    REQUIRE(sawCc);
+    REQUIRE(sawPitchBend);
+    REQUIRE(sawChordMarker);
 }
 
 TEST_CASE("Clip serialization validates type and audio schema", "[project][serialization][audio]") {

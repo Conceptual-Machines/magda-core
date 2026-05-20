@@ -1,5 +1,6 @@
 #include "MediaDbIndexer.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
 #include <sqlite3.h>
@@ -204,6 +205,13 @@ int deriveTonal(const AudioFeatures& f) {
     return f.spectralFlatness < kFlatnessThreshold ? 1 : 0;
 }
 
+std::string deriveMidiShape(double durationS) {
+    if (durationS <= 0.0) {
+        return "unknown";
+    }
+    return durationS < 2.0 ? "one-shot" : "loop";
+}
+
 // Apply the policy rules: one-shots have no BPM; drum/fx have no key.
 // Filename-derived keys (already in AudioFeatures from PathRules) are
 // kept; we only suppress when the family inherently shouldn't carry one.
@@ -288,6 +296,61 @@ std::vector<std::pair<std::string, float>> scanTagsFor(
         }
     }
     return tags;
+}
+
+struct MidiClipFeatures {
+    double durationS = 0.0;
+    std::optional<double> bpm;
+    bool hasNotes = false;
+};
+
+std::optional<MidiClipFeatures> extractMidiClipFeatures(const std::filesystem::path& path) {
+    juce::File file(juce::String(path.string()));
+    auto stream = file.createInputStream();
+    if (!stream) {
+        return std::nullopt;
+    }
+
+    juce::MidiFile midiFile;
+    if (!midiFile.readFrom(*stream)) {
+        return std::nullopt;
+    }
+
+    MidiClipFeatures result;
+
+    juce::MidiMessageSequence tempoEvents;
+    midiFile.findAllTempoEvents(tempoEvents);
+    if (tempoEvents.getNumEvents() > 0) {
+        const auto& msg = tempoEvents.getEventPointer(0)->message;
+        const double secondsPerQuarter = msg.getTempoSecondsPerQuarterNote();
+        if (secondsPerQuarter > 0.0) {
+            result.bpm = 60.0 / secondsPerQuarter;
+        }
+    }
+    if (!result.bpm) {
+        result.bpm = parseBpmFromPath(path).value_or(120.0);
+    }
+
+    for (int trackIndex = 0; trackIndex < midiFile.getNumTracks(); ++trackIndex) {
+        const auto* track = midiFile.getTrack(trackIndex);
+        if (track == nullptr) {
+            continue;
+        }
+        for (int eventIndex = 0; eventIndex < track->getNumEvents(); ++eventIndex) {
+            const auto& msg = track->getEventPointer(eventIndex)->message;
+            if (msg.isNoteOn()) {
+                result.hasNotes = true;
+                break;
+            }
+        }
+        if (result.hasNotes) {
+            break;
+        }
+    }
+
+    midiFile.convertTimestampTicksToSeconds();
+    result.durationS = midiFile.getLastTimestamp();
+    return result;
 }
 
 // ---- Insert helpers ------------------------------------------------------
@@ -546,14 +609,26 @@ void processOneFile(sqlite3* sqlDb, const ScannedFile& f, MediaDbIndexer::Stats&
         }
 
         std::optional<AudioFeatures> feats;
+        std::optional<MidiClipFeatures> midiFeats;
         if (f.kind == "audio") {
             feats = extractFeatures(f.path);
+        } else if (f.kind == "clip") {
+            midiFeats = extractMidiClipFeatures(f.path);
+            if (midiFeats) {
+                AudioFeatures indexed;
+                indexed.durationS = midiFeats->durationS;
+                indexed.bpm = midiFeats->bpm;
+                feats = indexed;
+            }
         }
 
         const std::string family = deriveFamily(f.path);
-        const std::string shape = feats ? deriveShape(*feats) : std::string{"unknown"};
-        const int tonal = feats ? deriveTonal(*feats) : 0;
-        if (feats) {
+        const std::string shape = midiFeats
+                                      ? deriveMidiShape(midiFeats->durationS)
+                                      : (feats ? deriveShape(*feats) : std::string{"unknown"});
+        const int tonal =
+            midiFeats ? (midiFeats->hasNotes ? 1 : 0) : (feats ? deriveTonal(*feats) : 0);
+        if (feats && f.kind == "audio") {
             applyPolicies(*feats, shape, family);
         }
         if (shouldCancel(shouldCancelFn)) {
