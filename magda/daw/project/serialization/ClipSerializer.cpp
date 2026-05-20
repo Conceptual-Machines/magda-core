@@ -105,6 +105,11 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
             obj->setProperty("loopStartBeats", clip.loopStartBeats);
         if (clip.loopLengthBeats > 0.0)
             obj->setProperty("loopLengthBeats", clip.loopLengthBeats);
+        if (clip.midi().sourceFilePath.isNotEmpty()) {
+            auto* midiObj = new juce::DynamicObject();
+            midiObj->setProperty("sourceFilePath", clip.midi().sourceFilePath);
+            obj->setProperty("midi", juce::var(midiObj));
+        }
     }
 
     // Groove/Shuffle/Swing
@@ -326,6 +331,10 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
 
         if (outClip.loopLength <= 0.0 && outClip.loopLengthBeats > 0.0 && projectTempo > 0.0)
             outClip.loopLength = outClip.loopLengthBeats * 60.0 / projectTempo;
+
+        if (auto* midiObj = obj->getProperty("midi").getDynamicObject()) {
+            outClip.midi().sourceFilePath = midiObj->getProperty("sourceFilePath").toString();
+        }
     }
 
     // Groove/Shuffle/Swing

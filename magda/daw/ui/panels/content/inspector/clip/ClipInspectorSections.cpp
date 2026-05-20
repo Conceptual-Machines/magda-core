@@ -974,39 +974,42 @@ void ClipInspector::initClipPropertiesSection() {
     saveLibraryButton_.setButtonText("Save to library");
     saveLibraryButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     saveLibraryButton_.setTooltip(
-        "Save current clip BPM, beats, BEAT mode, key, and warp markers to the media library");
+        "Save current clip settings or MIDI clip file to the media library");
     saveLibraryButton_.onClick = [this]() {
         auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-        if (clip == nullptr || !clip->isAudio()) {
+        if (clip == nullptr) {
             return;
         }
-        const auto bpmText = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
-        const double displayedBpm = bpmText.getDoubleValue();
-        if (magda::isValidBpm(displayedBpm)) {
-            clip->audio().interpretation.bpm = displayedBpm;
-        }
-        if (clipBeatsLengthValue_ && clipBeatsLengthValue_->isVisible()) {
-            const double displayedBeats = clipBeatsLengthValue_->getValue();
-            if (displayedBeats > 0.0) {
-                clip->audio().interpretation.totalBeats = displayedBeats;
-                clip->audio().interpretation.totalBeatsLocked = true;
-            }
-        }
-
+        const bool savingMidiClip = clip->isMidi();
         std::optional<std::vector<magda::ClipInfo::WarpMarker>> markers;
-        if (clip->warpEnabled) {
-            markers = std::vector<magda::ClipInfo::WarpMarker>{};
-            if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-                if (auto* bridge = engine->getAudioBridge()) {
-                    const auto liveMarkers = bridge->getWarpMarkers(primaryClipId());
-                    markers->reserve(liveMarkers.size());
-                    for (const auto& marker : liveMarkers) {
-                        markers->push_back({marker.sourceTime, marker.warpTime});
-                    }
+        if (clip->isAudio()) {
+            const auto bpmText = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
+            const double displayedBpm = bpmText.getDoubleValue();
+            if (magda::isValidBpm(displayedBpm)) {
+                clip->audio().interpretation.bpm = displayedBpm;
+            }
+            if (clipBeatsLengthValue_ && clipBeatsLengthValue_->isVisible()) {
+                const double displayedBeats = clipBeatsLengthValue_->getValue();
+                if (displayedBeats > 0.0) {
+                    clip->audio().interpretation.totalBeats = displayedBeats;
+                    clip->audio().interpretation.totalBeatsLocked = true;
                 }
             }
-            if (markers->empty()) {
-                *markers = clip->warpMarkers;
+
+            if (clip->warpEnabled) {
+                markers = std::vector<magda::ClipInfo::WarpMarker>{};
+                if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
+                    if (auto* bridge = engine->getAudioBridge()) {
+                        const auto liveMarkers = bridge->getWarpMarkers(primaryClipId());
+                        markers->reserve(liveMarkers.size());
+                        for (const auto& marker : liveMarkers) {
+                            markers->push_back({marker.sourceTime, marker.warpTime});
+                        }
+                    }
+                }
+                if (markers->empty()) {
+                    *markers = clip->warpMarkers;
+                }
             }
         }
 
@@ -1014,6 +1017,11 @@ void ClipInspector::initClipPropertiesSection() {
                                                                                std::move(markers));
         updateFromSelectedClip();
         saveLibraryButton_.setButtonText(saved ? "Saved" : "Save failed");
+        if (!saved && savingMidiClip) {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Save MIDI Clip Failed",
+                "Could not write the MIDI clip file or add it to the media library.");
+        }
         juce::Timer::callAfterDelay(
             1200, [safeThis = juce::Component::SafePointer<ClipInspector>(this)] {
                 if (safeThis != nullptr) {

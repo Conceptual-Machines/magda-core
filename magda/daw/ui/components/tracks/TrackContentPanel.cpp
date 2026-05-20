@@ -3160,6 +3160,7 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
                 auto* clip = ClipManager::getInstance().getClip(clipId);
                 if (!clip)
                     continue;
+                clip->midi().sourceFilePath = midiFile.getFullPathName();
 
                 // Populate MIDI notes
                 for (auto* note : list->getNotes()) {

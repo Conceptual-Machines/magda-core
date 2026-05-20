@@ -7,6 +7,7 @@
 #include "../project/ProjectManager.hpp"
 #include "ClipOperations.hpp"
 #include "Config.hpp"
+#include "MidiFileWriter.hpp"
 #include "TempoUtils.hpp"
 #include "TrackManager.hpp"
 #include "audio/AudioThumbnailManager.hpp"
@@ -64,6 +65,20 @@ bool seedSourceMetadataFromCachedDetection(ClipInfo& clip, double projectBPM) {
     }
 
     return true;
+}
+
+juce::File midiLibraryFileForClip(const ClipInfo& clip, const juce::File& midiDir) {
+    const juce::File existing(clip.midi().sourceFilePath);
+    if (existing != juce::File() && existing.getParentDirectory() == midiDir &&
+        existing.hasFileExtension(".mid;.midi")) {
+        return existing;
+    }
+
+    auto safeName = juce::File::createLegalFileName(clip.name);
+    if (safeName.isEmpty()) {
+        safeName = "midi_clip";
+    }
+    return midiDir.getNonexistentChildFile(safeName + "_" + juce::String(clip.id), ".mid");
 }
 
 }  // namespace
@@ -1081,7 +1096,14 @@ void ClipManager::recordUserKey(ClipId clipId, const std::string& root) {
 
 bool ClipManager::canSaveClipToLibrary(ClipId clipId) const {
     const auto* clip = getClip(clipId);
-    if (clip == nullptr || !clip->isAudio()) {
+    if (clip == nullptr) {
+        return false;
+    }
+    if (clip->isMidi()) {
+        return !clip->midiNotes.empty() || !clip->midiCCData.empty() ||
+               !clip->midiPitchBendData.empty();
+    }
+    if (!clip->isAudio()) {
         return false;
     }
     const auto& filePath = clip->audio().source.filePath;
@@ -1093,8 +1115,47 @@ bool ClipManager::canSaveClipToLibrary(ClipId clipId) const {
 
 bool ClipManager::saveClipToLibrary(ClipId clipId,
                                     std::optional<std::vector<ClipInfo::WarpMarker>> warpMarkers) {
-    const auto* clip = getClip(clipId);
-    if (clip == nullptr || !clip->isAudio()) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr) {
+        return false;
+    }
+    if (clip->isMidi()) {
+        if (!canSaveClipToLibrary(clipId)) {
+            return false;
+        }
+
+        auto& ctx = magda::media::MediaDbContext::getInstance();
+        if (!ctx.ensureInitialized()) {
+            return false;
+        }
+
+        const juce::File midiDir(juce::String(ctx.midiClipsDir().string()));
+        if (!midiDir.createDirectory()) {
+            return false;
+        }
+
+        const auto outFile = midiLibraryFileForClip(*clip, midiDir);
+        const double tempo = currentProjectTempoOrDefault();
+        if (!magda::daw::MidiFileWriter::writeToFile(outFile, clip->midiNotes, clip->midiCCData,
+                                                     clip->midiPitchBendData, tempo, clip->name)) {
+            return false;
+        }
+
+        magda::media::MediaDbIndexer indexer(ctx.db(), nullptr);
+        const auto stats =
+            indexer.indexFile(std::filesystem::path(outFile.getFullPathName().toStdString()),
+                              magda::media::MediaDbIndexer::Mode::ForceAll);
+        if (stats.inserted + stats.updated + stats.skipped <= 0) {
+            return false;
+        }
+
+        clip->midi().sourceFilePath = outFile.getFullPathName();
+        notifyClipPropertyChanged(clipId);
+        ctx.bumpMediaRevision();
+        return true;
+    }
+
+    if (!clip->isAudio()) {
         return false;
     }
     const auto& filePath = clip->audio().source.filePath;
@@ -2287,6 +2348,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
 
                 // Copy MIDI data
                 if (clipData.isMidi()) {
+                    newClip->midi().sourceFilePath = clipData.midi().sourceFilePath;
                     newClip->midiNotes = clipData.midiNotes;
                     newClip->midiOffset = clipData.midiOffset;
                     newClip->midiCCData = clipData.midiCCData;

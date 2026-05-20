@@ -68,6 +68,15 @@ std::filesystem::path MediaDbContext::modelsDir() const {
            "models";
 }
 
+std::filesystem::path MediaDbContext::midiClipsDir() const {
+    auto parent = dbPath().parent_path();
+    const auto leaf = parent.filename().string();
+    if (leaf == "db" || leaf == "DB") {
+        parent = parent.parent_path();
+    }
+    return parent / "clips" / "midi";
+}
+
 std::filesystem::path MediaDbContext::audioModelPath() const {
     return modelsDir() / kAudioModelFilename;
 }

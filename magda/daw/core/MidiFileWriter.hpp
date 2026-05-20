@@ -24,6 +24,15 @@ struct ChordMarker {
 
 struct MidiFileWriter {
     /**
+     * Write clip MIDI data to a specific .mid file (Type 0, single track).
+     */
+    static bool writeToFile(const juce::File& outFile, const std::vector<MidiNote>& notes,
+                            const std::vector<MidiCCData>& ccData,
+                            const std::vector<MidiPitchBendData>& pitchBendData, double tempo,
+                            const juce::String& nameHint = "pattern",
+                            const std::vector<ChordMarker>& chordMarkers = {});
+
+    /**
      * Write notes to a temporary .mid file (Type 0, single track).
      * @param notes     Vector of MidiNote (startBeat, lengthBeats, noteNumber, velocity)
      * @param tempo     BPM for the tempo meta event
