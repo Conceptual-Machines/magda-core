@@ -469,6 +469,50 @@ TEST_CASE("Saving a MIDI clip to the media library writes and indexes a generate
     REQUIRE(clip->midi().sourceFilePath == firstPath);
 }
 
+TEST_CASE("Saved audio library warp markers survive BPM mismatch re-import",
+          "[project][serialization][media_db][warp]") {
+    ProjectTestFixture fixture;
+    ScopedTestDataDir dataDir("magda-audio-warp-library-test");
+
+    auto sourceFile = dataDir.dir.getChildFile("drum_loop_135bpm.wav");
+    REQUIRE(sourceFile.replaceWithText("not decoded in this regression test"));
+
+    auto trackId = TrackManager::getInstance().createTrack("Audio Track", TrackType::Audio);
+    auto clipId = ClipManager::getInstance().createAudioClip(
+        trackId, 0.0, 4.0, sourceFile.getFullPathName(), ClipView::Arrangement, 120.0);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->isAudio());
+
+    clip->autoTempo = true;
+    clip->audio().interpretation.bpm = 140.0;
+    clip->audio().interpretation.totalBeats = 9.3333333333;
+    clip->audio().interpretation.totalBeatsLocked = true;
+    clip->warpEnabled = true;
+    clip->warpMarkers = {{0.0, 0.0}, {1.234, 1.75}, {3.5, 4.0}};
+
+    REQUIRE(ClipManager::getInstance().saveClipToLibrary(clipId));
+
+    ClipManager::getInstance().clearAllClips();
+    auto reimportedId = ClipManager::getInstance().createAudioClip(
+        trackId, 0.0, 4.0, sourceFile.getFullPathName(), ClipView::Arrangement, 120.0);
+    REQUIRE(reimportedId != INVALID_CLIP_ID);
+
+    auto* reimported = ClipManager::getInstance().getClip(reimportedId);
+    REQUIRE(reimported != nullptr);
+    REQUIRE(reimported->isAudio());
+    REQUIRE(reimported->warpEnabled);
+    REQUIRE(reimported->audio().interpretation.bpm == Approx(140.0));
+    REQUIRE(reimported->audio().interpretation.totalBeats == Approx(9.3333333333));
+    REQUIRE(reimported->warpMarkers.size() == 3);
+    REQUIRE(reimported->warpMarkers[1].sourceTime == Approx(1.234));
+    REQUIRE(reimported->warpMarkers[1].warpTime == Approx(1.75));
+    REQUIRE(reimported->warpMarkers[2].sourceTime == Approx(3.5));
+    REQUIRE(reimported->warpMarkers[2].warpTime == Approx(4.0));
+}
+
 TEST_CASE("MidiFileWriter writes MIDI clip data to a stable destination",
           "[project][serialization][midi][writer]") {
     ProjectTestFixture fixture;
