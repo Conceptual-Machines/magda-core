@@ -35,6 +35,7 @@ struct QueryFilters {
     std::optional<std::string> keyRoot;
     std::optional<std::string> keyScale;
     std::optional<std::string> format;  // file extension lowercase
+    bool duplicatesOnly = false;        // same content fingerprint appears in multiple rows
 
     // Free-text tag filter. Whitespace-separated tokens are AND-combined
     // (typing "drum 808" → tagged with both drum AND 808). Implemented via

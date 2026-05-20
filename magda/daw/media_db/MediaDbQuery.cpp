@@ -64,6 +64,17 @@ BuiltWhere buildWhere(const QueryFilters& f) {
         clauses.emplace_back("tonal = ?");
         w.intBinds.emplace_back("tonal", *f.tonal ? 1 : 0);
     }
+    if (f.duplicatesOnly) {
+        clauses.emplace_back("content_hash IS NOT NULL AND "
+                             "(content_hash, size_bytes, COALESCE(duration_s, -1), "
+                             " COALESCE(sample_rate, -1), COALESCE(channels, -1)) IN ("
+                             "SELECT content_hash, size_bytes, COALESCE(duration_s, -1), "
+                             "       COALESCE(sample_rate, -1), COALESCE(channels, -1) "
+                             "FROM media_file WHERE content_hash IS NOT NULL "
+                             "GROUP BY content_hash, size_bytes, COALESCE(duration_s, -1), "
+                             "         COALESCE(sample_rate, -1), COALESCE(channels, -1) "
+                             "HAVING COUNT(*) > 1)");
+    }
     // Tag filter — FTS5 column-scoped MATCH on tag_text. Multi-token
     // input is implicit AND in FTS5 (e.g. "drum 808" matches rows whose
     // tag_text contains both "drum" and "808"). Bound as text just like

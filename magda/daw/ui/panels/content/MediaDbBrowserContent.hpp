@@ -119,6 +119,7 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     juce::TextEditor bpmMinBox_;
     juce::TextEditor bpmMaxBox_;
     juce::ToggleButton tonalOnly_{"tonal"};
+    juce::ToggleButton duplicatesOnly_{"dupes"};
     juce::TextEditor tagsFilter_;  // free-text tag filter, AND-tokenised
     std::unique_ptr<magda::SvgButton> popOutButton_;
 

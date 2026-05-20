@@ -606,6 +606,10 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     tonalOnly_.setLookAndFeel(&fbLnf);
     tonalOnly_.onClick = [this]() { restartSearch(); };
 
+    duplicatesOnly_.setLookAndFeel(&fbLnf);
+    duplicatesOnly_.setTooltip("Show rows whose audio content appears more than once");
+    duplicatesOnly_.onClick = [this]() { restartSearch(); };
+
     // Tags free-text filter — whitespace-separated tokens are AND-combined
     // via FTS5 MATCH against media_fts.tag_text. Updates on Enter / blur,
     // matching the BPM range editors so we don't query on every keystroke.
@@ -635,6 +639,7 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     addAndMakeVisible(bpmMinBox_);
     addAndMakeVisible(bpmMaxBox_);
     addAndMakeVisible(tonalOnly_);
+    addAndMakeVisible(duplicatesOnly_);
     addAndMakeVisible(tagsFilter_);
 
     // Kind selection lives outside this component — see setKindFilter().
@@ -767,6 +772,7 @@ MediaDbBrowserContent::~MediaDbBrowserContent() {
     bpmMinBox_.setLookAndFeel(nullptr);
     bpmMaxBox_.setLookAndFeel(nullptr);
     tonalOnly_.setLookAndFeel(nullptr);
+    duplicatesOnly_.setLookAndFeel(nullptr);
 }
 
 void MediaDbBrowserContent::paint(juce::Graphics& g) {
@@ -801,6 +807,8 @@ void MediaDbBrowserContent::resized() {
     bpmMaxBox_.setBounds(row2.removeFromLeft(60).reduced(2));
     row2.removeFromLeft(8);
     tonalOnly_.setBounds(row2.removeFromLeft(70).reduced(2));
+    row2.removeFromLeft(8);
+    duplicatesOnly_.setBounds(row2.removeFromLeft(70).reduced(2));
     row2.removeFromLeft(8);
     // Tags fills the rest of the row — gives it room to breathe in
     // popped-out / wide panels and stays at minimum ~140px in narrow ones.
@@ -1280,6 +1288,7 @@ magda::media::QueryFilters MediaDbBrowserContent::currentFilters() const {
     if (tonalOnly_.getToggleState()) {
         f.tonal = true;
     }
+    f.duplicatesOnly = duplicatesOnly_.getToggleState();
     const auto tagsText = tagsFilter_.getText().trim();
     if (tagsText.isNotEmpty()) {
         f.tags = tagsText.toStdString();
@@ -1466,6 +1475,8 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
                 text += "\n\nTry clearing filters - the active filter combination may exclude "
                         "all potential neighbours.";
             }
+        } else if (duplicatesOnly_.getToggleState()) {
+            text = "No duplicate content rows match the current filters.";
         } else {
             text = "No results match the current filters.";
             if (!queryText_.isEmpty() && !magda::media::SampleTaggerDownloader::isInstalled()) {

@@ -154,6 +154,20 @@ TEST_CASE("query: filter-only browse with no text", "[media_db][query]") {
         REQUIRE(desc.front().path.filename().string() == "warm_analog.wav");
         REQUIRE(desc.back().path.filename().string() == "808_140bpm.wav");
     }
+
+    SECTION("duplicates-only filter returns rows with matching content fingerprints") {
+        writeMonoWav(dir.path() / "Copies" / "kick_copy.wav", 0.4, 80.0);
+        MediaDbIndexer indexer(db, nullptr);
+        auto stats = indexer.indexDirectory(dir.path());
+        REQUIRE(stats.inserted == 1);
+
+        QueryFilters f;
+        f.duplicatesOnly = true;
+        auto results = q.search(std::nullopt, f, 10, 0, {}, QuerySort{QuerySortField::Name, true});
+        REQUIRE(results.size() == 2);
+        REQUIRE(results[0].path.filename().string() == "kick_copy.wav");
+        REQUIRE(results[1].path.filename().string() == "kick_punchy_120bpm.wav");
+    }
 }
 
 TEST_CASE("query: FTS-only when text given without encoder", "[media_db][query]") {
