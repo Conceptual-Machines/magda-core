@@ -9,6 +9,7 @@
 namespace magda {
 class PianoRollGridComponent;
 class PianoRollKeyboard;
+class OctaveLabelStrip;
 class SvgButton;
 class MidiBridge;
 struct MidiNoteEvent;
@@ -82,7 +83,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
   private:
     // MidiEditorContent virtual implementations
     int getLeftPanelWidth() const override {
-        return SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH;
+        return SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
     }
     void updateGridSize() override;
     void setGridPixelsPerBeat(double ppb) override;
@@ -100,6 +101,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     // Layout constants (PianoRoll-specific)
     static constexpr int SIDEBAR_WIDTH = 32;
     static constexpr int ZOOM_STRIP_WIDTH = 16;
+    static constexpr int OCTAVE_LABEL_WIDTH = 32;
     static constexpr int KEYBOARD_WIDTH = 60;
     static constexpr int DEFAULT_NOTE_HEIGHT = magda::ClipInfo::DEFAULT_MIDI_EDITOR_ROW_HEIGHT;
     static constexpr int CHORD_ROW_HEIGHT = 24;
@@ -108,7 +110,9 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     static constexpr int MAX_NOTE = 127;  // G9
 
     // Vertical zoom limits
-    static constexpr int MIN_NOTE_HEIGHT = magda::ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT;
+    // Piano-roll specific floor — the global ClipInfo min is 6 which lets
+    // rows get unreadably thin. Bumped so each key still reads as a key.
+    static constexpr int MIN_NOTE_HEIGHT = 10;
     static constexpr int MAX_NOTE_HEIGHT = magda::ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT;
 
     // Zoom state (vertical — horizontal is in base)
@@ -151,6 +155,8 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     int getHeaderHeight() const {
         return showChordRow_ ? HEADER_HEIGHT : RULER_HEIGHT;
     }
+
+    std::unique_ptr<magda::OctaveLabelStrip> octaveLabelStrip_;
 
     // Center the view on middle C (C4)
     void centerOnNote(int noteNumber);
