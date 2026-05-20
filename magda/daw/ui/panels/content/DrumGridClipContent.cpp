@@ -1905,6 +1905,29 @@ DrumGridClipContent::DrumGridClipContent() {
 
 DrumGridClipContent::~DrumGridClipContent() = default;
 
+int DrumGridClipContent::getMaxVerticalScroll() const {
+    if (!viewport_ || !gridComponent_)
+        return 0;
+
+    const int viewHeight =
+        viewport_->getViewHeight() > 0 ? viewport_->getViewHeight() : viewport_->getHeight();
+    return juce::jmax(0, gridComponent_->getHeight() - juce::jmax(0, viewHeight));
+}
+
+int DrumGridClipContent::clampVerticalScrollY(int scrollY) const {
+    return juce::jlimit(0, getMaxVerticalScroll(), scrollY);
+}
+
+void DrumGridClipContent::clampViewportVerticalScroll() {
+    if (!viewport_)
+        return;
+
+    const int currentY = viewport_->getViewPositionY();
+    const int clampedY = clampVerticalScrollY(currentY);
+    if (clampedY != currentY)
+        viewport_->setViewPosition(viewport_->getViewPositionX(), clampedY);
+}
+
 void DrumGridClipContent::setRowHeight(int height, bool persist) {
     const int clampedHeight = juce::jlimit(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT, height);
     if (clampedHeight == rowHeight_)
@@ -1917,6 +1940,7 @@ void DrumGridClipContent::setRowHeight(int height, bool persist) {
         rowLabels_->setRowHeight(rowHeight_);
 
     updateGridSize();
+    clampViewportVerticalScroll();
 
     if (persist && editingClipId_ != magda::INVALID_CLIP_ID) {
         magda::ClipManager::getInstance().setClipMidiEditorRowHeight(editingClipId_, rowHeight_);
@@ -1931,7 +1955,7 @@ void DrumGridClipContent::setRowHeightAnchored(int height, int anchorRow, int an
         return;
 
     const int newAnchorY = anchorRow * rowHeight_;
-    const int newScrollY = juce::jmax(0, newAnchorY - anchorScreenY);
+    const int newScrollY = clampVerticalScrollY(newAnchorY - anchorScreenY);
     viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
 }
 
@@ -2085,7 +2109,7 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
         int deltaX = static_cast<int>(-wheel.deltaX * 100.0f);
         int deltaY = static_cast<int>(-wheel.deltaY * 100.0f);
         viewport_->setViewPosition(viewport_->getViewPositionX() + deltaX,
-                                   viewport_->getViewPositionY() + deltaY);
+                                   clampVerticalScrollY(viewport_->getViewPositionY() + deltaY));
     }
 }
 
@@ -2265,6 +2289,8 @@ void DrumGridClipContent::updateGridSize() {
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);
     }
+
+    clampViewportVerticalScroll();
 }
 
 void DrumGridClipContent::updateGridLoopRegion() {

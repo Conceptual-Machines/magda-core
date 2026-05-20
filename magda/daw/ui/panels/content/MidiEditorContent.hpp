@@ -37,6 +37,7 @@ class VerticalZoomStrip : public juce::Component {
     int maxValue_ = 1;
     int mouseDownY_ = 0;
     int startValue_ = 1;
+    int lastSentValue_ = 1;
     bool dragging_ = false;
 };
 

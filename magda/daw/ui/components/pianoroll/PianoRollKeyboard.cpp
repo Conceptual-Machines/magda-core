@@ -43,14 +43,7 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
         }
         g.fillRect(keyArea);
 
-        // Draw note names only when the row is tall enough to keep labels readable.
-        if (noteHeight_ >= 10 && note % 12 == 0) {
-            g.setColour(juce::Colour(0xFF2a2a2a));  // Dark text on white keys
-            g.setFont(FontManager::getInstance().getUIFont(
-                static_cast<float>(juce::jlimit(8, 12, noteHeight_ - 3))));
-            g.drawText(getNoteName(note), keyArea.reduced(4, 0), juce::Justification::centredLeft,
-                       false);
-        }
+        // Note names live in OctaveLabelStrip now (next to the keyboard).
 
         // Subtle separator line between white keys
         if (!isBlackKey(note)) {
