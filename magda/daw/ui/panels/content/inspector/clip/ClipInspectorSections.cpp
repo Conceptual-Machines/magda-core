@@ -980,6 +980,7 @@ void ClipInspector::initClipPropertiesSection() {
         if (clip == nullptr) {
             return;
         }
+        const bool savingMidiClip = clip->isMidi();
         std::optional<std::vector<magda::ClipInfo::WarpMarker>> markers;
         if (clip->isAudio()) {
             const auto bpmText = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
@@ -1016,6 +1017,11 @@ void ClipInspector::initClipPropertiesSection() {
                                                                                std::move(markers));
         updateFromSelectedClip();
         saveLibraryButton_.setButtonText(saved ? "Saved" : "Save failed");
+        if (!saved && savingMidiClip) {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Save MIDI Clip Failed",
+                "Could not write the MIDI clip file or add it to the media library.");
+        }
         juce::Timer::callAfterDelay(
             1200, [safeThis = juce::Component::SafePointer<ClipInspector>(this)] {
                 if (safeThis != nullptr) {
