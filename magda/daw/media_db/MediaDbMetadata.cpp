@@ -75,10 +75,18 @@ struct FilePathDedupeRow {
     bool analyzed = false;
 };
 
+bool isRegularFileMode(const int mode) {
+#if defined(_WIN32)
+    return (mode & _S_IFMT) == _S_IFREG;
+#else
+    return S_ISREG(mode);
+#endif
+}
+
 std::optional<std::string> physicalFileKey(const std::filesystem::path& path) {
     struct stat st {};
     const auto text = path.string();
-    if (::stat(text.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
+    if (::stat(text.c_str(), &st) != 0 || !isRegularFileMode(st.st_mode)) {
         return std::nullopt;
     }
     return std::to_string(static_cast<unsigned long long>(st.st_dev)) + ":" +
