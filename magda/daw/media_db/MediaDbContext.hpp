@@ -82,6 +82,7 @@ class MediaDbContext {
     // them there).
     [[nodiscard]] std::filesystem::path dbPath() const;
     [[nodiscard]] std::filesystem::path modelsDir() const;
+    [[nodiscard]] std::filesystem::path midiClipsDir() const;
     [[nodiscard]] std::filesystem::path audioModelPath() const;
     [[nodiscard]] std::filesystem::path textModelPath() const;
     [[nodiscard]] std::filesystem::path tokenizerJsonPath() const;

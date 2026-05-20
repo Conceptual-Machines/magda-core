@@ -219,12 +219,17 @@ void ClipInspector::updateFromSelectedClip() {
         else
             swatch->setColour(clip->colour);
 
-        // File path label: show audio filename for arrangement audio clips only.
-        if (clip->isAudio() && clip->audio().source.filePath.isNotEmpty() &&
-            clip->view != magda::ClipView::Session && !isMulti) {
-            juce::File audioFile(clip->audio().source.filePath);
-            clipFilePathLabel_.setText(audioFile.getFileName(), juce::dontSendNotification);
+        // File path label: show source filename for library-backed audio/MIDI clips.
+        if (!isMulti && clip->view != magda::ClipView::Session && clip->isAudio() &&
+            clip->audio().source.filePath.isNotEmpty()) {
+            juce::File sourceFile(clip->audio().source.filePath);
+            clipFilePathLabel_.setText(sourceFile.getFileName(), juce::dontSendNotification);
             clipFilePathLabel_.setTooltip(clip->audio().source.filePath);
+        } else if (!isMulti && clip->view != magda::ClipView::Session && clip->isMidi() &&
+                   clip->midi().sourceFilePath.isNotEmpty()) {
+            juce::File sourceFile(clip->midi().sourceFilePath);
+            clipFilePathLabel_.setText(sourceFile.getFileName(), juce::dontSendNotification);
+            clipFilePathLabel_.setTooltip(clip->midi().sourceFilePath);
         } else {
             clipFilePathLabel_.setText("", juce::dontSendNotification);
             clipFilePathLabel_.setTooltip("");
@@ -314,6 +319,12 @@ void ClipInspector::updateFromSelectedClip() {
             clipKeyRootCombo_.setSelectedId(rootId, juce::dontSendNotification);
             clipKeyLabel_.setVisible(true);
             clipKeyRootCombo_.setVisible(true);
+            saveLibraryButton_.setVisible(true);
+            saveLibraryButton_.setEnabled(
+                magda::ClipManager::getInstance().canSaveClipToLibrary(pid));
+        } else if (clip->isMidi() && !isMulti) {
+            clipKeyLabel_.setVisible(false);
+            clipKeyRootCombo_.setVisible(false);
             saveLibraryButton_.setVisible(true);
             saveLibraryButton_.setEnabled(
                 magda::ClipManager::getInstance().canSaveClipToLibrary(pid));

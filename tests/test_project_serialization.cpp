@@ -2,10 +2,16 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cstdlib>
+#include <filesystem>
 
+#include "magda/daw/core/AppPaths.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/media_db/MediaDbContext.hpp"
+#include "magda/daw/media_db/MediaDbMetadata.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
 
@@ -24,6 +30,29 @@ juce::File testTempRoot() {
 
 juce::File createTestTempFile(const juce::String& suffix) {
     return testTempRoot().getNonexistentChildFile("temp", suffix);
+}
+
+void setEnvVar(const char* name, const char* value) {
+#if defined(_WIN32)
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
+
+void unsetEnvVar(const char* name) {
+#if defined(_WIN32)
+    _putenv_s(name, "");
+#else
+    unsetenv(name);
+#endif
+}
+
+juce::String getEnvVar(const char* name) {
+    if (const char* value = std::getenv(name)) {
+        return juce::String::fromUTF8(value);
+    }
+    return {};
 }
 
 }  // namespace
@@ -90,6 +119,39 @@ struct ProjectTestFixture {
             file.getParentDirectory().getChildFile(file.getFileNameWithoutExtension());
         tempDirs.push_back(wrapperDir);
         return file;
+    }
+};
+
+struct ScopedTestDataDir {
+    juce::String previousDataDir;
+    juce::String previousConfigDataDir;
+    juce::String previousMediaDbDir;
+    juce::File dir;
+
+    explicit ScopedTestDataDir(const juce::String& name)
+        : previousDataDir(getEnvVar("MAGDA_DATA_DIR")),
+          previousConfigDataDir(magda::Config::getInstance().getDataDir()),
+          previousMediaDbDir(magda::Config::getInstance().getMediaDbDir()),
+          dir(testTempRoot().getNonexistentChildFile(name, "")) {
+        magda::media::MediaDbContext::getInstance().shutdown();
+        dir.createDirectory();
+        setEnvVar("MAGDA_DATA_DIR", dir.getFullPathName().toRawUTF8());
+        magda::Config::getInstance().setDataDir({});
+        magda::Config::getInstance().setMediaDbDir({});
+        magda::paths::resolve();
+    }
+
+    ~ScopedTestDataDir() {
+        magda::media::MediaDbContext::getInstance().shutdown();
+        if (previousDataDir.isEmpty()) {
+            unsetEnvVar("MAGDA_DATA_DIR");
+        } else {
+            setEnvVar("MAGDA_DATA_DIR", previousDataDir.toRawUTF8());
+        }
+        magda::Config::getInstance().setDataDir(previousConfigDataDir.toStdString());
+        magda::Config::getInstance().setMediaDbDir(previousMediaDbDir.toStdString());
+        magda::paths::resolve();
+        dir.deleteRecursively();
     }
 };
 
@@ -309,6 +371,7 @@ TEST_CASE("Looped MIDI clip serialization preserves loop region separate from pl
     clip.name = "Two Bar Loop";
     clip.setMidiContent();
     clip.view = ClipView::Arrangement;
+    clip.midi().sourceFilePath = "/tmp/imported-loop.mid";
     clip.loopEnabled = true;
     clip.setPlacementBeats(0.0, 68.0);  // 17 bars at 4/4
     clip.loopLengthBeats = 8.0;         // 2 bars at 4/4
@@ -340,6 +403,9 @@ TEST_CASE("Looped MIDI clip serialization preserves loop region separate from pl
     REQUIRE(placementObj != nullptr);
     REQUIRE(static_cast<double>(placementObj->getProperty("lengthBeats")) == Approx(68.0));
     REQUIRE(static_cast<double>(clipObj->getProperty("loopLengthBeats")) == Approx(8.0));
+    auto* midiObj = clipObj->getProperty("midi").getDynamicObject();
+    REQUIRE(midiObj != nullptr);
+    REQUIRE(midiObj->getProperty("sourceFilePath").toString() == "/tmp/imported-loop.mid");
 
     ProjectInfo loaded;
     REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
@@ -351,6 +417,54 @@ TEST_CASE("Looped MIDI clip serialization preserves loop region separate from pl
     REQUIRE(restored->loopLengthBeats == Approx(8.0));
     REQUIRE(restored->loopLength == Approx(4.0));
     REQUIRE(restored->midiOffset == Approx(1.0));
+    REQUIRE(restored->midi().sourceFilePath == "/tmp/imported-loop.mid");
+}
+
+TEST_CASE("Saving a MIDI clip to the media library writes and indexes a generated source file",
+          "[project][serialization][midi][media_db]") {
+    ProjectTestFixture fixture;
+    ScopedTestDataDir dataDir("magda-midi-library-test");
+
+    auto trackId = TrackManager::getInstance().createTrack("MIDI Track", TrackType::Audio);
+    auto clipId =
+        ClipManager::getInstance().createMidiClipBeats(trackId, 0.0, 4.0, ClipView::Arrangement);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    clip->name = "Hook MIDI";
+
+    MidiNote note;
+    note.startBeat = 0.0;
+    note.lengthBeats = 1.0;
+    note.noteNumber = 60;
+    note.velocity = 100;
+    clip->midiNotes.push_back(note);
+
+    MidiCCData cc;
+    cc.controller = 1;
+    cc.value = 64;
+    cc.beatPosition = 0.5;
+    clip->midiCCData.push_back(cc);
+
+    REQUIRE(ClipManager::getInstance().canSaveClipToLibrary(clipId));
+    REQUIRE(ClipManager::getInstance().saveClipToLibrary(clipId));
+
+    REQUIRE(clip->midi().sourceFilePath.isNotEmpty());
+    juce::File savedFile(clip->midi().sourceFilePath);
+    REQUIRE(savedFile.existsAsFile());
+    REQUIRE(savedFile.hasFileExtension(".mid"));
+
+    juce::File expectedDir(
+        juce::String(magda::media::MediaDbContext::getInstance().midiClipsDir().string()));
+    REQUIRE(savedFile.getParentDirectory() == expectedDir);
+    REQUIRE(magda::media::isFileIndexed(
+        std::filesystem::path(clip->midi().sourceFilePath.toStdString())));
+
+    const auto firstPath = clip->midi().sourceFilePath;
+    clip->midiNotes.front().velocity = 80;
+    REQUIRE(ClipManager::getInstance().saveClipToLibrary(clipId));
+    REQUIRE(clip->midi().sourceFilePath == firstPath);
 }
 
 TEST_CASE("Clip serialization validates type and audio schema", "[project][serialization][audio]") {

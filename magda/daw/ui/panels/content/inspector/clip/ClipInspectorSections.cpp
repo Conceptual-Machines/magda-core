@@ -974,39 +974,41 @@ void ClipInspector::initClipPropertiesSection() {
     saveLibraryButton_.setButtonText("Save to library");
     saveLibraryButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     saveLibraryButton_.setTooltip(
-        "Save current clip BPM, beats, BEAT mode, key, and warp markers to the media library");
+        "Save current clip settings or MIDI clip file to the media library");
     saveLibraryButton_.onClick = [this]() {
         auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-        if (clip == nullptr || !clip->isAudio()) {
+        if (clip == nullptr) {
             return;
         }
-        const auto bpmText = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
-        const double displayedBpm = bpmText.getDoubleValue();
-        if (magda::isValidBpm(displayedBpm)) {
-            clip->audio().interpretation.bpm = displayedBpm;
-        }
-        if (clipBeatsLengthValue_ && clipBeatsLengthValue_->isVisible()) {
-            const double displayedBeats = clipBeatsLengthValue_->getValue();
-            if (displayedBeats > 0.0) {
-                clip->audio().interpretation.totalBeats = displayedBeats;
-                clip->audio().interpretation.totalBeatsLocked = true;
-            }
-        }
-
         std::optional<std::vector<magda::ClipInfo::WarpMarker>> markers;
-        if (clip->warpEnabled) {
-            markers = std::vector<magda::ClipInfo::WarpMarker>{};
-            if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-                if (auto* bridge = engine->getAudioBridge()) {
-                    const auto liveMarkers = bridge->getWarpMarkers(primaryClipId());
-                    markers->reserve(liveMarkers.size());
-                    for (const auto& marker : liveMarkers) {
-                        markers->push_back({marker.sourceTime, marker.warpTime});
-                    }
+        if (clip->isAudio()) {
+            const auto bpmText = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
+            const double displayedBpm = bpmText.getDoubleValue();
+            if (magda::isValidBpm(displayedBpm)) {
+                clip->audio().interpretation.bpm = displayedBpm;
+            }
+            if (clipBeatsLengthValue_ && clipBeatsLengthValue_->isVisible()) {
+                const double displayedBeats = clipBeatsLengthValue_->getValue();
+                if (displayedBeats > 0.0) {
+                    clip->audio().interpretation.totalBeats = displayedBeats;
+                    clip->audio().interpretation.totalBeatsLocked = true;
                 }
             }
-            if (markers->empty()) {
-                *markers = clip->warpMarkers;
+
+            if (clip->warpEnabled) {
+                markers = std::vector<magda::ClipInfo::WarpMarker>{};
+                if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
+                    if (auto* bridge = engine->getAudioBridge()) {
+                        const auto liveMarkers = bridge->getWarpMarkers(primaryClipId());
+                        markers->reserve(liveMarkers.size());
+                        for (const auto& marker : liveMarkers) {
+                            markers->push_back({marker.sourceTime, marker.warpTime});
+                        }
+                    }
+                }
+                if (markers->empty()) {
+                    *markers = clip->warpMarkers;
+                }
             }
         }
 

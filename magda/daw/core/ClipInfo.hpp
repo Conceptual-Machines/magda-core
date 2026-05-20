@@ -115,7 +115,9 @@ struct AudioClipModel {
     AudioSourceInterpretation interpretation;
 };
 
-struct MidiClipModel {};
+struct MidiClipModel {
+    juce::String sourceFilePath;
+};
 
 using ClipContent = std::variant<MidiClipModel, AudioClipModel>;
 
