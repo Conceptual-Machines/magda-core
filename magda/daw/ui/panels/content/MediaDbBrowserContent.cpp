@@ -103,16 +103,17 @@ juce::String formatIndexSummary(const std::filesystem::path& path,
     return summary;
 }
 
-juce::String formatTaggingSummary(const magda::media::MediaDbIndexer::EmbeddingStats& stats) {
-    return juce::String("Tagging: ") + juce::String(stats.embedded) + " files tagged, " +
+juce::String formatAnalysisSummary(const magda::media::MediaDbIndexer::EmbeddingStats& stats) {
+    return juce::String("Analysis: ") + juce::String(stats.embedded) + " files analyzed, " +
            juce::String(stats.failed) + " failed";
 }
 
-juce::String formatTaggingSummary(const magda::media::MediaDbIndexer::Stats& decodeStats,
-                                  const magda::media::MediaDbIndexer::EmbeddingStats& tagStats) {
-    return juce::String("Tagging complete: ") + juce::String(decodeStats.inserted) + " inserted, " +
-           juce::String(decodeStats.updated) + " updated, " + juce::String(tagStats.embedded) +
-           " tagged, " + juce::String(decodeStats.failed + tagStats.failed) + " failed";
+juce::String formatAnalysisSummary(const magda::media::MediaDbIndexer::Stats& decodeStats,
+                                   const magda::media::MediaDbIndexer::EmbeddingStats& tagStats) {
+    return juce::String("Analysis complete: ") + juce::String(decodeStats.inserted) +
+           " inserted, " + juce::String(decodeStats.updated) + " updated, " +
+           juce::String(tagStats.embedded) + " analyzed, " +
+           juce::String(decodeStats.failed + tagStats.failed) + " failed";
 }
 
 juce::String formatEta(std::chrono::steady_clock::duration remaining) {
@@ -137,9 +138,9 @@ juce::String formatEta(std::chrono::steady_clock::duration remaining) {
     return juce::String(static_cast<int>(seconds)) + "s";
 }
 
-juce::String formatTaggingProgress(int done, int total, const std::filesystem::path& current,
-                                   std::chrono::steady_clock::time_point startedAt) {
-    juce::String status = juce::String("Tagging ") + juce::String(current.filename().string()) +
+juce::String formatAnalysisProgress(int done, int total, const std::filesystem::path& current,
+                                    std::chrono::steady_clock::time_point startedAt) {
+    juce::String status = juce::String("Analyzing ") + juce::String(current.filename().string()) +
                           " (" + juce::String(done) + "/" + juce::String(total) + ")";
     if (done > 0 && total > done) {
         const auto elapsed = std::chrono::steady_clock::now() - startedAt;
@@ -241,6 +242,30 @@ juce::String joinTags(const std::vector<std::string>& tags) {
     return out;
 }
 
+class MediaDbTableHeader : public juce::TableHeaderComponent {
+  public:
+    std::function<void()> onRemoveDuplicateRows;
+
+    void addMenuItems(juce::PopupMenu& menu, int columnIdClicked) override {
+        juce::TableHeaderComponent::addMenuItems(menu, columnIdClicked);
+        menu.addSeparator();
+        menu.addItem(kRemoveDuplicateRowsId, "Remove duplicate file rows...");
+    }
+
+    void reactToMenuItem(int menuReturnId, int columnIdClicked) override {
+        if (menuReturnId == kRemoveDuplicateRowsId) {
+            if (onRemoveDuplicateRows) {
+                onRemoveDuplicateRows();
+            }
+            return;
+        }
+        juce::TableHeaderComponent::reactToMenuItem(menuReturnId, columnIdClicked);
+    }
+
+  private:
+    static constexpr int kRemoveDuplicateRowsId = 0x4D445250;  // MDRP
+};
+
 }  // namespace
 
 // ===========================================================================
@@ -286,19 +311,19 @@ void ModelStatusIndicator::paint(juce::Graphics& g) {
     switch (state_) {
         case State::NotInstalled:
             dotColour = juce::Colours::grey;
-            label = "Tagger: not installed";
+            label = "Analyzer: not installed";
             break;
         case State::Idle:
             dotColour = juce::Colour(0xFFE5B84B);  // amber
-            label = "Tagger: idle";
+            label = "Analyzer: idle";
             break;
         case State::Loading:
             dotColour = juce::Colour(0xFF4FA3E3);  // blue
-            label = "Tagger: loading...";
+            label = "Analyzer: loading...";
             break;
         case State::Loaded:
             dotColour = juce::Colour(0xFF6FCF6F);  // green
-            label = "Tagger: loaded";
+            label = "Analyzer: loaded";
             break;
     }
 
@@ -352,7 +377,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         const auto& font = FontManager::getInstance().getUIFont(11.0F);
         g.setFont(font);
 
-        auto drawPill = [&](const juce::String& text, juce::Colour col) {
+        auto drawPill = [&](const juce::String& text, juce::Colour col, bool showMenuArrow) {
             if (text.isEmpty()) {
                 return;
             }
@@ -361,7 +386,19 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
             g.fillRoundedRectangle(pill.toFloat(), 3.0F);
             g.setColour(col);
             g.drawRoundedRectangle(pill.toFloat(), 3.0F, 1.0F);
-            g.drawText(text, pill, juce::Justification::centred, true);
+            auto textArea = pill;
+            if (showMenuArrow) {
+                textArea.removeFromRight(12);
+            }
+            g.drawText(text, textArea, juce::Justification::centred, true);
+            if (showMenuArrow) {
+                const auto arrow = pill.removeFromRight(12).toFloat();
+                juce::Path p;
+                p.addTriangle(arrow.getCentreX() - 3.0F, arrow.getCentreY() - 1.5F,
+                              arrow.getCentreX() + 3.0F, arrow.getCentreY() - 1.5F,
+                              arrow.getCentreX(), arrow.getCentreY() + 3.0F);
+                g.fillPath(p);
+            }
         };
 
         switch (columnId) {
@@ -383,10 +420,12 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                            juce::Justification::centredLeft, true);
                 break;
             case kColFamily:
-                drawPill(juce::String(r.family), DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                drawPill(juce::String(r.family), DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
+                         true);
                 break;
             case kColShape:
-                drawPill(juce::String(r.shape), DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                drawPill(juce::String(r.shape), DarkTheme::getColour(DarkTheme::TEXT_PRIMARY),
+                         true);
                 break;
             case kColBpm:
                 g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
@@ -423,11 +462,20 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         }
     }
 
-    void cellClicked(int row, int /*columnId*/, const juce::MouseEvent& e) override {
+    void cellClicked(int row, int columnId, const juce::MouseEvent& e) override {
         if (row < 0 || row >= static_cast<int>(owner_.results_.size())) {
             return;
         }
         const auto& r = owner_.results_[static_cast<size_t>(row)];
+
+        if (columnId == kColFamily && e.mods.isLeftButtonDown()) {
+            owner_.showFamilyMenuForRow(r.fileId, juce::String(r.family), e.getScreenPosition());
+            return;
+        }
+        if (columnId == kColShape && e.mods.isLeftButtonDown()) {
+            owner_.showShapeMenuForRow(r.fileId, juce::String(r.shape), e.getScreenPosition());
+            return;
+        }
 
         // Right-click: context menu. Left/middle: preview / select.
         if (e.mods.isRightButtonDown() || e.mods.isPopupMenu()) {
@@ -452,7 +500,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
             menu.addSeparator();
             menu.addItem(1, "Find similar sounds to \"" + fileName + "\"");
             menu.addSeparator();
-            menu.addItem(2, "Tag selected rows (" + juce::String(selectedCount) + ")");
+            menu.addItem(2, "Analyze selected rows (" + juce::String(selectedCount) + ")");
             const juce::Component::SafePointer<MediaDbBrowserContent> self(&owner_);
             const auto seedId = r.fileId;
             const auto seedName = fileName;
@@ -465,7 +513,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                     if (choice == 1) {
                         self->findSimilarTo(seedId, seedName);
                     } else if (choice == 2) {
-                        self->startTaggingFileIds(std::move(selectedIds));
+                        self->startAnalyzingFileIds(std::move(selectedIds));
                     } else if (choice == 4) {
                         if (selectedIds.size() > 1) {
                             self->showBulkEditRowsDialog(std::move(selectedIds));
@@ -484,11 +532,22 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         }
     }
 
-    void cellDoubleClicked(int row, int /*columnId*/, const juce::MouseEvent&) override {
+    void cellDoubleClicked(int row, int columnId, const juce::MouseEvent& e) override {
         if (row < 0 || row >= static_cast<int>(owner_.results_.size())) {
             return;
         }
-        owner_.showEditRowDialog(owner_.results_[static_cast<size_t>(row)].fileId);
+        const auto& result = owner_.results_[static_cast<size_t>(row)];
+        if (columnId == kColFamily) {
+            owner_.showFamilyMenuForRow(result.fileId, juce::String(result.family),
+                                        e.getScreenPosition());
+            return;
+        }
+        if (columnId == kColShape) {
+            owner_.showShapeMenuForRow(result.fileId, juce::String(result.shape),
+                                       e.getScreenPosition());
+            return;
+        }
+        owner_.showEditRowDialog(result.fileId);
     }
 
     // Kicks off an OS-level file drag for the selected rows and returns
@@ -606,10 +665,6 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     tonalOnly_.setLookAndFeel(&fbLnf);
     tonalOnly_.onClick = [this]() { restartSearch(); };
 
-    duplicatesOnly_.setLookAndFeel(&fbLnf);
-    duplicatesOnly_.setTooltip("Show rows whose audio content appears more than once");
-    duplicatesOnly_.onClick = [this]() { restartSearch(); };
-
     // Tags free-text filter — whitespace-separated tokens are AND-combined
     // via FTS5 MATCH against media_fts.tag_text. Updates on Enter / blur,
     // matching the BPM range editors so we don't query on every keystroke.
@@ -639,7 +694,6 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     addAndMakeVisible(bpmMinBox_);
     addAndMakeVisible(bpmMaxBox_);
     addAndMakeVisible(tonalOnly_);
-    addAndMakeVisible(duplicatesOnly_);
     addAndMakeVisible(tagsFilter_);
 
     // Kind selection lives outside this component — see setKindFilter().
@@ -652,6 +706,9 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     // in the drag var) + MediaDbBrowserContent::shouldDropFilesWhenDraggedExternally
     // (decodes them and asks the OS to drop them as files when the drag
     // leaves the app window).
+    auto tableHeader = std::make_unique<MediaDbTableHeader>();
+    tableHeader->onRemoveDuplicateRows = [this]() { removeDuplicateFilePathsWithConfirmation(); };
+    resultsTable_.setHeader(std::move(tableHeader));
     resultsModel_ = std::make_unique<ResultsTableModel>(*this);
     resultsTable_.setModel(resultsModel_.get());
     resultsTable_.setRowHeight(28);
@@ -772,7 +829,6 @@ MediaDbBrowserContent::~MediaDbBrowserContent() {
     bpmMinBox_.setLookAndFeel(nullptr);
     bpmMaxBox_.setLookAndFeel(nullptr);
     tonalOnly_.setLookAndFeel(nullptr);
-    duplicatesOnly_.setLookAndFeel(nullptr);
 }
 
 void MediaDbBrowserContent::paint(juce::Graphics& g) {
@@ -807,8 +863,6 @@ void MediaDbBrowserContent::resized() {
     bpmMaxBox_.setBounds(row2.removeFromLeft(60).reduced(2));
     row2.removeFromLeft(8);
     tonalOnly_.setBounds(row2.removeFromLeft(70).reduced(2));
-    row2.removeFromLeft(8);
-    duplicatesOnly_.setBounds(row2.removeFromLeft(70).reduced(2));
     row2.removeFromLeft(8);
     // Tags fills the rest of the row — gives it room to breathe in
     // popped-out / wide panels and stays at minimum ~140px in narrow ones.
@@ -914,7 +968,7 @@ void MediaDbBrowserContent::findSimilarTo(std::int64_t seedFileId, const juce::S
         magda::media::MediaDbQuery probe(ctx.db(), nullptr, nullptr);
         if (!probe.hasEmbedding(seedFileId)) {
             // No CLAP vector for this file — most likely it was indexed
-            // before the Sample Tagger bundle was installed, so cosine
+            // before the Sample Analyzer bundle was installed, so cosine
             // similarity is impossible. Tell the user instead of silently
             // returning an empty result list.
             juce::AlertWindow::showAsync(
@@ -922,11 +976,11 @@ void MediaDbBrowserContent::findSimilarTo(std::int64_t seedFileId, const juce::S
                     .withIconType(juce::MessageBoxIconType::InfoIcon)
                     .withTitle("Find similar sounds")
                     .withMessage("\"" + seedName +
-                                 "\" has not been tagged for similarity search yet.\n"
+                                 "\" has not been analyzed for similarity search yet.\n"
                                  "\n"
                                  "This usually means the file was indexed before the Sample "
-                                 "Tagger bundle was installed. Right-click the row and choose "
-                                 "\"Tag selected rows\".")
+                                 "Analyzer bundle was installed. Right-click the row and choose "
+                                 "\"Analyze selected rows\".")
                     .withButton("OK"),
                 nullptr);
             return;
@@ -1121,6 +1175,106 @@ void MediaDbBrowserContent::showBulkEditRowsDialog(std::vector<std::int64_t> fil
         }));
 }
 
+void MediaDbBrowserContent::showFamilyMenuForRow(std::int64_t fileId,
+                                                 const juce::String& currentFamily,
+                                                 juce::Point<int> screenPosition) {
+    if (indexing_ || fileId < 0) {
+        return;
+    }
+
+    juce::PopupMenu menu;
+    menu.addItem(1, "unknown", true, currentFamily.equalsIgnoreCase("unknown"));
+    for (size_t i = 1; i < kFamilies.size(); ++i) {
+        const auto& family = kFamilies[i];
+        menu.addItem(static_cast<int>(i + 1), family, true, currentFamily.equalsIgnoreCase(family));
+    }
+
+    const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+    const auto target = juce::Rectangle<int>(screenPosition.x, screenPosition.y, 1, 1);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(target), [self, fileId](
+                                                                                    int choice) {
+        if (choice <= 0 || self == nullptr) {
+            return;
+        }
+
+        juce::String selected = "unknown";
+        if (choice > 1) {
+            const auto index = static_cast<size_t>(choice - 1);
+            if (index >= kFamilies.size()) {
+                return;
+            }
+            selected = kFamilies[index];
+        }
+
+        magda::media::BulkEditableMediaUpdate update;
+        update.family = selected.toStdString();
+        auto& ctx = magda::media::MediaDbContext::getInstance();
+        const int updated = ctx.ensureInitialized()
+                                ? magda::media::updateEditableMediaRows(ctx.db(), {fileId}, update)
+                                : 0;
+        if (updated <= 0) {
+            juce::AlertWindow::showAsync(juce::MessageBoxOptions{}
+                                             .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                             .withTitle("Family")
+                                             .withMessage("Could not update the media row.")
+                                             .withButton("OK"),
+                                         nullptr);
+            return;
+        }
+        self->runSearch();
+    });
+}
+
+void MediaDbBrowserContent::showShapeMenuForRow(std::int64_t fileId,
+                                                const juce::String& currentShape,
+                                                juce::Point<int> screenPosition) {
+    if (indexing_ || fileId < 0) {
+        return;
+    }
+
+    juce::PopupMenu menu;
+    menu.addItem(1, "unknown", true, currentShape.equalsIgnoreCase("unknown"));
+    for (size_t i = 1; i < kShapes.size(); ++i) {
+        const auto& shape = kShapes[i];
+        menu.addItem(static_cast<int>(i + 1), shape, true, currentShape.equalsIgnoreCase(shape));
+    }
+
+    const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+    const auto target = juce::Rectangle<int>(screenPosition.x, screenPosition.y, 1, 1);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(target), [self, fileId](
+                                                                                    int choice) {
+        if (choice <= 0 || self == nullptr) {
+            return;
+        }
+
+        juce::String selected = "unknown";
+        if (choice > 1) {
+            const auto index = static_cast<size_t>(choice - 1);
+            if (index >= kShapes.size()) {
+                return;
+            }
+            selected = kShapes[index];
+        }
+
+        magda::media::BulkEditableMediaUpdate update;
+        update.shape = selected.toStdString();
+        auto& ctx = magda::media::MediaDbContext::getInstance();
+        const int updated = ctx.ensureInitialized()
+                                ? magda::media::updateEditableMediaRows(ctx.db(), {fileId}, update)
+                                : 0;
+        if (updated <= 0) {
+            juce::AlertWindow::showAsync(juce::MessageBoxOptions{}
+                                             .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                             .withTitle("Shape")
+                                             .withMessage("Could not update the media row.")
+                                             .withButton("OK"),
+                                         nullptr);
+            return;
+        }
+        self->runSearch();
+    });
+}
+
 void MediaDbBrowserContent::deleteFileIdsWithConfirmation(std::vector<std::int64_t> fileIds) {
     if (indexing_ || fileIds.empty()) {
         return;
@@ -1158,6 +1312,72 @@ void MediaDbBrowserContent::deleteFileIdsWithConfirmation(std::vector<std::int64
         });
 }
 
+void MediaDbBrowserContent::removeDuplicateFilePathsWithConfirmation() {
+    if (indexing_) {
+        return;
+    }
+
+    const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+    juce::AlertWindow::showAsync(
+        juce::MessageBoxOptions{}
+            .withIconType(juce::MessageBoxIconType::WarningIcon)
+            .withTitle("Remove Duplicate Rows")
+            .withMessage(
+                "Remove database rows that point to the same physical file?\n\n"
+                "MAGDA keeps the row with user edits first, then analyzed rows, then the newest "
+                "indexed row. Files on disk will not be deleted.")
+            .withButton("Remove")
+            .withButton("Cancel"),
+        [self](int result) {
+            if (result != 1 || self == nullptr) {
+                return;
+            }
+
+            if (!self->indexPool_) {
+                self->indexPool_ = std::make_unique<juce::ThreadPool>(1);
+            }
+            self->indexing_ = true;
+            if (self->onIndexingActiveChanged) {
+                self->onIndexingActiveChanged(true);
+            }
+            if (self->onIndexingStatus) {
+                self->onIndexingStatus("Removing duplicate file rows...");
+            }
+
+            self->indexPool_->addJob([self]() {
+                int removed = 0;
+                juce::String status;
+                try {
+                    magda::media::MediaDatabase bgDb(
+                        magda::media::MediaDbContext::getInstance().dbPath());
+                    removed = magda::media::removeDuplicateFilePathRows(bgDb);
+                    status = removed > 0 ? juce::String("Removed ") + juce::String(removed) +
+                                               " duplicate file row" + (removed == 1 ? "" : "s")
+                                         : "No duplicate file rows found";
+                } catch (const std::exception& e) {
+                    status = juce::String("Remove duplicates failed: ") + juce::String(e.what());
+                }
+
+                juce::MessageManager::callAsync([self, status, removed]() {
+                    if (self == nullptr) {
+                        return;
+                    }
+                    self->indexing_ = false;
+                    if (self->onIndexingActiveChanged) {
+                        self->onIndexingActiveChanged(false);
+                    }
+                    if (removed > 0) {
+                        magda::media::MediaDbContext::getInstance().bumpMediaRevision();
+                    }
+                    if (self->onIndexingStatus) {
+                        self->onIndexingStatus(status);
+                    }
+                    self->restartSearch();
+                });
+            });
+        });
+}
+
 void MediaDbBrowserContent::requestStopIndexing() {
     if (indexCancel_) {
         indexCancel_->store(true);
@@ -1167,7 +1387,7 @@ void MediaDbBrowserContent::requestStopIndexing() {
     }
 }
 
-void MediaDbBrowserContent::startTaggingFileIds(std::vector<std::int64_t> fileIds) {
+void MediaDbBrowserContent::startAnalyzingFileIds(std::vector<std::int64_t> fileIds) {
     if (indexing_ || fileIds.empty()) {
         return;
     }
@@ -1181,7 +1401,7 @@ void MediaDbBrowserContent::startTaggingFileIds(std::vector<std::int64_t> fileId
         onIndexingActiveChanged(true);
     }
     const auto prepText =
-        "Preparing tagging for " + juce::String(static_cast<int>(fileIds.size())) + " rows...";
+        "Preparing analysis for " + juce::String(static_cast<int>(fileIds.size())) + " rows...";
     if (onIndexingStatus) {
         onIndexingStatus(prepText);
     }
@@ -1197,12 +1417,12 @@ void MediaDbBrowserContent::startTaggingFileIds(std::vector<std::int64_t> fileId
             indexer.setShouldCancel([cancelToken]() { return cancelToken && cancelToken->load(); });
             indexer.setFailureCallback(
                 [](const std::filesystem::path& failedPath, const std::string& reason) {
-                    juce::Logger::writeToLog(juce::String("[MediaDbIndexer] Failed tagging: ") +
+                    juce::Logger::writeToLog(juce::String("[MediaDbIndexer] Failed analysis: ") +
                                              juce::String(failedPath.string()) + " - " +
                                              juce::String(reason));
                 });
             indexer.setProgress([self](int done, int total, const std::filesystem::path& current) {
-                const auto status = juce::String("Tagging ") +
+                const auto status = juce::String("Analyzing ") +
                                     juce::String(current.filename().string()) + " (" +
                                     juce::String(done) + "/" + juce::String(total) + ")";
                 juce::MessageManager::callAsync([self, status]() {
@@ -1218,11 +1438,11 @@ void MediaDbBrowserContent::startTaggingFileIds(std::vector<std::int64_t> fileId
 
             magda::media::MediaDbIndexer::EmbeddingStats tagStats;
             if (encoder != nullptr && !(cancelToken && cancelToken->load())) {
-                const auto taggingStartedAt = std::chrono::steady_clock::now();
-                indexer.setProgress([self, taggingStartedAt](int done, int total,
-                                                             const std::filesystem::path& current) {
+                const auto analysisStartedAt = std::chrono::steady_clock::now();
+                indexer.setProgress([self, analysisStartedAt](
+                                        int done, int total, const std::filesystem::path& current) {
                     const auto status =
-                        formatTaggingProgress(done, total, current, taggingStartedAt);
+                        formatAnalysisProgress(done, total, current, analysisStartedAt);
                     juce::MessageManager::callAsync([self, status]() {
                         if (self != nullptr) {
                             if (self->onIndexingStatus) {
@@ -1234,12 +1454,12 @@ void MediaDbBrowserContent::startTaggingFileIds(std::vector<std::int64_t> fileId
                 tagStats = indexer.embedAudioFileIds(ids);
             }
 
-            finalStatus = formatTaggingSummary(decodeStats, tagStats);
+            finalStatus = formatAnalysisSummary(decodeStats, tagStats);
             if (cancelToken && cancelToken->load()) {
-                finalStatus = "Tagging stopped: " + finalStatus;
+                finalStatus = "Analysis stopped: " + finalStatus;
             }
         } catch (const std::exception& e) {
-            finalStatus = juce::String("Tagging failed: ") + juce::String(e.what());
+            finalStatus = juce::String("Analysis failed: ") + juce::String(e.what());
         }
 
         juce::MessageManager::callAsync([self, finalStatus, cancelToken]() {
@@ -1288,7 +1508,6 @@ magda::media::QueryFilters MediaDbBrowserContent::currentFilters() const {
     if (tonalOnly_.getToggleState()) {
         f.tonal = true;
     }
-    f.duplicatesOnly = duplicatesOnly_.getToggleState();
     const auto tagsText = tagsFilter_.getText().trim();
     if (tagsText.isNotEmpty()) {
         f.tags = tagsText.toStdString();
@@ -1449,7 +1668,7 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
     if (empty) {
         // Probe library state once — used by every empty-state branch
         // below to decide between "library is empty", "filters excluded
-        // everything", and "library has no tagging data for similarity".
+        // everything", and "library has no analysis data for similarity".
         int libraryRows = -1;
         int embeddingRows = -1;
         auto& ctx = magda::media::MediaDbContext::getInstance();
@@ -1468,20 +1687,18 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
             text = "No similar sounds found for \"" + similarToFileName_ + "\".";
             if (embeddingRows <= 1) {
                 text += "\n\nThe library contains " + juce::String(embeddingRows) +
-                        " tagged audio file" + (embeddingRows == 1 ? "" : "s") +
-                        " total.\nRun tagging with the Sample Tagger installed "
+                        " analyzed audio file" + (embeddingRows == 1 ? "" : "s") +
+                        " total.\nRun analysis with the Sample Analyzer installed "
                         "to enable similarity search.";
             } else {
                 text += "\n\nTry clearing filters - the active filter combination may exclude "
                         "all potential neighbours.";
             }
-        } else if (duplicatesOnly_.getToggleState()) {
-            text = "No duplicate content rows match the current filters.";
         } else {
             text = "No results match the current filters.";
             if (!queryText_.isEmpty() && !magda::media::SampleTaggerDownloader::isInstalled()) {
                 text += "\n\nText search is filename / tag only without the AI Sample "
-                        "Tagger.\nInstall it from AI Settings > Sample Tagger.";
+                        "Analyzer.\nInstall it from AI Settings > Sample Analyzer.";
             }
         }
         emptyState_.setText(text, juce::dontSendNotification);
@@ -1555,21 +1772,71 @@ void MediaDbBrowserContent::visibilityChanged() {
 void MediaDbBrowserContent::startIndexing(const juce::File& dir,
                                           magda::media::MediaDbIndexer::Mode mode) {
     if (indexing_ || !dir.isDirectory()) {
+        return;
+    }
+
+    auto* alert = new juce::AlertWindow("Index Folder",
+                                        "Optional tags are written to each scanned media row.",
+                                        juce::MessageBoxIconType::NoIcon);
+    alert->addTextEditor("custom_tags", "", "Tags:");
+    juce::StringArray yesNo;
+    yesNo.add("No");
+    yesNo.add("Yes");
+    alert->addComboBox("folder_tag", yesNo, "Use folder name:");
+    alert->addComboBox("path_tags", yesNo, "Use subfolder names:");
+    if (auto* cb = alert->getComboBoxComponent("folder_tag")) {
+        cb->setSelectedId(2, juce::dontSendNotification);
+    }
+    if (auto* cb = alert->getComboBoxComponent("path_tags")) {
+        cb->setSelectedId(1, juce::dontSendNotification);
+    }
+    alert->addButton("Start", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+    alert->enterModalState(
+        true, juce::ModalCallbackFunction::create([alert, self, dir, mode](int result) mutable {
+            if (result != 1) {
+                delete alert;
+                return;
+            }
+
+            magda::media::MediaDbIndexer::ScanTagOptions options;
+            options.root = std::filesystem::path(dir.getFullPathName().toStdString());
+            options.customTags = parseTags(alert->getTextEditorContents("custom_tags"));
+            if (auto* cb = alert->getComboBoxComponent("folder_tag")) {
+                options.includeRootFolderName = cb->getSelectedId() == 2;
+            }
+            if (auto* cb = alert->getComboBoxComponent("path_tags")) {
+                options.includePathNodes = cb->getSelectedId() == 2;
+            }
+            delete alert;
+
+            if (self != nullptr) {
+                self->startIndexingWithOptions(dir, mode, std::move(options));
+            }
+        }));
+}
+
+void MediaDbBrowserContent::startIndexingWithOptions(
+    const juce::File& dir, magda::media::MediaDbIndexer::Mode mode,
+    magda::media::MediaDbIndexer::ScanTagOptions tagOptions) {
+    if (indexing_ || !dir.isDirectory()) {
         return;  // Already running, or invalid target — ignore.
     }
 
-    // Warn if the Sample Tagger isn't installed — indexing still works, but
-    // similarity tagging won't be computed, so text search will be filename /
+    // Warn if the Sample Analyzer isn't installed — indexing still works, but
+    // similarity analysis won't be computed, so text search will be filename /
     // tag only. Async (non-blocking) so the scan kicks off either way.
     if (!magda::media::SampleTaggerDownloader::isInstalled()) {
         juce::AlertWindow::showAsync(
             juce::MessageBoxOptions()
                 .withIconType(juce::MessageBoxIconType::InfoIcon)
-                .withTitle("AI Sample Tagger not installed")
+                .withTitle("AI Sample Analyzer not installed")
                 .withMessage(
-                    "Indexing will run, but without the Sample Tagger the library can only do "
+                    "Indexing will run, but without the Sample Analyzer the library can only do "
                     "filename / tag / family / BPM filtering - no semantic text search.\n\n"
-                    "Install it any time from AI Settings > Sample Tagger.")
+                    "Install it any time from AI Settings > Sample Analyzer.")
                 .withButton("OK"),
             nullptr);
     }
@@ -1602,7 +1869,7 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
     const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
     auto cancelToken = indexCancel_;
 
-    indexPool_->addJob([self, path, mode, cancelToken]() {
+    indexPool_->addJob([self, path, mode, cancelToken, tagOptions = std::move(tagOptions)]() {
         // Background thread. Open a fresh DB connection here so we don't
         // share the UI-thread MediaDbContext::db() handle across threads
         // — SQLite multi-thread mode requires one connection per thread.
@@ -1622,6 +1889,7 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
             magda::media::MediaDatabase bgDb(magda::media::MediaDbContext::getInstance().dbPath());
             auto* encoder = magda::media::MediaDbContext::getInstance().audioEncoder();
             magda::media::MediaDbIndexer indexer(bgDb, encoder);
+            indexer.setScanTagOptions(tagOptions);
             indexer.setShouldCancel([cancelToken]() { return cancelToken && cancelToken->load(); });
             indexer.setFailureCallback([&failureMutex, &failureCount,
                                         &firstFailures](const std::filesystem::path& failedPath,
@@ -1681,11 +1949,11 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
             });
 
             if (encoder != nullptr && !cancelledAfterScan) {
-                const auto taggingStartedAt = std::chrono::steady_clock::now();
-                indexer.setProgress([self, taggingStartedAt](int done, int total,
-                                                             const std::filesystem::path& current) {
+                const auto analysisStartedAt = std::chrono::steady_clock::now();
+                indexer.setProgress([self, analysisStartedAt](
+                                        int done, int total, const std::filesystem::path& current) {
                     const auto status =
-                        formatTaggingProgress(done, total, current, taggingStartedAt);
+                        formatAnalysisProgress(done, total, current, analysisStartedAt);
                     juce::MessageManager::callAsync([self, status]() {
                         if (self != nullptr) {
                             if (self->onIndexingStatus) {
@@ -1695,12 +1963,12 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
                     });
                 });
                 tagStats = indexer.embedMissingAudio(path);
-                const auto taggingStatus = formatTaggingSummary(tagStats);
-                const bool cancelledAfterTagging = cancelToken && cancelToken->load();
-                finalStatus = cancelledAfterTagging
-                                  ? scanStatus + " | Tagging stopped: " + taggingStatus
-                                  : scanStatus + " | " + taggingStatus;
-                juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + taggingStatus);
+                const auto analysisStatus = formatAnalysisSummary(tagStats);
+                const bool cancelledAfterAnalysis = cancelToken && cancelToken->load();
+                finalStatus = cancelledAfterAnalysis
+                                  ? scanStatus + " | Analysis stopped: " + analysisStatus
+                                  : scanStatus + " | " + analysisStatus;
+                juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + analysisStatus);
             }
 
             std::lock_guard<std::mutex> lock(failureMutex);

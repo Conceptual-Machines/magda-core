@@ -29,7 +29,7 @@
 
 namespace magda::daw::ui {
 
-// Compact status strip showing whether the Sample Tagger model is loaded.
+// Compact status strip showing whether the Sample Analyzer model is loaded.
 // Polls MediaDbContext + SampleTaggerDownloader twice a second so loads
 // triggered elsewhere (AI Settings, the proactive preload in
 // MediaDbBrowserContent::visibilityChanged, startup auto-load) reflect
@@ -99,10 +99,17 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     // around the given file's audio embedding instead of text / FTS.
     // Cleared by the next restartSearch().
     void findSimilarTo(std::int64_t seedFileId, const juce::String& seedName);
-    void startTaggingFileIds(std::vector<std::int64_t> fileIds);
+    void startAnalyzingFileIds(std::vector<std::int64_t> fileIds);
     void showEditRowDialog(std::int64_t fileId);
     void showBulkEditRowsDialog(std::vector<std::int64_t> fileIds);
+    void showFamilyMenuForRow(std::int64_t fileId, const juce::String& currentFamily,
+                              juce::Point<int> screenPosition);
+    void showShapeMenuForRow(std::int64_t fileId, const juce::String& currentShape,
+                             juce::Point<int> screenPosition);
     void deleteFileIdsWithConfirmation(std::vector<std::int64_t> fileIds);
+    void removeDuplicateFilePathsWithConfirmation();
+    void startIndexingWithOptions(const juce::File& dir, magda::media::MediaDbIndexer::Mode mode,
+                                  magda::media::MediaDbIndexer::ScanTagOptions tagOptions);
     void openPopOutWindow();
     magda::media::QueryFilters currentFilters() const;
     magda::media::QuerySort currentSort() const;
@@ -119,7 +126,6 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     juce::TextEditor bpmMinBox_;
     juce::TextEditor bpmMaxBox_;
     juce::ToggleButton tonalOnly_{"tonal"};
-    juce::ToggleButton duplicatesOnly_{"dupes"};
     juce::TextEditor tagsFilter_;  // free-text tag filter, AND-tokenised
     std::unique_ptr<magda::SvgButton> popOutButton_;
 

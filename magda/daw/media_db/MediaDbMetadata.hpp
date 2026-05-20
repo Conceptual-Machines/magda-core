@@ -99,6 +99,12 @@ int updateEditableMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& 
 
 int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds);
 
+// Remove duplicate DB rows that resolve to the same physical file on disk
+// (same device + inode). Exact duplicate path strings are already blocked by
+// media_file.path UNIQUE, so this handles symlink/alias/case variants. Files
+// on disk are not deleted. Returns removed media_file rows.
+int removeDuplicateFilePathRows(MediaDatabase& db);
+
 [[nodiscard]] std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkers(
     MediaDatabase& db, const std::filesystem::path& path);
 

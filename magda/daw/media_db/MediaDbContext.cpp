@@ -104,7 +104,7 @@ bool MediaDbContext::ensureInitialized() {
 
 void MediaDbContext::preloadModels() {
     // Force the lazy accessors to instantiate now. The "Load on startup"
-    // Config toggle and the AI Settings → Sample Tagger → Load button both
+    // Config toggle and the AI Settings → Sample Analyzer → Load button both
     // call this; running it on a background thread keeps the UI fluid
     // (this method itself blocks until each ORT Session is built).
     (void)audioEncoder();

@@ -39,6 +39,12 @@ class MediaDbIndexer {
         int skipped = 0;   // no encoder or no missing rows
         int failed = 0;    // decode/inference/write failed
     };
+    struct ScanTagOptions {
+        std::vector<std::string> customTags;
+        bool includeRootFolderName = false;
+        bool includePathNodes = false;
+        std::filesystem::path root;
+    };
 
     // Progress callback fired once per file. (done, total, currentPath)
     // where total is the prescanned file count and currentPath is the file
@@ -75,6 +81,7 @@ class MediaDbIndexer {
     void setProgress(ProgressFn fn);
     void setFailureCallback(FailureFn fn);
     void setShouldCancel(ShouldCancelFn fn);
+    void setScanTagOptions(ScanTagOptions options);
 
     // Synchronously walk `root`, indexing every classifying file.
     //
@@ -106,6 +113,7 @@ class MediaDbIndexer {
     ProgressFn progress_;
     FailureFn failure_;
     ShouldCancelFn shouldCancel_;
+    ScanTagOptions scanTagOptions_;
 };
 
 }  // namespace magda::media

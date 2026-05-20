@@ -2,10 +2,14 @@
 
 #include <juce_core/juce_core.h>
 #include <sqlite3.h>
+#include <sys/stat.h>
 
+#include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 
 #include "MediaDatabase.hpp"
 #include "MediaDbContext.hpp"
@@ -61,6 +65,37 @@ std::optional<std::vector<WarpMarkerMetadata>> decodeWarpMarkers(const std::stri
                            static_cast<double>(obj->getProperty("beat"))});
     }
     return markers;
+}
+
+struct FilePathDedupeRow {
+    std::int64_t fileId = -1;
+    std::filesystem::path path;
+    std::int64_t indexedAt = 0;
+    bool userEdited = false;
+    bool analyzed = false;
+};
+
+std::optional<std::string> physicalFileKey(const std::filesystem::path& path) {
+    struct stat st {};
+    const auto text = path.string();
+    if (::stat(text.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
+        return std::nullopt;
+    }
+    return std::to_string(static_cast<unsigned long long>(st.st_dev)) + ":" +
+           std::to_string(static_cast<unsigned long long>(st.st_ino));
+}
+
+bool isBetterDuplicateKeeper(const FilePathDedupeRow& candidate, const FilePathDedupeRow& current) {
+    if (candidate.userEdited != current.userEdited) {
+        return candidate.userEdited;
+    }
+    if (candidate.analyzed != current.analyzed) {
+        return candidate.analyzed;
+    }
+    if (candidate.indexedAt != current.indexedAt) {
+        return candidate.indexedAt > current.indexedAt;
+    }
+    return candidate.fileId < current.fileId;
 }
 
 }  // namespace
@@ -818,6 +853,65 @@ int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds)
     }
     sqlite3_exec(handle, ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
     return ok ? removed : 0;
+}
+
+int removeDuplicateFilePathRows(MediaDatabase& db) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(
+            db.handle(),
+            "SELECT id, path, indexed_at, "
+            "(bpm_user IS NOT NULL OR key_root_user IS NOT NULL OR "
+            " key_scale_user IS NOT NULL OR total_beats_user IS NOT NULL OR "
+            " beat_mode_user IS NOT NULL OR warp_markers_json IS NOT NULL OR "
+            " display_name IS NOT NULL OR EXISTS (SELECT 1 FROM media_tag "
+            " WHERE file_id = media_file.id AND source_model = 'user')) AS user_edited, "
+            "EXISTS (SELECT 1 FROM media_embedding WHERE file_id = media_file.id) AS analyzed "
+            "FROM media_file ORDER BY id",
+            -1, &stmt, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+
+    std::unordered_map<std::string, FilePathDedupeRow> keeperByPhysicalFile;
+    std::vector<std::int64_t> removeIds;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const auto* pathText = sqlite3_column_text(stmt, 1);
+        if (pathText == nullptr) {
+            continue;
+        }
+
+        FilePathDedupeRow row;
+        row.fileId = sqlite3_column_int64(stmt, 0);
+        row.path = std::filesystem::path(reinterpret_cast<const char*>(pathText));
+        row.indexedAt = sqlite3_column_int64(stmt, 2);
+        row.userEdited = sqlite3_column_int(stmt, 3) != 0;
+        row.analyzed = sqlite3_column_int(stmt, 4) != 0;
+
+        const auto key = physicalFileKey(row.path);
+        if (!key) {
+            continue;
+        }
+
+        auto it = keeperByPhysicalFile.find(*key);
+        if (it == keeperByPhysicalFile.end()) {
+            keeperByPhysicalFile.emplace(*key, std::move(row));
+            continue;
+        }
+
+        if (isBetterDuplicateKeeper(row, it->second)) {
+            removeIds.push_back(it->second.fileId);
+            it->second = std::move(row);
+        } else {
+            removeIds.push_back(row.fileId);
+        }
+    }
+    sqlite3_finalize(stmt);
+
+    if (removeIds.empty()) {
+        return 0;
+    }
+    std::sort(removeIds.begin(), removeIds.end());
+    removeIds.erase(std::unique(removeIds.begin(), removeIds.end()), removeIds.end());
+    return deleteMediaRows(db, removeIds);
 }
 
 int moveFolderInLibrary(MediaDatabase& db, const std::filesystem::path& oldFolder,

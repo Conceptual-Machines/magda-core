@@ -142,6 +142,33 @@ TEST_CASE("indexer: skips unchanged files on rescan", "[media_db][indexer]") {
     REQUIRE(second.skipped == 1);
 }
 
+TEST_CASE("indexer: scan tag options add custom folder and path-node tags", "[media_db][indexer]") {
+    TempDir dir;
+    const auto root = dir.path() / "Break Pack";
+    writeMonoWav(root / "Amen Chops" / "slice.wav", 0.5, 100.0);
+
+    MediaDatabase db(":memory:");
+    MediaDbIndexer indexer(db, nullptr);
+    MediaDbIndexer::ScanTagOptions options;
+    options.root = root;
+    options.customTags = {"jungle", "user break"};
+    options.includeRootFolderName = true;
+    options.includePathNodes = true;
+    indexer.setScanTagOptions(options);
+
+    auto stats = indexer.indexDirectory(root);
+    REQUIRE(stats.inserted == 1);
+
+    sqlite3* sql = db.handle();
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='jungle'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='user'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='break'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='pack'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='amen'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='chops'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_fts WHERE media_fts MATCH 'jungle'") == 1);
+}
+
 TEST_CASE("indexer: indexes one imported audio file", "[media_db][indexer]") {
     TempDir dir;
     const auto imported = dir.path() / "imported_128bpm.wav";

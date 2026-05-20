@@ -1665,7 +1665,7 @@ class ShortcutsPage : public juce::Component {
 };
 
 // ---------------------------------------------------------------------------
-// MediaLibraryPage — Sample Tagger model bundle + media DB housekeeping.
+// MediaLibraryPage — Sample Analyzer model bundle + media DB housekeeping.
 // Combined into one tab because the user reaches for both knobs as part
 // of the same task (managing the sample library subsystem).
 // ---------------------------------------------------------------------------
@@ -1694,8 +1694,8 @@ void styleDialogLabel(juce::Label& label, float size = 12.0f) {
 class MediaLibraryPage : public juce::Component {
   public:
     MediaLibraryPage() {
-        // ===== Sample Tagger section =====
-        setupSectionHeader(*this, taggerHeader_, "Sample Tagger");
+        // ===== Sample Analyzer section =====
+        setupSectionHeader(*this, taggerHeader_, "Sample Analyzer");
 
         taggerStatus_.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
         taggerStatus_.setColour(juce::Label::textColourId,
@@ -1732,7 +1732,7 @@ class MediaLibraryPage : public juce::Component {
         progressBar_.setVisible(false);
         addAndMakeVisible(progressBar_);
 
-        actionButton_.setButtonText("Download Sample Tagger");
+        actionButton_.setButtonText("Download Sample Analyzer");
         actionButton_.onClick = [this]() { handleActionClick(); };
         addAndMakeVisible(actionButton_);
 
@@ -1799,7 +1799,7 @@ class MediaLibraryPage : public juce::Component {
         const int rowH = 24;
         const int labelW = 110;
 
-        // Sample Tagger section
+        // Sample Analyzer section
         taggerHeader_.setBounds(bounds.removeFromTop(24));
         bounds.removeFromTop(4);
         taggerStatus_.setBounds(bounds.removeFromTop(54));
@@ -1853,7 +1853,7 @@ class MediaLibraryPage : public juce::Component {
 
   private:
     void refresh() {
-        // -- Sample Tagger
+        // -- Sample Analyzer
         modelsLocationField_.setText(
             juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string()),
             juce::dontSendNotification);
@@ -1865,7 +1865,7 @@ class MediaLibraryPage : public juce::Component {
 
         if (installed) {
             taggerStatus_.setText(
-                juce::String("Sample Tagger is installed (") +
+                juce::String("Sample Analyzer is installed (") +
                     (loaded ? "loaded in memory" : "not loaded - first query will load it") +
                     ").\nEnables text search ('warm pad', 'kick 808') and similarity search "
                     "over your indexed sample library.",
@@ -1874,12 +1874,12 @@ class MediaLibraryPage : public juce::Component {
         } else {
             const auto totalMb =
                 magda::media::SampleTaggerDownloader::expectedTotalBytes() / (1024.0 * 1024.0);
-            taggerStatus_.setText("Sample Tagger is not installed.\nDownload (~" +
+            taggerStatus_.setText("Sample Analyzer is not installed.\nDownload (~" +
                                       juce::String(totalMb, 0) +
                                       " MB) to enable text + similarity search. Without it the "
                                       "library still supports filename / tag / family filtering.",
                                   juce::dontSendNotification);
-            actionButton_.setButtonText("Download Sample Tagger");
+            actionButton_.setButtonText("Download Sample Analyzer");
         }
         progressBar_.setVisible(downloader_.isRunning());
         actionButton_.setEnabled(true);
@@ -1934,7 +1934,7 @@ class MediaLibraryPage : public juce::Component {
         const auto currentDir = juce::File(
             juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string()));
         modelsChooser_ = std::make_unique<juce::FileChooser>(
-            "Choose a folder for the Sample Tagger models",
+            "Choose a folder for the Sample Analyzer models",
             currentDir.exists() ? currentDir
                                 : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
         modelsChooser_->launchAsync(juce::FileBrowserComponent::openMode |

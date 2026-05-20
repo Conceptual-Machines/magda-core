@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdint>
 #include <ctime>
 #include <mutex>
@@ -215,6 +216,77 @@ void applyPolicies(AudioFeatures& f, const std::string& shape, const std::string
         f.keyScale.reset();
         f.keyConfidence.reset();
     }
+}
+
+std::vector<std::string> tagTokensFromText(const std::string& raw) {
+    std::vector<std::string> out;
+    std::string token;
+    auto flush = [&]() {
+        if (!token.empty() && std::find(out.begin(), out.end(), token) == out.end()) {
+            out.push_back(token);
+        }
+        token.clear();
+    };
+
+    for (unsigned char c : raw) {
+        if (std::isalnum(c)) {
+            token += static_cast<char>(std::tolower(c));
+        } else {
+            flush();
+        }
+    }
+    flush();
+    return out;
+}
+
+void addTag(std::vector<std::pair<std::string, float>>& tags, const std::string& tag) {
+    if (tag.empty()) {
+        return;
+    }
+    const auto exists =
+        std::any_of(tags.begin(), tags.end(), [&](const auto& t) { return t.first == tag; });
+    if (!exists) {
+        tags.emplace_back(tag, 1.0F);
+    }
+}
+
+std::vector<std::pair<std::string, float>> scanTagsFor(
+    const std::filesystem::path& path, const MediaDbIndexer::ScanTagOptions& options) {
+    std::vector<std::pair<std::string, float>> tags;
+    for (const auto& tag : options.customTags) {
+        for (const auto& token : tagTokensFromText(tag)) {
+            addTag(tags, token);
+        }
+    }
+
+    if (options.includeRootFolderName && !options.root.empty()) {
+        for (const auto& token : tagTokensFromText(options.root.filename().string())) {
+            addTag(tags, token);
+        }
+    }
+
+    if (options.includePathNodes) {
+        std::filesystem::path relativeParent = path.parent_path();
+        if (!options.root.empty()) {
+            std::error_code ec;
+            auto rel = std::filesystem::relative(path.parent_path(), options.root, ec);
+            if (!ec && !rel.empty() && rel.native() != ".") {
+                relativeParent = rel;
+            } else {
+                relativeParent.clear();
+            }
+        }
+
+        for (const auto& part : relativeParent) {
+            if (part.empty() || part.native() == "." || part.native() == "..") {
+                continue;
+            }
+            for (const auto& token : tagTokensFromText(part.string())) {
+                addTag(tags, token);
+            }
+        }
+    }
+    return tags;
 }
 
 // ---- Insert helpers ------------------------------------------------------
@@ -445,7 +517,8 @@ std::string buildTagText(const std::vector<std::pair<std::string, float>>& tags)
 void processOneFile(sqlite3* sqlDb, const ScannedFile& f, MediaDbIndexer::Stats& stats,
                     MediaDbIndexer::Mode mode, bool wrapWritesInTransaction,
                     const MediaDbIndexer::FailureFn& failure,
-                    const MediaDbIndexer::ShouldCancelFn& shouldCancelFn) {
+                    const MediaDbIndexer::ShouldCancelFn& shouldCancelFn,
+                    const MediaDbIndexer::ScanTagOptions& scanTagOptions) {
     bool transactionOpen = false;
     try {
         if (shouldCancel(shouldCancelFn)) {
@@ -486,7 +559,10 @@ void processOneFile(sqlite3* sqlDb, const ScannedFile& f, MediaDbIndexer::Stats&
             return;
         }
 
-        const auto tags = pathTags(f.path);
+        auto tags = pathTags(f.path);
+        for (const auto& tag : scanTagsFor(f.path, scanTagOptions)) {
+            addTag(tags, tag.first);
+        }
 
         // Expensive reads/analysis happen before the write transaction. In
         // parallel scans this keeps SQLite writer locks short; holding a
@@ -692,6 +768,10 @@ void MediaDbIndexer::setShouldCancel(ShouldCancelFn fn) {
     shouldCancel_ = std::move(fn);
 }
 
+void MediaDbIndexer::setScanTagOptions(ScanTagOptions options) {
+    scanTagOptions_ = std::move(options);
+}
+
 MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path& root,
                                                      int numThreads, Mode mode) {
     // Pre-scan into a vector so we have a stable list to slice for workers
@@ -711,7 +791,7 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
             if (shouldCancel(shouldCancel_)) {
                 break;
             }
-            processOneFile(sqlDb, f, stats, mode, true, failure_, shouldCancel_);
+            processOneFile(sqlDb, f, stats, mode, true, failure_, shouldCancel_, scanTagOptions_);
             ++done;
             if (progress_) {
                 progress_(done, total, f.path);
@@ -739,6 +819,7 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
     ProgressFn& progressRef = progress_;
     FailureFn failureCallback = failure_;
     ShouldCancelFn cancelCallback = shouldCancel_;
+    const auto scanTagOptions = scanTagOptions_;
     FailureFn failureRef = [failureCallback, &failureMutex](const std::filesystem::path& current,
                                                             const std::string& reason) {
         std::lock_guard<std::mutex> lock(failureMutex);
@@ -771,7 +852,8 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
                     if (shouldCancel(cancelCallback)) {
                         break;
                     }
-                    processOneFile(sqlDb, files[i], local, mode, true, failureRef, cancelCallback);
+                    processOneFile(sqlDb, files[i], local, mode, true, failureRef, cancelCallback,
+                                   scanTagOptions);
                     const int nowDone = ++doneCounter;
                     if (progressRef) {
                         std::lock_guard<std::mutex> lock(progressMutex);
@@ -810,7 +892,8 @@ MediaDbIndexer::Stats MediaDbIndexer::indexFile(const std::filesystem::path& pat
         return stats;
     }
     if (auto scanned = classify(path)) {
-        processOneFile(db_.handle(), *scanned, stats, mode, true, failure_, shouldCancel_);
+        processOneFile(db_.handle(), *scanned, stats, mode, true, failure_, shouldCancel_,
+                       scanTagOptions_);
     } else {
         reportFailure(failure_, path, "file no longer exists or has unsupported format");
         ++stats.failed;
@@ -834,7 +917,8 @@ MediaDbIndexer::Stats MediaDbIndexer::indexFileIds(const std::vector<std::int64_
             break;
         }
         if (auto scanned = classify(path)) {
-            processOneFile(sqlDb, *scanned, stats, mode, true, failure_, shouldCancel_);
+            processOneFile(sqlDb, *scanned, stats, mode, true, failure_, shouldCancel_,
+                           scanTagOptions_);
         } else {
             reportFailure(failure_, path, "file no longer exists or has unsupported format");
             ++stats.failed;

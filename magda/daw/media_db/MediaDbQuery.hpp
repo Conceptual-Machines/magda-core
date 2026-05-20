@@ -35,7 +35,6 @@ struct QueryFilters {
     std::optional<std::string> keyRoot;
     std::optional<std::string> keyScale;
     std::optional<std::string> format;  // file extension lowercase
-    bool duplicatesOnly = false;        // same content fingerprint appears in multiple rows
 
     // Free-text tag filter. Whitespace-separated tokens are AND-combined
     // (typing "drum 808" → tagged with both drum AND 808). Implemented via
@@ -108,7 +107,7 @@ class MediaDbQuery {
     // and ranks the filter-matched candidate set by cosine. No text encoder
     // or tokenizer needed — uses the embeddings already in the DB. The seed
     // itself is dropped from the result list. Returns empty if the seed has
-    // no embedding (e.g. wasn't indexed with the Sample Tagger installed).
+    // no embedding (e.g. wasn't indexed with the Sample Analyzer installed).
     std::vector<QueryResult> similarTo(std::int64_t seedFileId, const QueryFilters& filters,
                                        int limit = 20, int offset = 0, QuerySort sort = {}) const;
 

@@ -10,6 +10,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <random>
 #include <set>
 #include <string>
 #include <vector>
@@ -22,6 +25,7 @@ using Catch::Approx;
 using magda::media::kSchemaVersion;
 using magda::media::MediaDatabase;
 using magda::media::MediaDatabaseError;
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -37,6 +41,26 @@ std::set<std::string> listTables(sqlite3* db) {
     sqlite3_finalize(stmt);
     return names;
 }
+
+class TempDir {
+  public:
+    TempDir() {
+        path_ = fs::temp_directory_path() /
+                ("magda_media_db_metadata_test_" + std::to_string(std::random_device{}()));
+        fs::create_directories(path_);
+    }
+    ~TempDir() {
+        std::error_code ec;
+        fs::remove_all(path_, ec);
+    }
+
+    [[nodiscard]] const fs::path& path() const {
+        return path_;
+    }
+
+  private:
+    fs::path path_;
+};
 
 }  // namespace
 
@@ -297,4 +321,54 @@ TEST_CASE("Editable media rows update display fields and delete cleanly", "[medi
     REQUIRE(sqlite3_step(count) == SQLITE_ROW);
     REQUIRE(sqlite3_column_int(count, 0) == 0);
     sqlite3_finalize(count);
+}
+
+TEST_CASE("Duplicate file path cleanup removes rows pointing to the same physical file",
+          "[media_db][metadata]") {
+    TempDir dir;
+    const auto original = dir.path() / "break.wav";
+    const auto alias = dir.path() / "break-alias.wav";
+    {
+        std::ofstream out(original);
+        out << "same audio bytes";
+    }
+    std::error_code ec;
+    fs::create_hard_link(original, alias, ec);
+    if (ec) {
+        SUCCEED("filesystem does not allow hard links in this test location");
+        return;
+    }
+
+    MediaDatabase db(":memory:");
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(),
+                               "INSERT INTO media_file "
+                               "(path, kind, format, size_bytes, mtime_ns, indexed_at, bpm_user) "
+                               "VALUES (?, 'audio', 'wav', 16, 1, ?, ?)",
+                               -1, &stmt, nullptr) == SQLITE_OK);
+    const auto originalText = original.string();
+    const auto aliasText = alias.string();
+    sqlite3_bind_text(stmt, 1, originalText.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, 10);
+    sqlite3_bind_double(stmt, 3, 172.0);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+
+    sqlite3_bind_text(stmt, 1, aliasText.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, 20);
+    sqlite3_bind_null(stmt, 3);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+
+    REQUIRE(magda::media::removeDuplicateFilePathRows(db) == 1);
+
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT path, bpm_user FROM media_file", -1, &stmt,
+                               nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))) ==
+            originalText);
+    REQUIRE(sqlite3_column_double(stmt, 1) == Approx(172.0));
+    REQUIRE(sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
 }
