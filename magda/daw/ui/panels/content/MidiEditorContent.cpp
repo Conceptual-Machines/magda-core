@@ -42,7 +42,8 @@ void VerticalZoomStrip::paint(juce::Graphics& g) {
 
 void VerticalZoomStrip::mouseDown(const juce::MouseEvent& event) {
     mouseDownY_ = event.y;
-    startValue_ = getValue ? getValue() : minValue_;
+    startValue_ = juce::jlimit(minValue_, maxValue_, getValue ? getValue() : minValue_);
+    lastSentValue_ = startValue_;
     dragging_ = false;
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
 }
@@ -57,9 +58,13 @@ void VerticalZoomStrip::mouseDrag(const juce::MouseEvent& event) {
 
     const double sensitivity = 30.0;
     const double exponent = static_cast<double>(yDelta) / sensitivity;
-    const int newValue = juce::jlimit(
-        minValue_, maxValue_,
-        static_cast<int>(std::round(static_cast<double>(startValue_) * std::pow(2.0, exponent))));
+    const int rawValue =
+        static_cast<int>(std::round(static_cast<double>(startValue_) * std::pow(2.0, exponent)));
+    const int newValue = juce::jlimit(minValue_, maxValue_, rawValue);
+    if (newValue == lastSentValue_)
+        return;
+
+    lastSentValue_ = newValue;
 
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
 

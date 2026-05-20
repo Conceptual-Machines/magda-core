@@ -22,6 +22,7 @@
 #include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/CCLaneComponent.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
+#include "ui/components/pianoroll/OctaveLabelStrip.hpp"
 #include "ui/components/pianoroll/PianoRollGridComponent.hpp"
 #include "ui/components/pianoroll/PianoRollKeyboard.hpp"
 #include "ui/components/pianoroll/VelocityLaneComponent.hpp"
@@ -75,6 +76,13 @@ PianoRollContent::PianoRollContent() {
         setNoteHeightAnchored(newHeight, anchorNote, anchorScreenY, true);
     };
     addAndMakeVisible(verticalZoomStrip_.get());
+
+    // Octave label strip — fixed narrow column between the zoom strip and
+    // the keyboard, always shows C-x labels regardless of zoom level.
+    octaveLabelStrip_ = std::make_unique<magda::OctaveLabelStrip>();
+    octaveLabelStrip_->setNoteRange(MIN_NOTE, MAX_NOTE);
+    octaveLabelStrip_->setNoteHeight(noteHeight_);
+    addAndMakeVisible(octaveLabelStrip_.get());
 
     // Create keyboard component
     keyboard_ = std::make_unique<magda::PianoRollKeyboard>();
@@ -164,7 +172,13 @@ PianoRollContent::~PianoRollContent() {
 }
 
 void PianoRollContent::setNoteHeight(int height, bool persist) {
-    const int clampedHeight = juce::jlimit(MIN_NOTE_HEIGHT, MAX_NOTE_HEIGHT, height);
+    // Don't allow zooming below the level where the octave label strip's
+    // labels would no longer fit. Each octave block must be at least
+    // LABEL_HEIGHT pixels tall.
+    constexpr int kLabelFloor =
+        (magda::OctaveLabelStrip::LABEL_HEIGHT + 11) / 12;  // ceil(14/12) = 2
+    const int effectiveMin = juce::jmax(MIN_NOTE_HEIGHT, kLabelFloor);
+    const int clampedHeight = juce::jlimit(effectiveMin, MAX_NOTE_HEIGHT, height);
     if (clampedHeight == noteHeight_) {
         return;
     }
@@ -174,6 +188,8 @@ void PianoRollContent::setNoteHeight(int height, bool persist) {
         gridComponent_->setNoteHeight(noteHeight_);
     if (keyboard_)
         keyboard_->setNoteHeight(noteHeight_);
+    if (octaveLabelStrip_)
+        octaveLabelStrip_->setNoteHeight(noteHeight_);
 
     updateGridSize();
 
@@ -596,6 +612,8 @@ void PianoRollContent::setGridEditCursorPosition(double pos, bool visible) {
 
 void PianoRollContent::onScrollPositionChanged(int scrollX, int scrollY) {
     keyboard_->setScrollOffset(scrollY);
+    if (octaveLabelStrip_)
+        octaveLabelStrip_->setScrollOffset(scrollY);
     if (midiDrawer_) {
         midiDrawer_->setScrollOffset(scrollX);
     } else if (velocityLane_) {
@@ -637,7 +655,7 @@ void PianoRollContent::paint(juce::Graphics& g) {
         auto chordArea = getLocalBounds();
         chordArea.removeFromLeft(SIDEBAR_WIDTH);
         chordArea = chordArea.removeFromTop(CHORD_ROW_HEIGHT);
-        chordArea.removeFromLeft(ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH);
+        chordArea.removeFromLeft(ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH);
         drawChordRow(g, chordArea);
 
         // Horizontal separator at bottom of chord row — full width
@@ -661,7 +679,7 @@ void PianoRollContent::paintOverChildren(juce::Graphics& g) {
     int rulerTop = showChordRow_ ? CHORD_ROW_HEIGHT : 0;
     int tickLineY = rulerTop + RULER_HEIGHT - LayoutConfig::getInstance().rulerMajorTickHeight;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.fillRect(SIDEBAR_WIDTH, tickLineY, ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH, 1);
+    g.fillRect(SIDEBAR_WIDTH, tickLineY, ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH, 1);
 }
 
 void PianoRollContent::resized() {
@@ -698,13 +716,13 @@ void PianoRollContent::resized() {
         if (midiDrawer_) {
             // MidiDrawerComponent gets the full width including the left column,
             // so it can place controls (e.g. PB range) in the left margin area.
-            midiDrawer_->setLeftMargin(ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH);
+            midiDrawer_->setLeftMargin(ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH);
             midiDrawer_->setBounds(drawerArea);
             midiDrawer_->setVisible(true);
         } else if (velocityLane_) {
             // Legacy path: separate header drawn in paint(), lane below
             drawerArea.removeFromTop(VELOCITY_HEADER_HEIGHT);
-            drawerArea.removeFromLeft(ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH);
+            drawerArea.removeFromLeft(ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH);
             velocityLane_->setBounds(drawerArea);
             velocityLane_->setVisible(true);
         }
@@ -717,11 +735,16 @@ void PianoRollContent::resized() {
 
     // Ruler row
     auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
-    headerArea.removeFromLeft(ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH);
+    headerArea.removeFromLeft(ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH);
     timeRuler_->setBounds(headerArea);
 
     auto zoomStripArea = bounds.removeFromLeft(ZOOM_STRIP_WIDTH);
     verticalZoomStrip_->setBounds(zoomStripArea);
+
+    // Octave label strip between the zoom strip and the keyboard.
+    auto octaveStripArea = bounds.removeFromLeft(OCTAVE_LABEL_WIDTH);
+    if (octaveLabelStrip_)
+        octaveLabelStrip_->setBounds(octaveStripArea);
 
     // Keyboard on the left
     auto keyboardArea = bounds.removeFromLeft(KEYBOARD_WIDTH);
@@ -749,7 +772,7 @@ void PianoRollContent::resized() {
 void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
                                       const juce::MouseWheelDetails& wheel) {
     int headerHeight = getHeaderHeight();
-    int leftPanelWidth = SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + KEYBOARD_WIDTH;
+    int leftPanelWidth = SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
 
     // Check if mouse is over the chord row area (very top, only when visible)
     if (showChordRow_ && e.y < CHORD_ROW_HEIGHT && e.x >= leftPanelWidth) {
@@ -1661,6 +1684,8 @@ void PianoRollContent::centerOnNote(int noteNumber) {
 
     viewport_->setViewPosition(viewport_->getViewPositionX(), scrollY);
     keyboard_->setScrollOffset(scrollY);
+    if (octaveLabelStrip_)
+        octaveLabelStrip_->setScrollOffset(scrollY);
 }
 
 void PianoRollContent::centerOnNotes() {

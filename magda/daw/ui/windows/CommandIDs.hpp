@@ -48,6 +48,7 @@ enum {
     uiScaleDown = 0x4003,  // Cmd+- / Cmd+_: decrease global UI scale
     cycleViewForward = 0x4004,
     cycleViewBackward = 0x4005,
+    togglePianoRollFullscreen = 0x4006,  // Cmd/Ctrl+Shift+P
 
     // Help menu
     showHelp = 0x5000,

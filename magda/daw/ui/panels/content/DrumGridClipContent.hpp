@@ -94,7 +94,7 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     static constexpr int ZOOM_STRIP_WIDTH = 16;
     static constexpr int LABEL_WIDTH = 120;
     static constexpr int DEFAULT_ROW_HEIGHT = 24;
-    static constexpr int MIN_ROW_HEIGHT = magda::ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT;
+    static constexpr int MIN_ROW_HEIGHT = 14;
     static constexpr int MAX_ROW_HEIGHT = magda::ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT;
 
     int rowHeight_ = DEFAULT_ROW_HEIGHT;
@@ -119,6 +119,9 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     juce::String resolvePadName(int padIndex) const;
     void setRowHeight(int height, bool persist);
     void setRowHeightAnchored(int height, int anchorRow, int anchorScreenY, bool persist);
+    int getMaxVerticalScroll() const;
+    int clampVerticalScrollY(int scrollY) const;
+    void clampViewportVerticalScroll();
     void loadRowHeightFromClip(magda::ClipId clipId);
     void timerCallback() override;
 
