@@ -98,9 +98,9 @@ class MediaDbBrowserContent : public juce::Component {
     // around the given file's audio embedding instead of text / FTS.
     // Cleared by the next restartSearch().
     void findSimilarTo(std::int64_t seedFileId, const juce::String& seedName);
-    void startEmbeddingFileIds(std::vector<std::int64_t> fileIds);
-    void startReindexingFileIds(std::vector<std::int64_t> fileIds);
+    void startTaggingFileIds(std::vector<std::int64_t> fileIds);
     void showEditRowDialog(std::int64_t fileId);
+    void showBulkEditRowsDialog(std::vector<std::int64_t> fileIds);
     void deleteFileIdsWithConfirmation(std::vector<std::int64_t> fileIds);
     void openPopOutWindow();
     magda::media::QueryFilters currentFilters() const;

@@ -55,6 +55,7 @@ struct QueryResult {
     std::optional<std::string> keyScale;
     std::optional<double> durationS;
     bool userEdited = false;
+    bool tagged = false;
     // All tags on this file regardless of source_model (indexer-derived
     // path tags AND user-added tags appear in the same list). Loaded via
     // GROUP_CONCAT in the main SELECT.

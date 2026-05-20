@@ -613,6 +613,117 @@ bool updateEditableMediaRow(MediaDatabase& db, const EditableMediaRow& row) {
     return ok;
 }
 
+int updateEditableMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds,
+                            const BulkEditableMediaUpdate& update) {
+    auto* handle = db.handle();
+    if (fileIds.empty() ||
+        sqlite3_exec(handle, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+
+    int updatedRows = 0;
+    bool ok = true;
+    sqlite3_stmt* upd = nullptr;
+    ok = sqlite3_prepare_v2(handle,
+                            "UPDATE media_file SET "
+                            "family = COALESCE(?, family), "
+                            "shape = COALESCE(?, shape), "
+                            "bpm_user = COALESCE(?, bpm_user), "
+                            "key_root_user = COALESCE(?, key_root_user), "
+                            "key_scale_user = COALESCE(?, key_scale_user), "
+                            "duration_s = COALESCE(?, duration_s) "
+                            "WHERE id = ?",
+                            -1, &upd, nullptr) == SQLITE_OK;
+
+    sqlite3_stmt* delTags = nullptr;
+    sqlite3_stmt* insTag = nullptr;
+    if (ok && update.tags) {
+        ok = sqlite3_prepare_v2(handle, "DELETE FROM media_tag WHERE file_id = ?", -1, &delTags,
+                                nullptr) == SQLITE_OK &&
+             sqlite3_prepare_v2(
+                 handle,
+                 "INSERT INTO media_tag "
+                 "(file_id, tag, confidence, source_model) VALUES (?, ?, 1.0, 'user')",
+                 -1, &insTag, nullptr) == SQLITE_OK;
+    }
+
+    for (auto fileId : fileIds) {
+        if (!ok) {
+            break;
+        }
+
+        if (update.family && !update.family->empty()) {
+            sqlite3_bind_text(upd, 1, update.family->c_str(), -1, SQLITE_TRANSIENT);
+        } else {
+            sqlite3_bind_null(upd, 1);
+        }
+        if (update.shape && !update.shape->empty()) {
+            sqlite3_bind_text(upd, 2, update.shape->c_str(), -1, SQLITE_TRANSIENT);
+        } else {
+            sqlite3_bind_null(upd, 2);
+        }
+        if (update.bpm) {
+            sqlite3_bind_double(upd, 3, *update.bpm);
+        } else {
+            sqlite3_bind_null(upd, 3);
+        }
+        if (update.keyRoot && !update.keyRoot->empty()) {
+            sqlite3_bind_text(upd, 4, update.keyRoot->c_str(), -1, SQLITE_TRANSIENT);
+        } else {
+            sqlite3_bind_null(upd, 4);
+        }
+        if (update.keyScale && !update.keyScale->empty()) {
+            sqlite3_bind_text(upd, 5, update.keyScale->c_str(), -1, SQLITE_TRANSIENT);
+        } else {
+            sqlite3_bind_null(upd, 5);
+        }
+        if (update.durationS) {
+            sqlite3_bind_double(upd, 6, *update.durationS);
+        } else {
+            sqlite3_bind_null(upd, 6);
+        }
+        sqlite3_bind_int64(upd, 7, fileId);
+        if (sqlite3_step(upd) == SQLITE_DONE) {
+            updatedRows += sqlite3_changes(handle);
+        } else {
+            ok = false;
+            break;
+        }
+        sqlite3_reset(upd);
+        sqlite3_clear_bindings(upd);
+
+        if (update.tags) {
+            sqlite3_bind_int64(delTags, 1, fileId);
+            if (sqlite3_step(delTags) != SQLITE_DONE) {
+                ok = false;
+                break;
+            }
+            sqlite3_reset(delTags);
+            sqlite3_clear_bindings(delTags);
+
+            for (const auto& tag : *update.tags) {
+                sqlite3_bind_int64(insTag, 1, fileId);
+                sqlite3_bind_text(insTag, 2, tag.c_str(), -1, SQLITE_TRANSIENT);
+                if (sqlite3_step(insTag) != SQLITE_DONE) {
+                    ok = false;
+                    break;
+                }
+                sqlite3_reset(insTag);
+                sqlite3_clear_bindings(insTag);
+            }
+        }
+    }
+
+    sqlite3_finalize(upd);
+    sqlite3_finalize(delTags);
+    sqlite3_finalize(insTag);
+    if (ok) {
+        ok = rebuildFts(handle);
+    }
+    sqlite3_exec(handle, ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+    return ok ? updatedRows : 0;
+}
+
 int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds) {
     auto* handle = db.handle();
     if (fileIds.empty() ||

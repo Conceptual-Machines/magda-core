@@ -265,7 +265,9 @@ std::vector<QueryResult> hydrate(sqlite3* db,
         " display_name IS NOT NULL OR EXISTS (SELECT 1 FROM media_tag "
         " WHERE file_id = media_file.id AND source_model = 'user')) AS user_edited, "
         "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
-        "        WHERE file_id = media_file.id) AS tags "
+        "        WHERE file_id = media_file.id) AS tags, "
+        "       EXISTS (SELECT 1 FROM media_embedding "
+        "               WHERE file_id = media_file.id) AS tagged "
         "FROM media_file WHERE id IN (";
     for (size_t i = 0; i < scored.size(); ++i) {
         sql += (i == 0 ? "?" : ",?");
@@ -311,6 +313,7 @@ std::vector<QueryResult> hydrate(sqlite3* db,
                 }
             }
         }
+        r.tagged = sqlite3_column_int(stmt, 12) != 0;
         byId.emplace(r.fileId, std::move(r));
     }
     sqlite3_finalize(stmt);
@@ -339,7 +342,9 @@ std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit,
         " display_name IS NOT NULL OR EXISTS (SELECT 1 FROM media_tag "
         " WHERE file_id = media_file.id AND source_model = 'user')) AS user_edited, "
         "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
-        "        WHERE file_id = media_file.id) AS tags "
+        "        WHERE file_id = media_file.id) AS tags, "
+        "       EXISTS (SELECT 1 FROM media_embedding "
+        "               WHERE file_id = media_file.id) AS tagged "
         "FROM media_file WHERE " +
         w.clause + " ORDER BY indexed_at DESC LIMIT ? OFFSET ?";
 
@@ -381,6 +386,7 @@ std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit,
                 }
             }
         }
+        r.tagged = sqlite3_column_int(stmt, 12) != 0;
         r.score = std::numeric_limits<float>::quiet_NaN();
         out.push_back(std::move(r));
     }

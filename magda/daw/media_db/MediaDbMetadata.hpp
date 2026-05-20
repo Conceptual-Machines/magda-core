@@ -48,6 +48,16 @@ struct EditableMediaRow {
     std::vector<std::string> tags;
 };
 
+struct BulkEditableMediaUpdate {
+    std::optional<std::string> family;
+    std::optional<std::string> shape;
+    std::optional<double> bpm;
+    std::optional<std::string> keyRoot;
+    std::optional<std::string> keyScale;
+    std::optional<double> durationS;
+    std::optional<std::vector<std::string>> tags;
+};
+
 // Look up a file by absolute path. Returns nullopt if the file isn't in
 // the media DB. Each field is COALESCE(user_override, detected) so the
 // caller gets a single effective value per property.
@@ -75,6 +85,9 @@ void setUserKeyRoot(MediaDatabase& db, const std::filesystem::path& path,
                                                                   std::int64_t fileId);
 
 bool updateEditableMediaRow(MediaDatabase& db, const EditableMediaRow& row);
+
+int updateEditableMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds,
+                            const BulkEditableMediaUpdate& update);
 
 int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds);
 
