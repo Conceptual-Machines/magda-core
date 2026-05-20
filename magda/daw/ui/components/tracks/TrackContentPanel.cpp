@@ -3,6 +3,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <cmath>
 #include <functional>
 
 #include "../../panels/state/PanelController.hpp"
@@ -22,6 +23,69 @@
 #include "project/ProjectManager.hpp"
 
 namespace magda {
+
+namespace {
+
+bool isDraggedAudioFile(const juce::String& path) {
+    return path.endsWithIgnoreCase(".wav") || path.endsWithIgnoreCase(".aiff") ||
+           path.endsWithIgnoreCase(".aif") || path.endsWithIgnoreCase(".mp3") ||
+           path.endsWithIgnoreCase(".ogg") || path.endsWithIgnoreCase(".flac");
+}
+
+bool isDraggedMidiFile(const juce::String& path) {
+    return path.endsWithIgnoreCase(".mid") || path.endsWithIgnoreCase(".midi");
+}
+
+std::vector<FileDropGhost> makeMidiDropGhosts(const juce::File& midiFile, double tempoBPM) {
+    std::vector<FileDropGhost> ghosts;
+
+    juce::OwnedArray<tracktion::MidiList> lists;
+    juce::Array<tracktion::BeatPosition> tempoChangeBeatNumbers;
+    juce::Array<double> bpms;
+    juce::Array<int> numerators, denominators;
+    tracktion::BeatDuration songLength;
+
+    const bool ok = tracktion::MidiList::readSeparateTracksFromFile(
+        midiFile, lists, tempoChangeBeatNumbers, bpms, numerators, denominators, songLength, false);
+    if (!ok || lists.isEmpty()) {
+        ghosts.push_back({midiFile.getFileNameWithoutExtension(), 4.0});
+        return ghosts;
+    }
+
+    const double tempo = isValidBpm(tempoBPM) ? tempoBPM : DEFAULT_BPM;
+    int beatsPerBar = 4;
+    if (!numerators.isEmpty() && numerators[0] > 0)
+        beatsPerBar = numerators[0];
+
+    for (int listIdx = 0; listIdx < lists.size(); ++listIdx) {
+        auto* list = lists[listIdx];
+        if (list == nullptr || (list->getNumNotes() == 0 && list->getNumControllerEvents() == 0))
+            continue;
+
+        double lengthBeats = songLength.inBeats();
+        if (lengthBeats <= 0.0)
+            lengthBeats = list->getLastBeatNumber().inBeats();
+        if (lengthBeats <= 0.0)
+            lengthBeats = 4.0;
+
+        lengthBeats = std::ceil(lengthBeats / beatsPerBar) * beatsPerBar;
+
+        juce::String name = list->getImportedFileName();
+        if (name.isEmpty())
+            name = midiFile.getFileNameWithoutExtension();
+        if (lists.size() > 1)
+            name += " " + juce::String(listIdx + 1);
+
+        ghosts.push_back({name, lengthBeats * 60.0 / tempo});
+    }
+
+    if (ghosts.empty())
+        ghosts.push_back({midiFile.getFileNameWithoutExtension(), 4.0});
+
+    return ghosts;
+}
+
+}  // namespace
 
 TrackContentPanel::TrackContentPanel() {
     // Load configuration values, converting bars → seconds at default tempo
@@ -343,12 +407,12 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
             g.setColour(juce::Colours::yellow.withAlpha(0.8f));
             g.drawLine(static_cast<float>(dropX), static_cast<float>(trackY),
                        static_cast<float>(dropX), static_cast<float>(trackY + trackHeight), 2.0f);
-        } else if (!draggedAudioFiles_.isEmpty()) {
-            // Dropping audio on empty area — ghost one clip preview per audio
-            // file, each on its own phantom track row below the existing tracks.
+        } else if (!fileDropGhosts_.empty()) {
+            // Dropping files on empty area: ghost one clip preview per imported
+            // clip, each on its own phantom track row below the existing tracks.
             // The ghost starts at the drop insertion time (never before it) and
-            // its width matches the sample duration so the user can judge layout.
-            const int numGhosts = draggedAudioFiles_.size();
+            // its width matches the file duration so the user can judge layout.
+            const int numGhosts = static_cast<int>(fileDropGhosts_.size());
             const int topY = getTotalTracksHeight();
             const int ghostHeight = DEFAULT_TRACK_HEIGHT;
             const int baseIndex = TrackManager::getInstance().getNumTracks();
@@ -359,10 +423,8 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
 
                 const auto tint = juce::Colour(Config::getDefaultColour(baseIndex + i));
 
-                // Ghost clip: starts at dropX, width derived from sample duration.
-                double duration = (i < static_cast<int>(draggedAudioDurations_.size()))
-                                      ? draggedAudioDurations_[i]
-                                      : 4.0;
+                // Ghost clip: starts at dropX, width derived from file duration.
+                double duration = fileDropGhosts_[static_cast<size_t>(i)].durationSeconds;
                 int clipEndX = timeToPixel(dropInsertTime_ + duration);
                 int clipW = juce::jmax(4, clipEndX - dropX);
 
@@ -372,7 +434,7 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
                 g.setColour(tint.withAlpha(0.9f));
                 g.drawRect(clipRect, 1);
 
-                auto name = juce::File(draggedAudioFiles_[i]).getFileNameWithoutExtension();
+                const auto name = fileDropGhosts_[static_cast<size_t>(i)].name;
                 g.setColour(tint.brighter(0.3f));
                 g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
                 g.drawFittedText(name, clipRect.reduced(6, 4), juce::Justification::centredLeft, 1);
@@ -2804,10 +2866,7 @@ void TrackContentPanel::updateAutomationLanePositions() {
 
 bool TrackContentPanel::isInterestedInFileDrag(const juce::StringArray& files) {
     for (const auto& file : files) {
-        if (file.endsWithIgnoreCase(".wav") || file.endsWithIgnoreCase(".aiff") ||
-            file.endsWithIgnoreCase(".aif") || file.endsWithIgnoreCase(".mp3") ||
-            file.endsWithIgnoreCase(".ogg") || file.endsWithIgnoreCase(".flac") ||
-            file.endsWithIgnoreCase(".mid") || file.endsWithIgnoreCase(".midi")) {
+        if (isDraggedAudioFile(file) || isDraggedMidiFile(file)) {
             return true;
         }
     }
@@ -2821,16 +2880,11 @@ void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int
     }
     dropTargetTrackIndex_ = getTrackIndexAtY(y);
 
-    draggedAudioFiles_.clear();
-    draggedAudioDurations_.clear();
+    fileDropGhosts_.clear();
     juce::AudioFormatManager formatMgr;
     formatMgr.registerBasicFormats();
     for (const auto& f : files) {
-        if (f.endsWithIgnoreCase(".wav") || f.endsWithIgnoreCase(".aiff") ||
-            f.endsWithIgnoreCase(".aif") || f.endsWithIgnoreCase(".mp3") ||
-            f.endsWithIgnoreCase(".ogg") || f.endsWithIgnoreCase(".flac")) {
-            draggedAudioFiles_.add(f);
-
+        if (isDraggedAudioFile(f)) {
             double duration = 4.0;
             juce::File audioFile(f);
             if (auto reader = std::unique_ptr<juce::AudioFormatReader>(
@@ -2838,19 +2892,22 @@ void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int
                 if (reader->sampleRate > 0.0)
                     duration = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
             }
-            draggedAudioDurations_.push_back(duration);
+            fileDropGhosts_.push_back({audioFile.getFileNameWithoutExtension(), duration});
+        } else if (isDraggedMidiFile(f)) {
+            auto midiGhosts = makeMidiDropGhosts(juce::File(f), tempoBPM);
+            fileDropGhosts_.insert(fileDropGhosts_.end(), midiGhosts.begin(), midiGhosts.end());
         }
     }
 
     showDropIndicator_ = true;
 
-    // Fire ghost-header callback: one phantom header per audio file when the
+    // Fire ghost-header callback: one phantom header per imported clip when the
     // drop would spawn new tracks (i.e. empty area).
     if (onGhostHeadersChanged) {
         juce::StringArray labels;
         if (dropTargetTrackIndex_ < 0) {
-            for (const auto& f : draggedAudioFiles_)
-                labels.add(juce::File(f).getFileNameWithoutExtension());
+            for (const auto& ghost : fileDropGhosts_)
+                labels.add(ghost.name);
         }
         onGhostHeadersChanged(labels);
     }
@@ -2870,8 +2927,8 @@ void TrackContentPanel::fileDragMove(const juce::StringArray& /*files*/, int x, 
     if (onGhostHeadersChanged && (prevTarget < 0) != (dropTargetTrackIndex_ < 0)) {
         juce::StringArray labels;
         if (dropTargetTrackIndex_ < 0) {
-            for (const auto& f : draggedAudioFiles_)
-                labels.add(juce::File(f).getFileNameWithoutExtension());
+            for (const auto& ghost : fileDropGhosts_)
+                labels.add(ghost.name);
         }
         onGhostHeadersChanged(labels);
     }
@@ -2881,8 +2938,7 @@ void TrackContentPanel::fileDragMove(const juce::StringArray& /*files*/, int x, 
 
 void TrackContentPanel::fileDragExit(const juce::StringArray& /*files*/) {
     showDropIndicator_ = false;
-    draggedAudioFiles_.clear();
-    draggedAudioDurations_.clear();
+    fileDropGhosts_.clear();
     if (onGhostHeadersChanged)
         onGhostHeadersChanged({});
     repaintVisible();
@@ -2890,8 +2946,7 @@ void TrackContentPanel::fileDragExit(const juce::StringArray& /*files*/) {
 
 void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int y) {
     showDropIndicator_ = false;
-    draggedAudioFiles_.clear();
-    draggedAudioDurations_.clear();
+    fileDropGhosts_.clear();
     if (onGhostHeadersChanged)
         onGhostHeadersChanged({});
     repaintVisible();

@@ -298,6 +298,31 @@ void ClipInspector::updateFromSelectedClip() {
             clipBeatsUnitLabel_.setVisible(false);
         }
 
+        // Show key controls for audio clips. Mirror the clip's source
+        // interpretation root into the combo; empty = "--" (unknown).
+        if (showAudioProps && !isMulti) {
+            const auto& root = clip->audio().interpretation.keyRoot;
+            int rootId = 1;
+            static constexpr const char* kRoots[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                                     "F#", "G",  "G#", "A",  "A#", "B"};
+            for (int i = 0; i < 12; ++i) {
+                if (root == kRoots[i]) {
+                    rootId = i + 2;
+                    break;
+                }
+            }
+            clipKeyRootCombo_.setSelectedId(rootId, juce::dontSendNotification);
+            clipKeyLabel_.setVisible(true);
+            clipKeyRootCombo_.setVisible(true);
+            saveLibraryButton_.setVisible(true);
+            saveLibraryButton_.setEnabled(
+                magda::ClipManager::getInstance().canSaveClipToLibrary(pid));
+        } else {
+            clipKeyLabel_.setVisible(false);
+            clipKeyRootCombo_.setVisible(false);
+            saveLibraryButton_.setVisible(false);
+        }
+
         // Get tempo from TimelineController, fallback to 120 BPM if not available
         double bpm = 120.0;
         int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
@@ -626,6 +651,9 @@ void ClipInspector::showClipControls(bool show) {
         if (clipStretchValue_)
             clipStretchValue_->setVisible(false);
         stretchModeCombo_.setVisible(false);
+        clipKeyLabel_.setVisible(false);
+        clipKeyRootCombo_.setVisible(false);
+        saveLibraryButton_.setVisible(false);
         launchModeLabel_.setVisible(false);
         launchModeCombo_.setVisible(false);
         launchQuantizeLabel_.setVisible(false);

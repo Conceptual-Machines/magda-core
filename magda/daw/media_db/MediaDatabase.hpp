@@ -19,7 +19,7 @@ namespace magda::media {
 // On open we assert PRAGMA user_version matches; mismatch means the file
 // was written by a different version of MAGDA and the user must rebuild
 // the cache (the DB is rebuildable, files are source of truth).
-inline constexpr int kSchemaVersion = 4;
+inline constexpr int kSchemaVersion = 7;
 
 class MediaDatabaseError : public std::runtime_error {
   public:

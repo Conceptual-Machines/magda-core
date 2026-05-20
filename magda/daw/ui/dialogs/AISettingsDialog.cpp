@@ -1188,7 +1188,7 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
         progressBar_.setVisible(false);
         addAndMakeVisible(progressBar_);
 
-        actionButton_.setButtonText("Download Sample Tagger");
+        actionButton_.setButtonText("Download Sample Analyzer");
         actionButton_.onClick = [this]() { handleActionClick(); };
         addAndMakeVisible(actionButton_);
 
@@ -1265,7 +1265,7 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
 
         if (installed) {
             statusLabel_.setText(
-                juce::String("Sample Tagger is installed (") +
+                juce::String("Sample Analyzer is installed (") +
                     (loaded ? "loaded in memory" : "not loaded - first query will load it") +
                     ").\n\nThis enables text search ('warm pad', 'kick 808'...) over your indexed "
                     "sample library. Click Remove to free disk space if you don't use text "
@@ -1277,11 +1277,11 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
             const auto totalMb =
                 magda::media::SampleTaggerDownloader::expectedTotalBytes() / (1024.0 * 1024.0);
             statusLabel_.setText(
-                "Sample Tagger is not installed.\n\nDownload (~" + juce::String(totalMb, 0) +
+                "Sample Analyzer is not installed.\n\nDownload (~" + juce::String(totalMb, 0) +
                     " MB) to enable text search over indexed samples. Without it, the media "
                     "library still supports filename / tag / family filtering.",
                 juce::dontSendNotification);
-            actionButton_.setButtonText("Download Sample Tagger");
+            actionButton_.setButtonText("Download Sample Analyzer");
             progressBar_.setVisible(false);
         }
         actionButton_.setEnabled(true);
@@ -1319,7 +1319,7 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
         const auto currentDir = juce::File(
             juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string()));
         fileChooser_ = std::make_unique<juce::FileChooser>(
-            "Choose a folder for the Sample Tagger models",
+            "Choose a folder for the Sample Analyzer models",
             currentDir.exists() ? currentDir
                                 : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
         fileChooser_->launchAsync(juce::FileBrowserComponent::openMode |
@@ -1443,7 +1443,7 @@ AISettingsDialog::AISettingsDialog() {
     tabbedComponent_.addTab("Cloud", tabBg, cloudPage_.get(), false);
     tabbedComponent_.addTab("Local", tabBg, localPage_.get(), false);
     tabbedComponent_.addTab("Config", tabBg, configPage_.get(), false);
-    tabbedComponent_.addTab("Sample Tagger", tabBg, samplePage_.get(), false);
+    tabbedComponent_.addTab("Sample Analyzer", tabBg, samplePage_.get(), false);
 
     // Refresh config combos when switching to Config tab
     tabbedComponent_.onTabChanged = [this](int tabIndex) {

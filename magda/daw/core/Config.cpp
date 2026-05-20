@@ -176,6 +176,7 @@ void Config::save() {
     root->setProperty("browserLastView", toJuceString(browserLastView));
     root->setProperty("sampleTaggerModelsDir", toJuceString(sampleTaggerModelsDir));
     root->setProperty("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
+    root->setProperty("mediaDbDir", toJuceString(mediaDbDir));
 
     juce::Array<juce::var> favArray;
     for (const auto& f : browserFavorites)
@@ -539,6 +540,7 @@ void Config::load() {
     browserLastView = getString("browserLastView", browserLastView);
     sampleTaggerModelsDir = getString("sampleTaggerModelsDir", sampleTaggerModelsDir);
     loadSampleTaggerOnStartup = getBool("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
+    mediaDbDir = getString("mediaDbDir", mediaDbDir);
     browserFavorites = getStringArray("browserFavorites");
 
     // Auto-update check

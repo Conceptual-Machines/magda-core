@@ -7,18 +7,25 @@
 
 #include <sqlite3.h>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <random>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "../magda/daw/media_db/MediaDatabase.hpp"
+#include "../magda/daw/media_db/MediaDbMetadata.hpp"
 #include "../magda/daw/media_db/Schema.hpp"
 
+using Catch::Approx;
 using magda::media::kSchemaVersion;
 using magda::media::MediaDatabase;
 using magda::media::MediaDatabaseError;
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -34,6 +41,26 @@ std::set<std::string> listTables(sqlite3* db) {
     sqlite3_finalize(stmt);
     return names;
 }
+
+class TempDir {
+  public:
+    TempDir() {
+        path_ = fs::temp_directory_path() /
+                ("magda_media_db_metadata_test_" + std::to_string(std::random_device{}()));
+        fs::create_directories(path_);
+    }
+    ~TempDir() {
+        std::error_code ec;
+        fs::remove_all(path_, ec);
+    }
+
+    [[nodiscard]] const fs::path& path() const {
+        return path_;
+    }
+
+  private:
+    fs::path path_;
+};
 
 }  // namespace
 
@@ -177,4 +204,171 @@ TEST_CASE("Transaction commits on commit()", "[media_db][txn]") {
     REQUIRE(sqlite3_step(count) == SQLITE_ROW);
     REQUIRE(sqlite3_column_int(count, 0) == 1);
     sqlite3_finalize(count);
+}
+
+TEST_CASE("User metadata save marks indexed file and round-trips warp markers",
+          "[media_db][metadata]") {
+    MediaDatabase db(":memory:");
+    db.execute("INSERT INTO media_file "
+               "(path, kind, format, size_bytes, mtime_ns, indexed_at) "
+               "VALUES ('sample.wav', 'audio', 'wav', 0, 0, 0)");
+
+    REQUIRE(magda::media::isFileIndexed(db, "sample.wav"));
+
+    std::vector<magda::media::WarpMarkerMetadata> markers{{0.0, 0.0}, {1.5, 2.0}};
+    REQUIRE(magda::media::saveUserMetadata(db, "sample.wav", 128.0, std::string("D"), 16.0, true,
+                                           markers));
+
+    auto savedMarkers = magda::media::getUserWarpMarkers(db, "sample.wav");
+    REQUIRE(savedMarkers);
+    REQUIRE(savedMarkers->size() == 2);
+    REQUIRE((*savedMarkers)[1].sourceSec == Approx(1.5));
+    REQUIRE((*savedMarkers)[1].beat == Approx(2.0));
+
+    auto effective = magda::media::getEffectiveMetadata(db, "sample.wav");
+    REQUIRE(effective);
+    REQUIRE(effective->bpm);
+    REQUIRE(*effective->bpm == Approx(128.0));
+    REQUIRE(effective->totalBeats);
+    REQUIRE(*effective->totalBeats == Approx(16.0));
+    REQUIRE(effective->beatMode);
+    REQUIRE(*effective->beatMode);
+
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(),
+                               "SELECT bpm_user, key_root_user, total_beats_user, beat_mode_user, "
+                               "warp_markers_json IS NOT NULL "
+                               "FROM media_file WHERE path='sample.wav'",
+                               -1, &stmt, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_double(stmt, 0) == Approx(128.0));
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))) == "D");
+    REQUIRE(sqlite3_column_double(stmt, 2) == Approx(16.0));
+    REQUIRE(sqlite3_column_int(stmt, 3) == 1);
+    REQUIRE(sqlite3_column_int(stmt, 4) == 1);
+    sqlite3_finalize(stmt);
+}
+
+TEST_CASE("User metadata read does not promote scanner values to saved clip props",
+          "[media_db][metadata]") {
+    MediaDatabase db(":memory:");
+    db.execute("INSERT INTO media_file "
+               "(path, kind, format, size_bytes, mtime_ns, indexed_at, bpm, key_root) "
+               "VALUES ('detected.wav', 'audio', 'wav', 0, 0, 0, 172.0, 'A')");
+
+    auto effective = magda::media::getEffectiveMetadata(db, "detected.wav");
+    REQUIRE(effective);
+    REQUIRE(effective->bpm);
+    REQUIRE(*effective->bpm == Approx(172.0));
+    REQUIRE(effective->keyRoot);
+    REQUIRE(*effective->keyRoot == "A");
+
+    auto saved = magda::media::getUserMetadata(db, "detected.wav");
+    REQUIRE(saved);
+    REQUIRE_FALSE(saved->bpm);
+    REQUIRE_FALSE(saved->keyRoot);
+    REQUIRE_FALSE(saved->totalBeats);
+    REQUIRE_FALSE(saved->beatMode);
+}
+
+TEST_CASE("Editable media rows update display fields and delete cleanly", "[media_db][metadata]") {
+    MediaDatabase db(":memory:");
+    db.execute("INSERT INTO media_file "
+               "(path, kind, format, size_bytes, mtime_ns, indexed_at, family, shape) "
+               "VALUES ('sample.wav', 'audio', 'wav', 0, 0, 0, 'unknown', 'unknown')");
+
+    auto row = magda::media::getEditableMediaRow(db, 1);
+    REQUIRE(row);
+    row->displayName = std::string("Renamed Break");
+    row->family = "drum";
+    row->shape = "loop";
+    row->bpm = 172.0;
+    row->keyRoot = std::string("F#");
+    row->keyScale = std::string("maj");
+    row->durationS = 6.5;
+    row->tags = {"breakbeat", "amen"};
+    REQUIRE(magda::media::updateEditableMediaRow(db, *row));
+
+    auto edited = magda::media::getEditableMediaRow(db, 1);
+    REQUIRE(edited);
+    REQUIRE(edited->displayName == std::optional<std::string>("Renamed Break"));
+    REQUIRE(edited->family == "drum");
+    REQUIRE(edited->shape == "loop");
+    REQUIRE(edited->bpm == Approx(172.0));
+    REQUIRE(edited->keyRoot == std::optional<std::string>("F#"));
+    REQUIRE(edited->keyScale == std::optional<std::string>("maj"));
+    REQUIRE(edited->durationS == Approx(6.5));
+    REQUIRE(edited->tags.size() == 2);
+
+    sqlite3_stmt* fts = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(),
+                               "SELECT rowid FROM media_fts WHERE media_fts MATCH 'renamed'", -1,
+                               &fts, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(fts) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_int64(fts, 0) == 1);
+    sqlite3_finalize(fts);
+
+    REQUIRE(magda::media::deleteMediaRows(db, {1}) == 1);
+    sqlite3_stmt* count = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT COUNT(*) FROM media_file", -1, &count,
+                               nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(count) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_int(count, 0) == 0);
+    sqlite3_finalize(count);
+
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT COUNT(*) FROM media_fts", -1, &count,
+                               nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(count) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_int(count, 0) == 0);
+    sqlite3_finalize(count);
+}
+
+TEST_CASE("Duplicate file path cleanup removes rows pointing to the same physical file",
+          "[media_db][metadata]") {
+    TempDir dir;
+    const auto original = dir.path() / "break.wav";
+    const auto alias = dir.path() / "break-alias.wav";
+    {
+        std::ofstream out(original);
+        out << "same audio bytes";
+    }
+    std::error_code ec;
+    fs::create_hard_link(original, alias, ec);
+    if (ec) {
+        SUCCEED("filesystem does not allow hard links in this test location");
+        return;
+    }
+
+    MediaDatabase db(":memory:");
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(),
+                               "INSERT INTO media_file "
+                               "(path, kind, format, size_bytes, mtime_ns, indexed_at, bpm_user) "
+                               "VALUES (?, 'audio', 'wav', 16, 1, ?, ?)",
+                               -1, &stmt, nullptr) == SQLITE_OK);
+    const auto originalText = original.string();
+    const auto aliasText = alias.string();
+    sqlite3_bind_text(stmt, 1, originalText.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, 10);
+    sqlite3_bind_double(stmt, 3, 172.0);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+
+    sqlite3_bind_text(stmt, 1, aliasText.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, 20);
+    sqlite3_bind_null(stmt, 3);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+
+    REQUIRE(magda::media::removeDuplicateFilePathRows(db) == 1);
+
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT path, bpm_user FROM media_file", -1, &stmt,
+                               nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))) ==
+            originalText);
+    REQUIRE(sqlite3_column_double(stmt, 1) == Approx(172.0));
+    REQUIRE(sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
 }

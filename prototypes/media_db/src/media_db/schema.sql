@@ -3,7 +3,7 @@
 
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
-PRAGMA user_version = 3;
+PRAGMA user_version = 7;
 
 CREATE TABLE IF NOT EXISTS media_file (
     id              INTEGER PRIMARY KEY,
@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS media_file (
     mtime_ns        INTEGER NOT NULL,                  -- ns since epoch
     content_hash    BLOB,                              -- xxh64 raw 8-byte LE
     indexed_at      INTEGER NOT NULL,                  -- s since epoch
+    display_name    TEXT,
 
     -- audio-only columns (NULL otherwise)
     duration_s          REAL,
@@ -27,6 +28,14 @@ CREATE TABLE IF NOT EXISTS media_file (
     spectral_flatness   REAL,                          -- [0,1]; high = noisy/percussive
     transient_density   REAL,                          -- onsets per second
     key_confidence      REAL,                          -- chroma-profile correlation peak [0,1]
+
+    -- User overrides (NULL = no override).
+    bpm_user            REAL,
+    key_root_user       TEXT,
+    key_scale_user      TEXT,
+    total_beats_user    REAL,
+    beat_mode_user      INTEGER CHECK (beat_mode_user IN (0, 1)),
+    warp_markers_json   TEXT,
 
     -- Derived categorical labels (computed by indexer from features + tags).
     shape               TEXT CHECK (shape  IN ('one-shot','loop','sustained','unknown')),

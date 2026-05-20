@@ -10,6 +10,8 @@
 #include "TempoUtils.hpp"
 #include "TrackManager.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "media_db/MediaDbContext.hpp"
+#include "media_db/MediaDbIndexer.hpp"
 #include "media_db/MediaDbMetadata.hpp"
 
 namespace magda {
@@ -113,6 +115,40 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
     clip.loopStart = 0.0;
     clip.setLoopLengthFromTimeline(clip.getTimelineLength(bpm));
 
+    // Scanner output in the media DB is a hint, but user-saved source
+    // interpretation is explicit library metadata and should restore when the
+    // same file is imported again.
+    std::optional<magda::media::EffectiveMetadata> savedMetadata;
+    if (audioFilePath.isNotEmpty() && juce::File(audioFilePath).existsAsFile()) {
+        savedMetadata = magda::media::getUserMetadataForFile(
+            std::filesystem::path(audioFilePath.toStdString()));
+        if (savedMetadata) {
+            if (savedMetadata->bpm && isValidBpm(*savedMetadata->bpm)) {
+                clip.audio().interpretation.bpm = *savedMetadata->bpm;
+            }
+            if (savedMetadata->totalBeats && *savedMetadata->totalBeats > 0.0) {
+                clip.audio().interpretation.totalBeats = *savedMetadata->totalBeats;
+                clip.audio().interpretation.totalBeatsLocked = true;
+            }
+            if (savedMetadata->keyRoot && !savedMetadata->keyRoot->empty()) {
+                clip.audio().interpretation.keyRoot = *savedMetadata->keyRoot;
+            }
+            if (savedMetadata->keyScale && !savedMetadata->keyScale->empty()) {
+                clip.audio().interpretation.keyScale = *savedMetadata->keyScale;
+            }
+        }
+        const auto savedMarkers = magda::media::getUserWarpMarkersForFile(
+            std::filesystem::path(audioFilePath.toStdString()));
+        if (savedMarkers) {
+            clip.warpMarkers.clear();
+            clip.warpMarkers.reserve(savedMarkers->size());
+            for (const auto& marker : *savedMarkers) {
+                clip.warpMarkers.push_back({marker.sourceSec, marker.beat});
+            }
+            clip.warpEnabled = true;
+        }
+    }
+
     if (view == ClipView::Arrangement) {
         clips_[clip.id] = clip;
     } else {
@@ -125,6 +161,21 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         clips_[clip.id] = clip;
     }
 
+    if (savedMetadata && savedMetadata->beatMode) {
+        auto& savedClip = clips_[clip.id];
+        savedClip.autoTempo = *savedMetadata->beatMode;
+        if (savedClip.autoTempo) {
+            savedClip.loopEnabled = true;
+            savedClip.analogPitch = false;
+            savedClip.speedRatio = 1.0;
+            if (savedClip.audio().interpretation.totalBeats > 0.0 &&
+                savedClip.loopLengthBeats <= 0.0) {
+                savedClip.loopLengthBeats = savedClip.audio().interpretation.totalBeats;
+            }
+            savedClip.deriveTimesFromBeats(bpm);
+        }
+    }
+
     addToSessionSlotIndex(clips_[clip.id]);
     if (view == ClipView::Arrangement)
         resolveOverlaps(clip.id);
@@ -133,7 +184,7 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
     // Tracktion loopInfo is authoritative when it carries real file metadata,
     // but it can also report project-default values for freshly inserted clips.
     // Run audio analysis as a fallback and let it replace only unset/defaulted
-    // source interpretation values.
+    // source interpretation values. Session-only.
     if (view == ClipView::Session && audioFilePath.isNotEmpty() &&
         juce::File(audioFilePath).existsAsFile()) {
         ClipId cid = clip.id;
@@ -153,12 +204,6 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
                 if (thumb->getTotalLength() > 0.0)
                     fileDuration = thumb->getTotalLength();
             }
-            // Fall back to the clip's own source extent (loopLength, set by
-            // createAudioClip from the user-passed length parameter, or the
-            // timeline-derived length for non-looped clips). This mirrors
-            // seedSourceMetadataFromCachedDetection's behaviour for the
-            // arrangement path and matches the contract createAudioClip used
-            // to satisfy by writing source.durationSeconds = length directly.
             if (fileDuration <= 0.0)
                 fileDuration = c->getSourceLength(creationProjectBPM);
 
@@ -175,18 +220,6 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
             double live = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
             mgr.applyAudioClipBeats(cid, u, live);
         };
-
-        // Media DB takes precedence: if the file has been indexed, use the
-        // effective BPM (user override > scanner-detected) so dropped
-        // samples land with the BPM the user has already accepted or
-        // edited. Falls through to the live BPM-detection pipeline for
-        // un-indexed files.
-        auto dbMetadata = magda::media::getEffectiveMetadataForFile(
-            std::filesystem::path(audioFilePath.toStdString()));
-        if (dbMetadata && dbMetadata->bpm && *dbMetadata->bpm > 0.0) {
-            applyDetectedBPM(*dbMetadata->bpm);
-            return clip.id;
-        }
 
         auto& thumbs = AudioThumbnailManager::getInstance();
         const double cachedBPM = thumbs.getCachedBPM(audioFilePath);
@@ -1028,6 +1061,87 @@ void ClipManager::recordUserBpm(ClipId clipId, double bpm) {
         return;
     }
     magda::media::setUserBpmForFile(std::filesystem::path(filePath.toStdString()), bpm);
+}
+
+void ClipManager::recordUserKey(ClipId clipId, const std::string& root) {
+    const auto* clip = getClip(clipId);
+    if (clip == nullptr || !clip->isAudio()) {
+        return;
+    }
+    const auto& filePath = clip->audio().source.filePath;
+    if (filePath.isEmpty()) {
+        return;
+    }
+    std::optional<std::string> rootOpt;
+    if (!root.empty()) {
+        rootOpt = root;
+    }
+    magda::media::setUserKeyRootForFile(std::filesystem::path(filePath.toStdString()), rootOpt);
+}
+
+bool ClipManager::canSaveClipToLibrary(ClipId clipId) const {
+    const auto* clip = getClip(clipId);
+    if (clip == nullptr || !clip->isAudio()) {
+        return false;
+    }
+    const auto& filePath = clip->audio().source.filePath;
+    if (filePath.isEmpty()) {
+        return false;
+    }
+    return juce::File(filePath).existsAsFile();
+}
+
+bool ClipManager::saveClipToLibrary(ClipId clipId,
+                                    std::optional<std::vector<ClipInfo::WarpMarker>> warpMarkers) {
+    const auto* clip = getClip(clipId);
+    if (clip == nullptr || !clip->isAudio()) {
+        return false;
+    }
+    const auto& filePath = clip->audio().source.filePath;
+    if (filePath.isEmpty()) {
+        return false;
+    }
+    const auto path = std::filesystem::path(filePath.toStdString());
+    if (!magda::media::isFileIndexed(path)) {
+        auto& ctx = magda::media::MediaDbContext::getInstance();
+        if (!ctx.ensureInitialized()) {
+            return false;
+        }
+        magda::media::MediaDbIndexer indexer(ctx.db(), nullptr);
+        const auto stats = indexer.indexFile(path, magda::media::MediaDbIndexer::Mode::ForceAll);
+        if (stats.inserted + stats.updated + stats.skipped <= 0) {
+            return false;
+        }
+    }
+
+    std::optional<double> bpm;
+    if (isValidBpm(clip->audio().interpretation.bpm)) {
+        bpm = clip->audio().interpretation.bpm;
+    }
+    std::optional<double> totalBeats;
+    if (clip->audio().interpretation.totalBeats > 0.0) {
+        totalBeats = clip->audio().interpretation.totalBeats;
+    }
+    const std::optional<bool> beatMode = clip->autoTempo;
+
+    std::optional<std::string> keyRoot;
+    if (!clip->audio().interpretation.keyRoot.empty()) {
+        keyRoot = clip->audio().interpretation.keyRoot;
+    }
+
+    std::optional<std::vector<magda::media::WarpMarkerMetadata>> mediaMarkers;
+    if (clip->warpEnabled) {
+        const auto& sourceMarkers = warpMarkers ? *warpMarkers : clip->warpMarkers;
+        std::vector<magda::media::WarpMarkerMetadata> converted;
+        converted.reserve(sourceMarkers.size());
+        for (const auto& marker : sourceMarkers) {
+            converted.push_back({marker.sourceTime, marker.warpTime});
+        }
+        mediaMarkers = std::move(converted);
+    }
+
+    return magda::media::saveUserMetadataForFile(path, bpm, std::move(keyRoot), totalBeats,
+                                                 beatMode, std::move(mediaMarkers));
 }
 
 void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update,
