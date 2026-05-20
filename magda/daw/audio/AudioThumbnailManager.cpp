@@ -34,6 +34,14 @@ juce::AudioThumbnail* AudioThumbnailManager::getThumbnail(const juce::String& au
     return createThumbnail(audioFilePath);
 }
 
+void AudioThumbnailManager::removeThumbnailChangeListener(const juce::String& audioFilePath,
+                                                          juce::ChangeListener* listener) {
+    auto it = thumbnails_.find(audioFilePath);
+    if (it != thumbnails_.end()) {
+        it->second->removeChangeListener(listener);
+    }
+}
+
 juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String& audioFilePath) {
     // Validate file exists
     juce::File audioFile(audioFilePath);

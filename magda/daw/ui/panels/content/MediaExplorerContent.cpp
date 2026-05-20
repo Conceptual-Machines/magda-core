@@ -111,17 +111,11 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
 
     ~ThumbnailComponent() override {
         stopTimer();
-        if (currentThumbnail_ != nullptr) {
-            currentThumbnail_->removeChangeListener(this);
-        }
+        detachThumbnailListener();
     }
 
     void setFile(const juce::File& file) {
-        // Remove listener from old thumbnail
-        if (currentThumbnail_ != nullptr) {
-            currentThumbnail_->removeChangeListener(this);
-            currentThumbnail_ = nullptr;
-        }
+        detachThumbnailListener();
 
         currentFile_ = file;
         playbackPosition_ = 0.0;
@@ -131,10 +125,10 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
 
         // Get and listen to new thumbnail
         if (file.existsAsFile()) {
-            currentThumbnail_ =
-                magda::AudioThumbnailManager::getInstance().getThumbnail(file.getFullPathName());
-            if (currentThumbnail_ != nullptr) {
-                currentThumbnail_->addChangeListener(this);
+            currentThumbnailPath_ = file.getFullPathName();
+            if (auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                    currentThumbnailPath_)) {
+                thumbnail->addChangeListener(this);
             }
         }
 
@@ -260,8 +254,16 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
     }
 
   private:
+    void detachThumbnailListener() {
+        if (currentThumbnailPath_.isNotEmpty()) {
+            magda::AudioThumbnailManager::getInstance().removeThumbnailChangeListener(
+                currentThumbnailPath_, this);
+            currentThumbnailPath_.clear();
+        }
+    }
+
     juce::File currentFile_;
-    juce::AudioThumbnail* currentThumbnail_ = nullptr;
+    juce::String currentThumbnailPath_;
     juce::AudioTransportSource* transportSource_ = nullptr;
     double playbackPosition_ = 0.0;
     juce::String indexingStatus_;
