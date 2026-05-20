@@ -738,9 +738,12 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     // Opening SQLite + loading CLAP models can take seconds; doing it during
     // app startup would freeze the splash. setQueryText()/refresh() trigger
     // runSearch() lazily once the user enters library mode.
+    observedMediaRevision_ = magda::media::MediaDbContext::getInstance().mediaRevision();
+    startTimerHz(4);
 }
 
 MediaDbBrowserContent::~MediaDbBrowserContent() {
+    stopTimer();
     // Drain in-flight indexing jobs. removeAllJobs(true, ...) signals
     // cancellation and waits up to the timeout for the worker to exit.
     if (indexCancel_) {
@@ -834,6 +837,17 @@ void MediaDbBrowserContent::setQueryText(const juce::String& text) {
 
 void MediaDbBrowserContent::refresh() {
     restartSearch();
+}
+
+void MediaDbBrowserContent::timerCallback() {
+    const auto revision = magda::media::MediaDbContext::getInstance().mediaRevision();
+    if (revision == observedMediaRevision_) {
+        return;
+    }
+    observedMediaRevision_ = revision;
+    if (isShowing()) {
+        runSearch();
+    }
 }
 
 void MediaDbBrowserContent::restartSearch() {

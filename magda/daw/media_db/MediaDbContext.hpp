@@ -12,6 +12,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 
@@ -62,6 +63,8 @@ class MediaDbContext {
     // "library is empty" branch rather than first-time init. Returns
     // true on success.
     bool wipeAll();
+    [[nodiscard]] std::uint64_t mediaRevision() const noexcept;
+    void bumpMediaRevision() noexcept;
 
     // Force the singleton to release the open DB connection and forget
     // its initAttempted_ latch. Called by the Preferences UI when the
@@ -99,6 +102,7 @@ class MediaDbContext {
     // from preloadModels, or a worker triggering text-encoder load while
     // the indexer triggers audio-encoder load) all show as "loading".
     std::atomic<int> loadInProgress_{0};
+    std::atomic<std::uint64_t> mediaRevision_{0};
 };
 
 }  // namespace magda::media

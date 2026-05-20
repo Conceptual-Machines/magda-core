@@ -974,11 +974,23 @@ void ClipInspector::initClipPropertiesSection() {
     saveLibraryButton_.setButtonText("Save to library");
     saveLibraryButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     saveLibraryButton_.setTooltip(
-        "Save current clip BPM, key, and warp markers to the media library");
+        "Save current clip BPM, beats, BEAT mode, key, and warp markers to the media library");
     saveLibraryButton_.onClick = [this]() {
         auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
         if (clip == nullptr || !clip->isAudio()) {
             return;
+        }
+        const auto bpmText = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
+        const double displayedBpm = bpmText.getDoubleValue();
+        if (magda::isValidBpm(displayedBpm)) {
+            clip->audio().interpretation.bpm = displayedBpm;
+        }
+        if (clipBeatsLengthValue_ && clipBeatsLengthValue_->isVisible()) {
+            const double displayedBeats = clipBeatsLengthValue_->getValue();
+            if (displayedBeats > 0.0) {
+                clip->audio().interpretation.totalBeats = displayedBeats;
+                clip->audio().interpretation.totalBeatsLocked = true;
+            }
         }
 
         std::optional<std::vector<magda::ClipInfo::WarpMarker>> markers;
@@ -1000,8 +1012,14 @@ void ClipInspector::initClipPropertiesSection() {
 
         const bool saved = magda::ClipManager::getInstance().saveClipToLibrary(primaryClipId(),
                                                                                std::move(markers));
-        juce::ignoreUnused(saved);
         updateFromSelectedClip();
+        saveLibraryButton_.setButtonText(saved ? "Saved" : "Save failed");
+        juce::Timer::callAfterDelay(
+            1200, [safeThis = juce::Component::SafePointer<ClipInspector>(this)] {
+                if (safeThis != nullptr) {
+                    safeThis->saveLibraryButton_.setButtonText("Save to library");
+                }
+            });
     };
     clipPropsContainer_.addChildComponent(saveLibraryButton_);
 

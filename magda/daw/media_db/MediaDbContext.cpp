@@ -143,6 +143,14 @@ bool MediaDbContext::wipeAll() {
     return true;
 }
 
+std::uint64_t MediaDbContext::mediaRevision() const noexcept {
+    return mediaRevision_.load(std::memory_order_acquire);
+}
+
+void MediaDbContext::bumpMediaRevision() noexcept {
+    mediaRevision_.fetch_add(1, std::memory_order_acq_rel);
+}
+
 void MediaDbContext::resetForReopen() {
     audioEnc_.reset();
     textEnc_.reset();

@@ -142,6 +142,28 @@ TEST_CASE("indexer: skips unchanged files on rescan", "[media_db][indexer]") {
     REQUIRE(second.skipped == 1);
 }
 
+TEST_CASE("indexer: indexes one imported audio file", "[media_db][indexer]") {
+    TempDir dir;
+    const auto imported = dir.path() / "imported_128bpm.wav";
+    writeMonoWav(imported, 3.0, 100.0);
+
+    MediaDatabase db(":memory:");
+    MediaDbIndexer indexer(db, nullptr);
+    auto first = indexer.indexFile(imported);
+    REQUIRE(first.inserted == 1);
+    REQUIRE(first.updated == 0);
+    REQUIRE(first.skipped == 0);
+    REQUIRE(first.failed == 0);
+    REQUIRE(countRows(db.handle(), "SELECT COUNT(*) FROM media_file") == 1);
+
+    auto second = indexer.indexFile(imported, MediaDbIndexer::Mode::Incremental);
+    REQUIRE(second.inserted == 0);
+    REQUIRE(second.updated == 0);
+    REQUIRE(second.skipped == 1);
+    REQUIRE(second.failed == 0);
+    REQUIRE(countRows(db.handle(), "SELECT COUNT(*) FROM media_file") == 1);
+}
+
 TEST_CASE("indexer: walks recursively and respects file kinds", "[media_db][indexer]") {
     TempDir dir;
     writeMonoWav(dir.path() / "Drums" / "Kicks" / "kick_120bpm.wav", 0.4, 80.0);

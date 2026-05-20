@@ -192,7 +192,8 @@ TEST_CASE("User metadata save marks indexed file and round-trips warp markers",
     REQUIRE(magda::media::isFileIndexed(db, "sample.wav"));
 
     std::vector<magda::media::WarpMarkerMetadata> markers{{0.0, 0.0}, {1.5, 2.0}};
-    REQUIRE(magda::media::saveUserMetadata(db, "sample.wav", 128.0, std::string("D"), markers));
+    REQUIRE(magda::media::saveUserMetadata(db, "sample.wav", 128.0, std::string("D"), 16.0, true,
+                                           markers));
 
     auto savedMarkers = magda::media::getUserWarpMarkers(db, "sample.wav");
     REQUIRE(savedMarkers);
@@ -200,16 +201,50 @@ TEST_CASE("User metadata save marks indexed file and round-trips warp markers",
     REQUIRE((*savedMarkers)[1].sourceSec == Approx(1.5));
     REQUIRE((*savedMarkers)[1].beat == Approx(2.0));
 
+    auto effective = magda::media::getEffectiveMetadata(db, "sample.wav");
+    REQUIRE(effective);
+    REQUIRE(effective->bpm);
+    REQUIRE(*effective->bpm == Approx(128.0));
+    REQUIRE(effective->totalBeats);
+    REQUIRE(*effective->totalBeats == Approx(16.0));
+    REQUIRE(effective->beatMode);
+    REQUIRE(*effective->beatMode);
+
     sqlite3_stmt* stmt = nullptr;
     REQUIRE(sqlite3_prepare_v2(db.handle(),
-                               "SELECT bpm_user, key_root_user, warp_markers_json IS NOT NULL "
+                               "SELECT bpm_user, key_root_user, total_beats_user, beat_mode_user, "
+                               "warp_markers_json IS NOT NULL "
                                "FROM media_file WHERE path='sample.wav'",
                                -1, &stmt, nullptr) == SQLITE_OK);
     REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
     REQUIRE(sqlite3_column_double(stmt, 0) == Approx(128.0));
     REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))) == "D");
-    REQUIRE(sqlite3_column_int(stmt, 2) == 1);
+    REQUIRE(sqlite3_column_double(stmt, 2) == Approx(16.0));
+    REQUIRE(sqlite3_column_int(stmt, 3) == 1);
+    REQUIRE(sqlite3_column_int(stmt, 4) == 1);
     sqlite3_finalize(stmt);
+}
+
+TEST_CASE("User metadata read does not promote scanner values to saved clip props",
+          "[media_db][metadata]") {
+    MediaDatabase db(":memory:");
+    db.execute("INSERT INTO media_file "
+               "(path, kind, format, size_bytes, mtime_ns, indexed_at, bpm, key_root) "
+               "VALUES ('detected.wav', 'audio', 'wav', 0, 0, 0, 172.0, 'A')");
+
+    auto effective = magda::media::getEffectiveMetadata(db, "detected.wav");
+    REQUIRE(effective);
+    REQUIRE(effective->bpm);
+    REQUIRE(*effective->bpm == Approx(172.0));
+    REQUIRE(effective->keyRoot);
+    REQUIRE(*effective->keyRoot == "A");
+
+    auto saved = magda::media::getUserMetadata(db, "detected.wav");
+    REQUIRE(saved);
+    REQUIRE_FALSE(saved->bpm);
+    REQUIRE_FALSE(saved->keyRoot);
+    REQUIRE_FALSE(saved->totalBeats);
+    REQUIRE_FALSE(saved->beatMode);
 }
 
 TEST_CASE("Editable media rows update display fields and delete cleanly", "[media_db][metadata]") {

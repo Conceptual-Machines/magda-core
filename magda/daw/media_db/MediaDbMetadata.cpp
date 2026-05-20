@@ -69,7 +69,8 @@ std::optional<EffectiveMetadata> getEffectiveMetadata(MediaDatabase& db,
                                                       const std::filesystem::path& path) {
     static constexpr const char* kSql = "SELECT COALESCE(bpm_user, bpm), "
                                         "       COALESCE(key_root_user, key_root), "
-                                        "       COALESCE(key_scale_user, key_scale) "
+                                        "       COALESCE(key_scale_user, key_scale), "
+                                        "       total_beats_user, beat_mode_user "
                                         "FROM media_file WHERE path = ?";
 
     sqlite3_stmt* stmt = nullptr;
@@ -85,6 +86,39 @@ std::optional<EffectiveMetadata> getEffectiveMetadata(MediaDatabase& db,
         m.bpm = optDouble(stmt, 0);
         m.keyRoot = optString(stmt, 1);
         m.keyScale = optString(stmt, 2);
+        m.totalBeats = optDouble(stmt, 3);
+        if (sqlite3_column_type(stmt, 4) != SQLITE_NULL) {
+            m.beatMode = sqlite3_column_int(stmt, 4) != 0;
+        }
+        result = m;
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+std::optional<EffectiveMetadata> getUserMetadata(MediaDatabase& db,
+                                                 const std::filesystem::path& path) {
+    static constexpr const char* kSql = "SELECT bpm_user, key_root_user, key_scale_user, "
+                                        "       total_beats_user, beat_mode_user "
+                                        "FROM media_file WHERE path = ?";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db.handle(), kSql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return std::nullopt;
+    }
+    const std::string p = path.string();
+    sqlite3_bind_text(stmt, 1, p.c_str(), -1, SQLITE_TRANSIENT);
+
+    std::optional<EffectiveMetadata> result;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        EffectiveMetadata m;
+        m.bpm = optDouble(stmt, 0);
+        m.keyRoot = optString(stmt, 1);
+        m.keyScale = optString(stmt, 2);
+        m.totalBeats = optDouble(stmt, 3);
+        if (sqlite3_column_type(stmt, 4) != SQLITE_NULL) {
+            m.beatMode = sqlite3_column_int(stmt, 4) != 0;
+        }
         result = m;
     }
     sqlite3_finalize(stmt);
@@ -259,10 +293,12 @@ void setUserWarpMarkers(MediaDatabase& db, const std::filesystem::path& path,
 
 bool saveUserMetadata(MediaDatabase& db, const std::filesystem::path& path,
                       std::optional<double> bpm, std::optional<std::string> keyRoot,
+                      std::optional<double> totalBeats, std::optional<bool> beatMode,
                       std::optional<std::vector<WarpMarkerMetadata>> warpMarkers) {
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db.handle(),
                            "UPDATE media_file SET bpm_user = ?, key_root_user = ?, "
+                           "total_beats_user = ?, beat_mode_user = ?, "
                            "warp_markers_json = ? WHERE path = ?",
                            -1, &stmt, nullptr) != SQLITE_OK) {
         return false;
@@ -278,18 +314,29 @@ bool saveUserMetadata(MediaDatabase& db, const std::filesystem::path& path,
     } else {
         sqlite3_bind_null(stmt, 2);
     }
+    if (totalBeats) {
+        sqlite3_bind_double(stmt, 3, *totalBeats);
+    } else {
+        sqlite3_bind_null(stmt, 3);
+    }
+    if (beatMode) {
+        sqlite3_bind_int(stmt, 4, *beatMode ? 1 : 0);
+    } else {
+        sqlite3_bind_null(stmt, 4);
+    }
 
     std::string json;
     if (warpMarkers) {
         json = encodeWarpMarkers(*warpMarkers);
-        sqlite3_bind_text(stmt, 3, json.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 5, json.c_str(), -1, SQLITE_TRANSIENT);
     } else {
-        sqlite3_bind_null(stmt, 3);
+        sqlite3_bind_null(stmt, 5);
     }
 
     const std::string p = path.string();
-    sqlite3_bind_text(stmt, 4, p.c_str(), -1, SQLITE_TRANSIENT);
-    const bool ok = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(db.handle()) > 0;
+    sqlite3_bind_text(stmt, 6, p.c_str(), -1, SQLITE_TRANSIENT);
+    const bool ok = sqlite3_step(stmt) == SQLITE_DONE &&
+                    (sqlite3_changes(db.handle()) > 0 || isFileIndexed(db, path));
     sqlite3_finalize(stmt);
     return ok;
 }
@@ -302,6 +349,14 @@ std::optional<EffectiveMetadata> getEffectiveMetadataForFile(const std::filesyst
         return std::nullopt;
     }
     return getEffectiveMetadata(ctx.db(), path);
+}
+
+std::optional<EffectiveMetadata> getUserMetadataForFile(const std::filesystem::path& path) {
+    auto& ctx = MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return std::nullopt;
+    }
+    return getUserMetadata(ctx.db(), path);
 }
 
 void setUserBpmForFile(const std::filesystem::path& path, std::optional<double> bpm) {
@@ -347,13 +402,19 @@ std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkersForFile(
 }
 
 bool saveUserMetadataForFile(const std::filesystem::path& path, std::optional<double> bpm,
-                             std::optional<std::string> keyRoot,
+                             std::optional<std::string> keyRoot, std::optional<double> totalBeats,
+                             std::optional<bool> beatMode,
                              std::optional<std::vector<WarpMarkerMetadata>> warpMarkers) {
     auto& ctx = MediaDbContext::getInstance();
     if (!ctx.ensureInitialized()) {
         return false;
     }
-    return saveUserMetadata(ctx.db(), path, bpm, std::move(keyRoot), std::move(warpMarkers));
+    const bool ok = saveUserMetadata(ctx.db(), path, bpm, std::move(keyRoot), totalBeats, beatMode,
+                                     std::move(warpMarkers));
+    if (ok) {
+        ctx.bumpMediaRevision();
+    }
+    return ok;
 }
 
 bool hasIndexedDescendant(MediaDatabase& db, const std::filesystem::path& folder) {

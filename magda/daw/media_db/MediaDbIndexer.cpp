@@ -804,6 +804,23 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
     return aggregate;
 }
 
+MediaDbIndexer::Stats MediaDbIndexer::indexFile(const std::filesystem::path& path, Mode mode) {
+    Stats stats;
+    if (shouldCancel(shouldCancel_)) {
+        return stats;
+    }
+    if (auto scanned = classify(path)) {
+        processOneFile(db_.handle(), *scanned, stats, mode, true, failure_, shouldCancel_);
+    } else {
+        reportFailure(failure_, path, "file no longer exists or has unsupported format");
+        ++stats.failed;
+    }
+    if (progress_) {
+        progress_(1, 1, path);
+    }
+    return stats;
+}
+
 MediaDbIndexer::Stats MediaDbIndexer::indexFileIds(const std::vector<std::int64_t>& fileIds,
                                                    Mode mode) {
     Stats stats;

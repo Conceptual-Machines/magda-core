@@ -28,6 +28,8 @@ struct EffectiveMetadata {
     std::optional<double> bpm;
     std::optional<std::string> keyRoot;
     std::optional<std::string> keyScale;
+    std::optional<double> totalBeats;
+    std::optional<bool> beatMode;
 };
 
 struct WarpMarkerMetadata {
@@ -64,6 +66,12 @@ struct BulkEditableMediaUpdate {
 [[nodiscard]] std::optional<EffectiveMetadata> getEffectiveMetadata(
     MediaDatabase& db, const std::filesystem::path& path);
 
+// Read only explicit user-saved overrides. Unlike getEffectiveMetadata(), this
+// does not fall back to scanner values, so clip import can restore intentional
+// saves without adopting tagger guesses as source interpretation.
+[[nodiscard]] std::optional<EffectiveMetadata> getUserMetadata(MediaDatabase& db,
+                                                               const std::filesystem::path& path);
+
 // Write a user override. Pass nullopt to clear the override (effective
 // value falls back to the scanner-detected one). No-op if the file isn't
 // in the DB — the metadata API does not create rows.
@@ -99,6 +107,7 @@ void setUserWarpMarkers(MediaDatabase& db, const std::filesystem::path& path,
 
 [[nodiscard]] bool saveUserMetadata(MediaDatabase& db, const std::filesystem::path& path,
                                     std::optional<double> bpm, std::optional<std::string> keyRoot,
+                                    std::optional<double> totalBeats, std::optional<bool> beatMode,
                                     std::optional<std::vector<WarpMarkerMetadata>> warpMarkers);
 
 // Convenience overloads that go through the singleton MediaDbContext.
@@ -106,6 +115,9 @@ void setUserWarpMarkers(MediaDatabase& db, const std::filesystem::path& path,
 // silently no-op on init failure or when the file isn't indexed. UI code
 // can use these without holding a database handle of its own.
 [[nodiscard]] std::optional<EffectiveMetadata> getEffectiveMetadataForFile(
+    const std::filesystem::path& path);
+
+[[nodiscard]] std::optional<EffectiveMetadata> getUserMetadataForFile(
     const std::filesystem::path& path);
 
 void setUserBpmForFile(const std::filesystem::path& path, std::optional<double> bpm);
@@ -122,7 +134,8 @@ void setUserKeyRootForFile(const std::filesystem::path& path, std::optional<std:
 
 [[nodiscard]] bool saveUserMetadataForFile(
     const std::filesystem::path& path, std::optional<double> bpm,
-    std::optional<std::string> keyRoot, std::optional<std::vector<WarpMarkerMetadata>> warpMarkers);
+    std::optional<std::string> keyRoot, std::optional<double> totalBeats,
+    std::optional<bool> beatMode, std::optional<std::vector<WarpMarkerMetadata>> warpMarkers);
 
 // True if the DB has any indexed file under `folder` (descendant in the
 // path hierarchy, not equal to it). Used by the file-browser folder

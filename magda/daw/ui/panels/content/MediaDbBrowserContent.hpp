@@ -17,6 +17,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -45,7 +46,7 @@ class ModelStatusIndicator : public juce::Component, private juce::Timer {
     State state_ = State::NotInstalled;
 };
 
-class MediaDbBrowserContent : public juce::Component {
+class MediaDbBrowserContent : public juce::Component, private juce::Timer {
   public:
     // isPopOutInstance: true when this is the content of a detached pop-out
     // window (suppresses its own pop-out button and skips the empty-state hint
@@ -104,6 +105,7 @@ class MediaDbBrowserContent : public juce::Component {
     void deleteFileIdsWithConfirmation(std::vector<std::int64_t> fileIds);
     void openPopOutWindow();
     magda::media::QueryFilters currentFilters() const;
+    void timerCallback() override;
 
     // Filter strip — two rows.
     // Row 1: family / shape / key dropdowns
@@ -138,6 +140,7 @@ class MediaDbBrowserContent : public juce::Component {
     juce::String queryText_;
     std::vector<magda::media::QueryResult> results_;
     bool isPopOutInstance_ = false;
+    std::uint64_t observedMediaRevision_ = 0;
 
     // Pagination. Fixed page size; currentPage_ is 0-based. Prev / Next
     // buttons in the footer step the page index and re-run the same query

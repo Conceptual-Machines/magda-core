@@ -460,11 +460,20 @@ void AudioClipPropertiesContent::createControls() {
     saveLibraryButton_ = std::make_unique<juce::TextButton>("Save to library");
     saveLibraryButton_->setLookAndFeel(&smallLF);
     saveLibraryButton_->setTooltip(
-        "Save current clip BPM, key, and warp markers to the media library");
+        "Save current clip BPM, beats, BEAT mode, key, and warp markers to the media library");
     saveLibraryButton_->onClick = [this]() {
         auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
         if (clip == nullptr || !clip->isAudio()) {
             return;
+        }
+        const double displayedBpm = bpmValue_ ? bpmValue_->getValue() : 0.0;
+        if (magda::isValidBpm(displayedBpm)) {
+            clip->audio().interpretation.bpm = displayedBpm;
+        }
+        const double displayedBeats = beatsValue_ ? beatsValue_->getValue() : 0.0;
+        if (displayedBeats > 0.0) {
+            clip->audio().interpretation.totalBeats = displayedBeats;
+            clip->audio().interpretation.totalBeatsLocked = true;
         }
 
         std::optional<std::vector<magda::ClipInfo::WarpMarker>> markers;
@@ -486,8 +495,14 @@ void AudioClipPropertiesContent::createControls() {
 
         const bool saved =
             magda::ClipManager::getInstance().saveClipToLibrary(clipId_, std::move(markers));
-        juce::ignoreUnused(saved);
         updateFromClip();
+        saveLibraryButton_->setButtonText(saved ? "Saved" : "Save failed");
+        juce::Timer::callAfterDelay(
+            1200, [safeThis = juce::Component::SafePointer<AudioClipPropertiesContent>(this)] {
+                if (safeThis != nullptr && safeThis->saveLibraryButton_) {
+                    safeThis->saveLibraryButton_->setButtonText("Save to library");
+                }
+            });
     };
     addAndMakeVisible(*saveLibraryButton_);
 

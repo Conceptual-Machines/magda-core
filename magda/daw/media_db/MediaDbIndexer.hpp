@@ -90,6 +90,7 @@ class MediaDbIndexer {
     // files (setup cost dominates).
     Stats indexDirectory(const std::filesystem::path& root, int numThreads = 0,
                          Mode mode = Mode::Incremental);
+    Stats indexFile(const std::filesystem::path& path, Mode mode = Mode::ForceAll);
     Stats indexFileIds(const std::vector<std::int64_t>& fileIds, Mode mode = Mode::ForceAll);
 
     // Backfill semantic embeddings for indexed audio rows under `root` that

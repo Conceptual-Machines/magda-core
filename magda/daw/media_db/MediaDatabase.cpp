@@ -72,6 +72,14 @@ void migrate(sqlite3* db) {
         execOrThrow(db, "ALTER TABLE media_file ADD COLUMN display_name TEXT",
                     "migrate v6 display_name");
     }
+    if (!columnExists(db, "media_file", "total_beats_user")) {
+        execOrThrow(db, "ALTER TABLE media_file ADD COLUMN total_beats_user REAL",
+                    "migrate v7 total_beats_user");
+    }
+    if (!columnExists(db, "media_file", "beat_mode_user")) {
+        execOrThrow(db, "ALTER TABLE media_file ADD COLUMN beat_mode_user INTEGER",
+                    "migrate v7 beat_mode_user");
+    }
 }
 
 }  // namespace
