@@ -4,8 +4,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <mutex>
+#include <unordered_map>
 
 #include "../../../media_db/MediaDatabase.hpp"
 #include "../../../media_db/MediaDbContext.hpp"
@@ -35,6 +37,17 @@ enum ColumnId {
     kColKey = 5,
     kColDuration = 6,
     kColTags = 7,
+    kColStatus = 8,  // file-integrity badge: missing / dirty / ok
+};
+
+// File-integrity classification for a row's backing file. Computed lazily
+// on the first paint of the Status cell and cached by file_id so we don't
+// re-stat on every redraw.
+enum class RowIntegrity {
+    Unknown = 0,  // not yet computed; renders blank
+    Ok,           // file exists, size + mtime match indexed values
+    Dirty,        // file exists but size or mtime differ from index
+    Missing,      // file doesn't exist on disk
 };
 
 // ---- Filter combo value tables -----------------------------------------
@@ -348,6 +361,43 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         return static_cast<int>(owner_.results_.size());
     }
 
+    // Discard cached integrity entries. Call after results_ is replaced
+    // (new query, new page) or after a re-index — both can leave stale
+    // entries from previous file_ids or pre-change mtime/size values.
+    void clearIntegrityCache() {
+        integrityCache_.clear();
+    }
+
+    RowIntegrity integrityFor(const magda::media::QueryResult& r) {
+        if (auto it = integrityCache_.find(r.fileId); it != integrityCache_.end()) {
+            return it->second;
+        }
+        RowIntegrity state = RowIntegrity::Ok;
+        std::error_code ec;
+        if (!std::filesystem::exists(r.path, ec) || ec) {
+            state = RowIntegrity::Missing;
+        } else {
+            const auto sz = std::filesystem::file_size(r.path, ec);
+            if (ec) {
+                state = RowIntegrity::Missing;
+            } else {
+                const auto mt = std::filesystem::last_write_time(r.path, ec);
+                if (ec) {
+                    state = RowIntegrity::Missing;
+                } else {
+                    const auto curMtimeNs =
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(mt.time_since_epoch())
+                            .count();
+                    if (static_cast<std::int64_t>(sz) != r.sizeBytes || curMtimeNs != r.mtimeNs) {
+                        state = RowIntegrity::Dirty;
+                    }
+                }
+            }
+        }
+        integrityCache_.emplace(r.fileId, state);
+        return state;
+    }
+
     void sortOrderChanged(int newSortColumnId, bool isForwards) override {
         owner_.setSortOrder(newSortColumnId, isForwards);
     }
@@ -402,7 +452,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         };
 
         switch (columnId) {
-            case kColName:
+            case kColName: {
                 g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                 if (r.userEdited) {
                     const float dotR = 3.0F;
@@ -410,7 +460,11 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                     g.fillEllipse(8.0F, static_cast<float>(height) * 0.5F - dotR, dotR * 2.0F,
                                   dotR * 2.0F);
                 }
-                if (r.kind == "audio" && !r.tagged) {
+                const bool rowMissing = integrityFor(r) == RowIntegrity::Missing;
+                if (rowMissing) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.55F));
+                    g.setFont(font.italicised());
+                } else if (r.kind == "audio" && !r.tagged) {
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
                     g.setFont(font.italicised());
                 } else {
@@ -419,6 +473,32 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                 g.drawText(displayNameFor(r), cell.withTrimmedLeft(18).reduced(0, 2),
                            juce::Justification::centredLeft, true);
                 break;
+            }
+            case kColStatus: {
+                // Three states. Ok renders blank to keep healthy rows quiet.
+                // Dirty: amber outlined circle. Missing: filled red circle
+                // with a small slash through it. Same colours as elsewhere
+                // in the app so it matches the existing visual vocabulary.
+                const auto state = integrityFor(r);
+                if (state == RowIntegrity::Ok || state == RowIntegrity::Unknown) {
+                    break;
+                }
+                const float r2 = 4.0F;
+                const auto cx = static_cast<float>(width) * 0.5F;
+                const auto cy = static_cast<float>(height) * 0.5F;
+                const auto rect = juce::Rectangle<float>(cx - r2, cy - r2, r2 * 2.0F, r2 * 2.0F);
+                if (state == RowIntegrity::Dirty) {
+                    g.setColour(juce::Colour(0xFFE0A93D));
+                    g.drawEllipse(rect, 1.5F);
+                } else {  // Missing
+                    g.setColour(juce::Colour(0xFFD05A4A));
+                    g.fillEllipse(rect);
+                    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+                    g.drawLine(cx - r2 * 0.6F, cy + r2 * 0.6F, cx + r2 * 0.6F, cy - r2 * 0.6F,
+                               1.4F);
+                }
+                break;
+            }
             case kColFamily:
                 drawPill(juce::String(r.family), DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
                          true);
@@ -594,6 +674,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
 
   private:
     MediaDbBrowserContent& owner_;
+    std::unordered_map<std::int64_t, RowIntegrity> integrityCache_;
 };
 
 // ===========================================================================
@@ -733,6 +814,12 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
                       juce::TableHeaderComponent::sortable;
     // (id, name, defaultWidth, minWidth, maxWidth, propertyFlags)
     header.addColumn("Name", kColName, 260, 80, -1, flags);
+    // Narrow icon-only file-integrity column. No header label — the badge
+    // legend lives in tooltip / docs. Not sortable; status is computed
+    // client-side and a SQL sort key would require schema changes.
+    header.addColumn({}, kColStatus, 22, 22, 22,
+                     juce::TableHeaderComponent::visible | juce::TableHeaderComponent::draggable |
+                         juce::TableHeaderComponent::appearsOnColumnMenu);
     header.addColumn("Family", kColFamily, 90, 50, -1, flags);
     header.addColumn("Shape", kColShape, 90, 50, -1, flags);
     header.addColumn("BPM", kColBpm, 60, 40, -1, flags);
@@ -1659,6 +1746,9 @@ void MediaDbBrowserContent::runSearch() {
 void MediaDbBrowserContent::applySearchResultsToUi() {
     // updateContent() refreshes the row count; explicit repaint forces the
     // paint region invalidation (we've seen this matter on TableListBox).
+    if (resultsModel_) {
+        resultsModel_->clearIntegrityCache();
+    }
     resultsTable_.updateContent();
     resultsTable_.repaint();
 

@@ -56,6 +56,11 @@ struct QueryResult {
     std::optional<double> durationS;
     bool userEdited = false;
     bool tagged = false;
+    // size_bytes and mtime_ns as recorded at index time. The browser
+    // compares these against an on-the-fly stat() to flag rows whose
+    // backing file went missing or was modified since indexing.
+    std::int64_t sizeBytes = 0;
+    std::int64_t mtimeNs = 0;
     // All tags on this file regardless of source_model (indexer-derived
     // path tags AND user-added tags appear in the same list). Loaded via
     // GROUP_CONCAT in the main SELECT.
