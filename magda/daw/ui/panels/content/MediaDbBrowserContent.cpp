@@ -548,12 +548,60 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         }
         const auto& r = owner_.results_[static_cast<size_t>(row)];
 
+        // Pill-click bulk semantics: if the clicked row is part of a
+        // multi-row selection, apply the chosen value to every selected
+        // row. Otherwise just the clicked row. Use the pre-click snapshot
+        // because a plain click already collapsed getSelectedRows() down
+        // to the clicked row by the time we run.
+        struct PillTargets {
+            std::vector<std::int64_t> ids;
+            juce::SparseSet<int> rows;
+            bool restoreSelection = false;
+        };
+
+        auto pillTargets = [&]() {
+            PillTargets targets;
+            std::vector<std::int64_t> ids;
+            const auto& sel = owner_.resultsTable_.preClickSelection_;
+            bool clickedInSelection = false;
+            for (int i = 0; i < sel.size(); ++i) {
+                const int sr = sel[i];
+                if (sr < 0 || sr >= static_cast<int>(owner_.results_.size())) {
+                    continue;
+                }
+                if (sr == row) {
+                    clickedInSelection = true;
+                }
+                ids.push_back(owner_.results_[static_cast<size_t>(sr)].fileId);
+                targets.rows.addRange(juce::Range<int>(sr, sr + 1));
+            }
+            if (!clickedInSelection || ids.size() < 2) {
+                targets.ids.push_back(r.fileId);
+                targets.rows.clear();
+                targets.rows.addRange(juce::Range<int>(row, row + 1));
+                return targets;
+            }
+            targets.ids = std::move(ids);
+            targets.restoreSelection = true;
+            return targets;
+        };
+
         if (columnId == kColFamily && e.mods.isLeftButtonDown()) {
-            owner_.showFamilyMenuForRow(r.fileId, juce::String(r.family), e.getScreenPosition());
+            auto targets = pillTargets();
+            if (targets.restoreSelection) {
+                owner_.resultsTable_.setSelectedRows(targets.rows, juce::sendNotification);
+            }
+            owner_.showFamilyMenuForRow(std::move(targets.ids), juce::String(r.family),
+                                        e.getScreenPosition());
             return;
         }
         if (columnId == kColShape && e.mods.isLeftButtonDown()) {
-            owner_.showShapeMenuForRow(r.fileId, juce::String(r.shape), e.getScreenPosition());
+            auto targets = pillTargets();
+            if (targets.restoreSelection) {
+                owner_.resultsTable_.setSelectedRows(targets.rows, juce::sendNotification);
+            }
+            owner_.showShapeMenuForRow(std::move(targets.ids), juce::String(r.shape),
+                                       e.getScreenPosition());
             return;
         }
 
@@ -618,12 +666,12 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         }
         const auto& result = owner_.results_[static_cast<size_t>(row)];
         if (columnId == kColFamily) {
-            owner_.showFamilyMenuForRow(result.fileId, juce::String(result.family),
+            owner_.showFamilyMenuForRow({result.fileId}, juce::String(result.family),
                                         e.getScreenPosition());
             return;
         }
         if (columnId == kColShape) {
-            owner_.showShapeMenuForRow(result.fileId, juce::String(result.shape),
+            owner_.showShapeMenuForRow({result.fileId}, juce::String(result.shape),
                                        e.getScreenPosition());
             return;
         }
@@ -1262,10 +1310,10 @@ void MediaDbBrowserContent::showBulkEditRowsDialog(std::vector<std::int64_t> fil
         }));
 }
 
-void MediaDbBrowserContent::showFamilyMenuForRow(std::int64_t fileId,
+void MediaDbBrowserContent::showFamilyMenuForRow(std::vector<std::int64_t> fileIds,
                                                  const juce::String& currentFamily,
                                                  juce::Point<int> screenPosition) {
-    if (indexing_ || fileId < 0) {
+    if (indexing_ || fileIds.empty()) {
         return;
     }
 
@@ -1278,44 +1326,46 @@ void MediaDbBrowserContent::showFamilyMenuForRow(std::int64_t fileId,
 
     const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
     const auto target = juce::Rectangle<int>(screenPosition.x, screenPosition.y, 1, 1);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(target), [self, fileId](
-                                                                                    int choice) {
-        if (choice <= 0 || self == nullptr) {
-            return;
-        }
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(target),
+                       [self, fileIds = std::move(fileIds)](int choice) {
+                           if (choice <= 0 || self == nullptr) {
+                               return;
+                           }
 
-        juce::String selected = "unknown";
-        if (choice > 1) {
-            const auto index = static_cast<size_t>(choice - 1);
-            if (index >= kFamilies.size()) {
-                return;
-            }
-            selected = kFamilies[index];
-        }
+                           juce::String selected = "unknown";
+                           if (choice > 1) {
+                               const auto index = static_cast<size_t>(choice - 1);
+                               if (index >= kFamilies.size()) {
+                                   return;
+                               }
+                               selected = kFamilies[index];
+                           }
 
-        magda::media::BulkEditableMediaUpdate update;
-        update.family = selected.toStdString();
-        auto& ctx = magda::media::MediaDbContext::getInstance();
-        const int updated = ctx.ensureInitialized()
-                                ? magda::media::updateEditableMediaRows(ctx.db(), {fileId}, update)
-                                : 0;
-        if (updated <= 0) {
-            juce::AlertWindow::showAsync(juce::MessageBoxOptions{}
-                                             .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                             .withTitle("Family")
-                                             .withMessage("Could not update the media row.")
-                                             .withButton("OK"),
-                                         nullptr);
-            return;
-        }
-        self->runSearch();
-    });
+                           magda::media::BulkEditableMediaUpdate update;
+                           update.family = selected.toStdString();
+                           auto& ctx = magda::media::MediaDbContext::getInstance();
+                           const int updated = ctx.ensureInitialized()
+                                                   ? magda::media::updateEditableMediaRows(
+                                                         ctx.db(), fileIds, update)
+                                                   : 0;
+                           if (updated <= 0) {
+                               juce::AlertWindow::showAsync(
+                                   juce::MessageBoxOptions{}
+                                       .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                       .withTitle("Family")
+                                       .withMessage("Could not update the media row(s).")
+                                       .withButton("OK"),
+                                   nullptr);
+                               return;
+                           }
+                           self->runSearch();
+                       });
 }
 
-void MediaDbBrowserContent::showShapeMenuForRow(std::int64_t fileId,
+void MediaDbBrowserContent::showShapeMenuForRow(std::vector<std::int64_t> fileIds,
                                                 const juce::String& currentShape,
                                                 juce::Point<int> screenPosition) {
-    if (indexing_ || fileId < 0) {
+    if (indexing_ || fileIds.empty()) {
         return;
     }
 
@@ -1328,38 +1378,40 @@ void MediaDbBrowserContent::showShapeMenuForRow(std::int64_t fileId,
 
     const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
     const auto target = juce::Rectangle<int>(screenPosition.x, screenPosition.y, 1, 1);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(target), [self, fileId](
-                                                                                    int choice) {
-        if (choice <= 0 || self == nullptr) {
-            return;
-        }
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(target),
+                       [self, fileIds = std::move(fileIds)](int choice) {
+                           if (choice <= 0 || self == nullptr) {
+                               return;
+                           }
 
-        juce::String selected = "unknown";
-        if (choice > 1) {
-            const auto index = static_cast<size_t>(choice - 1);
-            if (index >= kShapes.size()) {
-                return;
-            }
-            selected = kShapes[index];
-        }
+                           juce::String selected = "unknown";
+                           if (choice > 1) {
+                               const auto index = static_cast<size_t>(choice - 1);
+                               if (index >= kShapes.size()) {
+                                   return;
+                               }
+                               selected = kShapes[index];
+                           }
 
-        magda::media::BulkEditableMediaUpdate update;
-        update.shape = selected.toStdString();
-        auto& ctx = magda::media::MediaDbContext::getInstance();
-        const int updated = ctx.ensureInitialized()
-                                ? magda::media::updateEditableMediaRows(ctx.db(), {fileId}, update)
-                                : 0;
-        if (updated <= 0) {
-            juce::AlertWindow::showAsync(juce::MessageBoxOptions{}
-                                             .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                             .withTitle("Shape")
-                                             .withMessage("Could not update the media row.")
-                                             .withButton("OK"),
-                                         nullptr);
-            return;
-        }
-        self->runSearch();
-    });
+                           magda::media::BulkEditableMediaUpdate update;
+                           update.shape = selected.toStdString();
+                           auto& ctx = magda::media::MediaDbContext::getInstance();
+                           const int updated = ctx.ensureInitialized()
+                                                   ? magda::media::updateEditableMediaRows(
+                                                         ctx.db(), fileIds, update)
+                                                   : 0;
+                           if (updated <= 0) {
+                               juce::AlertWindow::showAsync(
+                                   juce::MessageBoxOptions{}
+                                       .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                       .withTitle("Shape")
+                                       .withMessage("Could not update the media row(s).")
+                                       .withButton("OK"),
+                                   nullptr);
+                               return;
+                           }
+                           self->runSearch();
+                       });
 }
 
 void MediaDbBrowserContent::deleteFileIdsWithConfirmation(std::vector<std::int64_t> fileIds) {
@@ -1750,6 +1802,7 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
         resultsModel_->clearIntegrityCache();
     }
     resultsTable_.updateContent();
+    resultsTable_.syncSelectionSnapshot();
     resultsTable_.repaint();
 
     const bool empty = results_.empty();
@@ -2110,8 +2163,7 @@ void MediaDbBrowserContent::startIndexingWithOptions(
 class MediaDbBrowserContent::PopOutWindow : public juce::DocumentWindow {
   public:
     PopOutWindow()
-        : juce::DocumentWindow("MAGDA - Sample Library",
-                               DarkTheme::getColour(DarkTheme::BACKGROUND),
+        : juce::DocumentWindow("MAGDA - Media Browser", DarkTheme::getColour(DarkTheme::BACKGROUND),
                                juce::DocumentWindow::allButtons) {
         setUsingNativeTitleBar(true);
         setResizable(true, false);

@@ -91,6 +91,33 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     class ResultsTableModel;
     class PopOutWindow;
 
+    // TableListBox subclass that remembers the selection before JUCE's
+    // RowComp collapses it. Pill-click bulk semantics need that snapshot
+    // because cellClicked fires after selection handling.
+    class ResultsTable : public juce::TableListBox {
+      public:
+        void mouseDown(const juce::MouseEvent& e) override {
+            preClickSelection_ = getSelectedRows();
+            juce::TableListBox::mouseDown(e);
+        }
+
+        void selectedRowsChanged(int row) override {
+            preClickSelection_ = lastKnownSelection_;
+            lastKnownSelection_ = getSelectedRows();
+            juce::TableListBox::selectedRowsChanged(row);
+        }
+
+        void syncSelectionSnapshot() {
+            lastKnownSelection_ = getSelectedRows();
+            preClickSelection_ = lastKnownSelection_;
+        }
+
+        juce::SparseSet<int> preClickSelection_;
+
+      private:
+        juce::SparseSet<int> lastKnownSelection_;
+    };
+
     void runSearch();
     // New-query entry points: resets pagination to the initial page and
     // clears similar-sounds mode before calling runSearch().
@@ -102,9 +129,12 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     void startAnalyzingFileIds(std::vector<std::int64_t> fileIds);
     void showEditRowDialog(std::int64_t fileId);
     void showBulkEditRowsDialog(std::vector<std::int64_t> fileIds);
-    void showFamilyMenuForRow(std::int64_t fileId, const juce::String& currentFamily,
+    // When `fileIds` has more than one entry the family/shape choice is
+    // applied to all of them; the `current*` argument is the clicked row's
+    // value and only drives the tick mark next to that value in the menu.
+    void showFamilyMenuForRow(std::vector<std::int64_t> fileIds, const juce::String& currentFamily,
                               juce::Point<int> screenPosition);
-    void showShapeMenuForRow(std::int64_t fileId, const juce::String& currentShape,
+    void showShapeMenuForRow(std::vector<std::int64_t> fileIds, const juce::String& currentShape,
                              juce::Point<int> screenPosition);
     void deleteFileIdsWithConfirmation(std::vector<std::int64_t> fileIds);
     void removeDuplicateFilePathsWithConfirmation();
@@ -137,7 +167,7 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
 
     // Results
     std::unique_ptr<ResultsTableModel> resultsModel_;
-    juce::TableListBox resultsTable_;  // resizable, reorderable column header
+    ResultsTable resultsTable_;  // resizable, reorderable column header
     juce::Label emptyState_;
     juce::Label statusLabel_;  // similar-mode status only; indexing status lives in parent strip
     std::unique_ptr<juce::ArrowButton> prevPageBtn_;
