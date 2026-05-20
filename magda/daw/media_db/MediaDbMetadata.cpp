@@ -4,6 +4,7 @@
 #include <sqlite3.h>
 
 #include <cctype>
+#include <sstream>
 #include <string>
 
 #include "MediaDatabase.hpp"
@@ -161,6 +162,58 @@ bool isFileIndexed(MediaDatabase& db, const std::filesystem::path& path) {
     const bool found = sqlite3_step(stmt) == SQLITE_ROW;
     sqlite3_finalize(stmt);
     return found;
+}
+
+std::optional<EditableMediaRow> getEditableMediaRow(MediaDatabase& db, std::int64_t fileId) {
+    static constexpr const char* kSql =
+        "SELECT id, path, display_name, family, shape, COALESCE(bpm_user, bpm), "
+        "COALESCE(key_root_user, key_root), COALESCE(key_scale_user, key_scale), duration_s, "
+        "(SELECT GROUP_CONCAT(tag, ', ') FROM media_tag WHERE file_id = media_file.id) "
+        "FROM media_file WHERE id = ?";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db.handle(), kSql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return std::nullopt;
+    }
+    sqlite3_bind_int64(stmt, 1, fileId);
+
+    std::optional<EditableMediaRow> result;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        EditableMediaRow row;
+        row.fileId = sqlite3_column_int64(stmt, 0);
+        if (const auto* path = sqlite3_column_text(stmt, 1)) {
+            row.path = std::filesystem::path(reinterpret_cast<const char*>(path));
+        }
+        row.displayName = optString(stmt, 2);
+        if (auto family = optString(stmt, 3)) {
+            row.family = *family;
+        }
+        if (auto shape = optString(stmt, 4)) {
+            row.shape = *shape;
+        }
+        row.bpm = optDouble(stmt, 5);
+        row.keyRoot = optString(stmt, 6);
+        row.keyScale = optString(stmt, 7);
+        row.durationS = optDouble(stmt, 8);
+        if (auto tagsCsv = optString(stmt, 9)) {
+            std::stringstream stream(*tagsCsv);
+            std::string tag;
+            while (std::getline(stream, tag, ',')) {
+                while (!tag.empty() && std::isspace(static_cast<unsigned char>(tag.front()))) {
+                    tag.erase(tag.begin());
+                }
+                while (!tag.empty() && std::isspace(static_cast<unsigned char>(tag.back()))) {
+                    tag.pop_back();
+                }
+                if (!tag.empty()) {
+                    row.tags.push_back(tag);
+                }
+            }
+        }
+        result = std::move(row);
+    }
+    sqlite3_finalize(stmt);
+    return result;
 }
 
 std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkers(
@@ -409,7 +462,191 @@ std::string pathTextFor(const std::string& raw) {
     return out;
 }
 
+bool rebuildFts(sqlite3* handle) {
+    if (sqlite3_exec(handle, "INSERT INTO media_fts(media_fts) VALUES('delete-all')", nullptr,
+                     nullptr, nullptr) != SQLITE_OK) {
+        return false;
+    }
+
+    sqlite3_stmt* sel = nullptr;
+    if (sqlite3_prepare_v2(handle,
+                           "SELECT id, path, display_name, "
+                           "(SELECT GROUP_CONCAT(tag, ' ') FROM media_tag "
+                           " WHERE file_id = media_file.id) "
+                           "FROM media_file",
+                           -1, &sel, nullptr) != SQLITE_OK) {
+        return false;
+    }
+
+    sqlite3_stmt* ins = nullptr;
+    if (sqlite3_prepare_v2(handle,
+                           "INSERT INTO media_fts (rowid, path_text, tag_text) VALUES (?, ?, ?)",
+                           -1, &ins, nullptr) != SQLITE_OK) {
+        sqlite3_finalize(sel);
+        return false;
+    }
+
+    bool ok = true;
+    while (sqlite3_step(sel) == SQLITE_ROW) {
+        const auto id = sqlite3_column_int64(sel, 0);
+        const std::string path = reinterpret_cast<const char*>(sqlite3_column_text(sel, 1));
+        std::string pathText = pathTextFor(path);
+        if (const auto* display = sqlite3_column_text(sel, 2)) {
+            pathText += ' ';
+            pathText += pathTextFor(reinterpret_cast<const char*>(display));
+        }
+        std::string tagText;
+        if (const auto* tags = sqlite3_column_text(sel, 3)) {
+            tagText = reinterpret_cast<const char*>(tags);
+        }
+
+        sqlite3_bind_int64(ins, 1, id);
+        sqlite3_bind_text(ins, 2, pathText.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(ins, 3, tagText.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(ins) != SQLITE_DONE) {
+            ok = false;
+            break;
+        }
+        sqlite3_reset(ins);
+        sqlite3_clear_bindings(ins);
+    }
+    sqlite3_finalize(sel);
+    sqlite3_finalize(ins);
+    return ok;
+}
+
 }  // namespace
+
+bool updateEditableMediaRow(MediaDatabase& db, const EditableMediaRow& row) {
+    if (row.fileId < 0 || row.path.empty()) {
+        return false;
+    }
+
+    auto* handle = db.handle();
+    if (sqlite3_exec(handle, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        return false;
+    }
+
+    bool ok = true;
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(handle,
+                           "UPDATE media_file SET display_name = ?, family = ?, shape = ?, "
+                           "bpm_user = ?, key_root_user = ?, key_scale_user = ?, duration_s = ? "
+                           "WHERE id = ?",
+                           -1, &stmt, nullptr) != SQLITE_OK) {
+        ok = false;
+    } else {
+        if (row.displayName && !row.displayName->empty()) {
+            sqlite3_bind_text(stmt, 1, row.displayName->c_str(), -1, SQLITE_TRANSIENT);
+        } else {
+            sqlite3_bind_null(stmt, 1);
+        }
+        const std::string family = row.family.empty() ? "unknown" : row.family;
+        const std::string shape = row.shape.empty() ? "unknown" : row.shape;
+        sqlite3_bind_text(stmt, 2, family.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 3, shape.c_str(), -1, SQLITE_TRANSIENT);
+        if (row.bpm) {
+            sqlite3_bind_double(stmt, 4, *row.bpm);
+        } else {
+            sqlite3_bind_null(stmt, 4);
+        }
+        if (row.keyRoot && !row.keyRoot->empty()) {
+            sqlite3_bind_text(stmt, 5, row.keyRoot->c_str(), -1, SQLITE_TRANSIENT);
+        } else {
+            sqlite3_bind_null(stmt, 5);
+        }
+        if (row.keyScale && !row.keyScale->empty()) {
+            sqlite3_bind_text(stmt, 6, row.keyScale->c_str(), -1, SQLITE_TRANSIENT);
+        } else {
+            sqlite3_bind_null(stmt, 6);
+        }
+        if (row.durationS) {
+            sqlite3_bind_double(stmt, 7, *row.durationS);
+        } else {
+            sqlite3_bind_null(stmt, 7);
+        }
+        sqlite3_bind_int64(stmt, 8, row.fileId);
+        ok = sqlite3_step(stmt) == SQLITE_DONE;
+    }
+    sqlite3_finalize(stmt);
+
+    if (ok) {
+        sqlite3_stmt* del = nullptr;
+        if (sqlite3_prepare_v2(handle, "DELETE FROM media_tag WHERE file_id = ?", -1, &del,
+                               nullptr) != SQLITE_OK) {
+            ok = false;
+        } else {
+            sqlite3_bind_int64(del, 1, row.fileId);
+            ok = sqlite3_step(del) == SQLITE_DONE;
+        }
+        sqlite3_finalize(del);
+    }
+
+    if (ok && !row.tags.empty()) {
+        sqlite3_stmt* ins = nullptr;
+        if (sqlite3_prepare_v2(
+                handle,
+                "INSERT INTO media_tag "
+                "(file_id, tag, confidence, source_model) VALUES (?, ?, 1.0, 'user')",
+                -1, &ins, nullptr) != SQLITE_OK) {
+            ok = false;
+        } else {
+            for (const auto& tag : row.tags) {
+                sqlite3_bind_int64(ins, 1, row.fileId);
+                sqlite3_bind_text(ins, 2, tag.c_str(), -1, SQLITE_TRANSIENT);
+                if (sqlite3_step(ins) != SQLITE_DONE) {
+                    ok = false;
+                    break;
+                }
+                sqlite3_reset(ins);
+                sqlite3_clear_bindings(ins);
+            }
+        }
+        sqlite3_finalize(ins);
+    }
+
+    if (ok) {
+        ok = rebuildFts(handle);
+    }
+
+    sqlite3_exec(handle, ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+    return ok;
+}
+
+int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds) {
+    auto* handle = db.handle();
+    if (fileIds.empty() ||
+        sqlite3_exec(handle, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+
+    int removed = 0;
+    bool ok = true;
+    sqlite3_stmt* delFile = nullptr;
+    ok = sqlite3_prepare_v2(handle, "DELETE FROM media_file WHERE id = ?", -1, &delFile, nullptr) ==
+         SQLITE_OK;
+
+    if (ok) {
+        for (auto fileId : fileIds) {
+            sqlite3_bind_int64(delFile, 1, fileId);
+            if (sqlite3_step(delFile) == SQLITE_DONE) {
+                removed += sqlite3_changes(handle);
+            } else {
+                ok = false;
+                break;
+            }
+            sqlite3_reset(delFile);
+            sqlite3_clear_bindings(delFile);
+        }
+    }
+
+    sqlite3_finalize(delFile);
+    if (ok) {
+        ok = rebuildFts(handle);
+    }
+    sqlite3_exec(handle, ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+    return ok ? removed : 0;
+}
 
 int moveFolderInLibrary(MediaDatabase& db, const std::filesystem::path& oldFolder,
                         const std::filesystem::path& newFolder) {

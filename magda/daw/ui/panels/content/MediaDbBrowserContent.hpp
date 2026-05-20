@@ -100,6 +100,8 @@ class MediaDbBrowserContent : public juce::Component {
     void findSimilarTo(std::int64_t seedFileId, const juce::String& seedName);
     void startEmbeddingFileIds(std::vector<std::int64_t> fileIds);
     void startReindexingFileIds(std::vector<std::int64_t> fileIds);
+    void showEditRowDialog(std::int64_t fileId);
+    void deleteFileIdsWithConfirmation(std::vector<std::int64_t> fileIds);
     void openPopOutWindow();
     magda::media::QueryFilters currentFilters() const;
 

@@ -257,11 +257,13 @@ std::vector<QueryResult> hydrate(sqlite3* db,
     }
     // Bulk-fetch with one IN-clause query, then re-order by the input vector.
     std::string sql =
-        "SELECT id, path, kind, family, shape, COALESCE(bpm_user, bpm) AS bpm, "
+        "SELECT id, path, display_name, kind, family, shape, COALESCE(bpm_user, bpm) AS bpm, "
         "COALESCE(key_root_user, key_root) AS key_root, "
         "COALESCE(key_scale_user, key_scale) AS key_scale, duration_s, "
         "(bpm_user IS NOT NULL OR key_root_user IS NOT NULL OR "
-        " key_scale_user IS NOT NULL OR warp_markers_json IS NOT NULL) AS user_edited, "
+        " key_scale_user IS NOT NULL OR warp_markers_json IS NOT NULL OR "
+        " display_name IS NOT NULL OR EXISTS (SELECT 1 FROM media_tag "
+        " WHERE file_id = media_file.id AND source_model = 'user')) AS user_edited, "
         "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
         "        WHERE file_id = media_file.id) AS tags "
         "FROM media_file WHERE id IN (";
@@ -283,19 +285,20 @@ std::vector<QueryResult> hydrate(sqlite3* db,
         QueryResult r;
         r.fileId = sqlite3_column_int64(stmt, 0);
         r.path = std::filesystem::path(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)));
-        r.kind = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-        if (auto t = optString(stmt, 3)) {
+        r.displayName = optString(stmt, 2);
+        r.kind = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        if (auto t = optString(stmt, 4)) {
             r.family = *t;
         }
-        if (auto t = optString(stmt, 4)) {
+        if (auto t = optString(stmt, 5)) {
             r.shape = *t;
         }
-        r.bpm = optDouble(stmt, 5);
-        r.keyRoot = optString(stmt, 6);
-        r.keyScale = optString(stmt, 7);
-        r.durationS = optDouble(stmt, 8);
-        r.userEdited = sqlite3_column_int(stmt, 9) != 0;
-        if (auto tagsCsv = optString(stmt, 10)) {
+        r.bpm = optDouble(stmt, 6);
+        r.keyRoot = optString(stmt, 7);
+        r.keyScale = optString(stmt, 8);
+        r.durationS = optDouble(stmt, 9);
+        r.userEdited = sqlite3_column_int(stmt, 10) != 0;
+        if (auto tagsCsv = optString(stmt, 11)) {
             std::stringstream ts(*tagsCsv);
             std::string tag;
             while (std::getline(ts, tag, ',')) {
@@ -328,11 +331,13 @@ std::vector<QueryResult> hydrate(sqlite3* db,
 
 std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit, int offset) {
     const std::string sql =
-        "SELECT id, path, kind, family, shape, COALESCE(bpm_user, bpm) AS bpm, "
+        "SELECT id, path, display_name, kind, family, shape, COALESCE(bpm_user, bpm) AS bpm, "
         "COALESCE(key_root_user, key_root) AS key_root, "
         "COALESCE(key_scale_user, key_scale) AS key_scale, duration_s, "
         "(bpm_user IS NOT NULL OR key_root_user IS NOT NULL OR "
-        " key_scale_user IS NOT NULL OR warp_markers_json IS NOT NULL) AS user_edited, "
+        " key_scale_user IS NOT NULL OR warp_markers_json IS NOT NULL OR "
+        " display_name IS NOT NULL OR EXISTS (SELECT 1 FROM media_tag "
+        " WHERE file_id = media_file.id AND source_model = 'user')) AS user_edited, "
         "       (SELECT GROUP_CONCAT(tag, ', ') FROM media_tag "
         "        WHERE file_id = media_file.id) AS tags "
         "FROM media_file WHERE " +
@@ -351,19 +356,20 @@ std::vector<QueryResult> filterOnly(sqlite3* db, const BuiltWhere& w, int limit,
         QueryResult r;
         r.fileId = sqlite3_column_int64(stmt, 0);
         r.path = std::filesystem::path(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)));
-        r.kind = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-        if (auto t = optString(stmt, 3)) {
+        r.displayName = optString(stmt, 2);
+        r.kind = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        if (auto t = optString(stmt, 4)) {
             r.family = *t;
         }
-        if (auto t = optString(stmt, 4)) {
+        if (auto t = optString(stmt, 5)) {
             r.shape = *t;
         }
-        r.bpm = optDouble(stmt, 5);
-        r.keyRoot = optString(stmt, 6);
-        r.keyScale = optString(stmt, 7);
-        r.durationS = optDouble(stmt, 8);
-        r.userEdited = sqlite3_column_int(stmt, 9) != 0;
-        if (auto tagsCsv = optString(stmt, 10)) {
+        r.bpm = optDouble(stmt, 6);
+        r.keyRoot = optString(stmt, 7);
+        r.keyScale = optString(stmt, 8);
+        r.durationS = optDouble(stmt, 9);
+        r.userEdited = sqlite3_column_int(stmt, 10) != 0;
+        if (auto tagsCsv = optString(stmt, 11)) {
             std::stringstream ts(*tagsCsv);
             std::string tag;
             while (std::getline(ts, tag, ',')) {

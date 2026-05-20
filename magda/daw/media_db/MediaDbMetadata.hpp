@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -32,6 +33,19 @@ struct EffectiveMetadata {
 struct WarpMarkerMetadata {
     double sourceSec = 0.0;
     double beat = 0.0;
+};
+
+struct EditableMediaRow {
+    std::int64_t fileId = -1;
+    std::filesystem::path path;
+    std::optional<std::string> displayName;
+    std::string family;
+    std::string shape;
+    std::optional<double> bpm;
+    std::optional<std::string> keyRoot;
+    std::optional<std::string> keyScale;
+    std::optional<double> durationS;
+    std::vector<std::string> tags;
 };
 
 // Look up a file by absolute path. Returns nullopt if the file isn't in
@@ -56,6 +70,13 @@ void setUserKeyRoot(MediaDatabase& db, const std::filesystem::path& path,
                     std::optional<std::string> root);
 
 [[nodiscard]] bool isFileIndexed(MediaDatabase& db, const std::filesystem::path& path);
+
+[[nodiscard]] std::optional<EditableMediaRow> getEditableMediaRow(MediaDatabase& db,
+                                                                  std::int64_t fileId);
+
+bool updateEditableMediaRow(MediaDatabase& db, const EditableMediaRow& row);
+
+int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds);
 
 [[nodiscard]] std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkers(
     MediaDatabase& db, const std::filesystem::path& path);

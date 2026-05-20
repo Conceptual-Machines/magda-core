@@ -125,6 +125,9 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
 
         currentFile_ = file;
         playbackPosition_ = 0.0;
+        if (file.existsAsFile()) {
+            indexingStatus_.clear();
+        }
 
         // Get and listen to new thumbnail
         if (file.existsAsFile()) {
@@ -157,6 +160,9 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
     // filesystem browser. Empty -> no indexing in progress; paint reverts
     // to the normal waveform / "No file selected" behaviour.
     void setIndexingStatus(const juce::String& text) {
+        if (text.isNotEmpty() && !indexingActive_ && currentFile_.existsAsFile()) {
+            return;
+        }
         if (indexingStatus_ == text) {
             return;
         }

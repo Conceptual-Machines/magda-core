@@ -15,7 +15,7 @@ namespace magda::media {
 inline constexpr const char* kSchemaSql = R"SQL(
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
-	PRAGMA user_version = 5;
+	PRAGMA user_version = 6;
 
 CREATE TABLE IF NOT EXISTS media_file (
     id              INTEGER PRIMARY KEY,
@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS media_file (
     mtime_ns        INTEGER NOT NULL,
     content_hash    BLOB,
     indexed_at      INTEGER NOT NULL,
+    display_name    TEXT,
 
     duration_s          REAL,
     sample_rate         INTEGER,

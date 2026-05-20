@@ -46,6 +46,7 @@ struct QueryFilters {
 struct QueryResult {
     std::int64_t fileId = -1;
     std::filesystem::path path;
+    std::optional<std::string> displayName;
     std::string kind;
     std::string family;
     std::string shape;

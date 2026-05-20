@@ -211,3 +211,55 @@ TEST_CASE("User metadata save marks indexed file and round-trips warp markers",
     REQUIRE(sqlite3_column_int(stmt, 2) == 1);
     sqlite3_finalize(stmt);
 }
+
+TEST_CASE("Editable media rows update display fields and delete cleanly", "[media_db][metadata]") {
+    MediaDatabase db(":memory:");
+    db.execute("INSERT INTO media_file "
+               "(path, kind, format, size_bytes, mtime_ns, indexed_at, family, shape) "
+               "VALUES ('sample.wav', 'audio', 'wav', 0, 0, 0, 'unknown', 'unknown')");
+
+    auto row = magda::media::getEditableMediaRow(db, 1);
+    REQUIRE(row);
+    row->displayName = std::string("Renamed Break");
+    row->family = "drum";
+    row->shape = "loop";
+    row->bpm = 172.0;
+    row->keyRoot = std::string("F#");
+    row->keyScale = std::string("maj");
+    row->durationS = 6.5;
+    row->tags = {"breakbeat", "amen"};
+    REQUIRE(magda::media::updateEditableMediaRow(db, *row));
+
+    auto edited = magda::media::getEditableMediaRow(db, 1);
+    REQUIRE(edited);
+    REQUIRE(edited->displayName == std::optional<std::string>("Renamed Break"));
+    REQUIRE(edited->family == "drum");
+    REQUIRE(edited->shape == "loop");
+    REQUIRE(edited->bpm == Approx(172.0));
+    REQUIRE(edited->keyRoot == std::optional<std::string>("F#"));
+    REQUIRE(edited->keyScale == std::optional<std::string>("maj"));
+    REQUIRE(edited->durationS == Approx(6.5));
+    REQUIRE(edited->tags.size() == 2);
+
+    sqlite3_stmt* fts = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(),
+                               "SELECT rowid FROM media_fts WHERE media_fts MATCH 'renamed'", -1,
+                               &fts, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(fts) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_int64(fts, 0) == 1);
+    sqlite3_finalize(fts);
+
+    REQUIRE(magda::media::deleteMediaRows(db, {1}) == 1);
+    sqlite3_stmt* count = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT COUNT(*) FROM media_file", -1, &count,
+                               nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(count) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_int(count, 0) == 0);
+    sqlite3_finalize(count);
+
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT COUNT(*) FROM media_fts", -1, &count,
+                               nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(count) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_int(count, 0) == 0);
+    sqlite3_finalize(count);
+}

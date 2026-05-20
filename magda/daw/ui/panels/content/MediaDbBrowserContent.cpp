@@ -2,12 +2,15 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <mutex>
 
 #include "../../../media_db/MediaDatabase.hpp"
 #include "../../../media_db/MediaDbContext.hpp"
 #include "../../../media_db/MediaDbIndexer.hpp"
+#include "../../../media_db/MediaDbMetadata.hpp"
 #include "../../../media_db/SampleTaggerDownloader.hpp"
 #include "../../components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -43,7 +46,7 @@ enum ColumnId {
 
 const std::vector<juce::String> kFamilies = {
     "",  // id=1 sentinel
-    "drum", "bass", "lead", "pad", "keys", "guitar", "orchestral", "vocal", "fx",
+    "drum", "bass", "lead", "pad", "keys", "guitar", "orchestral", "vocal", "fx", "texture",
 };
 
 const std::vector<juce::String> kShapes = {
@@ -79,6 +82,13 @@ juce::String prettyDuration(std::optional<double> seconds) {
     return juce::String(s, 1) + "s";
 }
 
+juce::String displayNameFor(const magda::media::QueryResult& result) {
+    if (result.displayName && !result.displayName->empty()) {
+        return juce::String(*result.displayName);
+    }
+    return juce::String(result.path.filename().string());
+}
+
 juce::String formatIndexSummary(const std::filesystem::path& path,
                                 const magda::media::MediaDbIndexer::Stats& stats) {
     const int total = stats.inserted + stats.updated + stats.skipped + stats.failed;
@@ -98,6 +108,40 @@ juce::String formatEmbeddingSummary(const magda::media::MediaDbIndexer::Embeddin
            juce::String(stats.failed) + " failed";
 }
 
+juce::String formatEta(std::chrono::steady_clock::duration remaining) {
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(remaining).count();
+    if (seconds < 1) {
+        return "<1s";
+    }
+
+    const auto hours = seconds / 3600;
+    seconds %= 3600;
+    const auto minutes = seconds / 60;
+    seconds %= 60;
+
+    if (hours > 0) {
+        return juce::String(static_cast<int>(hours)) + "h " +
+               juce::String(static_cast<int>(minutes)) + "m";
+    }
+    if (minutes > 0) {
+        return juce::String(static_cast<int>(minutes)) + "m " +
+               juce::String(static_cast<int>(seconds)) + "s";
+    }
+    return juce::String(static_cast<int>(seconds)) + "s";
+}
+
+juce::String formatEmbeddingProgress(int done, int total, const std::filesystem::path& current,
+                                     std::chrono::steady_clock::time_point startedAt) {
+    juce::String status = juce::String("Embedding ") + juce::String(current.filename().string()) +
+                          " (" + juce::String(done) + "/" + juce::String(total) + ")";
+    if (done > 0 && total > done) {
+        const auto elapsed = std::chrono::steady_clock::now() - startedAt;
+        const auto perFile = elapsed / done;
+        status += " - ETA " + formatEta(perFile * (total - done));
+    }
+    return status;
+}
+
 juce::String prettyBpm(std::optional<double> bpm) {
     if (!bpm) {
         return "-";
@@ -113,6 +157,68 @@ juce::String prettyKey(const std::optional<std::string>& root,
     juce::String out(*root);
     if (scale && !scale->empty()) {
         out += " " + juce::String(*scale).substring(0, 3);  // "maj" / "min"
+    }
+    return out;
+}
+
+bool isAllowedValue(const juce::String& value, const std::vector<juce::String>& values) {
+    for (size_t i = 1; i < values.size(); ++i) {
+        if (value.equalsIgnoreCase(values[i])) {
+            return true;
+        }
+    }
+    return value.equalsIgnoreCase("unknown");
+}
+
+std::optional<double> parseOptionalPositiveDouble(const juce::String& raw, bool& ok) {
+    const auto text = raw.trim();
+    if (text.isEmpty() || text == "-") {
+        return std::nullopt;
+    }
+    int dots = 0;
+    for (int i = 0; i < text.length(); ++i) {
+        const auto c = text[i];
+        if (c == '.') {
+            ++dots;
+        } else if (!juce::CharacterFunctions::isDigit(c)) {
+            ok = false;
+            return std::nullopt;
+        }
+    }
+    if (dots > 1) {
+        ok = false;
+        return std::nullopt;
+    }
+    return text.getDoubleValue();
+}
+
+std::vector<std::string> parseTags(const juce::String& raw) {
+    juce::StringArray tokens;
+    tokens.addTokens(raw, ", \t\r\n", "\"'");
+    tokens.trim();
+    tokens.removeEmptyStrings();
+
+    std::vector<std::string> out;
+    out.reserve(static_cast<size_t>(tokens.size()));
+    for (const auto& token : tokens) {
+        const auto clean = token.trim().toLowerCase();
+        if (clean.isNotEmpty()) {
+            const auto s = clean.toStdString();
+            if (std::find(out.begin(), out.end(), s) == out.end()) {
+                out.push_back(s);
+            }
+        }
+    }
+    return out;
+}
+
+juce::String joinTags(const std::vector<std::string>& tags) {
+    juce::String out;
+    for (const auto& tag : tags) {
+        if (out.isNotEmpty()) {
+            out += ", ";
+        }
+        out += juce::String(tag);
     }
     return out;
 }
@@ -239,9 +345,8 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                                   dotR * 2.0F);
                 }
                 g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-                g.drawText(juce::String(r.path.filename().string()),
-                           cell.withTrimmedLeft(18).reduced(0, 2), juce::Justification::centredLeft,
-                           true);
+                g.drawText(displayNameFor(r), cell.withTrimmedLeft(18).reduced(0, 2),
+                           juce::Justification::centredLeft, true);
                 break;
             case kColFamily:
                 drawPill(juce::String(r.family), DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
@@ -293,7 +398,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         // Right-click: context menu. Left/middle: preview / select.
         if (e.mods.isRightButtonDown() || e.mods.isPopupMenu()) {
             juce::PopupMenu menu;
-            const auto fileName = juce::String(r.path.filename().string());
+            const auto fileName = displayNameFor(r);
             std::vector<std::int64_t> selectedIds;
             const auto selectedRows = owner_.resultsTable_.getSelectedRows();
             for (int i = 0; i < selectedRows.size(); ++i) {
@@ -306,6 +411,10 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                 selectedIds.push_back(r.fileId);
             }
             const int selectedCount = static_cast<int>(selectedIds.size());
+            menu.addItem(4, "Edit row...");
+            menu.addItem(5, "Delete selected rows (" + juce::String(selectedCount) + ")",
+                         !owner_.indexing_);
+            menu.addSeparator();
             menu.addItem(1, "Find similar sounds to \"" + fileName + "\"");
             menu.addSeparator();
             menu.addItem(2,
@@ -326,6 +435,10 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                         self->startEmbeddingFileIds(std::move(selectedIds));
                     } else if (choice == 3) {
                         self->startReindexingFileIds(std::move(selectedIds));
+                    } else if (choice == 4) {
+                        self->showEditRowDialog(seedId);
+                    } else if (choice == 5) {
+                        self->deleteFileIdsWithConfirmation(std::move(selectedIds));
                     }
                 });
             return;
@@ -723,6 +836,138 @@ void MediaDbBrowserContent::findSimilarTo(std::int64_t seedFileId, const juce::S
     runSearch();
 }
 
+void MediaDbBrowserContent::showEditRowDialog(std::int64_t fileId) {
+    if (indexing_) {
+        return;
+    }
+    auto& ctx = magda::media::MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return;
+    }
+    auto row = magda::media::getEditableMediaRow(ctx.db(), fileId);
+    if (!row) {
+        return;
+    }
+
+    auto* alert = new juce::AlertWindow(
+        "Edit Media Row", "Changes update the media database row, not the file on disk.",
+        juce::MessageBoxIconType::NoIcon);
+    alert->addTextEditor("display", row->displayName ? juce::String(*row->displayName) : "",
+                         "Display name:");
+    alert->addTextEditor("family", juce::String(row->family), "Family:");
+    alert->addTextEditor("shape", juce::String(row->shape), "Shape:");
+    alert->addTextEditor("bpm", row->bpm ? juce::String(*row->bpm, 2) : "", "BPM:");
+    alert->addTextEditor("key_root", row->keyRoot ? juce::String(*row->keyRoot) : "", "Key root:");
+    alert->addTextEditor("key_scale", row->keyScale ? juce::String(*row->keyScale) : "",
+                         "Key scale:");
+    alert->addTextEditor("duration", row->durationS ? juce::String(*row->durationS, 3) : "",
+                         "Duration (s):");
+    alert->addTextEditor("tags", joinTags(row->tags), "Tags:");
+    alert->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+    alert->enterModalState(
+        true, juce::ModalCallbackFunction::create([alert, self,
+                                                   row = std::move(*row)](int result) mutable {
+            if (result != 1) {
+                delete alert;
+                return;
+            }
+
+            auto edited = row;
+            const auto display = alert->getTextEditorContents("display").trim();
+            const auto family = alert->getTextEditorContents("family").trim().toLowerCase();
+            const auto shape = alert->getTextEditorContents("shape").trim().toLowerCase();
+            const auto keyRoot = alert->getTextEditorContents("key_root").trim();
+            const auto keyScale = alert->getTextEditorContents("key_scale").trim().toLowerCase();
+            bool ok = true;
+            edited.bpm = parseOptionalPositiveDouble(alert->getTextEditorContents("bpm"), ok);
+            edited.durationS =
+                parseOptionalPositiveDouble(alert->getTextEditorContents("duration"), ok);
+            edited.tags = parseTags(alert->getTextEditorContents("tags"));
+            delete alert;
+
+            if (self == nullptr) {
+                return;
+            }
+            if (!ok || !isAllowedValue(family, kFamilies) || !isAllowedValue(shape, kShapes)) {
+                juce::AlertWindow::showAsync(
+                    juce::MessageBoxOptions{}
+                        .withIconType(juce::MessageBoxIconType::WarningIcon)
+                        .withTitle("Edit Media Row")
+                        .withMessage("Family, shape, BPM, or duration contains an "
+                                     "unsupported value.")
+                        .withButton("OK"),
+                    nullptr);
+                return;
+            }
+
+            edited.displayName = display.isEmpty()
+                                     ? std::optional<std::string>{}
+                                     : std::optional<std::string>{display.toStdString()};
+            edited.family = family.isEmpty() ? "unknown" : family.toStdString();
+            edited.shape = shape.isEmpty() ? "unknown" : shape.toStdString();
+            edited.keyRoot = keyRoot.isEmpty() ? std::optional<std::string>{}
+                                               : std::optional<std::string>{keyRoot.toStdString()};
+            edited.keyScale = keyScale.isEmpty()
+                                  ? std::optional<std::string>{}
+                                  : std::optional<std::string>{keyScale.toStdString()};
+
+            auto& ctx = magda::media::MediaDbContext::getInstance();
+            const bool saved =
+                ctx.ensureInitialized() && magda::media::updateEditableMediaRow(ctx.db(), edited);
+            if (!saved) {
+                juce::AlertWindow::showAsync(
+                    juce::MessageBoxOptions{}
+                        .withIconType(juce::MessageBoxIconType::WarningIcon)
+                        .withTitle("Edit Media Row")
+                        .withMessage("Could not save the database row.")
+                        .withButton("OK"),
+                    nullptr);
+                return;
+            }
+            self->restartSearch();
+        }));
+}
+
+void MediaDbBrowserContent::deleteFileIdsWithConfirmation(std::vector<std::int64_t> fileIds) {
+    if (indexing_ || fileIds.empty()) {
+        return;
+    }
+    const auto count = static_cast<int>(fileIds.size());
+    const auto message = count == 1 ? juce::String("Remove this row from the media database?")
+                                    : juce::String("Remove ") + juce::String(count) +
+                                          " rows from the media database?";
+    const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+    juce::AlertWindow::showAsync(
+        juce::MessageBoxOptions{}
+            .withIconType(juce::MessageBoxIconType::WarningIcon)
+            .withTitle("Delete Media Rows")
+            .withMessage(message + "\n\nFiles on disk will not be deleted.")
+            .withButton("Delete")
+            .withButton("Cancel"),
+        [self, ids = std::move(fileIds)](int result) mutable {
+            if (result != 1 || self == nullptr) {
+                return;
+            }
+            auto& ctx = magda::media::MediaDbContext::getInstance();
+            const int removed =
+                ctx.ensureInitialized() ? magda::media::deleteMediaRows(ctx.db(), ids) : 0;
+            if (removed <= 0) {
+                juce::AlertWindow::showAsync(
+                    juce::MessageBoxOptions{}
+                        .withIconType(juce::MessageBoxIconType::WarningIcon)
+                        .withTitle("Delete Media Rows")
+                        .withMessage("No rows were removed.")
+                        .withButton("OK"),
+                    nullptr);
+                return;
+            }
+            self->restartSearch();
+        });
+}
+
 void MediaDbBrowserContent::requestStopIndexing() {
     if (indexCancel_) {
         indexCancel_->store(true);
@@ -766,10 +1011,11 @@ void MediaDbBrowserContent::startEmbeddingFileIds(std::vector<std::int64_t> file
                                              juce::String(failedPath.string()) + " - " +
                                              juce::String(reason));
                 });
-            indexer.setProgress([self](int done, int total, const std::filesystem::path& current) {
-                const auto status = juce::String("Embedding ") +
-                                    juce::String(current.filename().string()) + " (" +
-                                    juce::String(done) + "/" + juce::String(total) + ")";
+            const auto embeddingStartedAt = std::chrono::steady_clock::now();
+            indexer.setProgress([self, embeddingStartedAt](int done, int total,
+                                                           const std::filesystem::path& current) {
+                const auto status =
+                    formatEmbeddingProgress(done, total, current, embeddingStartedAt);
                 juce::MessageManager::callAsync([self, status]() {
                     if (self != nullptr) {
                         if (self->onIndexingStatus) {
@@ -1296,19 +1542,19 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
             });
 
             if (encoder != nullptr && !cancelledAfterScan) {
-                indexer.setProgress(
-                    [self](int done, int total, const std::filesystem::path& current) {
-                        const auto status = juce::String("Embedding ") +
-                                            juce::String(current.filename().string()) + " (" +
-                                            juce::String(done) + "/" + juce::String(total) + ")";
-                        juce::MessageManager::callAsync([self, status]() {
-                            if (self != nullptr) {
-                                if (self->onIndexingStatus) {
-                                    self->onIndexingStatus(status);
-                                }
+                const auto embeddingStartedAt = std::chrono::steady_clock::now();
+                indexer.setProgress([self, embeddingStartedAt](
+                                        int done, int total, const std::filesystem::path& current) {
+                    const auto status =
+                        formatEmbeddingProgress(done, total, current, embeddingStartedAt);
+                    juce::MessageManager::callAsync([self, status]() {
+                        if (self != nullptr) {
+                            if (self->onIndexingStatus) {
+                                self->onIndexingStatus(status);
                             }
-                        });
+                        }
                     });
+                });
                 embeddingStats = indexer.embedMissingAudio(path);
                 const auto embeddingStatus = formatEmbeddingSummary(embeddingStats);
                 const bool cancelledAfterEmbedding = cancelToken && cancelToken->load();
