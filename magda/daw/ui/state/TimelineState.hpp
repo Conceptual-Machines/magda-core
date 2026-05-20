@@ -8,6 +8,7 @@
 #include "../layout/LayoutConfig.hpp"
 #include "core/ClipTypes.hpp"
 #include "core/TempoUtils.hpp"
+#include "core/TypeIds.hpp"
 
 namespace magda {
 
@@ -197,6 +198,8 @@ struct TimeSelection {
     double endBeats = -1.0;       // Position in beats (authoritative)
     std::set<int> trackIndices;   // Empty = all tracks
     bool visuallyHidden = false;  // When true, selection is hidden visually but data remains
+    bool automationOnly = false;  // Selection was made on automation lanes, not clip lanes
+    std::set<AutomationLaneId> automationLaneIds;
 
     bool isActive() const {
         return startBeats >= 0.0 && endBeats > startBeats;
@@ -217,6 +220,8 @@ struct TimeSelection {
         endBeats = -1.0;
         trackIndices.clear();
         visuallyHidden = false;
+        automationOnly = false;
+        automationLaneIds.clear();
     }
     void hideVisually() {
         visuallyHidden = true;

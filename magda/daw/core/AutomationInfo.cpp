@@ -1,6 +1,7 @@
 #include "AutomationInfo.hpp"
 
 #include "DeviceInfo.hpp"
+#include "MacroInfo.hpp"
 #include "ModInfo.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
@@ -35,6 +36,29 @@ const ModInfo* resolveModInfoForTarget(const AutomationTarget& target) {
         if (m.id == target.modId)
             return &m;
     return nullptr;
+}
+
+const MacroInfo* resolveMacroInfoForTarget(const AutomationTarget& target) {
+    if (target.paramIndex < 0)
+        return nullptr;
+
+    auto& tm = TrackManager::getInstance();
+    const auto& trackManager = tm;
+    auto node = trackManager.resolveChainNode(target.devicePath);
+    if (!node.valid() || !node.macros)
+        return nullptr;
+
+    auto macroIndex = static_cast<size_t>(target.paramIndex);
+    if (macroIndex >= node.macros->size())
+        return nullptr;
+
+    return &(*node.macros)[macroIndex];
+}
+
+juce::String getModParamDisplayName(int modParamIndex) {
+    if (modParamIndex == 0)
+        return "Rate";
+    return "Param " + juce::String(modParamIndex);
 }
 
 ParameterInfo makeHzRateInfo(const juce::String& name) {
@@ -79,6 +103,30 @@ ParameterInfo makeSyncDivisionInfo(const juce::String& name) {
 }
 
 }  // namespace
+
+juce::String formatCustomNameWithDefault(const juce::String& name,
+                                         const juce::String& defaultName) {
+    auto trimmed = name.trim();
+    if (trimmed.isEmpty() || trimmed == defaultName)
+        return defaultName;
+    return trimmed + " [" + defaultName + "]";
+}
+
+juce::String getMacroDefaultDisplayName(int macroIndex) {
+    return "Macro " + juce::String(macroIndex + 1);
+}
+
+juce::String getMacroDisplayName(int macroIndex, const juce::String& name) {
+    return formatCustomNameWithDefault(name, getMacroDefaultDisplayName(macroIndex));
+}
+
+juce::String getModDisplayName(const ModInfo& mod) {
+    return formatCustomNameWithDefault(mod.name, ModInfo::getDefaultName(mod.id, mod.type));
+}
+
+juce::String getModParameterDisplayName(const ModInfo& mod, int modParamIndex) {
+    return getModDisplayName(mod) + " " + getModParamDisplayName(modParamIndex);
+}
 
 ParameterInfo getParameterInfoForTarget(const AutomationTarget& target) {
     switch (target.kind) {
@@ -148,11 +196,18 @@ juce::String getDisplayNameForTarget(const AutomationTarget& target) {
             return "Send " + juce::String(target.sendBusIndex + 1);
         case ControlTarget::Kind::PluginParam:
             return "Param " + juce::String(target.paramIndex);
-        case ControlTarget::Kind::DeviceMacro:
-            return "Macro " + juce::String(target.paramIndex + 1);
-        case ControlTarget::Kind::ModParam:
+        case ControlTarget::Kind::DeviceMacro: {
+            auto defaultName = getMacroDefaultDisplayName(target.paramIndex);
+            if (auto* macro = resolveMacroInfoForTarget(target))
+                return formatCustomNameWithDefault(macro->name, defaultName);
+            return defaultName;
+        }
+        case ControlTarget::Kind::ModParam: {
+            if (auto* mod = resolveModInfoForTarget(target))
+                return getModParameterDisplayName(*mod, target.modParamIndex);
             return "Mod " + juce::String(target.modId) + " Param " +
                    juce::String(target.modParamIndex);
+        }
     }
     return "Unknown";
 }

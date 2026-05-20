@@ -117,6 +117,17 @@ TEST_CASE("fingerprintOf - mod gating rules", "[modulation][fingerprint]") {
         REQUIRE(fp.modLinkCount == 2);
     }
 
+    SECTION("Disabled mod links do NOT count") {
+        auto disabledLink = modLink(DeviceId(1), 0, 0.5f, /*bipolar=*/true);
+        disabledLink.enabled = false;
+        ModArray mods;
+        mods.push_back(makeMod(0, /*enabled=*/true, {disabledLink, modLink(DeviceId(1), 1)}));
+        auto fp = fingerprintOf(makeNode(&mods, &emptyMacros));
+        REQUIRE(fp.modCount == 1);
+        REQUIRE(fp.modLinkCount == 1);
+        REQUIRE(fp.bipolarCount == 0);
+    }
+
     SECTION("Bipolar links bump bipolarCount once per link") {
         ModArray mods;
         mods.push_back(makeMod(0, true,

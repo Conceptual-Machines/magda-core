@@ -57,6 +57,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("gridNumerator", clip.gridNumerator);
     obj->setProperty("gridDenominator", clip.gridDenominator);
     obj->setProperty("gridSnapEnabled", clip.gridSnapEnabled);
+    if (clip.midiEditorRowHeight > 0)
+        obj->setProperty("midiEditorRowHeight", clip.midiEditorRowHeight);
 
     // Per-clip mix
     obj->setProperty("volumeDB", clip.volumeDB);
@@ -267,6 +269,15 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.gridNumerator = obj->getProperty("gridNumerator");
     outClip.gridDenominator = obj->getProperty("gridDenominator");
     outClip.gridSnapEnabled = static_cast<bool>(obj->getProperty("gridSnapEnabled"));
+    if (obj->hasProperty("midiEditorRowHeight")) {
+        outClip.midiEditorRowHeight =
+            juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT, ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT,
+                         static_cast<int>(obj->getProperty("midiEditorRowHeight")));
+    } else if (obj->hasProperty("pianoRollNoteHeight")) {
+        outClip.midiEditorRowHeight =
+            juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT, ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT,
+                         static_cast<int>(obj->getProperty("pianoRollNoteHeight")));
+    }
 
     // Per-clip mix
     outClip.volumeDB = static_cast<float>(static_cast<double>(obj->getProperty("volumeDB")));

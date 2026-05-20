@@ -169,6 +169,7 @@ class DrumGridClipGrid : public juce::Component,
     std::function<void(magda::ClipId, std::vector<size_t>)> onDuplicateNotes;
     std::function<void(magda::ClipId, std::vector<size_t>)> onDeleteNotes;
     std::function<void(double)> onEditCursorSet;
+    std::function<void(int, const juce::MouseWheelDetails&)> onVerticalZoomRequested;
 
     // Refresh note components from clip data
     void refreshNotes() {
@@ -665,6 +666,15 @@ class DrumGridClipGrid : public juce::Component,
             nearPhaseMarker_ = false;
             repaint();
         }
+    }
+
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
+        if (e.mods.isAltDown() && onVerticalZoomRequested) {
+            onVerticalZoomRequested(e.y, wheel);
+            return;
+        }
+
+        juce::Component::mouseWheelMove(e, wheel);
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
@@ -1519,6 +1529,7 @@ class DrumGridRowLabels : public juce::Component {
 
     // Callback: noteNumber, isNoteOn
     std::function<void(int, bool)> onNotePreview;
+    std::function<void(int, const juce::MouseWheelDetails&)> onVerticalZoomRequested;
 
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
@@ -1529,7 +1540,8 @@ class DrumGridRowLabels : public juce::Component {
         if (!padRows_ || padRows_->empty())
             return;
 
-        auto font = magda::FontManager::getInstance().getUIFont(11.0f);
+        auto font = magda::FontManager::getInstance().getUIFont(
+            static_cast<float>(juce::jlimit(8, 12, rowHeight_ - 4)));
         g.setFont(font);
 
         int numRows = static_cast<int>(padRows_->size());
@@ -1550,13 +1562,15 @@ class DrumGridRowLabels : public juce::Component {
 
             const auto& padRow = (*padRows_)[i];
 
-            // Pad name (on the left)
-            g.setColour(padRow.hasChain ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
-                                        : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            g.drawText(padRow.name,
-                       juce::Rectangle<int>(4, y + 1, bounds.getWidth() - PLAY_BTN_WIDTH - 8,
-                                            rowHeight_ - 2),
-                       juce::Justification::centredLeft, true);
+            if (rowHeight_ >= 10) {
+                // Pad name (on the left)
+                g.setColour(padRow.hasChain ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
+                                            : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.drawText(padRow.name,
+                           juce::Rectangle<int>(4, y + 1, bounds.getWidth() - PLAY_BTN_WIDTH - 8,
+                                                rowHeight_ - 2),
+                           juce::Justification::centredLeft, true);
+            }
 
             // Play button (small triangle on the right)
             auto btnBounds = getPlayButtonBounds(i);
@@ -1572,7 +1586,7 @@ class DrumGridRowLabels : public juce::Component {
             }
 
             // Draw play triangle
-            auto triArea = btnBounds.toFloat().reduced(4.0f, 5.0f);
+            auto triArea = btnBounds.toFloat().reduced(4.0f, rowHeight_ >= 10 ? 5.0f : 2.0f);
             juce::Path triangle;
             triangle.addTriangle(triArea.getX(), triArea.getY(), triArea.getX(),
                                  triArea.getBottom(), triArea.getRight(), triArea.getCentreY());
@@ -1623,6 +1637,15 @@ class DrumGridRowLabels : public juce::Component {
         }
     }
 
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
+        if (e.mods.isAltDown() && onVerticalZoomRequested) {
+            onVerticalZoomRequested(e.y, wheel);
+            return;
+        }
+
+        juce::Component::mouseWheelMove(e, wheel);
+    }
+
   private:
     static constexpr int PLAY_BTN_WIDTH = 16;
 
@@ -1665,9 +1688,19 @@ DrumGridClipContent::DrumGridClipContent() {
     };
     addAndMakeVisible(controlsToggle_.get());
 
+    verticalZoomStrip_ = std::make_unique<VerticalZoomStrip>(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
+    verticalZoomStrip_->getValue = [this]() { return rowHeight_; };
+    verticalZoomStrip_->onZoomChanged = [this](int newHeight, int anchorScreenY) {
+        const int anchorContentY = anchorScreenY + viewport_->getViewPositionY();
+        const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
+                                           anchorContentY / juce::jmax(1, rowHeight_));
+        setRowHeightAnchored(newHeight, anchorRow, anchorScreenY, true);
+    };
+    addAndMakeVisible(verticalZoomStrip_.get());
+
     // Create row labels
     rowLabels_ = std::make_unique<DrumGridRowLabels>();
-    rowLabels_->setRowHeight(ROW_HEIGHT);
+    rowLabels_->setRowHeight(rowHeight_);
     rowLabels_->onNotePreview = [this](int noteNumber, bool isNoteOn) {
         if (editingClipId_ == magda::INVALID_CLIP_ID)
             return;
@@ -1677,6 +1710,14 @@ DrumGridClipContent::DrumGridClipContent() {
                                                            isNoteOn ? 100 : 0, isNoteOn);
         }
     };
+    rowLabels_->onVerticalZoomRequested = [this](int labelsY,
+                                                 const juce::MouseWheelDetails& wheel) {
+        const int anchorContentY = labelsY + viewport_->getViewPositionY();
+        const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
+                                           anchorContentY / juce::jmax(1, rowHeight_));
+        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, labelsY, true);
+    };
     addAndMakeVisible(rowLabels_.get());
 
     // Add DrumGrid-specific components to viewport repaint list
@@ -1685,9 +1726,17 @@ DrumGridClipContent::DrumGridClipContent() {
     // Create grid component
     gridComponent_ = std::make_unique<DrumGridClipGrid>();
     gridComponent_->setPixelsPerBeat(horizontalZoom_);
-    gridComponent_->setRowHeight(ROW_HEIGHT);
+    gridComponent_->setRowHeight(rowHeight_);
     gridComponent_->setGridResolutionBeats(gridResolutionBeats_);
     gridComponent_->setSnapEnabled(snapEnabled_);
+    gridComponent_->onVerticalZoomRequested = [this](int gridY,
+                                                     const juce::MouseWheelDetails& wheel) {
+        const int anchorScreenY = gridY - viewport_->getViewPositionY();
+        const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
+                                           gridY / juce::jmax(1, rowHeight_));
+        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, anchorScreenY, true);
+    };
     if (auto* controller = magda::TimelineController::getCurrent()) {
         gridComponent_->setTimeSignatureNumerator(
             controller->getState().tempo.timeSignatureNumerator);
@@ -1856,6 +1905,68 @@ DrumGridClipContent::DrumGridClipContent() {
 
 DrumGridClipContent::~DrumGridClipContent() = default;
 
+int DrumGridClipContent::getMaxVerticalScroll() const {
+    if (!viewport_ || !gridComponent_)
+        return 0;
+
+    const int viewHeight =
+        viewport_->getViewHeight() > 0 ? viewport_->getViewHeight() : viewport_->getHeight();
+    return juce::jmax(0, gridComponent_->getHeight() - juce::jmax(0, viewHeight));
+}
+
+int DrumGridClipContent::clampVerticalScrollY(int scrollY) const {
+    return juce::jlimit(0, getMaxVerticalScroll(), scrollY);
+}
+
+void DrumGridClipContent::clampViewportVerticalScroll() {
+    if (!viewport_)
+        return;
+
+    const int currentY = viewport_->getViewPositionY();
+    const int clampedY = clampVerticalScrollY(currentY);
+    if (clampedY != currentY)
+        viewport_->setViewPosition(viewport_->getViewPositionX(), clampedY);
+}
+
+void DrumGridClipContent::setRowHeight(int height, bool persist) {
+    const int clampedHeight = juce::jlimit(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT, height);
+    if (clampedHeight == rowHeight_)
+        return;
+
+    rowHeight_ = clampedHeight;
+    if (gridComponent_)
+        gridComponent_->setRowHeight(rowHeight_);
+    if (rowLabels_)
+        rowLabels_->setRowHeight(rowHeight_);
+
+    updateGridSize();
+    clampViewportVerticalScroll();
+
+    if (persist && editingClipId_ != magda::INVALID_CLIP_ID) {
+        magda::ClipManager::getInstance().setClipMidiEditorRowHeight(editingClipId_, rowHeight_);
+    }
+}
+
+void DrumGridClipContent::setRowHeightAnchored(int height, int anchorRow, int anchorScreenY,
+                                               bool persist) {
+    const int previousHeight = rowHeight_;
+    setRowHeight(height, persist);
+    if (rowHeight_ == previousHeight || !viewport_)
+        return;
+
+    const int newAnchorY = anchorRow * rowHeight_;
+    const int newScrollY = clampVerticalScrollY(newAnchorY - anchorScreenY);
+    viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
+}
+
+void DrumGridClipContent::loadRowHeightFromClip(magda::ClipId clipId) {
+    const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    if (clip && clip->isMidi()) {
+        setRowHeight(clip->midiEditorRowHeight > 0 ? clip->midiEditorRowHeight : DEFAULT_ROW_HEIGHT,
+                     false);
+    }
+}
+
 // ============================================================================
 // MidiEditorContent virtual implementations
 // ============================================================================
@@ -1929,7 +2040,7 @@ void DrumGridClipContent::resized() {
     if (velocityDrawerOpen_) {
         auto drawerArea = bounds.removeFromBottom(drawerHeight_);
         if (midiDrawer_) {
-            midiDrawer_->setLeftMargin(LABEL_WIDTH);
+            midiDrawer_->setLeftMargin(ZOOM_STRIP_WIDTH + LABEL_WIDTH);
             midiDrawer_->setBounds(drawerArea);
             midiDrawer_->setVisible(true);
         }
@@ -1940,8 +2051,11 @@ void DrumGridClipContent::resized() {
 
     // Time ruler at top
     auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
-    headerArea.removeFromLeft(LABEL_WIDTH);  // Align with grid
+    headerArea.removeFromLeft(ZOOM_STRIP_WIDTH + LABEL_WIDTH);  // Align with grid
     timeRuler_->setBounds(headerArea);
+
+    auto zoomStripArea = bounds.removeFromLeft(ZOOM_STRIP_WIDTH);
+    verticalZoomStrip_->setBounds(zoomStripArea);
 
     // Row labels on left
     auto labelsArea = bounds.removeFromLeft(LABEL_WIDTH);
@@ -1964,13 +2078,23 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
     // Cmd/Ctrl + scroll = horizontal zoom (uses shared base method)
     if (e.mods.isCommandDown()) {
         double zoomFactor = 1.0 + (wheel.deltaY * 0.1);
-        int mouseXInViewport = e.x - SIDEBAR_WIDTH - LABEL_WIDTH;
+        int mouseXInViewport = e.x - SIDEBAR_WIDTH - ZOOM_STRIP_WIDTH - LABEL_WIDTH;
         performWheelZoom(zoomFactor, mouseXInViewport);
         return;
     }
 
+    // Alt/Option + scroll = vertical zoom (row height)
+    if (e.mods.isAltDown()) {
+        const int mouseYInContent = e.y - RULER_HEIGHT + viewport_->getViewPositionY();
+        const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
+                                           mouseYInContent / juce::jmax(1, rowHeight_));
+        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, e.y - RULER_HEIGHT, true);
+        return;
+    }
+
     // Forward to time ruler area for horizontal scroll
-    if (e.y < RULER_HEIGHT && e.x >= SIDEBAR_WIDTH + LABEL_WIDTH) {
+    if (e.y < RULER_HEIGHT && e.x >= SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + LABEL_WIDTH) {
         if (timeRuler_->onScrollRequested) {
             float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
             int scrollAmount = static_cast<int>(-delta * 100.0f);
@@ -1985,7 +2109,7 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
         int deltaX = static_cast<int>(-wheel.deltaX * 100.0f);
         int deltaY = static_cast<int>(-wheel.deltaY * 100.0f);
         viewport_->setViewPosition(viewport_->getViewPositionX() + deltaX,
-                                   viewport_->getViewPositionY() + deltaY);
+                                   clampVerticalScrollY(viewport_->getViewPositionY() + deltaY));
     }
 }
 
@@ -2040,6 +2164,7 @@ void DrumGridClipContent::clipSelectionChanged(magda::ClipId clipId) {
 
     const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
     if (clip && clip->isMidi()) {
+        loadRowHeightFromClip(clipId);
         setClip(clipId);
     }
 }
@@ -2053,6 +2178,7 @@ void DrumGridClipContent::setClip(magda::ClipId clipId) {
         return;
 
     editingClipId_ = clipId;
+    loadRowHeightFromClip(editingClipId_);
     findDrumGrid();
     buildPadRows();
 
@@ -2100,13 +2226,13 @@ void DrumGridClipContent::centerOnNotes() {
 
     if (targetRow < 0) {
         // No notes or note not found — scroll to bottom (C-2)
-        int totalHeight = static_cast<int>(padRows_.size()) * ROW_HEIGHT;
+        int totalHeight = static_cast<int>(padRows_.size()) * rowHeight_;
         int scrollY = juce::jmax(0, totalHeight - viewport_->getHeight());
         viewport_->setViewPosition(viewport_->getViewPositionX(), scrollY);
     } else {
         // Center on the target row
-        int rowY = targetRow * ROW_HEIGHT;
-        int scrollY = juce::jmax(0, rowY - (viewport_->getHeight() / 2) + (ROW_HEIGHT / 2));
+        int rowY = targetRow * rowHeight_;
+        int scrollY = juce::jmax(0, rowY - (viewport_->getHeight() / 2) + (rowHeight_ / 2));
         viewport_->setViewPosition(viewport_->getViewPositionX(), scrollY);
     }
 }
@@ -2144,7 +2270,7 @@ void DrumGridClipContent::updateGridSize() {
     int numRows = juce::jmax(1, static_cast<int>(padRows_.size()));
     int gridWidth = juce::jmax(viewport_->getWidth(),
                                static_cast<int>(displayLengthBeats * horizontalZoom_) + 100);
-    int gridHeight = numRows * ROW_HEIGHT;
+    int gridHeight = numRows * rowHeight_;
 
     gridComponent_->setSize(gridWidth, gridHeight);
     gridComponent_->setRelativeMode(relativeTimeMode_);
@@ -2163,6 +2289,8 @@ void DrumGridClipContent::updateGridSize() {
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);
     }
+
+    clampViewportVerticalScroll();
 }
 
 void DrumGridClipContent::updateGridLoopRegion() {

@@ -7,6 +7,7 @@
 #include "audio/AudioBridge.hpp"
 #include "core/Config.hpp"
 #include "core/PresetManager.hpp"
+#include "core/TrackCommands.hpp"
 #include "engine/AudioEngine.hpp"
 #include "layout/NodeHeaderStyles.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -727,7 +728,8 @@ void RackComponent::onModTargetChangedInternal(int modIndex, magda::ControlTarge
 }
 
 void RackComponent::onModNameChangedInternal(int modIndex, const juce::String& name) {
-    magda::TrackManager::getInstance().setModName(rackPath_, modIndex, name);
+    magda::UndoManager::getInstance().executeCommand(
+        std::make_unique<magda::SetModNameCommand>(rackPath_, modIndex, name));
 }
 
 void RackComponent::onModTypeChangedInternal(int modIndex, magda::ModType type) {
@@ -786,7 +788,8 @@ void RackComponent::onMacroTargetChangedInternal(int macroIndex, magda::ControlT
 }
 
 void RackComponent::onMacroNameChangedInternal(int macroIndex, const juce::String& name) {
-    magda::TrackManager::getInstance().setMacroName(rackPath_, macroIndex, name);
+    magda::UndoManager::getInstance().executeCommand(
+        std::make_unique<magda::SetMacroNameCommand>(rackPath_, macroIndex, name));
 }
 
 void RackComponent::onModClickedInternal(int modIndex) {

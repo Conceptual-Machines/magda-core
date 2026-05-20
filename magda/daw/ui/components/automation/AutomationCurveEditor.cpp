@@ -285,6 +285,8 @@ void AutomationCurveEditor::paintOverrideOverlay(juce::Graphics& g) {
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
     if (!lane || !lane->bypass)
         return;
+    if (lane->absolutePoints.empty())
+        return;
 
     auto currentValue = AutomationManager::getInstance().getCurrentTargetValue(lane->target);
     if (!currentValue)

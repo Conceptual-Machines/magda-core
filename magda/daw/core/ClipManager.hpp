@@ -299,6 +299,14 @@ class ClipManager {
      *         clips. */
     void applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update, double projectBPM);
 
+    /** @brief Persist a user-asserted BPM for the clip's source file back
+     *         to the media DB so subsequent drops of the same file (in any
+     *         session) start with this value instead of the scanner's
+     *         detected one. Called by inspector UI right after
+     *         applyAudioClipBeats — no-op if the clip's source file isn't
+     *         in the DB (e.g. a file the user dropped without indexing). */
+    void recordUserBpm(ClipId clipId, double bpm);
+
     /** @brief Refresh the seconds-domain cache (length, startTime, offset,
      *         loopStart, loopLength) on a beat-authoritative clip from its
      *         canonical beat fields. No-op for time-authoritative clips.
@@ -356,6 +364,7 @@ class ClipManager {
     // Per-clip grid settings (MIDI editor)
     void setClipGridSettings(ClipId clipId, bool autoGrid, int numerator, int denominator);
     void setClipSnapEnabled(ClipId clipId, bool enabled);
+    void setClipMidiEditorRowHeight(ClipId clipId, int rowHeight);
 
     // ========================================================================
     // Content-Level Operations (Editor Operations)

@@ -2472,6 +2472,8 @@ void ClipComponent::showContextMenu() {
 
     // Duplicate
     menu.addItem(4, "Duplicate", canEdit);
+    menu.addItem(18, "Duplicate With Automation", canEdit);
+    menu.addItem(19, "Duplicate Without Automation", canEdit);
     menu.addItem(17, "Duplicate Time Selection", !isFrozen && hasTimeSelection);
     menu.addSeparator();
 
@@ -2716,34 +2718,20 @@ void ClipComponent::showContextMenu() {
             }
 
             case 4: {  // Duplicate
-                auto selectedClips = selectionManager.getSelectedClips();
-                if (!selectedClips.empty()) {
-                    double tempo = 120.0;
-                    if (parentPanel_ && parentPanel_->getTimelineController())
-                        tempo = parentPanel_->getTimelineController()->getState().tempo.bpm;
+                if (parentPanel_)
+                    parentPanel_->duplicateSelectedArrangementClips(false);
+                break;
+            }
 
-                    auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempo);
-                    if (commands.empty())
-                        break;
+            case 18: {  // Duplicate With Automation
+                if (parentPanel_)
+                    parentPanel_->duplicateSelectedArrangementClips(true);
+                break;
+            }
 
-                    if (commands.size() > 1)
-                        UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
-
-                    std::unordered_set<ClipId> newClipIds;
-                    for (auto& cmd : commands) {
-                        auto* cmdPtr = cmd.get();
-                        UndoManager::getInstance().executeCommand(std::move(cmd));
-                        ClipId newId = cmdPtr->getDuplicatedClipId();
-                        if (newId != INVALID_CLIP_ID)
-                            newClipIds.insert(newId);
-                    }
-
-                    if (commands.size() > 1)
-                        UndoManager::getInstance().endCompoundOperation();
-
-                    if (!newClipIds.empty())
-                        selectionManager.selectClips(newClipIds);
-                }
+            case 19: {  // Duplicate Without Automation
+                if (parentPanel_)
+                    parentPanel_->duplicateSelectedArrangementClips(false);
                 break;
             }
 

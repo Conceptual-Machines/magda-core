@@ -216,7 +216,7 @@ void ModifierSyncWalker::syncStructure(
             auto& sourceMod = *srcIt->second;
 
             for (const auto& link : modInfo.links) {
-                if (!link.isValid())
+                if (!link.enabled || !link.isValid())
                     continue;
 
                 if (link.target.kind == ControlTarget::Kind::ModParam) {
@@ -319,7 +319,7 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
             }
 
             for (const auto& link : modInfo.links) {
-                if (!link.isValid())
+                if (!link.enabled || !link.isValid())
                     continue;
 
                 te::AutomatableParameter* param = nullptr;

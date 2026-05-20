@@ -3439,7 +3439,7 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                 int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                 bool ticked = isTargetShown(target);
                 deviceParamTargets->push_back(target);
-                trackMacrosMenu.addItem(itemId, macro.name, true, ticked);
+                trackMacrosMenu.addItem(itemId, getDisplayNameForTarget(target), true, ticked);
                 any = true;
             }
             if (any)
@@ -3463,7 +3463,7 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                 int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                 bool ticked = isTargetShown(target);
                 deviceParamTargets->push_back(target);
-                trackModsMenu.addItem(itemId, mod.name + " Rate", true, ticked);
+                trackModsMenu.addItem(itemId, getDisplayNameForTarget(target), true, ticked);
                 any = true;
             }
             if (any)
@@ -3556,7 +3556,8 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                                 bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                modsMenu.addItem(itemId, mod.name + " Rate", true, ticked);
+                                modsMenu.addItem(itemId, getDisplayNameForTarget(target), true,
+                                                 ticked);
                                 any = true;
                             }
                             if (any)
@@ -3581,7 +3582,8 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                                 bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                macrosMenu.addItem(itemId, macro.name, true, ticked);
+                                macrosMenu.addItem(itemId, getDisplayNameForTarget(target), true,
+                                                   ticked);
                                 any = true;
                             }
                             if (any)
@@ -3613,7 +3615,8 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                                 bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                modsMenu.addItem(itemId, mod.name + " Rate", true, ticked);
+                                modsMenu.addItem(itemId, getDisplayNameForTarget(target), true,
+                                                 ticked);
                                 any = true;
                             }
                             if (any)
@@ -3638,7 +3641,8 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                                 bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                macrosMenu.addItem(itemId, macro.name, true, ticked);
+                                macrosMenu.addItem(itemId, getDisplayNameForTarget(target), true,
+                                                   ticked);
                                 any = true;
                             }
                             if (any)

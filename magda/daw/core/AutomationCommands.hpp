@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include "AutomationInfo.hpp"
 #include "AutomationManager.hpp"
 #include "UndoManager.hpp"
@@ -260,6 +262,50 @@ class DeleteAutomationLaneCommand : public UndoableCommand {
     std::vector<AutomationClipInfo> storedClips_;
     size_t storedIndex_ = 0;
     bool captured_ = false;
+};
+
+/**
+ * @brief Duplicate absolute automation points in a timeline beat range.
+ *
+ * Points in [startBeat, endBeat] are copied to destinationStartBeat on
+ * matching visible lanes. If trackIds is empty, all tracks are considered.
+ */
+class DuplicateAutomationTimeSelectionCommand : public UndoableCommand {
+  public:
+    DuplicateAutomationTimeSelectionCommand(double startBeat, double endBeat,
+                                            std::vector<TrackId> trackIds = {},
+                                            double destinationStartBeat = -1.0,
+                                            std::vector<AutomationLaneId> laneIds = {})
+        : startBeat_(startBeat),
+          endBeat_(endBeat),
+          destinationStartBeat_(destinationStartBeat >= 0.0 ? destinationStartBeat : endBeat),
+          trackIds_(std::move(trackIds)),
+          laneIds_(std::move(laneIds)) {}
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Duplicate Automation";
+    }
+    bool canDuplicatePoints() const;
+    bool hasDuplicatedPoints() const {
+        return !insertedPoints_.empty();
+    }
+
+  private:
+    struct InsertedPoint {
+        AutomationLaneId laneId = INVALID_AUTOMATION_LANE_ID;
+        AutomationPointId pointId = INVALID_AUTOMATION_POINT_ID;
+    };
+
+    bool shouldDuplicateLane(const AutomationLaneInfo& lane) const;
+
+    double startBeat_ = 0.0;
+    double endBeat_ = 0.0;
+    double destinationStartBeat_ = 0.0;
+    std::vector<TrackId> trackIds_;
+    std::vector<AutomationLaneId> laneIds_;
+    std::vector<InsertedPoint> insertedPoints_;
 };
 
 }  // namespace magda

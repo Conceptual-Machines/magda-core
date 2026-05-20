@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -16,6 +17,29 @@ class MidiDrawerComponent;
 }  // namespace magda
 
 namespace magda::daw::ui {
+
+class VerticalZoomStrip : public juce::Component {
+  public:
+    VerticalZoomStrip(int minValue, int maxValue);
+
+    void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& event) override;
+    void mouseDrag(const juce::MouseEvent& event) override;
+    void mouseUp(const juce::MouseEvent& event) override;
+    void mouseMove(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent& event) override;
+
+    std::function<int()> getValue;
+    std::function<void(int, int)> onZoomChanged;  // newValue, anchorScreenY
+
+  private:
+    int minValue_ = 1;
+    int maxValue_ = 1;
+    int mouseDownY_ = 0;
+    int startValue_ = 1;
+    int lastSentValue_ = 1;
+    bool dragging_ = false;
+};
 
 /**
  * @brief Custom viewport that fires a callback on scroll and repaints registered components.

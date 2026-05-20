@@ -171,7 +171,11 @@ void Config::save() {
     // Browser
     root->setProperty("browserFilterAudio", browserFilterAudio);
     root->setProperty("browserFilterMidi", browserFilterMidi);
+    root->setProperty("browserFilterPreset", browserFilterPreset);
     root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
+    root->setProperty("browserLastView", toJuceString(browserLastView));
+    root->setProperty("sampleTaggerModelsDir", toJuceString(sampleTaggerModelsDir));
+    root->setProperty("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
 
     juce::Array<juce::var> favArray;
     for (const auto& f : browserFavorites)
@@ -530,7 +534,11 @@ void Config::load() {
 
     browserFilterAudio = getBool("browserFilterAudio", browserFilterAudio);
     browserFilterMidi = getBool("browserFilterMidi", browserFilterMidi);
+    browserFilterPreset = getBool("browserFilterPreset", browserFilterPreset);
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
+    browserLastView = getString("browserLastView", browserLastView);
+    sampleTaggerModelsDir = getString("sampleTaggerModelsDir", sampleTaggerModelsDir);
+    loadSampleTaggerOnStartup = getBool("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
     browserFavorites = getStringArray("browserFavorites");
 
     // Auto-update check

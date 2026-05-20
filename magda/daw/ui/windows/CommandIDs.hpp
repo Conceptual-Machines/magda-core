@@ -26,6 +26,8 @@ enum {
     renderTimeSelection = 0x100B,  // Cmd+Shift+B: consolidate time selection to audio
     setLoopFromClip = 0x100C,      // Cmd+Shift+L: set loop region to selected clip bounds
     toggleClipLoop = 0x100D,       // Cmd+L: toggle loop on/off for selected clip
+    duplicateClipWithAutomation = 0x100E,
+    duplicateClipWithoutAutomation = 0x100F,
 
     // Transport menu
     play = 0x2000,
@@ -44,6 +46,9 @@ enum {
     toggleArrangeSession = 0x4001,
     uiScaleUp = 0x4002,    // Cmd+= / Cmd++: increase global UI scale
     uiScaleDown = 0x4003,  // Cmd+- / Cmd+_: decrease global UI scale
+    cycleViewForward = 0x4004,
+    cycleViewBackward = 0x4005,
+    togglePianoRollFullscreen = 0x4006,  // Cmd/Ctrl+Shift+P
 
     // Help menu
     showHelp = 0x5000,

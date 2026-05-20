@@ -173,6 +173,13 @@ juce_add_binary_data(MagdaAssets
     ../../assets/midi.svg
     ../../assets/icons/browser/AUDIO.svg
     ../../assets/icons/browser/MIDI.svg
+    # Media-explorer filter icons (issue #768) — three coloured backdrops
+    ../../assets/icons/media_db/audio_db_off.svg
+    ../../assets/icons/media_db/audio_db_on.svg
+    ../../assets/icons/media_db/midi_db_off.svg
+    ../../assets/icons/media_db/midi_db_on.svg
+    ../../assets/icons/media_db/presets_db_off.svg
+    ../../assets/icons/media_db/presets_db_on.svg
     # Mixer fader icons
     ../../assets/icons/fader/fader_thumb.svg
     ../../assets/icons/fader/fader_track.svg
@@ -191,6 +198,9 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/panels/right_close.svg
     ../../assets/icons/panels/bottom_open.svg
     ../../assets/icons/panels/bottom_close.svg
+    ../../assets/icons/panels/enter_fs.svg
+    ../../assets/icons/panels/exit_fs.svg
+
     # Fontaudio waveform icons
     ../../assets/icons/fontaudio/fad-modsine.svg
     ../../assets/icons/fontaudio/fad-modtri.svg
@@ -316,6 +326,7 @@ add_subdirectory(api)
 add_subdirectory(interfaces)
 add_subdirectory(profiling)
 add_subdirectory(ui)
+add_subdirectory(media_db)
 
 # =============================================================================
 # Linking, compile defs, includes
@@ -344,6 +355,7 @@ endif()
 target_link_libraries(magda_daw
     PUBLIC
     juce::juce_core
+    juce::juce_cryptography  # SHA-256 verification of downloaded model files
     juce::juce_data_structures
     juce::juce_audio_basics
     juce::juce_audio_devices

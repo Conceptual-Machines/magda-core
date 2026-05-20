@@ -73,9 +73,11 @@ void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintC
                               ctx.linkCtx.rackMods, ctx.linkCtx.trackMods);
             if (modPtr) {
                 if (const auto* link = modPtr->getLink(target)) {
-                    const int barHeight = static_cast<int>(maxHeight * link->amount);
-                    drawVerticalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE), modX, startY,
-                                    amountBarWidth, barHeight);
+                    if (link->enabled) {
+                        const int barHeight = static_cast<int>(maxHeight * link->amount);
+                        drawVerticalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE), modX,
+                                        startY, amountBarWidth, barHeight);
+                    }
                 }
             }
         }
@@ -176,13 +178,14 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
                     ctx.linkCtx.devicePath, ctx.linkCtx.paramIndex);
 
                 if (const auto* link = modPtr->getLink(thisTarget)) {
-                    float linkAmount = link->amount;
+                    if (link->enabled) {
+                        float linkAmount = link->amount;
+                        int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
+                        int barWidth = static_cast<int>(maxWidth * linkAmount);
 
-                    int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
-                    int barWidth = static_cast<int>(maxWidth * linkAmount);
-
-                    drawHorizontalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE), startX, y,
-                                      barWidth, amountBarHeight);
+                        drawHorizontalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE), startX,
+                                          y, barWidth, amountBarHeight);
+                    }
                 }
             }
         }

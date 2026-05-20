@@ -11,11 +11,79 @@
 #include "ui/state/TimelineController.hpp"
 #include "ui/state/TimelineEvents.hpp"
 #include "ui/state/TimelineState.hpp"
+#include "ui/themes/CursorManager.hpp"
+#include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
 
 // Static member — persists drawer open/closed state across editor switches
 bool MidiEditorContent::velocityDrawerOpen_ = false;
+
+VerticalZoomStrip::VerticalZoomStrip(int minValue, int maxValue)
+    : minValue_(minValue), maxValue_(maxValue) {
+    setName("VerticalZoomStrip");
+    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+}
+
+void VerticalZoomStrip::paint(juce::Graphics& g) {
+    auto bounds = getLocalBounds();
+    g.fillAll(magda::DarkTheme::getColour(magda::DarkTheme::BACKGROUND_ALT));
+
+    g.setColour(magda::DarkTheme::getColour(magda::DarkTheme::SEPARATOR));
+    g.drawVerticalLine(bounds.getX(), 0.0f, static_cast<float>(bounds.getBottom()));
+    g.drawVerticalLine(bounds.getRight() - 1, 0.0f, static_cast<float>(bounds.getBottom()));
+
+    const int centreX = bounds.getCentreX();
+    const int centreY = bounds.getCentreY();
+    g.setColour(magda::DarkTheme::getColour(magda::DarkTheme::TEXT_DIM));
+    for (int y = centreY - 18; y <= centreY + 18; y += 9)
+        g.fillEllipse(static_cast<float>(centreX - 1), static_cast<float>(y - 1), 2.0f, 2.0f);
+}
+
+void VerticalZoomStrip::mouseDown(const juce::MouseEvent& event) {
+    mouseDownY_ = event.y;
+    startValue_ = juce::jlimit(minValue_, maxValue_, getValue ? getValue() : minValue_);
+    lastSentValue_ = startValue_;
+    dragging_ = false;
+    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+}
+
+void VerticalZoomStrip::mouseDrag(const juce::MouseEvent& event) {
+    const int yDelta = mouseDownY_ - event.y;
+    if (std::abs(yDelta) > 3)
+        dragging_ = true;
+
+    if (!dragging_)
+        return;
+
+    const double sensitivity = 30.0;
+    const double exponent = static_cast<double>(yDelta) / sensitivity;
+    const int rawValue =
+        static_cast<int>(std::round(static_cast<double>(startValue_) * std::pow(2.0, exponent)));
+    const int newValue = juce::jlimit(minValue_, maxValue_, rawValue);
+    if (newValue == lastSentValue_)
+        return;
+
+    lastSentValue_ = newValue;
+
+    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+
+    if (onZoomChanged)
+        onZoomChanged(newValue, mouseDownY_);
+}
+
+void VerticalZoomStrip::mouseUp(const juce::MouseEvent& /*event*/) {
+    dragging_ = false;
+    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+}
+
+void VerticalZoomStrip::mouseMove(const juce::MouseEvent& /*event*/) {
+    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+}
+
+void VerticalZoomStrip::mouseExit(const juce::MouseEvent& /*event*/) {
+    setMouseCursor(juce::MouseCursor::NormalCursor);
+}
 
 MidiEditorContent::MidiEditorContent() {
     // Create time ruler

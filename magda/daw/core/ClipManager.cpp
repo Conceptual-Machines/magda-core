@@ -10,6 +10,7 @@
 #include "TempoUtils.hpp"
 #include "TrackManager.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "media_db/MediaDbMetadata.hpp"
 
 namespace magda {
 
@@ -174,6 +175,18 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
             double live = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
             mgr.applyAudioClipBeats(cid, u, live);
         };
+
+        // Media DB takes precedence: if the file has been indexed, use the
+        // effective BPM (user override > scanner-detected) so dropped
+        // samples land with the BPM the user has already accepted or
+        // edited. Falls through to the live BPM-detection pipeline for
+        // un-indexed files.
+        auto dbMetadata = magda::media::getEffectiveMetadataForFile(
+            std::filesystem::path(audioFilePath.toStdString()));
+        if (dbMetadata && dbMetadata->bpm && *dbMetadata->bpm > 0.0) {
+            applyDetectedBPM(*dbMetadata->bpm);
+            return clip.id;
+        }
 
         auto& thumbs = AudioThumbnailManager::getInstance();
         const double cachedBPM = thumbs.getCachedBPM(audioFilePath);
@@ -1002,6 +1015,21 @@ void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
     applyAudioClipBeats(clipId, u, bpm);
 }
 
+void ClipManager::recordUserBpm(ClipId clipId, double bpm) {
+    if (!isValidBpm(bpm)) {
+        return;
+    }
+    const auto* clip = getClip(clipId);
+    if (!clip || !clip->isAudio()) {
+        return;
+    }
+    const auto& filePath = clip->audio().source.filePath;
+    if (filePath.isEmpty()) {
+        return;
+    }
+    magda::media::setUserBpmForFile(std::filesystem::path(filePath.toStdString()), bpm);
+}
+
 void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update,
                                       double projectBPM) {
     auto* clip = getClip(clipId);
@@ -1403,6 +1431,17 @@ void ClipManager::setClipSnapEnabled(ClipId clipId, bool enabled) {
     if (auto* clip = getClip(clipId)) {
         clip->gridSnapEnabled = enabled;
         notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::setClipMidiEditorRowHeight(ClipId clipId, int rowHeight) {
+    if (auto* clip = getClip(clipId)) {
+        const int clampedHeight = juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT,
+                                               ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT, rowHeight);
+        if (clip->midiEditorRowHeight != clampedHeight) {
+            clip->midiEditorRowHeight = clampedHeight;
+            notifyClipPropertyChanged(clipId);
+        }
     }
 }
 
@@ -2205,6 +2244,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                 newClip->gridNumerator = clipData.gridNumerator;
                 newClip->gridDenominator = clipData.gridDenominator;
                 newClip->gridSnapEnabled = clipData.gridSnapEnabled;
+                newClip->midiEditorRowHeight = clipData.midiEditorRowHeight;
 
                 // Cross-view translation: pasting into session view
                 if (targetView == ClipView::Session && targetSceneIndex >= 0) {

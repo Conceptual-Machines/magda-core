@@ -64,7 +64,11 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                 juce::PopupMenu recentMenu;
                 auto recentPaths = Config::getInstance().getRecentProjects();
                 if (recentPaths.empty()) {
-                    recentMenu.addItem(0, tr("menu.file.no_recent"), false, false);
+                    // Section header, not addItem(0, ...). JUCE asserts on
+                    // itemID 0 at juce_PopupMenu.cpp:1866 — it's reserved
+                    // for "user dismissed". Section headers are the
+                    // sanctioned non-clickable label form.
+                    recentMenu.addSectionHeader(tr("menu.file.no_recent"));
                 } else {
                     int idx = 0;
                     for (const auto& path : recentPaths) {
@@ -134,6 +138,10 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                          false);
             menu.addItem(Duplicate, tr("menu.edit.duplicate") + juce::String::fromUTF8("\t\u2318D"),
                          hasSelection_, false);
+            menu.addItem(DuplicateClipWithAutomation, "Duplicate Clip With Automation",
+                         hasSelection_, false);
+            menu.addItem(DuplicateClipWithoutAutomation, "Duplicate Clip Without Automation",
+                         hasSelection_, false);
             menu.addItem(Delete, tr("menu.edit.delete") + juce::String::fromUTF8("\t\u232B"),
                          hasSelection_, false);
             menu.addSeparator();
@@ -163,6 +171,10 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addItem(Copy, tr("menu.edit.copy") + "\tCtrl+C", hasSelection_, false);
             menu.addItem(Paste, tr("menu.edit.paste") + "\tCtrl+V", true, false);
             menu.addItem(Duplicate, tr("menu.edit.duplicate") + "\tCtrl+D", hasSelection_, false);
+            menu.addItem(DuplicateClipWithAutomation, "Duplicate Clip With Automation",
+                         hasSelection_, false);
+            menu.addItem(DuplicateClipWithoutAutomation, "Duplicate Clip Without Automation",
+                         hasSelection_, false);
             menu.addItem(Delete, tr("menu.edit.delete") + "\tDelete", hasSelection_, false);
             menu.addSeparator();
             menu.addItem(SplitOrTrim, tr("menu.edit.split_trim") + "\tCtrl+E", true, false);
@@ -358,6 +370,14 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case Duplicate:
             if (callbacks_.onDuplicate)
                 callbacks_.onDuplicate();
+            break;
+        case DuplicateClipWithAutomation:
+            if (callbacks_.onDuplicateClipWithAutomation)
+                callbacks_.onDuplicateClipWithAutomation();
+            break;
+        case DuplicateClipWithoutAutomation:
+            if (callbacks_.onDuplicateClipWithoutAutomation)
+                callbacks_.onDuplicateClipWithoutAutomation();
             break;
         case Delete:
             if (callbacks_.onDelete)

@@ -2,6 +2,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "core/ClipInfo.hpp"
 
 namespace magda {
 
@@ -42,13 +43,7 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
         }
         g.fillRect(keyArea);
 
-        // Draw note name for C notes
-        if (note % 12 == 0) {
-            g.setColour(juce::Colour(0xFF2a2a2a));  // Dark text on white keys
-            g.setFont(FontManager::getInstance().getUIFont(9.0f));
-            g.drawText(getNoteName(note), keyArea.reduced(4, 0), juce::Justification::centredLeft,
-                       false);
-        }
+        // Note names live in OctaveLabelStrip now (next to the keyboard).
 
         // Subtle separator line between white keys
         if (!isBlackKey(note)) {
@@ -180,7 +175,8 @@ void PianoRollKeyboard::mouseDrag(const juce::MouseEvent& event) {
         int newHeight = zoomStartHeight_ + heightDelta;
 
         // Clamp to reasonable limits
-        newHeight = juce::jlimit(6, 40, newHeight);
+        newHeight = juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT,
+                                 ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT, newHeight);
 
         if (onZoomChanged && newHeight != noteHeight_) {
             onZoomChanged(newHeight, zoomAnchorNote_, mouseDownY_);
@@ -209,8 +205,17 @@ void PianoRollKeyboard::mouseUp(const juce::MouseEvent& /*event*/) {
     dragMode_ = DragMode::None;
 }
 
-void PianoRollKeyboard::mouseWheelMove(const juce::MouseEvent& /*event*/,
+void PianoRollKeyboard::mouseWheelMove(const juce::MouseEvent& event,
                                        const juce::MouseWheelDetails& wheel) {
+    if (event.mods.isAltDown() && onZoomChanged) {
+        const int anchorNote = yToNoteNumber(event.y);
+        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        onZoomChanged(juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT,
+                                   ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT, noteHeight_ + heightDelta),
+                      anchorNote, event.y);
+        return;
+    }
+
     // Scroll vertically when wheel is used over the keyboard
     if (onScrollRequested) {
         // Convert wheel delta to pixels

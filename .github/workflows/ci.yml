@@ -358,9 +358,9 @@ jobs:
       run: echo "✅ macOS build and tests completed successfully"
 
   # Decide whether the Windows job runs on the self-hosted runner (magda-luca)
-  # or falls back to windows-latest. The self-hosted runner is preferred; if
-  # it's offline we use the GitHub-hosted runner so PRs don't block on Luca's
-  # machine being on.
+  # or falls back to windows-latest. The self-hosted runner is preferred only
+  # when it is online and idle; otherwise use the GitHub-hosted runner so PRs
+  # do not block behind a busy/offline local machine.
   pick-windows-runner:
     runs-on: ubuntu-latest
     if: |
@@ -375,20 +375,26 @@ jobs:
           GH_TOKEN: ${{ secrets.RUNNER_STATUS_PAT }}
         run: |
           set -euo pipefail
+
           if [ -z "${GH_TOKEN:-}" ]; then
             echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
             echo "No RUNNER_STATUS_PAT available in this context (e.g. Dependabot PRs do not see repo secrets); falling back to windows-latest"
             exit 0
           fi
-          status=$(gh api "repos/${{ github.repository }}/actions/runners" \
-            --jq '.runners[] | select(any(.labels[]; .name == "magda-luca")) | .status' \
-            | head -n1)
-          if [ "$status" = "online" ]; then
+
+          runner=$(gh api "repos/${{ github.repository }}/actions/runners" \
+            --jq '.runners[] | select(any(.labels[]; .name == "magda-luca")) | [.status, .busy] | @tsv' \
+            | head -n1 || true)
+
+          status=$(printf '%s' "$runner" | cut -f1)
+          busy=$(printf '%s' "$runner" | cut -f2)
+
+          if [ "$status" = "online" ] && [ "$busy" != "true" ]; then
             echo 'labels=["self-hosted","Windows","magda-luca"]' >> "$GITHUB_OUTPUT"
-            echo "Using self-hosted runner: magda-luca"
+            echo "Using idle self-hosted runner: magda-luca"
           else
             echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
-            echo "Falling back to windows-latest (magda-luca status: '${status:-not-found}')"
+            echo "Falling back to windows-latest (magda-luca status: '${status:-not-found}', busy: '${busy:-unknown}')"
           fi
 
   build-and-test-windows:

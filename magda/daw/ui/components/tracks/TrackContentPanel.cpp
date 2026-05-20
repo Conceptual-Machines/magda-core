@@ -13,6 +13,7 @@
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../clips/ClipComponent.hpp"
 #include "Config.hpp"
+#include "core/AutomationCommands.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
@@ -1229,8 +1230,18 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
             selectionEndTime = snapTimeToGrid(selectionEndTime);
         }
 
-        // Track the current track under the mouse for multi-track selection
+        // Track the current track under the mouse for multi-track selection.
+        // If the drag crosses into an automation lane header strip, keep the
+        // clip-row selection and add that lane as an explicit automation scope.
         selectionEndTrackIndex = getTrackIndexAtY(event.y);
+        std::set<AutomationLaneId> automationLaneIds;
+        int automationTrackIndex = -1;
+        AutomationLaneId automationLaneId = INVALID_AUTOMATION_LANE_ID;
+        if (selectionEndTrackIndex < 0 &&
+            getAutomationLaneStripAtY(event.y, automationTrackIndex, automationLaneId)) {
+            selectionEndTrackIndex = automationTrackIndex;
+            automationLaneIds.insert(automationLaneId);
+        }
 
         // Clamp to valid track range (handle dragging above/below track area)
         if (selectionEndTrackIndex < 0) {
@@ -1259,7 +1270,11 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
         if (onTimeSelectionChanged) {
             double start = juce::jmin(selectionStartTime, selectionEndTime);
             double end = juce::jmax(selectionStartTime, selectionEndTime);
-            onTimeSelectionChanged(start, end, trackIndices);
+            if (!automationLaneIds.empty() && onMixedTimeSelectionChanged) {
+                onMixedTimeSelectionChanged(start, end, trackIndices, automationLaneIds);
+            } else {
+                onTimeSelectionChanged(start, end, trackIndices);
+            }
         }
     }
 }
@@ -1512,6 +1527,15 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 
             // Get final track index from mouse position
             selectionEndTrackIndex = getTrackIndexAtY(event.y);
+            std::set<AutomationLaneId> automationLaneIds;
+            int automationTrackIndex = -1;
+            AutomationLaneId automationLaneId = INVALID_AUTOMATION_LANE_ID;
+            if (selectionEndTrackIndex < 0 &&
+                getAutomationLaneStripAtY(event.y, automationTrackIndex, automationLaneId)) {
+                selectionEndTrackIndex = automationTrackIndex;
+                automationLaneIds.insert(automationLaneId);
+            }
+
             if (selectionEndTrackIndex < 0) {
                 if (event.y < 0) {
                     selectionEndTrackIndex = 0;
@@ -1539,7 +1563,9 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
                     }
                 }
 
-                if (onTimeSelectionChanged) {
+                if (!automationLaneIds.empty() && onMixedTimeSelectionChanged) {
+                    onMixedTimeSelectionChanged(start, end, trackIndices, automationLaneIds);
+                } else if (onTimeSelectionChanged) {
                     onTimeSelectionChanged(start, end, trackIndices);
                 }
 
@@ -1673,20 +1699,25 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
     bool isFrozen = trackInfo && trackInfo->frozen;
 
     auto& clipManager = ClipManager::getInstance();
+    auto& selectionManager = SelectionManager::getInstance();
     bool hasClipboard = clipManager.hasClipsInClipboard();
+    bool hasSelectedClips = !selectionManager.getSelectedClips().empty();
 
     // "Duplicate Time Selection" only makes sense when an active, visible
     // time selection exists. Same gate Cmd+D uses in MainWindowCommands.
     bool hasTimeSelection = false;
     if (timelineController) {
         const auto& sel = timelineController->getState().selection;
-        hasTimeSelection = sel.isVisuallyActive();
+        hasTimeSelection = sel.isVisuallyActive() && !sel.automationOnly;
     }
 
     juce::PopupMenu menu;
     menu.addItem(1, "Create MIDI Clip", !isFrozen);
     menu.addSeparator();
     menu.addItem(2, "Paste", !isFrozen && hasClipboard);
+    menu.addItem(5, "Duplicate Selected Clips", !isFrozen && hasSelectedClips);
+    menu.addItem(6, "Duplicate Selected Clips With Automation", !isFrozen && hasSelectedClips);
+    menu.addItem(7, "Duplicate Selected Clips Without Automation", !isFrozen && hasSelectedClips);
     menu.addItem(4, "Duplicate Time Selection", !isFrozen && hasTimeSelection);
     menu.addItem(3, "Select All");
 
@@ -1764,8 +1795,70 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
                     SetTimeSelectionEvent{sel.endTime, sel.endTime + duration, sel.trackIndices});
                 break;
             }
+            case 5:  // Duplicate Selected Clips
+            case 7:  // Duplicate Selected Clips Without Automation
+                if (safeThis)
+                    safeThis->duplicateSelectedArrangementClips(false);
+                break;
+            case 6:  // Duplicate Selected Clips With Automation
+                if (safeThis)
+                    safeThis->duplicateSelectedArrangementClips(true);
+                break;
         }
     });
+}
+
+bool TrackContentPanel::duplicateSelectedArrangementClips(bool includeAutomation) {
+    auto& selectionManager = SelectionManager::getInstance();
+    auto& clipManager = ClipManager::getInstance();
+    const auto selectedClips = selectionManager.getSelectedClips();
+    if (selectedClips.empty())
+        return false;
+
+    auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempoBPM);
+    if (commands.empty())
+        return false;
+
+    const bool compoundOperation = commands.size() > 1 || includeAutomation;
+    if (compoundOperation) {
+        UndoManager::getInstance().beginCompoundOperation(
+            includeAutomation ? "Duplicate Clips With Automation" : "Duplicate Clips");
+    }
+
+    std::unordered_set<ClipId> newClipIds;
+    for (auto& cmd : commands) {
+        const auto sourceClipId = cmd->getSourceClipId();
+        auto* cmdPtr = cmd.get();
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+        const ClipId newId = cmdPtr->getDuplicatedClipId();
+        if (newId != INVALID_CLIP_ID)
+            newClipIds.insert(newId);
+
+        if (!includeAutomation || newId == INVALID_CLIP_ID)
+            continue;
+
+        const auto* sourceClip = clipManager.getClip(sourceClipId);
+        const auto* duplicatedClip = clipManager.getClip(newId);
+        if (!sourceClip || !duplicatedClip)
+            continue;
+
+        const double sourceStartBeat = sourceClip->getStartBeats(tempoBPM);
+        const double sourceEndBeat = sourceClip->getEndBeats(tempoBPM);
+        const double destinationStartBeat = duplicatedClip->getStartBeats(tempoBPM);
+        auto automationCmd = std::make_unique<DuplicateAutomationTimeSelectionCommand>(
+            sourceStartBeat, sourceEndBeat, std::vector<TrackId>{sourceClip->trackId},
+            destinationStartBeat);
+        if (automationCmd->canDuplicatePoints())
+            UndoManager::getInstance().executeCommand(std::move(automationCmd));
+    }
+
+    if (compoundOperation)
+        UndoManager::getInstance().endCompoundOperation();
+
+    if (!newClipIds.empty())
+        selectionManager.selectClips(newClipIds);
+
+    return true;
 }
 
 void TrackContentPanel::timerCallback() {
@@ -2271,6 +2364,15 @@ bool TrackContentPanel::checkIfMarqueeNeeded(const juce::Point<int>& currentPoin
 
 bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
     auto& selectionManager = SelectionManager::getInstance();
+    auto forwardToParent = [this, &key]() {
+        auto* parent = getParentComponent();
+        while (parent != nullptr) {
+            if (parent->keyPressed(key))
+                return true;
+            parent = parent->getParentComponent();
+        }
+        return false;
+    };
 
     // Note: Cmd+Z / Cmd+Shift+Z (undo/redo) are handled globally by
     // MainComponent's ApplicationCommandManager key mappings.
@@ -2304,7 +2406,8 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
 
     // Delete/Backspace: time-selection delete takes priority, then selected clips
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
-        if (timelineController && timelineController->getState().selection.isVisuallyActive()) {
+        if (timelineController && timelineController->getState().selection.isVisuallyActive() &&
+            !timelineController->getState().selection.automationOnly) {
             const auto& state = timelineController->getState();
             const auto& sel = state.selection;
 
@@ -2357,36 +2460,11 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
 
     // Cmd/Ctrl+D: Duplicate selected clips
     if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
-        const auto& selectedClips = selectionManager.getSelectedClips();
-        if (!selectedClips.empty()) {
-            auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempoBPM);
-            if (commands.empty())
-                return false;
+        if (timelineController && timelineController->getState().selection.isVisuallyActive()) {
+            return forwardToParent();
+        }
 
-            // Use compound operation to group all duplicates into single undo step
-            if (commands.size() > 1) {
-                UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
-            }
-
-            // Execute commands and collect new IDs
-            std::unordered_set<ClipId> newClipIds;
-            for (auto& cmd : commands) {
-                DuplicateClipCommand* cmdPtr = cmd.get();
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-                ClipId newId = cmdPtr->getDuplicatedClipId();
-                if (newId != INVALID_CLIP_ID) {
-                    newClipIds.insert(newId);
-                }
-            }
-
-            if (commands.size() > 1) {
-                UndoManager::getInstance().endCompoundOperation();
-            }
-
-            // Select the new duplicates
-            if (!newClipIds.empty()) {
-                selectionManager.selectClips(newClipIds);
-            }
+        if (duplicateSelectedArrangementClips(false)) {
             grabKeyboardFocus();  // Keep focus for subsequent operations
             return true;
         }
@@ -2464,15 +2542,7 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
     // Forward unhandled keys up the parent chain for command manager processing
     // Walk up past the Viewport to reach MainView/MainComponent where ApplicationCommandManager
     // lives
-    auto* parent = getParentComponent();
-    while (parent != nullptr) {
-        if (parent->keyPressed(key)) {
-            return true;
-        }
-        parent = parent->getParentComponent();
-    }
-
-    return false;  // Key not handled
+    return forwardToParent();
 }
 
 // ============================================================================
@@ -2558,6 +2628,38 @@ bool TrackContentPanel::isAutomationLaneVisible(TrackId trackId, AutomationLaneI
     return false;
 }
 
+bool TrackContentPanel::getAutomationLaneBounds(AutomationLaneId laneId,
+                                                juce::Rectangle<int>& bounds) const {
+    for (const auto& entry : automationLaneComponents_) {
+        if (entry.laneId == laneId && entry.component) {
+            bounds = entry.component->getBounds();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TrackContentPanel::getAutomationLaneStripAtY(int y, int& trackIndex,
+                                                  AutomationLaneId& laneId) const {
+    for (const auto& entry : automationLaneComponents_) {
+        if (!entry.component)
+            continue;
+
+        const auto bounds = entry.component->getBounds();
+        if (y < bounds.getY() || y >= bounds.getY() + AutomationLaneComponent::HEADER_HEIGHT)
+            continue;
+
+        auto trackIt = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), entry.trackId);
+        if (trackIt == visibleTrackIds_.end())
+            return false;
+
+        trackIndex = static_cast<int>(std::distance(visibleTrackIds_.begin(), trackIt));
+        laneId = entry.laneId;
+        return true;
+    }
+    return false;
+}
+
 int TrackContentPanel::getTrackTotalHeight(int trackIndex) const {
     if (trackIndex < 0 || trackIndex >= static_cast<int>(trackLanes.size())) {
         return 0;
@@ -2631,6 +2733,23 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
                 updateClipComponentPositions();
                 resized();
                 repaintVisible();
+            };
+            entry.component->onTimeSelectionChanged = [this, trackId, laneId](AutomationLaneId,
+                                                                              double startBeat,
+                                                                              double endBeat) {
+                if (!onAutomationTimeSelectionChanged || tempoBPM <= 0.0)
+                    return;
+
+                auto trackIt = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), trackId);
+                if (trackIt == visibleTrackIds_.end())
+                    return;
+
+                const int trackIndex =
+                    static_cast<int>(std::distance(visibleTrackIds_.begin(), trackIt));
+                std::set<int> trackIndices{trackIndex};
+                std::set<AutomationLaneId> laneIds{laneId};
+                onAutomationTimeSelectionChanged(startBeat * 60.0 / tempoBPM,
+                                                 endBeat * 60.0 / tempoBPM, trackIndices, laneIds);
             };
 
             addAndMakeVisible(*entry.component);

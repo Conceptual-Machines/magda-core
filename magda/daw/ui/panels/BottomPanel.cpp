@@ -182,6 +182,17 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     };
     addChildComponent(drumGridTab_.get());
 
+    // Fullscreen toggle (issue #1282) — applies to piano roll and drum grid.
+    fullscreenToggle_ = std::make_unique<SvgButton>("EditorFullscreen", BinaryData::enter_fs_svg,
+                                                    BinaryData::enter_fs_svgSize);
+    fullscreenToggle_->setTooltip("Toggle MIDI editor fullscreen");
+    fullscreenToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    fullscreenToggle_->onClick = [this]() {
+        if (onFullscreenToggleRequested)
+            onFullscreenToggleRequested();
+    };
+    addChildComponent(fullscreenToggle_.get());
+
     // Create audio clip properties side panel (hidden by default)
     audioPropsPanel_ = std::make_unique<daw::ui::AudioClipPropertiesContent>();
     addChildComponent(audioPropsPanel_.get());
@@ -263,6 +274,7 @@ BottomPanel::~BottomPanel() {
     headerBar_.reset();
     pianoRollTab_.reset();
     drumGridTab_.reset();
+    fullscreenToggle_.reset();
     propsResizer_.reset();
     audioPropsPanel_.reset();
     chordResizer_.reset();
@@ -887,6 +899,16 @@ void BottomPanel::updateContentBasedOnSelection() {
     }
 }
 
+void BottomPanel::setPianoRollFullscreenActive(bool active) {
+    pianoRollFullscreenActive_ = active;
+    if (fullscreenToggle_) {
+        fullscreenToggle_->updateSvgData(
+            active ? BinaryData::exit_fs_svg : BinaryData::enter_fs_svg,
+            active ? BinaryData::exit_fs_svgSize : BinaryData::enter_fs_svgSize);
+        fullscreenToggle_->setActive(active);
+    }
+}
+
 void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
                                       daw::ui::PanelContent* incoming) {
     // Depopulate outgoing content's header controls
@@ -898,14 +920,26 @@ void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
     // Populate incoming content's header controls
     if (incoming)
         incoming->populateHeader(*headerBar_);
+
     // Add MIDI controls if incoming is a MIDI editor
-    if (incoming && (incoming->getContentType() == daw::ui::PanelContentType::PianoRoll ||
-                     incoming->getContentType() == daw::ui::PanelContentType::DrumGridClipView)) {
-        addMidiControlsToHeader();
-    }
-    // Also add grid controls for waveform editor
-    if (incoming && incoming->getContentType() == daw::ui::PanelContentType::WaveformEditor) {
+    const bool isMidiEditor =
+        incoming && (incoming->getContentType() == daw::ui::PanelContentType::PianoRoll ||
+                     incoming->getContentType() == daw::ui::PanelContentType::DrumGridClipView);
+    const bool isWaveformEditor =
+        incoming && incoming->getContentType() == daw::ui::PanelContentType::WaveformEditor;
+    if (isMidiEditor || isWaveformEditor)
         addMidiControlsToHeader();  // Grid controls are shared between MIDI and audio
+
+    // Fullscreen toggle: enabled for any clip editor (piano roll, drum grid,
+    // waveform). Hidden for track chain and empty content (issue #1282).
+    if (fullscreenToggle_) {
+        if (isMidiEditor || isWaveformEditor) {
+            headerBar_->addAndMakeVisible(fullscreenToggle_.get());
+            // Sync icon to the cached fullscreen state.
+            setPianoRollFullscreenActive(pianoRollFullscreenActive_);
+        } else {
+            fullscreenToggle_->setVisible(false);
+        }
     }
 
     headerBar_->setVisible(incoming != nullptr && incoming->wantsHeader());
@@ -938,11 +972,25 @@ void BottomPanel::removeMidiControlsFromHeader() {
     addChildComponent(drumGridTab_.get());
     addChildComponent(sliceButton_.get());
     addChildComponent(bendButton_.get());
+    if (fullscreenToggle_)
+        addChildComponent(fullscreenToggle_.get());
 }
 
 void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
     auto controlsArea = headerBounds;
-    controlsArea.removeFromRight(30);
+    controlsArea.removeFromRight(8);
+
+    // Fullscreen toggle pinned to the far right (issue #1282). Only sized
+    // here; visibility is managed in onContentWillSwitch so we don't show
+    // it for waveform editor or track chain.
+    if (fullscreenToggle_ && fullscreenToggle_->isVisible()) {
+        const int btn = controlsArea.getHeight() - 8;
+        const int btnX = controlsArea.getRight() - btn;
+        const int btnY = controlsArea.getY() + (controlsArea.getHeight() - btn) / 2;
+        fullscreenToggle_->setBounds(btnX, btnY, btn, btn);
+        controlsArea.removeFromRight(btn + 6);
+    }
+    controlsArea.removeFromRight(22);
 
     int x = controlsArea.getRight();
     int y = controlsArea.getY();

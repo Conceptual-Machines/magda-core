@@ -1955,6 +1955,14 @@ void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {
     }
 }
 
+void TrackManager::notifyModulationNamesChanged(TrackId trackId) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->modulationNamesChanged(trackId);
+    }
+}
+
 void TrackManager::notifyAudioSidechainTriggered(TrackId sourceTrackId) {
     ScopedNotifyGuard guard(*this);
     for (size_t i = 0; i < listeners_.size(); ++i) {
