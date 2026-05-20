@@ -378,6 +378,14 @@ class Config {
         mediaDbDir = dir;
     }
 
+    // Optional executable/application used by "Edit in External Editor" on audio clips.
+    std::string getExternalAudioEditorPath() const {
+        return externalAudioEditorPath;
+    }
+    void setExternalAudioEditorPath(const std::string& path) {
+        externalAudioEditorPath = path;
+    }
+
     // Export Audio Configuration
     std::string getExportFormat() const {
         return exportFormat;
@@ -903,6 +911,9 @@ class Config {
     // Optional override for the media DB directory. Empty = default
     // (dataDir/MediaDB).
     std::string mediaDbDir = "";
+
+    // External sample editor executable/application path.
+    std::string externalAudioEditorPath = "";
 
     // Auto-update check
     bool autoCheckUpdates = true;          // Check GitHub for newer releases on startup

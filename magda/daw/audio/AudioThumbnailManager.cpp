@@ -500,6 +500,23 @@ void AudioThumbnailManager::clearCache() {
     pendingPeakComputes_.clear();
 }
 
+void AudioThumbnailManager::invalidateFile(const juce::String& audioFilePath) {
+    thumbnails_.erase(audioFilePath);
+    thumbnailCache_->clear();
+    bpmCache_.erase(audioFilePath);
+    pendingBpmCallbacks_.erase(audioFilePath);
+    transientCache_.erase(audioFilePath);
+
+    auto readerIt = readerIndex_.find(audioFilePath);
+    if (readerIt != readerIndex_.end()) {
+        readerLru_.erase(readerIt->second);
+        readerIndex_.erase(readerIt);
+    }
+
+    peakCaches_.erase(audioFilePath);
+    pendingPeakComputes_.erase(audioFilePath);
+}
+
 juce::ThreadPool& AudioThumbnailManager::getOrCreateBackgroundPool() {
     if (!backgroundThreadPool_)
         backgroundThreadPool_ = std::make_unique<juce::ThreadPool>(1);

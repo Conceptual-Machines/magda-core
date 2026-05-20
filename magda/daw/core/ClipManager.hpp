@@ -151,6 +151,11 @@ class ClipManager {
     void forceNotifyMultipleClipPropertiesChanged(const std::vector<ClipId>& clipIds);
 
     /**
+     * @brief Copy an audio clip source into the project external-edits folder and open it.
+     */
+    bool editAudioClipSourceInExternalEditor(ClipId clipId, juce::String& errorMessage);
+
+    /**
      * @brief Duplicate a clip (places copy right after original)
      * @return The ID of the new clip
      */

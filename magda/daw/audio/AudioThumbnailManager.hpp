@@ -109,6 +109,11 @@ class AudioThumbnailManager {
     void clearCache();
 
     /**
+     * @brief Clear cached waveform, BPM, transient, reader, and peak data for one file.
+     */
+    void invalidateFile(const juce::String& audioFilePath);
+
+    /**
      * @brief Shutdown and release all resources
      * Call during app shutdown to prevent JUCE leak detection issues
      */

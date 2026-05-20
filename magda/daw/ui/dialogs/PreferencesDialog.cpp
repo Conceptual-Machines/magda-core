@@ -1751,6 +1751,29 @@ class MediaLibraryPage : public juce::Component {
         };
         addAndMakeVisible(loadOnStartupToggle_);
 
+        // ===== External Editor section =====
+        setupSectionHeader(*this, editorHeader_, "External Audio Editor");
+
+        editorLocationCaption_.setText("Editor", juce::dontSendNotification);
+        styleDialogLabel(editorLocationCaption_);
+        addAndMakeVisible(editorLocationCaption_);
+
+        editorLocationField_.setReadOnly(true);
+        styleDialogEditor(editorLocationField_);
+        addAndMakeVisible(editorLocationField_);
+
+        editorBrowse_.setButtonText("Browse...");
+        editorBrowse_.onClick = [this]() { browseForExternalEditor(); };
+        addAndMakeVisible(editorBrowse_);
+
+        editorReset_.setButtonText("Reset");
+        editorReset_.onClick = [this]() {
+            magda::Config::getInstance().setExternalAudioEditorPath(std::string{});
+            magda::Config::getInstance().save();
+            refresh();
+        };
+        addAndMakeVisible(editorReset_);
+
         // ===== Media Database section =====
         setupSectionHeader(*this, dbHeader_, "Media Database");
 
@@ -1791,7 +1814,7 @@ class MediaLibraryPage : public juce::Component {
     int getPreferredHeight(int) const {
         // Two sections with header + status + 3-4 rows each. Conservative
         // estimate so the scroll viewport doesn't clip.
-        return 480;
+        return 560;
     }
 
     void resized() override {
@@ -1823,6 +1846,20 @@ class MediaLibraryPage : public juce::Component {
         loadButton_.setBounds(buttonRow.removeFromLeft(100));
         bounds.removeFromTop(6);
         loadOnStartupToggle_.setBounds(bounds.removeFromTop(22));
+
+        bounds.removeFromTop(20);
+
+        // External Editor section
+        editorHeader_.setBounds(bounds.removeFromTop(24));
+        bounds.removeFromTop(6);
+
+        auto editorRow = bounds.removeFromTop(rowH);
+        editorLocationCaption_.setBounds(editorRow.removeFromLeft(labelW));
+        editorReset_.setBounds(editorRow.removeFromRight(70).reduced(0, 1));
+        editorRow.removeFromRight(4);
+        editorBrowse_.setBounds(editorRow.removeFromRight(90).reduced(0, 1));
+        editorRow.removeFromRight(4);
+        editorLocationField_.setBounds(editorRow.reduced(0, 1));
 
         bounds.removeFromTop(20);
 
@@ -1885,6 +1922,12 @@ class MediaLibraryPage : public juce::Component {
         actionButton_.setEnabled(true);
         loadButton_.setButtonText(loaded ? "Unload" : (loadInFlight_ ? "Loading..." : "Load"));
         loadButton_.setEnabled(installed && !loadInFlight_);
+
+        const auto editorPath =
+            juce::String(magda::Config::getInstance().getExternalAudioEditorPath());
+        editorLocationField_.setText(editorPath.isEmpty() ? juce::String("Not configured")
+                                                          : editorPath,
+                                     juce::dontSendNotification);
 
         // -- Media Database
         dbLocationField_.setText(
@@ -1972,6 +2015,44 @@ class MediaLibraryPage : public juce::Component {
                 magda::media::MediaDbContext::getInstance().resetForReopen();
                 refresh();
             });
+    }
+
+    void browseForExternalEditor() {
+        const auto configured =
+            juce::String(magda::Config::getInstance().getExternalAudioEditorPath());
+        juce::File initial = configured.isNotEmpty()
+                                 ? juce::File(configured)
+                                 : juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+        if (!initial.exists()) {
+            initial = juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+        }
+
+        editorChooser_ =
+            std::make_unique<juce::FileChooser>("Choose an external audio editor", initial);
+        auto chooserFlags =
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+#if JUCE_MAC
+        chooserFlags |= juce::FileBrowserComponent::canSelectDirectories;
+#endif
+        editorChooser_->launchAsync(chooserFlags, [this](const juce::FileChooser& fc) {
+            const auto picked = fc.getResult();
+            if (!picked.exists()) {
+                return;
+            }
+#if JUCE_MAC
+            if (!picked.existsAsFile() && !picked.isBundle()) {
+                return;
+            }
+#else
+            if (!picked.existsAsFile()) {
+                return;
+            }
+#endif
+            magda::Config::getInstance().setExternalAudioEditorPath(
+                picked.getFullPathName().toStdString());
+            magda::Config::getInstance().save();
+            refresh();
+        });
     }
 
     void handleActionClick() {
@@ -2071,6 +2152,13 @@ class MediaLibraryPage : public juce::Component {
     juce::ToggleButton loadOnStartupToggle_;
     bool loadInFlight_ = false;
     magda::media::SampleTaggerDownloader downloader_;
+
+    juce::Label editorHeader_;
+    juce::Label editorLocationCaption_;
+    juce::TextEditor editorLocationField_;
+    juce::TextButton editorBrowse_;
+    juce::TextButton editorReset_;
+    std::unique_ptr<juce::FileChooser> editorChooser_;
 
     juce::Label dbHeader_;
     juce::Label dbLocationCaption_;
