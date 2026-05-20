@@ -270,7 +270,7 @@ std::vector<std::pair<std::string, float>> scanTagsFor(
         if (!options.root.empty()) {
             std::error_code ec;
             auto rel = std::filesystem::relative(path.parent_path(), options.root, ec);
-            if (!ec && !rel.empty() && rel.native() != ".") {
+            if (!ec && !rel.empty() && rel.string() != ".") {
                 relativeParent = rel;
             } else {
                 relativeParent.clear();
@@ -278,10 +278,11 @@ std::vector<std::pair<std::string, float>> scanTagsFor(
         }
 
         for (const auto& part : relativeParent) {
-            if (part.empty() || part.native() == "." || part.native() == "..") {
+            const auto partText = part.string();
+            if (partText.empty() || partText == "." || partText == "..") {
                 continue;
             }
-            for (const auto& token : tagTokensFromText(part.string())) {
+            for (const auto& token : tagTokensFromText(partText)) {
                 addTag(tags, token);
             }
         }
