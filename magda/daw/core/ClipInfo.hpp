@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
 
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -101,6 +102,12 @@ struct AudioSourceInterpretation {
     double bpm = 0.0;
     double totalBeats = 0.0;
     bool totalBeatsLocked = false;
+    // Musical key the source is interpreted in. Optional — empty = unknown.
+    // Inspector/editor edits live on the clip until the user explicitly saves
+    // them to the media library. keyScale is "major" / "minor" / "" when
+    // unknown; keyRoot is "C" / "C#" / ... / "B" or empty.
+    std::string keyRoot;
+    std::string keyScale;
 };
 
 struct AudioClipModel {

@@ -100,6 +100,8 @@ class MediaExplorerContent : public PanelContent,
     std::unique_ptr<juce::FileFilter> mediaFileFilter_;
     std::unique_ptr<juce::FileBrowserComponent> fileBrowser_;
     std::unique_ptr<juce::FileChooser> fileChooser_;  // Persisted for async callbacks
+    // Persisted for the "Move folder in library..." async callback.
+    std::unique_ptr<juce::FileChooser> moveFolderChooser_;
 
     // Library / DB mode (issue #768 — Phase F1+F2)
     // The file browser and dbBrowser_ share the same bounds; only one is
@@ -151,6 +153,7 @@ class MediaExplorerContent : public PanelContent,
 
     juce::File currentPreviewFile_;
     bool isPlaying_ = false;
+    bool previewLockedForIndexing_ = false;
 
     // Drag detection
     juce::File fileForDrag_;
@@ -172,6 +175,7 @@ class MediaExplorerContent : public PanelContent,
     void loadFileForPreview(const juce::File& file);
     void playPreview();
     void stopPreview();
+    void setPreviewLockedForIndexing(bool locked);
     void updateFileInfo(const juce::File& file);
     void navigateToDirectory(const juce::File& directory);
     void updateMediaFilter();

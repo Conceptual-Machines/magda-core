@@ -11,7 +11,7 @@ namespace magda::media {
 struct ClapTextEncoder::Impl {
     Ort::Env env;
     Ort::SessionOptions sessionOptions;
-    Ort::Session session;
+    Ort::Session session{nullptr};
     Ort::MemoryInfo memoryInfo;
     std::vector<std::string> inputNames;  // [input_ids, attention_mask] order
     std::string outputName;
@@ -20,8 +20,14 @@ struct ClapTextEncoder::Impl {
 
     explicit Impl(const std::filesystem::path& modelPath)
         : env(ORT_LOGGING_LEVEL_WARNING, "magda-clap-text"),
-          session(env, modelPath.c_str(), sessionOptions),
           memoryInfo(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)) {
+        // Match the audio encoder: keep one predictable ORT worker per model
+        // session instead of stacking internal ORT pools on top of app-level
+        // background jobs.
+        sessionOptions.SetIntraOpNumThreads(1);
+        sessionOptions.SetInterOpNumThreads(1);
+        session = Ort::Session(env, modelPath.c_str(), sessionOptions);
+
         Ort::AllocatorWithDefaultOptions allocator;
 
         const size_t nInputs = session.GetInputCount();

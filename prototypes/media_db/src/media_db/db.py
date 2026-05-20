@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 7
 
 
 def connect(db_path: Path | str) -> sqlite3.Connection:

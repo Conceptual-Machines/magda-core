@@ -25,6 +25,11 @@ class TimelineController;
 class ClipComponent;
 class AutomationLaneComponent;
 
+struct FileDropGhost {
+    juce::String name;
+    double durationSeconds = 4.0;
+};
+
 class TrackContentPanel : public juce::Component,
                           public juce::FileDragAndDropTarget,
                           public juce::DragAndDropTarget,
@@ -429,8 +434,7 @@ class TrackContentPanel : public juce::Component,
     bool showDropIndicator_ = false;
     double dropInsertTime_ = 0.0;
     int dropTargetTrackIndex_ = -1;
-    juce::StringArray draggedAudioFiles_;        // Audio files currently being dragged over
-    std::vector<double> draggedAudioDurations_;  // Parallel to draggedAudioFiles_
+    std::vector<FileDropGhost> fileDropGhosts_;
 
     // Group track extent cache — avoids walking all descendants every paint
     struct GroupExtent {

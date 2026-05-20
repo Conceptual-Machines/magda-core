@@ -367,6 +367,17 @@ class Config {
         loadSampleTaggerOnStartup = enabled;
     }
 
+    // Optional override for the media DB directory. Empty string =
+    // default (dataDir/MediaDB). MediaDbContext::dbPath() / modelsDir()
+    // route through this when set and the directory exists. Lets users
+    // park the (potentially large) index on a different drive.
+    std::string getMediaDbDir() const {
+        return mediaDbDir;
+    }
+    void setMediaDbDir(const std::string& dir) {
+        mediaDbDir = dir;
+    }
+
     // Export Audio Configuration
     std::string getExportFormat() const {
         return exportFormat;
@@ -888,6 +899,10 @@ class Config {
     // Eagerly load the Sample Tagger encoders + tokenizer at startup
     // (vs lazy on first query).
     bool loadSampleTaggerOnStartup = false;
+
+    // Optional override for the media DB directory. Empty = default
+    // (dataDir/MediaDB).
+    std::string mediaDbDir = "";
 
     // Auto-update check
     bool autoCheckUpdates = true;          // Check GitHub for newer releases on startup

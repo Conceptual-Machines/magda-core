@@ -64,6 +64,22 @@ void migrate(sqlite3* db) {
         execOrThrow(db, "ALTER TABLE media_file ADD COLUMN key_scale_user TEXT",
                     "migrate v4 key_scale_user");
     }
+    if (!columnExists(db, "media_file", "warp_markers_json")) {
+        execOrThrow(db, "ALTER TABLE media_file ADD COLUMN warp_markers_json TEXT",
+                    "migrate v5 warp_markers_json");
+    }
+    if (!columnExists(db, "media_file", "display_name")) {
+        execOrThrow(db, "ALTER TABLE media_file ADD COLUMN display_name TEXT",
+                    "migrate v6 display_name");
+    }
+    if (!columnExists(db, "media_file", "total_beats_user")) {
+        execOrThrow(db, "ALTER TABLE media_file ADD COLUMN total_beats_user REAL",
+                    "migrate v7 total_beats_user");
+    }
+    if (!columnExists(db, "media_file", "beat_mode_user")) {
+        execOrThrow(db, "ALTER TABLE media_file ADD COLUMN beat_mode_user INTEGER",
+                    "migrate v7 beat_mode_user");
+    }
 }
 
 }  // namespace
@@ -76,6 +92,7 @@ MediaDatabase::MediaDatabase(const std::filesystem::path& dbPath) : path_(dbPath
         db_ = nullptr;
         throw MediaDatabaseError("sqlite3_open(" + dbPath.string() + "): " + err);
     }
+    sqlite3_busy_timeout(db_, 60000);
 
     // Apply the schema. CREATE ... IF NOT EXISTS makes this safe to run on
     // every open, including against an already-initialized file. After
