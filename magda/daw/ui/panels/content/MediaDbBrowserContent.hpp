@@ -16,6 +16,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -65,6 +66,7 @@ class MediaDbBrowserContent : public juce::Component {
     // ForceAll).
     void startIndexing(const juce::File& dir, magda::media::MediaDbIndexer::Mode mode =
                                                   magda::media::MediaDbIndexer::Mode::Incremental);
+    void requestStopIndexing();
 
     // External kind selector hook. Pass "audio" / "clip" / "preset", or
     // nullopt to clear the filter. Re-runs the search.
@@ -78,6 +80,7 @@ class MediaDbBrowserContent : public juce::Component {
     // surface scan status in shared UI (e.g. the preview area) so it's
     // visible regardless of which browser mode the user is on.
     std::function<void(const juce::String&)> onIndexingStatus;
+    std::function<void(bool)> onIndexingActiveChanged;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -95,6 +98,8 @@ class MediaDbBrowserContent : public juce::Component {
     // around the given file's audio embedding instead of text / FTS.
     // Cleared by the next restartSearch().
     void findSimilarTo(std::int64_t seedFileId, const juce::String& seedName);
+    void startEmbeddingFileIds(std::vector<std::int64_t> fileIds);
+    void startReindexingFileIds(std::vector<std::int64_t> fileIds);
     void openPopOutWindow();
     magda::media::QueryFilters currentFilters() const;
 
@@ -121,7 +126,7 @@ class MediaDbBrowserContent : public juce::Component {
     std::unique_ptr<ResultsTableModel> resultsModel_;
     juce::TableListBox resultsTable_;  // resizable, reorderable column header
     juce::Label emptyState_;
-    juce::Label statusLabel_;  // "Indexing path/to/x.wav (N/M)" during a scan
+    juce::Label statusLabel_;  // similar-mode status only; indexing status lives in parent strip
     std::unique_ptr<juce::ArrowButton> prevPageBtn_;
     std::unique_ptr<juce::ArrowButton> nextPageBtn_;
     juce::Label pageLabel_;  // "Page N"
@@ -159,6 +164,7 @@ class MediaDbBrowserContent : public juce::Component {
     // pool is created lazily on first index click so app startup pays nothing.
     std::unique_ptr<juce::ThreadPool> indexPool_;
     bool indexing_ = false;
+    std::shared_ptr<std::atomic_bool> indexCancel_;
 
     // Single-thread pool for text-search queries. Text search triggers the
     // ONNX text encoder which costs multi-second on first load + a few

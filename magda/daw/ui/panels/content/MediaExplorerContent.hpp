@@ -153,6 +153,7 @@ class MediaExplorerContent : public PanelContent,
 
     juce::File currentPreviewFile_;
     bool isPlaying_ = false;
+    bool previewLockedForIndexing_ = false;
 
     // Drag detection
     juce::File fileForDrag_;
@@ -174,6 +175,7 @@ class MediaExplorerContent : public PanelContent,
     void loadFileForPreview(const juce::File& file);
     void playPreview();
     void stopPreview();
+    void setPreviewLockedForIndexing(bool locked);
     void updateFileInfo(const juce::File& file);
     void navigateToDirectory(const juce::File& directory);
     void updateMediaFilter();

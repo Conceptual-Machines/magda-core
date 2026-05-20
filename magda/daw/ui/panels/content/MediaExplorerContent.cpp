@@ -90,7 +90,24 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
                                                  public juce::ChangeListener,
                                                  public juce::Timer {
   public:
-    ThumbnailComponent() = default;
+    ThumbnailComponent() {
+        stopIndexingButton_.setButtonText("Stop");
+        stopIndexingButton_.setTooltip("Stop scanning after the current file");
+        stopIndexingButton_.setColour(juce::TextButton::buttonColourId,
+                                      DarkTheme::getColour(DarkTheme::SURFACE));
+        stopIndexingButton_.setColour(juce::TextButton::textColourOffId,
+                                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        stopIndexingButton_.setColour(juce::TextButton::buttonOnColourId,
+                                      DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+        stopIndexingButton_.setVisible(false);
+        stopIndexingButton_.onClick = [this]() {
+            stopIndexingButton_.setEnabled(false);
+            if (onStopIndexing) {
+                onStopIndexing();
+            }
+        };
+        addAndMakeVisible(stopIndexingButton_);
+    }
 
     ~ThumbnailComponent() override {
         stopTimer();
@@ -147,6 +164,16 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         repaint();
     }
 
+    void setIndexingActive(bool active) {
+        indexingActive_ = active;
+        stopIndexingButton_.setVisible(active);
+        stopIndexingButton_.setEnabled(active);
+        resized();
+        repaint();
+    }
+
+    std::function<void()> onStopIndexing;
+
     // ChangeListener - called when thumbnail finishes loading
     void changeListenerCallback(juce::ChangeBroadcaster*) override {
         repaint();
@@ -180,6 +207,9 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         if (indexingStatus_.isNotEmpty()) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
             g.setFont(FontManager::getInstance().getUIFont(11.0F));
+            if (indexingActive_) {
+                bounds.removeFromRight(76);
+            }
             g.drawFittedText(indexingStatus_, bounds.reduced(8), juce::Justification::centred, 3);
             return;
         }
@@ -218,12 +248,19 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         }
     }
 
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(8, 6);
+        stopIndexingButton_.setBounds(bounds.removeFromRight(64));
+    }
+
   private:
     juce::File currentFile_;
     juce::AudioThumbnail* currentThumbnail_ = nullptr;
     juce::AudioTransportSource* transportSource_ = nullptr;
     double playbackPosition_ = 0.0;
     juce::String indexingStatus_;
+    bool indexingActive_ = false;
+    juce::TextButton stopIndexingButton_;
 };
 
 //==============================================================================
@@ -728,6 +765,11 @@ MediaExplorerContent::MediaExplorerContent() {
 
     // Waveform thumbnail
     thumbnailComponent_ = std::make_unique<ThumbnailComponent>();
+    thumbnailComponent_->onStopIndexing = [this]() {
+        if (dbBrowser_) {
+            dbBrowser_->requestStopIndexing();
+        }
+    };
     addAndMakeVisible(*thumbnailComponent_);
 
     // Setup file browser with initial filter
@@ -807,6 +849,9 @@ MediaExplorerContent::MediaExplorerContent() {
     // browser at startup.
     dbBrowser_ = std::make_unique<MediaDbBrowserContent>();
     dbBrowser_->onFileSelected = [this](const juce::File& f) {
+        if (previewLockedForIndexing_) {
+            return;
+        }
         loadFileForPreview(f);
         // Match the file-browser's selectionChanged path: respect the Auto
         // toggle so picking a DB row auto-plays when the user wants it.
@@ -820,6 +865,9 @@ MediaExplorerContent::MediaExplorerContent() {
         if (thumbnailComponent_) {
             thumbnailComponent_->setIndexingStatus(status);
         }
+    };
+    dbBrowser_->onIndexingActiveChanged = [this](bool active) {
+        setPreviewLockedForIndexing(active);
     };
     addChildComponent(*dbBrowser_);
     dbBrowser_->setVisible(false);
@@ -1057,7 +1105,13 @@ void MediaExplorerContent::setupAudioPreview() {
 }
 
 void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
+    if (previewLockedForIndexing_) {
+        return;
+    }
     stopPreview();
+    if (thumbnailComponent_) {
+        thumbnailComponent_->setIndexingStatus({});
+    }
 
     // CRITICAL: Clear the transport source BEFORE destroying the old reader source
     // This prevents use-after-free when clicking multiple samples
@@ -1099,6 +1153,9 @@ void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
 }
 
 void MediaExplorerContent::playPreview() {
+    if (previewLockedForIndexing_) {
+        return;
+    }
     if (transportSource_ && !isPlaying_) {
         transportSource_->setPosition(0.0);
         transportSource_->start();
@@ -1116,6 +1173,44 @@ void MediaExplorerContent::stopPreview() {
         playButton_->setEnabled(currentPreviewFile_.existsAsFile());
         stopButton_->setEnabled(false);
         thumbnailComponent_->setPlaying(false);
+    }
+}
+
+void MediaExplorerContent::setPreviewLockedForIndexing(bool locked) {
+    if (previewLockedForIndexing_ == locked) {
+        return;
+    }
+    previewLockedForIndexing_ = locked;
+    if (thumbnailComponent_) {
+        thumbnailComponent_->setIndexingActive(locked);
+    }
+
+    if (locked) {
+        stopPreview();
+        if (transportSource_) {
+            transportSource_->setSource(nullptr);
+        }
+        readerSource_.reset();
+        playButton_->setEnabled(false);
+        stopButton_->setEnabled(false);
+        autoPlayButton_.setEnabled(false);
+        volumeSlider_.setEnabled(false);
+        currentPreviewFile_ = juce::File();
+        if (thumbnailComponent_) {
+            thumbnailComponent_->setFile(juce::File());
+        }
+        fileInfoLabel_.setText("Preview locked during media scan", juce::dontSendNotification);
+        formatLabel_.setText("", juce::dontSendNotification);
+        propertiesLabel_.setText("", juce::dontSendNotification);
+        return;
+    }
+
+    autoPlayButton_.setEnabled(true);
+    volumeSlider_.setEnabled(true);
+    playButton_->setEnabled(currentPreviewFile_.existsAsFile());
+    stopButton_->setEnabled(false);
+    if (!currentPreviewFile_.existsAsFile()) {
+        fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
     }
 }
 
@@ -1363,6 +1458,9 @@ void MediaExplorerContent::onDeactivated() {
 
 // FileBrowserListener implementation
 void MediaExplorerContent::selectionChanged() {
+    if (previewLockedForIndexing_) {
+        return;
+    }
     // Read selection from the underlying list directly (more reliable than
     // FileBrowserComponent's cached chosenFiles).
     auto* listComp = dynamic_cast<juce::FileListComponent*>(fileBrowser_->getDisplayComponent());
@@ -1618,6 +1716,9 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
 }
 
 void MediaExplorerContent::fileDoubleClicked(const juce::File& file) {
+    if (previewLockedForIndexing_) {
+        return;
+    }
     // Only audio files can be played on double-click
     if (isAudioFile(file)) {
         loadFileForPreview(file);

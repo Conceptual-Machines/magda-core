@@ -6,19 +6,20 @@
 //   AudioFeatures::extract -> PathRules::pathFamilyHint/pathTags/
 //   parseBpmFromPath/parseKeyFromPath -> derive shape/family/tonal ->
 //   policy rules (one-shot has no BPM, drum/fx has no key) ->
-//   ClapAudioEncoder::embed (optional) -> write media_file +
-//   media_tag (CLAP + path source) + media_embedding (if encoder) +
-//   media_fts row.
+//   write media_file + media_tag + media_fts row.
 //
 // The encoder is intentionally nullable — when "AI Audio Pack" isn't
-// installed we still index path tags, features, and FTS keyword search.
-// Semantic search just gracefully unavailable in that mode.
+// installed we still index path tags, features, and FTS keyword search. The
+// slower semantic embedding pass runs separately after the scan and
+// gracefully does nothing without an encoder.
 
 #pragma once
 
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <string>
+#include <vector>
 
 namespace magda::media {
 
@@ -33,6 +34,11 @@ class MediaDbIndexer {
         int skipped = 0;   // path known and unchanged
         int failed = 0;    // unreadable or decode-failed
     };
+    struct EmbeddingStats {
+        int embedded = 0;  // embedding row written
+        int skipped = 0;   // no encoder or no missing rows
+        int failed = 0;    // decode/inference/write failed
+    };
 
     // Progress callback fired once per file. (done, total, currentPath)
     // where total is the prescanned file count and currentPath is the file
@@ -42,6 +48,9 @@ class MediaDbIndexer {
     // for marshalling to the UI thread if it touches UI.
     using ProgressFn =
         std::function<void(int done, int total, const std::filesystem::path& current)>;
+    using FailureFn =
+        std::function<void(const std::filesystem::path& current, const std::string& reason)>;
+    using ShouldCancelFn = std::function<bool()>;
 
     // What the scan does with rows that already exist in media_file.
     enum class Mode {
@@ -59,31 +68,43 @@ class MediaDbIndexer {
         ForceAll,
     };
 
-    // db: required. encoder: nullable, controls whether we compute audio
-    // embeddings during this scan.
+    // db: required. encoder: nullable, controls whether the post-scan
+    // embedding backfill can run.
     MediaDbIndexer(MediaDatabase& db, ClapAudioEncoder* encoder);
 
     void setProgress(ProgressFn fn);
+    void setFailureCallback(FailureFn fn);
+    void setShouldCancel(ShouldCancelFn fn);
 
     // Synchronously walk `root`, indexing every classifying file.
     //
     // numThreads:
     //   0  → auto: max(1, hardware_concurrency() - 1), leaves a core free.
-    //   1  → serial, single transaction wraps the whole walk.
+    //   1  → serial, each changed file gets a short write transaction.
     //   >1 → parallel: each worker opens its own MediaDatabase against the
     //        same file under WAL, pulls batches off an atomic work-queue,
-    //        and commits per batch (~50 files).
+    //        and writes changed files with short per-file transactions.
     //
     // Forced to 1 automatically when the DB is in-memory (workers can't
     // share state across connections) or when the scan has fewer than ~64
     // files (setup cost dominates).
     Stats indexDirectory(const std::filesystem::path& root, int numThreads = 0,
                          Mode mode = Mode::Incremental);
+    Stats indexFileIds(const std::vector<std::int64_t>& fileIds, Mode mode = Mode::ForceAll);
+
+    // Backfill semantic embeddings for indexed audio rows under `root` that
+    // are missing the current encoder's model/version row. This is separate
+    // from indexDirectory so the library becomes browsable before slow CLAP
+    // work finishes.
+    EmbeddingStats embedMissingAudio(const std::filesystem::path& root = {});
+    EmbeddingStats embedAudioFileIds(const std::vector<std::int64_t>& fileIds);
 
   private:
     MediaDatabase& db_;
     ClapAudioEncoder* encoder_;
     ProgressFn progress_;
+    FailureFn failure_;
+    ShouldCancelFn shouldCancel_;
 };
 
 }  // namespace magda::media

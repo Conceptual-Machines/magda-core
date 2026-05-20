@@ -15,7 +15,7 @@ namespace magda::media {
 struct ClapAudioEncoder::Impl {
     Ort::Env env;
     Ort::SessionOptions sessionOptions;
-    Ort::Session session;
+    Ort::Session session{nullptr};
     Ort::MemoryInfo memoryInfo;
     std::string inputName;
     std::string outputName;
@@ -25,8 +25,15 @@ struct ClapAudioEncoder::Impl {
 
     explicit Impl(const std::filesystem::path& modelPath)
         : env(ORT_LOGGING_LEVEL_WARNING, "magda-clap"),
-          session(env, modelPath.c_str(), sessionOptions),
           memoryInfo(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)) {
+        // Keep CLAP inference predictable on older CPUs. The app already
+        // schedules embedding work on its own background thread; letting ORT
+        // create extra per-session worker pools can oversubscribe small
+        // machines and make cancellation feel worse.
+        sessionOptions.SetIntraOpNumThreads(1);
+        sessionOptions.SetInterOpNumThreads(1);
+        session = Ort::Session(env, modelPath.c_str(), sessionOptions);
+
         Ort::AllocatorWithDefaultOptions allocator;
 
         auto inName = session.GetInputNameAllocated(0, allocator);

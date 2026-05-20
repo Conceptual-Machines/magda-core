@@ -80,6 +80,7 @@ MediaDatabase::MediaDatabase(const std::filesystem::path& dbPath) : path_(dbPath
         db_ = nullptr;
         throw MediaDatabaseError("sqlite3_open(" + dbPath.string() + "): " + err);
     }
+    sqlite3_busy_timeout(db_, 60000);
 
     // Apply the schema. CREATE ... IF NOT EXISTS makes this safe to run on
     // every open, including against an already-initialized file. After

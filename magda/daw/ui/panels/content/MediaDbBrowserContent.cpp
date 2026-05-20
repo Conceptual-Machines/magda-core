@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 
 #include <filesystem>
+#include <mutex>
 
 #include "../../../media_db/MediaDatabase.hpp"
 #include "../../../media_db/MediaDbContext.hpp"
@@ -76,6 +77,25 @@ juce::String prettyDuration(std::optional<double> seconds) {
         return juce::String(s, 2) + "s";
     }
     return juce::String(s, 1) + "s";
+}
+
+juce::String formatIndexSummary(const std::filesystem::path& path,
+                                const magda::media::MediaDbIndexer::Stats& stats) {
+    const int total = stats.inserted + stats.updated + stats.skipped + stats.failed;
+    juce::String summary = juce::String("Scan complete: ") + juce::String(total) + " files, " +
+                           juce::String(stats.inserted) + " inserted, " +
+                           juce::String(stats.updated) + " updated, " +
+                           juce::String(stats.skipped) + " skipped";
+    if (stats.failed > 0) {
+        summary += ", " + juce::String(stats.failed) + " failed";
+    }
+    summary += " - " + juce::String(path.filename().string());
+    return summary;
+}
+
+juce::String formatEmbeddingSummary(const magda::media::MediaDbIndexer::EmbeddingStats& stats) {
+    return juce::String("Embeddings: ") + juce::String(stats.embedded) + " written, " +
+           juce::String(stats.failed) + " failed";
 }
 
 juce::String prettyBpm(std::optional<double> bpm) {
@@ -274,16 +294,40 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         if (e.mods.isRightButtonDown() || e.mods.isPopupMenu()) {
             juce::PopupMenu menu;
             const auto fileName = juce::String(r.path.filename().string());
+            std::vector<std::int64_t> selectedIds;
+            const auto selectedRows = owner_.resultsTable_.getSelectedRows();
+            for (int i = 0; i < selectedRows.size(); ++i) {
+                const int selectedRow = selectedRows[i];
+                if (selectedRow >= 0 && selectedRow < static_cast<int>(owner_.results_.size())) {
+                    selectedIds.push_back(owner_.results_[static_cast<size_t>(selectedRow)].fileId);
+                }
+            }
+            if (selectedIds.empty()) {
+                selectedIds.push_back(r.fileId);
+            }
+            const int selectedCount = static_cast<int>(selectedIds.size());
             menu.addItem(1, "Find similar sounds to \"" + fileName + "\"");
+            menu.addSeparator();
+            menu.addItem(2,
+                         "Run embeddings for selected rows (" + juce::String(selectedCount) + ")");
+            menu.addItem(3, "Re-decode selected rows (" + juce::String(selectedCount) + ")");
             const juce::Component::SafePointer<MediaDbBrowserContent> self(&owner_);
             const auto seedId = r.fileId;
             const auto seedName = fileName;
-            menu.showMenuAsync(juce::PopupMenu::Options{}, [self, seedId, seedName](int choice) {
-                if (self == nullptr || choice != 1) {
-                    return;
-                }
-                self->findSimilarTo(seedId, seedName);
-            });
+            menu.showMenuAsync(
+                juce::PopupMenu::Options{},
+                [self, seedId, seedName, selectedIds = std::move(selectedIds)](int choice) mutable {
+                    if (self == nullptr) {
+                        return;
+                    }
+                    if (choice == 1) {
+                        self->findSimilarTo(seedId, seedName);
+                    } else if (choice == 2) {
+                        self->startEmbeddingFileIds(std::move(selectedIds));
+                    } else if (choice == 3) {
+                        self->startReindexingFileIds(std::move(selectedIds));
+                    }
+                });
             return;
         }
 
@@ -528,7 +572,8 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
 
     addAndMakeVisible(modelStatus_);
 
-    // Indexing status. Hidden until a scan starts.
+    // Similar-mode status. Indexing status is forwarded to MediaExplorerContent's
+    // shared bottom strip so it is visible in one place only.
     statusLabel_.setFont(FontManager::getInstance().getUIFont(10.0F));
     statusLabel_.setJustificationType(juce::Justification::centredLeft);
     statusLabel_.setColour(juce::Label::textColourId,
@@ -547,6 +592,9 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
 MediaDbBrowserContent::~MediaDbBrowserContent() {
     // Drain in-flight indexing jobs. removeAllJobs(true, ...) signals
     // cancellation and waits up to the timeout for the worker to exit.
+    if (indexCancel_) {
+        indexCancel_->store(true);
+    }
     if (indexPool_) {
         indexPool_->removeAllJobs(true, 5000);
     }
@@ -601,7 +649,7 @@ void MediaDbBrowserContent::resized() {
 
     bounds.removeFromTop(4);
 
-    // Status strip at the bottom of the content area when indexing.
+    // Similar-mode status strip at the bottom of the content area.
     if (statusLabel_.isVisible()) {
         statusLabel_.setBounds(bounds.removeFromBottom(18).reduced(8, 2));
     } else {
@@ -673,6 +721,165 @@ void MediaDbBrowserContent::findSimilarTo(std::int64_t seedFileId, const juce::S
     similarToFileName_ = seedName;
     currentPage_ = 0;
     runSearch();
+}
+
+void MediaDbBrowserContent::requestStopIndexing() {
+    if (indexCancel_) {
+        indexCancel_->store(true);
+    }
+    if (onIndexingStatus) {
+        onIndexingStatus("Stopping scan...");
+    }
+}
+
+void MediaDbBrowserContent::startEmbeddingFileIds(std::vector<std::int64_t> fileIds) {
+    if (indexing_ || fileIds.empty()) {
+        return;
+    }
+    if (!indexPool_) {
+        indexPool_ = std::make_unique<juce::ThreadPool>(1);
+    }
+
+    indexing_ = true;
+    indexCancel_ = std::make_shared<std::atomic_bool>(false);
+    if (onIndexingActiveChanged) {
+        onIndexingActiveChanged(true);
+    }
+    const auto prepText =
+        "Preparing embeddings for " + juce::String(static_cast<int>(fileIds.size())) + " rows...";
+    if (onIndexingStatus) {
+        onIndexingStatus(prepText);
+    }
+
+    const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+    auto cancelToken = indexCancel_;
+    indexPool_->addJob([self, ids = std::move(fileIds), cancelToken]() {
+        juce::String finalStatus;
+        try {
+            magda::media::MediaDatabase bgDb(magda::media::MediaDbContext::getInstance().dbPath());
+            auto* encoder = magda::media::MediaDbContext::getInstance().audioEncoder();
+            magda::media::MediaDbIndexer indexer(bgDb, encoder);
+            indexer.setShouldCancel([cancelToken]() { return cancelToken && cancelToken->load(); });
+            indexer.setFailureCallback(
+                [](const std::filesystem::path& failedPath, const std::string& reason) {
+                    juce::Logger::writeToLog(juce::String("[MediaDbIndexer] Failed embedding: ") +
+                                             juce::String(failedPath.string()) + " - " +
+                                             juce::String(reason));
+                });
+            indexer.setProgress([self](int done, int total, const std::filesystem::path& current) {
+                const auto status = juce::String("Embedding ") +
+                                    juce::String(current.filename().string()) + " (" +
+                                    juce::String(done) + "/" + juce::String(total) + ")";
+                juce::MessageManager::callAsync([self, status]() {
+                    if (self != nullptr) {
+                        if (self->onIndexingStatus) {
+                            self->onIndexingStatus(status);
+                        }
+                    }
+                });
+            });
+            const auto stats = indexer.embedAudioFileIds(ids);
+            finalStatus = formatEmbeddingSummary(stats);
+            if (cancelToken && cancelToken->load()) {
+                finalStatus = "Embedding stopped: " + finalStatus;
+            }
+        } catch (const std::exception& e) {
+            finalStatus = juce::String("Embedding failed: ") + juce::String(e.what());
+        }
+
+        juce::MessageManager::callAsync([self, finalStatus, cancelToken]() {
+            if (self == nullptr) {
+                return;
+            }
+            self->indexing_ = false;
+            if (self->indexCancel_ == cancelToken) {
+                self->indexCancel_.reset();
+            }
+            if (self->onIndexingActiveChanged) {
+                self->onIndexingActiveChanged(false);
+            }
+            if (self->onIndexingStatus) {
+                self->onIndexingStatus(finalStatus);
+            }
+            self->restartSearch();
+        });
+    });
+}
+
+void MediaDbBrowserContent::startReindexingFileIds(std::vector<std::int64_t> fileIds) {
+    if (indexing_ || fileIds.empty()) {
+        return;
+    }
+    if (!indexPool_) {
+        indexPool_ = std::make_unique<juce::ThreadPool>(1);
+    }
+
+    indexing_ = true;
+    indexCancel_ = std::make_shared<std::atomic_bool>(false);
+    if (onIndexingActiveChanged) {
+        onIndexingActiveChanged(true);
+    }
+    const auto prepText =
+        "Preparing re-decode for " + juce::String(static_cast<int>(fileIds.size())) + " rows...";
+    if (onIndexingStatus) {
+        onIndexingStatus(prepText);
+    }
+
+    const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+    auto cancelToken = indexCancel_;
+    indexPool_->addJob([self, ids = std::move(fileIds), cancelToken]() {
+        juce::String finalStatus;
+        try {
+            magda::media::MediaDatabase bgDb(magda::media::MediaDbContext::getInstance().dbPath());
+            magda::media::MediaDbIndexer indexer(bgDb, nullptr);
+            indexer.setShouldCancel([cancelToken]() { return cancelToken && cancelToken->load(); });
+            indexer.setFailureCallback(
+                [](const std::filesystem::path& failedPath, const std::string& reason) {
+                    juce::Logger::writeToLog(juce::String("[MediaDbIndexer] Failed re-decode: ") +
+                                             juce::String(failedPath.string()) + " - " +
+                                             juce::String(reason));
+                });
+            indexer.setProgress([self](int done, int total, const std::filesystem::path& current) {
+                const auto status = juce::String("Re-decoding ") +
+                                    juce::String(current.filename().string()) + " (" +
+                                    juce::String(done) + "/" + juce::String(total) + ")";
+                juce::MessageManager::callAsync([self, status]() {
+                    if (self != nullptr) {
+                        if (self->onIndexingStatus) {
+                            self->onIndexingStatus(status);
+                        }
+                    }
+                });
+            });
+            const auto stats =
+                indexer.indexFileIds(ids, magda::media::MediaDbIndexer::Mode::ForceAll);
+            finalStatus = juce::String("Re-decode complete: ") + juce::String(stats.inserted) +
+                          " inserted, " + juce::String(stats.updated) + " updated, " +
+                          juce::String(stats.failed) + " failed";
+            if (cancelToken && cancelToken->load()) {
+                finalStatus = "Re-decode stopped: " + finalStatus;
+            }
+        } catch (const std::exception& e) {
+            finalStatus = juce::String("Re-decode failed: ") + juce::String(e.what());
+        }
+
+        juce::MessageManager::callAsync([self, finalStatus, cancelToken]() {
+            if (self == nullptr) {
+                return;
+            }
+            self->indexing_ = false;
+            if (self->indexCancel_ == cancelToken) {
+                self->indexCancel_.reset();
+            }
+            if (self->onIndexingActiveChanged) {
+                self->onIndexingActiveChanged(false);
+            }
+            if (self->onIndexingStatus) {
+                self->onIndexingStatus(finalStatus);
+            }
+            self->restartSearch();
+        });
+    });
 }
 
 magda::media::QueryFilters MediaDbBrowserContent::currentFilters() const {
@@ -987,6 +1194,10 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
     }
 
     indexing_ = true;
+    indexCancel_ = std::make_shared<std::atomic_bool>(false);
+    if (onIndexingActiveChanged) {
+        onIndexingActiveChanged(true);
+    }
     auto prepText = [mode]() -> juce::String {
         switch (mode) {
             case magda::media::MediaDbIndexer::Mode::ForceAll:
@@ -998,26 +1209,50 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
                 return "Preparing scan...";
         }
     }();
-    statusLabel_.setText(prepText, juce::dontSendNotification);
-    statusLabel_.setVisible(true);
-    resized();
     if (onIndexingStatus) {
         onIndexingStatus(prepText);
     }
 
     const auto path = std::filesystem::path(dir.getFullPathName().toStdString());
     const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+    auto cancelToken = indexCancel_;
 
-    indexPool_->addJob([self, path, mode]() {
+    indexPool_->addJob([self, path, mode, cancelToken]() {
         // Background thread. Open a fresh DB connection here so we don't
         // share the UI-thread MediaDbContext::db() handle across threads
         // — SQLite multi-thread mode requires one connection per thread.
         // WAL mode (set in schema) lets this writer coexist with the
         // UI's reader connection.
+        magda::media::MediaDbIndexer::Stats stats;
+        magda::media::MediaDbIndexer::EmbeddingStats embeddingStats;
+        juce::String finalStatus;
+        bool hardFailure = false;
+        std::mutex failureMutex;
+        int failureCount = 0;
+        std::vector<juce::String> firstFailures;
+
+        juce::Logger::writeToLog(juce::String("[MediaDbIndexer] Starting scan: ") +
+                                 juce::String(path.string()));
         try {
             magda::media::MediaDatabase bgDb(magda::media::MediaDbContext::getInstance().dbPath());
-            magda::media::MediaDbIndexer indexer(
-                bgDb, magda::media::MediaDbContext::getInstance().audioEncoder());
+            auto* encoder = magda::media::MediaDbContext::getInstance().audioEncoder();
+            magda::media::MediaDbIndexer indexer(bgDb, encoder);
+            indexer.setShouldCancel([cancelToken]() { return cancelToken && cancelToken->load(); });
+            indexer.setFailureCallback([&failureMutex, &failureCount,
+                                        &firstFailures](const std::filesystem::path& failedPath,
+                                                        const std::string& reason) {
+                const auto pathText = failedPath.empty() ? juce::String("(worker)")
+                                                         : juce::String(failedPath.string());
+                const auto message = juce::String("[MediaDbIndexer] Failed: ") + pathText + " - " +
+                                     juce::String(reason);
+                juce::Logger::writeToLog(message);
+
+                std::lock_guard<std::mutex> lock(failureMutex);
+                ++failureCount;
+                if (firstFailures.size() < 5) {
+                    firstFailures.push_back(message);
+                }
+            });
             indexer.setProgress([self, mode](int done, int total,
                                              const std::filesystem::path& current) {
                 // Fired per-file on the indexer thread; marshal the text
@@ -1032,29 +1267,90 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
                                     " (" + juce::String(done) + "/" + juce::String(total) + ")";
                 juce::MessageManager::callAsync([self, status]() {
                     if (self != nullptr) {
-                        self->statusLabel_.setText(status, juce::dontSendNotification);
                         if (self->onIndexingStatus) {
                             self->onIndexingStatus(status);
                         }
                     }
                 });
             });
-            indexer.indexDirectory(path, /*numThreads=*/0, mode);
-        } catch (const std::exception&) {
-            // Swallow — bounce back to the UI either way.
+            stats = indexer.indexDirectory(path, /*numThreads=*/0, mode);
+            const auto scanStatus = formatIndexSummary(path, stats);
+            finalStatus = scanStatus;
+            juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + scanStatus);
+
+            const bool cancelledAfterScan = cancelToken && cancelToken->load();
+            if (cancelledAfterScan) {
+                finalStatus = "Scan stopped: " + scanStatus;
+            }
+
+            juce::MessageManager::callAsync([self, scanStatus, cancelledAfterScan]() {
+                if (self != nullptr) {
+                    const auto status = cancelledAfterScan
+                                            ? juce::String("Scan stopped: ") + scanStatus
+                                            : scanStatus;
+                    if (self->onIndexingStatus) {
+                        self->onIndexingStatus(status);
+                    }
+                    self->restartSearch();
+                }
+            });
+
+            if (encoder != nullptr && !cancelledAfterScan) {
+                indexer.setProgress(
+                    [self](int done, int total, const std::filesystem::path& current) {
+                        const auto status = juce::String("Embedding ") +
+                                            juce::String(current.filename().string()) + " (" +
+                                            juce::String(done) + "/" + juce::String(total) + ")";
+                        juce::MessageManager::callAsync([self, status]() {
+                            if (self != nullptr) {
+                                if (self->onIndexingStatus) {
+                                    self->onIndexingStatus(status);
+                                }
+                            }
+                        });
+                    });
+                embeddingStats = indexer.embedMissingAudio(path);
+                const auto embeddingStatus = formatEmbeddingSummary(embeddingStats);
+                const bool cancelledAfterEmbedding = cancelToken && cancelToken->load();
+                finalStatus = cancelledAfterEmbedding
+                                  ? scanStatus + " | Embedding stopped: " + embeddingStatus
+                                  : scanStatus + " | " + embeddingStatus;
+                juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + embeddingStatus);
+            }
+
+            std::lock_guard<std::mutex> lock(failureMutex);
+            for (const auto& failure : firstFailures) {
+                juce::Logger::writeToLog(juce::String("[MediaDbIndexer] First failure: ") +
+                                         failure);
+            }
+            if (failureCount > static_cast<int>(firstFailures.size())) {
+                juce::Logger::writeToLog(
+                    juce::String("[MediaDbIndexer] Additional failures: ") +
+                    juce::String(failureCount - static_cast<int>(firstFailures.size())));
+            }
+        } catch (const std::exception& e) {
+            hardFailure = true;
+            finalStatus = juce::String("Scan failed: ") + juce::String(e.what());
+            juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + finalStatus);
         }
 
-        juce::MessageManager::callAsync([self]() {
+        juce::MessageManager::callAsync([self, finalStatus, hardFailure, cancelToken]() {
             if (self == nullptr) {
                 return;
             }
             self->indexing_ = false;
-            self->statusLabel_.setVisible(false);
-            self->resized();
-            if (self->onIndexingStatus) {
-                self->onIndexingStatus({});  // empty -> clear preview-area status
+            if (self->indexCancel_ == cancelToken) {
+                self->indexCancel_.reset();
             }
-            self->restartSearch();
+            if (self->onIndexingActiveChanged) {
+                self->onIndexingActiveChanged(false);
+            }
+            if (self->onIndexingStatus) {
+                self->onIndexingStatus(finalStatus);
+            }
+            if (!hardFailure) {
+                self->restartSearch();
+            }
         });
     });
 }
