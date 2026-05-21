@@ -1,9 +1,25 @@
 #include "NoteComponent.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include "../../themes/CursorManager.hpp"
+#include "../../themes/FontManager.hpp"
 #include "NoteGridHost.hpp"
 #include "core/ClipManager.hpp"
 #include "core/TrackManager.hpp"
+
+namespace {
+
+constexpr float kNoteLabelFontSize = 9.0f;
+constexpr float kNoteLabelHorizontalPadding = 4.0f;
+constexpr float kNoteLabelVerticalPadding = 1.0f;
+
+juce::Colour getContrastingNoteLabelColour(juce::Colour fillColour) {
+    return fillColour.getPerceivedBrightness() >= 0.5f ? juce::Colours::black.withAlpha(0.78f)
+                                                       : juce::Colours::white.withAlpha(0.88f);
+}
+
+}  // namespace
 
 namespace magda {
 
@@ -35,6 +51,23 @@ void NoteComponent::paint(juce::Graphics& g) {
     g.setColour(isSelected_ ? juce::Colours::white : fillColour.brighter(0.4f));
     float strokeWidth = isSelected_ ? 2.0f : 1.0f;
     g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS, strokeWidth);
+
+    // Note label
+    auto labelFont = FontManager::getInstance().getUIFont(kNoteLabelFontSize);
+    auto noteName =
+        juce::MidiMessage::getMidiNoteName(juce::jlimit(0, 127, noteNumber_), true, true, 4);
+    juce::GlyphArrangement labelGlyphs;
+    labelGlyphs.addLineOfText(labelFont, noteName, 0.0f, 0.0f);
+    float labelWidth = labelGlyphs.getBoundingBox(0, -1, true).getWidth();
+    float requiredWidth = labelWidth + (kNoteLabelHorizontalPadding * 2.0f);
+    auto labelBounds = bounds.reduced(kNoteLabelHorizontalPadding, kNoteLabelVerticalPadding);
+
+    if (labelBounds.getWidth() >= labelWidth && bounds.getWidth() >= requiredWidth &&
+        labelBounds.getHeight() >= labelFont.getHeight()) {
+        g.setFont(labelFont);
+        g.setColour(getContrastingNoteLabelColour(fillColour));
+        g.drawText(noteName, labelBounds, juce::Justification::centredLeft, false);
+    }
 
     // Resize handle highlights
     if (hoverLeftEdge_ || hoverRightEdge_) {
