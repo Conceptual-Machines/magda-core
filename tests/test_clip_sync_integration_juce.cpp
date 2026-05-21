@@ -101,12 +101,12 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testGainAndPan();
         testPitchChange();
         testRenderVerification();
-        testCreateAudioClipDeletesFullyOverlappedNeighbour();
+        testCreateAudioClipPreservesExistingNeighbour();
         testMoveAudioClipTrimsNeighbourFromRight();
         testMoveAudioClipTrimsNeighbourFromLeft();
         testDuplicateAudioClipResolvesOverlap();
         testPasteAudioClipResolvesOverlap();
-        testCreateMidiClipResolvesOverlap();
+        testCreateMidiClipPreservesExistingNeighbour();
         testMidiSyncClipsNotesToVisibleRangeAfterResize();
         testMidiSyncSkipsAllRestPitchBendButKeepsRealCurves();
         testMoveClipNoOverlapDoesNotMutateNeighbours();
@@ -1466,8 +1466,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
     // Overlap resolution
     // =========================================================================
 
-    void testCreateAudioClipDeletesFullyOverlappedNeighbour() {
-        beginTest("createAudioClip deletes a fully-covered arrangement neighbour");
+    void testCreateAudioClipPreservesExistingNeighbour() {
+        beginTest("createAudioClip preserves existing arrangement neighbours");
 
         Fixture f;
         auto& cm = ClipManager::getInstance();
@@ -1477,13 +1477,23 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
         expect(existing != INVALID_CLIP_ID);
 
-        // New clip fully covers it: 0-12 beats
+        // New clip requests an occupied range, so creation should move it after
+        // the existing clip instead of deleting or trimming the neighbour.
         auto incoming =
             cm.createAudioClip(f.trackId, 0.0, 12.0, f.audioPath(), ClipView::Arrangement, 60.0);
         expect(incoming != INVALID_CLIP_ID);
 
-        expect(cm.getClip(existing) == nullptr, "Fully-covered neighbour should have been deleted");
-        expect(cm.getClip(incoming) != nullptr, "Incoming clip should remain");
+        const auto* existingClip = cm.getClip(existing);
+        const auto* incomingClip = cm.getClip(incoming);
+        expect(existingClip != nullptr, "Existing neighbour should remain");
+        expect(incomingClip != nullptr, "Incoming clip should remain");
+        if (!existingClip || !incomingClip)
+            return;
+
+        expectWithinAbsoluteError(existingClip->placement.startBeat, 0.0, 0.01);
+        expectWithinAbsoluteError(existingClip->placement.lengthBeats, 8.0, 0.01);
+        expectWithinAbsoluteError(incomingClip->placement.startBeat, 8.0, 0.01);
+        expectWithinAbsoluteError(incomingClip->placement.lengthBeats, 12.0, 0.01);
     }
 
     void testMoveAudioClipTrimsNeighbourFromRight() {
@@ -1604,8 +1614,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(v->placement.lengthBeats, 2.0, 0.01);
     }
 
-    void testCreateMidiClipResolvesOverlap() {
-        beginTest("createMidiClip resolves overlap (MIDI uses the same code path)");
+    void testCreateMidiClipPreservesExistingNeighbour() {
+        beginTest("createMidiClip preserves existing arrangement neighbours");
 
         Fixture f;
         auto& cm = ClipManager::getInstance();
@@ -1620,11 +1630,9 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (!s || !i)
             return;
 
-        // Incoming covers stationary's right half (beats 4-8). Stationary's right
-        // edge should trim to beat 4.
         expectWithinAbsoluteError(s->placement.startBeat, 0.0, 0.01);
-        expectWithinAbsoluteError(s->placement.lengthBeats, 4.0, 0.01);
-        expectWithinAbsoluteError(i->placement.startBeat, 4.0, 0.01);
+        expectWithinAbsoluteError(s->placement.lengthBeats, 8.0, 0.01);
+        expectWithinAbsoluteError(i->placement.startBeat, 8.0, 0.01);
         expectWithinAbsoluteError(i->placement.lengthBeats, 8.0, 0.01);
     }
 

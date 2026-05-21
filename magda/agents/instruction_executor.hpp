@@ -93,6 +93,13 @@ class InstructionExecutor {
     /** Convert bar count to duration in beats (uses project time signature). */
     double barsToBeats(double bars) const;
 
+    /** Convert absolute timeline beats to a 1-based bar number. */
+    double beatsToBar(double beats) const;
+
+    /** Find the first non-overlapping arrangement slot on a track at or after desiredStartBeats. */
+    double findNonOverlappingClipStartBeats(TrackId trackId, double desiredStartBeats,
+                                            double lengthBeats) const;
+
     MagdaApi& api_;
     int currentTrackId_ = -1;
     int currentClipId_ = -1;

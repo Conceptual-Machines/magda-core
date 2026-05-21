@@ -88,9 +88,10 @@ class ClipManager {
      * Timeline placement is stored in beats and seconds are derived only for
      * bridge/UI compatibility.
      */
-    ClipId createAudioClipBeats(TrackId trackId, double startBeats, double lengthBeats,
-                                const juce::String& audioFilePath,
-                                ClipView view = ClipView::Arrangement, double projectBPM = 0.0);
+    ClipId createAudioClipBeats(
+        TrackId trackId, double startBeats, double lengthBeats, const juce::String& audioFilePath,
+        ClipView view = ClipView::Arrangement, double projectBPM = 0.0,
+        ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
 
     /**
      * @brief Create an audio clip from timeline seconds.
@@ -100,7 +101,8 @@ class ClipManager {
      */
     ClipId createAudioClip(TrackId trackId, double startTime, double length,
                            const juce::String& audioFilePath, ClipView view = ClipView::Arrangement,
-                           double projectBPM = 0.0);
+                           double projectBPM = 0.0,
+                           ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
 
     /**
      * @brief Create an empty MIDI clip — beats-authoritative API.
@@ -111,8 +113,10 @@ class ClipManager {
      * derived from the project tempo at clip-creation time and stored as
      * a display cache only; they are NOT round-tripped back into beats.
      */
-    ClipId createMidiClipBeats(TrackId trackId, double startBeats, double lengthBeats,
-                               ClipView view = ClipView::Arrangement);
+    ClipId createMidiClipBeats(
+        TrackId trackId, double startBeats, double lengthBeats,
+        ClipView view = ClipView::Arrangement,
+        ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
 
     /**
      * @brief Create an empty MIDI clip from seconds.
@@ -126,7 +130,8 @@ class ClipManager {
      * @param startTime Position on timeline - only used for Arrangement view
      */
     ClipId createMidiClip(TrackId trackId, double startTime, double length,
-                          ClipView view = ClipView::Arrangement);
+                          ClipView view = ClipView::Arrangement,
+                          ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
 
     /**
      * @brief Delete a clip
@@ -625,9 +630,9 @@ class ClipManager {
     /**
      * @brief Resolve overlaps after placing/moving a dominant clip
      *
-     * Trims or deletes any arrangement clips on the same track that overlap
-     * with the dominant clip. "Last write wins" semantics.
-     * Called internally by clip creation/move methods.
+     * Trims or deletes any arrangement clips on the same track that overlap with
+     * the dominant clip. "Last write wins" semantics.
+     * Called internally by move methods and explicit opt-in creation paths.
      */
     void resolveOverlaps(ClipId dominantClipId);
 
@@ -637,6 +642,9 @@ class ClipManager {
   private:
     ClipManager() = default;
     ~ClipManager() = default;
+
+    double findNonOverlappingStartBeats(TrackId trackId, double desiredStartBeats,
+                                        double lengthBeats, ClipView view) const;
 
     // Unified clip storage — ClipView is a property, not storage identity
     std::unordered_map<ClipId, ClipInfo> clips_;

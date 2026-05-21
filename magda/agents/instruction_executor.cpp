@@ -9,6 +9,7 @@
 #include "../daw/api/project_api.hpp"
 #include "../daw/api/selection_api.hpp"
 #include "../daw/api/track_api.hpp"
+#include "../daw/api/transport_api.hpp"
 #include "../daw/api/undo_api.hpp"
 #include "../daw/core/DeviceInfo.hpp"
 #include "../daw/core/MidiNoteCommands.hpp"
@@ -81,6 +82,53 @@ double InstructionExecutor::barsToBeats(double bars) const {
     return bars * static_cast<double>(beatsPerBar);
 }
 
+double InstructionExecutor::beatsToBar(double beats) const {
+    const double beatsPerBar = barsToBeats(1.0);
+    if (beatsPerBar <= 0.0)
+        return 1.0;
+    return (beats / beatsPerBar) + 1.0;
+}
+
+double InstructionExecutor::findNonOverlappingClipStartBeats(TrackId trackId,
+                                                             double desiredStartBeats,
+                                                             double lengthBeats) const {
+    constexpr double epsilon = 1.0e-6;
+    double candidate = std::max(0.0, desiredStartBeats);
+    if (lengthBeats <= 0.0)
+        return candidate;
+
+    struct Range {
+        double start;
+        double end;
+    };
+    std::vector<Range> ranges;
+
+    auto& clips = api_.clips();
+    for (auto clipId : clips.getClipsOnTrack(trackId)) {
+        const auto* clip = clips.getClip(clipId);
+        if (!clip || clip->view != ClipView::Arrangement)
+            continue;
+
+        const double start = clip->placement.startBeat;
+        const double end = clip->placement.endBeat();
+        if (end > start)
+            ranges.push_back({start, end});
+    }
+
+    std::sort(ranges.begin(), ranges.end(),
+              [](const auto& a, const auto& b) { return a.start < b.start; });
+
+    for (const auto& range : ranges) {
+        if (range.end <= candidate + epsilon)
+            continue;
+        if (candidate + lengthBeats <= range.start + epsilon)
+            break;
+        candidate = range.end;
+    }
+
+    return candidate;
+}
+
 // ============================================================================
 // Main execute
 // ============================================================================
@@ -112,7 +160,24 @@ bool InstructionExecutor::execute(const std::vector<Instruction>& instructions) 
             }
             case OpCode::Arp: {
                 const auto& a = std::get<ArpOp>(inst.payload);
-                const double span = a.beats > 0.0 ? a.beats : a.step;
+                double span = a.beats;
+                if (span <= 0.0) {
+                    std::vector<int> midiNotes;
+                    juce::String chordError;
+                    if (music::resolveChordNotes(a.root.toStdString(), a.quality.toStdString(),
+                                                 a.inversion, midiNotes, chordError)) {
+                        auto pattern = a.pattern.trim().toLowerCase();
+                        size_t noteCount = midiNotes.size();
+                        if ((pattern == "updown" || pattern == "upanddown" ||
+                             pattern == "up_down") &&
+                            midiNotes.size() > 2) {
+                            noteCount += midiNotes.size() - 2;
+                        }
+                        span = static_cast<double>(noteCount) * a.step;
+                    } else {
+                        span = a.step;
+                    }
+                }
                 pendingContentEndBeats_ = std::max(pendingContentEndBeats_, a.beat + span);
                 break;
             }
@@ -241,17 +306,12 @@ bool InstructionExecutor::autoCreateClip() {
         return false;
     }
 
-    // Create a clip at bar 1 sized to the pending content, with a 4-bar
-    // floor so an empty / single-note add still gets a usable clip. Round
-    // the content span up to the next whole bar so the clip lines up with
-    // the bar grid rather than ending mid-bar. Beats-authoritative: pass
-    // beats directly so the clip's musical position survives tempo /
-    // time-sig changes and skips the seconds<->beats round-trip.
-    const double beatsPerBar = barsToBeats(1.0);
-    const double minLength = barsToBeats(4.0);
-    double contentBars = beatsPerBar > 0.0 ? std::ceil(pendingContentEndBeats_ / beatsPerBar) : 4.0;
-    double startBeats = barsToBeats(0.0);  // bar 1 == beat 0
-    double lengthBeats = std::max(minLength, barsToBeats(contentBars));
+    // Create a clip at the edit/playhead position and size it exactly to the
+    // generated content. Playback/scheduling bugs must be fixed in the
+    // scheduler; the arranger should not pad the container to compensate.
+    double startBeats = std::max(0.0, api_.transport().getPositionBeats());
+    double lengthBeats = pendingContentEndBeats_ > 0.0 ? pendingContentEndBeats_ : barsToBeats(1.0);
+    startBeats = findNonOverlappingClipStartBeats(currentTrackId_, startBeats, lengthBeats);
 
     DBG("InstructionExecutor::autoCreateClip creating MIDI clip on track " +
         juce::String(currentTrackId_) + " startBeats=" + juce::String(startBeats, 3) +
@@ -269,7 +329,8 @@ bool InstructionExecutor::autoCreateClip() {
 
     currentClipId_ = clipId;
     autoCreatedClip_ = true;
-    results_.add("Created MIDI clip at bar 1.00, length 4.00 bars");
+    results_.add("Created MIDI clip at bar " + juce::String(beatsToBar(startBeats), 2) +
+                 ", length " + juce::String(beatsToBar(lengthBeats) - 1.0, 2) + " bars");
     return true;
 }
 
@@ -496,6 +557,7 @@ bool InstructionExecutor::executeClip(const ClipOp& op) {
     // signature; do NOT round-trip through seconds.
     double startBeats = barsToBeats(op.bar - 1.0);
     double lengthBeats = barsToBeats(op.lengthBars);
+    startBeats = findNonOverlappingClipStartBeats(trackId, startBeats, lengthBeats);
 
     auto& cm = api_.clips();
     auto clipId = cm.createMidiClipBeats(trackId, startBeats, lengthBeats);
@@ -509,11 +571,12 @@ bool InstructionExecutor::executeClip(const ClipOp& op) {
 
     if (op.name.isNotEmpty()) {
         cm.setClipName(clipId, op.name);
-        results_.add("Created clip '" + op.name + "' at bar " + juce::String(op.bar, 0) +
-                     ", length " + juce::String(op.lengthBars, 0) + " bars");
-    } else {
-        results_.add("Created clip at bar " + juce::String(op.bar, 0) + ", length " +
+        results_.add("Created clip '" + op.name + "' at bar " +
+                     juce::String(beatsToBar(startBeats), 0) + ", length " +
                      juce::String(op.lengthBars, 0) + " bars");
+    } else {
+        results_.add("Created clip at bar " + juce::String(beatsToBar(startBeats), 0) +
+                     ", length " + juce::String(op.lengthBars, 0) + " bars");
     }
     return true;
 }
