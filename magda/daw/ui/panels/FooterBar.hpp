@@ -5,6 +5,7 @@
 
 #include <array>
 #include <memory>
+#include <vector>
 
 #include "../components/common/SvgButton.hpp"
 #include "../utils/ComponentManager.hpp"
@@ -44,14 +45,33 @@ class FooterBar : public juce::Component,
     // Click on a controller pill in the footer opens the Controllers dialog.
     std::function<void()> onControllersClicked;
 
+    // Click on a local-model pill in the footer opens AI Settings.
+    std::function<void()> onLocalModelsClicked;
+
   private:
     static constexpr int NUM_MODES = 3;
+    static constexpr int NUM_LOCAL_MODELS = 2;
     static constexpr int BUTTON_SIZE = 32;
     static constexpr int BUTTON_SPACING = 16;
 
     std::array<magda::ManagedChild<SvgButton>, NUM_MODES> modeButtons;
     std::unique_ptr<SvgButton> bottomCollapseButton_;
     bool bottomCollapsed_ = false;
+
+    // ----- Local model strip on the right -----
+    enum class LocalModelState {
+        Unavailable,
+        Idle,
+        Loading,
+        Loaded,
+    };
+
+    std::array<std::unique_ptr<SvgButton>, NUM_LOCAL_MODELS> localModelButtons_;
+    std::array<LocalModelState, NUM_LOCAL_MODELS> localModelStates_ = {
+        LocalModelState::Unavailable, LocalModelState::Unavailable};
+    juce::Rectangle<int> localModelStripArea_;
+    bool refreshLocalModelStatus();
+    void setupLocalModelButtons();
 
     // ----- Enabled-controllers strip on the left -----
     struct ControllerBadge {

@@ -4,7 +4,6 @@
 
 #include "../../media_db/MediaDbContext.hpp"
 #include "../../media_db/MediaDbQuery.hpp"
-#include "../../media_db/SampleTaggerDownloader.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../state/TimelineController.hpp"
@@ -65,6 +64,28 @@ void setupSectionHeader(juce::Component& owner, juce::Label& header, const juce:
     header.setFont(magda::FontManager::getInstance().getUIFontBold(14.0f));
     header.setJustificationType(juce::Justification::centredLeft);
     owner.addAndMakeVisible(header);
+}
+
+void setupPathRowLabel(juce::Component& owner, juce::Label& label, const juce::String& text,
+                       float size = 12.0f) {
+    label.setText(text, juce::dontSendNotification);
+    label.setFont(magda::FontManager::getInstance().getUIFont(size));
+    label.setColour(juce::Label::textColourId,
+                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+    label.setJustificationType(juce::Justification::centredLeft);
+    owner.addAndMakeVisible(label);
+}
+
+void setupPathTextEditor(juce::Component& owner, juce::TextEditor& editor) {
+    editor.setReadOnly(true);
+    editor.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
+    editor.setColour(juce::TextEditor::backgroundColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::SURFACE));
+    editor.setColour(juce::TextEditor::textColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+    editor.setColour(juce::TextEditor::outlineColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::BORDER));
+    owner.addAndMakeVisible(editor);
 }
 
 juce::Rectangle<int> getPreferencesDialogContentSize() {
@@ -1219,6 +1240,50 @@ class PathsPage : public juce::Component {
         renderHint_.setJustificationType(juce::Justification::centredLeft);
         renderHint_.setText(tr("preferences.paths.note.render_hint"), juce::dontSendNotification);
         addAndMakeVisible(renderHint_);
+
+        // --- Media Library ---
+        setupSectionHeader(*this, editorHeader_, "External Audio Editor");
+        setupPathRowLabel(*this, editorLocationCaption_, "Editor");
+        setupPathTextEditor(*this, editorLocationField_);
+
+        editorBrowse_.setButtonText("Browse...");
+        editorBrowse_.onClick = [this]() { browseForExternalEditor(); };
+        addAndMakeVisible(editorBrowse_);
+
+        editorReset_.setButtonText("Reset");
+        editorReset_.onClick = [this]() {
+            magda::Config::getInstance().setExternalAudioEditorPath(std::string{});
+            magda::Config::getInstance().save();
+            refreshMediaLibrarySettings();
+        };
+        addAndMakeVisible(editorReset_);
+
+        setupSectionHeader(*this, dbHeader_, "Media Database");
+        setupPathRowLabel(*this, dbLocationCaption_, "Database location");
+        setupPathTextEditor(*this, dbLocationField_);
+
+        dbBrowse_.setButtonText("Browse...");
+        dbBrowse_.onClick = [this]() { browseForDbLocation(); };
+        addAndMakeVisible(dbBrowse_);
+
+        dbReset_.setButtonText("Reset");
+        dbReset_.onClick = [this]() {
+            magda::Config::getInstance().setMediaDbDir(std::string{});
+            magda::Config::getInstance().save();
+            magda::media::MediaDbContext::getInstance().resetForReopen();
+            refreshMediaLibrarySettings();
+        };
+        addAndMakeVisible(dbReset_);
+
+        dbStats_.setFont(magda::FontManager::getInstance().getUIFont(11.0f));
+        dbStats_.setColour(juce::Label::textColourId,
+                           magda::DarkTheme::getColour(magda::DarkTheme::TEXT_SECONDARY));
+        dbStats_.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(dbStats_);
+
+        wipeButton_.setButtonText("Wipe database...");
+        wipeButton_.onClick = [this]() { confirmAndWipe(); };
+        addAndMakeVisible(wipeButton_);
     }
 
     int getPreferredHeight(int) const {
@@ -1228,7 +1293,8 @@ class PathsPage : public juce::Component {
         constexpr int sectionGap = 18;
 
         return padding + rowH + gap + rowH + gap + rowH + gap + rowH + sectionGap + rowH + gap +
-               rowH + gap + rowH + gap + rowH + sectionGap + rowH + padding;
+               rowH + gap + rowH + gap + rowH + sectionGap + rowH + gap + rowH + sectionGap + rowH +
+               gap + rowH + gap + rowH + gap + rowH + sectionGap + rowH + padding;
     }
 
     void resized() override {
@@ -1239,6 +1305,7 @@ class PathsPage : public juce::Component {
         const int revealW = 130;
         const int browseW = 100;
         const int resetW = 80;
+        const int labelW = 120;
 
         // Data section: header → button row (Reveal + Browse + Reset, left-
         // aligned) → path row (Folder: <value>) → note.
@@ -1277,6 +1344,38 @@ class PathsPage : public juce::Component {
 
         bounds.removeFromTop(sectionGap);
 
+        // External editor section
+        editorHeader_.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(gap);
+        auto editorRow = bounds.removeFromTop(rowH);
+        editorLocationCaption_.setBounds(editorRow.removeFromLeft(labelW));
+        editorReset_.setBounds(editorRow.removeFromRight(70).reduced(0, 1));
+        editorRow.removeFromRight(4);
+        editorBrowse_.setBounds(editorRow.removeFromRight(90).reduced(0, 1));
+        editorRow.removeFromRight(4);
+        editorLocationField_.setBounds(editorRow.reduced(0, 1));
+
+        bounds.removeFromTop(sectionGap);
+
+        // Media database section
+        dbHeader_.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(gap);
+        auto dbLocRow = bounds.removeFromTop(rowH);
+        dbLocationCaption_.setBounds(dbLocRow.removeFromLeft(labelW));
+        dbReset_.setBounds(dbLocRow.removeFromRight(70).reduced(0, 1));
+        dbLocRow.removeFromRight(4);
+        dbBrowse_.setBounds(dbLocRow.removeFromRight(90).reduced(0, 1));
+        dbLocRow.removeFromRight(4);
+        dbLocationField_.setBounds(dbLocRow.reduced(0, 1));
+        bounds.removeFromTop(gap);
+
+        dbStats_.setBounds(bounds.removeFromTop(20));
+        bounds.removeFromTop(gap);
+
+        wipeButton_.setBounds(bounds.removeFromTop(rowH).removeFromLeft(180));
+
+        bounds.removeFromTop(sectionGap);
+
         renderHint_.setBounds(bounds.removeFromTop(rowH));
     }
 
@@ -1290,6 +1389,7 @@ class PathsPage : public juce::Component {
         pendingCopyData_ = false;
         pendingCopyPresets_ = false;
         updateDisplay();
+        refreshMediaLibrarySettings();
     }
 
     void applySettings(Config& /*config*/) {
@@ -1457,6 +1557,114 @@ class PathsPage : public juce::Component {
         }
     }
 
+    void refreshMediaLibrarySettings() {
+        auto& ctx = magda::media::MediaDbContext::getInstance();
+
+        const auto editorPath =
+            juce::String(magda::Config::getInstance().getExternalAudioEditorPath());
+        editorLocationField_.setText(editorPath.isEmpty() ? juce::String("Not configured")
+                                                          : editorPath,
+                                     juce::dontSendNotification);
+
+        dbLocationField_.setText(juce::String(ctx.dbPath().parent_path().string()),
+                                 juce::dontSendNotification);
+
+        int files = 0;
+        int embeddings = 0;
+        if (ctx.ensureInitialized()) {
+            magda::media::MediaDbQuery probe(ctx.db(), nullptr, nullptr);
+            files = probe.totalFiles();
+            embeddings = probe.totalEmbeddings();
+        }
+        dbStats_.setText(juce::String(files) + " indexed files, " + juce::String(embeddings) +
+                             " audio embeddings",
+                         juce::dontSendNotification);
+        wipeButton_.setEnabled(files > 0);
+    }
+
+    void browseForDbLocation() {
+        const auto currentDir = juce::File(juce::String(
+            magda::media::MediaDbContext::getInstance().dbPath().parent_path().string()));
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            "Choose a folder for the media database",
+            currentDir.exists() ? currentDir
+                                : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+
+        juce::Component::SafePointer<PathsPage> self(this);
+        fileChooser_->launchAsync(
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+            [self](const juce::FileChooser& fc) {
+                const auto picked = fc.getResult();
+                if (picked.isDirectory()) {
+                    magda::Config::getInstance().setMediaDbDir(
+                        picked.getFullPathName().toStdString());
+                    magda::Config::getInstance().save();
+                    magda::media::MediaDbContext::getInstance().resetForReopen();
+                    if (auto* page = self.getComponent())
+                        page->refreshMediaLibrarySettings();
+                }
+            });
+    }
+
+    void browseForExternalEditor() {
+        const auto configured =
+            juce::String(magda::Config::getInstance().getExternalAudioEditorPath());
+        juce::File initial = configured.isNotEmpty()
+                                 ? juce::File(configured)
+                                 : juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+        if (!initial.exists()) {
+            initial = juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+        }
+
+        fileChooser_ =
+            std::make_unique<juce::FileChooser>("Choose an external audio editor", initial);
+        auto chooserFlags =
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+#if JUCE_MAC
+        chooserFlags |= juce::FileBrowserComponent::canSelectDirectories;
+#endif
+
+        juce::Component::SafePointer<PathsPage> self(this);
+        fileChooser_->launchAsync(chooserFlags, [self](const juce::FileChooser& fc) {
+            const auto picked = fc.getResult();
+            if (!picked.exists()) {
+                return;
+            }
+#if JUCE_MAC
+            if (!picked.existsAsFile() && !picked.isBundle()) {
+                return;
+            }
+#else
+            if (!picked.existsAsFile()) {
+                return;
+            }
+#endif
+            magda::Config::getInstance().setExternalAudioEditorPath(
+                picked.getFullPathName().toStdString());
+            magda::Config::getInstance().save();
+            if (auto* page = self.getComponent())
+                page->refreshMediaLibrarySettings();
+        });
+    }
+
+    void confirmAndWipe() {
+        const juce::Component::SafePointer<PathsPage> self(this);
+        juce::AlertWindow::showAsync(
+            juce::MessageBoxOptions{}
+                .withIconType(juce::MessageBoxIconType::WarningIcon)
+                .withTitle("Wipe media database")
+                .withMessage("This deletes every indexed file, embedding, and tag from the media "
+                             "database.\nYour audio files on disk are untouched.\n\nContinue?")
+                .withButton("Wipe")
+                .withButton("Cancel"),
+            [self](int result) {
+                if (auto* page = self.getComponent(); page != nullptr && result == 1) {
+                    magda::media::MediaDbContext::getInstance().wipeAll();
+                    page->refreshMediaLibrarySettings();
+                }
+            });
+    }
+
     juce::Label dataHeader_, dataLabel_, dataValue_, dataNote_;
     juce::TextButton dataBrowse_, dataReveal_, dataReset_;
     std::string dataPath_;
@@ -1470,6 +1678,20 @@ class PathsPage : public juce::Component {
     bool pendingCopyPresets_ = false;
 
     juce::Label renderHint_;
+
+    juce::Label editorHeader_;
+    juce::Label editorLocationCaption_;
+    juce::TextEditor editorLocationField_;
+    juce::TextButton editorBrowse_;
+    juce::TextButton editorReset_;
+
+    juce::Label dbHeader_;
+    juce::Label dbLocationCaption_;
+    juce::TextEditor dbLocationField_;
+    juce::TextButton dbBrowse_;
+    juce::TextButton dbReset_;
+    juce::Label dbStats_;
+    juce::TextButton wipeButton_;
 
     std::unique_ptr<juce::FileChooser> fileChooser_;
 };
@@ -1665,512 +1887,6 @@ class ShortcutsPage : public juce::Component {
 };
 
 // ---------------------------------------------------------------------------
-// MediaLibraryPage — Sample Analyzer model bundle + media DB housekeeping.
-// Combined into one tab because the user reaches for both knobs as part
-// of the same task (managing the sample library subsystem).
-// ---------------------------------------------------------------------------
-
-namespace {
-
-void styleDialogEditor(juce::TextEditor& ed) {
-    ed.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
-    ed.setColour(juce::TextEditor::backgroundColourId,
-                 magda::DarkTheme::getColour(magda::DarkTheme::SURFACE));
-    ed.setColour(juce::TextEditor::textColourId,
-                 magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
-    ed.setColour(juce::TextEditor::outlineColourId,
-                 magda::DarkTheme::getColour(magda::DarkTheme::BORDER));
-}
-
-void styleDialogLabel(juce::Label& label, float size = 12.0f) {
-    label.setFont(magda::FontManager::getInstance().getUIFont(size));
-    label.setColour(juce::Label::textColourId,
-                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
-    label.setJustificationType(juce::Justification::centredLeft);
-}
-
-}  // namespace
-
-class MediaLibraryPage : public juce::Component {
-  public:
-    MediaLibraryPage() {
-        // ===== Sample Analyzer section =====
-        setupSectionHeader(*this, taggerHeader_, "Sample Analyzer");
-
-        taggerStatus_.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
-        taggerStatus_.setColour(juce::Label::textColourId,
-                                magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
-        taggerStatus_.setJustificationType(juce::Justification::topLeft);
-        addAndMakeVisible(taggerStatus_);
-
-        modelsLocationCaption_.setText("Models location", juce::dontSendNotification);
-        styleDialogLabel(modelsLocationCaption_);
-        addAndMakeVisible(modelsLocationCaption_);
-
-        modelsLocationField_.setReadOnly(true);
-        styleDialogEditor(modelsLocationField_);
-        addAndMakeVisible(modelsLocationField_);
-
-        modelsBrowse_.setButtonText("Browse...");
-        modelsBrowse_.onClick = [this]() { browseForModelsLocation(); };
-        addAndMakeVisible(modelsBrowse_);
-
-        modelsReset_.setButtonText("Reset");
-        modelsReset_.onClick = [this]() {
-            magda::Config::getInstance().setSampleTaggerModelsDir(std::string{});
-            magda::Config::getInstance().save();
-            refresh();
-        };
-        addAndMakeVisible(modelsReset_);
-
-        progressBar_.setColour(
-            juce::ProgressBar::backgroundColourId,
-            magda::DarkTheme::getColour(magda::DarkTheme::BACKGROUND).brighter(0.05f));
-        progressBar_.setColour(juce::ProgressBar::foregroundColourId,
-                               magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_BLUE));
-        progressBar_.setPercentageDisplay(false);
-        progressBar_.setVisible(false);
-        addAndMakeVisible(progressBar_);
-
-        actionButton_.setButtonText("Download Sample Analyzer");
-        actionButton_.onClick = [this]() { handleActionClick(); };
-        addAndMakeVisible(actionButton_);
-
-        loadButton_.setButtonText("Load");
-        loadButton_.onClick = [this]() { handleLoadClick(); };
-        addAndMakeVisible(loadButton_);
-
-        loadOnStartupToggle_.setButtonText("Load on startup");
-        loadOnStartupToggle_.setColour(
-            juce::ToggleButton::textColourId,
-            magda::DarkTheme::getColour(magda::DarkTheme::TEXT_SECONDARY));
-        loadOnStartupToggle_.onClick = [this]() {
-            magda::Config::getInstance().setLoadSampleTaggerOnStartup(
-                loadOnStartupToggle_.getToggleState());
-            magda::Config::getInstance().save();
-        };
-        addAndMakeVisible(loadOnStartupToggle_);
-
-        // ===== External Editor section =====
-        setupSectionHeader(*this, editorHeader_, "External Audio Editor");
-
-        editorLocationCaption_.setText("Editor", juce::dontSendNotification);
-        styleDialogLabel(editorLocationCaption_);
-        addAndMakeVisible(editorLocationCaption_);
-
-        editorLocationField_.setReadOnly(true);
-        styleDialogEditor(editorLocationField_);
-        addAndMakeVisible(editorLocationField_);
-
-        editorBrowse_.setButtonText("Browse...");
-        editorBrowse_.onClick = [this]() { browseForExternalEditor(); };
-        addAndMakeVisible(editorBrowse_);
-
-        editorReset_.setButtonText("Reset");
-        editorReset_.onClick = [this]() {
-            magda::Config::getInstance().setExternalAudioEditorPath(std::string{});
-            magda::Config::getInstance().save();
-            refresh();
-        };
-        addAndMakeVisible(editorReset_);
-
-        // ===== Media Database section =====
-        setupSectionHeader(*this, dbHeader_, "Media Database");
-
-        dbLocationCaption_.setText("Database location", juce::dontSendNotification);
-        styleDialogLabel(dbLocationCaption_);
-        addAndMakeVisible(dbLocationCaption_);
-
-        dbLocationField_.setReadOnly(true);
-        styleDialogEditor(dbLocationField_);
-        addAndMakeVisible(dbLocationField_);
-
-        dbBrowse_.setButtonText("Browse...");
-        dbBrowse_.onClick = [this]() { browseForDbLocation(); };
-        addAndMakeVisible(dbBrowse_);
-
-        dbReset_.setButtonText("Reset");
-        dbReset_.onClick = [this]() {
-            magda::Config::getInstance().setMediaDbDir(std::string{});
-            magda::Config::getInstance().save();
-            magda::media::MediaDbContext::getInstance().resetForReopen();
-            refresh();
-        };
-        addAndMakeVisible(dbReset_);
-
-        dbStats_.setFont(magda::FontManager::getInstance().getUIFont(11.0f));
-        dbStats_.setColour(juce::Label::textColourId,
-                           magda::DarkTheme::getColour(magda::DarkTheme::TEXT_SECONDARY));
-        dbStats_.setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(dbStats_);
-
-        wipeButton_.setButtonText("Wipe database...");
-        wipeButton_.onClick = [this]() { confirmAndWipe(); };
-        addAndMakeVisible(wipeButton_);
-
-        refresh();
-    }
-
-    int getPreferredHeight(int) const {
-        // Two sections with header + status + 3-4 rows each. Conservative
-        // estimate so the scroll viewport doesn't clip.
-        return 560;
-    }
-
-    void resized() override {
-        auto bounds = getLocalBounds().reduced(16);
-        const int rowH = 24;
-        const int labelW = 110;
-
-        // Sample Analyzer section
-        taggerHeader_.setBounds(bounds.removeFromTop(24));
-        bounds.removeFromTop(4);
-        taggerStatus_.setBounds(bounds.removeFromTop(54));
-        bounds.removeFromTop(8);
-
-        auto locRow = bounds.removeFromTop(rowH);
-        modelsLocationCaption_.setBounds(locRow.removeFromLeft(labelW));
-        modelsReset_.setBounds(locRow.removeFromRight(70).reduced(0, 1));
-        locRow.removeFromRight(4);
-        modelsBrowse_.setBounds(locRow.removeFromRight(90).reduced(0, 1));
-        locRow.removeFromRight(4);
-        modelsLocationField_.setBounds(locRow.reduced(0, 1));
-        bounds.removeFromTop(8);
-
-        progressBar_.setBounds(bounds.removeFromTop(20));
-        bounds.removeFromTop(6);
-
-        auto buttonRow = bounds.removeFromTop(28);
-        actionButton_.setBounds(buttonRow.removeFromLeft(220));
-        buttonRow.removeFromLeft(8);
-        loadButton_.setBounds(buttonRow.removeFromLeft(100));
-        bounds.removeFromTop(6);
-        loadOnStartupToggle_.setBounds(bounds.removeFromTop(22));
-
-        bounds.removeFromTop(20);
-
-        // External Editor section
-        editorHeader_.setBounds(bounds.removeFromTop(24));
-        bounds.removeFromTop(6);
-
-        auto editorRow = bounds.removeFromTop(rowH);
-        editorLocationCaption_.setBounds(editorRow.removeFromLeft(labelW));
-        editorReset_.setBounds(editorRow.removeFromRight(70).reduced(0, 1));
-        editorRow.removeFromRight(4);
-        editorBrowse_.setBounds(editorRow.removeFromRight(90).reduced(0, 1));
-        editorRow.removeFromRight(4);
-        editorLocationField_.setBounds(editorRow.reduced(0, 1));
-
-        bounds.removeFromTop(20);
-
-        // Media Database section
-        dbHeader_.setBounds(bounds.removeFromTop(24));
-        bounds.removeFromTop(6);
-
-        auto dbLocRow = bounds.removeFromTop(rowH);
-        dbLocationCaption_.setBounds(dbLocRow.removeFromLeft(labelW));
-        dbReset_.setBounds(dbLocRow.removeFromRight(70).reduced(0, 1));
-        dbLocRow.removeFromRight(4);
-        dbBrowse_.setBounds(dbLocRow.removeFromRight(90).reduced(0, 1));
-        dbLocRow.removeFromRight(4);
-        dbLocationField_.setBounds(dbLocRow.reduced(0, 1));
-        bounds.removeFromTop(6);
-
-        dbStats_.setBounds(bounds.removeFromTop(20));
-        bounds.removeFromTop(8);
-
-        wipeButton_.setBounds(bounds.removeFromTop(28).removeFromLeft(180));
-    }
-
-    void loadSettings(const magda::Config& config) {
-        loadOnStartupToggle_.setToggleState(config.getLoadSampleTaggerOnStartup(),
-                                            juce::dontSendNotification);
-        refresh();
-    }
-
-  private:
-    void refresh() {
-        // -- Sample Analyzer
-        modelsLocationField_.setText(
-            juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string()),
-            juce::dontSendNotification);
-
-        const bool installed = magda::media::SampleTaggerDownloader::isInstalled();
-        auto& ctx = magda::media::MediaDbContext::getInstance();
-        const bool loaded =
-            ctx.isAudioEncoderLoaded() && ctx.isTextEncoderLoaded() && ctx.isTokenizerLoaded();
-
-        if (installed) {
-            taggerStatus_.setText(
-                juce::String("Sample Analyzer is installed (") +
-                    (loaded ? "loaded in memory" : "not loaded - first query will load it") +
-                    ").\nEnables text search ('warm pad', 'kick 808') and similarity search "
-                    "over your indexed sample library.",
-                juce::dontSendNotification);
-            actionButton_.setButtonText("Remove");
-        } else {
-            const auto totalMb =
-                magda::media::SampleTaggerDownloader::expectedTotalBytes() / (1024.0 * 1024.0);
-            taggerStatus_.setText("Sample Analyzer is not installed.\nDownload (~" +
-                                      juce::String(totalMb, 0) +
-                                      " MB) to enable text + similarity search. Without it the "
-                                      "library still supports filename / tag / family filtering.",
-                                  juce::dontSendNotification);
-            actionButton_.setButtonText("Download Sample Analyzer");
-        }
-        progressBar_.setVisible(downloader_.isRunning());
-        actionButton_.setEnabled(true);
-        loadButton_.setButtonText(loaded ? "Unload" : (loadInFlight_ ? "Loading..." : "Load"));
-        loadButton_.setEnabled(installed && !loadInFlight_);
-
-        const auto editorPath =
-            juce::String(magda::Config::getInstance().getExternalAudioEditorPath());
-        editorLocationField_.setText(editorPath.isEmpty() ? juce::String("Not configured")
-                                                          : editorPath,
-                                     juce::dontSendNotification);
-
-        // -- Media Database
-        dbLocationField_.setText(
-            juce::String(
-                magda::media::MediaDbContext::getInstance().dbPath().parent_path().string()),
-            juce::dontSendNotification);
-
-        int files = 0;
-        int embeddings = 0;
-        if (ctx.ensureInitialized()) {
-            magda::media::MediaDbQuery probe(ctx.db(), nullptr, nullptr);
-            files = probe.totalFiles();
-            embeddings = probe.totalEmbeddings();
-        }
-        dbStats_.setText(juce::String(files) + " indexed files, " + juce::String(embeddings) +
-                             " audio embeddings",
-                         juce::dontSendNotification);
-        wipeButton_.setEnabled(files > 0);
-
-        resized();
-    }
-
-    void handleLoadClick() {
-        auto& ctx = magda::media::MediaDbContext::getInstance();
-        const bool loaded =
-            ctx.isAudioEncoderLoaded() && ctx.isTextEncoderLoaded() && ctx.isTokenizerLoaded();
-        if (loaded) {
-            ctx.unloadModels();
-            refresh();
-            return;
-        }
-        loadInFlight_ = true;
-        refresh();
-        const juce::Component::SafePointer<MediaLibraryPage> self(this);
-        juce::Thread::launch([self]() {
-            magda::media::MediaDbContext::getInstance().preloadModels();
-            juce::MessageManager::callAsync([self]() {
-                if (self != nullptr) {
-                    self->loadInFlight_ = false;
-                    self->refresh();
-                }
-            });
-        });
-    }
-
-    void browseForModelsLocation() {
-        const auto currentDir = juce::File(
-            juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string()));
-        modelsChooser_ = std::make_unique<juce::FileChooser>(
-            "Choose a folder for the Sample Analyzer models",
-            currentDir.exists() ? currentDir
-                                : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
-        modelsChooser_->launchAsync(juce::FileBrowserComponent::openMode |
-                                        juce::FileBrowserComponent::canSelectDirectories,
-                                    [this](const juce::FileChooser& fc) {
-                                        const auto picked = fc.getResult();
-                                        if (!picked.isDirectory()) {
-                                            return;
-                                        }
-                                        magda::Config::getInstance().setSampleTaggerModelsDir(
-                                            picked.getFullPathName().toStdString());
-                                        magda::Config::getInstance().save();
-                                        refresh();
-                                    });
-    }
-
-    void browseForDbLocation() {
-        const auto currentDir = juce::File(juce::String(
-            magda::media::MediaDbContext::getInstance().dbPath().parent_path().string()));
-        dbChooser_ = std::make_unique<juce::FileChooser>(
-            "Choose a folder for the media database",
-            currentDir.exists() ? currentDir
-                                : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
-        dbChooser_->launchAsync(
-            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-            [this](const juce::FileChooser& fc) {
-                const auto picked = fc.getResult();
-                if (!picked.isDirectory()) {
-                    return;
-                }
-                magda::Config::getInstance().setMediaDbDir(picked.getFullPathName().toStdString());
-                magda::Config::getInstance().save();
-                // Force a close so the next access opens the file at the
-                // new path instead of holding the old handle.
-                magda::media::MediaDbContext::getInstance().resetForReopen();
-                refresh();
-            });
-    }
-
-    void browseForExternalEditor() {
-        const auto configured =
-            juce::String(magda::Config::getInstance().getExternalAudioEditorPath());
-        juce::File initial = configured.isNotEmpty()
-                                 ? juce::File(configured)
-                                 : juce::File::getSpecialLocation(juce::File::userHomeDirectory);
-        if (!initial.exists()) {
-            initial = juce::File::getSpecialLocation(juce::File::userHomeDirectory);
-        }
-
-        editorChooser_ =
-            std::make_unique<juce::FileChooser>("Choose an external audio editor", initial);
-        auto chooserFlags =
-            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
-#if JUCE_MAC
-        chooserFlags |= juce::FileBrowserComponent::canSelectDirectories;
-#endif
-        editorChooser_->launchAsync(chooserFlags, [this](const juce::FileChooser& fc) {
-            const auto picked = fc.getResult();
-            if (!picked.exists()) {
-                return;
-            }
-#if JUCE_MAC
-            if (!picked.existsAsFile() && !picked.isBundle()) {
-                return;
-            }
-#else
-            if (!picked.existsAsFile()) {
-                return;
-            }
-#endif
-            magda::Config::getInstance().setExternalAudioEditorPath(
-                picked.getFullPathName().toStdString());
-            magda::Config::getInstance().save();
-            refresh();
-        });
-    }
-
-    void handleActionClick() {
-        if (downloader_.isRunning()) {
-            downloader_.cancel();
-            return;
-        }
-        if (magda::media::SampleTaggerDownloader::isInstalled()) {
-            removeInstalledFiles();
-            refresh();
-            return;
-        }
-        progressBar_.setVisible(true);
-        progressValue_ = 0.0;
-        actionButton_.setButtonText("Cancel");
-        taggerStatus_.setText("Starting download...", juce::dontSendNotification);
-
-        const juce::Component::SafePointer<MediaLibraryPage> self(this);
-        downloader_.start([self](const auto& p) {
-            if (self != nullptr) {
-                self->onProgress(p);
-            }
-        });
-    }
-
-    void onProgress(const magda::media::SampleTaggerDownloader::Progress& p) {
-        using Phase = magda::media::SampleTaggerDownloader::Phase;
-        switch (p.phase) {
-            case Phase::Downloading:
-            case Phase::Verifying: {
-                const auto total = p.totalBytesAll > 0 ? p.totalBytesAll : 1;
-                progressValue_ = static_cast<double>(p.bytesDoneAll) / static_cast<double>(total);
-                const auto mb = [](juce::int64 b) {
-                    return juce::String(b / (1024.0 * 1024.0), 1);
-                };
-                const auto verb = (p.phase == Phase::Verifying ? juce::String("Verifying ")
-                                                               : juce::String("Downloading "));
-                taggerStatus_.setText(verb + p.currentFilename + "  (" + mb(p.bytesDoneAll) +
-                                          " / " + mb(p.totalBytesAll) + " MB)",
-                                      juce::dontSendNotification);
-                progressBar_.repaint();
-                break;
-            }
-            case Phase::Done:
-            case Phase::Cancelled:
-                refresh();
-                break;
-            case Phase::Failed:
-                actionButton_.setButtonText("Retry");
-                taggerStatus_.setText(juce::String("Download failed: ") + p.errorMessage,
-                                      juce::dontSendNotification);
-                progressBar_.setVisible(false);
-                break;
-            case Phase::Idle:
-                break;
-        }
-    }
-
-    static void removeInstalledFiles() {
-        auto dir = juce::File(
-            juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string()));
-        for (const auto* name : {"clap_audio.onnx", "clap_text.onnx", "tokenizer.json"}) {
-            dir.getChildFile(name).deleteFile();
-        }
-    }
-
-    void confirmAndWipe() {
-        const juce::Component::SafePointer<MediaLibraryPage> self(this);
-        juce::AlertWindow::showAsync(
-            juce::MessageBoxOptions{}
-                .withIconType(juce::MessageBoxIconType::WarningIcon)
-                .withTitle("Wipe media database")
-                .withMessage("This deletes every indexed file, embedding, and tag from the media "
-                             "database.\nYour audio files on disk are untouched.\n\nContinue?")
-                .withButton("Wipe")
-                .withButton("Cancel"),
-            [self](int result) {
-                if (self == nullptr || result != 1) {
-                    return;  // Cancel == button index 2 (returned as 0 by JUCE)
-                }
-                magda::media::MediaDbContext::getInstance().wipeAll();
-                self->refresh();
-            });
-    }
-
-    juce::Label taggerHeader_;
-    juce::Label taggerStatus_;
-    juce::Label modelsLocationCaption_;
-    juce::TextEditor modelsLocationField_;
-    juce::TextButton modelsBrowse_;
-    juce::TextButton modelsReset_;
-    std::unique_ptr<juce::FileChooser> modelsChooser_;
-    double progressValue_ = 0.0;
-    juce::ProgressBar progressBar_{progressValue_};
-    juce::TextButton actionButton_;
-    juce::TextButton loadButton_;
-    juce::ToggleButton loadOnStartupToggle_;
-    bool loadInFlight_ = false;
-    magda::media::SampleTaggerDownloader downloader_;
-
-    juce::Label editorHeader_;
-    juce::Label editorLocationCaption_;
-    juce::TextEditor editorLocationField_;
-    juce::TextButton editorBrowse_;
-    juce::TextButton editorReset_;
-    std::unique_ptr<juce::FileChooser> editorChooser_;
-
-    juce::Label dbHeader_;
-    juce::Label dbLocationCaption_;
-    juce::TextEditor dbLocationField_;
-    juce::TextButton dbBrowse_;
-    juce::TextButton dbReset_;
-    std::unique_ptr<juce::FileChooser> dbChooser_;
-    juce::Label dbStats_;
-    juce::TextButton wipeButton_;
-};
-
-// ---------------------------------------------------------------------------
 // PreferencesDialog
 // ---------------------------------------------------------------------------
 
@@ -2182,7 +1898,6 @@ PreferencesDialog::PreferencesDialog() {
     renderingPage = std::make_unique<RenderingPage>();
     pathsPage = std::make_unique<PathsPage>();
     shortcutsPage = std::make_unique<ShortcutsPage>();
-    mediaLibraryPage = std::make_unique<MediaLibraryPage>();
 
     auto setupPageViewport = [](juce::Viewport& viewport, juce::Component& page) {
         viewport.setViewedComponent(&page, false);
@@ -2193,14 +1908,12 @@ PreferencesDialog::PreferencesDialog() {
     setupPageViewport(coloursPageViewport, *coloursPage);
     setupPageViewport(renderingPageViewport, *renderingPage);
     setupPageViewport(pathsPageViewport, *pathsPage);
-    setupPageViewport(mediaLibraryPageViewport, *mediaLibraryPage);
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     tabbedComponent.addTab(tr("preferences.tab.general"), tabBg, &generalPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.colours"), tabBg, &coloursPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.rendering"), tabBg, &renderingPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.paths"), tabBg, &pathsPageViewport, false);
-    tabbedComponent.addTab("Media Library", tabBg, &mediaLibraryPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.shortcuts"), tabBg, shortcutsPage.get(), false);
     tabbedComponent.setTabBarDepth(36);
     addAndMakeVisible(tabbedComponent);
@@ -2290,11 +2003,6 @@ void PreferencesDialog::updatePageViewports() {
             const int viewW = juce::jmax(1, pathsPageViewport.getMaximumVisibleWidth());
             updateContentSize(pathsPageViewport, *pathsPage, pathsPage->getPreferredHeight(viewW));
         }
-        if (mediaLibraryPage) {
-            const int viewW = juce::jmax(1, mediaLibraryPageViewport.getMaximumVisibleWidth());
-            updateContentSize(mediaLibraryPageViewport, *mediaLibraryPage,
-                              mediaLibraryPage->getPreferredHeight(viewW));
-        }
     };
 
     updateAll();
@@ -2308,7 +2016,6 @@ void PreferencesDialog::loadCurrentSettings() {
     renderingPage->loadSettings(config);
     pathsPage->loadSettings(config);
     shortcutsPage->loadSettings(config);
-    mediaLibraryPage->loadSettings(config);
 }
 
 namespace {
