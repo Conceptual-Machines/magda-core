@@ -45,6 +45,7 @@ juce::File logsDir();                // dataDir() / "Logs"
 juce::File controllerScriptsDir();   // dataDir() / "Scripts" / "Controllers"
 juce::File controllerProfilesDir();  // dataDir() / "controllers"
 juce::File pluginConfigsDir();       // dataDir() / "PluginConfigs"
+juce::File drumkitsDir();            // presetsDir() / "Drumkits"
 
 juce::File configFile();                                      // alwaysOSDefault() / "config.json"
 juce::File pluginListFile();                                  // dataDir() / "PluginList.xml"

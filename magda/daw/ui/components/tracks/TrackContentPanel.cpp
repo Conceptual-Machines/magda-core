@@ -1015,10 +1015,6 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
     // Grab keyboard focus so we can receive key events (like 'B' for blade)
     grabKeyboardFocus();
 
-    // Right-click is handled in mouseUp (context menu); don't start drag/selection
-    if (event.mods.isPopupMenu())
-        return;
-
     // Store initial mouse position for click vs drag detection
     mouseDownX = event.x;
     mouseDownY = event.y;
@@ -1029,6 +1025,72 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
 
     // Reset drag type
     currentDragType_ = DragType::None;
+
+    if (event.mods.isShiftDown() && event.mods.isCtrlDown()) {
+        if (auto* clipComp = getClipComponentAt(event.x, event.y)) {
+            isCreatingSelection = false;
+            isMovingSelection = false;
+            isDrawingClip_ = false;
+
+            std::vector<ClipId> clipIds;
+            const auto clipId = clipComp->getClipId();
+            auto& selectionManager = SelectionManager::getInstance();
+            const auto& selected = selectionManager.getSelectedClips();
+            if (selected.count(clipId) && selected.size() > 1) {
+                clipIds.assign(selected.begin(), selected.end());
+            } else {
+                clipIds.push_back(clipId);
+            }
+
+            juce::MessageManager::callAsync([clipIds = std::move(clipIds)]() {
+                if (clipIds.size() > 1)
+                    UndoManager::getInstance().beginCompoundOperation("Delete Clips");
+
+                for (auto id : clipIds) {
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<DeleteClipCommand>(id));
+                }
+
+                if (clipIds.size() > 1)
+                    UndoManager::getInstance().endCompoundOperation();
+
+                SelectionManager::getInstance().clearSelection();
+            });
+            return;
+        }
+    }
+
+    const bool isModifiedSelectionClick = event.mods.isCommandDown() && !event.mods.isShiftDown();
+    if (isModifiedSelectionClick) {
+        if (auto* clipComp = getClipComponentAt(event.x, event.y)) {
+            isCreatingSelection = false;
+            isMovingSelection = false;
+            isDrawingClip_ = false;
+
+            const auto clipId = clipComp->getClipId();
+            auto& selectionManager = SelectionManager::getInstance();
+            selectionManager.toggleClipSelection(clipId);
+            clipComp->setSelected(selectionManager.isClipSelected(clipId));
+
+            if (selectionManager.isClipSelected(clipId)) {
+                const auto* clip = ClipManager::getInstance().getClip(clipId);
+                if (clip) {
+                    auto& panelController = daw::ui::PanelController::getInstance();
+                    panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
+                    if (clip->isAudio()) {
+                        panelController.setActiveTabByType(
+                            daw::ui::PanelLocation::Bottom,
+                            daw::ui::PanelContentType::WaveformEditor);
+                    }
+                }
+            }
+            return;
+        }
+    }
+
+    // Right-click is handled in mouseUp (context menu); don't start drag/selection
+    if (event.mods.isPopupMenu())
+        return;
 
     // Zone-based behavior:
     // Upper half of track = clip operations
@@ -1085,8 +1147,8 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             }
         }
         if (!onClip) {
-            // Clicked empty space in upper zone - deselect clips (unless Cmd held)
-            if (!event.mods.isCommandDown()) {
+            // Clicked empty space in upper zone - deselect clips unless multi-select modifier held.
+            if (!event.mods.isCommandDown() && !event.mods.isCtrlDown()) {
                 SelectionManager::getInstance().clearSelection();
             }
         }

@@ -1780,6 +1780,66 @@ void ClipManager::setClipMidiEditorRowHeight(ClipId clipId, int rowHeight) {
     }
 }
 
+void ClipManager::setClipDrumRowLabel(ClipId clipId, int noteNumber, const juce::String& label) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr || noteNumber < 0 || noteNumber > 127)
+        return;
+    auto it = clip->drumRowMeta.find(noteNumber);
+    if (label.isEmpty()) {
+        if (it == clip->drumRowMeta.end())
+            return;
+        it->second.label.clear();
+        if (it->second.isEmpty())
+            clip->drumRowMeta.erase(it);
+    } else {
+        if (it == clip->drumRowMeta.end())
+            clip->drumRowMeta[noteNumber].label = label;
+        else if (it->second.label == label)
+            return;
+        else
+            it->second.label = label;
+    }
+    notifyClipPropertyChanged(clipId);
+}
+
+void ClipManager::setClipDrumRowRole(ClipId clipId, int noteNumber, const juce::String& role) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr || noteNumber < 0 || noteNumber > 127)
+        return;
+    auto it = clip->drumRowMeta.find(noteNumber);
+    if (role.isEmpty()) {
+        if (it == clip->drumRowMeta.end())
+            return;
+        it->second.role.clear();
+        if (it->second.isEmpty())
+            clip->drumRowMeta.erase(it);
+    } else {
+        if (it == clip->drumRowMeta.end())
+            clip->drumRowMeta[noteNumber].role = role;
+        else if (it->second.role == role)
+            return;
+        else
+            it->second.role = role;
+    }
+    notifyClipPropertyChanged(clipId);
+}
+
+void ClipManager::clearClipDrumRowMeta(ClipId clipId, int noteNumber) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr)
+        return;
+    if (clip->drumRowMeta.erase(noteNumber) > 0)
+        notifyClipPropertyChanged(clipId);
+}
+
+void ClipManager::clearAllClipDrumRowMeta(ClipId clipId) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr || clip->drumRowMeta.empty())
+        return;
+    clip->drumRowMeta.clear();
+    notifyClipPropertyChanged(clipId);
+}
+
 // ============================================================================
 // Content-Level Operations (Editor Operations)
 // ============================================================================

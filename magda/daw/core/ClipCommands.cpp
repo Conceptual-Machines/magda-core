@@ -724,6 +724,7 @@ void JoinClipsCommand::restoreState(const JoinClipsState& state) {
     }
 
     clipManager.forceNotifyClipsChanged();
+    clipManager.forceNotifyClipPropertyChanged(leftClipId_);
 }
 
 void JoinClipsCommand::performAction() {
@@ -734,29 +735,64 @@ void JoinClipsCommand::performAction() {
     if (!left || !right)
         return;
 
-    if (left->isMidi()) {
-        // MIDI join: copy right clip's notes into left, adjusting beat positions
-        const double bpm = resolveTimelineBpm(tempo_);
-        double beatOffset = right->getStartBeats(bpm) - left->getStartBeats(bpm);
+    const double bpm = resolveTimelineBpm(tempo_);
+    const double newEndBeats = right->getEndBeats(bpm);
+    const double leftStartBeats = left->getStartBeats(bpm);
+    const double joinedLengthBeats = newEndBeats - leftStartBeats;
 
-        for (const auto& note : right->midiNotes) {
+    if (left->isMidi()) {
+        // MIDI join behaves like a consolidation pass: render each clip's visible MIDI into
+        // plain local clip coordinates, then append the right clip at its timeline offset.
+        double beatOffset = right->getStartBeats(bpm) - leftStartBeats;
+        ClipInfo flattenedLeft = *left;
+        ClipInfo flattenedRight = *right;
+        ClipOperations::flattenMidiClip(flattenedLeft);
+        ClipOperations::flattenMidiClip(flattenedRight);
+
+        left->midiNotes = std::move(flattenedLeft.midiNotes);
+        left->midiCCData = std::move(flattenedLeft.midiCCData);
+        left->midiPitchBendData = std::move(flattenedLeft.midiPitchBendData);
+
+        for (const auto& note : flattenedRight.midiNotes) {
             MidiNote adjustedNote = note;
             adjustedNote.startBeat += beatOffset;
             left->midiNotes.push_back(adjustedNote);
         }
+
+        for (const auto& cc : flattenedRight.midiCCData) {
+            MidiCCData adjustedCC = cc;
+            adjustedCC.beatPosition += beatOffset;
+            left->midiCCData.push_back(adjustedCC);
+        }
+
+        for (const auto& pitchBend : flattenedRight.midiPitchBendData) {
+            MidiPitchBendData adjustedPitchBend = pitchBend;
+            adjustedPitchBend.beatPosition += beatOffset;
+            left->midiPitchBendData.push_back(adjustedPitchBend);
+        }
+
+        left->loopEnabled = false;
+        left->loopStart = 0.0;
+        left->loopStartBeats = 0.0;
+        left->loopLength = 0.0;
+        left->loopLengthBeats = 0.0;
+        left->midiOffset = 0.0;
+        left->midiTrimOffset = 0.0;
     } else if (left->isAudio()) {
         // Audio join: extend left clip length to cover both clips
         // (offset and speedRatio remain from left clip)
     }
 
     // Extend left clip length
-    const double bpm = resolveTimelineBpm(tempo_);
-    const double newEndBeats = right->getEndBeats(bpm);
-    left->setPlacementBeats(left->getStartBeats(bpm), newEndBeats - left->getStartBeats(bpm));
+    left->setPlacementBeats(leftStartBeats, joinedLengthBeats);
     left->deriveTimesFromBeats(bpm);
 
     // Delete right clip
     clipManager.deleteClip(rightClipId_);
+
+    // The left clip is mutated in place. Deleting the right clip only emits a structural
+    // notification, whose sync planner does not resync already-mapped TE clips.
+    clipManager.forceNotifyClipPropertyChanged(leftClipId_);
 }
 
 bool JoinClipsCommand::validateState() const {

@@ -80,7 +80,7 @@ Follow actions chain session clips together for generative arrangement. Once the
 ## Selecting Clips
 
 - **Click** a clip to select it
-- **Shift+click** to add or remove clips from the selection
+- ++cmd++ **+ click** (++ctrl++ **+ click** on Windows/Linux) to add or remove clips from the selection
 - ++cmd+a++ (++ctrl+a++ on Windows/Linux) selects all clips in the arrangement, or all notes when a MIDI editor is focused
 
 ## Editing Clips
@@ -90,7 +90,7 @@ Follow actions chain session clips together for generative arrangement. Once the
 - **Duplicate** — Hold ++alt++ and drag a clip, or press ++cmd+d++
 - **Split** — Position the playhead and use **Edit > Split Clip** or press ++cmd+e++
 - **Delete** — Select the clip and press ++delete++ or ++backspace++
-- **Erase under cursor** — ++cmd++ **+ click** a clip to delete it directly without selecting first. If the clip is part of a multi-selection, the whole group is erased. Acts as a rubber tool.
+- **Erase under cursor** — ++shift+ctrl++ **+ click** a clip to delete it directly without selecting first. If the clip is part of a multi-selection, the whole group is erased. Acts as a rubber tool.
 
 ## Cut, Copy, and Paste
 

@@ -378,6 +378,15 @@ class ClipManager {
     void setClipSnapEnabled(ClipId clipId, bool enabled);
     void setClipMidiEditorRowHeight(ClipId clipId, int rowHeight);
 
+    // Drum-grid row metadata. Rows are keyed by MIDI note number; passing an
+    // empty label/role wipes that field (and the entry is dropped when both
+    // become empty). Roles are NOT validated against the closed vocabulary
+    // here — callers feed canonical ids from DrumGridRoles.hpp.
+    void setClipDrumRowLabel(ClipId clipId, int noteNumber, const juce::String& label);
+    void setClipDrumRowRole(ClipId clipId, int noteNumber, const juce::String& role);
+    void clearClipDrumRowMeta(ClipId clipId, int noteNumber);
+    void clearAllClipDrumRowMeta(ClipId clipId);
+
     // ========================================================================
     // Content-Level Operations (Editor Operations)
     // ========================================================================
