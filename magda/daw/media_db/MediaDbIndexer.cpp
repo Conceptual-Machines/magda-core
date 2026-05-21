@@ -1,11 +1,13 @@
 #include "MediaDbIndexer.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
 #include <sqlite3.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdint>
 #include <ctime>
 #include <mutex>
@@ -97,6 +99,36 @@ bool unchanged(const ExistingRow& row, const ScannedFile& f,
     return row.mtimeNs == f.mtimeNs && row.sizeBytes == f.sizeBytes && row.hash == hash;
 }
 
+[[nodiscard]] std::string sqliteLastError(sqlite3* db) {
+    const char* msg = db ? sqlite3_errmsg(db) : "(no connection)";
+    return msg ? msg : "(unknown sqlite error)";
+}
+
+void execSqlOrThrow(sqlite3* db, const char* sql, const char* context) {
+    char* errMsg = nullptr;
+    const int rc = sqlite3_exec(db, sql, nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string err = errMsg ? errMsg : sqliteLastError(db);
+        sqlite3_free(errMsg);
+        throw MediaDatabaseError(std::string(context) + ": " + err);
+    }
+}
+
+void rollbackQuietly(sqlite3* db) {
+    sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+}
+
+void reportFailure(const MediaDbIndexer::FailureFn& failure, const std::filesystem::path& path,
+                   const std::string& reason) {
+    if (failure) {
+        failure(path, reason);
+    }
+}
+
+bool shouldCancel(const MediaDbIndexer::ShouldCancelFn& shouldCancelFn) {
+    return shouldCancelFn && shouldCancelFn();
+}
+
 // ---- Audio decode for the encoder ---------------------------------------
 
 // Decode mono float at 48 kHz (CLAP's required SR). Re-reads the file the
@@ -173,6 +205,13 @@ int deriveTonal(const AudioFeatures& f) {
     return f.spectralFlatness < kFlatnessThreshold ? 1 : 0;
 }
 
+std::string deriveMidiShape(double durationS) {
+    if (durationS <= 0.0) {
+        return "unknown";
+    }
+    return durationS < 2.0 ? "one-shot" : "loop";
+}
+
 // Apply the policy rules: one-shots have no BPM; drum/fx have no key.
 // Filename-derived keys (already in AudioFeatures from PathRules) are
 // kept; we only suppress when the family inherently shouldn't carry one.
@@ -185,6 +224,133 @@ void applyPolicies(AudioFeatures& f, const std::string& shape, const std::string
         f.keyScale.reset();
         f.keyConfidence.reset();
     }
+}
+
+std::vector<std::string> tagTokensFromText(const std::string& raw) {
+    std::vector<std::string> out;
+    std::string token;
+    auto flush = [&]() {
+        if (!token.empty() && std::find(out.begin(), out.end(), token) == out.end()) {
+            out.push_back(token);
+        }
+        token.clear();
+    };
+
+    for (unsigned char c : raw) {
+        if (std::isalnum(c)) {
+            token += static_cast<char>(std::tolower(c));
+        } else {
+            flush();
+        }
+    }
+    flush();
+    return out;
+}
+
+void addTag(std::vector<std::pair<std::string, float>>& tags, const std::string& tag) {
+    if (tag.empty()) {
+        return;
+    }
+    const auto exists =
+        std::any_of(tags.begin(), tags.end(), [&](const auto& t) { return t.first == tag; });
+    if (!exists) {
+        tags.emplace_back(tag, 1.0F);
+    }
+}
+
+std::vector<std::pair<std::string, float>> scanTagsFor(
+    const std::filesystem::path& path, const MediaDbIndexer::ScanTagOptions& options) {
+    std::vector<std::pair<std::string, float>> tags;
+    for (const auto& tag : options.customTags) {
+        for (const auto& token : tagTokensFromText(tag)) {
+            addTag(tags, token);
+        }
+    }
+
+    if (options.includeRootFolderName && !options.root.empty()) {
+        for (const auto& token : tagTokensFromText(options.root.filename().string())) {
+            addTag(tags, token);
+        }
+    }
+
+    if (options.includePathNodes) {
+        std::filesystem::path relativeParent = path.parent_path();
+        if (!options.root.empty()) {
+            std::error_code ec;
+            auto rel = std::filesystem::relative(path.parent_path(), options.root, ec);
+            if (!ec && !rel.empty() && rel.string() != ".") {
+                relativeParent = rel;
+            } else {
+                relativeParent.clear();
+            }
+        }
+
+        for (const auto& part : relativeParent) {
+            const auto partText = part.string();
+            if (partText.empty() || partText == "." || partText == "..") {
+                continue;
+            }
+            for (const auto& token : tagTokensFromText(partText)) {
+                addTag(tags, token);
+            }
+        }
+    }
+    return tags;
+}
+
+struct MidiClipFeatures {
+    double durationS = 0.0;
+    std::optional<double> bpm;
+    bool hasNotes = false;
+};
+
+std::optional<MidiClipFeatures> extractMidiClipFeatures(const std::filesystem::path& path) {
+    juce::File file(juce::String(path.string()));
+    auto stream = file.createInputStream();
+    if (!stream) {
+        return std::nullopt;
+    }
+
+    juce::MidiFile midiFile;
+    if (!midiFile.readFrom(*stream)) {
+        return std::nullopt;
+    }
+
+    MidiClipFeatures result;
+
+    juce::MidiMessageSequence tempoEvents;
+    midiFile.findAllTempoEvents(tempoEvents);
+    if (tempoEvents.getNumEvents() > 0) {
+        const auto& msg = tempoEvents.getEventPointer(0)->message;
+        const double secondsPerQuarter = msg.getTempoSecondsPerQuarterNote();
+        if (secondsPerQuarter > 0.0) {
+            result.bpm = 60.0 / secondsPerQuarter;
+        }
+    }
+    if (!result.bpm) {
+        result.bpm = parseBpmFromPath(path).value_or(120.0);
+    }
+
+    for (int trackIndex = 0; trackIndex < midiFile.getNumTracks(); ++trackIndex) {
+        const auto* track = midiFile.getTrack(trackIndex);
+        if (track == nullptr) {
+            continue;
+        }
+        for (int eventIndex = 0; eventIndex < track->getNumEvents(); ++eventIndex) {
+            const auto& msg = track->getEventPointer(eventIndex)->message;
+            if (msg.isNoteOn()) {
+                result.hasNotes = true;
+                break;
+            }
+        }
+        if (result.hasNotes) {
+            break;
+        }
+    }
+
+    midiFile.convertTimestampTicksToSeconds();
+    result.durationS = midiFile.getLastTimestamp();
+    return result;
 }
 
 // ---- Insert helpers ------------------------------------------------------
@@ -352,6 +518,14 @@ void upsertEmbedding(sqlite3* db, std::int64_t fileId, const std::string& modelI
     sqlite3_finalize(stmt);
 }
 
+void deleteEmbeddings(sqlite3* db, std::int64_t fileId) {
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db, "DELETE FROM media_embedding WHERE file_id = ?", -1, &stmt, nullptr);
+    sqlite3_bind_int64(stmt, 1, fileId);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
 void upsertFts(sqlite3* db, std::int64_t fileId, const std::string& pathText,
                const std::string& tagText) {
     sqlite3_stmt* del = nullptr;
@@ -400,64 +574,114 @@ std::string buildTagText(const std::vector<std::pair<std::string, float>>& tags)
 //
 // Same logic in both serial and parallel modes: takes a raw sqlite3* (so
 // workers can pass their own connection) plus an encoder pointer (shared —
-// ORT Session::Run is documented thread-safe) and mutates the supplied Stats.
+// mutates the supplied Stats. Semantic embeddings are intentionally handled
+// by embedMissingAudio() after the scan, so slow CLAP work cannot make file
+// discovery/indexing appear stuck.
 
-void processOneFile(sqlite3* sqlDb, ClapAudioEncoder* encoder, const ScannedFile& f,
-                    MediaDbIndexer::Stats& stats, bool force) {
+void processOneFile(sqlite3* sqlDb, const ScannedFile& f, MediaDbIndexer::Stats& stats,
+                    MediaDbIndexer::Mode mode, bool wrapWritesInTransaction,
+                    const MediaDbIndexer::FailureFn& failure,
+                    const MediaDbIndexer::ShouldCancelFn& shouldCancelFn,
+                    const MediaDbIndexer::ScanTagOptions& scanTagOptions) {
+    bool transactionOpen = false;
     try {
+        if (shouldCancel(shouldCancelFn)) {
+            return;
+        }
+        // OnlyNew skips before the prefix hash so existing files become
+        // a single cheap SELECT — useful when the user just wants to
+        // pick up additions on a large library without re-hashing.
+        if (mode == MediaDbIndexer::Mode::OnlyNew) {
+            if (lookupExisting(sqlDb, f.path.string())) {
+                ++stats.skipped;
+                return;
+            }
+        }
         const auto hash = hashFilePrefix(f.path);
         const auto existing = lookupExisting(sqlDb, f.path.string());
-        // force=true: caller (e.g. "Re-index folder") wants to re-derive
-        // everything regardless of mtime/size/hash match. Used to refresh
-        // path tags / family / features after the rules change.
-        if (!force && existing && unchanged(*existing, f, hash)) {
+        // Incremental skip: caller wants to re-derive when mtime/size/hash
+        // changed but leave unchanged rows alone. ForceAll bypasses this
+        // entirely.
+        if (mode == MediaDbIndexer::Mode::Incremental && existing &&
+            unchanged(*existing, f, hash)) {
             ++stats.skipped;
             return;
         }
 
         std::optional<AudioFeatures> feats;
+        std::optional<MidiClipFeatures> midiFeats;
         if (f.kind == "audio") {
             feats = extractFeatures(f.path);
+        } else if (f.kind == "clip") {
+            midiFeats = extractMidiClipFeatures(f.path);
+            if (midiFeats) {
+                AudioFeatures indexed;
+                indexed.durationS = midiFeats->durationS;
+                indexed.bpm = midiFeats->bpm;
+                feats = indexed;
+            }
         }
 
         const std::string family = deriveFamily(f.path);
-        const std::string shape = feats ? deriveShape(*feats) : std::string{"unknown"};
-        const int tonal = feats ? deriveTonal(*feats) : 0;
-        if (feats) {
+        const std::string shape = midiFeats
+                                      ? deriveMidiShape(midiFeats->durationS)
+                                      : (feats ? deriveShape(*feats) : std::string{"unknown"});
+        const int tonal =
+            midiFeats ? (midiFeats->hasNotes ? 1 : 0) : (feats ? deriveTonal(*feats) : 0);
+        if (feats && f.kind == "audio") {
             applyPolicies(*feats, shape, family);
+        }
+        if (shouldCancel(shouldCancelFn)) {
+            return;
+        }
+
+        auto tags = pathTags(f.path);
+        for (const auto& tag : scanTagsFor(f.path, scanTagOptions)) {
+            addTag(tags, tag.first);
+        }
+
+        // Expensive reads/analysis happen before the write transaction. In
+        // parallel scans this keeps SQLite writer locks short; holding a
+        // transaction across decode work can make peer workers hit busy
+        // timeouts and silently lose entire batches.
+        if (wrapWritesInTransaction) {
+            execSqlOrThrow(sqlDb, "BEGIN IMMEDIATE", "BEGIN media index file");
+            transactionOpen = true;
         }
 
         const std::int64_t fileId = upsertFile(sqlDb, f, hash, feats, shape, family, tonal);
         if (fileId < 0) {
-            ++stats.failed;
-            return;
+            throw MediaDatabaseError("upsert media_file failed: " + sqliteLastError(sqlDb));
         }
 
-        const auto tags = pathTags(f.path);
         replaceTags(sqlDb, fileId, tags, "path");
-
-        if (encoder && f.kind == "audio") {
-            if (auto mono = loadMono48k(f.path)) {
-                try {
-                    auto emb = encoder->embed(mono->data(), static_cast<int>(mono->size()));
-                    if (!emb.empty()) {
-                        upsertEmbedding(sqlDb, fileId, encoder->modelId(), emb);
-                    }
-                } catch (const ClapEncoderError&) {
-                    // Embedding failure is non-fatal: keep the row,
-                    // search will fall back to FTS-only for this file.
-                }
-            }
+        if (existing && f.kind == "audio") {
+            deleteEmbeddings(sqlDb, fileId);
         }
 
         upsertFts(sqlDb, fileId, buildPathText(f.path), buildTagText(tags));
+
+        if (wrapWritesInTransaction) {
+            execSqlOrThrow(sqlDb, "COMMIT", "COMMIT media index file");
+            transactionOpen = false;
+        }
 
         if (existing) {
             ++stats.updated;
         } else {
             ++stats.inserted;
         }
+    } catch (const std::exception& e) {
+        if (transactionOpen) {
+            rollbackQuietly(sqlDb);
+        }
+        reportFailure(failure, f.path, e.what());
+        ++stats.failed;
     } catch (...) {
+        if (transactionOpen) {
+            rollbackQuietly(sqlDb);
+        }
+        reportFailure(failure, f.path, "unknown error");
         ++stats.failed;
     }
 }
@@ -493,6 +717,114 @@ int decideThreadCount(int requested, size_t fileCount, const std::filesystem::pa
     return std::max(n, 1);
 }
 
+struct PendingEmbedding {
+    std::int64_t fileId = -1;
+    std::filesystem::path path;
+};
+
+std::string placeholders(size_t count) {
+    std::string out;
+    for (size_t i = 0; i < count; ++i) {
+        out += (i == 0 ? "?" : ",?");
+    }
+    return out;
+}
+
+std::vector<PendingEmbedding> pendingEmbeddings(sqlite3* db, const std::string& modelId,
+                                                const std::filesystem::path& root) {
+    std::string sql = "SELECT f.id, f.path "
+                      "FROM media_file AS f "
+                      "WHERE f.kind = 'audio' "
+                      "AND NOT EXISTS ("
+                      "  SELECT 1 FROM media_embedding AS e "
+                      "  WHERE e.file_id = f.id AND e.model_id = ? AND e.model_version = '1'"
+                      ")";
+    const bool filterRoot = !root.empty();
+    if (filterRoot) {
+        sql += " AND f.path LIKE ?";
+    }
+    sql += " ORDER BY f.indexed_at DESC";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        throw MediaDatabaseError("prepare pending embeddings: " + sqliteLastError(db));
+    }
+    sqlite3_bind_text(stmt, 1, modelId.c_str(), -1, SQLITE_TRANSIENT);
+    std::string rootLike;
+    if (filterRoot) {
+        rootLike = root.string();
+        if (!rootLike.empty() && rootLike.back() != '/') {
+            rootLike += '/';
+        }
+        rootLike += '%';
+        sqlite3_bind_text(stmt, 2, rootLike.c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    std::vector<PendingEmbedding> out;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        if (!text) {
+            continue;
+        }
+        out.push_back(PendingEmbedding{sqlite3_column_int64(stmt, 0), std::filesystem::path(text)});
+    }
+    sqlite3_finalize(stmt);
+    return out;
+}
+
+std::vector<PendingEmbedding> audioRowsForIds(sqlite3* db,
+                                              const std::vector<std::int64_t>& fileIds) {
+    if (fileIds.empty()) {
+        return {};
+    }
+    const std::string sql = "SELECT id, path FROM media_file WHERE kind = 'audio' AND id IN (" +
+                            placeholders(fileIds.size()) + ") ORDER BY indexed_at DESC";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        throw MediaDatabaseError("prepare selected audio rows: " + sqliteLastError(db));
+    }
+    for (size_t i = 0; i < fileIds.size(); ++i) {
+        sqlite3_bind_int64(stmt, static_cast<int>(i + 1), fileIds[i]);
+    }
+
+    std::vector<PendingEmbedding> out;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        if (text) {
+            out.push_back(
+                PendingEmbedding{sqlite3_column_int64(stmt, 0), std::filesystem::path(text)});
+        }
+    }
+    sqlite3_finalize(stmt);
+    return out;
+}
+
+std::vector<std::filesystem::path> pathsForIds(sqlite3* db,
+                                               const std::vector<std::int64_t>& fileIds) {
+    if (fileIds.empty()) {
+        return {};
+    }
+    const std::string sql =
+        "SELECT path FROM media_file WHERE id IN (" + placeholders(fileIds.size()) + ")";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        throw MediaDatabaseError("prepare selected file rows: " + sqliteLastError(db));
+    }
+    for (size_t i = 0; i < fileIds.size(); ++i) {
+        sqlite3_bind_int64(stmt, static_cast<int>(i + 1), fileIds[i]);
+    }
+
+    std::vector<std::filesystem::path> out;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        if (text) {
+            out.emplace_back(text);
+        }
+    }
+    sqlite3_finalize(stmt);
+    return out;
+}
+
 }  // namespace
 
 // ---- Public --------------------------------------------------------------
@@ -504,8 +836,20 @@ void MediaDbIndexer::setProgress(ProgressFn fn) {
     progress_ = std::move(fn);
 }
 
+void MediaDbIndexer::setFailureCallback(FailureFn fn) {
+    failure_ = std::move(fn);
+}
+
+void MediaDbIndexer::setShouldCancel(ShouldCancelFn fn) {
+    shouldCancel_ = std::move(fn);
+}
+
+void MediaDbIndexer::setScanTagOptions(ScanTagOptions options) {
+    scanTagOptions_ = std::move(options);
+}
+
 MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path& root,
-                                                     int numThreads, bool force) {
+                                                     int numThreads, Mode mode) {
     // Pre-scan into a vector so we have a stable list to slice for workers
     // and a total count for progress. Cheap relative to the indexing pass.
     std::vector<ScannedFile> files;
@@ -518,16 +862,17 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
     if (workers <= 1) {
         Stats stats;
         sqlite3* sqlDb = db_.handle();
-        MediaDatabase::Transaction txn(db_);
         int done = 0;
         for (const auto& f : files) {
-            processOneFile(sqlDb, encoder_, f, stats, force);
+            if (shouldCancel(shouldCancel_)) {
+                break;
+            }
+            processOneFile(sqlDb, f, stats, mode, true, failure_, shouldCancel_, scanTagOptions_);
             ++done;
             if (progress_) {
                 progress_(done, total, f.path);
             }
         }
-        txn.commit();
         return stats;
     }
 
@@ -535,19 +880,27 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
     //
     // Each worker owns its own MediaDatabase connection against the same
     // file. SQLite WAL serialises writers behind a single lock but lets
-    // readers proceed; per-batch transactions keep the writer-lock window
-    // small. The atomic index is a fetch_add work-queue — load-balanced
-    // even when files have very different processing costs.
+    // readers proceed; per-file write transactions keep that lock away from
+    // expensive decode + embedding work. The atomic index is a fetch_add
+    // work-queue — load-balanced even when files have very different costs.
 
     std::atomic<size_t> nextIdx{0};
     std::atomic<int> doneCounter{0};
     std::mutex progressMutex;
     std::mutex statsMutex;
+    std::mutex failureMutex;
 
     Stats aggregate;
     const std::filesystem::path dbPath = db_.path();
-    ClapAudioEncoder* encoder = encoder_;
     ProgressFn& progressRef = progress_;
+    FailureFn failureCallback = failure_;
+    ShouldCancelFn cancelCallback = shouldCancel_;
+    const auto scanTagOptions = scanTagOptions_;
+    FailureFn failureRef = [failureCallback, &failureMutex](const std::filesystem::path& current,
+                                                            const std::string& reason) {
+        std::lock_guard<std::mutex> lock(failureMutex);
+        reportFailure(failureCallback, current, reason);
+    };
 
     auto runWorker = [&]() {
         try {
@@ -562,26 +915,26 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
 
             Stats local;
             while (true) {
+                if (shouldCancel(cancelCallback)) {
+                    break;
+                }
                 const size_t batchStart = nextIdx.fetch_add(kBatchSize);
                 if (batchStart >= files.size()) {
                     break;
                 }
                 const size_t batchEnd = std::min(batchStart + kBatchSize, files.size());
 
-                try {
-                    MediaDatabase::Transaction txn(localDb);
-                    for (size_t i = batchStart; i < batchEnd; ++i) {
-                        processOneFile(sqlDb, encoder, files[i], local, force);
-                        const int nowDone = ++doneCounter;
-                        if (progressRef) {
-                            std::lock_guard<std::mutex> lock(progressMutex);
-                            progressRef(nowDone, total, files[i].path);
-                        }
+                for (size_t i = batchStart; i < batchEnd; ++i) {
+                    if (shouldCancel(cancelCallback)) {
+                        break;
                     }
-                    txn.commit();
-                } catch (const MediaDatabaseError&) {
-                    // Whole batch lost — count as failed but keep going.
-                    local.failed += static_cast<int>(batchEnd - batchStart);
+                    processOneFile(sqlDb, files[i], local, mode, true, failureRef, cancelCallback,
+                                   scanTagOptions);
+                    const int nowDone = ++doneCounter;
+                    if (progressRef) {
+                        std::lock_guard<std::mutex> lock(progressMutex);
+                        progressRef(nowDone, total, files[i].path);
+                    }
                 }
             }
 
@@ -590,9 +943,10 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
             aggregate.updated += local.updated;
             aggregate.skipped += local.skipped;
             aggregate.failed += local.failed;
-        } catch (const MediaDatabaseError&) {
+        } catch (const MediaDatabaseError& e) {
             // This worker couldn't even open a connection. Other workers
-            // will still drain the queue; we silently drop this thread.
+            // will still drain the queue; report the lost worker for logs.
+            reportFailure(failureRef, {}, e.what());
         }
     };
 
@@ -606,6 +960,180 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
     }
 
     return aggregate;
+}
+
+MediaDbIndexer::Stats MediaDbIndexer::indexFile(const std::filesystem::path& path, Mode mode) {
+    Stats stats;
+    if (shouldCancel(shouldCancel_)) {
+        return stats;
+    }
+    if (auto scanned = classify(path)) {
+        processOneFile(db_.handle(), *scanned, stats, mode, true, failure_, shouldCancel_,
+                       scanTagOptions_);
+    } else {
+        reportFailure(failure_, path, "file no longer exists or has unsupported format");
+        ++stats.failed;
+    }
+    if (progress_) {
+        progress_(1, 1, path);
+    }
+    return stats;
+}
+
+MediaDbIndexer::Stats MediaDbIndexer::indexFileIds(const std::vector<std::int64_t>& fileIds,
+                                                   Mode mode) {
+    Stats stats;
+    sqlite3* sqlDb = db_.handle();
+    const auto paths = pathsForIds(sqlDb, fileIds);
+    const int total = static_cast<int>(paths.size());
+
+    int done = 0;
+    for (const auto& path : paths) {
+        if (shouldCancel(shouldCancel_)) {
+            break;
+        }
+        if (auto scanned = classify(path)) {
+            processOneFile(sqlDb, *scanned, stats, mode, true, failure_, shouldCancel_,
+                           scanTagOptions_);
+        } else {
+            reportFailure(failure_, path, "file no longer exists or has unsupported format");
+            ++stats.failed;
+        }
+        ++done;
+        if (progress_) {
+            progress_(done, total, path);
+        }
+    }
+    return stats;
+}
+
+MediaDbIndexer::EmbeddingStats MediaDbIndexer::embedMissingAudio(
+    const std::filesystem::path& root) {
+    EmbeddingStats stats;
+    if (!encoder_) {
+        return stats;
+    }
+
+    sqlite3* sqlDb = db_.handle();
+    const std::string modelId = encoder_->modelId();
+    const auto files = pendingEmbeddings(sqlDb, modelId, root);
+    const int total = static_cast<int>(files.size());
+
+    int done = 0;
+    for (const auto& f : files) {
+        if (shouldCancel(shouldCancel_)) {
+            break;
+        }
+        try {
+            if (shouldCancel(shouldCancel_)) {
+                break;
+            }
+            auto mono = loadMono48k(f.path);
+            if (!mono) {
+                throw MediaDatabaseError("audio decode failed for embedding");
+            }
+            if (shouldCancel(shouldCancel_)) {
+                break;
+            }
+
+            auto embedding = encoder_->embed(mono->data(), static_cast<int>(mono->size()));
+            if (embedding.empty()) {
+                throw MediaDatabaseError("encoder returned an empty embedding");
+            }
+            if (shouldCancel(shouldCancel_)) {
+                break;
+            }
+
+            execSqlOrThrow(sqlDb, "BEGIN IMMEDIATE", "BEGIN media embedding");
+            bool transactionOpen = true;
+            try {
+                upsertEmbedding(sqlDb, f.fileId, modelId, embedding);
+                execSqlOrThrow(sqlDb, "COMMIT", "COMMIT media embedding");
+                transactionOpen = false;
+            } catch (...) {
+                if (transactionOpen) {
+                    rollbackQuietly(sqlDb);
+                }
+                throw;
+            }
+            ++stats.embedded;
+        } catch (const std::exception& e) {
+            reportFailure(failure_, f.path, e.what());
+            ++stats.failed;
+        } catch (...) {
+            reportFailure(failure_, f.path, "unknown embedding error");
+            ++stats.failed;
+        }
+
+        ++done;
+        if (progress_) {
+            progress_(done, total, f.path);
+        }
+    }
+    return stats;
+}
+
+MediaDbIndexer::EmbeddingStats MediaDbIndexer::embedAudioFileIds(
+    const std::vector<std::int64_t>& fileIds) {
+    EmbeddingStats stats;
+    if (!encoder_) {
+        return stats;
+    }
+
+    sqlite3* sqlDb = db_.handle();
+    const std::string modelId = encoder_->modelId();
+    const auto files = audioRowsForIds(sqlDb, fileIds);
+    const int total = static_cast<int>(files.size());
+
+    int done = 0;
+    for (const auto& f : files) {
+        if (shouldCancel(shouldCancel_)) {
+            break;
+        }
+        try {
+            auto mono = loadMono48k(f.path);
+            if (!mono) {
+                throw MediaDatabaseError("audio decode failed for embedding");
+            }
+            if (shouldCancel(shouldCancel_)) {
+                break;
+            }
+
+            auto embedding = encoder_->embed(mono->data(), static_cast<int>(mono->size()));
+            if (embedding.empty()) {
+                throw MediaDatabaseError("encoder returned an empty embedding");
+            }
+            if (shouldCancel(shouldCancel_)) {
+                break;
+            }
+
+            execSqlOrThrow(sqlDb, "BEGIN IMMEDIATE", "BEGIN selected media embedding");
+            bool transactionOpen = true;
+            try {
+                upsertEmbedding(sqlDb, f.fileId, modelId, embedding);
+                execSqlOrThrow(sqlDb, "COMMIT", "COMMIT selected media embedding");
+                transactionOpen = false;
+            } catch (...) {
+                if (transactionOpen) {
+                    rollbackQuietly(sqlDb);
+                }
+                throw;
+            }
+            ++stats.embedded;
+        } catch (const std::exception& e) {
+            reportFailure(failure_, f.path, e.what());
+            ++stats.failed;
+        } catch (...) {
+            reportFailure(failure_, f.path, "unknown embedding error");
+            ++stats.failed;
+        }
+
+        ++done;
+        if (progress_) {
+            progress_(done, total, f.path);
+        }
+    }
+    return stats;
 }
 
 }  // namespace magda::media

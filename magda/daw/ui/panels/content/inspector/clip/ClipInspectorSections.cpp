@@ -436,10 +436,6 @@ void ClipInspector::initClipPropertiesSection() {
             }
             auto& mgr = magda::ClipManager::getInstance();
             mgr.applyAudioClipBeats(primaryClipId(), u, bpm);
-            // Persist the user's BPM choice on the file in the media DB so
-            // re-drops of the same sample land with this value, not the
-            // scanner's original guess.
-            mgr.recordUserBpm(primaryClipId(), newBPM);
         } else {
             // Non-autoTempo audio: source interpretation is stored metadata,
             // not playback-affecting, but the inspector reads it for display
@@ -454,9 +450,6 @@ void ClipInspector::initClipPropertiesSection() {
             }
             auto& mgr = magda::ClipManager::getInstance();
             mgr.forceNotifyClipPropertyChanged(primaryClipId());
-            // Same write-back as the autoTempo branch — keep DB in sync
-            // with whatever the user said the file's BPM is.
-            mgr.recordUserBpm(primaryClipId(), newBPM);
         }
 
         clipBpmValue_.setText(juce::String(newBPM, 1), juce::dontSendNotification);
@@ -930,8 +923,117 @@ void ClipInspector::initClipPropertiesSection() {
     };
     clipPropsContainer_.addChildComponent(stretchModeCombo_);
 
+    // Source key root. Edits stay on the clip until explicitly saved.
+    // ID 1 is the "unknown" sentinel; non-zero IDs map onto kKeyRoots
+    // below. Scale (major/minor) is intentionally not exposed.
+    clipKeyLabel_.setText("KEY", juce::dontSendNotification);
+    clipKeyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipKeyLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipKeyLabel_.setJustificationType(juce::Justification::centredLeft);
+    clipPropsContainer_.addChildComponent(clipKeyLabel_);
+
+    static constexpr const char* kKeyRoots[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                                "F#", "G",  "G#", "A",  "A#", "B"};
+
+    // Theme colours so it visually matches the surrounding inspector combos
+    // (stretchModeCombo_). InspectorComboBoxLookAndFeel below restyles the
+    // popup menu — these setColour calls control the closed widget.
+    clipKeyRootCombo_.setColour(juce::ComboBox::backgroundColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+    clipKeyRootCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    clipKeyRootCombo_.setColour(juce::ComboBox::outlineColourId,
+                                DarkTheme::getColour(DarkTheme::BORDER));
+    clipKeyRootCombo_.addItem("--", 1);
+    for (int i = 0; i < 12; ++i) {
+        clipKeyRootCombo_.addItem(kKeyRoots[i], i + 2);
+    }
+    clipKeyRootCombo_.setSelectedId(1, juce::dontSendNotification);
+    clipKeyRootCombo_.onChange = [this]() {
+        if (selectedClipIds_.empty()) {
+            return;
+        }
+        const int rootId = clipKeyRootCombo_.getSelectedId();
+        std::string root;
+        if (rootId >= 2 && rootId <= 13) {
+            root = kKeyRoots[rootId - 2];
+        }
+        // Mirror onto every selected audio clip's interpretation so the
+        // inspector reflects the change immediately.
+        for (auto cid : selectedClipIds_) {
+            auto* clip = magda::ClipManager::getInstance().getClip(cid);
+            if (clip == nullptr || !clip->isAudio()) {
+                continue;
+            }
+            clip->audio().interpretation.keyRoot = root;
+            magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(cid);
+        }
+    };
+
+    clipPropsContainer_.addChildComponent(clipKeyRootCombo_);
+
+    saveLibraryButton_.setButtonText("Save to library");
+    saveLibraryButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    saveLibraryButton_.setTooltip(
+        "Save current clip settings or MIDI clip file to the media library");
+    saveLibraryButton_.onClick = [this]() {
+        auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
+        if (clip == nullptr) {
+            return;
+        }
+        const bool savingMidiClip = clip->isMidi();
+        std::optional<std::vector<magda::ClipInfo::WarpMarker>> markers;
+        if (clip->isAudio()) {
+            const auto bpmText = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
+            const double displayedBpm = bpmText.getDoubleValue();
+            if (magda::isValidBpm(displayedBpm)) {
+                clip->audio().interpretation.bpm = displayedBpm;
+            }
+            if (clipBeatsLengthValue_ && clipBeatsLengthValue_->isVisible()) {
+                const double displayedBeats = clipBeatsLengthValue_->getValue();
+                if (displayedBeats > 0.0) {
+                    clip->audio().interpretation.totalBeats = displayedBeats;
+                    clip->audio().interpretation.totalBeatsLocked = true;
+                }
+            }
+
+            if (clip->warpEnabled) {
+                markers = std::vector<magda::ClipInfo::WarpMarker>{};
+                if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
+                    if (auto* bridge = engine->getAudioBridge()) {
+                        const auto liveMarkers = bridge->getWarpMarkers(primaryClipId());
+                        markers->reserve(liveMarkers.size());
+                        for (const auto& marker : liveMarkers) {
+                            markers->push_back({marker.sourceTime, marker.warpTime});
+                        }
+                    }
+                }
+                if (markers->empty()) {
+                    *markers = clip->warpMarkers;
+                }
+            }
+        }
+
+        const bool saved = magda::ClipManager::getInstance().saveClipToLibrary(primaryClipId(),
+                                                                               std::move(markers));
+        updateFromSelectedClip();
+        saveLibraryButton_.setButtonText(saved ? "Saved" : "Save failed");
+        if (!saved && savingMidiClip) {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Save MIDI Clip Failed",
+                "Could not write the MIDI clip file or add it to the media library.");
+        }
+        juce::Timer::callAfterDelay(
+            1200, [safeThis = juce::Component::SafePointer<ClipInspector>(this)] {
+                if (safeThis != nullptr) {
+                    safeThis->saveLibraryButton_.setButtonText("Save to library");
+                }
+            });
+    };
+    clipPropsContainer_.addChildComponent(saveLibraryButton_);
+
     // Apply themed LookAndFeel to all inspector combo boxes
     stretchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+    clipKeyRootCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     autoPitchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     launchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     launchQuantizeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());

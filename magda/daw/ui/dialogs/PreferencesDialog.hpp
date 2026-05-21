@@ -10,6 +10,7 @@ class ColoursPage;
 class RenderingPage;
 class PathsPage;
 class ShortcutsPage;
+class MediaLibraryPage;
 
 /**
  * Preferences dialog for editing application configuration.
@@ -35,12 +36,14 @@ class PreferencesDialog : public juce::Component {
     juce::Viewport coloursPageViewport;
     juce::Viewport renderingPageViewport;
     juce::Viewport pathsPageViewport;
+    juce::Viewport mediaLibraryPageViewport;
 
     std::unique_ptr<GeneralPage> generalPage;
     std::unique_ptr<ColoursPage> coloursPage;
     std::unique_ptr<RenderingPage> renderingPage;
     std::unique_ptr<PathsPage> pathsPage;
     std::unique_ptr<ShortcutsPage> shortcutsPage;
+    std::unique_ptr<MediaLibraryPage> mediaLibraryPage;
 
     juce::TextButton okButton;
     juce::TextButton cancelButton;

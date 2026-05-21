@@ -219,12 +219,17 @@ void ClipInspector::updateFromSelectedClip() {
         else
             swatch->setColour(clip->colour);
 
-        // File path label: show audio filename for arrangement audio clips only.
-        if (clip->isAudio() && clip->audio().source.filePath.isNotEmpty() &&
-            clip->view != magda::ClipView::Session && !isMulti) {
-            juce::File audioFile(clip->audio().source.filePath);
-            clipFilePathLabel_.setText(audioFile.getFileName(), juce::dontSendNotification);
+        // File path label: show source filename for library-backed audio/MIDI clips.
+        if (!isMulti && clip->view != magda::ClipView::Session && clip->isAudio() &&
+            clip->audio().source.filePath.isNotEmpty()) {
+            juce::File sourceFile(clip->audio().source.filePath);
+            clipFilePathLabel_.setText(sourceFile.getFileName(), juce::dontSendNotification);
             clipFilePathLabel_.setTooltip(clip->audio().source.filePath);
+        } else if (!isMulti && clip->view != magda::ClipView::Session && clip->isMidi() &&
+                   clip->midi().sourceFilePath.isNotEmpty()) {
+            juce::File sourceFile(clip->midi().sourceFilePath);
+            clipFilePathLabel_.setText(sourceFile.getFileName(), juce::dontSendNotification);
+            clipFilePathLabel_.setTooltip(clip->midi().sourceFilePath);
         } else {
             clipFilePathLabel_.setText("", juce::dontSendNotification);
             clipFilePathLabel_.setTooltip("");
@@ -296,6 +301,37 @@ void ClipInspector::updateFromSelectedClip() {
         } else {
             clipBeatsLengthValue_->setVisible(false);
             clipBeatsUnitLabel_.setVisible(false);
+        }
+
+        // Show key controls for audio clips. Mirror the clip's source
+        // interpretation root into the combo; empty = "--" (unknown).
+        if (showAudioProps && !isMulti) {
+            const auto& root = clip->audio().interpretation.keyRoot;
+            int rootId = 1;
+            static constexpr const char* kRoots[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                                     "F#", "G",  "G#", "A",  "A#", "B"};
+            for (int i = 0; i < 12; ++i) {
+                if (root == kRoots[i]) {
+                    rootId = i + 2;
+                    break;
+                }
+            }
+            clipKeyRootCombo_.setSelectedId(rootId, juce::dontSendNotification);
+            clipKeyLabel_.setVisible(true);
+            clipKeyRootCombo_.setVisible(true);
+            saveLibraryButton_.setVisible(true);
+            saveLibraryButton_.setEnabled(
+                magda::ClipManager::getInstance().canSaveClipToLibrary(pid));
+        } else if (clip->isMidi() && !isMulti) {
+            clipKeyLabel_.setVisible(false);
+            clipKeyRootCombo_.setVisible(false);
+            saveLibraryButton_.setVisible(true);
+            saveLibraryButton_.setEnabled(
+                magda::ClipManager::getInstance().canSaveClipToLibrary(pid));
+        } else {
+            clipKeyLabel_.setVisible(false);
+            clipKeyRootCombo_.setVisible(false);
+            saveLibraryButton_.setVisible(false);
         }
 
         // Get tempo from TimelineController, fallback to 120 BPM if not available
@@ -626,6 +662,9 @@ void ClipInspector::showClipControls(bool show) {
         if (clipStretchValue_)
             clipStretchValue_->setVisible(false);
         stretchModeCombo_.setVisible(false);
+        clipKeyLabel_.setVisible(false);
+        clipKeyRootCombo_.setVisible(false);
+        saveLibraryButton_.setVisible(false);
         launchModeLabel_.setVisible(false);
         launchModeCombo_.setVisible(false);
         launchQuantizeLabel_.setVisible(false);

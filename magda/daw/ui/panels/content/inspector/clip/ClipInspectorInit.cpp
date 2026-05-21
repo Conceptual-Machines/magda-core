@@ -31,6 +31,7 @@ ClipInspector::ClipInspector() {
 
 ClipInspector::~ClipInspector() {
     magda::ClipManager::getInstance().removeListener(this);
+    saveLibraryButton_.setLookAndFeel(nullptr);
 }
 
 }  // namespace magda::daw::ui

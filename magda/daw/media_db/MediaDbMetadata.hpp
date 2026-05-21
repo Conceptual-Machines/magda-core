@@ -14,9 +14,11 @@
 
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace magda::media {
 
@@ -26,6 +28,36 @@ struct EffectiveMetadata {
     std::optional<double> bpm;
     std::optional<std::string> keyRoot;
     std::optional<std::string> keyScale;
+    std::optional<double> totalBeats;
+    std::optional<bool> beatMode;
+};
+
+struct WarpMarkerMetadata {
+    double sourceSec = 0.0;
+    double beat = 0.0;
+};
+
+struct EditableMediaRow {
+    std::int64_t fileId = -1;
+    std::filesystem::path path;
+    std::optional<std::string> displayName;
+    std::string family;
+    std::string shape;
+    std::optional<double> bpm;
+    std::optional<std::string> keyRoot;
+    std::optional<std::string> keyScale;
+    std::optional<double> durationS;
+    std::vector<std::string> tags;
+};
+
+struct BulkEditableMediaUpdate {
+    std::optional<std::string> family;
+    std::optional<std::string> shape;
+    std::optional<double> bpm;
+    std::optional<std::string> keyRoot;
+    std::optional<std::string> keyScale;
+    std::optional<double> durationS;
+    std::optional<std::vector<std::string>> tags;
 };
 
 // Look up a file by absolute path. Returns nullopt if the file isn't in
@@ -33,6 +65,12 @@ struct EffectiveMetadata {
 // caller gets a single effective value per property.
 [[nodiscard]] std::optional<EffectiveMetadata> getEffectiveMetadata(
     MediaDatabase& db, const std::filesystem::path& path);
+
+// Read only explicit user-saved overrides. Unlike getEffectiveMetadata(), this
+// does not fall back to scanner values, so clip import can restore intentional
+// saves without adopting tagger guesses as source interpretation.
+[[nodiscard]] std::optional<EffectiveMetadata> getUserMetadata(MediaDatabase& db,
+                                                               const std::filesystem::path& path);
 
 // Write a user override. Pass nullopt to clear the override (effective
 // value falls back to the scanner-detected one). No-op if the file isn't
@@ -42,6 +80,42 @@ void setUserBpm(MediaDatabase& db, const std::filesystem::path& path, std::optio
 void setUserKey(MediaDatabase& db, const std::filesystem::path& path,
                 std::optional<std::string> root, std::optional<std::string> scale);
 
+// Update only the key root override, leaving key_scale_user untouched.
+// Used by inspector UI that exposes root but not scale - blowing away
+// the scale override every time the user picks a new root would be
+// surprising.
+void setUserKeyRoot(MediaDatabase& db, const std::filesystem::path& path,
+                    std::optional<std::string> root);
+
+[[nodiscard]] bool isFileIndexed(MediaDatabase& db, const std::filesystem::path& path);
+
+[[nodiscard]] std::optional<EditableMediaRow> getEditableMediaRow(MediaDatabase& db,
+                                                                  std::int64_t fileId);
+
+bool updateEditableMediaRow(MediaDatabase& db, const EditableMediaRow& row);
+
+int updateEditableMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds,
+                            const BulkEditableMediaUpdate& update);
+
+int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds);
+
+// Remove duplicate DB rows that resolve to the same physical file on disk
+// (same device + inode). Exact duplicate path strings are already blocked by
+// media_file.path UNIQUE, so this handles symlink/alias/case variants. Files
+// on disk are not deleted. Returns removed media_file rows.
+int removeDuplicateFilePathRows(MediaDatabase& db);
+
+[[nodiscard]] std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkers(
+    MediaDatabase& db, const std::filesystem::path& path);
+
+void setUserWarpMarkers(MediaDatabase& db, const std::filesystem::path& path,
+                        std::optional<std::vector<WarpMarkerMetadata>> markers);
+
+[[nodiscard]] bool saveUserMetadata(MediaDatabase& db, const std::filesystem::path& path,
+                                    std::optional<double> bpm, std::optional<std::string> keyRoot,
+                                    std::optional<double> totalBeats, std::optional<bool> beatMode,
+                                    std::optional<std::vector<WarpMarkerMetadata>> warpMarkers);
+
 // Convenience overloads that go through the singleton MediaDbContext.
 // They open the DB lazily on first call (no-op if already open) and
 // silently no-op on init failure or when the file isn't indexed. UI code
@@ -49,10 +123,25 @@ void setUserKey(MediaDatabase& db, const std::filesystem::path& path,
 [[nodiscard]] std::optional<EffectiveMetadata> getEffectiveMetadataForFile(
     const std::filesystem::path& path);
 
+[[nodiscard]] std::optional<EffectiveMetadata> getUserMetadataForFile(
+    const std::filesystem::path& path);
+
 void setUserBpmForFile(const std::filesystem::path& path, std::optional<double> bpm);
 
 void setUserKeyForFile(const std::filesystem::path& path, std::optional<std::string> root,
                        std::optional<std::string> scale);
+
+void setUserKeyRootForFile(const std::filesystem::path& path, std::optional<std::string> root);
+
+[[nodiscard]] bool isFileIndexed(const std::filesystem::path& path);
+
+[[nodiscard]] std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkersForFile(
+    const std::filesystem::path& path);
+
+[[nodiscard]] bool saveUserMetadataForFile(
+    const std::filesystem::path& path, std::optional<double> bpm,
+    std::optional<std::string> keyRoot, std::optional<double> totalBeats,
+    std::optional<bool> beatMode, std::optional<std::vector<WarpMarkerMetadata>> warpMarkers);
 
 // True if the DB has any indexed file under `folder` (descendant in the
 // path hierarchy, not equal to it). Used by the file-browser folder
@@ -66,5 +155,28 @@ void setUserKeyForFile(const std::filesystem::path& path, std::optional<std::str
 [[nodiscard]] bool hasIndexedDescendant(MediaDatabase& db, const std::filesystem::path& folder);
 
 [[nodiscard]] bool hasIndexedDescendantOfFolder(const std::filesystem::path& folder);
+
+// Delete every indexed row whose path lives under `folder`. Cascades drop
+// the associated media_tag / media_embedding / media_metadata entries via
+// ON DELETE CASCADE; media_fts is contentless and gets an explicit DELETE
+// in the same transaction. Returns the number of media_file rows removed.
+// Same range-query semantics as hasIndexedDescendant.
+int removeFolderFromLibrary(MediaDatabase& db, const std::filesystem::path& folder);
+
+int removeFolderFromLibrary(const std::filesystem::path& folder);
+
+// Rewrite media_file.path (and media_fts.path_text) so every row under
+// `oldFolder` ends up rooted at `newFolder`. Useful when the user has
+// physically moved a sample folder on disk and wants the library to
+// follow without re-indexing. Does not move any files on disk. Returns
+// the number of media_file rows updated; 0 on no-op (no descendants).
+// Both transactional: a failed UPDATE (e.g. UNIQUE collision with rows
+// already living at the new prefix) rolls the whole thing back and
+// returns -1.
+int moveFolderInLibrary(MediaDatabase& db, const std::filesystem::path& oldFolder,
+                        const std::filesystem::path& newFolder);
+
+int moveFolderInLibrary(const std::filesystem::path& oldFolder,
+                        const std::filesystem::path& newFolder);
 
 }  // namespace magda::media

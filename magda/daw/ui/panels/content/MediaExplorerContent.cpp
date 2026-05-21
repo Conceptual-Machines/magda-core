@@ -90,7 +90,24 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
                                                  public juce::ChangeListener,
                                                  public juce::Timer {
   public:
-    ThumbnailComponent() = default;
+    ThumbnailComponent() {
+        stopIndexingButton_.setButtonText("Stop");
+        stopIndexingButton_.setTooltip("Stop scanning after the current file");
+        stopIndexingButton_.setColour(juce::TextButton::buttonColourId,
+                                      DarkTheme::getColour(DarkTheme::SURFACE));
+        stopIndexingButton_.setColour(juce::TextButton::textColourOffId,
+                                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        stopIndexingButton_.setColour(juce::TextButton::buttonOnColourId,
+                                      DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+        stopIndexingButton_.setVisible(false);
+        stopIndexingButton_.onClick = [this]() {
+            stopIndexingButton_.setEnabled(false);
+            if (onStopIndexing) {
+                onStopIndexing();
+            }
+        };
+        addAndMakeVisible(stopIndexingButton_);
+    }
 
     ~ThumbnailComponent() override {
         stopTimer();
@@ -108,6 +125,9 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
 
         currentFile_ = file;
         playbackPosition_ = 0.0;
+        if (file.existsAsFile()) {
+            indexingStatus_.clear();
+        }
 
         // Get and listen to new thumbnail
         if (file.existsAsFile()) {
@@ -140,12 +160,25 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
     // filesystem browser. Empty -> no indexing in progress; paint reverts
     // to the normal waveform / "No file selected" behaviour.
     void setIndexingStatus(const juce::String& text) {
+        if (text.isNotEmpty() && !indexingActive_ && currentFile_.existsAsFile()) {
+            return;
+        }
         if (indexingStatus_ == text) {
             return;
         }
         indexingStatus_ = text;
         repaint();
     }
+
+    void setIndexingActive(bool active) {
+        indexingActive_ = active;
+        stopIndexingButton_.setVisible(active);
+        stopIndexingButton_.setEnabled(active);
+        resized();
+        repaint();
+    }
+
+    std::function<void()> onStopIndexing;
 
     // ChangeListener - called when thumbnail finishes loading
     void changeListenerCallback(juce::ChangeBroadcaster*) override {
@@ -180,6 +213,9 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         if (indexingStatus_.isNotEmpty()) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
             g.setFont(FontManager::getInstance().getUIFont(11.0F));
+            if (indexingActive_) {
+                bounds.removeFromRight(76);
+            }
             g.drawFittedText(indexingStatus_, bounds.reduced(8), juce::Justification::centred, 3);
             return;
         }
@@ -218,12 +254,19 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         }
     }
 
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(8, 6);
+        stopIndexingButton_.setBounds(bounds.removeFromRight(64));
+    }
+
   private:
     juce::File currentFile_;
     juce::AudioThumbnail* currentThumbnail_ = nullptr;
     juce::AudioTransportSource* transportSource_ = nullptr;
     double playbackPosition_ = 0.0;
     juce::String indexingStatus_;
+    bool indexingActive_ = false;
+    juce::TextButton stopIndexingButton_;
 };
 
 //==============================================================================
@@ -712,6 +755,7 @@ MediaExplorerContent::MediaExplorerContent() {
     fileInfoLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
     fileInfoLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     fileInfoLabel_.setJustificationType(juce::Justification::centredLeft);
+    fileInfoLabel_.setMinimumHorizontalScale(1.0F);
     addAndMakeVisible(fileInfoLabel_);
 
     formatLabel_.setText("", juce::dontSendNotification);
@@ -728,6 +772,11 @@ MediaExplorerContent::MediaExplorerContent() {
 
     // Waveform thumbnail
     thumbnailComponent_ = std::make_unique<ThumbnailComponent>();
+    thumbnailComponent_->onStopIndexing = [this]() {
+        if (dbBrowser_) {
+            dbBrowser_->requestStopIndexing();
+        }
+    };
     addAndMakeVisible(*thumbnailComponent_);
 
     // Setup file browser with initial filter
@@ -807,6 +856,9 @@ MediaExplorerContent::MediaExplorerContent() {
     // browser at startup.
     dbBrowser_ = std::make_unique<MediaDbBrowserContent>();
     dbBrowser_->onFileSelected = [this](const juce::File& f) {
+        if (previewLockedForIndexing_) {
+            return;
+        }
         loadFileForPreview(f);
         // Match the file-browser's selectionChanged path: respect the Auto
         // toggle so picking a DB row auto-plays when the user wants it.
@@ -820,6 +872,9 @@ MediaExplorerContent::MediaExplorerContent() {
         if (thumbnailComponent_) {
             thumbnailComponent_->setIndexingStatus(status);
         }
+    };
+    dbBrowser_->onIndexingActiveChanged = [this](bool active) {
+        setPreviewLockedForIndexing(active);
     };
     addChildComponent(*dbBrowser_);
     dbBrowser_->setVisible(false);
@@ -1057,7 +1112,13 @@ void MediaExplorerContent::setupAudioPreview() {
 }
 
 void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
+    if (previewLockedForIndexing_) {
+        return;
+    }
     stopPreview();
+    if (thumbnailComponent_) {
+        thumbnailComponent_->setIndexingStatus({});
+    }
 
     // CRITICAL: Clear the transport source BEFORE destroying the old reader source
     // This prevents use-after-free when clicking multiple samples
@@ -1089,7 +1150,9 @@ void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
         }
     } else {
         playButton_->setEnabled(false);
-        fileInfoLabel_.setText("Could not load: " + file.getFileName(), juce::dontSendNotification);
+        fileInfoLabel_.setText("Could not load: " + file.getFullPathName(),
+                               juce::dontSendNotification);
+        fileInfoLabel_.setTooltip(file.getFullPathName());
 
         // Clear thumbnail
         if (thumbnailComponent_) {
@@ -1099,6 +1162,9 @@ void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
 }
 
 void MediaExplorerContent::playPreview() {
+    if (previewLockedForIndexing_) {
+        return;
+    }
     if (transportSource_ && !isPlaying_) {
         transportSource_->setPosition(0.0);
         transportSource_->start();
@@ -1119,16 +1185,59 @@ void MediaExplorerContent::stopPreview() {
     }
 }
 
-void MediaExplorerContent::updateFileInfo(const juce::File& file) {
-    if (!file.existsAsFile()) {
-        fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
+void MediaExplorerContent::setPreviewLockedForIndexing(bool locked) {
+    if (previewLockedForIndexing_ == locked) {
+        return;
+    }
+    previewLockedForIndexing_ = locked;
+    if (thumbnailComponent_) {
+        thumbnailComponent_->setIndexingActive(locked);
+    }
+
+    if (locked) {
+        stopPreview();
+        if (transportSource_) {
+            transportSource_->setSource(nullptr);
+        }
+        readerSource_.reset();
+        playButton_->setEnabled(false);
+        stopButton_->setEnabled(false);
+        autoPlayButton_.setEnabled(false);
+        volumeSlider_.setEnabled(false);
+        currentPreviewFile_ = juce::File();
+        if (thumbnailComponent_) {
+            thumbnailComponent_->setFile(juce::File());
+        }
+        fileInfoLabel_.setText("Preview locked during media scan", juce::dontSendNotification);
+        fileInfoLabel_.setTooltip({});
         formatLabel_.setText("", juce::dontSendNotification);
         propertiesLabel_.setText("", juce::dontSendNotification);
         return;
     }
 
-    // File name
-    fileInfoLabel_.setText(file.getFileName(), juce::dontSendNotification);
+    autoPlayButton_.setEnabled(true);
+    volumeSlider_.setEnabled(true);
+    playButton_->setEnabled(currentPreviewFile_.existsAsFile());
+    stopButton_->setEnabled(false);
+    if (!currentPreviewFile_.existsAsFile()) {
+        fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
+        fileInfoLabel_.setTooltip({});
+    }
+}
+
+void MediaExplorerContent::updateFileInfo(const juce::File& file) {
+    if (!file.existsAsFile()) {
+        fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
+        fileInfoLabel_.setTooltip({});
+        formatLabel_.setText("", juce::dontSendNotification);
+        propertiesLabel_.setText("", juce::dontSendNotification);
+        return;
+    }
+
+    // Full path. The label truncates visually, but the tooltip exposes the
+    // complete path when the preview row is narrow.
+    fileInfoLabel_.setText(file.getFullPathName(), juce::dontSendNotification);
+    fileInfoLabel_.setTooltip(file.getFullPathName());
 
     auto* reader = formatManager_.createReaderFor(file);
     if (reader != nullptr) {
@@ -1363,6 +1472,9 @@ void MediaExplorerContent::onDeactivated() {
 
 // FileBrowserListener implementation
 void MediaExplorerContent::selectionChanged() {
+    if (previewLockedForIndexing_) {
+        return;
+    }
     // Read selection from the underlying list directly (more reliable than
     // FileBrowserComponent's cached chosenFiles).
     auto* listComp = dynamic_cast<juce::FileListComponent*>(fileBrowser_->getDisplayComponent());
@@ -1403,6 +1515,7 @@ void MediaExplorerContent::selectionChanged() {
 
         fileInfoLabel_.setText(juce::String(numSelected) + " files selected",
                                juce::dontSendNotification);
+        fileInfoLabel_.setTooltip({});
         formatLabel_.setText("Multiple files", juce::dontSendNotification);
         propertiesLabel_.setText("Total size: " + formatFileSize(totalBytes),
                                  juce::dontSendNotification);
@@ -1420,6 +1533,7 @@ void MediaExplorerContent::selectionChanged() {
         readerSource_.reset();
         playButton_->setEnabled(false);
         fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
+        fileInfoLabel_.setTooltip({});
         formatLabel_.setText("", juce::dontSendNotification);
         propertiesLabel_.setText("", juce::dontSendNotification);
         if (thumbnailComponent_) {
@@ -1439,7 +1553,8 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         playButton_->setEnabled(false);
 
-        fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
+        fileInfoLabel_.setText(selectedFile.getFullPathName(), juce::dontSendNotification);
+        fileInfoLabel_.setTooltip(selectedFile.getFullPathName());
         formatLabel_.setText("MIDI File", juce::dontSendNotification);
         propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()) +
                                      " | Preview: Coming soon",
@@ -1453,7 +1568,8 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         playButton_->setEnabled(false);
 
-        fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
+        fileInfoLabel_.setText(selectedFile.getFullPathName(), juce::dontSendNotification);
+        fileInfoLabel_.setTooltip(selectedFile.getFullPathName());
         formatLabel_.setText("Magda Clip", juce::dontSendNotification);
         propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()) +
                                      " | Preview: Coming soon",
@@ -1467,7 +1583,8 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         playButton_->setEnabled(false);
 
-        fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
+        fileInfoLabel_.setText(selectedFile.getFullPathName(), juce::dontSendNotification);
+        fileInfoLabel_.setTooltip(selectedFile.getFullPathName());
         formatLabel_.setText("Preset", juce::dontSendNotification);
         propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()),
                                  juce::dontSendNotification);
@@ -1480,7 +1597,8 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         playButton_->setEnabled(false);
 
-        fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
+        fileInfoLabel_.setText(selectedFile.getFullPathName(), juce::dontSendNotification);
+        fileInfoLabel_.setTooltip(selectedFile.getFullPathName());
         formatLabel_.setText("Unknown format", juce::dontSendNotification);
         propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()),
                                  juce::dontSendNotification);
@@ -1507,14 +1625,22 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
             menu.addSectionHeader("Favorites full (max 8)");
         }
         menu.addSeparator();
-        // Context-aware label: if any file under this folder is already in
-        // the media DB, this is a Re-index (force re-derivation); otherwise
-        // it's a first-time Index. Range-query against the path index is
-        // O(log N) so this is safe to run on every right-click.
+        // Context-aware: first-time Index when nothing under this folder is
+        // in the DB; otherwise expose the two existing-data modes
+        // (Scan for new files / Re-index everything). Range-query against
+        // the path index is O(log N) so it's safe to run on every right-
+        // click.
         const bool alreadyIndexed = magda::media::hasIndexedDescendantOfFolder(
             std::filesystem::path(file.getFullPathName().toStdString()));
-        menu.addItem(3, alreadyIndexed ? "Re-index this folder for sample library"
-                                       : "Index this folder for sample library");
+        if (alreadyIndexed) {
+            menu.addItem(4, "Scan for new files");
+            menu.addItem(3, "Re-index this folder");
+            menu.addItem(6, "Move folder in library...");
+            menu.addSeparator();
+            menu.addItem(5, "Remove from media library");
+        } else {
+            menu.addItem(3, "Index this folder");
+        }
 
         menu.showMenuAsync(
             juce::PopupMenu::Options(), [this, path, file, alreadyIndexed](int result) {
@@ -1531,7 +1657,73 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
                     magda::Config::getInstance().save();
                     sidebarComponent_->rebuildFavoriteButtons();
                 } else if (result == 3 && dbBrowser_) {
-                    dbBrowser_->startIndexing(file, /*force=*/alreadyIndexed);
+                    dbBrowser_->startIndexing(
+                        file, alreadyIndexed ? magda::media::MediaDbIndexer::Mode::ForceAll
+                                             : magda::media::MediaDbIndexer::Mode::Incremental);
+                } else if (result == 4 && dbBrowser_) {
+                    dbBrowser_->startIndexing(file, magda::media::MediaDbIndexer::Mode::OnlyNew);
+                } else if (result == 5 && dbBrowser_) {
+                    const auto folderName = file.getFileName();
+                    const auto fsPath = std::filesystem::path(file.getFullPathName().toStdString());
+                    juce::Component::SafePointer<MediaExplorerContent> self(this);
+                    juce::AlertWindow::showAsync(
+                        juce::MessageBoxOptions{}
+                            .withIconType(juce::MessageBoxIconType::WarningIcon)
+                            .withTitle("Remove folder from media library")
+                            .withMessage("Remove every indexed entry under \"" + folderName +
+                                         "\" from the media library?\n"
+                                         "Your audio files on disk are untouched.")
+                            .withButton("Remove")
+                            .withButton("Cancel"),
+                        [self, fsPath](int choice) {
+                            if (self == nullptr || choice != 1) {
+                                return;
+                            }
+                            magda::media::removeFolderFromLibrary(fsPath);
+                            if (self->dbBrowser_ != nullptr) {
+                                self->dbBrowser_->refresh();
+                            }
+                        });
+                } else if (result == 6 && dbBrowser_) {
+                    const auto fsPath = std::filesystem::path(file.getFullPathName().toStdString());
+                    juce::Component::SafePointer<MediaExplorerContent> self(this);
+                    moveFolderChooser_ = std::make_unique<juce::FileChooser>(
+                        "Choose the folder's new location",
+                        file.getParentDirectory().exists()
+                            ? file.getParentDirectory()
+                            : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+                    moveFolderChooser_->launchAsync(
+                        juce::FileBrowserComponent::openMode |
+                            juce::FileBrowserComponent::canSelectDirectories,
+                        [self, fsPath](const juce::FileChooser& fc) {
+                            if (self == nullptr) {
+                                return;
+                            }
+                            const auto picked = fc.getResult();
+                            if (!picked.isDirectory()) {
+                                return;
+                            }
+                            const auto newPath =
+                                std::filesystem::path(picked.getFullPathName().toStdString());
+                            const int rows = magda::media::moveFolderInLibrary(fsPath, newPath);
+                            if (rows < 0) {
+                                juce::AlertWindow::showAsync(
+                                    juce::MessageBoxOptions{}
+                                        .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                        .withTitle("Move folder in library")
+                                        .withMessage(
+                                            "The move was rolled back. The new location "
+                                            "probably already contains indexed files with the "
+                                            "same names — remove those entries first or pick a "
+                                            "different destination.")
+                                        .withButton("OK"),
+                                    nullptr);
+                                return;
+                            }
+                            if (self->dbBrowser_ != nullptr) {
+                                self->dbBrowser_->refresh();
+                            }
+                        });
                 }
             });
         return;
@@ -1544,6 +1736,9 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
 }
 
 void MediaExplorerContent::fileDoubleClicked(const juce::File& file) {
+    if (previewLockedForIndexing_) {
+        return;
+    }
     // Only audio files can be played on double-click
     if (isAudioFile(file)) {
         loadFileForPreview(file);

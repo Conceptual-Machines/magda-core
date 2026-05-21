@@ -16,17 +16,20 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <vector>
 
 #include "../../../media_db/MediaDatabase.hpp"
+#include "../../../media_db/MediaDbIndexer.hpp"
 #include "../../../media_db/MediaDbQuery.hpp"
 #include "../../components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
 
-// Compact status strip showing whether the Sample Tagger model is loaded.
+// Compact status strip showing whether the Sample Analyzer model is loaded.
 // Polls MediaDbContext + SampleTaggerDownloader twice a second so loads
 // triggered elsewhere (AI Settings, the proactive preload in
 // MediaDbBrowserContent::visibilityChanged, startup auto-load) reflect
@@ -43,7 +46,7 @@ class ModelStatusIndicator : public juce::Component, private juce::Timer {
     State state_ = State::NotInstalled;
 };
 
-class MediaDbBrowserContent : public juce::Component {
+class MediaDbBrowserContent : public juce::Component, private juce::Timer {
   public:
     // isPopOutInstance: true when this is the content of a detached pop-out
     // window (suppresses its own pop-out button and skips the empty-state hint
@@ -57,15 +60,14 @@ class MediaDbBrowserContent : public juce::Component {
     // Re-run the current query. Useful after indexing finishes or filters change.
     void refresh();
 
-    // Kick off a background scan of `dir` and update the status label as it
-    // progresses. Called from the file-browser's folder-right-click menu — the
-    // DB browser no longer has its own "Index folder" button.
-    //
-    // force: when true, the indexer re-derives every file's metadata
-    // ignoring the skip-on-unchanged fast path. Used by the "Re-index"
-    // menu item to refresh tags / family / features on already-indexed
-    // content after a rules / algorithm change.
-    void startIndexing(const juce::File& dir, bool force = false);
+    // Kick off a background scan of `dir` and update the status label as
+    // it progresses. Called from the file-browser's folder-right-click
+    // menu. Mode controls how existing rows are treated — see
+    // MediaDbIndexer::Mode for the three semantics (Incremental, OnlyNew,
+    // ForceAll).
+    void startIndexing(const juce::File& dir, magda::media::MediaDbIndexer::Mode mode =
+                                                  magda::media::MediaDbIndexer::Mode::Incremental);
+    void requestStopIndexing();
 
     // External kind selector hook. Pass "audio" / "clip" / "preset", or
     // nullopt to clear the filter. Re-runs the search.
@@ -79,6 +81,7 @@ class MediaDbBrowserContent : public juce::Component {
     // surface scan status in shared UI (e.g. the preview area) so it's
     // visible regardless of which browser mode the user is on.
     std::function<void(const juce::String&)> onIndexingStatus;
+    std::function<void(bool)> onIndexingActiveChanged;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -88,6 +91,33 @@ class MediaDbBrowserContent : public juce::Component {
     class ResultsTableModel;
     class PopOutWindow;
 
+    // TableListBox subclass that remembers the selection before JUCE's
+    // RowComp collapses it. Pill-click bulk semantics need that snapshot
+    // because cellClicked fires after selection handling.
+    class ResultsTable : public juce::TableListBox {
+      public:
+        void mouseDown(const juce::MouseEvent& e) override {
+            preClickSelection_ = getSelectedRows();
+            juce::TableListBox::mouseDown(e);
+        }
+
+        void selectedRowsChanged(int row) override {
+            preClickSelection_ = lastKnownSelection_;
+            lastKnownSelection_ = getSelectedRows();
+            juce::TableListBox::selectedRowsChanged(row);
+        }
+
+        void syncSelectionSnapshot() {
+            lastKnownSelection_ = getSelectedRows();
+            preClickSelection_ = lastKnownSelection_;
+        }
+
+        juce::SparseSet<int> preClickSelection_;
+
+      private:
+        juce::SparseSet<int> lastKnownSelection_;
+    };
+
     void runSearch();
     // New-query entry points: resets pagination to the initial page and
     // clears similar-sounds mode before calling runSearch().
@@ -96,8 +126,25 @@ class MediaDbBrowserContent : public juce::Component {
     // around the given file's audio embedding instead of text / FTS.
     // Cleared by the next restartSearch().
     void findSimilarTo(std::int64_t seedFileId, const juce::String& seedName);
+    void startAnalyzingFileIds(std::vector<std::int64_t> fileIds);
+    void showEditRowDialog(std::int64_t fileId);
+    void showBulkEditRowsDialog(std::vector<std::int64_t> fileIds);
+    // When `fileIds` has more than one entry the family/shape choice is
+    // applied to all of them; the `current*` argument is the clicked row's
+    // value and only drives the tick mark next to that value in the menu.
+    void showFamilyMenuForRow(std::vector<std::int64_t> fileIds, const juce::String& currentFamily,
+                              juce::Point<int> screenPosition);
+    void showShapeMenuForRow(std::vector<std::int64_t> fileIds, const juce::String& currentShape,
+                             juce::Point<int> screenPosition);
+    void deleteFileIdsWithConfirmation(std::vector<std::int64_t> fileIds);
+    void removeDuplicateFilePathsWithConfirmation();
+    void startIndexingWithOptions(const juce::File& dir, magda::media::MediaDbIndexer::Mode mode,
+                                  magda::media::MediaDbIndexer::ScanTagOptions tagOptions);
     void openPopOutWindow();
     magda::media::QueryFilters currentFilters() const;
+    magda::media::QuerySort currentSort() const;
+    void setSortOrder(int columnId, bool ascending);
+    void timerCallback() override;
 
     // Filter strip — two rows.
     // Row 1: family / shape / key dropdowns
@@ -120,9 +167,9 @@ class MediaDbBrowserContent : public juce::Component {
 
     // Results
     std::unique_ptr<ResultsTableModel> resultsModel_;
-    juce::TableListBox resultsTable_;  // resizable, reorderable column header
+    ResultsTable resultsTable_;  // resizable, reorderable column header
     juce::Label emptyState_;
-    juce::Label statusLabel_;  // "Indexing path/to/x.wav (N/M)" during a scan
+    juce::Label statusLabel_;  // similar-mode status only; indexing status lives in parent strip
     std::unique_ptr<juce::ArrowButton> prevPageBtn_;
     std::unique_ptr<juce::ArrowButton> nextPageBtn_;
     juce::Label pageLabel_;  // "Page N"
@@ -132,6 +179,8 @@ class MediaDbBrowserContent : public juce::Component {
     juce::String queryText_;
     std::vector<magda::media::QueryResult> results_;
     bool isPopOutInstance_ = false;
+    std::uint64_t observedMediaRevision_ = 0;
+    magda::media::QuerySort sort_;
 
     // Pagination. Fixed page size; currentPage_ is 0-based. Prev / Next
     // buttons in the footer step the page index and re-run the same query
@@ -160,6 +209,7 @@ class MediaDbBrowserContent : public juce::Component {
     // pool is created lazily on first index click so app startup pays nothing.
     std::unique_ptr<juce::ThreadPool> indexPool_;
     bool indexing_ = false;
+    std::shared_ptr<std::atomic_bool> indexCancel_;
 
     // Single-thread pool for text-search queries. Text search triggers the
     // ONNX text encoder which costs multi-second on first load + a few

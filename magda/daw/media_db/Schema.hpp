@@ -15,7 +15,7 @@ namespace magda::media {
 inline constexpr const char* kSchemaSql = R"SQL(
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
-PRAGMA user_version = 4;
+	PRAGMA user_version = 7;
 
 CREATE TABLE IF NOT EXISTS media_file (
     id              INTEGER PRIMARY KEY,
@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS media_file (
     mtime_ns        INTEGER NOT NULL,
     content_hash    BLOB,
     indexed_at      INTEGER NOT NULL,
+    display_name    TEXT,
 
     duration_s          REAL,
     sample_rate         INTEGER,
@@ -43,9 +44,12 @@ CREATE TABLE IF NOT EXISTS media_file (
     -- detected) so the UI sees one effective value. Only the user-edit path
     -- writes these; the indexer never touches them, so user edits survive
     -- re-scans of unchanged files and re-encodes alike.
-    bpm_user            REAL,
-    key_root_user       TEXT,
-    key_scale_user      TEXT,
+	    bpm_user            REAL,
+	    key_root_user       TEXT,
+	    key_scale_user      TEXT,
+	    total_beats_user    REAL,
+	    beat_mode_user      INTEGER CHECK (beat_mode_user IN (0, 1)),
+	    warp_markers_json   TEXT,
 
     shape   TEXT CHECK (shape  IN ('one-shot','loop','sustained','unknown')),
     family  TEXT CHECK (family IN

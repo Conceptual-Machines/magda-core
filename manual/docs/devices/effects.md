@@ -80,3 +80,13 @@ Parameters live in a stable pool of slots that persist across recompiles, so mac
 
 !!! warning "Prototype"
     This device is still a prototype. The DSP is run through the **libfaust interpreter** rather than ahead-of-time-compiled native code, so CPU usage is significantly higher than the pre-compiled MAGDA FX bank. Use it for sketching and experimentation; for production work, ask for the patch to be promoted into a compiled device.
+
+### Writing Faust with AI help
+
+[`faust-mcp-magda`](https://github.com/Conceptual-Machines/faust-mcp-magda) is an optional companion tool that exposes the Faust compiler and standard library to AI assistants. MAGDA uses it to validate AI-generated Faust code before loading it into this device, so syntax errors and bad library references get caught up front instead of failing at compile time.
+
+Enable it from **Settings > AI Settings**, on the **Config** page, by turning on the **Faust DSP** toggle. When Faust validation is used, MAGDA will start the MCP server on-demand via `npx`; no manual install step is needed. `npx` must be available on the system `PATH` (it ships with Node.js).
+
+The Faust compiler runs in-process via WebAssembly inside the MCP server, so no separate Faust installation is required either.
+
+The server can also be wired into a separate MCP-aware AI assistant (Claude, Cursor, and similar) directly, by adding it to that client's MCP config; see the [project README](https://github.com/Conceptual-Machines/faust-mcp-magda) for details. This is independent of the MAGDA-side toggle.

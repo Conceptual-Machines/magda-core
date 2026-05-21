@@ -42,6 +42,12 @@ double timelineEndSeconds(const ClipInfo& clip, double bpm) {
     return clip.getTimelineEnd(bpm);
 }
 
+void showMidiClipLibrarySaveFailedAlert() {
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::AlertWindow::WarningIcon, "Save MIDI Clip Failed",
+        "Could not write the MIDI clip file or add it to the media library.");
+}
+
 }  // namespace
 
 static float computeFadeGain(float alpha, FadeCurve curve) {
@@ -2540,6 +2546,7 @@ void ClipComponent::showContextMenu() {
     // Quantize (MIDI clips only)
     {
         bool hasMidi = false;
+        bool canSaveSingleMidi = false;
         if (isMultiSelection) {
             for (auto cid : selectionManager.getSelectedClips()) {
                 auto* c = clipManager.getClip(cid);
@@ -2551,9 +2558,13 @@ void ClipComponent::showContextMenu() {
         } else {
             const auto* ci = getClipInfo();
             hasMidi = ci && ci->isMidi() && !ci->midiNotes.empty();
+            canSaveSingleMidi = ci && ci->isMidi() && clipManager.canSaveClipToLibrary(ci->id);
         }
 
         if (hasMidi) {
+            menu.addItem(20, "Save MIDI Clip to Library", canSaveSingleMidi);
+            menu.addSeparator();
+
             juce::PopupMenu quantizeMenu;
 
             // "Current Grid" option (IDs 97-99)
@@ -2732,6 +2743,13 @@ void ClipComponent::showContextMenu() {
             case 19: {  // Duplicate Without Automation
                 if (parentPanel_)
                     parentPanel_->duplicateSelectedArrangementClips(false);
+                break;
+            }
+
+            case 20: {  // Save MIDI Clip to Library
+                if (!clipManager.saveClipToLibrary(clipId_)) {
+                    showMidiClipLibrarySaveFailedAlert();
+                }
                 break;
             }
 

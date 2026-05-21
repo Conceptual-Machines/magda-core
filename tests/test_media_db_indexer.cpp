@@ -8,6 +8,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <sqlite3.h>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <filesystem>
@@ -22,6 +23,7 @@
 #include "../magda/daw/media_db/MediaDbIndexer.hpp"
 
 namespace fs = std::filesystem;
+using Catch::Approx;
 using magda::media::MediaDatabase;
 using magda::media::MediaDbIndexer;
 
@@ -70,6 +72,47 @@ void writeMonoWav(const fs::path& out, double seconds, double freq, int sampleRa
         data[i] = static_cast<float>(0.3 * std::sin(kTwoPi * freq * i / sampleRate));
     }
     writer->writeFromAudioSampleBuffer(buf, 0, n);
+}
+
+void writeMidiFile(const fs::path& out, double bpm, double lengthBeats) {
+    fs::create_directories(out.parent_path());
+
+    constexpr int ticksPerQuarter = 960;
+    auto beatsToTicks = [](double beats) { return beats * ticksPerQuarter; };
+
+    juce::MidiMessageSequence seq;
+    auto name = juce::MidiMessage::textMetaEvent(3, "Hook MIDI");
+    name.setTimeStamp(0.0);
+    seq.addEvent(name);
+
+    auto tempo = juce::MidiMessage::tempoMetaEvent(static_cast<int>(60000000.0 / bpm));
+    tempo.setTimeStamp(0.0);
+    seq.addEvent(tempo);
+
+    auto noteOn = juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100));
+    noteOn.setTimeStamp(0.0);
+    seq.addEvent(noteOn);
+
+    auto noteOff = juce::MidiMessage::noteOff(1, 60);
+    noteOff.setTimeStamp(beatsToTicks(lengthBeats));
+    seq.addEvent(noteOff);
+
+    auto eot = juce::MidiMessage::endOfTrack();
+    eot.setTimeStamp(beatsToTicks(lengthBeats) + 1.0);
+    seq.addEvent(eot);
+    seq.sort();
+    seq.updateMatchedPairs();
+
+    juce::MidiFile midiFile;
+    midiFile.setTicksPerQuarterNote(ticksPerQuarter);
+    midiFile.addTrack(seq);
+
+    juce::File jf(juce::String(out.string()));
+    jf.deleteFile();
+    std::unique_ptr<juce::FileOutputStream> stream(jf.createOutputStream());
+    REQUIRE(stream != nullptr);
+    REQUIRE(midiFile.writeTo(*stream, 0));
+    stream->flush();
 }
 
 int countRows(sqlite3* db, const std::string& sql) {
@@ -140,6 +183,92 @@ TEST_CASE("indexer: skips unchanged files on rescan", "[media_db][indexer]") {
     REQUIRE(second.inserted == 0);
     REQUIRE(second.updated == 0);
     REQUIRE(second.skipped == 1);
+}
+
+TEST_CASE("indexer: scan tag options add custom folder and path-node tags", "[media_db][indexer]") {
+    TempDir dir;
+    const auto root = dir.path() / "Break Pack";
+    writeMonoWav(root / "Amen Chops" / "slice.wav", 0.5, 100.0);
+
+    MediaDatabase db(":memory:");
+    MediaDbIndexer indexer(db, nullptr);
+    MediaDbIndexer::ScanTagOptions options;
+    options.root = root;
+    options.customTags = {"jungle", "user break"};
+    options.includeRootFolderName = true;
+    options.includePathNodes = true;
+    indexer.setScanTagOptions(options);
+
+    auto stats = indexer.indexDirectory(root);
+    REQUIRE(stats.inserted == 1);
+
+    sqlite3* sql = db.handle();
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='jungle'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='user'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='break'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='pack'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='amen'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='chops'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_fts WHERE media_fts MATCH 'jungle'") == 1);
+}
+
+TEST_CASE("indexer: indexes one imported audio file", "[media_db][indexer]") {
+    TempDir dir;
+    const auto imported = dir.path() / "imported_128bpm.wav";
+    writeMonoWav(imported, 3.0, 100.0);
+
+    MediaDatabase db(":memory:");
+    MediaDbIndexer indexer(db, nullptr);
+    auto first = indexer.indexFile(imported);
+    REQUIRE(first.inserted == 1);
+    REQUIRE(first.updated == 0);
+    REQUIRE(first.skipped == 0);
+    REQUIRE(first.failed == 0);
+    REQUIRE(countRows(db.handle(), "SELECT COUNT(*) FROM media_file") == 1);
+
+    auto second = indexer.indexFile(imported, MediaDbIndexer::Mode::Incremental);
+    REQUIRE(second.inserted == 0);
+    REQUIRE(second.updated == 0);
+    REQUIRE(second.skipped == 1);
+    REQUIRE(second.failed == 0);
+    REQUIRE(countRows(db.handle(), "SELECT COUNT(*) FROM media_file") == 1);
+}
+
+TEST_CASE("indexer: extracts metadata for MIDI clip files", "[media_db][indexer][midi]") {
+    TempDir dir;
+    const auto midiPath = dir.path() / "Leads" / "Hook Melody.mid";
+    writeMidiFile(midiPath, 90.0, 8.0);
+
+    MediaDatabase db(":memory:");
+    MediaDbIndexer indexer(db, nullptr);
+    auto stats = indexer.indexFile(midiPath);
+    REQUIRE(stats.inserted == 1);
+    REQUIRE(stats.updated == 0);
+    REQUIRE(stats.skipped == 0);
+    REQUIRE(stats.failed == 0);
+
+    sqlite3* sql = db.handle();
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(sql,
+                       "SELECT kind, format, duration_s, bpm, shape, family, tonal "
+                       "FROM media_file WHERE path = ?",
+                       -1, &stmt, nullptr);
+    const auto pathText = midiPath.string();
+    sqlite3_bind_text(stmt, 1, pathText.c_str(), -1, SQLITE_TRANSIENT);
+
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))) == "clip");
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))) == "mid");
+    REQUIRE(sqlite3_column_double(stmt, 2) == Approx(8.0 * 60.0 / 90.0).margin(0.01));
+    REQUIRE(sqlite3_column_double(stmt, 3) == Approx(90.0).margin(0.01));
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4))) == "loop");
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5))) == "lead");
+    REQUIRE(sqlite3_column_int(stmt, 6) == 1);
+    sqlite3_finalize(stmt);
+
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_embedding") == 0);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_fts WHERE media_fts MATCH 'hook'") == 1);
+    REQUIRE(countRows(sql, "SELECT COUNT(*) FROM media_tag WHERE tag='leads'") == 1);
 }
 
 TEST_CASE("indexer: walks recursively and respects file kinds", "[media_db][indexer]") {

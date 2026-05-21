@@ -26,9 +26,23 @@ MediaDbContext::MediaDbContext() = default;
 MediaDbContext::~MediaDbContext() = default;
 
 std::filesystem::path MediaDbContext::dbPath() const {
+    // User override: same fall-back semantics as modelsDir(). Lets users
+    // park the (potentially large) index on a different drive without
+    // symlinking. If the override directory has gone missing (drive
+    // unplugged), fall back so we don't crash on launch with a dead path.
+    const auto override = magda::Config::getInstance().getMediaDbDir();
+    if (!override.empty()) {
+        std::filesystem::path p(override);
+        std::error_code ec;
+        if (std::filesystem::is_directory(p, ec)) {
+            return p / "media.db";
+        }
+    }
+    // Default: MediaDB/db/media.db, sibling of MediaDB/models/ so the
+    // two resources read as parallel.
     return std::filesystem::path(
                magda::paths::dataDir().getChildFile("MediaDB").getFullPathName().toStdString()) /
-           "media.db";
+           "db" / "media.db";
 }
 
 std::filesystem::path MediaDbContext::modelsDir() const {
@@ -46,9 +60,21 @@ std::filesystem::path MediaDbContext::modelsDir() const {
             return p;
         }
     }
+    // Default: MediaDB/models/ — sibling of MediaDB/db/ under the
+    // shared MediaDB/ parent so the two defaults read as parallel
+    // resources rather than the model living inside the DB folder.
     return std::filesystem::path(
                magda::paths::dataDir().getChildFile("MediaDB").getFullPathName().toStdString()) /
            "models";
+}
+
+std::filesystem::path MediaDbContext::midiClipsDir() const {
+    auto parent = dbPath().parent_path();
+    const auto leaf = parent.filename().string();
+    if (leaf == "db" || leaf == "DB") {
+        parent = parent.parent_path();
+    }
+    return parent / "clips" / "midi";
 }
 
 std::filesystem::path MediaDbContext::audioModelPath() const {
@@ -87,7 +113,7 @@ bool MediaDbContext::ensureInitialized() {
 
 void MediaDbContext::preloadModels() {
     // Force the lazy accessors to instantiate now. The "Load on startup"
-    // Config toggle and the AI Settings → Sample Tagger → Load button both
+    // Config toggle and the AI Settings → Sample Analyzer → Load button both
     // call this; running it on a background thread keeps the UI fluid
     // (this method itself blocks until each ORT Session is built).
     (void)audioEncoder();
@@ -99,6 +125,47 @@ void MediaDbContext::unloadModels() {
     audioEnc_.reset();
     textEnc_.reset();
     tokenizer_.reset();
+}
+
+bool MediaDbContext::wipeAll() {
+    if (!ensureInitialized()) {
+        return false;
+    }
+    // Single transaction so the user can't end up with a half-deleted
+    // DB after a power loss. media_file has ON DELETE CASCADE for
+    // media_tag / media_embedding / media_metadata, but the FTS5
+    // contentless table doesn't follow FKs so it gets an explicit
+    // DELETE. PRAGMA foreign_keys is set to ON in Schema.hpp.
+    try {
+        db_->execute("BEGIN");
+        db_->execute("DELETE FROM media_file");
+        db_->execute("DELETE FROM media_fts");
+        db_->execute("COMMIT");
+    } catch (const std::exception&) {
+        try {
+            db_->execute("ROLLBACK");
+        } catch (...) {
+            // best-effort cleanup; nothing to do if rollback also fails
+        }
+        return false;
+    }
+    return true;
+}
+
+std::uint64_t MediaDbContext::mediaRevision() const noexcept {
+    return mediaRevision_.load(std::memory_order_acquire);
+}
+
+void MediaDbContext::bumpMediaRevision() noexcept {
+    mediaRevision_.fetch_add(1, std::memory_order_acq_rel);
+}
+
+void MediaDbContext::resetForReopen() {
+    audioEnc_.reset();
+    textEnc_.reset();
+    tokenizer_.reset();
+    db_.reset();
+    initAttempted_ = false;
 }
 
 void MediaDbContext::shutdown() {

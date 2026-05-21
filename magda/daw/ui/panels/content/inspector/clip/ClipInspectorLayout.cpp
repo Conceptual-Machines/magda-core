@@ -209,6 +209,22 @@ void ClipInspector::resized() {
                 }
             }
         }
+
+        // Row 3: [KEY label + root combo] | (right column empty)
+        if (clipKeyRootCombo_.isVisible()) {
+            addSpace(4);
+            auto row3 = addRow(22);
+            auto left = row3.removeFromLeft(halfWidth);
+            const int labelW = 28;
+            clipKeyLabel_.setBounds(left.removeFromLeft(labelW));
+            left.removeFromLeft(4);
+            clipKeyRootCombo_.setBounds(left.reduced(0, 1));
+        }
+
+        if (saveLibraryButton_.isVisible()) {
+            addSpace(4);
+            saveLibraryButton_.setBounds(addRow(22).reduced(0, 1));
+        }
     }
 
     // Transient sensitivity section (audio clips only)
