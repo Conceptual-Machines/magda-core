@@ -382,6 +382,8 @@ target_sources(magda_daw PRIVATE
     plugins/MidiReceivePlugin.hpp
     plugins/MagdaSamplerPlugin.hpp
     plugins/DrumGridPlugin.hpp
+    plugins/DrumGridRoles.hpp
+    plugins/DrumGridTemplates.hpp
     plugins/MidiChordEnginePlugin.hpp
     plugins/ArpeggiatorPlugin.hpp
     plugins/InstrumentMeterTapPlugin.hpp

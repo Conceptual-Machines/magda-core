@@ -12,8 +12,11 @@
 #include "AudioEngine.hpp"
 #include "BinaryData.h"
 #include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/DrumGridRoles.hpp"
+#include "audio/plugins/DrumGridTemplates.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "core/ClipOperations.hpp"
+#include "core/DrumkitManager.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -1530,6 +1533,56 @@ class DrumGridRowLabels : public juce::Component {
     // Callback: noteNumber, isNoteOn
     std::function<void(int, bool)> onNotePreview;
     std::function<void(int, const juce::MouseWheelDetails&)> onVerticalZoomRequested;
+    std::function<void(int /*noteNumber*/, juce::String /*newLabel*/)> onRowLabelCommitted;
+    std::function<void(int /*noteNumber*/, juce::Point<int> /*screenPos*/)> onRowContextMenu;
+
+    // Initial label text to seed the inline editor with. Set by the parent.
+    std::function<juce::String(int /*noteNumber*/)> getRowLabel;
+
+    void startRenameRow(int noteNumber) {
+        if (!padRows_)
+            return;
+        int rowIndex = -1;
+        for (int i = 0; i < static_cast<int>(padRows_->size()); ++i) {
+            if ((*padRows_)[static_cast<size_t>(i)].noteNumber == noteNumber) {
+                rowIndex = i;
+                break;
+            }
+        }
+        if (rowIndex < 0)
+            return;
+
+        rowEditor_ = std::make_unique<juce::TextEditor>();
+        rowEditor_->setMultiLine(false);
+        rowEditor_->setReturnKeyStartsNewLine(false);
+        rowEditor_->setBorder({1, 2, 1, 2});
+        rowEditor_->setIndents(4, 1);
+        rowEditor_->setColour(juce::TextEditor::backgroundColourId,
+                              DarkTheme::getColour(DarkTheme::BACKGROUND));
+        rowEditor_->setColour(juce::TextEditor::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        rowEditor_->setColour(juce::TextEditor::outlineColourId,
+                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        rowEditor_->setColour(juce::TextEditor::focusedOutlineColourId,
+                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        juce::String seed;
+        if (getRowLabel)
+            seed = getRowLabel(noteNumber);
+        if (seed.isEmpty())
+            seed = (*padRows_)[static_cast<size_t>(rowIndex)].name;
+        rowEditor_->setText(seed, juce::dontSendNotification);
+        rowEditor_->selectAll();
+
+        int y = rowIndex * rowHeight_ - scrollOffsetY_;
+        rowEditor_->setBounds(0, y, juce::jmax(0, getWidth() - PLAY_BTN_WIDTH), rowHeight_);
+        addAndMakeVisible(rowEditor_.get());
+        rowEditor_->grabKeyboardFocus();
+
+        editingNote_ = noteNumber;
+        rowEditor_->onReturnKey = [this]() { commitRename(); };
+        rowEditor_->onEscapeKey = [this]() { cancelRename(); };
+        rowEditor_->onFocusLost = [this]() { commitRename(); };
+    }
 
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
@@ -1563,11 +1616,34 @@ class DrumGridRowLabels : public juce::Component {
             const auto& padRow = (*padRows_)[i];
 
             if (rowHeight_ >= 10) {
-                // Pad name (on the left)
+                int textX = 4;
+                int textRight = bounds.getWidth() - PLAY_BTN_WIDTH - 4;
+
+                // Role short-tag pill (drawn before the label, if role is set)
+                if (padRow.role.isNotEmpty()) {
+                    auto shortTag =
+                        magda::daw::audio::drum_grid_roles::shortTagForRole(padRow.role);
+                    if (shortTag.isNotEmpty()) {
+                        const int pillH = juce::jmin(rowHeight_ - 4, 14);
+                        const int pillW = juce::jmax(18, shortTag.length() * 8 + 8);
+                        juce::Rectangle<float> pill(
+                            static_cast<float>(textX),
+                            static_cast<float>(y + (rowHeight_ - pillH) / 2),
+                            static_cast<float>(pillW), static_cast<float>(pillH));
+                        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.85f));
+                        g.fillRoundedRectangle(pill, 3.0f);
+                        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+                        g.drawText(shortTag, pill.toNearestInt(), juce::Justification::centred,
+                                   false);
+                        textX += pillW + 4;
+                    }
+                }
+
+                // Pad name (after the role pill)
                 g.setColour(padRow.hasChain ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
                                             : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
                 g.drawText(padRow.name,
-                           juce::Rectangle<int>(4, y + 1, bounds.getWidth() - PLAY_BTN_WIDTH - 8,
+                           juce::Rectangle<int>(textX, y + 1, juce::jmax(0, textRight - textX),
                                                 rowHeight_ - 2),
                            juce::Justification::centredLeft, true);
             }
@@ -1603,14 +1679,33 @@ class DrumGridRowLabels : public juce::Component {
         if (row < 0 || !padRows_)
             return;
 
+        int noteNumber = (*padRows_)[static_cast<size_t>(row)].noteNumber;
+
+        if (e.mods.isPopupMenu()) {
+            if (onRowContextMenu)
+                onRowContextMenu(noteNumber, e.getScreenPosition());
+            return;
+        }
+
         auto btnBounds = getPlayButtonBounds(row);
         if (btnBounds.contains(e.getPosition())) {
-            int noteNumber = (*padRows_)[row].noteNumber;
             playingNoteNumber_ = noteNumber;
             if (onNotePreview)
                 onNotePreview(noteNumber, true);
             repaint();
         }
+    }
+
+    void mouseDoubleClick(const juce::MouseEvent& e) override {
+        if (!padRows_)
+            return;
+        int row = getRowAtY(e.y);
+        if (row < 0)
+            return;
+        // Ignore double-clicks on the play button.
+        if (getPlayButtonBounds(row).contains(e.getPosition()))
+            return;
+        startRenameRow((*padRows_)[static_cast<size_t>(row)].noteNumber);
     }
 
     void mouseUp(const juce::MouseEvent& /*e*/) override {
@@ -1654,6 +1749,32 @@ class DrumGridRowLabels : public juce::Component {
     int scrollOffsetY_ = 0;
     int playingNoteNumber_ = -1;
     int hoverRow_ = -1;
+    std::unique_ptr<juce::TextEditor> rowEditor_;
+    int editingNote_ = -1;
+
+    void commitRename() {
+        if (rowEditor_ == nullptr || editingNote_ < 0)
+            return;
+        const int note = editingNote_;
+        const auto newText = rowEditor_->getText().trim();
+        editingNote_ = -1;
+        // Defer destruction so we don't free the editor inside its own focus-lost callback.
+        juce::MessageManager::callAsync(
+            [weak = juce::Component::SafePointer<DrumGridRowLabels>(this)]() {
+                if (weak == nullptr)
+                    return;
+                weak->rowEditor_.reset();
+                weak->repaint();
+            });
+        if (onRowLabelCommitted)
+            onRowLabelCommitted(note, newText);
+    }
+
+    void cancelRename() {
+        editingNote_ = -1;
+        rowEditor_.reset();
+        repaint();
+    }
 
     int getRowAtY(int y) const {
         if (!padRows_ || padRows_->empty())
@@ -1668,6 +1789,45 @@ class DrumGridRowLabels : public juce::Component {
         int y = row * rowHeight_ - scrollOffsetY_;
         return {getWidth() - PLAY_BTN_WIDTH, y, PLAY_BTN_WIDTH, rowHeight_};
     }
+};
+
+//==============================================================================
+// DrumGridLabelDivider - thin vertical strip between row labels and the grid
+// that drags to resize the labels column.
+//==============================================================================
+class DrumGridLabelDivider : public juce::Component {
+  public:
+    DrumGridLabelDivider() {
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    }
+
+    std::function<void(int /*deltaX*/)> onDragDelta;
+
+    void paint(juce::Graphics& g) override {
+        // Idle: invisible (inherits the parent's bg). Hover/drag: subtle accent
+        // so the user can see the hit zone they grabbed.
+        if (isMouseOverOrDragging()) {
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+            g.fillRect(getLocalBounds());
+        }
+    }
+
+    void mouseDown(const juce::MouseEvent&) override {
+        dragStartX_ = 0;
+    }
+
+    void mouseDrag(const juce::MouseEvent& e) override {
+        if (onDragDelta)
+            onDragDelta(e.getDistanceFromDragStartX() - dragStartX_);
+        dragStartX_ = e.getDistanceFromDragStartX();
+    }
+
+    void mouseUp(const juce::MouseEvent&) override {
+        dragStartX_ = 0;
+    }
+
+  private:
+    int dragStartX_ = 0;
 };
 
 //==============================================================================
@@ -1718,7 +1878,28 @@ DrumGridClipContent::DrumGridClipContent() {
         const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
         setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, labelsY, true);
     };
+    rowLabels_->getRowLabel = [this](int noteNumber) -> juce::String {
+        if (editingClipId_ == magda::INVALID_CLIP_ID)
+            return {};
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip == nullptr)
+            return {};
+        auto it = clip->drumRowMeta.find(noteNumber);
+        return it != clip->drumRowMeta.end() ? it->second.label : juce::String();
+    };
+    rowLabels_->onRowLabelCommitted = [this](int noteNumber, juce::String newLabel) {
+        if (editingClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        magda::ClipManager::getInstance().setClipDrumRowLabel(editingClipId_, noteNumber, newLabel);
+    };
+    rowLabels_->onRowContextMenu = [this](int noteNumber, juce::Point<int> screenPos) {
+        showRowContextMenu(noteNumber, screenPos);
+    };
     addAndMakeVisible(rowLabels_.get());
+
+    labelDivider_ = std::make_unique<DrumGridLabelDivider>();
+    labelDivider_->onDragDelta = [this](int dx) { setLabelWidth(labelWidth_ + dx); };
+    addAndMakeVisible(labelDivider_.get());
 
     // Add DrumGrid-specific components to viewport repaint list
     viewport_->componentsToRepaint.push_back(rowLabels_.get());
@@ -2040,7 +2221,7 @@ void DrumGridClipContent::resized() {
     if (velocityDrawerOpen_) {
         auto drawerArea = bounds.removeFromBottom(drawerHeight_);
         if (midiDrawer_) {
-            midiDrawer_->setLeftMargin(ZOOM_STRIP_WIDTH + LABEL_WIDTH);
+            midiDrawer_->setLeftMargin(ZOOM_STRIP_WIDTH + labelWidth_ + LABEL_DIVIDER_WIDTH);
             midiDrawer_->setBounds(drawerArea);
             midiDrawer_->setVisible(true);
         }
@@ -2051,15 +2232,21 @@ void DrumGridClipContent::resized() {
 
     // Time ruler at top
     auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
-    headerArea.removeFromLeft(ZOOM_STRIP_WIDTH + LABEL_WIDTH);  // Align with grid
+    headerArea.removeFromLeft(ZOOM_STRIP_WIDTH + labelWidth_ +
+                              LABEL_DIVIDER_WIDTH);  // Align with grid
     timeRuler_->setBounds(headerArea);
 
     auto zoomStripArea = bounds.removeFromLeft(ZOOM_STRIP_WIDTH);
     verticalZoomStrip_->setBounds(zoomStripArea);
 
     // Row labels on left
-    auto labelsArea = bounds.removeFromLeft(LABEL_WIDTH);
+    auto labelsArea = bounds.removeFromLeft(labelWidth_);
     rowLabels_->setBounds(labelsArea);
+
+    // Draggable divider between row labels and the grid
+    auto dividerArea = bounds.removeFromLeft(LABEL_DIVIDER_WIDTH);
+    if (labelDivider_)
+        labelDivider_->setBounds(dividerArea);
 
     // Viewport fills the rest
     viewport_->setBounds(bounds);
@@ -2078,7 +2265,8 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
     // Cmd/Ctrl + scroll = horizontal zoom (uses shared base method)
     if (e.mods.isCommandDown()) {
         double zoomFactor = 1.0 + (wheel.deltaY * 0.1);
-        int mouseXInViewport = e.x - SIDEBAR_WIDTH - ZOOM_STRIP_WIDTH - LABEL_WIDTH;
+        int mouseXInViewport =
+            e.x - SIDEBAR_WIDTH - ZOOM_STRIP_WIDTH - labelWidth_ - LABEL_DIVIDER_WIDTH;
         performWheelZoom(zoomFactor, mouseXInViewport);
         return;
     }
@@ -2094,7 +2282,8 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
     }
 
     // Forward to time ruler area for horizontal scroll
-    if (e.y < RULER_HEIGHT && e.x >= SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + LABEL_WIDTH) {
+    if (e.y < RULER_HEIGHT &&
+        e.x >= SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + labelWidth_ + LABEL_DIVIDER_WIDTH) {
         if (timeRuler_->onScrollRequested) {
             float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
             int scrollAmount = static_cast<int>(-delta * 100.0f);
@@ -2365,6 +2554,15 @@ void DrumGridClipContent::findDrumGrid() {
 juce::String DrumGridClipContent::resolvePadName(int padIndex) const {
     int noteNumber = baseNote_ + padIndex;
 
+    // Clip-level label override wins over device-derived names.
+    if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        if (const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_)) {
+            auto it = clip->drumRowMeta.find(noteNumber);
+            if (it != clip->drumRowMeta.end() && it->second.label.isNotEmpty())
+                return it->second.label;
+        }
+    }
+
     if (drumGrid_) {
         const auto* chain = drumGrid_->getChainForNote(noteNumber);
         if (chain) {
@@ -2394,6 +2592,10 @@ juce::String DrumGridClipContent::resolvePadName(int padIndex) const {
 void DrumGridClipContent::buildPadRows() {
     padRows_.clear();
 
+    const ClipInfo* clip = editingClipId_ != magda::INVALID_CLIP_ID
+                               ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                               : nullptr;
+
     for (int i = 0; i < numPads_; ++i) {
         int noteNumber = baseNote_ + i;
         bool hasChain = false;
@@ -2405,6 +2607,11 @@ void DrumGridClipContent::buildPadRows() {
         row.noteNumber = noteNumber;
         row.name = resolvePadName(i);
         row.hasChain = hasChain;
+        if (clip != nullptr) {
+            auto it = clip->drumRowMeta.find(noteNumber);
+            if (it != clip->drumRowMeta.end())
+                row.role = it->second.role;
+        }
         padRows_.push_back(row);
     }
 
@@ -2413,6 +2620,9 @@ void DrumGridClipContent::buildPadRows() {
 }
 
 void DrumGridClipContent::refreshPadRowNames() {
+    const ClipInfo* clip = editingClipId_ != magda::INVALID_CLIP_ID
+                               ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                               : nullptr;
     bool changed = false;
     for (auto& row : padRows_) {
         int padIndex = row.noteNumber - baseNote_;
@@ -2423,10 +2633,17 @@ void DrumGridClipContent::refreshPadRowNames() {
         bool newHasChain = false;
         if (drumGrid_)
             newHasChain = (drumGrid_->getChainForNote(row.noteNumber) != nullptr);
+        juce::String newRole;
+        if (clip != nullptr) {
+            auto it = clip->drumRowMeta.find(row.noteNumber);
+            if (it != clip->drumRowMeta.end())
+                newRole = it->second.role;
+        }
 
-        if (row.name != newName || row.hasChain != newHasChain) {
+        if (row.name != newName || row.hasChain != newHasChain || row.role != newRole) {
             row.name = newName;
             row.hasChain = newHasChain;
+            row.role = newRole;
             changed = true;
         }
     }
@@ -2437,6 +2654,175 @@ void DrumGridClipContent::refreshPadRowNames() {
 
 void DrumGridClipContent::timerCallback() {
     refreshPadRowNames();
+}
+
+void DrumGridClipContent::setLabelWidth(int newWidth) {
+    int clamped = juce::jlimit(MIN_LABEL_WIDTH, MAX_LABEL_WIDTH, newWidth);
+    if (clamped == labelWidth_)
+        return;
+    labelWidth_ = clamped;
+    resized();
+    repaint();
+}
+
+void DrumGridClipContent::applyTemplateToClip(
+    const daw::audio::drum_grid_templates::Template& templ) {
+    if (editingClipId_ == magda::INVALID_CLIP_ID || templ.numRows <= 0 || templ.rows == nullptr)
+        return;
+    // Stamp template entries onto the lowest N rows in MIDI-note ascending
+    // order (kick → lowest note → bottom row in the editor).
+    int applied = 0;
+    for (int padIndex = 0; padIndex < numPads_ && applied < templ.numRows; ++padIndex) {
+        int noteNumber = baseNote_ + padIndex;
+        const auto& row = templ.rows[applied];
+        magda::ClipManager::getInstance().setClipDrumRowLabel(editingClipId_, noteNumber,
+                                                              juce::String(row.label));
+        magda::ClipManager::getInstance().setClipDrumRowRole(editingClipId_, noteNumber,
+                                                             juce::String(row.role));
+        ++applied;
+    }
+    refreshPadRowNames();
+}
+
+void DrumGridClipContent::applyDrumkitToClip(const juce::String& drumkitName) {
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+    auto rows = magda::DrumkitManager::getInstance().loadDrumkit(drumkitName);
+    if (rows.empty())
+        return;
+    auto& cm = magda::ClipManager::getInstance();
+    for (const auto& r : rows) {
+        cm.setClipDrumRowLabel(editingClipId_, r.noteNumber, r.label);
+        cm.setClipDrumRowRole(editingClipId_, r.noteNumber, r.role);
+    }
+    refreshPadRowNames();
+}
+
+void DrumGridClipContent::promptSaveDrumkit() {
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (clip == nullptr || clip->drumRowMeta.empty())
+        return;  // nothing to save
+
+    auto window = std::make_shared<juce::AlertWindow>(
+        "Save Drumkit", "Name for this drumkit:", juce::MessageBoxIconType::NoIcon);
+    window->addTextEditor("name", "My Drumkit");
+    window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<DrumGridClipContent> safeThis(this);
+    window->enterModalState(
+        true, juce::ModalCallbackFunction::create([safeThis, window](int result) mutable {
+            if (result != 1 || safeThis == nullptr) {
+                window.reset();
+                return;
+            }
+            auto name = window->getTextEditorContents("name").trim();
+            window.reset();
+            if (name.isEmpty() || safeThis->editingClipId_ == magda::INVALID_CLIP_ID)
+                return;
+            const auto* clipNow =
+                magda::ClipManager::getInstance().getClip(safeThis->editingClipId_);
+            if (clipNow == nullptr)
+                return;
+            std::vector<magda::DrumkitManager::Row> rows;
+            rows.reserve(clipNow->drumRowMeta.size());
+            for (const auto& [note, meta] : clipNow->drumRowMeta) {
+                magda::DrumkitManager::Row r;
+                r.noteNumber = note;
+                r.label = meta.label;
+                r.role = meta.role;
+                rows.push_back(std::move(r));
+            }
+            magda::DrumkitManager::getInstance().saveDrumkit(name, rows);
+        }),
+        true);
+}
+
+void DrumGridClipContent::showRowContextMenu(int noteNumber, juce::Point<int> screenPos) {
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+
+    juce::PopupMenu menu;
+
+    // "Set instrument" submenu (full role vocabulary + None at the top)
+    juce::PopupMenu instrumentMenu;
+    juce::String currentRole;
+    if (const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_)) {
+        auto it = clip->drumRowMeta.find(noteNumber);
+        if (it != clip->drumRowMeta.end())
+            currentRole = it->second.role;
+    }
+
+    instrumentMenu.addItem(1, "None", true, currentRole.isEmpty());
+    instrumentMenu.addSeparator();
+    int instrumentItemId = 100;
+    std::vector<juce::String> roleIds;
+    roleIds.reserve(daw::audio::drum_grid_roles::kRoles.size());
+    for (const auto& r : daw::audio::drum_grid_roles::kRoles) {
+        instrumentMenu.addItem(instrumentItemId++, juce::String(r.displayLabel), true,
+                               currentRole == r.id);
+        roleIds.emplace_back(r.id);
+    }
+    menu.addSubMenu("Set instrument", instrumentMenu);
+
+    menu.addItem(2, "Rename label...");
+    menu.addItem(3, "Clear label", true, false);
+    menu.addItem(4, "Clear role", true, !currentRole.isEmpty());
+
+    juce::PopupMenu templateMenu;
+    int templateItemId = 500;
+    for (const auto& t : daw::audio::drum_grid_templates::kBuiltIn)
+        templateMenu.addItem(templateItemId++, juce::String(t.name));
+
+    auto savedDrumkits = magda::DrumkitManager::getInstance().listDrumkits();
+    if (!savedDrumkits.empty()) {
+        templateMenu.addSeparator();
+        int drumkitItemId = 700;
+        for (const auto& kit : savedDrumkits)
+            templateMenu.addItem(drumkitItemId++, kit.name);
+    }
+    menu.addSubMenu("Apply template", templateMenu);
+
+    menu.addSeparator();
+    menu.addItem(5, "Save as drumkit...");
+
+    std::vector<juce::String> savedDrumkitNames;
+    savedDrumkitNames.reserve(savedDrumkits.size());
+    for (const auto& kit : savedDrumkits)
+        savedDrumkitNames.push_back(kit.name);
+
+    auto rect = juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetScreenArea(rect),
+        [this, noteNumber, roleIds, savedDrumkitNames](int result) {
+            constexpr int numBuiltIn =
+                static_cast<int>(daw::audio::drum_grid_templates::kBuiltIn.size());
+            if (result == 0)
+                return;
+            auto& cm = magda::ClipManager::getInstance();
+            if (result == 1) {
+                cm.setClipDrumRowRole(editingClipId_, noteNumber, juce::String());
+            } else if (result == 2) {
+                if (rowLabels_)
+                    rowLabels_->startRenameRow(noteNumber);
+            } else if (result == 3) {
+                cm.setClipDrumRowLabel(editingClipId_, noteNumber, juce::String());
+            } else if (result == 4) {
+                cm.setClipDrumRowRole(editingClipId_, noteNumber, juce::String());
+            } else if (result == 5) {
+                promptSaveDrumkit();
+            } else if (result >= 100 && result < 100 + static_cast<int>(roleIds.size())) {
+                cm.setClipDrumRowRole(editingClipId_, noteNumber,
+                                      roleIds[static_cast<size_t>(result - 100)]);
+            } else if (result >= 500 && result < 500 + numBuiltIn) {
+                applyTemplateToClip(
+                    daw::audio::drum_grid_templates::kBuiltIn[static_cast<size_t>(result - 500)]);
+            } else if (result >= 700 && result < 700 + static_cast<int>(savedDrumkitNames.size())) {
+                applyDrumkitToClip(savedDrumkitNames[static_cast<size_t>(result - 700)]);
+            }
+        });
 }
 
 }  // namespace magda::daw::ui
