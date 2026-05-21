@@ -1348,6 +1348,9 @@ void MediaExplorerContent::mouseDrag(const juce::MouseEvent& e) {
         auto* obj = new juce::DynamicObject();
         obj->setProperty("type", juce::var("files"));
         obj->setProperty("paths", juce::var(pathArray));
+        // Wrap immediately so the DynamicObject is owned via ref-counting and
+        // cleans up if findParentDragContainerFor returns null below.
+        juce::var description(obj);
 
         // Build a compact drag image showing the file names instead of
         // letting JUCE auto-snapshot the entire browser panel.
@@ -1376,7 +1379,7 @@ void MediaExplorerContent::mouseDrag(const juce::MouseEvent& e) {
         }
 
         if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this))
-            container->startDragging(juce::var(obj), this, juce::ScaledImage(dragImg));
+            container->startDragging(description, this, juce::ScaledImage(dragImg));
 
         // startDragging is non-blocking, so reset state immediately — the drag
         // runs under JUCE's modal drag-image controller and the original
