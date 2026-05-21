@@ -1334,11 +1334,61 @@ void MediaExplorerContent::mouseDrag(const juce::MouseEvent& e) {
         paths.add(fileForDrag_.getFullPathName());
 
     if (!paths.isEmpty()) {
-        juce::DragAndDropContainer::performExternalDragDropOfFiles(paths, false, this);
+#if JUCE_LINUX
+        // JUCE has no Wayland DnD, and even on X11 external DnD is unreliable
+        // from the same app to itself, so drops into the arrangement silently
+        // fail. Use JUCE-internal DnD instead — TrackContentPanel::itemDropped
+        // recognises the {type:"files",paths} payload and runs the same import
+        // logic as the OS file-drop path. Tradeoff: dragging out of MAGDA into
+        // another app is not possible via this route.
+        juce::Array<juce::var> pathArray;
+        for (const auto& p : paths)
+            pathArray.add(p);
 
-        // The ListBox collapsed the visual selection to the clicked row when
-        // the drag started. Restore the sticky multi-selection now that the
-        // external drag has finished so the user keeps their selection.
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("type", juce::var("files"));
+        obj->setProperty("paths", juce::var(pathArray));
+        // Wrap immediately so the DynamicObject is owned via ref-counting and
+        // cleans up if findParentDragContainerFor returns null below.
+        juce::var description(obj);
+
+        // Build a compact drag image showing the file names instead of
+        // letting JUCE auto-snapshot the entire browser panel.
+        const int rowH = 18;
+        const int maxRows = juce::jmin(paths.size(), 5);
+        const int hasMore = (paths.size() > maxRows) ? 1 : 0;
+        const int width = 240;
+        const int height = (maxRows + hasMore) * rowH + 6;
+
+        juce::Image dragImg(juce::Image::ARGB, width, height, true);
+        {
+            juce::Graphics g(dragImg);
+            g.setColour(juce::Colours::black.withAlpha(0.78f));
+            g.fillRoundedRectangle(0.0f, 0.0f, (float)width, (float)height, 4.0f);
+            g.setColour(juce::Colours::white);
+            g.setFont(13.0f);
+            for (int i = 0; i < maxRows; ++i) {
+                g.drawText(juce::File(paths[i]).getFileName(), 8, 3 + i * rowH, width - 16,
+                           rowH, juce::Justification::centredLeft, true);
+            }
+            if (hasMore) {
+                g.drawText("+" + juce::String(paths.size() - maxRows) + " more", 8,
+                           3 + maxRows * rowH, width - 16, rowH,
+                           juce::Justification::centredLeft, true);
+            }
+        }
+
+        if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this))
+            container->startDragging(description, this, juce::ScaledImage(dragImg));
+
+        // startDragging is non-blocking, so reset state immediately — the drag
+        // runs under JUCE's modal drag-image controller and the original
+        // component will not receive mouseUp.
+        isDraggingFile_ = false;
+#else
+        juce::DragAndDropContainer::performExternalDragDropOfFiles(paths, false, this);
+#endif
+
         if (stickyRowSelection_.size() >= 2 && listComp != nullptr)
             listComp->setSelectedRows(stickyRowSelection_);
     }

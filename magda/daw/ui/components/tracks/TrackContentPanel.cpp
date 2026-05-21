@@ -2758,6 +2758,23 @@ bool TrackContentPanel::isInterestedInFileDrag(const juce::StringArray& files) {
 }
 
 void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int y) {
+    beginFilesDropFeedback(files, x, y);
+}
+
+void TrackContentPanel::fileDragMove(const juce::StringArray& /*files*/, int x, int y) {
+    updateFilesDropFeedback(x, y);
+}
+
+void TrackContentPanel::fileDragExit(const juce::StringArray& /*files*/) {
+    endFilesDropFeedback();
+}
+
+void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int y) {
+    endFilesDropFeedback();
+    importFilesAtPosition(files, x, y);
+}
+
+void TrackContentPanel::beginFilesDropFeedback(const juce::StringArray& files, int x, int y) {
     dropInsertTime_ = juce::jmax(0.0, pixelToTime(x));
     if (snapTimeToGrid) {
         dropInsertTime_ = snapTimeToGrid(dropInsertTime_);
@@ -2801,7 +2818,7 @@ void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int
     repaintVisible();
 }
 
-void TrackContentPanel::fileDragMove(const juce::StringArray& /*files*/, int x, int y) {
+void TrackContentPanel::updateFilesDropFeedback(int x, int y) {
     dropInsertTime_ = juce::jmax(0.0, pixelToTime(x));
     if (snapTimeToGrid) {
         dropInsertTime_ = snapTimeToGrid(dropInsertTime_);
@@ -2809,7 +2826,6 @@ void TrackContentPanel::fileDragMove(const juce::StringArray& /*files*/, int x, 
     const int prevTarget = dropTargetTrackIndex_;
     dropTargetTrackIndex_ = getTrackIndexAtY(y);
 
-    // Update ghost headers when we cross the empty-area / existing-track boundary.
     if (onGhostHeadersChanged && (prevTarget < 0) != (dropTargetTrackIndex_ < 0)) {
         juce::StringArray labels;
         if (dropTargetTrackIndex_ < 0) {
@@ -2822,7 +2838,7 @@ void TrackContentPanel::fileDragMove(const juce::StringArray& /*files*/, int x, 
     repaintVisible();
 }
 
-void TrackContentPanel::fileDragExit(const juce::StringArray& /*files*/) {
+void TrackContentPanel::endFilesDropFeedback() {
     showDropIndicator_ = false;
     draggedAudioFiles_.clear();
     draggedAudioDurations_.clear();
@@ -2831,14 +2847,20 @@ void TrackContentPanel::fileDragExit(const juce::StringArray& /*files*/) {
     repaintVisible();
 }
 
-void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int y) {
-    showDropIndicator_ = false;
-    draggedAudioFiles_.clear();
-    draggedAudioDurations_.clear();
-    if (onGhostHeadersChanged)
-        onGhostHeadersChanged({});
-    repaintVisible();
+juce::StringArray TrackContentPanel::extractFilePathsFromDescription(const juce::var& description) {
+    juce::StringArray paths;
+    if (auto* obj = description.getDynamicObject()) {
+        if (obj->getProperty("type").toString() == "files") {
+            if (auto* arr = obj->getProperty("paths").getArray()) {
+                for (const auto& v : *arr)
+                    paths.add(v.toString());
+            }
+        }
+    }
+    return paths;
+}
 
+void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, int x, int y) {
     // Determine drop position (clamp to timeline start, snap if enabled)
     double dropTime = juce::jmax(0.0, pixelToTime(x));
     if (snapTimeToGrid) {
@@ -3137,36 +3159,75 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
 }
 
 // =============================================================================
-// Plugin Drag-and-Drop Implementation (DragAndDropTarget)
+// Internal Drag-and-Drop Implementation (DragAndDropTarget)
+//
+// Two payload types are accepted via details.description (a DynamicObject):
+//   type="plugin": dropped from the plugin browser → create track with device
+//   type="files", paths=[...]: dropped from the in-app media browser →
+//       same import flow as the OS file-drop path. This route exists because
+//       JUCE's external file DnD does not work on Linux/Wayland.
 // =============================================================================
 
+namespace {
+juce::String dragType(const juce::DragAndDropTarget::SourceDetails& details) {
+    if (auto* obj = details.description.getDynamicObject())
+        return obj->getProperty("type").toString();
+    return {};
+}
+}  // namespace
+
 bool TrackContentPanel::isInterestedInDragSource(const SourceDetails& details) {
-    if (auto* obj = details.description.getDynamicObject()) {
-        return obj->getProperty("type").toString() == "plugin";
-    }
+    const auto type = dragType(details);
+    if (type == "plugin")
+        return true;
+    if (type == "files")
+        return isInterestedInFileDrag(extractFilePathsFromDescription(details.description));
     return false;
 }
 
 void TrackContentPanel::itemDragEnter(const SourceDetails& details) {
+    if (dragType(details) == "files") {
+        beginFilesDropFeedback(extractFilePathsFromDescription(details.description),
+                               details.localPosition.x, details.localPosition.y);
+        return;
+    }
+
     showPluginDropOverlay_ = true;
     pluginDropTrackIndex_ = getTrackIndexAtY(details.localPosition.y);
     repaintVisible();
 }
 
 void TrackContentPanel::itemDragMove(const SourceDetails& details) {
+    if (dragType(details) == "files") {
+        updateFilesDropFeedback(details.localPosition.x, details.localPosition.y);
+        return;
+    }
+
     int prev = pluginDropTrackIndex_;
     pluginDropTrackIndex_ = getTrackIndexAtY(details.localPosition.y);
     if (pluginDropTrackIndex_ != prev)
         repaintVisible();
 }
 
-void TrackContentPanel::itemDragExit(const SourceDetails& /*details*/) {
+void TrackContentPanel::itemDragExit(const SourceDetails& details) {
+    if (dragType(details) == "files") {
+        endFilesDropFeedback();
+        return;
+    }
+
     showPluginDropOverlay_ = false;
     pluginDropTrackIndex_ = -1;
     repaintVisible();
 }
 
 void TrackContentPanel::itemDropped(const SourceDetails& details) {
+    if (dragType(details) == "files") {
+        endFilesDropFeedback();
+        importFilesAtPosition(extractFilePathsFromDescription(details.description),
+                              details.localPosition.x, details.localPosition.y);
+        return;
+    }
+
     showPluginDropOverlay_ = false;
     pluginDropTrackIndex_ = -1;
     repaintVisible();

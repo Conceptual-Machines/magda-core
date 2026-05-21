@@ -425,6 +425,16 @@ class TrackContentPanel : public juce::Component,
     juce::StringArray draggedAudioFiles_;        // Audio files currently being dragged over
     std::vector<double> draggedAudioDurations_;  // Parallel to draggedAudioFiles_
 
+    // Drop-feedback / import helpers shared by the OS file-drop path
+    // (FileDragAndDropTarget) and the in-app drop path (DragAndDropTarget with
+    // {type:"files", paths:[...]}). The in-app path exists because JUCE's
+    // OS-level DnD does not work on Linux/Wayland.
+    void beginFilesDropFeedback(const juce::StringArray& files, int x, int y);
+    void updateFilesDropFeedback(int x, int y);
+    void endFilesDropFeedback();
+    void importFilesAtPosition(const juce::StringArray& files, int x, int y);
+    static juce::StringArray extractFilePathsFromDescription(const juce::var& description);
+
     // Group track extent cache — avoids walking all descendants every paint
     struct GroupExtent {
         double earliest = 0.0;
