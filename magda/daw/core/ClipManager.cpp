@@ -1,5 +1,7 @@
 #include "ClipManager.hpp"
 
+#include <juce_events/juce_events.h>
+
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
@@ -80,6 +82,107 @@ juce::File midiLibraryFileForClip(const ClipInfo& clip, const juce::File& midiDi
     }
     return midiDir.getNonexistentChildFile(safeName + "_" + juce::String(clip.id), ".mid");
 }
+
+juce::File externalEditFileForClip(const ClipInfo& clip, const juce::File& editsDir,
+                                   const juce::File& sourceFile) {
+    auto safeName = juce::File::createLegalFileName(clip.name);
+    if (safeName.isEmpty()) {
+        safeName = sourceFile.getFileNameWithoutExtension();
+    }
+    if (safeName.isEmpty()) {
+        safeName = "audio_clip";
+    }
+    return editsDir.getNonexistentChildFile(safeName, sourceFile.getFileExtension(), false);
+}
+
+bool isLaunchableExternalAudioEditor(const juce::File& editor) {
+#if JUCE_MAC
+    if (editor.isBundle()) {
+        return true;
+    }
+#endif
+    return editor.existsAsFile();
+}
+
+bool launchExternalAudioEditor(const juce::File& editor, const juce::File& editFile) {
+    juce::StringArray args;
+
+#if JUCE_MAC
+    if (editor.isBundle()) {
+        args.add("/usr/bin/open");
+        args.add("-n");
+        args.add("-a");
+        args.add(editor.getFullPathName());
+        args.add(editFile.getFullPathName());
+    } else
+#endif
+    {
+        args.add(editor.getFullPathName());
+        args.add(editFile.getFullPathName());
+    }
+
+    juce::ChildProcess process;
+    return process.start(args, 0);
+}
+
+class ExternalEditPoller : private juce::Timer {
+  public:
+    static ExternalEditPoller& getInstance() {
+        static ExternalEditPoller poller;
+        return poller;
+    }
+
+    void watch(ClipId clipId, const juce::File& file) {
+        if (!file.existsAsFile()) {
+            return;
+        }
+
+        const auto path = file.getFullPathName();
+        const auto mtime = file.getLastModificationTime();
+        for (auto& item : watched_) {
+            if (item.path == path) {
+                item.clipId = clipId;
+                item.lastModified = mtime;
+                return;
+            }
+        }
+
+        watched_.push_back({clipId, path, mtime});
+        startTimer(1000);
+    }
+
+  private:
+    struct WatchedFile {
+        ClipId clipId = INVALID_CLIP_ID;
+        juce::String path;
+        juce::Time lastModified;
+    };
+
+    void timerCallback() override {
+        for (auto it = watched_.begin(); it != watched_.end();) {
+            juce::File file(it->path);
+            if (!file.existsAsFile()) {
+                it = watched_.erase(it);
+                continue;
+            }
+
+            const auto currentModified = file.getLastModificationTime();
+            if (currentModified != it->lastModified) {
+                it->lastModified = currentModified;
+                AudioThumbnailManager::getInstance().invalidateFile(it->path);
+                ClipManager::getInstance().forceNotifyClipPropertyChanged(it->clipId);
+                ProjectManager::getInstance().markDirty();
+            }
+            ++it;
+        }
+
+        if (watched_.empty()) {
+            stopTimer();
+        }
+    }
+
+    std::vector<WatchedFile> watched_;
+};
 
 }  // namespace
 
@@ -365,6 +468,63 @@ void ClipManager::forceNotifyMultipleClipPropertiesChanged(const std::vector<Cli
             listener->clipPropertiesChanged(clipIds);
         }
     }
+}
+
+bool ClipManager::editAudioClipSourceInExternalEditor(ClipId clipId, juce::String& errorMessage) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr || !clip->isAudio()) {
+        errorMessage = "Select an audio clip first.";
+        return false;
+    }
+
+    const auto editorPath = juce::String(Config::getInstance().getExternalAudioEditorPath());
+    if (editorPath.isEmpty()) {
+        errorMessage = "Choose an external audio editor in Preferences > Media Library first.";
+        return false;
+    }
+
+    juce::File editor(editorPath);
+    if (!editor.exists()) {
+        errorMessage = "The configured external audio editor could not be found.";
+        return false;
+    }
+    if (!isLaunchableExternalAudioEditor(editor)) {
+        errorMessage = "Choose the editor application or executable, not its containing folder.";
+        return false;
+    }
+
+    const juce::File sourceFile(clip->audio().source.filePath);
+    if (!sourceFile.existsAsFile()) {
+        errorMessage = "The clip source file could not be found.";
+        return false;
+    }
+
+    auto editsDir = ProjectManager::getInstance().getExternalEditsDirectory();
+    if (editsDir == juce::File() || !editsDir.createDirectory()) {
+        errorMessage = "Could not create the project external-edits folder.";
+        return false;
+    }
+
+    const auto editFile = externalEditFileForClip(*clip, editsDir, sourceFile);
+    if (!sourceFile.copyFileTo(editFile) || !editFile.existsAsFile()) {
+        errorMessage = "Could not copy the clip source into the project external-edits folder.";
+        return false;
+    }
+
+    if (!launchExternalAudioEditor(editor, editFile)) {
+        editFile.deleteFile();
+        errorMessage = "Could not launch the configured external audio editor.";
+        return false;
+    }
+
+    const auto oldPath = clip->audio().source.filePath;
+    clip->audio().source.filePath = editFile.getFullPathName();
+    AudioThumbnailManager::getInstance().invalidateFile(oldPath);
+    AudioThumbnailManager::getInstance().invalidateFile(clip->audio().source.filePath);
+    notifyClipPropertyChanged(clipId);
+    ProjectManager::getInstance().markDirty();
+    ExternalEditPoller::getInstance().watch(clipId, editFile);
+    return true;
 }
 
 ClipId ClipManager::duplicateClip(ClipId clipId) {

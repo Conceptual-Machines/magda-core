@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -22,6 +23,7 @@ class LlamaModelManager {
     bool loadModel(const Config& config);
     void unloadModel();
     bool isLoaded() const;
+    bool isLoading() const noexcept;
     std::string getLoadedModelPath() const;
 
     struct InferenceRequest {
@@ -52,6 +54,7 @@ class LlamaModelManager {
     std::string applyTemplate(const std::string& systemPrompt, const std::string& userMessage);
 
     mutable std::mutex mutex_;
+    std::atomic<bool> loading_{false};
     llama_model* model_ = nullptr;
     llama_context* ctx_ = nullptr;
     std::string loadedPath_;
