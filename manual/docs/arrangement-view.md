@@ -43,8 +43,9 @@ The corner toolbar provides quick access to:
 
 - **Move** — Click and drag a clip along the timeline or between tracks
 - **Resize** — Drag the edges of a clip to trim it
-- **Select** — Click a clip to select it; ++ctrl+a++ (++cmd+a++) to select all
+- **Select** — Click a clip to select it; ++cmd++-click (++ctrl++-click on Windows/Linux) to toggle clips in the selection; ++ctrl+a++ (++cmd+a++) to select all
 - **Delete** — Select a clip and press ++delete++ or ++backspace++
+- **Erase** — ++shift+ctrl++-click a clip to delete it directly without selecting first
 - **Duplicate** — ++ctrl+d++ (++cmd+d++) to duplicate selected clips
 
 Drag audio files from the [Media Explorer](panels/browsers.md) directly onto a track to import them as clips.

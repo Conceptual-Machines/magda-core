@@ -26,6 +26,13 @@
 | ++ctrl+b++ / ++cmd+b++ | Render clip to audio |
 | ++ctrl+shift+b++ / ++cmd+shift+b++ | Render time selection |
 
+## Mouse Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| ++cmd++ + click (++ctrl++ + click on Windows/Linux) | Toggle arrangement clip selection |
+| ++shift+ctrl++ + click | Erase arrangement clip under cursor |
+
 ## Tracks
 
 | Shortcut | Action |

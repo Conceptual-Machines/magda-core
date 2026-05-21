@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <unordered_set>
@@ -61,6 +62,24 @@ static BeatPosition secondsToBeatPosition(double seconds, double bpm = 120.0) {
 static BeatDuration secondsToBeatDuration(double seconds, double bpm = 120.0) {
     return BeatDuration{seconds * bpm / 60.0};
 }
+
+struct RecordingClipListener : ClipManagerListener {
+    int clipsChangedCount = 0;
+    std::vector<ClipId> propertyChangedClipIds;
+
+    void clipsChanged() override {
+        ++clipsChangedCount;
+    }
+
+    void clipPropertyChanged(ClipId clipId) override {
+        propertyChangedClipIds.push_back(clipId);
+    }
+
+    bool sawPropertyChangeFor(ClipId clipId) const {
+        return std::find(propertyChangedClipIds.begin(), propertyChangedClipIds.end(), clipId) !=
+               propertyChangedClipIds.end();
+    }
+};
 
 // ============================================================================
 // DuplicateClipCommand
@@ -476,6 +495,51 @@ TEST_CASE("JoinClipsCommand - basic MIDI join", "[clip][command][join]") {
         REQUIRE(joined->midiNotes[1].startBeat == Catch::Approx(2.0));
         REQUIRE(joined->midiNotes[2].startBeat == Catch::Approx(4.0));
         REQUIRE(joined->midiNotes[3].startBeat == Catch::Approx(5.0));
+    }
+
+    SECTION("Join looped MIDI clips flattens the joined result") {
+        ClipId left = createMidi(track, 0.0, 2.0, {0.0});
+        ClipId right = createMidi(track, 2.0, 2.0, {0.0});
+
+        auto& cm = ClipManager::getInstance();
+        auto* leftClip = cm.getClip(left);
+        REQUIRE(leftClip != nullptr);
+        leftClip->loopEnabled = true;
+        leftClip->loopLengthBeats = leftClip->placement.lengthBeats;
+        leftClip->loopLength = leftClip->getTimelineLength(120.0);
+
+        JoinClipsCommand cmd(left, right);
+        REQUIRE(cmd.canExecute());
+        cmd.execute();
+
+        auto* joined = cm.getClip(left);
+        REQUIRE(joined != nullptr);
+        REQUIRE(joined->lengthBeats == Catch::Approx(8.0));
+        REQUIRE_FALSE(joined->loopEnabled);
+        REQUIRE(joined->loopLengthBeats == Catch::Approx(0.0));
+        REQUIRE(joined->loopLength == Catch::Approx(0.0));
+        REQUIRE(joined->midiOffset == Catch::Approx(0.0));
+        REQUIRE(joined->midiTrimOffset == Catch::Approx(0.0));
+        REQUIRE(joined->midiNotes.size() == 2);
+        REQUIRE(joined->midiNotes[0].startBeat == Catch::Approx(0.0));
+        REQUIRE(joined->midiNotes[1].startBeat == Catch::Approx(4.0));
+    }
+
+    SECTION("Join notifies that the left MIDI clip changed") {
+        ClipId left = createMidi(track, 0.0, 2.0, {0.0});
+        ClipId right = createMidi(track, 2.0, 2.0, {0.0});
+
+        RecordingClipListener listener;
+        ClipManager::getInstance().addListener(&listener);
+
+        JoinClipsCommand cmd(left, right);
+        REQUIRE(cmd.canExecute());
+        cmd.execute();
+
+        ClipManager::getInstance().removeListener(&listener);
+
+        REQUIRE(listener.clipsChangedCount > 0);
+        REQUIRE(listener.sawPropertyChangeFor(left));
     }
 
     SECTION("Join three clips sequentially") {
