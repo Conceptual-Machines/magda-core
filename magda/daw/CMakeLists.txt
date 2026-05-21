@@ -566,6 +566,25 @@ else()
     )
 endif()
 
+# Copy resources/drumkits/ (stock .mdgk drumkit templates) into the app so
+# DrumkitManager can seed the user's Drumkits folder on first launch.
+set(MAGDA_DRUMKITS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../resources/drumkits")
+if(APPLE)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_DRUMKITS_SRC}"
+            "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Resources/drumkits"
+        COMMENT "Copying stock drumkits to app bundle Resources"
+    )
+else()
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_DRUMKITS_SRC}"
+            "$<TARGET_FILE_DIR:magda_daw_app>/drumkits"
+        COMMENT "Copying stock drumkits alongside app executable"
+    )
+endif()
+
 # Copy faustlibraries (stdfaust.lib + dependencies) into the app so libfaust's
 # `import("stdfaust.lib")` resolves at runtime. FaustPlugin passes this dir as
 # `-I` argv to the interpreter compiler. Submodule path: third_party/faust/libraries.
