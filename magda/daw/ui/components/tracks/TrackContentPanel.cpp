@@ -1022,8 +1022,8 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             }
         }
         if (!onClip) {
-            // Clicked empty space in upper zone - deselect clips (unless Cmd held)
-            if (!event.mods.isCommandDown()) {
+            // Clicked empty space in upper zone - deselect clips unless multi-select modifier held.
+            if (!event.mods.isCommandDown() && !event.mods.isCtrlDown()) {
                 SelectionManager::getInstance().clearSelection();
             }
         }

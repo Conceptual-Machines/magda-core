@@ -237,7 +237,7 @@ void ClipComponent::timerCallback() {
     if (mouseIsOver_) {
         const auto mods = juce::ModifierKeys::currentModifiers;
         updateCursor(mods.isAltDown(), mods.isShiftDown(),
-                     mods.isCommandDown() || mods.isCtrlDown());
+                     mods.isShiftDown() && (mods.isCommandDown() || mods.isCtrlDown()));
         startTimer(50);
     } else {
         stopTimer();
@@ -1010,8 +1010,8 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
 
     // Frozen tracks: allow selection (so piano roll shows content) but block editing
     if (isFrozen && !e.mods.isPopupMenu()) {
-        // Still allow click-to-select and Cmd+click toggle
-        if (e.mods.isCommandDown()) {
+        // Still allow click-to-select and modifier-click toggle
+        if (e.mods.isCommandDown() || e.mods.isCtrlDown()) {
             selectionManager.toggleClipSelection(clipId_);
         } else {
             selectionManager.selectClip(clipId_);
@@ -1023,9 +1023,13 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Cmd/Ctrl-click acts as an eraser for the clip under the cursor. If the
+    const bool isSelectionModifierDown = e.mods.isCommandDown() || e.mods.isCtrlDown();
+    const bool isEraseClick =
+        e.mods.isLeftButtonDown() && e.mods.isShiftDown() && isSelectionModifierDown;
+
+    // Shift+Cmd/Ctrl-click acts as an eraser for the clip under the cursor. If the
     // clicked clip is part of a multi-selection, erase the selected group.
-    if (e.mods.isLeftButtonDown() && (e.mods.isCommandDown() || e.mods.isCtrlDown())) {
+    if (isEraseClick) {
         std::vector<ClipId> clipIds;
         const auto& selected = selectionManager.getSelectedClips();
         if (selected.count(clipId_) && selected.size() > 1) {
@@ -1048,6 +1052,22 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
 
             SelectionManager::getInstance().clearSelection();
         });
+        return;
+    }
+
+    // Cmd/Ctrl-click toggles clip selection without starting a drag.
+    if (e.mods.isLeftButtonDown() && isSelectionModifierDown) {
+        selectionManager.toggleClipSelection(clipId_);
+        isSelected_ = selectionManager.isClipSelected(clipId_);
+
+        if (isSelected_) {
+            ensureEditorOpen(clipId_);
+            if (onClipSelected)
+                onClipSelected(clipId_);
+        }
+
+        dragMode_ = DragMode::None;
+        repaint();
         return;
     }
 
@@ -2199,7 +2219,7 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
 
     // Always update cursor to check modifier-driven tools.
     updateCursor(e.mods.isAltDown(), e.mods.isShiftDown(),
-                 e.mods.isCommandDown() || e.mods.isCtrlDown());
+                 e.mods.isShiftDown() && (e.mods.isCommandDown() || e.mods.isCtrlDown()));
 
     if (hoverLeftEdge_ != wasHoverLeft || hoverRightEdge_ != wasHoverRight ||
         hoverFadeIn_ != wasHoverFadeIn || hoverFadeOut_ != wasHoverFadeOut ||
@@ -2212,7 +2232,7 @@ void ClipComponent::mouseEnter(const juce::MouseEvent& e) {
     mouseIsOver_ = true;
     startTimer(50);
     updateCursor(e.mods.isAltDown(), e.mods.isShiftDown(),
-                 e.mods.isCommandDown() || e.mods.isCtrlDown());
+                 e.mods.isShiftDown() && (e.mods.isCommandDown() || e.mods.isCtrlDown()));
 }
 
 void ClipComponent::mouseExit(const juce::MouseEvent& /*e*/) {
