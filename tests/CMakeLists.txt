@@ -52,6 +52,7 @@ set(TEST_SOURCES
     test_dsl_add_arpeggio.cpp
     test_scale_detection.cpp
     test_step_clock.cpp
+    test_string_table.cpp
     test_mono_note_processor.cpp
     test_sends_and_track_deletion.cpp
     test_master_track_serialization.cpp
