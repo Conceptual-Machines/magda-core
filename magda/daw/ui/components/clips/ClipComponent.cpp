@@ -42,6 +42,9 @@ double timelineEndSeconds(const ClipInfo& clip, double bpm) {
     return clip.getTimelineEnd(bpm);
 }
 
+constexpr int MIDI_PREVIEW_MIN_NOTE = 21;   // A0
+constexpr int MIDI_PREVIEW_MAX_NOTE = 108;  // C8
+
 }  // namespace
 
 static float computeFadeGain(float alpha, FadeCurve curve) {
@@ -236,8 +239,7 @@ size_t ClipComponent::computeWaveformHash(const ClipInfo& clip) {
 void ClipComponent::timerCallback() {
     if (mouseIsOver_) {
         const auto mods = juce::ModifierKeys::currentModifiers;
-        updateCursor(mods.isAltDown(), mods.isShiftDown(),
-                     mods.isShiftDown() && (mods.isCommandDown() || mods.isCtrlDown()));
+        updateCursor(mods.isAltDown(), mods.isShiftDown(), mods.isShiftDown() && mods.isCtrlDown());
         startTimer(50);
     } else {
         stopTimer();
@@ -602,24 +604,20 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
         return displayEnd > 0.0 && displayStart < clipLengthInBeats;
     };
 
-    int minNote = 127, maxNote = 0;
     bool hasVisibleNote = false;
     for (const auto& note : clip.midiNotes) {
         if (!noteCanDisplay(note))
             continue;
 
-        minNote = juce::jmin(minNote, note.noteNumber);
-        maxNote = juce::jmax(maxNote, note.noteNumber);
         hasVisibleNote = true;
+        break;
     }
 
     if (!hasVisibleNote)
         return;
 
-    int rawRange = maxNote - minNote;
-    int padding = juce::jmax(6, rawRange / 4);
-    minNote = juce::jmax(0, minNote - padding);
-    maxNote = juce::jmin(127, maxNote + padding);
+    constexpr int minNote = MIDI_PREVIEW_MIN_NOTE;
+    constexpr int maxNote = MIDI_PREVIEW_MAX_NOTE;
     int noteRange = juce::jmax(12, maxNote - minNote);
     double beatRange = juce::jmax(1.0, clipLengthInBeats);
 
@@ -1008,10 +1006,14 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         }
     };
 
+    const bool isSelectionModifierDown = e.mods.isCommandDown();
+    const bool isModifiedSelectionClick = isSelectionModifierDown && !e.mods.isShiftDown();
+    const bool isEraseClick = e.mods.isShiftDown() && e.mods.isCtrlDown();
+
     // Frozen tracks: allow selection (so piano roll shows content) but block editing
-    if (isFrozen && !e.mods.isPopupMenu()) {
+    if (isFrozen && (!e.mods.isPopupMenu() || isModifiedSelectionClick)) {
         // Still allow click-to-select and modifier-click toggle
-        if (e.mods.isCommandDown() || e.mods.isCtrlDown()) {
+        if (isModifiedSelectionClick) {
             selectionManager.toggleClipSelection(clipId_);
         } else {
             selectionManager.selectClip(clipId_);
@@ -1023,11 +1025,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    const bool isSelectionModifierDown = e.mods.isCommandDown() || e.mods.isCtrlDown();
-    const bool isEraseClick =
-        e.mods.isLeftButtonDown() && e.mods.isShiftDown() && isSelectionModifierDown;
-
-    // Shift+Cmd/Ctrl-click acts as an eraser for the clip under the cursor. If the
+    // Shift+Ctrl-click acts as an eraser for the clip under the cursor. If the
     // clicked clip is part of a multi-selection, erase the selected group.
     if (isEraseClick) {
         std::vector<ClipId> clipIds;
@@ -1055,15 +1053,13 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Cmd/Ctrl-click toggles clip selection without starting a drag.
-    if (e.mods.isLeftButtonDown() && isSelectionModifierDown) {
+    // Cmd-click toggles clip selection without starting a drag.
+    if (isModifiedSelectionClick) {
         selectionManager.toggleClipSelection(clipId_);
         isSelected_ = selectionManager.isClipSelected(clipId_);
 
         if (isSelected_) {
             ensureEditorOpen(clipId_);
-            if (onClipSelected)
-                onClipSelected(clipId_);
         }
 
         dragMode_ = DragMode::None;
@@ -1765,7 +1761,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
 void ClipComponent::mouseUp(const juce::MouseEvent& e) {
     // Handle right-click for context menu
-    if (e.mods.isPopupMenu()) {
+    if (e.mods.isPopupMenu() && !(e.mods.isShiftDown() && e.mods.isCtrlDown())) {
         showContextMenu();
         return;
     }
@@ -2219,7 +2215,7 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
 
     // Always update cursor to check modifier-driven tools.
     updateCursor(e.mods.isAltDown(), e.mods.isShiftDown(),
-                 e.mods.isShiftDown() && (e.mods.isCommandDown() || e.mods.isCtrlDown()));
+                 e.mods.isShiftDown() && e.mods.isCtrlDown());
 
     if (hoverLeftEdge_ != wasHoverLeft || hoverRightEdge_ != wasHoverRight ||
         hoverFadeIn_ != wasHoverFadeIn || hoverFadeOut_ != wasHoverFadeOut ||
@@ -2232,7 +2228,7 @@ void ClipComponent::mouseEnter(const juce::MouseEvent& e) {
     mouseIsOver_ = true;
     startTimer(50);
     updateCursor(e.mods.isAltDown(), e.mods.isShiftDown(),
-                 e.mods.isShiftDown() && (e.mods.isCommandDown() || e.mods.isCtrlDown()));
+                 e.mods.isShiftDown() && e.mods.isCtrlDown());
 }
 
 void ClipComponent::mouseExit(const juce::MouseEvent& /*e*/) {
