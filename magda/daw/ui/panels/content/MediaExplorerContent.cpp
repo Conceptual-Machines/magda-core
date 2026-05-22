@@ -132,6 +132,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
             }
         }
 
+        updateStopIndexingButtonVisibility();
         repaint();
     }
 
@@ -161,13 +162,13 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
             return;
         }
         indexingStatus_ = text;
+        updateStopIndexingButtonVisibility();
         repaint();
     }
 
     void setIndexingActive(bool active) {
         indexingActive_ = active;
-        stopIndexingButton_.setVisible(active);
-        stopIndexingButton_.setEnabled(active);
+        updateStopIndexingButtonVisibility();
         resized();
         repaint();
     }
@@ -204,7 +205,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         // asked for scan progress to be visible whether they're on the
         // filesystem browser or the DB browser, and this panel is the one
         // shared place above the result lists.
-        if (indexingStatus_.isNotEmpty()) {
+        if (indexingStatus_.isNotEmpty() && !currentFile_.existsAsFile()) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
             g.setFont(FontManager::getInstance().getUIFont(11.0F));
             if (indexingActive_) {
@@ -254,6 +255,13 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
     }
 
   private:
+    void updateStopIndexingButtonVisibility() {
+        const bool showStop =
+            indexingActive_ && indexingStatus_.isNotEmpty() && !currentFile_.existsAsFile();
+        stopIndexingButton_.setVisible(showStop);
+        stopIndexingButton_.setEnabled(showStop);
+    }
+
     void detachThumbnailListener() {
         if (currentThumbnailPath_.isNotEmpty()) {
             magda::AudioThumbnailManager::getInstance().removeThumbnailChangeListener(
