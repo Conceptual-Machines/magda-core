@@ -1009,12 +1009,16 @@ void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {
         return;
 
     juce::PopupMenu menu;
-    menu.addItem(1, "Delete");
+    menu.addItem(1, "Analyze pad role");
+    menu.addSeparator();
+    menu.addItem(2, "Delete");
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
                            juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
                        [this, padIndex](int result) {
-                           if (result == 1 && onClearRequested)
+                           if (result == 1 && onAnalyzePadRoleRequested)
+                               onAnalyzePadRoleRequested(padIndex);
+                           else if (result == 2 && onClearRequested)
                                onClearRequested(padIndex);
                        });
 }
@@ -1023,12 +1027,17 @@ void DrumGridUI::showChainContextMenu(int padIndex, juce::Point<int> screenPos) 
     setSelectedPad(padIndex);
 
     juce::PopupMenu menu;
-    menu.addItem(1, "Delete");
+    const auto& info = padInfos_[static_cast<size_t>(padIndex)];
+    menu.addItem(1, "Analyze pad role", info.sampleName.isNotEmpty());
+    menu.addSeparator();
+    menu.addItem(2, "Delete");
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
                            juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
                        [this, padIndex](int result) {
-                           if (result == 1 && onClearRequested)
+                           if (result == 1 && onAnalyzePadRoleRequested)
+                               onAnalyzePadRoleRequested(padIndex);
+                           else if (result == 2 && onClearRequested)
                                onClearRequested(padIndex);
                        });
 }

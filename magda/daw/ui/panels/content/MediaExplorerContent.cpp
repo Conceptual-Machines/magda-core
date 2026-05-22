@@ -133,6 +133,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
             }
         }
 
+        updateStopIndexingButtonVisibility();
         repaint();
     }
 
@@ -162,13 +163,13 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
             return;
         }
         indexingStatus_ = text;
-        updateStopIndexingButton();
+        updateStopIndexingButtonVisibility();
         repaint();
     }
 
     void setIndexingActive(bool active) {
         indexingActive_ = active;
-        updateStopIndexingButton();
+        updateStopIndexingButtonVisibility();
         resized();
         repaint();
     }
@@ -205,9 +206,12 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         // asked for scan progress to be visible whether they're on the
         // filesystem browser or the DB browser, and this panel is the one
         // shared place above the result lists.
-        if (indexingStatus_.isNotEmpty()) {
+        if (indexingStatus_.isNotEmpty() && !currentFile_.existsAsFile()) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
             g.setFont(FontManager::getInstance().getUIFont(11.0F));
+            if (indexingActive_) {
+                bounds.removeFromRight(76);
+            }
             g.drawFittedText(indexingStatus_, bounds.reduced(8), juce::Justification::centred, 3);
             return;
         }
@@ -252,10 +256,11 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
     }
 
   private:
-    void updateStopIndexingButton() {
-        const bool showButton = shouldShowIndexingStopButton(indexingActive_, indexingStatus_);
-        stopIndexingButton_.setVisible(showButton);
-        stopIndexingButton_.setEnabled(showButton);
+    void updateStopIndexingButtonVisibility() {
+        const bool showStop =
+            indexingActive_ && indexingStatus_.isNotEmpty() && !currentFile_.existsAsFile();
+        stopIndexingButton_.setVisible(showStop);
+        stopIndexingButton_.setEnabled(showStop);
     }
 
     void detachThumbnailListener() {
