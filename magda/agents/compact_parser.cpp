@@ -1,6 +1,86 @@
 #include "compact_parser.hpp"
 
+#include "../daw/audio/plugins/DrumGridRoles.hpp"
+
 namespace magda {
+
+namespace {
+// Default velocities for the two non-rest cell glyphs in the drummer agent's
+// grid grammar. Picked to give an audible accent without being aggressive.
+constexpr int kHitVelocity = 85;
+constexpr int kAccentVelocity = 110;
+
+// Beats per bar that the grid grammar assumes when computing cell positions.
+// 4/4 is the only meter the LLM is asked to produce in v0; the executor sees
+// HitOps in plain beats so re-bar-ing later is just arithmetic.
+constexpr double kBarBeats = 4.0;
+
+// Parse one grid line: "<role-token> | <bar> | <bar> | ... | <bar>".
+// The first `|` separates role from cells; additional `|`s separate bars (one
+// bar of cells each — every line is expected to use the same cells-per-bar
+// count, but the parser doesn't enforce that). Step length within a bar =
+// kBarBeats / cells-in-that-bar. Each non-rest cell appends a HitOp at the
+// correct absolute beat. Lines without any `|` are not grid lines; caller
+// should fall through to the opcode parser.
+bool parseGridLine(const juce::String& line, std::vector<Instruction>& out,
+                   juce::String& errorMessage) {
+    const int firstBar = line.indexOfChar('|');
+    if (firstBar < 0)
+        return false;  // not a grid line
+
+    auto roleToken = line.substring(0, firstBar).trim();
+    auto cellsPart = line.substring(firstBar + 1).trim();
+
+    auto roleId = daw::audio::drum_grid_roles::roleIdForToken(roleToken);
+    if (roleId.isEmpty()) {
+        errorMessage = "Unknown drum role: " + roleToken;
+        return false;
+    }
+
+    // Split into one-bar segments on additional `|` separators. Single-bar
+    // patterns produce a one-element array; multi-bar patterns produce N.
+    juce::StringArray bars;
+    bars.addTokens(cellsPart, "|", "");
+
+    double barStartBeat = 0.0;
+    bool anyCells = false;
+    for (auto& barCells : bars) {
+        juce::StringArray cells;
+        cells.addTokens(barCells.trim(), " \t", "");
+        cells.removeEmptyStrings();
+        if (cells.isEmpty())
+            continue;
+        anyCells = true;
+
+        const double step = kBarBeats / static_cast<double>(cells.size());
+        for (int i = 0; i < cells.size(); ++i) {
+            const auto cell = cells[i];
+            if (cell == ".")
+                continue;
+            HitOp h;
+            h.role = roleId;
+            h.beat = barStartBeat + static_cast<double>(i) * step;
+            h.length = step;
+            if (cell == "X")
+                h.velocity = kAccentVelocity;
+            else if (cell == "x")
+                h.velocity = kHitVelocity;
+            else {
+                errorMessage = "Unknown drum cell glyph '" + cell + "' (expected X, x, or .)";
+                return false;
+            }
+            out.push_back({OpCode::Hit, h});
+        }
+        barStartBeat += kBarBeats;
+    }
+
+    if (!anyCells) {
+        errorMessage = "Empty drum pattern for role " + roleToken;
+        return false;
+    }
+    return true;
+}
+}  // namespace
 
 bool CompactParser::isInteger(const juce::String& s) {
     if (s.isEmpty())
@@ -33,6 +113,20 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
         auto line = raw.trim();
         if (line.isEmpty())
             continue;
+
+        // Drum grid line: "<role> | <cell> <cell> ..." — pre-empts the opcode
+        // parser because role tokens (K, S, HH, ...) overlap nothing in the
+        // existing opcode set but only the `|` reliably disambiguates.
+        if (line.containsChar('|')) {
+            juce::String gridError;
+            if (parseGridLine(line, instructions, gridError))
+                continue;
+            if (gridError.isNotEmpty()) {
+                lastError_ = gridError;
+                return {};
+            }
+            // fall through (no `|` after all — shouldn't happen, but safe)
+        }
 
         juce::StringArray parts;
         parts.addTokens(line, " ", "\"");

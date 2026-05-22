@@ -60,23 +60,6 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     if (clip.midiEditorRowHeight > 0)
         obj->setProperty("midiEditorRowHeight", clip.midiEditorRowHeight);
 
-    if (!clip.drumRowMeta.empty()) {
-        juce::Array<juce::var> rowArray;
-        for (const auto& [note, meta] : clip.drumRowMeta) {
-            if (meta.isEmpty())
-                continue;
-            auto* rowObj = new juce::DynamicObject();
-            rowObj->setProperty("note", note);
-            if (meta.label.isNotEmpty())
-                rowObj->setProperty("label", meta.label);
-            if (meta.role.isNotEmpty())
-                rowObj->setProperty("role", meta.role);
-            rowArray.add(juce::var(rowObj));
-        }
-        if (!rowArray.isEmpty())
-            obj->setProperty("drumRowMeta", rowArray);
-    }
-
     // Per-clip mix
     obj->setProperty("volumeDB", clip.volumeDB);
     obj->setProperty("gainDB", clip.gainDB);
@@ -299,23 +282,6 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         outClip.midiEditorRowHeight =
             juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT, ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT,
                          static_cast<int>(obj->getProperty("pianoRollNoteHeight")));
-    }
-
-    if (auto drumRowsVar = obj->getProperty("drumRowMeta"); drumRowsVar.isArray()) {
-        outClip.drumRowMeta.clear();
-        for (const auto& rowVar : *drumRowsVar.getArray()) {
-            auto* rowObj = rowVar.getDynamicObject();
-            if (rowObj == nullptr || !rowObj->hasProperty("note"))
-                continue;
-            int note = juce::jlimit(0, 127, static_cast<int>(rowObj->getProperty("note")));
-            ClipInfo::DrumRowMeta meta;
-            if (rowObj->hasProperty("label"))
-                meta.label = rowObj->getProperty("label").toString();
-            if (rowObj->hasProperty("role"))
-                meta.role = rowObj->getProperty("role").toString();
-            if (!meta.isEmpty())
-                outClip.drumRowMeta[note] = meta;
-        }
     }
 
     // Per-clip mix

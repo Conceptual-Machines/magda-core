@@ -173,6 +173,10 @@ juce::File pluginAliasesFile() {
     return dataDir().getChildFile("plugin_aliases.xml");
 }
 
+juce::File pluginPreferencesFile() {
+    return dataDir().getChildFile("plugin_preferences.json");
+}
+
 juce::File parameterDetectorLog() {
     return dataDir().getChildFile("param_detector.log");
 }

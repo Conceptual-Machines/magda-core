@@ -11,6 +11,7 @@
 #include "../../../core/Config.hpp"
 #include "../../../core/DeviceInfo.hpp"
 #include "../../../core/ParameterUtils.hpp"
+#include "../../../core/PluginPreferences.hpp"
 #include "../../../core/RackInfo.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/StringTable.hpp"
@@ -29,6 +30,36 @@ namespace magda {
 
 // dB conversion helpers for volume
 namespace {
+
+namespace te = tracktion::engine;
+
+// First synth (instrument) plugin on `trackId`, walking into racks. Returns
+// nullptr if the track has none.
+te::Plugin* findPrimaryInstrumentForTrack(TrackId trackId) {
+    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return nullptr;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return nullptr;
+    auto* teTrack = bridge->getAudioTrack(trackId);
+    if (!teTrack)
+        return nullptr;
+
+    for (auto* plugin : teTrack->pluginList) {
+        if (plugin != nullptr && plugin->isSynth())
+            return plugin;
+        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
+            if (rackInstance->type != nullptr) {
+                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
+                    if (innerPlugin != nullptr && innerPlugin->isSynth())
+                        return innerPlugin;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
 
 bool dragObjectToChainNodePathAt(const juce::DynamicObject& obj, int index, ChainNodePath& path) {
     path = {};
@@ -2859,6 +2890,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         ToggleIORouting = 6,
         DuplicateContentOnly = 7,
         ToggleFreeze = 8,
+        PreferDrumGrid = 9,
 
         MoveToGroupBase = 100,
         AddSendBase = 500,
@@ -2987,66 +3019,84 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 
     menu.addSeparator();
 
+    // Prefer Drum Grid for the track's primary instrument plugin. The flag
+    // lives at the plugin-identifier level (user-global), so all tracks using
+    // the same instrument get the same default editor.
+    auto* primaryInstrument = findPrimaryInstrumentForTrack(header.trackId);
+    if (primaryInstrument != nullptr) {
+        const auto identifier = primaryInstrument->getIdentifierString();
+        const bool prefersGrid =
+            magda::PluginPreferences::getInstance().prefersDrumGrid(identifier);
+        menu.addItem(PreferDrumGrid, "Prefer Drum Grid for " + primaryInstrument->getName(), true,
+                     prefersGrid);
+    }
+
     // Show/Hide I/O routing
     menu.addItem(ToggleIORouting, header.showIORouting ? tr("tracks.hide_io_routing")
                                                        : tr("tracks.show_io_routing"));
 
     // Show menu and handle result
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-                           localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
-                       [this, trackId = header.trackId, trackIndex](int result) {
-                           // Force-dismiss the menu synchronously. JUCE's item-click path only
-                           // exits modal state and relies on async component destruction, which
-                           // leaves the popup visually lingering until the next input event.
-                           // dismissAllActiveMenus() routes through hide(nullptr, true) which
-                           // calls setVisible(false) immediately, so subsequent mutations that
-                           // rebuild the headers won't race the menu's close paint.
-                           juce::PopupMenu::dismissAllActiveMenus();
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetScreenArea(
+            localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
+        [this, trackId = header.trackId, trackIndex](int result) {
+            // Force-dismiss the menu synchronously. JUCE's item-click path only
+            // exits modal state and relies on async component destruction, which
+            // leaves the popup visually lingering until the next input event.
+            // dismissAllActiveMenus() routes through hide(nullptr, true) which
+            // calls setVisible(false) immediately, so subsequent mutations that
+            // rebuild the headers won't race the menu's close paint.
+            juce::PopupMenu::dismissAllActiveMenus();
 
-                           if (result == CollapseToggle) {
-                               handleCollapseToggle(trackId);
-                           } else if (result == RemoveFromGroup) {
-                               TrackManager::getInstance().removeTrackFromGroup(trackId);
-                           } else if (result == DeleteTrack) {
-                               auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
-                               UndoManager::getInstance().executeCommand(std::move(cmd));
-                           } else if (result == DuplicateWithContent) {
-                               auto cmd = std::make_unique<DuplicateTrackCommand>(
-                                   trackId, /*duplicateContent=*/true, /*duplicateDevices=*/true);
-                               UndoManager::getInstance().executeCommand(std::move(cmd));
-                           } else if (result == DuplicateNoContent) {
-                               auto cmd = std::make_unique<DuplicateTrackCommand>(
-                                   trackId, /*duplicateContent=*/false, /*duplicateDevices=*/true);
-                               UndoManager::getInstance().executeCommand(std::move(cmd));
-                           } else if (result == DuplicateContentOnly) {
-                               auto cmd = std::make_unique<DuplicateTrackCommand>(
-                                   trackId, /*duplicateContent=*/true, /*duplicateDevices=*/false);
-                               UndoManager::getInstance().executeCommand(std::move(cmd));
-                           } else if (result == ToggleIORouting) {
-                               if (trackIndex >= 0 &&
-                                   trackIndex < static_cast<int>(trackHeaders.size())) {
-                                   trackHeaders[trackIndex]->showIORouting =
-                                       !trackHeaders[trackIndex]->showIORouting;
-                                   resized();
-                               }
-                           } else if (result == ToggleFreeze) {
-                               auto* t = TrackManager::getInstance().getTrack(trackId);
-                               if (t) {
-                                   TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
-                               }
-                           } else if (result >= RemoveSendBase) {
-                               int busIndex = result - RemoveSendBase;
-                               TrackManager::getInstance().removeSend(trackId, busIndex);
-                           } else if (result >= AddSendBase) {
-                               // Checked after RemoveSendBase to avoid collision when trackId
-                               // pushes the value past 600.
-                               TrackId auxId = result - AddSendBase;
-                               TrackManager::getInstance().addSend(trackId, auxId);
-                           } else if (result >= MoveToGroupBase) {
-                               TrackId groupId = result - MoveToGroupBase;
-                               TrackManager::getInstance().addTrackToGroup(trackId, groupId);
-                           }
-                       });
+            if (result == CollapseToggle) {
+                handleCollapseToggle(trackId);
+            } else if (result == RemoveFromGroup) {
+                TrackManager::getInstance().removeTrackFromGroup(trackId);
+            } else if (result == DeleteTrack) {
+                auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == DuplicateWithContent) {
+                auto cmd = std::make_unique<DuplicateTrackCommand>(
+                    trackId, /*duplicateContent=*/true, /*duplicateDevices=*/true);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == DuplicateNoContent) {
+                auto cmd = std::make_unique<DuplicateTrackCommand>(
+                    trackId, /*duplicateContent=*/false, /*duplicateDevices=*/true);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == DuplicateContentOnly) {
+                auto cmd = std::make_unique<DuplicateTrackCommand>(
+                    trackId, /*duplicateContent=*/true, /*duplicateDevices=*/false);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == ToggleIORouting) {
+                if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
+                    trackHeaders[trackIndex]->showIORouting =
+                        !trackHeaders[trackIndex]->showIORouting;
+                    resized();
+                }
+            } else if (result == ToggleFreeze) {
+                auto* t = TrackManager::getInstance().getTrack(trackId);
+                if (t) {
+                    TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
+                }
+            } else if (result == PreferDrumGrid) {
+                if (auto* plugin = findPrimaryInstrumentForTrack(trackId)) {
+                    auto& prefs = magda::PluginPreferences::getInstance();
+                    const auto identifier = plugin->getIdentifierString();
+                    prefs.setPrefersDrumGrid(identifier, !prefs.prefersDrumGrid(identifier));
+                }
+            } else if (result >= RemoveSendBase) {
+                int busIndex = result - RemoveSendBase;
+                TrackManager::getInstance().removeSend(trackId, busIndex);
+            } else if (result >= AddSendBase) {
+                // Checked after RemoveSendBase to avoid collision when trackId
+                // pushes the value past 600.
+                TrackId auxId = result - AddSendBase;
+                TrackManager::getInstance().addSend(trackId, auxId);
+            } else if (result >= MoveToGroupBase) {
+                TrackId groupId = result - MoveToGroupBase;
+                TrackManager::getInstance().addTrackToGroup(trackId, groupId);
+            }
+        });
 }
 
 void TrackHeadersPanel::toggleRouting(int trackIndex, RoutingType type) {

@@ -24,6 +24,8 @@ dsl_grammar.hpp
     command_agent.cpp
     music_agent.hpp
     music_agent.cpp
+    drummer_agent.hpp
+    drummer_agent.cpp
     automation_parser.hpp
     automation_parser.cpp
     automation_executor.hpp

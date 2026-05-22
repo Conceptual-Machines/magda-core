@@ -19,6 +19,7 @@
 #include "content/PianoRollContent.hpp"
 #include "content/WaveformEditorContent.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/PluginPreferences.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -31,7 +32,51 @@ namespace magda {
 namespace {
 namespace te = tracktion::engine;
 
-bool trackHasDrumGrid(TrackId trackId) {
+// MouseListener wrapper that fires a callback on right-click only. Used to
+// extend SvgButton-based tab buttons with a context menu — their onClick is
+// left-click only.
+class RightClickForwarder : public juce::MouseListener {
+  public:
+    std::function<void(juce::Point<int>)> onRightClick;
+    void mouseDown(const juce::MouseEvent& e) override {
+        if (e.mods.isPopupMenu() && onRightClick)
+            onRightClick(e.getScreenPosition());
+    }
+};
+
+// First synth (instrument) plugin on `trackId`, walking into racks. Returns
+// nullptr if the track has none.
+te::Plugin* findPrimaryInstrumentForTrack(TrackId trackId) {
+    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return nullptr;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return nullptr;
+    auto* teTrack = bridge->getAudioTrack(trackId);
+    if (!teTrack)
+        return nullptr;
+
+    for (auto* plugin : teTrack->pluginList) {
+        if (plugin != nullptr && plugin->isSynth())
+            return plugin;
+        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
+            if (rackInstance->type != nullptr) {
+                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
+                    if (innerPlugin != nullptr && innerPlugin->isSynth())
+                        return innerPlugin;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+// True if any instrument plugin on `trackId` has its preferred clip editor set
+// to Drum Grid (via magda::PluginPreferences). Walks the track's plugin list
+// and into any racks. The DrumGrid plugin has an implicit DrumGrid preference
+// in PluginPreferences so existing behaviour is preserved without user setup.
+bool trackPrefersDrumGrid(TrackId trackId) {
     auto* audioEngine = TrackManager::getInstance().getAudioEngine();
     if (!audioEngine)
         return false;
@@ -42,13 +87,21 @@ bool trackHasDrumGrid(TrackId trackId) {
     if (!teTrack)
         return false;
 
+    auto& prefs = magda::PluginPreferences::getInstance();
+
+    auto pluginPrefersDrumGrid = [&](te::Plugin* plugin) {
+        if (plugin == nullptr || !plugin->isSynth())
+            return false;
+        return prefs.prefersDrumGrid(plugin->getIdentifierString());
+    };
+
     for (auto* plugin : teTrack->pluginList) {
-        if (dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
+        if (pluginPrefersDrumGrid(plugin))
             return true;
         if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
             if (rackInstance->type != nullptr) {
                 for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin))
+                    if (pluginPrefersDrumGrid(innerPlugin))
                         return true;
                 }
             }
@@ -180,6 +233,14 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
         if (!updatingTabs_)
             onEditorTabChanged(1);
     };
+    {
+        auto forwarder = std::make_unique<RightClickForwarder>();
+        forwarder->onRightClick = [this](juce::Point<int> screenPos) {
+            showDrumGridTabContextMenu(screenPos);
+        };
+        drumGridTab_->addMouseListener(forwarder.get(), false);
+        drumGridTabRightClick_ = std::move(forwarder);
+    }
     addChildComponent(drumGridTab_.get());
 
     // Fullscreen toggle (issue #1282) — applies to piano roll and drum grid.
@@ -815,7 +876,7 @@ void BottomPanel::updateContentBasedOnSelection() {
                 // Auto-default to Drum Grid for DrumGrid tracks (on first selection)
                 if (selectedClip != lastEditorClipId_) {
                     lastEditorClipId_ = selectedClip;
-                    if (trackHasDrumGrid(clip->trackId))
+                    if (trackPrefersDrumGrid(clip->trackId))
                         lastEditorTabChoice_ = 1;  // Drum Grid
                     else
                         lastEditorTabChoice_ = 0;  // Piano Roll
@@ -1061,6 +1122,36 @@ juce::Rectangle<int> BottomPanel::getContentBounds() {
         bounds.removeFromRight(28);
     }
     return bounds;
+}
+
+void BottomPanel::showDrumGridTabContextMenu(juce::Point<int> screenPos) {
+    auto& clipManager = ClipManager::getInstance();
+    auto selectedClip = clipManager.getSelectedClip();
+    const auto* clip =
+        (selectedClip != INVALID_CLIP_ID) ? clipManager.getClip(selectedClip) : nullptr;
+
+    juce::PopupMenu menu;
+    auto* plugin = (clip != nullptr) ? findPrimaryInstrumentForTrack(clip->trackId) : nullptr;
+
+    if (plugin == nullptr) {
+        menu.addItem(0, "No instrument plugin on this track", false, false);
+    } else {
+        auto& prefs = magda::PluginPreferences::getInstance();
+        const auto identifier = plugin->getIdentifierString();
+        const bool prefersGrid = prefs.prefersDrumGrid(identifier);
+        menu.addItem(1, "Use Drum Grid by default for " + plugin->getName(), true, prefersGrid);
+    }
+
+    const juce::String identifier =
+        (plugin != nullptr) ? plugin->getIdentifierString() : juce::String();
+    auto rect = juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(rect),
+                       [identifier](int result) {
+                           if (result != 1 || identifier.isEmpty())
+                               return;
+                           auto& prefs = magda::PluginPreferences::getInstance();
+                           prefs.setPrefersDrumGrid(identifier, !prefs.prefersDrumGrid(identifier));
+                       });
 }
 
 void BottomPanel::onEditorTabChanged(int tabIndex) {

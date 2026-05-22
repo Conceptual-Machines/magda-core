@@ -22,6 +22,7 @@ class TrackApiLive : public TrackApi {
     void setTrackSoloed(TrackId trackId, bool soloed) override;
 
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device) override;
+    const DeviceInfo* getPrimaryInstrument(TrackId trackId) const override;
 
     AudioEngine* getAudioEngine() const override;
 };

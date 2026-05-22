@@ -26,6 +26,7 @@ class CommandAgent;
 class ControllerProfileAgent;
 class FourOscAgent;
 class DAWAgent;
+class DrummerAgent;
 class MagdaApi;
 class MagdaApiLive;
 class MusicAgent;
@@ -115,10 +116,15 @@ class AIChatConsoleContent : public PanelContent,
     void onInputChanged();  // shared body for both insert / delete callbacks
 
     // Bottom bar: context icon + label + send button
-    enum class ContextIcon { None, Track, Clip, Device };
+    enum class ContextIcon { None, Track, Clip, Device, Drummer };
     ContextIcon contextIcon_ = ContextIcon::None;
     std::unique_ptr<juce::Drawable> trackIconDrawable_;
     std::unique_ptr<juce::Drawable> clipIconDrawable_;
+    std::unique_ptr<juce::Drawable> drumIconDrawable_;
+    // True when the selected track's primary instrument carries a kit with at
+    // least one role-tagged row. Drives the drummer auto-route in
+    // RequestThread::run and the drum context icon below the chat.
+    bool drummerModeActive_ = false;
     juce::Label contextLabel_;
     juce::DrawableButton sendButton_{"send", juce::DrawableButton::ImageFitted};
     juce::DrawableButton clearButton_{"clear", juce::DrawableButton::ImageFitted};
@@ -146,6 +152,7 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<magda::RouterAgent> routerAgent_;
     std::unique_ptr<magda::CommandAgent> commandAgent_;
     std::unique_ptr<magda::MusicAgent> musicAgent_;
+    std::unique_ptr<magda::DrummerAgent> drummerAgent_;
     std::unique_ptr<magda::AutomationAgent> automationAgent_;
     std::unique_ptr<magda::ControllerProfileAgent> controllerAgent_;
     std::unique_ptr<magda::FourOscAgent> fourOscAgent_;

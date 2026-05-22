@@ -101,12 +101,12 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testGainAndPan();
         testPitchChange();
         testRenderVerification();
-        testCreateAudioClipDeletesFullyOverlappedNeighbour();
+        testCreateAudioClipPreservesExistingNeighbour();
         testMoveAudioClipTrimsNeighbourFromRight();
         testMoveAudioClipTrimsNeighbourFromLeft();
         testDuplicateAudioClipResolvesOverlap();
         testPasteAudioClipResolvesOverlap();
-        testCreateMidiClipResolvesOverlap();
+        testCreateMidiClipPreservesExistingNeighbour();
         testMidiSyncClipsNotesToVisibleRangeAfterResize();
         testMidiSyncSkipsAllRestPitchBendButKeepsRealCurves();
         testMoveClipNoOverlapDoesNotMutateNeighbours();
@@ -990,43 +990,50 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
     void testSplitDrivesLeftClipUpdateThroughListener() {
         beginTest("Split notifies property change for left clip (no manual resync needed)");
 
-        Fixture f;
-        auto& cm = ClipManager::getInstance();
-
         // Audio: split must shrink the existing TE clip via the listener flow.
-        auto audioId =
-            cm.createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
-        cm.splitClip(audioId, 2.0, 60.0);
+        {
+            Fixture f;
+            auto& cm = ClipManager::getInstance();
 
-        auto* leftAudio = f.getTeAudioClip(audioId);
-        expect(leftAudio != nullptr, "Left audio TE clip should still exist after split");
-        if (leftAudio) {
-            const auto pos = leftAudio->getPosition();
-            expectWithinAbsoluteError(pos.getStart().inSeconds(), 0.0, 0.01);
-            expectWithinAbsoluteError(pos.getEnd().inSeconds(), 2.0, 0.01);
+            auto audioId =
+                cm.createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+            cm.splitClip(audioId, 2.0, 60.0);
+
+            auto* leftAudio = f.getTeAudioClip(audioId);
+            expect(leftAudio != nullptr, "Left audio TE clip should still exist after split");
+            if (leftAudio) {
+                const auto pos = leftAudio->getPosition();
+                expectWithinAbsoluteError(pos.getStart().inSeconds(), 0.0, 0.01);
+                expectWithinAbsoluteError(pos.getEnd().inSeconds(), 2.0, 0.01);
+            }
         }
 
         // MIDI: notes must be partitioned in the left TE clip too.
-        auto midiId = cm.createMidiClip(f.trackId, 0.0, 4.0, ClipView::Arrangement);
-        for (int beat = 0; beat < 4; ++beat) {
-            MidiNote n;
-            n.startBeat = static_cast<double>(beat) * 60.0 / 60.0;
-            n.lengthBeats = 0.25;
-            n.noteNumber = 60 + beat;
-            n.velocity = 100;
-            cm.addMidiNote(midiId, n);
-        }
-        cm.splitClip(midiId, 2.0, 60.0);
+        {
+            Fixture f;
+            auto& cm = ClipManager::getInstance();
 
-        auto* leftMidi = f.getTeMidiClip(midiId);
-        expect(leftMidi != nullptr, "Left MIDI TE clip should still exist after split");
-        if (leftMidi) {
-            const auto pos = leftMidi->getPosition();
-            expectWithinAbsoluteError(pos.getEnd().inSeconds() - pos.getStart().inSeconds(), 2.0,
-                                      0.01);
-            const int teNoteCount = leftMidi->getSequence().getNumNotes();
-            expectEquals(teNoteCount, 2,
-                         "Left MIDI TE clip should hold only the notes before the split");
+            auto midiId = cm.createMidiClip(f.trackId, 0.0, 4.0, ClipView::Arrangement);
+            for (int beat = 0; beat < 4; ++beat) {
+                MidiNote n;
+                n.startBeat = static_cast<double>(beat) * 60.0 / 60.0;
+                n.lengthBeats = 0.25;
+                n.noteNumber = 60 + beat;
+                n.velocity = 100;
+                cm.addMidiNote(midiId, n);
+            }
+            cm.splitClip(midiId, 2.0, 60.0);
+
+            auto* leftMidi = f.getTeMidiClip(midiId);
+            expect(leftMidi != nullptr, "Left MIDI TE clip should still exist after split");
+            if (leftMidi) {
+                const auto pos = leftMidi->getPosition();
+                expectWithinAbsoluteError(pos.getEnd().inSeconds() - pos.getStart().inSeconds(),
+                                          2.0, 0.01);
+                const int teNoteCount = leftMidi->getSequence().getNumNotes();
+                expectEquals(teNoteCount, 2,
+                             "Left MIDI TE clip should hold only the notes before the split");
+            }
         }
     }
 
@@ -1466,8 +1473,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
     // Overlap resolution
     // =========================================================================
 
-    void testCreateAudioClipDeletesFullyOverlappedNeighbour() {
-        beginTest("createAudioClip deletes a fully-covered arrangement neighbour");
+    void testCreateAudioClipPreservesExistingNeighbour() {
+        beginTest("createAudioClip preserves existing arrangement neighbours");
 
         Fixture f;
         auto& cm = ClipManager::getInstance();
@@ -1477,13 +1484,23 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
         expect(existing != INVALID_CLIP_ID);
 
-        // New clip fully covers it: 0-12 beats
+        // New clip requests an occupied range, so creation should move it after
+        // the existing clip instead of deleting or trimming the neighbour.
         auto incoming =
             cm.createAudioClip(f.trackId, 0.0, 12.0, f.audioPath(), ClipView::Arrangement, 60.0);
         expect(incoming != INVALID_CLIP_ID);
 
-        expect(cm.getClip(existing) == nullptr, "Fully-covered neighbour should have been deleted");
-        expect(cm.getClip(incoming) != nullptr, "Incoming clip should remain");
+        const auto* existingClip = cm.getClip(existing);
+        const auto* incomingClip = cm.getClip(incoming);
+        expect(existingClip != nullptr, "Existing neighbour should remain");
+        expect(incomingClip != nullptr, "Incoming clip should remain");
+        if (!existingClip || !incomingClip)
+            return;
+
+        expectWithinAbsoluteError(existingClip->placement.startBeat, 0.0, 0.01);
+        expectWithinAbsoluteError(existingClip->placement.lengthBeats, 8.0, 0.01);
+        expectWithinAbsoluteError(incomingClip->placement.startBeat, 8.0, 0.01);
+        expectWithinAbsoluteError(incomingClip->placement.lengthBeats, 12.0, 0.01);
     }
 
     void testMoveAudioClipTrimsNeighbourFromRight() {
@@ -1604,8 +1621,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(v->placement.lengthBeats, 2.0, 0.01);
     }
 
-    void testCreateMidiClipResolvesOverlap() {
-        beginTest("createMidiClip resolves overlap (MIDI uses the same code path)");
+    void testCreateMidiClipPreservesExistingNeighbour() {
+        beginTest("createMidiClip preserves existing arrangement neighbours");
 
         Fixture f;
         auto& cm = ClipManager::getInstance();
@@ -1620,11 +1637,9 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (!s || !i)
             return;
 
-        // Incoming covers stationary's right half (beats 4-8). Stationary's right
-        // edge should trim to beat 4.
         expectWithinAbsoluteError(s->placement.startBeat, 0.0, 0.01);
-        expectWithinAbsoluteError(s->placement.lengthBeats, 4.0, 0.01);
-        expectWithinAbsoluteError(i->placement.startBeat, 4.0, 0.01);
+        expectWithinAbsoluteError(s->placement.lengthBeats, 8.0, 0.01);
+        expectWithinAbsoluteError(i->placement.startBeat, 8.0, 0.01);
         expectWithinAbsoluteError(i->placement.lengthBeats, 8.0, 0.01);
     }
 

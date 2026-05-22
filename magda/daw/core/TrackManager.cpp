@@ -11,6 +11,7 @@
 #include "ClipManager.hpp"
 #include "Config.hpp"
 #include "ModulatorEngine.hpp"
+#include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
 #include "SelectionManager.hpp"
 
@@ -1171,6 +1172,15 @@ void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {
 // Device Management on Track
 // ============================================================================
 
+void TrackManager::stampDefaultKitIfMissing(DeviceInfo& dev) {
+    if (!dev.isInstrument || !dev.kitRows.empty())
+        return;
+    const auto identifier = dev.uniqueId.isNotEmpty() ? dev.uniqueId : dev.pluginId;
+    if (identifier.isEmpty())
+        return;
+    dev.kitRows = PluginPreferences::getInstance().defaultKitRows(identifier);
+}
+
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
         if ((track->type == TrackType::Aux || track->type == TrackType::Group ||
@@ -1181,6 +1191,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
         }
         DeviceInfo newDevice = device;
         newDevice.id = nextDeviceId_++;
+        stampDefaultKitIfMissing(newDevice);
         track->chainElements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
         DBG("Added device: " << newDevice.name << " (id=" << newDevice.id << ") to track "
@@ -1201,6 +1212,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
         }
         DeviceInfo newDevice = device;
         newDevice.id = nextDeviceId_++;
+        stampDefaultKitIfMissing(newDevice);
 
         // Clamp insert index to valid range
         int maxIndex = static_cast<int>(track->chainElements.size());
