@@ -858,11 +858,14 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
             if (!chain)
                 return result;
 
-            for (auto& plugin : chain->plugins) {
+            for (int pluginIndex = 0; pluginIndex < static_cast<int>(chain->plugins.size());
+                 ++pluginIndex) {
+                auto& plugin = chain->plugins[static_cast<size_t>(pluginIndex)];
                 if (!plugin)
                     continue;
                 PadChainPanel::PluginSlotInfo info;
                 info.plugin = plugin.get();
+                info.deviceId = dg->getPluginDeviceId(chain->index, pluginIndex);
                 info.isSampler =
                     dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get()) != nullptr;
                 info.name = plugin->getName();

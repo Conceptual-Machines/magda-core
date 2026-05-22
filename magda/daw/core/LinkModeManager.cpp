@@ -2,6 +2,14 @@
 
 namespace magda {
 
+namespace {
+
+juce::String linkPathString(const ChainNodePath& path) {
+    return path.isValid() ? path.toString() : juce::String("<invalid>");
+}
+
+}  // namespace
+
 LinkModeManager& LinkModeManager::getInstance() {
     static LinkModeManager instance;
     return instance;
@@ -25,6 +33,7 @@ void LinkModeManager::enterModLinkMode(const ChainNodePath& parentPath, int modI
     modSelection_.modIndex = modIndex;
     linkModeType_ = LinkModeType::Mod;
 
+    DBG("[LinkMode] enter mod parent=" << linkPathString(parentPath) << " index=" << modIndex);
     notifyModLinkModeChanged(true, modSelection_);
 }
 
@@ -37,6 +46,8 @@ void LinkModeManager::exitModLinkMode() {
     linkModeType_ = LinkModeType::None;
     modSelection_ = ModSelection{};
 
+    DBG("[LinkMode] exit mod parent=" << linkPathString(oldSelection.parentPath)
+                                      << " index=" << oldSelection.modIndex);
     notifyModLinkModeChanged(false, oldSelection);
 }
 
@@ -67,6 +78,7 @@ void LinkModeManager::enterMacroLinkMode(const ChainNodePath& parentPath, int ma
     macroSelection_.macroIndex = macroIndex;
     linkModeType_ = LinkModeType::Macro;
 
+    DBG("[LinkMode] enter macro parent=" << linkPathString(parentPath) << " index=" << macroIndex);
     notifyMacroLinkModeChanged(true, macroSelection_);
 }
 
@@ -79,6 +91,8 @@ void LinkModeManager::exitMacroLinkMode() {
     linkModeType_ = LinkModeType::None;
     macroSelection_ = MacroSelection{};
 
+    DBG("[LinkMode] exit macro parent=" << linkPathString(oldSelection.parentPath)
+                                        << " index=" << oldSelection.macroIndex);
     notifyMacroLinkModeChanged(false, oldSelection);
 }
 

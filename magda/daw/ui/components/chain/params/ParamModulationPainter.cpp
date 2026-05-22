@@ -31,6 +31,21 @@ void drawVerticalBar(juce::Graphics& g, juce::Colour colour, int x, int startY, 
                                static_cast<float>(juce::jmax(1, -height)), 1.0f);
 }
 
+float getSelectedDeviceMacroModulation(const ParamLinkContext& ctx) {
+    if (ctx.selectedMacroIndex < 0 || ctx.deviceMacros == nullptr ||
+        ctx.selectedMacroIndex >= static_cast<int>(ctx.deviceMacros->size()))
+        return 0.0f;
+
+    const auto target = magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
+    const auto& macro = (*ctx.deviceMacros)[static_cast<size_t>(ctx.selectedMacroIndex)];
+    const auto* link = macro.getLink(target);
+    if (link == nullptr)
+        return 0.0f;
+
+    const float macroOffset = link->bipolar ? (macro.value * 2.0f - 1.0f) : macro.value;
+    return macroOffset * link->amount;
+}
+
 void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintContext& ctx) {
     auto sliderBounds = ctx.sliderBounds;
     auto cellBounds = ctx.cellBounds;
@@ -80,6 +95,16 @@ void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintC
                     }
                 }
             }
+        }
+    }
+
+    if (!ctx.isInLinkMode) {
+        const float selectedMacroModulation = getSelectedDeviceMacroModulation(ctx.linkCtx);
+        if (selectedMacroModulation != 0.0f) {
+            const int barHeight = static_cast<int>(maxHeight * selectedMacroModulation);
+            drawVerticalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.9f),
+                            macroX, startY, amountBarWidth, barHeight);
+            return;
         }
     }
 
@@ -188,6 +213,19 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
                     }
                 }
             }
+        }
+    }
+
+    if (!ctx.isInLinkMode) {
+        const float selectedMacroModulation = getSelectedDeviceMacroModulation(ctx.linkCtx);
+        if (selectedMacroModulation != 0.0f) {
+            int y = sliderBounds.getY() + 2;
+            int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
+            int barWidth = static_cast<int>(maxWidth * selectedMacroModulation);
+
+            drawHorizontalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.9f),
+                              startX, y, barWidth, amountBarHeight);
+            return;
         }
     }
 
