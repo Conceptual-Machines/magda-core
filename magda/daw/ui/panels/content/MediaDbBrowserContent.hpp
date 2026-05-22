@@ -129,6 +129,9 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     void startAnalyzingFileIds(std::vector<std::int64_t> fileIds);
     void showEditRowDialog(std::int64_t fileId);
     void showBulkEditRowsDialog(std::vector<std::int64_t> fileIds);
+    void resetRowsToDetected(std::vector<std::int64_t> fileIds);
+    void saveMatchingClipValuesToLibrary(std::int64_t fileId);
+    void recoverMissingFile(std::int64_t fileId);
     // When `fileIds` has more than one entry the family/shape choice is
     // applied to all of them; the `current*` argument is the clicked row's
     // value and only drives the tick mark next to that value in the menu.
