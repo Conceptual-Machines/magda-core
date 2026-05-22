@@ -105,9 +105,9 @@ void StringTable::parseObject(const juce::var& obj, const juce::String& prefix,
 
 juce::String StringTable::get(const juce::String& key) const {
     // Prefer the active locale, then fall back to English, then finally to the
-    // key itself. That way missing translations stay readable as English rather
-    // than surfacing the raw dotted key to users.
-    if (auto it = localized_.find(key); it != localized_.end())
+    // key itself. Empty locale values are treated as untranslated placeholders,
+    // so partially translated files stay readable instead of rendering blanks.
+    if (auto it = localized_.find(key); it != localized_.end() && it->second.isNotEmpty())
         return it->second;
     if (auto it = english_.find(key); it != english_.end())
         return it->second;

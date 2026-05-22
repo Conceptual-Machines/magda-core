@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/agents/compact_parser.hpp"
@@ -8,6 +9,7 @@
 #include "magda/daw/core/SelectionManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
+#include "tests/MockMagdaApi.hpp"
 
 using namespace magda;
 
@@ -200,4 +202,122 @@ TEST_CASE("InstructionExecutor: bare SET targets the selected track", "[compact]
     auto& tm = TrackManager::getInstance();
     REQUIRE(tm.getTrack(bass)->muted);
     REQUIRE_FALSE(tm.getTrack(lead)->muted);
+}
+
+// ============================================================================
+// Agent-created arrangement clips do not pad or overwrite
+// ============================================================================
+
+TEST_CASE("InstructionExecutor: auto-created MIDI clip matches generated content length",
+          "[compact][clip][arranger]") {
+    using magda::test::MockMagdaApi;
+
+    MockMagdaApi api;
+    api.selection_.selectedTrack = 10;
+
+    CompactParser parser;
+    InstructionExecutor exec(api);
+    REQUIRE(exec.execute(parseOrFail(parser, "NOTE C4 0 8")));
+
+    REQUIRE(api.clips_.midiCreations.size() == 1);
+    const auto& created = api.clips_.midiCreations.front();
+    REQUIRE(created.trackId == 10);
+    REQUIRE(created.startBeats == Catch::Approx(0.0));
+    REQUIRE(created.lengthBeats == Catch::Approx(8.0));
+    REQUIRE(api.undo_.executeCalls == 1);
+}
+
+TEST_CASE("InstructionExecutor: auto-created arpeggio clip matches emitted note span",
+          "[compact][clip][arranger]") {
+    using magda::test::MockMagdaApi;
+
+    MockMagdaApi api;
+    api.selection_.selectedTrack = 10;
+
+    CompactParser parser;
+    InstructionExecutor exec(api);
+    REQUIRE(exec.execute(parseOrFail(parser, "ARP C4 major 0 0.5")));
+
+    REQUIRE(api.clips_.midiCreations.size() == 1);
+    const auto& created = api.clips_.midiCreations.front();
+    REQUIRE(created.startBeats == Catch::Approx(0.0));
+    REQUIRE(created.lengthBeats == Catch::Approx(1.5));
+    REQUIRE(api.undo_.executeCalls == 1);
+}
+
+TEST_CASE("InstructionExecutor: auto-created MIDI clip starts at playhead after existing clip",
+          "[compact][clip][arranger]") {
+    using magda::test::MockMagdaApi;
+
+    MockMagdaApi api;
+    api.selection_.selectedTrack = 10;
+    api.transport_.positionBeats = 8.0;
+
+    ClipInfo existing;
+    existing.id = 50;
+    existing.trackId = 10;
+    existing.view = ClipView::Arrangement;
+    existing.setPlacementBeats(0.0, 8.0);
+    api.clips_.clips[existing.id] = existing;
+    api.clips_.clipsOnTrack[existing.trackId].push_back(existing.id);
+
+    CompactParser parser;
+    InstructionExecutor exec(api);
+    REQUIRE(exec.execute(parseOrFail(parser, "NOTE C4 0 8")));
+
+    REQUIRE(api.clips_.midiCreations.size() == 1);
+    const auto& created = api.clips_.midiCreations.front();
+    REQUIRE(created.startBeats == Catch::Approx(8.0));
+    REQUIRE(created.lengthBeats == Catch::Approx(8.0));
+}
+
+TEST_CASE("InstructionExecutor: auto-created MIDI clip moves past overlapping arranger clip",
+          "[compact][clip][arranger]") {
+    using magda::test::MockMagdaApi;
+
+    MockMagdaApi api;
+    api.selection_.selectedTrack = 10;
+    api.transport_.positionBeats = 4.0;
+
+    ClipInfo existing;
+    existing.id = 50;
+    existing.trackId = 10;
+    existing.view = ClipView::Arrangement;
+    existing.setPlacementBeats(0.0, 8.0);
+    api.clips_.clips[existing.id] = existing;
+    api.clips_.clipsOnTrack[existing.trackId].push_back(existing.id);
+
+    CompactParser parser;
+    InstructionExecutor exec(api);
+    REQUIRE(exec.execute(parseOrFail(parser, "NOTE C4 0 8")));
+
+    REQUIRE(api.clips_.midiCreations.size() == 1);
+    const auto& created = api.clips_.midiCreations.front();
+    REQUIRE(created.startBeats == Catch::Approx(8.0));
+    REQUIRE(created.lengthBeats == Catch::Approx(8.0));
+}
+
+TEST_CASE("InstructionExecutor: explicit arranger clip creation does not overlap existing clips",
+          "[compact][clip][arranger]") {
+    using magda::test::MockMagdaApi;
+
+    MockMagdaApi api;
+    api.selection_.selectedTrack = 10;
+
+    ClipInfo existing;
+    existing.id = 50;
+    existing.trackId = 10;
+    existing.view = ClipView::Arrangement;
+    existing.setPlacementBeats(0.0, 8.0);
+    api.clips_.clips[existing.id] = existing;
+    api.clips_.clipsOnTrack[existing.trackId].push_back(existing.id);
+
+    CompactParser parser;
+    InstructionExecutor exec(api);
+    REQUIRE(exec.execute(parseOrFail(parser, "CLIP 1 2")));
+
+    REQUIRE(api.clips_.midiCreations.size() == 1);
+    const auto& created = api.clips_.midiCreations.front();
+    REQUIRE(created.startBeats == Catch::Approx(8.0));
+    REQUIRE(created.lengthBeats == Catch::Approx(8.0));
 }

@@ -195,9 +195,51 @@ ClipManager& ClipManager::getInstance() {
 // Clip Creation
 // ============================================================================
 
+double ClipManager::findNonOverlappingStartBeats(TrackId trackId, double desiredStartBeats,
+                                                 double lengthBeats, ClipView view) const {
+    if (view != ClipView::Arrangement || lengthBeats <= 0.0)
+        return desiredStartBeats;
+
+    struct Span {
+        double start = 0.0;
+        double end = 0.0;
+    };
+
+    std::vector<Span> spans;
+    spans.reserve(clips_.size());
+    for (const auto& [_, clip] : clips_) {
+        if (clip.trackId != trackId || clip.view != ClipView::Arrangement)
+            continue;
+
+        spans.push_back(
+            {clip.placement.startBeat, clip.placement.startBeat + clip.placement.lengthBeats});
+    }
+
+    std::sort(spans.begin(), spans.end(),
+              [](const Span& a, const Span& b) { return a.start < b.start; });
+
+    double candidateStart = desiredStartBeats;
+    constexpr double epsilon = 1.0e-9;
+    for (const auto& span : spans) {
+        if (span.end <= candidateStart + epsilon)
+            continue;
+
+        if (span.start >= candidateStart + lengthBeats - epsilon)
+            break;
+
+        candidateStart = span.end;
+    }
+
+    return candidateStart;
+}
+
 ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, double lengthBeats,
                                          const juce::String& audioFilePath, ClipView view,
-                                         double projectBPM) {
+                                         double projectBPM, ClipOverlapPolicy overlapPolicy) {
+    if (overlapPolicy == ClipOverlapPolicy::PreserveExisting) {
+        startBeats = findNonOverlappingStartBeats(trackId, startBeats, lengthBeats, view);
+    }
+
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
@@ -295,7 +337,7 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
     }
 
     addToSessionSlotIndex(clips_[clip.id]);
-    if (view == ClipView::Arrangement)
+    if (view == ClipView::Arrangement && overlapPolicy == ClipOverlapPolicy::ResolveOverlaps)
         resolveOverlaps(clip.id);
     notifyClipsChanged();
 
@@ -357,14 +399,18 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
 
 ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double length,
                                     const juce::String& audioFilePath, ClipView view,
-                                    double projectBPM) {
+                                    double projectBPM, ClipOverlapPolicy overlapPolicy) {
     const double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
     return createAudioClipBeats(trackId, startTime * bpm / 60.0, length * bpm / 60.0, audioFilePath,
-                                view, bpm);
+                                view, bpm, overlapPolicy);
 }
 
 ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, double lengthBeats,
-                                        ClipView view) {
+                                        ClipView view, ClipOverlapPolicy overlapPolicy) {
+    if (overlapPolicy == ClipOverlapPolicy::PreserveExisting) {
+        startBeats = findNonOverlappingStartBeats(trackId, startBeats, lengthBeats, view);
+    }
+
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
@@ -397,15 +443,15 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
     }
 
     addToSessionSlotIndex(clips_[clip.id]);
-    if (view == ClipView::Arrangement)
+    if (view == ClipView::Arrangement && overlapPolicy == ClipOverlapPolicy::ResolveOverlaps)
         resolveOverlaps(clip.id);
     notifyClipsChanged();
 
     return clip.id;
 }
 
-ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double length,
-                                   ClipView view) {
+ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double length, ClipView view,
+                                   ClipOverlapPolicy overlapPolicy) {
     // Seconds → beats once, at the boundary, using project tempo. Then
     // delegate to the beats-authoritative path. Anything driven by musical
     // input (bars, beats from a parser, etc.) should call createMidiClipBeats
@@ -415,7 +461,7 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
         tempo = 120.0;
     double startBeats = (startTime * tempo) / 60.0;
     double lengthBeats = (length * tempo) / 60.0;
-    return createMidiClipBeats(trackId, startBeats, lengthBeats, view);
+    return createMidiClipBeats(trackId, startBeats, lengthBeats, view, overlapPolicy);
 }
 
 void ClipManager::deleteClip(ClipId clipId) {
@@ -1780,66 +1826,6 @@ void ClipManager::setClipMidiEditorRowHeight(ClipId clipId, int rowHeight) {
     }
 }
 
-void ClipManager::setClipDrumRowLabel(ClipId clipId, int noteNumber, const juce::String& label) {
-    auto* clip = getClip(clipId);
-    if (clip == nullptr || noteNumber < 0 || noteNumber > 127)
-        return;
-    auto it = clip->drumRowMeta.find(noteNumber);
-    if (label.isEmpty()) {
-        if (it == clip->drumRowMeta.end())
-            return;
-        it->second.label.clear();
-        if (it->second.isEmpty())
-            clip->drumRowMeta.erase(it);
-    } else {
-        if (it == clip->drumRowMeta.end())
-            clip->drumRowMeta[noteNumber].label = label;
-        else if (it->second.label == label)
-            return;
-        else
-            it->second.label = label;
-    }
-    notifyClipPropertyChanged(clipId);
-}
-
-void ClipManager::setClipDrumRowRole(ClipId clipId, int noteNumber, const juce::String& role) {
-    auto* clip = getClip(clipId);
-    if (clip == nullptr || noteNumber < 0 || noteNumber > 127)
-        return;
-    auto it = clip->drumRowMeta.find(noteNumber);
-    if (role.isEmpty()) {
-        if (it == clip->drumRowMeta.end())
-            return;
-        it->second.role.clear();
-        if (it->second.isEmpty())
-            clip->drumRowMeta.erase(it);
-    } else {
-        if (it == clip->drumRowMeta.end())
-            clip->drumRowMeta[noteNumber].role = role;
-        else if (it->second.role == role)
-            return;
-        else
-            it->second.role = role;
-    }
-    notifyClipPropertyChanged(clipId);
-}
-
-void ClipManager::clearClipDrumRowMeta(ClipId clipId, int noteNumber) {
-    auto* clip = getClip(clipId);
-    if (clip == nullptr)
-        return;
-    if (clip->drumRowMeta.erase(noteNumber) > 0)
-        notifyClipPropertyChanged(clipId);
-}
-
-void ClipManager::clearAllClipDrumRowMeta(ClipId clipId) {
-    auto* clip = getClip(clipId);
-    if (clip == nullptr || clip->drumRowMeta.empty())
-        return;
-    clip->drumRowMeta.clear();
-    notifyClipPropertyChanged(clipId);
-}
-
 // ============================================================================
 // Content-Level Operations (Editor Operations)
 // ============================================================================
@@ -2551,11 +2537,13 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
         if (clipData.isAudio()) {
             if (clipData.audio().source.filePath.isNotEmpty()) {
                 newClipId = createAudioClip(newTrackId, newStartTime, clipLength,
-                                            clipData.audio().source.filePath, targetView);
+                                            clipData.audio().source.filePath, targetView, 0.0,
+                                            ClipOverlapPolicy::ResolveOverlaps);
             }
         } else {
             // For MIDI clips, create empty then copy notes
-            newClipId = createMidiClip(newTrackId, newStartTime, clipLength, targetView);
+            newClipId = createMidiClip(newTrackId, newStartTime, clipLength, targetView,
+                                       ClipOverlapPolicy::ResolveOverlaps);
         }
 
         if (newClipId != INVALID_CLIP_ID) {

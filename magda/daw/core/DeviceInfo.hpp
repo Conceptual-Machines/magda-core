@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include "KitRow.hpp"
 #include "MacroInfo.hpp"
 #include "ModInfo.hpp"
 #include "ParameterInfo.hpp"
@@ -111,6 +112,13 @@ struct DeviceInfo {
 
     // Modulators for device-level modulation
     ModArray mods = createDefaultMods(0);
+
+    // Drum kit (note number -> label + role) for this specific instance.
+    // Authoritative source for the drum grid editor's row metadata on any
+    // clip routed through this device. Editing rows in the drum grid writes
+    // here; PluginPreferences keeps a user-global mirror that's stamped onto
+    // new instances when they're created. See KitRow.hpp.
+    std::vector<KitRow> kitRows;
 
     // Sidechain configuration (e.g., compressor key input)
     SidechainConfig sidechain;

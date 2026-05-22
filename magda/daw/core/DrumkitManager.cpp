@@ -53,21 +53,38 @@ DrumkitManager& DrumkitManager::getInstance() {
     return instance;
 }
 
+namespace {
+// True iff the on-disk drumkit at `file` carries the stock sentinel — i.e.
+// magdaVersion == "stock". User-saved kits use the actual MAGDA_VERSION
+// string in that field (see saveDrumkit below), so the two are
+// distinguishable. Used to decide whether refreshing from the bundle is safe.
+bool isStockKitFile(const juce::File& file) {
+    if (!file.existsAsFile())
+        return false;
+    auto root = juce::JSON::parse(file.loadFileAsString());
+    auto* obj = root.getDynamicObject();
+    if (obj == nullptr)
+        return false;
+    return obj->getProperty("magdaVersion").toString() == "stock";
+}
+}  // namespace
+
 DrumkitManager::DrumkitManager() {
     auto userDir = getDrumkitsDirectory();
-    // Seed bundled stock kits on first launch only — once the user dir exists,
-    // we never overwrite, so the user is free to edit or delete stock kits.
-    const bool firstRun = !userDir.exists();
     userDir.createDirectory();
-    if (firstRun) {
-        if (auto bundled = findBundledDrumkitsDirectory(); bundled.isDirectory()) {
-            auto stock = bundled.findChildFiles(juce::File::findFiles, false,
-                                                juce::String("*") + kDrumkitExtension);
-            for (const auto& src : stock) {
-                auto dst = userDir.getChildFile(src.getFileName());
-                if (!dst.existsAsFile())
-                    src.copyFileTo(dst);
-            }
+    // Sync bundled stock kits into the user dir on every launch. Files marked
+    // magdaVersion=="stock" are reference data — if the bundled copy changes
+    // (e.g. a kit file fix shipped in a new build), the user copy is refreshed
+    // automatically. Files without the stock sentinel are user-saved (whether
+    // via Save-as-drumkit or by editing a stock file enough that we'd want to
+    // preserve it) and left alone.
+    if (auto bundled = findBundledDrumkitsDirectory(); bundled.isDirectory()) {
+        auto stock = bundled.findChildFiles(juce::File::findFiles, false,
+                                            juce::String("*") + kDrumkitExtension);
+        for (const auto& src : stock) {
+            auto dst = userDir.getChildFile(src.getFileName());
+            if (!dst.existsAsFile() || isStockKitFile(dst))
+                src.copyFileTo(dst);
         }
     }
 }

@@ -16,6 +16,7 @@
 #include "core/AppPaths.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
+#include "core/PluginPreferences.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
@@ -559,6 +560,15 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     menu.addItem(3, "Configure Parameters...");
     menu.addItem(7, "Edit Alias...");
     menu.addSeparator();
+
+    // Prefer drum grid (instruments only — piano roll is the default for MIDI clips)
+    if (plugin.category == "Instrument") {
+        const bool prefersGrid =
+            magda::PluginPreferences::getInstance().prefersDrumGrid(plugin.uniqueId);
+        menu.addItem(10, "Prefer Drum Grid", true, prefersGrid);
+        menu.addSeparator();
+    }
+
     menu.addItem(5, plugin.isFavorite ? "Remove from Favorites" : "Add to Favorites");
     menu.addSeparator();
     menu.addItem(6, "Show in Finder", !plugin.fileOrIdentifier.isEmpty());
@@ -641,6 +651,12 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                 case 7:
                     showEditAliasDialog(plugin);
                     break;
+                case 10: {
+                    auto& prefs = magda::PluginPreferences::getInstance();
+                    prefs.setPrefersDrumGrid(plugin.uniqueId,
+                                             !prefs.prefersDrumGrid(plugin.uniqueId));
+                    break;
+                }
             }
         });
 }

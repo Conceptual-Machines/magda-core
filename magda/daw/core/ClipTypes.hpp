@@ -28,6 +28,14 @@ enum class ClipView {
 };
 
 /**
+ * @brief How arrangement clip creation should handle timeline overlaps.
+ */
+enum class ClipOverlapPolicy {
+    PreserveExisting,  // Shift the new clip forward until it no longer overlaps
+    ResolveOverlaps    // Trim/delete existing clips under the new clip
+};
+
+/**
  * @brief Get display name for clip type
  */
 inline const char* getClipTypeName(ClipType type) {

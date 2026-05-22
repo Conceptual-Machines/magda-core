@@ -12,6 +12,7 @@
 #include "../../../../agents/command_agent.hpp"
 #include "../../../../agents/controller_profile_agent.hpp"
 #include "../../../../agents/daw_agent.hpp"
+#include "../../../../agents/drummer_agent.hpp"
 #include "../../../../agents/dsl_interpreter.hpp"
 #include "../../../../agents/four_osc_agent.hpp"
 #include "../../../../agents/four_osc_apply.hpp"
@@ -35,6 +36,7 @@
 #include "../../../core/controllers/ControllerProfileRegistry.hpp"
 #include "../../../core/controllers/ControllerRegistry.hpp"
 #include "../../components/common/SvgButton.hpp"
+#include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
@@ -42,11 +44,19 @@
 #include "PluginBrowserContent.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+// Forward declaration so RequestThread::run can call the formatter — the
+// definition lives further down in the file's other anon-namespace block,
+// next to isDrummerTrack().
+juce::String formatClipAsDrummerContext(magda::ClipId clipId);
+}  // namespace
 
 // ============================================================================
 // AutocompletePopup
@@ -286,9 +296,15 @@ void AIChatConsoleContent::RequestThread::run() {
     auto totalStart = std::chrono::steady_clock::now();
     double routerMs = 0.0, agentMs = 0.0;
 
-    // Step 1: Classify intent via router
+    // Step 1: Classify intent via router. Skipped entirely when the user is
+    // on a drum-targetable track and didn't lead with an explicit @alias —
+    // context is unambiguous, no need to spend a model call on classification.
+    const bool hasExplicitAlias = juce::String(message).trimStart().startsWithChar('@');
     std::string intent = "COMMAND";  // default fallback
-    if (owner_.routerAgent_) {
+    if (owner_.drummerModeActive_ && !hasExplicitAlias) {
+        intent = "DRUM";
+        DBG("MAGDA Router: bypassed (drummer mode, context-driven)");
+    } else if (owner_.routerAgent_) {
         auto routerStart = std::chrono::steady_clock::now();
         auto classification = owner_.routerAgent_->classify(message);
         routerMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
@@ -527,6 +543,31 @@ void AIChatConsoleContent::RequestThread::run() {
             else
                 autoInstructions = std::move(result.instructions);
         }
+    } else if (intent == "DRUM") {
+        // Drummer agent: emits compact role-grid output. Reuses the music IR
+        // path because Hit ops land in musicInstructions and execute through
+        // InstructionExecutor like any other note/chord.
+        //
+        // When the user has a clip selected, format its current pattern into
+        // grid grammar and prepend as context — lets the agent reason about
+        // additions / variations ("add a fill", "make hats busier") instead
+        // of generating from scratch. Output still lands in a new clip (the
+        // executor never inherits the selected clip).
+        if (owner_.drummerAgent_) {
+            std::string drummerMessage = message;
+            auto selectedClip = magda::SelectionManager::getInstance().getSelectedClip();
+            auto contextPreamble = formatClipAsDrummerContext(selectedClip);
+            if (contextPreamble.isNotEmpty()) {
+                drummerMessage = contextPreamble.toStdString() + "\nUser request: " + message;
+            }
+            auto result = owner_.drummerAgent_->generateStreaming(drummerMessage, onToken);
+            if (threadShouldExit())
+                return;
+            if (result.hasError)
+                error = result.error;
+            else
+                musicInstructions = std::move(result.instructions);
+        }
     }
 
     agentMs =
@@ -737,6 +778,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
         juce::Drawable::createFromImageData(BinaryData::track_svg, BinaryData::track_svgSize);
     clipIconDrawable_ =
         juce::Drawable::createFromImageData(BinaryData::clip_svg, BinaryData::clip_svgSize);
+    drumIconDrawable_ = juce::Drawable::createFromImageData(BinaryData::drum_grid_svg,
+                                                            BinaryData::drum_grid_svgSize);
 
     // Context label (always visible, inside bottom bar)
     contextLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
@@ -934,6 +977,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     routerAgent_ = std::make_unique<magda::RouterAgent>();
     commandAgent_ = std::make_unique<magda::CommandAgent>(*magdaApi_);
     musicAgent_ = std::make_unique<magda::MusicAgent>();
+    drummerAgent_ = std::make_unique<magda::DrummerAgent>();
     automationAgent_ = std::make_unique<magda::AutomationAgent>(*magdaApi_);
     controllerAgent_ = std::make_unique<magda::ControllerProfileAgent>();
     fourOscAgent_ = std::make_unique<magda::FourOscAgent>();
@@ -1072,6 +1116,8 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
             musicAgent_->requestCancel();
         if (automationAgent_)
             automationAgent_->requestCancel();
+        if (drummerAgent_)
+            drummerAgent_->requestCancel();
         requestThread_->signalThreadShouldExit();
         if (!requestThread_->stopThread(2000))
             DBG("AIChatConsole: Warning - previous request thread did not stop within timeout");
@@ -1109,6 +1155,8 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
         musicAgent_->resetCancel();
     if (automationAgent_)
         automationAgent_->resetCancel();
+    if (drummerAgent_)
+        drummerAgent_->resetCancel();
 
     pendingMessage_ = resolvedText;
 
@@ -1134,6 +1182,8 @@ void AIChatConsoleContent::cancelRequest() {
         musicAgent_->requestCancel();
     if (automationAgent_)
         automationAgent_->requestCancel();
+    if (drummerAgent_)
+        drummerAgent_->requestCancel();
 
     if (requestThread_ && requestThread_->isThreadRunning()) {
         requestThread_->signalThreadShouldExit();
@@ -1223,7 +1273,9 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
         // Draw context icon
         if (contextIcon_ != ContextIcon::None) {
             juce::Drawable* icon = nullptr;
-            if (contextIcon_ == ContextIcon::Track || contextIcon_ == ContextIcon::Device)
+            if (contextIcon_ == ContextIcon::Drummer)
+                icon = drumIconDrawable_.get();
+            else if (contextIcon_ == ContextIcon::Track || contextIcon_ == ContextIcon::Device)
                 icon = trackIconDrawable_.get();
             else if (contextIcon_ == ContextIcon::Clip)
                 icon = clipIconDrawable_.get();
@@ -1479,23 +1531,138 @@ void AIChatConsoleContent::selectionTypeChanged(magda::SelectionType newType) {
     }
 }
 
+namespace {
+// Track is drummer-targetable when its primary instrument carries a kit with
+// at least one role-tagged row. A kit-less instrument or rows that only have
+// labels don't qualify — the agent needs roles to address rows by symbol.
+bool isDrummerTrack(magda::TrackId trackId) {
+    if (trackId == magda::INVALID_TRACK_ID)
+        return false;
+    const auto* device = magda::TrackManager::getInstance().getPrimaryInstrument(trackId);
+    if (device == nullptr)
+        return false;
+    for (const auto& row : device->kitRows) {
+        if (row.role.isNotEmpty())
+            return true;
+    }
+    return false;
+}
+
+// Format an existing drum clip's notes back into the grid grammar the agent
+// emits, so we can hand the current pattern to the LLM as input context for
+// follow-up prompts ("add a fill", "make the hats busier", etc.). Returns an
+// empty string when there's no clip / no notes / no instrument with a kit.
+//
+// Resolution is hard-coded to 16ths in 4/4. Notes that don't land on a 16th
+// cell are quantised to the nearest one; off-grid playing detail isn't
+// preserved (it can't survive a round-trip into role-grid form anyway).
+juce::String formatClipAsDrummerContext(magda::ClipId clipId) {
+    if (clipId == magda::INVALID_CLIP_ID)
+        return {};
+    const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr || !clip->isMidi() || clip->midiNotes.empty())
+        return {};
+    const auto* device = magda::TrackManager::getInstance().getPrimaryInstrument(clip->trackId);
+    if (device == nullptr)
+        return {};
+
+    double tempo = 120.0;
+    if (auto* controller = magda::TimelineController::getCurrent())
+        tempo = controller->getState().tempo.bpm;
+    const double lengthBeats = clip->getLengthInBeats(tempo);
+
+    constexpr double kBarBeats = 4.0;
+    constexpr int kCellsPerBar = 16;
+    constexpr double kCellBeats = kBarBeats / static_cast<double>(kCellsPerBar);
+    const int numBars = juce::jmax(1, static_cast<int>(std::ceil(lengthBeats / kBarBeats)));
+    const int totalCells = numBars * kCellsPerBar;
+
+    juce::String header = "Current pattern (" + juce::String(numBars) + " bar" +
+                          (numBars > 1 ? juce::String("s") : juce::String()) + ", " +
+                          juce::String(kCellsPerBar) + " cells per bar):\n";
+
+    juce::String rows;
+    for (const auto& roleInfo : magda::daw::audio::drum_grid_roles::kRoles) {
+        const juce::String roleId(roleInfo.id);
+        std::vector<char> cells(static_cast<size_t>(totalCells), '.');
+        bool hasAny = false;
+        for (const auto& note : clip->midiNotes) {
+            // role lookup: which kit row covers this note's MIDI number
+            juce::String noteRole;
+            for (const auto& row : device->kitRows) {
+                if (row.noteNumber == note.noteNumber) {
+                    noteRole = row.role;
+                    break;
+                }
+            }
+            if (noteRole != roleId)
+                continue;
+            int cellIdx = static_cast<int>(std::floor(note.startBeat / kCellBeats + 0.5));
+            if (cellIdx < 0 || cellIdx >= totalCells)
+                continue;
+            cells[static_cast<size_t>(cellIdx)] = (note.velocity >= 100) ? 'X' : 'x';
+            hasAny = true;
+        }
+        if (!hasAny)
+            continue;
+
+        juce::String line(roleInfo.shortTag);
+        line += " | ";
+        for (int bar = 0; bar < numBars; ++bar) {
+            if (bar > 0)
+                line += " | ";
+            for (int i = 0; i < kCellsPerBar; ++i) {
+                if (i > 0)
+                    line += " ";
+                line +=
+                    juce::String::charToString(cells[static_cast<size_t>(bar * kCellsPerBar + i)]);
+            }
+        }
+        line += "\n";
+        rows += line;
+    }
+
+    if (rows.isEmpty())
+        return {};
+    return header + rows;
+}
+}  // namespace
+
 void AIChatConsoleContent::trackSelectionChanged(magda::TrackId trackId) {
     auto* track = magda::TrackManager::getInstance().getTrack(trackId);
-    contextText_ = track != nullptr ? track->name : juce::String(trackId);
-    contextIcon_ = ContextIcon::Track;
+    auto trackName = track != nullptr ? track->name : juce::String(trackId);
+    drummerModeActive_ = isDrummerTrack(trackId);
+    if (drummerModeActive_) {
+        contextText_ = juce::String::fromUTF8("Drummer \xc2\xb7 ") + trackName;
+        contextIcon_ = ContextIcon::Drummer;
+    } else {
+        contextText_ = trackName;
+        contextIcon_ = ContextIcon::Track;
+    }
     updateContextBar();
 }
 
 void AIChatConsoleContent::clipSelectionChanged(magda::ClipId clipId) {
     auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    magda::TrackId trackId = magda::INVALID_TRACK_ID;
+    juce::String trackName;
     if (clip != nullptr) {
+        trackId = clip->trackId;
         auto* track = magda::TrackManager::getInstance().getTrack(clip->trackId);
-        juce::String trackName = track != nullptr ? track->name : juce::String(clip->trackId);
+        trackName = track != nullptr ? track->name : juce::String(clip->trackId);
         contextText_ = trackName + " > " + clip->name;
     } else {
         contextText_ = juce::String(clipId);
     }
-    contextIcon_ = ContextIcon::Clip;
+    drummerModeActive_ = isDrummerTrack(trackId);
+    if (drummerModeActive_) {
+        if (clip != nullptr)
+            contextText_ =
+                juce::String::fromUTF8("Drummer \xc2\xb7 ") + trackName + " > " + clip->name;
+        contextIcon_ = ContextIcon::Drummer;
+    } else {
+        contextIcon_ = ContextIcon::Clip;
+    }
     updateContextBar();
 }
 
