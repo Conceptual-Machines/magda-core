@@ -120,6 +120,8 @@ set(TEST_SOURCES
     test_media_db_indexer.cpp
     # Media database (issue #768) — Phase E2: MediaDbQuery (hybrid search)
     test_media_db_query.cpp
+    # Media database (issue #1319) — CLAP zero-shot tagging
+    test_media_db_zero_shot_tags.cpp
 )
 
 # Create test executable

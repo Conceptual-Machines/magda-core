@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -25,6 +26,9 @@ namespace magda::media {
 
 class MediaDatabase;
 class ClapAudioEncoder;
+class ClapTextEncoder;
+class RobertaTokenizer;
+class ZeroShotTagger;
 
 class MediaDbIndexer {
   public:
@@ -74,9 +78,26 @@ class MediaDbIndexer {
         ForceAll,
     };
 
+    using TextEncoderProvider = std::function<ClapTextEncoder*()>;
+    using TokenizerProvider = std::function<RobertaTokenizer*()>;
+
     // db: required. encoder: nullable, controls whether the post-scan
-    // embedding backfill can run.
-    MediaDbIndexer(MediaDatabase& db, ClapAudioEncoder* encoder);
+    // embedding backfill can run. textEncoderProvider + tokenizerProvider:
+    // optional, each returns the corresponding model when called. The
+    // indexer only invokes the providers when an embedding pass actually
+    // has pending files, so installing the bundle doesn't make ordinary
+    // indexing scans pay the ~480 MB text-model load cost. Providers
+    // returning null (or providers themselves left empty) disable the
+    // CLAP zero-shot tagging side of the embedding pass while still
+    // producing audio embeddings (issue #1319).
+    MediaDbIndexer(MediaDatabase& db, ClapAudioEncoder* encoder,
+                   TextEncoderProvider textEncoderProvider = {},
+                   TokenizerProvider tokenizerProvider = {});
+    ~MediaDbIndexer();
+    MediaDbIndexer(const MediaDbIndexer&) = delete;
+    MediaDbIndexer& operator=(const MediaDbIndexer&) = delete;
+    MediaDbIndexer(MediaDbIndexer&&) = delete;
+    MediaDbIndexer& operator=(MediaDbIndexer&&) = delete;
 
     void setProgress(ProgressFn fn);
     void setFailureCallback(FailureFn fn);
@@ -110,6 +131,12 @@ class MediaDbIndexer {
   private:
     MediaDatabase& db_;
     ClapAudioEncoder* encoder_;
+    TextEncoderProvider textEncoderProvider_;
+    TokenizerProvider tokenizerProvider_;
+    // Built lazily on the first embedding pass that actually has pending
+    // files. Held as a unique_ptr so the header doesn't have to pull in
+    // MediaDbZeroShotTags.hpp.
+    std::unique_ptr<ZeroShotTagger> zeroShotTagger_;
     ProgressFn progress_;
     FailureFn failure_;
     ShouldCancelFn shouldCancel_;
