@@ -743,19 +743,21 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         owner_.showEditRowDialog(result.fileId);
     }
 
-    // Kicks off an OS-level file drag for the selected rows and returns
-    // juce::var() to tell ListBox NOT to also start its own internal drag.
+    // Kicks off a file drag for the selected rows.
     //
-    // Why OS-level rather than JUCE-internal: the drop targets we care
-    // about (TrackContentPanel, SessionView, Finder, plugin file slots)
-    // are all juce::FileDragAndDropTarget, not juce::DragAndDropTarget —
-    // they only respond to OS file drags. An internal drag would show
-    // the snapshot but no target would accept the drop.
+    // On macOS/Windows we run an OS-level drag so the payload reaches
+    // FileDragAndDropTarget consumers (TrackContentPanel, SessionView,
+    // Finder, plugin file slots). Deferred via callAsync because
+    // performExternalDragDropOfFiles enters a modal native run loop and
+    // we're sitting inside ListBox's mouseDrag callback — bouncing
+    // through the message queue gets us out of that nested call.
     //
-    // Why deferred via callAsync: performExternalDragDropOfFiles enters
-    // a modal native run loop and we're sitting inside ListBox's
-    // mouseDrag callback right now. Bouncing through the message queue
-    // gets us out of that nested call before the modal loop starts.
+    // On Linux we return a {type:"files",paths:[...]} description so JUCE
+    // drives a non-modal internal drag instead. JUCE has no Wayland DnD
+    // and same-app external drags are unreliable even on X11, so OS DnD
+    // silently fails. TrackContentPanel::itemDropped recognises this
+    // payload. Tradeoff: drops into Finder / FileDragAndDropTarget-only
+    // consumers are not supported via this route.
     juce::var getDragSourceDescription(const juce::SparseSet<int>& selectedRows) override {
         if (owner_.dragInProgress_ || selectedRows.isEmpty()) {
             return {};
@@ -772,6 +774,15 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         if (paths.isEmpty()) {
             return {};
         }
+#if JUCE_LINUX
+        juce::Array<juce::var> pathArray;
+        for (const auto& p : paths)
+            pathArray.add(p);
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("type", juce::var("files"));
+        obj->setProperty("paths", juce::var(pathArray));
+        return juce::var(obj);  // ListBox will run startDragging with this payload
+#else
         owner_.dragInProgress_ = true;
         const juce::Component::SafePointer<MediaDbBrowserContent> src(&owner_);
         juce::MessageManager::callAsync([paths, src]() {
@@ -783,6 +794,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
             src->dragInProgress_ = false;
         });
         return {};  // suppress JUCE's internal drag — we handle it ourselves
+#endif
     }
 
   private:
