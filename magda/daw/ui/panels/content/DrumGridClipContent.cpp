@@ -38,6 +38,37 @@ namespace magda::daw::ui {
 namespace {
 namespace te = tracktion::engine;
 
+// Lookup the (track, device) of the primary instrument plugin for the editing
+// clip. Returns {INVALID_TRACK_ID, INVALID_DEVICE_ID} if there's no clip or no
+// instrument on the track. Used by every drum-grid read/write of kit metadata.
+struct PrimaryInstance {
+    magda::TrackId trackId = magda::INVALID_TRACK_ID;
+    magda::DeviceId deviceId = magda::INVALID_DEVICE_ID;
+    const magda::DeviceInfo* device = nullptr;
+    bool valid() const {
+        return device != nullptr;
+    }
+};
+
+PrimaryInstance primaryInstanceForClip(magda::ClipId clipId) {
+    if (clipId == magda::INVALID_CLIP_ID)
+        return {};
+    const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr)
+        return {};
+    auto* device = magda::TrackManager::getInstance().getPrimaryInstrument(clip->trackId);
+    if (device == nullptr)
+        return {};
+    return {clip->trackId, device->id, device};
+}
+
+const magda::KitRow* findKitRow(const std::vector<magda::KitRow>& rows, int noteNumber) {
+    auto it = std::find_if(rows.begin(), rows.end(), [noteNumber](const magda::KitRow& r) {
+        return r.noteNumber == noteNumber;
+    });
+    return it == rows.end() ? nullptr : &(*it);
+}
+
 daw::audio::DrumGridPlugin* findDrumGridForTrack(magda::TrackId trackId) {
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
     if (!audioEngine)
@@ -65,6 +96,7 @@ daw::audio::DrumGridPlugin* findDrumGridForTrack(magda::TrackId trackId) {
     }
     return nullptr;
 }
+
 }  // namespace
 
 //==============================================================================
@@ -1268,6 +1300,8 @@ class DrumGridClipGrid : public juce::Component,
                 fireSelectionChanged();
             };
 
+            noteComp->onNoteDeselected = [this](size_t /*index*/) { fireSelectionChanged(); };
+
             noteComp->onNoteMoved = [this](size_t index, double newBeat, int newNoteNumber) {
                 if (!onNoteMoved)
                     return;
@@ -1879,18 +1913,18 @@ DrumGridClipContent::DrumGridClipContent() {
         setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, labelsY, true);
     };
     rowLabels_->getRowLabel = [this](int noteNumber) -> juce::String {
-        if (editingClipId_ == magda::INVALID_CLIP_ID)
+        auto inst = primaryInstanceForClip(editingClipId_);
+        if (!inst.valid())
             return {};
-        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-        if (clip == nullptr)
-            return {};
-        auto it = clip->drumRowMeta.find(noteNumber);
-        return it != clip->drumRowMeta.end() ? it->second.label : juce::String();
+        const auto* row = findKitRow(inst.device->kitRows, noteNumber);
+        return row != nullptr ? row->label : juce::String();
     };
     rowLabels_->onRowLabelCommitted = [this](int noteNumber, juce::String newLabel) {
-        if (editingClipId_ == magda::INVALID_CLIP_ID)
+        auto inst = primaryInstanceForClip(editingClipId_);
+        if (!inst.valid())
             return;
-        magda::ClipManager::getInstance().setClipDrumRowLabel(editingClipId_, noteNumber, newLabel);
+        magda::TrackManager::getInstance().setDeviceKitRowLabel(inst.trackId, inst.deviceId,
+                                                                noteNumber, newLabel);
     };
     rowLabels_->onRowContextMenu = [this](int noteNumber, juce::Point<int> screenPos) {
         showRowContextMenu(noteNumber, screenPos);
@@ -2509,13 +2543,15 @@ void DrumGridClipContent::updateVelocityLane() {
     if (!midiDrawer_)
         return;
 
-    // Call base implementation for common setup
+    // Common setup (clip, ppb, scroll, relative mode follows relativeTimeMode_).
+    // The previous override to setRelativeMode(true) here was wrong: the
+    // DrumGrid grid itself honours relativeTimeMode_ for its own coordinate
+    // system, and forcing the drawer to a different mode parks the velocity
+    // stems off-screen whenever the grid is in ABS view.
     MidiEditorContent::updateMidiDrawer();
 
-    // DrumGrid always uses relative mode (override base class setting)
-    midiDrawer_->setRelativeMode(true);
-
-    // Set clip length (DrumGrid-specific)
+    // Set clip length (DrumGrid-specific) so the drawer can render the loop
+    // region overlay correctly.
     const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
                            ? magda::ClipManager::getInstance().getClip(editingClipId_)
                            : nullptr;
@@ -2554,12 +2590,13 @@ void DrumGridClipContent::findDrumGrid() {
 juce::String DrumGridClipContent::resolvePadName(int padIndex) const {
     int noteNumber = baseNote_ + padIndex;
 
-    // Clip-level label override wins over device-derived names.
-    if (editingClipId_ != magda::INVALID_CLIP_ID) {
-        if (const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_)) {
-            auto it = clip->drumRowMeta.find(noteNumber);
-            if (it != clip->drumRowMeta.end() && it->second.label.isNotEmpty())
-                return it->second.label;
+    // Instance-level label wins over device-derived names.
+    {
+        auto inst = primaryInstanceForClip(editingClipId_);
+        if (inst.valid()) {
+            const auto* row = findKitRow(inst.device->kitRows, noteNumber);
+            if (row != nullptr && row->label.isNotEmpty())
+                return row->label;
         }
     }
 
@@ -2592,9 +2629,7 @@ juce::String DrumGridClipContent::resolvePadName(int padIndex) const {
 void DrumGridClipContent::buildPadRows() {
     padRows_.clear();
 
-    const ClipInfo* clip = editingClipId_ != magda::INVALID_CLIP_ID
-                               ? magda::ClipManager::getInstance().getClip(editingClipId_)
-                               : nullptr;
+    auto inst = primaryInstanceForClip(editingClipId_);
 
     for (int i = 0; i < numPads_; ++i) {
         int noteNumber = baseNote_ + i;
@@ -2607,10 +2642,9 @@ void DrumGridClipContent::buildPadRows() {
         row.noteNumber = noteNumber;
         row.name = resolvePadName(i);
         row.hasChain = hasChain;
-        if (clip != nullptr) {
-            auto it = clip->drumRowMeta.find(noteNumber);
-            if (it != clip->drumRowMeta.end())
-                row.role = it->second.role;
+        if (inst.valid()) {
+            if (const auto* kitRow = findKitRow(inst.device->kitRows, noteNumber))
+                row.role = kitRow->role;
         }
         padRows_.push_back(row);
     }
@@ -2620,9 +2654,7 @@ void DrumGridClipContent::buildPadRows() {
 }
 
 void DrumGridClipContent::refreshPadRowNames() {
-    const ClipInfo* clip = editingClipId_ != magda::INVALID_CLIP_ID
-                               ? magda::ClipManager::getInstance().getClip(editingClipId_)
-                               : nullptr;
+    auto inst = primaryInstanceForClip(editingClipId_);
     bool changed = false;
     for (auto& row : padRows_) {
         int padIndex = row.noteNumber - baseNote_;
@@ -2634,10 +2666,9 @@ void DrumGridClipContent::refreshPadRowNames() {
         if (drumGrid_)
             newHasChain = (drumGrid_->getChainForNote(row.noteNumber) != nullptr);
         juce::String newRole;
-        if (clip != nullptr) {
-            auto it = clip->drumRowMeta.find(row.noteNumber);
-            if (it != clip->drumRowMeta.end())
-                newRole = it->second.role;
+        if (inst.valid()) {
+            if (const auto* kitRow = findKitRow(inst.device->kitRows, row.noteNumber))
+                newRole = kitRow->role;
         }
 
         if (row.name != newName || row.hasChain != newHasChain || row.role != newRole) {
@@ -2667,42 +2698,51 @@ void DrumGridClipContent::setLabelWidth(int newWidth) {
 
 void DrumGridClipContent::applyTemplateToClip(
     const daw::audio::drum_grid_templates::Template& templ) {
-    if (editingClipId_ == magda::INVALID_CLIP_ID || templ.numRows <= 0 || templ.rows == nullptr)
+    auto inst = primaryInstanceForClip(editingClipId_);
+    if (!inst.valid() || templ.numRows <= 0 || templ.rows == nullptr)
         return;
     // Stamp template entries onto the lowest N rows in MIDI-note ascending
     // order (kick → lowest note → bottom row in the editor).
+    std::vector<magda::KitRow> rows;
+    rows.reserve(static_cast<size_t>(templ.numRows));
     int applied = 0;
     for (int padIndex = 0; padIndex < numPads_ && applied < templ.numRows; ++padIndex) {
         int noteNumber = baseNote_ + padIndex;
-        const auto& row = templ.rows[applied];
-        magda::ClipManager::getInstance().setClipDrumRowLabel(editingClipId_, noteNumber,
-                                                              juce::String(row.label));
-        magda::ClipManager::getInstance().setClipDrumRowRole(editingClipId_, noteNumber,
-                                                             juce::String(row.role));
+        const auto& trow = templ.rows[applied];
+        magda::KitRow r;
+        r.noteNumber = noteNumber;
+        r.label = juce::String(trow.label);
+        r.role = juce::String(trow.role);
+        rows.push_back(std::move(r));
         ++applied;
     }
+    magda::TrackManager::getInstance().setDeviceKitRows(inst.trackId, inst.deviceId, rows);
     refreshPadRowNames();
 }
 
 void DrumGridClipContent::applyDrumkitToClip(const juce::String& drumkitName) {
-    if (editingClipId_ == magda::INVALID_CLIP_ID)
+    auto inst = primaryInstanceForClip(editingClipId_);
+    if (!inst.valid())
         return;
-    auto rows = magda::DrumkitManager::getInstance().loadDrumkit(drumkitName);
-    if (rows.empty())
+    auto kitRows = magda::DrumkitManager::getInstance().loadDrumkit(drumkitName);
+    if (kitRows.empty())
         return;
-    auto& cm = magda::ClipManager::getInstance();
-    for (const auto& r : rows) {
-        cm.setClipDrumRowLabel(editingClipId_, r.noteNumber, r.label);
-        cm.setClipDrumRowRole(editingClipId_, r.noteNumber, r.role);
+    std::vector<magda::KitRow> rows;
+    rows.reserve(kitRows.size());
+    for (const auto& kr : kitRows) {
+        magda::KitRow r;
+        r.noteNumber = kr.noteNumber;
+        r.label = kr.label;
+        r.role = kr.role;
+        rows.push_back(std::move(r));
     }
+    magda::TrackManager::getInstance().setDeviceKitRows(inst.trackId, inst.deviceId, rows);
     refreshPadRowNames();
 }
 
 void DrumGridClipContent::promptSaveDrumkit() {
-    if (editingClipId_ == magda::INVALID_CLIP_ID)
-        return;
-    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-    if (clip == nullptr || clip->drumRowMeta.empty())
+    auto inst = primaryInstanceForClip(editingClipId_);
+    if (!inst.valid() || inst.device->kitRows.empty())
         return;  // nothing to save
 
     auto window = std::make_shared<juce::AlertWindow>(
@@ -2720,19 +2760,18 @@ void DrumGridClipContent::promptSaveDrumkit() {
             }
             auto name = window->getTextEditorContents("name").trim();
             window.reset();
-            if (name.isEmpty() || safeThis->editingClipId_ == magda::INVALID_CLIP_ID)
+            if (name.isEmpty())
                 return;
-            const auto* clipNow =
-                magda::ClipManager::getInstance().getClip(safeThis->editingClipId_);
-            if (clipNow == nullptr)
+            auto inst = primaryInstanceForClip(safeThis->editingClipId_);
+            if (!inst.valid())
                 return;
             std::vector<magda::DrumkitManager::Row> rows;
-            rows.reserve(clipNow->drumRowMeta.size());
-            for (const auto& [note, meta] : clipNow->drumRowMeta) {
+            rows.reserve(inst.device->kitRows.size());
+            for (const auto& kitRow : inst.device->kitRows) {
                 magda::DrumkitManager::Row r;
-                r.noteNumber = note;
-                r.label = meta.label;
-                r.role = meta.role;
+                r.noteNumber = kitRow.noteNumber;
+                r.label = kitRow.label;
+                r.role = kitRow.role;
                 rows.push_back(std::move(r));
             }
             magda::DrumkitManager::getInstance().saveDrumkit(name, rows);
@@ -2741,7 +2780,8 @@ void DrumGridClipContent::promptSaveDrumkit() {
 }
 
 void DrumGridClipContent::showRowContextMenu(int noteNumber, juce::Point<int> screenPos) {
-    if (editingClipId_ == magda::INVALID_CLIP_ID)
+    auto inst = primaryInstanceForClip(editingClipId_);
+    if (!inst.valid())
         return;
 
     juce::PopupMenu menu;
@@ -2749,11 +2789,8 @@ void DrumGridClipContent::showRowContextMenu(int noteNumber, juce::Point<int> sc
     // "Set instrument" submenu (full role vocabulary + None at the top)
     juce::PopupMenu instrumentMenu;
     juce::String currentRole;
-    if (const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_)) {
-        auto it = clip->drumRowMeta.find(noteNumber);
-        if (it != clip->drumRowMeta.end())
-            currentRole = it->second.role;
-    }
+    if (const auto* row = findKitRow(inst.device->kitRows, noteNumber))
+        currentRole = row->role;
 
     instrumentMenu.addItem(1, "None", true, currentRole.isEmpty());
     instrumentMenu.addSeparator();
@@ -2801,21 +2838,24 @@ void DrumGridClipContent::showRowContextMenu(int noteNumber, juce::Point<int> sc
                 static_cast<int>(daw::audio::drum_grid_templates::kBuiltIn.size());
             if (result == 0)
                 return;
-            auto& cm = magda::ClipManager::getInstance();
+            auto inst = primaryInstanceForClip(editingClipId_);
+            if (!inst.valid())
+                return;
+            auto& tm = magda::TrackManager::getInstance();
             if (result == 1) {
-                cm.setClipDrumRowRole(editingClipId_, noteNumber, juce::String());
+                tm.setDeviceKitRowRole(inst.trackId, inst.deviceId, noteNumber, juce::String());
             } else if (result == 2) {
                 if (rowLabels_)
                     rowLabels_->startRenameRow(noteNumber);
             } else if (result == 3) {
-                cm.setClipDrumRowLabel(editingClipId_, noteNumber, juce::String());
+                tm.setDeviceKitRowLabel(inst.trackId, inst.deviceId, noteNumber, juce::String());
             } else if (result == 4) {
-                cm.setClipDrumRowRole(editingClipId_, noteNumber, juce::String());
+                tm.setDeviceKitRowRole(inst.trackId, inst.deviceId, noteNumber, juce::String());
             } else if (result == 5) {
                 promptSaveDrumkit();
             } else if (result >= 100 && result < 100 + static_cast<int>(roleIds.size())) {
-                cm.setClipDrumRowRole(editingClipId_, noteNumber,
-                                      roleIds[static_cast<size_t>(result - 100)]);
+                tm.setDeviceKitRowRole(inst.trackId, inst.deviceId, noteNumber,
+                                       roleIds[static_cast<size_t>(result - 100)]);
             } else if (result >= 500 && result < 500 + numBuiltIn) {
                 applyTemplateToClip(
                     daw::audio::drum_grid_templates::kBuiltIn[static_cast<size_t>(result - 500)]);

@@ -17,6 +17,14 @@ LlamaModelManager::~LlamaModelManager() {
 }
 
 bool LlamaModelManager::loadModel(const Config& config) {
+    loading_.store(true, std::memory_order_release);
+    struct LoadingReset {
+        std::atomic<bool>& loading;
+        ~LoadingReset() {
+            loading.store(false, std::memory_order_release);
+        }
+    } loadingReset{loading_};
+
     std::lock_guard<std::mutex> lock(mutex_);
 
     // Unload existing model if any
@@ -72,6 +80,10 @@ void LlamaModelManager::unloadModel() {
 bool LlamaModelManager::isLoaded() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return model_ != nullptr && ctx_ != nullptr;
+}
+
+bool LlamaModelManager::isLoading() const noexcept {
+    return loading_.load(std::memory_order_acquire);
 }
 
 std::string LlamaModelManager::getLoadedModelPath() const {

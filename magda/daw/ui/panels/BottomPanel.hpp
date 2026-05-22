@@ -111,6 +111,11 @@ class BottomPanel : public daw::ui::TabbedPanel,
     ClipId lastEditorClipId_ = INVALID_CLIP_ID;  // Track which clip we auto-defaulted for
 
     void onEditorTabChanged(int tabIndex);
+    void showDrumGridTabContextMenu(juce::Point<int> screenPos);
+
+    // Mouse listener attached to drumGridTab_ to forward right-clicks to the
+    // context-menu handler. SvgButton's onClick is left-click only.
+    std::unique_ptr<juce::MouseListener> drumGridTabRightClick_;
 
     // Header controls (visible when showEditorTabs_ is true)
     std::unique_ptr<juce::TextButton> timeModeButton_;

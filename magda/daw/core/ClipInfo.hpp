@@ -340,20 +340,6 @@ struct ClipInfo {
     bool gridSnapEnabled = true;
     int midiEditorRowHeight = 0;  // 0 = editor default
 
-    // Drum-grid editor: per-row label + role tag, keyed by MIDI note number.
-    // Label is the free-text override the user sees in the row header (empty
-    // = fall back to the computed name from the device). Role is the closed
-    // vocabulary id used by the drummer agent (#859); see DrumGridRoles.hpp.
-    // Roles are NOT required to be unique across rows.
-    struct DrumRowMeta {
-        juce::String label;
-        juce::String role;
-        bool isEmpty() const {
-            return label.isEmpty() && role.isEmpty();
-        }
-    };
-    std::map<int, DrumRowMeta> drumRowMeta;
-
     // Session launch properties
     LaunchMode launchMode = LaunchMode::Trigger;
     LaunchQuantize launchQuantize = LaunchQuantize::OneBar;

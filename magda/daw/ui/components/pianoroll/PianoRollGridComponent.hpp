@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <set>
 #include <vector>
 
 #include "NoteComponent.hpp"
@@ -198,6 +199,7 @@ class PianoRollGridComponent : public juce::Component,
     // Callback when note selection changes (e.g. after lasso, deselect-all)
     // Provides the full set of currently selected note indices for the primary clip
     std::function<void(ClipId, std::vector<size_t>)> onNoteSelectionChanged;
+    std::function<void(const std::set<int>&)> onSelectedPitchRowsChanged;
 
     // Callback for drag preview (for syncing velocity lane position)
     std::function<void(ClipId, size_t, double, bool)>
@@ -289,6 +291,7 @@ class PianoRollGridComponent : public juce::Component,
 
     // Currently selected note index (or -1 for none)
     int selectedNoteIndex_ = -1;
+    std::set<int> selectedPitchRows_;
 
     // Edit cursor click on grid line
     bool isEditCursorClick_ = false;
@@ -363,6 +366,7 @@ class PianoRollGridComponent : public juce::Component,
     void createNoteComponents();
     void clearNoteComponents();
     void updateNoteComponentBounds();
+    void rebuildSelectedPitchRows();
 
     // Helpers
     struct NoteInsertPosition {

@@ -60,6 +60,13 @@ struct BulkEditableMediaUpdate {
     std::optional<std::vector<std::string>> tags;
 };
 
+struct MissingFileCandidate {
+    std::int64_t fileId = -1;
+    std::filesystem::path path;
+    std::string matchReason;
+    std::int64_t sizeBytes = 0;
+};
+
 // Look up a file by absolute path. Returns nullopt if the file isn't in
 // the media DB. Each field is COALESCE(user_override, detected) so the
 // caller gets a single effective value per property.
@@ -96,6 +103,15 @@ bool updateEditableMediaRow(MediaDatabase& db, const EditableMediaRow& row);
 
 int updateEditableMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds,
                             const BulkEditableMediaUpdate& update);
+
+int resetMediaRowsToDetected(MediaDatabase& db, const std::vector<std::int64_t>& fileIds);
+
+[[nodiscard]] std::vector<MissingFileCandidate> findMissingFileCandidates(MediaDatabase& db,
+                                                                          std::int64_t fileId,
+                                                                          int limit = 12);
+
+bool recoverMissingMediaFilePath(MediaDatabase& db, std::int64_t fileId,
+                                 const std::filesystem::path& newPath);
 
 int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds);
 

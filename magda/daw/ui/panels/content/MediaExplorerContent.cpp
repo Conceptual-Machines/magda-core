@@ -111,17 +111,11 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
 
     ~ThumbnailComponent() override {
         stopTimer();
-        if (currentThumbnail_ != nullptr) {
-            currentThumbnail_->removeChangeListener(this);
-        }
+        detachThumbnailListener();
     }
 
     void setFile(const juce::File& file) {
-        // Remove listener from old thumbnail
-        if (currentThumbnail_ != nullptr) {
-            currentThumbnail_->removeChangeListener(this);
-            currentThumbnail_ = nullptr;
-        }
+        detachThumbnailListener();
 
         currentFile_ = file;
         playbackPosition_ = 0.0;
@@ -131,13 +125,14 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
 
         // Get and listen to new thumbnail
         if (file.existsAsFile()) {
-            currentThumbnail_ =
-                magda::AudioThumbnailManager::getInstance().getThumbnail(file.getFullPathName());
-            if (currentThumbnail_ != nullptr) {
-                currentThumbnail_->addChangeListener(this);
+            currentThumbnailPath_ = file.getFullPathName();
+            if (auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                    currentThumbnailPath_)) {
+                thumbnail->addChangeListener(this);
             }
         }
 
+        updateStopIndexingButtonVisibility();
         repaint();
     }
 
@@ -167,13 +162,13 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
             return;
         }
         indexingStatus_ = text;
+        updateStopIndexingButtonVisibility();
         repaint();
     }
 
     void setIndexingActive(bool active) {
         indexingActive_ = active;
-        stopIndexingButton_.setVisible(active);
-        stopIndexingButton_.setEnabled(active);
+        updateStopIndexingButtonVisibility();
         resized();
         repaint();
     }
@@ -210,7 +205,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         // asked for scan progress to be visible whether they're on the
         // filesystem browser or the DB browser, and this panel is the one
         // shared place above the result lists.
-        if (indexingStatus_.isNotEmpty()) {
+        if (indexingStatus_.isNotEmpty() && !currentFile_.existsAsFile()) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
             g.setFont(FontManager::getInstance().getUIFont(11.0F));
             if (indexingActive_) {
@@ -260,8 +255,23 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
     }
 
   private:
+    void updateStopIndexingButtonVisibility() {
+        const bool showStop =
+            indexingActive_ && indexingStatus_.isNotEmpty() && !currentFile_.existsAsFile();
+        stopIndexingButton_.setVisible(showStop);
+        stopIndexingButton_.setEnabled(showStop);
+    }
+
+    void detachThumbnailListener() {
+        if (currentThumbnailPath_.isNotEmpty()) {
+            magda::AudioThumbnailManager::getInstance().removeThumbnailChangeListener(
+                currentThumbnailPath_, this);
+            currentThumbnailPath_.clear();
+        }
+    }
+
     juce::File currentFile_;
-    juce::AudioThumbnail* currentThumbnail_ = nullptr;
+    juce::String currentThumbnailPath_;
     juce::AudioTransportSource* transportSource_ = nullptr;
     double playbackPosition_ = 0.0;
     juce::String indexingStatus_;
@@ -1796,11 +1806,61 @@ void MediaExplorerContent::mouseDrag(const juce::MouseEvent& e) {
         paths.add(fileForDrag_.getFullPathName());
 
     if (!paths.isEmpty()) {
-        juce::DragAndDropContainer::performExternalDragDropOfFiles(paths, false, this);
+#if JUCE_LINUX
+        // JUCE has no Wayland DnD, and even on X11 external DnD is unreliable
+        // from the same app to itself, so drops into the arrangement silently
+        // fail. Use JUCE-internal DnD instead — TrackContentPanel::itemDropped
+        // recognises the {type:"files",paths} payload and runs the same import
+        // logic as the OS file-drop path. Tradeoff: dragging out of MAGDA into
+        // another app is not possible via this route.
+        juce::Array<juce::var> pathArray;
+        for (const auto& p : paths)
+            pathArray.add(p);
 
-        // The ListBox collapsed the visual selection to the clicked row when
-        // the drag started. Restore the sticky multi-selection now that the
-        // external drag has finished so the user keeps their selection.
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("type", juce::var("files"));
+        obj->setProperty("paths", juce::var(pathArray));
+        // Wrap immediately so the DynamicObject is owned via ref-counting and
+        // cleans up if findParentDragContainerFor returns null below.
+        juce::var description(obj);
+
+        // Build a compact drag image showing the file names instead of
+        // letting JUCE auto-snapshot the entire browser panel.
+        const int rowH = 18;
+        const int maxRows = juce::jmin(paths.size(), 5);
+        const int hasMore = (paths.size() > maxRows) ? 1 : 0;
+        const int width = 240;
+        const int height = (maxRows + hasMore) * rowH + 6;
+
+        juce::Image dragImg(juce::Image::ARGB, width, height, true);
+        {
+            juce::Graphics g(dragImg);
+            g.setColour(juce::Colours::black.withAlpha(0.78f));
+            g.fillRoundedRectangle(0.0f, 0.0f, (float)width, (float)height, 4.0f);
+            g.setColour(juce::Colours::white);
+            g.setFont(13.0f);
+            for (int i = 0; i < maxRows; ++i) {
+                g.drawText(juce::File(paths[i]).getFileName(), 8, 3 + i * rowH, width - 16, rowH,
+                           juce::Justification::centredLeft, true);
+            }
+            if (hasMore) {
+                g.drawText("+" + juce::String(paths.size() - maxRows) + " more", 8,
+                           3 + maxRows * rowH, width - 16, rowH, juce::Justification::centredLeft,
+                           true);
+            }
+        }
+
+        if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this))
+            container->startDragging(description, this, juce::ScaledImage(dragImg));
+
+        // startDragging is non-blocking, so reset state immediately — the drag
+        // runs under JUCE's modal drag-image controller and the original
+        // component will not receive mouseUp.
+        isDraggingFile_ = false;
+#else
+        juce::DragAndDropContainer::performExternalDragDropOfFiles(paths, false, this);
+#endif
+
         if (stickyRowSelection_.size() >= 2 && listComp != nullptr)
             listComp->setSelectedRows(stickyRowSelection_);
     }

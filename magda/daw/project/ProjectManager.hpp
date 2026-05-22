@@ -271,6 +271,11 @@ class ProjectManager : private juce::Timer {
     juce::File getBouncesDirectory() const;
 
     /**
+     * @brief Get the copy-on-edit external sample edits subdirectory
+     */
+    juce::File getExternalEditsDirectory() const;
+
+    /**
      * @brief Delete temp media directories older than 7 days.
      * Call once at app launch.
      */
@@ -308,7 +313,7 @@ class ProjectManager : private juce::Timer {
     void createTempMediaDirectory();
 
     /**
-     * @brief Ensure recordings/, renders/, bounces/ subdirectories exist
+     * @brief Ensure project media subdirectories exist
      */
     static void ensureMediaSubdirectories(const juce::File& mediaRoot);
 

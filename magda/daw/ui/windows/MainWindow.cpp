@@ -8,6 +8,7 @@
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../debug/DebugDialog.hpp"
 #include "../debug/DebugSettings.hpp"
+#include "../dialogs/AISettingsDialog.hpp"
 #include "../dialogs/AudioSettingsDialog.hpp"
 #include "../dialogs/ControllersDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
@@ -512,6 +513,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         resized();
     };
     footerBar->onControllersClicked = [this]() { ControllersDialog::showDialog(this); };
+    footerBar->onLocalModelsClicked = [this]() { AISettingsDialog::showDialog(this); };
     addAndMakeVisible(*footerBar);
 
     // Create views (now audioEngine is valid - use externalEngine which points to either external

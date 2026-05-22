@@ -4,6 +4,7 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
 
@@ -165,6 +166,7 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
     if (auto* chain = getChain(trackId, rackId, chainId)) {
         DeviceInfo newDevice = device;
         newDevice.id = nextDeviceId_++;
+        stampDefaultKitIfMissing(newDevice);
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
         DBG("Added device: " << newDevice.name << " (id=" << newDevice.id << ") to chain "
@@ -225,6 +227,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
         // Add the device
         DeviceInfo newDevice = device;
         newDevice.id = nextDeviceId_++;
+        stampDefaultKitIfMissing(newDevice);
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(chainPath.trackId);
         DBG("Added device via path: " << newDevice.name << " (id=" << newDevice.id << ") to chain "
@@ -285,6 +288,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
         // Add the device at the specified index
         DeviceInfo newDevice = device;
         newDevice.id = nextDeviceId_++;
+        stampDefaultKitIfMissing(newDevice);
 
         // Clamp insert index to valid range
         int maxIndex = static_cast<int>(chain->elements.size());
@@ -1150,6 +1154,157 @@ void TrackManager::setDeviceLevel(const ChainNodePath& devicePath, float level) 
         device->gainDb = (level > 0.0f) ? 20.0f * std::log10(level) : -100.0f;
         notifyDevicePropertyChanged(device->id);
     }
+}
+
+namespace {
+// Mirror the device's current kit to the user-global default in
+// PluginPreferences. Called after every kit mutation so the most recent edit
+// to any instance becomes the default applied to new instances of the same
+// plugin. Empty identifier (no plugin loaded yet) is a no-op.
+void mirrorKitToPreferences(const DeviceInfo& device) {
+    const auto identifier = device.uniqueId.isNotEmpty() ? device.uniqueId : device.pluginId;
+    if (identifier.isEmpty())
+        return;
+    PluginPreferences::getInstance().setDefaultKitRows(identifier, device.kitRows);
+}
+
+DeviceInfo* findPrimaryInstrumentIn(std::vector<ChainElement>& elements) {
+    for (auto& element : elements) {
+        if (isDevice(element)) {
+            auto& dev = getDevice(element);
+            if (dev.isInstrument)
+                return &dev;
+        } else if (isRack(element)) {
+            auto& rack = getRack(element);
+            for (auto& chain : rack.chains) {
+                if (auto* dev = findPrimaryInstrumentIn(chain.elements))
+                    return dev;
+            }
+        }
+    }
+    return nullptr;
+}
+
+// Recursive id-based device lookup. TrackManager::getDevice only walks the
+// top-level chainElements — rack-contained devices return nullptr from it,
+// which silently broke kit-row mutations on instruments wrapped in racks
+// (the common case: every instrument added via the plugin browser is
+// auto-wrapped in an InstrumentRack).
+DeviceInfo* findDeviceByIdIn(std::vector<ChainElement>& elements, DeviceId deviceId) {
+    for (auto& element : elements) {
+        if (isDevice(element)) {
+            auto& dev = getDevice(element);
+            if (dev.id == deviceId)
+                return &dev;
+        } else if (isRack(element)) {
+            auto& rack = getRack(element);
+            for (auto& chain : rack.chains) {
+                if (auto* dev = findDeviceByIdIn(chain.elements, deviceId))
+                    return dev;
+            }
+        }
+    }
+    return nullptr;
+}
+
+DeviceInfo* findDeviceOnTrack(TrackInfo* track, DeviceId deviceId) {
+    return track != nullptr ? findDeviceByIdIn(track->chainElements, deviceId) : nullptr;
+}
+}  // namespace
+
+const DeviceInfo* TrackManager::getPrimaryInstrument(TrackId trackId) const {
+    return const_cast<TrackManager*>(this)->getPrimaryInstrument(trackId);
+}
+
+DeviceInfo* TrackManager::getPrimaryInstrument(TrackId trackId) {
+    auto* track = getTrack(trackId);
+    if (track == nullptr)
+        return nullptr;
+    return findPrimaryInstrumentIn(track->chainElements);
+}
+
+namespace {
+// Find/insert/update a row in `rows` by note number. Returns true if the row
+// vector changed (so caller can skip the notify on no-op edits).
+bool updateKitRow(std::vector<KitRow>& rows, int noteNumber, const juce::String* label,
+                  const juce::String* role) {
+    auto it = std::find_if(rows.begin(), rows.end(),
+                           [noteNumber](const KitRow& r) { return r.noteNumber == noteNumber; });
+    if (it == rows.end()) {
+        const bool labelEmpty = (label == nullptr || label->isEmpty());
+        const bool roleEmpty = (role == nullptr || role->isEmpty());
+        if (labelEmpty && roleEmpty)
+            return false;
+        KitRow r;
+        r.noteNumber = noteNumber;
+        if (label != nullptr)
+            r.label = *label;
+        if (role != nullptr)
+            r.role = *role;
+        rows.push_back(std::move(r));
+        return true;
+    }
+    bool changed = false;
+    if (label != nullptr && it->label != *label) {
+        it->label = *label;
+        changed = true;
+    }
+    if (role != nullptr && it->role != *role) {
+        it->role = *role;
+        changed = true;
+    }
+    if (it->label.isEmpty() && it->role.isEmpty()) {
+        rows.erase(it);
+        return true;
+    }
+    return changed;
+}
+}  // namespace
+
+void TrackManager::setDeviceKitRowLabel(TrackId trackId, DeviceId deviceId, int noteNumber,
+                                        const juce::String& label) {
+    auto* device = findDeviceOnTrack(getTrack(trackId), deviceId);
+    if (device == nullptr || noteNumber < 0 || noteNumber > 127)
+        return;
+    if (updateKitRow(device->kitRows, noteNumber, &label, nullptr)) {
+        notifyDevicePropertyChanged(deviceId);
+        mirrorKitToPreferences(*device);
+    }
+}
+
+void TrackManager::setDeviceKitRowRole(TrackId trackId, DeviceId deviceId, int noteNumber,
+                                       const juce::String& role) {
+    auto* device = findDeviceOnTrack(getTrack(trackId), deviceId);
+    if (device == nullptr || noteNumber < 0 || noteNumber > 127)
+        return;
+    if (updateKitRow(device->kitRows, noteNumber, nullptr, &role)) {
+        notifyDevicePropertyChanged(deviceId);
+        mirrorKitToPreferences(*device);
+    }
+}
+
+void TrackManager::clearDeviceKitRow(TrackId trackId, DeviceId deviceId, int noteNumber) {
+    auto* device = findDeviceOnTrack(getTrack(trackId), deviceId);
+    if (device == nullptr)
+        return;
+    auto& rows = device->kitRows;
+    auto it = std::find_if(rows.begin(), rows.end(),
+                           [noteNumber](const KitRow& r) { return r.noteNumber == noteNumber; });
+    if (it == rows.end())
+        return;
+    rows.erase(it);
+    notifyDevicePropertyChanged(deviceId);
+    mirrorKitToPreferences(*device);
+}
+
+void TrackManager::setDeviceKitRows(TrackId trackId, DeviceId deviceId,
+                                    const std::vector<KitRow>& rows) {
+    auto* device = findDeviceOnTrack(getTrack(trackId), deviceId);
+    if (device == nullptr)
+        return;
+    device->kitRows = rows;
+    notifyDevicePropertyChanged(deviceId);
+    mirrorKitToPreferences(*device);
 }
 
 ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {

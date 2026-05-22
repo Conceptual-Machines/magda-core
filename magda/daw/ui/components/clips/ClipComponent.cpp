@@ -48,6 +48,11 @@ void showMidiClipLibrarySaveFailedAlert() {
         "Could not write the MIDI clip file or add it to the media library.");
 }
 
+void showExternalEditorFailedAlert(const juce::String& message) {
+    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                           "Edit in External Editor Failed", message);
+}
+
 constexpr int MIDI_PREVIEW_MIN_NOTE = 21;   // A0
 constexpr int MIDI_PREVIEW_MAX_NOTE = 108;  // C8
 
@@ -2533,6 +2538,15 @@ void ClipComponent::showContextMenu() {
     menu.addItem(16, "Slice at Grid to Drum Grid", canSliceAtGrid);
     menu.addSeparator();
 
+    bool canEditExternally = false;
+    if (!isMultiSelection && canEdit) {
+        const auto* singleClip = getClipInfo();
+        canEditExternally = singleClip && singleClip->isAudio() &&
+                            juce::File(singleClip->audio().source.filePath).existsAsFile();
+    }
+    menu.addItem(21, "Edit in External Editor", canEditExternally);
+    menu.addSeparator();
+
     // Join Clips (need 2+ adjacent clips on same track)
     bool canJoin = false;
     if (selectionManager.getSelectedClipCount() >= 2) {
@@ -2765,6 +2779,14 @@ void ClipComponent::showContextMenu() {
             case 20: {  // Save MIDI Clip to Library
                 if (!clipManager.saveClipToLibrary(clipId_)) {
                     showMidiClipLibrarySaveFailedAlert();
+                }
+                break;
+            }
+
+            case 21: {  // Edit in External Editor
+                juce::String error;
+                if (!clipManager.editAudioClipSourceInExternalEditor(clipId_, error)) {
+                    showExternalEditorFailedAlert(error);
                 }
                 break;
             }

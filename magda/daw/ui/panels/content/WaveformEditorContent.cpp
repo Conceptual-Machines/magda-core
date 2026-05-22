@@ -1084,9 +1084,10 @@ void WaveformEditorContent::setRelativeTimeMode(bool relative) {
     }
 
     updateGridSize();
-    scrollToClipStart();
-    if (changed)
+    if (changed) {
+        scrollToClipStart();
         repaint();
+    }
 }
 
 void WaveformEditorContent::setSnapEnabledFromUI(bool enabled) {

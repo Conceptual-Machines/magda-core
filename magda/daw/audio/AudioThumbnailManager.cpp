@@ -34,6 +34,14 @@ juce::AudioThumbnail* AudioThumbnailManager::getThumbnail(const juce::String& au
     return createThumbnail(audioFilePath);
 }
 
+void AudioThumbnailManager::removeThumbnailChangeListener(const juce::String& audioFilePath,
+                                                          juce::ChangeListener* listener) {
+    auto it = thumbnails_.find(audioFilePath);
+    if (it != thumbnails_.end()) {
+        it->second->removeChangeListener(listener);
+    }
+}
+
 juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String& audioFilePath) {
     // Validate file exists
     juce::File audioFile(audioFilePath);
@@ -498,6 +506,23 @@ void AudioThumbnailManager::clearCache() {
     readerLru_.clear();
     peakCaches_.clear();
     pendingPeakComputes_.clear();
+}
+
+void AudioThumbnailManager::invalidateFile(const juce::String& audioFilePath) {
+    thumbnails_.erase(audioFilePath);
+    thumbnailCache_->clear();
+    bpmCache_.erase(audioFilePath);
+    pendingBpmCallbacks_.erase(audioFilePath);
+    transientCache_.erase(audioFilePath);
+
+    auto readerIt = readerIndex_.find(audioFilePath);
+    if (readerIt != readerIndex_.end()) {
+        readerLru_.erase(readerIt->second);
+        readerIndex_.erase(readerIt);
+    }
+
+    peakCaches_.erase(audioFilePath);
+    pendingPeakComputes_.erase(audioFilePath);
 }
 
 juce::ThreadPool& AudioThumbnailManager::getOrCreateBackgroundPool() {

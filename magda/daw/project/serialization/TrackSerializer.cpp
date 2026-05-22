@@ -398,6 +398,21 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
         obj->setProperty("canReceiveMidi", true);
     }
 
+    // Per-instance drum kit rows
+    if (!device.kitRows.empty()) {
+        juce::Array<juce::var> kitArray;
+        for (const auto& r : device.kitRows) {
+            auto* rowObj = new juce::DynamicObject();
+            rowObj->setProperty("note", r.noteNumber);
+            if (r.label.isNotEmpty())
+                rowObj->setProperty("label", r.label);
+            if (r.role.isNotEmpty())
+                rowObj->setProperty("role", r.role);
+            kitArray.add(juce::var(rowObj));
+        }
+        obj->setProperty("kitRows", juce::var(kitArray));
+    }
+
     // Sidechain
     if (device.sidechain.isActive()) {
         auto* scObj = new juce::DynamicObject();
@@ -534,6 +549,21 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     // Plugin native state
     if (obj->hasProperty("pluginState"))
         outDevice.pluginState = obj->getProperty("pluginState").toString();
+
+    // Per-instance drum kit rows
+    auto kitVar = obj->getProperty("kitRows");
+    if (kitVar.isArray()) {
+        for (const auto& rowVar : *kitVar.getArray()) {
+            auto* rowObj = rowVar.getDynamicObject();
+            if (rowObj == nullptr || !rowObj->hasProperty("note"))
+                continue;
+            KitRow r;
+            r.noteNumber = juce::jlimit(0, 127, static_cast<int>(rowObj->getProperty("note")));
+            r.label = rowObj->getProperty("label").toString();
+            r.role = rowObj->getProperty("role").toString();
+            outDevice.kitRows.push_back(std::move(r));
+        }
+    }
 
     // Sidechain
     auto sidechainVar = obj->getProperty("sidechain");

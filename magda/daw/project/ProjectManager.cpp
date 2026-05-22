@@ -18,6 +18,7 @@ namespace magda {
 static const char* const kRecordingsDir = "recordings";
 static const char* const kRendersDir = "renders";
 static const char* const kBouncesDir = "bounces";
+static const char* const kExternalEditsDir = "external-edits";
 static const char* const kTempRootDir = "MAGDA";
 static const char* const kTempPrefix = "UnsavedProject_";
 static constexpr int kStaleTempDays = 7;
@@ -485,6 +486,12 @@ juce::File ProjectManager::getBouncesDirectory() const {
     return mediaDirectory_.getChildFile(kBouncesDir);
 }
 
+juce::File ProjectManager::getExternalEditsDirectory() const {
+    if (mediaDirectory_ == juce::File())
+        return {};
+    return mediaDirectory_.getChildFile(kExternalEditsDir);
+}
+
 void ProjectManager::createTempMediaDirectory() {
     auto tempRoot = getWritableTempRoot().getChildFile(kTempRootDir);
     tempRoot.createDirectory();
@@ -509,9 +516,10 @@ void ProjectManager::createTempMediaDirectory() {
 void ProjectManager::ensureMediaSubdirectories(const juce::File& mediaRoot) {
     if (mediaRoot == juce::File())
         return;
-    mediaRoot.getChildFile(kRecordingsDir).createDirectory();
-    mediaRoot.getChildFile(kRendersDir).createDirectory();
-    mediaRoot.getChildFile(kBouncesDir).createDirectory();
+    const char* subdirs[] = {kRecordingsDir, kRendersDir, kBouncesDir, kExternalEditsDir};
+    for (auto* subdir : subdirs) {
+        mediaRoot.getChildFile(subdir).createDirectory();
+    }
 }
 
 void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir) {
@@ -523,7 +531,7 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
     std::vector<ClipId> updatedClipIds;
 
     // Move files from each subdirectory
-    const char* subdirs[] = {kRecordingsDir, kRendersDir, kBouncesDir};
+    const char* subdirs[] = {kRecordingsDir, kRendersDir, kBouncesDir, kExternalEditsDir};
     for (auto* subdir : subdirs) {
         auto srcDir = oldDir.getChildFile(subdir);
         auto dstDir = newDir.getChildFile(subdir);

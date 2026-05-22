@@ -177,6 +177,7 @@ void Config::save() {
     root->setProperty("sampleTaggerModelsDir", toJuceString(sampleTaggerModelsDir));
     root->setProperty("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
     root->setProperty("mediaDbDir", toJuceString(mediaDbDir));
+    root->setProperty("externalAudioEditorPath", toJuceString(externalAudioEditorPath));
 
     juce::Array<juce::var> favArray;
     for (const auto& f : browserFavorites)
@@ -541,6 +542,7 @@ void Config::load() {
     sampleTaggerModelsDir = getString("sampleTaggerModelsDir", sampleTaggerModelsDir);
     loadSampleTaggerOnStartup = getBool("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
     mediaDbDir = getString("mediaDbDir", mediaDbDir);
+    externalAudioEditorPath = getString("externalAudioEditorPath", externalAudioEditorPath);
     browserFavorites = getStringArray("browserFavorites");
 
     // Auto-update check

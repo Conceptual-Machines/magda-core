@@ -1,5 +1,7 @@
 #include "ClipManager.hpp"
 
+#include <juce_events/juce_events.h>
+
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
@@ -81,6 +83,107 @@ juce::File midiLibraryFileForClip(const ClipInfo& clip, const juce::File& midiDi
     return midiDir.getNonexistentChildFile(safeName + "_" + juce::String(clip.id), ".mid");
 }
 
+juce::File externalEditFileForClip(const ClipInfo& clip, const juce::File& editsDir,
+                                   const juce::File& sourceFile) {
+    auto safeName = juce::File::createLegalFileName(clip.name);
+    if (safeName.isEmpty()) {
+        safeName = sourceFile.getFileNameWithoutExtension();
+    }
+    if (safeName.isEmpty()) {
+        safeName = "audio_clip";
+    }
+    return editsDir.getNonexistentChildFile(safeName, sourceFile.getFileExtension(), false);
+}
+
+bool isLaunchableExternalAudioEditor(const juce::File& editor) {
+#if JUCE_MAC
+    if (editor.isBundle()) {
+        return true;
+    }
+#endif
+    return editor.existsAsFile();
+}
+
+bool launchExternalAudioEditor(const juce::File& editor, const juce::File& editFile) {
+    juce::StringArray args;
+
+#if JUCE_MAC
+    if (editor.isBundle()) {
+        args.add("/usr/bin/open");
+        args.add("-n");
+        args.add("-a");
+        args.add(editor.getFullPathName());
+        args.add(editFile.getFullPathName());
+    } else
+#endif
+    {
+        args.add(editor.getFullPathName());
+        args.add(editFile.getFullPathName());
+    }
+
+    juce::ChildProcess process;
+    return process.start(args, 0);
+}
+
+class ExternalEditPoller : private juce::Timer {
+  public:
+    static ExternalEditPoller& getInstance() {
+        static ExternalEditPoller poller;
+        return poller;
+    }
+
+    void watch(ClipId clipId, const juce::File& file) {
+        if (!file.existsAsFile()) {
+            return;
+        }
+
+        const auto path = file.getFullPathName();
+        const auto mtime = file.getLastModificationTime();
+        for (auto& item : watched_) {
+            if (item.path == path) {
+                item.clipId = clipId;
+                item.lastModified = mtime;
+                return;
+            }
+        }
+
+        watched_.push_back({clipId, path, mtime});
+        startTimer(1000);
+    }
+
+  private:
+    struct WatchedFile {
+        ClipId clipId = INVALID_CLIP_ID;
+        juce::String path;
+        juce::Time lastModified;
+    };
+
+    void timerCallback() override {
+        for (auto it = watched_.begin(); it != watched_.end();) {
+            juce::File file(it->path);
+            if (!file.existsAsFile()) {
+                it = watched_.erase(it);
+                continue;
+            }
+
+            const auto currentModified = file.getLastModificationTime();
+            if (currentModified != it->lastModified) {
+                it->lastModified = currentModified;
+                AudioThumbnailManager::getInstance().invalidateFile(it->path);
+                ClipManager::getInstance().forceNotifyClipPropertyChanged(it->clipId);
+                ProjectManager::getInstance().markDirty();
+            }
+            ++it;
+        }
+
+        if (watched_.empty()) {
+            stopTimer();
+        }
+    }
+
+    std::vector<WatchedFile> watched_;
+};
+
 }  // namespace
 
 ClipManager& ClipManager::getInstance() {
@@ -92,9 +195,51 @@ ClipManager& ClipManager::getInstance() {
 // Clip Creation
 // ============================================================================
 
+double ClipManager::findNonOverlappingStartBeats(TrackId trackId, double desiredStartBeats,
+                                                 double lengthBeats, ClipView view) const {
+    if (view != ClipView::Arrangement || lengthBeats <= 0.0)
+        return desiredStartBeats;
+
+    struct Span {
+        double start = 0.0;
+        double end = 0.0;
+    };
+
+    std::vector<Span> spans;
+    spans.reserve(clips_.size());
+    for (const auto& [_, clip] : clips_) {
+        if (clip.trackId != trackId || clip.view != ClipView::Arrangement)
+            continue;
+
+        spans.push_back(
+            {clip.placement.startBeat, clip.placement.startBeat + clip.placement.lengthBeats});
+    }
+
+    std::sort(spans.begin(), spans.end(),
+              [](const Span& a, const Span& b) { return a.start < b.start; });
+
+    double candidateStart = desiredStartBeats;
+    constexpr double epsilon = 1.0e-9;
+    for (const auto& span : spans) {
+        if (span.end <= candidateStart + epsilon)
+            continue;
+
+        if (span.start >= candidateStart + lengthBeats - epsilon)
+            break;
+
+        candidateStart = span.end;
+    }
+
+    return candidateStart;
+}
+
 ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, double lengthBeats,
                                          const juce::String& audioFilePath, ClipView view,
-                                         double projectBPM) {
+                                         double projectBPM, ClipOverlapPolicy overlapPolicy) {
+    if (overlapPolicy == ClipOverlapPolicy::PreserveExisting) {
+        startBeats = findNonOverlappingStartBeats(trackId, startBeats, lengthBeats, view);
+    }
+
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
@@ -192,7 +337,7 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
     }
 
     addToSessionSlotIndex(clips_[clip.id]);
-    if (view == ClipView::Arrangement)
+    if (view == ClipView::Arrangement && overlapPolicy == ClipOverlapPolicy::ResolveOverlaps)
         resolveOverlaps(clip.id);
     notifyClipsChanged();
 
@@ -254,14 +399,18 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
 
 ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double length,
                                     const juce::String& audioFilePath, ClipView view,
-                                    double projectBPM) {
+                                    double projectBPM, ClipOverlapPolicy overlapPolicy) {
     const double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
     return createAudioClipBeats(trackId, startTime * bpm / 60.0, length * bpm / 60.0, audioFilePath,
-                                view, bpm);
+                                view, bpm, overlapPolicy);
 }
 
 ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, double lengthBeats,
-                                        ClipView view) {
+                                        ClipView view, ClipOverlapPolicy overlapPolicy) {
+    if (overlapPolicy == ClipOverlapPolicy::PreserveExisting) {
+        startBeats = findNonOverlappingStartBeats(trackId, startBeats, lengthBeats, view);
+    }
+
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
@@ -294,15 +443,15 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
     }
 
     addToSessionSlotIndex(clips_[clip.id]);
-    if (view == ClipView::Arrangement)
+    if (view == ClipView::Arrangement && overlapPolicy == ClipOverlapPolicy::ResolveOverlaps)
         resolveOverlaps(clip.id);
     notifyClipsChanged();
 
     return clip.id;
 }
 
-ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double length,
-                                   ClipView view) {
+ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double length, ClipView view,
+                                   ClipOverlapPolicy overlapPolicy) {
     // Seconds → beats once, at the boundary, using project tempo. Then
     // delegate to the beats-authoritative path. Anything driven by musical
     // input (bars, beats from a parser, etc.) should call createMidiClipBeats
@@ -312,7 +461,7 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
         tempo = 120.0;
     double startBeats = (startTime * tempo) / 60.0;
     double lengthBeats = (length * tempo) / 60.0;
-    return createMidiClipBeats(trackId, startBeats, lengthBeats, view);
+    return createMidiClipBeats(trackId, startBeats, lengthBeats, view, overlapPolicy);
 }
 
 void ClipManager::deleteClip(ClipId clipId) {
@@ -365,6 +514,63 @@ void ClipManager::forceNotifyMultipleClipPropertiesChanged(const std::vector<Cli
             listener->clipPropertiesChanged(clipIds);
         }
     }
+}
+
+bool ClipManager::editAudioClipSourceInExternalEditor(ClipId clipId, juce::String& errorMessage) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr || !clip->isAudio()) {
+        errorMessage = "Select an audio clip first.";
+        return false;
+    }
+
+    const auto editorPath = juce::String(Config::getInstance().getExternalAudioEditorPath());
+    if (editorPath.isEmpty()) {
+        errorMessage = "Choose an external audio editor in Preferences > Media Library first.";
+        return false;
+    }
+
+    juce::File editor(editorPath);
+    if (!editor.exists()) {
+        errorMessage = "The configured external audio editor could not be found.";
+        return false;
+    }
+    if (!isLaunchableExternalAudioEditor(editor)) {
+        errorMessage = "Choose the editor application or executable, not its containing folder.";
+        return false;
+    }
+
+    const juce::File sourceFile(clip->audio().source.filePath);
+    if (!sourceFile.existsAsFile()) {
+        errorMessage = "The clip source file could not be found.";
+        return false;
+    }
+
+    auto editsDir = ProjectManager::getInstance().getExternalEditsDirectory();
+    if (editsDir == juce::File() || !editsDir.createDirectory()) {
+        errorMessage = "Could not create the project external-edits folder.";
+        return false;
+    }
+
+    const auto editFile = externalEditFileForClip(*clip, editsDir, sourceFile);
+    if (!sourceFile.copyFileTo(editFile) || !editFile.existsAsFile()) {
+        errorMessage = "Could not copy the clip source into the project external-edits folder.";
+        return false;
+    }
+
+    if (!launchExternalAudioEditor(editor, editFile)) {
+        editFile.deleteFile();
+        errorMessage = "Could not launch the configured external audio editor.";
+        return false;
+    }
+
+    const auto oldPath = clip->audio().source.filePath;
+    clip->audio().source.filePath = editFile.getFullPathName();
+    AudioThumbnailManager::getInstance().invalidateFile(oldPath);
+    AudioThumbnailManager::getInstance().invalidateFile(clip->audio().source.filePath);
+    notifyClipPropertyChanged(clipId);
+    ProjectManager::getInstance().markDirty();
+    ExternalEditPoller::getInstance().watch(clipId, editFile);
+    return true;
 }
 
 ClipId ClipManager::duplicateClip(ClipId clipId) {
@@ -1620,66 +1826,6 @@ void ClipManager::setClipMidiEditorRowHeight(ClipId clipId, int rowHeight) {
     }
 }
 
-void ClipManager::setClipDrumRowLabel(ClipId clipId, int noteNumber, const juce::String& label) {
-    auto* clip = getClip(clipId);
-    if (clip == nullptr || noteNumber < 0 || noteNumber > 127)
-        return;
-    auto it = clip->drumRowMeta.find(noteNumber);
-    if (label.isEmpty()) {
-        if (it == clip->drumRowMeta.end())
-            return;
-        it->second.label.clear();
-        if (it->second.isEmpty())
-            clip->drumRowMeta.erase(it);
-    } else {
-        if (it == clip->drumRowMeta.end())
-            clip->drumRowMeta[noteNumber].label = label;
-        else if (it->second.label == label)
-            return;
-        else
-            it->second.label = label;
-    }
-    notifyClipPropertyChanged(clipId);
-}
-
-void ClipManager::setClipDrumRowRole(ClipId clipId, int noteNumber, const juce::String& role) {
-    auto* clip = getClip(clipId);
-    if (clip == nullptr || noteNumber < 0 || noteNumber > 127)
-        return;
-    auto it = clip->drumRowMeta.find(noteNumber);
-    if (role.isEmpty()) {
-        if (it == clip->drumRowMeta.end())
-            return;
-        it->second.role.clear();
-        if (it->second.isEmpty())
-            clip->drumRowMeta.erase(it);
-    } else {
-        if (it == clip->drumRowMeta.end())
-            clip->drumRowMeta[noteNumber].role = role;
-        else if (it->second.role == role)
-            return;
-        else
-            it->second.role = role;
-    }
-    notifyClipPropertyChanged(clipId);
-}
-
-void ClipManager::clearClipDrumRowMeta(ClipId clipId, int noteNumber) {
-    auto* clip = getClip(clipId);
-    if (clip == nullptr)
-        return;
-    if (clip->drumRowMeta.erase(noteNumber) > 0)
-        notifyClipPropertyChanged(clipId);
-}
-
-void ClipManager::clearAllClipDrumRowMeta(ClipId clipId) {
-    auto* clip = getClip(clipId);
-    if (clip == nullptr || clip->drumRowMeta.empty())
-        return;
-    clip->drumRowMeta.clear();
-    notifyClipPropertyChanged(clipId);
-}
-
 // ============================================================================
 // Content-Level Operations (Editor Operations)
 // ============================================================================
@@ -2391,11 +2537,13 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
         if (clipData.isAudio()) {
             if (clipData.audio().source.filePath.isNotEmpty()) {
                 newClipId = createAudioClip(newTrackId, newStartTime, clipLength,
-                                            clipData.audio().source.filePath, targetView);
+                                            clipData.audio().source.filePath, targetView, 0.0,
+                                            ClipOverlapPolicy::ResolveOverlaps);
             }
         } else {
             // For MIDI clips, create empty then copy notes
-            newClipId = createMidiClip(newTrackId, newStartTime, clipLength, targetView);
+            newClipId = createMidiClip(newTrackId, newStartTime, clipLength, targetView,
+                                       ClipOverlapPolicy::ResolveOverlaps);
         }
 
         if (newClipId != INVALID_CLIP_ID) {

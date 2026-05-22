@@ -33,6 +33,16 @@ class AudioThumbnailManager {
     juce::AudioThumbnail* getThumbnail(const juce::String& audioFilePath);
 
     /**
+     * @brief Remove a listener from a cached thumbnail if it still exists.
+     *
+     * Unlike getThumbnail(), this never creates a thumbnail. Use this for UI
+     * teardown because invalidateFile() may have already removed the cached
+     * thumbnail while the component still tracks the source path.
+     */
+    void removeThumbnailChangeListener(const juce::String& audioFilePath,
+                                       juce::ChangeListener* listener);
+
+    /**
      * @brief Draw the waveform for an audio file
      * @param g Graphics context to draw into
      * @param bounds Rectangle to draw the waveform in
@@ -107,6 +117,11 @@ class AudioThumbnailManager {
      * @brief Clear the thumbnail cache (useful for freeing memory)
      */
     void clearCache();
+
+    /**
+     * @brief Clear cached waveform, BPM, transient, reader, and peak data for one file.
+     */
+    void invalidateFile(const juce::String& audioFilePath);
 
     /**
      * @brief Shutdown and release all resources
