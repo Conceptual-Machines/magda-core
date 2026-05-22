@@ -337,6 +337,7 @@ bool InstructionExecutor::autoCreateClip() {
 
     currentClipId_ = clipId;
     autoCreatedClip_ = true;
+    api_.selection().selectClip(clipId);
     results_.add("Created MIDI clip at bar " + juce::String(beatsToBar(startBeats), 2) +
                  ", length " + juce::String(beatsToBar(lengthBeats) - 1.0, 2) + " bars");
     return true;
@@ -576,6 +577,7 @@ bool InstructionExecutor::executeClip(const ClipOp& op) {
     }
 
     currentClipId_ = clipId;
+    api_.selection().selectClip(clipId);
 
     if (op.name.isNotEmpty()) {
         cm.setClipName(clipId, op.name);
