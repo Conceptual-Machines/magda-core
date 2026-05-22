@@ -1,5 +1,6 @@
 #include "drummer_agent.hpp"
 
+#include "../daw/audio/plugins/DrumGridRoles.hpp"
 #include "../daw/core/Config.hpp"
 #include "llm_client_factory.hpp"
 #include "llm_presets.hpp"
@@ -8,7 +9,11 @@ namespace magda {
 
 const char* DrummerAgent::getSystemPrompt() {
     return R"PROMPT(You are a drum pattern assistant. Output drum patterns in the grid grammar below.
-Respond ONLY with grid lines. No prose. No markdown. No code fences.
+Return a JSON object with exactly these fields:
+  rows: a string containing only grid lines in the grammar below.
+  description: a short plain-language description of the pattern, or "" if not useful.
+
+Do not put prose, markdown, code fences, or explanations inside rows.
 
 GRID FORMAT:
   <ROLE> | <cell> <cell> ... <cell>
@@ -45,13 +50,13 @@ applied later by the host; the role names are stable, you do not need to
 think about which MIDI note each one plays.
 
 CURRENT-PATTERN CONTEXT:
-If the user's prompt is preceded by a "Current pattern:" block in grid
-grammar, treat it as context — that is what's already on the selected
-clip. Use it to inform additions, variations, or fills the user is asking
-for. Your output is a COMPLETE NEW PATTERN that lands in a fresh clip; it
-does not merge with the existing one. If the user asks for "a fill at the
-end" or "a 4-bar version with a fill", emit the full pattern including
-the fill bar.
+If the user's prompt is preceded by one or more "Current pattern:" blocks
+in grid grammar, treat them as context — those are the selected clip(s).
+Use them to inform additions, variations, or fills the user is asking for.
+Your output is a COMPLETE NEW PATTERN that lands in a fresh clip; it does
+not merge with the existing one. If the user asks for "a fill at the end"
+or "a 4-bar version with a fill", emit the full pattern including the fill
+bar.
 
 EXAMPLES:
 
@@ -141,17 +146,115 @@ CR | . . . . . . . . . . . . . . . . | . . . . . . . . . . . . . . . . | . . . .
 }
 
 namespace {
-void logResult(const std::string& rawOutput, const std::vector<Instruction>& instructions,
-               const juce::String& error) {
+juce::var buildDrummerResponseSchema() {
+    return llm::Schema::object({
+        {"rows", llm::Schema::string()},
+        {"description", llm::Schema::string()},
+    });
+}
+
+juce::String stripMarkdownFence(juce::String text) {
+    text = text.trim();
+    if (!text.startsWith("```"))
+        return text;
+
+    auto firstLineEnd = text.indexOfChar('\n');
+    auto lastFence = text.lastIndexOf("```");
+    if (firstLineEnd >= 0 && lastFence > firstLineEnd)
+        return text.substring(firstLineEnd + 1, lastFence).trim();
+
+    return text;
+}
+
+bool isDrumGridLine(const juce::String& line) {
+    if (!line.containsChar('|'))
+        return false;
+
+    auto roleToken = line.upToFirstOccurrenceOf("|", false, false).trim();
+    return daw::audio::drum_grid_roles::roleIdForToken(roleToken).isNotEmpty();
+}
+
+juce::String extractLastGridBlock(const juce::String& text) {
+    juce::StringArray currentBlock;
+    juce::StringArray lastBlock;
+
+    juce::StringArray lines;
+    lines.addLines(text);
+
+    for (auto line : lines) {
+        line = line.trim();
+
+        if (isDrumGridLine(line)) {
+            currentBlock.add(line);
+            continue;
+        }
+
+        if (!currentBlock.isEmpty()) {
+            lastBlock = currentBlock;
+            currentBlock.clear();
+        }
+    }
+
+    if (!currentBlock.isEmpty())
+        lastBlock = currentBlock;
+
+    return lastBlock.joinIntoString("\n").trim();
+}
+
+juce::String extractRowsFromResponse(const juce::String& rawText, juce::String& description) {
+    auto text = stripMarkdownFence(rawText);
+
+    auto parsed = juce::JSON::parse(text);
+    if (auto* obj = parsed.getDynamicObject()) {
+        auto rows = obj->getProperty("rows");
+        if (rows.isString()) {
+            if (auto desc = obj->getProperty("description"); desc.isString())
+                description = desc.toString().trim();
+
+            auto rowsText = rows.toString().trim();
+            if (rowsText.isNotEmpty())
+                return rowsText;
+        }
+    }
+
+    return extractLastGridBlock(text);
+}
+
+void parseResponse(CompactParser& parser, DrummerAgent::GenerateResult& result,
+                   const juce::String& rawText) {
+    auto trimmedText = rawText.trim();
+    result.rawOutput = trimmedText.toStdString();
+
+    juce::String description;
+    auto rowsText = extractRowsFromResponse(trimmedText, description);
+    result.description = description.toStdString();
+
+    if (rowsText.isEmpty()) {
+        result.error = "Parse error: no drum grid rows found";
+        result.hasError = true;
+        return;
+    }
+
+    result.instructions = parser.parse(rowsText);
+    if (result.instructions.empty() && parser.getLastError().isNotEmpty()) {
+        result.error = "Parse error: " + parser.getLastError().toStdString();
+        result.hasError = true;
+    }
+}
+
+void logResult(const DrummerAgent::GenerateResult& result) {
+    const auto& rawOutput = result.rawOutput;
     DBG("MAGDA DrummerAgent raw output (" + juce::String(static_cast<int>(rawOutput.size())) +
         " chars):");
     DBG("---8<---");
     DBG(juce::String(rawOutput));
     DBG("--->8---");
-    DBG("MAGDA DrummerAgent parsed " + juce::String(static_cast<int>(instructions.size())) +
+    if (!result.description.empty())
+        DBG("MAGDA DrummerAgent description: " + juce::String(result.description));
+    DBG("MAGDA DrummerAgent parsed " + juce::String(static_cast<int>(result.instructions.size())) +
         " instruction(s)");
-    if (error.isNotEmpty())
-        DBG("MAGDA DrummerAgent ERROR: " + error);
+    if (!result.error.empty())
+        DBG("MAGDA DrummerAgent ERROR: " + juce::String(result.error));
 }
 }  // namespace
 
@@ -182,6 +285,7 @@ DrummerAgent::GenerateResult DrummerAgent::generate(const std::string& message) 
     request.systemPrompt = juce::String::fromUTF8(getSystemPrompt());
     request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.4f;
+    request.schema = buildDrummerResponseSchema();
 
     auto response = client->sendRequest(request);
     if (!response.success) {
@@ -190,15 +294,8 @@ DrummerAgent::GenerateResult DrummerAgent::generate(const std::string& message) 
         return result;
     }
 
-    auto trimmedText = response.text.trim();
-    result.rawOutput = trimmedText.toStdString();
-    result.instructions = parser_.parse(trimmedText);
-    if (result.instructions.empty() && parser_.getLastError().isNotEmpty()) {
-        result.error = "Parse error: " + parser_.getLastError().toStdString();
-        result.hasError = true;
-    }
-
-    logResult(result.rawOutput, result.instructions, juce::String(result.error));
+    parseResponse(parser_, result, response.text);
+    logResult(result);
     return result;
 }
 
@@ -228,6 +325,7 @@ DrummerAgent::GenerateResult DrummerAgent::generateStreaming(const std::string& 
     request.systemPrompt = juce::String::fromUTF8(getSystemPrompt());
     request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.4f;
+    request.schema = buildDrummerResponseSchema();
 
     auto response =
         client->sendStreamingRequest(request, [this, &onToken](const juce::String& tok) {
@@ -242,15 +340,8 @@ DrummerAgent::GenerateResult DrummerAgent::generateStreaming(const std::string& 
         return result;
     }
 
-    auto trimmedText = response.text.trim();
-    result.rawOutput = trimmedText.toStdString();
-    result.instructions = parser_.parse(trimmedText);
-    if (result.instructions.empty() && parser_.getLastError().isNotEmpty()) {
-        result.error = "Parse error: " + parser_.getLastError().toStdString();
-        result.hasError = true;
-    }
-
-    logResult(result.rawOutput, result.instructions, juce::String(result.error));
+    parseResponse(parser_, result, response.text);
+    logResult(result);
     return result;
 }
 
