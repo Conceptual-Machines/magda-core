@@ -95,6 +95,7 @@ class AIChatConsoleContent : public PanelContent,
     void restoreSendIcon();
     void appendToChat(const juce::String& text);
     void updateContextBar();
+    std::vector<magda::ClipId> getSelectedDrummerContextClipIds() const;
 
     // Timer callback for "Thinking..." animation
     void timerCallback() override;
@@ -126,6 +127,7 @@ class AIChatConsoleContent : public PanelContent,
     // RequestThread::run and the drum context icon below the chat.
     bool drummerModeActive_ = false;
     juce::Label contextLabel_;
+    juce::ToggleButton useClipContextToggle_{"Use clip"};
     juce::DrawableButton sendButton_{"send", juce::DrawableButton::ImageFitted};
     juce::DrawableButton clearButton_{"clear", juce::DrawableButton::ImageFitted};
     juce::DrawableButton copyButton_{"copy", juce::DrawableButton::ImageFitted};
@@ -133,6 +135,8 @@ class AIChatConsoleContent : public PanelContent,
     juce::Rectangle<int> contextIconBounds_;
     juce::String contextText_;
     bool contextEnabled_ = true;
+    bool pendingUseClipContext_ = false;
+    std::vector<magda::ClipId> pendingClipContextIds_;
 
     void mouseUp(const juce::MouseEvent& event) override;
 

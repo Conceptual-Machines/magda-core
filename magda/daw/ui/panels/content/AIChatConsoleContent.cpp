@@ -56,6 +56,7 @@ namespace {
 // definition lives further down in the file's other anon-namespace block,
 // next to isDrummerTrack().
 juce::String formatClipAsDrummerContext(magda::ClipId clipId);
+juce::String formatClipsAsDrummerContext(const std::vector<magda::ClipId>& clipIds);
 }  // namespace
 
 // ============================================================================
@@ -555,8 +556,9 @@ void AIChatConsoleContent::RequestThread::run() {
         // executor never inherits the selected clip).
         if (owner_.drummerAgent_) {
             std::string drummerMessage = message;
-            auto selectedClip = magda::SelectionManager::getInstance().getSelectedClip();
-            auto contextPreamble = formatClipAsDrummerContext(selectedClip);
+            auto contextPreamble = owner_.pendingUseClipContext_
+                                       ? formatClipsAsDrummerContext(owner_.pendingClipContextIds_)
+                                       : juce::String();
             if (contextPreamble.isNotEmpty()) {
                 drummerMessage = contextPreamble.toStdString() + "\nUser request: " + message;
             }
@@ -790,6 +792,15 @@ AIChatConsoleContent::AIChatConsoleContent() {
     contextLabel_.setInterceptsMouseClicks(true, false);
     contextLabel_.addMouseListener(this, false);
     addAndMakeVisible(contextLabel_);
+
+    useClipContextToggle_.setColour(juce::ToggleButton::textColourId, DarkTheme::getAccentColour());
+    useClipContextToggle_.setColour(juce::ToggleButton::tickColourId, DarkTheme::getAccentColour());
+    useClipContextToggle_.setColour(juce::ToggleButton::tickDisabledColourId,
+                                    DarkTheme::getSecondaryTextColour().withAlpha(0.35f));
+    useClipContextToggle_.setTooltip("Include selected Drum Grid clip(s) as drummer context");
+    useClipContextToggle_.setToggleState(true, juce::dontSendNotification);
+    useClipContextToggle_.setVisible(false);
+    addAndMakeVisible(useClipContextToggle_);
 
     // Send button (embedded in bottom bar) — SVG icon
     auto enterSvg =
@@ -1159,6 +1170,10 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
         drummerAgent_->resetCancel();
 
     pendingMessage_ = resolvedText;
+    pendingClipContextIds_ = getSelectedDrummerContextClipIds();
+    pendingUseClipContext_ = contextEnabled_ && useClipContextToggle_.isVisible() &&
+                             useClipContextToggle_.getToggleState() &&
+                             !pendingClipContextIds_.empty();
 
     dotCount_ = 0;
     startTimer(400);  // Animate dots every 400ms
@@ -1317,6 +1332,10 @@ void AIChatConsoleContent::resized() {
         auto bottomBar = bounds.removeFromBottom(26);
         bottomBarBounds_ = bottomBar;
         sendButton_.setBounds(bottomBar.removeFromRight(22));
+        if (useClipContextToggle_.isVisible()) {
+            bottomBar.removeFromRight(4);
+            useClipContextToggle_.setBounds(bottomBar.removeFromRight(104).reduced(0, 3));
+        }
         contextIconBounds_ = bottomBar.removeFromLeft(22);
         contextLabel_.setBounds(bottomBar);
 
@@ -1527,6 +1546,7 @@ void AIChatConsoleContent::selectionTypeChanged(magda::SelectionType newType) {
     if (newType == magda::SelectionType::None) {
         contextText_.clear();
         contextIcon_ = ContextIcon::None;
+        drummerModeActive_ = false;
         updateContextBar();
     }
 }
@@ -1626,7 +1646,58 @@ juce::String formatClipAsDrummerContext(magda::ClipId clipId) {
         return {};
     return header + rows;
 }
+
+juce::String formatClipsAsDrummerContext(const std::vector<magda::ClipId>& clipIds) {
+    juce::String output;
+    for (auto clipId : clipIds) {
+        auto pattern = formatClipAsDrummerContext(clipId);
+        if (pattern.isEmpty())
+            continue;
+
+        const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+        juce::String clipName = clip != nullptr ? clip->name : juce::String(clipId);
+        if (output.isNotEmpty())
+            output += "\n";
+        output += "Selected clip \"" + clipName + "\" context:\n" + pattern;
+    }
+    return output;
+}
 }  // namespace
+
+std::vector<magda::ClipId> AIChatConsoleContent::getSelectedDrummerContextClipIds() const {
+    std::vector<magda::ClipId> clipIds;
+    std::set<magda::ClipId> seen;
+    auto& selection = magda::SelectionManager::getInstance();
+
+    auto addIfValid = [&](magda::ClipId clipId) {
+        if (clipId == magda::INVALID_CLIP_ID || seen.count(clipId) != 0)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+        if (clip == nullptr || !clip->isMidi() || !isDrummerTrack(clip->trackId))
+            return;
+        seen.insert(clipId);
+        clipIds.push_back(clipId);
+    };
+
+    for (auto clipId : selection.getSelectedClips())
+        addIfValid(clipId);
+
+    addIfValid(selection.getSelectedClip());
+
+    std::sort(clipIds.begin(), clipIds.end(), [](magda::ClipId a, magda::ClipId b) {
+        const auto* clipA = magda::ClipManager::getInstance().getClip(a);
+        const auto* clipB = magda::ClipManager::getInstance().getClip(b);
+        if (clipA == nullptr || clipB == nullptr)
+            return a < b;
+        if (clipA->trackId != clipB->trackId)
+            return clipA->trackId < clipB->trackId;
+        if (clipA->startTime != clipB->startTime)
+            return clipA->startTime < clipB->startTime;
+        return a < b;
+    });
+
+    return clipIds;
+}
 
 void AIChatConsoleContent::trackSelectionChanged(magda::TrackId trackId) {
     auto* track = magda::TrackManager::getInstance().getTrack(trackId);
@@ -1689,6 +1760,14 @@ void AIChatConsoleContent::updateContextBar() {
     contextLabel_.setColour(juce::Label::textColourId,
                             contextEnabled_ ? DarkTheme::getAccentColour()
                                             : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+    auto selectedClipContextIds = getSelectedDrummerContextClipIds();
+    const bool showClipContextToggle = drummerModeActive_ && !selectedClipContextIds.empty();
+    useClipContextToggle_.setButtonText(selectedClipContextIds.size() > 1 ? "Use clips"
+                                                                          : "Use clip");
+    useClipContextToggle_.setVisible(showClipContextToggle);
+    useClipContextToggle_.setEnabled(contextEnabled_);
+    useClipContextToggle_.setAlpha(contextEnabled_ ? 1.0f : 0.35f);
+    resized();
     repaint();
 }
 
