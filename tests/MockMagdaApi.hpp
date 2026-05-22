@@ -2,8 +2,8 @@
 
 // Header-only test double for magda::MagdaApi. Provides minimal
 // implementations of every sub-interface — Selection, Track, Clip,
-// Session, Project are functional; Automation, Alias, and Undo are
-// inert stubs that abort on use (the binding tests don't touch them).
+// Session, Project, and Undo are functional enough for tests; Automation
+// and Alias are inert stubs that abort on use (the binding tests don't touch them).
 //
 // The mock records writes (set_volume, set_muted, etc.) into vectors so
 // tests can assert what the bindings invoked. Reads are seeded by
@@ -87,8 +87,10 @@ class StubAliasApi : public AliasApi {
 
 class StubUndoApi : public UndoApi {
   public:
+    int executeCalls = 0;
+
     void executeCommand(std::unique_ptr<UndoableCommand>) override {
-        std::abort();
+        ++executeCalls;
     }
 };
 
