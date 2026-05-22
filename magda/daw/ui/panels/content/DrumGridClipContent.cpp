@@ -18,6 +18,7 @@
 #include "core/ClipOperations.hpp"
 #include "core/DrumkitManager.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/PluginPreferences.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -59,6 +60,35 @@ daw::audio::DrumGridPlugin* findDrumGridForTrack(magda::TrackId trackId) {
                 for (auto* innerPlugin : rackInstance->type->getPlugins()) {
                     if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin))
                         return dg;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+// First synth (instrument) plugin on `trackId`, walking into racks. Returns
+// nullptr if the track has none. Used to address the track's primary
+// instrument for per-plugin preferences.
+te::Plugin* findPrimaryInstrumentForTrack(magda::TrackId trackId) {
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return nullptr;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return nullptr;
+    auto* teTrack = bridge->getAudioTrack(trackId);
+    if (!teTrack)
+        return nullptr;
+
+    for (auto* plugin : teTrack->pluginList) {
+        if (plugin != nullptr && plugin->isSynth())
+            return plugin;
+        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
+            if (rackInstance->type != nullptr) {
+                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
+                    if (innerPlugin != nullptr && innerPlugin->isSynth())
+                        return innerPlugin;
                 }
             }
         }
@@ -1848,6 +1878,13 @@ DrumGridClipContent::DrumGridClipContent() {
     };
     addAndMakeVisible(controlsToggle_.get());
 
+    editorPrefButton_ = std::make_unique<magda::SvgButton>("EditorPrefMenu", BinaryData::menu_svg,
+                                                           BinaryData::menu_svgSize);
+    editorPrefButton_->setTooltip("Set this editor as default for the track's instrument");
+    editorPrefButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    editorPrefButton_->onClick = [this]() { showEditorPreferenceMenu(); };
+    addAndMakeVisible(editorPrefButton_.get());
+
     verticalZoomStrip_ = std::make_unique<VerticalZoomStrip>(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
     verticalZoomStrip_->getValue = [this]() { return rowHeight_; };
     verticalZoomStrip_->onZoomChanged = [this](int newHeight, int anchorScreenY) {
@@ -2216,6 +2253,8 @@ void DrumGridClipContent::resized() {
     int iconPadding = (SIDEBAR_WIDTH - iconSize) / 2;
     controlsToggle_->setBounds(iconPadding, getHeight() - iconSize - iconPadding, iconSize,
                                iconSize);
+    editorPrefButton_->setBounds(iconPadding, getHeight() - (iconSize + iconPadding) * 2, iconSize,
+                                 iconSize);
 
     // MIDI drawer at bottom (if open)
     if (velocityDrawerOpen_) {
@@ -2822,6 +2861,48 @@ void DrumGridClipContent::showRowContextMenu(int noteNumber, juce::Point<int> sc
             } else if (result >= 700 && result < 700 + static_cast<int>(savedDrumkitNames.size())) {
                 applyDrumkitToClip(savedDrumkitNames[static_cast<size_t>(result - 700)]);
             }
+        });
+}
+
+void DrumGridClipContent::showEditorPreferenceMenu() {
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (clip == nullptr)
+        return;
+
+    auto* plugin = findPrimaryInstrumentForTrack(clip->trackId);
+    juce::PopupMenu menu;
+
+    if (plugin == nullptr) {
+        menu.addItem(0, "No instrument plugin on this track", false, false);
+    } else {
+        const auto identifier = plugin->getIdentifierString();
+        const auto pluginName = plugin->getName();
+        using Editor = magda::PluginPreferences::PreferredClipEditor;
+        const auto current =
+            magda::PluginPreferences::getInstance().preferredClipEditorFor(identifier);
+
+        menu.addSectionHeader("Preferred clip editor for " + pluginName);
+        menu.addItem(1, "Default", true, current == Editor::Unset);
+        menu.addItem(2, "Piano Roll", true, current == Editor::PianoRoll);
+        menu.addItem(3, "Drum Grid", true, current == Editor::DrumGrid);
+    }
+
+    juce::String identifierCopy =
+        (plugin != nullptr) ? plugin->getIdentifierString() : juce::String();
+    auto rect = editorPrefButton_->getScreenBounds();
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetScreenArea(rect), [identifierCopy](int result) {
+            if (result <= 0 || identifierCopy.isEmpty())
+                return;
+            using Editor = magda::PluginPreferences::PreferredClipEditor;
+            auto editor = Editor::Unset;
+            if (result == 2)
+                editor = Editor::PianoRoll;
+            else if (result == 3)
+                editor = Editor::DrumGrid;
+            magda::PluginPreferences::getInstance().setPreferredClipEditor(identifierCopy, editor);
         });
 }
 

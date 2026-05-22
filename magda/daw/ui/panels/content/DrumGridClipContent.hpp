@@ -118,12 +118,14 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     std::unique_ptr<DrumGridLabelDivider> labelDivider_;
     std::unique_ptr<VerticalZoomStrip> verticalZoomStrip_;
     std::unique_ptr<magda::SvgButton> controlsToggle_;
+    std::unique_ptr<magda::SvgButton> editorPrefButton_;
 
     void buildPadRows();
     void refreshPadRowNames();
     void findDrumGrid();
     void setLabelWidth(int newWidth);
     void showRowContextMenu(int noteNumber, juce::Point<int> screenPos);
+    void showEditorPreferenceMenu();
     void applyTemplateToClip(const daw::audio::drum_grid_templates::Template& templ);
     void applyDrumkitToClip(const juce::String& drumkitName);
     void promptSaveDrumkit();

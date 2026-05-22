@@ -16,6 +16,7 @@
 #include "core/AppPaths.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
+#include "core/PluginPreferences.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
@@ -559,6 +560,20 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     menu.addItem(3, "Configure Parameters...");
     menu.addItem(7, "Edit Alias...");
     menu.addSeparator();
+
+    // Preferred clip editor (instruments only — effects don't drive clip editor choice)
+    if (plugin.category == "Instrument") {
+        using Editor = magda::PluginPreferences::PreferredClipEditor;
+        const auto current =
+            magda::PluginPreferences::getInstance().preferredClipEditorFor(plugin.uniqueId);
+        juce::PopupMenu editorSubmenu;
+        editorSubmenu.addItem(10, "Default", true, current == Editor::Unset);
+        editorSubmenu.addItem(11, "Piano Roll", true, current == Editor::PianoRoll);
+        editorSubmenu.addItem(12, "Drum Grid", true, current == Editor::DrumGrid);
+        menu.addSubMenu("Preferred Clip Editor", editorSubmenu);
+        menu.addSeparator();
+    }
+
     menu.addItem(5, plugin.isFavorite ? "Remove from Favorites" : "Add to Favorites");
     menu.addSeparator();
     menu.addItem(6, "Show in Finder", !plugin.fileOrIdentifier.isEmpty());
@@ -640,6 +655,18 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                 }
                 case 7:
                     showEditAliasDialog(plugin);
+                    break;
+                case 10:
+                    magda::PluginPreferences::getInstance().setPreferredClipEditor(
+                        plugin.uniqueId, magda::PluginPreferences::PreferredClipEditor::Unset);
+                    break;
+                case 11:
+                    magda::PluginPreferences::getInstance().setPreferredClipEditor(
+                        plugin.uniqueId, magda::PluginPreferences::PreferredClipEditor::PianoRoll);
+                    break;
+                case 12:
+                    magda::PluginPreferences::getInstance().setPreferredClipEditor(
+                        plugin.uniqueId, magda::PluginPreferences::PreferredClipEditor::DrumGrid);
                     break;
             }
         });

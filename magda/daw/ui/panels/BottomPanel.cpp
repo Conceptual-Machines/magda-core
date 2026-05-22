@@ -19,6 +19,7 @@
 #include "content/PianoRollContent.hpp"
 #include "content/WaveformEditorContent.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/PluginPreferences.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -31,7 +32,11 @@ namespace magda {
 namespace {
 namespace te = tracktion::engine;
 
-bool trackHasDrumGrid(TrackId trackId) {
+// True if any instrument plugin on `trackId` has its preferred clip editor set
+// to Drum Grid (via magda::PluginPreferences). Walks the track's plugin list
+// and into any racks. The DrumGrid plugin has an implicit DrumGrid preference
+// in PluginPreferences so existing behaviour is preserved without user setup.
+bool trackPrefersDrumGrid(TrackId trackId) {
     auto* audioEngine = TrackManager::getInstance().getAudioEngine();
     if (!audioEngine)
         return false;
@@ -42,13 +47,22 @@ bool trackHasDrumGrid(TrackId trackId) {
     if (!teTrack)
         return false;
 
+    auto& prefs = magda::PluginPreferences::getInstance();
+    using Editor = magda::PluginPreferences::PreferredClipEditor;
+
+    auto pluginPrefersDrumGrid = [&](te::Plugin* plugin) {
+        if (plugin == nullptr || !plugin->isSynth())
+            return false;
+        return prefs.preferredClipEditorFor(plugin->getIdentifierString()) == Editor::DrumGrid;
+    };
+
     for (auto* plugin : teTrack->pluginList) {
-        if (dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
+        if (pluginPrefersDrumGrid(plugin))
             return true;
         if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
             if (rackInstance->type != nullptr) {
                 for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin))
+                    if (pluginPrefersDrumGrid(innerPlugin))
                         return true;
                 }
             }
@@ -815,7 +829,7 @@ void BottomPanel::updateContentBasedOnSelection() {
                 // Auto-default to Drum Grid for DrumGrid tracks (on first selection)
                 if (selectedClip != lastEditorClipId_) {
                     lastEditorClipId_ = selectedClip;
-                    if (trackHasDrumGrid(clip->trackId))
+                    if (trackPrefersDrumGrid(clip->trackId))
                         lastEditorTabChoice_ = 1;  // Drum Grid
                     else
                         lastEditorTabChoice_ = 0;  // Piano Roll

@@ -34,6 +34,7 @@ target_sources(magda_daw PRIVATE
     ParameterDetector.cpp
     PresetManager.cpp
     DrumkitManager.cpp
+    PluginPreferences.cpp
     PluginPresetScanner.cpp
     InternalDeviceKind.cpp
     # Parameter alias system (issue #1062)
@@ -101,5 +102,6 @@ target_sources(magda_daw PRIVATE
     AutomationManager.hpp
     PresetManager.hpp
     DrumkitManager.hpp
+    PluginPreferences.hpp
     PluginPresetScanner.hpp
 )
