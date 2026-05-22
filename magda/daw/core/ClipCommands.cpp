@@ -2181,17 +2181,19 @@ void prepareDrumGridAdsrMacros(DeviceInfo& drumGridDevice) {
 }
 
 void zeroSamplerAdsrBase(daw::audio::MagdaSamplerPlugin& sampler) {
-    static constexpr float kZero = 0.0f;
+    const float attackMin = sampler.attackParam->getValueRange().getStart();
+    const float decayMin = sampler.decayParam->getValueRange().getStart();
+    const float releaseMin = sampler.releaseParam->getValueRange().getStart();
 
-    sampler.attackParam->setParameterFromHost(kZero, juce::dontSendNotification);
-    sampler.decayParam->setParameterFromHost(kZero, juce::dontSendNotification);
-    sampler.sustainParam->setParameterFromHost(kZero, juce::dontSendNotification);
-    sampler.releaseParam->setParameterFromHost(kZero, juce::dontSendNotification);
+    sampler.attackParam->setParameterFromHost(attackMin, juce::dontSendNotification);
+    sampler.decayParam->setParameterFromHost(decayMin, juce::dontSendNotification);
+    sampler.sustainParam->setParameterFromHost(0.0f, juce::dontSendNotification);
+    sampler.releaseParam->setParameterFromHost(releaseMin, juce::dontSendNotification);
 
-    sampler.attackValue = kZero;
-    sampler.decayValue = kZero;
-    sampler.sustainValue = kZero;
-    sampler.releaseValue = kZero;
+    sampler.attackValue = attackMin;
+    sampler.decayValue = decayMin;
+    sampler.sustainValue = 0.0f;
+    sampler.releaseValue = releaseMin;
 }
 
 void addSamplerAdsrMacroLinks(DeviceInfo& drumGridDevice, TrackId trackId, DeviceId samplerDeviceId,

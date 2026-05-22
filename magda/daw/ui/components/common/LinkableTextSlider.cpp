@@ -230,6 +230,7 @@ void LinkableTextSlider::setLinkContext(magda::DeviceId deviceId, int paramIndex
     deviceId_ = deviceId;
     paramIndex_ = paramIndex;
     devicePath_ = devicePath;
+    linkOwnerPath_ = devicePath;
     refreshMidiBindingState();
 
     // Wire the underlying TextSlider's automation target so the purple
@@ -244,6 +245,11 @@ void LinkableTextSlider::setLinkContext(magda::DeviceId deviceId, int paramIndex
         slider_.setAutomationTarget(target);
     else
         slider_.clearAutomationTarget();
+}
+
+void LinkableTextSlider::setLinkOwnerPath(const magda::ChainNodePath& ownerPath) {
+    linkOwnerPath_ = ownerPath;
+    refreshLinkModeState();
 }
 
 void LinkableTextSlider::setAvailableMods(const magda::ModArray* mods) {
@@ -297,7 +303,7 @@ void LinkableTextSlider::refreshLinkModeState() {
 // ============================================================================
 
 void LinkableTextSlider::modLinkModeChanged(bool active, const magda::ModSelection& selection) {
-    bool isInScope = isInScopeOf(devicePath_, selection.parentPath);
+    bool isInScope = isInScopeOf(linkOwnerPath_, selection.parentPath);
 
     isInLinkMode_ = active && isInScope;
 
@@ -327,7 +333,7 @@ void LinkableTextSlider::modLinkModeChanged(bool active, const magda::ModSelecti
 }
 
 void LinkableTextSlider::macroLinkModeChanged(bool active, const magda::MacroSelection& selection) {
-    bool isInScope = isInScopeOf(devicePath_, selection.parentPath);
+    bool isInScope = isInScopeOf(linkOwnerPath_, selection.parentPath);
 
     isInLinkMode_ = active && isInScope;
 
@@ -526,7 +532,7 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
 
     // Mod link mode
     if (activeMod_.isValid()) {
-        const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_,
+        const auto* modPtr = resolveModPtr(activeMod_, linkOwnerPath_, availableMods_,
                                            availableRackMods_, availableTrackMods_);
 
         float initialAmount = 0.0f;
@@ -564,7 +570,7 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
 
     // Macro link mode
     if (activeMacro_.isValid()) {
-        const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
+        const auto* macroPtr = resolveMacroPtr(activeMacro_, linkOwnerPath_, availableMacros_,
                                                availableRackMacros_, availableTrackMacros_);
 
         float initialAmount = 0.0f;
@@ -620,8 +626,8 @@ void LinkableTextSlider::mouseDrag(const juce::MouseEvent& e) {
     amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
 
     // Resolve mod/macro and dispatch amount change
-    const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_, availableRackMods_,
-                                       availableTrackMods_);
+    const auto* modPtr = resolveModPtr(activeMod_, linkOwnerPath_, availableMods_,
+                                       availableRackMods_, availableTrackMods_);
 
     if (modPtr) {
         magda::ControlTarget thisTarget =
@@ -641,7 +647,7 @@ void LinkableTextSlider::mouseDrag(const juce::MouseEvent& e) {
         }
         repaint();
     } else if (activeMacro_.isValid()) {
-        const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
+        const auto* macroPtr = resolveMacroPtr(activeMacro_, linkOwnerPath_, availableMacros_,
                                                availableRackMacros_, availableTrackMacros_);
         if (macroPtr) {
             magda::ControlTarget thisTarget =
@@ -666,6 +672,25 @@ void LinkableTextSlider::mouseDrag(const juce::MouseEvent& e) {
 
 void LinkableTextSlider::mouseUp(const juce::MouseEvent& /*e*/) {
     if (isLinkModeDrag_) {
+        constexpr float kDefaultLinkAmount = 0.3f;
+        const bool noDragHappened = linkModeDragStartAmount_ == linkModeDragCurrentAmount_;
+        if (noDragHappened) {
+            magda::ControlTarget target =
+                magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+            if (activeMod_.isValid()) {
+                const auto* modPtr = resolveModPtr(activeMod_, linkOwnerPath_, availableMods_,
+                                                   availableRackMods_, availableTrackMods_);
+                if (modPtr && !modPtr->getLink(target) && onModLinkedWithAmount)
+                    onModLinkedWithAmount(activeMod_.modIndex, target, kDefaultLinkAmount);
+            } else if (activeMacro_.isValid()) {
+                const auto* macroPtr =
+                    resolveMacroPtr(activeMacro_, linkOwnerPath_, availableMacros_,
+                                    availableRackMacros_, availableTrackMacros_);
+                if (macroPtr && !macroPtr->getLink(target) && onMacroLinkedWithAmount)
+                    onMacroLinkedWithAmount(activeMacro_.macroIndex, target, kDefaultLinkAmount);
+            }
+        }
+
         isLinkModeDrag_ = false;
         amountLabel_.setVisible(false);
 

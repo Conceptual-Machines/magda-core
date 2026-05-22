@@ -291,6 +291,7 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
 }
 
 void PadDeviceSlot::setLinkContext(magda::DeviceId deviceId, const magda::ChainNodePath& devicePath,
+                                   const magda::ChainNodePath& linkOwnerPath,
                                    const magda::MacroArray* macros, const magda::ModArray* mods,
                                    const magda::MacroArray* trackMacros,
                                    const magda::ModArray* trackMods, int selectedModIndex,
@@ -302,6 +303,7 @@ void PadDeviceSlot::setLinkContext(magda::DeviceId deviceId, const magda::ChainN
         auto& slot = paramSlots_[static_cast<size_t>(i)];
         slot->setDeviceId(deviceId);
         slot->setDevicePath(devicePath);
+        slot->setLinkOwnerPath(linkOwnerPath);
         slot->setAvailableMacros(macros);
         slot->setAvailableMods(mods);
         slot->setAvailableTrackMacros(trackMacros);
@@ -318,6 +320,7 @@ void PadDeviceSlot::setLinkContext(magda::DeviceId deviceId, const magda::ChainN
             auto* slider = sliders[static_cast<size_t>(i)];
             int paramIdx = slider->getParamIndex() >= 0 ? slider->getParamIndex() : i;
             slider->setLinkContext(deviceId, paramIdx, devicePath);
+            slider->setLinkOwnerPath(linkOwnerPath);
             slider->setAvailableMacros(macros);
             slider->setAvailableMods(mods);
             slider->setAvailableTrackMacros(trackMacros);

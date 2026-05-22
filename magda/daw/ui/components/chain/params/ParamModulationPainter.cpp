@@ -31,6 +31,15 @@ void drawVerticalBar(juce::Graphics& g, juce::Colour colour, int x, int startY, 
                                static_cast<float>(juce::jmax(1, -height)), 1.0f);
 }
 
+const magda::MacroLink* getSelectedDeviceMacroLink(const ParamLinkContext& ctx) {
+    if (ctx.selectedMacroIndex < 0 || ctx.deviceMacros == nullptr ||
+        ctx.selectedMacroIndex >= static_cast<int>(ctx.deviceMacros->size()))
+        return nullptr;
+
+    const auto target = magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
+    return (*ctx.deviceMacros)[static_cast<size_t>(ctx.selectedMacroIndex)].getLink(target);
+}
+
 void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintContext& ctx) {
     auto sliderBounds = ctx.sliderBounds;
     auto cellBounds = ctx.cellBounds;
@@ -80,6 +89,15 @@ void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintC
                     }
                 }
             }
+        }
+    }
+
+    if (!ctx.isInLinkMode) {
+        if (const auto* link = getSelectedDeviceMacroLink(ctx.linkCtx)) {
+            const int barHeight = static_cast<int>(maxHeight * link->amount);
+            drawVerticalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.9f),
+                            macroX, startY, amountBarWidth, barHeight);
+            return;
         }
     }
 
@@ -188,6 +206,18 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
                     }
                 }
             }
+        }
+    }
+
+    if (!ctx.isInLinkMode) {
+        if (const auto* link = getSelectedDeviceMacroLink(ctx.linkCtx)) {
+            int y = sliderBounds.getY() + 2;
+            int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
+            int barWidth = static_cast<int>(maxWidth * link->amount);
+
+            drawHorizontalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.9f),
+                              startX, y, barWidth, amountBarHeight);
+            return;
         }
     }
 

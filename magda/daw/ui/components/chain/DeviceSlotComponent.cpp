@@ -1258,6 +1258,8 @@ void DeviceSlotComponent::updateParamModulation() {
             selectedModIndex = modSel.modIndex;
         }
     }
+    if (selectedModIndex_ >= 0)
+        selectedModIndex = selectedModIndex_;
 
     if (selMgr.hasMacroSelection()) {
         const auto& macroSel = selMgr.getMacroSelection();
@@ -1266,6 +1268,8 @@ void DeviceSlotComponent::updateParamModulation() {
             selectedMacroIndex = macroSel.macroIndex;
         }
     }
+    if (selectedMacroIndex_ >= 0)
+        selectedMacroIndex = selectedMacroIndex_;
 
     // Update each param slot with current mod/macro data
     paramGrid_->updateParamModulation(mods, macros, rackMods, rackMacros, trackMods, trackMacros,
@@ -2132,11 +2136,15 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
         if (modSel.parentPath == nodePath_)
             selectedModIndex = modSel.modIndex;
     }
+    if (selectedModIndex_ >= 0)
+        selectedModIndex = selectedModIndex_;
     if (selMgr.hasMacroSelection()) {
         const auto& macroSel = selMgr.getMacroSelection();
         if (macroSel.parentPath == nodePath_)
             selectedMacroIndex = macroSel.macroIndex;
     }
+    if (selectedMacroIndex_ >= 0)
+        selectedMacroIndex = selectedMacroIndex_;
 
     drum_grid_slot::setPadChainLinkContext(customUI_.getDrumGridUI(), nodePath_, macros, mods,
                                            trackMacros, trackMods, selectedModIndex,
@@ -2214,11 +2222,15 @@ void DeviceSlotComponent::setupCustomUILinking() {
         if (modSel.parentPath == nodePath_)
             selectedModIndex = modSel.modIndex;
     }
+    if (selectedModIndex_ >= 0)
+        selectedModIndex = selectedModIndex_;
     if (selMgr.hasMacroSelection()) {
         const auto& macroSel = selMgr.getMacroSelection();
         if (macroSel.parentPath == nodePath_)
             selectedMacroIndex = macroSel.macroIndex;
     }
+    if (selectedMacroIndex_ >= 0)
+        selectedMacroIndex = selectedMacroIndex_;
 
     for (int i = 0; i < static_cast<int>(sliders.size()); ++i) {
         auto* slider = sliders[static_cast<size_t>(i)];

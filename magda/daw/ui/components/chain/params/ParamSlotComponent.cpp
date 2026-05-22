@@ -207,7 +207,7 @@ ParamLinkContext ParamSlotComponent::buildLinkContext() const {
 // ============================================================================
 
 void ParamSlotComponent::modLinkModeChanged(bool active, const magda::ModSelection& selection) {
-    bool isInScope = isInScopeOf(devicePath_, selection.parentPath);
+    bool isInScope = isInScopeOf(linkOwnerPath_, selection.parentPath);
 
     isInLinkMode_ = active && isInScope;
 
@@ -239,7 +239,7 @@ void ParamSlotComponent::modLinkModeChanged(bool active, const magda::ModSelecti
 }
 
 void ParamSlotComponent::macroLinkModeChanged(bool active, const magda::MacroSelection& selection) {
-    bool isInScope = isInScopeOf(devicePath_, selection.parentPath);
+    bool isInScope = isInScopeOf(linkOwnerPath_, selection.parentPath);
     isInLinkMode_ = active && isInScope;
 
     if (active && isInScope) {
@@ -322,8 +322,8 @@ void ParamSlotComponent::handleLinkModeClick() {
         return;
     }
 
-    const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_, availableRackMods_,
-                                       availableTrackMods_);
+    const auto* modPtr = resolveModPtr(activeMod_, linkOwnerPath_, availableMods_,
+                                       availableRackMods_, availableTrackMods_);
 
     if (modPtr) {
         magda::ControlTarget thisTarget =
@@ -342,7 +342,7 @@ void ParamSlotComponent::handleLinkModeClick() {
 
         showLinkModeSlider(!isLinked, initialAmount);
     } else {
-        const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
+        const auto* macroPtr = resolveMacroPtr(activeMacro_, linkOwnerPath_, availableMacros_,
                                                availableRackMacros_, availableTrackMacros_);
 
         if (macroPtr) {
@@ -718,7 +718,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
     if (isInLinkMode_ && e.mods.isLeftButtonDown()) {
         // Mod link mode
         if (activeMod_.isValid()) {
-            const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_,
+            const auto* modPtr = resolveModPtr(activeMod_, linkOwnerPath_, availableMods_,
                                                availableRackMods_, availableTrackMods_);
 
             float initialAmount = 0.0f;
@@ -757,7 +757,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
 
         // Macro link mode
         if (activeMacro_.isValid()) {
-            const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
+            const auto* macroPtr = resolveMacroPtr(activeMacro_, linkOwnerPath_, availableMacros_,
                                                    availableRackMacros_, availableTrackMacros_);
 
             float initialAmount = 0.0f;
@@ -820,7 +820,7 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
         amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
 
         // Resolve mod/macro and dispatch amount change
-        const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_,
+        const auto* modPtr = resolveModPtr(activeMod_, linkOwnerPath_, availableMods_,
                                            availableRackMods_, availableTrackMods_);
 
         if (modPtr) {
@@ -841,7 +841,7 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
             }
             repaint();
         } else if (activeMacro_.isValid()) {
-            const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
+            const auto* macroPtr = resolveMacroPtr(activeMacro_, linkOwnerPath_, availableMacros_,
                                                    availableRackMacros_, availableTrackMacros_);
             if (macroPtr) {
                 magda::ControlTarget thisTarget =
@@ -881,13 +881,14 @@ void ParamSlotComponent::mouseUp(const juce::MouseEvent& /*e*/) {
             magda::ControlTarget macroTarget =
                 magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
             if (activeMod_.isValid()) {
-                const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_,
+                const auto* modPtr = resolveModPtr(activeMod_, linkOwnerPath_, availableMods_,
                                                    availableRackMods_, availableTrackMods_);
                 if (modPtr && !modPtr->getLink(modTarget) && onModLinkedWithAmount)
                     onModLinkedWithAmount(activeMod_.modIndex, modTarget, kDefaultLinkAmount);
             } else if (activeMacro_.isValid()) {
-                const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
-                                                       availableRackMacros_, availableTrackMacros_);
+                const auto* macroPtr =
+                    resolveMacroPtr(activeMacro_, linkOwnerPath_, availableMacros_,
+                                    availableRackMacros_, availableTrackMacros_);
                 if (macroPtr && !macroPtr->getLink(macroTarget) && onMacroLinkedWithAmount)
                     onMacroLinkedWithAmount(activeMacro_.macroIndex, macroTarget,
                                             kDefaultLinkAmount);

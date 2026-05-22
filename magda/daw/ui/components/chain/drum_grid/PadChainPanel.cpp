@@ -107,8 +107,8 @@ void PadChainPanel::updateLinkContext() {
 void PadChainPanel::applyLinkContextToSlot(PadDeviceSlot& slot, const PluginSlotInfo& info) {
     if (info.deviceId != magda::INVALID_DEVICE_ID) {
         auto pluginPath = magda::ChainNodePath::topLevelDevice(devicePath_.trackId, info.deviceId);
-        slot.setLinkContext(info.deviceId, pluginPath, macros_, mods_, trackMacros_, trackMods_,
-                            selectedModIndex_, selectedMacroIndex_);
+        slot.setLinkContext(info.deviceId, pluginPath, devicePath_, macros_, mods_, trackMacros_,
+                            trackMods_, selectedModIndex_, selectedMacroIndex_);
     }
 }
 
@@ -329,14 +329,20 @@ void PadChainPanel::resized() {
     // Viewport fills the rest
     viewport_.setBounds(area);
 
-    // Calculate total content width to determine if scrollbar is needed
+    // Calculate total content width, including the add button. The viewport
+    // will show a horizontal scrollbar whenever the container is wider than
+    // the visible area; reserve that height before laying out the sampler so
+    // its controls never end up under the scrollbar.
     int totalContentWidth = 2;
     for (size_t i = 0; i < slots_.size(); ++i) {
         if (i > 0)
             totalContentWidth += ARROW_WIDTH;
-        totalContentWidth += slots_[i]->getPreferredWidth();
+        int slotWidth = slots_[i]->getPreferredWidth();
+        if (slots_.size() == 1 && !slots_[i]->isCollapsed())
+            slotWidth = juce::jmax(slotWidth, area.getWidth() - 4);
+        totalContentWidth += slotWidth;
     }
-    totalContentWidth += 2;
+    totalContentWidth += 4 + 20 + 2;
 
     bool needsScrollbar = totalContentWidth > area.getWidth();
     int scrollbarHeight = needsScrollbar ? viewport_.getScrollBarThickness() : 0;
