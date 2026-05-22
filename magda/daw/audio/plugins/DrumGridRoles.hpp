@@ -64,5 +64,23 @@ inline juce::String shortTagForRole(const juce::String& id) {
     return {};
 }
 
+// Reverse lookup used by the drummer-agent grammar parser: tokens emitted by
+// the agent are short tags (K, HH, ...) or canonical role ids (kick, hh-closed).
+// Both forms resolve to the canonical id. Case-insensitive on the short tag
+// because LLMs are not careful about caps.
+inline juce::String roleIdForToken(const juce::String& token) {
+    if (token.isEmpty())
+        return {};
+    for (const auto& r : kRoles) {
+        if (token == juce::String(r.id))
+            return r.id;
+    }
+    for (const auto& r : kRoles) {
+        if (token.equalsIgnoreCase(r.shortTag))
+            return r.id;
+    }
+    return {};
+}
+
 }  // namespace drum_grid_roles
 }  // namespace magda::daw::audio

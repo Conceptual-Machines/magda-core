@@ -8,6 +8,14 @@ namespace magda {
 namespace {
 constexpr const char* kKind = "plugin_preferences";
 constexpr const char* kDrumGridBuiltinId = "drumgrid";
+
+// Plugins whose per-instance kit should NOT be mirrored to a user-global
+// default. Internal DrumGrid is the canonical case: its kit is built
+// dynamically per instance from whatever samples the user drops on each
+// chain — no transferable default exists between instances.
+bool hasGlobalKitDefault(const juce::String& pluginIdentifier) {
+    return pluginIdentifier != kDrumGridBuiltinId;
+}
 }  // namespace
 
 PluginPreferences& PluginPreferences::getInstance() {
@@ -41,7 +49,7 @@ void PluginPreferences::setPrefersDrumGrid(const juce::String& pluginIdentifier,
 
 std::vector<magda::KitRow> PluginPreferences::defaultKitRows(
     const juce::String& pluginIdentifier) const {
-    if (pluginIdentifier.isEmpty())
+    if (pluginIdentifier.isEmpty() || !hasGlobalKitDefault(pluginIdentifier))
         return {};
     auto it = defaultKits_.find(pluginIdentifier);
     if (it == defaultKits_.end())
@@ -51,7 +59,7 @@ std::vector<magda::KitRow> PluginPreferences::defaultKitRows(
 
 void PluginPreferences::setDefaultKitRows(const juce::String& pluginIdentifier,
                                           const std::vector<KitRow>& rows) {
-    if (pluginIdentifier.isEmpty())
+    if (pluginIdentifier.isEmpty() || !hasGlobalKitDefault(pluginIdentifier))
         return;
     if (rows.empty())
         defaultKits_.erase(pluginIdentifier);

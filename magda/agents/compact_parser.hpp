@@ -28,6 +28,7 @@ enum class OpCode {
     Arp,     // Add arpeggio (on last clip target)
     Chord,   // Add chord (on last clip target)
     Note,    // Add note (on last clip target)
+    Hit,     // Add drum hit by role (on last clip target)
 };
 
 /** How a track is referenced — by 1-based index, by name, or implicitly (last TRACK). */
@@ -116,8 +117,19 @@ struct NoteOp {
     int velocity = -1;  // -1 = not specified
 };
 
+// One drum hit emitted by the drummer agent. role is a canonical id from
+// DrumGridRoles.hpp; the executor resolves it to a MIDI note number via the
+// focused track's primary-instrument kit. velocity = -1 means "use a
+// reasonable default" (parser maps grid 'X' to ~110, 'x' to ~85).
+struct HitOp {
+    juce::String role;
+    double beat = 0.0;
+    double length = 0.25;
+    int velocity = -1;
+};
+
 using OpPayload = std::variant<TrackOp, DelOp, MuteOp, SoloOp, SetOp, ClipOp, FxOp, SelectOp, ArpOp,
-                               ChordOp, NoteOp>;
+                               ChordOp, NoteOp, HitOp>;
 
 struct Instruction {
     OpCode opcode;

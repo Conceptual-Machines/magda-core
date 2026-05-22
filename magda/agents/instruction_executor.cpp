@@ -116,6 +116,11 @@ bool InstructionExecutor::execute(const std::vector<Instruction>& instructions) 
                 pendingContentEndBeats_ = std::max(pendingContentEndBeats_, a.beat + span);
                 break;
             }
+            case OpCode::Hit: {
+                const auto& h = std::get<HitOp>(inst.payload);
+                pendingContentEndBeats_ = std::max(pendingContentEndBeats_, h.beat + h.length);
+                break;
+            }
             default:
                 break;
         }
@@ -210,6 +215,9 @@ bool InstructionExecutor::execute(const std::vector<Instruction>& instructions) 
                 break;
             case OpCode::Note:
                 ok = executeNote(std::get<NoteOp>(inst.payload));
+                break;
+            case OpCode::Hit:
+                ok = executeHit(std::get<HitOp>(inst.payload));
                 break;
         }
 
@@ -840,6 +848,44 @@ bool InstructionExecutor::executeChord(const ChordOp& op) {
         "Add " + op.quality + " chord at beat " + juce::String(op.beat, 2)));
 
     results_.add("Added chord " + op.root + " " + op.quality);
+    return true;
+}
+
+bool InstructionExecutor::executeHit(const HitOp& op) {
+    if (currentTrackId_ < 0) {
+        error_ = "No current track context for HIT (drummer needs a selected track)";
+        return false;
+    }
+    if (currentClipId_ < 0) {
+        if (!autoCreateClip())
+            return false;
+    }
+
+    const auto* device = api_.tracks().getPrimaryInstrument(currentTrackId_);
+    if (device == nullptr) {
+        error_ = "Track has no instrument plugin to resolve drum roles";
+        return false;
+    }
+
+    // Resolve role -> noteNumber via the per-instance kit. Missing rows are
+    // not a fatal error — the agent emits the full role vocabulary and the
+    // kit may legitimately omit some roles (e.g. a drumkit without ride).
+    int noteNumber = -1;
+    for (const auto& row : device->kitRows) {
+        if (row.role == op.role) {
+            noteNumber = row.noteNumber;
+            break;
+        }
+    }
+    if (noteNumber < 0) {
+        results_.add("Skipped " + op.role + " — no row in track's kit");
+        return true;
+    }
+
+    int velocity = op.velocity >= 0 ? op.velocity : 100;
+    api_.undo().executeCommand(std::make_unique<AddMidiNoteCommand>(
+        currentClipId_, op.beat, noteNumber, op.length, velocity));
+    results_.add("Hit " + op.role);
     return true;
 }
 

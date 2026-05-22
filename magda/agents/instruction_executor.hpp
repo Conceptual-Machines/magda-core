@@ -71,6 +71,7 @@ class InstructionExecutor {
     bool executeArp(const ArpOp& op);
     bool executeChord(const ChordOp& op);
     bool executeNote(const NoteOp& op);
+    bool executeHit(const HitOp& op);
 
     /** Auto-create a MIDI clip on the current track when NOTE/CHORD/ARP lack clip context. */
     bool autoCreateClip();
