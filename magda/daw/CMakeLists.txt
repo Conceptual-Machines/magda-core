@@ -604,3 +604,18 @@ else()
         COMMENT "Copying Faust standard libraries alongside app executable"
     )
 endif()
+
+# Windows-only: copy the ONNX Runtime DLLs alongside the app. macOS/Linux
+# resolve the dylib/so via the linker's rpath, but Windows only searches the
+# exe's directory, the cwd, and PATH — none of which include the FetchContent
+# `_deps/onnxruntime-src/lib/` location, so without this copy the first ORT
+# call (Sample Tagger load) faults when the delay-loaded DLL fails to resolve.
+if(WIN32)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll"
+            "${ONNXRUNTIME_LIB_DIR}/onnxruntime_providers_shared.dll"
+            "$<TARGET_FILE_DIR:magda_daw_app>"
+        COMMENT "Copying ONNX Runtime DLLs alongside app executable"
+    )
+endif()

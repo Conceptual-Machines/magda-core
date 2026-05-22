@@ -753,8 +753,13 @@ std::vector<PendingEmbedding> pendingEmbeddings(sqlite3* db, const std::string& 
     std::string rootLike;
     if (filterRoot) {
         rootLike = root.string();
-        if (!rootLike.empty() && rootLike.back() != '/') {
-            rootLike += '/';
+        // Stored paths use the platform's native separator (backslash on
+        // Windows, forward slash elsewhere), and SQL LIKE compares
+        // characters literally. Appending '/' unconditionally produced a
+        // pattern that never matched on Windows, leaving freshly indexed
+        // files stuck without embeddings.
+        if (!rootLike.empty() && rootLike.back() != '/' && rootLike.back() != '\\') {
+            rootLike += static_cast<char>(std::filesystem::path::preferred_separator);
         }
         rootLike += '%';
         sqlite3_bind_text(stmt, 2, rootLike.c_str(), -1, SQLITE_TRANSIENT);

@@ -470,7 +470,7 @@ bool hasIndexedDescendant(MediaDatabase& db, const std::filesystem::path& folder
         return false;
     }
     if (prefix.back() != '/' && prefix.back() != '\\') {
-        prefix.push_back('/');
+        prefix.push_back(static_cast<char>(std::filesystem::path::preferred_separator));
     }
     std::string upper = prefix;
     upper.back() = static_cast<char>(static_cast<unsigned char>(upper.back()) + 1);
@@ -502,7 +502,7 @@ int removeFolderFromLibrary(MediaDatabase& db, const std::filesystem::path& fold
         return 0;
     }
     if (prefix.back() != '/' && prefix.back() != '\\') {
-        prefix.push_back('/');
+        prefix.push_back(static_cast<char>(std::filesystem::path::preferred_separator));
     }
     std::string upper = prefix;
     upper.back() = static_cast<char>(static_cast<unsigned char>(upper.back()) + 1);
@@ -1173,11 +1173,12 @@ int moveFolderInLibrary(MediaDatabase& db, const std::filesystem::path& oldFolde
     if (oldPrefix.empty() || newPrefix.empty()) {
         return 0;
     }
+    constexpr char kSep = static_cast<char>(std::filesystem::path::preferred_separator);
     if (oldPrefix.back() != '/' && oldPrefix.back() != '\\') {
-        oldPrefix.push_back('/');
+        oldPrefix.push_back(kSep);
     }
     if (newPrefix.back() != '/' && newPrefix.back() != '\\') {
-        newPrefix.push_back('/');
+        newPrefix.push_back(kSep);
     }
     if (oldPrefix == newPrefix) {
         return 0;
