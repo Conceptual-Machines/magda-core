@@ -643,6 +643,24 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         }
     }
 
+    // Register DrumGrid pad plugins in syncedDevices_ before macro/mod sync.
+    // Drum Grid device macros can target pad samplers, and those targets must
+    // already be visible to PluginManager for the link resolver to bind them.
+    {
+        std::vector<std::pair<DeviceId, daw::audio::DrumGridPlugin*>> drumGrids;
+        {
+            juce::ScopedLock lock(pluginLock_);
+            for (const auto& [deviceId, sd] : syncedDevices_) {
+                if (sd.trackId != trackId)
+                    continue;
+                if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
+                    drumGrids.push_back({deviceId, dg});
+            }
+        }
+        for (auto& [deviceId, dg] : drumGrids)
+            syncDrumGridPadPlugins(trackId, deviceId, dg);
+    }
+
     // Sync device-level + track-level modifiers AND macros via the
     // ModifierSyncWalker (issue #1131 step 2).
     syncDeviceModifiers(trackId, teTrack);
@@ -730,22 +748,6 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // so a sidechained FX receives source MIDI, then downstream devices receive
     // the original chain MIDI again.
     syncSidechains(trackId, teTrack);
-
-    // Register DrumGrid pad plugins in syncedDevices_ for macro/mod linking
-    {
-        std::vector<std::pair<DeviceId, daw::audio::DrumGridPlugin*>> drumGrids;
-        {
-            juce::ScopedLock lock(pluginLock_);
-            for (const auto& [deviceId, sd] : syncedDevices_) {
-                if (sd.trackId != trackId)
-                    continue;
-                if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
-                    drumGrids.push_back({deviceId, dg});
-            }
-        }
-        for (auto& [deviceId, dg] : drumGrids)
-            syncDrumGridPadPlugins(trackId, deviceId, dg);
-    }
 
     // Ensure VolumeAndPan is near the end of the chain (before LevelMeter)
     // This is the track's fader control - it should come AFTER audio sources
