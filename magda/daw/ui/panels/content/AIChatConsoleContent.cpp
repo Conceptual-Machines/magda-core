@@ -1527,7 +1527,7 @@ void AIChatConsoleContent::trackSelectionChanged(magda::TrackId trackId) {
     auto trackName = track != nullptr ? track->name : juce::String(trackId);
     drummerModeActive_ = isDrummerTrack(trackId);
     if (drummerModeActive_) {
-        contextText_ = "Drummer · " + trackName;
+        contextText_ = juce::String::fromUTF8("Drummer \xc2\xb7 ") + trackName;
         contextIcon_ = ContextIcon::Drummer;
     } else {
         contextText_ = trackName;
@@ -1551,7 +1551,8 @@ void AIChatConsoleContent::clipSelectionChanged(magda::ClipId clipId) {
     drummerModeActive_ = isDrummerTrack(trackId);
     if (drummerModeActive_) {
         if (clip != nullptr)
-            contextText_ = "Drummer · " + trackName + " > " + clip->name;
+            contextText_ =
+                juce::String::fromUTF8("Drummer \xc2\xb7 ") + trackName + " > " + clip->name;
         contextIcon_ = ContextIcon::Drummer;
     } else {
         contextIcon_ = ContextIcon::Clip;
