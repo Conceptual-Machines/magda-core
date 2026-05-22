@@ -43,6 +43,11 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
         }
         g.fillRect(keyArea);
 
+        if (highlightedNotes_.find(note) != highlightedNotes_.end()) {
+            g.setColour(juce::Colour(0x556688CC));
+            g.fillRect(keyArea);
+        }
+
         // Note names live in OctaveLabelStrip now (next to the keyboard).
 
         // Subtle separator line between white keys
@@ -81,6 +86,13 @@ void PianoRollKeyboard::setNotePressed(int noteNumber, bool pressed) {
     auto& state = pressedNotes_[static_cast<size_t>(noteNumber)];
     if (state != pressed) {
         state = pressed;
+        repaint();
+    }
+}
+
+void PianoRollKeyboard::setHighlightedNotes(const std::set<int>& notes) {
+    if (highlightedNotes_ != notes) {
+        highlightedNotes_ = notes;
         repaint();
     }
 }

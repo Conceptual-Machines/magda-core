@@ -59,6 +59,7 @@ class NoteComponent : public juce::Component, private juce::Timer {
 
     // Update note data from clip
     void updateFromNote(const MidiNote& note, juce::Colour colour);
+    void updatePreviewPitch(int noteNumber);
 
     // Callbacks
     std::function<void(size_t, bool)> onNoteSelected;      // noteIndex, isAdditive

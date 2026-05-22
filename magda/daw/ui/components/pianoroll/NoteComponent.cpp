@@ -390,6 +390,14 @@ void NoteComponent::updateFromNote(const MidiNote& note, juce::Colour colour) {
     repaint();
 }
 
+void NoteComponent::updatePreviewPitch(int noteNumber) {
+    noteNumber = juce::jlimit(0, 127, noteNumber);
+    if (noteNumber_ != noteNumber) {
+        noteNumber_ = noteNumber;
+        repaint();
+    }
+}
+
 void NoteComponent::timerCallback() {
     if (mouseIsOver_) {
         updateCursor();

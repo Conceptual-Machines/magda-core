@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <limits>
+#include <set>
 
 #include "../../core/SelectionManager.hpp"
 #include "../../state/TimelineController.hpp"
@@ -136,6 +137,10 @@ PianoRollContent::PianoRollContent() {
     gridComponent_->setLeftPadding(GRID_LEFT_PADDING);
     gridComponent_->setGridResolutionBeats(gridResolutionBeats_);
     gridComponent_->setSnapEnabled(snapEnabled_);
+    gridComponent_->onSelectedPitchRowsChanged = [this](const std::set<int>& notes) {
+        if (keyboard_)
+            keyboard_->setHighlightedNotes(notes);
+    };
     gridComponent_->onVerticalZoomRequested = [this](int gridY,
                                                      const juce::MouseWheelDetails& wheel) {
         const int anchorScreenY = gridY - viewport_->getViewPositionY();
