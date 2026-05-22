@@ -24,6 +24,7 @@ class DrummerAgent {
   public:
     struct GenerateResult {
         std::string rawOutput;
+        std::string description;
         std::vector<Instruction> instructions;
         std::string error;
         bool hasError = false;
