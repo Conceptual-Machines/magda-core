@@ -9,6 +9,18 @@
 
 namespace magda::daw::ui {
 
+namespace {
+
+juce::String linkPathString(const magda::ChainNodePath& path) {
+    return path.isValid() ? path.toString() : juce::String("<invalid>");
+}
+
+juce::String yesNo(bool value) {
+    return value ? "yes" : "no";
+}
+
+}  // namespace
+
 PadChainPanel::PadChainPanel() {
     addButton_.setColour(juce::TextButton::buttonColourId,
                          DarkTheme::getColour(DarkTheme::SURFACE));
@@ -91,6 +103,10 @@ void PadChainPanel::setLinkContext(const magda::ChainNodePath& devicePath,
     trackMods_ = trackMods;
     selectedModIndex_ = selectedModIndex;
     selectedMacroIndex_ = selectedMacroIndex;
+    DBG("[PadChainLink] set context owner="
+        << linkPathString(devicePath_) << " macros=" << yesNo(macros_ != nullptr)
+        << " mods=" << yesNo(mods_ != nullptr) << " trackMacros=" << yesNo(trackMacros_ != nullptr)
+        << " selectedMod=" << selectedModIndex_ << " selectedMacro=" << selectedMacroIndex_);
     // Apply to existing slots
     updateLinkContext();
 }
@@ -107,6 +123,10 @@ void PadChainPanel::updateLinkContext() {
 void PadChainPanel::applyLinkContextToSlot(PadDeviceSlot& slot, const PluginSlotInfo& info) {
     if (info.deviceId != magda::INVALID_DEVICE_ID) {
         auto pluginPath = magda::ChainNodePath::topLevelDevice(devicePath_.trackId, info.deviceId);
+        DBG("[PadChainLink] apply pad=" << currentPadIndex_ << " pluginDevice=" << info.deviceId
+                                        << " sampler=" << yesNo(info.isSampler)
+                                        << " target=" << linkPathString(pluginPath)
+                                        << " owner=" << linkPathString(devicePath_));
         slot.setLinkContext(info.deviceId, pluginPath, devicePath_, macros_, mods_, trackMacros_,
                             trackMods_, selectedModIndex_, selectedMacroIndex_);
     }

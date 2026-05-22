@@ -14,6 +14,18 @@ namespace te = tracktion::engine;
 
 namespace magda::daw::ui {
 
+namespace {
+
+juce::String linkPathString(const magda::ChainNodePath& path) {
+    return path.isValid() ? path.toString() : juce::String("<invalid>");
+}
+
+juce::String yesNo(bool value) {
+    return value ? "yes" : "no";
+}
+
+}  // namespace
+
 PadDeviceSlot::PadDeviceSlot() {
     nameLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
@@ -316,9 +328,15 @@ void PadDeviceSlot::setLinkContext(magda::DeviceId deviceId, const magda::ChainN
     // Wire sampler LinkableTextSliders
     if (samplerUI_) {
         auto sliders = samplerUI_->getLinkableSliders();
+        DBG("[PadDeviceLink] sampler context deviceId="
+            << deviceId << " target=" << linkPathString(devicePath)
+            << " owner=" << linkPathString(linkOwnerPath) << " sliders=" << sliders.size()
+            << " selectedMod=" << selectedModIndex << " selectedMacro=" << selectedMacroIndex
+            << " macros=" << yesNo(macros != nullptr));
         for (int i = 0; i < static_cast<int>(sliders.size()); ++i) {
             auto* slider = sliders[static_cast<size_t>(i)];
             int paramIdx = slider->getParamIndex() >= 0 ? slider->getParamIndex() : i;
+            DBG("[PadDeviceLink]   slider slot=" << i << " param=" << paramIdx);
             slider->setLinkContext(deviceId, paramIdx, devicePath);
             slider->setLinkOwnerPath(linkOwnerPath);
             slider->setAvailableMacros(macros);

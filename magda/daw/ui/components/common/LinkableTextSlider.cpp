@@ -9,6 +9,18 @@
 
 namespace magda::daw::ui {
 
+namespace {
+
+juce::String linkPathString(const magda::ChainNodePath& path) {
+    return path.isValid() ? path.toString() : juce::String("<invalid>");
+}
+
+juce::String yesNo(bool value) {
+    return value ? "yes" : "no";
+}
+
+}  // namespace
+
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
@@ -231,6 +243,8 @@ void LinkableTextSlider::setLinkContext(magda::DeviceId deviceId, int paramIndex
     paramIndex_ = paramIndex;
     devicePath_ = devicePath;
     linkOwnerPath_ = devicePath;
+    DBG("[LinkableSlider] set target deviceId=" << deviceId_ << " param=" << paramIndex_
+                                                << " target=" << linkPathString(devicePath_));
     refreshMidiBindingState();
 
     // Wire the underlying TextSlider's automation target so the purple
@@ -249,6 +263,9 @@ void LinkableTextSlider::setLinkContext(magda::DeviceId deviceId, int paramIndex
 
 void LinkableTextSlider::setLinkOwnerPath(const magda::ChainNodePath& ownerPath) {
     linkOwnerPath_ = ownerPath;
+    DBG("[LinkableSlider] set owner param=" << paramIndex_
+                                            << " owner=" << linkPathString(linkOwnerPath_)
+                                            << " target=" << linkPathString(devicePath_));
     refreshLinkModeState();
 }
 
@@ -306,6 +323,11 @@ void LinkableTextSlider::modLinkModeChanged(bool active, const magda::ModSelecti
     bool isInScope = isInScopeOf(linkOwnerPath_, selection.parentPath);
 
     isInLinkMode_ = active && isInScope;
+    DBG("[LinkableSlider] mod mode active="
+        << yesNo(active) << " param=" << paramIndex_ << " owner=" << linkPathString(linkOwnerPath_)
+        << " target=" << linkPathString(devicePath_)
+        << " selection=" << linkPathString(selection.parentPath) << " index=" << selection.modIndex
+        << " inScope=" << yesNo(isInScope) << " final=" << yesNo(isInLinkMode_));
 
     if (active && isInScope) {
         activeMod_ = selection;
@@ -336,6 +358,11 @@ void LinkableTextSlider::macroLinkModeChanged(bool active, const magda::MacroSel
     bool isInScope = isInScopeOf(linkOwnerPath_, selection.parentPath);
 
     isInLinkMode_ = active && isInScope;
+    DBG("[LinkableSlider] macro mode active="
+        << yesNo(active) << " param=" << paramIndex_ << " owner=" << linkPathString(linkOwnerPath_)
+        << " target=" << linkPathString(devicePath_) << " selection="
+        << linkPathString(selection.parentPath) << " index=" << selection.macroIndex
+        << " inScope=" << yesNo(isInScope) << " final=" << yesNo(isInLinkMode_));
 
     if (active && isInScope) {
         activeMacro_ = selection;
@@ -527,6 +554,13 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
     }
 
     if (!isInLinkMode_ || !e.mods.isLeftButtonDown()) {
+        if (e.mods.isLeftButtonDown()) {
+            DBG("[LinkableSlider] mouseDown ignored param="
+                << paramIndex_ << " inLinkMode=" << yesNo(isInLinkMode_) << " activeMod="
+                << yesNo(activeMod_.isValid()) << " activeMacro=" << yesNo(activeMacro_.isValid())
+                << " owner=" << linkPathString(linkOwnerPath_)
+                << " target=" << linkPathString(devicePath_));
+        }
         return;
     }
 
@@ -534,6 +568,11 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
     if (activeMod_.isValid()) {
         const auto* modPtr = resolveModPtr(activeMod_, linkOwnerPath_, availableMods_,
                                            availableRackMods_, availableTrackMods_);
+        DBG("[LinkableSlider] mod click param=" << paramIndex_
+                                                << " modIndex=" << activeMod_.modIndex
+                                                << " resolved=" << yesNo(modPtr != nullptr)
+                                                << " owner=" << linkPathString(linkOwnerPath_)
+                                                << " target=" << linkPathString(devicePath_));
 
         float initialAmount = 0.0f;
         if (modPtr) {
@@ -572,6 +611,11 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
     if (activeMacro_.isValid()) {
         const auto* macroPtr = resolveMacroPtr(activeMacro_, linkOwnerPath_, availableMacros_,
                                                availableRackMacros_, availableTrackMacros_);
+        DBG("[LinkableSlider] macro click param=" << paramIndex_
+                                                  << " macroIndex=" << activeMacro_.macroIndex
+                                                  << " resolved=" << yesNo(macroPtr != nullptr)
+                                                  << " owner=" << linkPathString(linkOwnerPath_)
+                                                  << " target=" << linkPathString(devicePath_));
 
         float initialAmount = 0.0f;
         bool isLinked = false;
@@ -581,6 +625,8 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
                 magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
             const auto* existingLink = macroPtr->getLink(thisTarget);
             isLinked = existingLink != nullptr;
+            DBG("[LinkableSlider] macro click link param=" << paramIndex_
+                                                           << " linked=" << yesNo(isLinked));
             if (isLinked) {
                 initialAmount = existingLink->amount;
             }
