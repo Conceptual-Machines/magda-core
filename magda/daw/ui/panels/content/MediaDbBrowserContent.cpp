@@ -9,6 +9,10 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "../../../audio/AudioBridge.hpp"
+#include "../../../core/ClipManager.hpp"
+#include "../../../core/TrackManager.hpp"
+#include "../../../engine/AudioEngine.hpp"
 #include "../../../media_db/MediaDatabase.hpp"
 #include "../../../media_db/MediaDbContext.hpp"
 #include "../../../media_db/MediaDbIndexer.hpp"
@@ -100,6 +104,52 @@ juce::String displayNameFor(const magda::media::QueryResult& result) {
         return juce::String(*result.displayName);
     }
     return juce::String(result.path.filename().string());
+}
+
+std::filesystem::path normalizedPath(const std::filesystem::path& path) {
+    return path.lexically_normal();
+}
+
+std::optional<magda::ClipId> findOpenClipForPath(const std::filesystem::path& path) {
+    const auto target = normalizedPath(path);
+    for (const auto& clip : magda::ClipManager::getInstance().getClips()) {
+        juce::String sourcePath;
+        if (clip.isAudio()) {
+            sourcePath = clip.audio().source.filePath;
+        } else if (clip.isMidi()) {
+            sourcePath = clip.midi().sourceFilePath;
+        }
+        if (sourcePath.isEmpty()) {
+            continue;
+        }
+        if (normalizedPath(std::filesystem::path(sourcePath.toStdString())) == target) {
+            return clip.id;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::vector<magda::ClipInfo::WarpMarker>> currentWarpMarkersForClip(
+    magda::ClipId clipId) {
+    auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr || !clip->isAudio() || !clip->warpEnabled) {
+        return std::nullopt;
+    }
+
+    std::vector<magda::ClipInfo::WarpMarker> markers;
+    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
+        if (auto* bridge = engine->getAudioBridge()) {
+            const auto liveMarkers = bridge->getWarpMarkers(clipId);
+            markers.reserve(liveMarkers.size());
+            for (const auto& marker : liveMarkers) {
+                markers.push_back({marker.sourceTime, marker.warpTime});
+            }
+        }
+    }
+    if (markers.empty()) {
+        markers = clip->warpMarkers;
+    }
+    return markers;
 }
 
 juce::String formatIndexSummary(const std::filesystem::path& path,
@@ -621,8 +671,17 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                 selectedIds.push_back(r.fileId);
             }
             const int selectedCount = static_cast<int>(selectedIds.size());
+            const bool rowMissing = integrityFor(r) == RowIntegrity::Missing;
+            const bool hasMatchingClip = findOpenClipForPath(r.path).has_value();
             menu.addItem(4, selectedCount > 1 ? "Edit selected row fields and tags..."
                                               : "Edit row fields and tags...");
+            menu.addItem(
+                6, selectedCount > 1 ? "Reset selected rows to detected" : "Reset to detected",
+                !owner_.indexing_);
+            menu.addItem(7, "Save current clip values to library",
+                         !owner_.indexing_ && selectedCount == 1 && hasMatchingClip);
+            menu.addItem(8, "Recover missing file...",
+                         !owner_.indexing_ && selectedCount == 1 && rowMissing);
             menu.addItem(5, "Delete selected rows (" + juce::String(selectedCount) + ")",
                          !owner_.indexing_);
             menu.addSeparator();
@@ -650,6 +709,12 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                         }
                     } else if (choice == 5) {
                         self->deleteFileIdsWithConfirmation(std::move(selectedIds));
+                    } else if (choice == 6) {
+                        self->resetRowsToDetected(std::move(selectedIds));
+                    } else if (choice == 7) {
+                        self->saveMatchingClipValuesToLibrary(seedId);
+                    } else if (choice == 8) {
+                        self->recoverMissingFile(seedId);
                     }
                 });
             return;
@@ -1308,6 +1373,122 @@ void MediaDbBrowserContent::showBulkEditRowsDialog(std::vector<std::int64_t> fil
             }
             self->restartSearch();
         }));
+}
+
+void MediaDbBrowserContent::resetRowsToDetected(std::vector<std::int64_t> fileIds) {
+    if (indexing_ || fileIds.empty()) {
+        return;
+    }
+
+    auto& ctx = magda::media::MediaDbContext::getInstance();
+    const int updated =
+        ctx.ensureInitialized() ? magda::media::resetMediaRowsToDetected(ctx.db(), fileIds) : 0;
+    if (updated <= 0) {
+        juce::AlertWindow::showAsync(juce::MessageBoxOptions{}
+                                         .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                         .withTitle("Reset to detected")
+                                         .withMessage("No media rows were reset.")
+                                         .withButton("OK"),
+                                     nullptr);
+        return;
+    }
+    ctx.bumpMediaRevision();
+    restartSearch();
+}
+
+void MediaDbBrowserContent::saveMatchingClipValuesToLibrary(std::int64_t fileId) {
+    if (indexing_) {
+        return;
+    }
+    auto& ctx = magda::media::MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return;
+    }
+    auto row = magda::media::getEditableMediaRow(ctx.db(), fileId);
+    if (!row) {
+        return;
+    }
+    auto clipId = findOpenClipForPath(row->path);
+    if (!clipId) {
+        juce::AlertWindow::showAsync(juce::MessageBoxOptions{}
+                                         .withIconType(juce::MessageBoxIconType::InfoIcon)
+                                         .withTitle("Save current clip values")
+                                         .withMessage("No open clip is using this media file.")
+                                         .withButton("OK"),
+                                     nullptr);
+        return;
+    }
+
+    const auto markers = currentWarpMarkersForClip(*clipId);
+    const bool saved = magda::ClipManager::getInstance().saveClipToLibrary(*clipId, markers);
+    if (!saved) {
+        juce::AlertWindow::showAsync(
+            juce::MessageBoxOptions{}
+                .withIconType(juce::MessageBoxIconType::WarningIcon)
+                .withTitle("Save current clip values")
+                .withMessage("Could not save the matching clip values to the media library.")
+                .withButton("OK"),
+            nullptr);
+        return;
+    }
+    restartSearch();
+}
+
+void MediaDbBrowserContent::recoverMissingFile(std::int64_t fileId) {
+    if (indexing_) {
+        return;
+    }
+    auto& ctx = magda::media::MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return;
+    }
+
+    auto candidates = magda::media::findMissingFileCandidates(ctx.db(), fileId);
+    if (candidates.empty()) {
+        juce::AlertWindow::showAsync(juce::MessageBoxOptions{}
+                                         .withIconType(juce::MessageBoxIconType::InfoIcon)
+                                         .withTitle("Recover Missing File")
+                                         .withMessage("No indexed substitute files were found.")
+                                         .withButton("OK"),
+                                     nullptr);
+        return;
+    }
+
+    juce::PopupMenu menu;
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        const auto& candidate = candidates[i];
+        const auto label = juce::String(candidate.matchReason) + ": " +
+                           juce::String(candidate.path.filename().string()) + " - " +
+                           juce::String(candidate.path.parent_path().string());
+        menu.addItem(static_cast<int>(i + 1), label);
+    }
+
+    const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options{},
+        [self, fileId, candidates = std::move(candidates)](int choice) mutable {
+            if (self == nullptr || choice <= 0 || choice > static_cast<int>(candidates.size())) {
+                return;
+            }
+
+            auto& ctx = magda::media::MediaDbContext::getInstance();
+            const auto& candidate = candidates[static_cast<size_t>(choice - 1)];
+            const bool recovered =
+                ctx.ensureInitialized() &&
+                magda::media::recoverMissingMediaFilePath(ctx.db(), fileId, candidate.path);
+            if (!recovered) {
+                juce::AlertWindow::showAsync(
+                    juce::MessageBoxOptions{}
+                        .withIconType(juce::MessageBoxIconType::WarningIcon)
+                        .withTitle("Recover Missing File")
+                        .withMessage("Could not update the media database path.")
+                        .withButton("OK"),
+                    nullptr);
+                return;
+            }
+            ctx.bumpMediaRevision();
+            self->restartSearch();
+        });
 }
 
 void MediaDbBrowserContent::showFamilyMenuForRow(std::vector<std::int64_t> fileIds,

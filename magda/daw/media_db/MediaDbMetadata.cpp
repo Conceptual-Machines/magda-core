@@ -828,6 +828,250 @@ int updateEditableMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& 
     return ok ? updatedRows : 0;
 }
 
+int resetMediaRowsToDetected(MediaDatabase& db, const std::vector<std::int64_t>& fileIds) {
+    auto* handle = db.handle();
+    if (fileIds.empty() ||
+        sqlite3_exec(handle, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    bool ok = sqlite3_prepare_v2(handle,
+                                 "UPDATE media_file SET "
+                                 "bpm_user = NULL, "
+                                 "key_root_user = NULL, "
+                                 "key_scale_user = NULL, "
+                                 "total_beats_user = NULL, "
+                                 "beat_mode_user = NULL, "
+                                 "warp_markers_json = NULL "
+                                 "WHERE id = ?",
+                                 -1, &stmt, nullptr) == SQLITE_OK;
+    int updatedRows = 0;
+    for (auto fileId : fileIds) {
+        if (!ok) {
+            break;
+        }
+        sqlite3_bind_int64(stmt, 1, fileId);
+        if (sqlite3_step(stmt) == SQLITE_DONE) {
+            updatedRows += sqlite3_changes(handle);
+        } else {
+            ok = false;
+        }
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
+    }
+    sqlite3_finalize(stmt);
+    sqlite3_exec(handle, ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+    return ok ? updatedRows : 0;
+}
+
+std::vector<MissingFileCandidate> findMissingFileCandidates(MediaDatabase& db, std::int64_t fileId,
+                                                            int limit) {
+    std::vector<MissingFileCandidate> out;
+    if (fileId < 0 || limit <= 0) {
+        return out;
+    }
+
+    auto* handle = db.handle();
+    sqlite3_stmt* target = nullptr;
+    if (sqlite3_prepare_v2(handle,
+                           "SELECT path, size_bytes, content_hash FROM media_file WHERE id = ?", -1,
+                           &target, nullptr) != SQLITE_OK) {
+        return out;
+    }
+    sqlite3_bind_int64(target, 1, fileId);
+    if (sqlite3_step(target) != SQLITE_ROW) {
+        sqlite3_finalize(target);
+        return out;
+    }
+
+    const auto targetPath =
+        std::filesystem::path(reinterpret_cast<const char*>(sqlite3_column_text(target, 0)));
+    const auto targetName = targetPath.filename().string();
+    const auto targetSize = sqlite3_column_int64(target, 1);
+    const void* hashBlob = sqlite3_column_blob(target, 2);
+    const int hashBytes = sqlite3_column_bytes(target, 2);
+    std::vector<std::uint8_t> targetHash;
+    if (hashBlob != nullptr && hashBytes > 0) {
+        const auto* bytes = static_cast<const std::uint8_t*>(hashBlob);
+        targetHash.assign(bytes, bytes + hashBytes);
+    }
+    sqlite3_finalize(target);
+
+    std::unordered_map<std::int64_t, bool> seen;
+    auto addCandidate = [&](std::int64_t candidateId, const char* pathText, std::int64_t sizeBytes,
+                            const char* reason) {
+        if (candidateId == fileId || pathText == nullptr || seen.count(candidateId) != 0 ||
+            static_cast<int>(out.size()) >= limit) {
+            return;
+        }
+        std::filesystem::path candidatePath(pathText);
+        std::error_code ec;
+        if (!std::filesystem::exists(candidatePath, ec) || ec) {
+            return;
+        }
+        seen.emplace(candidateId, true);
+        out.push_back({candidateId, std::move(candidatePath), reason, sizeBytes});
+    };
+
+    if (!targetHash.empty()) {
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(handle,
+                               "SELECT id, path, size_bytes FROM media_file "
+                               "WHERE id != ? AND content_hash = ? "
+                               "ORDER BY indexed_at DESC LIMIT ?",
+                               -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int64(stmt, 1, fileId);
+            sqlite3_bind_blob(stmt, 2, targetHash.data(), static_cast<int>(targetHash.size()),
+                              SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt, 3, limit);
+            while (sqlite3_step(stmt) == SQLITE_ROW) {
+                addCandidate(sqlite3_column_int64(stmt, 0),
+                             reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)),
+                             sqlite3_column_int64(stmt, 2), "content hash");
+            }
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    if (static_cast<int>(out.size()) >= limit || targetName.empty()) {
+        return out;
+    }
+
+    const auto tolerance = std::max<std::int64_t>(4096, targetSize / 50);
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(handle,
+                           "SELECT id, path, size_bytes FROM media_file "
+                           "WHERE id != ? AND size_bytes BETWEEN ? AND ? "
+                           "ORDER BY indexed_at DESC LIMIT 200",
+                           -1, &stmt, nullptr) != SQLITE_OK) {
+        return out;
+    }
+    sqlite3_bind_int64(stmt, 1, fileId);
+    sqlite3_bind_int64(stmt, 2, std::max<std::int64_t>(0, targetSize - tolerance));
+    sqlite3_bind_int64(stmt, 3, targetSize + tolerance);
+    while (sqlite3_step(stmt) == SQLITE_ROW && static_cast<int>(out.size()) < limit) {
+        const auto* pathText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        if (pathText == nullptr) {
+            continue;
+        }
+        if (std::filesystem::path(pathText).filename().string() != targetName) {
+            continue;
+        }
+        addCandidate(sqlite3_column_int64(stmt, 0), pathText, sqlite3_column_int64(stmt, 2),
+                     "same name + close size");
+    }
+    sqlite3_finalize(stmt);
+    return out;
+}
+
+bool recoverMissingMediaFilePath(MediaDatabase& db, std::int64_t fileId,
+                                 const std::filesystem::path& newPath) {
+    if (fileId < 0 || newPath.empty()) {
+        return false;
+    }
+
+    auto* handle = db.handle();
+    if (sqlite3_exec(handle, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        return false;
+    }
+
+    const auto pathText = newPath.string();
+    std::int64_t duplicateId = -1;
+    sqlite3_stmt* dup = nullptr;
+    bool ok = true;
+    if (sqlite3_prepare_v2(handle, "SELECT id FROM media_file WHERE path = ?", -1, &dup, nullptr) ==
+        SQLITE_OK) {
+        sqlite3_bind_text(dup, 1, pathText.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(dup) == SQLITE_ROW) {
+            duplicateId = sqlite3_column_int64(dup, 0);
+        }
+    } else {
+        ok = false;
+    }
+    sqlite3_finalize(dup);
+
+    if (ok && duplicateId == fileId) {
+        sqlite3_exec(handle, "COMMIT", nullptr, nullptr, nullptr);
+        return true;
+    }
+
+    if (ok && duplicateId >= 0) {
+        sqlite3_stmt* copy = nullptr;
+        ok = sqlite3_prepare_v2(
+                 handle,
+                 "UPDATE media_file SET "
+                 "kind = (SELECT kind FROM media_file WHERE id = ?1), "
+                 "format = (SELECT format FROM media_file WHERE id = ?1), "
+                 "size_bytes = (SELECT size_bytes FROM media_file WHERE id = ?1), "
+                 "mtime_ns = (SELECT mtime_ns FROM media_file WHERE id = ?1), "
+                 "content_hash = (SELECT content_hash FROM media_file WHERE id = ?1), "
+                 "indexed_at = (SELECT indexed_at FROM media_file WHERE id = ?1), "
+                 "duration_s = (SELECT duration_s FROM media_file WHERE id = ?1), "
+                 "sample_rate = (SELECT sample_rate FROM media_file WHERE id = ?1), "
+                 "channels = (SELECT channels FROM media_file WHERE id = ?1), "
+                 "bpm = (SELECT bpm FROM media_file WHERE id = ?1), "
+                 "key_root = (SELECT key_root FROM media_file WHERE id = ?1), "
+                 "key_scale = (SELECT key_scale FROM media_file WHERE id = ?1), "
+                 "key_confidence = (SELECT key_confidence FROM media_file WHERE id = ?1), "
+                 "rms = (SELECT rms FROM media_file WHERE id = ?1), "
+                 "spectral_centroid = (SELECT spectral_centroid FROM media_file WHERE id = ?1), "
+                 "spectral_flatness = (SELECT spectral_flatness FROM media_file WHERE id = ?1), "
+                 "transient_density = (SELECT transient_density FROM media_file WHERE id = ?1), "
+                 "shape = (SELECT shape FROM media_file WHERE id = ?1), "
+                 "family = (SELECT family FROM media_file WHERE id = ?1), "
+                 "tonal = (SELECT tonal FROM media_file WHERE id = ?1) "
+                 "WHERE id = ?2",
+                 -1, &copy, nullptr) == SQLITE_OK;
+        if (ok) {
+            sqlite3_bind_int64(copy, 1, duplicateId);
+            sqlite3_bind_int64(copy, 2, fileId);
+            ok = sqlite3_step(copy) == SQLITE_DONE;
+        }
+        sqlite3_finalize(copy);
+
+        if (ok) {
+            sqlite3_stmt* del = nullptr;
+            ok = sqlite3_prepare_v2(handle, "DELETE FROM media_file WHERE id = ?", -1, &del,
+                                    nullptr) == SQLITE_OK;
+            if (ok) {
+                sqlite3_bind_int64(del, 1, duplicateId);
+                ok = sqlite3_step(del) == SQLITE_DONE;
+            }
+            sqlite3_finalize(del);
+        }
+
+        if (ok) {
+            sqlite3_stmt* updPath = nullptr;
+            ok = sqlite3_prepare_v2(handle, "UPDATE media_file SET path = ? WHERE id = ?", -1,
+                                    &updPath, nullptr) == SQLITE_OK;
+            if (ok) {
+                sqlite3_bind_text(updPath, 1, pathText.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int64(updPath, 2, fileId);
+                ok = sqlite3_step(updPath) == SQLITE_DONE && sqlite3_changes(handle) > 0;
+            }
+            sqlite3_finalize(updPath);
+        }
+    } else if (ok) {
+        sqlite3_stmt* upd = nullptr;
+        ok = sqlite3_prepare_v2(handle, "UPDATE media_file SET path = ? WHERE id = ?", -1, &upd,
+                                nullptr) == SQLITE_OK;
+        if (ok) {
+            sqlite3_bind_text(upd, 1, pathText.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int64(upd, 2, fileId);
+            ok = sqlite3_step(upd) == SQLITE_DONE && sqlite3_changes(handle) > 0;
+        }
+        sqlite3_finalize(upd);
+    }
+
+    if (ok) {
+        ok = rebuildFts(handle);
+    }
+
+    sqlite3_exec(handle, ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+    return ok;
+}
+
 int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds) {
     auto* handle = db.handle();
     if (fileIds.empty() ||
