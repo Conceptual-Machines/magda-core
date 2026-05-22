@@ -442,11 +442,29 @@ void LinkableTextSlider::resized() {
 
 void LinkableTextSlider::paintOverChildren(juce::Graphics& g) {
     if (isInLinkMode_) {
-        auto color = activeMod_.isValid()
-                         ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.15f)
-                         : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.15f);
-        g.setColour(color);
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
+        const bool isMod = activeMod_.isValid();
+        const auto target = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+        bool isLinked = false;
+
+        if (isMod) {
+            const auto* modPtr = resolveModPtr(activeMod_, linkOwnerPath_, availableMods_,
+                                               availableRackMods_, availableTrackMods_);
+            isLinked = modPtr != nullptr && modPtr->getLink(target) != nullptr;
+        } else if (activeMacro_.isValid()) {
+            const auto* macroPtr = resolveMacroPtr(activeMacro_, linkOwnerPath_, availableMacros_,
+                                                   availableRackMacros_, availableTrackMacros_);
+            isLinked = macroPtr != nullptr && macroPtr->getLink(target) != nullptr;
+        }
+
+        auto colour = isMod ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)
+                            : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+        auto bounds = getLocalBounds().toFloat();
+        g.setColour(colour.withAlpha(isLinked ? 0.30f : 0.12f));
+        g.fillRoundedRectangle(bounds, 2.0f);
+        if (isLinked) {
+            g.setColour(colour.withAlpha(0.95f));
+            g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.5f);
+        }
     }
 
     // Persistent MIDI-mapped badge: a small dot at the top-right corner.
@@ -707,17 +725,9 @@ void LinkableTextSlider::mouseUp(const juce::MouseEvent& /*e*/) {
 // ============================================================================
 
 ParamLinkContext LinkableTextSlider::buildLinkContext() const {
-    return {deviceId_,
-            paramIndex_,
-            devicePath_,
-            availableMods_,
-            availableRackMods_,
-            availableMacros_,
-            availableRackMacros_,
-            availableTrackMods_,
-            availableTrackMacros_,
-            selectedModIndex_,
-            selectedMacroIndex_};
+    return {deviceId_,           paramIndex_,           devicePath_,       linkOwnerPath_,
+            availableMods_,      availableRackMods_,    availableMacros_,  availableRackMacros_,
+            availableTrackMods_, availableTrackMacros_, selectedModIndex_, selectedMacroIndex_};
 }
 
 void LinkableTextSlider::timerCallback() {
