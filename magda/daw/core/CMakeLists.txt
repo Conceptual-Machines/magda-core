@@ -102,6 +102,7 @@ target_sources(magda_daw PRIVATE
     AutomationManager.hpp
     PresetManager.hpp
     DrumkitManager.hpp
+    KitRow.hpp
     PluginPreferences.hpp
     PluginPresetScanner.hpp
 )

@@ -7,28 +7,7 @@ namespace magda {
 
 namespace {
 constexpr const char* kKind = "plugin_preferences";
-constexpr const char* kPianoRoll = "piano-roll";
-constexpr const char* kDrumGrid = "drum-grid";
-
-const char* editorToString(PluginPreferences::PreferredClipEditor e) {
-    switch (e) {
-        case PluginPreferences::PreferredClipEditor::PianoRoll:
-            return kPianoRoll;
-        case PluginPreferences::PreferredClipEditor::DrumGrid:
-            return kDrumGrid;
-        case PluginPreferences::PreferredClipEditor::Unset:
-            break;
-    }
-    return "";
-}
-
-PluginPreferences::PreferredClipEditor editorFromString(const juce::String& s) {
-    if (s == kPianoRoll)
-        return PluginPreferences::PreferredClipEditor::PianoRoll;
-    if (s == kDrumGrid)
-        return PluginPreferences::PreferredClipEditor::DrumGrid;
-    return PluginPreferences::PreferredClipEditor::Unset;
-}
+constexpr const char* kDrumGridBuiltinId = "drumgrid";
 }  // namespace
 
 PluginPreferences& PluginPreferences::getInstance() {
@@ -40,33 +19,50 @@ PluginPreferences::PluginPreferences() {
     load();
 }
 
-PluginPreferences::PreferredClipEditor PluginPreferences::preferredClipEditorFor(
-    const juce::String& pluginIdentifier) const {
-    auto it = preferredEditor_.find(pluginIdentifier);
-    if (it != preferredEditor_.end())
-        return it->second;
-
-    // Implicit defaults for MAGDA built-ins. Overridden by any explicit user
-    // choice (which would land in the map above).
-    if (pluginIdentifier == "drumgrid")
-        return PreferredClipEditor::DrumGrid;
-
-    return PreferredClipEditor::Unset;
+bool PluginPreferences::prefersDrumGrid(const juce::String& pluginIdentifier) const {
+    if (pluginIdentifier.isEmpty())
+        return false;
+    if (drumGridPlugins_.find(pluginIdentifier) != drumGridPlugins_.end())
+        return true;
+    // Built-in default: MAGDA's DrumGrid plugin opens in the drum-grid view
+    // even when nothing is recorded.
+    return pluginIdentifier == kDrumGridBuiltinId;
 }
 
-void PluginPreferences::setPreferredClipEditor(const juce::String& pluginIdentifier,
-                                               PreferredClipEditor editor) {
+void PluginPreferences::setPrefersDrumGrid(const juce::String& pluginIdentifier, bool prefer) {
     if (pluginIdentifier.isEmpty())
         return;
-    if (editor == PreferredClipEditor::Unset)
-        preferredEditor_.erase(pluginIdentifier);
+    if (prefer)
+        drumGridPlugins_.insert(pluginIdentifier);
     else
-        preferredEditor_[pluginIdentifier] = editor;
+        drumGridPlugins_.erase(pluginIdentifier);
+    save();
+}
+
+std::vector<magda::KitRow> PluginPreferences::defaultKitRows(
+    const juce::String& pluginIdentifier) const {
+    if (pluginIdentifier.isEmpty())
+        return {};
+    auto it = defaultKits_.find(pluginIdentifier);
+    if (it == defaultKits_.end())
+        return {};
+    return it->second;
+}
+
+void PluginPreferences::setDefaultKitRows(const juce::String& pluginIdentifier,
+                                          const std::vector<KitRow>& rows) {
+    if (pluginIdentifier.isEmpty())
+        return;
+    if (rows.empty())
+        defaultKits_.erase(pluginIdentifier);
+    else
+        defaultKits_[pluginIdentifier] = rows;
     save();
 }
 
 void PluginPreferences::load() {
-    preferredEditor_.clear();
+    drumGridPlugins_.clear();
+    defaultKits_.clear();
     auto file = magda::paths::pluginPreferencesFile();
     if (!file.existsAsFile())
         return;
@@ -80,32 +76,72 @@ void PluginPreferences::load() {
     if (payload == nullptr)
         return;
 
-    auto editorsVar = payload->getProperty("preferredEditor");
-    if (!editorsVar.isArray())
-        return;
+    auto prefersVar = payload->getProperty("prefersDrumGrid");
+    if (prefersVar.isArray()) {
+        for (const auto& entry : *prefersVar.getArray()) {
+            auto id = entry.toString();
+            if (id.isNotEmpty())
+                drumGridPlugins_.insert(id);
+        }
+    }
 
-    for (const auto& entry : *editorsVar.getArray()) {
-        auto* entryObj = entry.getDynamicObject();
-        if (entryObj == nullptr)
-            continue;
-        auto pluginId = entryObj->getProperty("plugin").toString();
-        auto editor = editorFromString(entryObj->getProperty("editor").toString());
-        if (pluginId.isNotEmpty() && editor != PreferredClipEditor::Unset)
-            preferredEditor_[pluginId] = editor;
+    auto kitsVar = payload->getProperty("defaultKits");
+    if (kitsVar.isArray()) {
+        for (const auto& kitEntry : *kitsVar.getArray()) {
+            auto* kitObj = kitEntry.getDynamicObject();
+            if (kitObj == nullptr)
+                continue;
+            auto pluginId = kitObj->getProperty("plugin").toString();
+            if (pluginId.isEmpty())
+                continue;
+            auto rowsVar = kitObj->getProperty("rows");
+            if (!rowsVar.isArray())
+                continue;
+            std::vector<KitRow> rows;
+            for (const auto& rowVar : *rowsVar.getArray()) {
+                auto* rowObj = rowVar.getDynamicObject();
+                if (rowObj == nullptr || !rowObj->hasProperty("note"))
+                    continue;
+                KitRow r;
+                r.noteNumber = juce::jlimit(0, 127, static_cast<int>(rowObj->getProperty("note")));
+                r.label = rowObj->getProperty("label").toString();
+                r.role = rowObj->getProperty("role").toString();
+                rows.push_back(std::move(r));
+            }
+            if (!rows.empty())
+                defaultKits_[pluginId] = std::move(rows);
+        }
     }
 }
 
 void PluginPreferences::save() const {
-    juce::Array<juce::var> editorArray;
-    for (const auto& [identifier, editor] : preferredEditor_) {
-        auto* entry = new juce::DynamicObject();
-        entry->setProperty("plugin", identifier);
-        entry->setProperty("editor", juce::String(editorToString(editor)));
-        editorArray.add(juce::var(entry));
+    juce::Array<juce::var> prefersList;
+    for (const auto& id : drumGridPlugins_)
+        prefersList.add(juce::var(id));
+
+    juce::Array<juce::var> kitsList;
+    for (const auto& [pluginId, rows] : defaultKits_) {
+        if (rows.empty())
+            continue;
+        juce::Array<juce::var> rowArray;
+        for (const auto& r : rows) {
+            auto* rowObj = new juce::DynamicObject();
+            rowObj->setProperty("note", r.noteNumber);
+            if (r.label.isNotEmpty())
+                rowObj->setProperty("label", r.label);
+            if (r.role.isNotEmpty())
+                rowObj->setProperty("role", r.role);
+            rowArray.add(juce::var(rowObj));
+        }
+        auto* kitObj = new juce::DynamicObject();
+        kitObj->setProperty("plugin", pluginId);
+        kitObj->setProperty("rows", rowArray);
+        kitsList.add(juce::var(kitObj));
     }
 
     auto* payload = new juce::DynamicObject();
-    payload->setProperty("preferredEditor", editorArray);
+    payload->setProperty("prefersDrumGrid", prefersList);
+    payload->setProperty("defaultKits", kitsList);
 
     auto* envelope = new juce::DynamicObject();
     envelope->setProperty("magdaVersion", juce::String(MAGDA_VERSION));

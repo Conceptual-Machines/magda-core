@@ -561,16 +561,11 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     menu.addItem(7, "Edit Alias...");
     menu.addSeparator();
 
-    // Preferred clip editor (instruments only — effects don't drive clip editor choice)
+    // Prefer drum grid (instruments only — piano roll is the default for MIDI clips)
     if (plugin.category == "Instrument") {
-        using Editor = magda::PluginPreferences::PreferredClipEditor;
-        const auto current =
-            magda::PluginPreferences::getInstance().preferredClipEditorFor(plugin.uniqueId);
-        juce::PopupMenu editorSubmenu;
-        editorSubmenu.addItem(10, "Default", true, current == Editor::Unset);
-        editorSubmenu.addItem(11, "Piano Roll", true, current == Editor::PianoRoll);
-        editorSubmenu.addItem(12, "Drum Grid", true, current == Editor::DrumGrid);
-        menu.addSubMenu("Preferred Clip Editor", editorSubmenu);
+        const bool prefersGrid =
+            magda::PluginPreferences::getInstance().prefersDrumGrid(plugin.uniqueId);
+        menu.addItem(10, "Prefer Drum Grid", true, prefersGrid);
         menu.addSeparator();
     }
 
@@ -656,18 +651,12 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                 case 7:
                     showEditAliasDialog(plugin);
                     break;
-                case 10:
-                    magda::PluginPreferences::getInstance().setPreferredClipEditor(
-                        plugin.uniqueId, magda::PluginPreferences::PreferredClipEditor::Unset);
+                case 10: {
+                    auto& prefs = magda::PluginPreferences::getInstance();
+                    prefs.setPrefersDrumGrid(plugin.uniqueId,
+                                             !prefs.prefersDrumGrid(plugin.uniqueId));
                     break;
-                case 11:
-                    magda::PluginPreferences::getInstance().setPreferredClipEditor(
-                        plugin.uniqueId, magda::PluginPreferences::PreferredClipEditor::PianoRoll);
-                    break;
-                case 12:
-                    magda::PluginPreferences::getInstance().setPreferredClipEditor(
-                        plugin.uniqueId, magda::PluginPreferences::PreferredClipEditor::DrumGrid);
-                    break;
+                }
             }
         });
 }
