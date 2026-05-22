@@ -18,8 +18,11 @@
 
 #include "AudioFeatures.hpp"
 #include "ClapAudioEncoder.hpp"
+#include "ClapTextEncoder.hpp"
 #include "MediaDatabase.hpp"
+#include "MediaDbZeroShotTags.hpp"
 #include "PathRules.hpp"
+#include "RobertaTokenizer.hpp"
 #include "Scan.hpp"
 
 namespace magda::media {
@@ -570,6 +573,104 @@ std::string buildTagText(const std::vector<std::pair<std::string, float>>& tags)
     return out;
 }
 
+// ---- Zero-shot helpers (issue #1319) ------------------------------------
+
+// Read every tag row for a file across all source_models. Used when the
+// zero-shot pass needs to refresh the FTS row with the union of path +
+// scan + clap-zeroshot tags after writing new clap-zeroshot rows.
+std::vector<std::pair<std::string, float>> readAllTags(sqlite3* db, std::int64_t fileId) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, "SELECT tag, confidence FROM media_tag WHERE file_id = ?", -1, &stmt,
+                           nullptr) != SQLITE_OK) {
+        return {};
+    }
+    sqlite3_bind_int64(stmt, 1, fileId);
+    std::vector<std::pair<std::string, float>> out;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        if (text == nullptr) {
+            continue;
+        }
+        out.emplace_back(text, static_cast<float>(sqlite3_column_double(stmt, 1)));
+    }
+    sqlite3_finalize(stmt);
+    return out;
+}
+
+// Read the path + currently-stored family for a file. Family is what we
+// wrote during the scan pass — usually a path hint or "unknown".
+struct ExistingFileRow {
+    std::string path;
+    std::string family;
+};
+std::optional<ExistingFileRow> readFileRow(sqlite3* db, std::int64_t fileId) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, "SELECT path, family FROM media_file WHERE id = ?", -1, &stmt,
+                           nullptr) != SQLITE_OK) {
+        return std::nullopt;
+    }
+    sqlite3_bind_int64(stmt, 1, fileId);
+    std::optional<ExistingFileRow> result;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        ExistingFileRow row;
+        if (const auto* p = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))) {
+            row.path = p;
+        }
+        if (const auto* fam = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))) {
+            row.family = fam;
+        }
+        result = std::move(row);
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+void updateFamily(sqlite3* db, std::int64_t fileId, const std::string& family) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, "UPDATE media_file SET family = ? WHERE id = ?", -1, &stmt,
+                           nullptr) != SQLITE_OK) {
+        return;
+    }
+    sqlite3_bind_text(stmt, 1, family.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, fileId);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+// After audio embedding: score against the prompt matrix, write the top
+// hits as media_tag rows under the 'clap-zeroshot' source, override family
+// from the top non-texture tag when the scan pass left it "unknown", and
+// refresh the FTS row so tag-text search picks the new tags up. All inside
+// the same transaction the caller opens around upsertEmbedding so a power
+// loss between writes can't leave the DB in a state where the embedding
+// exists but tags/family/FTS are stale.
+void applyZeroShotTagging(sqlite3* db, std::int64_t fileId,
+                          const std::vector<float>& audioEmbedding, const ZeroShotTagger& tagger) {
+    const auto hits = tagger.scoreEmbedding(audioEmbedding.data(), audioEmbedding.size());
+    replaceTags(db, fileId, hits, "clap-zeroshot");
+
+    const auto fileRow = readFileRow(db, fileId);
+    if (fileRow) {
+        // Only overwrite when the path-derived family was non-informative.
+        // The path hint is treated as more reliable than CLAP on short or
+        // ambiguous samples (a 0.5s vocal hit sounds drum-like to CLAP, but
+        // a producer who put it in /Vocals/ knew what they made).
+        if (fileRow->family.empty() || fileRow->family == "unknown") {
+            const auto clapFamily = familyFromTopTags(hits);
+            if (!clapFamily.empty()) {
+                updateFamily(db, fileId, clapFamily);
+            }
+        }
+    }
+
+    // Refresh FTS so tag_text reflects path + scan + clap-zeroshot tags
+    // together. readAllTags is cheap (one indexed SELECT) compared to the
+    // ORT inference we just ran.
+    const auto unioned = readAllTags(db, fileId);
+    const auto pathText = fileRow ? buildPathText(fileRow->path) : std::string{};
+    upsertFts(db, fileId, pathText, buildTagText(unioned));
+}
+
 // ---- Per-file pipeline --------------------------------------------------
 //
 // Same logic in both serial and parallel modes: takes a raw sqlite3* (so
@@ -829,8 +930,40 @@ std::vector<std::filesystem::path> pathsForIds(sqlite3* db,
 
 // ---- Public --------------------------------------------------------------
 
-MediaDbIndexer::MediaDbIndexer(MediaDatabase& db, ClapAudioEncoder* encoder)
-    : db_(db), encoder_(encoder) {}
+MediaDbIndexer::MediaDbIndexer(MediaDatabase& db, ClapAudioEncoder* encoder,
+                               ClapTextEncoder* textEncoder, RobertaTokenizer* tokenizer)
+    : db_(db), encoder_(encoder), textEncoder_(textEncoder), tokenizer_(tokenizer) {}
+
+MediaDbIndexer::~MediaDbIndexer() = default;
+
+namespace {
+// Lazy-init helper for the indexer's ZeroShotTagger. Embeds every prompt
+// through the text encoder once; if anything throws we leave the tagger
+// pointer null and the embedding loop degrades to "audio embedding only".
+// Caller reports the failure once (not per file) via the failure callback.
+ZeroShotTagger* ensureZeroShotTagger(std::unique_ptr<ZeroShotTagger>& slot,
+                                     ClapTextEncoder* textEncoder, RobertaTokenizer* tokenizer,
+                                     const MediaDbIndexer::FailureFn& failure) {
+    if (slot) {
+        return slot.get();
+    }
+    if (textEncoder == nullptr || tokenizer == nullptr) {
+        return nullptr;
+    }
+    try {
+        slot = std::make_unique<ZeroShotTagger>(*textEncoder, *tokenizer);
+    } catch (const std::exception& e) {
+        // One-time report so the user sees zero-shot tagging is unavailable
+        // for this scan; subsequent files just skip silently.
+        reportFailure(failure, {}, std::string{"zero-shot tag init failed: "} + e.what());
+        slot.reset();
+    } catch (...) {
+        reportFailure(failure, {}, "zero-shot tag init failed: unknown error");
+        slot.reset();
+    }
+    return slot.get();
+}
+}  // namespace
 
 void MediaDbIndexer::setProgress(ProgressFn fn) {
     progress_ = std::move(fn);
@@ -1019,6 +1152,10 @@ MediaDbIndexer::EmbeddingStats MediaDbIndexer::embedMissingAudio(
     const auto files = pendingEmbeddings(sqlDb, modelId, root);
     const int total = static_cast<int>(files.size());
 
+    // Lazy-init zero-shot tagger; null when text encoder / tokenizer are
+    // unavailable, which means we skip CLAP tagging but still embed.
+    auto* tagger = ensureZeroShotTagger(zeroShotTagger_, textEncoder_, tokenizer_, failure_);
+
     int done = 0;
     for (const auto& f : files) {
         if (shouldCancel(shouldCancel_)) {
@@ -1048,6 +1185,9 @@ MediaDbIndexer::EmbeddingStats MediaDbIndexer::embedMissingAudio(
             bool transactionOpen = true;
             try {
                 upsertEmbedding(sqlDb, f.fileId, modelId, embedding);
+                if (tagger != nullptr) {
+                    applyZeroShotTagging(sqlDb, f.fileId, embedding, *tagger);
+                }
                 execSqlOrThrow(sqlDb, "COMMIT", "COMMIT media embedding");
                 transactionOpen = false;
             } catch (...) {
@@ -1085,6 +1225,8 @@ MediaDbIndexer::EmbeddingStats MediaDbIndexer::embedAudioFileIds(
     const auto files = audioRowsForIds(sqlDb, fileIds);
     const int total = static_cast<int>(files.size());
 
+    auto* tagger = ensureZeroShotTagger(zeroShotTagger_, textEncoder_, tokenizer_, failure_);
+
     int done = 0;
     for (const auto& f : files) {
         if (shouldCancel(shouldCancel_)) {
@@ -1111,6 +1253,9 @@ MediaDbIndexer::EmbeddingStats MediaDbIndexer::embedAudioFileIds(
             bool transactionOpen = true;
             try {
                 upsertEmbedding(sqlDb, f.fileId, modelId, embedding);
+                if (tagger != nullptr) {
+                    applyZeroShotTagging(sqlDb, f.fileId, embedding, *tagger);
+                }
                 execSqlOrThrow(sqlDb, "COMMIT", "COMMIT selected media embedding");
                 transactionOpen = false;
             } catch (...) {

@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -25,6 +26,9 @@ namespace magda::media {
 
 class MediaDatabase;
 class ClapAudioEncoder;
+class ClapTextEncoder;
+class RobertaTokenizer;
+class ZeroShotTagger;
 
 class MediaDbIndexer {
   public:
@@ -75,8 +79,17 @@ class MediaDbIndexer {
     };
 
     // db: required. encoder: nullable, controls whether the post-scan
-    // embedding backfill can run.
-    MediaDbIndexer(MediaDatabase& db, ClapAudioEncoder* encoder);
+    // embedding backfill can run. textEncoder + tokenizer: nullable as a
+    // pair, control whether the embedding pass also writes CLAP zero-shot
+    // tags (issue #1319). When either is null the post-scan pass still
+    // produces audio embeddings but skips zero-shot tagging.
+    MediaDbIndexer(MediaDatabase& db, ClapAudioEncoder* encoder,
+                   ClapTextEncoder* textEncoder = nullptr, RobertaTokenizer* tokenizer = nullptr);
+    ~MediaDbIndexer();
+    MediaDbIndexer(const MediaDbIndexer&) = delete;
+    MediaDbIndexer& operator=(const MediaDbIndexer&) = delete;
+    MediaDbIndexer(MediaDbIndexer&&) = delete;
+    MediaDbIndexer& operator=(MediaDbIndexer&&) = delete;
 
     void setProgress(ProgressFn fn);
     void setFailureCallback(FailureFn fn);
@@ -110,6 +123,12 @@ class MediaDbIndexer {
   private:
     MediaDatabase& db_;
     ClapAudioEncoder* encoder_;
+    ClapTextEncoder* textEncoder_;
+    RobertaTokenizer* tokenizer_;
+    // Built lazily on the first embedding pass when textEncoder_ + tokenizer_
+    // are both available. Held as a unique_ptr so the header doesn't have to
+    // pull in MediaDbZeroShotTags.hpp.
+    std::unique_ptr<ZeroShotTagger> zeroShotTagger_;
     ProgressFn progress_;
     FailureFn failure_;
     ShouldCancelFn shouldCancel_;
