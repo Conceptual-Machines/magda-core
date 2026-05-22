@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 
 #include "../audio/AudioBridge.hpp"
@@ -14,6 +15,7 @@
 #include "../ui/state/TimelineController.hpp"
 #include "ClipOperations.hpp"
 #include "Config.hpp"
+#include "ControlTarget.hpp"
 #include "TrackManager.hpp"
 
 namespace magda {
@@ -2153,6 +2155,65 @@ struct SliceRegion {
     double timelinePos;
 };
 
+int parameterIndexFor(te::Plugin& plugin, te::AutomatableParameter* wantedParam) {
+    if (wantedParam == nullptr)
+        return -1;
+
+    auto params = plugin.getAutomatableParameters();
+    for (int i = 0; i < static_cast<int>(params.size()); ++i) {
+        if (params[static_cast<size_t>(i)] == wantedParam)
+            return i;
+    }
+    return -1;
+}
+
+void prepareDrumGridAdsrMacros(DeviceInfo& drumGridDevice) {
+    static constexpr std::array<const char*, 4> kMacroNames = {"Attack", "Decay", "Sustain",
+                                                               "Release"};
+    if (static_cast<int>(drumGridDevice.macros.size()) < static_cast<int>(kMacroNames.size()))
+        drumGridDevice.macros = createDefaultMacros();
+
+    for (int i = 0; i < static_cast<int>(kMacroNames.size()); ++i) {
+        auto& macro = drumGridDevice.macros[static_cast<size_t>(i)];
+        macro.name = kMacroNames[static_cast<size_t>(i)];
+        macro.value = 0.0f;
+        macro.links.clear();
+    }
+}
+
+void addSamplerAdsrMacroLinks(DeviceInfo& drumGridDevice, TrackId trackId, DeviceId samplerDeviceId,
+                              daw::audio::MagdaSamplerPlugin& sampler) {
+    if (samplerDeviceId == INVALID_DEVICE_ID)
+        return;
+
+    struct AdsrParam {
+        int macroIndex;
+        te::AutomatableParameter* parameter;
+    };
+
+    const std::array<AdsrParam, 4> adsrParams = {{{0, sampler.attackParam.get()},
+                                                  {1, sampler.decayParam.get()},
+                                                  {2, sampler.sustainParam.get()},
+                                                  {3, sampler.releaseParam.get()}}};
+
+    const auto samplerPath = ChainNodePath::topLevelDevice(trackId, samplerDeviceId);
+    for (const auto& adsrParam : adsrParams) {
+        if (adsrParam.macroIndex < 0 ||
+            adsrParam.macroIndex >= static_cast<int>(drumGridDevice.macros.size()))
+            continue;
+
+        const int paramIndex = parameterIndexFor(sampler, adsrParam.parameter);
+        if (paramIndex < 0)
+            continue;
+
+        MacroLink link;
+        link.target = ControlTarget::pluginParam(samplerPath, paramIndex);
+        link.amount = 1.0f;
+        link.bipolar = false;
+        drumGridDevice.macros[static_cast<size_t>(adsrParam.macroIndex)].links.push_back(link);
+    }
+}
+
 /**
  * Core helper: given pre-computed slice regions, create a DrumGrid
  * track, load each region to a pad, and write a MIDI clip.
@@ -2179,7 +2240,14 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     dgDevice.pluginId = "drumgrid";
     dgDevice.format = PluginFormat::Internal;
     dgDevice.isInstrument = true;
-    trackManager.addDeviceToTrack(newTrackId, dgDevice);
+    DeviceId drumGridDeviceId = trackManager.addDeviceToTrack(newTrackId, dgDevice);
+    if (drumGridDeviceId == INVALID_DEVICE_ID)
+        return;
+
+    auto* drumGridDevice = trackManager.getDevice(newTrackId, drumGridDeviceId);
+    if (drumGridDevice == nullptr)
+        return;
+    prepareDrumGridAdsrMacros(*drumGridDevice);
 
     // Find the DrumGridPlugin that was just created
     auto* audioEngine = trackManager.getAudioEngine();
@@ -2227,9 +2295,12 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
                 sampler->sampleStartValue = startSec;
                 sampler->sampleEndParam->setParameter(endSec, juce::dontSendNotification);
                 sampler->sampleEndValue = endSec;
+                addSamplerAdsrMacroLinks(*drumGridDevice, newTrackId,
+                                         drumGrid->getPluginDeviceId(i, 0), *sampler);
             }
         }
     }
+    trackManager.notifyTrackDevicesChanged(newTrackId);
 
     // Create MIDI clip with notes triggering each pad
     auto& clipManager = ClipManager::getInstance();
