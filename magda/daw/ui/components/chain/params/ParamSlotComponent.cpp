@@ -189,9 +189,17 @@ ParamSlotComponent::~ParamSlotComponent() {
 // ============================================================================
 
 ParamLinkContext ParamSlotComponent::buildLinkContext() const {
-    return {deviceId_,           paramIndex_,           devicePath_,       linkOwnerPath_,
-            availableMods_,      availableRackMods_,    availableMacros_,  availableRackMacros_,
-            availableTrackMods_, availableTrackMacros_, selectedModIndex_, selectedMacroIndex_};
+    return {deviceId_,
+            paramIndex_,
+            devicePath_,
+            availableMods_,
+            availableRackMods_,
+            availableMacros_,
+            availableRackMacros_,
+            availableTrackMods_,
+            availableTrackMacros_,
+            selectedModIndex_,
+            selectedMacroIndex_};
 }
 
 // ============================================================================

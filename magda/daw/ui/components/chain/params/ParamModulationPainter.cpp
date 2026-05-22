@@ -61,9 +61,9 @@ void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintC
         if (ctx.activeMacro.isValid() && ctx.activeMacro.macroIndex >= 0) {
             auto target =
                 magda::ControlTarget::pluginParam(ctx.linkCtx.devicePath, ctx.linkCtx.paramIndex);
-            const auto* macro = resolveMacroPtr(ctx.activeMacro, ctx.linkCtx.linkOwnerPath,
-                                                ctx.linkCtx.deviceMacros, ctx.linkCtx.rackMacros,
-                                                ctx.linkCtx.trackMacros);
+            const auto* macro =
+                resolveMacroPtr(ctx.activeMacro, ctx.linkCtx.devicePath, ctx.linkCtx.deviceMacros,
+                                ctx.linkCtx.rackMacros, ctx.linkCtx.trackMacros);
             if (macro) {
                 if (const auto* link = macro->getLink(target)) {
                     const int barHeight = static_cast<int>(maxHeight * link->amount);
@@ -78,7 +78,7 @@ void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintC
             auto target =
                 magda::ControlTarget::pluginParam(ctx.linkCtx.devicePath, ctx.linkCtx.paramIndex);
             const auto* modPtr =
-                resolveModPtr(ctx.activeMod, ctx.linkCtx.linkOwnerPath, ctx.linkCtx.deviceMods,
+                resolveModPtr(ctx.activeMod, ctx.linkCtx.devicePath, ctx.linkCtx.deviceMods,
                               ctx.linkCtx.rackMods, ctx.linkCtx.trackMods);
             if (modPtr) {
                 if (const auto* link = modPtr->getLink(target)) {
@@ -166,9 +166,9 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
             magda::ControlTarget thisTarget =
                 magda::ControlTarget::pluginParam(ctx.linkCtx.devicePath, ctx.linkCtx.paramIndex);
 
-            const auto* macro = resolveMacroPtr(ctx.activeMacro, ctx.linkCtx.linkOwnerPath,
-                                                ctx.linkCtx.deviceMacros, ctx.linkCtx.rackMacros,
-                                                ctx.linkCtx.trackMacros);
+            const auto* macro =
+                resolveMacroPtr(ctx.activeMacro, ctx.linkCtx.devicePath, ctx.linkCtx.deviceMacros,
+                                ctx.linkCtx.rackMacros, ctx.linkCtx.trackMacros);
 
             if (macro) {
                 if (const auto* link = macro->getLink(thisTarget)) {
@@ -187,7 +187,7 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
         // Draw MOD amount line at BOTTOM - only for the ACTIVE mod in link mode
         if (ctx.activeMod.isValid() && ctx.activeMod.modIndex >= 0) {
             const auto* modPtr =
-                resolveModPtr(ctx.activeMod, ctx.linkCtx.linkOwnerPath, ctx.linkCtx.deviceMods,
+                resolveModPtr(ctx.activeMod, ctx.linkCtx.devicePath, ctx.linkCtx.deviceMods,
                               ctx.linkCtx.rackMods, ctx.linkCtx.trackMods);
 
             if (modPtr) {

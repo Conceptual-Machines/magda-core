@@ -17,7 +17,6 @@ struct ParamLinkContext {
     magda::DeviceId deviceId = magda::INVALID_DEVICE_ID;
     int paramIndex = -1;
     magda::ChainNodePath devicePath;
-    magda::ChainNodePath linkOwnerPath;
     const magda::ModArray* deviceMods = nullptr;
     const magda::ModArray* rackMods = nullptr;
     const magda::MacroArray* deviceMacros = nullptr;

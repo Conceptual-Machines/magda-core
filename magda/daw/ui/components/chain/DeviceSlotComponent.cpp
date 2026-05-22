@@ -1282,10 +1282,12 @@ void DeviceSlotComponent::updateParamModulation() {
                 compiledPanel_->bindPlugin(plugin.get());
             }
         }
-        ParamLinkContext curveLinkContext{
-            device_.id, -1,          nodePath_,        nodePath_,
-            mods,       rackMods,    macros,           rackMacros,
-            trackMods,  trackMacros, selectedModIndex, selectedMacroIndex};
+        ParamLinkContext curveLinkContext{device_.id,        -1,
+                                          nodePath_,         mods,
+                                          rackMods,          macros,
+                                          rackMacros,        trackMods,
+                                          trackMacros,       selectedModIndex,
+                                          selectedMacroIndex};
         compiledPanel_->updateFromDevice(device_, &curveLinkContext);
     }
 
