@@ -2171,9 +2171,10 @@ void MediaDbBrowserContent::startIndexingWithOptions(
     }
 
     // Warn if the Sample Analyzer isn't installed — indexing still works, but
-    // similarity analysis won't be computed, so text search will be filename /
-    // tag only. Async (non-blocking) so the scan kicks off either way.
+    // semantic / similarity search won't be available. The dialog now offers
+    // Cancel so the user can bail before any scan work begins.
     if (!magda::media::SampleTaggerDownloader::isInstalled()) {
+        const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
         juce::AlertWindow::showAsync(
             juce::MessageBoxOptions()
                 .withIconType(juce::MessageBoxIconType::InfoIcon)
@@ -2182,8 +2183,23 @@ void MediaDbBrowserContent::startIndexingWithOptions(
                     "Indexing will run, but without the Sample Analyzer the library can only do "
                     "filename / tag / family / BPM filtering - no semantic text search.\n\n"
                     "Install it any time from AI Settings > Sample Analyzer.")
-                .withButton("OK"),
-            nullptr);
+                .withButton("Continue indexing")
+                .withButton("Cancel"),
+            [self, dir, mode, tagOptions = std::move(tagOptions)](int result) mutable {
+                if (auto* page = self.getComponent(); page != nullptr && result == 1) {
+                    page->runIndexing(dir, mode, std::move(tagOptions));
+                }
+            });
+        return;
+    }
+    runIndexing(dir, mode, std::move(tagOptions));
+}
+
+void MediaDbBrowserContent::runIndexing(
+    const juce::File& dir, magda::media::MediaDbIndexer::Mode mode,
+    magda::media::MediaDbIndexer::ScanTagOptions tagOptions) {
+    if (indexing_ || !dir.isDirectory()) {
+        return;
     }
 
     if (!indexPool_) {
@@ -2233,11 +2249,44 @@ void MediaDbBrowserContent::startIndexingWithOptions(
         try {
             magda::media::MediaDatabase bgDb(magda::media::MediaDbContext::getInstance().dbPath());
             auto& ctx = magda::media::MediaDbContext::getInstance();
+
+            // Fire UI status on the message thread. Used for one-off
+            // notifications (model loads, skip reasons) that don't fit the
+            // per-file progress callback.
+            auto postStatus = [self](juce::String text) {
+                juce::MessageManager::callAsync([self, text]() {
+                    if (self != nullptr && self->onIndexingStatus) {
+                        self->onIndexingStatus(text);
+                    }
+                });
+            };
+
+            // audioEncoder() lazy-loads the ONNX session synchronously
+            // (~5-10 s). Tell the user that's what the pause is for.
+            if (!ctx.isAudioEncoderLoaded() && std::filesystem::exists(ctx.audioModelPath())) {
+                postStatus("Loading Sample Tagger audio model...");
+            }
             auto* encoder = ctx.audioEncoder();
-            magda::media::MediaDbIndexer indexer(
-                bgDb, encoder,
-                []() { return magda::media::MediaDbContext::getInstance().textEncoder(); },
-                []() { return magda::media::MediaDbContext::getInstance().tokenizer(); });
+
+            // Wrap the text encoder + tokenizer getters so the first access
+            // (driven by zero-shot tagging inside the embed loop) surfaces a
+            // status message before its own multi-second load.
+            auto textEncoderGetter = [postStatus]() -> magda::media::ClapTextEncoder* {
+                auto& c = magda::media::MediaDbContext::getInstance();
+                if (!c.isTextEncoderLoaded() && std::filesystem::exists(c.textModelPath())) {
+                    postStatus("Loading Sample Tagger text model...");
+                }
+                return c.textEncoder();
+            };
+            auto tokenizerGetter = [postStatus]() -> magda::media::RobertaTokenizer* {
+                auto& c = magda::media::MediaDbContext::getInstance();
+                if (!c.isTokenizerLoaded() && std::filesystem::exists(c.tokenizerJsonPath())) {
+                    postStatus("Loading Sample Tagger tokenizer...");
+                }
+                return c.tokenizer();
+            };
+            magda::media::MediaDbIndexer indexer(bgDb, encoder, textEncoderGetter,
+                                                 tokenizerGetter);
             indexer.setScanTagOptions(tagOptions);
             indexer.setShouldCancel([cancelToken]() { return cancelToken && cancelToken->load(); });
             indexer.setFailureCallback([&failureMutex, &failureCount,
@@ -2318,6 +2367,19 @@ void MediaDbBrowserContent::startIndexingWithOptions(
                                   ? scanStatus + " | Analysis stopped: " + analysisStatus
                                   : scanStatus + " | " + analysisStatus;
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + analysisStatus);
+            } else if (!cancelledAfterScan) {
+                // Encoder unavailable — most common reason is the Sample
+                // Tagger bundle isn't installed (or failed to load). Without
+                // this branch the user just sees the scan summary and has
+                // no idea why no audio analysis ran.
+                const auto skipReason =
+                    std::filesystem::exists(ctx.audioModelPath())
+                        ? juce::String("Sample Tagger model failed to load — skipping audio analysis")
+                        : juce::String(
+                              "Sample Tagger not installed — skipping audio analysis. Install it "
+                              "in AI Settings to enable semantic search.");
+                finalStatus = scanStatus + " | " + skipReason;
+                juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + skipReason);
             }
 
             std::lock_guard<std::mutex> lock(failureMutex);
