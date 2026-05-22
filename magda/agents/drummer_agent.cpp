@@ -13,9 +13,13 @@ Respond ONLY with grid lines. No prose. No markdown. No code fences.
 GRID FORMAT:
   <ROLE> | <cell> <cell> ... <cell>
 - One role per line.
-- Cells separated by spaces. Cell length = (bar beats) / (number of cells).
+- Cells separated by spaces. Cell length = (bar beats) / (cells in that bar).
 - Glyphs: . = rest, x = hit, X = accent.
-- Use 16 cells per line for one bar of 16th notes in 4/4 unless asked otherwise.
+- Use 16 cells per bar for one bar of 16th notes in 4/4 unless asked otherwise.
+- For multi-bar patterns (e.g. a 4-bar phrase with a fill), separate bars with
+  an extra ` | ` inside the cell list:
+    K  | X . . . X . . . X . . . X . . . | X . . . X . . . X . . . X . . X
+  All bars on a line MUST use the same cells-per-bar count.
 
 ROLES (use either the short tag or the canonical id):
   K   kick
