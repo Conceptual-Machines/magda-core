@@ -2168,15 +2168,30 @@ int parameterIndexForParamId(te::Plugin& plugin, const juce::String& paramId) {
 void prepareDrumGridAdsrMacros(DeviceInfo& drumGridDevice) {
     static constexpr std::array<const char*, 4> kMacroNames = {"Attack", "Decay", "Sustain",
                                                                "Release"};
+    static constexpr std::array<float, 4> kMacroValues = {0.0f, 0.1f, 1.0f, 0.1f};
     if (static_cast<int>(drumGridDevice.macros.size()) < static_cast<int>(kMacroNames.size()))
         drumGridDevice.macros = createDefaultMacros();
 
     for (int i = 0; i < static_cast<int>(kMacroNames.size()); ++i) {
         auto& macro = drumGridDevice.macros[static_cast<size_t>(i)];
         macro.name = kMacroNames[static_cast<size_t>(i)];
-        macro.value = 0.0f;
+        macro.value = kMacroValues[static_cast<size_t>(i)];
         macro.links.clear();
     }
+}
+
+void zeroSamplerAdsrBase(daw::audio::MagdaSamplerPlugin& sampler) {
+    static constexpr float kZero = 0.0f;
+
+    sampler.attackParam->setParameterFromHost(kZero, juce::dontSendNotification);
+    sampler.decayParam->setParameterFromHost(kZero, juce::dontSendNotification);
+    sampler.sustainParam->setParameterFromHost(kZero, juce::dontSendNotification);
+    sampler.releaseParam->setParameterFromHost(kZero, juce::dontSendNotification);
+
+    sampler.attackValue = kZero;
+    sampler.decayValue = kZero;
+    sampler.sustainValue = kZero;
+    sampler.releaseValue = kZero;
 }
 
 void addSamplerAdsrMacroLinks(DeviceInfo& drumGridDevice, TrackId trackId, DeviceId samplerDeviceId,
@@ -2222,6 +2237,7 @@ void linkAssignedDrumGridSamplerAdsrMacros(DeviceInfo& drumGridDevice, TrackId t
         if (sampler == nullptr)
             continue;
 
+        zeroSamplerAdsrBase(*sampler);
         addSamplerAdsrMacroLinks(drumGridDevice, trackId,
                                  drumGrid.getPluginDeviceId(chain->index, 0), *sampler);
     }
