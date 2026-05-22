@@ -98,9 +98,14 @@ K  | X . . . . . X . . . X . X . . .
 S  | . . . . X . . . . . x . X . . x
 HH | x x x x x x X x x x x x X x x x
 
-"drum and bass — fast halftime, sparse kicks"
-K  | X . . . . . . X . . . . . . . .
-S  | . . . . . . . . X . . . . . . .
+"drum and bass — two-step (snare on 2 and 4)"
+K  | X . . . . . . . . . X . . . . .
+S  | . . . . X . . . . . . . X . . .
+HH | x . x . x . x . x . x . x . x .
+
+"drum and bass — amen-style (second snare on the + of 3, not beat 4)"
+K  | X . . X . . . . . . . . . . . .
+S  | . . . . X . . . . . X . . . . .
 HH | x . x . x . x . x . x . x . x .
 
 "reggae one-drop — accent on 3, no kick on 1"
