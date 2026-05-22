@@ -9,6 +9,7 @@
 #include "AudioThumbnailManager.hpp"
 #include "BinaryData.h"
 #include "MediaDbBrowserContent.hpp"
+#include "MediaExplorerPreviewState.hpp"
 #include "media_db/MediaDbMetadata.hpp"
 
 namespace magda::daw::ui {
@@ -106,7 +107,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
                 onStopIndexing();
             }
         };
-        addAndMakeVisible(stopIndexingButton_);
+        addChildComponent(stopIndexingButton_);
     }
 
     ~ThumbnailComponent() override {

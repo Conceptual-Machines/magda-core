@@ -14,6 +14,18 @@ namespace te = tracktion::engine;
 
 namespace magda::daw::ui {
 
+namespace {
+
+juce::String linkPathString(const magda::ChainNodePath& path) {
+    return path.isValid() ? path.toString() : juce::String("<invalid>");
+}
+
+juce::String yesNo(bool value) {
+    return value ? "yes" : "no";
+}
+
+}  // namespace
+
 PadDeviceSlot::PadDeviceSlot() {
     nameLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
@@ -291,9 +303,11 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
 }
 
 void PadDeviceSlot::setLinkContext(magda::DeviceId deviceId, const magda::ChainNodePath& devicePath,
+                                   const magda::ChainNodePath& linkOwnerPath,
                                    const magda::MacroArray* macros, const magda::ModArray* mods,
                                    const magda::MacroArray* trackMacros,
-                                   const magda::ModArray* trackMods) {
+                                   const magda::ModArray* trackMods, int selectedModIndex,
+                                   int selectedMacroIndex) {
     pluginDeviceId_ = deviceId;
 
     // Wire external plugin ParamSlotComponents
@@ -301,23 +315,37 @@ void PadDeviceSlot::setLinkContext(magda::DeviceId deviceId, const magda::ChainN
         auto& slot = paramSlots_[static_cast<size_t>(i)];
         slot->setDeviceId(deviceId);
         slot->setDevicePath(devicePath);
+        slot->setLinkOwnerPath(linkOwnerPath);
         slot->setAvailableMacros(macros);
         slot->setAvailableMods(mods);
         slot->setAvailableTrackMacros(trackMacros);
         slot->setAvailableTrackMods(trackMods);
+        slot->setSelectedModIndex(selectedModIndex);
+        slot->setSelectedMacroIndex(selectedMacroIndex);
+        slot->refreshLinkModeState();
     }
 
     // Wire sampler LinkableTextSliders
     if (samplerUI_) {
         auto sliders = samplerUI_->getLinkableSliders();
+        DBG("[PadDeviceLink] sampler context deviceId="
+            << deviceId << " target=" << linkPathString(devicePath)
+            << " owner=" << linkPathString(linkOwnerPath) << " sliders=" << sliders.size()
+            << " selectedMod=" << selectedModIndex << " selectedMacro=" << selectedMacroIndex
+            << " macros=" << yesNo(macros != nullptr));
         for (int i = 0; i < static_cast<int>(sliders.size()); ++i) {
             auto* slider = sliders[static_cast<size_t>(i)];
             int paramIdx = slider->getParamIndex() >= 0 ? slider->getParamIndex() : i;
+            DBG("[PadDeviceLink]   slider slot=" << i << " param=" << paramIdx);
             slider->setLinkContext(deviceId, paramIdx, devicePath);
+            slider->setLinkOwnerPath(linkOwnerPath);
             slider->setAvailableMacros(macros);
             slider->setAvailableMods(mods);
             slider->setAvailableTrackMacros(trackMacros);
             slider->setAvailableTrackMods(trackMods);
+            slider->setSelectedModIndex(selectedModIndex);
+            slider->setSelectedMacroIndex(selectedMacroIndex);
+            slider->refreshLinkModeState();
         }
     }
 }

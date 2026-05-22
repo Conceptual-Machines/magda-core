@@ -9,6 +9,18 @@
 
 namespace magda::daw::ui {
 
+namespace {
+
+juce::String linkPathString(const magda::ChainNodePath& path) {
+    return path.isValid() ? path.toString() : juce::String("<invalid>");
+}
+
+juce::String yesNo(bool value) {
+    return value ? "yes" : "no";
+}
+
+}  // namespace
+
 PadChainPanel::PadChainPanel() {
     addButton_.setColour(juce::TextButton::buttonColourId,
                          DarkTheme::getColour(DarkTheme::SURFACE));
@@ -82,12 +94,19 @@ void PadChainPanel::setCollapsedPlugins(const std::vector<tracktion::engine::Plu
 void PadChainPanel::setLinkContext(const magda::ChainNodePath& devicePath,
                                    const magda::MacroArray* macros, const magda::ModArray* mods,
                                    const magda::MacroArray* trackMacros,
-                                   const magda::ModArray* trackMods) {
+                                   const magda::ModArray* trackMods, int selectedModIndex,
+                                   int selectedMacroIndex) {
     devicePath_ = devicePath;
     macros_ = macros;
     mods_ = mods;
     trackMacros_ = trackMacros;
     trackMods_ = trackMods;
+    selectedModIndex_ = selectedModIndex;
+    selectedMacroIndex_ = selectedMacroIndex;
+    DBG("[PadChainLink] set context owner="
+        << linkPathString(devicePath_) << " macros=" << yesNo(macros_ != nullptr)
+        << " mods=" << yesNo(mods_ != nullptr) << " trackMacros=" << yesNo(trackMacros_ != nullptr)
+        << " selectedMod=" << selectedModIndex_ << " selectedMacro=" << selectedMacroIndex_);
     // Apply to existing slots
     updateLinkContext();
 }
@@ -103,7 +122,13 @@ void PadChainPanel::updateLinkContext() {
 
 void PadChainPanel::applyLinkContextToSlot(PadDeviceSlot& slot, const PluginSlotInfo& info) {
     if (info.deviceId != magda::INVALID_DEVICE_ID) {
-        slot.setLinkContext(info.deviceId, devicePath_, macros_, mods_, trackMacros_, trackMods_);
+        auto pluginPath = magda::ChainNodePath::topLevelDevice(devicePath_.trackId, info.deviceId);
+        DBG("[PadChainLink] apply pad=" << currentPadIndex_ << " pluginDevice=" << info.deviceId
+                                        << " sampler=" << yesNo(info.isSampler)
+                                        << " target=" << linkPathString(pluginPath)
+                                        << " owner=" << linkPathString(devicePath_));
+        slot.setLinkContext(info.deviceId, pluginPath, devicePath_, macros_, mods_, trackMacros_,
+                            trackMods_, selectedModIndex_, selectedMacroIndex_);
     }
 }
 
@@ -324,14 +349,20 @@ void PadChainPanel::resized() {
     // Viewport fills the rest
     viewport_.setBounds(area);
 
-    // Calculate total content width to determine if scrollbar is needed
+    // Calculate total content width, including the add button. The viewport
+    // will show a horizontal scrollbar whenever the container is wider than
+    // the visible area; reserve that height before laying out the sampler so
+    // its controls never end up under the scrollbar.
     int totalContentWidth = 2;
     for (size_t i = 0; i < slots_.size(); ++i) {
         if (i > 0)
             totalContentWidth += ARROW_WIDTH;
-        totalContentWidth += slots_[i]->getPreferredWidth();
+        int slotWidth = slots_[i]->getPreferredWidth();
+        if (slots_.size() == 1 && !slots_[i]->isCollapsed())
+            slotWidth = juce::jmax(slotWidth, area.getWidth() - 4);
+        totalContentWidth += slotWidth;
     }
-    totalContentWidth += 2;
+    totalContentWidth += 4 + 20 + 2;
 
     bool needsScrollbar = totalContentWidth > area.getWidth();
     int scrollbarHeight = needsScrollbar ? viewport_.getScrollBarThickness() : 0;

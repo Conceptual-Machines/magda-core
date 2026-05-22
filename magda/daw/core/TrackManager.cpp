@@ -124,6 +124,32 @@ juce::String stripDuplicateRuntimePluginState(const juce::String& pluginState) {
     return pluginState;
 }
 
+void scanEmbeddedDeviceIds(const juce::ValueTree& tree, int& maxDeviceId) {
+    static const juce::Identifier embeddedDeviceIdProp("magdaDeviceId");
+
+    if (tree.hasProperty(embeddedDeviceIdProp)) {
+        const int embeddedDeviceId = static_cast<int>(tree.getProperty(embeddedDeviceIdProp));
+        if (embeddedDeviceId != INVALID_DEVICE_ID)
+            maxDeviceId = std::max(maxDeviceId, embeddedDeviceId);
+    }
+
+    for (int i = 0; i < tree.getNumChildren(); ++i)
+        scanEmbeddedDeviceIds(tree.getChild(i), maxDeviceId);
+}
+
+void scanEmbeddedDeviceIds(const juce::String& pluginState, int& maxDeviceId) {
+    if (pluginState.isEmpty())
+        return;
+
+    auto xml = juce::parseXML(pluginState);
+    if (!xml)
+        return;
+
+    auto state = juce::ValueTree::fromXml(*xml);
+    if (state.isValid())
+        scanEmbeddedDeviceIds(state, maxDeviceId);
+}
+
 void remapDuplicatedElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
                              const DuplicateIdRemap& remap) {
     for (auto& element : elements) {
@@ -1873,6 +1899,7 @@ void TrackManager::refreshIdCountersFromTracks() {
         if (std::holds_alternative<DeviceInfo>(element)) {
             const auto& device = std::get<DeviceInfo>(element);
             maxDeviceId = std::max(maxDeviceId, device.id);
+            scanEmbeddedDeviceIds(device.pluginState, maxDeviceId);
         } else if (std::holds_alternative<std::unique_ptr<RackInfo>>(element)) {
             const auto& rackPtr = std::get<std::unique_ptr<RackInfo>>(element);
             if (rackPtr) {

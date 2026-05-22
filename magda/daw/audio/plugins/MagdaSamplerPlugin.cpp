@@ -6,6 +6,18 @@ namespace magda::daw::audio {
 
 namespace te = tracktion::engine;
 
+namespace {
+
+float clampToParameterRange(const te::AutomatableParameter::Ptr& param, float value) {
+    if (param == nullptr)
+        return value;
+
+    auto range = param->getValueRange();
+    return juce::jlimit(range.getStart(), range.getEnd(), value);
+}
+
+}  // namespace
+
 const char* MagdaSamplerPlugin::xmlTypeName = "magdasampler";
 
 //==============================================================================
@@ -282,6 +294,11 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
 
     for (int i = 0; i < numVoices; ++i)
         synthesiser.addVoice(new SamplerVoice());
+
+    attackValue = clampToParameterRange(attackParam, attackValue.get());
+    decayValue = clampToParameterRange(decayParam, decayValue.get());
+    sustainValue = clampToParameterRange(sustainParam, sustainValue.get());
+    releaseValue = clampToParameterRange(releaseParam, releaseValue.get());
 
     // Initialize automatable parameters to their default values.
     // addParam() defaults to range minimum; we must explicitly set the intended defaults.
@@ -598,6 +615,12 @@ void MagdaSamplerPlugin::restorePluginStateFromValueTree(const juce::ValueTree& 
     te::copyPropertiesToCachedValues(v, attackValue, decayValue, sustainValue, releaseValue,
                                      pitchValue, fineValue, levelValue, sampleStartValue,
                                      sampleEndValue, loopStartValue, loopEndValue);
+
+    attackValue = clampToParameterRange(attackParam, attackValue.get());
+    decayValue = clampToParameterRange(decayParam, decayValue.get());
+    sustainValue = clampToParameterRange(sustainParam, sustainValue.get());
+    releaseValue = clampToParameterRange(releaseParam, releaseValue.get());
+
     // Handle non-float CachedValues separately to avoid MSVC C2440 ambiguity
     // with var -> String conversion in TE's copyPropertiesToCachedValues
     if (auto p = v.getPropertyPointer(samplePathValue.getPropertyID()))

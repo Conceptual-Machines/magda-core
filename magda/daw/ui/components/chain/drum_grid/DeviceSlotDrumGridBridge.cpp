@@ -28,6 +28,16 @@ magda::ChainNodePath nearestRackPathForDevicePath(const magda::ChainNodePath& de
     return rackPath;
 }
 
+juce::String linkPathString(const magda::ChainNodePath& path) {
+    return path.isValid() ? path.toString() : juce::String("<invalid>");
+}
+
+juce::String targetString(const magda::ControlTarget& target) {
+    return juce::String(magda::toString(target.kind)) +
+           " path=" + linkPathString(target.devicePath) +
+           " param=" + juce::String(target.paramIndex);
+}
+
 void refreshModUi(const PadChainLinkCallbacks& callbacks) {
     if (callbacks.updateParamModulation)
         callbacks.updateParamModulation();
@@ -49,6 +59,10 @@ void wireLinkableControl(Control& control, PadChainLinkCallbacks callbacks) {
         const auto nodePath =
             callbacks.getNodePath ? callbacks.getNodePath() : magda::ChainNodePath{};
         const auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
+        DBG("[PadChainLink] onModLinkedWithAmount node="
+            << linkPathString(nodePath) << " activeParent="
+            << linkPathString(activeModSelection.parentPath) << " modIndex=" << modIndex
+            << " amount=" << amount << " target={" << targetString(target) << "}");
         if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
             magda::TrackManager::getInstance().setModTarget(nodePath, modIndex, target);
             magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target, amount);
@@ -125,6 +139,10 @@ void wireLinkableControl(Control& control, PadChainLinkCallbacks callbacks) {
             callbacks.getNodePath ? callbacks.getNodePath() : magda::ChainNodePath{};
         const auto activeMacroSelection =
             magda::LinkModeManager::getInstance().getMacroInLinkMode();
+        DBG("[PadChainLink] onMacroLinkedWithAmount node="
+            << linkPathString(nodePath) << " activeParent="
+            << linkPathString(activeMacroSelection.parentPath) << " macroIndex=" << macroIndex
+            << " amount=" << amount << " target={" << targetString(target) << "}");
         if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
             magda::TrackManager::getInstance().setMacroTarget(nodePath, macroIndex, target);
             magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex, target,
@@ -178,6 +196,10 @@ void wireLinkableControl(Control& control, PadChainLinkCallbacks callbacks) {
             callbacks.getNodePath ? callbacks.getNodePath() : magda::ChainNodePath{};
         const auto activeMacroSelection =
             magda::LinkModeManager::getInstance().getMacroInLinkMode();
+        DBG("[PadChainLink] onMacroAmountChanged node="
+            << linkPathString(nodePath) << " activeParent="
+            << linkPathString(activeMacroSelection.parentPath) << " macroIndex=" << macroIndex
+            << " amount=" << amount << " target={" << targetString(target) << "}");
         if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
             magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex, target,
                                                                   amount);
@@ -326,11 +348,11 @@ bool layoutDrumGridUI(DrumGridUI* drumGridUI, juce::Rectangle<int> contentArea) 
 
 void setPadChainLinkContext(DrumGridUI* drumGridUI, const magda::ChainNodePath& nodePath,
                             const magda::MacroArray* macros, const magda::ModArray* mods,
-                            const magda::MacroArray* trackMacros,
-                            const magda::ModArray* trackMods) {
+                            const magda::MacroArray* trackMacros, const magda::ModArray* trackMods,
+                            int selectedModIndex, int selectedMacroIndex) {
     if (drumGridUI != nullptr)
-        drumGridUI->getPadChainPanel().setLinkContext(nodePath, macros, mods, trackMacros,
-                                                      trackMods);
+        drumGridUI->getPadChainPanel().setLinkContext(
+            nodePath, macros, mods, trackMacros, trackMods, selectedModIndex, selectedMacroIndex);
 }
 
 void appendAvailableDevices(const DrumGridUI* drumGridUI,
