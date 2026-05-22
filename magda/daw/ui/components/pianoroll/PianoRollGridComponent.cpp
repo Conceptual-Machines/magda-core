@@ -1722,13 +1722,15 @@ void PianoRollGridComponent::createNoteComponents() {
 
             noteComp->onNoteDeselected = [this, clipId](size_t /*index*/) {
                 // Cmd+click toggled this note OFF — remove from SelectionManager
-                if (onNoteSelectionChanged) {
-                    std::vector<size_t> selectedIndices;
-                    for (auto& nc : noteComponents_) {
-                        if (nc->isSelected()) {
-                            selectedIndices.push_back(nc->getNoteIndex());
-                        }
+                std::vector<size_t> selectedIndices;
+                for (auto& nc : noteComponents_) {
+                    if (nc->isSelected()) {
+                        selectedIndices.push_back(nc->getNoteIndex());
                     }
+                }
+                selectedNoteIndex_ =
+                    selectedIndices.empty() ? -1 : static_cast<int>(selectedIndices.back());
+                if (onNoteSelectionChanged) {
                     onNoteSelectionChanged(clipId, selectedIndices);
                 }
                 rebuildSelectedPitchRows();

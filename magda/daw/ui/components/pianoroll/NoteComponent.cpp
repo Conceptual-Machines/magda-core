@@ -98,9 +98,12 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         }
     }
 
-    // Cmd/Ctrl-click acts as an eraser for the note under the cursor. The parent
+    const bool isEraseClick =
+        e.mods.isLeftButtonDown() && e.mods.isShiftDown() && e.mods.isCtrlDown();
+
+    // Shift+Ctrl-click acts as an eraser for the note under the cursor. The parent
     // grid expands this to the selected note group when appropriate.
-    if (e.mods.isLeftButtonDown() && (e.mods.isCommandDown() || e.mods.isCtrlDown())) {
+    if (isEraseClick) {
         if (onNoteDeleted)
             onNoteDeleted(noteIndex_);
         dragMode_ = DragMode::None;
@@ -115,14 +118,23 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
+    const bool isAdditiveSelectionClick = e.mods.isCommandDown();
+
     // Single click - select this note
     if (!isSelected_) {
         setSelected(true);
-        // Clicking an unselected note: deselect others immediately
         if (onNoteSelected) {
-            onNoteSelected(noteIndex_, false);
+            onNoteSelected(noteIndex_, isAdditiveSelectionClick);
         }
         deferredDeselect_ = false;
+    } else if (isAdditiveSelectionClick) {
+        setSelected(false);
+        if (onNoteDeselected) {
+            onNoteDeselected(noteIndex_);
+        }
+        deferredDeselect_ = false;
+        dragMode_ = DragMode::None;
+        return;
     } else {
         // Already selected: defer deselect-others to mouseUp so multi-drag works
         deferredDeselect_ = true;
@@ -415,7 +427,7 @@ bool NoteComponent::isOnRightEdge(int x) const {
 }
 
 void NoteComponent::updateCursor() {
-    if (juce::ModifierKeys::currentModifiers.isCommandDown() ||
+    if (juce::ModifierKeys::currentModifiers.isShiftDown() &&
         juce::ModifierKeys::currentModifiers.isCtrlDown()) {
         setMouseCursor(CursorManager::getInstance().getEraseCursor());
     } else if (hoverLeftEdge_ || hoverRightEdge_) {
