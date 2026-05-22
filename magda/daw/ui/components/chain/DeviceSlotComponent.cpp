@@ -1291,7 +1291,8 @@ void DeviceSlotComponent::updateParamModulation() {
     setupCustomUILinking();
 
     drum_grid_slot::setPadChainLinkContext(customUI_.getDrumGridUI(), nodePath_, macros, mods,
-                                           trackMacros, trackMods);
+                                           trackMacros, trackMods, selectedModIndex,
+                                           selectedMacroIndex);
 }
 
 void DeviceSlotComponent::paint(juce::Graphics& g) {
@@ -2122,8 +2123,24 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
             trackMacros = &trackInfo->macros;
         }
     }
+
+    auto& selMgr = magda::SelectionManager::getInstance();
+    int selectedModIndex = -1;
+    int selectedMacroIndex = -1;
+    if (selMgr.hasModSelection()) {
+        const auto& modSel = selMgr.getModSelection();
+        if (modSel.parentPath == nodePath_)
+            selectedModIndex = modSel.modIndex;
+    }
+    if (selMgr.hasMacroSelection()) {
+        const auto& macroSel = selMgr.getMacroSelection();
+        if (macroSel.parentPath == nodePath_)
+            selectedMacroIndex = macroSel.macroIndex;
+    }
+
     drum_grid_slot::setPadChainLinkContext(customUI_.getDrumGridUI(), nodePath_, macros, mods,
-                                           trackMacros, trackMods);
+                                           trackMacros, trackMods, selectedModIndex,
+                                           selectedMacroIndex);
 
     juce::Component::SafePointer<DeviceSlotComponent> safeThis(this);
     drum_grid_slot::PadChainLinkCallbacks callbacks;

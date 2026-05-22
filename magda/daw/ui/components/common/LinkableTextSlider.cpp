@@ -280,6 +280,18 @@ void LinkableTextSlider::setSelectedMacroIndex(int macroIndex) {
     repaint();
 }
 
+void LinkableTextSlider::refreshLinkModeState() {
+    auto& manager = magda::LinkModeManager::getInstance();
+    if (manager.getLinkModeType() == magda::LinkModeType::Mod) {
+        modLinkModeChanged(true, manager.getModInLinkMode());
+    } else if (manager.getLinkModeType() == magda::LinkModeType::Macro) {
+        macroLinkModeChanged(true, manager.getMacroInLinkMode());
+    } else {
+        modLinkModeChanged(false, {});
+        macroLinkModeChanged(false, {});
+    }
+}
+
 // ============================================================================
 // Link mode listener
 // ============================================================================

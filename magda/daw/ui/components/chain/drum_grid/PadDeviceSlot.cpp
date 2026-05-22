@@ -293,7 +293,8 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
 void PadDeviceSlot::setLinkContext(magda::DeviceId deviceId, const magda::ChainNodePath& devicePath,
                                    const magda::MacroArray* macros, const magda::ModArray* mods,
                                    const magda::MacroArray* trackMacros,
-                                   const magda::ModArray* trackMods) {
+                                   const magda::ModArray* trackMods, int selectedModIndex,
+                                   int selectedMacroIndex) {
     pluginDeviceId_ = deviceId;
 
     // Wire external plugin ParamSlotComponents
@@ -305,6 +306,9 @@ void PadDeviceSlot::setLinkContext(magda::DeviceId deviceId, const magda::ChainN
         slot->setAvailableMods(mods);
         slot->setAvailableTrackMacros(trackMacros);
         slot->setAvailableTrackMods(trackMods);
+        slot->setSelectedModIndex(selectedModIndex);
+        slot->setSelectedMacroIndex(selectedMacroIndex);
+        slot->refreshLinkModeState();
     }
 
     // Wire sampler LinkableTextSliders
@@ -318,6 +322,9 @@ void PadDeviceSlot::setLinkContext(magda::DeviceId deviceId, const magda::ChainN
             slider->setAvailableMods(mods);
             slider->setAvailableTrackMacros(trackMacros);
             slider->setAvailableTrackMods(trackMods);
+            slider->setSelectedModIndex(selectedModIndex);
+            slider->setSelectedMacroIndex(selectedMacroIndex);
+            slider->refreshLinkModeState();
         }
     }
 }

@@ -62,6 +62,7 @@ class LinkableTextSlider : public juce::Component,
     void setAvailableTrackMacros(const magda::MacroArray* trackMacros);
     void setSelectedModIndex(int modIndex);
     void setSelectedMacroIndex(int macroIndex);
+    void refreshLinkModeState();
 
     // Switch this slider into "modifier rate" mode — used by the LFO / mod
     // rate slider. MIDI Learn becomes a ModParam binding instead of a

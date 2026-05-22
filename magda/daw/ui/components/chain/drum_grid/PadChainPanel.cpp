@@ -82,12 +82,15 @@ void PadChainPanel::setCollapsedPlugins(const std::vector<tracktion::engine::Plu
 void PadChainPanel::setLinkContext(const magda::ChainNodePath& devicePath,
                                    const magda::MacroArray* macros, const magda::ModArray* mods,
                                    const magda::MacroArray* trackMacros,
-                                   const magda::ModArray* trackMods) {
+                                   const magda::ModArray* trackMods, int selectedModIndex,
+                                   int selectedMacroIndex) {
     devicePath_ = devicePath;
     macros_ = macros;
     mods_ = mods;
     trackMacros_ = trackMacros;
     trackMods_ = trackMods;
+    selectedModIndex_ = selectedModIndex;
+    selectedMacroIndex_ = selectedMacroIndex;
     // Apply to existing slots
     updateLinkContext();
 }
@@ -104,7 +107,8 @@ void PadChainPanel::updateLinkContext() {
 void PadChainPanel::applyLinkContextToSlot(PadDeviceSlot& slot, const PluginSlotInfo& info) {
     if (info.deviceId != magda::INVALID_DEVICE_ID) {
         auto pluginPath = magda::ChainNodePath::topLevelDevice(devicePath_.trackId, info.deviceId);
-        slot.setLinkContext(info.deviceId, pluginPath, macros_, mods_, trackMacros_, trackMods_);
+        slot.setLinkContext(info.deviceId, pluginPath, macros_, mods_, trackMacros_, trackMods_,
+                            selectedModIndex_, selectedMacroIndex_);
     }
 }
 

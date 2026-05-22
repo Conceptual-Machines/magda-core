@@ -89,7 +89,8 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
     /** Set link mode context so PadDeviceSlots can participate in macro/mod linking. */
     void setLinkContext(const magda::ChainNodePath& devicePath, const magda::MacroArray* macros,
                         const magda::ModArray* mods, const magda::MacroArray* trackMacros,
-                        const magda::ModArray* trackMods);
+                        const magda::ModArray* trackMods, int selectedModIndex,
+                        int selectedMacroIndex);
 
     /** Update link mode context on existing slots (called when mod/macro data changes). */
     void updateLinkContext();
@@ -123,6 +124,8 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
     const magda::ModArray* mods_ = nullptr;
     const magda::MacroArray* trackMacros_ = nullptr;
     const magda::ModArray* trackMods_ = nullptr;
+    int selectedModIndex_ = -1;
+    int selectedMacroIndex_ = -1;
 
     void rebuildSlots();
     void applyLinkContextToSlot(PadDeviceSlot& slot, const PluginSlotInfo& info);
