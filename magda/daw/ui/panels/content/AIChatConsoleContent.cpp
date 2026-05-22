@@ -36,6 +36,7 @@
 #include "../../../core/controllers/ControllerProfileRegistry.hpp"
 #include "../../../core/controllers/ControllerRegistry.hpp"
 #include "../../components/common/SvgButton.hpp"
+#include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
@@ -43,11 +44,19 @@
 #include "PluginBrowserContent.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+// Forward declaration so RequestThread::run can call the formatter — the
+// definition lives further down in the file's other anon-namespace block,
+// next to isDrummerTrack().
+juce::String formatClipAsDrummerContext(magda::ClipId clipId);
+}  // namespace
 
 // ============================================================================
 // AutocompletePopup
@@ -538,8 +547,20 @@ void AIChatConsoleContent::RequestThread::run() {
         // Drummer agent: emits compact role-grid output. Reuses the music IR
         // path because Hit ops land in musicInstructions and execute through
         // InstructionExecutor like any other note/chord.
+        //
+        // When the user has a clip selected, format its current pattern into
+        // grid grammar and prepend as context — lets the agent reason about
+        // additions / variations ("add a fill", "make hats busier") instead
+        // of generating from scratch. Output still lands in a new clip (the
+        // executor never inherits the selected clip).
         if (owner_.drummerAgent_) {
-            auto result = owner_.drummerAgent_->generateStreaming(message, onToken);
+            std::string drummerMessage = message;
+            auto selectedClip = magda::SelectionManager::getInstance().getSelectedClip();
+            auto contextPreamble = formatClipAsDrummerContext(selectedClip);
+            if (contextPreamble.isNotEmpty()) {
+                drummerMessage = contextPreamble.toStdString() + "\nUser request: " + message;
+            }
+            auto result = owner_.drummerAgent_->generateStreaming(drummerMessage, onToken);
             if (threadShouldExit())
                 return;
             if (result.hasError)
@@ -1519,6 +1540,85 @@ bool isDrummerTrack(magda::TrackId trackId) {
             return true;
     }
     return false;
+}
+
+// Format an existing drum clip's notes back into the grid grammar the agent
+// emits, so we can hand the current pattern to the LLM as input context for
+// follow-up prompts ("add a fill", "make the hats busier", etc.). Returns an
+// empty string when there's no clip / no notes / no instrument with a kit.
+//
+// Resolution is hard-coded to 16ths in 4/4. Notes that don't land on a 16th
+// cell are quantised to the nearest one; off-grid playing detail isn't
+// preserved (it can't survive a round-trip into role-grid form anyway).
+juce::String formatClipAsDrummerContext(magda::ClipId clipId) {
+    if (clipId == magda::INVALID_CLIP_ID)
+        return {};
+    const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr || !clip->isMidi() || clip->midiNotes.empty())
+        return {};
+    const auto* device = magda::TrackManager::getInstance().getPrimaryInstrument(clip->trackId);
+    if (device == nullptr)
+        return {};
+
+    double tempo = 120.0;
+    if (auto* controller = magda::TimelineController::getCurrent())
+        tempo = controller->getState().tempo.bpm;
+    const double lengthBeats = clip->getLengthInBeats(tempo);
+
+    constexpr double kBarBeats = 4.0;
+    constexpr int kCellsPerBar = 16;
+    constexpr double kCellBeats = kBarBeats / static_cast<double>(kCellsPerBar);
+    const int numBars = juce::jmax(1, static_cast<int>(std::ceil(lengthBeats / kBarBeats)));
+    const int totalCells = numBars * kCellsPerBar;
+
+    juce::String header = "Current pattern (" + juce::String(numBars) + " bar" +
+                          (numBars > 1 ? juce::String("s") : juce::String()) + ", " +
+                          juce::String(kCellsPerBar) + " cells per bar):\n";
+
+    juce::String rows;
+    for (const auto& roleInfo : magda::daw::audio::drum_grid_roles::kRoles) {
+        const juce::String roleId(roleInfo.id);
+        std::vector<char> cells(static_cast<size_t>(totalCells), '.');
+        bool hasAny = false;
+        for (const auto& note : clip->midiNotes) {
+            // role lookup: which kit row covers this note's MIDI number
+            juce::String noteRole;
+            for (const auto& row : device->kitRows) {
+                if (row.noteNumber == note.noteNumber) {
+                    noteRole = row.role;
+                    break;
+                }
+            }
+            if (noteRole != roleId)
+                continue;
+            int cellIdx = static_cast<int>(std::floor(note.startBeat / kCellBeats + 0.5));
+            if (cellIdx < 0 || cellIdx >= totalCells)
+                continue;
+            cells[static_cast<size_t>(cellIdx)] = (note.velocity >= 100) ? 'X' : 'x';
+            hasAny = true;
+        }
+        if (!hasAny)
+            continue;
+
+        juce::String line(roleInfo.shortTag);
+        line += " | ";
+        for (int bar = 0; bar < numBars; ++bar) {
+            if (bar > 0)
+                line += " | ";
+            for (int i = 0; i < kCellsPerBar; ++i) {
+                if (i > 0)
+                    line += " ";
+                line +=
+                    juce::String::charToString(cells[static_cast<size_t>(bar * kCellsPerBar + i)]);
+            }
+        }
+        line += "\n";
+        rows += line;
+    }
+
+    if (rows.isEmpty())
+        return {};
+    return header + rows;
 }
 }  // namespace
 

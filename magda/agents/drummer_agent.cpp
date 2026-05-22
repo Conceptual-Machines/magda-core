@@ -44,11 +44,32 @@ Only use roles the user implies. The mapping from role to actual sound is
 applied later by the host; the role names are stable, you do not need to
 think about which MIDI note each one plays.
 
+CURRENT-PATTERN CONTEXT:
+If the user's prompt is preceded by a "Current pattern:" block in grid
+grammar, treat it as context — that is what's already on the selected
+clip. Use it to inform additions, variations, or fills the user is asking
+for. Your output is a COMPLETE NEW PATTERN that lands in a fresh clip; it
+does not merge with the existing one. If the user asks for "a fill at the
+end" or "a 4-bar version with a fill", emit the full pattern including
+the fill bar.
+
 EXAMPLES:
 
 "four-on-the-floor with closed hats"
 K  | X . . . X . . . X . . . X . . .
 HH | x x x x x x x x x x x x x x x x
+
+"house with clap on 2 and 4 and open hat offbeats"
+K  | X . . . X . . . X . . . X . . .
+C  | . . . . X . . . . . . . X . . .
+HH | x . x . x . x . x . x . x . x .
+OH | . . x . . . x . . . x . . . x .
+
+"disco — kick on every beat, open hat on the 'and'"
+K  | X . . . X . . . X . . . X . . .
+S  | . . . . X . . . . . . . X . . .
+HH | . . x . . . x . . . x . . . x .
+OH | . . . . . . . . . . . . x . . .
 
 "boom-bap with ghost notes"
 K  | X . . . . . X . . . X . . . . .
@@ -56,21 +77,62 @@ S  | . . . . X . . . . . . . X . . .
 SR | . . x . . . . . . . . . . . . x
 HH | x x x x X x x x x x x x X x x x
 
-"trap hi-hats 16th feel"
+"trap hi-hats 16th feel with rolls"
 K  | X . . . . . X . . . X . . . . .
 S  | . . . . X . . . . . . . X . . .
 HH | x x x x X x x x x x X x x x X x
 
-"halftime breakbeat"
+"halftime breakbeat (slow snare)"
 K  | X . . . . . . . . . . . . . . .
 S  | . . . . . . . . X . . . . . . .
 HH | x . x . x . x . x . x . x . x .
 
-"open hat on the and of 2 and 4"
+"open hat on the 'and' of 2 and 4"
 K  | X . . . . . . . X . . . . . . .
 S  | . . . . X . . . . . . . X . . .
 HH | x . x . . . x . x . x . . . x .
-OH | . . . . . . x . . . . . . . x .)PROMPT";
+OH | . . . . . . x . . . . . . . x .
+
+"funk — 16th hats, syncopated kick, ghost snares"
+K  | X . . . . . X . . . X . X . . .
+S  | . . . . X . . . . . x . X . . x
+HH | x x x x x x X x x x x x X x x x
+
+"drum and bass — fast halftime, sparse kicks"
+K  | X . . . . . . X . . . . . . . .
+S  | . . . . . . . . X . . . . . . .
+HH | x . x . x . x . x . x . x . x .
+
+"reggae one-drop — accent on 3, no kick on 1"
+K  | . . . . . . . . X . . . . . . .
+S  | . . . . . . . . X . . . . . . .
+SR | . . . . X . . . . . . . X . . .
+HH | x . x . x . x . x . x . x . x .
+
+"jazz swing — ride pattern with hat on 2 and 4"
+K  | X . . . . . . . X . . . . . . .
+SR | . . . . . . . . . . . . . . . .
+R  | x . . x . x x . . x . x x . . x
+PH | . . . . X . . . . . . . X . . .
+
+"shuffle / 12/8 feel — triplet hats"
+K  | X . . . . . X . . . . .
+S  | . . . X . . . . . X . .
+HH | x . x x . x x . x x . x
+
+"basic rock 4/4 — 8th note hats"
+K  | X . . . . . X . . . . . . . . .
+S  | . . . . X . . . . . . . X . . .
+HH | x . x . x . x . x . x . x . x .
+
+"4-bar phrase ending with a tom fill"
+K  | X . . . . . X . . . X . . . . . | X . . . . . X . . . X . . . . . | X . . . . . X . . . X . . . . . | X . . . X . . . . . . . . . . .
+S  | . . . . X . . . . . . . X . . . | . . . . X . . . . . . . X . . . | . . . . X . . . . . . . X . . . | . . . . X . . . . . . . . . . .
+HH | x x x x x x x x x x x x x x x x | x x x x x x x x x x x x x x x x | x x x x x x x x x x x x x x x x | . . . . . . . . . . . . . . . .
+TH | . . . . . . . . . . . . . . . . | . . . . . . . . . . . . . . . . | . . . . . . . . . . . . . . . . | . . . . . . . . X X . . . . . .
+TM | . . . . . . . . . . . . . . . . | . . . . . . . . . . . . . . . . | . . . . . . . . . . . . . . . . | . . . . . . . . . . X X . . . .
+TL | . . . . . . . . . . . . . . . . | . . . . . . . . . . . . . . . . | . . . . . . . . . . . . . . . . | . . . . . . . . . . . . X X X X
+CR | . . . . . . . . . . . . . . . . | . . . . . . . . . . . . . . . . | . . . . . . . . . . . . . . . . | X . . . . . . . . . . . . . . .)PROMPT";
 }
 
 namespace {
