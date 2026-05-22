@@ -2541,13 +2541,15 @@ void DrumGridClipContent::updateVelocityLane() {
     if (!midiDrawer_)
         return;
 
-    // Call base implementation for common setup
+    // Common setup (clip, ppb, scroll, relative mode follows relativeTimeMode_).
+    // The previous override to setRelativeMode(true) here was wrong: the
+    // DrumGrid grid itself honours relativeTimeMode_ for its own coordinate
+    // system, and forcing the drawer to a different mode parks the velocity
+    // stems off-screen whenever the grid is in ABS view.
     MidiEditorContent::updateMidiDrawer();
 
-    // DrumGrid always uses relative mode (override base class setting)
-    midiDrawer_->setRelativeMode(true);
-
-    // Set clip length (DrumGrid-specific)
+    // Set clip length (DrumGrid-specific) so the drawer can render the loop
+    // region overlay correctly.
     const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
                            ? magda::ClipManager::getInstance().getClip(editingClipId_)
                            : nullptr;
