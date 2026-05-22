@@ -1,5 +1,8 @@
 #include "MediaDbContext.hpp"
 
+#include <juce_core/juce_core.h>
+#include <sqlite3.h>
+
 #include <stdexcept>
 
 #include "../core/AppPaths.hpp"
@@ -129,19 +132,45 @@ void MediaDbContext::unloadModels() {
 
 bool MediaDbContext::wipeAll() {
     if (!ensureInitialized()) {
+        juce::Logger::writeToLog("[wipeAll] ensureInitialized failed");
         return false;
     }
+
+    // Helper: SELECT COUNT(*) from a table, returns -1 on error so the log
+    // line still emits even if a probe fails.
+    const auto countRows = [this](const char* table) {
+        sqlite3_stmt* stmt = nullptr;
+        const std::string sql = std::string("SELECT COUNT(*) FROM ") + table;
+        if (sqlite3_prepare_v2(db_->handle(), sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            return -1;
+        }
+        int n = -1;
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            n = sqlite3_column_int(stmt, 0);
+        }
+        sqlite3_finalize(stmt);
+        return n;
+    };
+
+    const auto pathStr = juce::String(dbPath().string());
+    juce::Logger::writeToLog("[wipeAll] starting on " + pathStr +
+                             " (before: media_file=" + juce::String(countRows("media_file")) +
+                             ", media_fts=" + juce::String(countRows("media_fts")) + ")");
+
     // Single transaction so the user can't end up with a half-deleted
     // DB after a power loss. media_file has ON DELETE CASCADE for
     // media_tag / media_embedding / media_metadata, but the FTS5
-    // contentless table doesn't follow FKs so it gets an explicit
-    // DELETE. PRAGMA foreign_keys is set to ON in Schema.hpp.
+    // contentless table (content='' in Schema.hpp) doesn't follow FKs
+    // and can't be cleared with a plain DELETE — SQLite returns
+    // "cannot DELETE from contentless fts5 table". Use the FTS5
+    // command interface to clear it instead.
     try {
         db_->execute("BEGIN");
         db_->execute("DELETE FROM media_file");
-        db_->execute("DELETE FROM media_fts");
+        db_->execute("INSERT INTO media_fts(media_fts) VALUES('delete-all')");
         db_->execute("COMMIT");
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[wipeAll] failed: ") + e.what());
         try {
             db_->execute("ROLLBACK");
         } catch (...) {
@@ -149,6 +178,15 @@ bool MediaDbContext::wipeAll() {
         }
         return false;
     }
+
+    juce::Logger::writeToLog("[wipeAll] committed (after: media_file=" +
+                             juce::String(countRows("media_file")) +
+                             ", media_fts=" + juce::String(countRows("media_fts")) + ")");
+
+    // Signal listeners (MediaDbBrowserContent polls this on a timer) that
+    // their cached result sets are stale, otherwise the browser keeps
+    // showing the rows that were just deleted.
+    bumpMediaRevision();
     return true;
 }
 
