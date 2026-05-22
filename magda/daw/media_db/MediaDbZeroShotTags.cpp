@@ -12,118 +12,122 @@ namespace magda::media {
 
 namespace {
 
-// Single source of truth for the prompt list. Mirrors DEFAULT_TAGS in
-// prototypes/media_db/src/media_db/tags.py — keep the two lists in sync when
-// adjusting taxonomy so the prototype's validation runs stay representative.
-const std::vector<std::string>& staticPrompts() {
-    static const std::vector<std::string> kPrompts = {
+// Mirrors tags.py's PROMPT_TEMPLATE. The label list stays terse for the DB
+// and the UI; this string is only used internally when we hand text to the
+// CLAP text encoder. Keep the wording in sync with the prototype so the
+// validation runs there stay representative of the C++ embedding values.
+constexpr const char* kPromptTemplate = "the sound of ";
+
+// Single source of truth for the label list. Mirrors DEFAULT_TAGS in
+// prototypes/media_db/src/media_db/tags.py — keep the two lists in sync
+// when adjusting taxonomy so the prototype's validation runs stay
+// representative.
+const std::vector<std::string>& staticLabels() {
+    static const std::vector<std::string> kLabels = {
         // drums
-        "the sound of a kick drum",
-        "the sound of a snare drum",
-        "the sound of a clap",
-        "the sound of a hi-hat",
-        "the sound of a cymbal",
-        "the sound of a tom drum",
-        "the sound of a percussion loop",
-        "the sound of a drum loop",
-        "the sound of a 808 bass drum",
+        "a kick drum",
+        "a snare drum",
+        "a clap",
+        "a hi-hat",
+        "a cymbal",
+        "a tom drum",
+        "a percussion loop",
+        "a drum loop",
+        "a 808 bass drum",
         // bass and lead
-        "the sound of a sub bass",
-        "the sound of a synth bass",
-        "the sound of an acid bass",
-        "the sound of a synth lead",
-        "the sound of a synth pad",
-        "the sound of a synth pluck",
-        "the sound of an arpeggio",
+        "a sub bass",
+        "a synth bass",
+        "an acid bass",
+        "a synth lead",
+        "a synth pad",
+        "a synth pluck",
+        "an arpeggio",
         // acoustic
-        "the sound of a piano",
-        "the sound of an electric piano",
-        "the sound of an organ",
-        "the sound of an acoustic guitar",
-        "the sound of an electric guitar",
-        "the sound of strings",
-        "the sound of brass",
-        "the sound of woodwinds",
-        "the sound of a vocal",
-        "the sound of a vocal chop",
+        "a piano",
+        "an electric piano",
+        "an organ",
+        "an acoustic guitar",
+        "an electric guitar",
+        "strings",
+        "brass",
+        "woodwinds",
+        "a vocal",
+        "a vocal chop",
         // fx
-        "the sound of a sound effect",
-        "the sound of an impact",
-        "the sound of a riser",
-        "the sound of a downlifter",
-        "the sound of a noise sweep",
-        "the sound of an ambience",
-        "the sound of a foley sound",
+        "a sound effect",
+        "an impact",
+        "a riser",
+        "a downlifter",
+        "a noise sweep",
+        "an ambience",
+        "a foley sound",
         // texture / mood descriptors
-        "the sound of a dark sound",
-        "the sound of a bright sound",
-        "the sound of a warm sound",
-        "the sound of a metallic sound",
-        "the sound of a distorted sound",
-        "the sound of a clean sound",
-        "the sound of a lo-fi sound",
-        "the sound of a glitchy sound",
+        "a dark sound",
+        "a bright sound",
+        "a warm sound",
+        "a metallic sound",
+        "a distorted sound",
+        "a clean sound",
+        "a lo-fi sound",
+        "a glitchy sound",
     };
-    return kPrompts;
+    return kLabels;
 }
 
-// Prompt -> coarse family. "texture" is a sentinel; texture prompts can
-// still emit a tag but never set the family (see familyFromTopTags). The
-// keys are the exact prompt strings from staticPrompts() so lookups are
-// trivial; if a caller passes a string that isn't in the map we treat it
-// as unknown.
+// Label -> coarse family. "texture" is a sentinel; texture labels can still
+// emit a tag but never set the family (see familyFromTopLabels).
 const std::unordered_map<std::string, std::string>& staticFamilyMap() {
     static const std::unordered_map<std::string, std::string> kFamily = {
-        {"the sound of a kick drum", "drum"},
-        {"the sound of a snare drum", "drum"},
-        {"the sound of a clap", "drum"},
-        {"the sound of a hi-hat", "drum"},
-        {"the sound of a cymbal", "drum"},
-        {"the sound of a tom drum", "drum"},
-        {"the sound of a percussion loop", "drum"},
-        {"the sound of a drum loop", "drum"},
-        {"the sound of a 808 bass drum", "drum"},
+        {"a kick drum", "drum"},
+        {"a snare drum", "drum"},
+        {"a clap", "drum"},
+        {"a hi-hat", "drum"},
+        {"a cymbal", "drum"},
+        {"a tom drum", "drum"},
+        {"a percussion loop", "drum"},
+        {"a drum loop", "drum"},
+        {"a 808 bass drum", "drum"},
 
-        {"the sound of a sub bass", "bass"},
-        {"the sound of a synth bass", "bass"},
-        {"the sound of an acid bass", "bass"},
+        {"a sub bass", "bass"},
+        {"a synth bass", "bass"},
+        {"an acid bass", "bass"},
 
-        {"the sound of a synth lead", "lead"},
-        {"the sound of a synth pluck", "lead"},
-        {"the sound of an arpeggio", "lead"},
+        {"a synth lead", "lead"},
+        {"a synth pluck", "lead"},
+        {"an arpeggio", "lead"},
 
-        {"the sound of a synth pad", "pad"},
+        {"a synth pad", "pad"},
 
-        {"the sound of a piano", "keys"},
-        {"the sound of an electric piano", "keys"},
-        {"the sound of an organ", "keys"},
+        {"a piano", "keys"},
+        {"an electric piano", "keys"},
+        {"an organ", "keys"},
 
-        {"the sound of an acoustic guitar", "guitar"},
-        {"the sound of an electric guitar", "guitar"},
+        {"an acoustic guitar", "guitar"},
+        {"an electric guitar", "guitar"},
 
-        {"the sound of strings", "orchestral"},
-        {"the sound of brass", "orchestral"},
-        {"the sound of woodwinds", "orchestral"},
+        {"strings", "orchestral"},
+        {"brass", "orchestral"},
+        {"woodwinds", "orchestral"},
 
-        {"the sound of a vocal", "vocal"},
-        {"the sound of a vocal chop", "vocal"},
+        {"a vocal", "vocal"},
+        {"a vocal chop", "vocal"},
 
-        {"the sound of a sound effect", "fx"},
-        {"the sound of an impact", "fx"},
-        {"the sound of a riser", "fx"},
-        {"the sound of a downlifter", "fx"},
-        {"the sound of a noise sweep", "fx"},
-        {"the sound of an ambience", "fx"},
-        {"the sound of a foley sound", "fx"},
+        {"a sound effect", "fx"},
+        {"an impact", "fx"},
+        {"a riser", "fx"},
+        {"a downlifter", "fx"},
+        {"a noise sweep", "fx"},
+        {"an ambience", "fx"},
+        {"a foley sound", "fx"},
 
-        {"the sound of a dark sound", "texture"},
-        {"the sound of a bright sound", "texture"},
-        {"the sound of a warm sound", "texture"},
-        {"the sound of a metallic sound", "texture"},
-        {"the sound of a distorted sound", "texture"},
-        {"the sound of a clean sound", "texture"},
-        {"the sound of a lo-fi sound", "texture"},
-        {"the sound of a glitchy sound", "texture"},
+        {"a dark sound", "texture"},
+        {"a bright sound", "texture"},
+        {"a warm sound", "texture"},
+        {"a metallic sound", "texture"},
+        {"a distorted sound", "texture"},
+        {"a clean sound", "texture"},
+        {"a lo-fi sound", "texture"},
+        {"a glitchy sound", "texture"},
     };
     return kFamily;
 }
@@ -145,29 +149,29 @@ void l2NormalizeInPlace(float* v, std::size_t n) {
 
 }  // namespace
 
-const std::vector<std::string>& defaultZeroShotPrompts() {
-    return staticPrompts();
+const std::vector<std::string>& defaultZeroShotLabels() {
+    return staticLabels();
 }
 
-const std::string& familyForPrompt(const std::string& prompt) {
+const std::string& familyForLabel(const std::string& label) {
     static const std::string kUnknown = "unknown";
     const auto& map = staticFamilyMap();
-    if (auto it = map.find(prompt); it != map.end()) {
+    if (auto it = map.find(label); it != map.end()) {
         return it->second;
     }
     return kUnknown;
 }
 
-std::string familyFromTopTags(const std::vector<std::pair<std::string, float>>& topTags) {
-    // topTags is descending-confidence (scoreEmbedding's contract). Walk it
-    // and return the first non-texture family above the floor. This mirrors
+std::string familyFromTopLabels(const std::vector<std::pair<std::string, float>>& topLabels) {
+    // topLabels is descending-confidence (scoreEmbedding's contract). Walk
+    // it and return the first non-texture family above the floor. Mirrors
     // derive.py:family() — first real-instrument candidate wins; texture
     // descriptors are skipped so "warm sound" can't outrank "synth pad".
-    for (const auto& [tag, conf] : topTags) {
+    for (const auto& [label, conf] : topLabels) {
         if (conf < kZeroShotFamilyFloor) {
             break;  // sorted; everything after is below threshold
         }
-        const auto& family = familyForPrompt(tag);
+        const auto& family = familyForLabel(label);
         if (family.empty() || family == "texture" || family == "unknown") {
             continue;
         }
@@ -177,13 +181,13 @@ std::string familyFromTopTags(const std::vector<std::pair<std::string, float>>& 
 }
 
 ZeroShotTagger::ZeroShotTagger(ClapTextEncoder& textEncoder, RobertaTokenizer& tokenizer)
-    : ZeroShotTagger(textEncoder, tokenizer, staticPrompts()) {}
+    : ZeroShotTagger(textEncoder, tokenizer, staticLabels()) {}
 
 ZeroShotTagger::ZeroShotTagger(ClapTextEncoder& textEncoder, RobertaTokenizer& tokenizer,
-                               std::vector<std::string> prompts)
-    : prompts_(std::move(prompts)) {
-    if (prompts_.empty()) {
-        throw std::runtime_error("ZeroShotTagger: prompt list is empty");
+                               std::vector<std::string> labels)
+    : labels_(std::move(labels)) {
+    if (labels_.empty()) {
+        throw std::runtime_error("ZeroShotTagger: label list is empty");
     }
 
     const int dim = textEncoder.dim();
@@ -191,14 +195,18 @@ ZeroShotTagger::ZeroShotTagger(ClapTextEncoder& textEncoder, RobertaTokenizer& t
         throw std::runtime_error("ZeroShotTagger: text encoder reports non-positive dim");
     }
     dim_ = static_cast<std::size_t>(dim);
-    promptMatrix_.resize(prompts_.size() * dim_, 0.0F);
+    promptMatrix_.resize(labels_.size() * dim_, 0.0F);
 
-    for (std::size_t i = 0; i < prompts_.size(); ++i) {
-        const auto enc = tokenizer.encode(prompts_[i]);
+    for (std::size_t i = 0; i < labels_.size(); ++i) {
+        // Wrap the terse label with "the sound of " before tokenizing — the
+        // text encoder was trained on full sentences, and the prototype
+        // applies the same template (PROMPT_TEMPLATE in tags.py).
+        const std::string prompt = std::string(kPromptTemplate) + labels_[i];
+        const auto enc = tokenizer.encode(prompt);
         auto vec = textEncoder.embedTokens(enc.inputIds, enc.attentionMask);
         if (vec.size() != dim_) {
-            throw std::runtime_error("ZeroShotTagger: text embedding dim mismatch on prompt " +
-                                     prompts_[i]);
+            throw std::runtime_error("ZeroShotTagger: text embedding dim mismatch on label " +
+                                     labels_[i]);
         }
         // ClapTextEncoder already L2-normalizes, but re-normalize defensively
         // — a future refactor could drop normalization at the encoder layer
@@ -216,8 +224,8 @@ std::vector<std::pair<std::string, float>> ZeroShotTagger::scoreEmbedding(
     }
 
     std::vector<std::pair<std::string, float>> hits;
-    hits.reserve(prompts_.size());
-    for (std::size_t i = 0; i < prompts_.size(); ++i) {
+    hits.reserve(labels_.size());
+    for (std::size_t i = 0; i < labels_.size(); ++i) {
         const std::size_t rowStart = i * dim_;
         double dot = 0.0;
         for (std::size_t j = 0; j < dim_; ++j) {
@@ -226,7 +234,7 @@ std::vector<std::pair<std::string, float>> ZeroShotTagger::scoreEmbedding(
         }
         const float score = static_cast<float>(dot);
         if (score >= threshold) {
-            hits.emplace_back(prompts_[i], score);
+            hits.emplace_back(labels_[i], score);
         }
     }
     std::sort(hits.begin(), hits.end(),
@@ -234,16 +242,16 @@ std::vector<std::pair<std::string, float>> ZeroShotTagger::scoreEmbedding(
     return hits;
 }
 
-std::size_t ZeroShotTagger::numPrompts() const noexcept {
-    return prompts_.size();
+std::size_t ZeroShotTagger::numLabels() const noexcept {
+    return labels_.size();
 }
 
 std::size_t ZeroShotTagger::embeddingDim() const noexcept {
     return dim_;
 }
 
-const std::vector<std::string>& ZeroShotTagger::prompts() const noexcept {
-    return prompts_;
+const std::vector<std::string>& ZeroShotTagger::labels() const noexcept {
+    return labels_;
 }
 
 }  // namespace magda::media

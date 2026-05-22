@@ -656,7 +656,7 @@ void applyZeroShotTagging(sqlite3* db, std::int64_t fileId,
         // ambiguous samples (a 0.5s vocal hit sounds drum-like to CLAP, but
         // a producer who put it in /Vocals/ knew what they made).
         if (fileRow->family.empty() || fileRow->family == "unknown") {
-            const auto clapFamily = familyFromTopTags(hits);
+            const auto clapFamily = familyFromTopLabels(hits);
             if (!clapFamily.empty()) {
                 updateFamily(db, fileId, clapFamily);
             }
@@ -758,6 +758,13 @@ void processOneFile(sqlite3* sqlDb, const ScannedFile& f, MediaDbIndexer::Stats&
         replaceTags(sqlDb, fileId, tags, "path");
         if (existing && f.kind == "audio") {
             deleteEmbeddings(sqlDb, fileId);
+            // Stale CLAP zero-shot tags described the previous audio
+            // content; clear them in the same transaction so the file can't
+            // be left with semantic tags that no longer describe the bytes
+            // on disk. The next embedding pass re-derives them when a
+            // tagger is available; when it isn't, the file simply has no
+            // CLAP tags rather than misleading ones (issue #1319).
+            replaceTags(sqlDb, fileId, {}, "clap-zeroshot");
         }
 
         upsertFts(sqlDb, fileId, buildPathText(f.path), buildTagText(tags));
@@ -931,30 +938,41 @@ std::vector<std::filesystem::path> pathsForIds(sqlite3* db,
 // ---- Public --------------------------------------------------------------
 
 MediaDbIndexer::MediaDbIndexer(MediaDatabase& db, ClapAudioEncoder* encoder,
-                               ClapTextEncoder* textEncoder, RobertaTokenizer* tokenizer)
-    : db_(db), encoder_(encoder), textEncoder_(textEncoder), tokenizer_(tokenizer) {}
+                               TextEncoderProvider textEncoderProvider,
+                               TokenizerProvider tokenizerProvider)
+    : db_(db),
+      encoder_(encoder),
+      textEncoderProvider_(std::move(textEncoderProvider)),
+      tokenizerProvider_(std::move(tokenizerProvider)) {}
 
 MediaDbIndexer::~MediaDbIndexer() = default;
 
 namespace {
-// Lazy-init helper for the indexer's ZeroShotTagger. Embeds every prompt
-// through the text encoder once; if anything throws we leave the tagger
-// pointer null and the embedding loop degrades to "audio embedding only".
-// Caller reports the failure once (not per file) via the failure callback.
+// Lazy-init helper for the indexer's ZeroShotTagger. Invokes the provider
+// lambdas (which may trigger the ~480 MB text-model load) only on the
+// first call, and only when the embedding pass actually has work — see
+// the embedMissing*/embedAudio* call sites which skip this when files is
+// empty. If anything throws we leave the tagger null and the embedding
+// loop degrades to "audio embedding only", reporting the failure once via
+// the failure callback so the per-file path stays quiet.
 ZeroShotTagger* ensureZeroShotTagger(std::unique_ptr<ZeroShotTagger>& slot,
-                                     ClapTextEncoder* textEncoder, RobertaTokenizer* tokenizer,
+                                     const MediaDbIndexer::TextEncoderProvider& textProvider,
+                                     const MediaDbIndexer::TokenizerProvider& tokenizerProvider,
                                      const MediaDbIndexer::FailureFn& failure) {
     if (slot) {
         return slot.get();
     }
+    if (!textProvider || !tokenizerProvider) {
+        return nullptr;
+    }
+    auto* textEncoder = textProvider();
+    auto* tokenizer = tokenizerProvider();
     if (textEncoder == nullptr || tokenizer == nullptr) {
         return nullptr;
     }
     try {
         slot = std::make_unique<ZeroShotTagger>(*textEncoder, *tokenizer);
     } catch (const std::exception& e) {
-        // One-time report so the user sees zero-shot tagging is unavailable
-        // for this scan; subsequent files just skip silently.
         reportFailure(failure, {}, std::string{"zero-shot tag init failed: "} + e.what());
         slot.reset();
     } catch (...) {
@@ -1152,9 +1170,16 @@ MediaDbIndexer::EmbeddingStats MediaDbIndexer::embedMissingAudio(
     const auto files = pendingEmbeddings(sqlDb, modelId, root);
     const int total = static_cast<int>(files.size());
 
-    // Lazy-init zero-shot tagger; null when text encoder / tokenizer are
-    // unavailable, which means we skip CLAP tagging but still embed.
-    auto* tagger = ensureZeroShotTagger(zeroShotTagger_, textEncoder_, tokenizer_, failure_);
+    // Zero-shot tagger needs the text encoder + tokenizer (the latter
+    // triggering a ~480 MB ORT session load). Only ask the providers for
+    // them when we actually have files to process — otherwise installing
+    // the Sample Tagger bundle makes empty / no-op embedding passes pay
+    // the load cost for nothing.
+    ZeroShotTagger* tagger = nullptr;
+    if (!files.empty()) {
+        tagger = ensureZeroShotTagger(zeroShotTagger_, textEncoderProvider_, tokenizerProvider_,
+                                      failure_);
+    }
 
     int done = 0;
     for (const auto& f : files) {
@@ -1225,7 +1250,11 @@ MediaDbIndexer::EmbeddingStats MediaDbIndexer::embedAudioFileIds(
     const auto files = audioRowsForIds(sqlDb, fileIds);
     const int total = static_cast<int>(files.size());
 
-    auto* tagger = ensureZeroShotTagger(zeroShotTagger_, textEncoder_, tokenizer_, failure_);
+    ZeroShotTagger* tagger = nullptr;
+    if (!files.empty()) {
+        tagger = ensureZeroShotTagger(zeroShotTagger_, textEncoderProvider_, tokenizerProvider_,
+                                      failure_);
+    }
 
     int done = 0;
     for (const auto& f : files) {

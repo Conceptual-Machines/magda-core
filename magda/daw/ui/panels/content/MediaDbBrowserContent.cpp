@@ -1734,13 +1734,15 @@ void MediaDbBrowserContent::startAnalyzingFileIds(std::vector<std::int64_t> file
             magda::media::MediaDatabase bgDb(magda::media::MediaDbContext::getInstance().dbPath());
             auto& ctx = magda::media::MediaDbContext::getInstance();
             auto* encoder = ctx.audioEncoder();
-            // Text encoder + tokenizer are nullable; when both are loaded the
-            // indexer also writes CLAP zero-shot tags during the embedding
-            // pass (issue #1319). They share the same ORT/tokenizer state
-            // the query path uses, so loading is amortised across the app.
-            auto* textEncoder = ctx.textEncoder();
-            auto* tokenizer = ctx.tokenizer();
-            magda::media::MediaDbIndexer indexer(bgDb, encoder, textEncoder, tokenizer);
+            // The indexer writes CLAP zero-shot tags during the embedding
+            // pass when the text encoder + tokenizer are available (issue
+            // #1319). Pass providers rather than already-loaded pointers so
+            // the ~480 MB text-model load is deferred until the indexer
+            // actually has pending audio rows to embed.
+            magda::media::MediaDbIndexer indexer(
+                bgDb, encoder,
+                []() { return magda::media::MediaDbContext::getInstance().textEncoder(); },
+                []() { return magda::media::MediaDbContext::getInstance().tokenizer(); });
             indexer.setShouldCancel([cancelToken]() { return cancelToken && cancelToken->load(); });
             indexer.setFailureCallback(
                 [](const std::filesystem::path& failedPath, const std::string& reason) {
@@ -2220,9 +2222,10 @@ void MediaDbBrowserContent::startIndexingWithOptions(
             magda::media::MediaDatabase bgDb(magda::media::MediaDbContext::getInstance().dbPath());
             auto& ctx = magda::media::MediaDbContext::getInstance();
             auto* encoder = ctx.audioEncoder();
-            auto* textEncoder = ctx.textEncoder();
-            auto* tokenizer = ctx.tokenizer();
-            magda::media::MediaDbIndexer indexer(bgDb, encoder, textEncoder, tokenizer);
+            magda::media::MediaDbIndexer indexer(
+                bgDb, encoder,
+                []() { return magda::media::MediaDbContext::getInstance().textEncoder(); },
+                []() { return magda::media::MediaDbContext::getInstance().tokenizer(); });
             indexer.setScanTagOptions(tagOptions);
             indexer.setShouldCancel([cancelToken]() { return cancelToken && cancelToken->load(); });
             indexer.setFailureCallback([&failureMutex, &failureCount,

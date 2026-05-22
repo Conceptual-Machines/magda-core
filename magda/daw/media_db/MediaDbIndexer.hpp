@@ -78,13 +78,21 @@ class MediaDbIndexer {
         ForceAll,
     };
 
+    using TextEncoderProvider = std::function<ClapTextEncoder*()>;
+    using TokenizerProvider = std::function<RobertaTokenizer*()>;
+
     // db: required. encoder: nullable, controls whether the post-scan
-    // embedding backfill can run. textEncoder + tokenizer: nullable as a
-    // pair, control whether the embedding pass also writes CLAP zero-shot
-    // tags (issue #1319). When either is null the post-scan pass still
-    // produces audio embeddings but skips zero-shot tagging.
+    // embedding backfill can run. textEncoderProvider + tokenizerProvider:
+    // optional, each returns the corresponding model when called. The
+    // indexer only invokes the providers when an embedding pass actually
+    // has pending files, so installing the bundle doesn't make ordinary
+    // indexing scans pay the ~480 MB text-model load cost. Providers
+    // returning null (or providers themselves left empty) disable the
+    // CLAP zero-shot tagging side of the embedding pass while still
+    // producing audio embeddings (issue #1319).
     MediaDbIndexer(MediaDatabase& db, ClapAudioEncoder* encoder,
-                   ClapTextEncoder* textEncoder = nullptr, RobertaTokenizer* tokenizer = nullptr);
+                   TextEncoderProvider textEncoderProvider = {},
+                   TokenizerProvider tokenizerProvider = {});
     ~MediaDbIndexer();
     MediaDbIndexer(const MediaDbIndexer&) = delete;
     MediaDbIndexer& operator=(const MediaDbIndexer&) = delete;
@@ -123,11 +131,11 @@ class MediaDbIndexer {
   private:
     MediaDatabase& db_;
     ClapAudioEncoder* encoder_;
-    ClapTextEncoder* textEncoder_;
-    RobertaTokenizer* tokenizer_;
-    // Built lazily on the first embedding pass when textEncoder_ + tokenizer_
-    // are both available. Held as a unique_ptr so the header doesn't have to
-    // pull in MediaDbZeroShotTags.hpp.
+    TextEncoderProvider textEncoderProvider_;
+    TokenizerProvider tokenizerProvider_;
+    // Built lazily on the first embedding pass that actually has pending
+    // files. Held as a unique_ptr so the header doesn't have to pull in
+    // MediaDbZeroShotTags.hpp.
     std::unique_ptr<ZeroShotTagger> zeroShotTagger_;
     ProgressFn progress_;
     FailureFn failure_;
