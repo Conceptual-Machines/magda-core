@@ -103,7 +103,8 @@ void PadChainPanel::updateLinkContext() {
 
 void PadChainPanel::applyLinkContextToSlot(PadDeviceSlot& slot, const PluginSlotInfo& info) {
     if (info.deviceId != magda::INVALID_DEVICE_ID) {
-        slot.setLinkContext(info.deviceId, devicePath_, macros_, mods_, trackMacros_, trackMods_);
+        auto pluginPath = magda::ChainNodePath::topLevelDevice(devicePath_.trackId, info.deviceId);
+        slot.setLinkContext(info.deviceId, pluginPath, macros_, mods_, trackMacros_, trackMods_);
     }
 }
 

@@ -2155,13 +2155,11 @@ struct SliceRegion {
     double timelinePos;
 };
 
-int parameterIndexFor(te::Plugin& plugin, te::AutomatableParameter* wantedParam) {
-    if (wantedParam == nullptr)
-        return -1;
-
+int parameterIndexForParamId(te::Plugin& plugin, const juce::String& paramId) {
     auto params = plugin.getAutomatableParameters();
     for (int i = 0; i < static_cast<int>(params.size()); ++i) {
-        if (params[static_cast<size_t>(i)] == wantedParam)
+        if (params[static_cast<size_t>(i)] != nullptr &&
+            params[static_cast<size_t>(i)]->paramID == paramId)
             return i;
     }
     return -1;
@@ -2182,19 +2180,17 @@ void prepareDrumGridAdsrMacros(DeviceInfo& drumGridDevice) {
 }
 
 void addSamplerAdsrMacroLinks(DeviceInfo& drumGridDevice, TrackId trackId, DeviceId samplerDeviceId,
-                              daw::audio::MagdaSamplerPlugin& sampler) {
+                              te::Plugin& sampler) {
     if (samplerDeviceId == INVALID_DEVICE_ID)
         return;
 
     struct AdsrParam {
         int macroIndex;
-        te::AutomatableParameter* parameter;
+        const char* paramId;
     };
 
-    const std::array<AdsrParam, 4> adsrParams = {{{0, sampler.attackParam.get()},
-                                                  {1, sampler.decayParam.get()},
-                                                  {2, sampler.sustainParam.get()},
-                                                  {3, sampler.releaseParam.get()}}};
+    const std::array<AdsrParam, 4> adsrParams = {
+        {{0, "attack"}, {1, "decay"}, {2, "sustain"}, {3, "release"}}};
 
     const auto samplerPath = ChainNodePath::topLevelDevice(trackId, samplerDeviceId);
     for (const auto& adsrParam : adsrParams) {
@@ -2202,7 +2198,7 @@ void addSamplerAdsrMacroLinks(DeviceInfo& drumGridDevice, TrackId trackId, Devic
             adsrParam.macroIndex >= static_cast<int>(drumGridDevice.macros.size()))
             continue;
 
-        const int paramIndex = parameterIndexFor(sampler, adsrParam.parameter);
+        const int paramIndex = parameterIndexForParamId(sampler, adsrParam.paramId);
         if (paramIndex < 0)
             continue;
 
@@ -2211,6 +2207,23 @@ void addSamplerAdsrMacroLinks(DeviceInfo& drumGridDevice, TrackId trackId, Devic
         link.amount = 1.0f;
         link.bipolar = false;
         drumGridDevice.macros[static_cast<size_t>(adsrParam.macroIndex)].links.push_back(link);
+    }
+}
+
+void linkAssignedDrumGridSamplerAdsrMacros(DeviceInfo& drumGridDevice, TrackId trackId,
+                                           daw::audio::DrumGridPlugin& drumGrid) {
+    prepareDrumGridAdsrMacros(drumGridDevice);
+
+    for (const auto& chain : drumGrid.getChains()) {
+        if (chain == nullptr || chain->plugins.empty())
+            continue;
+
+        auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(chain->plugins[0].get());
+        if (sampler == nullptr)
+            continue;
+
+        addSamplerAdsrMacroLinks(drumGridDevice, trackId,
+                                 drumGrid.getPluginDeviceId(chain->index, 0), *sampler);
     }
 }
 
@@ -2247,7 +2260,6 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     auto* drumGridDevice = trackManager.getDevice(newTrackId, drumGridDeviceId);
     if (drumGridDevice == nullptr)
         return;
-    prepareDrumGridAdsrMacros(*drumGridDevice);
 
     // Find the DrumGridPlugin that was just created
     auto* audioEngine = trackManager.getAudioEngine();
@@ -2285,7 +2297,7 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
         const auto& slice = slices[static_cast<size_t>(i)];
         drumGrid->loadSampleToPad(i, audioFile);
 
-        auto* chain = drumGrid->getChainByIndexMutable(i);
+        auto* chain = drumGrid->getChainForNote(daw::audio::DrumGridPlugin::baseNote + i);
         if (chain && !chain->plugins.empty()) {
             auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(chain->plugins[0].get());
             if (sampler) {
@@ -2295,11 +2307,11 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
                 sampler->sampleStartValue = startSec;
                 sampler->sampleEndParam->setParameter(endSec, juce::dontSendNotification);
                 sampler->sampleEndValue = endSec;
-                addSamplerAdsrMacroLinks(*drumGridDevice, newTrackId,
-                                         drumGrid->getPluginDeviceId(i, 0), *sampler);
             }
         }
     }
+
+    linkAssignedDrumGridSamplerAdsrMacros(*drumGridDevice, newTrackId, *drumGrid);
     trackManager.notifyTrackDevicesChanged(newTrackId);
 
     // Create MIDI clip with notes triggering each pad

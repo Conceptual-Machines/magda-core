@@ -9,6 +9,7 @@
 #include "AudioThumbnailManager.hpp"
 #include "BinaryData.h"
 #include "MediaDbBrowserContent.hpp"
+#include "MediaExplorerPreviewState.hpp"
 #include "media_db/MediaDbMetadata.hpp"
 
 namespace magda::daw::ui {
@@ -106,7 +107,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
                 onStopIndexing();
             }
         };
-        addAndMakeVisible(stopIndexingButton_);
+        addChildComponent(stopIndexingButton_);
     }
 
     ~ThumbnailComponent() override {
@@ -161,13 +162,13 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
             return;
         }
         indexingStatus_ = text;
+        updateStopIndexingButton();
         repaint();
     }
 
     void setIndexingActive(bool active) {
         indexingActive_ = active;
-        stopIndexingButton_.setVisible(active);
-        stopIndexingButton_.setEnabled(active);
+        updateStopIndexingButton();
         resized();
         repaint();
     }
@@ -207,9 +208,6 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         if (indexingStatus_.isNotEmpty()) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
             g.setFont(FontManager::getInstance().getUIFont(11.0F));
-            if (indexingActive_) {
-                bounds.removeFromRight(76);
-            }
             g.drawFittedText(indexingStatus_, bounds.reduced(8), juce::Justification::centred, 3);
             return;
         }
@@ -254,6 +252,12 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
     }
 
   private:
+    void updateStopIndexingButton() {
+        const bool showButton = shouldShowIndexingStopButton(indexingActive_, indexingStatus_);
+        stopIndexingButton_.setVisible(showButton);
+        stopIndexingButton_.setEnabled(showButton);
+    }
+
     void detachThumbnailListener() {
         if (currentThumbnailPath_.isNotEmpty()) {
             magda::AudioThumbnailManager::getInstance().removeThumbnailChangeListener(
