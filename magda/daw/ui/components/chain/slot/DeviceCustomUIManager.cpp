@@ -1,8 +1,19 @@
 #include "slot/DeviceCustomUIManager.hpp"
 
+#include <juce_audio_formats/juce_audio_formats.h>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
+#include <mutex>
+#include <optional>
+#include <thread>
+
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
@@ -31,6 +42,10 @@
 #include "drum_grid/DrumGridUI.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
+#include "media_db/ClapAudioEncoder.hpp"
+#include "media_db/ClapTextEncoder.hpp"
+#include "media_db/MediaDbContext.hpp"
+#include "media_db/RobertaTokenizer.hpp"
 #include "project/ProjectManager.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/panels/content/ChordPanelContent.hpp"
@@ -38,6 +53,164 @@
 namespace magda::daw::ui {
 
 namespace {
+
+struct RolePrompt {
+    const char* roleId;
+    const char* prompt;
+};
+
+constexpr std::array<RolePrompt, 20> kDrumRolePrompts{{
+    {"kick", "kick drum"},
+    {"kick", "bass drum"},
+    {"snare", "snare drum"},
+    {"snare-rim", "snare rimshot"},
+    {"clap", "hand clap drum sample"},
+    {"hh-closed", "closed hi hat"},
+    {"hh-closed", "tight closed hihat"},
+    {"hh-open", "open hi hat"},
+    {"hh-pedal", "pedal hi hat"},
+    {"ride", "ride cymbal"},
+    {"ride-bell", "ride cymbal bell"},
+    {"crash", "crash cymbal"},
+    {"tom-high", "high tom drum"},
+    {"tom-mid", "mid tom drum"},
+    {"tom-low", "low tom floor tom"},
+    {"perc-1", "percussion drum hit"},
+    {"perc-2", "conga bongo percussion"},
+    {"perc-3", "shaker tambourine percussion"},
+    {"perc-4", "cowbell percussion"},
+    {"perc-4", "woodblock percussion"},
+}};
+
+struct CachedRoleEmbedding {
+    juce::String roleId;
+    std::vector<float> embedding;
+};
+
+std::optional<std::vector<float>> loadMono48kRegion(const juce::File& file, double startSeconds,
+                                                    double endSeconds) {
+    juce::AudioFormatManager fm;
+    fm.registerBasicFormats();
+
+    std::unique_ptr<juce::AudioFormatReader> reader(fm.createReaderFor(file));
+    if (!reader || reader->lengthInSamples <= 0 || reader->numChannels < 1 ||
+        reader->sampleRate <= 0.0) {
+        return std::nullopt;
+    }
+
+    const int srcSr = static_cast<int>(reader->sampleRate);
+    const int srcChannels = static_cast<int>(reader->numChannels);
+    const auto fullLen = reader->lengthInSamples;
+    const auto startSample = juce::jlimit<juce::int64>(
+        0, fullLen - 1, static_cast<juce::int64>(std::floor(startSeconds * srcSr)));
+
+    juce::int64 endSample = fullLen;
+    if (endSeconds > startSeconds) {
+        endSample = juce::jlimit<juce::int64>(
+            startSample + 1, fullLen, static_cast<juce::int64>(std::ceil(endSeconds * srcSr)));
+    }
+
+    const auto regionLen64 = endSample - startSample;
+    if (regionLen64 <= 0 || regionLen64 > std::numeric_limits<int>::max()) {
+        return std::nullopt;
+    }
+    const int regionLen = static_cast<int>(regionLen64);
+
+    juce::AudioBuffer<float> multi(srcChannels, regionLen);
+    multi.clear();
+    reader->read(&multi, 0, regionLen, startSample, true, true);
+
+    std::vector<float> mono(static_cast<size_t>(regionLen), 0.0F);
+    const float gain = 1.0F / static_cast<float>(srcChannels);
+    for (int ch = 0; ch < srcChannels; ++ch) {
+        const float* src = multi.getReadPointer(ch);
+        for (int i = 0; i < regionLen; ++i)
+            mono[static_cast<size_t>(i)] += src[i] * gain;
+    }
+
+    if (srcSr == 48000)
+        return mono;
+
+    const double ratio = static_cast<double>(srcSr) / 48000.0;
+    const int dstLen = std::max(1, static_cast<int>(static_cast<double>(regionLen) / ratio));
+    std::vector<float> dst(static_cast<size_t>(dstLen), 0.0F);
+    juce::LagrangeInterpolator interp;
+    interp.process(ratio, mono.data(), dst.data(), dstLen);
+    return dst;
+}
+
+float dotProduct(const std::vector<float>& a, const std::vector<float>& b) {
+    const auto n = std::min(a.size(), b.size());
+    float sum = 0.0F;
+    for (size_t i = 0; i < n; ++i)
+        sum += a[i] * b[i];
+    return sum;
+}
+
+std::vector<CachedRoleEmbedding> roleTextEmbeddings(magda::media::ClapTextEncoder& textEncoder,
+                                                    magda::media::RobertaTokenizer& tokenizer) {
+    static std::mutex cacheMutex;
+    static const magda::media::ClapTextEncoder* cachedTextEncoder = nullptr;
+    static const magda::media::RobertaTokenizer* cachedTokenizer = nullptr;
+    static std::vector<CachedRoleEmbedding> cached;
+
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    if (cachedTextEncoder == &textEncoder && cachedTokenizer == &tokenizer && !cached.empty())
+        return cached;
+
+    std::vector<CachedRoleEmbedding> next;
+    next.reserve(kDrumRolePrompts.size());
+    for (const auto& prompt : kDrumRolePrompts) {
+        auto encoded = tokenizer.encode(prompt.prompt);
+        next.push_back(
+            {prompt.roleId, textEncoder.embedTokens(encoded.inputIds, encoded.attentionMask)});
+    }
+
+    cachedTextEncoder = &textEncoder;
+    cachedTokenizer = &tokenizer;
+    cached = std::move(next);
+    return cached;
+}
+
+struct RoleAnalysisResult {
+    bool ok = false;
+    juce::String roleId;
+    float score = 0.0F;
+    juce::String error;
+};
+
+RoleAnalysisResult classifyDrumRole(const juce::File& file, double startSeconds, double endSeconds,
+                                    magda::media::ClapAudioEncoder& audioEncoder,
+                                    magda::media::ClapTextEncoder& textEncoder,
+                                    magda::media::RobertaTokenizer& tokenizer) {
+    try {
+        auto mono = loadMono48kRegion(file, startSeconds, endSeconds);
+        if (!mono || mono->empty())
+            return {false, {}, 0.0F, "Could not read the pad sample."};
+
+        auto audioEmbedding = audioEncoder.embed(mono->data(), static_cast<int>(mono->size()));
+        if (audioEmbedding.empty())
+            return {false, {}, 0.0F, "The sample analyzer returned an empty embedding."};
+
+        auto roleEmbeddings = roleTextEmbeddings(textEncoder, tokenizer);
+        juce::String bestRole;
+        float bestScore = -1.0F;
+        for (const auto& role : roleEmbeddings) {
+            const float score = dotProduct(audioEmbedding, role.embedding);
+            if (score > bestScore) {
+                bestScore = score;
+                bestRole = role.roleId;
+            }
+        }
+
+        if (bestRole.isEmpty())
+            return {false, {}, 0.0F, "Could not infer a drum role for this sample."};
+
+        return {true, bestRole, bestScore, {}};
+    } catch (const std::exception& e) {
+        return {false, {}, 0.0F, juce::String("Sample role analysis failed: ") + e.what()};
+    }
+}
 
 bool isLegacyTeCompressorPluginId(const juce::String& pluginId) {
     return magda::classifyInternalDevice(pluginId) == magda::InternalDeviceKind::TeCompressor;
@@ -545,6 +718,96 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
                 dg->clearPad(padIndex);
                 drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
             }
+        };
+
+        drumGridUI_->onAnalyzePadRoleRequested = [this, cb = callbacks, getDrumGrid](int padIndex) {
+            auto* dg = getDrumGrid();
+            if (!dg)
+                return;
+
+            if (!cb.getNodePath)
+                return;
+            auto nodePath = cb.getNodePath();
+            if (!nodePath.isValid())
+                return;
+
+            daw::audio::MagdaSamplerPlugin* sampler = nullptr;
+            const int pluginCount = dg->getPadPluginCount(padIndex);
+            for (int i = 0; i < pluginCount; ++i) {
+                if (auto* plugin = dg->getPadPlugin(padIndex, i)) {
+                    sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin);
+                    if (sampler != nullptr)
+                        break;
+                }
+            }
+
+            if (sampler == nullptr || !sampler->getSampleFile().existsAsFile()) {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "Analyze pad role",
+                                                       "This pad does not have a loaded sample.");
+                return;
+            }
+
+            auto& mediaCtx = magda::media::MediaDbContext::getInstance();
+            if (!mediaCtx.isAudioEncoderLoaded() || !mediaCtx.isTextEncoderLoaded() ||
+                !mediaCtx.isTokenizerLoaded()) {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, "Analyze pad role",
+                    "Sample Analyzer models are not loaded. Load them first, then run this "
+                    "manual analysis again.");
+                return;
+            }
+
+            auto* audioEncoder = mediaCtx.audioEncoder();
+            auto* textEncoder = mediaCtx.textEncoder();
+            auto* tokenizer = mediaCtx.tokenizer();
+            if (audioEncoder == nullptr || textEncoder == nullptr || tokenizer == nullptr)
+                return;
+
+            const auto file = sampler->getSampleFile();
+            const double startSeconds = sampler->sampleStartParam != nullptr
+                                            ? sampler->sampleStartParam->getCurrentValue()
+                                            : 0.0;
+            const double endSeconds = sampler->sampleEndParam != nullptr
+                                          ? sampler->sampleEndParam->getCurrentValue()
+                                          : sampler->getSampleLengthSeconds();
+            const auto trackId = nodePath.trackId;
+            const auto deviceId = nodePath.getDeviceId();
+            const int noteNumber = daw::audio::DrumGridPlugin::baseNote + padIndex;
+            const juce::Component::SafePointer<DrumGridUI> safeUi(drumGridUI_.get());
+
+            std::thread([safeUi, file, startSeconds, endSeconds, trackId, deviceId, noteNumber,
+                         padIndex, audioEncoder, textEncoder, tokenizer]() {
+                auto result = classifyDrumRole(file, startSeconds, endSeconds, *audioEncoder,
+                                               *textEncoder, *tokenizer);
+
+                juce::MessageManager::callAsync([safeUi, result, trackId, deviceId, noteNumber,
+                                                 padIndex]() {
+                    if (safeUi == nullptr)
+                        return;
+
+                    if (!result.ok) {
+                        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                               "Analyze pad role", result.error);
+                        return;
+                    }
+
+                    auto roleLabel =
+                        daw::audio::drum_grid_roles::displayLabelForRole(result.roleId);
+                    if (roleLabel.isEmpty())
+                        roleLabel = result.roleId;
+
+                    auto& tm = magda::TrackManager::getInstance();
+                    tm.setDeviceKitRowLabel(trackId, deviceId, noteNumber, roleLabel);
+                    tm.setDeviceKitRowRole(trackId, deviceId, noteNumber, result.roleId);
+
+                    DBG("DrumGridUI: analyzed pad " << padIndex << " as " << result.roleId
+                                                    << " score=" << result.score);
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::InfoIcon, "Analyze pad role",
+                        "Pad " + juce::String(padIndex) + " set to " + roleLabel + ".");
+                });
+            }).detach();
         };
 
         // Pad swap via drag-and-drop

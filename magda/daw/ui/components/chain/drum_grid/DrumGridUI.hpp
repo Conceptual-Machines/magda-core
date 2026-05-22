@@ -110,6 +110,9 @@ class DrumGridUI : public juce::Component,
     /** Called when delete is clicked on a chain row. (padIndex) */
     std::function<void(int)> onPadDeleteRequested;
 
+    /** Called when the user explicitly asks to analyse a pad sample role. (padIndex) */
+    std::function<void(int)> onAnalyzePadRoleRequested;
+
     /** Called when a pad is dragged and dropped onto another pad. (sourcePad, targetPad) */
     std::function<void(int, int)> onPadsSwapped;
 
