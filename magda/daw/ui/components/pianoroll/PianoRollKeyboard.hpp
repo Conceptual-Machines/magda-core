@@ -4,6 +4,7 @@
 
 #include <array>
 #include <functional>
+#include <set>
 
 namespace magda {
 
@@ -31,6 +32,7 @@ class PianoRollKeyboard : public juce::Component {
     void setNoteRange(int minNote, int maxNote);
     void setScrollOffset(int offsetY);
     void setNotePressed(int noteNumber, bool pressed);
+    void setHighlightedNotes(const std::set<int>& notes);
     void clearPressedNotes();
 
     int getNoteHeight() const {
@@ -60,6 +62,7 @@ class PianoRollKeyboard : public juce::Component {
 
     // Note preview state
     std::array<bool, 128> pressedNotes_{};
+    std::set<int> highlightedNotes_;
     int currentPlayingNote_ = -1;
     bool isPlayingNote_ = false;
 

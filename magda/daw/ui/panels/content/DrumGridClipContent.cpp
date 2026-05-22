@@ -1300,6 +1300,8 @@ class DrumGridClipGrid : public juce::Component,
                 fireSelectionChanged();
             };
 
+            noteComp->onNoteDeselected = [this](size_t /*index*/) { fireSelectionChanged(); };
+
             noteComp->onNoteMoved = [this](size_t index, double newBeat, int newNoteNumber) {
                 if (!onNoteMoved)
                     return;

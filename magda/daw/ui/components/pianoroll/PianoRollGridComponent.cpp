@@ -366,6 +366,16 @@ void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> a
         }
     }
 
+    if (!selectedPitchRows_.empty()) {
+        g.setColour(juce::Colour(0x556688CC));
+        for (int note : selectedPitchRows_) {
+            int y = noteNumberToY(note);
+            if (y + noteHeight_ < area.getY() || y > area.getBottom())
+                continue;
+            g.fillRect(gridArea.getX(), y, gridArea.getWidth(), noteHeight_);
+        }
+    }
+
     // Fill left padding area with solid panel background (covers the alternating rows)
     if (leftPadding_ > 0) {
         g.setColour(DarkTheme::getPanelBackgroundColour());
@@ -686,6 +696,7 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
                 nc->setSelected(true);
             }
         }
+        rebuildSelectedPitchRows();
 
         isDragSelecting_ = false;
 
@@ -709,6 +720,7 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
                 noteComp->setSelected(false);
             }
             selectedNoteIndex_ = -1;
+            rebuildSelectedPitchRows();
 
             if (onNoteSelectionChanged) {
                 onNoteSelectionChanged(clipId_, {});
@@ -825,6 +837,7 @@ bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
                 allIndices.push_back(nc->getNoteIndex());
             }
         }
+        rebuildSelectedPitchRows();
 
         if (onNoteSelectionChanged) {
             onNoteSelectionChanged(clipId_, allIndices);
@@ -1153,6 +1166,7 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
         previewNote.lengthBeats = length;
         if (!ClipOperations::constrainMidiNoteToVisibleRange(*clip, previewNote)) {
             note->setVisible(false);
+            rebuildSelectedPitchRows();
             return;
         }
         beat = previewNote.startBeat;
@@ -1193,6 +1207,8 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
     int height = noteHeight_ - 2;  // Small gap between notes
 
     note->setBounds(x, y + 1, width, height);
+    note->updatePreviewPitch(noteNumber);
+    rebuildSelectedPitchRows();
 }
 
 void PianoRollGridComponent::setCopyDragPreview(double beat, int noteNumber, double length,
@@ -1297,6 +1313,7 @@ void PianoRollGridComponent::updateSelectedNotePositions(NoteComponent* draggedN
         int newNote = juce::jlimit(0, 127, note.noteNumber + noteDelta);
         updateNotePosition(nc.get(), newBeat, newNote, note.lengthBeats);
     }
+    rebuildSelectedPitchRows();
 }
 
 void PianoRollGridComponent::updateSelectedNoteLengths(NoteComponent* draggedNote,
@@ -1327,6 +1344,7 @@ void PianoRollGridComponent::updateSelectedNoteLengths(NoteComponent* draggedNot
         double newLength = juce::jmax(MIN_LENGTH, note.lengthBeats + lengthDelta);
         updateNotePosition(nc.get(), note.startBeat, note.noteNumber, newLength);
     }
+    rebuildSelectedPitchRows();
 }
 
 void PianoRollGridComponent::updateSelectedNoteLeftResize(NoteComponent* draggedNote,
@@ -1359,6 +1377,7 @@ void PianoRollGridComponent::updateSelectedNoteLeftResize(NoteComponent* dragged
         double newStart = juce::jmax(0.0, note.startBeat + beatDelta);
         updateNotePosition(nc.get(), newStart, note.noteNumber, newLength);
     }
+    rebuildSelectedPitchRows();
 }
 
 void PianoRollGridComponent::selectNoteAfterRefresh(ClipId clipId, int noteIndex) {
@@ -1381,6 +1400,7 @@ void PianoRollGridComponent::syncSelectionFromManager() {
         }
         nc->setSelected(shouldSelect);
     }
+    rebuildSelectedPitchRows();
     repaint();
 }
 
@@ -1470,6 +1490,7 @@ void PianoRollGridComponent::refreshNotes() {
         }
     }
 
+    rebuildSelectedPitchRows();
     repaint();
 }
 
@@ -1692,6 +1713,7 @@ void PianoRollGridComponent::createNoteComponents() {
                     }
                 }
                 selectedNoteIndex_ = static_cast<int>(index);
+                rebuildSelectedPitchRows();
 
                 if (onNoteSelected) {
                     onNoteSelected(clipId, index, isAdditive);
@@ -1700,15 +1722,18 @@ void PianoRollGridComponent::createNoteComponents() {
 
             noteComp->onNoteDeselected = [this, clipId](size_t /*index*/) {
                 // Cmd+click toggled this note OFF — remove from SelectionManager
-                if (onNoteSelectionChanged) {
-                    std::vector<size_t> selectedIndices;
-                    for (auto& nc : noteComponents_) {
-                        if (nc->isSelected()) {
-                            selectedIndices.push_back(nc->getNoteIndex());
-                        }
+                std::vector<size_t> selectedIndices;
+                for (auto& nc : noteComponents_) {
+                    if (nc->isSelected()) {
+                        selectedIndices.push_back(nc->getNoteIndex());
                     }
+                }
+                selectedNoteIndex_ =
+                    selectedIndices.empty() ? -1 : static_cast<int>(selectedIndices.back());
+                if (onNoteSelectionChanged) {
                     onNoteSelectionChanged(clipId, selectedIndices);
                 }
+                rebuildSelectedPitchRows();
             };
 
             noteComp->onNoteMoved = [this, clipId](size_t index, double newBeat,
@@ -1889,6 +1914,7 @@ void PianoRollGridComponent::createNoteComponents() {
                     onNoteDeleted(clipId, index);
                 }
                 selectedNoteIndex_ = -1;
+                rebuildSelectedPitchRows();
             };
 
             noteComp->onNoteDragging = [this, clipId](size_t index, double previewBeat,
@@ -2011,6 +2037,11 @@ void PianoRollGridComponent::clearNoteComponents() {
     }
     noteComponents_.clear();
     selectedNoteIndex_ = -1;
+    if (!selectedPitchRows_.empty()) {
+        selectedPitchRows_.clear();
+        if (onSelectedPitchRowsChanged)
+            onSelectedPitchRowsChanged(selectedPitchRows_);
+    }
 }
 
 void PianoRollGridComponent::updateNoteComponentBounds() {
@@ -2077,6 +2108,23 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
         noteComp->setGhost(!isClipSelected(clipId));
         noteComp->updateFromNote(note, noteColour);
         noteComp->setVisible(true);
+    }
+    rebuildSelectedPitchRows();
+}
+
+void PianoRollGridComponent::rebuildSelectedPitchRows() {
+    std::set<int> pitches;
+    for (const auto& noteComp : noteComponents_) {
+        if (noteComp->isSelected() && noteComp->isVisible()) {
+            pitches.insert(yToNoteNumber(noteComp->getY()));
+        }
+    }
+
+    if (selectedPitchRows_ != pitches) {
+        selectedPitchRows_ = std::move(pitches);
+        if (onSelectedPitchRowsChanged)
+            onSelectedPitchRowsChanged(selectedPitchRows_);
+        repaint();
     }
 }
 
