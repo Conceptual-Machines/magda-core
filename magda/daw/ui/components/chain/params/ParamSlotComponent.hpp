@@ -66,8 +66,13 @@ class ParamSlotComponent : public juce::Component,
     // Set the device path (for param selection)
     void setDevicePath(const magda::ChainNodePath& path) {
         devicePath_ = path;
+        linkOwnerPath_ = path;
         refreshAutomationTarget();
         refreshMidiBindingState();
+    }
+    void setLinkOwnerPath(const magda::ChainNodePath& path) {
+        linkOwnerPath_ = path;
+        refreshLinkModeState();
     }
 
   private:
@@ -211,6 +216,7 @@ class ParamSlotComponent : public juce::Component,
     int paramIndex_;
     magda::DeviceId deviceId_ = magda::INVALID_DEVICE_ID;
     magda::ChainNodePath devicePath_;                          // For param selection
+    magda::ChainNodePath linkOwnerPath_;                       // Scope that owns macro/mod links
     const magda::ModArray* availableMods_ = nullptr;           // Device-level mods
     const magda::ModArray* availableRackMods_ = nullptr;       // Rack-level mods
     const magda::MacroArray* availableMacros_ = nullptr;       // Device-level macros

@@ -50,6 +50,7 @@ class LinkableTextSlider : public juce::Component,
     // === Linking context (set by parent custom UI) ===
     void setLinkContext(magda::DeviceId deviceId, int paramIndex,
                         const magda::ChainNodePath& devicePath);
+    void setLinkOwnerPath(const magda::ChainNodePath& ownerPath);
     // Pre-set paramIndex before setLinkContext runs. Use when the processor's
     // parameter ordering (e.g. TE's oscType/bandLimit/freq/level for the Tone
     // Generator) doesn't match the slider's position in getLinkableSliders().
@@ -62,6 +63,7 @@ class LinkableTextSlider : public juce::Component,
     void setAvailableTrackMacros(const magda::MacroArray* trackMacros);
     void setSelectedModIndex(int modIndex);
     void setSelectedMacroIndex(int macroIndex);
+    void refreshLinkModeState();
 
     // Switch this slider into "modifier rate" mode — used by the LFO / mod
     // rate slider. MIDI Learn becomes a ModParam binding instead of a
@@ -141,6 +143,7 @@ class LinkableTextSlider : public juce::Component,
     magda::DeviceId deviceId_ = magda::INVALID_DEVICE_ID;
     int paramIndex_ = -1;
     magda::ChainNodePath devicePath_;
+    magda::ChainNodePath linkOwnerPath_;
     const magda::ModArray* availableMods_ = nullptr;
     const magda::ModArray* availableRackMods_ = nullptr;
     const magda::MacroArray* availableMacros_ = nullptr;

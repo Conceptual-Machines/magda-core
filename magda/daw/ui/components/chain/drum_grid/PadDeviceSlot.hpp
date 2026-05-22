@@ -82,8 +82,10 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
 
     /** Set link mode context so param slots / linkable sliders participate in linking. */
     void setLinkContext(magda::DeviceId deviceId, const magda::ChainNodePath& devicePath,
-                        const magda::MacroArray* macros, const magda::ModArray* mods,
-                        const magda::MacroArray* trackMacros, const magda::ModArray* trackMods);
+                        const magda::ChainNodePath& linkOwnerPath, const magda::MacroArray* macros,
+                        const magda::ModArray* mods, const magda::MacroArray* trackMacros,
+                        const magda::ModArray* trackMods, int selectedModIndex,
+                        int selectedMacroIndex);
 
     /** Get all linkable controls (sampler LinkableTextSliders or external ParamSlotComponents). */
     std::vector<LinkableTextSlider*> getLinkableSliders();

@@ -114,6 +114,8 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
     if (!rc.destBuffer || !rc.bufferForMidiMessages)
         return;
 
+    updateParameterStreams(rc.editTime.getStart());
+
     auto& outputBuffer = *rc.destBuffer;
     auto& inputMidi = *rc.bufferForMidiMessages;
     const int numSamples = rc.bufferNumSamples;
@@ -186,8 +188,10 @@ void DrumGridPlugin::processChain(Chain& chain, juce::AudioBuffer<float>& output
 
     for (int pi = 0; pi < static_cast<int>(chain.plugins.size()); ++pi) {
         auto& p = chain.plugins[static_cast<size_t>(pi)];
-        if (p != nullptr)
+        if (p != nullptr) {
+            p->updateParameterStreams(rc.editTime.getStart());
             p->applyToBufferWithAutomation(chainRc);
+        }
 
         float pluginGain = (pi < static_cast<int>(chain.pluginGains.size()))
                                ? chain.pluginGains[static_cast<size_t>(pi)]

@@ -67,7 +67,8 @@ bool layoutDrumGridUI(DrumGridUI* drumGridUI, juce::Rectangle<int> contentArea);
 
 void setPadChainLinkContext(DrumGridUI* drumGridUI, const magda::ChainNodePath& nodePath,
                             const magda::MacroArray* macros, const magda::ModArray* mods,
-                            const magda::MacroArray* trackMacros, const magda::ModArray* trackMods);
+                            const magda::MacroArray* trackMacros, const magda::ModArray* trackMods,
+                            int selectedModIndex, int selectedMacroIndex);
 
 void appendAvailableDevices(const DrumGridUI* drumGridUI,
                             std::vector<std::pair<magda::DeviceId, juce::String>>& devices);

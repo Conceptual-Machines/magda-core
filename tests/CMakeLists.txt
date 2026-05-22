@@ -45,6 +45,7 @@ set(TEST_SOURCES
     test_velocity_lane_utils.cpp
     test_grid_constants.cpp
     test_ui_scale.cpp
+    test_media_explorer_preview_state.cpp
     test_timeline_loop_activation.cpp
     test_multi_out_tracks.cpp
     test_freeze_track.cpp
