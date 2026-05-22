@@ -1116,6 +1116,8 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
             musicAgent_->requestCancel();
         if (automationAgent_)
             automationAgent_->requestCancel();
+        if (drummerAgent_)
+            drummerAgent_->requestCancel();
         requestThread_->signalThreadShouldExit();
         if (!requestThread_->stopThread(2000))
             DBG("AIChatConsole: Warning - previous request thread did not stop within timeout");
@@ -1153,6 +1155,8 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
         musicAgent_->resetCancel();
     if (automationAgent_)
         automationAgent_->resetCancel();
+    if (drummerAgent_)
+        drummerAgent_->resetCancel();
 
     pendingMessage_ = resolvedText;
 
@@ -1178,6 +1182,8 @@ void AIChatConsoleContent::cancelRequest() {
         musicAgent_->requestCancel();
     if (automationAgent_)
         automationAgent_->requestCancel();
+    if (drummerAgent_)
+        drummerAgent_->requestCancel();
 
     if (requestThread_ && requestThread_->isThreadRunning()) {
         requestThread_->signalThreadShouldExit();

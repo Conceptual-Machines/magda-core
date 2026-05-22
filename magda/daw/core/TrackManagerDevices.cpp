@@ -1184,6 +1184,32 @@ DeviceInfo* findPrimaryInstrumentIn(std::vector<ChainElement>& elements) {
     }
     return nullptr;
 }
+
+// Recursive id-based device lookup. TrackManager::getDevice only walks the
+// top-level chainElements — rack-contained devices return nullptr from it,
+// which silently broke kit-row mutations on instruments wrapped in racks
+// (the common case: every instrument added via the plugin browser is
+// auto-wrapped in an InstrumentRack).
+DeviceInfo* findDeviceByIdIn(std::vector<ChainElement>& elements, DeviceId deviceId) {
+    for (auto& element : elements) {
+        if (isDevice(element)) {
+            auto& dev = getDevice(element);
+            if (dev.id == deviceId)
+                return &dev;
+        } else if (isRack(element)) {
+            auto& rack = getRack(element);
+            for (auto& chain : rack.chains) {
+                if (auto* dev = findDeviceByIdIn(chain.elements, deviceId))
+                    return dev;
+            }
+        }
+    }
+    return nullptr;
+}
+
+DeviceInfo* findDeviceOnTrack(TrackInfo* track, DeviceId deviceId) {
+    return track != nullptr ? findDeviceByIdIn(track->chainElements, deviceId) : nullptr;
+}
 }  // namespace
 
 const DeviceInfo* TrackManager::getPrimaryInstrument(TrackId trackId) const {
@@ -1237,7 +1263,7 @@ bool updateKitRow(std::vector<KitRow>& rows, int noteNumber, const juce::String*
 
 void TrackManager::setDeviceKitRowLabel(TrackId trackId, DeviceId deviceId, int noteNumber,
                                         const juce::String& label) {
-    auto* device = getDevice(trackId, deviceId);
+    auto* device = findDeviceOnTrack(getTrack(trackId), deviceId);
     if (device == nullptr || noteNumber < 0 || noteNumber > 127)
         return;
     if (updateKitRow(device->kitRows, noteNumber, &label, nullptr)) {
@@ -1248,7 +1274,7 @@ void TrackManager::setDeviceKitRowLabel(TrackId trackId, DeviceId deviceId, int 
 
 void TrackManager::setDeviceKitRowRole(TrackId trackId, DeviceId deviceId, int noteNumber,
                                        const juce::String& role) {
-    auto* device = getDevice(trackId, deviceId);
+    auto* device = findDeviceOnTrack(getTrack(trackId), deviceId);
     if (device == nullptr || noteNumber < 0 || noteNumber > 127)
         return;
     if (updateKitRow(device->kitRows, noteNumber, nullptr, &role)) {
@@ -1258,7 +1284,7 @@ void TrackManager::setDeviceKitRowRole(TrackId trackId, DeviceId deviceId, int n
 }
 
 void TrackManager::clearDeviceKitRow(TrackId trackId, DeviceId deviceId, int noteNumber) {
-    auto* device = getDevice(trackId, deviceId);
+    auto* device = findDeviceOnTrack(getTrack(trackId), deviceId);
     if (device == nullptr)
         return;
     auto& rows = device->kitRows;
@@ -1273,7 +1299,7 @@ void TrackManager::clearDeviceKitRow(TrackId trackId, DeviceId deviceId, int not
 
 void TrackManager::setDeviceKitRows(TrackId trackId, DeviceId deviceId,
                                     const std::vector<KitRow>& rows) {
-    auto* device = getDevice(trackId, deviceId);
+    auto* device = findDeviceOnTrack(getTrack(trackId), deviceId);
     if (device == nullptr)
         return;
     device->kitRows = rows;

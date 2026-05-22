@@ -919,15 +919,19 @@ bool InstructionExecutor::executeHit(const HitOp& op) {
         error_ = "No current track context for HIT (drummer needs a selected track)";
         return false;
     }
-    if (currentClipId_ < 0) {
-        if (!autoCreateClip())
-            return false;
-    }
 
+    // Validate the instrument BEFORE auto-creating a clip — otherwise a track
+    // with no instrument gets a stranded empty clip every time the drummer
+    // runs against it.
     const auto* device = api_.tracks().getPrimaryInstrument(currentTrackId_);
     if (device == nullptr) {
         error_ = "Track has no instrument plugin to resolve drum roles";
         return false;
+    }
+
+    if (currentClipId_ < 0) {
+        if (!autoCreateClip())
+            return false;
     }
 
     // Resolve role -> noteNumber via the per-instance kit. Missing rows are
