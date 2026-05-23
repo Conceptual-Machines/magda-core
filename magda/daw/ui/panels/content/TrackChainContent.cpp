@@ -759,6 +759,7 @@ TrackChainContent::TrackChainContent()
                                                              muteButton_.getToggleState()));
         }
     };
+    muteButton_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
     muteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addChildComponent(muteButton_);
 
@@ -799,6 +800,7 @@ TrackChainContent::TrackChainContent()
                                                              soloButton_.getToggleState()));
         }
     };
+    soloButton_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
     soloButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addChildComponent(soloButton_);
 

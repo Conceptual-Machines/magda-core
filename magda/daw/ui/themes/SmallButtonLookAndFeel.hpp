@@ -31,7 +31,12 @@ class SmallButtonLookAndFeel : public juce::LookAndFeel_V4 {
         g.setColour(baseColour);
         g.fillRoundedRectangle(bounds, cornerRadius);
 
-        g.setColour(baseColour.darker(0.15f));
+        // Buttons can opt into a visible border by setting ComboBox::outlineColourId;
+        // otherwise the border is a subtle shade of the fill.
+        const auto borderColour = button.isColourSpecified(juce::ComboBox::outlineColourId)
+                                      ? button.findColour(juce::ComboBox::outlineColourId)
+                                      : baseColour.darker(0.15f);
+        g.setColour(borderColour);
         g.drawRoundedRectangle(bounds, cornerRadius, 1.0f);
     }
 
