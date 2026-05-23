@@ -31,6 +31,7 @@ Section "Install"
     ; ${__FILEDIR__} resolves to the directory of this .nsi at compile time, so
     ; the installer builds correctly regardless of makensis's working directory.
     File "${__FILEDIR__}\MAGDA.exe"
+    File "${__FILEDIR__}\mgd_doc_icon.ico"
     File /nonfatal "${__FILEDIR__}\magda_plugin_scanner.exe"
 
     ; Localization JSON files - StringTable looks for them next to MAGDA.exe
@@ -71,6 +72,7 @@ Section "Install"
     WriteRegStr HKCR ".mgd" "" "MAGDA.Project"
     WriteRegStr HKCR "MAGDA.Project" "" "MAGDA Project"
     WriteRegStr HKCR "MAGDA.Project\shell\open\command" "" '"$INSTDIR\MAGDA.exe" "%1"'
+    WriteRegStr HKCR "MAGDA.Project\DefaultIcon" "" "$INSTDIR\mgd_doc_icon.ico"
 
     ; Notify shell of file association change
     System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
@@ -78,6 +80,7 @@ SectionEnd
 
 Section "Uninstall"
     Delete "$INSTDIR\MAGDA.exe"
+    Delete "$INSTDIR\mgd_doc_icon.ico"
     Delete "$INSTDIR\magda_plugin_scanner.exe"
     Delete "$INSTDIR\Uninstall.exe"
     RMDir /r "$INSTDIR\lang"

@@ -296,6 +296,8 @@ juce_add_gui_app(magda_daw_app
                 <array>
                     <string>mgd</string>
                 </array>
+                <key>CFBundleTypeIconFile</key>
+                <string>mgd_doc_icon</string>
             </dict>
         </array>
     </dict></plist>"
@@ -304,6 +306,16 @@ juce_add_gui_app(magda_daw_app
 target_sources(magda_daw_app PRIVATE
     magda_daw_main.cpp
 )
+
+# Bundle the .mgd document icon into the app's Resources so Finder shows it for
+# project files (referenced by CFBundleTypeIconFile in the plist above).
+if(APPLE)
+    set_source_files_properties(
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/mgd_doc_icon.icns"
+        PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(magda_daw_app PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/mgd_doc_icon.icns")
+endif()
 
 # Out-of-process plugin scanner.
 juce_add_console_app(magda_plugin_scanner

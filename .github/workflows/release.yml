@@ -420,6 +420,7 @@ jobs:
         New-Item -ItemType Directory -Path $stage | Out-Null
 
         Copy-Item "packaging\windows\magda-installer.nsi" "$stage\"
+        Copy-Item "assets\mgd_doc_icon.ico" "$stage\"
         Copy-Item "${{ steps.locate.outputs.exe_path }}" "$stage\MAGDA.exe"
 
         $exeDir = Split-Path "${{ steps.locate.outputs.exe_path }}"
@@ -630,6 +631,9 @@ jobs:
 
         # Copy icon
         cp assets/app_icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/magda.png"
+        # Document (file-type) icon shown for .mgd files in file managers
+        mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/mimetypes"
+        cp assets/mgd_doc_icon.png "$APPDIR/usr/share/icons/hicolor/256x256/mimetypes/application-x-magda-project.png"
 
         # Create desktop entry
         printf '%s\n' \
