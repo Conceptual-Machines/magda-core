@@ -603,18 +603,18 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Master-only speaker mute (shown instead of the "M" button for the master),
     // matching the inspector and mixer master strips.
     {
-        auto onIcon = juce::Drawable::createFromImageData(BinaryData::volume_up_svg,
-                                                          BinaryData::volume_up_svgSize);
-        auto offIcon = juce::Drawable::createFromImageData(BinaryData::volume_off_svg,
-                                                           BinaryData::volume_off_svgSize);
+        auto onIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
+                                                          BinaryData::speaker_on_svgSize);
+        auto offIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
+                                                           BinaryData::speaker_off_svgSize);
         masterMuteButton =
             std::make_unique<juce::DrawableButton>("masterMute", juce::DrawableButton::ImageFitted);
         masterMuteButton->setImages(onIcon.get(), nullptr, nullptr, nullptr, offIcon.get());
         masterMuteButton->setClickingTogglesState(true);
         masterMuteButton->setColour(juce::DrawableButton::backgroundColourId,
-                                    juce::Colours::transparentBlack);
+                                    DarkTheme::getColour(DarkTheme::SURFACE));
         masterMuteButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                                    juce::Colours::transparentBlack);
+                                    DarkTheme::getColour(DarkTheme::SURFACE));
     }
 
     soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));

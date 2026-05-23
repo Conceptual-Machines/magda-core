@@ -155,10 +155,10 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(muteButton_);
 
     // Speaker icon button (used for master mute instead of "M" text)
-    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::volume_up_svg,
-                                                             BinaryData::volume_up_svgSize);
-    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::volume_off_svg,
-                                                              BinaryData::volume_off_svgSize);
+    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
+                                                             BinaryData::speaker_on_svgSize);
+    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
+                                                              BinaryData::speaker_off_svgSize);
     speakerButton_ =
         std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
     speakerButton_->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
@@ -166,7 +166,7 @@ TrackInspector::TrackInspector() {
     speakerButton_->setColour(juce::DrawableButton::backgroundColourId,
                               DarkTheme::getColour(DarkTheme::SURFACE));
     speakerButton_->setColour(juce::DrawableButton::backgroundOnColourId,
-                              DarkTheme::getColour(DarkTheme::STATUS_ERROR).withAlpha(0.3f));
+                              DarkTheme::getColour(DarkTheme::SURFACE));
     speakerButton_->setEdgeIndent(2);
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(

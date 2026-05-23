@@ -762,6 +762,25 @@ TrackChainContent::TrackChainContent()
     muteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addChildComponent(muteButton_);
 
+    // Master mute: speaker toggle shown in place of "M" when the master is selected.
+    {
+        auto onIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
+                                                          BinaryData::speaker_on_svgSize);
+        auto offIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
+                                                           BinaryData::speaker_off_svgSize);
+        masterMuteButton_.setImages(onIcon.get(), nullptr, nullptr, nullptr, offIcon.get());
+        masterMuteButton_.setClickingTogglesState(true);
+        masterMuteButton_.setColour(juce::DrawableButton::backgroundColourId,
+                                    DarkTheme::getColour(DarkTheme::SURFACE));
+        masterMuteButton_.setColour(juce::DrawableButton::backgroundOnColourId,
+                                    DarkTheme::getColour(DarkTheme::SURFACE));
+        masterMuteButton_.onClick = [this]() {
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetMasterMuteCommand>(masterMuteButton_.getToggleState()));
+        };
+        addChildComponent(masterMuteButton_);
+    }
+
     // Solo button
     soloButton_.setButtonText("S");
     soloButton_.setColour(juce::TextButton::buttonColourId,
@@ -1584,6 +1603,7 @@ void TrackChainContent::trackPropertyChanged(int trackId) {
         if (track) {
             trackNameLabel_.setText(track->name, juce::dontSendNotification);
             muteButton_.setToggleState(track->muted, juce::dontSendNotification);
+            masterMuteButton_.setToggleState(track->muted, juce::dontSendNotification);
             soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
             volumeLabel_.setValue(gainToDb(track->volume), juce::dontSendNotification);
             panLabel_.setValue(track->pan, juce::dontSendNotification);
@@ -1717,6 +1737,7 @@ void TrackChainContent::updateFromSelectedTrack() {
 
             // Update mute/solo state
             muteButton_.setToggleState(track->muted, juce::dontSendNotification);
+            masterMuteButton_.setToggleState(track->muted, juce::dontSendNotification);
             soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
 
             // Convert linear gain to dB for volume slider
@@ -1824,6 +1845,7 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(presetButton_.get());
     headerBar.addAndMakeVisible(trackNameLabel_);
     headerBar.addAndMakeVisible(muteButton_);
+    headerBar.addChildComponent(masterMuteButton_);
     headerBar.addAndMakeVisible(soloButton_);
     headerBar.addAndMakeVisible(volumeLabel_);
     headerBar.addAndMakeVisible(panLabel_);
@@ -1889,7 +1911,15 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
         soloButton_.setBounds(headerArea.removeFromRight(18));
         headerArea.removeFromRight(2);
     }
-    muteButton_.setBounds(headerArea.removeFromRight(18));
+    auto muteArea = headerArea.removeFromRight(18);
+    if (isMaster) {
+        masterMuteButton_.setBounds(muteArea);
+        masterMuteButton_.setVisible(true);
+        muteButton_.setVisible(false);
+    } else {
+        muteButton_.setBounds(muteArea);
+        masterMuteButton_.setVisible(false);
+    }
     headerArea.removeFromRight(8);
     trackNameLabel_.setBounds(headerArea);  // Name takes remaining space
 
@@ -1928,6 +1958,7 @@ void TrackChainContent::hideHeaderControls() {
     // Right side - track info
     trackNameLabel_.setVisible(false);
     muteButton_.setVisible(false);
+    masterMuteButton_.setVisible(false);
     soloButton_.setVisible(false);
     volumeLabel_.setVisible(false);
     panLabel_.setVisible(false);

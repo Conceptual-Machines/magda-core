@@ -2227,10 +2227,10 @@ MainView::MasterHeaderPanel::~MasterHeaderPanel() {
 
 void MainView::MasterHeaderPanel::setupControls() {
     // Speaker on/off button (toggles master mute)
-    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::volume_up_svg,
-                                                             BinaryData::volume_up_svgSize);
-    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::volume_off_svg,
-                                                              BinaryData::volume_off_svgSize);
+    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
+                                                             BinaryData::speaker_on_svgSize);
+    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
+                                                              BinaryData::speaker_off_svgSize);
 
     speakerButton =
         std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
@@ -2239,7 +2239,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     speakerButton->setColour(juce::DrawableButton::backgroundColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     speakerButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                             DarkTheme::getColour(DarkTheme::STATUS_ERROR).withAlpha(0.3f));
+                             DarkTheme::getColour(DarkTheme::SURFACE));
     speakerButton->setEdgeIndent(2);
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(

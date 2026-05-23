@@ -699,8 +699,12 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 selectionManager.clearSelection();
                 return true;
             }
-            // No notes or clips selected — delete selected track(s)
-            const auto& selectedTracks = selectionManager.getSelectedTracks();
+            // No notes or clips selected — delete selected track(s). The master
+            // track cannot be deleted, so drop it before prompting or deleting.
+            std::vector<TrackId> selectedTracks;
+            for (auto id : selectionManager.getSelectedTracks())
+                if (id != MASTER_TRACK_ID)
+                    selectedTracks.push_back(id);
             if (!selectedTracks.empty()) {
                 if (Config::getInstance().getConfirmTrackDelete()) {
                     auto trackIds = selectedTracks;  // copy for lambda capture
@@ -1206,7 +1210,11 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
 
     // Delete or Backspace: Delete selected track(s) (through undo system)
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
-        const auto& selectedTracks = SelectionManager::getInstance().getSelectedTracks();
+        // The master track cannot be deleted; exclude it from the selection.
+        std::vector<TrackId> selectedTracks;
+        for (auto id : SelectionManager::getInstance().getSelectedTracks())
+            if (id != MASTER_TRACK_ID)
+                selectedTracks.push_back(id);
         if (!selectedTracks.empty()) {
             if (selectedTracks.size() > 1) {
                 UndoManager::getInstance().beginCompoundOperation("Delete Tracks");
