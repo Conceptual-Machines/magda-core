@@ -167,7 +167,7 @@ TrackInspector::TrackInspector() {
                               juce::Colours::transparentBlack);
     speakerButton_->setColour(juce::DrawableButton::backgroundOnColourId,
                               juce::Colours::transparentBlack);
-    speakerButton_->setEdgeIndent(2);
+    speakerButton_->setEdgeIndent(0);
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetMasterMuteCommand>(speakerButton_->getToggleState()));
@@ -523,7 +523,8 @@ void TrackInspector::resized() {
             return;
         if (showSpeaker) {
             // Speaker icon: fixed square size
-            speakerButton_->setBounds(row.removeFromLeft(controlRowHeight));
+            speakerButton_->setBounds(
+                row.removeFromLeft(controlRowHeight).withSizeKeepingCentre(22, 22));
         } else {
             const int btnWidth = (row.getWidth() - (visibleButtons - 1) * gap) / visibleButtons;
             muteButton_.setBounds(row.removeFromLeft(btnWidth));
@@ -551,7 +552,7 @@ void TrackInspector::resized() {
             auto speakerArea = row.removeFromRight(36);
             row.removeFromRight(gap);
             gainLabel_->setBounds(row);
-            speakerButton_->setBounds(speakerArea);
+            speakerButton_->setBounds(speakerArea.withSizeKeepingCentre(22, 22));
         } else {
             const int mixPortion = row.getWidth() * 60 / 100;
             if (showPan) {
@@ -572,7 +573,7 @@ void TrackInspector::resized() {
             auto speakerArea = mixRow.removeFromRight(36);
             mixRow.removeFromRight(buttonGap);
             gainLabel_->setBounds(mixRow);
-            speakerButton_->setBounds(speakerArea);
+            speakerButton_->setBounds(speakerArea.withSizeKeepingCentre(22, 22));
         } else {
             if (showPan) {
                 const int mixGap = 4;
@@ -595,7 +596,7 @@ void TrackInspector::resized() {
             auto speakerArea = volRow.removeFromRight(36);
             volRow.removeFromRight(buttonGap);
             gainLabel_->setBounds(volRow);
-            speakerButton_->setBounds(speakerArea);
+            speakerButton_->setBounds(speakerArea.withSizeKeepingCentre(22, 22));
         } else {
             gainLabel_->setBounds(volRow);
             if (showPan) {

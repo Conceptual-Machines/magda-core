@@ -769,6 +769,7 @@ TrackChainContent::TrackChainContent()
         auto offIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
                                                            BinaryData::speaker_off_svgSize);
         masterMuteButton_.setImages(onIcon.get(), nullptr, nullptr, nullptr, offIcon.get());
+        masterMuteButton_.setEdgeIndent(0);
         masterMuteButton_.setClickingTogglesState(true);
         masterMuteButton_.setColour(juce::DrawableButton::backgroundColourId,
                                     juce::Colours::transparentBlack);
@@ -1914,7 +1915,8 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
     if (isMaster) {
         // Square the speaker to the row height so its built-in border matches the
         // volume box, instead of the narrow "M" footprint.
-        masterMuteButton_.setBounds(headerArea.removeFromRight(headerArea.getHeight()));
+        masterMuteButton_.setBounds(
+            headerArea.removeFromRight(headerArea.getHeight()).withSizeKeepingCentre(18, 18));
         masterMuteButton_.setVisible(true);
         muteButton_.setVisible(false);
     } else {

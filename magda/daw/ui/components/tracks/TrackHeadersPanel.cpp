@@ -610,6 +610,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         masterMuteButton =
             std::make_unique<juce::DrawableButton>("masterMute", juce::DrawableButton::ImageFitted);
         masterMuteButton->setImages(onIcon.get(), nullptr, nullptr, nullptr, offIcon.get());
+        masterMuteButton->setEdgeIndent(0);
         masterMuteButton->setClickingTogglesState(true);
         masterMuteButton->setColour(juce::DrawableButton::backgroundColourId,
                                     juce::Colours::transparentBlack);
@@ -2308,7 +2309,7 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
         content.removeFromLeft(gap);
         // Master uses the speaker toggle in place of the "M" button.
         header.muteButton->setVisible(false);
-        header.masterMuteButton->setBounds(content);
+        header.masterMuteButton->setBounds(content.withSizeKeepingCentre(18, 18));
         header.masterMuteButton->setVisible(true);
         header.soloButton->setVisible(false);
         header.panLabel->setVisible(false);

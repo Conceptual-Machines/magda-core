@@ -454,6 +454,7 @@ void MasterChannelStrip::setupControls() {
     speakerButton =
         std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
     speakerButton->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
+    speakerButton->setEdgeIndent(0);
     speakerButton->setClickingTogglesState(true);
     speakerButton->setColour(juce::DrawableButton::backgroundColourId,
                              juce::Colours::transparentBlack);
@@ -586,7 +587,7 @@ void MasterChannelStrip::resized() {
         bounds.removeFromLeft(8);
 
         // Mute button
-        speakerButton->setBounds(bounds.removeFromLeft(28).withSizeKeepingCentre(24, 24));
+        speakerButton->setBounds(bounds.removeFromLeft(28).withSizeKeepingCentre(18, 18));
         bounds.removeFromLeft(8);
 
         // Value label above meter

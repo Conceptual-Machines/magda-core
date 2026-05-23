@@ -2240,7 +2240,7 @@ void MainView::MasterHeaderPanel::setupControls() {
                              juce::Colours::transparentBlack);
     speakerButton->setColour(juce::DrawableButton::backgroundOnColourId,
                              juce::Colours::transparentBlack);
-    speakerButton->setEdgeIndent(2);
+    speakerButton->setEdgeIndent(0);
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -2306,7 +2306,8 @@ void MainView::MasterHeaderPanel::resized() {
     // Top row: volume + speaker
     auto topRow = contentArea.removeFromTop(18);
     // Square to the row height; the icon carries its own border, so don't shrink it.
-    speakerButton->setBounds(topRow.removeFromRight(topRow.getHeight()));
+    speakerButton->setBounds(
+        topRow.removeFromRight(topRow.getHeight()).withSizeKeepingCentre(16, 16));
     topRow.removeFromRight(4);
     volumeLabel->setBounds(topRow);
 
