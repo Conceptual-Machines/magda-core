@@ -332,74 +332,6 @@ class MediaDbTableHeader : public juce::TableHeaderComponent {
 }  // namespace
 
 // ===========================================================================
-// ModelStatusIndicator
-// ===========================================================================
-
-ModelStatusIndicator::ModelStatusIndicator() {
-    refresh();
-    startTimerHz(2);  // 500ms polling — cheap, no callback wiring needed
-}
-
-void ModelStatusIndicator::timerCallback() {
-    const auto prev = state_;
-    refresh();
-    if (state_ != prev) {
-        repaint();
-    }
-}
-
-void ModelStatusIndicator::refresh() {
-    if (!magda::media::SampleTaggerDownloader::isInstalled()) {
-        state_ = State::NotInstalled;
-        return;
-    }
-    auto& ctx = magda::media::MediaDbContext::getInstance();
-    if (ctx.isTextEncoderLoaded() && ctx.isTokenizerLoaded()) {
-        state_ = State::Loaded;
-    } else if (ctx.isLoadInProgress()) {
-        state_ = State::Loading;
-    } else {
-        state_ = State::Idle;
-    }
-}
-
-void ModelStatusIndicator::paint(juce::Graphics& g) {
-    const auto bounds = getLocalBounds().toFloat();
-    const float dotR = 4.0F;
-    const auto dotCx = bounds.getX() + 8.0F;
-    const auto dotCy = bounds.getCentreY();
-
-    juce::Colour dotColour;
-    juce::String label;
-    switch (state_) {
-        case State::NotInstalled:
-            dotColour = juce::Colours::grey;
-            label = "Analyzer: not installed";
-            break;
-        case State::Idle:
-            dotColour = juce::Colour(0xFFE5B84B);  // amber
-            label = "Analyzer: idle";
-            break;
-        case State::Loading:
-            dotColour = juce::Colour(0xFF4FA3E3);  // blue
-            label = "Analyzer: loading...";
-            break;
-        case State::Loaded:
-            dotColour = juce::Colour(0xFF6FCF6F);  // green
-            label = "Analyzer: loaded";
-            break;
-    }
-
-    g.setColour(dotColour);
-    g.fillEllipse(dotCx - dotR, dotCy - dotR, dotR * 2.0F, dotR * 2.0F);
-
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    g.setFont(FontManager::getInstance().getUIFont(11.0F));
-    const auto textBounds = bounds.withTrimmedLeft(20.0F);
-    g.drawText(label, textBounds, juce::Justification::centredLeft, true);
-}
-
-// ===========================================================================
 // ResultsTableModel — paints one cell of the TableListBox per column
 // ===========================================================================
 
@@ -1000,8 +932,6 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     addAndMakeVisible(pageLabel_);
     addAndMakeVisible(*nextPageBtn_);
 
-    addAndMakeVisible(modelStatus_);
-
     // Similar-mode status. Indexing status is forwarded to MediaExplorerContent's
     // shared bottom strip so it is visible in one place only.
     statusLabel_.setFont(FontManager::getInstance().getUIFont(10.0F));
@@ -1098,9 +1028,6 @@ void MediaDbBrowserContent::resized() {
         placeNavArrow(*nextPageBtn_, pager, /*fromLeft=*/false);
         pageLabel_.setBounds(pager);
     }
-
-    // Model status indicator, left-aligned thin row above the pager / table.
-    modelStatus_.setBounds(bounds.removeFromBottom(18).withTrimmedLeft(4));
 
     resultsTable_.setBounds(bounds);
     emptyState_.setBounds(bounds);
@@ -2126,10 +2053,9 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
     // in, instead of being prompted twice (once for tags, once for the
     // warning).
     auto presentTagOptionsDialog = [this, dir, mode]() {
-        auto* alert =
-            new juce::AlertWindow("Index Folder",
-                                  "Optional tags are written to each scanned media row.",
-                                  juce::MessageBoxIconType::NoIcon);
+        auto* alert = new juce::AlertWindow("Index Folder",
+                                            "Optional tags are written to each scanned media row.",
+                                            juce::MessageBoxIconType::NoIcon);
         alert->addTextEditor("custom_tags", "", "Tags:");
         juce::StringArray yesNo;
         yesNo.add("No");
@@ -2147,8 +2073,7 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
 
         const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
         alert->enterModalState(
-            true,
-            juce::ModalCallbackFunction::create([alert, self, dir, mode](int result) mutable {
+            true, juce::ModalCallbackFunction::create([alert, self, dir, mode](int result) mutable {
                 if (result != 1) {
                     delete alert;
                     return;
@@ -2205,9 +2130,9 @@ void MediaDbBrowserContent::startIndexingWithOptions(
     runIndexing(dir, mode, std::move(tagOptions));
 }
 
-void MediaDbBrowserContent::runIndexing(
-    const juce::File& dir, magda::media::MediaDbIndexer::Mode mode,
-    magda::media::MediaDbIndexer::ScanTagOptions tagOptions) {
+void MediaDbBrowserContent::runIndexing(const juce::File& dir,
+                                        magda::media::MediaDbIndexer::Mode mode,
+                                        magda::media::MediaDbIndexer::ScanTagOptions tagOptions) {
     if (indexing_ || !dir.isDirectory()) {
         return;
     }
@@ -2295,8 +2220,7 @@ void MediaDbBrowserContent::runIndexing(
                 }
                 return c.tokenizer();
             };
-            magda::media::MediaDbIndexer indexer(bgDb, encoder, textEncoderGetter,
-                                                 tokenizerGetter);
+            magda::media::MediaDbIndexer indexer(bgDb, encoder, textEncoderGetter, tokenizerGetter);
             indexer.setScanTagOptions(tagOptions);
             indexer.setShouldCancel([cancelToken]() { return cancelToken && cancelToken->load(); });
             indexer.setFailureCallback([&failureMutex, &failureCount,
@@ -2384,7 +2308,8 @@ void MediaDbBrowserContent::runIndexing(
                 // no idea why no audio analysis ran.
                 const auto skipReason =
                     std::filesystem::exists(ctx.audioModelPath())
-                        ? juce::String("Sample Tagger model failed to load — skipping audio analysis")
+                        ? juce::String(
+                              "Sample Tagger model failed to load — skipping audio analysis")
                         : juce::String(
                               "Sample Tagger not installed — skipping audio analysis. Install it "
                               "in AI Settings to enable semantic search.");

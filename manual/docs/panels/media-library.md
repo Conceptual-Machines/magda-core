@@ -108,12 +108,7 @@ It is built on CLAP (Contrastive Language-Audio Pre-training), which embeds audi
 
 The analyzer is a separate download, not bundled with the app. Open the [AI Settings](../interface/ai-settings.md#sample-analyzer) dialog (**Settings > AI Settings**) and pick the **Sample Analyzer** tab, where it shows the download size and a **Download Sample Analyzer** button. Once installed, **Load** brings the models into memory (they also preload in the background the first time you enter Library mode).
 
-A status indicator in the Library browser shows the current state:
-
-- **Analyzer: not installed** (grey)
-- **Analyzer: idle** (amber)
-- **Analyzer: loading...** (blue)
-- **Analyzer: loaded** (green)
+The **Sample Analyzer** icon (a database icon) in the [footer status bar](../interface/overview.md#footer) shows the current state. Its colour reflects the state and the tooltip names it: **not installed**, **installed** (downloaded but not loaded), **loading**, or **loaded**.
 
 ### Without the analyzer
 
