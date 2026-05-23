@@ -10,6 +10,7 @@ target_sources(magda_daw PRIVATE
     MediaDbIndexer.cpp
     MediaDbMetadata.cpp
     MediaDbQuery.cpp
+    MediaDbZeroShotTags.cpp
     MelSpectrogram.cpp
     PathRules.cpp
     RobertaTokenizer.cpp
