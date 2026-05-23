@@ -404,7 +404,7 @@ void TimeRuler::mouseWheelMove(const juce::MouseEvent& /*event*/,
     if (onScrollRequested) {
         // Use deltaX if available (trackpad horizontal swipe), otherwise use deltaY (mouse wheel)
         float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
-        int scrollAmount = static_cast<int>(-delta * 100.0f);
+        int scrollAmount = static_cast<int>(-delta * 800.0f);
         if (scrollAmount != 0) {
             onScrollRequested(scrollAmount);
         }

@@ -791,28 +791,11 @@ void WaveformEditorContent::mouseMove(const juce::MouseEvent& event) {
 
 void WaveformEditorContent::mouseWheelMove(const juce::MouseEvent& event,
                                            const juce::MouseWheelDetails& wheel) {
-    // Check if mouse is over the toolbar or time ruler area (header)
-    bool overHeader = event.y < (TOOLBAR_HEIGHT + TIME_RULER_HEIGHT);
+    juce::ignoreUnused(event);
 
-    if (overHeader || event.mods.isCommandDown()) {
-        // Scroll on header OR Cmd+scroll anywhere = horizontal zoom
-        double zoomFactor = 1.0 + (wheel.deltaY * 0.5);
-        int anchorX = event.x - viewport_->getX();
-        performAnchorPointZoom(zoomFactor, anchorX);
-    } else if (event.mods.isAltDown()) {
-        // Alt + scroll anywhere = vertical zoom
-        double zoomFactor = 1.0 + (wheel.deltaY * 0.5);
-        double newZoom = verticalZoom_ * zoomFactor;
-        newZoom = juce::jlimit(MIN_VERTICAL_ZOOM, MAX_VERTICAL_ZOOM, newZoom);
-        if (newZoom != verticalZoom_) {
-            verticalZoom_ = newZoom;
-            gridComponent_->setVerticalZoom(verticalZoom_);
-        }
-    } else {
-        // Normal scroll over waveform area — virtual horizontal scroll
-        int scrollDelta = static_cast<int>(-wheel.deltaY * 800.0);
-        setVirtualScrollX(virtualScrollX_ + scrollDelta);
-    }
+    const float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
+    int scrollDelta = static_cast<int>(-delta * 800.0f);
+    setVirtualScrollX(virtualScrollX_ + scrollDelta);
 }
 
 void WaveformEditorContent::mouseMagnify(const juce::MouseEvent& event, float scaleFactor) {
@@ -1218,11 +1201,18 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
 }
 
 void WaveformEditorContent::performAnchorPointZoom(double zoomFactor, int anchorX) {
+    if (!std::isfinite(zoomFactor) || zoomFactor <= 0.0 || !gridComponent_)
+        return;
+
+    if (viewport_)
+        anchorX = juce::jlimit(0, juce::jmax(0, viewport_->getWidth() - 1), anchorX);
+
     // anchorX is in viewport-local coordinates. Convert to time using current virtual scroll.
-    double anchorTime = 0.0;
-    if (gridComponent_) {
-        anchorTime = gridComponent_->pixelToTime(anchorX);
-    }
+    double anchorTime = gridComponent_->pixelToTime(anchorX);
+    const double maxAnchorTime =
+        juce::jmax(0.0, static_cast<double>(gridComponent_->getVirtualContentWidth()) /
+                            juce::jmax(1.0, horizontalZoom_));
+    anchorTime = juce::jlimit(0.0, maxAnchorTime, anchorTime);
 
     // Apply zoom
     double newZoom = horizontalZoom_ * zoomFactor;
