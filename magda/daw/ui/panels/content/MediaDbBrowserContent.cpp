@@ -2120,60 +2120,59 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
         return;
     }
 
-    auto* alert = new juce::AlertWindow("Index Folder",
-                                        "Optional tags are written to each scanned media row.",
-                                        juce::MessageBoxIconType::NoIcon);
-    alert->addTextEditor("custom_tags", "", "Tags:");
-    juce::StringArray yesNo;
-    yesNo.add("No");
-    yesNo.add("Yes");
-    alert->addComboBox("folder_tag", yesNo, "Use folder name:");
-    alert->addComboBox("path_tags", yesNo, "Use subfolder names:");
-    if (auto* cb = alert->getComboBoxComponent("folder_tag")) {
-        cb->setSelectedId(2, juce::dontSendNotification);
-    }
-    if (auto* cb = alert->getComboBoxComponent("path_tags")) {
-        cb->setSelectedId(1, juce::dontSendNotification);
-    }
-    alert->addButton("Start", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    // The tag-options dialog is wrapped in a lambda so the analyzer-missing
+    // warning below can gate it on the user's choice. Calling the warning
+    // ahead of the tag dialog lets the user bail before filling anything
+    // in, instead of being prompted twice (once for tags, once for the
+    // warning).
+    auto presentTagOptionsDialog = [this, dir, mode]() {
+        auto* alert =
+            new juce::AlertWindow("Index Folder",
+                                  "Optional tags are written to each scanned media row.",
+                                  juce::MessageBoxIconType::NoIcon);
+        alert->addTextEditor("custom_tags", "", "Tags:");
+        juce::StringArray yesNo;
+        yesNo.add("No");
+        yesNo.add("Yes");
+        alert->addComboBox("folder_tag", yesNo, "Use folder name:");
+        alert->addComboBox("path_tags", yesNo, "Use subfolder names:");
+        if (auto* cb = alert->getComboBoxComponent("folder_tag")) {
+            cb->setSelectedId(2, juce::dontSendNotification);
+        }
+        if (auto* cb = alert->getComboBoxComponent("path_tags")) {
+            cb->setSelectedId(1, juce::dontSendNotification);
+        }
+        alert->addButton("Start", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
-    const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
-    alert->enterModalState(
-        true, juce::ModalCallbackFunction::create([alert, self, dir, mode](int result) mutable {
-            if (result != 1) {
+        const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+        alert->enterModalState(
+            true,
+            juce::ModalCallbackFunction::create([alert, self, dir, mode](int result) mutable {
+                if (result != 1) {
+                    delete alert;
+                    return;
+                }
+
+                magda::media::MediaDbIndexer::ScanTagOptions options;
+                options.root = std::filesystem::path(dir.getFullPathName().toStdString());
+                options.customTags = parseTags(alert->getTextEditorContents("custom_tags"));
+                if (auto* cb = alert->getComboBoxComponent("folder_tag")) {
+                    options.includeRootFolderName = cb->getSelectedId() == 2;
+                }
+                if (auto* cb = alert->getComboBoxComponent("path_tags")) {
+                    options.includePathNodes = cb->getSelectedId() == 2;
+                }
                 delete alert;
-                return;
-            }
 
-            magda::media::MediaDbIndexer::ScanTagOptions options;
-            options.root = std::filesystem::path(dir.getFullPathName().toStdString());
-            options.customTags = parseTags(alert->getTextEditorContents("custom_tags"));
-            if (auto* cb = alert->getComboBoxComponent("folder_tag")) {
-                options.includeRootFolderName = cb->getSelectedId() == 2;
-            }
-            if (auto* cb = alert->getComboBoxComponent("path_tags")) {
-                options.includePathNodes = cb->getSelectedId() == 2;
-            }
-            delete alert;
+                if (self != nullptr) {
+                    self->startIndexingWithOptions(dir, mode, std::move(options));
+                }
+            }));
+    };
 
-            if (self != nullptr) {
-                self->startIndexingWithOptions(dir, mode, std::move(options));
-            }
-        }));
-}
-
-void MediaDbBrowserContent::startIndexingWithOptions(
-    const juce::File& dir, magda::media::MediaDbIndexer::Mode mode,
-    magda::media::MediaDbIndexer::ScanTagOptions tagOptions) {
-    if (indexing_ || !dir.isDirectory()) {
-        return;  // Already running, or invalid target — ignore.
-    }
-
-    // Warn if the Sample Analyzer isn't installed — indexing still works, but
-    // similarity analysis won't be computed, so text search will be filename /
-    // tag only. Async (non-blocking) so the scan kicks off either way.
     if (!magda::media::SampleTaggerDownloader::isInstalled()) {
+        const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
         juce::AlertWindow::showAsync(
             juce::MessageBoxOptions()
                 .withIconType(juce::MessageBoxIconType::InfoIcon)
@@ -2182,8 +2181,35 @@ void MediaDbBrowserContent::startIndexingWithOptions(
                     "Indexing will run, but without the Sample Analyzer the library can only do "
                     "filename / tag / family / BPM filtering - no semantic text search.\n\n"
                     "Install it any time from AI Settings > Sample Analyzer.")
-                .withButton("OK"),
-            nullptr);
+                .withButton("Continue indexing")
+                .withButton("Cancel"),
+            [self, presentTagOptionsDialog = std::move(presentTagOptionsDialog)](int result) {
+                if (auto* page = self.getComponent(); page != nullptr && result == 1) {
+                    presentTagOptionsDialog();
+                }
+            });
+        return;
+    }
+    presentTagOptionsDialog();
+}
+
+void MediaDbBrowserContent::startIndexingWithOptions(
+    const juce::File& dir, magda::media::MediaDbIndexer::Mode mode,
+    magda::media::MediaDbIndexer::ScanTagOptions tagOptions) {
+    if (indexing_ || !dir.isDirectory()) {
+        return;  // Already running, or invalid target — ignore.
+    }
+    // Sample-Analyzer-missing warning lives upstream in startIndexing(),
+    // ahead of the tag-options dialog, so by the time we land here the
+    // user has already chosen to proceed.
+    runIndexing(dir, mode, std::move(tagOptions));
+}
+
+void MediaDbBrowserContent::runIndexing(
+    const juce::File& dir, magda::media::MediaDbIndexer::Mode mode,
+    magda::media::MediaDbIndexer::ScanTagOptions tagOptions) {
+    if (indexing_ || !dir.isDirectory()) {
+        return;
     }
 
     if (!indexPool_) {
@@ -2233,11 +2259,44 @@ void MediaDbBrowserContent::startIndexingWithOptions(
         try {
             magda::media::MediaDatabase bgDb(magda::media::MediaDbContext::getInstance().dbPath());
             auto& ctx = magda::media::MediaDbContext::getInstance();
+
+            // Fire UI status on the message thread. Used for one-off
+            // notifications (model loads, skip reasons) that don't fit the
+            // per-file progress callback.
+            auto postStatus = [self](juce::String text) {
+                juce::MessageManager::callAsync([self, text]() {
+                    if (self != nullptr && self->onIndexingStatus) {
+                        self->onIndexingStatus(text);
+                    }
+                });
+            };
+
+            // audioEncoder() lazy-loads the ONNX session synchronously
+            // (~5-10 s). Tell the user that's what the pause is for.
+            if (!ctx.isAudioEncoderLoaded() && std::filesystem::exists(ctx.audioModelPath())) {
+                postStatus("Loading Sample Tagger audio model...");
+            }
             auto* encoder = ctx.audioEncoder();
-            magda::media::MediaDbIndexer indexer(
-                bgDb, encoder,
-                []() { return magda::media::MediaDbContext::getInstance().textEncoder(); },
-                []() { return magda::media::MediaDbContext::getInstance().tokenizer(); });
+
+            // Wrap the text encoder + tokenizer getters so the first access
+            // (driven by zero-shot tagging inside the embed loop) surfaces a
+            // status message before its own multi-second load.
+            auto textEncoderGetter = [postStatus]() -> magda::media::ClapTextEncoder* {
+                auto& c = magda::media::MediaDbContext::getInstance();
+                if (!c.isTextEncoderLoaded() && std::filesystem::exists(c.textModelPath())) {
+                    postStatus("Loading Sample Tagger text model...");
+                }
+                return c.textEncoder();
+            };
+            auto tokenizerGetter = [postStatus]() -> magda::media::RobertaTokenizer* {
+                auto& c = magda::media::MediaDbContext::getInstance();
+                if (!c.isTokenizerLoaded() && std::filesystem::exists(c.tokenizerJsonPath())) {
+                    postStatus("Loading Sample Tagger tokenizer...");
+                }
+                return c.tokenizer();
+            };
+            magda::media::MediaDbIndexer indexer(bgDb, encoder, textEncoderGetter,
+                                                 tokenizerGetter);
             indexer.setScanTagOptions(tagOptions);
             indexer.setShouldCancel([cancelToken]() { return cancelToken && cancelToken->load(); });
             indexer.setFailureCallback([&failureMutex, &failureCount,
@@ -2318,6 +2377,19 @@ void MediaDbBrowserContent::startIndexingWithOptions(
                                   ? scanStatus + " | Analysis stopped: " + analysisStatus
                                   : scanStatus + " | " + analysisStatus;
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + analysisStatus);
+            } else if (!cancelledAfterScan) {
+                // Encoder unavailable — most common reason is the Sample
+                // Tagger bundle isn't installed (or failed to load). Without
+                // this branch the user just sees the scan summary and has
+                // no idea why no audio analysis ran.
+                const auto skipReason =
+                    std::filesystem::exists(ctx.audioModelPath())
+                        ? juce::String("Sample Tagger model failed to load — skipping audio analysis")
+                        : juce::String(
+                              "Sample Tagger not installed — skipping audio analysis. Install it "
+                              "in AI Settings to enable semantic search.");
+                finalStatus = scanStatus + " | " + skipReason;
+                juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + skipReason);
             }
 
             std::lock_guard<std::mutex> lock(failureMutex);

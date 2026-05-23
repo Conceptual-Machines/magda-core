@@ -143,6 +143,11 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     void removeDuplicateFilePathsWithConfirmation();
     void startIndexingWithOptions(const juce::File& dir, magda::media::MediaDbIndexer::Mode mode,
                                   magda::media::MediaDbIndexer::ScanTagOptions tagOptions);
+    // Body of the indexing flow. Split out from startIndexingWithOptions so
+    // the "Sample Analyzer not installed" warning can gate it on the user's
+    // choice (Continue / Cancel) via an async alert callback.
+    void runIndexing(const juce::File& dir, magda::media::MediaDbIndexer::Mode mode,
+                     magda::media::MediaDbIndexer::ScanTagOptions tagOptions);
     void openPopOutWindow();
     magda::media::QueryFilters currentFilters() const;
     magda::media::QuerySort currentSort() const;

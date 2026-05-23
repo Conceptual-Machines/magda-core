@@ -125,3 +125,6 @@ build/
 # MkDocs build output
 manual/site/
 LUCATHINKPAD.log
+
+# winbuild.ps1 / winbuild.sh tee log
+build.log
