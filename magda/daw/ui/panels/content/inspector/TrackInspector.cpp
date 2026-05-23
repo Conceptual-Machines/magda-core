@@ -129,6 +129,22 @@ TrackInspector::TrackInspector() {
     };
     addAndMakeVisible(*colourSwatch_);
 
+    // MAGDA glyph shown in the master track's (empty) colour-swatch slot.
+    masterGlyph_ =
+        std::make_unique<juce::DrawableButton>("masterGlyph", juce::DrawableButton::ImageFitted);
+    {
+        auto glyph = juce::Drawable::createFromImageData(BinaryData::BoldMGlyph_svg,
+                                                         BinaryData::BoldMGlyph_svgSize);
+        if (glyph)
+            glyph->replaceColour(juce::Colour(0xFF0A0A0A), DarkTheme::getSecondaryTextColour());
+        masterGlyph_->setImages(glyph.get());
+    }
+    masterGlyph_->setEdgeIndent(0);
+    masterGlyph_->setInterceptsMouseClicks(false, false);
+    masterGlyph_->setColour(juce::DrawableButton::backgroundColourId,
+                            juce::Colours::transparentBlack);
+    addChildComponent(*masterGlyph_);
+
     // Mute button (TCP style)
     muteButton_.setButtonText("M");
     muteButton_.setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
@@ -489,7 +505,13 @@ void TrackInspector::resized() {
     // Track properties layout (TCP style)
     trackNameLabel_.setBounds(bounds.removeFromTop(16));
     auto nameRow = bounds.removeFromTop(24);
-    colourSwatch_->setBounds(nameRow.removeFromRight(24));
+    if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
+        // Mirror the volume row's mute button (22x22 within a 36px right area)
+        // so the glyph lines up with it.
+        masterGlyph_->setBounds(nameRow.removeFromRight(36).withSizeKeepingCentre(22, 22));
+    } else {
+        colourSwatch_->setBounds(nameRow.removeFromRight(24));
+    }
     nameRow.removeFromRight(4);
     trackNameValue_.setBounds(nameRow);
     bounds.removeFromTop(separatorPadding);
@@ -1173,6 +1195,7 @@ void TrackInspector::updateFromMultiTrackSelection() {
     trackNameLabel_.setVisible(true);
     trackNameValue_.setVisible(true);
     colourSwatch_->setVisible(true);
+    masterGlyph_->setVisible(false);
     muteButton_.setVisible(true);
     speakerButton_->setVisible(false);
     soloButton_.setVisible(true);
@@ -1227,6 +1250,7 @@ void TrackInspector::showTrackControls(bool show) {
     trackNameLabel_.setVisible(show);
     trackNameValue_.setVisible(show);
     colourSwatch_->setVisible(show && !isMaster);
+    masterGlyph_->setVisible(show && isMaster);
     muteButton_.setVisible(show && !isMaster);
     speakerButton_->setVisible(isMaster);
     soloButton_.setVisible(show && !isMaster);
