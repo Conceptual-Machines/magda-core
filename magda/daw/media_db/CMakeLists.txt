@@ -13,6 +13,7 @@ target_sources(magda_daw PRIVATE
     MediaDbZeroShotTags.cpp
     MelSpectrogram.cpp
     PathRules.cpp
+    PresetDbIndexer.cpp
     RobertaTokenizer.cpp
     SampleTaggerDownloader.cpp
     Scan.cpp
