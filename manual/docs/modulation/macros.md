@@ -14,7 +14,8 @@ All macro knobs output a normalized **0–1 range**. The mapping to each target 
 
 ## Naming
 
-- Click a macro label to rename it (e.g., "Filter Cutoff", "Drive Amount")
+- Double-click a macro's name label to rename it (e.g., "Filter Cutoff", "Drive Amount"). A single click opens the macro editor instead.
+- You can rename from either the name label on the knob or the header of the macro editor panel.
 - Names are displayed on the knob and in the modulation matrix
 
 ## Assigning Parameters

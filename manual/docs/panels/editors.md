@@ -10,6 +10,7 @@ Displayed when a MIDI clip is selected. Provides a grid for editing notes:
 
 - **Horizontal axis** — Time (bars and beats)
 - **Vertical axis** — Pitch (MIDI note numbers, with piano keyboard on the left)
+- **Vertical zoom** — Drag the zoom strip on the far-left edge (beside the octave labels and keyboard) up or down to change the note row height. The zoom level is remembered per clip.
 - **Double-click** an empty cell to add a default-length note at that position and pitch
 - ++shift++ **+ drag** on empty grid to draw a note of variable length. The drag distance sets the note length. Acts as a pencil tool.
 - **Drag** a note to move it in time or pitch
@@ -22,6 +23,7 @@ Displayed when a MIDI clip is selected. Provides a grid for editing notes:
     - **AUTO** — Automatically adjust grid resolution based on zoom level
     - **SNAP** — Toggle snap-to-grid
     - **Time Bend** — Redistribute selected note timing along a curve (see [Time Bend](../time-bend.md#piano-roll))
+    - **Fullscreen** — Pinned to the far right, this toggle expands the MIDI editor to fill the window. Click again to restore. Available for the Piano Roll and Drum Grid Editor.
 
 !!! note "Footer controls"
     - ![bar chart](../assets/images/icons/bar_chart.svg){ width="16" } **Velocity** — Toggle the velocity/MIDI lane at the bottom of the editor
@@ -69,6 +71,12 @@ Displayed when an audio clip is selected. Shows the audio waveform with:
     - **Grid resolution** — Draggable numerator/denominator for grid subdivision
     - **SNAP** — Toggle snap-to-grid
     - **GRID** — Toggle grid line visibility
+
+### Edit in an External Editor
+
+To do destructive editing in another application (Audacity, iZotope RX, and so on), right-click an audio clip and choose **Edit in External Editor**. MAGDA hands the clip's source file to the application you have configured, so changes you save there are reflected back in MAGDA.
+
+Set which application to use under **External Audio Editor** in [Preferences](../interface/preferences.md#external-audio-editor). The menu item is disabled until an editor is configured.
 
 ## Track Chain
 

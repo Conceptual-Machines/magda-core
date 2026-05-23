@@ -88,6 +88,7 @@ Follow actions chain session clips together for generative arrangement. Once the
 - **Move** — Drag a clip to reposition it on the timeline or move it to another track
 - **Resize** — Drag the left or right edge of a clip to trim its start or end point
 - **Duplicate** — Hold ++alt++ and drag a clip, or press ++cmd+d++
+- **Duplicate with or without automation** — Right-click a clip and choose **Duplicate With Automation** to copy the clip together with the automation under it, or **Duplicate Without Automation** to copy just the clip. Plain **Duplicate** behaves the same as the menu's default.
 - **Split** — Position the playhead and use **Edit > Split Clip** or press ++cmd+e++
 - **Delete** — Select the clip and press ++delete++ or ++backspace++
 - **Erase under cursor** — ++shift+ctrl++ **+ click** a clip to delete it directly without selecting first. If the clip is part of a multi-selection, the whole group is erased. Acts as a rubber tool.

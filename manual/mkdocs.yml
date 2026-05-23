@@ -48,6 +48,7 @@ nav:
       - Preferences: interface/preferences.md
       - Audio Settings: interface/audio-settings.md
       - Plugin Settings: interface/plugin-settings.md
+      - AI Settings: interface/ai-settings.md
       - Controllers: interface/controllers.md
   - Tracks: tracks.md
   - Clips: clips.md
@@ -59,6 +60,7 @@ nav:
   - Panels:
       - Inspector: panels/inspector.md
       - Plugin & Media Browser: panels/browsers.md
+      - Media Library: panels/media-library.md
       - AI Assistant: panels/ai-assistant.md
       - Editors: panels/editors.md
       - Chord Panel: panels/chord-panel.md

@@ -4,6 +4,8 @@ Modulators are signal generators that modulate device parameters over time. Each
 
 Modulators are managed from the modulation panel at the bottom of the track chain. Click the **+** button to add a new modulator. The panel shows active modulators alongside the macro knobs.
 
+Double-click a modulator's name label to rename it (for example "Filter Wobble" or "Swell"), the same way you rename a [macro](macros.md#naming). Custom names make a track with several LFOs and envelopes far easier to read.
+
 ![Global Macros & Modulators](../assets/images/modulation/global-macros-mods.png){ width="500" }
 
 ## LFO

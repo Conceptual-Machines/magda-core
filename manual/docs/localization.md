@@ -4,7 +4,7 @@ MAGDA's interface can be displayed in multiple languages. Simplified Chinese (`z
 
 ## Switching Language
 
-Set the UI language from **[Preferences](interface/preferences.md) > Language**. The dropdown lists every locale that ships with a matching `.json` file in MAGDA's `lang/` folder. A restart is required after switching.
+Set the UI language from **[Preferences](interface/preferences.md) > Language**. The dropdown lists every language MAGDA ships with. A restart is required after switching.
 
 ## Contributing Translations
 
@@ -18,7 +18,7 @@ To contribute:
 2. Once approved, translate strings directly in the browser editor.
 3. Approved translations sync back to MAGDA through an automated pull request — no manual file handling required.
 
-New locales appear in **Preferences > Language** once they have been synced into the `lang/` folder and shipped in a release.
+New locales appear in **Preferences > Language** once their translations are complete and shipped in a release.
 
 ## What is Not Translated
 
