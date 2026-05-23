@@ -668,6 +668,10 @@ class TrackManager {
      */
     void notifyTrackDevicesChanged(TrackId trackId);
     void notifyModulationNamesChanged(TrackId trackId);
+    // Full header/track-list rebuild. Public so commands that change track
+    // structure (e.g. creating a track together with a device) can force the
+    // UI to rebuild once the final state is in place.
+    void notifyTracksChanged();
 
   private:
     TrackManager();
@@ -737,7 +741,6 @@ class TrackManager {
     std::array<uint64_t, kMaxBusTracks> lastBusNoteOn_{};
     std::array<uint64_t, kMaxBusTracks> lastBusNoteOff_{};
 
-    void notifyTracksChanged();
     void notifyTrackPropertyChanged(int trackId);
     void notifyMasterChannelChanged();
     void notifyTrackSelectionChanged(TrackId trackId);

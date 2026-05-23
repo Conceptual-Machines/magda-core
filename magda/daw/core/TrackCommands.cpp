@@ -765,6 +765,12 @@ void CreateTrackWithDeviceCommand::execute() {
     createdDeviceId_ = trackManager.addDeviceToTrack(createdTrackId_, device_);
     trackManager.setSelectedTrack(createdTrackId_);
 
+    // createTrack() built the header before the device existed, and adding the
+    // device only fires trackDevicesChanged (which does not re-run the
+    // type/routing-dependent header setup). Rebuild now so the new track's
+    // header is correct immediately instead of only after a view switch.
+    trackManager.notifyTracksChanged();
+
     executed_ = true;
     DBG("UNDO: Created track " << createdTrackId_ << " with device " << createdDeviceId_);
 }
