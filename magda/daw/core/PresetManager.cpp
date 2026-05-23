@@ -1,5 +1,9 @@
 #include "PresetManager.hpp"
 
+#include <filesystem>
+
+#include "../media_db/MediaDbContext.hpp"
+#include "../media_db/PresetDbIndexer.hpp"
 #include "../project/serialization/ProjectSerializer.hpp"
 #include "AppPaths.hpp"
 #include "version.hpp"
@@ -11,6 +15,72 @@ constexpr const char* kPresetExtension = ".mps";
 constexpr const char* kKindChain = "chain";
 constexpr const char* kKindRack = "rack";
 constexpr const char* kKindDevice = "device";
+
+// Mirror a freshly-written preset file into the media DB. Best-effort —
+// failures are logged but don't fail the save, since the on-disk file
+// is the source of truth and the user can always re-run "Index presets"
+// from Preferences to recover.
+void mirrorToMediaDb(const juce::File& presetsRoot, const juce::File& presetFile) {
+    auto& ctx = magda::media::MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return;
+    }
+    magda::media::PresetDbIndexer indexer(ctx.db());
+    if (indexer.upsertOne(std::filesystem::path(presetsRoot.getFullPathName().toStdString()),
+                          std::filesystem::path(presetFile.getFullPathName().toStdString()))) {
+        ctx.bumpMediaRevision();
+    }
+}
+
+void mirrorDeleteToMediaDb(const juce::File& presetFile) {
+    auto& ctx = magda::media::MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return;
+    }
+    magda::media::PresetDbIndexer indexer(ctx.db());
+    if (indexer.removeOne(std::filesystem::path(presetFile.getFullPathName().toStdString()))) {
+        ctx.bumpMediaRevision();
+    }
+}
+
+// Delete the on-disk preset file and its media DB row. Returns false
+// when the file is missing or the OS delete fails.
+bool deletePresetFile(const juce::File& target, juce::String& outError) {
+    if (!target.existsAsFile()) {
+        outError = "Preset file not found: " + target.getFullPathName();
+        return false;
+    }
+    if (!target.deleteFile()) {
+        outError = "Failed to delete preset file: " + target.getFullPathName();
+        return false;
+    }
+    mirrorDeleteToMediaDb(target);
+    return true;
+}
+
+// Move the on-disk preset file and update the media DB. Refuses to
+// overwrite an existing destination so a typo in the new name doesn't
+// silently clobber another preset.
+bool renamePresetFile(const juce::File& presetsRoot, const juce::File& source,
+                      const juce::File& dest, juce::String& outError) {
+    if (!source.existsAsFile()) {
+        outError = "Preset file not found: " + source.getFullPathName();
+        return false;
+    }
+    if (dest.existsAsFile()) {
+        outError = "Destination preset already exists: " + dest.getFullPathName();
+        return false;
+    }
+    dest.getParentDirectory().createDirectory();
+    if (!source.moveFileTo(dest)) {
+        outError = "Failed to rename preset: " + source.getFullPathName() + " -> " +
+                   dest.getFullPathName();
+        return false;
+    }
+    mirrorDeleteToMediaDb(source);
+    mirrorToMediaDb(presetsRoot, dest);
+    return true;
+}
 
 // Sanitize a user-supplied preset name into something filesystem-safe.
 juce::String sanitizeName(const juce::String& name) {
@@ -148,7 +218,11 @@ bool PresetManager::saveChainPreset(const std::vector<ChainElement>& chainElemen
 
     auto target =
         getChainsDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
-    return writePresetFile(target, kKindChain, juce::var(payload), lastError_);
+    if (!writePresetFile(target, kKindChain, juce::var(payload), lastError_)) {
+        return false;
+    }
+    mirrorToMediaDb(getPresetsDirectory(), target);
+    return true;
 }
 
 bool PresetManager::loadChainPreset(const juce::String& presetName,
@@ -189,6 +263,19 @@ juce::StringArray PresetManager::getChainPresets() const {
     return out;
 }
 
+bool PresetManager::deleteChainPreset(const juce::String& presetName) {
+    auto target =
+        getChainsDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
+    return deletePresetFile(target, lastError_);
+}
+
+bool PresetManager::renameChainPreset(const juce::String& oldName, const juce::String& newName) {
+    auto source =
+        getChainsDirectory().getChildFile(sanitizeRelativePath(oldName) + kPresetExtension);
+    auto dest = getChainsDirectory().getChildFile(sanitizeRelativePath(newName) + kPresetExtension);
+    return renamePresetFile(getPresetsDirectory(), source, dest, lastError_);
+}
+
 // ============================================================================
 // Rack Presets
 // ============================================================================
@@ -199,7 +286,11 @@ bool PresetManager::saveRackPreset(const RackInfo& rack, const juce::String& pre
     // preset under subdirectories (e.g. "Drums/808 Stack").
     auto target =
         getRacksDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
-    return writePresetFile(target, kKindRack, payload, lastError_);
+    if (!writePresetFile(target, kKindRack, payload, lastError_)) {
+        return false;
+    }
+    mirrorToMediaDb(getPresetsDirectory(), target);
+    return true;
 }
 
 bool PresetManager::loadRackPreset(const juce::String& presetName, RackInfo& outRack) {
@@ -222,6 +313,19 @@ juce::StringArray PresetManager::getRackPresets() const {
     return out;
 }
 
+bool PresetManager::deleteRackPreset(const juce::String& presetName) {
+    auto target =
+        getRacksDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
+    return deletePresetFile(target, lastError_);
+}
+
+bool PresetManager::renameRackPreset(const juce::String& oldName, const juce::String& newName) {
+    auto source =
+        getRacksDirectory().getChildFile(sanitizeRelativePath(oldName) + kPresetExtension);
+    auto dest = getRacksDirectory().getChildFile(sanitizeRelativePath(newName) + kPresetExtension);
+    return renamePresetFile(getPresetsDirectory(), source, dest, lastError_);
+}
+
 // ============================================================================
 // Device Presets
 // ============================================================================
@@ -234,7 +338,11 @@ bool PresetManager::saveDevicePreset(const DeviceInfo& device, const juce::Strin
     auto payload = ProjectSerializer::serializeDeviceInfo(device);
     auto pluginDir = getDevicePluginDirectory(device.name);
     auto target = pluginDir.getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
-    return writePresetFile(target, kKindDevice, payload, lastError_);
+    if (!writePresetFile(target, kKindDevice, payload, lastError_)) {
+        return false;
+    }
+    mirrorToMediaDb(getPresetsDirectory(), target);
+    return true;
 }
 
 bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
@@ -257,6 +365,22 @@ juce::StringArray PresetManager::getDevicePresets(const juce::String& pluginFold
     juce::StringArray out;
     collectPresetsRecursive(getDevicePluginDirectory(pluginFolder), "", out);
     return out;
+}
+
+bool PresetManager::deleteDevicePreset(const juce::String& pluginFolder,
+                                       const juce::String& presetRelativePath) {
+    auto target = getDevicePluginDirectory(pluginFolder)
+                      .getChildFile(sanitizeRelativePath(presetRelativePath) + kPresetExtension);
+    return deletePresetFile(target, lastError_);
+}
+
+bool PresetManager::renameDevicePreset(const juce::String& pluginFolder,
+                                       const juce::String& oldRelativePath,
+                                       const juce::String& newRelativePath) {
+    auto pluginDir = getDevicePluginDirectory(pluginFolder);
+    auto source = pluginDir.getChildFile(sanitizeRelativePath(oldRelativePath) + kPresetExtension);
+    auto dest = pluginDir.getChildFile(sanitizeRelativePath(newRelativePath) + kPresetExtension);
+    return renamePresetFile(getPresetsDirectory(), source, dest, lastError_);
 }
 
 // ============================================================================

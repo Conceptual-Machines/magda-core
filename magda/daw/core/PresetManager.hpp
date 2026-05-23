@@ -75,6 +75,12 @@ class PresetManager {
      */
     juce::StringArray getChainPresets() const;
 
+    /** @brief Delete a chain preset file (and its media DB row). */
+    bool deleteChainPreset(const juce::String& presetName);
+
+    /** @brief Rename a chain preset. Fails if the destination already exists. */
+    bool renameChainPreset(const juce::String& oldName, const juce::String& newName);
+
     // ========================================================================
     // Rack Presets
     // ========================================================================
@@ -99,6 +105,12 @@ class PresetManager {
      * @brief Get list of available rack presets
      */
     juce::StringArray getRackPresets() const;
+
+    /** @brief Delete a rack preset file (and its media DB row). */
+    bool deleteRackPreset(const juce::String& presetName);
+
+    /** @brief Rename a rack preset. Fails if the destination already exists. */
+    bool renameRackPreset(const juce::String& oldName, const juce::String& newName);
 
     // ========================================================================
     // Device Presets
@@ -132,6 +144,14 @@ class PresetManager {
 
     /** @brief The Devices/<pluginFolder>/ directory. Created lazily on save. */
     juce::File getDevicePluginDirectory(const juce::String& pluginFolder) const;
+
+    /** @brief Delete a device preset file (and its media DB row). */
+    bool deleteDevicePreset(const juce::String& pluginFolder,
+                            const juce::String& presetRelativePath);
+
+    /** @brief Rename a device preset. Fails if the destination already exists. */
+    bool renameDevicePreset(const juce::String& pluginFolder, const juce::String& oldRelativePath,
+                            const juce::String& newRelativePath);
 
     // ========================================================================
     // Suggested Preset Names

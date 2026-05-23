@@ -1,9 +1,12 @@
 #include "PreferencesDialog.hpp"
 
 #include <cmath>
+#include <filesystem>
 
+#include "../../media_db/MediaDatabase.hpp"
 #include "../../media_db/MediaDbContext.hpp"
 #include "../../media_db/MediaDbQuery.hpp"
+#include "../../media_db/PresetDbIndexer.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../state/TimelineController.hpp"
@@ -1284,6 +1287,10 @@ class PathsPage : public juce::Component {
         wipeButton_.setButtonText("Wipe database...");
         wipeButton_.onClick = [this]() { confirmAndWipe(); };
         addAndMakeVisible(wipeButton_);
+
+        indexPresetsButton_.setButtonText("Index presets");
+        indexPresetsButton_.onClick = [this]() { runPresetIndex(); };
+        addAndMakeVisible(indexPresetsButton_);
     }
 
     int getPreferredHeight(int) const {
@@ -1372,7 +1379,10 @@ class PathsPage : public juce::Component {
         dbStats_.setBounds(bounds.removeFromTop(20));
         bounds.removeFromTop(gap);
 
-        wipeButton_.setBounds(bounds.removeFromTop(rowH).removeFromLeft(180));
+        auto dbActionRow = bounds.removeFromTop(rowH);
+        wipeButton_.setBounds(dbActionRow.removeFromLeft(180));
+        dbActionRow.removeFromLeft(gap);
+        indexPresetsButton_.setBounds(dbActionRow.removeFromLeft(160));
 
         bounds.removeFromTop(sectionGap);
 
@@ -1647,6 +1657,38 @@ class PathsPage : public juce::Component {
         });
     }
 
+    void runPresetIndex() {
+        auto& ctx = magda::media::MediaDbContext::getInstance();
+        if (!ctx.ensureInitialized()) {
+            return;
+        }
+        const auto presetsRoot =
+            std::filesystem::path(magda::paths::presetsDir().getFullPathName().toStdString());
+
+        indexPresetsButton_.setEnabled(false);
+        indexPresetsButton_.setButtonText("Indexing presets...");
+
+        const juce::Component::SafePointer<PathsPage> self(this);
+        juce::Thread::launch([self, presetsRoot]() {
+            auto& ctx = magda::media::MediaDbContext::getInstance();
+            magda::media::PresetDbIndexer indexer(ctx.db());
+            const auto stats = indexer.indexAll(presetsRoot);
+            ctx.bumpMediaRevision();
+            juce::MessageManager::callAsync([self, stats]() {
+                if (auto* page = self.getComponent()) {
+                    page->indexPresetsButton_.setEnabled(true);
+                    page->indexPresetsButton_.setButtonText("Index presets");
+                    page->refreshMediaLibrarySettings();
+                    juce::Logger::writeToLog(juce::String("[indexPresets] inserted=") +
+                                             juce::String(stats.inserted) +
+                                             " updated=" + juce::String(stats.updated) +
+                                             " skipped=" + juce::String(stats.skipped) +
+                                             " failed=" + juce::String(stats.failed));
+                }
+            });
+        });
+    }
+
     void confirmAndWipe() {
         const juce::Component::SafePointer<PathsPage> self(this);
         juce::AlertWindow::showAsync(
@@ -1692,6 +1734,7 @@ class PathsPage : public juce::Component {
     juce::TextButton dbReset_;
     juce::Label dbStats_;
     juce::TextButton wipeButton_;
+    juce::TextButton indexPresetsButton_;
 
     std::unique_ptr<juce::FileChooser> fileChooser_;
 };
