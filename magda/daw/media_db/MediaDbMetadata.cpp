@@ -1171,6 +1171,7 @@ int moveFolderInLibrary(MediaDatabase& db, const std::filesystem::path& oldFolde
     std::string oldPrefix = oldFolder.string();
     std::string newPrefix = newFolder.string();
     if (oldPrefix.empty() || newPrefix.empty()) {
+        juce::Logger::writeToLog("[moveFolder] empty prefix, aborting");
         return 0;
     }
     constexpr char kSep = static_cast<char>(std::filesystem::path::preferred_separator);
@@ -1181,13 +1182,38 @@ int moveFolderInLibrary(MediaDatabase& db, const std::filesystem::path& oldFolde
         newPrefix.push_back(kSep);
     }
     if (oldPrefix == newPrefix) {
+        juce::Logger::writeToLog("[moveFolder] old == new (" + juce::String(oldPrefix) +
+                                 "), nothing to do");
         return 0;
     }
     std::string upper = oldPrefix;
     upper.back() = static_cast<char>(static_cast<unsigned char>(upper.back()) + 1);
 
     auto* handle = db.handle();
+
+    // Probe how many rows the WHERE actually matches so we can tell a real
+    // "moved 0 rows" outcome from a range-bound bug like the one fixed in
+    // the path-separator pass on Windows.
+    int matchedRows = -1;
+    {
+        sqlite3_stmt* probe = nullptr;
+        if (sqlite3_prepare_v2(
+                handle, "SELECT COUNT(*) FROM media_file WHERE path >= ? AND path < ?", -1, &probe,
+                nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(probe, 1, oldPrefix.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(probe, 2, upper.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(probe) == SQLITE_ROW) {
+                matchedRows = sqlite3_column_int(probe, 0);
+            }
+            sqlite3_finalize(probe);
+        }
+    }
+    juce::Logger::writeToLog("[moveFolder] oldPrefix='" + juce::String(oldPrefix) +
+                             "' newPrefix='" + juce::String(newPrefix) + "' upper='" +
+                             juce::String(upper) + "' matched=" + juce::String(matchedRows));
+
     if (sqlite3_exec(handle, "BEGIN", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        juce::Logger::writeToLog("[moveFolder] BEGIN failed");
         return -1;
     }
 
@@ -1248,10 +1274,12 @@ int moveFolderInLibrary(MediaDatabase& db, const std::filesystem::path& oldFolde
     }
 
     if (!ok) {
+        juce::Logger::writeToLog("[moveFolder] rolling back");
         sqlite3_exec(handle, "ROLLBACK", nullptr, nullptr, nullptr);
         return -1;
     }
     sqlite3_exec(handle, "COMMIT", nullptr, nullptr, nullptr);
+    juce::Logger::writeToLog("[moveFolder] committed, rows=" + juce::String(updatedRows));
     return updatedRows;
 }
 
