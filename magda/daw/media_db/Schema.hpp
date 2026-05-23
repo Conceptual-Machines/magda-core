@@ -15,7 +15,7 @@ namespace magda::media {
 inline constexpr const char* kSchemaSql = R"SQL(
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
-	PRAGMA user_version = 7;
+	PRAGMA user_version = 8;
 
 CREATE TABLE IF NOT EXISTS media_file (
     id              INTEGER PRIMARY KEY,
@@ -55,7 +55,11 @@ CREATE TABLE IF NOT EXISTS media_file (
     family  TEXT CHECK (family IN
                 ('drum','bass','lead','pad','keys','guitar','orchestral',
                  'vocal','fx','texture','unknown')),
-    tonal   INTEGER CHECK (tonal IN (0, 1))
+    tonal   INTEGER CHECK (tonal IN (0, 1)),
+
+    -- Preset rows only. NULL for kind='audio'/'clip'. Mirrors the on-disk
+    -- folder split under <PresetsDir>/{Chains,Racks,Devices}/.
+    preset_kind TEXT CHECK (preset_kind IN ('chain','rack','device'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_media_file_kind   ON media_file (kind);
