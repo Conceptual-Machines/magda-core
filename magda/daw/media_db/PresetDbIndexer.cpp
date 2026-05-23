@@ -60,13 +60,13 @@ std::optional<FileMeta> statFile(const std::filesystem::path& path) {
     if (ec) {
         return std::nullopt;
     }
-    // file_time_type clock varies by platform — convert via system_clock
-    // for a consistent epoch (good enough for skip-if-unchanged checks).
-    const auto sysTime = std::chrono::time_point_cast<std::chrono::nanoseconds>(
-        std::chrono::file_clock::to_sys(fileTime));
+    // Only relative changes matter for skip-if-unchanged checks, so use the
+    // file clock's own epoch directly. This avoids the non-portable
+    // file_clock -> system_clock conversion (MSVC's file clock has no to_sys).
     FileMeta m;
     m.sizeBytes = static_cast<std::int64_t>(sz);
-    m.mtimeNs = sysTime.time_since_epoch().count();
+    m.mtimeNs =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(fileTime.time_since_epoch()).count();
     return m;
 }
 
