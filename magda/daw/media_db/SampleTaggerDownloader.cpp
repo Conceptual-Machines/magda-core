@@ -145,14 +145,11 @@ class SampleTaggerDownloader::Worker : public juce::Thread {
         }
 
         juce::TemporaryFile tmp(dest);  // atomic rename on commit
-        juce::FileOutputStream out(tmp.getFile());
-        if (!out.openedOk()) {
+        auto out = std::make_unique<juce::FileOutputStream>(tmp.getFile());
+        if (!out->openedOk()) {
             p.errorMessage = juce::String("Could not write to ") + tmp.getFile().getFullPathName();
             return false;
         }
-
-        juce::SHA256 hasherUnused;  // placeholder — see hashFile() below
-        juce::ignoreUnused(hasherUnused);
 
         constexpr int kChunk = 1 << 16;  // 64 KiB
         juce::MemoryBlock buf(kChunk);
@@ -168,7 +165,7 @@ class SampleTaggerDownloader::Worker : public juce::Thread {
             if (read == 0) {
                 break;
             }
-            if (!out.write(buf.getData(), static_cast<size_t>(read))) {
+            if (!out->write(buf.getData(), static_cast<size_t>(read))) {
                 p.errorMessage = juce::String("Write error on ") + dest.getFullPathName();
                 return false;
             }
@@ -176,11 +173,21 @@ class SampleTaggerDownloader::Worker : public juce::Thread {
             p.bytesDoneAll = cumulativeBytes + p.bytesDoneInFile;
             postProgress(p);
         }
-        out.flush();
-        if (out.getStatus().failed()) {
+        out->flush();
+        if (out->getStatus().failed()) {
             p.errorMessage = juce::String("Flush failed on ") + dest.getFullPathName();
             return false;
         }
+
+#if JUCE_WINDOWS
+        // Release the temp file handle before the rename below. JUCE
+        // FileOutputStream opens with FILE_SHARE_READ only on Windows, so
+        // the temp file cannot be moved or deleted while we still hold it
+        // — overwriteTargetFileWithTemporary() would otherwise fail every
+        // retry with a sharing violation. On macOS/Linux open files can be
+        // renamed normally, so we leave the destructor to run at scope end.
+        out.reset();
+#endif
 
         // Verify before swapping the temp file into its final name. A
         // tampered or partial download must not appear "installed" to the
