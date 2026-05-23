@@ -37,7 +37,9 @@ TrackInspector::TrackInspector() {
                               DarkTheme::getColour(DarkTheme::SURFACE));
     trackNameValue_.setEditable(true);
     trackNameValue_.onTextChange = [this]() {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+        // The master track cannot be renamed; its name is fixed.
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID &&
+            selectedTrackId_ != magda::MASTER_TRACK_ID) {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetTrackNameCommand>(selectedTrackId_,
                                                              trackNameValue_.getText()));
@@ -910,6 +912,7 @@ void TrackInspector::updateFromSelectedTrack() {
     if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
         const auto& master = magda::TrackManager::getInstance().getMasterChannel();
         trackNameValue_.setText(tr("common.master"), juce::dontSendNotification);
+        trackNameValue_.setEditable(false);  // master cannot be renamed
         speakerButton_->setToggleState(master.muted, juce::dontSendNotification);
         soloButton_.setToggleState(false, juce::dontSendNotification);
         recordButton_.setToggleState(false, juce::dontSendNotification);
@@ -935,6 +938,7 @@ void TrackInspector::updateFromSelectedTrack() {
             swatch->setColour(track->colour);
 
         trackNameValue_.setText(track->name, juce::dontSendNotification);
+        trackNameValue_.setEditable(true);  // re-enable after a master selection
         muteButton_.setToggleState(track->muted, juce::dontSendNotification);
         soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
         recordButton_.setToggleState(track->recordArmed, juce::dontSendNotification);

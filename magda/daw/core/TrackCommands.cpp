@@ -167,6 +167,12 @@ juce::String CreateTrackCommand::getDescription() const {
 DeleteTrackCommand::DeleteTrackCommand(TrackId trackId) : trackId_(trackId) {}
 
 void DeleteTrackCommand::execute() {
+    // The master track is permanent. Bail before touching clips or storing undo
+    // state so the command is a clean no-op (undo() is gated on executed_).
+    if (trackId_ == MASTER_TRACK_ID) {
+        return;
+    }
+
     auto& trackManager = TrackManager::getInstance();
     const auto* track = trackManager.getTrack(trackId_);
 

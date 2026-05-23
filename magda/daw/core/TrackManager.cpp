@@ -300,6 +300,13 @@ TrackId TrackManager::createGroupTrack(const juce::String& name) {
 }
 
 void TrackManager::deleteTrack(TrackId trackId) {
+    // The master track is permanent and must never be deleted. getTrack()
+    // returns a valid pointer for MASTER_TRACK_ID, so the null check below
+    // would not catch it; guard explicitly here, the single choke point all
+    // delete entry points funnel through.
+    if (trackId == MASTER_TRACK_ID)
+        return;
+
     auto* track = getTrack(trackId);
     if (!track)
         return;
