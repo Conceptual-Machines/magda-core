@@ -56,7 +56,7 @@ In this mode, describe the groove you want in plain language:
 - "a half-time hip-hop beat, snare on 3"
 - "busier hats in the second bar"
 
-The agent works in terms of drum **roles** (kick, snare, closed hat, and so on), so it places hits on the pads you have labelled with matching [roles](../devices/drum-grid.md#row-labels-and-roles). If a Drum Grid clip is selected, its current pattern is sent along as context, so follow-up requests like "add a crash on the downbeat" build on what is already there. The generated pattern is written straight into the selected clip.
+The agent works in terms of drum **roles** (kick, snare, closed hat, and so on), so it places hits on the pads you have labelled with matching [roles](drum-grid-editor.md#row-labels-and-roles). If a Drum Grid clip is selected, its current pattern is sent along as context, so follow-up requests like "add a crash on the downbeat" build on what is already there. The generated pattern is written straight into the selected clip.
 
 Drummer mode is automatic and context-driven; there is no slash command to type. Select a non-drum track to return to the general assistant.
 

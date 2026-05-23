@@ -51,7 +51,7 @@ During playback (in the Arpeggiator and Step Sequencer), a green sweep animation
 
 ![Time Bend popup in the Piano Roll](assets/images/panels/piano-roll-time-bend.png)
 
-Select two or more notes in the [Piano Roll](panels/editors.md#piano-roll) and click the Time Bend button in the editor header bar. A popup appears with the curve display and Depth, Skew, and Cycles sliders.
+Select two or more notes in the [Piano Roll](panels/piano-roll.md) and click the Time Bend button in the editor header bar. A popup appears with the curve display and Depth, Skew, and Cycles sliders.
 
 As you adjust the curve, the selected notes move in real time as a preview. Click **Apply** to confirm — this creates an undoable action, so you can ++ctrl+z++ to revert. Click **Cancel** or close the popup to restore the original positions.
 
@@ -60,7 +60,7 @@ As you adjust the curve, the selected notes move in real time as a preview. Clic
 
 ## Drum Grid Editor
 
-Time Bend works identically in the [Drum Grid Editor](panels/editors.md#drum-grid-editor). Select notes, click the Time Bend button, shape the curve, and apply.
+Time Bend works identically in the [Drum Grid Editor](panels/drum-grid-editor.md). Select notes, click the Time Bend button, shape the curve, and apply.
 
 ## Arpeggiator
 

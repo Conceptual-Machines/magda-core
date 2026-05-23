@@ -62,7 +62,12 @@ nav:
       - Plugin & Media Browser: panels/browsers.md
       - Media Library: panels/media-library.md
       - AI Assistant: panels/ai-assistant.md
-      - Editors: panels/editors.md
+      - Editors:
+          - Overview: panels/editors.md
+          - Piano Roll: panels/piano-roll.md
+          - Drum Grid Editor: panels/drum-grid-editor.md
+          - Waveform Editor: panels/waveform-editor.md
+          - Track Chain: panels/track-chain.md
       - Chord Panel: panels/chord-panel.md
   - Devices:
       - Overview: devices/built-in.md

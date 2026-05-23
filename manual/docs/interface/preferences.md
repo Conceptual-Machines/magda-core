@@ -44,7 +44,7 @@ Click **Browse…** next to a path to relocate that folder. MAGDA does not move 
 
 ### External Audio Editor
 
-Set the application MAGDA hands audio clips to when you choose **Edit in External Editor** (see [Editors](../panels/editors.md#edit-in-an-external-editor)). Use **Browse…** to pick the application, or **Reset** to clear it. While no editor is set, the clip menu item stays disabled.
+Set the application MAGDA hands audio clips to when you choose **Edit in External Editor** (see [Waveform Editor](../panels/waveform-editor.md#edit-in-an-external-editor)). Use **Browse…** to pick the application, or **Reset** to clear it. While no editor is set, the clip menu item stays disabled.
 
 ### Media Database
 
