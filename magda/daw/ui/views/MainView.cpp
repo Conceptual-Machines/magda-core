@@ -2237,9 +2237,9 @@ void MainView::MasterHeaderPanel::setupControls() {
     speakerButton->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
     speakerButton->setClickingTogglesState(true);
     speakerButton->setColour(juce::DrawableButton::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             juce::Colours::transparentBlack);
     speakerButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             juce::Colours::transparentBlack);
     speakerButton->setEdgeIndent(2);
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
@@ -2305,7 +2305,8 @@ void MainView::MasterHeaderPanel::resized() {
 
     // Top row: volume + speaker
     auto topRow = contentArea.removeFromTop(18);
-    speakerButton->setBounds(topRow.removeFromRight(18).withSizeKeepingCentre(16, 16));
+    // Square to the row height; the icon carries its own border, so don't shrink it.
+    speakerButton->setBounds(topRow.removeFromRight(topRow.getHeight()));
     topRow.removeFromRight(4);
     volumeLabel->setBounds(topRow);
 

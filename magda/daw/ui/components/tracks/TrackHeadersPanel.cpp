@@ -612,9 +612,9 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         masterMuteButton->setImages(onIcon.get(), nullptr, nullptr, nullptr, offIcon.get());
         masterMuteButton->setClickingTogglesState(true);
         masterMuteButton->setColour(juce::DrawableButton::backgroundColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
+                                    juce::Colours::transparentBlack);
         masterMuteButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
+                                    juce::Colours::transparentBlack);
     }
 
     soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));

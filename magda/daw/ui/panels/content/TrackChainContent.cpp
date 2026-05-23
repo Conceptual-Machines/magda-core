@@ -771,9 +771,9 @@ TrackChainContent::TrackChainContent()
         masterMuteButton_.setImages(onIcon.get(), nullptr, nullptr, nullptr, offIcon.get());
         masterMuteButton_.setClickingTogglesState(true);
         masterMuteButton_.setColour(juce::DrawableButton::backgroundColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
+                                    juce::Colours::transparentBlack);
         masterMuteButton_.setColour(juce::DrawableButton::backgroundOnColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
+                                    juce::Colours::transparentBlack);
         masterMuteButton_.onClick = [this]() {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetMasterMuteCommand>(masterMuteButton_.getToggleState()));
@@ -1911,13 +1911,14 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
         soloButton_.setBounds(headerArea.removeFromRight(18));
         headerArea.removeFromRight(2);
     }
-    auto muteArea = headerArea.removeFromRight(18);
     if (isMaster) {
-        masterMuteButton_.setBounds(muteArea);
+        // Square the speaker to the row height so its built-in border matches the
+        // volume box, instead of the narrow "M" footprint.
+        masterMuteButton_.setBounds(headerArea.removeFromRight(headerArea.getHeight()));
         masterMuteButton_.setVisible(true);
         muteButton_.setVisible(false);
     } else {
-        muteButton_.setBounds(muteArea);
+        muteButton_.setBounds(headerArea.removeFromRight(18));
         masterMuteButton_.setVisible(false);
     }
     headerArea.removeFromRight(8);

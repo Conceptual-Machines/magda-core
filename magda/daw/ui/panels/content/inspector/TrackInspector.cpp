@@ -164,9 +164,9 @@ TrackInspector::TrackInspector() {
     speakerButton_->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
     speakerButton_->setClickingTogglesState(true);
     speakerButton_->setColour(juce::DrawableButton::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
+                              juce::Colours::transparentBlack);
     speakerButton_->setColour(juce::DrawableButton::backgroundOnColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
+                              juce::Colours::transparentBlack);
     speakerButton_->setEdgeIndent(2);
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
