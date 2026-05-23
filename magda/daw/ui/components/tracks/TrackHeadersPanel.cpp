@@ -600,6 +600,23 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
     muteButton->setClickingTogglesState(true);
 
+    // Master-only speaker mute (shown instead of the "M" button for the master),
+    // matching the inspector and mixer master strips.
+    {
+        auto onIcon = juce::Drawable::createFromImageData(BinaryData::volume_up_svg,
+                                                          BinaryData::volume_up_svgSize);
+        auto offIcon = juce::Drawable::createFromImageData(BinaryData::volume_off_svg,
+                                                           BinaryData::volume_off_svgSize);
+        masterMuteButton =
+            std::make_unique<juce::DrawableButton>("masterMute", juce::DrawableButton::ImageFitted);
+        masterMuteButton->setImages(onIcon.get(), nullptr, nullptr, nullptr, offIcon.get());
+        masterMuteButton->setClickingTogglesState(true);
+        masterMuteButton->setColour(juce::DrawableButton::backgroundColourId,
+                                    juce::Colours::transparentBlack);
+        masterMuteButton->setColour(juce::DrawableButton::backgroundOnColourId,
+                                    juce::Colours::transparentBlack);
+    }
+
     soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));
     soloButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     soloButton->setColour(juce::TextButton::buttonColourId,
@@ -1181,6 +1198,8 @@ void TrackHeadersPanel::tracksChanged() {
         // Add components
         addAndMakeVisible(*header->nameLabel);
         addAndMakeVisible(*header->muteButton);
+        if (header->isMaster)
+            addChildComponent(*header->masterMuteButton);  // shown by layout for master
         addAndMakeVisible(*header->soloButton);
         addAndMakeVisible(*header->recordButton);
         addAndMakeVisible(*header->monitorButton);
@@ -1219,6 +1238,7 @@ void TrackHeadersPanel::tracksChanged() {
 
         // Update UI state
         header->muteButton->setToggleState(track->muted, juce::dontSendNotification);
+        header->masterMuteButton->setToggleState(track->muted, juce::dontSendNotification);
         header->soloButton->setToggleState(track->soloed, juce::dontSendNotification);
         header->recordButton->setToggleState(track->recordArmed, juce::dontSendNotification);
         header->volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
@@ -1287,6 +1307,7 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
 
         header.nameLabel->setText(track->name, juce::dontSendNotification);
         header.muteButton->setToggleState(track->muted, juce::dontSendNotification);
+        header.masterMuteButton->setToggleState(track->muted, juce::dontSendNotification);
         header.soloButton->setToggleState(track->soloed, juce::dontSendNotification);
         header.recordButton->setToggleState(track->recordArmed, juce::dontSendNotification);
 
@@ -1873,6 +1894,17 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         }
     };
 
+    // Master uses the speaker toggle, which drives the master channel directly.
+    header.masterMuteButton->onClick = [this, trackId]() {
+        int index = getVisibleHeaderIndex(trackId);
+        if (index >= 0) {
+            auto& header = *trackHeaders[index];
+            header.muted = header.masterMuteButton->getToggleState();
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetMasterMuteCommand>(header.muted));
+        }
+    };
+
     // Solo button callback - updates TrackManager
     header.soloButton->onClick = [this, trackId, getEditTargets]() {
         int index = getVisibleHeaderIndex(trackId);
@@ -2274,7 +2306,10 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
         header.volumeLabel->setBounds(content.removeFromLeft(content.getWidth() - btnW - gap));
         header.volumeLabel->setVisible(true);
         content.removeFromLeft(gap);
-        header.muteButton->setBounds(content);
+        // Master uses the speaker toggle in place of the "M" button.
+        header.muteButton->setVisible(false);
+        header.masterMuteButton->setBounds(content);
+        header.masterMuteButton->setVisible(true);
         header.soloButton->setVisible(false);
         header.panLabel->setVisible(false);
         header.recordButton->setVisible(false);

@@ -164,6 +164,9 @@ class TrackHeadersPanel : public juce::Component,
         // UI components
         std::unique_ptr<juce::Label> nameLabel;
         std::unique_ptr<juce::TextButton> muteButton;
+        // Master-only mute: a speaker toggle matching the inspector/mixer, used
+        // in place of the "M" muteButton when isMaster.
+        std::unique_ptr<juce::DrawableButton> masterMuteButton;
         std::unique_ptr<juce::TextButton> soloButton;
         std::unique_ptr<juce::TextButton> recordButton;        // Record arm button
         std::unique_ptr<juce::TextButton> monitorButton;       // Input monitor button
