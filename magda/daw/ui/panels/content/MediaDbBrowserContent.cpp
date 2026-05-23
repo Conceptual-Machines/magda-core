@@ -2120,59 +2120,57 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
         return;
     }
 
-    auto* alert = new juce::AlertWindow("Index Folder",
-                                        "Optional tags are written to each scanned media row.",
-                                        juce::MessageBoxIconType::NoIcon);
-    alert->addTextEditor("custom_tags", "", "Tags:");
-    juce::StringArray yesNo;
-    yesNo.add("No");
-    yesNo.add("Yes");
-    alert->addComboBox("folder_tag", yesNo, "Use folder name:");
-    alert->addComboBox("path_tags", yesNo, "Use subfolder names:");
-    if (auto* cb = alert->getComboBoxComponent("folder_tag")) {
-        cb->setSelectedId(2, juce::dontSendNotification);
-    }
-    if (auto* cb = alert->getComboBoxComponent("path_tags")) {
-        cb->setSelectedId(1, juce::dontSendNotification);
-    }
-    alert->addButton("Start", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    // The tag-options dialog is wrapped in a lambda so the analyzer-missing
+    // warning below can gate it on the user's choice. Calling the warning
+    // ahead of the tag dialog lets the user bail before filling anything
+    // in, instead of being prompted twice (once for tags, once for the
+    // warning).
+    auto presentTagOptionsDialog = [this, dir, mode]() {
+        auto* alert =
+            new juce::AlertWindow("Index Folder",
+                                  "Optional tags are written to each scanned media row.",
+                                  juce::MessageBoxIconType::NoIcon);
+        alert->addTextEditor("custom_tags", "", "Tags:");
+        juce::StringArray yesNo;
+        yesNo.add("No");
+        yesNo.add("Yes");
+        alert->addComboBox("folder_tag", yesNo, "Use folder name:");
+        alert->addComboBox("path_tags", yesNo, "Use subfolder names:");
+        if (auto* cb = alert->getComboBoxComponent("folder_tag")) {
+            cb->setSelectedId(2, juce::dontSendNotification);
+        }
+        if (auto* cb = alert->getComboBoxComponent("path_tags")) {
+            cb->setSelectedId(1, juce::dontSendNotification);
+        }
+        alert->addButton("Start", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
-    const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
-    alert->enterModalState(
-        true, juce::ModalCallbackFunction::create([alert, self, dir, mode](int result) mutable {
-            if (result != 1) {
+        const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+        alert->enterModalState(
+            true,
+            juce::ModalCallbackFunction::create([alert, self, dir, mode](int result) mutable {
+                if (result != 1) {
+                    delete alert;
+                    return;
+                }
+
+                magda::media::MediaDbIndexer::ScanTagOptions options;
+                options.root = std::filesystem::path(dir.getFullPathName().toStdString());
+                options.customTags = parseTags(alert->getTextEditorContents("custom_tags"));
+                if (auto* cb = alert->getComboBoxComponent("folder_tag")) {
+                    options.includeRootFolderName = cb->getSelectedId() == 2;
+                }
+                if (auto* cb = alert->getComboBoxComponent("path_tags")) {
+                    options.includePathNodes = cb->getSelectedId() == 2;
+                }
                 delete alert;
-                return;
-            }
 
-            magda::media::MediaDbIndexer::ScanTagOptions options;
-            options.root = std::filesystem::path(dir.getFullPathName().toStdString());
-            options.customTags = parseTags(alert->getTextEditorContents("custom_tags"));
-            if (auto* cb = alert->getComboBoxComponent("folder_tag")) {
-                options.includeRootFolderName = cb->getSelectedId() == 2;
-            }
-            if (auto* cb = alert->getComboBoxComponent("path_tags")) {
-                options.includePathNodes = cb->getSelectedId() == 2;
-            }
-            delete alert;
+                if (self != nullptr) {
+                    self->startIndexingWithOptions(dir, mode, std::move(options));
+                }
+            }));
+    };
 
-            if (self != nullptr) {
-                self->startIndexingWithOptions(dir, mode, std::move(options));
-            }
-        }));
-}
-
-void MediaDbBrowserContent::startIndexingWithOptions(
-    const juce::File& dir, magda::media::MediaDbIndexer::Mode mode,
-    magda::media::MediaDbIndexer::ScanTagOptions tagOptions) {
-    if (indexing_ || !dir.isDirectory()) {
-        return;  // Already running, or invalid target — ignore.
-    }
-
-    // Warn if the Sample Analyzer isn't installed — indexing still works, but
-    // semantic / similarity search won't be available. The dialog now offers
-    // Cancel so the user can bail before any scan work begins.
     if (!magda::media::SampleTaggerDownloader::isInstalled()) {
         const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
         juce::AlertWindow::showAsync(
@@ -2185,13 +2183,25 @@ void MediaDbBrowserContent::startIndexingWithOptions(
                     "Install it any time from AI Settings > Sample Analyzer.")
                 .withButton("Continue indexing")
                 .withButton("Cancel"),
-            [self, dir, mode, tagOptions = std::move(tagOptions)](int result) mutable {
+            [self, presentTagOptionsDialog = std::move(presentTagOptionsDialog)](int result) {
                 if (auto* page = self.getComponent(); page != nullptr && result == 1) {
-                    page->runIndexing(dir, mode, std::move(tagOptions));
+                    presentTagOptionsDialog();
                 }
             });
         return;
     }
+    presentTagOptionsDialog();
+}
+
+void MediaDbBrowserContent::startIndexingWithOptions(
+    const juce::File& dir, magda::media::MediaDbIndexer::Mode mode,
+    magda::media::MediaDbIndexer::ScanTagOptions tagOptions) {
+    if (indexing_ || !dir.isDirectory()) {
+        return;  // Already running, or invalid target — ignore.
+    }
+    // Sample-Analyzer-missing warning lives upstream in startIndexing(),
+    // ahead of the tag-options dialog, so by the time we land here the
+    // user has already chosen to proceed.
     runIndexing(dir, mode, std::move(tagOptions));
 }
 
