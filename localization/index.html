@@ -613,6 +613,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../interface/controllers/" class="md-nav__link">
         
   
@@ -874,6 +896,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../panels/media-library/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Media Library
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../panels/ai-assistant/" class="md-nav__link">
         
   
@@ -895,9 +939,21 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../panels/editors/" class="md-nav__link">
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
         
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_11_5" id="__nav_11_5_label" tabindex="0">
+            
   
   <span class="md-ellipsis">
     Editors
@@ -905,7 +961,129 @@
   </span>
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_11_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_5">
+            <span class="md-nav__icon md-icon"></span>
+            Editors
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../panels/editors/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../panels/piano-roll/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Piano Roll
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../panels/drum-grid-editor/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Drum Grid Editor
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../panels/waveform-editor/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Waveform Editor
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../panels/track-chain/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Track Chain
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1710,7 +1888,7 @@
 <h1 id="localization">Localization<a class="headerlink" href="#localization" title="Permanent link">&para;</a></h1>
 <p>MAGDA's interface can be displayed in multiple languages. Simplified Chinese (<code>zh-CN</code>) is the first non-English locale; more are added as community translations are completed.</p>
 <h2 id="switching-language">Switching Language<a class="headerlink" href="#switching-language" title="Permanent link">&para;</a></h2>
-<p>Set the UI language from <strong><a href="../interface/preferences/">Preferences</a> &gt; Language</strong>. The dropdown lists every locale that ships with a matching <code>.json</code> file in MAGDA's <code>lang/</code> folder. A restart is required after switching.</p>
+<p>Set the UI language from <strong><a href="../interface/preferences/">Preferences</a> &gt; Language</strong>. The dropdown lists every language MAGDA ships with. A restart is required after switching.</p>
 <h2 id="contributing-translations">Contributing Translations<a class="headerlink" href="#contributing-translations" title="Permanent link">&para;</a></h2>
 <p>MAGDA's translations are managed on Crowdin:</p>
 <p><a href="https://crowdin.com/project/magda">https://crowdin.com/project/magda</a></p>
@@ -1720,7 +1898,7 @@
 <li>Once approved, translate strings directly in the browser editor.</li>
 <li>Approved translations sync back to MAGDA through an automated pull request — no manual file handling required.</li>
 </ol>
-<p>New locales appear in <strong>Preferences &gt; Language</strong> once they have been synced into the <code>lang/</code> folder and shipped in a release.</p>
+<p>New locales appear in <strong>Preferences &gt; Language</strong> once their translations are complete and shipped in a release.</p>
 <h2 id="what-is-not-translated">What is Not Translated<a class="headerlink" href="#what-is-not-translated" title="Permanent link">&para;</a></h2>
 <p>Some strings are deliberately kept in English across every locale:</p>
 <ul>

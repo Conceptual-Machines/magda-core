@@ -543,6 +543,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../interface/controllers/" class="md-nav__link">
         
   
@@ -804,6 +826,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../panels/media-library/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Media Library
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../panels/ai-assistant/" class="md-nav__link">
         
   
@@ -825,9 +869,21 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../panels/editors/" class="md-nav__link">
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
         
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_11_5" id="__nav_11_5_label" tabindex="0">
+            
   
   <span class="md-ellipsis">
     Editors
@@ -835,7 +891,129 @@
   </span>
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_11_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_5">
+            <span class="md-nav__icon md-icon"></span>
+            Editors
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/editors/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/piano-roll/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Piano Roll
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/drum-grid-editor/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Drum Grid Editor
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/waveform-editor/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Waveform Editor
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/track-chain/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Track Chain
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1220,6 +1398,15 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pad-envelope-and-macros" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pad Envelope and Macros
+    </span>
+  </a>
   
 </li>
       
@@ -1766,6 +1953,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#pad-envelope-and-macros" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pad Envelope and Macros
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#midi-mapping" class="md-nav__link">
     <span class="md-ellipsis">
       MIDI Mapping
@@ -1804,6 +2000,7 @@
 <li>Pads can be triggered from the Piano Roll, the Drum Grid Editor (bottom panel), or a MIDI controller</li>
 <li>Click a pad to select it and view its chain in the Inspector</li>
 </ul>
+<p>Pad <strong>labels</strong>, instrument <strong>roles</strong>, and <strong>drumkits</strong> are managed by right-clicking rows in the <a href="../../panels/drum-grid-editor/#row-labels-and-roles">Drum Grid Editor</a>.</p>
 <h2 id="per-pad-fx-chain">Per-Pad FX Chain<a class="headerlink" href="#per-pad-fx-chain" title="Permanent link">&para;</a></h2>
 <p>Each pad has its own FX chain, just like a regular track. You can add plugins, built-in devices, or racks to any pad's chain. This allows effects like distortion on a snare without affecting the kick.</p>
 <h2 id="per-pad-mix">Per-Pad Mix<a class="headerlink" href="#per-pad-mix" title="Permanent link">&para;</a></h2>
@@ -1820,7 +2017,13 @@
 <li>Each pad plays one sample at a time</li>
 </ul>
 <h3 id="multi-sample-drop">Multi-Sample Drop<a class="headerlink" href="#multi-sample-drop" title="Permanent link">&para;</a></h3>
-<p>Select several samples in the <a href="../../panels/browsers/">Media Explorer</a> and drag them onto any pad. Samples fill consecutive pads in selection order, starting from the drop target. While dragging, every pad that will receive a sample lights up so you can see the range before releasing.</p>
+<p>Select several samples in the <a href="../../panels/browsers/">Media Explorer</a> or <a href="../../panels/media-library/">Media Library</a> and drag them onto any pad. Samples fill consecutive pads in selection order, starting from the drop target. While dragging, every pad that will receive a sample lights up so you can see the range before releasing.</p>
+<h2 id="pad-envelope-and-macros">Pad Envelope and Macros<a class="headerlink" href="#pad-envelope-and-macros" title="Permanent link">&para;</a></h2>
+<p>Each pad plays its sample through MAGDA's sampler, which has an amplitude envelope you can shape per pad:</p>
+<ul>
+<li><strong>Attack</strong> (ATK), <strong>Decay</strong> (DEC), <strong>Sustain</strong> (SUS), <strong>Release</strong> (REL)</li>
+</ul>
+<p>These ADSR controls are full modulation targets. You can link them to the Drum Grid's <a href="../../modulation/macros/">macros</a> and modulate them with LFOs or envelopes the same way as any other parameter (see <a href="../../modulation/linking/">Linking Parameters</a>). Slicing a sample across several pads gives each slice its own envelope, so a single macro can, for example, tighten every slice's release at once.</p>
 <h2 id="midi-mapping">MIDI Mapping<a class="headerlink" href="#midi-mapping" title="Permanent link">&para;</a></h2>
 <p>The default mapping assigns pads to General MIDI drum note numbers (kick = C1, snare = D1, etc.), but pads can be remapped to any MIDI note.</p>
 

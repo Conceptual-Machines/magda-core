@@ -543,6 +543,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../interface/controllers/" class="md-nav__link">
         
   
@@ -804,6 +826,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../panels/media-library/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Media Library
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../panels/ai-assistant/" class="md-nav__link">
         
   
@@ -825,9 +869,21 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../panels/editors/" class="md-nav__link">
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
         
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_11_5" id="__nav_11_5_label" tabindex="0">
+            
   
   <span class="md-ellipsis">
     Editors
@@ -835,7 +891,129 @@
   </span>
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_11_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_5">
+            <span class="md-nav__icon md-icon"></span>
+            Editors
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../panels/editors/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../panels/piano-roll/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Piano Roll
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../panels/drum-grid-editor/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Drum Grid Editor
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../panels/waveform-editor/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Waveform Editor
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../panels/track-chain/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Track Chain
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1437,6 +1615,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#duplicating-clips-with-automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Duplicating Clips with Automation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#removing-automation" class="md-nav__link">
     <span class="md-ellipsis">
       Removing Automation
@@ -1762,6 +1949,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#duplicating-clips-with-automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Duplicating Clips with Automation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#removing-automation" class="md-nav__link">
     <span class="md-ellipsis">
       Removing Automation
@@ -1880,6 +2076,8 @@
 <div class="highlight"><pre><span></span><code>final value = automation lane value + modulator output + macro output
 </code></pre></div>
 <p>This means a slow LFO can wobble around an automation curve, or a macro can offset the whole lane up and down — same parameter, three sources, all live.</p>
+<h2 id="duplicating-clips-with-automation">Duplicating Clips with Automation<a class="headerlink" href="#duplicating-clips-with-automation" title="Permanent link">&para;</a></h2>
+<p>When you duplicate a clip, you can decide whether its automation comes along. Right-click a clip and choose <strong>Duplicate With Automation</strong> to carry the lane data into the copy, or <strong>Duplicate Without Automation</strong> to leave it behind. See <a href="../clips/#editing-clips">Clips — Editing Clips</a>.</p>
 <h2 id="removing-automation">Removing Automation<a class="headerlink" href="#removing-automation" title="Permanent link">&para;</a></h2>
 <p>To remove a single point: right-click → <strong>Delete Point</strong>.
 To clear the whole lane: right-click in the lane → <strong>Clear Lane</strong>.

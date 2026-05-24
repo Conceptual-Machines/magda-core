@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/devices/arpeggiator/">
+        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/panels/media-library/">
       
       
-        <link rel="prev" href="../built-in/">
+        <link rel="prev" href="../browsers/">
       
       
-        <link rel="next" href="../chord-engine/">
+        <link rel="next" href="../ai-assistant/">
       
       
       <link rel="icon" href="../../assets/images/magda-lisa.svg">
@@ -24,7 +24,7 @@
     
     
       
-        <title>Arpeggiator - MAGDA Manual</title>
+        <title>Media Library - MAGDA Manual</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#arpeggiator" class="md-skip">
+        <a href="#media-library" class="md-skip">
           Skip to content
         </a>
       
@@ -113,7 +113,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Arpeggiator
+              Media Library
             
           </span>
         </div>
@@ -738,8 +738,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -749,11 +751,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" checked>
         
           
           <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="">
@@ -768,7 +770,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_11">
             <span class="md-nav__icon md-icon"></span>
             Panels
@@ -782,7 +784,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../panels/inspector/" class="md-nav__link">
+      <a href="../inspector/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -804,7 +806,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../panels/browsers/" class="md-nav__link">
+      <a href="../browsers/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -823,10 +825,31 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../panels/media-library/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Media Library
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   <span class="md-ellipsis">
@@ -836,6 +859,170 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#disk-and-library-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Disk and Library modes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#indexing-folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      Indexing folders
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Indexing folders">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-index-folder-dialog" class="md-nav__link">
+    <span class="md-ellipsis">
+      The Index Folder dialog
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-gets-indexed" class="md-nav__link">
+    <span class="md-ellipsis">
+      What gets indexed
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#searching-and-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      Searching and filtering
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Searching and filtering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#results-columns" class="md-nav__link">
+    <span class="md-ellipsis">
+      Results columns
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#row-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      Row status
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#editing-entries" class="md-nav__link">
+    <span class="md-ellipsis">
+      Editing entries
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ai-sample-analyzer" class="md-nav__link">
+    <span class="md-ellipsis">
+      AI Sample Analyzer
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AI Sample Analyzer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#installing-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      Installing it
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#without-the-analyzer" class="md-nav__link">
+    <span class="md-ellipsis">
+      Without the analyzer
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-sounds-to-your-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      Adding sounds to your project
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pop-out-window" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pop-out window
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#managing-the-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      Managing the database
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -848,7 +1035,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../panels/ai-assistant/" class="md-nav__link">
+      <a href="../ai-assistant/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -908,7 +1095,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../panels/editors/" class="md-nav__link">
+      <a href="../editors/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -930,7 +1117,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../panels/piano-roll/" class="md-nav__link">
+      <a href="../piano-roll/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -952,7 +1139,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../panels/drum-grid-editor/" class="md-nav__link">
+      <a href="../drum-grid-editor/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -974,7 +1161,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../panels/waveform-editor/" class="md-nav__link">
+      <a href="../waveform-editor/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -996,7 +1183,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../panels/track-chain/" class="md-nav__link">
+      <a href="../track-chain/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1026,7 +1213,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../panels/chord-panel/" class="md-nav__link">
+      <a href="../chord-panel/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1052,8 +1239,6 @@
       
   
   
-    
-  
   
   
     
@@ -1065,11 +1250,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
         
           
           <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="">
@@ -1084,7 +1269,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_12">
             <span class="md-nav__icon md-icon"></span>
             Devices
@@ -1098,7 +1283,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../built-in/" class="md-nav__link">
+      <a href="../../devices/built-in/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1117,8 +1302,6 @@
                 
   
   
-    
-  
   
   
     
@@ -1127,11 +1310,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12_2" >
         
           
           <label class="md-nav__link" for="__nav_12_2" id="__nav_12_2_label" tabindex="0">
@@ -1146,7 +1329,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_12_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_12_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
@@ -1157,31 +1340,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  <span class="md-ellipsis">
-    Arpeggiator
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../devices/arpeggiator/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1191,86 +1353,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      Overview
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#parameters" class="md-nav__link">
-    <span class="md-ellipsis">
-      Parameters
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Parameters">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#pattern-timing" class="md-nav__link">
-    <span class="md-ellipsis">
-      Pattern &amp; Timing
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#velocity" class="md-nav__link">
-    <span class="md-ellipsis">
-      Velocity
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#time-bend" class="md-nav__link">
-    <span class="md-ellipsis">
-      Time Bend
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      Usage
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1283,7 +1365,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../chord-engine/" class="md-nav__link">
+      <a href="../../devices/chord-engine/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1305,7 +1387,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../step-sequencer/" class="md-nav__link">
+      <a href="../../devices/step-sequencer/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1373,7 +1455,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../4osc/" class="md-nav__link">
+      <a href="../../devices/4osc/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1395,7 +1477,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../drum-grid/" class="md-nav__link">
+      <a href="../../devices/drum-grid/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1417,7 +1499,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../sampler/" class="md-nav__link">
+      <a href="../../devices/sampler/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1447,7 +1529,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../effects/" class="md-nav__link">
+      <a href="../../devices/effects/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1875,46 +1957,37 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#disk-and-library-modes" class="md-nav__link">
     <span class="md-ellipsis">
-      Overview
+      Disk and Library modes
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#parameters" class="md-nav__link">
+  <a href="#indexing-folders" class="md-nav__link">
     <span class="md-ellipsis">
-      Parameters
+      Indexing folders
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Parameters">
+    <nav class="md-nav" aria-label="Indexing folders">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#pattern-timing" class="md-nav__link">
+  <a href="#the-index-folder-dialog" class="md-nav__link">
     <span class="md-ellipsis">
-      Pattern &amp; Timing
+      The Index Folder dialog
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#velocity" class="md-nav__link">
+  <a href="#what-gets-indexed" class="md-nav__link">
     <span class="md-ellipsis">
-      Velocity
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#time-bend" class="md-nav__link">
-    <span class="md-ellipsis">
-      Time Bend
+      What gets indexed
     </span>
   </a>
   
@@ -1926,9 +1999,102 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
+  <a href="#searching-and-filtering" class="md-nav__link">
     <span class="md-ellipsis">
-      Usage
+      Searching and filtering
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Searching and filtering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#results-columns" class="md-nav__link">
+    <span class="md-ellipsis">
+      Results columns
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#row-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      Row status
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#editing-entries" class="md-nav__link">
+    <span class="md-ellipsis">
+      Editing entries
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ai-sample-analyzer" class="md-nav__link">
+    <span class="md-ellipsis">
+      AI Sample Analyzer
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AI Sample Analyzer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#installing-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      Installing it
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#without-the-analyzer" class="md-nav__link">
+    <span class="md-ellipsis">
+      Without the analyzer
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-sounds-to-your-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      Adding sounds to your project
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pop-out-window" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pop-out window
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#managing-the-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      Managing the database
     </span>
   </a>
   
@@ -1953,114 +2119,139 @@
   
 
 
-<h1 id="arpeggiator">Arpeggiator<a class="headerlink" href="#arpeggiator" title="Permanent link">&para;</a></h1>
-<p>The Arpeggiator is a MIDI device that takes held chords and plays them back as a rhythmic pattern — one note at a time, in a chosen order and rate.</p>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p><img alt="Arpeggiator" src="../../assets/images/devices/arpeggiator.png" /></p>
-<p>The Arpeggiator sits on a track's device chain before an instrument. It intercepts incoming MIDI chords and outputs arpeggiated note sequences. Hold a chord on your keyboard and the arpeggiator cycles through its notes at the configured rate and pattern.</p>
-<h2 id="parameters">Parameters<a class="headerlink" href="#parameters" title="Permanent link">&para;</a></h2>
-<h3 id="pattern-timing">Pattern &amp; Timing<a class="headerlink" href="#pattern-timing" title="Permanent link">&para;</a></h3>
+<h1 id="media-library">Media Library<a class="headerlink" href="#media-library" title="Permanent link">&para;</a></h1>
+<p>The <strong>Media Library</strong> is the searchable, indexed side of the left browser panel. Where the <a href="../browsers/#media-explorer">Media Explorer</a> walks your filesystem folder by folder, the Library lets you index folders once and then find sounds by family, shape, key, tempo, tags, or a plain-language description of what you want.</p>
+<p><img alt="Media Library browser" src="../../assets/images/panels/media-library.png" /></p>
+<h2 id="disk-and-library-modes">Disk and Library modes<a class="headerlink" href="#disk-and-library-modes" title="Permanent link">&para;</a></h2>
+<p>The left panel sidebar has two buttons that switch what the browser shows:</p>
+<ul>
+<li><strong>Disk</strong> - the filesystem browser (Media Explorer). Navigate folders and preview files as they sit on disk.</li>
+<li><strong>Library</strong> - the indexed sample database. Searches and filters run against everything you have indexed, regardless of which folder it lives in.</li>
+</ul>
+<p>You index folders from <strong>Disk</strong> mode and then search them from <strong>Library</strong> mode.</p>
+<h2 id="indexing-folders">Indexing folders<a class="headerlink" href="#indexing-folders" title="Permanent link">&para;</a></h2>
+<p>The Library is empty until you index something. In <strong>Disk</strong> mode, right-click any folder:</p>
+<ul>
+<li><strong>Index this folder</strong> - shown when nothing under the folder has been indexed yet. Scans the folder and adds every supported file.</li>
+<li><strong>Scan for new files</strong> - skips files already in the database and only processes ones it has not seen.</li>
+<li><strong>Re-index this folder</strong> - re-derives every file from scratch, ignoring the cache. Use this after a tagging-model change or if entries look wrong.</li>
+<li><strong>Change folder location...</strong> - point an indexed folder at a new path on disk without losing its entries.</li>
+<li><strong>Remove from media library</strong> - drops the folder's entries from the database. The files on disk are untouched.</li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">Always move indexed folders with Change folder location...</p>
+<p>If you move or rename an indexed folder in Finder, Explorer, or your file manager, every entry under it points at a path that no longer exists and the rows are flagged <strong>missing</strong>. Use <strong>Change folder location...</strong> to relocate an indexed folder so the database follows the move and your entries stay intact. If a folder has already been moved by hand, you can recover it: re-index it at the new path, or fix individual files with <strong>Recover missing file...</strong>.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Indexing is manual</p>
+<p>There is no scan-on-startup or live filesystem watcher. The Library only changes when you index, re-index, or scan for new files. When files on disk change after indexing, their rows are flagged (see <a href="#row-status">Row status</a>) so you know to re-scan.</p>
+</div>
+<h3 id="the-index-folder-dialog">The Index Folder dialog<a class="headerlink" href="#the-index-folder-dialog" title="Permanent link">&para;</a></h3>
+<p>When you start indexing, the <strong>Index Folder</strong> dialog lets you attach tags to every row in that scan:</p>
+<ul>
+<li><strong>Tags</strong> - free-text tags applied to all files in the folder (for example a pack name).</li>
+<li><strong>Use folder name</strong> - adds the folder's own name as a tag (on by default).</li>
+<li><strong>Use subfolder names</strong> - adds each subfolder along the path as a tag (off by default).</li>
+</ul>
+<p>Press <strong>Start</strong> to begin. Indexing runs in the background; you can keep working while it scans.</p>
+<h3 id="what-gets-indexed">What gets indexed<a class="headerlink" href="#what-gets-indexed" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Range</th>
-<th>Description</th>
+<th>Kind</th>
+<th>Extensions</th>
+<th>Analysis</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Pattern</strong></td>
-<td>Up, Down, Up/Down, Down/Up, Random, As Played</td>
-<td>Note order within each cycle</td>
+<td>Audio</td>
+<td><code>.wav</code>, <code>.aif</code>, <code>.aiff</code>, <code>.mp3</code>, <code>.flac</code>, <code>.ogg</code></td>
+<td>Full: BPM, key, family, shape, duration, tags</td>
 </tr>
 <tr>
-<td><strong>Rate</strong></td>
-<td>Musical subdivisions (1/1 – 1/32, triplets, dotted)</td>
-<td>Speed of the arpeggio steps</td>
-</tr>
-<tr>
-<td><strong>Octaves</strong></td>
-<td>1–4</td>
-<td>How many octaves the pattern spans before repeating</td>
-</tr>
-<tr>
-<td><strong>Gate</strong></td>
-<td>0–100%</td>
-<td>Note length as a percentage of the step duration. Lower values produce staccato; higher values produce legato.</td>
-</tr>
-<tr>
-<td><strong>Swing</strong></td>
-<td>-100% to 100%</td>
-<td>Offsets every other step for a shuffle feel</td>
-</tr>
-<tr>
-<td><strong>Latch</strong></td>
-<td>On / Off</td>
-<td>When on, the arpeggio continues playing after you release the keys</td>
+<td>Presets</td>
+<td><code>.vstpreset</code>, <code>.aupreset</code>, <code>.mps</code></td>
+<td>Path, format, and parsed metadata only</td>
 </tr>
 </tbody>
 </table>
-<h3 id="velocity">Velocity<a class="headerlink" href="#velocity" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Range</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Vel Mode</strong></td>
-<td>Original, Fixed, Accent</td>
-<td>How output velocity is determined. Original uses the played velocity; Fixed uses a set value; Accent alternates between normal and accent levels.</td>
-</tr>
-<tr>
-<td><strong>Fixed Vel</strong></td>
-<td>0–127</td>
-<td>Velocity value used when Vel Mode is set to Fixed</td>
-</tr>
-</tbody>
-</table>
-<h3 id="time-bend">Time Bend<a class="headerlink" href="#time-bend" title="Permanent link">&para;</a></h3>
-<p>The <a href="../../time-bend/">Time Bend</a> section reshapes the timing of arpeggiated notes within each cycle. Instead of evenly spaced steps, notes can accelerate, decelerate, or cluster in rhythmic patterns.</p>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Range</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Depth</strong></td>
-<td>-1.0 to 1.0</td>
-<td>Curve intensity — positive front-loads notes, negative back-loads them</td>
-</tr>
-<tr>
-<td><strong>Skew</strong></td>
-<td>-1.0 to 1.0</td>
-<td>Shifts the curve's inflection point earlier or later</td>
-</tr>
-<tr>
-<td><strong>Cycles</strong></td>
-<td>1–8</td>
-<td>Repeats the curve within each arpeggio cycle</td>
-</tr>
-</tbody>
-</table>
-<p>The interactive curve display shows the timing transformation in real time. During playback, a green sweep animation tracks the current step position. Drag the handle to shape the curve, or double-click to reset.</p>
-<p>Depth, Skew, and Cycles can be linked to <a href="../../modulation/macros/">Macros</a> for automatable timing modulation — morph from straight to swung patterns in real time.</p>
-<h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
-<ol>
-<li>Place the Arpeggiator before an instrument on a track's device chain</li>
-<li>Play or input a chord — the arpeggiator breaks it into individual notes</li>
-<li>Adjust Pattern, Rate, and Gate to shape the basic rhythm</li>
-<li>Use Time Bend to add rhythmic variation beyond simple swing</li>
-<li>Enable Latch to keep the arpeggio running while you change chords</li>
-</ol>
+<p>For audio, MAGDA derives what it can from the file itself (tempo, key, duration, whether the sound is tonal) and from naming conventions in the path (a <code>kick_120bpm.wav</code> in a <code>.../Drums/Kicks/</code> folder picks up the tempo and a <code>drum</code> family hint).</p>
+<h2 id="searching-and-filtering">Searching and filtering<a class="headerlink" href="#searching-and-filtering" title="Permanent link">&para;</a></h2>
+<p>In <strong>Library</strong> mode the search bar and filter strip drive the results table.</p>
+<ul>
+<li><strong>Search media...</strong> (top bar) - a plain-language semantic search. Type a description like <code>warm analog bass</code> and press <span class="keys"><kbd class="key-enter">Enter</kbd></span> to rank results by how close their sound is to your text. This uses the <a href="#ai-sample-analyzer">AI Sample Analyzer</a> and runs on <span class="keys"><kbd class="key-enter">Enter</kbd></span> rather than per keystroke. Clearing the box restores the unfiltered view.</li>
+<li><strong>File-type icons</strong> (top bar) - the audio / MIDI / preset icons double as the kind filter in Library mode, narrowing results to a file type.</li>
+</ul>
+<p>The filter strip below adds structured filters that combine with the search:</p>
+<ul>
+<li><strong>family</strong> - a closed set: <code>drum</code>, <code>bass</code>, <code>lead</code>, <code>pad</code>, <code>keys</code>, <code>guitar</code>, <code>orchestral</code>, <code>vocal</code>, <code>fx</code>, <code>texture</code>.</li>
+<li><strong>shape</strong> - <code>one-shot</code>, <code>loop</code>, or <code>sustained</code>.</li>
+<li><strong>key</strong> - root note from <code>C</code> to <code>B</code>.</li>
+<li><strong>BPM</strong> - <code>min</code> and <code>max</code> boxes for a tempo range.</li>
+<li><strong>tonal</strong> - toggle to limit results to pitched (tonal) material.</li>
+<li><strong>tags</strong> - free-text keyword filter. Space- or comma-separated tokens are AND-combined against each row's tags (for example <code>drum 808</code>). This works whether or not the Sample Analyzer is installed.</li>
+</ul>
+<p>Results are paginated at 100 rows per page; use the <strong>Prev</strong> / <strong>Next</strong> buttons at the bottom to move between pages.</p>
+<h3 id="results-columns">Results columns<a class="headerlink" href="#results-columns" title="Permanent link">&para;</a></h3>
+<p>The table shows <strong>Name</strong>, <strong>Family</strong>, <strong>Shape</strong>, <strong>BPM</strong>, <strong>Key</strong>, <strong>Duration</strong>, and <strong>Tags</strong>. Drag column headers to reorder them, and use the header's right-click menu to toggle column visibility. The <strong>Tags</strong> column is hidden by default in the docked panel and shown by default in the <a href="#pop-out-window">pop-out window</a>.</p>
+<p>The <strong>Family</strong> and <strong>Shape</strong> cells are clickable pills: click one to reassign a row's family or shape from a menu, without opening the full edit dialog.</p>
+<h3 id="row-status">Row status<a class="headerlink" href="#row-status" title="Permanent link">&para;</a></h3>
+<p>Each row carries an integrity badge:</p>
+<ul>
+<li><strong>ok</strong> - the file on disk matches what was indexed.</li>
+<li><strong>dirty</strong> - the file changed (modified time or size) since it was indexed. Re-scan to refresh it.</li>
+<li><strong>missing</strong> - the file is no longer at its indexed path. Use <strong>Recover missing file...</strong> to point the row at its new location.</li>
+</ul>
+<h2 id="editing-entries">Editing entries<a class="headerlink" href="#editing-entries" title="Permanent link">&para;</a></h2>
+<p>Right-click a row (or a multi-row selection) for per-row actions:</p>
+<ul>
+<li><strong>Edit row fields and tags...</strong> - edit the family, shape, key, BPM, and tags by hand. With multiple rows selected this becomes <strong>Edit selected row fields and tags...</strong> for bulk edits.</li>
+<li><strong>Reset to detected</strong> - discard manual edits and re-derive fields from the file itself.</li>
+<li><strong>Save current clip values to library</strong> - if the file is open as a clip in the project, write that clip's BPM, key, and related values back to the Library row.</li>
+<li><strong>Recover missing file...</strong> - browse to the new location of a file flagged <strong>missing</strong>.</li>
+<li><strong>Find similar sounds to "..."</strong> - find sounds whose audio resembles the selected one (see below).</li>
+<li><strong>Analyze selected rows</strong> - run the <a href="#ai-sample-analyzer">AI Sample Analyzer</a> over the selection.</li>
+<li><strong>Delete selected rows</strong> - remove the rows from the database (the files on disk are untouched).</li>
+</ul>
+<p>The table header's right-click menu also offers <strong>Remove duplicate file rows...</strong> to clear out repeated paths.</p>
+<h2 id="ai-sample-analyzer">AI Sample Analyzer<a class="headerlink" href="#ai-sample-analyzer" title="Permanent link">&para;</a></h2>
+<p>The Sample Analyzer is an optional AI model that listens to your samples and adds two capabilities:</p>
+<ul>
+<li><strong>Semantic text search</strong> - the <strong>Search media...</strong> box can rank sounds by a plain-language description instead of relying on filenames and tags.</li>
+<li><strong>Find similar sounds</strong> - right-click a row to surface other samples that sound like it, ranked by audio similarity.</li>
+</ul>
+<p>It is built on CLAP (Contrastive Language-Audio Pre-training), which embeds audio and text into the same space so the two can be compared.</p>
+<div class="admonition note">
+<p class="admonition-title">Not the CLAP plugin format</p>
+<p>The CLAP used here is a machine-learning model for matching audio to text. It is unrelated to CLAP the audio plugin standard, which shares the acronym but is a different thing entirely.</p>
+</div>
+<h3 id="installing-it">Installing it<a class="headerlink" href="#installing-it" title="Permanent link">&para;</a></h3>
+<p>The analyzer is a separate download, not bundled with the app. Open the <a href="../../interface/ai-settings/#sample-analyzer">AI Settings</a> dialog (<strong>Settings &gt; AI Settings</strong>) and pick the <strong>Sample Analyzer</strong> tab, where it shows the download size and a <strong>Download Sample Analyzer</strong> button. Once installed, <strong>Load</strong> brings the models into memory (they also preload in the background the first time you enter Library mode).</p>
+<p>The <strong>Sample Analyzer</strong> icon (a database icon) in the <a href="../../interface/overview/#footer">footer status bar</a> shows the current state. Its colour reflects the state and the tooltip names it: <strong>not installed</strong>, <strong>installed</strong> (downloaded but not loaded), <strong>loading</strong>, or <strong>loaded</strong>.</p>
+<h3 id="without-the-analyzer">Without the analyzer<a class="headerlink" href="#without-the-analyzer" title="Permanent link">&para;</a></h3>
+<p>Indexing and the Library still work without it; you simply lose semantic search and find-similar. Filename, tag, family, shape, key, and BPM filtering all work on their own. When you index a folder without the analyzer installed, MAGDA warns you and lets you continue. You can install the analyzer later and run <strong>Analyze selected rows</strong> to backfill the audio analysis on rows that were indexed without it.</p>
+<h2 id="adding-sounds-to-your-project">Adding sounds to your project<a class="headerlink" href="#adding-sounds-to-your-project" title="Permanent link">&para;</a></h2>
+<p>Drag rows from the Library into the project exactly as you would from the Media Explorer. Drop targets behave the same way:</p>
+<ul>
+<li><a href="../../arrangement-view/#multi-sample-drag-and-drop">Arrangement View</a> - an empty area creates one track per sample; an existing track appends clips sequentially.</li>
+<li><a href="../../session-view/#multi-sample-drag-and-drop">Session View</a> - an empty area stacks samples into scene rows; an existing track fills consecutive scene slots.</li>
+<li><a href="../../devices/drum-grid/#multi-sample-drop">Drum Grid</a> - samples fill consecutive pads from the drop target.</li>
+</ul>
+<p>Select multiple rows (<span class="keys"><kbd class="key-shift">Shift</kbd></span>-click for a range, <span class="keys"><kbd class="key-command">Cmd</kbd></span>-click / <span class="keys"><kbd class="key-control">Ctrl</kbd></span>-click to toggle individual rows) and drag any one of them to drag the whole selection.</p>
+<div class="admonition note">
+<p class="admonition-title">Linux drag-and-drop</p>
+<p>On macOS and Windows, dragging out of the Library is an OS-level drag, so you can also drop files into Finder, Explorer, or a plugin's file slot. On Linux the drag is internal to MAGDA, so it targets in-app destinations such as tracks and the Drum Grid.</p>
+</div>
+<h2 id="pop-out-window">Pop-out window<a class="headerlink" href="#pop-out-window" title="Permanent link">&para;</a></h2>
+<p>The <strong>Open in window</strong> button (top of the filter strip) detaches the Library into its own resizable window, which is useful when you want a tall results list alongside the arrangement. The pop-out shows the <strong>Tags</strong> column by default.</p>
+<h2 id="managing-the-database">Managing the database<a class="headerlink" href="#managing-the-database" title="Permanent link">&para;</a></h2>
+<p>The database is a rebuildable cache; your audio files on disk remain the source of truth. Its settings live in the <strong>Media Database</strong> section of <a href="../../interface/preferences/">Preferences</a>:</p>
+<ul>
+<li><strong>Database location</strong> - <strong>Browse...</strong> to move the database file, or <strong>Reset</strong> to return it to the default location.</li>
+<li>A statistics line showing how many entries are indexed.</li>
+<li><strong>Wipe database...</strong> - clear every indexed entry and start fresh. This does not delete any files on disk.</li>
+</ul>
 
 
 
