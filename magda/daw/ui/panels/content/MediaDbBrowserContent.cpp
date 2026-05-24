@@ -2089,6 +2089,9 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
                                             "Optional tags are written to each scanned media row.",
                                             juce::MessageBoxIconType::NoIcon);
         alert->addTextEditor("custom_tags", "", "Tags:");
+        // AlertWindow::addCustomComponent does NOT take ownership (it holds a
+        // plain Array<Component*>, not an OwnedArray), so this component must be
+        // deleted by us alongside the alert in every callback path below.
         auto* tagOptionsComponent = new IndexTagOptionsComponent();
         alert->addCustomComponent(tagOptionsComponent);
         alert->addButton("Start", 1, juce::KeyPress(juce::KeyPress::returnKey));
