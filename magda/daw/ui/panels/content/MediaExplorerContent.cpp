@@ -95,22 +95,24 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
                                                  public juce::Timer {
   public:
     ThumbnailComponent() {
-        stopIndexingButton_.setButtonText("Stop");
-        stopIndexingButton_.setTooltip("Stop scanning after the current file");
-        stopIndexingButton_.setColour(juce::TextButton::buttonColourId,
-                                      DarkTheme::getColour(DarkTheme::SURFACE));
-        stopIndexingButton_.setColour(juce::TextButton::textColourOffId,
-                                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        stopIndexingButton_.setColour(juce::TextButton::buttonOnColourId,
-                                      DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
-        stopIndexingButton_.setVisible(false);
-        stopIndexingButton_.onClick = [this]() {
-            stopIndexingButton_.setEnabled(false);
+        stopIndexingButton_ = std::make_unique<magda::SvgButton>(
+            "Stop Scan", BinaryData::server_stop_svg, BinaryData::server_stop_svgSize);
+        stopIndexingButton_->setTooltip("Stop scanning after the current file");
+        stopIndexingButton_->setOriginalColor(juce::Colour(0xffb3b3b3));
+        stopIndexingButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        stopIndexingButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        stopIndexingButton_->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        stopIndexingButton_->setBorderColor(DarkTheme::getBorderColour());
+        stopIndexingButton_->setCornerRadius(5.0f);
+        stopIndexingButton_->setIconPadding(10.0f);
+        stopIndexingButton_->setVisible(false);
+        stopIndexingButton_->onClick = [this]() {
+            stopIndexingButton_->setEnabled(false);
             if (onStopIndexing) {
                 onStopIndexing();
             }
         };
-        addChildComponent(stopIndexingButton_);
+        addChildComponent(*stopIndexingButton_);
     }
 
     ~ThumbnailComponent() override {
@@ -213,7 +215,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
             g.setFont(FontManager::getInstance().getUIFont(11.0F));
             if (indexingActive_) {
-                bounds.removeFromRight(76);
+                bounds.removeFromRight(48);
             }
             g.drawFittedText(indexingStatus_, bounds.reduced(8), juce::Justification::centred, 3);
             return;
@@ -255,15 +257,19 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
 
     void resized() override {
         auto bounds = getLocalBounds().reduced(8, 6);
-        stopIndexingButton_.setBounds(bounds.removeFromRight(64));
+        if (stopIndexingButton_) {
+            stopIndexingButton_->setBounds(bounds.removeFromRight(38).reduced(1));
+        }
     }
 
   private:
     void updateStopIndexingButtonVisibility() {
         const bool showStop =
             indexingActive_ && indexingStatus_.isNotEmpty() && !currentFile_.existsAsFile();
-        stopIndexingButton_.setVisible(showStop);
-        stopIndexingButton_.setEnabled(showStop);
+        if (stopIndexingButton_) {
+            stopIndexingButton_->setVisible(showStop);
+            stopIndexingButton_->setEnabled(showStop);
+        }
     }
 
     void detachThumbnailListener() {
@@ -280,7 +286,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
     double playbackPosition_ = 0.0;
     juce::String indexingStatus_;
     bool indexingActive_ = false;
-    juce::TextButton stopIndexingButton_;
+    std::unique_ptr<magda::SvgButton> stopIndexingButton_;
 };
 
 //==============================================================================
@@ -1656,184 +1662,181 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
             menu.addItem(3, "Index this folder");
         }
 
-        menu.showMenuAsync(
-            juce::PopupMenu::Options(), [this, path, file, alreadyIndexed](int result) {
-                if (result == 1) {
-                    auto favs = magda::Config::getInstance().getBrowserFavorites();
-                    favs.erase(std::remove(favs.begin(), favs.end(), path), favs.end());
-                    magda::Config::getInstance().setBrowserFavorites(favs);
-                    magda::Config::getInstance().save();
-                    sidebarComponent_->rebuildFavoriteButtons();
-                } else if (result == 2) {
-                    auto favs = magda::Config::getInstance().getBrowserFavorites();
-                    favs.push_back(path);
-                    magda::Config::getInstance().setBrowserFavorites(favs);
-                    magda::Config::getInstance().save();
-                    sidebarComponent_->rebuildFavoriteButtons();
-                } else if (result == 3 && dbBrowser_) {
-                    dbBrowser_->startIndexing(
-                        file, alreadyIndexed ? magda::media::MediaDbIndexer::Mode::ForceAll
-                                             : magda::media::MediaDbIndexer::Mode::Incremental);
-                } else if (result == 4 && dbBrowser_) {
-                    dbBrowser_->startIndexing(file, magda::media::MediaDbIndexer::Mode::OnlyNew);
-                } else if (result == 5 && dbBrowser_) {
-                    const auto folderName = file.getFileName();
-                    const auto fsPath = std::filesystem::path(file.getFullPathName().toStdString());
-                    juce::Component::SafePointer<MediaExplorerContent> self(this);
-                    juce::AlertWindow::showAsync(
-                        juce::MessageBoxOptions{}
-                            .withIconType(juce::MessageBoxIconType::WarningIcon)
-                            .withTitle("Remove folder from media library")
-                            .withMessage("Remove every indexed entry under \"" + folderName +
-                                         "\" from the media library?\n"
-                                         "Your audio files on disk are untouched.")
-                            .withButton("Remove")
-                            .withButton("Cancel"),
-                        [self, fsPath](int choice) {
-                            if (self == nullptr || choice != 1) {
-                                return;
-                            }
-                            magda::media::removeFolderFromLibrary(fsPath);
-                            if (self->dbBrowser_ != nullptr) {
-                                self->dbBrowser_->refresh();
-                            }
-                        });
-                } else if (result == 6 && dbBrowser_) {
-                    const auto fsPath = std::filesystem::path(file.getFullPathName().toStdString());
-                    juce::Component::SafePointer<MediaExplorerContent> self(this);
-                    moveFolderChooser_ = std::make_unique<juce::FileChooser>(
-                        "Choose the new parent folder",
-                        file.getParentDirectory().exists()
-                            ? file.getParentDirectory()
-                            : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
-                    moveFolderChooser_->launchAsync(
-                        juce::FileBrowserComponent::openMode |
-                            juce::FileBrowserComponent::canSelectDirectories,
-                        [self, fsPath](const juce::FileChooser& fc) {
-                            if (self == nullptr) {
-                                return;
-                            }
-                            const auto picked = fc.getResult();
-                            if (!picked.isDirectory()) {
-                                return;
-                            }
-                            // The chooser returns the new PARENT directory.
-                            // The folder itself keeps its original name at the
-                            // new location, so build the full destination by
-                            // appending the source folder's leaf name.
-                            const auto newParent =
-                                std::filesystem::path(picked.getFullPathName().toStdString());
-                            const auto newFullPath = newParent / fsPath.filename();
+        menu.showMenuAsync(juce::PopupMenu::Options(), [this, path, file,
+                                                        alreadyIndexed](int result) {
+            if (result == 1) {
+                auto favs = magda::Config::getInstance().getBrowserFavorites();
+                favs.erase(std::remove(favs.begin(), favs.end(), path), favs.end());
+                magda::Config::getInstance().setBrowserFavorites(favs);
+                magda::Config::getInstance().save();
+                sidebarComponent_->rebuildFavoriteButtons();
+            } else if (result == 2) {
+                auto favs = magda::Config::getInstance().getBrowserFavorites();
+                favs.push_back(path);
+                magda::Config::getInstance().setBrowserFavorites(favs);
+                magda::Config::getInstance().save();
+                sidebarComponent_->rebuildFavoriteButtons();
+            } else if (result == 3 && dbBrowser_) {
+                dbBrowser_->startIndexing(
+                    file, alreadyIndexed ? magda::media::MediaDbIndexer::Mode::ForceAll
+                                         : magda::media::MediaDbIndexer::Mode::Incremental);
+            } else if (result == 4 && dbBrowser_) {
+                dbBrowser_->startIndexing(file, magda::media::MediaDbIndexer::Mode::OnlyNew);
+            } else if (result == 5 && dbBrowser_) {
+                const auto folderName = file.getFileName();
+                const auto fsPath = std::filesystem::path(file.getFullPathName().toStdString());
+                juce::Component::SafePointer<MediaExplorerContent> self(this);
+                juce::AlertWindow::showAsync(
+                    juce::MessageBoxOptions{}
+                        .withIconType(juce::MessageBoxIconType::WarningIcon)
+                        .withTitle("Remove folder from media library")
+                        .withMessage("Remove every indexed entry under \"" + folderName +
+                                     "\" from the media library?\n"
+                                     "Your audio files on disk are untouched.")
+                        .withButton("Remove")
+                        .withButton("Cancel"),
+                    [self, fsPath](int choice) {
+                        if (self == nullptr || choice != 1) {
+                            return;
+                        }
+                        magda::media::removeFolderFromLibrary(fsPath);
+                        if (self->dbBrowser_ != nullptr) {
+                            self->dbBrowser_->refresh();
+                        }
+                    });
+            } else if (result == 6 && dbBrowser_) {
+                const auto fsPath = std::filesystem::path(file.getFullPathName().toStdString());
+                juce::Component::SafePointer<MediaExplorerContent> self(this);
+                moveFolderChooser_ = std::make_unique<juce::FileChooser>(
+                    "Choose the new parent folder",
+                    file.getParentDirectory().exists()
+                        ? file.getParentDirectory()
+                        : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+                moveFolderChooser_->launchAsync(
+                    juce::FileBrowserComponent::openMode |
+                        juce::FileBrowserComponent::canSelectDirectories,
+                    [self, fsPath](const juce::FileChooser& fc) {
+                        if (self == nullptr) {
+                            return;
+                        }
+                        const auto picked = fc.getResult();
+                        if (!picked.isDirectory()) {
+                            return;
+                        }
+                        // The chooser returns the new PARENT directory.
+                        // The folder itself keeps its original name at the
+                        // new location, so build the full destination by
+                        // appending the source folder's leaf name.
+                        const auto newParent =
+                            std::filesystem::path(picked.getFullPathName().toStdString());
+                        const auto newFullPath = newParent / fsPath.filename();
 
-                            auto showError = [](const juce::String& msg) {
-                                juce::AlertWindow::showAsync(
-                                    juce::MessageBoxOptions{}
-                                        .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                        .withTitle("Move folder")
-                                        .withMessage(msg)
-                                        .withButton("OK"),
-                                    nullptr);
-                            };
+                        auto showError = [](const juce::String& msg) {
+                            juce::AlertWindow::showAsync(
+                                juce::MessageBoxOptions{}
+                                    .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                    .withTitle("Move folder")
+                                    .withMessage(msg)
+                                    .withButton("OK"),
+                                nullptr);
+                        };
 
-                            if (newFullPath == fsPath) {
-                                showError("The new parent is the folder's current parent — "
-                                          "nothing to do.");
-                                return;
-                            }
-                            std::error_code ec;
-                            if (std::filesystem::exists(newFullPath, ec)) {
-                                showError("A folder named \"" +
-                                          juce::String(fsPath.filename().string()) +
-                                          "\" already exists at the chosen location. Pick a "
-                                          "different parent or remove the existing folder "
-                                          "first.");
-                                return;
-                            }
+                        if (newFullPath == fsPath) {
+                            showError("The new parent is the folder's current parent — "
+                                      "nothing to do.");
+                            return;
+                        }
+                        std::error_code ec;
+                        if (std::filesystem::exists(newFullPath, ec)) {
+                            showError("A folder named \"" +
+                                      juce::String(fsPath.filename().string()) +
+                                      "\" already exists at the chosen location. Pick a "
+                                      "different parent or remove the existing folder "
+                                      "first.");
+                            return;
+                        }
 
-                            // Release every handle MAGDA holds on the
-                            // source tree before attempting the rename.
-                            // Two of our subsystems can keep the source
-                            // alive:
-                            //   1. The file browser's
-                            //      DirectoryContentsList polls its current
-                            //      root and enumerates child entries; if
-                            //      that root is at or under the folder we
-                            //      want to move, switching it away first
-                            //      makes the worker stop walking the
-                            //      doomed directory.
-                            //   2. The preview transport keeps an audio
-                            //      reader open on the last-played file,
-                            //      which sits underneath the source
-                            //      folder when the user just auditioned
-                            //      something from it.
-                            // POSIX would silently let the rename happen
-                            // with these handles still open, but Windows
-                            // returns access-denied — so the cleanup is
-                            // required there and harmless elsewhere.
-                            if (self->fileBrowser_ != nullptr) {
-                                const auto parent = fsPath.parent_path();
-                                if (!parent.empty()) {
-                                    self->fileBrowser_->setRoot(
-                                        juce::File(juce::String(parent.string())));
-                                }
-                            }
-                            self->stopPreview();
-                            if (self->transportSource_) {
-                                self->transportSource_->setSource(nullptr);
-                            }
-                            self->currentPreviewFile_ = juce::File();
-
-                            // Physically move the folder first; only update
-                            // the library rows if that succeeded, otherwise
-                            // the DB would point at a path that doesn't
-                            // exist on disk (the original bug).
-                            std::filesystem::rename(fsPath, newFullPath, ec);
-                            if (ec) {
-                                juce::Logger::writeToLog(
-                                    juce::String("[moveFolder] rename failed: code=") +
-                                    juce::String(ec.value()) + " msg='" +
-                                    juce::String(ec.message()) + "' src='" +
-                                    juce::String(fsPath.string()) + "' dst='" +
-                                    juce::String(newFullPath.string()) + "'");
-                                showError("Could not move the folder on disk: " +
-                                          juce::String(ec.message()) + " (code " +
-                                          juce::String(ec.value()) +
-                                          ").\n\nOn Windows this usually means MAGDA, "
-                                          "File Explorer, or an antivirus is holding the "
-                                          "folder open. Close any preview, switch the "
-                                          "explorer pane to a different folder, then try "
-                                          "again. The media library was not changed.");
-                                return;
-                            }
-
-                            const int rows =
-                                magda::media::moveFolderInLibrary(fsPath, newFullPath);
-                            if (rows < 0) {
-                                // DB update failed after the disk move succeeded.
-                                // Put the folder back so we don't leave the user
-                                // with stale DB rows AND a moved folder.
-                                std::error_code revertEc;
-                                std::filesystem::rename(newFullPath, fsPath, revertEc);
-                                showError(
-                                    "The folder was moved on disk, but the library update "
-                                    "was rolled back (likely a name collision). The folder "
-                                    "has been moved back to its original location.");
-                                return;
-                            }
-                            // Navigate the explorer to the new parent so
-                            // the user lands on the moved folder instead
-                            // of staring at the old (now empty of it)
-                            // location.
-                            if (self->fileBrowser_ != nullptr) {
+                        // Release every handle MAGDA holds on the
+                        // source tree before attempting the rename.
+                        // Two of our subsystems can keep the source
+                        // alive:
+                        //   1. The file browser's
+                        //      DirectoryContentsList polls its current
+                        //      root and enumerates child entries; if
+                        //      that root is at or under the folder we
+                        //      want to move, switching it away first
+                        //      makes the worker stop walking the
+                        //      doomed directory.
+                        //   2. The preview transport keeps an audio
+                        //      reader open on the last-played file,
+                        //      which sits underneath the source
+                        //      folder when the user just auditioned
+                        //      something from it.
+                        // POSIX would silently let the rename happen
+                        // with these handles still open, but Windows
+                        // returns access-denied — so the cleanup is
+                        // required there and harmless elsewhere.
+                        if (self->fileBrowser_ != nullptr) {
+                            const auto parent = fsPath.parent_path();
+                            if (!parent.empty()) {
                                 self->fileBrowser_->setRoot(
-                                    juce::File(juce::String(newParent.string())));
+                                    juce::File(juce::String(parent.string())));
                             }
-                            if (self->dbBrowser_ != nullptr) {
-                                self->dbBrowser_->refresh();
-                            }
-                        });
-                }
-            });
+                        }
+                        self->stopPreview();
+                        if (self->transportSource_) {
+                            self->transportSource_->setSource(nullptr);
+                        }
+                        self->currentPreviewFile_ = juce::File();
+
+                        // Physically move the folder first; only update
+                        // the library rows if that succeeded, otherwise
+                        // the DB would point at a path that doesn't
+                        // exist on disk (the original bug).
+                        std::filesystem::rename(fsPath, newFullPath, ec);
+                        if (ec) {
+                            juce::Logger::writeToLog(
+                                juce::String("[moveFolder] rename failed: code=") +
+                                juce::String(ec.value()) + " msg='" + juce::String(ec.message()) +
+                                "' src='" + juce::String(fsPath.string()) + "' dst='" +
+                                juce::String(newFullPath.string()) + "'");
+                            showError(
+                                "Could not move the folder on disk: " + juce::String(ec.message()) +
+                                " (code " + juce::String(ec.value()) +
+                                ").\n\nOn Windows this usually means MAGDA, "
+                                "File Explorer, or an antivirus is holding the "
+                                "folder open. Close any preview, switch the "
+                                "explorer pane to a different folder, then try "
+                                "again. The media library was not changed.");
+                            return;
+                        }
+
+                        const int rows = magda::media::moveFolderInLibrary(fsPath, newFullPath);
+                        if (rows < 0) {
+                            // DB update failed after the disk move succeeded.
+                            // Put the folder back so we don't leave the user
+                            // with stale DB rows AND a moved folder.
+                            std::error_code revertEc;
+                            std::filesystem::rename(newFullPath, fsPath, revertEc);
+                            showError("The folder was moved on disk, but the library update "
+                                      "was rolled back (likely a name collision). The folder "
+                                      "has been moved back to its original location.");
+                            return;
+                        }
+                        // Navigate the explorer to the new parent so
+                        // the user lands on the moved folder instead
+                        // of staring at the old (now empty of it)
+                        // location.
+                        if (self->fileBrowser_ != nullptr) {
+                            self->fileBrowser_->setRoot(
+                                juce::File(juce::String(newParent.string())));
+                        }
+                        if (self->dbBrowser_ != nullptr) {
+                            self->dbBrowser_->refresh();
+                        }
+                    });
+            }
+        });
         return;
     }
 

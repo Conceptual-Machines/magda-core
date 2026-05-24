@@ -88,6 +88,38 @@ std::optional<std::string> selectedString(const juce::ComboBox& cb,
     return table[static_cast<size_t>(id - 1)].toStdString();
 }
 
+class IndexTagOptionsComponent final : public juce::Component {
+  public:
+    IndexTagOptionsComponent() {
+        addAndMakeVisible(includeRootFolderName_);
+        addAndMakeVisible(includePathNodes_);
+
+        includeRootFolderName_.setToggleState(true, juce::dontSendNotification);
+        includePathNodes_.setToggleState(false, juce::dontSendNotification);
+
+        setSize(280, 58);
+    }
+
+    bool includeRootFolderName() const {
+        return includeRootFolderName_.getToggleState();
+    }
+
+    bool includePathNodes() const {
+        return includePathNodes_.getToggleState();
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds();
+        includeRootFolderName_.setBounds(bounds.removeFromTop(24));
+        bounds.removeFromTop(6);
+        includePathNodes_.setBounds(bounds.removeFromTop(24));
+    }
+
+  private:
+    juce::ToggleButton includeRootFolderName_{"Use folder name"};
+    juce::ToggleButton includePathNodes_{"Use subfolder names"};
+};
+
 juce::String prettyDuration(std::optional<double> seconds) {
     if (!seconds) {
         return "-";
@@ -2057,38 +2089,28 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
                                             "Optional tags are written to each scanned media row.",
                                             juce::MessageBoxIconType::NoIcon);
         alert->addTextEditor("custom_tags", "", "Tags:");
-        juce::StringArray yesNo;
-        yesNo.add("No");
-        yesNo.add("Yes");
-        alert->addComboBox("folder_tag", yesNo, "Use folder name:");
-        alert->addComboBox("path_tags", yesNo, "Use subfolder names:");
-        if (auto* cb = alert->getComboBoxComponent("folder_tag")) {
-            cb->setSelectedId(2, juce::dontSendNotification);
-        }
-        if (auto* cb = alert->getComboBoxComponent("path_tags")) {
-            cb->setSelectedId(1, juce::dontSendNotification);
-        }
+        auto* tagOptionsComponent = new IndexTagOptionsComponent();
+        alert->addCustomComponent(tagOptionsComponent);
         alert->addButton("Start", 1, juce::KeyPress(juce::KeyPress::returnKey));
         alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
         const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
         alert->enterModalState(
-            true, juce::ModalCallbackFunction::create([alert, self, dir, mode](int result) mutable {
+            true, juce::ModalCallbackFunction::create([alert, tagOptionsComponent, self, dir,
+                                                       mode](int result) mutable {
                 if (result != 1) {
                     delete alert;
+                    delete tagOptionsComponent;
                     return;
                 }
 
                 magda::media::MediaDbIndexer::ScanTagOptions options;
                 options.root = std::filesystem::path(dir.getFullPathName().toStdString());
                 options.customTags = parseTags(alert->getTextEditorContents("custom_tags"));
-                if (auto* cb = alert->getComboBoxComponent("folder_tag")) {
-                    options.includeRootFolderName = cb->getSelectedId() == 2;
-                }
-                if (auto* cb = alert->getComboBoxComponent("path_tags")) {
-                    options.includePathNodes = cb->getSelectedId() == 2;
-                }
+                options.includeRootFolderName = tagOptionsComponent->includeRootFolderName();
+                options.includePathNodes = tagOptionsComponent->includePathNodes();
                 delete alert;
+                delete tagOptionsComponent;
 
                 if (self != nullptr) {
                     self->startIndexingWithOptions(dir, mode, std::move(options));
