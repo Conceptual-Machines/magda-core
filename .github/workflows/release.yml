@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build-macos:
-    runs-on: macos-14  # Apple Silicon, can build universal binaries
+    runs-on: macos-14  # Apple Silicon; arm64-only (ONNX Runtime 1.26 has no Intel macOS build)
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -44,13 +44,13 @@ jobs:
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Version: $VERSION"
 
-    - name: Configure CMake (Universal Binary)
+    - name: Configure CMake (arm64)
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+          -DCMAKE_OSX_ARCHITECTURES="arm64" \
           -DCMAKE_OSX_DEPLOYMENT_TARGET="11.0" \
           -DMAGDA_BUILD_TESTS=OFF \
           -DMAGDA_FULL_VERSION="$VERSION" \
@@ -149,7 +149,7 @@ jobs:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
         APP_PATH="build/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
-        DMG_NAME="MAGDA-${VERSION}-macOS-Universal.dmg"
+        DMG_NAME="MAGDA-${VERSION}-macOS-arm64.dmg"
 
         # create-dmg may exit non-zero if AppleScript Finder styling fails
         # (common on CI). The DMG is still valid in that case.
@@ -178,7 +178,7 @@ jobs:
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
-        DMG_NAME="MAGDA-${VERSION}-macOS-Universal.dmg"
+        DMG_NAME="MAGDA-${VERSION}-macOS-arm64.dmg"
         codesign --force --sign "Developer ID Application: Luca Romagnoli (VH54FX3Z7U)" "$DMG_NAME"
         codesign --verify --verbose "$DMG_NAME"
 
@@ -189,7 +189,7 @@ jobs:
         NOTARIZATION_APPLE_ID: ${{ secrets.NOTARIZATION_APPLE_ID }}
         NOTARIZATION_PASSWORD: ${{ secrets.NOTARIZATION_PASSWORD }}
       run: |
-        DMG_NAME="MAGDA-${VERSION}-macOS-Universal.dmg"
+        DMG_NAME="MAGDA-${VERSION}-macOS-arm64.dmg"
 
         echo "Submitting for notarization..."
         SUBMIT_OUTPUT=$(xcrun notarytool submit "$DMG_NAME" \
@@ -228,7 +228,7 @@ jobs:
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
-        DMG_NAME="MAGDA-${VERSION}-macOS-Universal.dmg"
+        DMG_NAME="MAGDA-${VERSION}-macOS-arm64.dmg"
         shasum -a 256 "$DMG_NAME" > "${DMG_NAME}.sha256"
         cat "${DMG_NAME}.sha256"
 
@@ -237,8 +237,8 @@ jobs:
       with:
         name: macos-release
         path: |
-          MAGDA-*-macOS-Universal.dmg
-          MAGDA-*-macOS-Universal.dmg.sha256
+          MAGDA-*-macOS-arm64.dmg
+          MAGDA-*-macOS-arm64.dmg.sha256
 
     - name: Clean up
       if: always()
