@@ -567,8 +567,8 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onZoomToFit = [this]() {
         if (mainComponent && mainComponent->mainView) {
             auto& tc = mainComponent->mainView->getTimelineController();
-            double length = tc.getState().timelineLength;
-            tc.dispatch(ZoomToFitEvent{0.0, length});
+            double lengthBeats = tc.getState().timelineLengthBeats;
+            tc.dispatch(ZoomToFitBeatsEvent{0.0, lengthBeats});
         }
     };
 
@@ -577,7 +577,7 @@ void MainWindow::setupMenuCallbacks() {
             auto& tc = mainComponent->mainView->getTimelineController();
             const auto& loop = tc.getState().loop;
             if (loop.isValid() && loop.enabled) {
-                tc.dispatch(ZoomToFitEvent{loop.startTime, loop.endTime});
+                tc.dispatch(ZoomToFitBeatsEvent{loop.startBeats, loop.endBeats});
             }
         }
     };
@@ -587,7 +587,7 @@ void MainWindow::setupMenuCallbacks() {
             auto& tc = mainComponent->mainView->getTimelineController();
             const auto& sel = tc.getState().selection;
             if (sel.isActive()) {
-                tc.dispatch(ZoomToFitEvent{sel.startTime, sel.endTime});
+                tc.dispatch(ZoomToFitBeatsEvent{sel.startBeats, sel.endBeats});
             }
         }
     };
@@ -634,15 +634,16 @@ void MainWindow::setupMenuCallbacks() {
 
     callbacks.onGoToStart = [this]() {
         if (mainComponent && mainComponent->mainView) {
-            mainComponent->mainView->getTimelineController().dispatch(SetEditPositionEvent{0.0});
+            mainComponent->mainView->getTimelineController().dispatch(
+                SetEditPositionBeatsEvent{0.0});
         }
     };
 
     callbacks.onGoToEnd = [this]() {
         if (mainComponent && mainComponent->mainView) {
             auto& tc = mainComponent->mainView->getTimelineController();
-            double length = tc.getState().timelineLength;
-            tc.dispatch(SetEditPositionEvent{length});
+            double lengthBeats = tc.getState().timelineLengthBeats;
+            tc.dispatch(SetEditPositionBeatsEvent{lengthBeats});
         }
     };
 

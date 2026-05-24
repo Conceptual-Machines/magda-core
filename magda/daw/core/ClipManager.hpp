@@ -263,6 +263,12 @@ class ClipManager {
      *         touch offset / phase / loop start. */
     void setLoopLength(ClipId clipId, double loopLength, double bpm = 120.0);
 
+    /** @brief Set MIDI loop region start in beats. Does NOT touch offset / phase. */
+    void setMidiLoopStartBeats(ClipId clipId, double loopStartBeats, double bpm = 120.0);
+
+    /** @brief Set MIDI loop region length in beats. Does NOT touch offset / phase / loop start. */
+    void setMidiLoopLengthBeats(ClipId clipId, double loopLengthBeats, double bpm = 120.0);
+
     /** @brief Composite operation: relocate the loop region (start + length)
      *         AND snap phase to 0 by setting offset = loopStart whenever
      *         loopStart actually moved.

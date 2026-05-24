@@ -1185,6 +1185,11 @@ void ClipManager::setLoopStart(ClipId clipId, double loopStart, double bpm) {
             sanitizeAudioClip(*clip);
         } else {
             clip->loopStart = juce::jmax(0.0, loopStart);
+            if (clip->isMidi()) {
+                const double projectBpm = isValidBpm(bpm) ? bpm : currentProjectTempoOrDefault();
+                clip->loopStartBeats =
+                    projectBpm > 0.0 ? (clip->loopStart * projectBpm) / 60.0 : 0.0;
+            }
             if (clip->isAudio())
                 sanitizeAudioClip(*clip);
         }
@@ -1210,6 +1215,30 @@ void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
             }
             sanitizeAudioClip(*clip);
         }
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::setMidiLoopStartBeats(ClipId clipId, double loopStartBeats, double bpm) {
+    if (auto* clip = getClip(clipId)) {
+        if (!clip->isMidi())
+            return;
+
+        const double projectBpm = isValidBpm(bpm) ? bpm : currentProjectTempoOrDefault();
+        clip->loopStartBeats = juce::jmax(0.0, loopStartBeats);
+        clip->loopStart = projectBpm > 0.0 ? (clip->loopStartBeats * 60.0) / projectBpm : 0.0;
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::setMidiLoopLengthBeats(ClipId clipId, double loopLengthBeats, double bpm) {
+    if (auto* clip = getClip(clipId)) {
+        if (!clip->isMidi())
+            return;
+
+        const double projectBpm = isValidBpm(bpm) ? bpm : currentProjectTempoOrDefault();
+        clip->loopLengthBeats = juce::jmax(0.0, loopLengthBeats);
+        clip->loopLength = projectBpm > 0.0 ? (clip->loopLengthBeats * 60.0) / projectBpm : 0.0;
         notifyClipPropertyChanged(clipId);
     }
 }

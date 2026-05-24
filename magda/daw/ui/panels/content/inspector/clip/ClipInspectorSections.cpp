@@ -49,8 +49,9 @@ double displayBeatsToAudioSourceSeconds(const magda::ClipInfo& clip, double disp
     return info.timelineToSource(displaySeconds);
 }
 
-double timelineStartSeconds(const magda::ClipInfo& clip, double bpm) {
-    return clip.getTimelineStart(bpm);
+double minClipLengthBeats(double bpm) {
+    const double validBpm = magda::isValidBpm(bpm) ? bpm : 120.0;
+    return magda::ClipOperations::MIN_CLIP_LENGTH * validBpm / 60.0;
 }
 
 double timelineLengthSeconds(const magda::ClipInfo& clip, double bpm) {
@@ -547,14 +548,13 @@ void ClipInspector::initClipPropertiesSection() {
         }
         double currentValue = clipStartValue_->getValue();
         double deltaBeats = currentValue - multiStartDragStart_;
-        double deltaSeconds = magda::TimelineUtils::beatsToSeconds(deltaBeats, bpm);
         magda::ClipBatchEdit batch("Move Clips", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->view != magda::ClipView::Session) {
-                double newStart = juce::jmax(0.0, timelineStartSeconds(*c, bpm) + deltaSeconds);
+                double newStart = juce::jmax(0.0, c->getStartBeats(bpm) + deltaBeats);
                 batch.execute(std::make_unique<magda::MoveClipCommand>(
-                    cid, magda::BeatPosition{newStart * bpm / 60.0}, bpm));
+                    cid, magda::BeatPosition{newStart}, bpm));
             }
         }
         multiStartDragStart_ = currentValue;
@@ -579,14 +579,14 @@ void ClipInspector::initClipPropertiesSection() {
         }
         double currentValue = clipEndValue_->getValue();
         double deltaBeats = currentValue - multiEndDragStart_;
-        double deltaSeconds = magda::TimelineUtils::beatsToSeconds(deltaBeats, bpm);
         magda::ClipBatchEdit batch("Resize Clips", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->view != magda::ClipView::Session) {
-                double newLength = juce::jmax(0.0, timelineLengthSeconds(*c, bpm) + deltaSeconds);
+                double newLength =
+                    juce::jmax(minClipLengthBeats(bpm), c->getLengthInBeats(bpm) + deltaBeats);
                 batch.execute(std::make_unique<magda::ResizeClipCommand>(
-                    cid, magda::BeatDuration{newLength * bpm / 60.0}, false, bpm));
+                    cid, magda::BeatDuration{newLength}, false, bpm));
             }
         }
         multiEndDragStart_ = currentValue;
@@ -612,15 +612,14 @@ void ClipInspector::initClipPropertiesSection() {
         }
         const double currentValue = clipLengthValue_->getValue();
         const double deltaBeats = currentValue - multiLengthDragStart_;
-        const double deltaSeconds = magda::TimelineUtils::beatsToSeconds(deltaBeats, bpm);
         magda::ClipBatchEdit batch("Resize Clips", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->view != magda::ClipView::Session) {
-                const double newLength = juce::jmax(magda::ClipOperations::MIN_CLIP_LENGTH,
-                                                    timelineLengthSeconds(*c, bpm) + deltaSeconds);
+                const double newLength =
+                    juce::jmax(minClipLengthBeats(bpm), c->getLengthInBeats(bpm) + deltaBeats);
                 batch.execute(std::make_unique<magda::ResizeClipCommand>(
-                    cid, magda::BeatDuration{newLength * bpm / 60.0}, false, bpm));
+                    cid, magda::BeatDuration{newLength}, false, bpm));
             }
         }
         multiLengthDragStart_ = currentValue;
@@ -1059,11 +1058,23 @@ void ClipInspector::initClipPropertiesSection() {
         if (timelineController_) {
             bpm = timelineController_->getState().tempo.bpm;
         }
-        double currentPhase = clip->getSourceOffset() - clip->getSourceLoopStart();
         double newLoopStartBeats = clipLoopStartValue_->getValue();
+        if (clip->isMidi()) {
+            const double newOffsetBeats =
+                juce::jmax(0.0, newLoopStartBeats + clip->midiOffset - clip->loopStartBeats);
+            magda::UndoManager::getInstance().beginCompoundOperation("Set Clip Loop Start");
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetMidiClipLoopStartBeatsCommand>(primaryClipId(),
+                                                                          newLoopStartBeats, bpm));
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(), newOffsetBeats));
+            magda::UndoManager::getInstance().endCompoundOperation();
+            return;
+        }
+
+        double currentPhase = clip->getSourceOffset() - clip->getSourceLoopStart();
         double newLoopStartSeconds =
-            clip->isAudio() ? displayBeatsToAudioSourceSeconds(*clip, newLoopStartBeats, bpm)
-                            : magda::TimelineUtils::beatsToSeconds(newLoopStartBeats, bpm);
+            displayBeatsToAudioSourceSeconds(*clip, newLoopStartBeats, bpm);
         newLoopStartSeconds = std::max(0.0, newLoopStartSeconds);
         double newOffset = newLoopStartSeconds + currentPhase;
         // Atomic: change loopStart, then place offset to preserve phase. Undo
@@ -1108,11 +1119,14 @@ void ClipInspector::initClipPropertiesSection() {
                 displayBeatsToAudioSourceSeconds(*clip, newLoopEndBeats, bpm);
             newLoopLengthSeconds = juce::jmax(0.0, newLoopEndSeconds - clip->getSourceLoopStart());
         } else {
-            double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, bpm);
+            double loopStartBeats = clip->loopStartBeats;
             double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
             if (newLoopLengthBeats < 0.25)
                 newLoopLengthBeats = 0.25;
-            newLoopLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetMidiClipLoopLengthBeatsCommand>(
+                    primaryClipId(), newLoopLengthBeats, bpm));
+            return;
         }
         newLoopLengthSeconds =
             juce::jmax(magda::ClipOperations::MIN_SOURCE_LENGTH, newLoopLengthSeconds);

@@ -19,12 +19,12 @@ namespace magda {
 
 namespace {
 
-double timelineStartSeconds(const ClipInfo& clip, double bpm) {
-    return clip.getTimelineStart(bpm);
+double timelineStartBeats(const ClipInfo& clip, double bpm) {
+    return clip.getStartBeats(bpm);
 }
 
-double timelineEndSeconds(const ClipInfo& clip, double bpm) {
-    return clip.getTimelineEnd(bpm);
+double timelineEndBeats(const ClipInfo& clip, double bpm) {
+    return clip.getEndBeats(bpm);
 }
 
 /**
@@ -442,16 +442,17 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     if (timeSigDen <= 0)
         timeSigDen = 4;
 
-    // Determine export time range
-    double rangeStart = 0.0;
-    double rangeEnd = 0.0;
+    // Determine export range in timeline beats. MIDI file ticks are beat-based,
+    // so seconds should only appear at external Tracktion API boundaries.
+    double rangeStartBeats = 0.0;
+    double rangeEndBeats = 0.0;
 
     // Find the extent of all MIDI clips
     for (const auto& clip : clips) {
         if (clip.isMidi()) {
-            double end = timelineEndSeconds(clip, projectTempo);
-            if (end > rangeEnd)
-                rangeEnd = end;
+            double endBeats = timelineEndBeats(clip, projectTempo);
+            if (endBeats > rangeEndBeats)
+                rangeEndBeats = endBeats;
         }
     }
 
@@ -459,15 +460,16 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
         auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
         if (engine && engine->getEdit()) {
             auto loopRange = engine->getEdit()->getTransport().getLoopRange();
-            rangeStart = loopRange.getStart().inSeconds();
-            rangeEnd = loopRange.getEnd().inSeconds();
+            // Tracktion exposes loop range as seconds; convert once at this boundary.
+            rangeStartBeats = loopRange.getStart().inSeconds() * projectTempo / 60.0;
+            rangeEndBeats = loopRange.getEnd().inSeconds() * projectTempo / 60.0;
         }
     }
 
-    DBG("MIDI export range: " << rangeStart << " - " << rangeEnd);
+    DBG("MIDI export range beats: " << rangeStartBeats << " - " << rangeEndBeats);
 
-    if (rangeEnd <= rangeStart) {
-        DBG("No MIDI clips found - rangeEnd <= rangeStart");
+    if (rangeEndBeats <= rangeStartBeats) {
+        DBG("No MIDI clips found - rangeEndBeats <= rangeStartBeats");
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                tr("export.alert.midi_title"),
                                                tr("export.error.no_midi_clips"));
@@ -477,7 +479,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     // Collect MIDI clips grouped by track — copy data to avoid dangling pointers
     // during async file chooser
     struct ClipMidiData {
-        double startSeconds;
+        double startBeats;
         std::vector<MidiNote> midiNotes;
         std::vector<MidiCCData> midiCCData;
         std::vector<MidiPitchBendData> midiPitchBendData;
@@ -495,9 +497,9 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
             continue;
 
         // Check if clip overlaps with range
-        const double clipStart = timelineStartSeconds(clip, projectTempo);
-        const double clipEnd = timelineEndSeconds(clip, projectTempo);
-        if (clipEnd <= rangeStart || clipStart >= rangeEnd)
+        const double clipStartBeats = timelineStartBeats(clip, projectTempo);
+        const double clipEndBeats = timelineEndBeats(clip, projectTempo);
+        if (clipEndBeats <= rangeStartBeats || clipStartBeats >= rangeEndBeats)
             continue;
 
         auto& td = trackData[clip.trackId];
@@ -505,7 +507,8 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
             auto* track = trackManager.getTrack(clip.trackId);
             td.trackName = track ? track->name : "Track";
         }
-        td.clips.push_back({clipStart, clip.midiNotes, clip.midiCCData, clip.midiPitchBendData});
+        td.clips.push_back(
+            {clipStartBeats, clip.midiNotes, clip.midiCCData, clip.midiPitchBendData});
     }
 
     DBG("Track data count: " << trackData.size());
@@ -534,12 +537,12 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
                  juce::FileBrowserComponent::warnAboutOverwriting;
 
     auto midiFormat = settings.midiFormat;
-    auto capturedRangeStart = rangeStart;
-    auto capturedRangeEnd = rangeEnd;
+    auto capturedRangeStartBeats = rangeStartBeats;
+    auto capturedRangeEndBeats = rangeEndBeats;
 
     fileChooser_->launchAsync(flags, [this, trackData = std::move(trackData), projectTempo,
-                                      timeSigNum, timeSigDen, midiFormat, capturedRangeStart,
-                                      capturedRangeEnd](const juce::FileChooser& chooser) {
+                                      timeSigNum, timeSigDen, midiFormat, capturedRangeStartBeats,
+                                      capturedRangeEndBeats](const juce::FileChooser& chooser) {
         auto file = chooser.getResult();
         fileChooser_.reset();
 
@@ -551,9 +554,6 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
 
         constexpr int ticksPerQuarter = 960;
         auto beatsToTicks = [&](double beats) -> double { return beats * ticksPerQuarter; };
-        auto secondsToBeats = [&](double seconds) -> double {
-            return (seconds * projectTempo) / 60.0;
-        };
 
         juce::MidiFile midiFile;
         midiFile.setTicksPerQuarterNote(ticksPerQuarter);
@@ -565,14 +565,14 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
         auto timeSigMsg = juce::MidiMessage::timeSignatureMetaEvent(timeSigNum, timeSigDen);
         timeSigMsg.setTimeStamp(0.0);
 
-        // Range end in beats (relative to range start) for clamping
-        double rangeEndBeats = secondsToBeats(capturedRangeEnd - capturedRangeStart);
-        double rangeEndTick = beatsToTicks(rangeEndBeats);
+        // Range end in beats (relative to range start) for clamping.
+        double relativeRangeEndBeats = capturedRangeEndBeats - capturedRangeStartBeats;
+        double rangeEndTick = beatsToTicks(relativeRangeEndBeats);
 
         // Helper to add notes/CC/PB from clips to a sequence
         auto addClipDataToSequence = [&](juce::MidiMessageSequence& seq, const ClipMidiData& clip,
                                          int channel, double& maxTick) {
-            double clipStartBeats = secondsToBeats(clip.startSeconds - capturedRangeStart);
+            double clipStartBeats = clip.startBeats - capturedRangeStartBeats;
 
             for (const auto& note : clip.midiNotes) {
                 double startTick = beatsToTicks(clipStartBeats + note.startBeat);

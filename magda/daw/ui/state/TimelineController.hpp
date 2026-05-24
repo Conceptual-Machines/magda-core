@@ -60,10 +60,10 @@ class TimelineStateListener {
 };
 
 /**
- * @brief Central controller for timeline state management
+ * @brief Central mutation boundary for timeline state management
  *
- * The TimelineController owns the single source of truth (TimelineState)
- * and provides:
+ * TimelineState is the single data snapshot. TimelineController owns the only
+ * write path into that state and provides:
  * - Event dispatching for state modifications
  * - Listener notification for state changes
  * - Delegates undo/redo to the central UndoManager
@@ -149,7 +149,7 @@ class TimelineController {
     using ChangeFlags = magda::ChangeFlags;
 
   private:
-    // The single source of truth
+    // The authoritative state snapshot. Mutate only through dispatched events.
     TimelineState state;
 
     // Listeners
@@ -160,34 +160,46 @@ class TimelineController {
     // Each handler modifies state and returns flags indicating what changed
 
     ChangeFlags handleEvent(const SetZoomEvent& e);
+    ChangeFlags handleEvent(const SetZoomCenteredBeatsEvent& e);
     ChangeFlags handleEvent(const SetZoomCenteredEvent& e);
+    ChangeFlags handleEvent(const SetZoomAnchoredBeatsEvent& e);
     ChangeFlags handleEvent(const SetZoomAnchoredEvent& e);
+    ChangeFlags handleEvent(const ZoomToFitBeatsEvent& e);
     ChangeFlags handleEvent(const ZoomToFitEvent& e);
     ChangeFlags handleEvent(const ResetZoomEvent& e);
 
     ChangeFlags handleEvent(const SetScrollPositionEvent& e);
     ChangeFlags handleEvent(const ScrollByDeltaEvent& e);
+    ChangeFlags handleEvent(const ScrollToBeatEvent& e);
     ChangeFlags handleEvent(const ScrollToTimeEvent& e);
 
+    ChangeFlags handleEvent(const SetEditPositionBeatsEvent& e);
     ChangeFlags handleEvent(const SetEditPositionEvent& e);
+    ChangeFlags handleEvent(const SetPlayheadPositionBeatsEvent& e);
     ChangeFlags handleEvent(const SetPlayheadPositionEvent& e);
+    ChangeFlags handleEvent(const SetPlaybackPositionBeatsEvent& e);
     ChangeFlags handleEvent(const SetPlaybackPositionEvent& e);
     ChangeFlags handleEvent(const StartPlaybackEvent& e);
     ChangeFlags handleEvent(const StopPlaybackEvent& e);
     ChangeFlags handleEvent(const StartRecordEvent& e);
+    ChangeFlags handleEvent(const MovePlayheadByDeltaBeatsEvent& e);
     ChangeFlags handleEvent(const MovePlayheadByDeltaEvent& e);
     ChangeFlags handleEvent(const SetPlaybackStateEvent& e);
     ChangeFlags handleEvent(const SetEditCursorEvent& e);
 
+    ChangeFlags handleEvent(const SetTimeSelectionBeatsEvent& e);
     ChangeFlags handleEvent(const SetTimeSelectionEvent& e);
     ChangeFlags handleEvent(const ClearTimeSelectionEvent& e);
     ChangeFlags handleEvent(const CreateLoopFromSelectionEvent& e);
 
+    ChangeFlags handleEvent(const SetLoopRegionBeatsEvent& e);
     ChangeFlags handleEvent(const SetLoopRegionEvent& e);
     ChangeFlags handleEvent(const ClearLoopRegionEvent& e);
     ChangeFlags handleEvent(const SetLoopEnabledEvent& e);
+    ChangeFlags handleEvent(const MoveLoopRegionBeatsEvent& e);
     ChangeFlags handleEvent(const MoveLoopRegionEvent& e);
 
+    ChangeFlags handleEvent(const SetPunchRegionBeatsEvent& e);
     ChangeFlags handleEvent(const SetPunchRegionEvent& e);
     ChangeFlags handleEvent(const ClearPunchRegionEvent& e);
     ChangeFlags handleEvent(const SetPunchInEnabledEvent& e);
@@ -202,13 +214,17 @@ class TimelineController {
     ChangeFlags handleEvent(const SetGridQuantizeEvent& e);
     ChangeFlags handleEvent(const SetAutoGridDisplayEvent& e);
 
+    ChangeFlags handleEvent(const AddSectionBeatsEvent& e);
     ChangeFlags handleEvent(const AddSectionEvent& e);
     ChangeFlags handleEvent(const RemoveSectionEvent& e);
+    ChangeFlags handleEvent(const MoveSectionBeatsEvent& e);
     ChangeFlags handleEvent(const MoveSectionEvent& e);
+    ChangeFlags handleEvent(const ResizeSectionBeatsEvent& e);
     ChangeFlags handleEvent(const ResizeSectionEvent& e);
     ChangeFlags handleEvent(const SelectSectionEvent& e);
 
     ChangeFlags handleEvent(const ViewportResizedEvent& e);
+    ChangeFlags handleEvent(const SetTimelineLengthBeatsEvent& e);
     ChangeFlags handleEvent(const SetTimelineLengthEvent& e);
 
     // ===== Notification Helpers =====

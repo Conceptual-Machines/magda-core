@@ -86,6 +86,74 @@ TEST_CASE("Timeline range state treats beats as authoritative", "[timeline][beat
     REQUIRE(selection.getDurationBeats() == Catch::Approx(4.0));
 }
 
+TEST_CASE("TimelineController playhead and ranges are beat-authoritative",
+          "[timeline][beats][controller]") {
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetTempoEvent{120.0});
+    controller.dispatch(magda::SetTimelineLengthBeatsEvent{128.0});
+    controller.dispatch(magda::SetEditPositionBeatsEvent{8.0});
+    controller.dispatch(magda::StartPlaybackEvent{});
+    controller.dispatch(magda::SetPlaybackPositionBeatsEvent{10.0});
+    controller.dispatch(magda::SetLoopRegionBeatsEvent{12.0, 20.0});
+    controller.dispatch(magda::SetTimeSelectionBeatsEvent{24.0, 32.0, {}});
+
+    const auto& state = controller.getState();
+    REQUIRE(state.timelineLengthBeats == Catch::Approx(128.0));
+    REQUIRE(state.timelineLength == Catch::Approx(64.0));
+    REQUIRE(state.playhead.editPositionBeats == Catch::Approx(8.0));
+    REQUIRE(state.playhead.editPosition == Catch::Approx(4.0));
+    REQUIRE(state.playhead.playbackPositionBeats == Catch::Approx(10.0));
+    REQUIRE(state.playhead.playbackPosition == Catch::Approx(5.0));
+    REQUIRE(state.loop.startBeats == Catch::Approx(12.0));
+    REQUIRE(state.loop.endBeats == Catch::Approx(20.0));
+    REQUIRE(state.selection.startBeats == Catch::Approx(24.0));
+    REQUIRE(state.selection.endBeats == Catch::Approx(32.0));
+
+    controller.dispatch(magda::SetTempoEvent{60.0});
+
+    REQUIRE(state.timelineLengthBeats == Catch::Approx(128.0));
+    REQUIRE(state.timelineLength == Catch::Approx(128.0));
+    REQUIRE(state.playhead.editPositionBeats == Catch::Approx(8.0));
+    REQUIRE(state.playhead.editPosition == Catch::Approx(8.0));
+    REQUIRE(state.playhead.playbackPositionBeats == Catch::Approx(10.0));
+    REQUIRE(state.playhead.playbackPosition == Catch::Approx(10.0));
+    REQUIRE(state.loop.startBeats == Catch::Approx(12.0));
+    REQUIRE(state.loop.startTime == Catch::Approx(12.0));
+    REQUIRE(state.selection.endBeats == Catch::Approx(32.0));
+    REQUIRE(state.selection.endTime == Catch::Approx(32.0));
+}
+
+TEST_CASE("TimelineController arrangement sections are beat-authoritative",
+          "[timeline][beats][sections]") {
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetTempoEvent{120.0});
+    controller.dispatch(magda::SetTimelineLengthBeatsEvent{64.0});
+    controller.dispatch(magda::AddSectionBeatsEvent{"Verse", 8.0, 16.0, juce::Colours::green});
+
+    const auto& state = controller.getState();
+    REQUIRE(state.sections.size() == 1);
+    REQUIRE(state.sections[0].startBeats == Catch::Approx(8.0));
+    REQUIRE(state.sections[0].endBeats == Catch::Approx(16.0));
+    REQUIRE(state.sections[0].startTime == Catch::Approx(4.0));
+
+    controller.dispatch(magda::MoveSectionBeatsEvent{0, 12.0});
+    REQUIRE(state.sections[0].startBeats == Catch::Approx(12.0));
+    REQUIRE(state.sections[0].endBeats == Catch::Approx(20.0));
+
+    controller.dispatch(magda::ResizeSectionBeatsEvent{0, 10.0, 18.0});
+    REQUIRE(state.sections[0].startBeats == Catch::Approx(10.0));
+    REQUIRE(state.sections[0].endBeats == Catch::Approx(18.0));
+    REQUIRE(state.sections[0].startTime == Catch::Approx(5.0));
+
+    controller.dispatch(magda::SetTempoEvent{60.0});
+    REQUIRE(state.sections[0].startBeats == Catch::Approx(10.0));
+    REQUIRE(state.sections[0].endBeats == Catch::Approx(18.0));
+    REQUIRE(state.sections[0].startTime == Catch::Approx(10.0));
+    REQUIRE(state.sections[0].endTime == Catch::Approx(18.0));
+}
+
 TEST_CASE("Enabling loop with an existing valid region keeps it in place",
           "[timeline][loop][regression]") {
     magda::TimelineController controller;

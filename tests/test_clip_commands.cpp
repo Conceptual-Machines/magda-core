@@ -5,6 +5,7 @@
 
 #include "magda/daw/core/ClipCommands.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/ClipPropertyCommands.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
 
@@ -915,6 +916,73 @@ TEST_CASE("ResizeClipCommand - merge consecutive resizes", "[clip][command][resi
     REQUIRE(cmd1.canMergeWith(&cmd2));
     // Same clip, different direction: cannot merge
     REQUIRE_FALSE(cmd1.canMergeWith(&cmdFromLeft));
+}
+
+TEST_CASE("MIDI loop start command stores beats without seconds reinterpretation",
+          "[clip][command][midi][loop][beats]") {
+    resetState();
+    constexpr double bpm = 90.0;
+    TrackId track = createTrack("MIDI");
+    ClipId clipId = createMidi(track, 0.0, 4.0);
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    clip->loopStartBeats = 3.0;
+    clip->loopStart = 2.0;  // 3 beats at 90 BPM
+
+    SetMidiClipLoopStartBeatsCommand cmd(clipId, 6.0, bpm);
+    cmd.execute();
+
+    clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip->loopStartBeats == Catch::Approx(6.0));
+    REQUIRE(clip->loopStart == Catch::Approx(4.0));  // derived cache only
+
+    cmd.undo();
+
+    clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip->loopStartBeats == Catch::Approx(3.0));
+    REQUIRE(clip->loopStart == Catch::Approx(2.0));
+}
+
+TEST_CASE("MIDI loop length command stores beats without seconds reinterpretation",
+          "[clip][command][midi][loop][beats]") {
+    resetState();
+    constexpr double bpm = 90.0;
+    TrackId track = createTrack("MIDI");
+    ClipId clipId = createMidi(track, 0.0, 4.0);
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    clip->loopLengthBeats = 3.0;
+    clip->loopLength = 2.0;  // 3 beats at 90 BPM
+
+    SetMidiClipLoopLengthBeatsCommand cmd(clipId, 6.0, bpm);
+    cmd.execute();
+
+    clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip->loopLengthBeats == Catch::Approx(6.0));
+    REQUIRE(clip->loopLength == Catch::Approx(4.0));  // derived cache only
+
+    cmd.undo();
+
+    clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip->loopLengthBeats == Catch::Approx(3.0));
+    REQUIRE(clip->loopLength == Catch::Approx(2.0));
+}
+
+TEST_CASE("Legacy MIDI loop start seconds setter keeps beat mirror synced",
+          "[clip][midi][loop][beats]") {
+    resetState();
+    constexpr double bpm = 90.0;
+    TrackId track = createTrack("MIDI");
+    ClipId clipId = createMidi(track, 0.0, 4.0);
+
+    ClipManager::getInstance().setLoopStart(clipId, 4.0, bpm);
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->loopStart == Catch::Approx(4.0));
+    REQUIRE(clip->loopStartBeats == Catch::Approx(6.0));
 }
 
 TEST_CASE("DeleteTimeSelectionCommand - trim keeps beat placement in sync",

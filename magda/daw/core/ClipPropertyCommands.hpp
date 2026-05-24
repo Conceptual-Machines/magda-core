@@ -254,6 +254,76 @@ class SetClipLoopLengthCommand : public UndoableCommand {
     double bpm_;
 };
 
+class SetMidiClipLoopStartBeatsCommand : public UndoableCommand {
+  public:
+    SetMidiClipLoopStartBeatsCommand(ClipId clipId, double newLoopStartBeats, double bpm = 120.0)
+        : clipId_(clipId), newLoopStartBeats_(newLoopStartBeats), bpm_(bpm) {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId))
+            oldLoopStartBeats_ = clip->loopStartBeats;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setMidiLoopStartBeats(clipId_, newLoopStartBeats_, bpm_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setMidiLoopStartBeats(clipId_, oldLoopStartBeats_, bpm_);
+    }
+    juce::String getDescription() const override {
+        return "Set MIDI Clip Loop Start";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetMidiClipLoopStartBeatsCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        auto* o = static_cast<const SetMidiClipLoopStartBeatsCommand*>(other);
+        newLoopStartBeats_ = o->newLoopStartBeats_;
+        bpm_ = o->bpm_;
+    }
+
+  private:
+    ClipId clipId_;
+    double oldLoopStartBeats_ = 0.0, newLoopStartBeats_;
+    double bpm_;
+};
+
+class SetMidiClipLoopLengthBeatsCommand : public UndoableCommand {
+  public:
+    SetMidiClipLoopLengthBeatsCommand(ClipId clipId, double newLoopLengthBeats, double bpm = 120.0)
+        : clipId_(clipId), newLoopLengthBeats_(newLoopLengthBeats), bpm_(bpm) {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId))
+            oldLoopLengthBeats_ = clip->loopLengthBeats;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setMidiLoopLengthBeats(clipId_, newLoopLengthBeats_, bpm_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setMidiLoopLengthBeats(clipId_, oldLoopLengthBeats_, bpm_);
+    }
+    juce::String getDescription() const override {
+        return "Set MIDI Clip Loop Length";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetMidiClipLoopLengthBeatsCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        auto* o = static_cast<const SetMidiClipLoopLengthBeatsCommand*>(other);
+        newLoopLengthBeats_ = o->newLoopLengthBeats_;
+        bpm_ = o->bpm_;
+    }
+
+  private:
+    ClipId clipId_;
+    double oldLoopLengthBeats_ = 0.0, newLoopLengthBeats_;
+    double bpm_;
+};
+
 /**
  * @brief Command for relocating a clip's loop region (start + length) as a
  *        unit. Wraps ClipManager::relocateLoopRegion, which snaps the

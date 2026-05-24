@@ -17,6 +17,8 @@ TimelineController::TimelineController() {
 
     // Load configuration values (bars → seconds using default 120 BPM)
     auto& config = magda::Config::getInstance();
+    state.timelineLengthBeats =
+        config.getDefaultTimelineLengthBars() * state.tempo.timeSignatureNumerator;
     state.timelineLength = state.tempo.barsToTime(config.getDefaultTimelineLengthBars());
 
     // Set default zoom (ppb) to show a reasonable view duration
@@ -85,15 +87,13 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomEve
     return ChangeFlags::Zoom | ChangeFlags::Scroll;
 }
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomCenteredEvent& e) {
+TimelineController::ChangeFlags TimelineController::handleEvent(
+    const SetZoomCenteredBeatsEvent& e) {
     double newZoom = clampZoom(e.zoom);
 
-    // Calculate where the center time should appear after zoom
-    // Convert time to beats since zoom is ppb
     int viewportCenter = state.zoom.viewportWidth / 2;
-    double centerBeats = state.secondsToBeats(e.centerTime);
     int timeContentX =
-        static_cast<int>(centerBeats * newZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+        static_cast<int>(e.centerBeats * newZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
     int newScrollX = timeContentX - viewportCenter;
 
     state.zoom.horizontalZoom = newZoom;
@@ -103,14 +103,16 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomCen
     return ChangeFlags::Zoom | ChangeFlags::Scroll;
 }
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomAnchoredEvent& e) {
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomCenteredEvent& e) {
+    return handleEvent(SetZoomCenteredBeatsEvent{e.zoom, state.secondsToBeats(e.centerTime)});
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(
+    const SetZoomAnchoredBeatsEvent& e) {
     double newZoom = clampZoom(e.zoom);
 
-    // Calculate scroll position to keep anchorTime at anchorScreenX
-    // Convert time to beats since zoom is ppb
-    double anchorBeats = state.secondsToBeats(e.anchorTime);
     int anchorPixelPos =
-        static_cast<int>(anchorBeats * newZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+        static_cast<int>(e.anchorBeats * newZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
     int newScrollX = anchorPixelPos - e.anchorScreenX;
 
     state.zoom.horizontalZoom = newZoom;
@@ -120,14 +122,17 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomAnc
     return ChangeFlags::Zoom | ChangeFlags::Scroll;
 }
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const ZoomToFitEvent& e) {
-    if (e.endTime <= e.startTime) {
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomAnchoredEvent& e) {
+    return handleEvent(
+        SetZoomAnchoredBeatsEvent{e.zoom, state.secondsToBeats(e.anchorTime), e.anchorScreenX});
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const ZoomToFitBeatsEvent& e) {
+    if (e.endBeats <= e.startBeats) {
         return ChangeFlags::None;
     }
 
-    // Convert duration to beats since zoom is ppb
-    double duration = e.endTime - e.startTime;
-    double durationBeats = state.secondsToBeats(duration);
+    double durationBeats = e.endBeats - e.startBeats;
     double paddingBeats = durationBeats * e.paddingPercent;
     double zoomToFit =
         static_cast<double>(state.zoom.viewportWidth) / (durationBeats + paddingBeats * 2);
@@ -135,7 +140,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ZoomToFitE
     state.zoom.horizontalZoom = clampZoom(zoomToFit);
 
     // Calculate scroll to show the start (with padding)
-    double startBeats = state.secondsToBeats(e.startTime) - paddingBeats;
+    double startBeats = e.startBeats - paddingBeats;
     int scrollX = static_cast<int>(startBeats * state.zoom.horizontalZoom);
     state.zoom.scrollX = juce::jmax(0, scrollX);
     clampScrollPosition();
@@ -143,14 +148,18 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ZoomToFitE
     return ChangeFlags::Zoom | ChangeFlags::Scroll;
 }
 
+TimelineController::ChangeFlags TimelineController::handleEvent(const ZoomToFitEvent& e) {
+    return handleEvent(ZoomToFitBeatsEvent{state.secondsToBeats(e.startTime),
+                                           state.secondsToBeats(e.endTime), e.paddingPercent});
+}
+
 TimelineController::ChangeFlags TimelineController::handleEvent(const ResetZoomEvent& /*e*/) {
-    if (state.timelineLength <= 0 || state.zoom.viewportWidth <= 0) {
+    if (state.timelineLengthBeats <= 0 || state.zoom.viewportWidth <= 0) {
         return ChangeFlags::None;
     }
 
-    // Convert timeline length to beats since zoom is ppb
     int availableWidth = state.zoom.viewportWidth - LayoutConfig::TIMELINE_LEFT_PADDING;
-    double beats = state.secondsToBeats(state.timelineLength);
+    double beats = state.timelineLengthBeats;
     double fitZoom = (beats > 0) ? static_cast<double>(availableWidth) / beats : 1.0;
 
     state.zoom.horizontalZoom = clampZoom(fitZoom);
@@ -190,11 +199,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ScrollByDe
     return ChangeFlags::Scroll;
 }
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const ScrollToTimeEvent& e) {
-    // Convert time to beats since zoom is ppb
-    double beats = state.secondsToBeats(e.time);
+TimelineController::ChangeFlags TimelineController::handleEvent(const ScrollToBeatEvent& e) {
     int targetX =
-        static_cast<int>(beats * state.zoom.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+        static_cast<int>(e.beat * state.zoom.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
     if (e.center) {
         targetX -= state.zoom.viewportWidth / 2;
@@ -206,46 +213,58 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ScrollToTi
     return ChangeFlags::Scroll;
 }
 
+TimelineController::ChangeFlags TimelineController::handleEvent(const ScrollToTimeEvent& e) {
+    return handleEvent(ScrollToBeatEvent{state.secondsToBeats(e.time), e.center});
+}
+
 // ===== Playhead Event Handlers =====
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const SetEditPositionEvent& e) {
-    double newPos = juce::jlimit(0.0, state.timelineLength, e.position);
-    if (newPos == state.playhead.editPosition) {
+TimelineController::ChangeFlags TimelineController::handleEvent(
+    const SetEditPositionBeatsEvent& e) {
+    double newBeats = juce::jlimit(0.0, state.timelineLengthBeats, e.positionBeats);
+    if (newBeats == state.playhead.editPositionBeats) {
         return ChangeFlags::None;
     }
 
-    state.playhead.editPosition = newPos;
-    state.playhead.editPositionBeats =
-        magda::TimelineUtils::secondsToBeats(newPos, state.tempo.bpm);
-    // If not playing, also sync playbackPosition to editPosition
+    state.playhead.editPositionBeats = newBeats;
+    state.playhead.editPosition = state.beatsToSeconds(newBeats);
     if (!state.playhead.isPlaying) {
-        state.playhead.playbackPosition = newPos;
+        state.playhead.playbackPositionBeats = newBeats;
+        state.playhead.playbackPosition = state.playhead.editPosition;
     }
 
-    // Notify transport listeners of edit position change
     for (auto* listener : audioEngineListeners) {
-        listener->onEditPositionChanged(newPos);
+        listener->onEditPositionChanged(state.playhead.editPosition);
     }
 
     return ChangeFlags::Playhead;
 }
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlayheadPositionEvent& e) {
-    // Backwards compatible: SetPlayheadPositionEvent behaves like SetEditPositionEvent
-    return handleEvent(SetEditPositionEvent{e.position});
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetEditPositionEvent& e) {
+    return handleEvent(SetEditPositionBeatsEvent{state.secondsToBeats(e.position)});
 }
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybackPositionEvent& e) {
-    // Only updates the playback position (the moving cursor), not the edit position
-    double newPos = juce::jlimit(0.0, state.timelineLength, e.position);
-    if (newPos == state.playhead.playbackPosition) {
+TimelineController::ChangeFlags TimelineController::handleEvent(
+    const SetPlayheadPositionBeatsEvent& e) {
+    return handleEvent(SetEditPositionBeatsEvent{e.positionBeats});
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlayheadPositionEvent& e) {
+    return handleEvent(SetEditPositionBeatsEvent{state.secondsToBeats(e.position)});
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(
+    const SetPlaybackPositionBeatsEvent& e) {
+    double newBeats = juce::jlimit(0.0, state.timelineLengthBeats, e.positionBeats);
+    if (newBeats == state.playhead.playbackPositionBeats) {
         return ChangeFlags::None;
     }
 
-    state.playhead.playbackPosition = newPos;
+    state.playhead.playbackPositionBeats = newBeats;
+    state.playhead.playbackPosition = state.beatsToSeconds(newBeats);
 
     // === Punch In: trigger recording when playhead reaches punch-in point ===
-    if (punchArmed_ && newPos >= state.punch.startTime) {
+    if (punchArmed_ && newBeats >= state.punch.startBeats) {
         punchArmed_ = false;
         DBG("SetPlaybackPositionEvent: punch-in triggered at " << state.punch.startTime);
         for (auto* listener : audioEngineListeners) {
@@ -255,7 +274,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
 
     // === Punch Out: stop recording when playhead reaches punch-out point ===
     if (state.playhead.isRecording && !punchArmed_ && state.punch.punchOutEnabled &&
-        state.punch.isValid() && newPos >= state.punch.endTime) {
+        state.punch.isValid() && newBeats >= state.punch.endBeats) {
         DBG("SetPlaybackPositionEvent: punch-out triggered at " << state.punch.endTime);
         state.playhead.isRecording = false;
         for (auto* listener : audioEngineListeners) {
@@ -266,6 +285,10 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
     return ChangeFlags::Playhead;
 }
 
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybackPositionEvent& e) {
+    return handleEvent(SetPlaybackPositionBeatsEvent{state.secondsToBeats(e.position)});
+}
+
 TimelineController::ChangeFlags TimelineController::handleEvent(const StartPlaybackEvent& /*e*/) {
     if (state.playhead.isPlaying) {
         return ChangeFlags::None;  // Already playing
@@ -274,6 +297,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartPlayb
     state.playhead.isPlaying = true;
     // Sync playbackPosition to editPosition at start of playback
     state.playhead.playbackPosition = state.playhead.editPosition;
+    state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
 
     for (auto* listener : audioEngineListeners) {
         listener->onTransportPlay(state.playhead.editPosition);
@@ -310,19 +334,20 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
 
     if (punchInActive) {
         // Determine the position we'll be playing from
-        double startPos = state.playhead.isPlaying ? state.playhead.playbackPosition
-                                                   : state.playhead.editPosition;
+        double startBeats = state.playhead.isPlaying ? state.playhead.playbackPositionBeats
+                                                     : state.playhead.editPositionBeats;
 
-        if (startPos < state.punch.startTime) {
+        if (startBeats < state.punch.startBeats) {
             // Playhead is before punch-in point — arm and start playback, defer recording
             DBG("StartRecordEvent: punch-in armed, waiting for position "
-                << state.punch.startTime << " (current: " << startPos << ")");
+                << state.punch.startTime << " (current beats: " << startBeats << ")");
             punchArmed_ = true;
             state.playhead.isRecording = true;  // UI shows recording state
 
             if (!state.playhead.isPlaying) {
                 state.playhead.isPlaying = true;
                 state.playhead.playbackPosition = state.playhead.editPosition;
+                state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
                 for (auto* listener : audioEngineListeners) {
                     listener->onTransportPlay(state.playhead.editPosition);
                 }
@@ -345,6 +370,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
         state.playhead.isPlaying = true;
         state.playhead.isRecording = true;
         state.playhead.playbackPosition = state.playhead.editPosition;
+        state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
         for (auto* listener : audioEngineListeners) {
             listener->onTransportRecord(state.playhead.editPosition);
         }
@@ -363,7 +389,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StopPlayba
     // Capture where playback was at the moment of stopping, before any
     // resets. The "stop updates playhead" preference uses this to move
     // editPosition to the stop point so the next Play resumes from there.
-    const double stopPosition = state.playhead.playbackPosition;
+    const double stopPositionBeats = state.playhead.playbackPositionBeats;
+    const double stopPosition = state.beatsToSeconds(stopPositionBeats);
 
     state.playhead.isPlaying = false;
     state.playhead.isRecording = false;
@@ -371,13 +398,14 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StopPlayba
 
     if (magda::Config::getInstance().getStopUpdatesPlayhead()) {
         state.playhead.editPosition = stopPosition;
-        state.playhead.editPositionBeats =
-            magda::TimelineUtils::secondsToBeats(stopPosition, state.tempo.bpm);
+        state.playhead.editPositionBeats = stopPositionBeats;
         state.playhead.playbackPosition = stopPosition;
+        state.playhead.playbackPositionBeats = stopPositionBeats;
     } else {
         // Default Bitwig behavior: rewind playbackPosition to editPosition
         // so the next Play restarts from where the playhead was before.
         state.playhead.playbackPosition = state.playhead.editPosition;
+        state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
     }
 
     // Notify transport listeners to stop playback
@@ -388,19 +416,13 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StopPlayba
     return ChangeFlags::Playhead;
 }
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const MovePlayheadByDeltaEvent& e) {
-    double newPos =
-        juce::jlimit(0.0, state.timelineLength, state.playhead.editPosition + e.deltaSeconds);
-    if (newPos == state.playhead.editPosition) {
-        return ChangeFlags::None;
-    }
+TimelineController::ChangeFlags TimelineController::handleEvent(
+    const MovePlayheadByDeltaBeatsEvent& e) {
+    return handleEvent(SetEditPositionBeatsEvent{state.playhead.editPositionBeats + e.deltaBeats});
+}
 
-    state.playhead.editPosition = newPos;
-    // If not playing, also sync playbackPosition
-    if (!state.playhead.isPlaying) {
-        state.playhead.playbackPosition = newPos;
-    }
-    return ChangeFlags::Playhead;
+TimelineController::ChangeFlags TimelineController::handleEvent(const MovePlayheadByDeltaEvent& e) {
+    return handleEvent(MovePlayheadByDeltaBeatsEvent{state.secondsToBeats(e.deltaSeconds)});
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybackStateEvent& e) {
@@ -410,10 +432,14 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
         state.playhead.isPlaying = e.isPlaying;
         // If starting playback, sync playbackPosition to editPosition
         if (e.isPlaying) {
-            state.playhead.playbackPosition = state.playhead.editPosition;
+            state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
+            state.playhead.playbackPosition =
+                state.beatsToSeconds(state.playhead.playbackPositionBeats);
         } else {
             // If stopping, reset playbackPosition to editPosition
-            state.playhead.playbackPosition = state.playhead.editPosition;
+            state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
+            state.playhead.playbackPosition =
+                state.beatsToSeconds(state.playhead.playbackPositionBeats);
         }
         changed = true;
     }
@@ -431,7 +457,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetEditCur
 
     // Allow -1.0 to hide the cursor, otherwise clamp to the timeline in beats.
     if (newBeats >= 0.0) {
-        newBeats = juce::jlimit(0.0, state.secondsToBeats(state.timelineLength), newBeats);
+        newBeats = juce::jlimit(0.0, state.timelineLengthBeats, newBeats);
     }
 
     if (newBeats == state.editCursorBeats) {
@@ -446,17 +472,24 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetEditCur
 
 // ===== Selection Event Handlers =====
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSelectionEvent& e) {
-    double start = juce::jlimit(0.0, state.timelineLength, e.startTime);
-    double end = juce::jlimit(0.0, state.timelineLength, e.endTime);
+TimelineController::ChangeFlags TimelineController::handleEvent(
+    const SetTimeSelectionBeatsEvent& e) {
+    double start = juce::jlimit(0.0, state.timelineLengthBeats, e.startBeats);
+    double end = juce::jlimit(0.0, state.timelineLengthBeats, e.endBeats);
 
-    state.selection.setFromSeconds(start, end, state.tempo.bpm);
+    state.selection.setFromBeats(start, end, state.tempo.bpm);
     state.selection.trackIndices = e.trackIndices;
     state.selection.automationOnly = e.automationOnly;
     state.selection.automationLaneIds = e.automationLaneIds;
     state.selection.visuallyHidden = false;  // New selection is always visible
 
     return ChangeFlags::Selection;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSelectionEvent& e) {
+    return handleEvent(SetTimeSelectionBeatsEvent{state.secondsToBeats(e.startTime),
+                                                  state.secondsToBeats(e.endTime), e.trackIndices,
+                                                  e.automationOnly, e.automationLaneIds});
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(
@@ -494,16 +527,17 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
 
 // ===== Loop Event Handlers =====
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopRegionEvent& e) {
-    double start = juce::jlimit(0.0, state.timelineLength, e.startTime);
-    double end = juce::jlimit(0.0, state.timelineLength, e.endTime);
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopRegionBeatsEvent& e) {
+    double start = juce::jlimit(0.0, state.timelineLengthBeats, e.startBeats);
+    double end = juce::jlimit(0.0, state.timelineLengthBeats, e.endBeats);
 
     // Ensure minimum duration
-    if (end - start < 0.01) {
-        end = start + 0.01;
+    const double minBeats = state.secondsToBeats(0.01);
+    if (end - start < minBeats) {
+        end = start + minBeats;
     }
 
-    state.loop.setFromSeconds(start, end, state.tempo.bpm);
+    state.loop.setFromBeats(start, end, state.tempo.bpm);
 
     // Enable loop if it wasn't valid before
     if (!state.loop.enabled && state.loop.isValid()) {
@@ -515,10 +549,15 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopReg
 
     // Notify audio engine of loop region change
     for (auto* listener : audioEngineListeners) {
-        listener->onLoopRegionChanged(start, end, state.loop.enabled);
+        listener->onLoopRegionChanged(state.loop.startTime, state.loop.endTime, state.loop.enabled);
     }
 
     return ChangeFlags::Loop;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopRegionEvent& e) {
+    return handleEvent(SetLoopRegionBeatsEvent{state.secondsToBeats(e.startTime),
+                                               state.secondsToBeats(e.endTime)});
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const ClearLoopRegionEvent& /*e*/) {
@@ -555,39 +594,41 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEna
         return ChangeFlags::None;
     }
 
-    constexpr double minLoopDuration = 0.01;
-    if (state.timelineLength < minLoopDuration) {
+    const double minLoopBeats = state.secondsToBeats(0.01);
+    if (state.timelineLengthBeats < minLoopBeats) {
         return ChangeFlags::None;
     }
 
-    const double defaultDuration = juce::jmax(minLoopDuration, state.tempo.getSecondsPerBar());
-    double start = juce::jlimit(0.0, state.timelineLength, state.playhead.getCurrentPosition());
-    double end = juce::jmin(state.timelineLength, start + defaultDuration);
-    if (end - start < minLoopDuration) {
-        end = juce::jlimit(minLoopDuration, state.timelineLength, end);
-        start = juce::jmax(0.0, end - minLoopDuration);
+    const double defaultDurationBeats =
+        juce::jmax(minLoopBeats, static_cast<double>(state.tempo.timeSignatureNumerator));
+    double start =
+        juce::jlimit(0.0, state.timelineLengthBeats, state.playhead.getCurrentPositionBeats());
+    double end = juce::jmin(state.timelineLengthBeats, start + defaultDurationBeats);
+    if (end - start < minLoopBeats) {
+        end = juce::jlimit(minLoopBeats, state.timelineLengthBeats, end);
+        start = juce::jmax(0.0, end - minLoopBeats);
     }
 
-    state.loop.setFromSeconds(start, end, state.tempo.bpm);
+    state.loop.setFromBeats(start, end, state.tempo.bpm);
     state.loop.enabled = true;
 
     ProjectManager::getInstance().setLoopSettings(true, state.loop.startBeats, state.loop.endBeats);
 
     for (auto* listener : audioEngineListeners) {
-        listener->onLoopRegionChanged(start, end, true);
+        listener->onLoopRegionChanged(state.loop.startTime, state.loop.endTime, true);
     }
 
     return ChangeFlags::Loop;
 }
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const MoveLoopRegionEvent& e) {
+TimelineController::ChangeFlags TimelineController::handleEvent(const MoveLoopRegionBeatsEvent& e) {
     if (!state.loop.isValid()) {
         return ChangeFlags::None;
     }
 
     double durationBeats = state.loop.getDurationBeats();
-    double newStartBeats = state.loop.startBeats + state.secondsToBeats(e.deltaSeconds);
-    double timelineLengthBeats = state.secondsToBeats(state.timelineLength);
+    double newStartBeats = state.loop.startBeats + e.deltaBeats;
+    double timelineLengthBeats = state.timelineLengthBeats;
 
     // Clamp to valid range
     newStartBeats = juce::jlimit(0.0, timelineLengthBeats - durationBeats, newStartBeats);
@@ -599,18 +640,23 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const MoveLoopRe
     return ChangeFlags::Loop;
 }
 
+TimelineController::ChangeFlags TimelineController::handleEvent(const MoveLoopRegionEvent& e) {
+    return handleEvent(MoveLoopRegionBeatsEvent{state.secondsToBeats(e.deltaSeconds)});
+}
+
 // ===== Punch In/Out Event Handlers =====
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchRegionEvent& e) {
-    double start = juce::jlimit(0.0, state.timelineLength, e.startTime);
-    double end = juce::jlimit(0.0, state.timelineLength, e.endTime);
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchRegionBeatsEvent& e) {
+    double start = juce::jlimit(0.0, state.timelineLengthBeats, e.startBeats);
+    double end = juce::jlimit(0.0, state.timelineLengthBeats, e.endBeats);
 
     // Ensure minimum duration
-    if (end - start < 0.01) {
-        end = start + 0.01;
+    const double minBeats = state.secondsToBeats(0.01);
+    if (end - start < minBeats) {
+        end = start + minBeats;
     }
 
-    state.punch.setFromSeconds(start, end, state.tempo.bpm);
+    state.punch.setFromBeats(start, end, state.tempo.bpm);
 
     // Enable both punch in/out if region wasn't valid before
     if (!state.punch.isEnabled() && state.punch.isValid()) {
@@ -620,11 +666,16 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchRe
 
     // Notify audio engine of punch region change
     for (auto* listener : audioEngineListeners) {
-        listener->onPunchRegionChanged(start, end, state.punch.punchInEnabled,
-                                       state.punch.punchOutEnabled);
+        listener->onPunchRegionChanged(state.punch.startTime, state.punch.endTime,
+                                       state.punch.punchInEnabled, state.punch.punchOutEnabled);
     }
 
     return ChangeFlags::Punch;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchRegionEvent& e) {
+    return handleEvent(SetPunchRegionBeatsEvent{state.secondsToBeats(e.startTime),
+                                                state.secondsToBeats(e.endTime)});
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(
@@ -697,6 +748,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
 
     double oldBpm = state.tempo.bpm;
     state.tempo.bpm = newBpm;
+    state.timelineLength = magda::TimelineUtils::beatsToSeconds(state.timelineLengthBeats, newBpm);
 
     // Keep ProjectManager in sync for serialization
     ProjectManager::getInstance().setTempo(newBpm);
@@ -726,7 +778,20 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
             magda::TimelineUtils::beatsToSeconds(state.playhead.editPositionBeats, newBpm);
         if (!state.playhead.isPlaying) {
             state.playhead.playbackPosition = state.playhead.editPosition;
+            state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
         }
+        extraFlags |= static_cast<uint32_t>(ChangeFlags::Playhead);
+    }
+
+    // --- Playhead playback position ---
+    if (state.playhead.isPlaying && state.playhead.playbackPosition > 0.0) {
+        // Migration: calculate beat position if it was never set.
+        if (state.playhead.playbackPositionBeats <= 0.0) {
+            state.playhead.playbackPositionBeats =
+                magda::TimelineUtils::secondsToBeats(state.playhead.playbackPosition, oldBpm);
+        }
+        state.playhead.playbackPosition =
+            magda::TimelineUtils::beatsToSeconds(state.playhead.playbackPositionBeats, newBpm);
         extraFlags |= static_cast<uint32_t>(ChangeFlags::Playhead);
     }
 
@@ -746,6 +811,14 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
     if (state.loop.isValid()) {
         state.loop.setFromBeats(state.loop.startBeats, state.loop.endBeats, newBpm);
         extraFlags |= static_cast<uint32_t>(ChangeFlags::Loop);
+    }
+
+    // --- Arrangement sections ---
+    if (!state.sections.empty()) {
+        for (auto& section : state.sections) {
+            section.setFromBeats(section.startBeats, section.endBeats, newBpm);
+        }
+        extraFlags |= static_cast<uint32_t>(ChangeFlags::Sections);
     }
 
     // Sync updated loop to ProjectManager
@@ -928,8 +1001,30 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetAutoGri
 
 // ===== Section Event Handlers =====
 
+TimelineController::ChangeFlags TimelineController::handleEvent(const AddSectionBeatsEvent& e) {
+    ArrangementSection section(0.0, 0.0, e.name, e.colour);
+    section.setFromBeats(e.startBeats, e.endBeats, state.tempo.bpm);
+    state.sections.push_back(section);
+    return ChangeFlags::Sections;
+}
+
 TimelineController::ChangeFlags TimelineController::handleEvent(const AddSectionEvent& e) {
-    state.sections.emplace_back(e.startTime, e.endTime, e.name, e.colour);
+    return handleEvent(AddSectionBeatsEvent{e.name, state.secondsToBeats(e.startTime),
+                                            state.secondsToBeats(e.endTime), e.colour});
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const MoveSectionBeatsEvent& e) {
+    if (e.index < 0 || e.index >= static_cast<int>(state.sections.size())) {
+        return ChangeFlags::None;
+    }
+
+    auto& section = state.sections[e.index];
+    double durationBeats = section.getDurationBeats();
+    double newStart = juce::jmax(0.0, e.newStartBeats);
+    double newEnd = juce::jmin(state.timelineLengthBeats, newStart + durationBeats);
+
+    section.setFromBeats(newStart, newEnd, state.tempo.bpm);
+
     return ChangeFlags::Sections;
 }
 
@@ -951,44 +1046,37 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const RemoveSect
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const MoveSectionEvent& e) {
+    return handleEvent(MoveSectionBeatsEvent{e.index, state.secondsToBeats(e.newStartTime)});
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const ResizeSectionBeatsEvent& e) {
     if (e.index < 0 || e.index >= static_cast<int>(state.sections.size())) {
         return ChangeFlags::None;
     }
 
     auto& section = state.sections[e.index];
-    double duration = section.getDuration();
-    double newStart = juce::jmax(0.0, e.newStartTime);
-    double newEnd = juce::jmin(state.timelineLength, newStart + duration);
 
-    section.startTime = newStart;
-    section.endTime = newEnd;
+    double start = juce::jlimit(0.0, state.timelineLengthBeats, e.newStartBeats);
+    double end = juce::jlimit(0.0, state.timelineLengthBeats, e.newEndBeats);
+
+    // Ensure minimum duration
+    constexpr double minDurationBeats = 1.0;
+    if (end - start < minDurationBeats) {
+        if (e.newStartBeats != section.startBeats) {
+            start = juce::jmin(start, section.endBeats - minDurationBeats);
+        } else {
+            end = juce::jmax(end, section.startBeats + minDurationBeats);
+        }
+    }
+
+    section.setFromBeats(start, end, state.tempo.bpm);
 
     return ChangeFlags::Sections;
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const ResizeSectionEvent& e) {
-    if (e.index < 0 || e.index >= static_cast<int>(state.sections.size())) {
-        return ChangeFlags::None;
-    }
-
-    auto& section = state.sections[e.index];
-
-    double start = juce::jlimit(0.0, state.timelineLength, e.newStartTime);
-    double end = juce::jlimit(0.0, state.timelineLength, e.newEndTime);
-
-    // Ensure minimum duration
-    if (end - start < 1.0) {
-        if (e.newStartTime != section.startTime) {
-            start = juce::jmin(start, section.endTime - 1.0);
-        } else {
-            end = juce::jmax(end, section.startTime + 1.0);
-        }
-    }
-
-    section.startTime = start;
-    section.endTime = end;
-
-    return ChangeFlags::Sections;
+    return handleEvent(ResizeSectionBeatsEvent{e.index, state.secondsToBeats(e.newStartTime),
+                                               state.secondsToBeats(e.newEndTime)});
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SelectSectionEvent& e) {
@@ -1023,25 +1111,30 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ViewportRe
     return ChangeFlags::None;
 }
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelineLengthEvent& e) {
-    if (e.lengthInSeconds == state.timelineLength) {
+TimelineController::ChangeFlags TimelineController::handleEvent(
+    const SetTimelineLengthBeatsEvent& e) {
+    const double newLengthBeats = juce::jmax(0.0, e.lengthBeats);
+    if (newLengthBeats == state.timelineLengthBeats) {
         return ChangeFlags::None;
     }
 
-    state.timelineLength = e.lengthInSeconds;
+    state.timelineLengthBeats = newLengthBeats;
+    state.timelineLength = state.beatsToSeconds(newLengthBeats);
 
     // Clamp playhead positions to new length
-    state.playhead.editPosition = juce::jmin(state.playhead.editPosition, state.timelineLength);
-    state.playhead.playbackPosition =
-        juce::jmin(state.playhead.playbackPosition, state.timelineLength);
+    const double timelineLengthBeats = state.timelineLengthBeats;
+    state.playhead.editPositionBeats =
+        juce::jmin(state.playhead.editPositionBeats, timelineLengthBeats);
+    state.playhead.editPosition = state.beatsToSeconds(state.playhead.editPositionBeats);
+    state.playhead.playbackPositionBeats =
+        juce::jmin(state.playhead.playbackPositionBeats, timelineLengthBeats);
+    state.playhead.playbackPosition = state.beatsToSeconds(state.playhead.playbackPositionBeats);
     if (state.editCursorBeats >= 0.0) {
-        state.editCursorBeats =
-            juce::jmin(state.editCursorBeats, state.secondsToBeats(state.timelineLength));
+        state.editCursorBeats = juce::jmin(state.editCursorBeats, timelineLengthBeats);
         state.editCursorPosition = state.beatsToSeconds(state.editCursorBeats);
     }
 
     if (state.loop.isValid()) {
-        const double timelineLengthBeats = state.secondsToBeats(state.timelineLength);
         const double endBeats = juce::jmin(state.loop.endBeats, timelineLengthBeats);
         if (state.loop.startBeats >= endBeats) {
             state.loop.clear();
@@ -1051,7 +1144,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
     }
 
     if (state.punch.isValid()) {
-        const double timelineLengthBeats = state.secondsToBeats(state.timelineLength);
+        const double timelineLengthBeats = state.timelineLengthBeats;
         const double endBeats = juce::jmin(state.punch.endBeats, timelineLengthBeats);
         if (state.punch.startBeats >= endBeats) {
             state.punch.clear();
@@ -1060,9 +1153,23 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
         }
     }
 
+    for (auto it = state.sections.begin(); it != state.sections.end();) {
+        const double endBeats = juce::jmin(it->endBeats, timelineLengthBeats);
+        if (it->startBeats >= endBeats) {
+            it = state.sections.erase(it);
+        } else {
+            it->setFromBeats(it->startBeats, endBeats, state.tempo.bpm);
+            ++it;
+        }
+    }
+
     clampScrollPosition();
 
     return ChangeFlags::Timeline | ChangeFlags::Zoom | ChangeFlags::Scroll;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelineLengthEvent& e) {
+    return handleEvent(SetTimelineLengthBeatsEvent{state.secondsToBeats(e.lengthInSeconds)});
 }
 
 // ===== Project Restore =====
@@ -1077,6 +1184,8 @@ void TimelineController::restoreProjectState(double tempo, int timeSigNum, int t
 
     // Recalculate timeline length from configured bars using actual project tempo
     auto& config = magda::Config::getInstance();
+    state.timelineLengthBeats =
+        config.getDefaultTimelineLengthBars() * state.tempo.timeSignatureNumerator;
     state.timelineLength = state.tempo.barsToTime(config.getDefaultTimelineLengthBars());
 
     // Loop: beats are authoritative, derive seconds from BPM

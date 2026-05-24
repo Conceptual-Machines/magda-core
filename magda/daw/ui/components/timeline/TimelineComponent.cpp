@@ -792,10 +792,10 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                                                            LayoutConfig::TIMELINE_LEFT_PADDING) /
                                            (tempoBPM / 60.0 * zoom));
         double startTime = std::floor(visibleStartTime / markerInterval) * markerInterval;
+        double endTime = juce::jmin(timelineLength, visibleEndTime + markerInterval);
 
         // Draw ticks and labels
-        for (double time = startTime; time <= visibleEndTime + markerInterval;
-             time += markerInterval) {
+        for (double time = startTime; time <= endTime; time += markerInterval) {
             int x = timeToPixel(time) + LayoutConfig::TIMELINE_LEFT_PADDING;
             if (x >= 0 && x < getWidth()) {
                 bool isMajor = false;
@@ -910,10 +910,10 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
             static_cast<double>(clipBoundsRect.getRight() - LayoutConfig::TIMELINE_LEFT_PADDING) /
                 zoom);
         double startBeat = std::floor(visStartBeat / markerIntervalBeats) * markerIntervalBeats;
+        double endBeat = juce::jmin(totalTimelineBeats, visEndBeat + markerIntervalBeats);
 
         // Pass 1: Draw grid ticks — iterate in beats
-        for (double beat = startBeat; beat <= visEndBeat + markerIntervalBeats;
-             beat += markerIntervalBeats) {
+        for (double beat = startBeat; beat <= endBeat; beat += markerIntervalBeats) {
             int x = beatsToPixel(beat) + LayoutConfig::TIMELINE_LEFT_PADDING;
             if (x < 0 || x >= getWidth())
                 continue;

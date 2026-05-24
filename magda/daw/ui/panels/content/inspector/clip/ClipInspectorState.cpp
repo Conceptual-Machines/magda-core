@@ -101,19 +101,12 @@ void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double 
         return;
     }
 
-    const double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip.loopStart, loopBpm);
+    const double loopStartBeats = clip.loopStartBeats;
     clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);
 
-    double loopLengthDisplayBeats = 0.0;
-    if (clip.autoTempo && clip.loopLengthBeats > 0.0) {
-        loopLengthDisplayBeats = clip.loopLengthBeats;
-    } else {
-        double projectBPM = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-        const double sourceLength = clip.getSourceLoopLength() > 0.0
-                                        ? clip.getSourceLoopLength()
-                                        : clip.timelineToSource(clip.getTimelineLength(projectBPM));
-        loopLengthDisplayBeats = magda::TimelineUtils::secondsToBeats(sourceLength, loopBpm);
-    }
+    double loopLengthDisplayBeats = clip.loopLengthBeats;
+    if (loopLengthDisplayBeats <= 0.0)
+        loopLengthDisplayBeats = clip.getLengthInBeats(loopBpm);
     clipLoopEndValue_->setValue(loopStartBeats + loopLengthDisplayBeats,
                                 juce::dontSendNotification);
 

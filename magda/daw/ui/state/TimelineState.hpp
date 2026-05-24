@@ -162,21 +162,26 @@ struct ZoomState {
 /**
  * @brief Playhead state (Bitwig-style dual playhead)
  *
- * - editPosition: Where the triangle sits (stationary during playback)
- * - playbackPosition: Where playback currently is (moving cursor)
+ * - editPositionBeats: Where the triangle sits (stationary during playback)
+ * - playbackPositionBeats: Where playback currently is (moving cursor)
  *
  * When playback stops, playbackPosition resets to editPosition.
  */
 struct PlayheadState {
-    double editPosition = 0.0;       // Triangle position in seconds (derived from beats)
-    double editPositionBeats = 0.0;  // Triangle position in beats (authoritative)
-    double playbackPosition = 0.0;   // Moving cursor position
-    bool isPlaying = false;          // Is transport playing
-    bool isRecording = false;        // Is transport recording
+    double editPosition = 0.0;           // Triangle position in seconds (derived from beats)
+    double editPositionBeats = 0.0;      // Triangle position in beats (authoritative)
+    double playbackPosition = 0.0;       // Moving cursor position in seconds (derived from beats)
+    double playbackPositionBeats = 0.0;  // Moving cursor position in beats (authoritative)
+    bool isPlaying = false;              // Is transport playing
+    bool isRecording = false;            // Is transport recording
 
     // Get the "current" position (playback when playing, edit otherwise)
     double getCurrentPosition() const {
         return isPlaying ? playbackPosition : editPosition;
+    }
+
+    double getCurrentPositionBeats() const {
+        return isPlaying ? playbackPositionBeats : editPositionBeats;
     }
 
     // For backwards compatibility - returns the effective playhead position
@@ -392,30 +397,61 @@ struct DisplayConfig {
  * @brief Arrangement section
  */
 struct ArrangementSection {
-    double startTime;
-    double endTime;
+    double startTime;   // seconds cache derived from beats
+    double endTime;     // seconds cache derived from beats
+    double startBeats;  // authoritative beat position
+    double endBeats;    // authoritative beat position
     juce::String name;
     juce::Colour colour;
 
     ArrangementSection(double start = 0.0, double end = 0.0,
                        const juce::String& sectionName = "Section",
                        juce::Colour sectionColour = juce::Colours::blue)
-        : startTime(start), endTime(end), name(sectionName), colour(sectionColour) {}
+        : startTime(start),
+          endTime(end),
+          startBeats(start * DEFAULT_BPM / 60.0),
+          endBeats(end * DEFAULT_BPM / 60.0),
+          name(sectionName),
+          colour(sectionColour) {}
 
     double getDuration() const {
         return endTime - startTime;
     }
+
+    double getDurationBeats() const {
+        return endBeats - startBeats;
+    }
+
+    void setFromBeats(double start, double end, double bpm) {
+        if (start > end)
+            std::swap(start, end);
+        startBeats = juce::jmax(0.0, start);
+        endBeats = juce::jmax(startBeats, end);
+        const double validBpm = clampBpm(bpm);
+        startTime = startBeats * 60.0 / validBpm;
+        endTime = endBeats * 60.0 / validBpm;
+    }
+
+    void setFromSeconds(double start, double end, double bpm) {
+        if (start > end)
+            std::swap(start, end);
+        const double validBpm = clampBpm(bpm);
+        setFromBeats(start * validBpm / 60.0, end * validBpm / 60.0, validBpm);
+    }
 };
 
 /**
- * @brief Complete timeline state - the single source of truth
+ * @brief Complete timeline data snapshot - the single source of truth
  *
- * This struct holds ALL timeline-related state. Components read from this
- * and dispatch events to modify it via the TimelineController.
+ * This struct holds ALL timeline-related state. Components read this snapshot
+ * and dispatch events to TimelineController for modifications. Beat fields are
+ * authoritative; seconds fields are derived caches for engine/legacy boundaries.
  */
 struct TimelineState {
     // Core timeline properties
     double timelineLength = 300.0;  // Total length in seconds
+    double timelineLengthBeats =
+        300.0 * DEFAULT_BPM / 60.0;  // Total length in beats (authoritative for UI)
 
     // Edit cursor - separate from playhead, used for split/edit operations
     // Set by clicking in lower track zone, independent of playback position
@@ -628,8 +664,7 @@ struct TimelineState {
      * Calculate content width based on zoom and timeline length
      */
     int getContentWidth() const {
-        double beats = secondsToBeats(timelineLength);
-        int baseWidth = static_cast<int>(std::round(beats * zoom.horizontalZoom)) +
+        int baseWidth = static_cast<int>(std::round(timelineLengthBeats * zoom.horizontalZoom)) +
                         LayoutConfig::TIMELINE_LEFT_PADDING;
         int minWidth = zoom.viewportWidth + (zoom.viewportWidth / 2);
         return juce::jmax(baseWidth, minWidth);
@@ -639,9 +674,9 @@ struct TimelineState {
      * Calculate maximum scroll position
      */
     int getMaxScrollX() const {
-        double beats = secondsToBeats(timelineLength);
-        int timelineWidth = static_cast<int>(std::round(beats * zoom.horizontalZoom)) +
-                            LayoutConfig::TIMELINE_LEFT_PADDING;
+        int timelineWidth =
+            static_cast<int>(std::round(timelineLengthBeats * zoom.horizontalZoom)) +
+            LayoutConfig::TIMELINE_LEFT_PADDING;
         return juce::jmax(0, timelineWidth - zoom.viewportWidth);
     }
 
@@ -649,13 +684,10 @@ struct TimelineState {
      * Calculate minimum zoom level (ppb) to fit timeline in viewport
      */
     double getMinZoom() const {
-        if (timelineLength > 0 && zoom.viewportWidth > 0) {
+        if (timelineLengthBeats > 0 && zoom.viewportWidth > 0) {
             double availableWidth = zoom.viewportWidth - 50.0;
-            double beats = secondsToBeats(timelineLength);
-            if (beats > 0) {
-                // Allow zooming out to 1/4 of the fit-to-viewport level
-                return (availableWidth / beats) * 0.25;
-            }
+            // Allow zooming out to 1/4 of the fit-to-viewport level
+            return (availableWidth / timelineLengthBeats) * 0.25;
         }
         return 0.01;
     }
