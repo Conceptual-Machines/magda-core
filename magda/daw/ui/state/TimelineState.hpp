@@ -448,6 +448,8 @@ struct ArrangementSection {
  * authoritative; seconds fields are derived caches for engine/legacy boundaries.
  */
 struct TimelineState {
+    static constexpr double MIN_ZOOM_RIGHT_LABEL_GUTTER = 70.0;
+
     // Core timeline properties
     double timelineLength = 300.0;  // Total length in seconds
     double timelineLengthBeats =
@@ -685,9 +687,10 @@ struct TimelineState {
      */
     double getMinZoom() const {
         if (timelineLengthBeats > 0 && zoom.viewportWidth > 0) {
-            double availableWidth = zoom.viewportWidth - 50.0;
-            // Allow zooming out to 1/4 of the fit-to-viewport level
-            return (availableWidth / timelineLengthBeats) * 0.25;
+            const double availableWidth = juce::jmax(
+                1.0, static_cast<double>(zoom.viewportWidth - LayoutConfig::TIMELINE_LEFT_PADDING) -
+                         MIN_ZOOM_RIGHT_LABEL_GUTTER);
+            return availableWidth / timelineLengthBeats;
         }
         return 0.01;
     }

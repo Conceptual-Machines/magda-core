@@ -186,6 +186,7 @@ TEST_CASE("TimelineState max scroll clamps to real timeline width", "[timeline][
     state.tempo.bpm = 120.0;
     state.tempo.timeSignatureNumerator = 4;
     state.timelineLength = 1024.0;  // 512 bars at 120 BPM
+    state.timelineLengthBeats = state.secondsToBeats(state.timelineLength);
     state.zoom.viewportWidth = 1600;
 
     SECTION("zoomed out timeline cannot scroll into synthetic padding") {
@@ -204,6 +205,49 @@ TEST_CASE("TimelineState max scroll clamps to real timeline width", "[timeline][
                                             state.zoom.horizontalZoom)) +
                     magda::LayoutConfig::TIMELINE_LEFT_PADDING - state.zoom.viewportWidth);
     }
+}
+
+TEST_CASE("TimelineState minimum zoom fits the full timeline with label gutter",
+          "[timeline][zoom][scroll]") {
+    magda::TimelineState state;
+    state.tempo.bpm = 120.0;
+    state.timelineLength = 1024.0;
+    state.timelineLengthBeats = state.secondsToBeats(state.timelineLength);
+    state.zoom.viewportWidth = 1600;
+
+    const double expectedAvailableWidth =
+        static_cast<double>(state.zoom.viewportWidth - magda::LayoutConfig::TIMELINE_LEFT_PADDING) -
+        magda::TimelineState::MIN_ZOOM_RIGHT_LABEL_GUTTER;
+
+    REQUIRE(state.getMinZoom() ==
+            Catch::Approx(expectedAvailableWidth / state.timelineLengthBeats));
+
+    state.zoom.horizontalZoom = state.getMinZoom();
+    const int timelineEndX =
+        static_cast<int>(std::round(state.timelineLengthBeats * state.zoom.horizontalZoom)) +
+        magda::LayoutConfig::TIMELINE_LEFT_PADDING;
+
+    REQUIRE(timelineEndX ==
+            state.zoom.viewportWidth -
+                static_cast<int>(magda::TimelineState::MIN_ZOOM_RIGHT_LABEL_GUTTER));
+    REQUIRE(state.getMaxScrollX() == 0);
+}
+
+TEST_CASE("TimelineController clamps zoom when viewport establishes a larger minimum",
+          "[timeline][zoom][scroll]") {
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetTimelineLengthBeatsEvent{2048.0});
+    controller.dispatch(magda::ViewportResizedEvent{800, 600});
+    controller.dispatch(magda::SetZoomEvent{0.01});
+
+    const double smallViewportZoom = controller.getState().zoom.horizontalZoom;
+
+    controller.dispatch(magda::ViewportResizedEvent{2000, 600});
+
+    const auto& state = controller.getState();
+    REQUIRE(state.zoom.horizontalZoom > smallViewportZoom);
+    REQUIRE(state.zoom.horizontalZoom == Catch::Approx(state.getMinZoom()));
 }
 
 TEST_CASE("Timeline edit cursor is beat-authoritative across tempo changes",

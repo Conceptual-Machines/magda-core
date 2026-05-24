@@ -158,7 +158,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ResetZoomE
         return ChangeFlags::None;
     }
 
-    int availableWidth = state.zoom.viewportWidth - LayoutConfig::TIMELINE_LEFT_PADDING;
+    int availableWidth = static_cast<int>(
+        static_cast<double>(state.zoom.viewportWidth - LayoutConfig::TIMELINE_LEFT_PADDING) -
+        TimelineState::MIN_ZOOM_RIGHT_LABEL_GUTTER);
     double beats = state.timelineLengthBeats;
     double fitZoom = (beats > 0) ? static_cast<double>(availableWidth) / beats : 1.0;
 
@@ -1104,6 +1106,10 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ViewportRe
     }
 
     if (changed) {
+        const double clampedZoom = clampZoom(state.zoom.horizontalZoom);
+        if (clampedZoom != state.zoom.horizontalZoom) {
+            state.zoom.horizontalZoom = clampedZoom;
+        }
         clampScrollPosition();
         return ChangeFlags::Zoom | ChangeFlags::Scroll;
     }
@@ -1163,6 +1169,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
         }
     }
 
+    state.zoom.horizontalZoom = clampZoom(state.zoom.horizontalZoom);
     clampScrollPosition();
 
     return ChangeFlags::Timeline | ChangeFlags::Zoom | ChangeFlags::Scroll;
