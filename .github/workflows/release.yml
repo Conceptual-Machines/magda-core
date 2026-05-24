@@ -512,7 +512,11 @@ jobs:
         Get-Content "$installer.sha256"
 
     - name: Create MuseHub source bundle
-      shell: powershell
+      # pwsh (PowerShell 7), NOT Windows PowerShell 5.1: 5.1's Compress-Archive
+      # writes ZIP entry names with backslash separators, which violates the ZIP
+      # spec (forward slashes required) and breaks the nested controllers/, lang/
+      # etc. trees on extraction. pwsh's Compress-Archive emits forward slashes.
+      shell: pwsh
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
