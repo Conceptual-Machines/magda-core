@@ -37,7 +37,9 @@ TrackInspector::TrackInspector() {
                               DarkTheme::getColour(DarkTheme::SURFACE));
     trackNameValue_.setEditable(true);
     trackNameValue_.onTextChange = [this]() {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+        // The master track cannot be renamed; its name is fixed.
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID &&
+            selectedTrackId_ != magda::MASTER_TRACK_ID) {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetTrackNameCommand>(selectedTrackId_,
                                                              trackNameValue_.getText()));
@@ -127,6 +129,22 @@ TrackInspector::TrackInspector() {
     };
     addAndMakeVisible(*colourSwatch_);
 
+    // MAGDA glyph shown in the master track's (empty) colour-swatch slot.
+    masterGlyph_ =
+        std::make_unique<juce::DrawableButton>("masterGlyph", juce::DrawableButton::ImageFitted);
+    {
+        auto glyph = juce::Drawable::createFromImageData(BinaryData::BoldMGlyph_svg,
+                                                         BinaryData::BoldMGlyph_svgSize);
+        if (glyph)
+            glyph->replaceColour(juce::Colour(0xFF0A0A0A), DarkTheme::getSecondaryTextColour());
+        masterGlyph_->setImages(glyph.get());
+    }
+    masterGlyph_->setEdgeIndent(0);
+    masterGlyph_->setInterceptsMouseClicks(false, false);
+    masterGlyph_->setColour(juce::DrawableButton::backgroundColourId,
+                            juce::Colours::transparentBlack);
+    addChildComponent(*masterGlyph_);
+
     // Mute button (TCP style)
     muteButton_.setButtonText("M");
     muteButton_.setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
@@ -153,19 +171,19 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(muteButton_);
 
     // Speaker icon button (used for master mute instead of "M" text)
-    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::volume_up_svg,
-                                                             BinaryData::volume_up_svgSize);
-    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::volume_off_svg,
-                                                              BinaryData::volume_off_svgSize);
+    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
+                                                             BinaryData::speaker_on_svgSize);
+    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
+                                                              BinaryData::speaker_off_svgSize);
     speakerButton_ =
         std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
     speakerButton_->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
     speakerButton_->setClickingTogglesState(true);
     speakerButton_->setColour(juce::DrawableButton::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
+                              juce::Colours::transparentBlack);
     speakerButton_->setColour(juce::DrawableButton::backgroundOnColourId,
-                              DarkTheme::getColour(DarkTheme::STATUS_ERROR).withAlpha(0.3f));
-    speakerButton_->setEdgeIndent(2);
+                              juce::Colours::transparentBlack);
+    speakerButton_->setEdgeIndent(0);
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetMasterMuteCommand>(speakerButton_->getToggleState()));
@@ -487,7 +505,13 @@ void TrackInspector::resized() {
     // Track properties layout (TCP style)
     trackNameLabel_.setBounds(bounds.removeFromTop(16));
     auto nameRow = bounds.removeFromTop(24);
-    colourSwatch_->setBounds(nameRow.removeFromRight(24));
+    if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
+        // Mirror the volume row's mute button (22x22 within a 36px right area)
+        // so the glyph lines up with it.
+        masterGlyph_->setBounds(nameRow.removeFromRight(36).withSizeKeepingCentre(22, 22));
+    } else {
+        colourSwatch_->setBounds(nameRow.removeFromRight(24));
+    }
     nameRow.removeFromRight(4);
     trackNameValue_.setBounds(nameRow);
     bounds.removeFromTop(separatorPadding);
@@ -521,7 +545,8 @@ void TrackInspector::resized() {
             return;
         if (showSpeaker) {
             // Speaker icon: fixed square size
-            speakerButton_->setBounds(row.removeFromLeft(controlRowHeight));
+            speakerButton_->setBounds(
+                row.removeFromLeft(controlRowHeight).withSizeKeepingCentre(22, 22));
         } else {
             const int btnWidth = (row.getWidth() - (visibleButtons - 1) * gap) / visibleButtons;
             muteButton_.setBounds(row.removeFromLeft(btnWidth));
@@ -549,7 +574,7 @@ void TrackInspector::resized() {
             auto speakerArea = row.removeFromRight(36);
             row.removeFromRight(gap);
             gainLabel_->setBounds(row);
-            speakerButton_->setBounds(speakerArea);
+            speakerButton_->setBounds(speakerArea.withSizeKeepingCentre(22, 22));
         } else {
             const int mixPortion = row.getWidth() * 60 / 100;
             if (showPan) {
@@ -570,7 +595,7 @@ void TrackInspector::resized() {
             auto speakerArea = mixRow.removeFromRight(36);
             mixRow.removeFromRight(buttonGap);
             gainLabel_->setBounds(mixRow);
-            speakerButton_->setBounds(speakerArea);
+            speakerButton_->setBounds(speakerArea.withSizeKeepingCentre(22, 22));
         } else {
             if (showPan) {
                 const int mixGap = 4;
@@ -593,7 +618,7 @@ void TrackInspector::resized() {
             auto speakerArea = volRow.removeFromRight(36);
             volRow.removeFromRight(buttonGap);
             gainLabel_->setBounds(volRow);
-            speakerButton_->setBounds(speakerArea);
+            speakerButton_->setBounds(speakerArea.withSizeKeepingCentre(22, 22));
         } else {
             gainLabel_->setBounds(volRow);
             if (showPan) {
@@ -910,6 +935,7 @@ void TrackInspector::updateFromSelectedTrack() {
     if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
         const auto& master = magda::TrackManager::getInstance().getMasterChannel();
         trackNameValue_.setText(tr("common.master"), juce::dontSendNotification);
+        trackNameValue_.setEditable(false);  // master cannot be renamed
         speakerButton_->setToggleState(master.muted, juce::dontSendNotification);
         soloButton_.setToggleState(false, juce::dontSendNotification);
         recordButton_.setToggleState(false, juce::dontSendNotification);
@@ -935,6 +961,7 @@ void TrackInspector::updateFromSelectedTrack() {
             swatch->setColour(track->colour);
 
         trackNameValue_.setText(track->name, juce::dontSendNotification);
+        trackNameValue_.setEditable(true);  // re-enable after a master selection
         muteButton_.setToggleState(track->muted, juce::dontSendNotification);
         soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
         recordButton_.setToggleState(track->recordArmed, juce::dontSendNotification);
@@ -1168,6 +1195,7 @@ void TrackInspector::updateFromMultiTrackSelection() {
     trackNameLabel_.setVisible(true);
     trackNameValue_.setVisible(true);
     colourSwatch_->setVisible(true);
+    masterGlyph_->setVisible(false);
     muteButton_.setVisible(true);
     speakerButton_->setVisible(false);
     soloButton_.setVisible(true);
@@ -1222,6 +1250,7 @@ void TrackInspector::showTrackControls(bool show) {
     trackNameLabel_.setVisible(show);
     trackNameValue_.setVisible(show);
     colourSwatch_->setVisible(show && !isMaster);
+    masterGlyph_->setVisible(show && isMaster);
     muteButton_.setVisible(show && !isMaster);
     speakerButton_->setVisible(isMaster);
     soloButton_.setVisible(show && !isMaster);

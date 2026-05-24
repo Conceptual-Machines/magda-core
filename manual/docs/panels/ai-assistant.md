@@ -37,43 +37,7 @@ Creating a new track still works either way — just be explicit in the request 
 
 ### Setup
 
-The AI Assistant supports multiple LLM providers. Open the AI Settings dialog from **Settings > AI Settings** to configure your providers.
-
-The settings dialog has three tabs:
-
-| Tab | Description |
-|-----|-------------|
-| **Cloud** | Configure cloud API providers (Anthropic, OpenAI, DeepSeek, Gemini, OpenRouter) |
-| **Local** | Configure the embedded llama.cpp engine with a local GGUF model |
-| **Config** | Mode selection (Local / Cloud / Hybrid), provider, and optimization strategy |
-
-To add a cloud provider:
-
-1. Select the **Provider** from the dropdown
-2. Enter your **API Key**
-3. Click **Add** (or **Test** to verify the key first)
-
-Registered providers appear in the list below. You can add multiple providers and switch between them. Click **X** to remove a provider.
-
-#### Local Tab
-
-The Local tab configures the embedded **llama.cpp** inference engine for fully offline AI. MAGDA includes a one-click downloader for the custom **magda-v0.3.0** GGUF model, fine-tuned for DAW operations.
-
-- **Download Model** — Downloads the MAGDA model from HuggingFace with a progress indicator
-- **Model Path** — Path to any `.gguf` model file (use the file browser to select a custom model)
-- **GPU Layers** — Number of layers to offload to the GPU (-1 = all layers, for Metal/CUDA acceleration)
-- **Context Size** — Context window size (default 4096)
-- **Load / Unload** — Load the model into memory or unload it to free resources
-
-#### Config Tab
-
-The Config tab selects which providers the AI agents use:
-
-| Setting | Description |
-|---------|-------------|
-| **Mode** | **Local** (all agents use embedded llama), **Cloud** (all agents use a cloud provider), or **Hybrid** (mix of local and cloud) |
-| **Provider** | Which cloud provider to use (from the registered providers in the Cloud tab) |
-| **Optimize** | **Cost** (prefer local where possible), **Speed** (prefer fastest), or **Quality** (prefer most capable model) |
+The AI Assistant supports both cloud LLM providers and a fully offline local model. Configure them in the **AI Settings** dialog (**Settings > AI Settings**); see [AI Settings](../interface/ai-settings.md) for the Cloud, Local, and Config tabs.
 
 ### Usage Tips
 
@@ -81,6 +45,20 @@ The Config tab selects which providers the AI agents use:
 - The assistant can handle multi-step requests: "Create 4 MIDI tracks and name them Kick, Snare, HiHat, Bass"
 - Use it for repetitive tasks: "Set all tracks to -6 dB"
 - Prefix a message with `/dsl` to execute DSL directly from the AI chat without making an AI call
+
+## Drummer Agent
+
+When you select a track that hosts a [Drum Grid](../devices/drum-grid.md) (or a MIDI clip on one), the AI chat automatically switches into **Drummer** mode. The input area shows a drum icon and a `Drummer - <track name>` breadcrumb, and your requests are routed to a specialised agent that writes drum patterns instead of the general DAW assistant.
+
+In this mode, describe the groove you want in plain language:
+
+- "four on the floor with offbeat open hats"
+- "a half-time hip-hop beat, snare on 3"
+- "busier hats in the second bar"
+
+The agent works in terms of drum **roles** (kick, snare, closed hat, and so on), so it places hits on the pads you have labelled with matching [roles](drum-grid-editor.md#row-labels-and-roles). If a Drum Grid clip is selected, its current pattern is sent along as context, so follow-up requests like "add a crash on the downbeat" build on what is already there. The generated pattern is written straight into the selected clip.
+
+Drummer mode is automatic and context-driven; there is no slash command to type. Select a non-drum track to return to the general assistant.
 
 ## DSL Tab
 

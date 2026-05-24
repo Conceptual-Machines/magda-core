@@ -48,6 +48,7 @@ nav:
       - Preferences: interface/preferences.md
       - Audio Settings: interface/audio-settings.md
       - Plugin Settings: interface/plugin-settings.md
+      - AI Settings: interface/ai-settings.md
       - Controllers: interface/controllers.md
   - Tracks: tracks.md
   - Clips: clips.md
@@ -59,8 +60,14 @@ nav:
   - Panels:
       - Inspector: panels/inspector.md
       - Plugin & Media Browser: panels/browsers.md
+      - Media Library: panels/media-library.md
       - AI Assistant: panels/ai-assistant.md
-      - Editors: panels/editors.md
+      - Editors:
+          - Overview: panels/editors.md
+          - Piano Roll: panels/piano-roll.md
+          - Drum Grid Editor: panels/drum-grid-editor.md
+          - Waveform Editor: panels/waveform-editor.md
+          - Track Chain: panels/track-chain.md
       - Chord Panel: panels/chord-panel.md
   - Devices:
       - Overview: devices/built-in.md

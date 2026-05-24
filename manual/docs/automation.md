@@ -67,6 +67,10 @@ final value = automation lane value + modulator output + macro output
 
 This means a slow LFO can wobble around an automation curve, or a macro can offset the whole lane up and down — same parameter, three sources, all live.
 
+## Duplicating Clips with Automation
+
+When you duplicate a clip, you can decide whether its automation comes along. Right-click a clip and choose **Duplicate With Automation** to carry the lane data into the copy, or **Duplicate Without Automation** to leave it behind. See [Clips — Editing Clips](clips.md#editing-clips).
+
 ## Removing Automation
 
 To remove a single point: right-click → **Delete Point**.

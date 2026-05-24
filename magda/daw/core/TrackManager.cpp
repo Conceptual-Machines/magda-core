@@ -300,6 +300,13 @@ TrackId TrackManager::createGroupTrack(const juce::String& name) {
 }
 
 void TrackManager::deleteTrack(TrackId trackId) {
+    // The master track is permanent and must never be deleted. getTrack()
+    // returns a valid pointer for MASTER_TRACK_ID, so the null check below
+    // would not catch it; guard explicitly here, the single choke point all
+    // delete entry points funnel through.
+    if (trackId == MASTER_TRACK_ID)
+        return;
+
     auto* track = getTrack(trackId);
     if (!track)
         return;
@@ -822,6 +829,12 @@ void TrackManager::setTrackColour(TrackId trackId, juce::Colour colour) {
 }
 
 void TrackManager::setTrackVolume(TrackId trackId, float volume, bool fromAutomation) {
+    // The master is authoritative in masterChannel_; route track-level writes to
+    // the master setter so every observer (inspector, mixer, headers) stays in sync.
+    if (trackId == MASTER_TRACK_ID) {
+        setMasterVolume(juce::jlimit(0.0f, 2.0f, volume));
+        return;
+    }
     if (auto* track = getTrack(trackId)) {
         // Allow up to +6dB gain (10^(6/20) ≈ 2.0)
         track->volume = juce::jlimit(0.0f, 2.0f, volume);
@@ -832,6 +845,10 @@ void TrackManager::setTrackVolume(TrackId trackId, float volume, bool fromAutoma
 }
 
 void TrackManager::setTrackPan(TrackId trackId, float pan, bool fromAutomation) {
+    if (trackId == MASTER_TRACK_ID) {
+        setMasterPan(juce::jlimit(-1.0f, 1.0f, pan));
+        return;
+    }
     if (auto* track = getTrack(trackId)) {
         track->pan = juce::jlimit(-1.0f, 1.0f, pan);
         if (!fromAutomation)
@@ -841,6 +858,10 @@ void TrackManager::setTrackPan(TrackId trackId, float pan, bool fromAutomation) 
 }
 
 void TrackManager::setTrackMuted(TrackId trackId, bool muted) {
+    if (trackId == MASTER_TRACK_ID) {
+        setMasterMuted(muted);
+        return;
+    }
     if (auto* track = getTrack(trackId)) {
         track->muted = muted;
         notifyTrackPropertyChanged(trackId);
@@ -848,6 +869,10 @@ void TrackManager::setTrackMuted(TrackId trackId, bool muted) {
 }
 
 void TrackManager::setTrackSoloed(TrackId trackId, bool soloed) {
+    if (trackId == MASTER_TRACK_ID) {
+        setMasterSoloed(soloed);
+        return;
+    }
     if (auto* track = getTrack(trackId)) {
         track->soloed = soloed;
         notifyTrackPropertyChanged(trackId);
@@ -1802,24 +1827,36 @@ void TrackManager::clearSelectedChain() {
 // Master Channel
 // ============================================================================
 
+// masterChannel_ is the source of truth for the master. masterTrack_ (the
+// TrackInfo that lets the master appear as a track header) is kept as a mirror
+// so track-API readers see the same values, and both observer paths are
+// notified so every master UI updates regardless of which it listens to.
 void TrackManager::setMasterVolume(float volume) {
     masterChannel_.volume = volume;
+    masterTrack_.volume = volume;
     notifyMasterChannelChanged();
+    notifyTrackPropertyChanged(MASTER_TRACK_ID);
 }
 
 void TrackManager::setMasterPan(float pan) {
     masterChannel_.pan = pan;
+    masterTrack_.pan = pan;
     notifyMasterChannelChanged();
+    notifyTrackPropertyChanged(MASTER_TRACK_ID);
 }
 
 void TrackManager::setMasterMuted(bool muted) {
     masterChannel_.muted = muted;
+    masterTrack_.muted = muted;
     notifyMasterChannelChanged();
+    notifyTrackPropertyChanged(MASTER_TRACK_ID);
 }
 
 void TrackManager::setMasterSoloed(bool soloed) {
     masterChannel_.soloed = soloed;
+    masterTrack_.soloed = soloed;
     notifyMasterChannelChanged();
+    notifyTrackPropertyChanged(MASTER_TRACK_ID);
 }
 
 void TrackManager::setMasterVisible(ViewMode mode, bool visible) {

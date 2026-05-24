@@ -42,6 +42,14 @@ MAGDA keeps user data in three configurable folders. Each can be redirected to a
 
 Click **Browse…** next to a path to relocate that folder. MAGDA does not move existing content for you — copy or symlink the contents over before switching if you want to keep what's there.
 
+### External Audio Editor
+
+Set the application MAGDA hands audio clips to when you choose **Edit in External Editor** (see [Waveform Editor](../panels/waveform-editor.md#edit-in-an-external-editor)). Use **Browse…** to pick the application, or **Reset** to clear it. While no editor is set, the clip menu item stays disabled.
+
+### Media Database
+
+The location and maintenance of the sample-indexing database live here too. See [Media Library — Managing the database](../panels/media-library.md#managing-the-database).
+
 ## Colours
 
 - **Custom colour palette** — Define a custom set of colours for tracks and clips
@@ -59,7 +67,7 @@ Click **Browse…** next to a path to relocate that folder. MAGDA does not move 
 
 AI provider configuration has moved to a dedicated dialog. Open it from **Settings > AI Settings**.
 
-See [AI Assistant — Setup](../panels/ai-assistant.md#setup) for details.
+See [AI Settings](ai-settings.md) for the full reference.
 
 ## Shortcuts
 

@@ -35,6 +35,9 @@ If a newly installed plugin doesn't appear, use **Settings > Plugin Scan** to re
 
 The Media Explorer lets you browse files on your system and preview audio before importing.
 
+!!! tip "Searchable library"
+    The same panel has a **Library** mode that indexes folders into a searchable database, so you can find sounds by family, key, tempo, tags, or a plain-language description. See [Media Library](media-library.md).
+
 ### Navigation
 
 - **File browser** — Navigate your file system with a tree view

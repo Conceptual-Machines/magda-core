@@ -2227,20 +2227,20 @@ MainView::MasterHeaderPanel::~MasterHeaderPanel() {
 
 void MainView::MasterHeaderPanel::setupControls() {
     // Speaker on/off button (toggles master mute)
-    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::volume_up_svg,
-                                                             BinaryData::volume_up_svgSize);
-    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::volume_off_svg,
-                                                              BinaryData::volume_off_svgSize);
+    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
+                                                             BinaryData::speaker_on_svgSize);
+    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
+                                                              BinaryData::speaker_off_svgSize);
 
     speakerButton =
         std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
     speakerButton->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
     speakerButton->setClickingTogglesState(true);
     speakerButton->setColour(juce::DrawableButton::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             juce::Colours::transparentBlack);
     speakerButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                             DarkTheme::getColour(DarkTheme::STATUS_ERROR).withAlpha(0.3f));
-    speakerButton->setEdgeIndent(2);
+                             juce::Colours::transparentBlack);
+    speakerButton->setEdgeIndent(0);
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -2305,7 +2305,9 @@ void MainView::MasterHeaderPanel::resized() {
 
     // Top row: volume + speaker
     auto topRow = contentArea.removeFromTop(18);
-    speakerButton->setBounds(topRow.removeFromRight(18).withSizeKeepingCentre(16, 16));
+    // Square to the row height; the icon carries its own border, so don't shrink it.
+    speakerButton->setBounds(
+        topRow.removeFromRight(topRow.getHeight()).withSizeKeepingCentre(16, 16));
     topRow.removeFromRight(4);
     volumeLabel->setBounds(topRow);
 

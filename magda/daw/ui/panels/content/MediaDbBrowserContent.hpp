@@ -29,23 +29,6 @@
 
 namespace magda::daw::ui {
 
-// Compact status strip showing whether the Sample Analyzer model is loaded.
-// Polls MediaDbContext + SampleTaggerDownloader twice a second so loads
-// triggered elsewhere (AI Settings, the proactive preload in
-// MediaDbBrowserContent::visibilityChanged, startup auto-load) reflect
-// here without needing a callback wiring.
-class ModelStatusIndicator : public juce::Component, private juce::Timer {
-  public:
-    ModelStatusIndicator();
-    void paint(juce::Graphics& g) override;
-
-  private:
-    enum class State { NotInstalled, Idle, Loading, Loaded };
-    void timerCallback() override;
-    void refresh();
-    State state_ = State::NotInstalled;
-};
-
 class MediaDbBrowserContent : public juce::Component, private juce::Timer {
   public:
     // isPopOutInstance: true when this is the content of a detached pop-out
@@ -181,7 +164,6 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     std::unique_ptr<juce::ArrowButton> prevPageBtn_;
     std::unique_ptr<juce::ArrowButton> nextPageBtn_;
     juce::Label pageLabel_;  // "Page N"
-    ModelStatusIndicator modelStatus_;
 
     // State
     juce::String queryText_;
