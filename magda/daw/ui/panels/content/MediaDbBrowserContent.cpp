@@ -138,6 +138,46 @@ juce::String displayNameFor(const magda::media::QueryResult& result) {
     return juce::String(result.path.filename().string());
 }
 
+// A compact, branded chip used as the drag image for preset rows. macOS would
+// otherwise show the generic blank-document icon for an unregistered .mps; this
+// gives a clear, distinctive snapshot naming the preset(s) being dragged.
+juce::Image makePresetDragImage(const juce::StringArray& names) {
+    const juce::String text =
+        names.size() == 1 ? names[0] : (juce::String(names.size()) + " presets");
+    auto font = FontManager::getInstance().getUIFont(12.0F);
+    const int textW = juce::GlyphArrangement::getStringWidthInt(font, text);
+    const int padLeft = 26;  // room for the glyph
+    const int padRight = 12;
+    const int width = juce::jlimit(90, 260, padLeft + textW + padRight);
+    const int height = 26;
+
+    juce::Image img(juce::Image::ARGB, width, height, true);
+    juce::Graphics g(img);
+
+    auto bounds =
+        juce::Rectangle<float>(0.0F, 0.0F, static_cast<float>(width), static_cast<float>(height))
+            .reduced(0.5F);
+    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.96F));
+    g.fillRoundedRectangle(bounds, 6.0F);
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.drawRoundedRectangle(bounds, 6.0F, 1.5F);
+
+    // Two offset squares read as a stacked "preset".
+    const float gy = static_cast<float>(height) * 0.5F;
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.fillRoundedRectangle(8.0F, gy - 6.0F, 8.0F, 8.0F, 2.0F);
+    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.96F));
+    g.fillRoundedRectangle(11.0F, gy - 2.5F, 8.0F, 8.0F, 2.0F);
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.drawRoundedRectangle(11.0F, gy - 2.5F, 8.0F, 8.0F, 2.0F, 1.0F);
+
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setFont(font);
+    g.drawText(text, juce::Rectangle<int>(padLeft, 0, width - padLeft - padRight, height),
+               juce::Justification::centredLeft, true);
+    return img;
+}
+
 std::filesystem::path normalizedPath(const std::filesystem::path& path) {
     return path.lexically_normal();
 }
@@ -727,16 +767,43 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
             return {};
         }
         juce::StringArray paths;
+        juce::StringArray presetNames;
+        bool allPresets = true;
         for (int i = 0; i < selectedRows.size(); ++i) {
             const int row = selectedRows[i];
             if (row < 0 || row >= static_cast<int>(owner_.results_.size())) {
                 continue;
             }
-            paths.addIfNotAlreadyThere(
-                juce::String(owner_.results_[static_cast<size_t>(row)].path.string()));
+            const auto& result = owner_.results_[static_cast<size_t>(row)];
+            paths.addIfNotAlreadyThere(juce::String(result.path.string()));
+            if (result.kind == "preset") {
+                presetNames.add(displayNameFor(result));
+            } else {
+                allPresets = false;
+            }
         }
         if (paths.isEmpty()) {
             return {};
+        }
+
+        // Preset rows: drive a JUCE-internal drag with a clean, branded image on
+        // every platform. The in-app preset drop targets (track FX chain,
+        // arrangement) recognise the {type:"files"} payload, and presets aren't
+        // dragged out to Finder, so the OS file-drag route isn't needed here.
+        // This also avoids macOS showing the generic blank-document .mps icon.
+        if (allPresets) {
+            juce::Array<juce::var> pathArray;
+            for (const auto& p : paths)
+                pathArray.add(p);
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty("type", juce::var("files"));
+            obj->setProperty("paths", juce::var(pathArray));
+            juce::var description(obj);
+            if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(&owner_)) {
+                container->startDragging(description, &owner_,
+                                         juce::ScaledImage(makePresetDragImage(presetNames)));
+            }
+            return {};  // we started the drag ourselves; suppress ListBox's default
         }
 #if JUCE_LINUX
         juce::Array<juce::var> pathArray;

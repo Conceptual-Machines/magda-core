@@ -330,7 +330,15 @@ class DeviceButtonLookAndFeel : public juce::LookAndFeel_V4 {
 //==============================================================================
 // ChainContainer - Container for track chain that paints arrows between elements
 //==============================================================================
-class TrackChainContent::ChainContainer : public juce::Component, public juce::DragAndDropTarget {
+namespace {
+// Defined further down (with the chain-preset menu wiring); declared here so
+// ChainContainer's inline drop handlers can surface load failures the same way.
+void showChainPresetErrorAsync(const juce::String& title, const juce::String& message);
+}  // namespace
+
+class TrackChainContent::ChainContainer : public juce::Component,
+                                          public juce::DragAndDropTarget,
+                                          public juce::FileDragAndDropTarget {
   public:
     explicit ChainContainer(TrackChainContent& owner) : owner_(owner) {}
 
@@ -427,7 +435,14 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
         }
         if (auto* obj = details.description.getDynamicObject()) {
             auto type = obj->getProperty("type").toString();
-            return type == "plugin" || type == "chainElement" || type == "chainElements";
+            if (type == "plugin" || type == "chainElement" || type == "chainElements") {
+                return true;
+            }
+            // Linux: the media browser drags rows as {type:"files",paths:[...]}.
+            // macOS/Windows route the same drop through FileDragAndDropTarget.
+            if (type == "files") {
+                return anyDroppablePreset(filePathsFromDescription(details.description));
+            }
         }
         return false;
     }
@@ -458,6 +473,14 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
                                   : static_cast<int>(nodeComponents_->size());
             const bool shouldScrollToEnd = insertIndex >= static_cast<int>(nodeComponents_->size());
             const auto type = obj->getProperty("type").toString();
+
+            // Linux: media-browser preset rows arrive as a {type:"files"} payload.
+            if (type == "files") {
+                clearDropFeedback();
+                applyDroppedPresets(filePathsFromDescription(details.description), insertIndex,
+                                    shouldScrollToEnd);
+                return;
+            }
 
             if (type == "chainElement" || type == "chainElements") {
                 auto sourcePaths = dragObjectToChainNodePaths(*obj);
@@ -538,7 +561,115 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
         repaint();
     }
 
+    // FileDragAndDropTarget — macOS/Windows deliver the media-browser preset
+    // drag as an OS file drag through here; Linux takes the internal path above.
+    bool isInterestedInFileDrag(const juce::StringArray& files) override {
+        return owner_.selectedTrackId_ != magda::INVALID_TRACK_ID && anyDroppablePreset(files);
+    }
+
+    void fileDragEnter(const juce::StringArray&, int x, int /*y*/) override {
+        owner_.dropInsertIndex_ = owner_.calculateInsertIndex(x);
+        owner_.startTimerHz(10);
+        owner_.resized();
+        repaint();
+    }
+
+    void fileDragMove(const juce::StringArray&, int x, int /*y*/) override {
+        owner_.dropInsertIndex_ = owner_.calculateInsertIndex(x);
+        repaint();
+    }
+
+    void fileDragExit(const juce::StringArray&) override {
+        clearDropFeedback();
+    }
+
+    void filesDropped(const juce::StringArray& files, int /*x*/, int /*y*/) override {
+        const int insertIndex = owner_.dropInsertIndex_ >= 0
+                                    ? owner_.dropInsertIndex_
+                                    : static_cast<int>(nodeComponents_->size());
+        const bool shouldScrollToEnd = insertIndex >= static_cast<int>(nodeComponents_->size());
+        clearDropFeedback();
+        applyDroppedPresets(files, insertIndex, shouldScrollToEnd);
+    }
+
   private:
+    void clearDropFeedback() {
+        owner_.dropInsertIndex_ = -1;
+        owner_.stopTimer();
+        owner_.resized();
+        repaint();
+    }
+
+    static juce::StringArray filePathsFromDescription(const juce::var& description) {
+        juce::StringArray paths;
+        if (auto* obj = description.getDynamicObject()) {
+            if (obj->getProperty("type").toString() == "files") {
+                if (auto* arr = obj->getProperty("paths").getArray()) {
+                    for (const auto& v : *arr) {
+                        paths.add(v.toString());
+                    }
+                }
+            }
+        }
+        return paths;
+    }
+
+    // Phase 1 accepts chain and device presets; rack presets are a follow-up.
+    static bool isDroppablePreset(const juce::String& path) {
+        const auto ref = magda::PresetManager::getInstance().classifyPresetFile(juce::File(path));
+        return ref.has_value() && (ref->kind == magda::PresetManager::PresetRef::Kind::Chain ||
+                                   ref->kind == magda::PresetManager::PresetRef::Kind::Device);
+    }
+
+    static bool anyDroppablePreset(const juce::StringArray& files) {
+        for (const auto& f : files) {
+            if (isDroppablePreset(f)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Load each dropped preset onto the selected track: chain presets replace
+    // the whole chain, device presets insert at the drop position (advancing
+    // the index so a multi-file drop keeps its order).
+    void applyDroppedPresets(const juce::StringArray& files, int insertIndex,
+                             bool shouldScrollToEnd) {
+        const auto trackId = owner_.selectedTrackId_;
+        if (trackId == magda::INVALID_TRACK_ID) {
+            return;
+        }
+        auto& presets = magda::PresetManager::getInstance();
+        auto& tracks = magda::TrackManager::getInstance();
+        for (const auto& path : files) {
+            const auto ref = presets.classifyPresetFile(juce::File(path));
+            if (!ref.has_value()) {
+                continue;
+            }
+            if (ref->kind == magda::PresetManager::PresetRef::Kind::Chain) {
+                std::vector<magda::ChainElement> elements;
+                if (!presets.loadChainPreset(ref->name, elements)) {
+                    showChainPresetErrorAsync("Load Chain Preset Failed", presets.getLastError());
+                    continue;
+                }
+                if (!tracks.applyChainPreset(trackId, std::move(elements))) {
+                    showChainPresetErrorAsync("Load Chain Preset Failed",
+                                              "Failed to apply preset to track.");
+                }
+            } else if (ref->kind == magda::PresetManager::PresetRef::Kind::Device) {
+                magda::DeviceInfo device;
+                if (!presets.loadDevicePreset(ref->pluginFolder, ref->name, device)) {
+                    showChainPresetErrorAsync("Load Device Preset Failed", presets.getLastError());
+                    continue;
+                }
+                owner_.scrollToEndAfterNextDeviceChange_ = shouldScrollToEnd;
+                owner_.suppressNextImplicitScrollToEnd_ = !shouldScrollToEnd;
+                tracks.addDeviceToTrack(trackId, device, insertIndex);
+                ++insertIndex;
+            }
+        }
+    }
+
     void checkAndResetStaleDropState() {
         if (owner_.dropInsertIndex_ >= 0) {
             if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this)) {

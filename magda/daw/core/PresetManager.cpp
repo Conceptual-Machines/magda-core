@@ -276,6 +276,40 @@ bool PresetManager::renameChainPreset(const juce::String& oldName, const juce::S
     return renamePresetFile(getPresetsDirectory(), source, dest, lastError_);
 }
 
+std::optional<PresetManager::PresetRef> PresetManager::classifyPresetFile(
+    const juce::File& file) const {
+    if (!file.hasFileExtension(kPresetExtension)) {
+        return std::nullopt;
+    }
+
+    // Relative path from a preset subtree, normalised to forward slashes with
+    // the .mps extension stripped — the form the load APIs accept.
+    auto relName = [&file](const juce::File& base) {
+        auto rel = file.getRelativePathFrom(base).replaceCharacter('\\', '/');
+        if (rel.endsWithIgnoreCase(kPresetExtension)) {
+            rel = rel.dropLastCharacters(juce::String(kPresetExtension).length());
+        }
+        return rel;
+    };
+
+    if (file.isAChildOf(getChainsDirectory())) {
+        return PresetRef{PresetRef::Kind::Chain, relName(getChainsDirectory()), {}};
+    }
+    if (file.isAChildOf(getRacksDirectory())) {
+        return PresetRef{PresetRef::Kind::Rack, relName(getRacksDirectory()), {}};
+    }
+    if (file.isAChildOf(getDevicesDirectory())) {
+        const auto rel = relName(getDevicesDirectory());
+        const int slash = rel.indexOfChar('/');
+        if (slash <= 0) {
+            return std::nullopt;  // a device preset must live under a plugin folder
+        }
+        return PresetRef{PresetRef::Kind::Device, rel.substring(slash + 1),
+                         rel.substring(0, slash)};
+    }
+    return std::nullopt;
+}
+
 // ============================================================================
 // Rack Presets
 // ============================================================================

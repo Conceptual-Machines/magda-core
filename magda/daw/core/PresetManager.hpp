@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <optional>
 #include <unordered_map>
 
 #include "DeviceInfo.hpp"
@@ -152,6 +153,34 @@ class PresetManager {
     /** @brief Rename a device preset. Fails if the destination already exists. */
     bool renameDevicePreset(const juce::String& pluginFolder, const juce::String& oldRelativePath,
                             const juce::String& newRelativePath);
+
+    // ========================================================================
+    // Preset Classification
+    // ========================================================================
+
+    /**
+     * @brief A .mps preset file resolved into the components the load APIs need.
+     *
+     * For Chain/Rack, `name` is the relative preset name (forward-slash,
+     * no extension) accepted by loadChainPreset / loadRackPreset. For Device,
+     * `pluginFolder` is the first segment under Devices/ and `name` is the
+     * remaining relative path accepted by loadDevicePreset.
+     */
+    struct PresetRef {
+        enum class Kind { Chain, Rack, Device };
+        Kind kind{};
+        juce::String name;
+        juce::String pluginFolder;  // device only; empty for chain/rack
+    };
+
+    /**
+     * @brief Classify a .mps file living under the presets tree.
+     *
+     * Returns nullopt when the file is not a .mps, sits outside
+     * Chains/Racks/Devices, or is a device preset not nested under a plugin
+     * folder (and so cannot be addressed by loadDevicePreset).
+     */
+    std::optional<PresetRef> classifyPresetFile(const juce::File& file) const;
 
     // ========================================================================
     // Suggested Preset Names
