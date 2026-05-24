@@ -18,11 +18,20 @@ Displayed in the bottom panel when a MIDI clip is selected. Provides a grid for 
     - **Grid resolution** — Draggable numerator/denominator for grid subdivision
     - **AUTO** — Automatically adjust grid resolution based on zoom level
     - **SNAP** — Toggle snap-to-grid
+    - **Slice** — Split each selected note into equal pieces (see [Slicing Notes](#slicing-notes))
     - **Time Bend** — Redistribute selected note timing along a curve (see [Time Bend](../time-bend.md#piano-roll))
     - **Fullscreen** — Pinned to the far right, this toggle expands the MIDI editor to fill the window. Click again to restore. Available for the Piano Roll and Drum Grid Editor.
 
 !!! note "Footer controls"
     - ![bar chart](../assets/images/icons/bar_chart.svg){ width="16" } **Velocity** — Toggle the velocity/MIDI lane at the bottom of the editor
+
+## Slicing Notes
+
+Select one or more notes and click the **Slice** button in the editor header bar. A popup shows how many notes are selected and a **SLICES** control. Set how many equal pieces to divide each selected note into (2 to 32, default 4), then click **Apply** or press ++enter++.
+
+Each selected note is split into that many equal-length pieces end to end, keeping the original pitch and velocity. The slices land on the same track in place of the original notes, and they become the new selection so you can immediately edit or slice them again. The action is undoable (++ctrl+z++ to revert). Click **Cancel** or press ++esc++ to dismiss without changing the clip.
+
+Slicing is available in both the Piano Roll and the [Drum Grid Editor](drum-grid-editor.md). The button stays greyed out until at least one note is selected.
 
 ## Chord Timeline
 

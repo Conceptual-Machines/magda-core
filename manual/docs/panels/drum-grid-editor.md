@@ -13,6 +13,7 @@ Displayed in the bottom panel when a drum clip is selected or a DrumGrid device 
     - **Grid resolution** — Draggable numerator/denominator for grid subdivision
     - **AUTO** — Automatically adjust grid resolution based on zoom level
     - **SNAP** — Toggle snap-to-grid
+    - **Slice** — Split each selected note into equal pieces (see [Slicing Notes](piano-roll.md#slicing-notes))
     - **Time Bend** — Redistribute selected note timing along a curve (see [Time Bend](../time-bend.md#drum-grid-editor))
     - **Fullscreen** — Pinned to the far right, this toggle expands the editor to fill the window. Click again to restore. Shared with the Piano Roll.
 
