@@ -80,6 +80,14 @@ void migrate(sqlite3* db) {
         execOrThrow(db, "ALTER TABLE media_file ADD COLUMN beat_mode_user INTEGER",
                     "migrate v7 beat_mode_user");
     }
+    // v8: preset rows. Without this column on an existing DB, indexing presets
+    // fails to prepare its INSERT and silently reports every preset as failed.
+    if (!columnExists(db, "media_file", "preset_kind")) {
+        execOrThrow(db,
+                    "ALTER TABLE media_file ADD COLUMN preset_kind TEXT "
+                    "CHECK (preset_kind IN ('chain','rack','device'))",
+                    "migrate v8 preset_kind");
+    }
 }
 
 }  // namespace
