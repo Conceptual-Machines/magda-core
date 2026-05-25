@@ -22,7 +22,6 @@
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
-#include "../themes/MainLookAndFeel.hpp"
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
