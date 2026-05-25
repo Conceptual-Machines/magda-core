@@ -90,7 +90,9 @@ class AnalysisTapPlugin : public te::Plugin {
     void restorePluginStateFromValueTree(const juce::ValueTree&) override {}
 
   protected:
-    AudioTapBuffer tap_;
+    // ~1.3 s at 48k - enough history for an oscilloscope window up to ~1000 ms
+    // plus trigger-search headroom (the spectrum only needs <= one FFT frame).
+    AudioTapBuffer tap_{65536};
     std::vector<float> monoScratch_;  // audio-thread downmix scratch, sized in initialise()
     std::atomic<double> sampleRate_{44100.0};
 };

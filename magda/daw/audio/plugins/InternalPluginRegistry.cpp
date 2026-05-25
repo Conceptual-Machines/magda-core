@@ -148,11 +148,11 @@ const InternalPluginSpec kSpecs[] = {
      matches<::magda::SessionMonitorPlugin>, nullptr},
     {InternalDeviceKind::Oscilloscope, OscilloscopePlugin::xmlTypeName, "Oscilloscope", "Analysis",
      "Transparent waveform monitor for inspecting signal shape over time.",
-     InternalPluginCreateMode::FreshValueTree, true, true, kOscilloscopeAliases,
+     InternalPluginCreateMode::SavedStateOrFresh, true, true, kOscilloscopeAliases,
      std::size(kOscilloscopeAliases), matches<OscilloscopePlugin>, nullptr, true},
     {InternalDeviceKind::SpectrumAnalyzer, SpectrumAnalyzerPlugin::xmlTypeName, "Spectrum Analyzer",
      "Analysis", "Real-time FFT spectrum display with log-frequency axis and peak hold.",
-     InternalPluginCreateMode::FreshValueTree, true, true, kSpectrumAliases,
+     InternalPluginCreateMode::SavedStateOrFresh, true, true, kSpectrumAliases,
      std::size(kSpectrumAliases), matches<SpectrumAnalyzerPlugin>, nullptr, true},
 };
 

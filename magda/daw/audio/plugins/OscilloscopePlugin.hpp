@@ -10,12 +10,22 @@ namespace magda::daw::audio {
  */
 class OscilloscopePlugin : public AnalysisTapPlugin {
   public:
-    explicit OscilloscopePlugin(const te::PluginCreationInfo& info) : AnalysisTapPlugin(info) {}
+    explicit OscilloscopePlugin(const te::PluginCreationInfo& info) : AnalysisTapPlugin(info) {
+        timebaseMsValue.referTo(state, juce::Identifier("timebaseMs"), getUndoManager(), 10.0f);
+    }
 
     static const char* getPluginName() {
         return "Oscilloscope";
     }
     static const char* xmlTypeName;
+
+    // Display setting (message thread): visible window length in milliseconds.
+    float getTimebaseMs() const {
+        return timebaseMsValue.get();
+    }
+    void setTimebaseMs(float ms) {
+        timebaseMsValue = juce::jlimit(1.0f, 1000.0f, ms);
+    }
 
     juce::String getName() const override {
         return getPluginName();
@@ -29,6 +39,9 @@ class OscilloscopePlugin : public AnalysisTapPlugin {
     juce::String getSelectableDescription() override {
         return getName();
     }
+
+  private:
+    juce::CachedValue<float> timebaseMsValue;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscilloscopePlugin)
 };

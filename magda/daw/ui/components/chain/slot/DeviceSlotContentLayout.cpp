@@ -51,9 +51,15 @@ void layoutMeterStrip(juce::Rectangle<int>& contentArea, const DeviceSlotTraits&
     }
 
     if (controls.gainSlider != nullptr) {
-        controls.gainSlider->setBounds(stripBounds);
-        controls.gainSlider->setVisible(true);
-        controls.gainSlider->toFront(false);
+        // Analysis devices (oscilloscope / spectrum) are transparent passthroughs:
+        // no volume control. The level meter still shows.
+        if (traits.isAnalysis) {
+            controls.gainSlider->setVisible(false);
+        } else {
+            controls.gainSlider->setBounds(stripBounds);
+            controls.gainSlider->setVisible(true);
+            controls.gainSlider->toFront(false);
+        }
     }
 }
 
@@ -76,7 +82,7 @@ void showExpandedHeaderControls(const DeviceSlotTraits& traits, const magda::Dev
                                                   traits.isArpeggiator, traits.isStepSequencer));
     setVisibleIfPresent(controls.uiButton, !internalDevice);
     setVisibleIfPresent(controls.powerButton, true);
-    setVisibleIfPresent(controls.gainLabel, !isMidiUtility(traits));
+    setVisibleIfPresent(controls.gainLabel, !isMidiUtility(traits) && !traits.isAnalysis);
 }
 
 void layoutParamGrid(ParamHostComponent* paramGrid, juce::Rectangle<int> area) {
