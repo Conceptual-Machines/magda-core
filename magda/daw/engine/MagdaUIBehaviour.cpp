@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "../ui/themes/DarkTheme.hpp"
 #include "../ui/themes/MainLookAndFeel.hpp"
 
 namespace magda {
@@ -111,9 +112,29 @@ PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
     setUsingNativeTitleBar(false);
     setTitleBarHeight(MainLookAndFeel::kTitleBarHeight);
 
-    // Keep plugin window always on top so it doesn't go behind main window when user interacts with
-    // parameters
-    setAlwaysOnTop(true);
+    // Pin toggle (title bar): pinned keeps the window above the main window so it
+    // stays visible while tweaking params; unpinned lets the DAW sit in front,
+    // which is handy on a single monitor. Persisted per-plugin, defaults pinned.
+    const bool pinned = static_cast<bool>(plugin_.state.getProperty("magdaWindowPinned", true));
+    setAlwaysOnTop(pinned);
+    pinButton_.setClickingTogglesState(true);
+    pinButton_.setToggleState(pinned, juce::dontSendNotification);
+    pinButton_.setColour(juce::TextButton::buttonColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+    pinButton_.setColour(juce::TextButton::buttonOnColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    pinButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    pinButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    pinButton_.onClick = [this] {
+        const bool p = pinButton_.getToggleState();
+        setAlwaysOnTop(p);
+        if (p)
+            toFront(true);
+        plugin_.state.setProperty("magdaWindowPinned", p, nullptr);
+    };
+    // Base-class call: ResizableWindow hides the reference overload to discourage
+    // adding children directly, but the title-bar Pin button is exactly that.
+    Component::addAndMakeVisible(pinButton_);
 
     // Try to create the plugin's editor
     std::unique_ptr<juce::Component> editor;
@@ -192,6 +213,14 @@ void PluginEditorWindow::moved() {
     if (state_.lastWindowBounds.has_value()) {
         state_.lastWindowBounds = getBounds();
     }
+}
+
+void PluginEditorWindow::resized() {
+    DocumentWindow::resized();
+    // Place the Pin toggle at the left of the title bar (close/minimise sit on the
+    // right). Sized to the title bar so it never collides with the system buttons.
+    const int h = getTitleBarHeight();
+    pinButton_.setBounds(6, (h - 16) / 2, 40, 16);
 }
 
 }  // namespace magda

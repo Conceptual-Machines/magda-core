@@ -19,10 +19,11 @@ namespace magda::daw::ui {
  * slot, well before app/JUCE shutdown - no static state, no shutdown ordering
  * pitfalls. Closing hides it; reopening re-shows the same instance.
  *
- * A "Pin" toggle in a thin top strip controls always-on-top: pinned it floats
- * above the main window (great on a second monitor); unpinned it behaves like a
- * normal window that the DAW can sit in front of (better on a single monitor).
- * The state is reported back via onPinnedChanged so the owner can persist it.
+ * A "Pin" toggle in the title bar controls always-on-top: pinned it floats above
+ * the main window (great on a second monitor); unpinned it behaves like a normal
+ * window that the DAW can sit in front of (better on a single monitor). The state
+ * is reported back via onPinnedChanged so the owner can persist it. Uses a JUCE
+ * (non-native) title bar so the Pin button can live in the bar itself.
  */
 class AnalyzerWindow : public juce::DocumentWindow {
   public:
@@ -31,23 +32,33 @@ class AnalyzerWindow : public juce::DocumentWindow {
         : juce::DocumentWindow(name, DarkTheme::getColour(DarkTheme::BACKGROUND),
                                juce::DocumentWindow::allButtons),
           onPinnedChanged_(std::move(onPinnedChanged)) {
-        setUsingNativeTitleBar(true);
+        setUsingNativeTitleBar(false);
+        setContentOwned(content.release(), false);
+        setResizable(true, true);
+        setResizeLimits(360, 200, 4000, 3000);
+        centreWithSize(720, 380);
 
-        auto holder = std::make_unique<Holder>(std::move(content), startPinned);
-        holder_ = holder.get();
-        holder_->pinButton.onClick = [this] {
-            const bool pinned = holder_->pinButton.getToggleState();
+        pinButton_.setClickingTogglesState(true);
+        pinButton_.setToggleState(startPinned, juce::dontSendNotification);
+        pinButton_.setColour(juce::TextButton::buttonColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+        pinButton_.setColour(juce::TextButton::buttonOnColourId,
+                             DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        pinButton_.setColour(juce::TextButton::textColourOffId,
+                             DarkTheme::getSecondaryTextColour());
+        pinButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+        pinButton_.onClick = [this] {
+            const bool pinned = pinButton_.getToggleState();
             setAlwaysOnTop(pinned);
             if (pinned)
                 toFront(true);
             if (onPinnedChanged_)
                 onPinnedChanged_(pinned);
         };
-        setContentOwned(holder.release(), false);
+        // Base-class call: ResizableWindow hides the reference overload to
+        // discourage adding children directly, but the Pin button is exactly that.
+        Component::addAndMakeVisible(pinButton_);
 
-        setResizable(true, true);
-        setResizeLimits(360, 200, 4000, 3000);
-        centreWithSize(720, 404);
         setAlwaysOnTop(startPinned);
         setVisible(true);
     }
@@ -56,37 +67,15 @@ class AnalyzerWindow : public juce::DocumentWindow {
         setVisible(false);
     }
 
-  private:
-    // Wraps the analyzer body with a thin top strip carrying the Pin toggle.
-    struct Holder : juce::Component {
-        Holder(std::unique_ptr<juce::Component> b, bool pinned) : body(std::move(b)) {
-            addAndMakeVisible(*body);
-            pinButton.setButtonText("Pin");
-            pinButton.setClickingTogglesState(true);
-            pinButton.setToggleState(pinned, juce::dontSendNotification);
-            pinButton.setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-            pinButton.setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-            pinButton.setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getSecondaryTextColour());
-            pinButton.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
-            addAndMakeVisible(pinButton);
-        }
-        void resized() override {
-            auto r = getLocalBounds();
-            auto top = r.removeFromTop(24);
-            pinButton.setBounds(top.removeFromRight(60).reduced(3, 3));
-            body->setBounds(r);
-        }
-        void paint(juce::Graphics& g) override {
-            g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
-        }
-        std::unique_ptr<juce::Component> body;
-        juce::TextButton pinButton;
-    };
+    void resized() override {
+        juce::DocumentWindow::resized();
+        // Pin toggle at the left of the title bar (close/minimise sit on the right).
+        const int h = getTitleBarHeight();
+        pinButton_.setBounds(6, (h - 16) / 2, 40, 16);
+    }
 
-    Holder* holder_ = nullptr;
+  private:
+    juce::TextButton pinButton_{"Pin"};
     std::function<void(bool)> onPinnedChanged_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AnalyzerWindow)
