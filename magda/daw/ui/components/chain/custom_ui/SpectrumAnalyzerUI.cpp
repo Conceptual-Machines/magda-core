@@ -5,6 +5,7 @@
 #include <iterator>
 #include <limits>
 
+#include "AnalyzerColours.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
@@ -89,6 +90,15 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     };
     styleCombo(speedCombo_);
 
+    styleLabel(colourLabel_, "Color");
+    for (int i = 0; i < kAnalyzerColourCount; ++i)
+        colourCombo_.addItem(kAnalyzerColourNames[i], i + 1);
+    colourCombo_.onChange = [this] {
+        if (plugin_ != nullptr)
+            plugin_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
+    };
+    styleCombo(colourCombo_);
+
     rebuildFft(11);
     startTimerHz(30);
 }
@@ -99,6 +109,7 @@ SpectrumAnalyzerUI::~SpectrumAnalyzerUI() {
     fftCombo_.setLookAndFeel(nullptr);
     slopeCombo_.setLookAndFeel(nullptr);
     speedCombo_.setLookAndFeel(nullptr);
+    colourCombo_.setLookAndFeel(nullptr);
 }
 
 void SpectrumAnalyzerUI::rebuildFft(int order) {
@@ -124,6 +135,7 @@ void SpectrumAnalyzerUI::setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin) {
     fftCombo_.setSelectedId(plugin_->getFftOrder() >= 12 ? 2 : 1, juce::dontSendNotification);
     slopeCombo_.setSelectedId(nearestId(kSlopeOptions, slopeDbPerOct_), juce::dontSendNotification);
     speedCombo_.setSelectedId(nearestId(kSpeedOptions, smoothing_), juce::dontSendNotification);
+    colourCombo_.setSelectedId(plugin_->getTraceColourIndex() + 1, juce::dontSendNotification);
     rebuildFft(plugin_->getFftOrder());
 }
 
@@ -144,6 +156,9 @@ void SpectrumAnalyzerUI::resized() {
     auto [spL, spC] = cell(34, 64);
     speedLabel_.setBounds(spL);
     speedCombo_.setBounds(spC.reduced(2, 1));
+    auto [colL, colC] = cell(34, 70);
+    colourLabel_.setBounds(colL);
+    colourCombo_.setBounds(colC.reduced(2, 1));
 }
 
 void SpectrumAnalyzerUI::timerCallback() {
@@ -250,9 +265,11 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         return p;
     };
 
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.5f));  // peak-hold
+    const juce::Colour trace =
+        analyzerTraceColour(plugin_ != nullptr ? plugin_->getTraceColourIndex() : 0);
+    g.setColour(trace.withAlpha(0.4f));  // peak-hold
     g.strokePath(buildPath(peakDb_), juce::PathStrokeType(1.0f));
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));  // live spectrum
+    g.setColour(trace);  // live spectrum
     g.strokePath(buildPath(smoothedDb_), juce::PathStrokeType(1.5f));
 
     // Hover readout: a vertical cursor plus the frequency and spectrum level at it.

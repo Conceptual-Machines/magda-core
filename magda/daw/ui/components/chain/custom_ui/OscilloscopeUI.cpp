@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cmath>
 
+#include "AnalyzerColours.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -49,11 +51,26 @@ OscilloscopeUI::OscilloscopeUI() {
     addAndMakeVisible(timeValueLabel_);
     updateTimeReadout();
 
+    colourCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    colourCombo_.setColour(juce::ComboBox::backgroundColourId,
+                           DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+    colourCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    colourCombo_.setColour(juce::ComboBox::outlineColourId,
+                           DarkTheme::getColour(DarkTheme::BORDER));
+    for (int i = 0; i < kAnalyzerColourCount; ++i)
+        colourCombo_.addItem(kAnalyzerColourNames[i], i + 1);
+    colourCombo_.onChange = [this] {
+        if (plugin_ != nullptr)
+            plugin_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
+    };
+    addAndMakeVisible(colourCombo_);
+
     startTimerHz(60);
 }
 
 OscilloscopeUI::~OscilloscopeUI() {
     stopTimer();
+    colourCombo_.setLookAndFeel(nullptr);
 }
 
 void OscilloscopeUI::setPlugin(daw::audio::OscilloscopePlugin* plugin) {
@@ -63,6 +80,7 @@ void OscilloscopeUI::setPlugin(daw::audio::OscilloscopePlugin* plugin) {
     timeSlider_.setValue(plugin_->getTimebaseMs(), juce::dontSendNotification);
     updateTimeReadout();
     applyTimebase();
+    colourCombo_.setSelectedId(plugin_->getTraceColourIndex() + 1, juce::dontSendNotification);
 }
 
 void OscilloscopeUI::updateTimeReadout() {
@@ -83,7 +101,8 @@ void OscilloscopeUI::applyTimebase() {
 void OscilloscopeUI::resized() {
     auto controls = getLocalBounds().removeFromBottom(kControlRowH);
     timeLabel_.setBounds(controls.removeFromLeft(40));
-    timeValueLabel_.setBounds(controls.removeFromRight(60));
+    colourCombo_.setBounds(controls.removeFromRight(72).reduced(2, 2));
+    timeValueLabel_.setBounds(controls.removeFromRight(54));
     timeSlider_.setBounds(controls.reduced(4, 2));
 }
 
@@ -137,7 +156,7 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
         }
     }
 
-    g.setColour(DarkTheme::getColour(DarkTheme::WAVEFORM_NORMAL));
+    g.setColour(analyzerTraceColour(plugin_ != nullptr ? plugin_->getTraceColourIndex() : 0));
 
     const float w = area.getWidth();
     const int cols = juce::jmax(1, static_cast<int>(w));

@@ -27,7 +27,9 @@ namespace te = tracktion::engine;
 class AnalysisTapPlugin : public te::Plugin {
   public:
     explicit AnalysisTapPlugin(const te::PluginCreationInfo& info, int ringCapacity = 65536)
-        : te::Plugin(info), tap_(ringCapacity) {}
+        : te::Plugin(info), tap_(ringCapacity) {
+        traceColourValue_.referTo(state, juce::Identifier("traceColour"), getUndoManager(), 0);
+    }
     ~AnalysisTapPlugin() override {
         notifyListenersOfDeletion();
     }
@@ -40,6 +42,14 @@ class AnalysisTapPlugin : public te::Plugin {
     /** Sample rate the tap is fed at; used by the spectrum UI for its freq axis. */
     double getSampleRate() const {
         return sampleRate_.load(std::memory_order_relaxed);
+    }
+
+    /** Display trace colour index (into the analyzer palette); persisted setting. */
+    int getTraceColourIndex() const {
+        return traceColourValue_.get();
+    }
+    void setTraceColourIndex(int index) {
+        traceColourValue_ = index;
     }
 
     void initialise(const te::PluginInitialisationInfo& info) override {
@@ -96,6 +106,7 @@ class AnalysisTapPlugin : public te::Plugin {
     AudioTapBuffer tap_;
     std::vector<float> monoScratch_;  // audio-thread downmix scratch, sized in initialise()
     std::atomic<double> sampleRate_{44100.0};
+    juce::CachedValue<int> traceColourValue_;  // index into the analyzer colour palette
 };
 
 }  // namespace magda::daw::audio

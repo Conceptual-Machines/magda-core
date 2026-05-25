@@ -58,8 +58,8 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     static constexpr float kMaxHz = 20000.0f;
     static constexpr float kPeakDecayDb = 0.6f;
 
-    juce::ComboBox fftCombo_, slopeCombo_, speedCombo_;
-    juce::Label fftLabel_, slopeLabel_, speedLabel_;
+    juce::ComboBox fftCombo_, slopeCombo_, speedCombo_, colourCombo_;
+    juce::Label fftLabel_, slopeLabel_, speedLabel_, colourLabel_;
 
     juce::Point<int> mousePos_;
     bool mouseOver_ = false;

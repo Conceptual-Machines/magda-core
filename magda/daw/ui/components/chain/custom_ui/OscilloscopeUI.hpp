@@ -43,6 +43,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     juce::Slider timeSlider_;
     juce::Label timeLabel_;
     juce::Label timeValueLabel_;
+    juce::ComboBox colourCombo_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscilloscopeUI)
 };
