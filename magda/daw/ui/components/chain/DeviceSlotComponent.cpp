@@ -347,36 +347,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     uiButton_->onClick = [this]() {
         // Analysis devices have no native editor; pop their UI into a floating window.
         if (magda::isAnalysisDevice(device_.pluginId)) {
-            if (analyzerWindow_ != nullptr) {
-                const bool show = !analyzerWindow_->isVisible();
-                analyzerWindow_->setVisible(show);
-                if (show)
-                    analyzerWindow_->toFront(true);
-                uiButton_->setToggleState(show, juce::dontSendNotification);
-                uiButton_->setActive(show);
-                return;
-            }
-            auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-            auto* bridge = engine ? engine->getAudioBridge() : nullptr;
-            if (bridge == nullptr)
-                return;
-            auto plugin = bridge->getPlugin(device_.id);
-            std::unique_ptr<juce::Component> content;
-            if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get())) {
-                auto ui = std::make_unique<OscilloscopeUI>();
-                ui->setPlugin(scope);
-                content = std::move(ui);
-            } else if (auto* spec =
-                           dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
-                auto ui = std::make_unique<SpectrumAnalyzerUI>();
-                ui->setPlugin(spec);
-                content = std::move(ui);
-            }
-            if (content == nullptr)
-                return;
-            analyzerWindow_ = std::make_unique<AnalyzerWindow>(device_.name, std::move(content));
-            uiButton_->setToggleState(true, juce::dontSendNotification);
-            uiButton_->setActive(true);
+            toggleAnalyzerWindow();
             return;
         }
         // Get the audio bridge and toggle plugin window
@@ -827,9 +798,12 @@ void DeviceSlotComponent::timerCallback() {
     if (!bridge)
         return;
 
-    // Update UI button state to match actual plugin window state
+    // Update UI button state to match the actual window state.
     if (uiButton_) {
-        bool isOpen = bridge->isPluginWindowOpen(device_.id);
+        // Analysis devices use the popout AnalyzerWindow, not a native plugin window.
+        const bool isOpen = magda::isAnalysisDevice(device_.pluginId)
+                                ? (analyzerWindow_ != nullptr && analyzerWindow_->isVisible())
+                                : bridge->isPluginWindowOpen(device_.id);
         bool currentState = uiButton_->getToggleState();
 
         // Only update if state changed to avoid unnecessary repaints
@@ -1884,6 +1858,42 @@ void DeviceSlotComponent::paramSelectionChanged(const magda::ParamSelection& sel
 // refreshControllerIndicators(), which the base wires up to BindingRegistry,
 // ControllerRegistry, and chain-node selection changes.
 
+void DeviceSlotComponent::toggleAnalyzerWindow() {
+    if (analyzerWindow_ != nullptr) {
+        const bool show = !analyzerWindow_->isVisible();
+        analyzerWindow_->setVisible(show);
+        if (show)
+            analyzerWindow_->toFront(true);
+        if (uiButton_ != nullptr) {
+            uiButton_->setToggleState(show, juce::dontSendNotification);
+            uiButton_->setActive(show);
+        }
+        return;
+    }
+    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+    auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
+    if (bridge == nullptr)
+        return;
+    auto plugin = bridge->getPlugin(device_.id);
+    std::unique_ptr<juce::Component> content;
+    if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get())) {
+        auto ui = std::make_unique<OscilloscopeUI>();
+        ui->setPlugin(scope);
+        content = std::move(ui);
+    } else if (auto* spec = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
+        auto ui = std::make_unique<SpectrumAnalyzerUI>();
+        ui->setPlugin(spec);
+        content = std::move(ui);
+    }
+    if (content == nullptr)
+        return;
+    analyzerWindow_ = std::make_unique<AnalyzerWindow>(device_.name, std::move(content));
+    if (uiButton_ != nullptr) {
+        uiButton_->setToggleState(true, juce::dontSendNotification);
+        uiButton_->setActive(true);
+    }
+}
+
 // =============================================================================
 // Mouse Handling
 // =============================================================================
@@ -1897,9 +1907,10 @@ void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
 
     // Check for double-click
     if (e.getNumberOfClicks() == 2) {
-        // Toggle plugin window on double-click
-        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (audioEngine) {
+        // Toggle the editor / analyzer window on double-click.
+        if (magda::isAnalysisDevice(device_.pluginId)) {
+            toggleAnalyzerWindow();
+        } else if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
                 bool isOpen = bridge->togglePluginWindow(device_.id);
                 uiButton_->setToggleState(isOpen, juce::dontSendNotification);

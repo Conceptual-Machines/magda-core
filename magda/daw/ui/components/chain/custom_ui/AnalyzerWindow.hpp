@@ -27,6 +27,10 @@ class AnalyzerWindow : public juce::DocumentWindow {
         setResizable(true, true);
         setResizeLimits(360, 200, 4000, 3000);
         centreWithSize(720, 380);
+        // Float above the main window like a scope/meter utility window: clicking
+        // back into the DAW must not push it behind (which leaves it visible-but-
+        // hidden and desyncs the toggle button).
+        setAlwaysOnTop(true);
         setVisible(true);
     }
 
