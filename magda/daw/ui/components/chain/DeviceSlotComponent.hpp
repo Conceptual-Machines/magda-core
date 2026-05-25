@@ -21,6 +21,7 @@
 
 namespace magda::daw::ui {
 
+class AnalyzerWindow;
 class FaustCustomView;
 class FaustUI;
 
@@ -231,6 +232,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<FaustCustomView> faustCustomView_;
     std::unique_ptr<CompiledDevicePanel> compiledPanel_;
+    std::unique_ptr<AnalyzerWindow> analyzerWindow_;  // popped-out oscilloscope/spectrum
 
     static constexpr int METER_STRIP_WIDTH = 18;  // wide enough for slider thumb overlay
     magda::LevelMeter levelMeter_;

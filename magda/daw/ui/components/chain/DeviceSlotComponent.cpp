@@ -8,6 +8,8 @@
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/OscilloscopePlugin.hpp"
+#include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "core/Config.hpp"
 #include "core/InternalDeviceKind.hpp"
 #include "core/MacroInfo.hpp"
@@ -17,9 +19,12 @@
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "custom_ui/AnalyzerWindow.hpp"
 #include "custom_ui/ArpeggiatorUI.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustUI.hpp"
+#include "custom_ui/OscilloscopeUI.hpp"
+#include "custom_ui/SpectrumAnalyzerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 #include "engine/AudioEngine.hpp"
@@ -340,6 +345,40 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                                                    BinaryData::open_in_new_svgSize);
     applyHeaderIconStyle(*uiButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     uiButton_->onClick = [this]() {
+        // Analysis devices have no native editor; pop their UI into a floating window.
+        if (magda::isAnalysisDevice(device_.pluginId)) {
+            if (analyzerWindow_ != nullptr) {
+                const bool show = !analyzerWindow_->isVisible();
+                analyzerWindow_->setVisible(show);
+                if (show)
+                    analyzerWindow_->toFront(true);
+                uiButton_->setToggleState(show, juce::dontSendNotification);
+                uiButton_->setActive(show);
+                return;
+            }
+            auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+            auto* bridge = engine ? engine->getAudioBridge() : nullptr;
+            if (bridge == nullptr)
+                return;
+            auto plugin = bridge->getPlugin(device_.id);
+            std::unique_ptr<juce::Component> content;
+            if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get())) {
+                auto ui = std::make_unique<OscilloscopeUI>();
+                ui->setPlugin(scope);
+                content = std::move(ui);
+            } else if (auto* spec =
+                           dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
+                auto ui = std::make_unique<SpectrumAnalyzerUI>();
+                ui->setPlugin(spec);
+                content = std::move(ui);
+            }
+            if (content == nullptr)
+                return;
+            analyzerWindow_ = std::make_unique<AnalyzerWindow>(device_.name, std::move(content));
+            uiButton_->setToggleState(true, juce::dontSendNotification);
+            uiButton_->setActive(true);
+            return;
+        }
         // Get the audio bridge and toggle plugin window
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
         if (audioEngine) {
