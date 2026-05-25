@@ -1460,6 +1460,8 @@ const magda::ModArray* DeviceSlotComponent::getModsData() const {
 
 const magda::MacroArray* DeviceSlotComponent::getMacrosData() const {
     if (auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
+        if (magda::isAnalysisDevice(dev->pluginId))
+            return nullptr;  // analysis devices expose no macros
         return &dev->macros;
     }
     return nullptr;

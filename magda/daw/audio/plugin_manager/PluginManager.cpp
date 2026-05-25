@@ -541,7 +541,7 @@ void PluginManager::purgeStaleEntries() {
                 }
             }
         };
-        collectIds(track.chainElements);
+        collectIds(track.chain.fxChainElements);
     }
 
     // Purge stale entries from maps
@@ -656,7 +656,7 @@ void PluginManager::validateMappingConsistency() {
         // the rack exists in TrackManager
         bool found = false;
         for (const auto& track : TrackManager::getInstance().getTracks()) {
-            for (const auto& element : track.chainElements) {
+            for (const auto& element : track.chain.fxChainElements) {
                 if (isRack(element) && getRack(element).id == rackId) {
                     found = true;
                     break;

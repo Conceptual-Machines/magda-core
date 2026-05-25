@@ -11,6 +11,8 @@
 namespace magda::daw::audio {
 class ArpeggiatorPlugin;
 class MidiChordEnginePlugin;
+class OscilloscopePlugin;
+class SpectrumAnalyzerPlugin;
 class StepSequencerPlugin;
 }  // namespace magda::daw::audio
 
@@ -28,7 +30,9 @@ class FilterUI;
 class FourOscUI;
 class ImpulseResponseUI;
 class LinkableTextSlider;
+class OscilloscopeUI;
 class PhaserUI;
+class SpectrumAnalyzerUI;
 class PitchShiftUI;
 class ReverbUI;
 class SamplerUI;
@@ -194,6 +198,8 @@ class DeviceCustomUIManager {
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;
+    std::unique_ptr<OscilloscopeUI> oscilloscopeUI_;
+    std::unique_ptr<SpectrumAnalyzerUI> spectrumAnalyzerUI_;
 
     // Plugin raw pointers for timer polling / setNodePath updates
     daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;

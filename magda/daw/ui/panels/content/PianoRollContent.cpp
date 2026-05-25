@@ -1029,7 +1029,7 @@ void PianoRollContent::onActivated() {
             if (!showChordRow_ && clip->trackId != magda::INVALID_TRACK_ID) {
                 auto* trackInfo = magda::TrackManager::getInstance().getTrack(clip->trackId);
                 if (trackInfo) {
-                    for (const auto& elem : trackInfo->chainElements) {
+                    for (const auto& elem : trackInfo->chain.fxChainElements) {
                         if (magda::isDevice(elem)) {
                             const auto& dev = magda::getDevice(elem);
                             if (dev.pluginId.containsIgnoreCase(

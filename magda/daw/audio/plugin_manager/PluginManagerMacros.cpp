@@ -30,7 +30,7 @@ void PluginManager::syncRackProperties(TrackId trackId) {
     if (!trackInfo)
         return;
 
-    for (const auto& element : trackInfo->chainElements) {
+    for (const auto& element : trackInfo->chain.fxChainElements) {
         if (isRack(element)) {
             rackSyncManager_.updateRackProperties(getRack(element));
         }

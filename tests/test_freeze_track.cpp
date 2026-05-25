@@ -40,15 +40,15 @@ TEST_CASE("TrackInfo::hasInstrument - empty chain", "[track][freeze]") {
 
 TEST_CASE("TrackInfo::hasInstrument - effects only", "[track][freeze]") {
     TrackInfo track;
-    track.chainElements.push_back(makeDevice("EQ"));
-    track.chainElements.push_back(makeDevice("Compressor"));
+    track.chain.fxChainElements.push_back(makeDevice("EQ"));
+    track.chain.fxChainElements.push_back(makeDevice("Compressor"));
     REQUIRE_FALSE(track.hasInstrument());
 }
 
 TEST_CASE("TrackInfo::hasInstrument - top-level instrument", "[track][freeze]") {
     TrackInfo track;
-    track.chainElements.push_back(makeDevice("Serum", true));
-    track.chainElements.push_back(makeDevice("Reverb"));
+    track.chain.fxChainElements.push_back(makeDevice("Serum", true));
+    track.chain.fxChainElements.push_back(makeDevice("Reverb"));
     REQUIRE(track.hasInstrument());
 }
 
@@ -57,7 +57,7 @@ TEST_CASE("TrackInfo::hasInstrument - instrument inside rack", "[track][freeze]"
     std::vector<ChainElement> rackElements;
     rackElements.push_back(makeDevice("Vital", true));
     rackElements.push_back(makeDevice("Delay"));
-    track.chainElements.push_back(makeRack(std::move(rackElements)));
+    track.chain.fxChainElements.push_back(makeRack(std::move(rackElements)));
     REQUIRE(track.hasInstrument());
 }
 
@@ -66,20 +66,20 @@ TEST_CASE("TrackInfo::hasInstrument - rack with effects only", "[track][freeze]"
     std::vector<ChainElement> rackElements;
     rackElements.push_back(makeDevice("EQ"));
     rackElements.push_back(makeDevice("Limiter"));
-    track.chainElements.push_back(makeRack(std::move(rackElements)));
+    track.chain.fxChainElements.push_back(makeRack(std::move(rackElements)));
     REQUIRE_FALSE(track.hasInstrument());
 }
 
 TEST_CASE("TrackInfo::hasInstrument - mixed chain with rack", "[track][freeze]") {
     TrackInfo track;
     // Top-level effect
-    track.chainElements.push_back(makeDevice("EQ"));
+    track.chain.fxChainElements.push_back(makeDevice("EQ"));
     // Rack with no instrument
     std::vector<ChainElement> rackElements;
     rackElements.push_back(makeDevice("Compressor"));
-    track.chainElements.push_back(makeRack(std::move(rackElements)));
+    track.chain.fxChainElements.push_back(makeRack(std::move(rackElements)));
     // Top-level instrument
-    track.chainElements.push_back(makeDevice("Massive X", true));
+    track.chain.fxChainElements.push_back(makeDevice("Massive X", true));
     REQUIRE(track.hasInstrument());
 }
 
@@ -115,7 +115,7 @@ TEST_CASE("TrackInfo copy preserves frozen state", "[track][freeze]") {
     TrackInfo original;
     original.frozen = true;
     original.name = "Frozen Track";
-    original.chainElements.push_back(makeDevice("Synth", true));
+    original.chain.fxChainElements.push_back(makeDevice("Synth", true));
 
     SECTION("Copy constructor") {
         TrackInfo copy(original);

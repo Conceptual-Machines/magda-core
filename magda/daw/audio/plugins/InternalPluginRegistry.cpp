@@ -8,7 +8,9 @@
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
+#include "plugins/OscilloscopePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
+#include "plugins/SpectrumAnalyzerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/internal/MidiDeviceProcessors.hpp"
@@ -40,6 +42,8 @@ constexpr const char* kImpulseResponseAliases[] = {"impulseresponse"};
 constexpr const char* kFourOscAliases[] = {"4osc"};
 constexpr const char* kToneAliases[] = {"tone", "tonegenerator"};
 constexpr const char* kMeterAliases[] = {"meter", "levelmeter"};
+constexpr const char* kOscilloscopeAliases[] = {"scope"};
+constexpr const char* kSpectrumAliases[] = {"spectrum", "analyzer"};
 
 const InternalPluginSpec kSpecs[] = {
     {InternalDeviceKind::TeEq, te::EqualiserPlugin::xmlTypeName, "Equaliser", "EQ",
@@ -141,13 +145,21 @@ const InternalPluginSpec kSpecs[] = {
      "Session Monitor", "Session", "Internal monitor used by session playback and launch state.",
      InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
      matches<::magda::SessionMonitorPlugin>, nullptr},
+    {InternalDeviceKind::Oscilloscope, OscilloscopePlugin::xmlTypeName, "Oscilloscope", "Analysis",
+     "Transparent waveform monitor for inspecting signal shape over time.",
+     InternalPluginCreateMode::FreshValueTree, true, true, kOscilloscopeAliases,
+     std::size(kOscilloscopeAliases), matches<OscilloscopePlugin>, nullptr},
+    {InternalDeviceKind::SpectrumAnalyzer, SpectrumAnalyzerPlugin::xmlTypeName, "Spectrum Analyzer",
+     "Analysis", "Real-time FFT spectrum display with log-frequency axis and peak hold.",
+     InternalPluginCreateMode::FreshValueTree, true, true, kSpectrumAliases,
+     std::size(kSpectrumAliases), matches<SpectrumAnalyzerPlugin>, nullptr},
 };
 
 const InternalPluginSpec* const kSpecPtrs[] = {
-    &kSpecs[0],  &kSpecs[1],  &kSpecs[2],  &kSpecs[3],  &kSpecs[4],  &kSpecs[5],
-    &kSpecs[6],  &kSpecs[7],  &kSpecs[8],  &kSpecs[9],  &kSpecs[10], &kSpecs[11],
-    &kSpecs[12], &kSpecs[13], &kSpecs[14], &kSpecs[15], &kSpecs[16], &kSpecs[17],
-    &kSpecs[18], &kSpecs[19], &kSpecs[20], &kSpecs[21], &kSpecs[22], &kSpecs[23],
+    &kSpecs[0],  &kSpecs[1],  &kSpecs[2],  &kSpecs[3],  &kSpecs[4],  &kSpecs[5],  &kSpecs[6],
+    &kSpecs[7],  &kSpecs[8],  &kSpecs[9],  &kSpecs[10], &kSpecs[11], &kSpecs[12], &kSpecs[13],
+    &kSpecs[14], &kSpecs[15], &kSpecs[16], &kSpecs[17], &kSpecs[18], &kSpecs[19], &kSpecs[20],
+    &kSpecs[21], &kSpecs[22], &kSpecs[23], &kSpecs[24], &kSpecs[25],
 };
 
 bool typeMatchesAlias(const juce::String& type, const InternalPluginSpec& spec) {

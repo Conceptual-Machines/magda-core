@@ -461,7 +461,7 @@ void MidiInputRouter::updateForSelection() {
             return false;
         };
 
-        bool needsMidi = checkElements(track.chainElements);
+        bool needsMidi = checkElements(track.chain.fxChainElements);
         if (!needsMidi && !track.recordArmed)
             continue;
 

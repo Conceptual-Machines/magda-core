@@ -590,7 +590,7 @@ const ModInfo* TrackManager::getModById(TrackId trackId, ModId modId) const {
         if (mod.id == modId)
             return &mod;
     }
-    for (const auto& element : track->chainElements) {
+    for (const auto& element : track->chain.fxChainElements) {
         if (std::holds_alternative<DeviceInfo>(element)) {
             for (const auto& mod : std::get<DeviceInfo>(element).mods) {
                 if (mod.id == modId)
@@ -928,7 +928,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         }
 
         // Device/rack-level mods
-        for (auto& element : track.chainElements) {
+        for (auto& element : track.chain.fxChainElements) {
             trackChanged |= updateElementMods(element, trackMidiTriggered, trackMidiNoteOff,
                                               trackAudioPeak, track.id);
         }

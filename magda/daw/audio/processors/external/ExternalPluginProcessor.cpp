@@ -227,7 +227,7 @@ void ExternalPluginProcessor::propagateParameterChange(te::AutomatableParameter&
         auto& tm = TrackManager::getInstance();
 
         for (const auto& track : tm.getTracks()) {
-            for (const auto& element : track.chainElements) {
+            for (const auto& element : track.chain.fxChainElements) {
                 if (std::holds_alternative<DeviceInfo>(element)) {
                     const auto& device = std::get<DeviceInfo>(element);
                     if (device.id == deviceId_) {

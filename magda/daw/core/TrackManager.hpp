@@ -422,7 +422,7 @@ class TrackManager {
     /**
      * @brief Replace a track's FX chain with a loaded chain preset's elements.
      *
-     * Replaces track.chainElements wholesale with the preset's elements. The
+     * Replaces track.chain.fxChainElements wholesale with the preset's elements. The
      * track's identity (id, name, type, send routing, master volume/pan/etc.)
      * is preserved — only the inline chain is swapped. All chain / device /
      * nested-rack ids in the preset are reassigned to fresh runtime values to

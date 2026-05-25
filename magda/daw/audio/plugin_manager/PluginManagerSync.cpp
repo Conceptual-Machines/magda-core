@@ -152,12 +152,12 @@ void PluginManager::syncAllPlugins() {
     };
 
     for (const auto& track : tracks) {
-        collectIds(track.chainElements);
+        collectIds(track.chain.fxChainElements);
     }
 
     // Include master track (not in getTracks())
     if (auto* masterTrack = tm.getTrack(MASTER_TRACK_ID)) {
-        collectIds(masterTrack->chainElements);
+        collectIds(masterTrack->chain.fxChainElements);
     }
 
     // ── Step 2: Remove orphan devices (globally) ────────────────────────
@@ -305,7 +305,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 }
             }
         };
-    collectElements(trackInfo->chainElements);
+    collectElements(trackInfo->chain.fxChainElements);
 
     // Remove TE plugins that no longer exist in MAGDA for THIS track.
     // Uses the stored trackId for ownership — no TE owner-track heuristic needed.
@@ -396,8 +396,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     }
 
     // Add new plugins for MAGDA devices that don't have TE counterparts
-    for (size_t elemIdx = 0; elemIdx < trackInfo->chainElements.size(); ++elemIdx) {
-        const auto& element = trackInfo->chainElements[elemIdx];
+    for (size_t elemIdx = 0; elemIdx < trackInfo->chain.fxChainElements.size(); ++elemIdx) {
+        const auto& element = trackInfo->chain.fxChainElements[elemIdx];
         if (isDevice(element)) {
             const auto& device = getDevice(element);
 
@@ -407,10 +407,10 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 // that already has a synced plugin, and insert before it.
                 int teInsertIndex = -1;  // -1 = append (before VolumeAndPan/LevelMeter)
                 auto* teTrackForIdx = trackController_.getAudioTrack(trackId);
-                for (size_t j = elemIdx + 1; teTrackForIdx && j < trackInfo->chainElements.size();
-                     ++j) {
-                    if (isDevice(trackInfo->chainElements[j])) {
-                        auto nextId = getDevice(trackInfo->chainElements[j]).id;
+                for (size_t j = elemIdx + 1;
+                     teTrackForIdx && j < trackInfo->chain.fxChainElements.size(); ++j) {
+                    if (isDevice(trackInfo->chain.fxChainElements[j])) {
+                        auto nextId = getDevice(trackInfo->chain.fxChainElements[j]).id;
                         auto it = syncedDevices_.find(nextId);
                         if (it != syncedDevices_.end() && it->second.plugin) {
                             // For wrapped instruments, the actual plugin on the track
@@ -690,7 +690,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     {
         // Build the desired order of TE plugin indices from the MAGDA chain
         std::vector<te::Plugin*> desiredOrder;
-        for (const auto& element : trackInfo->chainElements) {
+        for (const auto& element : trackInfo->chain.fxChainElements) {
             if (isDevice(element)) {
                 juce::ScopedLock lock(pluginLock_);
                 auto it = syncedDevices_.find(getDevice(element).id);
@@ -916,7 +916,7 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
         for (const auto& track : tm.getTracks()) {
             if (track.id == trackId)
                 continue;
-            for (const auto& element : track.chainElements) {
+            for (const auto& element : track.chain.fxChainElements) {
                 if (isDevice(element)) {
                     const auto& device = getDevice(element);
                     if (device.sidechain.isActive() && device.sidechain.sourceTrackId == trackId) {
@@ -1340,8 +1340,8 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     }
 
     // Sync user-added FX devices from chainElements (same as normal track path)
-    for (size_t elemIdx = 0; elemIdx < trackInfo.chainElements.size(); ++elemIdx) {
-        const auto& element = trackInfo.chainElements[elemIdx];
+    for (size_t elemIdx = 0; elemIdx < trackInfo.chain.fxChainElements.size(); ++elemIdx) {
+        const auto& element = trackInfo.chain.fxChainElements[elemIdx];
         if (isDevice(element)) {
             const auto& device = getDevice(element);
 
@@ -1349,9 +1349,9 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
             if (syncedDevices_.find(device.id) == syncedDevices_.end()) {
                 // Compute TE insertion index from subsequent synced devices
                 int teInsertIndex = -1;
-                for (size_t j = elemIdx + 1; j < trackInfo.chainElements.size(); ++j) {
-                    if (isDevice(trackInfo.chainElements[j])) {
-                        auto nextId = getDevice(trackInfo.chainElements[j]).id;
+                for (size_t j = elemIdx + 1; j < trackInfo.chain.fxChainElements.size(); ++j) {
+                    if (isDevice(trackInfo.chain.fxChainElements[j])) {
+                        auto nextId = getDevice(trackInfo.chain.fxChainElements[j]).id;
                         auto it = syncedDevices_.find(nextId);
                         if (it != syncedDevices_.end() && it->second.plugin) {
                             auto* rackInst = instrumentRackManager_.getRackInstance(nextId);
@@ -1378,7 +1378,7 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     // Reorder TE plugins to match the MAGDA chain element order (same as syncTrackPlugins)
     {
         std::vector<te::Plugin*> desiredOrder;
-        for (const auto& element : trackInfo.chainElements) {
+        for (const auto& element : trackInfo.chain.fxChainElements) {
             if (isDevice(element)) {
                 juce::ScopedLock lock(pluginLock_);
                 auto it = syncedDevices_.find(getDevice(element).id);
@@ -1453,7 +1453,7 @@ void PluginManager::syncMasterPlugins() {
 
     // Collect current MAGDA device IDs on master
     std::vector<DeviceId> magdaDevices;
-    for (const auto& element : trackInfo->chainElements) {
+    for (const auto& element : trackInfo->chain.fxChainElements) {
         if (isDevice(element))
             magdaDevices.push_back(getDevice(element).id);
     }
@@ -1502,7 +1502,7 @@ void PluginManager::syncMasterPlugins() {
     }
 
     // Add new plugins for MAGDA devices not yet synced
-    for (const auto& element : trackInfo->chainElements) {
+    for (const auto& element : trackInfo->chain.fxChainElements) {
         if (!isDevice(element))
             continue;
         const auto& device = getDevice(element);

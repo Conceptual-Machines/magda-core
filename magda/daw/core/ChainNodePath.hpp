@@ -9,9 +9,21 @@
 namespace magda {
 
 /**
- * @brief Type of element in a chain path step
+ * @brief Which of a track's two FX lists a path descends into.
+ *
+ * Encoded as the id of a leading ChainStepType::Segment step. Fx is the
+ * implicit default (paths with no Segment step address the main FX chain);
+ * post-fx paths carry an explicit Segment(PostFx) step as their first step.
  */
-enum class ChainStepType { Rack, Chain, Device };
+enum class ChainSegment { Fx, PostFx };
+
+/**
+ * @brief Type of element in a chain path step
+ *
+ * Segment is appended last so the persisted integer values of Rack/Chain/
+ * Device (serialized in automation targets) stay stable.
+ */
+enum class ChainStepType { Rack, Chain, Device, Segment };
 
 /**
  * @brief A single step in a chain node path
@@ -74,12 +86,21 @@ struct ChainNodePath {
                 return ChainNodeType::Chain;
             case ChainStepType::Device:
                 return ChainNodeType::Device;
+            case ChainStepType::Segment:
+                return ChainNodeType::None;  // a bare segment is not a selectable node
         }
         return ChainNodeType::None;
     }
 
     bool isValid() const {
         return getType() != ChainNodeType::None;
+    }
+
+    // True when this path descends into the track's post-fader FX list. Post-fx
+    // is flat, so such a path is always Segment(PostFx) followed by a Device step.
+    bool isPostFx() const {
+        return !steps.empty() && steps.front().type == ChainStepType::Segment &&
+               steps.front().id == static_cast<int>(ChainSegment::PostFx);
     }
 
     bool operator==(const ChainNodePath& other) const {
@@ -167,6 +188,16 @@ struct ChainNodePath {
         return p;
     }
 
+    // A device in the track's post-fader FX list. Flat by construction:
+    //   Track > Segment(PostFx) > Device
+    static ChainNodePath postFxDevice(TrackId track, DeviceId device) {
+        ChainNodePath p;
+        p.trackId = track;
+        p.steps.push_back({ChainStepType::Segment, static_cast<int>(ChainSegment::PostFx)});
+        p.steps.push_back({ChainStepType::Device, device});
+        return p;
+    }
+
     // Create a path by extending an existing path
     ChainNodePath withRack(RackId r) const {
         ChainNodePath p = *this;
@@ -208,6 +239,11 @@ struct ChainNodePath {
                     break;
                 case ChainStepType::Device:
                     result += " > Device[" + juce::String(step.id) + "]";
+                    break;
+                case ChainStepType::Segment:
+                    result += (step.id == static_cast<int>(ChainSegment::PostFx))
+                                  ? juce::String(" > Segment[PostFx]")
+                                  : juce::String(" > Segment[Fx]");
                     break;
             }
         }

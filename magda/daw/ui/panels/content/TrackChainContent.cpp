@@ -1194,7 +1194,7 @@ void TrackChainContent::initGlobalModsPanel() {
                 }
                 return {};
             };
-            auto name = findParam(track->chainElements);
+            auto name = findParam(track->chain.fxChainElements);
             return name.isNotEmpty() ? name : ("P" + juce::String(paramIndex));
         });
     addChildComponent(*globalModEditorPanel_);
@@ -1315,7 +1315,7 @@ void TrackChainContent::initGlobalMacrosPanel() {
                 }
                 return {};
             };
-            auto name = findParam(track->chainElements);
+            auto name = findParam(track->chain.fxChainElements);
             return name.isNotEmpty() ? name : ("P" + juce::String(paramIndex));
         });
     globalMacroEditorPanel_->setModNameResolver(
@@ -1369,7 +1369,7 @@ void TrackChainContent::updateGlobalModsPanel() {
             }
         }
     };
-    collectDevices(track->chainElements);
+    collectDevices(track->chain.fxChainElements);
 
     globalModsPanel_->setAvailableDevices(allDevices);
     globalModsPanel_->setDeviceParamNames(allDeviceParams);
@@ -1433,7 +1433,7 @@ void TrackChainContent::updateGlobalMacrosPanel() {
             }
         }
     };
-    collectDevices(track->chainElements);
+    collectDevices(track->chain.fxChainElements);
 
     auto trackPath = magda::ChainNodePath::trackLevel(selectedTrackId_);
     globalMacrosPanel_->setParentPath(trackPath);
@@ -1759,7 +1759,7 @@ void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         const int previousElementCount = static_cast<int>(nodeComponents_.size());
         const int nextElementCount =
-            track ? static_cast<int>(track->chainElements.size()) : previousElementCount;
+            track ? static_cast<int>(track->chain.fxChainElements.size()) : previousElementCount;
         const bool shouldScrollToEnd =
             scrollToEndAfterNextDeviceChange_ ||
             (!suppressNextImplicitScrollToEnd_ && nextElementCount > previousElementCount);
