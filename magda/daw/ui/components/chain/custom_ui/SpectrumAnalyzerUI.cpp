@@ -5,6 +5,10 @@
 #include <iterator>
 #include <limits>
 
+#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/FontManager.hpp"
+#include "ui/themes/SmallComboBoxLookAndFeel.hpp"
+
 namespace magda::daw::ui {
 
 namespace {
@@ -29,9 +33,23 @@ template <typename Range> int nearestId(const Range& options, float value) {
 }  // namespace
 
 SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
-    fftLabel_.setText("FFT", juce::dontSendNotification);
-    fftLabel_.setJustificationType(juce::Justification::centredRight);
-    addAndMakeVisible(fftLabel_);
+    auto styleLabel = [this](juce::Label& l, const juce::String& text) {
+        l.setText(text, juce::dontSendNotification);
+        l.setFont(FontManager::getInstance().getUIFont(10.0f));
+        l.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        l.setJustificationType(juce::Justification::centredRight);
+        addAndMakeVisible(l);
+    };
+    auto styleCombo = [this](juce::ComboBox& c) {
+        c.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+        c.setColour(juce::ComboBox::backgroundColourId,
+                    DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+        c.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+        c.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+        addAndMakeVisible(c);
+    };
+
+    styleLabel(fftLabel_, "FFT");
     fftCombo_.addItem("2048", 1);
     fftCombo_.addItem("4096", 2);
     fftCombo_.onChange = [this] {
@@ -40,11 +58,9 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
             plugin_->setFftOrder(order);
         rebuildFft(order);
     };
-    addAndMakeVisible(fftCombo_);
+    styleCombo(fftCombo_);
 
-    slopeLabel_.setText("Slope", juce::dontSendNotification);
-    slopeLabel_.setJustificationType(juce::Justification::centredRight);
-    addAndMakeVisible(slopeLabel_);
+    styleLabel(slopeLabel_, "Slope");
     slopeCombo_.addItem("0 dB/oct", 1);
     slopeCombo_.addItem("3 dB/oct", 2);
     slopeCombo_.addItem("4.5 dB/oct", 3);
@@ -57,11 +73,9 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
                 plugin_->setSlopeDbPerOct(slopeDbPerOct_);
         }
     };
-    addAndMakeVisible(slopeCombo_);
+    styleCombo(slopeCombo_);
 
-    speedLabel_.setText("Time", juce::dontSendNotification);
-    speedLabel_.setJustificationType(juce::Justification::centredRight);
-    addAndMakeVisible(speedLabel_);
+    styleLabel(speedLabel_, "Time");
     speedCombo_.addItem("Slow", 1);
     speedCombo_.addItem("Med", 2);
     speedCombo_.addItem("Fast", 3);
@@ -73,7 +87,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
                 plugin_->setSmoothing(smoothing_);
         }
     };
-    addAndMakeVisible(speedCombo_);
+    styleCombo(speedCombo_);
 
     rebuildFft(11);
     startTimerHz(30);
@@ -81,6 +95,10 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
 
 SpectrumAnalyzerUI::~SpectrumAnalyzerUI() {
     stopTimer();
+    // Clear the shared LookAndFeel before the combos are destroyed.
+    fftCombo_.setLookAndFeel(nullptr);
+    slopeCombo_.setLookAndFeel(nullptr);
+    speedCombo_.setLookAndFeel(nullptr);
 }
 
 void SpectrumAnalyzerUI::rebuildFft(int order) {
@@ -169,19 +187,35 @@ float SpectrumAnalyzerUI::dbToY(float db, juce::Rectangle<float> area) const {
     return area.getBottom() - juce::jlimit(0.0f, 1.0f, t) * area.getHeight();
 }
 
-void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
-    auto area = getLocalBounds();
-    area.removeFromBottom(kControlRowH);
-    auto plot = area.toFloat().reduced(4.0f);
+juce::Rectangle<float> SpectrumAnalyzerUI::plotArea() const {
+    auto a = getLocalBounds();
+    a.removeFromBottom(kControlRowH);
+    return a.toFloat().reduced(4.0f);
+}
 
-    g.setColour(juce::Colour(0xff10141a));
+void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
+    const auto plot = plotArea();
+
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
     g.fillRoundedRectangle(plot, 4.0f);
 
-    g.setColour(juce::Colour(0xff20262e));
+    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));
     for (float f : {100.0f, 1000.0f, 10000.0f})
         g.drawVerticalLine(static_cast<int>(freqToX(f, plot)), plot.getY(), plot.getBottom());
     for (float db = kMaxDb; db >= kMinDb; db -= 20.0f)
         g.drawHorizontalLine(static_cast<int>(dbToY(db, plot)), plot.getX(), plot.getRight());
+
+    // Frequency axis labels along the bottom of the plot.
+    g.setFont(FontManager::getInstance().getUIFont(9.0f));
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    auto freqLabel = [&](float f, const juce::String& s) {
+        const float x = freqToX(f, plot);
+        g.drawText(s, juce::Rectangle<float>(x - 18.0f, plot.getBottom() - 13.0f, 36.0f, 12.0f),
+                   juce::Justification::centred);
+    };
+    freqLabel(100.0f, "100");
+    freqLabel(1000.0f, "1k");
+    freqLabel(10000.0f, "10k");
 
     if (smoothedDb_.empty())
         return;
@@ -205,10 +239,47 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         return p;
     };
 
-    g.setColour(juce::Colour(0x80ffb347));  // peak-hold
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.5f));  // peak-hold
     g.strokePath(buildPath(peakDb_), juce::PathStrokeType(1.0f));
-    g.setColour(juce::Colour(0xff4fd1c5));  // live spectrum
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));  // live spectrum
     g.strokePath(buildPath(smoothedDb_), juce::PathStrokeType(1.5f));
+
+    // Hover readout: a vertical cursor plus the frequency and spectrum level at it.
+    if (mouseOver_) {
+        const float mx =
+            juce::jlimit(plot.getX(), plot.getRight(), static_cast<float>(mousePos_.x));
+        const float t = (mx - plot.getX()) / plot.getWidth();
+        const float freq = kMinHz * std::pow(kMaxHz / kMinHz, juce::jlimit(0.0f, 1.0f, t));
+        const int bin = juce::jlimit(1, numBins_ - 1, juce::roundToInt(freq / binHz));
+        const float db = smoothedDb_[static_cast<size_t>(bin)];
+
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.6f));
+        g.drawVerticalLine(static_cast<int>(mx), plot.getY(), plot.getBottom());
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+        g.fillEllipse(mx - 2.5f, dbToY(db, plot) - 2.5f, 5.0f, 5.0f);
+
+        const juce::String fTxt =
+            freq >= 1000.0f ? juce::String(freq / 1000.0f, freq >= 10000.0f ? 1 : 2) + " kHz"
+                            : juce::String(juce::roundToInt(freq)) + " Hz";
+        const juce::String txt = fTxt + "   " + juce::String(db, 1) + " dB";
+        auto box = plot.reduced(6.0f, 4.0f).removeFromTop(14.0f).withWidth(150.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).withAlpha(0.75f));
+        g.fillRect(box);
+        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.drawText(txt, box, juce::Justification::centredLeft);
+    }
+}
+
+void SpectrumAnalyzerUI::mouseMove(const juce::MouseEvent& e) {
+    mousePos_ = e.getPosition();
+    mouseOver_ = plotArea().contains(mousePos_.toFloat());
+    repaint();
+}
+
+void SpectrumAnalyzerUI::mouseExit(const juce::MouseEvent&) {
+    mouseOver_ = false;
+    repaint();
 }
 
 }  // namespace magda::daw::ui

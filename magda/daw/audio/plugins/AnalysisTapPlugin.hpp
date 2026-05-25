@@ -26,7 +26,8 @@ namespace te = tracktion::engine;
  */
 class AnalysisTapPlugin : public te::Plugin {
   public:
-    explicit AnalysisTapPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) {}
+    explicit AnalysisTapPlugin(const te::PluginCreationInfo& info, int ringCapacity = 65536)
+        : te::Plugin(info), tap_(ringCapacity) {}
     ~AnalysisTapPlugin() override {
         notifyListenersOfDeletion();
     }
@@ -90,9 +91,9 @@ class AnalysisTapPlugin : public te::Plugin {
     void restorePluginStateFromValueTree(const juce::ValueTree&) override {}
 
   protected:
-    // ~1.3 s at 48k - enough history for an oscilloscope window up to ~1000 ms
-    // plus trigger-search headroom (the spectrum only needs <= one FFT frame).
-    AudioTapBuffer tap_{65536};
+    // Sized by each subclass via the ctor: the oscilloscope needs seconds of
+    // history for long timebases; the spectrum only needs <= one FFT frame.
+    AudioTapBuffer tap_;
     std::vector<float> monoScratch_;  // audio-thread downmix scratch, sized in initialise()
     std::atomic<double> sampleRate_{44100.0};
 };

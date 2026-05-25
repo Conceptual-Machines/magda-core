@@ -10,7 +10,8 @@ namespace magda::daw::audio {
  */
 class SpectrumAnalyzerPlugin : public AnalysisTapPlugin {
   public:
-    explicit SpectrumAnalyzerPlugin(const te::PluginCreationInfo& info) : AnalysisTapPlugin(info) {
+    explicit SpectrumAnalyzerPlugin(const te::PluginCreationInfo& info)
+        : AnalysisTapPlugin(info, 8192) {  // one FFT frame (max 4096) + headroom
         auto* um = getUndoManager();
         fftOrderValue.referTo(state, juce::Identifier("fftOrder"), um, 11);  // 2048
         slopeDbPerOctValue.referTo(state, juce::Identifier("slopeDbPerOct"), um, 4.5f);

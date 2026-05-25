@@ -27,13 +27,14 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
 
   private:
     void timerCallback() override;
-    void applyTimebase();  // recompute displaySamples_ / readCount_ from timebase + sample rate
+    void applyTimebase();      // recompute displaySamples_ / readCount_ from timebase + sample rate
+    void updateTimeReadout();  // format the slider value into the themed value label
 
     daw::audio::OscilloscopePlugin* plugin_ = nullptr;
 
     // window_ holds the whole tap ring; each frame we read readCount_ samples
     // (the drawn span plus trigger-search headroom) from the latest history.
-    static constexpr int kMaxWindow = 65536;
+    static constexpr int kMaxWindow = 262144;  // matches the plugin's tap ring (~5.4 s at 48k)
     static constexpr int kTriggerSearch = 2048;
     std::vector<float> window_;
     int displaySamples_ = 1024;
@@ -41,6 +42,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
 
     juce::Slider timeSlider_;
     juce::Label timeLabel_;
+    juce::Label timeValueLabel_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscilloscopeUI)
 };

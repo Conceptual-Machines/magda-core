@@ -10,7 +10,8 @@ namespace magda::daw::audio {
  */
 class OscilloscopePlugin : public AnalysisTapPlugin {
   public:
-    explicit OscilloscopePlugin(const te::PluginCreationInfo& info) : AnalysisTapPlugin(info) {
+    explicit OscilloscopePlugin(const te::PluginCreationInfo& info)
+        : AnalysisTapPlugin(info, 262144) {  // ~5.4 s at 48k
         timebaseMsValue.referTo(state, juce::Identifier("timebaseMs"), getUndoManager(), 10.0f);
     }
 
@@ -24,7 +25,7 @@ class OscilloscopePlugin : public AnalysisTapPlugin {
         return timebaseMsValue.get();
     }
     void setTimebaseMs(float ms) {
-        timebaseMsValue = juce::jlimit(1.0f, 1000.0f, ms);
+        timebaseMsValue = juce::jlimit(1.0f, 5000.0f, ms);
     }
 
     juce::String getName() const override {

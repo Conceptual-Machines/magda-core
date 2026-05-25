@@ -27,12 +27,15 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
 
   private:
     void timerCallback() override;
     void rebuildFft(int order);  // (re)allocate FFT + buffers for a 2^order transform
     float freqToX(float hz, juce::Rectangle<float> area) const;
     float dbToY(float db, juce::Rectangle<float> area) const;
+    juce::Rectangle<float> plotArea() const;  // plot region (excludes the control row)
 
     daw::audio::SpectrumAnalyzerPlugin* plugin_ = nullptr;
 
@@ -57,6 +60,9 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
 
     juce::ComboBox fftCombo_, slopeCombo_, speedCombo_;
     juce::Label fftLabel_, slopeLabel_, speedLabel_;
+
+    juce::Point<int> mousePos_;
+    bool mouseOver_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAnalyzerUI)
 };
