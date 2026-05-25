@@ -202,8 +202,19 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));
     for (float f : {100.0f, 1000.0f, 10000.0f})
         g.drawVerticalLine(static_cast<int>(freqToX(f, plot)), plot.getY(), plot.getBottom());
-    for (float db = kMaxDb; db >= kMinDb; db -= 20.0f)
-        g.drawHorizontalLine(static_cast<int>(dbToY(db, plot)), plot.getX(), plot.getRight());
+
+    // dB scale on the left axis.
+    g.setFont(FontManager::getInstance().getUIFont(9.0f));
+    for (float db = kMaxDb; db >= kMinDb; db -= 20.0f) {
+        const float y = dbToY(db, plot);
+        g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));
+        g.drawHorizontalLine(static_cast<int>(y), plot.getX(), plot.getRight());
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        const float ly = (db >= kMaxDb - 0.01f) ? y + 1.0f : y - 11.0f;  // top label sits below
+        g.drawText(juce::String(static_cast<int>(db)),
+                   juce::Rectangle<float>(plot.getX() + 2.0f, ly, 30.0f, 11.0f),
+                   juce::Justification::topLeft);
+    }
 
     // Frequency axis labels along the bottom of the plot.
     g.setFont(FontManager::getInstance().getUIFont(9.0f));

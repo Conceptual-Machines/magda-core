@@ -1,6 +1,7 @@
 #include "OscilloscopeUI.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -101,6 +102,24 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(area, 4.0f);
 
     const float midY = area.getCentreY();
+    const float halfH = area.getHeight() * 0.5f;
+
+    // dBFS amplitude reference lines (symmetric about the centre) + labels on the
+    // left. The trace stays linear; these just mark levels (0 dBFS = full scale).
+    g.setFont(FontManager::getInstance().getUIFont(9.0f));
+    for (float dbfs : {0.0f, -6.0f, -12.0f, -18.0f}) {
+        const float amp = std::pow(10.0f, dbfs / 20.0f) * 0.9f;  // 0.9 = trace headroom
+        const float yTop = midY - amp * halfH;
+        const float yBot = midY + amp * halfH;
+        g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));
+        g.drawHorizontalLine(static_cast<int>(yTop), area.getX(), area.getRight());
+        g.drawHorizontalLine(static_cast<int>(yBot), area.getX(), area.getRight());
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        g.drawText(juce::String(static_cast<int>(dbfs)),
+                   juce::Rectangle<float>(area.getX() + 2.0f, yTop - 6.0f, 28.0f, 12.0f),
+                   juce::Justification::centredLeft);
+    }
+    // Centre line (0 reference / silence).
     g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));
     g.drawHorizontalLine(static_cast<int>(midY), area.getX(), area.getRight());
 
@@ -121,7 +140,6 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::WAVEFORM_NORMAL));
 
     const float w = area.getWidth();
-    const float halfH = area.getHeight() * 0.5f;
     const int cols = juce::jmax(1, static_cast<int>(w));
     auto yOf = [&](float s) { return midY - juce::jlimit(-1.0f, 1.0f, s) * halfH * 0.9f; };
 
