@@ -57,16 +57,10 @@ class PluginEditorWindow final : public juce::DocumentWindow {
 
     void closeButtonPressed() override;
     void moved() override;
-    void resized() override;
 
   private:
     tracktion::Plugin& plugin_;
     tracktion::PluginWindowState& state_;
-
-    // "Pin" toggle in the title bar: pinned = window floats always-on-top (so it
-    // stays visible while tweaking params), unpinned = the DAW can sit in front.
-    // Persisted per-plugin on the plugin's state tree.
-    juce::TextButton pinButton_{"Pin"};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditorWindow)
 };

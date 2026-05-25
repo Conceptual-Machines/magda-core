@@ -29,7 +29,6 @@ class AnalysisTapPlugin : public te::Plugin {
     explicit AnalysisTapPlugin(const te::PluginCreationInfo& info, int ringCapacity = 65536)
         : te::Plugin(info), tap_(ringCapacity) {
         traceColourValue_.referTo(state, juce::Identifier("traceColour"), getUndoManager(), 0);
-        pinnedValue_.referTo(state, juce::Identifier("pinned"), getUndoManager(), false);
     }
     ~AnalysisTapPlugin() override {
         notifyListenersOfDeletion();
@@ -51,14 +50,6 @@ class AnalysisTapPlugin : public te::Plugin {
     }
     void setTraceColourIndex(int index) {
         traceColourValue_ = index;
-    }
-
-    /** Whether the popout analyzer window floats above the main window; persisted. */
-    bool isPinned() const {
-        return pinnedValue_.get();
-    }
-    void setPinned(bool pinned) {
-        pinnedValue_ = pinned;
     }
 
     void initialise(const te::PluginInitialisationInfo& info) override {
@@ -116,7 +107,6 @@ class AnalysisTapPlugin : public te::Plugin {
     std::vector<float> monoScratch_;  // audio-thread downmix scratch, sized in initialise()
     std::atomic<double> sampleRate_{44100.0};
     juce::CachedValue<int> traceColourValue_;  // index into the analyzer colour palette
-    juce::CachedValue<bool> pinnedValue_;      // popout window floats always-on-top
 };
 
 }  // namespace magda::daw::audio

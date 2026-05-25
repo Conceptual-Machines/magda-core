@@ -1887,21 +1887,7 @@ void DeviceSlotComponent::toggleAnalyzerWindow() {
     }
     if (content == nullptr)
         return;
-
-    auto* analysis = dynamic_cast<daw::audio::AnalysisTapPlugin*>(plugin.get());
-    const bool startPinned = analysis != nullptr ? analysis->isPinned() : false;
-    const DeviceId deviceId = device_.id;
-    auto onPinnedChanged = [deviceId](bool pinned) {
-        auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-        auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
-        if (bridge == nullptr)
-            return;
-        if (auto p = bridge->getPlugin(deviceId))
-            if (auto* a = dynamic_cast<daw::audio::AnalysisTapPlugin*>(p.get()))
-                a->setPinned(pinned);
-    };
-    analyzerWindow_ = std::make_unique<AnalyzerWindow>(device_.name, std::move(content),
-                                                       startPinned, std::move(onPinnedChanged));
+    analyzerWindow_ = std::make_unique<AnalyzerWindow>(device_.name, std::move(content));
     if (uiButton_ != nullptr) {
         uiButton_->setToggleState(true, juce::dontSendNotification);
         uiButton_->setActive(true);
