@@ -98,7 +98,12 @@ class AnalysisTapPlugin : public te::Plugin {
     double getTailLength() const override {
         return 0.0;
     }
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override {}
+    // Restore persisted settings (e.g. on preset load, or when a fresh plugin is
+    // created then restored). Subclasses override to also restore their own
+    // CachedValues, calling this base first.
+    void restorePluginStateFromValueTree(const juce::ValueTree& v) override {
+        tracktion::copyPropertiesToCachedValues(v, traceColourValue_);
+    }
 
   protected:
     // Sized by each subclass via the ctor: the oscilloscope needs seconds of

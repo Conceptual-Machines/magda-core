@@ -28,6 +28,11 @@ class OscilloscopePlugin : public AnalysisTapPlugin {
         timebaseMsValue = juce::jlimit(1.0f, 5000.0f, ms);
     }
 
+    void restorePluginStateFromValueTree(const juce::ValueTree& v) override {
+        AnalysisTapPlugin::restorePluginStateFromValueTree(v);  // trace colour
+        tracktion::copyPropertiesToCachedValues(v, timebaseMsValue);
+    }
+
     juce::String getName() const override {
         return getPluginName();
     }

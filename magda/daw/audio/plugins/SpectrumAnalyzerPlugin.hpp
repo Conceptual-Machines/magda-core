@@ -44,6 +44,12 @@ class SpectrumAnalyzerPlugin : public AnalysisTapPlugin {
         smoothingValue = juce::jlimit(0.05f, 1.0f, s);
     }
 
+    void restorePluginStateFromValueTree(const juce::ValueTree& v) override {
+        AnalysisTapPlugin::restorePluginStateFromValueTree(v);  // trace colour
+        tracktion::copyPropertiesToCachedValues(v, fftOrderValue, slopeDbPerOctValue,
+                                                smoothingValue);
+    }
+
     juce::String getName() const override {
         return getPluginName();
     }
