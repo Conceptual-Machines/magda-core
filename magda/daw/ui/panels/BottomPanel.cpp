@@ -1032,14 +1032,17 @@ void BottomPanel::updateContentBasedOnSelection() {
         audioPropsPanel_->onDeactivated();
     }
 
-    resized();
-
     // Switch to the appropriate content via PanelController
     daw::ui::PanelController::getInstance().setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                                                targetContent);
 
     // The TrackChain content (and its post-fx toggle button) is now active.
     syncPostFxToggleButton();
+
+    // Lay out AFTER the content switch so the now-active content's header
+    // controls are positioned (otherwise they keep a stale layout from the
+    // previous content until the next click/resize).
+    resized();
 
     // Apply time mode to new content and sync grid controls.
     // Run regardless of showEditorTabs_ — that flag only tracks MIDI tabs, but the ABS/REL
