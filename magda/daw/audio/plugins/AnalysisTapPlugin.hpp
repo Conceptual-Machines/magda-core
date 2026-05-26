@@ -26,9 +26,14 @@ namespace te = tracktion::engine;
  */
 class AnalysisTapPlugin : public te::Plugin {
   public:
-    explicit AnalysisTapPlugin(const te::PluginCreationInfo& info, int ringCapacity = 65536)
+    explicit AnalysisTapPlugin(const te::PluginCreationInfo& info, int ringCapacity = 65536,
+                               int defaultTraceColour = 0)
         : te::Plugin(info), tap_(ringCapacity) {
-        traceColourValue_.referTo(state, juce::Identifier("traceColour"), getUndoManager(), 0);
+        // defaultTraceColour comes from the per-device-kind Config default, so a
+        // fresh device adopts the user's last-used colour; a restored device's
+        // saved property overrides this in copyPropertiesToCachedValues().
+        traceColourValue_.referTo(state, juce::Identifier("traceColour"), getUndoManager(),
+                                  defaultTraceColour);
     }
     ~AnalysisTapPlugin() override {
         notifyListenersOfDeletion();

@@ -679,6 +679,35 @@ class Config {
         openMacrosOnSelect = enabled;
     }
 
+    // Analysis device defaults: the last-used settings, applied to every newly
+    // created Oscilloscope / Spectrum Analyzer. A device restored from a project
+    // keeps its own saved state; only fresh devices pick these up. Persisted in
+    // config.json under "analysisDefaults". Field defaults below mirror the
+    // plugins' own hardcoded fallbacks.
+    struct OscilloscopeDefaults {
+        int traceColour = 0;
+        float timebaseMs = 10.0f;
+    };
+    struct SpectrumDefaults {
+        int traceColour = 0;
+        int fftOrder = 11;  // 11 = 2048, 12 = 4096
+        float slopeDbPerOct = 4.5f;
+        float smoothing = 0.5f;
+    };
+
+    OscilloscopeDefaults getOscilloscopeDefaults() const {
+        return oscilloscopeDefaults_;
+    }
+    void setOscilloscopeDefaults(const OscilloscopeDefaults& d) {
+        oscilloscopeDefaults_ = d;
+    }
+    SpectrumDefaults getSpectrumDefaults() const {
+        return spectrumDefaults_;
+    }
+    void setSpectrumDefaults(const SpectrumDefaults& d) {
+        spectrumDefaults_ = d;
+    }
+
     // Preview output channel (stereo pair offset: 0 = outputs 1-2, 2 = outputs 3-4, etc.)
     int getPreviewOutputChannel() const {
         return previewOutputChannel;
@@ -844,6 +873,10 @@ class Config {
 
     // Device chain behaviour
     bool openMacrosOnSelect = true;  // Open macro panel when selecting a device/rack
+
+    // Analysis device last-used defaults (see getters above).
+    OscilloscopeDefaults oscilloscopeDefaults_;
+    SpectrumDefaults spectrumDefaults_;
 
     // Auto-save settings
     bool autoSaveEnabled = true;       // Auto-save enabled by default

@@ -6,6 +6,7 @@
 #include <limits>
 
 #include "AnalyzerColours.hpp"
+#include "core/Config.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
@@ -30,6 +31,20 @@ template <typename Range> int nearestId(const Range& options, float value) {
         ++i;
     }
     return bestId;
+}
+
+// Snapshot the plugin's current settings as the global last-used spectrum
+// default (config.json), so the next freshly-created spectrum adopts them.
+void persistSpectrumDefaults(daw::audio::SpectrumAnalyzerPlugin* p) {
+    if (p == nullptr)
+        return;
+    Config::SpectrumDefaults d;
+    d.traceColour = p->getTraceColourIndex();
+    d.fftOrder = p->getFftOrder();
+    d.slopeDbPerOct = p->getSlopeDbPerOct();
+    d.smoothing = p->getSmoothing();
+    Config::getInstance().setSpectrumDefaults(d);
+    Config::getInstance().save();
 }
 }  // namespace
 
@@ -58,6 +73,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
         if (plugin_ != nullptr)
             plugin_->setFftOrder(order);
         rebuildFft(order);
+        persistSpectrumDefaults(plugin_);
     };
     styleCombo(fftCombo_);
 
@@ -72,6 +88,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
             slopeDbPerOct_ = kSlopeOptions[static_cast<size_t>(idx)];
             if (plugin_ != nullptr)
                 plugin_->setSlopeDbPerOct(slopeDbPerOct_);
+            persistSpectrumDefaults(plugin_);
         }
     };
     styleCombo(slopeCombo_);
@@ -86,6 +103,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
             smoothing_ = kSpeedOptions[static_cast<size_t>(idx)];
             if (plugin_ != nullptr)
                 plugin_->setSmoothing(smoothing_);
+            persistSpectrumDefaults(plugin_);
         }
     };
     styleCombo(speedCombo_);
@@ -96,6 +114,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     colourCombo_.onChange = [this] {
         if (plugin_ != nullptr)
             plugin_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
+        persistSpectrumDefaults(plugin_);
     };
     styleCombo(colourCombo_);
 

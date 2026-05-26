@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../core/Config.hpp"
 #include "plugins/AnalysisTapPlugin.hpp"
 
 namespace magda::daw::audio {
@@ -11,8 +12,10 @@ namespace magda::daw::audio {
 class OscilloscopePlugin : public AnalysisTapPlugin {
   public:
     explicit OscilloscopePlugin(const te::PluginCreationInfo& info)
-        : AnalysisTapPlugin(info, 262144) {  // ~5.4 s at 48k
-        timebaseMsValue.referTo(state, juce::Identifier("timebaseMs"), getUndoManager(), 10.0f);
+        : AnalysisTapPlugin(info, 262144,  // ~5.4 s at 48k
+                            magda::Config::getInstance().getOscilloscopeDefaults().traceColour) {
+        timebaseMsValue.referTo(state, juce::Identifier("timebaseMs"), getUndoManager(),
+                                magda::Config::getInstance().getOscilloscopeDefaults().timebaseMs);
     }
 
     static const char* getPluginName() {

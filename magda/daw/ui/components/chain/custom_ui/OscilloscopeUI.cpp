@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "AnalyzerColours.hpp"
+#include "core/Config.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
@@ -43,6 +44,15 @@ OscilloscopeUI::OscilloscopeUI() {
             repaint();
         }
     };
+    // Persist as the global last-used default on release (not per drag tick).
+    timeSlider_.onDragEnd = [this] {
+        if (plugin_ == nullptr)
+            return;
+        auto d = Config::getInstance().getOscilloscopeDefaults();
+        d.timebaseMs = plugin_->getTimebaseMs();
+        Config::getInstance().setOscilloscopeDefaults(d);
+        Config::getInstance().save();
+    };
     addAndMakeVisible(timeSlider_);
 
     timeValueLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -60,8 +70,13 @@ OscilloscopeUI::OscilloscopeUI() {
     for (int i = 0; i < kAnalyzerColourCount; ++i)
         colourCombo_.addItem(kAnalyzerColourNames[i], i + 1);
     colourCombo_.onChange = [this] {
-        if (plugin_ != nullptr)
-            plugin_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
+        if (plugin_ == nullptr)
+            return;
+        plugin_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
+        auto d = Config::getInstance().getOscilloscopeDefaults();
+        d.traceColour = plugin_->getTraceColourIndex();
+        Config::getInstance().setOscilloscopeDefaults(d);
+        Config::getInstance().save();
     };
     addAndMakeVisible(colourCombo_);
 

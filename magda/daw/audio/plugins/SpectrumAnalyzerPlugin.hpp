@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../core/Config.hpp"
 #include "plugins/AnalysisTapPlugin.hpp"
 
 namespace magda::daw::audio {
@@ -11,11 +12,13 @@ namespace magda::daw::audio {
 class SpectrumAnalyzerPlugin : public AnalysisTapPlugin {
   public:
     explicit SpectrumAnalyzerPlugin(const te::PluginCreationInfo& info)
-        : AnalysisTapPlugin(info, 8192) {  // one FFT frame (max 4096) + headroom
+        : AnalysisTapPlugin(info, 8192,  // one FFT frame (max 4096) + headroom
+                            magda::Config::getInstance().getSpectrumDefaults().traceColour) {
+        const auto d = magda::Config::getInstance().getSpectrumDefaults();
         auto* um = getUndoManager();
-        fftOrderValue.referTo(state, juce::Identifier("fftOrder"), um, 11);  // 2048
-        slopeDbPerOctValue.referTo(state, juce::Identifier("slopeDbPerOct"), um, 4.5f);
-        smoothingValue.referTo(state, juce::Identifier("smoothing"), um, 0.5f);
+        fftOrderValue.referTo(state, juce::Identifier("fftOrder"), um, d.fftOrder);  // 11 = 2048
+        slopeDbPerOctValue.referTo(state, juce::Identifier("slopeDbPerOct"), um, d.slopeDbPerOct);
+        smoothingValue.referTo(state, juce::Identifier("smoothing"), um, d.smoothing);
     }
 
     static const char* getPluginName() {
