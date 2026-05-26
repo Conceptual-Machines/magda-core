@@ -1,6 +1,6 @@
 #include "ClapAudioEncoder.hpp"
 
-#ifdef MAGDA_HAVE_CLAP
+#if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
 
 #include <onnxruntime_cxx_api.h>
 

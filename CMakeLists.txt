@@ -76,8 +76,10 @@ option(MAGDA_BUILD_JUCE_ADAPTER "Build JUCE/Tracktion adapter" OFF)
 # (catalogue, indexing, metadata search) still works without it.
 set(_magda_clap_default ON)
 if(APPLE)
+    # ORT 1.26 only ships single-arch binaries, so any build that targets
+    # x86_64 (Intel-only or arm64+x86_64 universal) must disable CLAP.
     if(CMAKE_OSX_ARCHITECTURES)
-        if(NOT CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
+        if(CMAKE_OSX_ARCHITECTURES MATCHES "x86_64|i386")
             set(_magda_clap_default OFF)
         endif()
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|i386")

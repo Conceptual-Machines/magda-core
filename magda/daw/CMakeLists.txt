@@ -624,32 +624,35 @@ endif()
 # the FetchContent `_deps/onnxruntime-src/lib/` build-dir path into the binary's
 # rpath, which does not exist on an end-user machine, so the distributed app
 # must carry the runtime library itself or it aborts at launch ("Library not
-# loaded: @rpath/libonnxruntime.1.dylib").
-if(APPLE)
-    # Place the dylib in the bundle's Frameworks/ — the release codesign step
-    # already signs everything there — and add an rpath so the loader finds it.
-    # The executable references @rpath/libonnxruntime.1.dylib (the lib's own
-    # install name), so the bundled file must use that exact name.
-    add_custom_command(TARGET magda_daw_app POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Frameworks"
-        COMMAND ${CMAKE_COMMAND} -E copy
-            "${ONNXRUNTIME_LIB_DIR}/libonnxruntime.dylib"
-            "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Frameworks/libonnxruntime.1.dylib"
-        COMMENT "Bundling ONNX Runtime dylib into app Frameworks"
-    )
-    set_property(TARGET magda_daw_app APPEND PROPERTY
-        BUILD_RPATH "@executable_path/../Frameworks")
-elseif(WIN32)
-    # Windows only searches the exe's directory, the cwd, and PATH — none of
-    # which include the FetchContent lib dir — so without this copy the first
-    # ORT call (Sample Tagger load) faults when the delay-loaded DLL fails to
-    # resolve.
-    add_custom_command(TARGET magda_daw_app POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll"
-            "${ONNXRUNTIME_LIB_DIR}/onnxruntime_providers_shared.dll"
-            "$<TARGET_FILE_DIR:magda_daw_app>"
-        COMMENT "Copying ONNX Runtime DLLs alongside app executable"
-    )
+# loaded: @rpath/libonnxruntime.1.dylib"). Skipped when MAGDA_HAVE_CLAP is off
+# (Intel macOS) since there's no ORT to bundle.
+if(MAGDA_HAVE_CLAP)
+    if(APPLE)
+        # Place the dylib in the bundle's Frameworks/ — the release codesign step
+        # already signs everything there — and add an rpath so the loader finds it.
+        # The executable references @rpath/libonnxruntime.1.dylib (the lib's own
+        # install name), so the bundled file must use that exact name.
+        add_custom_command(TARGET magda_daw_app POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Frameworks"
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "${ONNXRUNTIME_LIB_DIR}/libonnxruntime.dylib"
+                "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Frameworks/libonnxruntime.1.dylib"
+            COMMENT "Bundling ONNX Runtime dylib into app Frameworks"
+        )
+        set_property(TARGET magda_daw_app APPEND PROPERTY
+            BUILD_RPATH "@executable_path/../Frameworks")
+    elseif(WIN32)
+        # Windows only searches the exe's directory, the cwd, and PATH — none of
+        # which include the FetchContent lib dir — so without this copy the first
+        # ORT call (Sample Tagger load) faults when the delay-loaded DLL fails to
+        # resolve.
+        add_custom_command(TARGET magda_daw_app POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll"
+                "${ONNXRUNTIME_LIB_DIR}/onnxruntime_providers_shared.dll"
+                "$<TARGET_FILE_DIR:magda_daw_app>"
+            COMMENT "Copying ONNX Runtime DLLs alongside app executable"
+        )
+    endif()
 endif()

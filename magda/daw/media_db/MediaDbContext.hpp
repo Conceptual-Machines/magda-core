@@ -22,7 +22,7 @@ namespace magda::media {
 // text→audio search, zero-shot tagging). Currently false on Intel macOS;
 // see CMakeLists.txt for the gate.
 constexpr bool clapBackendAvailable() noexcept {
-#ifdef MAGDA_HAVE_CLAP
+#if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
     return true;
 #else
     return false;
