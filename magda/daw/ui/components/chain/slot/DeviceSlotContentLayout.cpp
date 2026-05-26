@@ -124,9 +124,9 @@ bool prepareDeviceSlotContentFrame(juce::Rectangle<int>& contentArea,
                                    bool collapsed, bool internalDevice, bool pluginPresetsAvailable,
                                    DeviceSlotContentFrameControls controls, int meterStripWidth,
                                    int contentHeaderHeight) {
-    const bool skipContentHeader =
-        traits.isFaust || (traits.compiledPresentation != nullptr &&
-                           traits.compiledPresentation->layoutCellCount == 0);
+    const bool skipContentHeader = traits.isAnalysis || traits.isFaust ||
+                                   (traits.compiledPresentation != nullptr &&
+                                    traits.compiledPresentation->layoutCellCount == 0);
 
     if (!collapsed) {
         if (!skipContentHeader) {

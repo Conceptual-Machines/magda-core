@@ -9,8 +9,11 @@ namespace magda::daw::ui {
 namespace {
 
 bool skipsContentHeader(const DeviceSlotContentPaintState& state) {
-    return state.traits.isFaust || (state.traits.compiledPresentation != nullptr &&
-                                    state.traits.compiledPresentation->layoutCellCount == 0);
+    // Analysis devices (oscilloscope / spectrum) have no need for the
+    // "manufacturer / name" subheader — the main header already names them.
+    return state.traits.isAnalysis || state.traits.isFaust ||
+           (state.traits.compiledPresentation != nullptr &&
+            state.traits.compiledPresentation->layoutCellCount == 0);
 }
 
 void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
