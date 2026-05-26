@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build-macos:
-    runs-on: macos-14  # Apple Silicon; arm64-only (ONNX Runtime 1.26 has no Intel macOS build)
+    runs-on: macos-14  # Apple Silicon; includes the CLAP semantic-search backend (ORT-only on arm64)
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -244,6 +244,229 @@ jobs:
       if: always()
       run: |
         # Remove temporary signing keychain
+        KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+        if [ -f "$KEYCHAIN_PATH" ]; then
+          security delete-keychain "$KEYCHAIN_PATH"
+        fi
+        rm -rf build
+
+  build-macos-x86_64:
+    # Intel Mac build (MAGDA_HAVE_CLAP=OFF, no semantic search).
+    # macos-13 is the last x86_64 runner GitHub offers — when it goes away we
+    # will need a self-hosted runner or to drop this build.
+    runs-on: macos-13
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        lfs: true
+
+    - name: Install dependencies
+      run: |
+        brew install ninja create-dmg
+        if ! command -v sccache &>/dev/null; then
+          brew install sccache
+        fi
+
+    - name: Extract version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          VERSION="${GITHUB_REF_NAME#v}"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Version: $VERSION"
+
+    - name: Configure CMake (x86_64)
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        cmake -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_OSX_ARCHITECTURES="x86_64" \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET="11.0" \
+          -DMAGDA_BUILD_TESTS=OFF \
+          -DMAGDA_FULL_VERSION="$VERSION" \
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+
+    - name: Build
+      run: cmake --build build --config Release -j $(sysctl -n hw.ncpu)
+
+    - name: Verify app bundle
+      run: |
+        APP_PATH="build/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
+        if [ ! -d "$APP_PATH" ]; then
+          echo "MAGDA.app not found at $APP_PATH"
+          find build -name "MAGDA.app" -type d || true
+          exit 1
+        fi
+        echo "MAGDA.app found at $APP_PATH"
+        ls -la "$APP_PATH/Contents/MacOS/"
+
+    - name: Import signing certificate
+      env:
+        MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+        MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      run: |
+        KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+        KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+        echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+        security import "$RUNNER_TEMP/certificate.p12" \
+          -k "$KEYCHAIN_PATH" \
+          -P "$MACOS_CERTIFICATE_PASSWORD" \
+          -T /usr/bin/codesign \
+          -T /usr/bin/productsign
+        rm "$RUNNER_TEMP/certificate.p12"
+
+        security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: \
+          -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+        security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+        security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+    - name: Code sign app bundle
+      run: |
+        APP_PATH="build/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
+        IDENTITY="Developer ID Application: Luca Romagnoli (VH54FX3Z7U)"
+        ENTITLEMENTS="packaging/macos/entitlements.plist"
+
+        if [ -f "$APP_PATH/Contents/MacOS/magda_plugin_scanner" ]; then
+          echo "Signing plugin scanner..."
+          codesign --force --verify --verbose --timestamp \
+            --options runtime \
+            --entitlements "$ENTITLEMENTS" \
+            --sign "$IDENTITY" \
+            "$APP_PATH/Contents/MacOS/magda_plugin_scanner"
+        fi
+
+        find "$APP_PATH/Contents/Frameworks" -name "*.dylib" -o -name "*.framework" 2>/dev/null | while read -r lib; do
+          echo "Signing: $lib"
+          codesign --force --verify --verbose --timestamp \
+            --options runtime \
+            --sign "$IDENTITY" \
+            "$lib"
+        done
+
+        echo "Signing MAGDA.app..."
+        codesign --force --verify --verbose --timestamp \
+          --options runtime \
+          --entitlements "$ENTITLEMENTS" \
+          --sign "$IDENTITY" \
+          "$APP_PATH"
+
+    - name: Verify signature
+      run: |
+        APP_PATH="build/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
+        echo "Verifying codesign..."
+        codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+        echo "Verifying Gatekeeper assessment..."
+        spctl --assess --type execute -vvv "$APP_PATH" || echo "spctl check failed (may need notarization)"
+
+    - name: Create DMG
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        APP_PATH="build/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
+        DMG_NAME="MAGDA-${VERSION}-macOS-x86_64.dmg"
+
+        set +e
+        create-dmg \
+          --volname "MAGDA" \
+          --window-pos 200 120 \
+          --window-size 600 400 \
+          --icon-size 100 \
+          --icon "MAGDA.app" 150 190 \
+          --app-drop-link 450 190 \
+          "$DMG_NAME" \
+          "$APP_PATH"
+        CREATE_DMG_EXIT=$?
+        set -e
+
+        if [ ! -f "$DMG_NAME" ]; then
+          echo "create-dmg failed and no DMG was produced (exit code $CREATE_DMG_EXIT)"
+          exit 1
+        fi
+
+        echo "DMG created: $DMG_NAME"
+        ls -lh "$DMG_NAME"
+
+    - name: Sign DMG
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        DMG_NAME="MAGDA-${VERSION}-macOS-x86_64.dmg"
+        codesign --force --sign "Developer ID Application: Luca Romagnoli (VH54FX3Z7U)" "$DMG_NAME"
+        codesign --verify --verbose "$DMG_NAME"
+
+    - name: Notarize DMG
+      timeout-minutes: 30
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        NOTARIZATION_APPLE_ID: ${{ secrets.NOTARIZATION_APPLE_ID }}
+        NOTARIZATION_PASSWORD: ${{ secrets.NOTARIZATION_PASSWORD }}
+      run: |
+        DMG_NAME="MAGDA-${VERSION}-macOS-x86_64.dmg"
+
+        echo "Submitting for notarization..."
+        SUBMIT_OUTPUT=$(xcrun notarytool submit "$DMG_NAME" \
+          --apple-id "$NOTARIZATION_APPLE_ID" \
+          --password "$NOTARIZATION_PASSWORD" \
+          --team-id "VH54FX3Z7U" \
+          --wait 2>&1) || true
+        echo "$SUBMIT_OUTPUT"
+
+        set +o pipefail
+        SUBMISSION_ID=$(echo "$SUBMIT_OUTPUT" | grep "id:" | head -1 | awk '{print $2}') || true
+        STATUS=$(echo "$SUBMIT_OUTPUT" | grep "status:" | tail -1 | awk '{print $2}') || true
+        set -o pipefail
+
+        if [ -z "$SUBMISSION_ID" ] || [ -z "$STATUS" ]; then
+          echo "Failed to parse notarization output:"
+          echo "$SUBMIT_OUTPUT"
+          exit 1
+        fi
+
+        if [ "$STATUS" != "Accepted" ]; then
+          echo "Notarization failed with status: $STATUS"
+          echo "Fetching notarization log..."
+          xcrun notarytool log "$SUBMISSION_ID" \
+            --apple-id "$NOTARIZATION_APPLE_ID" \
+            --password "$NOTARIZATION_PASSWORD" \
+            --team-id "VH54FX3Z7U"
+          exit 1
+        fi
+
+        echo "Stapling notarization ticket..."
+        xcrun stapler staple "$DMG_NAME"
+
+    - name: Generate checksum
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        DMG_NAME="MAGDA-${VERSION}-macOS-x86_64.dmg"
+        shasum -a 256 "$DMG_NAME" > "${DMG_NAME}.sha256"
+        cat "${DMG_NAME}.sha256"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: macos-x86_64-release
+        path: |
+          MAGDA-*-macOS-x86_64.dmg
+          MAGDA-*-macOS-x86_64.dmg.sha256
+
+    - name: Clean up
+      if: always()
+      run: |
         KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
         if [ -f "$KEYCHAIN_PATH" ]; then
           security delete-keychain "$KEYCHAIN_PATH"
@@ -779,7 +1002,7 @@ jobs:
           MAGDA-*-Linux-x86_64.AppImage.sha256
 
   create-release:
-    needs: [build-macos, build-windows, build-linux]
+    needs: [build-macos, build-macos-x86_64, build-windows, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -828,6 +1051,7 @@ jobs:
         fail_on_unmatched_files: true
         files: |
           macos-release/*
+          macos-x86_64-release/*
           windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe
           windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe.sha256
           windows-x86_64-release/MAGDA-*-Windows-x86_64.pdb

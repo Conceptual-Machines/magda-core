@@ -19,4 +19,8 @@ target_sources(magda_daw PRIVATE
     Scan.cpp
 )
 
-target_link_libraries(magda_daw PUBLIC sqlite3 onnxruntime)
+target_link_libraries(magda_daw PUBLIC sqlite3)
+if(MAGDA_HAVE_CLAP)
+    target_link_libraries(magda_daw PUBLIC onnxruntime)
+    target_compile_definitions(magda_daw PUBLIC MAGDA_HAVE_CLAP=1)
+endif()
