@@ -890,6 +890,22 @@ TrackChainContent::TrackChainContent()
                         BinaryData::spectrum_svgSize, "Spectrum Analyzer (post-FX)",
                         "spectrumanalyzer", "Spectrum Analyzer");
 
+    // Post-FX panel show/hide toggle. The panel itself lives in BottomPanel,
+    // which wires onPostFxPanelToggled / setPostFxPanelOpen.
+    postFxPanelButton_ = std::make_unique<magda::SvgButton>("PostFx", BinaryData::postfx_svg,
+                                                            BinaryData::postfx_svgSize);
+    postFxPanelButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    postFxPanelButton_->setHoverColor(DarkTheme::getTextColour());
+    postFxPanelButton_->setActiveColor(juce::Colours::white);
+    postFxPanelButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    postFxPanelButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    postFxPanelButton_->setTooltip("Show/hide the post-FX panel");
+    postFxPanelButton_->onClick = [this]() {
+        if (onPostFxPanelToggled)
+            onPostFxPanelToggled(!postFxPanelOpen_);
+    };
+    addChildComponent(*postFxPanelButton_);
+
     // === HEADER BAR CONTROLS - RIGHT SIDE (track info) ===
 
     // Track name label - clicks pass through for track selection
@@ -1824,11 +1840,20 @@ void TrackChainContent::togglePostFxAnalysisDevice(const juce::String& pluginId,
         device.deviceType = magda::DeviceType::Analysis;
         device.format = magda::PluginFormat::Internal;
         tm.addDeviceToPostFx(selectedTrackId_, device);
+        // Reveal the panel so the analyzer you just added is visible.
+        if (onPostFxPanelToggled)
+            onPostFxPanelToggled(true);
     }
     // trackDevicesChanged() fires from the mutations above and refreshes the
     // toggles, but refresh here too so the lit state updates even if this panel
     // is not the listener that drives the rebuild.
     refreshAnalysisToggles();
+}
+
+void TrackChainContent::setPostFxPanelOpen(bool open) {
+    postFxPanelOpen_ = open;
+    if (postFxPanelButton_)
+        postFxPanelButton_->setActive(open);
 }
 
 void TrackChainContent::refreshAnalysisToggles() {
@@ -1983,6 +2008,7 @@ void TrackChainContent::updateFromSelectedTrack() {
             addRackButton_->setVisible(true);
             treeViewButton_->setVisible(true);
             presetButton_->setVisible(true);
+            postFxPanelButton_->setVisible(true);
             oscToggleButton_->setVisible(true);
             specToggleButton_->setVisible(true);
             refreshAnalysisToggles();
@@ -2048,6 +2074,7 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(addRackButton_.get());
     headerBar.addAndMakeVisible(treeViewButton_.get());
     headerBar.addAndMakeVisible(presetButton_.get());
+    headerBar.addAndMakeVisible(postFxPanelButton_.get());
     headerBar.addAndMakeVisible(oscToggleButton_.get());
     headerBar.addAndMakeVisible(specToggleButton_.get());
     headerBar.addAndMakeVisible(trackNameLabel_);
@@ -2071,6 +2098,7 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(addRackButton_.get());
     addChildComponent(treeViewButton_.get());
     addChildComponent(presetButton_.get());
+    addChildComponent(postFxPanelButton_.get());
     addChildComponent(oscToggleButton_.get());
     addChildComponent(specToggleButton_.get());
     addChildComponent(&trackNameLabel_);
@@ -2131,11 +2159,13 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
         masterMuteButton_.setVisible(false);
     }
     headerArea.removeFromRight(8);
-    // Analysis-device toggles — grouped with the track's output controls
-    // (solo/mute/volume) rather than the chain-editing buttons on the left.
+    // Post-FX panel toggle + analysis-device toggles — grouped with the track's
+    // output controls (solo/mute/volume) rather than the left chain buttons.
     specToggleButton_->setBounds(headerArea.removeFromRight(20));
     headerArea.removeFromRight(4);
     oscToggleButton_->setBounds(headerArea.removeFromRight(20));
+    headerArea.removeFromRight(4);
+    postFxPanelButton_->setBounds(headerArea.removeFromRight(20));
     headerArea.removeFromRight(8);
     trackNameLabel_.setBounds(headerArea);  // Name takes remaining space
 
@@ -2158,6 +2188,7 @@ void TrackChainContent::hideHeaderControls() {
     addRackButton_->setVisible(false);
     treeViewButton_->setVisible(false);
     presetButton_->setVisible(false);
+    postFxPanelButton_->setVisible(false);
     oscToggleButton_->setVisible(false);
     specToggleButton_->setVisible(false);
     // Hide panels

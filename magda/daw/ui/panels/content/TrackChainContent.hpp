@@ -111,18 +111,30 @@ class TrackChainContent : public PanelContent,
     juce::Label linkModeLabel_;  // Shows "LINK MODE" when mod/macro linking is active
 
     // Header bar controls - LEFT side (action buttons)
-    std::unique_ptr<magda::SvgButton> globalModsButton_;  // Toggle global modulators panel
-    std::unique_ptr<magda::SvgButton> macroButton_;       // Toggle global macros panel
-    std::unique_ptr<magda::SvgButton> addRackButton_;     // Add rack button
-    std::unique_ptr<magda::SvgButton> treeViewButton_;    // Show chain tree dialog
-    std::unique_ptr<magda::SvgButton> presetButton_;      // MAGDA track-chain presets menu
-    std::unique_ptr<magda::SvgButton> oscToggleButton_;   // Toggle oscilloscope in post-fx
-    std::unique_ptr<magda::SvgButton> specToggleButton_;  // Toggle spectrum analyzer in post-fx
+    std::unique_ptr<magda::SvgButton> globalModsButton_;   // Toggle global modulators panel
+    std::unique_ptr<magda::SvgButton> macroButton_;        // Toggle global macros panel
+    std::unique_ptr<magda::SvgButton> addRackButton_;      // Add rack button
+    std::unique_ptr<magda::SvgButton> treeViewButton_;     // Show chain tree dialog
+    std::unique_ptr<magda::SvgButton> presetButton_;       // MAGDA track-chain presets menu
+    std::unique_ptr<magda::SvgButton> oscToggleButton_;    // Toggle oscilloscope in post-fx
+    std::unique_ptr<magda::SvgButton> specToggleButton_;   // Toggle spectrum analyzer in post-fx
+    std::unique_ptr<magda::SvgButton> postFxPanelButton_;  // Show/hide the post-fx panel
 
     // Add or remove the named analysis device in the selected track's post-fx
     // (osc/spectrum are unique per kind there), then refresh the toggle states.
     void togglePostFxAnalysisDevice(const juce::String& pluginId, const juce::String& displayName);
     void refreshAnalysisToggles();  // light osc/spec buttons when present in post-fx
+
+  public:
+    // The post-fx panel lives in BottomPanel; the toggle button lives here.
+    // BottomPanel wires these: onPostFxPanelToggled fires when the user clicks
+    // the button, and setPostFxPanelOpen reflects the panel's open state back
+    // onto the button.
+    std::function<void(bool open)> onPostFxPanelToggled;
+    void setPostFxPanelOpen(bool open);
+
+  private:
+    bool postFxPanelOpen_ = false;  // mirrored panel state, for the button's lit look
 
     // Currently-loaded chain preset name for the selected track (empty when
     // none). Cleared on track selection change so each track gets a fresh

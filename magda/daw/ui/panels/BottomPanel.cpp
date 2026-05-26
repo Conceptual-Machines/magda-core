@@ -18,6 +18,7 @@
 #include "content/MidiEditorContent.hpp"
 #include "content/PianoRollContent.hpp"
 #include "content/PostFxPanelContent.hpp"
+#include "content/TrackChainContent.hpp"
 #include "content/WaveformEditorContent.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/PluginPreferences.hpp"
@@ -612,7 +613,6 @@ void BottomPanel::paint(juce::Graphics& g) {
     };
     drawCollapsedBorder(showPropsPanel_, propsPanelCollapsed_);
     drawCollapsedBorder(showChordPanel_, chordPanelCollapsed_);
-    drawCollapsedBorder(showPostFxPanel_, postFxPanelCollapsed_);
 }
 
 void BottomPanel::resized() {
@@ -632,8 +632,6 @@ void BottomPanel::resized() {
             postFxPanel_->setVisible(false);
         if (postFxResizer_)
             postFxResizer_->setVisible(false);
-        if (postFxCollapseButton_)
-            postFxCollapseButton_->setVisible(false);
         TabbedPanel::resized();
         return;
     }
@@ -746,9 +744,10 @@ void BottomPanel::resized() {
         }
     }
 
-    // Position post-fader FX side panel (same pattern as the chord panel)
+    // Position the post-FX side panel. Shown/hidden by the TrackChain header
+    // toggle (no collapse strip); the resizer handles its width when shown.
     if (postFxPanel_) {
-        if (showPostFxPanel_ && !postFxPanelCollapsed_) {
+        if (showPostFxPanel_) {
             auto fullContent = getLocalBounds();
             if (hasHeader)
                 fullContent.removeFromTop(HeaderBar::HEIGHT);
@@ -762,31 +761,9 @@ void BottomPanel::resized() {
             auto postFxArea = fullContent.removeFromRight(postFxWidth);
             postFxPanel_->setBounds(postFxArea);
             postFxPanel_->setVisible(true);
-
-            constexpr int collapseBtnSize = 20;
-            constexpr int collapsePad = 4;
-            postFxCollapseButton_->setBounds(postFxArea.getX() + collapsePad,
-                                             postFxArea.getBottom() - collapseBtnSize - collapsePad,
-                                             collapseBtnSize, collapseBtnSize);
-            postFxCollapseButton_->setVisible(true);
-            postFxCollapseButton_->toFront(false);
-        } else if (showPostFxPanel_ && postFxPanelCollapsed_) {
-            postFxPanel_->setVisible(false);
-            postFxResizer_->setVisible(false);
-
-            constexpr int collapseBtnSize = 20;
-            constexpr int stripWidth = 28;
-            auto fullContent = getLocalBounds();
-            if (hasHeader)
-                fullContent.removeFromTop(HeaderBar::HEIGHT);
-            postFxCollapseButton_->setBounds(fullContent.getRight() - stripWidth + 4,
-                                             fullContent.getBottom() - collapseBtnSize - 4,
-                                             collapseBtnSize, collapseBtnSize);
-            postFxCollapseButton_->setVisible(true);
         } else {
             postFxPanel_->setVisible(false);
             postFxResizer_->setVisible(false);
-            postFxCollapseButton_->setVisible(false);
         }
     }
 }
@@ -905,22 +882,8 @@ void BottomPanel::ensurePostFxPanelCreated() {
     postFxPanel_ = std::make_unique<daw::ui::PostFxPanelContent>();
     addChildComponent(postFxPanel_.get());
 
-    postFxCollapseButton_ = std::make_unique<SvgButton>(
-        "PostFxCollapse", BinaryData::right_close_svg, BinaryData::right_close_svgSize);
-    postFxCollapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
-    postFxCollapseButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    postFxCollapseButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    postFxCollapseButton_->setTooltip("Toggle post-FX panel");
-    postFxCollapseButton_->onClick = [this]() {
-        postFxPanelCollapsed_ = !postFxPanelCollapsed_;
-        postFxCollapseButton_->updateSvgData(
-            postFxPanelCollapsed_ ? BinaryData::right_open_svg : BinaryData::right_close_svg,
-            postFxPanelCollapsed_ ? BinaryData::right_open_svgSize
-                                  : BinaryData::right_close_svgSize);
-        resized();
-    };
-    addChildComponent(postFxCollapseButton_.get());
-
+    // No collapse button/strip: the TrackChain header toggle shows/hides the
+    // panel. The resizer only adjusts width while it is shown.
     postFxResizer_ = std::make_unique<PropsResizeHandle>();
     postFxResizer_->onResize = [this](int delta) {
         const int maxW = getWidth() * 7 / 10;                 // max width (70%)
@@ -928,10 +891,7 @@ void BottomPanel::ensurePostFxPanelCreated() {
         postFxPanelWidth_ = juce::jlimit(minW, maxW, effectivePostFxWidth() - delta);
         resized();
     };
-    postFxResizer_->onDoubleClick = [this]() {
-        postFxPanelCollapsed_ = !postFxPanelCollapsed_;
-        resized();
-    };
+    postFxResizer_->onDoubleClick = [this]() { setPostFxOpen(false); };
     addChildComponent(postFxResizer_.get());
 }
 
@@ -943,6 +903,39 @@ int BottomPanel::effectivePostFxWidth() const {
     if (postFxPanelWidth_ < 0)
         return juce::jlimit(minW, maxW, getWidth() * 35 / 100);
     return juce::jlimit(minW, maxW, postFxPanelWidth_);
+}
+
+void BottomPanel::updatePostFxPanel(bool onTrackChain, TrackId selectedTrack,
+                                    bool allowAutoReveal) {
+    // Auto-reveal so a track's existing post-fx devices are never hidden behind
+    // a closed panel (only on selection, not when the user explicitly toggles).
+    if (allowAutoReveal && onTrackChain && selectedTrack != INVALID_TRACK_ID &&
+        !TrackManager::getInstance().getPostFxChainElements(selectedTrack).empty()) {
+        postFxOpen_ = true;
+    }
+
+    showPostFxPanel_ = onTrackChain && postFxOpen_;
+    if (showPostFxPanel_) {
+        ensurePostFxPanelCreated();
+        postFxPanel_->setTrack(selectedTrack);
+    } else if (postFxPanel_) {
+        postFxPanel_->setTrack(INVALID_TRACK_ID);
+    }
+}
+
+void BottomPanel::syncPostFxToggleButton() {
+    if (auto* tc = dynamic_cast<daw::ui::TrackChainContent*>(getActiveContent())) {
+        tc->onPostFxPanelToggled = [this](bool open) { setPostFxOpen(open); };
+        tc->setPostFxPanelOpen(showPostFxPanel_);
+    }
+}
+
+void BottomPanel::setPostFxOpen(bool open) {
+    postFxOpen_ = open;
+    updatePostFxPanel(getActiveContentType() == daw::ui::PanelContentType::TrackChain,
+                      TrackManager::getInstance().getSelectedTrack(), /*allowAutoReveal=*/false);
+    resized();
+    syncPostFxToggleButton();
 }
 
 void BottomPanel::updateContentBasedOnSelection() {
@@ -1018,15 +1011,11 @@ void BottomPanel::updateContentBasedOnSelection() {
         }
     }
 
-    // Show the post-fader FX panel whenever a track is selected (i.e. when the
-    // bottom panel is showing that track's FX chain).
-    showPostFxPanel_ = (targetContent == daw::ui::PanelContentType::TrackChain);
-    if (showPostFxPanel_) {
-        ensurePostFxPanelCreated();
-        postFxPanel_->setTrack(selectedTrack);
-    } else if (postFxPanel_) {
-        postFxPanel_->setTrack(INVALID_TRACK_ID);
-    }
+    // Post-FX panel: shown only when its TrackChain header toggle is open (or
+    // auto-revealed because the selected track already has post-fx devices).
+    // The toggle button itself is wired after the content switch below.
+    updatePostFxPanel(targetContent == daw::ui::PanelContentType::TrackChain, selectedTrack,
+                      /*allowAutoReveal=*/true);
 
     // Update MIDI tab icon active states
     if (showEditorTabs_) {
@@ -1048,6 +1037,9 @@ void BottomPanel::updateContentBasedOnSelection() {
     // Switch to the appropriate content via PanelController
     daw::ui::PanelController::getInstance().setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                                                targetContent);
+
+    // The TrackChain content (and its post-fx toggle button) is now active.
+    syncPostFxToggleButton();
 
     // Apply time mode to new content and sync grid controls.
     // Run regardless of showEditorTabs_ — that flag only tracks MIDI tabs, but the ABS/REL
@@ -1232,11 +1224,9 @@ juce::Rectangle<int> BottomPanel::getContentBounds() {
     } else if (showChordPanel_ && chordPanelCollapsed_) {
         bounds.removeFromRight(28);
     }
-    // Reserve space for the post-fader FX side panel
-    if (showPostFxPanel_ && !postFxPanelCollapsed_) {
+    // Reserve space for the post-FX side panel when it is shown
+    if (showPostFxPanel_) {
         bounds.removeFromRight(effectivePostFxWidth() + RESIZE_HANDLE_SIZE);
-    } else if (showPostFxPanel_ && postFxPanelCollapsed_) {
-        bounds.removeFromRight(28);
     }
     return bounds;
 }
