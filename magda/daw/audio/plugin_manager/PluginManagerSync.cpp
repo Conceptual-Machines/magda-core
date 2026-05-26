@@ -1495,12 +1495,14 @@ void PluginManager::syncMasterPlugins() {
 
     auto& masterList = edit_.getMasterPluginList();
 
-    // Collect current MAGDA device IDs on master
+    // Collect current MAGDA device IDs on master (fx chain + flat post-fx list)
     std::vector<DeviceId> magdaDevices;
     for (const auto& element : trackInfo->chain.fxChainElements) {
         if (isDevice(element))
             magdaDevices.push_back(getDevice(element).id);
     }
+    for (const auto& postElem : trackInfo->chain.postFxChainElements)
+        magdaDevices.push_back(postElem.device.id);
 
     // Remove synced plugins that are no longer in MAGDA's master chain
     std::vector<DeviceId> toRemove;
@@ -1588,6 +1590,52 @@ void PluginManager::syncMasterPlugins() {
                         TrackManager::getInstance().getDevice(MASTER_TRACK_ID, device.id)) {
                     devInfo->loadState = DeviceLoadState::Loading;
                 }
+                TrackManager::getInstance().notifyTrackDevicesChanged(MASTER_TRACK_ID);
+                pollAsyncPluginLoad(MASTER_TRACK_ID, device.id, plugin);
+            }
+        }
+    }
+
+    // Wire post-FX devices (flat list) after the fx inserts, so the master list
+    // ends up [fx..., postFx...] ahead of the master fader.
+    for (const auto& postElem : trackInfo->chain.postFxChainElements) {
+        const auto& device = postElem.device;
+        {
+            juce::ScopedLock lock(pluginLock_);
+            if (syncedDevices_.find(device.id) != syncedDevices_.end())
+                continue;
+        }
+
+        auto plugin = createPluginOnly(MASTER_TRACK_ID, device);
+        if (!plugin)
+            continue;
+
+        masterList.insertPlugin(plugin, -1, nullptr);
+        {
+            juce::ScopedLock lock(pluginLock_);
+            syncedDevices_[device.id].trackId = MASTER_TRACK_ID;
+            syncedDevices_[device.id].plugin = plugin;
+            pluginToDevice_[plugin.get()] = device.id;
+        }
+
+        registerRackPluginProcessor(device.id, plugin, device);
+
+        // Post-fx devices are addressed by a post-fx path, not the top-level
+        // getDevice() lookup used for fx devices above.
+        const auto postPath = ChainNodePath::postFxDevice(MASTER_TRACK_ID, device.id);
+        if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(postPath)) {
+            if (plugin->canSidechain())
+                devInfo->canSidechain = true;
+            if (plugin->takesMidiInput() && !device.isInstrument)
+                devInfo->canReceiveMidi = true;
+        }
+
+        if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+            if (extPlugin->isInitialisingAsync()) {
+                juce::ScopedLock lock(pluginLock_);
+                syncedDevices_[device.id].isPendingLoad = true;
+                if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(postPath))
+                    devInfo->loadState = DeviceLoadState::Loading;
                 TrackManager::getInstance().notifyTrackDevicesChanged(MASTER_TRACK_ID);
                 pollAsyncPluginLoad(MASTER_TRACK_ID, device.id, plugin);
             }
