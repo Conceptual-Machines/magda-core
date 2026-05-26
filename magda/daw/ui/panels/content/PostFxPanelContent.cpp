@@ -37,6 +37,25 @@ class PostFxPanelContent::Container : public juce::Component, public juce::DragA
             DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(appendHi ? 0.75f : 0.24f));
         g.drawRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f, 1.0f);
 
+        // "POST-FX" watermark as upright stacked letters, sitting above the "+"
+        // button (which is a child and paints on top of this).
+        {
+            const juce::String text("POSTFX");
+            constexpr int lineH = 12;
+            const int stackH = text.length() * lineH;
+            const int plusTop = appendZone.getCentreY() - 10;  // "+" is 20px, centred
+            const int regionTop = appendZone.getY() + 10;
+            int y = juce::jmax(regionTop, (regionTop + plusTop - stackH) / 2);
+            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+            g.setFont(FontManager::getInstance().getUIFont(11.0f));
+            for (int i = 0; i < text.length(); ++i) {
+                g.drawText(juce::String::charToString(text[i]),
+                           juce::Rectangle<int>(appendZone.getX(), y + i * lineH,
+                                                appendZone.getWidth(), lineH),
+                           juce::Justification::centred);
+            }
+        }
+
         // Empty-state hint, centred in the area left of the add strip.
         if (owner_.slots_.empty() && owner_.dragInsertIndex_ < 0 && owner_.dropInsertIndex_ < 0) {
             auto hintArea = getLocalBounds();
@@ -320,13 +339,9 @@ void PostFxPanelContent::layoutSlots() {
 }
 
 void PostFxPanelContent::paint(juce::Graphics& g) {
+    // No header bar; the "POST-FX" watermark runs vertically down the add strip
+    // (drawn by the container).
     g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
-
-    // "POST-FX" watermark instead of a header bar — faint, top-left, behind the
-    // (transparent) viewport so device slots sit on top of it.
-    g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
-    g.setFont(FontManager::getInstance().getUIFont(11.0f));
-    g.drawText("POST-FX", getLocalBounds().reduced(10, 7), juce::Justification::topLeft);
 }
 
 void PostFxPanelContent::showAddDeviceMenu() {

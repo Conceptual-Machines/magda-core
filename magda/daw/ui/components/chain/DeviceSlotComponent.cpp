@@ -958,8 +958,22 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
     refreshCustomUIParameterValues();
 }
 
+bool DeviceSlotComponent::stripsAnalysisChrome() const {
+    // Post-FX analysis devices are managed by the TrackChain header toggle, and
+    // bypass/presets don't apply to a transparent tap, so drop that chrome.
+    return magda::isAnalysisDevice(device_.pluginId) && nodePath_.isPostFx();
+}
+
 void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
+
+    // Hide power / preset / delete for post-FX analysis devices (the getters
+    // return nullptr too, so the header layout skips placing them).
+    const bool strip = stripsAnalysisChrome();
+    onButton_->setVisible(!strip);
+    presetButton_->setVisible(!strip);
+    setDeleteButtonVisible(!strip);
+
     // Now that nodePath_ is valid, update param slots with the device path
     updateParamModulation();
 
@@ -1365,22 +1379,22 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
         compiledPanel_ != nullptr ? &compiledPanel_->component() : nullptr;
     const bool pluginPresetsAvailable =
         !collapsed_ && !traits_.isFaust && hasPluginPresetsAvailable();
-    if (!prepareDeviceSlotContentFrame(contentArea, traits_, device_, collapsed_,
-                                       isInternalDevice(), pluginPresetsAvailable,
-                                       {.pluginPresetsButton = presetsButton_.get(),
-                                        .levelMeter = &levelMeter_,
-                                        .midiNoteStrip = &midiNoteStrip_,
-                                        .gainSlider = gainSlider_.get(),
-                                        .paramGrid = paramGrid_.get(),
-                                        .gainLabel = &gainLabel_,
-                                        .magdaPresetButton = presetButton_.get(),
-                                        .activeCustomUI = activeCustomUI,
-                                        .compiledPanel = compiledPanelComponent,
-                                        .modButton = modButton_.get(),
-                                        .macroButton = macroButton_.get(),
-                                        .uiButton = uiButton_.get(),
-                                        .powerButton = onButton_.get()},
-                                       METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT)) {
+    if (!prepareDeviceSlotContentFrame(
+            contentArea, traits_, device_, collapsed_, isInternalDevice(), pluginPresetsAvailable,
+            {.pluginPresetsButton = presetsButton_.get(),
+             .levelMeter = &levelMeter_,
+             .midiNoteStrip = &midiNoteStrip_,
+             .gainSlider = gainSlider_.get(),
+             .paramGrid = paramGrid_.get(),
+             .gainLabel = &gainLabel_,
+             .magdaPresetButton = stripsAnalysisChrome() ? nullptr : presetButton_.get(),
+             .activeCustomUI = activeCustomUI,
+             .compiledPanel = compiledPanelComponent,
+             .modButton = modButton_.get(),
+             .macroButton = macroButton_.get(),
+             .uiButton = uiButton_.get(),
+             .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get()},
+            METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT)) {
         return;
     }
 
@@ -1412,19 +1426,20 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    layoutExpandedDeviceSlotHeader(headerArea, traits_, device_, isInternalDevice(),
-                                   {.gainLabel = &gainLabel_,
-                                    .macroButton = macroButton_.get(),
-                                    .modButton = modButton_.get(),
-                                    .aiButton = aiButton_.get(),
-                                    .learnButton = learnButton_.get(),
-                                    .sidechainButton = scButton_.get(),
-                                    .multiOutButton = multiOutButton_.get(),
-                                    .uiButton = uiButton_.get(),
-                                    .powerButton = onButton_.get(),
-                                    .presetButton = presetButton_.get(),
-                                    .exportClipButton = exportClipButton_.get()},
-                                   BUTTON_SIZE);
+    layoutExpandedDeviceSlotHeader(
+        headerArea, traits_, device_, isInternalDevice(),
+        {.gainLabel = &gainLabel_,
+         .macroButton = macroButton_.get(),
+         .modButton = modButton_.get(),
+         .aiButton = aiButton_.get(),
+         .learnButton = learnButton_.get(),
+         .sidechainButton = scButton_.get(),
+         .multiOutButton = multiOutButton_.get(),
+         .uiButton = uiButton_.get(),
+         .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
+         .presetButton = stripsAnalysisChrome() ? nullptr : presetButton_.get(),
+         .exportClipButton = exportClipButton_.get()},
+        BUTTON_SIZE);
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {

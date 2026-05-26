@@ -101,10 +101,10 @@ class DeviceSlotComponent : public NodeComponent,
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
     juce::Component* getHeaderPresetButton() override {
-        return presetButton_.get();
+        return stripsAnalysisChrome() ? nullptr : presetButton_.get();
     }
     juce::Component* getHeaderPowerButton() override {
-        return onButton_.get();
+        return stripsAnalysisChrome() ? nullptr : onButton_.get();
     }
     void mouseDrag(const juce::MouseEvent& e) override;
     void resizedCollapsed(juce::Rectangle<int>& area) override;
@@ -296,6 +296,10 @@ class DeviceSlotComponent : public NodeComponent,
     bool isInternalDevice() const {
         return device_.format == magda::PluginFormat::Internal;
     }
+
+    // An analysis device sitting in post-FX: the header toggle owns add/remove
+    // and bypass/presets are meaningless, so its slot drops power/preset/delete.
+    bool stripsAnalysisChrome() const;
 
     // Helper to create custom UI for internal devices
     void createCustomUI();

@@ -867,15 +867,22 @@ TrackChainContent::TrackChainContent()
     // Analysis-device toggles — one-click add/remove of an Oscilloscope or
     // Spectrum in this track's post-fx. Lit while the device is present; the
     // model keeps them unique per kind, so this is a clean on/off.
+    // Active colours are chosen to NOT clash with the mod (orange) and macro
+    // (purple) toggles next door.
     auto setupAnalysisToggle = [this](std::unique_ptr<magda::SvgButton>& button, const char* name,
                                       const char* svg, size_t svgSize, const juce::String& tooltip,
-                                      const juce::String& pluginId,
-                                      const juce::String& displayName) {
+                                      const juce::String& pluginId, const juce::String& displayName,
+                                      juce::Colour activeBg) {
         button = std::make_unique<magda::SvgButton>(name, svg, svgSize);
+        // Tell SvgButton the icon's native fill so it recolors the glyph (grey
+        // idle, white when engaged). Engaged look = subtle tint + coloured
+        // border rather than a solid candy fill.
+        button->setOriginalColor(juce::Colour(0xFFB3B3B3));
         button->setNormalColor(DarkTheme::getSecondaryTextColour());
         button->setHoverColor(DarkTheme::getTextColour());
-        button->setActiveColor(juce::Colours::white);
-        button->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        button->setActiveColor(juce::Colours::white.darker(0.18f));
+        button->setActiveBackgroundColor(activeBg.withAlpha(0.20f));
+        button->setActiveBorderColor(activeBg);
         button->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         button->setTooltip(tooltip);
         button->onClick = [this, pluginId, displayName]() {
@@ -883,21 +890,29 @@ TrackChainContent::TrackChainContent()
         };
         addChildComponent(*button);
     };
+    // Muted so they sit with the dark chrome rather than reading as candy
+    // (and still clear of the mod orange / macro purple next door).
+    const auto muted = [](juce::uint32 c) {
+        return juce::Colour(c).withMultipliedSaturation(0.55f).withMultipliedBrightness(0.85f);
+    };
     setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::oscilloscope_svg,
                         BinaryData::oscilloscope_svgSize, "Oscilloscope (post-FX)", "oscilloscope",
-                        "Oscilloscope");
+                        "Oscilloscope", muted(DarkTheme::ACCENT_GREEN));
     setupAnalysisToggle(specToggleButton_, "Spectrum", BinaryData::spectrum_svg,
                         BinaryData::spectrum_svgSize, "Spectrum Analyzer (post-FX)",
-                        "spectrumanalyzer", "Spectrum Analyzer");
+                        "spectrumanalyzer", "Spectrum Analyzer", muted(DarkTheme::ACCENT_CYAN));
 
     // Post-FX panel show/hide toggle. The panel itself lives in BottomPanel,
     // which wires onPostFxPanelToggled / setPostFxPanelOpen.
     postFxPanelButton_ = std::make_unique<magda::SvgButton>("PostFx", BinaryData::postfx_svg,
                                                             BinaryData::postfx_svgSize);
+    postFxPanelButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     postFxPanelButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     postFxPanelButton_->setHoverColor(DarkTheme::getTextColour());
-    postFxPanelButton_->setActiveColor(juce::Colours::white);
-    postFxPanelButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    postFxPanelButton_->setActiveColor(juce::Colours::white.darker(0.18f));
+    postFxPanelButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.20f));
+    postFxPanelButton_->setActiveBorderColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     postFxPanelButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     postFxPanelButton_->setTooltip("Show/hide the post-FX panel");
     postFxPanelButton_->onClick = [this]() {
