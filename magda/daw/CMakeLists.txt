@@ -266,7 +266,7 @@ add_library(magda_daw STATIC
 
 # JUCE GUI app — sources contributed below via add_subdirectory().
 juce_add_gui_app(magda_daw_app
-    VERSION "0.1.0"
+    VERSION "${MAGDA_BUNDLE_VERSION}"
     COMPANY_NAME "MAGDA"
     PRODUCT_NAME "MAGDA"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/app_icon.png"
@@ -319,7 +319,7 @@ endif()
 
 # Out-of-process plugin scanner.
 juce_add_console_app(magda_plugin_scanner
-    VERSION "1.0.0"
+    VERSION "${MAGDA_BUNDLE_VERSION}"
     COMPANY_NAME "MAGDA"
     PRODUCT_NAME "MAGDA Plugin Scanner"
 )

@@ -25,6 +25,17 @@ if(NOT DEFINED MAGDA_FULL_VERSION OR MAGDA_FULL_VERSION STREQUAL "")
     endif()
 endif()
 
+# Bundle version for the executable metadata (macOS CFBundleShortVersionString /
+# CFBundleVersion, Windows VERSIONINFO). These fields require a numeric dotted
+# version, so strip any pre-release / git-describe suffix from MAGDA_FULL_VERSION
+# (e.g. "0.9.0-rc2-15-g1391223" -> "0.9.0"). Falls back to PROJECT_VERSION when
+# there is no leading numeric component (e.g. a bare commit hash).
+if(MAGDA_FULL_VERSION MATCHES "^([0-9]+(\\.[0-9]+)*)")
+    set(MAGDA_BUNDLE_VERSION "${CMAKE_MATCH_1}")
+else()
+    set(MAGDA_BUNDLE_VERSION "${PROJECT_VERSION}")
+endif()
+
 # ccache disabled - causes unnecessary rebuilds with Ninja
 # The interaction between ccache, Ninja, and JUCE's glob verification
 # causes all 258+ targets to rebuild on every invocation.
