@@ -307,6 +307,11 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         };
     collectElements(trackInfo->chain.fxChainElements);
 
+    // Post-FX devices are flat (no racks/instruments) and run before the fader.
+    // Include them so stale-removal keeps their plugins (and removes deleted ones).
+    for (const auto& postElem : trackInfo->chain.postFxChainElements)
+        magdaDevices.push_back(postElem.device.id);
+
     // Remove TE plugins that no longer exist in MAGDA for THIS track.
     // Uses the stored trackId for ownership — no TE owner-track heuristic needed.
     std::vector<DeviceId> toRemove;
@@ -684,6 +689,34 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     else
         removeAudioSidechainMonitor(trackId);
 
+    // Create TE plugins for post-FX devices (flat list, no racks/instruments).
+    // Inserted at -1 (append); the reorder pass below places them after the fx
+    // tree and ensureVolumePluginPosition keeps the fader after them, so the
+    // final order is [fx..., postFx..., VolumeAndPan, LevelMeter].
+    for (const auto& postElem : trackInfo->chain.postFxChainElements) {
+        const auto& device = postElem.device;
+        juce::ScopedLock lock(pluginLock_);
+        if (syncedDevices_.find(device.id) != syncedDevices_.end())
+            continue;
+        auto plugin = loadDeviceAsPlugin(trackId, device, -1);
+        if (!plugin)
+            continue;
+        syncedDevices_[device.id].trackId = trackId;
+        syncedDevices_[device.id].plugin = plugin;
+        pluginToDevice_[plugin.get()] = device.id;
+
+        if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+            if (extPlugin->isInitialisingAsync()) {
+                syncedDevices_[device.id].isPendingLoad = true;
+                if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(
+                        ChainNodePath::postFxDevice(trackId, device.id)))
+                    devInfo->loadState = DeviceLoadState::Loading;
+                TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+                pollAsyncPluginLoad(trackId, device.id, plugin);
+            }
+        }
+    }
+
     // Reorder TE plugins to match the MAGDA chain element order.
     // This handles moveNode (drag-and-drop reorder) where the MAGDA chain changed
     // but existing TE plugins haven't moved.
@@ -706,6 +739,17 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 if (rackInstance && teTrack->pluginList.indexOf(rackInstance) >= 0)
                     desiredOrder.push_back(rackInstance);
             }
+        }
+
+        // Post-FX devices come after the fx tree but before the fader: append
+        // their plugins so the move below sequences them last (the fader and
+        // meter are then pushed past them by ensureVolumePluginPosition).
+        for (const auto& postElem : trackInfo->chain.postFxChainElements) {
+            juce::ScopedLock lock(pluginLock_);
+            auto it = syncedDevices_.find(postElem.device.id);
+            if (it != syncedDevices_.end() && it->second.plugin &&
+                teTrack->pluginList.indexOf(it->second.plugin.get()) >= 0)
+                desiredOrder.push_back(it->second.plugin.get());
         }
 
         // Walk the desired order and move each plugin to its correct position
