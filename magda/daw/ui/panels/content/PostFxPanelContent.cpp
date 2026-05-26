@@ -136,7 +136,10 @@ PostFxPanelContent::PostFxPanelContent() {
     viewport_ = std::make_unique<juce::Viewport>();
     container_ = std::make_unique<Container>(*this);
     viewport_->setViewedComponent(container_.get(), false);
-    viewport_->setScrollBarsShown(false, true);  // horizontal only
+    // No visible scrollbars; allow horizontal scrolling via trackpad/wheel. A
+    // shown horizontal scrollbar would reserve vertical space and raise the
+    // device's bottom whenever the content overflows the panel width.
+    viewport_->setScrollBarsShown(false, false, false, true);
     addAndMakeVisible(*viewport_);
 
     addButton_.setButtonText("+");
@@ -302,9 +305,8 @@ int PostFxPanelContent::contentWidth() const {
 }
 
 int PostFxPanelContent::appendZoneX() const {
-    // Pinned to the right edge of the container (which is at least the viewport
-    // width), so the "+" sits all the way right and clears the bottom-left
-    // collapse button.
+    // Pinned to the right edge of the container, so the "+" sits all the way
+    // right (and hugs the panel's right margin when devices fit).
     return contentWidth() - APPEND_ZONE_WIDTH - LEFT_PADDING;
 }
 
@@ -314,13 +316,11 @@ void PostFxPanelContent::layoutSlots() {
 
     const bool dragActive = dragInsertIndex_ >= 0 || dropInsertIndex_ >= 0;
     const int leftPad = LEFT_PADDING + (dragActive ? DRAG_PADDING : 0);
-    const int viewportW = viewport_->getWidth();
-    const int viewportH = viewport_->getHeight();
     const int totalW = contentWidth();
-
-    int contentH = viewportH;
-    if (totalW > viewportW)
-        contentH = juce::jmax(40, viewportH - 8);  // leave room for the scrollbar
+    // Full viewport height — NOT getMaximumVisibleHeight(), which subtracts the
+    // horizontal scrollbar's reserved strip and would shrink the slot (raising
+    // the device's bottom) once the content overflows the panel width.
+    const int contentH = viewport_->getHeight();
     container_->setSize(totalW, contentH);
 
     int x = leftPad;

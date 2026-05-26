@@ -973,6 +973,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     onButton_->setVisible(!strip);
     presetButton_->setVisible(!strip);
     setDeleteButtonVisible(!strip);
+    levelMeter_.setVisible(!strip);  // peak meter is redundant on an analyzer
 
     // Now that nodePath_ is valid, update param slots with the device path
     updateParamModulation();
@@ -1369,8 +1370,8 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
                             .deviceName = device_.name,
                             .tracktionLogo = tracktionLogo_.get(),
                             .stepRecording = stepRecording},
-                           METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT, PAGINATION_HEIGHT,
-                           FaustUI::kHeaderHeight);
+                           stripsAnalysisChrome() ? 0 : METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT,
+                           PAGINATION_HEIGHT, FaustUI::kHeaderHeight);
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
@@ -1394,7 +1395,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
              .macroButton = macroButton_.get(),
              .uiButton = uiButton_.get(),
              .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get()},
-            METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT)) {
+            stripsAnalysisChrome() ? 0 : METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT)) {
         return;
     }
 
@@ -1453,17 +1454,17 @@ void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
-    layoutCollapsedDeviceSlotControls(area, collapsedMeterArea_, traits_, device_,
-                                      isInternalDevice(),
-                                      {.levelMeter = &levelMeter_,
-                                       .midiNoteStrip = &midiNoteStrip_,
-                                       .powerButton = onButton_.get(),
-                                       .uiButton = uiButton_.get(),
-                                       .macroButton = macroButton_.get(),
-                                       .modButton = modButton_.get(),
-                                       .aiButton = aiButton_.get(),
-                                       .multiOutButton = multiOutButton_.get()},
-                                      BUTTON_SIZE);
+    layoutCollapsedDeviceSlotControls(
+        area, collapsedMeterArea_, traits_, device_, isInternalDevice(),
+        {.levelMeter = stripsAnalysisChrome() ? nullptr : &levelMeter_,
+         .midiNoteStrip = &midiNoteStrip_,
+         .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
+         .uiButton = uiButton_.get(),
+         .macroButton = macroButton_.get(),
+         .modButton = modButton_.get(),
+         .aiButton = aiButton_.get(),
+         .multiOutButton = multiOutButton_.get()},
+        BUTTON_SIZE);
 }
 
 juce::String DeviceSlotComponent::getCollapsedName() const {

@@ -20,11 +20,15 @@ void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
         return;
 
     const bool skipContentHeader = skipsContentHeader(state);
-    const int lineX = contentArea.getRight() - meterStripWidth - 4;
-    const int meterTop = contentArea.getY() + (skipContentHeader ? 0 : contentHeaderHeight);
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawVerticalLine(lineX, static_cast<float>(meterTop + 2),
-                       static_cast<float>(contentArea.getBottom() - 2));
+    // Vertical separator before the meter strip — skip it when there's no strip
+    // (meterStripWidth <= 0, e.g. post-FX analysis devices).
+    if (meterStripWidth > 0) {
+        const int lineX = contentArea.getRight() - meterStripWidth - 4;
+        const int meterTop = contentArea.getY() + (skipContentHeader ? 0 : contentHeaderHeight);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawVerticalLine(lineX, static_cast<float>(meterTop + 2),
+                           static_cast<float>(contentArea.getBottom() - 2));
+    }
 
     const float left = static_cast<float>(contentArea.getX() + 2);
     const float right = static_cast<float>(contentArea.getRight() - 2);

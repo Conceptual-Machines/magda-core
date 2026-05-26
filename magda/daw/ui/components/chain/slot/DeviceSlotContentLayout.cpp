@@ -37,6 +37,15 @@ void layoutPluginPresetButton(juce::Rectangle<int> secondHeaderArea, const Devic
 
 void layoutMeterStrip(juce::Rectangle<int>& contentArea, const DeviceSlotTraits& traits,
                       DeviceSlotContentFrameControls controls, int meterStripWidth) {
+    // Width 0 = no meter strip (e.g. post-FX analysis devices): reserve nothing
+    // so the body uses the full width.
+    if (meterStripWidth <= 0) {
+        setVisibleIfPresent(controls.levelMeter, false);
+        setVisibleIfPresent(controls.midiNoteStrip, false);
+        setVisibleIfPresent(controls.gainSlider, false);
+        return;
+    }
+
     auto stripBounds = contentArea.removeFromRight(meterStripWidth).reduced(1, 3);
     contentArea.removeFromRight(4);
 
