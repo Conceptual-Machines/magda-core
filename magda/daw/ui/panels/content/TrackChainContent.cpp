@@ -2100,12 +2100,6 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
     // Track-chain presets button — sits on the LEFT of the header (devices
     // and racks have theirs on the right inside their own node header).
     presetButton_->setBounds(headerArea.removeFromLeft(20));
-    headerArea.removeFromLeft(8);
-    // Post-fx analysis-device toggles.
-    oscToggleButton_->setBounds(headerArea.removeFromLeft(20));
-    headerArea.removeFromLeft(4);
-    specToggleButton_->setBounds(headerArea.removeFromLeft(20));
-    headerArea.removeFromLeft(16);
 
     // RIGHT SIDE - Track info (from right to left)
     const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
@@ -2136,6 +2130,12 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
         muteButton_.setBounds(headerArea.removeFromRight(18));
         masterMuteButton_.setVisible(false);
     }
+    headerArea.removeFromRight(8);
+    // Analysis-device toggles — grouped with the track's output controls
+    // (solo/mute/volume) rather than the chain-editing buttons on the left.
+    specToggleButton_->setBounds(headerArea.removeFromRight(20));
+    headerArea.removeFromRight(4);
+    oscToggleButton_->setBounds(headerArea.removeFromRight(20));
     headerArea.removeFromRight(8);
     trackNameLabel_.setBounds(headerArea);  // Name takes remaining space
 

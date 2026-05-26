@@ -923,9 +923,9 @@ void BottomPanel::ensurePostFxPanelCreated() {
 
     postFxResizer_ = std::make_unique<PropsResizeHandle>();
     postFxResizer_->onResize = [this](int delta) {
-        const int half = getWidth() / 2;                      // max width
-        const int minW = juce::jmin(POSTFX_MIN_WIDTH, half);  // min width (< half)
-        postFxPanelWidth_ = juce::jlimit(minW, half, effectivePostFxWidth() - delta);
+        const int maxW = getWidth() * 7 / 10;                 // max width (70%)
+        const int minW = juce::jmin(POSTFX_MIN_WIDTH, maxW);  // min width
+        postFxPanelWidth_ = juce::jlimit(minW, maxW, effectivePostFxWidth() - delta);
         resized();
     };
     postFxResizer_->onDoubleClick = [this]() {
@@ -936,13 +936,13 @@ void BottomPanel::ensurePostFxPanelCreated() {
 }
 
 int BottomPanel::effectivePostFxWidth() const {
-    // Half the panel is the MAX (FX chain keeps >= half); it can shrink down to
-    // POSTFX_MIN_WIDTH. -1 = not yet sized, so open at the max.
-    const int half = getWidth() / 2;
-    const int minW = juce::jmin(POSTFX_MIN_WIDTH, half);
+    // Resizable in [POSTFX_MIN_WIDTH, 70% of the panel]; -1 = not yet sized, so
+    // open at ~35% of the panel.
+    const int maxW = getWidth() * 7 / 10;
+    const int minW = juce::jmin(POSTFX_MIN_WIDTH, maxW);
     if (postFxPanelWidth_ < 0)
-        return half;
-    return juce::jlimit(minW, half, postFxPanelWidth_);
+        return juce::jlimit(minW, maxW, getWidth() * 35 / 100);
+    return juce::jlimit(minW, maxW, postFxPanelWidth_);
 }
 
 void BottomPanel::updateContentBasedOnSelection() {

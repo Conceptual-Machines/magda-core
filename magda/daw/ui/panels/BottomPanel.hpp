@@ -173,9 +173,9 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<daw::ui::PostFxPanelContent> postFxPanel_;
     bool showPostFxPanel_ = false;
     bool postFxPanelCollapsed_ = false;
-    // User-resized width, clamped to [POSTFX_MIN_WIDTH, half the panel]: half is
-    // the MAX (the FX chain always keeps >= half), and it can shrink well below
-    // that. -1 means "not yet sized" -> opens at the max (half).
+    // User-resized width, clamped to [POSTFX_MIN_WIDTH, 70% of the panel]. It
+    // can shrink well below half and grow up to 70% (the FX chain keeps >= 30%).
+    // -1 means "not yet sized" -> opens at ~35% of the panel.
     int postFxPanelWidth_ = -1;
     static constexpr int POSTFX_MIN_WIDTH = 240;
 
