@@ -17,6 +17,7 @@ class SvgButton;
 namespace daw::ui {
 class AudioClipPropertiesContent;
 class ChordPanelContent;
+class PostFxPanelContent;
 }  // namespace daw::ui
 
 /**
@@ -168,7 +169,22 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<PropsResizeHandle> chordResizer_;
     std::unique_ptr<magda::SvgButton> chordCollapseButton_;
 
+    // Post-FX side panel (right side, shown when a track is selected).
+    std::unique_ptr<daw::ui::PostFxPanelContent> postFxPanel_;
+    bool showPostFxPanel_ = false;
+    bool postFxPanelCollapsed_ = false;
+    // User-resized width, clamped to [POSTFX_MIN_WIDTH, half the panel]: half is
+    // the MAX (the FX chain always keeps >= half), and it can shrink well below
+    // that. -1 means "not yet sized" -> opens at the max (half).
+    int postFxPanelWidth_ = -1;
+    static constexpr int POSTFX_MIN_WIDTH = 240;
+
+    std::unique_ptr<PropsResizeHandle> postFxResizer_;
+    std::unique_ptr<magda::SvgButton> postFxCollapseButton_;
+
     void ensureChordPanelCreated();
+    void ensurePostFxPanelCreated();
+    int effectivePostFxWidth() const;  // postFxPanelWidth_ clamped to [50%, panel - chain min]
     void setupHeaderControls();
     void applyTimeModeToContent();
     void syncGridStateFromTimeline();

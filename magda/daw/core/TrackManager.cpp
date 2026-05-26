@@ -1288,6 +1288,85 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
     return INVALID_DEVICE_ID;
 }
 
+// ============================================================================
+// Post-fader FX (flat device list)
+// ============================================================================
+
+const std::vector<PostFxChainElement>& TrackManager::getPostFxChainElements(TrackId trackId) const {
+    static const std::vector<PostFxChainElement> empty;
+    if (const auto* track = getTrack(trackId)) {
+        return track->chain.postFxChainElements;
+    }
+    return empty;
+}
+
+DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& device) {
+    const auto* track = getTrack(trackId);
+    int appendIndex = track ? static_cast<int>(track->chain.postFxChainElements.size()) : 0;
+    return addDeviceToPostFx(trackId, device, appendIndex);
+}
+
+DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& device,
+                                         int insertIndex) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return INVALID_DEVICE_ID;
+
+    // Post-fader FX is effects/analysis only — nothing generates sound after
+    // the fader. Instruments are rejected here; racks/nesting are already
+    // unrepresentable because PostFxChainElement holds a bare DeviceInfo.
+    if (device.isInstrument) {
+        DBG("Cannot add instrument plugin to post-fx chain");
+        return INVALID_DEVICE_ID;
+    }
+
+    // Analysis devices (oscilloscope / spectrum) are unique per kind in post-fx:
+    // the header toggles rely on a 1:1 mapping. Regular FX may repeat freely.
+    if (isAnalysisDevice(device.pluginId) &&
+        findPostFxDevice(trackId, device.pluginId) != INVALID_DEVICE_ID) {
+        DBG("Post-fx already has analysis device " << device.pluginId << "; skipping duplicate");
+        return INVALID_DEVICE_ID;
+    }
+
+    DeviceInfo newDevice = device;
+    newDevice.id = nextDeviceId_++;
+    if (isAnalysisDevice(newDevice.pluginId))
+        newDevice.deviceType = DeviceType::Analysis;
+
+    auto& elements = track->chain.postFxChainElements;
+    insertIndex = std::clamp(insertIndex, 0, static_cast<int>(elements.size()));
+    elements.insert(elements.begin() + insertIndex, PostFxChainElement{newDevice});
+    notifyTrackDevicesChanged(trackId);
+    DBG("Added post-fx device: " << newDevice.name << " (id=" << newDevice.id << ") to track "
+                                 << trackId << " at index " << insertIndex);
+    return newDevice.id;
+}
+
+void TrackManager::movePostFxDevice(TrackId trackId, int fromIndex, int toIndex) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return;
+    auto& elements = track->chain.postFxChainElements;
+    int size = static_cast<int>(elements.size());
+    if (fromIndex >= 0 && fromIndex < size && toIndex >= 0 && toIndex < size &&
+        fromIndex != toIndex) {
+        PostFxChainElement element = std::move(elements[fromIndex]);
+        elements.erase(elements.begin() + fromIndex);
+        elements.insert(elements.begin() + toIndex, std::move(element));
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+DeviceId TrackManager::findPostFxDevice(TrackId trackId, const juce::String& pluginId) const {
+    if (const auto* track = getTrack(trackId)) {
+        for (const auto& e : track->chain.postFxChainElements) {
+            if (e.device.pluginId == pluginId)
+                return e.device.id;
+        }
+    }
+    return INVALID_DEVICE_ID;
+}
+
 void TrackManager::removeDeviceFromTrack(TrackId trackId, DeviceId deviceId) {
     if (auto* track = getTrack(trackId)) {
         auto& elements = track->chain.fxChainElements;

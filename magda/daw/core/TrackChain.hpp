@@ -8,31 +8,34 @@
 namespace magda {
 
 /**
- * @brief A single element in a track's post-fader FX chain.
+ * @brief A single element in a track's post-FX chain.
  *
  * Post-FX is flat by design: a linear list of effect / analysis devices that
- * run after the track fader (VolumeAndPan). It is never an instrument (nothing
- * generates sound after the fader) and never a rack (no parallel routing in the
- * post-fader stage). Making it a distinct type from ChainElement encodes those
- * invariants structurally - there is no "is post-fx" flag and no runtime
- * placement check; the type system simply cannot represent a rack or a nested
- * structure here.
+ * run after the main FX chain (but before the track fader - it is post-FX, not
+ * post-fader). It is never an instrument (nothing generates sound at this
+ * stage) and never a rack (no parallel routing in the post-FX stage). Making it
+ * a distinct type from ChainElement encodes those invariants structurally -
+ * there is no "is post-fx" flag and no runtime placement check; the type system
+ * simply cannot represent a rack or a nested structure here.
  */
 struct PostFxChainElement {
     DeviceInfo device;
 };
 
 /**
- * @brief The full signal chain of a track, split at the fader.
+ * @brief The full signal chain of a track, split into the main FX chain and a
+ *        flat post-FX stage.
  *
- * - fxChainElements:     the main / pre-fader FX chain. A full device/rack
- *                        tree (ChainElement), reusing all existing nesting,
+ * - fxChainElements:     the main FX chain. A full device/rack tree
+ *                        (ChainElement), reusing all existing nesting,
  *                        deep-copy, sync-flatten and path-resolution machinery.
- * - postFxChainElements: the post-fader FX chain. A flat list of devices.
+ * - postFxChainElements: the post-FX stage. A flat list of devices that runs
+ *                        after the main FX chain but still before the fader
+ *                        (post-FX, not post-fader).
  *
- * The track fader (VolumeAndPan) is not modelled as a node; it sits
- * structurally between the two lists. PluginManagerSync realises this as:
- *   flatten(fxChainElements) -> VolumeAndPan -> postFxChainElements -> LevelMeter
+ * The track fader (VolumeAndPan) is not modelled as a node. The intended
+ * routing (sync not yet implemented) is:
+ *   flatten(fxChainElements) -> postFxChainElements -> VolumeAndPan -> LevelMeter
  */
 struct TrackChain {
     std::vector<ChainElement> fxChainElements;            // main / pre-fader (tree)

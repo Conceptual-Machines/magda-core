@@ -147,6 +147,9 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/waveform/bezier.svg
     ../../assets/icons/waveform/bend-in-out.svg
     ../../assets/icons/waveform/curve.svg
+    # Analysis device icons
+    ../../assets/icons/analysis/oscilloscope.svg
+    ../../assets/icons/analysis/spectrum.svg
     # Toolbar icons
     ../../assets/icons/toolbar/density_small.svg
     ../../assets/icons/toolbar/density_medium.svg

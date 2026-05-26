@@ -116,6 +116,13 @@ class TrackChainContent : public PanelContent,
     std::unique_ptr<magda::SvgButton> addRackButton_;     // Add rack button
     std::unique_ptr<magda::SvgButton> treeViewButton_;    // Show chain tree dialog
     std::unique_ptr<magda::SvgButton> presetButton_;      // MAGDA track-chain presets menu
+    std::unique_ptr<magda::SvgButton> oscToggleButton_;   // Toggle oscilloscope in post-fx
+    std::unique_ptr<magda::SvgButton> specToggleButton_;  // Toggle spectrum analyzer in post-fx
+
+    // Add or remove the named analysis device in the selected track's post-fx
+    // (osc/spectrum are unique per kind there), then refresh the toggle states.
+    void togglePostFxAnalysisDevice(const juce::String& pluginId, const juce::String& displayName);
+    void refreshAnalysisToggles();  // light osc/spec buttons when present in post-fx
 
     // Currently-loaded chain preset name for the selected track (empty when
     // none). Cleared on track selection change so each track gets a fresh

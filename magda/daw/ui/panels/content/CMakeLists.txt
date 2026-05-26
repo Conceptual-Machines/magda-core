@@ -18,6 +18,7 @@ target_sources(magda_daw_app PRIVATE
     WaveformEditorContent.cpp
     AudioClipPropertiesContent.cpp
     ChordPanelContent.cpp
+    PostFxPanelContent.cpp
     PanelContent.hpp
     PanelContentFactory.hpp
     PluginBrowserContent.hpp

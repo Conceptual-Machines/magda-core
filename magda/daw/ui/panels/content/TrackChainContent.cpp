@@ -864,6 +864,32 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(*presetButton_);
 
+    // Analysis-device toggles — one-click add/remove of an Oscilloscope or
+    // Spectrum in this track's post-fx. Lit while the device is present; the
+    // model keeps them unique per kind, so this is a clean on/off.
+    auto setupAnalysisToggle = [this](std::unique_ptr<magda::SvgButton>& button, const char* name,
+                                      const char* svg, size_t svgSize, const juce::String& tooltip,
+                                      const juce::String& pluginId,
+                                      const juce::String& displayName) {
+        button = std::make_unique<magda::SvgButton>(name, svg, svgSize);
+        button->setNormalColor(DarkTheme::getSecondaryTextColour());
+        button->setHoverColor(DarkTheme::getTextColour());
+        button->setActiveColor(juce::Colours::white);
+        button->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        button->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        button->setTooltip(tooltip);
+        button->onClick = [this, pluginId, displayName]() {
+            togglePostFxAnalysisDevice(pluginId, displayName);
+        };
+        addChildComponent(*button);
+    };
+    setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::oscilloscope_svg,
+                        BinaryData::oscilloscope_svgSize, "Oscilloscope (post-FX)", "oscilloscope",
+                        "Oscilloscope");
+    setupAnalysisToggle(specToggleButton_, "Spectrum", BinaryData::spectrum_svg,
+                        BinaryData::spectrum_svgSize, "Spectrum Analyzer (post-FX)",
+                        "spectrumanalyzer", "Spectrum Analyzer");
+
     // === HEADER BAR CONTROLS - RIGHT SIDE (track info) ===
 
     // Track name label - clicks pass through for track selection
@@ -1665,10 +1691,14 @@ void TrackChainContent::layoutChainContent() {
         x += nodeWidth + scaledArrowWidth + scaledSlotSpacing;
     }
 
+    // Append "+" lives in the append zone, which is pinned to the right edge
+    // of the container (see calculateAppendZoneX) rather than trailing the last
+    // node, so it sits all the way to the right.
     const int appendZoneWidth = getScaledWidth(APPEND_ZONE_WIDTH);
+    const int appendX = calculateAppendZoneX();
     constexpr int buttonSize = 20;
     addDeviceButton_.setVisible(selectedTrackId_ != magda::INVALID_TRACK_ID);
-    addDeviceButton_.setBounds(x + juce::jmax(0, (appendZoneWidth - buttonSize) / 2),
+    addDeviceButton_.setBounds(appendX + juce::jmax(0, (appendZoneWidth - buttonSize) / 2),
                                juce::jmax(0, (chainHeight - buttonSize) / 2), buttonSize,
                                buttonSize);
     addDeviceButton_.toFront(false);
@@ -1769,10 +1799,48 @@ void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
         rebuildNodeComponents();
         updateGlobalModsPanel();
         updateGlobalMacrosPanel();
+        refreshAnalysisToggles();  // post-fx contents may have changed
 
         if (shouldScrollToEnd)
             scrollToEndAsync();
     }
+}
+
+void TrackChainContent::togglePostFxAnalysisDevice(const juce::String& pluginId,
+                                                   const juce::String& displayName) {
+    if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+        return;
+
+    auto& tm = magda::TrackManager::getInstance();
+    const magda::DeviceId existing = tm.findPostFxDevice(selectedTrackId_, pluginId);
+    if (existing != magda::INVALID_DEVICE_ID) {
+        tm.removeDeviceFromChainByPath(
+            magda::ChainNodePath::postFxDevice(selectedTrackId_, existing));
+    } else {
+        magda::DeviceInfo device;
+        device.name = displayName;
+        device.manufacturer = "MAGDA";
+        device.pluginId = pluginId;
+        device.deviceType = magda::DeviceType::Analysis;
+        device.format = magda::PluginFormat::Internal;
+        tm.addDeviceToPostFx(selectedTrackId_, device);
+    }
+    // trackDevicesChanged() fires from the mutations above and refreshes the
+    // toggles, but refresh here too so the lit state updates even if this panel
+    // is not the listener that drives the rebuild.
+    refreshAnalysisToggles();
+}
+
+void TrackChainContent::refreshAnalysisToggles() {
+    if (!oscToggleButton_ || !specToggleButton_)
+        return;
+    auto& tm = magda::TrackManager::getInstance();
+    const bool hasTrack = selectedTrackId_ != magda::INVALID_TRACK_ID;
+    oscToggleButton_->setActive(hasTrack && tm.findPostFxDevice(selectedTrackId_, "oscilloscope") !=
+                                                magda::INVALID_DEVICE_ID);
+    specToggleButton_->setActive(hasTrack &&
+                                 tm.findPostFxDevice(selectedTrackId_, "spectrumanalyzer") !=
+                                     magda::INVALID_DEVICE_ID);
 }
 
 void TrackChainContent::modulationNamesChanged(magda::TrackId trackId) {
@@ -1915,6 +1983,9 @@ void TrackChainContent::updateFromSelectedTrack() {
             addRackButton_->setVisible(true);
             treeViewButton_->setVisible(true);
             presetButton_->setVisible(true);
+            oscToggleButton_->setVisible(true);
+            specToggleButton_->setVisible(true);
+            refreshAnalysisToggles();
             trackNameLabel_.setVisible(true);
             muteButton_.setVisible(true);
             soloButton_.setVisible(true);
@@ -1977,6 +2048,8 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(addRackButton_.get());
     headerBar.addAndMakeVisible(treeViewButton_.get());
     headerBar.addAndMakeVisible(presetButton_.get());
+    headerBar.addAndMakeVisible(oscToggleButton_.get());
+    headerBar.addAndMakeVisible(specToggleButton_.get());
     headerBar.addAndMakeVisible(trackNameLabel_);
     headerBar.addAndMakeVisible(muteButton_);
     headerBar.addChildComponent(masterMuteButton_);
@@ -1998,6 +2071,8 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(addRackButton_.get());
     addChildComponent(treeViewButton_.get());
     addChildComponent(presetButton_.get());
+    addChildComponent(oscToggleButton_.get());
+    addChildComponent(specToggleButton_.get());
     addChildComponent(&trackNameLabel_);
     addChildComponent(&muteButton_);
     addChildComponent(&soloButton_);
@@ -2025,6 +2100,11 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
     // Track-chain presets button — sits on the LEFT of the header (devices
     // and racks have theirs on the right inside their own node header).
     presetButton_->setBounds(headerArea.removeFromLeft(20));
+    headerArea.removeFromLeft(8);
+    // Post-fx analysis-device toggles.
+    oscToggleButton_->setBounds(headerArea.removeFromLeft(20));
+    headerArea.removeFromLeft(4);
+    specToggleButton_->setBounds(headerArea.removeFromLeft(20));
     headerArea.removeFromLeft(16);
 
     // RIGHT SIDE - Track info (from right to left)
@@ -2078,6 +2158,8 @@ void TrackChainContent::hideHeaderControls() {
     addRackButton_->setVisible(false);
     treeViewButton_->setVisible(false);
     presetButton_->setVisible(false);
+    oscToggleButton_->setVisible(false);
+    specToggleButton_->setVisible(false);
     // Hide panels
     if (globalModsPanel_)
         globalModsPanel_->setVisible(false);
@@ -2512,16 +2594,14 @@ int TrackChainContent::calculateIndicatorX(int index) const {
 }
 
 int TrackChainContent::calculateAppendZoneX() const {
-    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
-    int x = isDraggingOrDropping ? getScaledWidth(DRAG_LEFT_PADDING) : 0;
-    int scaledArrowWidth = getScaledWidth(ARROW_WIDTH);
-    int scaledSlotSpacing = getScaledWidth(SLOT_SPACING);
-
-    for (const auto& node : nodeComponents_) {
-        x += getScaledWidth(node->getPreferredWidth()) + scaledArrowWidth + scaledSlotSpacing;
-    }
-
-    return x;
+    // Pin the append zone to the right edge of the container. The container is
+    // sized to max(content, viewport), so this puts the "+" at the far right of
+    // the visible area when the chain is short, and right after the last node
+    // once the content overflows (container width == content width then).
+    const int scaledAppendWidth = getScaledWidth(APPEND_ZONE_WIDTH);
+    if (chainContainer_ != nullptr)
+        return juce::jmax(0, chainContainer_->getWidth() - scaledAppendWidth);
+    return 0;
 }
 
 void TrackChainContent::saveNodeStates() {
