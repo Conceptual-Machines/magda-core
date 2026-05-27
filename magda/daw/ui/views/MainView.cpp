@@ -188,7 +188,6 @@ void MainView::syncStateFromController() {
 
     // Update cached values
     horizontalZoom = state.zoom.horizontalZoom;
-    verticalZoom = state.zoom.verticalZoom;
     timelineLength = state.timelineLength;
     playheadPosition = state.playhead.getPosition();
 
@@ -716,15 +715,15 @@ void MainView::paint(juce::Graphics& g) {
     }
 
     auto arrangementLayout = computeArrangementLayout();
-    auto headerArea = arrangementLayout.horizontalScrollBarRowArea;
-    headerArea.setWidth(trackHeaderWidth);
-    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-    g.fillRect(headerArea);
+    SideColumn headerColumn(!arrangementLayout.swapped);
+    auto contentArea = arrangementLayout.horizontalScrollBarRowArea;
+    auto headerArea = headerColumn.removeFrom(contentArea, trackHeaderWidth);
+    headerColumn.removeSpacing(contentArea, LayoutConfig::getInstance().componentSpacing);
 
-    auto contentArea = arrangementLayout.horizontalScrollBarRowArea.withTrimmedLeft(
-        trackHeaderWidth + LayoutConfig::getInstance().componentSpacing);
     g.setColour(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
     g.fillRect(contentArea);
+    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillRect(headerArea);
 
     // Draw borders on both sides of the vertical zoom scrollbar (below corner toolbar)
     if (verticalScrollbarRevealProgress > 0.01f) {
@@ -748,7 +747,7 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
 
     result.swapped = Config::getInstance().getScrollbarOnLeft();
     SideColumn headerColumn(!result.swapped);
-    SideColumn zoomColumn(result.swapped);
+    SideColumn zoomColumn(false);
 
     const int fullVerticalScrollbarWidth = ARRANGEMENT_SCROLLBAR_SIZE + 2;
     const int verticalScrollbarWidth = isVerticalScrollbarReserved ? fullVerticalScrollbarWidth : 0;
@@ -902,6 +901,7 @@ void MainView::resized() {
 
     timelineViewport->setBounds(arrangementLayout.timelineArea);
     trackHeadersViewport->setBounds(arrangementLayout.trackHeadersArea);
+    trackHeadersPanel->refreshHeaderSideLayout();
     trackContentViewport->setBounds(arrangementLayout.trackContentArea);
 
     // Grid overlay (bottom layer - draws vertical time grid lines)
@@ -1298,10 +1298,8 @@ void MainView::updateVerticalZoomScrollBar() {
     double rangeHeight = (verticalZoom - 0.5) / 2.5;
     rangeHeight = juce::jlimit(0.01, 1.0, rangeHeight);
 
-    // Calculate scaled content height for scroll position
-    int scaledContentHeight = static_cast<int>(totalContentHeight * verticalZoom);
-    if (scaledContentHeight <= 0)
-        scaledContentHeight = viewportHeight;
+    // getTotalTracksHeight already includes verticalZoom.
+    int scaledContentHeight = totalContentHeight;
 
     // Calculate scroll position as fraction
     double scrollFraction =
@@ -1621,6 +1619,9 @@ void MainView::mouseDrag(const juce::MouseEvent& event) {
 
     if (isResizingHeaders) {
         int deltaX = event.x - lastMouseX;
+        if (Config::getInstance().getScrollbarOnLeft())
+            deltaX = -deltaX;
+
         auto& layout = LayoutConfig::getInstance();
         int newWidth = juce::jlimit(layout.minTrackHeaderWidth, layout.maxTrackHeaderWidth,
                                     trackHeaderWidth + deltaX);
@@ -1702,8 +1703,12 @@ juce::Rectangle<int> MainView::getResizeHandleArea() const {
     // Position the resize handle in the padding space between headers and content
     // Starts below the corner toolbar / timeline area
     auto& layout = LayoutConfig::getInstance();
+    auto arrangementLayout = computeArrangementLayout();
     int top = getTimelineHeight();
-    return juce::Rectangle<int>(trackHeaderWidth, top, layout.componentSpacing, getHeight() - top);
+    int x = arrangementLayout.swapped
+                ? arrangementLayout.trackHeadersArea.getX() - layout.componentSpacing
+                : arrangementLayout.trackHeadersArea.getRight();
+    return juce::Rectangle<int>(x, top, layout.componentSpacing, getHeight() - top);
 }
 
 void MainView::paintResizeHandle(juce::Graphics& g) {
@@ -1786,6 +1791,10 @@ void MainView::zoomToSelection() {
 }
 
 void MainView::setAllTrackHeights(int height) {
+    verticalZoom = 1.0;
+    trackHeadersPanel->setVerticalZoom(verticalZoom);
+    trackContentPanel->setVerticalZoom(verticalZoom);
+
     int numTracks = trackHeadersPanel->getNumTracks();
     for (int i = 0; i < numTracks; ++i) {
         trackHeadersPanel->setTrackHeight(i, height);

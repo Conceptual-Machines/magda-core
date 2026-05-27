@@ -1540,6 +1540,11 @@ void TrackHeadersPanel::resized() {
     updateTrackHeaderLayout();
 }
 
+void TrackHeadersPanel::refreshHeaderSideLayout() {
+    updateTrackHeaderLayout();
+    repaint();
+}
+
 void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels,
                                         const juce::StringArray& detailLabels) {
     if (ghostHeaderLabels_ == labels && ghostHeaderDetailLabels_ == detailLabels)
@@ -2537,8 +2542,8 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
 
 void TrackHeadersPanel::updateTrackHeaderLayout() {
     headersOnRight_ = Config::getInstance().getScrollbarOnLeft();
-    SideColumn outer(headersOnRight_);   // meters: right normally, left when swapped
-    SideColumn inner(!headersOnRight_);  // controls+indent: left normally, right when swapped
+    SideColumn outer(headersOnRight_);  // meters: right normally, left when swapped
+    SideColumn inner(true);             // controls stay left-aligned in the header column
 
     for (size_t i = 0; i < trackHeaders.size(); ++i) {
         auto& header = *trackHeaders[i];
@@ -2577,9 +2582,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 auto nameArea = nameRow.withTrimmedRight(nameRow.getWidth() / 4);
                 header.nameLabel->setBounds(nameArea);
                 header.nameLabel->setVisible(true);
-                header.nameLabel->setJustificationType(headersOnRight_
-                                                           ? juce::Justification::centredRight
-                                                           : juce::Justification::centredLeft);
+                header.nameLabel->setJustificationType(juce::Justification::centredLeft);
             }
 
             // Controls in the bottom area (below 0dB line)
