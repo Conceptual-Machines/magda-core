@@ -184,7 +184,12 @@ void GainStagingManager::stopCollection() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<GainStageCommand>(std::move(moves)));
 
-    mode_ = GainStagingMode::Staged;
+    // Pass complete: drop the transient capture state and return to idle. The
+    // applied marks (appliedDeltas_) persist, so the moved faders stay flagged.
+    staged_.clear();
+    info_.clear();
+    activeTrackId_ = INVALID_TRACK_ID;
+    mode_ = GainStagingMode::Idle;
     notifyMode();
 }
 
@@ -211,9 +216,6 @@ void GainStagingManager::toggle(TrackId trackId) {
             break;
         case GainStagingMode::Collecting:
             stopCollection();
-            break;
-        case GainStagingMode::Staged:
-            reset();
             break;
     }
 }

@@ -23,10 +23,11 @@ namespace magda {
 //   1. User starts a pass on a track  -> Collecting
 //   2. User plays the desired section; a timer samples each device's peak
 //      meter and keeps a running max ("peak hold") per device.
-//   3. User stops the pass            -> Staged
+//   3. User stops the pass            -> back to Idle
 //      The engine walks the chain, and for each device that saw signal it
 //      moves the device's OUTPUT VOLUME so its captured peak lands at the
-//      target headroom. All moves are applied as ONE undo step.
+//      target headroom. All moves are applied as ONE undo step, and the moved
+//      faders keep a persistent mark (see appliedDeltas_).
 //
 // This phase is deliberately order-blind: each device is targeted on its own.
 // The musical, order-aware decisions (drive a saturator, respect a compressor
@@ -51,7 +52,6 @@ inline constexpr float kGainStageMaxGainDb = 12.0f;
 enum class GainStagingMode {
     Idle,        // nothing happening
     Collecting,  // capturing peak holds while the transport plays
-    Staged,      // pass stopped; gains computed + applied
 };
 
 /** Per-device state shown on the device header. */
@@ -119,6 +119,17 @@ class GainStagingManager : private juce::Timer {
 
     void setTargetDb(float db);
 
+    // Whether the next pass should defer to the AI agent. Stored here so the
+    // dialog can set it before startCollection; the algorithmic path runs until
+    // the agent (phase 2) is wired in.
+    bool getUseAi() const {
+        return useAi_;
+    }
+
+    void setUseAi(bool useAi) {
+        useAi_ = useAi;
+    }
+
     // ------------------------------------------------------------------
     // Pass control
     // ------------------------------------------------------------------
@@ -133,10 +144,9 @@ class GainStagingManager : private juce::Timer {
     void reset();
 
     /**
-     * Header-button convenience:
-     *   Idle       -> startCollection(trackId)
+     * Header-button convenience for the non-idle case:
      *   Collecting -> stopCollection()
-     *   Staged     -> reset()
+     * (The Idle case opens the pre-pass dialog from the UI, not here.)
      */
     void toggle(TrackId trackId);
 
@@ -194,6 +204,7 @@ class GainStagingManager : private juce::Timer {
     GainStagingMode mode_ = GainStagingMode::Idle;
     TrackId activeTrackId_ = INVALID_TRACK_ID;
     float targetDb_ = kGainStageDefaultTargetDb;
+    bool useAi_ = false;
 
     std::vector<StagedDevice> staged_;
     std::map<DeviceId, DeviceGainStageInfo> info_;  // transient: current pass

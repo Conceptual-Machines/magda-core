@@ -6,6 +6,7 @@
 
 #include "../../debug/DebugSettings.hpp"
 #include "../../dialogs/ChainTreeDialog.hpp"
+#include "../../dialogs/GainStagingDialog.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
@@ -876,8 +877,24 @@ TrackChainContent::TrackChainContent()
     gainStagingButton_->setActiveColor(juce::Colours::white.darker(0.18f));
     gainStagingButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     gainStagingButton_->onClick = [this]() {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::GainStagingManager::getInstance().toggle(selectedTrackId_);
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+            return;
+        auto& gsm = magda::GainStagingManager::getInstance();
+        // Idle -> ask for the target and AI choice, then start. Collecting /
+        // Staged just advance (stop+apply / clear) without a dialog.
+        if (gsm.getMode() == magda::GainStagingMode::Idle) {
+            const auto trackId = selectedTrackId_;
+            magda::GainStagingDialog::showDialog(
+                this, gsm.getTargetDb(), gsm.getUseAi(),
+                [trackId](const magda::GainStagingDialog::Settings& settings) {
+                    auto& m = magda::GainStagingManager::getInstance();
+                    m.setTargetDb(settings.targetDb);
+                    m.setUseAi(settings.useAi);
+                    m.startCollection(trackId);
+                });
+        } else {
+            gsm.toggle(selectedTrackId_);
+        }
     };
     addChildComponent(*gainStagingButton_);
     refreshGainStagingButton();
@@ -2008,39 +2025,24 @@ void TrackChainContent::refreshGainStagingButton() {
         return;
 
     auto& gs = magda::GainStagingManager::getInstance();
-    const auto mode = gs.getMode();
     // Only treat the button as engaged when the active pass is on the track
     // currently shown in this header.
     const bool onThisTrack = gs.getActiveTrack() == selectedTrackId_;
-    const bool collecting = mode == magda::GainStagingMode::Collecting && onThisTrack;
-    const bool staged = mode == magda::GainStagingMode::Staged && onThisTrack;
+    const bool collecting = gs.getMode() == magda::GainStagingMode::Collecting && onThisTrack;
 
     if (collecting) {
         const auto red = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
         gainStagingButton_->setActiveBackgroundColor(red.withAlpha(0.20f));
         gainStagingButton_->setActiveBorderColor(red);
         gainStagingButton_->setTooltip("Gain staging: stop and apply");
-    } else if (staged) {
-        const auto amber = DarkTheme::getColour(DarkTheme::STATUS_WARNING);
-        gainStagingButton_->setActiveBackgroundColor(amber.withAlpha(0.20f));
-        gainStagingButton_->setActiveBorderColor(amber);
-        gainStagingButton_->setTooltip("Gain staging: clear");
     } else {
         gainStagingButton_->setTooltip("Gain staging: capture levels, then auto-set device gains");
     }
 
-    gainStagingButton_->setActive(collecting || staged);
+    gainStagingButton_->setActive(collecting);
 
-    // Centered banner mirrors the link-mode label; red while collecting,
-    // amber once staged.
-    gainStagingLabel_.setVisible(collecting || staged);
-    if (collecting || staged) {
-        gainStagingLabel_.setText(collecting ? "GAIN STAGING" : "GAIN STAGED",
-                                  juce::dontSendNotification);
-        gainStagingLabel_.setColour(juce::Label::textColourId,
-                                    DarkTheme::getColour(collecting ? DarkTheme::STATUS_DANGER
-                                                                    : DarkTheme::STATUS_WARNING));
-    }
+    // Centered banner mirrors the link-mode label, shown only while capturing.
+    gainStagingLabel_.setVisible(collecting);
 }
 
 void TrackChainContent::updateFromSelectedTrack() {
