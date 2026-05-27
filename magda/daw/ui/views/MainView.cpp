@@ -267,6 +267,8 @@ void MainView::setupComponents() {
     horizontalZoomScrollBar =
         std::make_unique<ZoomScrollBar>(ZoomScrollBar::Orientation::Horizontal);
     horizontalZoomScrollBar->onRangeChanged = [this](double start, double end) {
+        revealHorizontalArrangementScrollbar();
+
         // Convert range to zoom and scroll
         double rangeWidth = end - start;
         const auto& st = timelineController->getState();
@@ -287,10 +289,14 @@ void MainView::setupComponents() {
         }
     };
     addAndMakeVisible(*horizontalZoomScrollBar);
+    horizontalZoomScrollBar->setVisible(false);
+    horizontalZoomScrollBar->setAlpha(horizontalScrollbarRevealProgress);
 
     // Create vertical zoom scroll bar (on left)
     verticalZoomScrollBar = std::make_unique<ZoomScrollBar>(ZoomScrollBar::Orientation::Vertical);
     verticalZoomScrollBar->onRangeChanged = [this](double start, double end) {
+        revealVerticalArrangementScrollbar();
+
         double rangeHeight = end - start;
         if (rangeHeight > 0) {
             // Guard to prevent feedback loop: setViewPosition triggers scrollBarMoved
@@ -328,6 +334,8 @@ void MainView::setupComponents() {
         }
     };
     addAndMakeVisible(*verticalZoomScrollBar);
+    verticalZoomScrollBar->setVisible(false);
+    verticalZoomScrollBar->setAlpha(verticalScrollbarRevealProgress);
 
     // Corner toolbar buttons (above track headers)
     // Zoom icon buttons
@@ -437,6 +445,8 @@ void MainView::setupCallbacks() {
 
     // Handle scroll requests from timeline (for trackpad scrolling over ruler)
     timeline->onScrollRequested = [this](float deltaX, float deltaY) {
+        revealHorizontalArrangementScrollbar();
+
         // Calculate scroll amount (scale delta for smooth scrolling)
         const float scrollSpeed = 50.0f;
         int scrollDeltaX = static_cast<int>(-deltaX * scrollSpeed);
@@ -482,6 +492,8 @@ MainView::~MainView() {
 // ===== Timer Implementation (for metering) =====
 
 void MainView::timerCallback() {
+    updateArrangementScrollbarVisibility();
+
     // Update master metering from audio engine
     if (!audioEngine_ || !masterHeaderPanel)
         return;
@@ -510,8 +522,10 @@ void MainView::timerCallback() {
 void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
     // Zoom/scroll changes
     if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll)) {
+        if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll))
+            revealHorizontalArrangementScrollbar();
+
         horizontalZoom = state.zoom.horizontalZoom;
-        verticalZoom = state.zoom.verticalZoom;
 
         timeline->setZoom(horizontalZoom);
         trackContentPanel->setZoom(horizontalZoom);
@@ -701,11 +715,23 @@ void MainView::paint(juce::Graphics& g) {
         g.fillRect(cornerSeparatorLine);
     }
 
+    auto arrangementLayout = computeArrangementLayout();
+    auto headerArea = arrangementLayout.horizontalScrollBarRowArea;
+    headerArea.setWidth(trackHeaderWidth);
+    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillRect(headerArea);
+
+    auto contentArea = arrangementLayout.horizontalScrollBarRowArea.withTrimmedLeft(
+        trackHeaderWidth + LayoutConfig::getInstance().componentSpacing);
+    g.setColour(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+    g.fillRect(contentArea);
+
     // Draw borders on both sides of the vertical zoom scrollbar (below corner toolbar)
-    {
+    if (verticalScrollbarRevealProgress > 0.01f) {
         auto sb = verticalZoomScrollBar->getBounds();
         int top = getTimelineHeight();
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER)
+                        .withMultipliedAlpha(verticalScrollbarRevealProgress));
         g.fillRect(sb.getX() - 1, top, 1, getHeight() - top);
         g.fillRect(sb.getRight(), top, 1, getHeight() - top);
     }
@@ -724,9 +750,27 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     SideColumn headerColumn(!result.swapped);
     SideColumn zoomColumn(result.swapped);
 
-    result.verticalScrollBarArea = zoomColumn.removeFrom(bounds, ARRANGEMENT_SCROLLBAR_SIZE + 2);
+    const int fullVerticalScrollbarWidth = ARRANGEMENT_SCROLLBAR_SIZE + 2;
+    const int verticalScrollbarWidth = isVerticalScrollbarReserved ? fullVerticalScrollbarWidth : 0;
+    const int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
 
-    result.horizontalScrollBarArea = bounds.removeFromBottom(ARRANGEMENT_SCROLLBAR_SIZE);
+    {
+        auto hitBounds = bounds;
+        result.verticalScrollBarHitArea =
+            zoomColumn.removeFrom(hitBounds, fullVerticalScrollbarWidth);
+    }
+
+    result.verticalScrollBarArea = zoomColumn.removeFrom(bounds, verticalScrollbarWidth);
+
+    {
+        auto hitBounds = bounds;
+        result.horizontalScrollBarHitArea = hitBounds.removeFromBottom(ARRANGEMENT_SCROLLBAR_SIZE);
+        headerColumn.removeSpacing(result.horizontalScrollBarHitArea,
+                                   trackHeaderWidth + layout.componentSpacing);
+    }
+
+    result.horizontalScrollBarRowArea = bounds.removeFromBottom(horizontalScrollbarHeight);
+    result.horizontalScrollBarArea = result.horizontalScrollBarRowArea;
     headerColumn.removeSpacing(result.horizontalScrollBarArea,
                                trackHeaderWidth + layout.componentSpacing);
 
@@ -752,11 +796,18 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     }
 
     int effectiveAuxHeight = auxVisible_ ? auxSectionHeight : 0;
-    result.verticalScrollBarArea.removeFromBottom(ARRANGEMENT_SCROLLBAR_SIZE +
+    result.verticalScrollBarHitArea.removeFromBottom(
+        ARRANGEMENT_SCROLLBAR_SIZE + effectiveMasterHeight + effectiveResizeHandleHeight +
+        effectiveAuxHeight);
+    result.verticalScrollBarHitArea.removeFromTop(getTimelineHeight());
+    result.verticalScrollBarHitArea = result.verticalScrollBarHitArea.reduced(1, 0);
+
+    result.verticalScrollBarArea.removeFromBottom(horizontalScrollbarHeight +
                                                   effectiveMasterHeight +
                                                   effectiveResizeHandleHeight + effectiveAuxHeight);
     result.verticalScrollBarArea.removeFromTop(getTimelineHeight());
-    result.verticalScrollBarArea = result.verticalScrollBarArea.reduced(1, 0);
+    if (result.verticalScrollBarArea.getWidth() > 2)
+        result.verticalScrollBarArea = result.verticalScrollBarArea.reduced(1, 0);
 
     result.timelineArea = bounds.removeFromTop(getTimelineHeight());
     result.cornerArea = headerColumn.removeFrom(result.timelineArea, trackHeaderWidth);
@@ -778,6 +829,13 @@ void MainView::resized() {
 
     horizontalZoomScrollBar->setBounds(arrangementLayout.horizontalScrollBarArea);
     verticalZoomScrollBar->setBounds(arrangementLayout.verticalScrollBarArea);
+    horizontalScrollbarHitArea = arrangementLayout.horizontalScrollBarHitArea;
+    verticalScrollbarHitArea = arrangementLayout.verticalScrollBarHitArea;
+
+    horizontalZoomScrollBar->setAlpha(horizontalScrollbarRevealProgress);
+    verticalZoomScrollBar->setAlpha(verticalScrollbarRevealProgress);
+    horizontalZoomScrollBar->setVisible(horizontalScrollbarRevealProgress > 0.01f);
+    verticalZoomScrollBar->setVisible(verticalScrollbarRevealProgress > 0.01f);
 
     if (masterVisible_) {
         masterHeaderPanel->setBounds(arrangementLayout.masterHeaderArea);
@@ -1102,6 +1160,8 @@ void MainView::updateContentSizes() {
 void MainView::scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double newRangeStart) {
     // Sync timeline viewport when track content viewport scrolls horizontally
     if (scrollBarThatHasMoved == &trackContentViewport->getHorizontalScrollBar()) {
+        revealHorizontalArrangementScrollbar();
+
         int scrollX = static_cast<int>(newRangeStart);
         int scrollY = trackContentViewport->getViewPositionY();
 
@@ -1262,9 +1322,109 @@ void MainView::updateVerticalZoomScrollBar() {
     verticalZoomScrollBar->setVisibleRange(visibleStart, visibleEnd);
 }
 
+void MainView::revealHorizontalArrangementScrollbar() {
+    if (isUpdatingArrangementScrollbarLayout)
+        return;
+
+    horizontalScrollbarRevealFrames =
+        juce::jmax(horizontalScrollbarRevealFrames, ARRANGEMENT_SCROLLBAR_REVEAL_HOLD_FRAMES);
+    isHorizontalScrollbarReserved = true;
+    horizontalScrollbarRevealProgress = 1.0f;
+    horizontalZoomScrollBar->setAlpha(horizontalScrollbarRevealProgress);
+    horizontalZoomScrollBar->setVisible(true);
+    repaint(horizontalZoomScrollBar->getBounds().expanded(0, 2));
+}
+
+void MainView::revealVerticalArrangementScrollbar() {
+    verticalScrollbarRevealFrames =
+        juce::jmax(verticalScrollbarRevealFrames, ARRANGEMENT_SCROLLBAR_REVEAL_HOLD_FRAMES);
+    isVerticalScrollbarReserved = true;
+    verticalScrollbarRevealProgress =
+        juce::jmax(verticalScrollbarRevealProgress, ARRANGEMENT_SCROLLBAR_FADE_IN_STEP);
+    verticalZoomScrollBar->setAlpha(verticalScrollbarRevealProgress);
+    verticalZoomScrollBar->setVisible(true);
+}
+
+void MainView::updateArrangementScrollbarHover(const juce::MouseEvent& event) {
+    auto position = event.getEventRelativeTo(this).getPosition();
+    isHorizontalScrollbarHovered = horizontalScrollbarHitArea.contains(position);
+    isVerticalScrollbarHovered = verticalScrollbarHitArea.contains(position);
+}
+
+void MainView::updateArrangementScrollbarVisibility() {
+    if (!horizontalZoomScrollBar || !verticalZoomScrollBar)
+        return;
+
+    auto mousePosition = getLocalPoint(nullptr, juce::Desktop::getInstance().getMousePosition());
+    isHorizontalScrollbarHovered = horizontalScrollbarHitArea.contains(mousePosition);
+    isVerticalScrollbarHovered = verticalScrollbarHitArea.contains(mousePosition);
+
+    if (!isHorizontalScrollbarHovered && !horizontalZoomScrollBar->isDragging() &&
+        horizontalScrollbarRevealFrames > 0) {
+        --horizontalScrollbarRevealFrames;
+    }
+
+    if (!isVerticalScrollbarHovered && !verticalZoomScrollBar->isDragging() &&
+        verticalScrollbarRevealFrames > 0) {
+        --verticalScrollbarRevealFrames;
+    }
+
+    const bool targetHorizontalVisible = isHorizontalScrollbarHovered || isZoomActive ||
+                                         horizontalZoomScrollBar->isDragging() ||
+                                         horizontalScrollbarRevealFrames > 0;
+    const bool targetVerticalVisible = isVerticalScrollbarHovered ||
+                                       verticalZoomScrollBar->isDragging() ||
+                                       verticalScrollbarRevealFrames > 0;
+
+    auto nextProgress = [](float current, bool targetVisible, float fadeOutStep) {
+        if (targetVisible) {
+            return juce::jmin(1.0f, current + MainView::ARRANGEMENT_SCROLLBAR_FADE_IN_STEP);
+        }
+
+        return juce::jmax(0.0f, current - fadeOutStep);
+    };
+
+    const bool oldVerticalReserved = isVerticalScrollbarReserved;
+
+    if (targetVerticalVisible)
+        isVerticalScrollbarReserved = true;
+
+    auto nextHorizontalProgress =
+        nextProgress(horizontalScrollbarRevealProgress, targetHorizontalVisible,
+                     HORIZONTAL_SCROLLBAR_FADE_OUT_STEP);
+    auto nextVerticalProgress = nextProgress(verticalScrollbarRevealProgress, targetVerticalVisible,
+                                             VERTICAL_SCROLLBAR_FADE_OUT_STEP);
+
+    if (nextHorizontalProgress == horizontalScrollbarRevealProgress &&
+        nextVerticalProgress == verticalScrollbarRevealProgress)
+        return;
+
+    horizontalScrollbarRevealProgress = nextHorizontalProgress;
+    verticalScrollbarRevealProgress = nextVerticalProgress;
+
+    if (verticalScrollbarRevealProgress <= 0.0f)
+        isVerticalScrollbarReserved = false;
+
+    if (oldVerticalReserved != isVerticalScrollbarReserved) {
+        juce::ScopedValueSetter<bool> scrollbarLayoutUpdate(isUpdatingArrangementScrollbarLayout,
+                                                            true);
+        resized();
+        repaint();
+        return;
+    }
+
+    horizontalZoomScrollBar->setAlpha(horizontalScrollbarRevealProgress);
+    verticalZoomScrollBar->setAlpha(verticalScrollbarRevealProgress);
+    horizontalZoomScrollBar->setVisible(horizontalScrollbarRevealProgress > 0.01f);
+    verticalZoomScrollBar->setVisible(verticalScrollbarRevealProgress > 0.01f);
+    repaint(verticalZoomScrollBar->getBounds().expanded(2, 0));
+}
+
 void MainView::setupTimelineCallbacks() {
     // Set up timeline zoom callback - dispatches to TimelineController
     timeline->onZoomChanged = [this](double newZoom, double anchorTime, int anchorContentX) {
+        revealHorizontalArrangementScrollbar();
+
         // Set crosshair cursor during zoom operations
         setMouseCursor(juce::MouseCursor::CrosshairCursor);
 
@@ -1293,6 +1453,8 @@ void MainView::setupTimelineCallbacks() {
     timeline->onZoomToFitRequested = [this](double startTime, double endTime) {
         if (endTime <= startTime)
             return;
+
+        revealHorizontalArrangementScrollbar();
 
         // Dispatch to controller
         timelineController->dispatch(ZoomToFitEvent{startTime, endTime, 0.05});
@@ -1433,6 +1595,7 @@ void MainView::PlayheadComponent::mouseMove(const juce::MouseEvent& event) {
 void MainView::mouseDown(const juce::MouseEvent& event) {
     // Always grab keyboard focus so shortcuts work
     grabKeyboardFocus();
+    updateArrangementScrollbarHover(event);
 
     if (getResizeHandleArea().contains(event.getPosition())) {
         isResizingHeaders = true;
@@ -1454,6 +1617,8 @@ void MainView::mouseDown(const juce::MouseEvent& event) {
 }
 
 void MainView::mouseDrag(const juce::MouseEvent& event) {
+    updateArrangementScrollbarHover(event);
+
     if (isResizingHeaders) {
         int deltaX = event.x - lastMouseX;
         auto& layout = LayoutConfig::getInstance();
@@ -1483,7 +1648,9 @@ void MainView::mouseDrag(const juce::MouseEvent& event) {
     }
 }
 
-void MainView::mouseUp([[maybe_unused]] const juce::MouseEvent& event) {
+void MainView::mouseUp(const juce::MouseEvent& event) {
+    updateArrangementScrollbarHover(event);
+
     if (isResizingHeaders) {
         isResizingHeaders = false;
         setMouseCursor(juce::MouseCursor::NormalCursor);
@@ -1500,6 +1667,8 @@ void MainView::mouseUp([[maybe_unused]] const juce::MouseEvent& event) {
 }
 
 void MainView::mouseMove(const juce::MouseEvent& event) {
+    updateArrangementScrollbarHover(event);
+
     auto handleArea = getResizeHandleArea();
     auto masterHandleArea = getMasterResizeHandleArea();
 
@@ -1516,7 +1685,13 @@ void MainView::mouseMove(const juce::MouseEvent& event) {
     }
 }
 
-void MainView::mouseExit([[maybe_unused]] const juce::MouseEvent& event) {
+void MainView::mouseExit(const juce::MouseEvent& event) {
+    auto position = event.getEventRelativeTo(this).getPosition();
+    if (!getLocalBounds().contains(position)) {
+        isHorizontalScrollbarHovered = false;
+        isVerticalScrollbarHovered = false;
+    }
+
     setMouseCursor(juce::MouseCursor::NormalCursor);
     repaint(getResizeHandleArea());        // Remove hover effect
     repaint(getMasterResizeHandleArea());  // Remove hover effect
@@ -1563,11 +1738,9 @@ juce::Rectangle<int> MainView::getMasterResizeHandleArea() const {
     }
 
     // Position the resize handle in the gap between track content and master strip
-    static constexpr int ZOOM_SCROLLBAR_SIZE = 20;
     int effectiveAuxHeight = auxVisible_ ? auxSectionHeight : 0;
-    // Master row top is at: getHeight() - ZOOM_SCROLLBAR_SIZE - masterStripHeight
-    // Resize handle is ABOVE that, and aux section is above that
-    int resizeHandleY = getHeight() - ZOOM_SCROLLBAR_SIZE - masterStripHeight -
+    int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
+    int resizeHandleY = getHeight() - horizontalScrollbarHeight - masterStripHeight -
                         MASTER_RESIZE_HANDLE_HEIGHT - effectiveAuxHeight;
     return juce::Rectangle<int>(0, resizeHandleY, getWidth(), MASTER_RESIZE_HANDLE_HEIGHT);
 }

@@ -7,15 +7,22 @@ namespace magda {
 
 ZoomScrollBar::ZoomScrollBar(Orientation orientation) : orientation(orientation) {
     setMouseCursor(juce::MouseCursor::NormalCursor);
+    setOpaque(false);
 }
 
 void ZoomScrollBar::paint(juce::Graphics& g) {
+    if (getWidth() < 8 || getHeight() < 8)
+        return;
+
     auto trackBounds = getTrackBounds();
     auto thumbBounds = getThumbBounds();
 
-    // Draw track background
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-    g.fillRoundedRectangle(trackBounds.toFloat(), 3.0f);
+    // Draw track background. The horizontal bar sits in a parent-painted row
+    // matching the master/content backgrounds, so avoid adding a dark gutter fill.
+    if (orientation == Orientation::Vertical) {
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRoundedRectangle(trackBounds.toFloat(), 3.0f);
+    }
 
     // Draw track border
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));

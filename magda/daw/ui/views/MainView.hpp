@@ -203,12 +203,31 @@ class MainView : public juce::Component,
         juce::Rectangle<int> playheadArea;
         juce::Rectangle<int> horizontalScrollBarArea;
         juce::Rectangle<int> verticalScrollBarArea;
+        juce::Rectangle<int> horizontalScrollBarRowArea;
+        juce::Rectangle<int> horizontalScrollBarHitArea;
+        juce::Rectangle<int> verticalScrollBarHitArea;
         juce::Rectangle<int> masterHeaderArea;
         juce::Rectangle<int> masterContentArea;
         juce::Rectangle<int> auxHeadersArea;
         juce::Rectangle<int> auxContentArea;
     };
     ArrangementLayout computeArrangementLayout() const;
+
+    float horizontalScrollbarRevealProgress = 0.0f;
+    float verticalScrollbarRevealProgress = 0.0f;
+    int horizontalScrollbarRevealFrames = 0;
+    int verticalScrollbarRevealFrames = 0;
+    bool isHorizontalScrollbarHovered = false;
+    bool isVerticalScrollbarHovered = false;
+    bool isHorizontalScrollbarReserved = false;
+    bool isVerticalScrollbarReserved = false;
+    bool isUpdatingArrangementScrollbarLayout = false;
+    juce::Rectangle<int> horizontalScrollbarHitArea;
+    juce::Rectangle<int> verticalScrollbarHitArea;
+    static constexpr float ARRANGEMENT_SCROLLBAR_FADE_IN_STEP = 0.22f;
+    static constexpr float HORIZONTAL_SCROLLBAR_FADE_OUT_STEP = 0.055f;
+    static constexpr float VERTICAL_SCROLLBAR_FADE_OUT_STEP = 0.08f;
+    static constexpr int ARRANGEMENT_SCROLLBAR_REVEAL_HOLD_FRAMES = 0;
 
     // Resize handle state (horizontal - track header width)
     bool isResizingHeaders = false;
@@ -256,6 +275,10 @@ class MainView : public juce::Component,
     // Zoom scroll bar synchronization
     void updateHorizontalZoomScrollBar();
     void updateVerticalZoomScrollBar();
+    void revealHorizontalArrangementScrollbar();
+    void revealVerticalArrangementScrollbar();
+    void updateArrangementScrollbarVisibility();
+    void updateArrangementScrollbarHover(const juce::MouseEvent& event);
 
     // Grid division display (shown on horizontal zoom scroll bar)
     void updateGridDivisionDisplay();
