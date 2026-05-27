@@ -175,6 +175,7 @@ class GainStagingManager : private juce::Timer {
         bool isInstrument = false;
         float capturedPeakDb = kGainStageSilenceDb;
         float currentGainDb = 0.0f;
+        float suggestedGainDb = 0.0f;       // flat-target trim (the algorithmic answer)
         std::vector<ParamSnapshot> params;  // current settings, MAGDA devices only
     };
 

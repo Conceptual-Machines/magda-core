@@ -1100,8 +1100,15 @@ TrackChainContent::TrackChainContent()
     gainStagingLabel_.setColour(juce::Label::textColourId,
                                 DarkTheme::getColour(DarkTheme::STATUS_DANGER));
     gainStagingLabel_.setJustificationType(juce::Justification::centred);
+    gainStagingLabel_.setMinimumHorizontalScale(0.5f);  // let the AI summary shrink to fit
     gainStagingLabel_.setVisible(false);
     addChildComponent(gainStagingLabel_);
+
+    // Blink the "GETTING AI RESULTS" banner while the agent is thinking.
+    aiBlinkTimer_.onTick = [this]() {
+        aiBlinkOn_ = !aiBlinkOn_;
+        refreshGainStagingButton();
+    };
 
     // Initialize global mods/macros panels
     initGlobalModsPanel();
@@ -1699,6 +1706,9 @@ void TrackChainContent::mouseWheelMove(const juce::MouseEvent& e,
 void TrackChainContent::resized() {
     auto bounds = getLocalBounds();
 
+    if (aiReasoningOverlay_ != nullptr)
+        aiReasoningOverlay_->setBounds(getLocalBounds());
+
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
         noSelectionLabel_.setBounds(bounds);
         hideHeaderControls();
@@ -2035,11 +2045,11 @@ void TrackChainContent::refreshGainStagingButton() {
     const bool onThisTrack = gs.getActiveTrack() == selectedTrackId_;
     const bool collecting = gs.getMode() == magda::GainStagingMode::Collecting && onThisTrack;
 
+    const auto yellow = DarkTheme::getColour(DarkTheme::STATUS_WARNING);
+
     if (aiProcessing_) {
-        // Waiting on the AI agent — blue, distinct from the red capture state.
-        const auto blue = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
-        gainStagingButton_->setActiveBackgroundColor(blue.withAlpha(0.20f));
-        gainStagingButton_->setActiveBorderColor(blue);
+        gainStagingButton_->setActiveBackgroundColor(yellow.withAlpha(0.20f));
+        gainStagingButton_->setActiveBorderColor(yellow);
         gainStagingButton_->setTooltip("Gain staging: AI is analysing the chain...");
     } else if (collecting) {
         const auto red = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
@@ -2052,12 +2062,20 @@ void TrackChainContent::refreshGainStagingButton() {
 
     gainStagingButton_->setActive(aiProcessing_ || collecting);
 
-    // Centered banner, shown while capturing or while the agent is thinking.
-    gainStagingLabel_.setVisible(aiProcessing_ || collecting);
+    // Centered banner: blinking "GETTING AI RESULTS" while the agent runs (the
+    // reasoning is shown in the overlay afterwards), "GAIN STAGING" while
+    // capturing. Position it to fill the header bar each time it's shown -- the
+    // header only re-lays-out on a BottomPanel resize, which doesn't fire when
+    // the pass starts.
+    const bool bannerVisible = aiProcessing_ || collecting;
+    gainStagingLabel_.setVisible(bannerVisible);
+    if (bannerVisible)
+        if (auto* parent = gainStagingLabel_.getParentComponent())
+            gainStagingLabel_.setBounds(parent->getLocalBounds());
     if (aiProcessing_) {
-        gainStagingLabel_.setText("ANALYSING (AI)", juce::dontSendNotification);
+        gainStagingLabel_.setText("GETTING AI RESULTS", juce::dontSendNotification);
         gainStagingLabel_.setColour(juce::Label::textColourId,
-                                    DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                    yellow.withAlpha(aiBlinkOn_ ? 1.0f : 0.25f));
     } else if (collecting) {
         gainStagingLabel_.setText("GAIN STAGING", juce::dontSendNotification);
         gainStagingLabel_.setColour(juce::Label::textColourId,
@@ -2085,12 +2103,16 @@ void TrackChainContent::runAiGainStagingPass() {
         lvl.isInstrument = s.isInstrument;
         lvl.capturedPeakDb = s.capturedPeakDb;
         lvl.currentGainDb = s.currentGainDb;
+        lvl.suggestedGainDb = s.suggestedGainDb;
         for (const auto& p : s.params)
             lvl.params.push_back({p.name.toStdString(), (double)p.value, p.unit.toStdString()});
         levels.push_back(std::move(lvl));
     }
 
     aiProcessing_ = true;
+    aiReasoningOverlay_.reset();  // drop any stale panel
+    aiBlinkOn_ = true;
+    aiBlinkTimer_.startTimerHz(2);  // ~2 Hz blink while thinking
     refreshGainStagingButton();
 
     // The LLM call blocks; run it off the message thread and apply on return.
@@ -2098,10 +2120,35 @@ void TrackChainContent::runAiGainStagingPass() {
     std::thread([safe, levels = std::move(levels), target]() {
         magda::GainStagingAgent agent;
         auto result = agent.generate(target, levels);
-        juce::MessageManager::callAsync([safe, result]() {
+
+        // Build the human-readable reasoning while we still have device names.
+        juce::String reasoning;
+        if (result.hasError) {
+            reasoning = "AI gain staging failed:\n" + juce::String(result.error);
+        } else {
+            if (!result.summary.empty())
+                reasoning << juce::String(result.summary) << "\n\n";
+            for (const auto& d : result.decisions) {
+                juce::String name;
+                for (const auto& lvl : levels)
+                    if (lvl.deviceId == d.deviceId) {
+                        name = juce::String(lvl.name);
+                        break;
+                    }
+                reasoning << name << ":  " << (d.newGainDb >= 0.0f ? "+" : "")
+                          << juce::String(d.newGainDb, 1) << " dB";
+                if (!d.reason.empty())
+                    reasoning << "   " << juce::String(d.reason);
+                reasoning << "\n";
+            }
+        }
+
+        juce::MessageManager::callAsync([safe, result, reasoning]() {
             if (safe == nullptr)
                 return;
             safe->aiProcessing_ = false;
+            safe->aiBlinkTimer_.stopTimer();
+
             auto& m = magda::GainStagingManager::getInstance();
             if (result.hasError) {
                 juce::Logger::writeToLog("[GainStaging] AI error: " + juce::String(result.error));
@@ -2113,9 +2160,78 @@ void TrackChainContent::runAiGainStagingPass() {
                 m.applyAiMoves(moves);
                 juce::Logger::writeToLog("[GainStaging] AI: " + juce::String(result.summary));
             }
+
             safe->refreshGainStagingButton();
+            safe->showAiReasoning(reasoning);
         });
     }).detach();
+}
+
+namespace {
+// Transient panel that prints the agent's reasoning over the chain; any click
+// anywhere on it dismisses it.
+class AiReasoningOverlay : public juce::Component {
+  public:
+    std::function<void()> onDismiss;
+
+    void setText(juce::String text) {
+        text_ = std::move(text);
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(juce::Colours::black.withAlpha(0.55f));
+
+        auto area = getLocalBounds().reduced(24);
+        if (area.getWidth() > 560)
+            area = area.withSizeKeepingCentre(560, area.getHeight());
+
+        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.fillRoundedRectangle(area.toFloat(), 8.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.drawRoundedRectangle(area.toFloat(), 8.0f, 1.5f);
+
+        auto inner = area.reduced(16);
+        auto titleArea = inner.removeFromTop(22);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.setFont(FontManager::getInstance().getUIFontBold(15.0f));
+        g.drawText("AI gain staging", titleArea, juce::Justification::topLeft);
+
+        auto hintArea = inner.removeFromBottom(18);
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(11.0f));
+        g.drawText("click to dismiss", hintArea, juce::Justification::topRight);
+
+        g.setColour(DarkTheme::getTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(13.0f));
+        g.drawFittedText(text_, inner, juce::Justification::topLeft, 40);
+    }
+
+    void mouseDown(const juce::MouseEvent&) override {
+        if (onDismiss)
+            onDismiss();
+    }
+
+  private:
+    juce::String text_;
+};
+}  // namespace
+
+void TrackChainContent::showAiReasoning(const juce::String& text) {
+    if (text.isEmpty())
+        return;
+
+    auto overlay = std::make_unique<AiReasoningOverlay>();
+    overlay->setText(text);
+    juce::Component::SafePointer<TrackChainContent> safe(this);
+    overlay->onDismiss = [safe]() {
+        if (safe != nullptr)
+            safe->aiReasoningOverlay_.reset();
+    };
+    addAndMakeVisible(*overlay);
+    overlay->setBounds(getLocalBounds());
+    overlay->toFront(false);
+    aiReasoningOverlay_ = std::move(overlay);
 }
 
 void TrackChainContent::updateFromSelectedTrack() {

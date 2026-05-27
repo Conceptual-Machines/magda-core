@@ -37,6 +37,7 @@ class GainStagingAgent {
         bool isInstrument = false;
         float capturedPeakDb = -100.0f;  // peak measured at the device output
         float currentGainDb = 0.0f;      // current output trim
+        float suggestedGainDb = 0.0f;    // flat-target trim baseline (the math, done)
         std::vector<Param> params;       // current settings (MAGDA devices only)
     };
 

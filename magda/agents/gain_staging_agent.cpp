@@ -50,12 +50,16 @@ juce::String stripToJsonObject(const juce::String& raw) {
 const char* GainStagingAgent::getSystemPrompt() {
     return "You are a mixing engineer setting the gain structure on one track's device chain.\n"
            "You are given the devices in signal order, each with: an integer id, a name, a kind, "
-           "the peak level in dBFS measured at the device OUTPUT during playback, and its current "
-           "output trim in dB. MAGDA devices also include their current settings (a 'settings' "
-           "list of name/value/unit) so you can reason about thresholds, drive, ceilings, and "
-           "makeup. You ONLY set the output trim; you do NOT change any of those settings.\n"
-           "Choose a NEW output trim (dB) for each device so the chain is well gain-staged toward "
-           "the target peak, using musical judgement:\n"
+           "the peak level in dBFS measured at the device OUTPUT during playback, its current "
+           "output trim in dB, and a 'suggestedTrimDb' -- the trim that lands this stage's output "
+           "exactly at the target (the arithmetic is done for you). MAGDA devices also include "
+           "their current settings (a 'settings' list of name/value/unit) so you can reason about "
+           "thresholds, drive, ceilings, and makeup. You ONLY set the output trim; you do NOT "
+           "change any of those settings.\n"
+           "Use suggestedTrimDb as your BASELINE for each device and keep it unless you have a "
+           "musical reason to deviate -- this keeps the chain on target. Deviate (and explain it "
+           "in "
+           "the reason) only when warranted:\n"
            "- Aim each stage's output near the target so no stage runs hot or starves the next.\n"
            "- A limiter or clipper at the END of the chain sets the ceiling: do NOT drive hard "
            "into it. Ease the level entering it back toward the target and leave its own trim near "
@@ -84,6 +88,7 @@ juce::String GainStagingAgent::buildUserMessage(float targetPeakDb,
         obj->setProperty("kind", juce::String(classifyKind(d)));
         obj->setProperty("peakDb", juce::String(d.capturedPeakDb, 1).getDoubleValue());
         obj->setProperty("currentGainDb", juce::String(d.currentGainDb, 1).getDoubleValue());
+        obj->setProperty("suggestedTrimDb", juce::String(d.suggestedGainDb, 1).getDoubleValue());
 
         if (!d.params.empty()) {
             juce::Array<juce::var> params;

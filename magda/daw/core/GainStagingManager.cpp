@@ -228,6 +228,12 @@ std::vector<GainStagingManager::DeviceSnapshot> GainStagingManager::finishCaptur
     stopTimer();
     auto& tm = TrackManager::getInstance();
 
+    // Mirror the algorithmic cascade so we can hand the agent the exact trim
+    // that lands each stage at the target. The agent anchors to this number and
+    // only deviates for musical reasons -- LLMs are poor at dB arithmetic, so
+    // doing the math for them keeps the result close to target.
+    float cumulativeAppliedDb = 0.0f;
+
     for (const auto& staged : staged_) {
         auto it = info_.find(staged.deviceId);
         if (it == info_.end())
@@ -244,6 +250,19 @@ std::vector<GainStagingManager::DeviceSnapshot> GainStagingManager::finishCaptur
         s.capturedPeakDb = it->second.capturedPeakDb;
         s.currentGainDb = device->gainDb;
 
+        // Flat-target cascade suggestion (attenuation-only), same as the
+        // algorithmic path; leaves a no-signal device unchanged.
+        s.suggestedGainDb = device->gainDb;
+        if (it->second.capturedPeakDb > kGainStageSilenceDb + 0.5f) {
+            const float effectiveOutputDb = it->second.capturedPeakDb + cumulativeAppliedDb;
+            const float deltaDb = juce::jmin(0.0f, targetDb_ - effectiveOutputDb);
+            s.suggestedGainDb =
+                juce::jlimit(kGainStageMinGainDb, kGainStageMaxGainDb, device->gainDb + deltaDb);
+            const float applied = s.suggestedGainDb - device->gainDb;
+            if (std::abs(applied) >= 0.05f)
+                cumulativeAppliedDb += applied;
+        }
+
         // Send current settings for MAGDA/internal devices so the agent can
         // reason about thresholds, drive, ceilings. External plugins are
         // skipped (their parameter sets are large and opaque).
@@ -255,8 +274,15 @@ std::vector<GainStagingManager::DeviceSnapshot> GainStagingManager::finishCaptur
         out.push_back(s);
     }
 
-    // Return to idle, but KEEP staged_/info_ so applyAiMoves() can resolve paths
-    // and reset() can drop the capture if the agent fails.
+    // Clear the per-device capture highlight (otherwise devices stay stuck in
+    // the red "collecting" state through the whole AI wait). The UI shows the
+    // "getting AI results" state on the header instead. staged_ is KEPT so
+    // applyAiMoves() can still resolve paths; info_ is no longer needed (it
+    // fed the snapshot we just built).
+    info_.clear();
+    for (const auto& staged : staged_)
+        notifyDevice(staged.deviceId);
+
     mode_ = GainStagingMode::Idle;
     notifyMode();
     return out;
