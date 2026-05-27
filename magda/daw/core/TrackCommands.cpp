@@ -65,7 +65,8 @@ ChainNodePath findChainElementPath(TrackManager& tm, ChainStepType type, int id)
     for (const auto& track : tm.getTracks()) {
         ChainNodePath trackPath;
         trackPath.trackId = track.id;
-        if (auto path = findChainElementPathRecursive(trackPath, track.chainElements, type, id);
+        if (auto path =
+                findChainElementPathRecursive(trackPath, track.chain.fxChainElements, type, id);
             path.isValid())
             return path;
     }
@@ -73,8 +74,8 @@ ChainNodePath findChainElementPath(TrackManager& tm, ChainStepType type, int id)
     if (const auto* masterTrack = tm.getTrack(MASTER_TRACK_ID)) {
         ChainNodePath masterPath;
         masterPath.trackId = MASTER_TRACK_ID;
-        if (auto path =
-                findChainElementPathRecursive(masterPath, masterTrack->chainElements, type, id);
+        if (auto path = findChainElementPathRecursive(masterPath,
+                                                      masterTrack->chain.fxChainElements, type, id);
             path.isValid())
             return path;
     }
@@ -584,7 +585,7 @@ void PasteChainElementsCommand::execute() {
 
     const auto& destinationElements =
         destinationChainPath_.steps.empty()
-            ? track->chainElements
+            ? track->chain.fxChainElements
             : tm.getChain(destinationChainPath_.trackId, destinationChainPath_.getRackId(),
                           destinationChainPath_.getChainId())
                   ->elements;

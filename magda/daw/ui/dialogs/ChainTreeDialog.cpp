@@ -338,7 +338,7 @@ class ChainTreeDialog::ContentComponent : public juce::Component,
         auto root = std::make_unique<TrackTreeItem>(track->name, trackId_);
 
         // Add all chain elements (devices and racks in order)
-        for (const auto& element : track->chainElements) {
+        for (const auto& element : track->chain.fxChainElements) {
             if (magda::isDevice(element)) {
                 const auto& device = magda::getDevice(element);
                 auto path = ChainNodePath::topLevelDevice(trackId_, device.id);

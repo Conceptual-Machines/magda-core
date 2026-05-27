@@ -17,6 +17,7 @@ class SvgButton;
 namespace daw::ui {
 class AudioClipPropertiesContent;
 class ChordPanelContent;
+class PostFxPanelContent;
 }  // namespace daw::ui
 
 /**
@@ -168,7 +169,28 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<PropsResizeHandle> chordResizer_;
     std::unique_ptr<magda::SvgButton> chordCollapseButton_;
 
+    // Post-FX side panel (right side, shown when a track is selected AND the
+    // user has opened it via the TrackChain header toggle).
+    std::unique_ptr<daw::ui::PostFxPanelContent> postFxPanel_;
+    bool showPostFxPanel_ = false;  // derived: TrackChain content && postFxOpen_
+    bool postFxOpen_ = false;       // user/auto open state (header toggle)
+    // User-resized width, clamped to [POSTFX_MIN_WIDTH, 70% of the panel]. It
+    // can shrink well below half and grow up to 70% (the FX chain keeps >= 30%).
+    // -1 means "not yet sized" -> opens at ~35% of the panel.
+    int postFxPanelWidth_ = -1;
+    static constexpr int POSTFX_MIN_WIDTH = 240;
+
+    std::unique_ptr<PropsResizeHandle> postFxResizer_;
+
     void ensureChordPanelCreated();
+    void ensurePostFxPanelCreated();
+    int effectivePostFxWidth() const;  // postFxPanelWidth_ clamped to [min, 70%]
+    // Recompute showPostFxPanel_ and (re)create + point the panel at the track.
+    // allowAutoReveal opens it when the track already has post-fx devices (used
+    // on selection, not when the user explicitly toggles).
+    void updatePostFxPanel(bool onTrackChain, TrackId selectedTrack, bool allowAutoReveal);
+    void syncPostFxToggleButton();  // wire + light the TrackChain header toggle
+    void setPostFxOpen(bool open);  // header-toggle handler
     void setupHeaderControls();
     void applyTimeModeToContent();
     void syncGridStateFromTimeline();

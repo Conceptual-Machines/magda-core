@@ -133,9 +133,9 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         g.fillRoundedRectangle(bgBounds, cornerRadius);
     }
 
-    // Draw border if set
+    // Draw border if set (colored differently while active, if configured)
     if (hasBorder) {
-        g.setColour(borderColor);
+        g.setColour(isActive && hasActiveBorderColor ? activeBorderColor : borderColor);
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f),
                                cornerRadius, borderThickness);
     }

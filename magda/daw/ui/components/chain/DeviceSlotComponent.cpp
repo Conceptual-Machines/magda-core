@@ -8,6 +8,8 @@
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/OscilloscopePlugin.hpp"
+#include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "core/Config.hpp"
 #include "core/InternalDeviceKind.hpp"
 #include "core/MacroInfo.hpp"
@@ -17,9 +19,12 @@
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "custom_ui/AnalyzerWindow.hpp"
 #include "custom_ui/ArpeggiatorUI.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustUI.hpp"
+#include "custom_ui/OscilloscopeUI.hpp"
+#include "custom_ui/SpectrumAnalyzerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 #include "engine/AudioEngine.hpp"
@@ -340,6 +345,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                                                    BinaryData::open_in_new_svgSize);
     applyHeaderIconStyle(*uiButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     uiButton_->onClick = [this]() {
+        // Analysis devices have no native editor; pop their UI into a floating window.
+        if (magda::isAnalysisDevice(device_.pluginId)) {
+            toggleAnalyzerWindow();
+            return;
+        }
         // Get the audio bridge and toggle plugin window
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
         if (audioEngine) {
@@ -788,9 +798,12 @@ void DeviceSlotComponent::timerCallback() {
     if (!bridge)
         return;
 
-    // Update UI button state to match actual plugin window state
+    // Update UI button state to match the actual window state.
     if (uiButton_) {
-        bool isOpen = bridge->isPluginWindowOpen(device_.id);
+        // Analysis devices use the popout AnalyzerWindow, not a native plugin window.
+        const bool isOpen = magda::isAnalysisDevice(device_.pluginId)
+                                ? (analyzerWindow_ != nullptr && analyzerWindow_->isVisible())
+                                : bridge->isPluginWindowOpen(device_.id);
         bool currentState = uiButton_->getToggleState();
 
         // Only update if state changed to avoid unnecessary repaints
@@ -945,8 +958,23 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
     refreshCustomUIParameterValues();
 }
 
+bool DeviceSlotComponent::stripsAnalysisChrome() const {
+    // Post-FX analysis devices are managed by the TrackChain header toggle, and
+    // bypass/presets don't apply to a transparent tap, so drop that chrome.
+    return magda::isAnalysisDevice(device_.pluginId) && nodePath_.isPostFx();
+}
+
 void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
+
+    // Hide power / preset / delete for post-FX analysis devices (the getters
+    // return nullptr too, so the header layout skips placing them).
+    const bool strip = stripsAnalysisChrome();
+    onButton_->setVisible(!strip);
+    presetButton_->setVisible(!strip);
+    setDeleteButtonVisible(!strip);
+    levelMeter_.setVisible(!strip);  // peak meter is redundant on an analyzer
+
     // Now that nodePath_ is valid, update param slots with the device path
     updateParamModulation();
 
@@ -1342,8 +1370,8 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
                             .deviceName = device_.name,
                             .tracktionLogo = tracktionLogo_.get(),
                             .stepRecording = stepRecording},
-                           METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT, PAGINATION_HEIGHT,
-                           FaustUI::kHeaderHeight);
+                           stripsAnalysisChrome() ? 0 : METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT,
+                           PAGINATION_HEIGHT, FaustUI::kHeaderHeight);
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
@@ -1352,22 +1380,22 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
         compiledPanel_ != nullptr ? &compiledPanel_->component() : nullptr;
     const bool pluginPresetsAvailable =
         !collapsed_ && !traits_.isFaust && hasPluginPresetsAvailable();
-    if (!prepareDeviceSlotContentFrame(contentArea, traits_, device_, collapsed_,
-                                       isInternalDevice(), pluginPresetsAvailable,
-                                       {.pluginPresetsButton = presetsButton_.get(),
-                                        .levelMeter = &levelMeter_,
-                                        .midiNoteStrip = &midiNoteStrip_,
-                                        .gainSlider = gainSlider_.get(),
-                                        .paramGrid = paramGrid_.get(),
-                                        .gainLabel = &gainLabel_,
-                                        .magdaPresetButton = presetButton_.get(),
-                                        .activeCustomUI = activeCustomUI,
-                                        .compiledPanel = compiledPanelComponent,
-                                        .modButton = modButton_.get(),
-                                        .macroButton = macroButton_.get(),
-                                        .uiButton = uiButton_.get(),
-                                        .powerButton = onButton_.get()},
-                                       METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT)) {
+    if (!prepareDeviceSlotContentFrame(
+            contentArea, traits_, device_, collapsed_, isInternalDevice(), pluginPresetsAvailable,
+            {.pluginPresetsButton = presetsButton_.get(),
+             .levelMeter = &levelMeter_,
+             .midiNoteStrip = &midiNoteStrip_,
+             .gainSlider = gainSlider_.get(),
+             .paramGrid = paramGrid_.get(),
+             .gainLabel = &gainLabel_,
+             .magdaPresetButton = stripsAnalysisChrome() ? nullptr : presetButton_.get(),
+             .activeCustomUI = activeCustomUI,
+             .compiledPanel = compiledPanelComponent,
+             .modButton = modButton_.get(),
+             .macroButton = macroButton_.get(),
+             .uiButton = uiButton_.get(),
+             .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get()},
+            stripsAnalysisChrome() ? 0 : METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT)) {
         return;
     }
 
@@ -1399,19 +1427,20 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    layoutExpandedDeviceSlotHeader(headerArea, traits_, device_, isInternalDevice(),
-                                   {.gainLabel = &gainLabel_,
-                                    .macroButton = macroButton_.get(),
-                                    .modButton = modButton_.get(),
-                                    .aiButton = aiButton_.get(),
-                                    .learnButton = learnButton_.get(),
-                                    .sidechainButton = scButton_.get(),
-                                    .multiOutButton = multiOutButton_.get(),
-                                    .uiButton = uiButton_.get(),
-                                    .powerButton = onButton_.get(),
-                                    .presetButton = presetButton_.get(),
-                                    .exportClipButton = exportClipButton_.get()},
-                                   BUTTON_SIZE);
+    layoutExpandedDeviceSlotHeader(
+        headerArea, traits_, device_, isInternalDevice(),
+        {.gainLabel = &gainLabel_,
+         .macroButton = macroButton_.get(),
+         .modButton = modButton_.get(),
+         .aiButton = aiButton_.get(),
+         .learnButton = learnButton_.get(),
+         .sidechainButton = scButton_.get(),
+         .multiOutButton = multiOutButton_.get(),
+         .uiButton = uiButton_.get(),
+         .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
+         .presetButton = stripsAnalysisChrome() ? nullptr : presetButton_.get(),
+         .exportClipButton = exportClipButton_.get()},
+        BUTTON_SIZE);
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
@@ -1425,17 +1454,17 @@ void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
-    layoutCollapsedDeviceSlotControls(area, collapsedMeterArea_, traits_, device_,
-                                      isInternalDevice(),
-                                      {.levelMeter = &levelMeter_,
-                                       .midiNoteStrip = &midiNoteStrip_,
-                                       .powerButton = onButton_.get(),
-                                       .uiButton = uiButton_.get(),
-                                       .macroButton = macroButton_.get(),
-                                       .modButton = modButton_.get(),
-                                       .aiButton = aiButton_.get(),
-                                       .multiOutButton = multiOutButton_.get()},
-                                      BUTTON_SIZE);
+    layoutCollapsedDeviceSlotControls(
+        area, collapsedMeterArea_, traits_, device_, isInternalDevice(),
+        {.levelMeter = stripsAnalysisChrome() ? nullptr : &levelMeter_,
+         .midiNoteStrip = &midiNoteStrip_,
+         .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
+         .uiButton = uiButton_.get(),
+         .macroButton = macroButton_.get(),
+         .modButton = modButton_.get(),
+         .aiButton = aiButton_.get(),
+         .multiOutButton = multiOutButton_.get()},
+        BUTTON_SIZE);
 }
 
 juce::String DeviceSlotComponent::getCollapsedName() const {
@@ -1460,6 +1489,8 @@ const magda::ModArray* DeviceSlotComponent::getModsData() const {
 
 const magda::MacroArray* DeviceSlotComponent::getMacrosData() const {
     if (auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
+        if (magda::isAnalysisDevice(dev->pluginId))
+            return nullptr;  // analysis devices expose no macros
         return &dev->macros;
     }
     return nullptr;
@@ -1843,6 +1874,42 @@ void DeviceSlotComponent::paramSelectionChanged(const magda::ParamSelection& sel
 // refreshControllerIndicators(), which the base wires up to BindingRegistry,
 // ControllerRegistry, and chain-node selection changes.
 
+void DeviceSlotComponent::toggleAnalyzerWindow() {
+    if (analyzerWindow_ != nullptr) {
+        const bool show = !analyzerWindow_->isVisible();
+        analyzerWindow_->setVisible(show);
+        if (show)
+            analyzerWindow_->toFront(true);
+        if (uiButton_ != nullptr) {
+            uiButton_->setToggleState(show, juce::dontSendNotification);
+            uiButton_->setActive(show);
+        }
+        return;
+    }
+    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+    auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
+    if (bridge == nullptr)
+        return;
+    auto plugin = bridge->getPlugin(device_.id);
+    std::unique_ptr<juce::Component> content;
+    if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get())) {
+        auto ui = std::make_unique<OscilloscopeUI>();
+        ui->setPlugin(scope);
+        content = std::move(ui);
+    } else if (auto* spec = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
+        auto ui = std::make_unique<SpectrumAnalyzerUI>();
+        ui->setPlugin(spec);
+        content = std::move(ui);
+    }
+    if (content == nullptr)
+        return;
+    analyzerWindow_ = std::make_unique<AnalyzerWindow>(device_.name, std::move(content));
+    if (uiButton_ != nullptr) {
+        uiButton_->setToggleState(true, juce::dontSendNotification);
+        uiButton_->setActive(true);
+    }
+}
+
 // =============================================================================
 // Mouse Handling
 // =============================================================================
@@ -1856,9 +1923,10 @@ void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
 
     // Check for double-click
     if (e.getNumberOfClicks() == 2) {
-        // Toggle plugin window on double-click
-        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (audioEngine) {
+        // Toggle the editor / analyzer window on double-click.
+        if (magda::isAnalysisDevice(device_.pluginId)) {
+            toggleAnalyzerWindow();
+        } else if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
                 bool isOpen = bridge->togglePluginWindow(device_.id);
                 uiButton_->setToggleState(isOpen, juce::dontSendNotification);

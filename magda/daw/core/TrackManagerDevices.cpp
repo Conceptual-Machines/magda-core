@@ -85,6 +85,8 @@ void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
             case ChainStepType::Device:
                 touched = remapId(remap.devices, step.id) || touched;
                 break;
+            case ChainStepType::Segment:
+                break;  // Segment steps carry no remappable ID
         }
     }
 
@@ -458,7 +460,7 @@ static std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& 
 
     if (chainPath.steps.empty()) {
         if (auto* track = tm.getTrack(chainPath.trackId))
-            return &track->chainElements;
+            return &track->chain.fxChainElements;
         return nullptr;
     }
 
@@ -545,7 +547,7 @@ static void retargetLinksInElements(std::vector<ChainElement>& elements,
 
 static void retargetMovedLinksInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
     retargetMovedLinks(track.macros, track.mods, movedPaths);
-    retargetLinksInElements(track.chainElements, movedPaths);
+    retargetLinksInElements(track.chain.fxChainElements, movedPaths);
 }
 
 static bool targetPointsAtMovedDevice(const ControlTarget& target,
@@ -592,7 +594,7 @@ static void removeMovedTargetsInElements(std::vector<ChainElement>& elements,
 
 static void removeMovedTargetsInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
     removeMovedTargets(track.macros, track.mods, movedPaths);
-    removeMovedTargetsInElements(track.chainElements, movedPaths);
+    removeMovedTargetsInElements(track.chain.fxChainElements, movedPaths);
 }
 
 static ChainNodePath getInsertedElementPath(const ChainNodePath& destinationChainPath,
@@ -1008,12 +1010,30 @@ int TrackManager::getChainElementIndex(const ChainNodePath& elementPath) {
 }
 
 void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) {
+    // Post-fader FX list: flat, Segment(PostFx) > Device.
+    if (devicePath.isPostFx()) {
+        auto* track = getTrack(devicePath.trackId);
+        if (!track)
+            return;
+        DeviceId id = devicePath.getDeviceId();
+        auto& elements = track->chain.postFxChainElements;
+        auto it = std::find_if(elements.begin(), elements.end(),
+                               [id](const PostFxChainElement& e) { return e.device.id == id; });
+        if (it != elements.end()) {
+            DBG("Removed post-fx device: " << it->device.name << " (id=" << id << ")");
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
+            elements.erase(it);
+            notifyTrackDevicesChanged(devicePath.trackId);
+        }
+        return;
+    }
+
     // Handle top-level device (uses topLevelDeviceId field)
     if (devicePath.topLevelDeviceId != INVALID_DEVICE_ID) {
         auto* track = getTrack(devicePath.trackId);
         if (!track)
             return;
-        auto& elements = track->chainElements;
+        auto& elements = track->chain.fxChainElements;
         auto it =
             std::find_if(elements.begin(), elements.end(), [&devicePath](const ChainElement& e) {
                 return magda::isDevice(e) && magda::getDevice(e).id == devicePath.topLevelDeviceId;
@@ -1063,12 +1083,25 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
 }
 
 DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath) {
+    // Post-fader FX list: flat, so the path is Segment(PostFx) > Device.
+    if (devicePath.isPostFx()) {
+        auto* track = getTrack(devicePath.trackId);
+        if (!track)
+            return nullptr;
+        DeviceId id = devicePath.getDeviceId();
+        for (auto& e : track->chain.postFxChainElements) {
+            if (e.device.id == id)
+                return &e.device;
+        }
+        return nullptr;
+    }
+
     // Handle top-level device (legacy path format with topLevelDeviceId)
     if (devicePath.topLevelDeviceId != INVALID_DEVICE_ID) {
         auto* track = getTrack(devicePath.trackId);
         if (!track)
             return nullptr;
-        for (auto& element : track->chainElements) {
+        for (auto& element : track->chain.fxChainElements) {
             if (magda::isDevice(element) &&
                 magda::getDevice(element).id == devicePath.topLevelDeviceId) {
                 return &magda::getDevice(element);
@@ -1101,7 +1134,7 @@ DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath
         auto* track = getTrack(devicePath.trackId);
         if (!track)
             return nullptr;
-        for (auto& element : track->chainElements) {
+        for (auto& element : track->chain.fxChainElements) {
             if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
                 return &magda::getDevice(element);
             }
@@ -1208,7 +1241,7 @@ DeviceInfo* findDeviceByIdIn(std::vector<ChainElement>& elements, DeviceId devic
 }
 
 DeviceInfo* findDeviceOnTrack(TrackInfo* track, DeviceId deviceId) {
-    return track != nullptr ? findDeviceByIdIn(track->chainElements, deviceId) : nullptr;
+    return track != nullptr ? findDeviceByIdIn(track->chain.fxChainElements, deviceId) : nullptr;
 }
 }  // namespace
 
@@ -1220,7 +1253,7 @@ DeviceInfo* TrackManager::getPrimaryInstrument(TrackId trackId) {
     auto* track = getTrack(trackId);
     if (track == nullptr)
         return nullptr;
-    return findPrimaryInstrumentIn(track->chainElements);
+    return findPrimaryInstrumentIn(track->chain.fxChainElements);
 }
 
 namespace {
@@ -1310,7 +1343,7 @@ void TrackManager::setDeviceKitRows(TrackId trackId, DeviceId deviceId,
 ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {
     // Search all tracks for a device by ID and return its full path
     for (const auto& track : tracks_) {
-        for (const auto& element : track.chainElements) {
+        for (const auto& element : track.chain.fxChainElements) {
             if (magda::isDevice(element) && magda::getDevice(element).id == deviceId)
                 return ChainNodePath::topLevelDevice(track.id, deviceId);
             if (magda::isRack(element)) {
@@ -1327,7 +1360,7 @@ ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {
         }
     }
     // Also check master track
-    for (const auto& element : masterTrack_.chainElements) {
+    for (const auto& element : masterTrack_.chain.fxChainElements) {
         if (magda::isDevice(element) && magda::getDevice(element).id == deviceId)
             return ChainNodePath::topLevelDevice(MASTER_TRACK_ID, deviceId);
     }
@@ -1337,7 +1370,7 @@ ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {
 void TrackManager::updateDeviceParameters(DeviceId deviceId,
                                           const std::vector<ParameterInfo>& params) {
     // Check master track first
-    for (auto& element : masterTrack_.chainElements) {
+    for (auto& element : masterTrack_.chain.fxChainElements) {
         if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
             magda::getDevice(element).parameters = params;
             return;
@@ -1346,7 +1379,7 @@ void TrackManager::updateDeviceParameters(DeviceId deviceId,
 
     // Search all tracks for the device and update its parameters
     for (auto& track : tracks_) {
-        for (auto& element : track.chainElements) {
+        for (auto& element : track.chain.fxChainElements) {
             if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
                 magda::getDevice(element).parameters = params;
                 DBG("  -> found on track " << track.id << " (top-level)");
@@ -1373,7 +1406,7 @@ void TrackManager::updateDeviceParameters(DeviceId deviceId,
 void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
                                               const std::vector<int>& visibleParams) {
     // Check master track first
-    for (auto& element : masterTrack_.chainElements) {
+    for (auto& element : masterTrack_.chain.fxChainElements) {
         if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
             magda::getDevice(element).visibleParameters = visibleParams;
             return;
@@ -1382,7 +1415,7 @@ void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
 
     // Search all tracks for the device and update visible parameters
     for (auto& track : tracks_) {
-        for (auto& element : track.chainElements) {
+        for (auto& element : track.chain.fxChainElements) {
             if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
                 magda::getDevice(element).visibleParameters = visibleParams;
                 return;
@@ -1564,7 +1597,7 @@ bool TrackManager::applyChainPreset(TrackId trackId, std::vector<ChainElement> p
     reassignIds(presetElements);
     remapPresetLinksRecursive(presetElements, remap);
 
-    track->chainElements = std::move(presetElements);
+    track->chain.fxChainElements = std::move(presetElements);
 
     notifyTrackDevicesChanged(trackId);
     return true;
@@ -1628,7 +1661,7 @@ double TrackManager::getTrackLatencySeconds(TrackId trackId) {
     };
 
     // Sum latency across top-level chain elements
-    for (const auto& element : track->chainElements) {
+    for (const auto& element : track->chain.fxChainElements) {
         if (magda::isDevice(element)) {
             total += getDeviceLatency(magda::getDevice(element));
         } else if (magda::isRack(element)) {
@@ -1660,7 +1693,7 @@ RackId TrackManager::wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
     if (!track)
         return INVALID_RACK_ID;
 
-    auto& elements = track->chainElements;
+    auto& elements = track->chain.fxChainElements;
 
     // Find the device in the top-level chain
     auto it = std::find_if(elements.begin(), elements.end(), [deviceId](const ChainElement& e) {
@@ -1953,7 +1986,7 @@ void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack
 
     // Search all tracks for the target device
     for (auto& track : tracks_) {
-        if (updateElements(updateElements, track.chainElements))
+        if (updateElements(updateElements, track.chain.fxChainElements))
             return;
     }
 }

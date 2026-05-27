@@ -37,7 +37,7 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
         return;
 
     const auto topLevelRoutingPlan =
-        routing::compileTrackChainRouting(trackId, trackInfo->chainElements);
+        routing::compileTrackChainRouting(trackId, trackInfo->chain.fxChainElements);
     auto findTopLevelRoutingNode = [&](DeviceId deviceId) -> const routing::ChainRoutingNode* {
         for (const auto& node : topLevelRoutingPlan.nodes) {
             if (node.kind == routing::ChainRoutingNodeKind::Device && node.deviceId == deviceId)
@@ -72,7 +72,7 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
         }
     };
 
-    for (const auto& element : trackInfo->chainElements) {
+    for (const auto& element : trackInfo->chain.fxChainElements) {
         if (isDevice(element)) {
             syncTopLevelDevice(getDevice(element));
         } else if (isRack(element)) {
@@ -98,11 +98,11 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
     //
     // Must recurse into rack chains: an LFO on a device sitting inside a rack
     // chain still listens on this track's MIDI bus for retrigger.
-    if (sidechain::elementsHaveMidiTriggeredMod(trackInfo->chainElements))
+    if (sidechain::elementsHaveMidiTriggeredMod(trackInfo->chain.fxChainElements))
         return true;
 
     const auto topLevelRoutingPlan =
-        routing::compileTrackChainRouting(trackId, trackInfo->chainElements);
+        routing::compileTrackChainRouting(trackId, trackInfo->chain.fxChainElements);
     for (const auto& node : topLevelRoutingPlan.nodes) {
         if (node.kind == routing::ChainRoutingNodeKind::Device &&
             node.usesExternalMidiSidechain()) {
@@ -112,7 +112,8 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
 
     // Check if this track is a MIDI sidechain source for any other track
     for (const auto& track : TrackManager::getInstance().getTracks()) {
-        if (sidechain::elementsUseSource(track.chainElements, trackId, SidechainConfig::Type::MIDI))
+        if (sidechain::elementsUseSource(track.chain.fxChainElements, trackId,
+                                         SidechainConfig::Type::MIDI))
             return true;
     }
 
@@ -210,7 +211,7 @@ bool PluginManager::trackNeedsAudioSidechainMonitor(TrackId trackId) const {
     };
 
     for (const auto& track : TrackManager::getInstance().getTracks()) {
-        for (const auto& element : track.chainElements) {
+        for (const auto& element : track.chain.fxChainElements) {
             if (isDevice(element)) {
                 if (deviceHasAudioTrigger(getDevice(element)))
                     return true;

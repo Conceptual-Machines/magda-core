@@ -267,6 +267,20 @@ class TrackManager {
     const std::vector<ChainElement>& getChainElements(TrackId trackId) const;
     void moveNode(TrackId trackId, int fromIndex, int toIndex);
 
+    // Post-fader FX chain (flat device list; never racks or instruments).
+    // Getting/removing a post-fx device goes through the path-based APIs
+    // (getDeviceInChainByPath / removeDeviceFromChainByPath with a
+    // ChainNodePath::postFxDevice path, both already post-fx aware); these
+    // add/reorder helpers complete the surface.
+    const std::vector<PostFxChainElement>& getPostFxChainElements(TrackId trackId) const;
+    DeviceId addDeviceToPostFx(TrackId trackId, const DeviceInfo& device);
+    DeviceId addDeviceToPostFx(TrackId trackId, const DeviceInfo& device, int insertIndex);
+    void movePostFxDevice(TrackId trackId, int fromIndex, int toIndex);
+    // First post-fx device on the track with this pluginId, or INVALID_DEVICE_ID.
+    // Drives the analysis-device header toggles: analysis devices (oscilloscope /
+    // spectrum) are unique per kind in post-fx, so add* rejects a second one.
+    DeviceId findPostFxDevice(TrackId trackId, const juce::String& pluginId) const;
+
     // Device management on track
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device);
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device, int insertIndex);
@@ -422,7 +436,7 @@ class TrackManager {
     /**
      * @brief Replace a track's FX chain with a loaded chain preset's elements.
      *
-     * Replaces track.chainElements wholesale with the preset's elements. The
+     * Replaces track.chain.fxChainElements wholesale with the preset's elements. The
      * track's identity (id, name, type, send routing, master volume/pan/etc.)
      * is preserved — only the inline chain is swapped. All chain / device /
      * nested-rack ids in the preset are reassigned to fresh runtime values to

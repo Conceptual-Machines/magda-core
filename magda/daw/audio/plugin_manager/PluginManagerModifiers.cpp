@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "../../core/InternalDeviceKind.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../core/SidechainTraversal.hpp"
 #include "../../core/TrackManager.hpp"
@@ -72,7 +73,7 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
             if (auto* plugin = teTrack->pluginList[pi])
                 visit(plugin);
         }
-        for (const auto& el : trackInfo->chainElements) {
+        for (const auto& el : trackInfo->chain.fxChainElements) {
             if (!isDevice(el))
                 continue;
             const auto& dev = getDevice(el);
@@ -104,7 +105,7 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
     ctx.forEachScopePlugin = forEachPlugin;
 
     // Per-device: in-place LFO + assignment depth update.
-    for (const auto& element : trackInfo->chainElements) {
+    for (const auto& element : trackInfo->chain.fxChainElements) {
         if (!isDevice(element))
             continue;
 
@@ -160,7 +161,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
             if (auto* plugin = teTrack->pluginList[pi])
                 visit(plugin);
         }
-        for (const auto& el : trackInfo->chainElements) {
+        for (const auto& el : trackInfo->chain.fxChainElements) {
             if (!isDevice(el))
                 continue;
             const auto& dev = getDevice(el);
@@ -190,7 +191,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
     DeviceTargetLookup lookup(*this);
 
     // ---- Per-device mods + macros ----
-    for (const auto& element : trackInfo->chainElements) {
+    for (const auto& element : trackInfo->chain.fxChainElements) {
         if (!isDevice(element))
             continue;
 
@@ -212,8 +213,11 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
         node.scope = ChainScope::Device;
         node.deviceId = device.id;
         node.trackId = trackId;
-        node.mods = device.bypassed ? nullptr : &device.mods;
-        node.macros = device.bypassed ? nullptr : &device.macros;
+        // Analysis devices (oscilloscope / spectrum) are transparent passthroughs
+        // and expose no macros or mods, so never sync TE modifier state for them.
+        const bool analysis = ::magda::isAnalysisDevice(device.pluginId);
+        node.mods = (device.bypassed || analysis) ? nullptr : &device.mods;
+        node.macros = (device.bypassed || analysis) ? nullptr : &device.macros;
 
         ModifierSyncContext ctx;
         ctx.modifierList = modList;
@@ -256,7 +260,7 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
     if (!trackInfo)
         return;
 
-    for (const auto& element : trackInfo->chainElements) {
+    for (const auto& element : trackInfo->chain.fxChainElements) {
         if (!isDevice(element))
             continue;
 
@@ -581,7 +585,7 @@ void PluginManager::rebuildSidechainLFOCache() {
         // 1. Self-track LFOs: collect from syncedDevices_ modifiers for this track's devices
         //    Skip devices that have a cross-track sidechain source — those LFOs
         //    are triggered by the source track, not by self.
-        for (const auto& element : track.chainElements) {
+        for (const auto& element : track.chain.fxChainElements) {
             if (!isDevice(element))
                 continue;
             const auto& device = getDevice(element);
@@ -593,7 +597,7 @@ void PluginManager::rebuildSidechainLFOCache() {
         // Also collect from racks on this track. If any nested rack scope has
         // an external sidechain source, the rack manager will collect matching
         // LFOs in the source-track pass below.
-        if (!sidechain::elementsContainExternalSource(track.chainElements))
+        if (!sidechain::elementsContainExternalSource(track.chain.fxChainElements))
             rackSyncManager_.collectLFOModifiersWithModes(track.id, lfos, modes);
 
         selfTrackCount = static_cast<int>(lfos.size());
@@ -605,12 +609,12 @@ void PluginManager::rebuildSidechainLFOCache() {
             if (otherTrack.id == track.id)
                 continue;
 
-            if (!sidechain::elementsUseSource(otherTrack.chainElements, track.id))
+            if (!sidechain::elementsUseSource(otherTrack.chain.fxChainElements, track.id))
                 continue;
 
             // Collect LFO modifiers only from devices on the destination track
             // that are actually sidechained from this source track.
-            for (const auto& element : otherTrack.chainElements) {
+            for (const auto& element : otherTrack.chain.fxChainElements) {
                 if (!isDevice(element))
                     continue;
                 const auto& device = getDevice(element);
@@ -651,7 +655,7 @@ std::pair<int, int> PluginManager::computeModLinkFingerprint(TrackId trackId,
     int modCount = 0, linkCount = 0, bipolarCount = 0;
 
     // Device-level mods
-    for (const auto& element : trackInfo->chainElements) {
+    for (const auto& element : trackInfo->chain.fxChainElements) {
         if (!isDevice(element))
             continue;
         const auto& device = getDevice(element);

@@ -114,7 +114,7 @@ TEST_CASE("Group track rejects instrument plugins", "[group_track][instrument]")
         REQUIRE(id == INVALID_DEVICE_ID);
 
         group = fixture.tm().getTrack(groupId);
-        REQUIRE(group->chainElements.empty());
+        REQUIRE(group->chain.fxChainElements.empty());
     }
 
     SECTION("addDeviceToTrack with index rejects instrument") {
@@ -126,7 +126,7 @@ TEST_CASE("Group track rejects instrument plugins", "[group_track][instrument]")
         REQUIRE(id == INVALID_DEVICE_ID);
 
         group = fixture.tm().getTrack(groupId);
-        REQUIRE(group->chainElements.size() == 1);  // Only the effect
+        REQUIRE(group->chain.fxChainElements.size() == 1);  // Only the effect
     }
 
     SECTION("addDeviceToTrack allows effects on group track") {
@@ -134,7 +134,7 @@ TEST_CASE("Group track rejects instrument plugins", "[group_track][instrument]")
         REQUIRE(id != INVALID_DEVICE_ID);
 
         group = fixture.tm().getTrack(groupId);
-        REQUIRE(group->chainElements.size() == 1);
+        REQUIRE(group->chain.fxChainElements.size() == 1);
     }
 }
 

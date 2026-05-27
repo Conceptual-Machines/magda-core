@@ -152,12 +152,12 @@ void PluginManager::syncAllPlugins() {
     };
 
     for (const auto& track : tracks) {
-        collectIds(track.chainElements);
+        collectIds(track.chain.fxChainElements);
     }
 
     // Include master track (not in getTracks())
     if (auto* masterTrack = tm.getTrack(MASTER_TRACK_ID)) {
-        collectIds(masterTrack->chainElements);
+        collectIds(masterTrack->chain.fxChainElements);
     }
 
     // ── Step 2: Remove orphan devices (globally) ────────────────────────
@@ -305,7 +305,12 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 }
             }
         };
-    collectElements(trackInfo->chainElements);
+    collectElements(trackInfo->chain.fxChainElements);
+
+    // Post-FX devices are flat (no racks/instruments) and run before the fader.
+    // Include them so stale-removal keeps their plugins (and removes deleted ones).
+    for (const auto& postElem : trackInfo->chain.postFxChainElements)
+        magdaDevices.push_back(postElem.device.id);
 
     // Remove TE plugins that no longer exist in MAGDA for THIS track.
     // Uses the stored trackId for ownership — no TE owner-track heuristic needed.
@@ -396,8 +401,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     }
 
     // Add new plugins for MAGDA devices that don't have TE counterparts
-    for (size_t elemIdx = 0; elemIdx < trackInfo->chainElements.size(); ++elemIdx) {
-        const auto& element = trackInfo->chainElements[elemIdx];
+    for (size_t elemIdx = 0; elemIdx < trackInfo->chain.fxChainElements.size(); ++elemIdx) {
+        const auto& element = trackInfo->chain.fxChainElements[elemIdx];
         if (isDevice(element)) {
             const auto& device = getDevice(element);
 
@@ -407,10 +412,10 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 // that already has a synced plugin, and insert before it.
                 int teInsertIndex = -1;  // -1 = append (before VolumeAndPan/LevelMeter)
                 auto* teTrackForIdx = trackController_.getAudioTrack(trackId);
-                for (size_t j = elemIdx + 1; teTrackForIdx && j < trackInfo->chainElements.size();
-                     ++j) {
-                    if (isDevice(trackInfo->chainElements[j])) {
-                        auto nextId = getDevice(trackInfo->chainElements[j]).id;
+                for (size_t j = elemIdx + 1;
+                     teTrackForIdx && j < trackInfo->chain.fxChainElements.size(); ++j) {
+                    if (isDevice(trackInfo->chain.fxChainElements[j])) {
+                        auto nextId = getDevice(trackInfo->chain.fxChainElements[j]).id;
                         auto it = syncedDevices_.find(nextId);
                         if (it != syncedDevices_.end() && it->second.plugin) {
                             // For wrapped instruments, the actual plugin on the track
@@ -684,13 +689,41 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     else
         removeAudioSidechainMonitor(trackId);
 
+    // Create TE plugins for post-FX devices (flat list, no racks/instruments).
+    // Inserted at -1 (append); the reorder pass below places them after the fx
+    // tree and ensureVolumePluginPosition keeps the fader after them, so the
+    // final order is [fx..., postFx..., VolumeAndPan, LevelMeter].
+    for (const auto& postElem : trackInfo->chain.postFxChainElements) {
+        const auto& device = postElem.device;
+        juce::ScopedLock lock(pluginLock_);
+        if (syncedDevices_.find(device.id) != syncedDevices_.end())
+            continue;
+        auto plugin = loadDeviceAsPlugin(trackId, device, -1);
+        if (!plugin)
+            continue;
+        syncedDevices_[device.id].trackId = trackId;
+        syncedDevices_[device.id].plugin = plugin;
+        pluginToDevice_[plugin.get()] = device.id;
+
+        if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+            if (extPlugin->isInitialisingAsync()) {
+                syncedDevices_[device.id].isPendingLoad = true;
+                if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(
+                        ChainNodePath::postFxDevice(trackId, device.id)))
+                    devInfo->loadState = DeviceLoadState::Loading;
+                TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+                pollAsyncPluginLoad(trackId, device.id, plugin);
+            }
+        }
+    }
+
     // Reorder TE plugins to match the MAGDA chain element order.
     // This handles moveNode (drag-and-drop reorder) where the MAGDA chain changed
     // but existing TE plugins haven't moved.
     {
         // Build the desired order of TE plugin indices from the MAGDA chain
         std::vector<te::Plugin*> desiredOrder;
-        for (const auto& element : trackInfo->chainElements) {
+        for (const auto& element : trackInfo->chain.fxChainElements) {
             if (isDevice(element)) {
                 juce::ScopedLock lock(pluginLock_);
                 auto it = syncedDevices_.find(getDevice(element).id);
@@ -706,6 +739,17 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 if (rackInstance && teTrack->pluginList.indexOf(rackInstance) >= 0)
                     desiredOrder.push_back(rackInstance);
             }
+        }
+
+        // Post-FX devices come after the fx tree but before the fader: append
+        // their plugins so the move below sequences them last (the fader and
+        // meter are then pushed past them by ensureVolumePluginPosition).
+        for (const auto& postElem : trackInfo->chain.postFxChainElements) {
+            juce::ScopedLock lock(pluginLock_);
+            auto it = syncedDevices_.find(postElem.device.id);
+            if (it != syncedDevices_.end() && it->second.plugin &&
+                teTrack->pluginList.indexOf(it->second.plugin.get()) >= 0)
+                desiredOrder.push_back(it->second.plugin.get());
         }
 
         // Walk the desired order and move each plugin to its correct position
@@ -916,7 +960,7 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
         for (const auto& track : tm.getTracks()) {
             if (track.id == trackId)
                 continue;
-            for (const auto& element : track.chainElements) {
+            for (const auto& element : track.chain.fxChainElements) {
                 if (isDevice(element)) {
                     const auto& device = getDevice(element);
                     if (device.sidechain.isActive() && device.sidechain.sourceTrackId == trackId) {
@@ -1340,8 +1384,8 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     }
 
     // Sync user-added FX devices from chainElements (same as normal track path)
-    for (size_t elemIdx = 0; elemIdx < trackInfo.chainElements.size(); ++elemIdx) {
-        const auto& element = trackInfo.chainElements[elemIdx];
+    for (size_t elemIdx = 0; elemIdx < trackInfo.chain.fxChainElements.size(); ++elemIdx) {
+        const auto& element = trackInfo.chain.fxChainElements[elemIdx];
         if (isDevice(element)) {
             const auto& device = getDevice(element);
 
@@ -1349,9 +1393,9 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
             if (syncedDevices_.find(device.id) == syncedDevices_.end()) {
                 // Compute TE insertion index from subsequent synced devices
                 int teInsertIndex = -1;
-                for (size_t j = elemIdx + 1; j < trackInfo.chainElements.size(); ++j) {
-                    if (isDevice(trackInfo.chainElements[j])) {
-                        auto nextId = getDevice(trackInfo.chainElements[j]).id;
+                for (size_t j = elemIdx + 1; j < trackInfo.chain.fxChainElements.size(); ++j) {
+                    if (isDevice(trackInfo.chain.fxChainElements[j])) {
+                        auto nextId = getDevice(trackInfo.chain.fxChainElements[j]).id;
                         auto it = syncedDevices_.find(nextId);
                         if (it != syncedDevices_.end() && it->second.plugin) {
                             auto* rackInst = instrumentRackManager_.getRackInstance(nextId);
@@ -1378,7 +1422,7 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     // Reorder TE plugins to match the MAGDA chain element order (same as syncTrackPlugins)
     {
         std::vector<te::Plugin*> desiredOrder;
-        for (const auto& element : trackInfo.chainElements) {
+        for (const auto& element : trackInfo.chain.fxChainElements) {
             if (isDevice(element)) {
                 juce::ScopedLock lock(pluginLock_);
                 auto it = syncedDevices_.find(getDevice(element).id);
@@ -1451,12 +1495,14 @@ void PluginManager::syncMasterPlugins() {
 
     auto& masterList = edit_.getMasterPluginList();
 
-    // Collect current MAGDA device IDs on master
+    // Collect current MAGDA device IDs on master (fx chain + flat post-fx list)
     std::vector<DeviceId> magdaDevices;
-    for (const auto& element : trackInfo->chainElements) {
+    for (const auto& element : trackInfo->chain.fxChainElements) {
         if (isDevice(element))
             magdaDevices.push_back(getDevice(element).id);
     }
+    for (const auto& postElem : trackInfo->chain.postFxChainElements)
+        magdaDevices.push_back(postElem.device.id);
 
     // Remove synced plugins that are no longer in MAGDA's master chain
     std::vector<DeviceId> toRemove;
@@ -1502,7 +1548,7 @@ void PluginManager::syncMasterPlugins() {
     }
 
     // Add new plugins for MAGDA devices not yet synced
-    for (const auto& element : trackInfo->chainElements) {
+    for (const auto& element : trackInfo->chain.fxChainElements) {
         if (!isDevice(element))
             continue;
         const auto& device = getDevice(element);
@@ -1544,6 +1590,52 @@ void PluginManager::syncMasterPlugins() {
                         TrackManager::getInstance().getDevice(MASTER_TRACK_ID, device.id)) {
                     devInfo->loadState = DeviceLoadState::Loading;
                 }
+                TrackManager::getInstance().notifyTrackDevicesChanged(MASTER_TRACK_ID);
+                pollAsyncPluginLoad(MASTER_TRACK_ID, device.id, plugin);
+            }
+        }
+    }
+
+    // Wire post-FX devices (flat list) after the fx inserts, so the master list
+    // ends up [fx..., postFx...] ahead of the master fader.
+    for (const auto& postElem : trackInfo->chain.postFxChainElements) {
+        const auto& device = postElem.device;
+        {
+            juce::ScopedLock lock(pluginLock_);
+            if (syncedDevices_.find(device.id) != syncedDevices_.end())
+                continue;
+        }
+
+        auto plugin = createPluginOnly(MASTER_TRACK_ID, device);
+        if (!plugin)
+            continue;
+
+        masterList.insertPlugin(plugin, -1, nullptr);
+        {
+            juce::ScopedLock lock(pluginLock_);
+            syncedDevices_[device.id].trackId = MASTER_TRACK_ID;
+            syncedDevices_[device.id].plugin = plugin;
+            pluginToDevice_[plugin.get()] = device.id;
+        }
+
+        registerRackPluginProcessor(device.id, plugin, device);
+
+        // Post-fx devices are addressed by a post-fx path, not the top-level
+        // getDevice() lookup used for fx devices above.
+        const auto postPath = ChainNodePath::postFxDevice(MASTER_TRACK_ID, device.id);
+        if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(postPath)) {
+            if (plugin->canSidechain())
+                devInfo->canSidechain = true;
+            if (plugin->takesMidiInput() && !device.isInstrument)
+                devInfo->canReceiveMidi = true;
+        }
+
+        if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+            if (extPlugin->isInitialisingAsync()) {
+                juce::ScopedLock lock(pluginLock_);
+                syncedDevices_[device.id].isPendingLoad = true;
+                if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(postPath))
+                    devInfo->loadState = DeviceLoadState::Loading;
                 TrackManager::getInstance().notifyTrackDevicesChanged(MASTER_TRACK_ID);
                 pollAsyncPluginLoad(MASTER_TRACK_ID, device.id, plugin);
             }

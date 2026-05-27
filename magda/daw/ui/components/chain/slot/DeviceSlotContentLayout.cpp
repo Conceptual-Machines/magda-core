@@ -37,6 +37,15 @@ void layoutPluginPresetButton(juce::Rectangle<int> secondHeaderArea, const Devic
 
 void layoutMeterStrip(juce::Rectangle<int>& contentArea, const DeviceSlotTraits& traits,
                       DeviceSlotContentFrameControls controls, int meterStripWidth) {
+    // Width 0 = no meter strip (e.g. post-FX analysis devices): reserve nothing
+    // so the body uses the full width.
+    if (meterStripWidth <= 0) {
+        setVisibleIfPresent(controls.levelMeter, false);
+        setVisibleIfPresent(controls.midiNoteStrip, false);
+        setVisibleIfPresent(controls.gainSlider, false);
+        return;
+    }
+
     auto stripBounds = contentArea.removeFromRight(meterStripWidth).reduced(1, 3);
     contentArea.removeFromRight(4);
 
@@ -51,9 +60,15 @@ void layoutMeterStrip(juce::Rectangle<int>& contentArea, const DeviceSlotTraits&
     }
 
     if (controls.gainSlider != nullptr) {
-        controls.gainSlider->setBounds(stripBounds);
-        controls.gainSlider->setVisible(true);
-        controls.gainSlider->toFront(false);
+        // Analysis devices (oscilloscope / spectrum) are transparent passthroughs:
+        // no volume control. The level meter still shows.
+        if (traits.isAnalysis) {
+            controls.gainSlider->setVisible(false);
+        } else {
+            controls.gainSlider->setBounds(stripBounds);
+            controls.gainSlider->setVisible(true);
+            controls.gainSlider->toFront(false);
+        }
     }
 }
 
@@ -74,9 +89,9 @@ void showExpandedHeaderControls(const DeviceSlotTraits& traits, const magda::Dev
     setVisibleIfPresent(controls.macroButton, drum_grid_slot::shouldShowMacroButton(
                                                   traits.isDrumGrid, device.deviceType,
                                                   traits.isArpeggiator, traits.isStepSequencer));
-    setVisibleIfPresent(controls.uiButton, !internalDevice);
+    setVisibleIfPresent(controls.uiButton, !internalDevice || traits.isAnalysis);
     setVisibleIfPresent(controls.powerButton, true);
-    setVisibleIfPresent(controls.gainLabel, !isMidiUtility(traits));
+    setVisibleIfPresent(controls.gainLabel, !isMidiUtility(traits) && !traits.isAnalysis);
 }
 
 void layoutParamGrid(ParamHostComponent* paramGrid, juce::Rectangle<int> area) {
@@ -109,9 +124,9 @@ bool prepareDeviceSlotContentFrame(juce::Rectangle<int>& contentArea,
                                    bool collapsed, bool internalDevice, bool pluginPresetsAvailable,
                                    DeviceSlotContentFrameControls controls, int meterStripWidth,
                                    int contentHeaderHeight) {
-    const bool skipContentHeader =
-        traits.isFaust || (traits.compiledPresentation != nullptr &&
-                           traits.compiledPresentation->layoutCellCount == 0);
+    const bool skipContentHeader = traits.isAnalysis || traits.isFaust ||
+                                   (traits.compiledPresentation != nullptr &&
+                                    traits.compiledPresentation->layoutCellCount == 0);
 
     if (!collapsed) {
         if (!skipContentHeader) {

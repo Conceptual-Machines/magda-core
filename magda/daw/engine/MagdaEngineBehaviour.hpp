@@ -9,7 +9,9 @@
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
 #include "../audio/plugins/MidiChordEnginePlugin.hpp"
 #include "../audio/plugins/MidiReceivePlugin.hpp"
+#include "../audio/plugins/OscilloscopePlugin.hpp"
 #include "../audio/plugins/SidechainMonitorPlugin.hpp"
+#include "../audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../audio/session/SessionMonitorPlugin.hpp"
@@ -114,6 +116,12 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         }
         if (type == daw::audio::StepSequencerPlugin::xmlTypeName) {
             return new daw::audio::StepSequencerPlugin(info);
+        }
+        if (type == daw::audio::OscilloscopePlugin::xmlTypeName) {
+            return new daw::audio::OscilloscopePlugin(info);
+        }
+        if (type == daw::audio::SpectrumAnalyzerPlugin::xmlTypeName) {
+            return new daw::audio::SpectrumAnalyzerPlugin(info);
         }
         if (type == daw::audio::InstrumentMeterTapPlugin::xmlTypeName) {
             return new daw::audio::InstrumentMeterTapPlugin(info);

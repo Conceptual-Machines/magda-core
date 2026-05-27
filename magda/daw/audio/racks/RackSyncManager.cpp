@@ -654,7 +654,7 @@ void RackSyncManager::resyncAllModifiers(TrackId trackId) {
         for (const auto& track : tm.getTracks()) {
             if (track.id != trackId)
                 continue;
-            for (const auto& element : track.chainElements) {
+            for (const auto& element : track.chain.fxChainElements) {
                 if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
                     if (!*rackPtr || (*rackPtr)->id != rackId)
                         continue;
@@ -693,7 +693,7 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
         for (const auto& track : tm.getTracks()) {
             if (track.id != trackId)
                 continue;
-            for (const auto& element : track.chainElements) {
+            for (const auto& element : track.chain.fxChainElements) {
                 if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
                     if (!*rackPtr || (*rackPtr)->id != rackId)
                         continue;
@@ -1344,7 +1344,7 @@ bool RackSyncManager::needsModifierResync(TrackId trackId) const {
     if (!trackInfo)
         return false;
 
-    for (const auto& element : trackInfo->chainElements) {
+    for (const auto& element : trackInfo->chain.fxChainElements) {
         if (!isRack(element))
             continue;
 

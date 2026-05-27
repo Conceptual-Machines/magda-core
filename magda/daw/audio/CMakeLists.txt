@@ -340,6 +340,8 @@ target_sources(magda_daw PRIVATE
     plugins/MidiChordEnginePlugin.cpp
     plugins/ArpeggiatorPlugin.cpp
     plugins/InstrumentMeterTapPlugin.cpp
+    plugins/OscilloscopePlugin.cpp
+    plugins/SpectrumAnalyzerPlugin.cpp
     plugins/MidiDevicePlugin.cpp
     plugins/FaustPlugin.cpp
     plugins/FaustMetadataParser.cpp
@@ -387,6 +389,10 @@ target_sources(magda_daw PRIVATE
     plugins/MidiChordEnginePlugin.hpp
     plugins/ArpeggiatorPlugin.hpp
     plugins/InstrumentMeterTapPlugin.hpp
+    plugins/AnalysisTapPlugin.hpp
+    plugins/OscilloscopePlugin.hpp
+    plugins/SpectrumAnalyzerPlugin.hpp
+    analysis/AudioTapBuffer.hpp
     plugins/MidiDevicePlugin.hpp
     plugins/FaustPlugin.hpp
     plugins/FaustCustomViewKind.hpp
