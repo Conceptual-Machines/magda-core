@@ -864,6 +864,24 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(*presetButton_);
 
+    // Gain-staging pass toggle. Steps the GainStagingManager through
+    // start (collect) -> stop (compute + apply) -> clear for the selected
+    // track. Active tint follows the mode: red while collecting, amber once
+    // staged. The icon recolors via SvgButton's black-replacement path
+    // (the SVG uses currentColor).
+    gainStagingButton_ = std::make_unique<magda::SvgButton>(
+        "GainStaging", BinaryData::gainstaging_svg, BinaryData::gainstaging_svgSize);
+    gainStagingButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    gainStagingButton_->setHoverColor(DarkTheme::getTextColour());
+    gainStagingButton_->setActiveColor(juce::Colours::white.darker(0.18f));
+    gainStagingButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    gainStagingButton_->onClick = [this]() {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::GainStagingManager::getInstance().toggle(selectedTrackId_);
+    };
+    addChildComponent(*gainStagingButton_);
+    refreshGainStagingButton();
+
     // Analysis-device toggles — one-click add/remove of an Oscilloscope or
     // Spectrum in this track's post-fx. Lit while the device is present; the
     // model keeps them unique per kind, so this is a clean on/off.
@@ -1053,6 +1071,16 @@ TrackChainContent::TrackChainContent()
     linkModeLabel_.setVisible(false);
     addChildComponent(linkModeLabel_);
 
+    // Gain-staging mode indicator label (centered, big text), parallel to the
+    // link-mode label.
+    gainStagingLabel_.setText("GAIN STAGING", juce::dontSendNotification);
+    gainStagingLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    gainStagingLabel_.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::STATUS_DANGER));
+    gainStagingLabel_.setJustificationType(juce::Justification::centred);
+    gainStagingLabel_.setVisible(false);
+    addChildComponent(gainStagingLabel_);
+
     // Initialize global mods/macros panels
     initGlobalModsPanel();
     initGlobalMacrosPanel();
@@ -1061,6 +1089,7 @@ TrackChainContent::TrackChainContent()
     magda::TrackManager::getInstance().addListener(this);
     magda::SelectionManager::getInstance().addListener(this);
     magda::LinkModeManager::getInstance().addListener(this);
+    magda::GainStagingManager::getInstance().addListener(this);
 
     // Check if there's already a selected track
     selectedTrackId_ = magda::TrackManager::getInstance().getSelectedTrack();
@@ -1072,6 +1101,7 @@ TrackChainContent::~TrackChainContent() {
     magda::TrackManager::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
     magda::LinkModeManager::getInstance().removeListener(this);
+    magda::GainStagingManager::getInstance().removeListener(this);
 }
 
 // ==============================================================================
@@ -1967,6 +1997,52 @@ void TrackChainContent::macroLinkModeChanged(bool active,
     resized();
 }
 
+void TrackChainContent::gainStagingModeChanged(magda::GainStagingMode /*mode*/,
+                                               magda::TrackId /*trackId*/) {
+    refreshGainStagingButton();
+    resized();
+}
+
+void TrackChainContent::refreshGainStagingButton() {
+    if (!gainStagingButton_)
+        return;
+
+    auto& gs = magda::GainStagingManager::getInstance();
+    const auto mode = gs.getMode();
+    // Only treat the button as engaged when the active pass is on the track
+    // currently shown in this header.
+    const bool onThisTrack = gs.getActiveTrack() == selectedTrackId_;
+    const bool collecting = mode == magda::GainStagingMode::Collecting && onThisTrack;
+    const bool staged = mode == magda::GainStagingMode::Staged && onThisTrack;
+
+    if (collecting) {
+        const auto red = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
+        gainStagingButton_->setActiveBackgroundColor(red.withAlpha(0.20f));
+        gainStagingButton_->setActiveBorderColor(red);
+        gainStagingButton_->setTooltip("Gain staging: stop and apply");
+    } else if (staged) {
+        const auto amber = DarkTheme::getColour(DarkTheme::STATUS_WARNING);
+        gainStagingButton_->setActiveBackgroundColor(amber.withAlpha(0.20f));
+        gainStagingButton_->setActiveBorderColor(amber);
+        gainStagingButton_->setTooltip("Gain staging: clear");
+    } else {
+        gainStagingButton_->setTooltip("Gain staging: capture levels, then auto-set device gains");
+    }
+
+    gainStagingButton_->setActive(collecting || staged);
+
+    // Centered banner mirrors the link-mode label; red while collecting,
+    // amber once staged.
+    gainStagingLabel_.setVisible(collecting || staged);
+    if (collecting || staged) {
+        gainStagingLabel_.setText(collecting ? "GAIN STAGING" : "GAIN STAGED",
+                                  juce::dontSendNotification);
+        gainStagingLabel_.setColour(juce::Label::textColourId,
+                                    DarkTheme::getColour(collecting ? DarkTheme::STATUS_DANGER
+                                                                    : DarkTheme::STATUS_WARNING));
+    }
+}
+
 void TrackChainContent::updateFromSelectedTrack() {
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
         hideHeaderControls();
@@ -2023,10 +2099,12 @@ void TrackChainContent::updateFromSelectedTrack() {
             addRackButton_->setVisible(true);
             treeViewButton_->setVisible(true);
             presetButton_->setVisible(true);
+            gainStagingButton_->setVisible(true);
             postFxPanelButton_->setVisible(true);
             oscToggleButton_->setVisible(true);
             specToggleButton_->setVisible(true);
             refreshAnalysisToggles();
+            refreshGainStagingButton();
             trackNameLabel_.setVisible(true);
             muteButton_.setVisible(true);
             soloButton_.setVisible(true);
@@ -2089,6 +2167,7 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(addRackButton_.get());
     headerBar.addAndMakeVisible(treeViewButton_.get());
     headerBar.addAndMakeVisible(presetButton_.get());
+    headerBar.addAndMakeVisible(gainStagingButton_.get());
     headerBar.addAndMakeVisible(postFxPanelButton_.get());
     headerBar.addAndMakeVisible(oscToggleButton_.get());
     headerBar.addAndMakeVisible(specToggleButton_.get());
@@ -2100,6 +2179,7 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(panLabel_);
     headerBar.addAndMakeVisible(chainBypassButton_.get());
     headerBar.addChildComponent(linkModeLabel_);
+    headerBar.addChildComponent(gainStagingLabel_);
 
     // If no track selected, hide controls
     if (selectedTrackId_ == magda::INVALID_TRACK_ID)
@@ -2113,6 +2193,7 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(addRackButton_.get());
     addChildComponent(treeViewButton_.get());
     addChildComponent(presetButton_.get());
+    addChildComponent(gainStagingButton_.get());
     addChildComponent(postFxPanelButton_.get());
     addChildComponent(oscToggleButton_.get());
     addChildComponent(specToggleButton_.get());
@@ -2123,6 +2204,7 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(&panLabel_);
     addChildComponent(chainBypassButton_.get());
     addChildComponent(&linkModeLabel_);
+    addChildComponent(&gainStagingLabel_);
 }
 
 void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
@@ -2143,6 +2225,8 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
     // Track-chain presets button — sits on the LEFT of the header (devices
     // and racks have theirs on the right inside their own node header).
     presetButton_->setBounds(headerArea.removeFromLeft(20));
+    headerArea.removeFromLeft(8);
+    gainStagingButton_->setBounds(headerArea.removeFromLeft(20));
 
     // RIGHT SIDE - Track info (from right to left)
     const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
@@ -2194,6 +2278,10 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
     if (linkModeLabel_.isVisible()) {
         linkModeLabel_.setBounds(headerBounds);
     }
+    // Gain-staging banner - centered, same treatment as the link-mode label.
+    if (gainStagingLabel_.isVisible()) {
+        gainStagingLabel_.setBounds(headerBounds);
+    }
 }
 
 void TrackChainContent::hideHeaderControls() {
@@ -2203,6 +2291,8 @@ void TrackChainContent::hideHeaderControls() {
     addRackButton_->setVisible(false);
     treeViewButton_->setVisible(false);
     presetButton_->setVisible(false);
+    gainStagingButton_->setVisible(false);
+    gainStagingLabel_.setVisible(false);
     postFxPanelButton_->setVisible(false);
     oscToggleButton_->setVisible(false);
     specToggleButton_->setVisible(false);

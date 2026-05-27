@@ -6,6 +6,7 @@
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/DeviceInfo.hpp"
+#include "core/GainStagingManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
@@ -46,7 +47,8 @@ class FaustUI;
 class DeviceSlotComponent : public NodeComponent,
                             public juce::Timer,
                             public magda::TrackManagerListener,
-                            public magda::AutomationManagerListener {
+                            public magda::AutomationManagerListener,
+                            public magda::GainStagingListener {
   public:
     static constexpr int BASE_SLOT_WIDTH = 450;  // Maximum width (8 columns)
     static constexpr int NUM_PARAMS_PER_PAGE = 32;
@@ -89,8 +91,10 @@ class DeviceSlotComponent : public NodeComponent,
 
   protected:
     void paint(juce::Graphics& g) override;
-    // No paintOverChildren override — base class handles dim, selection, and
-    // controller-indicator dots uniformly across device + rack nodes.
+    // Base class handles dim, selection, and controller-indicator dots; we
+    // extend it to draw the gain-staging overlay (state border + delta badge)
+    // on top of the slot's children.
+    void paintOverChildren(juce::Graphics& g) override;
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
 
     // Drum Grid clears the standard nameLabel_ and paints its custom
@@ -199,6 +203,11 @@ class DeviceSlotComponent : public NodeComponent,
     // device; track-level lanes are handled by TrackHeadersPanel.
     void automationLanesChanged() override {}
     void automationValueChanged(magda::AutomationLaneId laneId, double normalizedValue) override;
+
+    // GainStagingListener — repaint our slot's staging overlay when this
+    // device's staging state changes.
+    void deviceGainStageChanged(magda::DeviceId deviceId,
+                                const magda::DeviceGainStageInfo& info) override;
 
   private:
     magda::DeviceInfo device_;

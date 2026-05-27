@@ -47,12 +47,22 @@ class GainSliderWithMeterTooltip : public juce::Slider {
         const float peakDb = meter_.getPeakDb();
         const juce::String peakStr =
             peakDb <= -59.5f ? juce::String("-inf") : juce::String::formatted("%+.1f", peakDb);
-        return juce::String::formatted("Gain: %+.1f dB    Peak: ", gainDb) + peakStr +
-               juce::String(" dB");
+        juce::String tip = juce::String::formatted("Gain: %+.1f dB    Peak: ", gainDb) + peakStr +
+                           juce::String(" dB");
+        if (stagingInfo_.isNotEmpty())
+            tip += "\n" + stagingInfo_;
+        return tip;
+    }
+
+    // Extra tooltip line describing the most recent gain-staging move on this
+    // device. Set by DeviceSlotComponent; empty when not in a staging pass.
+    void setStagingInfo(juce::String info) {
+        stagingInfo_ = std::move(info);
     }
 
   private:
     const magda::LevelMeter& meter_;
+    juce::String stagingInfo_;
 };
 
 // Unified visual recipe for all node-header SvgButtons. Pass the accent
