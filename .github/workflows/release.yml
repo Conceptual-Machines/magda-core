@@ -224,6 +224,26 @@ jobs:
         echo "Stapling notarization ticket..."
         xcrun stapler staple "$DMG_NAME"
 
+    - name: Create MuseHub app bundle (arm64)
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        # MuseHub rejects DMGs; it wants a notarized .app zipped with symlinks
+        # preserved (their "zip -y"). The DMG notarization above registered this
+        # app's code hash with Apple, so we can staple the ticket straight into
+        # the .app, then ditto-zip it (ditto preserves the framework symlinks a
+        # plain zip would flatten). Stays a CI artifact, not a public release asset.
+        APP_PATH="build/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
+        ZIP_NAME="MAGDA-${VERSION}-macOS-arm64.app.zip"
+
+        xcrun stapler staple "$APP_PATH"
+        xcrun stapler validate "$APP_PATH"
+
+        ditto -c -k --keepParent "$APP_PATH" "$ZIP_NAME"
+        shasum -a 256 "$ZIP_NAME" > "${ZIP_NAME}.sha256"
+        echo "MuseHub bundle created: $ZIP_NAME"
+        ls -lh "$ZIP_NAME"
+
     - name: Generate checksum
       env:
         VERSION: ${{ steps.version.outputs.version }}
@@ -239,6 +259,8 @@ jobs:
         path: |
           MAGDA-*-macOS-arm64.dmg
           MAGDA-*-macOS-arm64.dmg.sha256
+          MAGDA-*-macOS-arm64.app.zip
+          MAGDA-*-macOS-arm64.app.zip.sha256
 
     - name: Clean up
       if: always()
@@ -449,6 +471,26 @@ jobs:
         echo "Stapling notarization ticket..."
         xcrun stapler staple "$DMG_NAME"
 
+    - name: Create MuseHub app bundle (x86_64)
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        # MuseHub rejects DMGs; it wants a notarized .app zipped with symlinks
+        # preserved (their "zip -y"). The DMG notarization above registered this
+        # app's code hash with Apple, so we can staple the ticket straight into
+        # the .app, then ditto-zip it (ditto preserves the framework symlinks a
+        # plain zip would flatten). Stays a CI artifact, not a public release asset.
+        APP_PATH="build/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
+        ZIP_NAME="MAGDA-${VERSION}-macOS-x86_64.app.zip"
+
+        xcrun stapler staple "$APP_PATH"
+        xcrun stapler validate "$APP_PATH"
+
+        ditto -c -k --keepParent "$APP_PATH" "$ZIP_NAME"
+        shasum -a 256 "$ZIP_NAME" > "${ZIP_NAME}.sha256"
+        echo "MuseHub bundle created: $ZIP_NAME"
+        ls -lh "$ZIP_NAME"
+
     - name: Generate checksum
       env:
         VERSION: ${{ steps.version.outputs.version }}
@@ -464,6 +506,8 @@ jobs:
         path: |
           MAGDA-*-macOS-x86_64.dmg
           MAGDA-*-macOS-x86_64.dmg.sha256
+          MAGDA-*-macOS-x86_64.app.zip
+          MAGDA-*-macOS-x86_64.app.zip.sha256
 
     - name: Clean up
       if: always()
@@ -1003,6 +1047,10 @@ jobs:
           MAGDA-*-Linux-x86_64.AppImage.sha256
 
   create-release:
+    # Publish a GitHub Release only for tag pushes. A workflow_dispatch run is
+    # for regenerating build artifacts (e.g. the MuseHub .app.zip for an already
+    # released version) and must never mutate a published release.
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: [build-macos, build-macos-x86_64, build-windows, build-linux]
     runs-on: ubuntu-latest
     permissions:
@@ -1051,8 +1099,10 @@ jobs:
         generate_release_notes: true
         fail_on_unmatched_files: true
         files: |
-          macos-release/*
-          macos-x86_64-release/*
+          macos-release/MAGDA-*-macOS-arm64.dmg
+          macos-release/MAGDA-*-macOS-arm64.dmg.sha256
+          macos-x86_64-release/MAGDA-*-macOS-x86_64.dmg
+          macos-x86_64-release/MAGDA-*-macOS-x86_64.dmg.sha256
           windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe
           windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe.sha256
           windows-x86_64-release/MAGDA-*-Windows-x86_64.pdb
