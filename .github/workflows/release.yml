@@ -252,9 +252,10 @@ jobs:
 
   build-macos-x86_64:
     # Intel Mac build (MAGDA_HAVE_CLAP=OFF, no semantic search).
-    # macos-13 is the last x86_64 runner GitHub offers — when it goes away we
-    # will need a self-hosted runner or to drop this build.
-    runs-on: macos-13
+    # macos-15-intel is the last x86_64 runner GitHub offers (available until
+    # Aug 2027). macos-13 was retired in Dec 2025. After macos-15-intel goes
+    # away we will need a self-hosted runner or to drop this build.
+    runs-on: macos-15-intel
     steps:
     - uses: actions/checkout@v4
       with:
