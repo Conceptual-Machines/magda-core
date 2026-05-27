@@ -1101,6 +1101,9 @@ TrackChainContent::TrackChainContent()
                                 DarkTheme::getColour(DarkTheme::STATUS_DANGER));
     gainStagingLabel_.setJustificationType(juce::Justification::centred);
     gainStagingLabel_.setMinimumHorizontalScale(0.5f);  // let the AI summary shrink to fit
+    // The banner spans the whole header bar; it must NOT eat clicks meant for
+    // the gain-staging button underneath (otherwise you can't stop a pass).
+    gainStagingLabel_.setInterceptsMouseClicks(false, false);
     gainStagingLabel_.setVisible(false);
     addChildComponent(gainStagingLabel_);
 
