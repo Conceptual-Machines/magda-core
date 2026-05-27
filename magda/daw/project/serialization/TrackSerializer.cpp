@@ -78,10 +78,17 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
 
     // Chain elements
     juce::Array<juce::var> chainArray;
-    for (const auto& element : track.chainElements) {
+    for (const auto& element : track.chain.fxChainElements) {
         chainArray.add(serializeChainElement(element));
     }
     obj->setProperty("chainElements", juce::var(chainArray));
+
+    // Post-fader FX chain elements
+    juce::Array<juce::var> postFxArray;
+    for (const auto& element : track.chain.postFxChainElements) {
+        postFxArray.add(serializeDeviceInfo(element.device));
+    }
+    obj->setProperty("postFxChainElements", juce::var(postFxArray));
 
     // Track-level mods and macros
     juce::Array<juce::var> trackModsArray;
@@ -222,7 +229,20 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
             if (!deserializeChainElement(elementVar, element)) {
                 return false;
             }
-            outTrack.chainElements.push_back(std::move(element));
+            outTrack.chain.fxChainElements.push_back(std::move(element));
+        }
+    }
+
+    // Post-fader FX chain elements (backward compatible — absent in older projects)
+    auto postFxVar = obj->getProperty("postFxChainElements");
+    if (postFxVar.isArray()) {
+        auto* arr = postFxVar.getArray();
+        for (const auto& elementVar : *arr) {
+            DeviceInfo device;
+            if (!deserializeDeviceInfo(elementVar, device)) {
+                return false;
+            }
+            outTrack.chain.postFxChainElements.push_back(PostFxChainElement{std::move(device)});
         }
     }
 

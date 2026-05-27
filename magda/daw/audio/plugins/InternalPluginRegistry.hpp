@@ -36,6 +36,8 @@ struct InternalPluginSpec {
     int loadAliasCount = 0;
     bool (*matchesPlugin)(te::Plugin*) = nullptr;
     std::unique_ptr<DeviceProcessor> (*createProcessor)(DeviceId, te::Plugin::Ptr) = nullptr;
+    bool showInBrowser = false;  // listed in the plugin browser (single source of truth)
+    bool isInstrument = false;   // browser hint: synth/sampler vs effect
 };
 
 std::span<const InternalPluginSpec* const> getAllInternalPluginSpecs();

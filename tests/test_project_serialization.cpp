@@ -1077,9 +1077,9 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         REQUIRE(tracks[0].type == TrackType::Audio);
 
         // Verify the device was restored
-        REQUIRE(tracks[0].chainElements.size() == 1);
-        REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
-        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chain.fxChainElements[0]) == true);
+        const auto& restoredDevice = getDevice(tracks[0].chain.fxChainElements[0]);
         REQUIRE(restoredDevice.name == "Test Synth");
         REQUIRE(restoredDevice.isInstrument == true);
 
@@ -1124,9 +1124,9 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         REQUIRE(tracks.size() == 1);
 
         // Verify the rack was restored
-        REQUIRE(tracks[0].chainElements.size() == 1);
-        REQUIRE(isRack(tracks[0].chainElements[0]) == true);
-        const auto& restoredRack = getRack(tracks[0].chainElements[0]);
+        REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
+        REQUIRE(isRack(tracks[0].chain.fxChainElements[0]) == true);
+        const auto& restoredRack = getRack(tracks[0].chain.fxChainElements[0]);
         REQUIRE(restoredRack.name == "Test Rack");
 
         // Cleanup
@@ -1215,10 +1215,10 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
 
         const auto& tracks = trackManager.getTracks();
         REQUIRE(tracks.size() == 1);
-        REQUIRE(tracks[0].chainElements.size() == 1);
-        REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
+        REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chain.fxChainElements[0]) == true);
 
-        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        const auto& restoredDevice = getDevice(tracks[0].chain.fxChainElements[0]);
         REQUIRE(restoredDevice.pluginState == juce::String("SGVsbG8gV29ybGQ="));
     }
 
@@ -1245,9 +1245,9 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
 
         const auto& tracks = trackManager.getTracks();
         REQUIRE(tracks.size() == 1);
-        REQUIRE(tracks[0].chainElements.size() == 1);
-        REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
-        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chain.fxChainElements[0]) == true);
+        const auto& restoredDevice = getDevice(tracks[0].chain.fxChainElements[0]);
         REQUIRE(restoredDevice.pluginState.isEmpty());
     }
 }
@@ -1315,9 +1315,9 @@ TEST_CASE("DeviceInfo panel UI state roundtrip", "[project][serialization][devic
     REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
     auto* loadedTrack = trackManager.getTrack(trackId);
     REQUIRE(loadedTrack != nullptr);
-    REQUIRE(loadedTrack->chainElements.size() == 1);
-    REQUIRE(isDevice(loadedTrack->chainElements[0]));
-    const auto& loaded = getDevice(loadedTrack->chainElements[0]);
+    REQUIRE(loadedTrack->chain.fxChainElements.size() == 1);
+    REQUIRE(isDevice(loadedTrack->chain.fxChainElements[0]));
+    const auto& loaded = getDevice(loadedTrack->chain.fxChainElements[0]);
     REQUIRE(loaded.modPanelOpen);
     REQUIRE(loaded.gainPanelOpen);
     REQUIRE(loaded.paramPanelOpen);
@@ -1399,9 +1399,9 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
     auto* loadedTrack = trackManager.getTrack(trackId);
     REQUIRE(loadedTrack != nullptr);
-    REQUIRE(loadedTrack->chainElements.size() == 1);
-    REQUIRE(isDevice(loadedTrack->chainElements[0]));
-    const auto& loadedDevice = getDevice(loadedTrack->chainElements[0]);
+    REQUIRE(loadedTrack->chain.fxChainElements.size() == 1);
+    REQUIRE(isDevice(loadedTrack->chain.fxChainElements[0]));
+    const auto& loadedDevice = getDevice(loadedTrack->chain.fxChainElements[0]);
     REQUIRE(loadedDevice.parameters.size() == 1);
     const auto& loaded = loadedDevice.parameters[0];
     REQUIRE(loaded.paramIndex == 12);

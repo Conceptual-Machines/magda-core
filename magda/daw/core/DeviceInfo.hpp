@@ -18,10 +18,12 @@ enum class PluginFormat { VST3, AU, VST, Internal };
 /**
  * @brief Device type classification
  *
- * Instruments generate audio/MIDI, effects process audio,
- * and MIDI devices process or analyse MIDI without audio I/O.
+ * Instruments generate audio/MIDI, effects process audio, MIDI devices process
+ * or analyse MIDI without audio I/O, and Analysis devices are transparent
+ * passthroughs (oscilloscope, spectrum) that visualise the signal and expose
+ * no macros or mods.
  */
-enum class DeviceType { Instrument, Effect, MIDI };
+enum class DeviceType { Instrument, Effect, MIDI, Analysis };
 
 /**
  * @brief Describes a single stereo output pair from a multi-output plugin

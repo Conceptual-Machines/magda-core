@@ -21,6 +21,7 @@
 
 namespace magda::daw::ui {
 
+class AnalyzerWindow;
 class FaustCustomView;
 class FaustUI;
 
@@ -100,10 +101,10 @@ class DeviceSlotComponent : public NodeComponent,
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
     juce::Component* getHeaderPresetButton() override {
-        return presetButton_.get();
+        return stripsAnalysisChrome() ? nullptr : presetButton_.get();
     }
     juce::Component* getHeaderPowerButton() override {
-        return onButton_.get();
+        return stripsAnalysisChrome() ? nullptr : onButton_.get();
     }
     void mouseDrag(const juce::MouseEvent& e) override;
     void resizedCollapsed(juce::Rectangle<int>& area) override;
@@ -231,6 +232,8 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<FaustCustomView> faustCustomView_;
     std::unique_ptr<CompiledDevicePanel> compiledPanel_;
+    std::unique_ptr<AnalyzerWindow> analyzerWindow_;  // popped-out oscilloscope/spectrum
+    void toggleAnalyzerWindow();                      // open / hide the analyzer popout
 
     static constexpr int METER_STRIP_WIDTH = 18;  // wide enough for slider thumb overlay
     magda::LevelMeter levelMeter_;
@@ -293,6 +296,10 @@ class DeviceSlotComponent : public NodeComponent,
     bool isInternalDevice() const {
         return device_.format == magda::PluginFormat::Internal;
     }
+
+    // An analysis device sitting in post-FX: the header toggle owns add/remove
+    // and bypass/presets are meaningless, so its slot drops power/preset/delete.
+    bool stripsAnalysisChrome() const;
 
     // Helper to create custom UI for internal devices
     void createCustomUI();

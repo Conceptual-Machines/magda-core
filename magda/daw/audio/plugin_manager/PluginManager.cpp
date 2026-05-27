@@ -29,6 +29,22 @@ namespace magda {
 
 namespace {
 
+// Find the DeviceInfo for a synced device id across every track and chain
+// segment. Plain getDevice() only sees top-level fx devices on regular tracks:
+// the master track lives outside getTracks(), and post-fx devices live in the
+// flat post-fx list (reached via a postFxDevice path), so both are missed.
+DeviceInfo* findCapturableDeviceInfo(TrackManager& tm, DeviceId id) {
+    auto onTrack = [&](TrackId t) -> DeviceInfo* {
+        if (auto* d = tm.getDevice(t, id))
+            return d;
+        return tm.getDeviceInChainByPath(ChainNodePath::postFxDevice(t, id));
+    };
+    for (auto& track : tm.getTracks())
+        if (auto* d = onTrack(track.id))
+            return d;
+    return onTrack(MASTER_TRACK_ID);
+}
+
 // Resolve the TE param for a macro/mod link whose target is another modifier
 // on the same scope (device or track). modParamIndex 0 == Rate; we pick the
 // LFO's `rate` param when tempoSync is off and `rateType` when it's on, so
@@ -354,19 +370,17 @@ void PluginManager::captureAllPluginStates() {
             if (hasProcessor)
                 sd.processor->populateParameters(liveSnapshot);
 
-            // Always overwrite pluginState (even if empty) to avoid stale state
+            // Always overwrite pluginState (even if empty) to avoid stale state.
+            // Searches regular tracks + master, fx + post-fx (see helper).
             auto& trackManager = TrackManager::getInstance();
-            for (auto& track : trackManager.getTracks()) {
-                if (auto* devInfo = trackManager.getDevice(track.id, deviceId)) {
-                    devInfo->pluginState = stateStr;
-                    if (hasProcessor)
-                        devInfo->parameters = liveSnapshot.parameters;
-                    ++capturedTopLevel;
-                    DBG("[ChainMove] captureAll top-level device id="
-                        << deviceId << " name='" << devInfo->name << "' stateLen="
-                        << stateStr.length() << " params=" << devInfo->parameters.size());
-                    break;
-                }
+            if (auto* devInfo = findCapturableDeviceInfo(trackManager, deviceId)) {
+                devInfo->pluginState = stateStr;
+                if (hasProcessor)
+                    devInfo->parameters = liveSnapshot.parameters;
+                ++capturedTopLevel;
+                DBG("[ChainMove] captureAll top-level device id="
+                    << deviceId << " name='" << devInfo->name << "' stateLen=" << stateStr.length()
+                    << " params=" << devInfo->parameters.size());
             }
         }
     }
@@ -402,25 +416,19 @@ void PluginManager::capturePluginState(DeviceId deviceId) {
         DBG("capturePluginState: internal plugin, state length=" << stateStr.length());
     }
 
-    bool found = false;
     auto& trackManager = TrackManager::getInstance();
-    for (auto& track : trackManager.getTracks()) {
-        if (auto* devInfo = trackManager.getDevice(track.id, deviceId)) {
-            devInfo->pluginState = stateStr;
-            DeviceInfo liveSnapshot;
-            if (it->second.processor) {
-                it->second.processor->populateParameters(liveSnapshot);
-                devInfo->parameters = liveSnapshot.parameters;
-            }
-            DBG("[ChainMove] captureOne device id=" << deviceId << " name='" << devInfo->name
-                                                    << "' stateLen=" << stateStr.length()
-                                                    << " params=" << devInfo->parameters.size());
-            found = true;
-            DBG("capturePluginState: saved to DeviceInfo on track " << track.id);
-            break;
+    if (auto* devInfo = findCapturableDeviceInfo(trackManager, deviceId)) {
+        devInfo->pluginState = stateStr;
+        DeviceInfo liveSnapshot;
+        if (it->second.processor) {
+            it->second.processor->populateParameters(liveSnapshot);
+            devInfo->parameters = liveSnapshot.parameters;
         }
-    }
-    if (!found) {
+        DBG("[ChainMove] captureOne device id=" << deviceId << " name='" << devInfo->name
+                                                << "' stateLen=" << stateStr.length()
+                                                << " params=" << devInfo->parameters.size());
+        DBG("capturePluginState: saved to DeviceInfo");
+    } else {
         DBG("capturePluginState: WARNING - device " << deviceId << " not found in any track");
     }
 }
@@ -489,7 +497,10 @@ void PluginManager::detachRackRuntimeForChainMove(RackId rackId) {
 }
 
 void PluginManager::restorePluginState(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin) {
-    auto* devInfo = TrackManager::getInstance().getDevice(trackId, deviceId);
+    auto& tm = TrackManager::getInstance();
+    auto* devInfo = tm.getDevice(trackId, deviceId);
+    if (!devInfo)  // post-fx devices aren't top-level fx; reach them by path
+        devInfo = tm.getDeviceInChainByPath(ChainNodePath::postFxDevice(trackId, deviceId));
     if (!devInfo || devInfo->pluginState.isEmpty()) {
         DBG("restorePluginState: no state to restore for device "
             << deviceId << " (devInfo=" << (devInfo ? "found" : "null") << ", state="
@@ -541,7 +552,7 @@ void PluginManager::purgeStaleEntries() {
                 }
             }
         };
-        collectIds(track.chainElements);
+        collectIds(track.chain.fxChainElements);
     }
 
     // Purge stale entries from maps
@@ -656,7 +667,7 @@ void PluginManager::validateMappingConsistency() {
         // the rack exists in TrackManager
         bool found = false;
         for (const auto& track : TrackManager::getInstance().getTracks()) {
-            for (const auto& element : track.chainElements) {
+            for (const auto& element : track.chain.fxChainElements) {
                 if (isRack(element) && getRack(element).id == rackId) {
                     found = true;
                     break;

@@ -50,7 +50,8 @@ magda::ChainNodePath resolveTargetDevicePath(const magda::ChainNodePath& parentP
     magda::ChainNodePath resolved;
     if (parentPath.isTrackLevel) {
         if (const auto* track = tm.getTrack(parentPath.trackId)) {
-            if (findDevicePathInElements(track->chainElements, parentPath, deviceId, resolved))
+            if (findDevicePathInElements(track->chain.fxChainElements, parentPath, deviceId,
+                                         resolved))
                 return resolved;
         }
     } else if (parentPath.getType() == magda::ChainNodeType::Rack) {

@@ -60,6 +60,12 @@ class SvgButton : public juce::Button {
         borderColor = color;
         hasBorder = true;
     }
+    // Border colour used while active/engaged (falls back to borderColor).
+    void setActiveBorderColor(juce::Colour color) {
+        activeBorderColor = color;
+        hasActiveBorderColor = true;
+        hasBorder = true;
+    }
     void setBorderThickness(float thickness) {
         borderThickness = thickness;
     }
@@ -97,6 +103,8 @@ class SvgButton : public juce::Button {
 
     // Border settings
     juce::Colour borderColor;
+    juce::Colour activeBorderColor;  // Border colour when active (if set)
+    bool hasActiveBorderColor = false;
     float borderThickness = 1.0f;
     float cornerRadius = 2.0f;
     bool hasBorder = false;

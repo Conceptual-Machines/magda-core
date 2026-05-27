@@ -17,6 +17,8 @@
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/OscilloscopePlugin.hpp"
+#include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
@@ -33,10 +35,12 @@
 #include "custom_ui/FilterUI.hpp"
 #include "custom_ui/FourOscUI.hpp"
 #include "custom_ui/ImpulseResponseUI.hpp"
+#include "custom_ui/OscilloscopeUI.hpp"
 #include "custom_ui/PhaserUI.hpp"
 #include "custom_ui/PitchShiftUI.hpp"
 #include "custom_ui/ReverbUI.hpp"
 #include "custom_ui/SamplerUI.hpp"
+#include "custom_ui/SpectrumAnalyzerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "custom_ui/ToneGeneratorUI.hpp"
 #include "drum_grid/DrumGridUI.hpp"
@@ -281,6 +285,10 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return arpeggiatorUI_.get();
     if (stepSequencerUI_)
         return stepSequencerUI_.get();
+    if (oscilloscopeUI_)
+        return oscilloscopeUI_.get();
+    if (spectrumAnalyzerUI_)
+        return spectrumAnalyzerUI_.get();
     return nullptr;
 }
 
@@ -319,7 +327,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 bool DeviceCustomUIManager::hasAnyUI() const {
     return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
            reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-           impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_;
+           impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ ||
+           oscilloscopeUI_ || spectrumAnalyzerUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -344,6 +353,10 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (impulseResponseUI_)
         return 350;
     if (stepSequencerUI_)
+        return 500;
+    if (oscilloscopeUI_)
+        return 500;
+    if (spectrumAnalyzerUI_)
         return 500;
     if (chordEngineUI_)
         return 800;  // 400 (BASE_SLOT_WIDTH) * 2
@@ -1308,6 +1321,29 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
                 if (auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get())) {
                     stepSequencerUI_->setPlugin(seq);
                     stepSeqPlugin_ = seq;
+                }
+            }
+        }
+    } else if (device.pluginId.containsIgnoreCase(daw::audio::OscilloscopePlugin::xmlTypeName)) {
+        oscilloscopeUI_ = std::make_unique<OscilloscopeUI>();
+        parent->addAndMakeVisible(*oscilloscopeUI_);
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device.id);
+                if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get())) {
+                    oscilloscopeUI_->setPlugin(scope);
+                }
+            }
+        }
+    } else if (device.pluginId.containsIgnoreCase(
+                   daw::audio::SpectrumAnalyzerPlugin::xmlTypeName)) {
+        spectrumAnalyzerUI_ = std::make_unique<SpectrumAnalyzerUI>();
+        parent->addAndMakeVisible(*spectrumAnalyzerUI_);
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device.id);
+                if (auto* sa = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
+                    spectrumAnalyzerUI_->setPlugin(sa);
                 }
             }
         }

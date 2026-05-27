@@ -300,12 +300,16 @@ bool paintContentHeader(juce::Graphics& g, bool isDrumGrid, bool bypassed,
 }
 
 bool shouldShowModButton(bool isDrumGrid, magda::DeviceType deviceType) {
-    return deviceType != magda::DeviceType::MIDI || isDrumGrid;
+    // Analysis devices (oscilloscope / spectrum) expose no mods.
+    return (deviceType != magda::DeviceType::MIDI && deviceType != magda::DeviceType::Analysis) ||
+           isDrumGrid;
 }
 
 bool shouldShowMacroButton(bool isDrumGrid, magda::DeviceType deviceType, bool isArpeggiator,
                            bool isStepSequencer) {
-    return deviceType != magda::DeviceType::MIDI || isArpeggiator || isStepSequencer || isDrumGrid;
+    // Analysis devices expose no macros.
+    return (deviceType != magda::DeviceType::MIDI && deviceType != magda::DeviceType::Analysis) ||
+           isArpeggiator || isStepSequencer || isDrumGrid;
 }
 
 bool shouldShowSidechainButton(bool isDrumGrid, bool canSidechain, bool canReceiveMidi) {

@@ -163,10 +163,10 @@ TEST_CASE("MAGDA track presets retarget top-level macro and mod links",
 
     auto* track = fixture.tm().getTrack(trackId);
     REQUIRE(track != nullptr);
-    REQUIRE(track->chainElements.size() == 1);
-    REQUIRE(isDevice(track->chainElements[0]));
+    REQUIRE(track->chain.fxChainElements.size() == 1);
+    REQUIRE(isDevice(track->chain.fxChainElements[0]));
 
-    auto& liveDevice = getDevice(track->chainElements[0]);
+    auto& liveDevice = getDevice(track->chain.fxChainElements[0]);
     auto expectedTarget = ChainNodePath::topLevelDevice(trackId, liveDevice.id);
 
     REQUIRE(liveDevice.macros.size() == 1);
@@ -246,11 +246,11 @@ TEST_CASE("MAGDA duplicate track retargets copied macro and mod links",
 
     auto* duplicateTrack = fixture.tm().getTrack(duplicateTrackId);
     REQUIRE(duplicateTrack != nullptr);
-    REQUIRE(duplicateTrack->chainElements.size() == 2);
-    REQUIRE(isDevice(duplicateTrack->chainElements[0]));
-    REQUIRE(isRack(duplicateTrack->chainElements[1]));
+    REQUIRE(duplicateTrack->chain.fxChainElements.size() == 2);
+    REQUIRE(isDevice(duplicateTrack->chain.fxChainElements[0]));
+    REQUIRE(isRack(duplicateTrack->chain.fxChainElements[1]));
 
-    auto& duplicateTopDevice = getDevice(duplicateTrack->chainElements[0]);
+    auto& duplicateTopDevice = getDevice(duplicateTrack->chain.fxChainElements[0]);
     auto duplicateTopPath = ChainNodePath::topLevelDevice(duplicateTrackId, duplicateTopDevice.id);
     REQUIRE(!duplicateTrack->macros.empty());
     REQUIRE(!duplicateTrack->mods.empty());
@@ -264,7 +264,7 @@ TEST_CASE("MAGDA duplicate track retargets copied macro and mod links",
     CHECK(duplicateTopDevice.macros[0].links[0].target.devicePath == duplicateTopPath);
     CHECK(duplicateTopDevice.macros[0].links[0].target.kind == ControlTarget::Kind::ModParam);
 
-    auto& duplicateRack = getRack(duplicateTrack->chainElements[1]);
+    auto& duplicateRack = getRack(duplicateTrack->chain.fxChainElements[1]);
     REQUIRE(duplicateRack.chains.size() == 1);
     REQUIRE(duplicateRack.chains[0].elements.size() == 1);
     REQUIRE(isDevice(duplicateRack.chains[0].elements[0]));
@@ -319,10 +319,10 @@ TEST_CASE("Rack audio sync: data model preparation", "[rack_audio][data_model]")
         // Verify the rack is in the track's chain elements
         auto* track = fixture.tm().getTrack(trackId);
         REQUIRE(track != nullptr);
-        REQUIRE(track->chainElements.size() == 1);
-        REQUIRE(isRack(track->chainElements[0]));
+        REQUIRE(track->chain.fxChainElements.size() == 1);
+        REQUIRE(isRack(track->chain.fxChainElements[0]));
 
-        const auto& rackElement = getRack(track->chainElements[0]);
+        const auto& rackElement = getRack(track->chain.fxChainElements[0]);
         REQUIRE(rackElement.id == rackId);
         REQUIRE(rackElement.chains[0].elements.size() == 2);
     }
@@ -513,8 +513,8 @@ TEST_CASE("Rack audio sync: recursive device search", "[rack_audio][recursive_se
         auto rackId = fixture.tm().addRackToTrack(trackId, "Test Rack");
 
         auto* track = fixture.tm().getTrack(trackId);
-        REQUIRE(track->chainElements.size() == 2);
-        REQUIRE(isDevice(track->chainElements[0]));
-        REQUIRE(isRack(track->chainElements[1]));
+        REQUIRE(track->chain.fxChainElements.size() == 2);
+        REQUIRE(isDevice(track->chain.fxChainElements[0]));
+        REQUIRE(isRack(track->chain.fxChainElements[1]));
     }
 }

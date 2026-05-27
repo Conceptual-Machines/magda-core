@@ -9,8 +9,11 @@
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
+#include "audio/plugins/InternalPluginRegistry.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/OscilloscopePlugin.hpp"
+#include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "core/AppPaths.hpp"
@@ -345,37 +348,19 @@ void PluginBrowserContent::onPanelExpanded() {
 
 std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     std::vector<PluginBrowserInfo> list;
-    list.push_back(PluginBrowserInfo::createInternal("Test Tone", "tone", false));
-    list.push_back(PluginBrowserInfo::createInternal("4OSC Synth", "4osc", true));
-    list.push_back(
-        PluginBrowserInfo::createInternal("Sampler", audio::MagdaSamplerPlugin::xmlTypeName, true));
-    list.push_back(PluginBrowserInfo::createInternal(audio::DrumGridPlugin::getPluginName(),
-                                                     audio::DrumGridPlugin::xmlTypeName, true));
-    list.push_back(PluginBrowserInfo::createInternal(audio::MidiChordEnginePlugin::getPluginName(),
-                                                     audio::MidiChordEnginePlugin::xmlTypeName,
-                                                     false, "MIDI"));
-    list.push_back(PluginBrowserInfo::createInternal(audio::ArpeggiatorPlugin::getPluginName(),
-                                                     audio::ArpeggiatorPlugin::xmlTypeName, false,
-                                                     "MIDI"));
-    list.push_back(PluginBrowserInfo::createInternal(audio::StepSequencerPlugin::getPluginName(),
-                                                     audio::StepSequencerPlugin::xmlTypeName, false,
-                                                     "MIDI"));
-    // TE Equaliser is superseded by the compiled-Faust magda_eq device (it
-    // still registers as an InternalPluginRegistry entry so projects that
-    // saved it continue to load).
-    list.push_back(PluginBrowserInfo::createInternal("Lowpass", "lowpass", false, "Filter"));
-    // Compiled-Faust devices come from the registry — displayName / category /
-    // pluginId live with the wrapper. Adding a new compiled device picks up
-    // here automatically.
+    // Native + TE internal devices: the registry is the single source of truth.
+    // A device appears here by setting showInBrowser on its InternalPluginSpec -
+    // no separate hand-maintained list to keep in sync.
+    for (const auto* spec : audio::getAllInternalPluginSpecs()) {
+        if (spec->showInBrowser)
+            list.push_back(PluginBrowserInfo::createInternal(
+                spec->displayName, spec->pluginId, spec->isInstrument, spec->browserCategory));
+    }
+    // Compiled-Faust devices come from their own registry.
     for (const auto* spec : audio::compiled::getAllCompiledPluginSpecs()) {
         list.push_back(PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId, false,
                                                          spec->browserCategory));
     }
-    list.push_back(
-        PluginBrowserInfo::createInternal("IR Reverb", "impulseresponse", false, "Reverb"));
-    list.push_back(PluginBrowserInfo::createInternal(audio::FaustPlugin::getPluginName(),
-                                                     audio::FaustPlugin::xmlTypeName, false,
-                                                     "Experimental"));
     return list;
 }
 

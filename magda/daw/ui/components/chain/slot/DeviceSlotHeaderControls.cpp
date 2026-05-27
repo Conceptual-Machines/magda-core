@@ -90,7 +90,9 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
     setVisibleIfPresent(controls.multiOutButton, device.multiOut.isMultiOut);
     setVisibleIfPresent(controls.learnButton, !isInternalDevice);
     setVisibleIfPresent(controls.powerButton, true);
-    setVisibleIfPresent(controls.uiButton, !isInternalDevice);
+    // Analysis devices have no native editor, but the UI button pops their
+    // oscilloscope/spectrum into a floating window.
+    setVisibleIfPresent(controls.uiButton, !isInternalDevice || traits.isAnalysis);
     setVisibleIfPresent(controls.presetButton, true);
 
     placeRight(headerArea, controls.sidechainButton, buttonSize);
@@ -120,7 +122,8 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
     setVisibleIfPresent(controls.powerButton, true);
 
     const bool showUI =
-        drum_grid_slot::shouldShowCollapsedUiButton(traits.isDrumGrid, isInternalDevice);
+        drum_grid_slot::shouldShowCollapsedUiButton(traits.isDrumGrid, isInternalDevice) ||
+        traits.isAnalysis;
     if (showUI) {
         placeCollapsedButton(area, controls.uiButton, buttonSize);
         setVisibleIfPresent(controls.uiButton, true);

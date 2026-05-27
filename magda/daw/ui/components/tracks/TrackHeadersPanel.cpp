@@ -3760,7 +3760,7 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
             };
 
         ChainNodePath rootPath = ChainNodePath::trackLevel(trackId);
-        buildMenu(trackInfo->chainElements, rootPath, addNewMenu);
+        buildMenu(trackInfo->chain.fxChainElements, rootPath, addNewMenu);
     }
 
     menu.addSubMenu("Add New Lane...", addNewMenu);

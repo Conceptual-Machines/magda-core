@@ -254,6 +254,25 @@ void Config::save() {
         root->setProperty("midiLearn", juce::var(mlObj));
     }
 
+    // Analysis device defaults (last-used settings for new osc / spectrum)
+    {
+        auto* adObj = new juce::DynamicObject();
+
+        auto* oscObj = new juce::DynamicObject();
+        oscObj->setProperty("traceColour", oscilloscopeDefaults_.traceColour);
+        oscObj->setProperty("timebaseMs", oscilloscopeDefaults_.timebaseMs);
+        adObj->setProperty("oscilloscope", juce::var(oscObj));
+
+        auto* specObj = new juce::DynamicObject();
+        specObj->setProperty("traceColour", spectrumDefaults_.traceColour);
+        specObj->setProperty("fftOrder", spectrumDefaults_.fftOrder);
+        specObj->setProperty("slopeDbPerOct", spectrumDefaults_.slopeDbPerOct);
+        specObj->setProperty("smoothing", spectrumDefaults_.smoothing);
+        adObj->setProperty("spectrum", juce::var(specObj));
+
+        root->setProperty("analysisDefaults", juce::var(adObj));
+    }
+
     // Write to disk
     auto configFile = magda::paths::configFile();
     configFile.getParentDirectory().createDirectory();
@@ -607,6 +626,35 @@ void Config::load() {
         if (auto* mlObj = mlVar.getDynamicObject()) {
             auto scopeStr = mlObj->getProperty("defaultScope").toString();
             midiLearnDefaultScope_ = (scopeStr == "global") ? 0 : 1;
+        }
+    }
+
+    if (obj->hasProperty("analysisDefaults")) {
+        auto adVar = obj->getProperty("analysisDefaults");
+        if (auto* adObj = adVar.getDynamicObject()) {
+            auto oscVar = adObj->getProperty("oscilloscope");
+            if (auto* oscObj = oscVar.getDynamicObject()) {
+                if (oscObj->hasProperty("traceColour"))
+                    oscilloscopeDefaults_.traceColour =
+                        static_cast<int>(oscObj->getProperty("traceColour"));
+                if (oscObj->hasProperty("timebaseMs"))
+                    oscilloscopeDefaults_.timebaseMs =
+                        static_cast<float>(static_cast<double>(oscObj->getProperty("timebaseMs")));
+            }
+            auto specVar = adObj->getProperty("spectrum");
+            if (auto* specObj = specVar.getDynamicObject()) {
+                if (specObj->hasProperty("traceColour"))
+                    spectrumDefaults_.traceColour =
+                        static_cast<int>(specObj->getProperty("traceColour"));
+                if (specObj->hasProperty("fftOrder"))
+                    spectrumDefaults_.fftOrder = static_cast<int>(specObj->getProperty("fftOrder"));
+                if (specObj->hasProperty("slopeDbPerOct"))
+                    spectrumDefaults_.slopeDbPerOct = static_cast<float>(
+                        static_cast<double>(specObj->getProperty("slopeDbPerOct")));
+                if (specObj->hasProperty("smoothing"))
+                    spectrumDefaults_.smoothing =
+                        static_cast<float>(static_cast<double>(specObj->getProperty("smoothing")));
+            }
         }
     }
 

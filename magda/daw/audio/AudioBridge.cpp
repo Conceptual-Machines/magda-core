@@ -424,7 +424,7 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
     // Search through all tracks, recursing into racks
     auto& tm = TrackManager::getInstance();
     for (const auto& track : tm.getTracks()) {
-        auto* device = findDeviceRecursive(track.chainElements, deviceId);
+        auto* device = findDeviceRecursive(track.chain.fxChainElements, deviceId);
         if (device) {
             if (processor) {
                 processor->syncFromDeviceInfo(*device);

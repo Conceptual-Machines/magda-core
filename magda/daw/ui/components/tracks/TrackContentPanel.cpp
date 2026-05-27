@@ -3061,7 +3061,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
         }
 
         // Block drops on tracks with a DrumGrid plugin
-        for (const auto& element : track->chainElements) {
+        for (const auto& element : track->chain.fxChainElements) {
             if (isDevice(element) && getDevice(element).pluginId.containsIgnoreCase("drumgrid")) {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::WarningIcon, "Drop Failed",
