@@ -715,66 +715,82 @@ void MainView::paint(juce::Graphics& g) {
     paintMasterResizeHandle(g);
 }
 
-void MainView::resized() {
+MainView::ArrangementLayout MainView::computeArrangementLayout() const {
+    ArrangementLayout result;
     auto bounds = getLocalBounds();
-
-    static constexpr int ZOOM_SCROLLBAR_SIZE = 20;
     auto& layout = LayoutConfig::getInstance();
 
-    // Side columns: headers default to left, zoom scrollbar default to right
-    // When swapped: headers on right, zoom scrollbar on left
-    bool swapped = Config::getInstance().getScrollbarOnLeft();
-    SideColumn headerColumn(!swapped);  // left by default
-    SideColumn zoomColumn(swapped);     // right by default (opposite of header)
+    result.swapped = Config::getInstance().getScrollbarOnLeft();
+    SideColumn headerColumn(!result.swapped);
+    SideColumn zoomColumn(result.swapped);
 
-    // Vertical zoom scroll bar (+ 2px for border lines on each side)
-    auto verticalScrollBarArea = zoomColumn.removeFrom(bounds, ZOOM_SCROLLBAR_SIZE + 2);
+    result.verticalScrollBarArea = zoomColumn.removeFrom(bounds, ARRANGEMENT_SCROLLBAR_SIZE + 2);
 
-    // Horizontal zoom scroll bar at the bottom
-    auto horizontalScrollBarArea = bounds.removeFromBottom(ZOOM_SCROLLBAR_SIZE);
-    // Leave space in corner for track headers
-    headerColumn.removeSpacing(horizontalScrollBarArea, trackHeaderWidth + layout.componentSpacing);
-    horizontalZoomScrollBar->setBounds(horizontalScrollBarArea);
+    result.horizontalScrollBarArea = bounds.removeFromBottom(ARRANGEMENT_SCROLLBAR_SIZE);
+    headerColumn.removeSpacing(result.horizontalScrollBarArea,
+                               trackHeaderWidth + layout.componentSpacing);
 
-    // Fixed master track row at the bottom (above horizontal scroll bar) - only if visible
     int effectiveMasterHeight = masterVisible_ ? masterStripHeight : 0;
     int effectiveResizeHandleHeight = masterVisible_ ? MASTER_RESIZE_HANDLE_HEIGHT : 0;
 
     if (masterVisible_) {
         auto masterRowArea = bounds.removeFromBottom(masterStripHeight);
-        // Master header in the header column
-        masterHeaderPanel->setBounds(headerColumn.removeFrom(masterRowArea, trackHeaderWidth));
+        result.masterHeaderArea = headerColumn.removeFrom(masterRowArea, trackHeaderWidth);
         headerColumn.removeSpacing(masterRowArea, layout.componentSpacing);
-        // Master content takes the rest
-        masterContentPanel->setBounds(masterRowArea);
+        result.masterContentArea = masterRowArea;
     }
 
-    // Fixed aux track section (directly above master, no extra gap)
     if (auxVisible_) {
         auto auxRowArea = bounds.removeFromBottom(auxSectionHeight);
-        auxHeadersPanel->setBounds(headerColumn.removeFrom(auxRowArea, trackHeaderWidth));
+        result.auxHeadersArea = headerColumn.removeFrom(auxRowArea, trackHeaderWidth);
         headerColumn.removeSpacing(auxRowArea, layout.componentSpacing);
-        auxContentPanel->setBounds(auxRowArea);
+        result.auxContentArea = auxRowArea;
     }
 
-    // Resize handle ABOVE the entire fixed bottom section (aux + master)
     if (masterVisible_) {
         bounds.removeFromBottom(MASTER_RESIZE_HANDLE_HEIGHT);
     }
 
-    // Now position vertical scroll bar (after bottom areas removed)
     int effectiveAuxHeight = auxVisible_ ? auxSectionHeight : 0;
-    verticalScrollBarArea.removeFromBottom(ZOOM_SCROLLBAR_SIZE + effectiveMasterHeight +
-                                           effectiveResizeHandleHeight + effectiveAuxHeight);
-    verticalScrollBarArea.removeFromTop(getTimelineHeight());  // Start below timeline
-    verticalZoomScrollBar->setBounds(verticalScrollBarArea.reduced(1, 0));
+    result.verticalScrollBarArea.removeFromBottom(ARRANGEMENT_SCROLLBAR_SIZE +
+                                                  effectiveMasterHeight +
+                                                  effectiveResizeHandleHeight + effectiveAuxHeight);
+    result.verticalScrollBarArea.removeFromTop(getTimelineHeight());
+    result.verticalScrollBarArea = result.verticalScrollBarArea.reduced(1, 0);
 
-    // Timeline viewport at the top - offset by track header width
-    auto timelineArea = bounds.removeFromTop(getTimelineHeight());
+    result.timelineArea = bounds.removeFromTop(getTimelineHeight());
+    result.cornerArea = headerColumn.removeFrom(result.timelineArea, trackHeaderWidth);
 
-    // Corner toolbar area above track headers — buttons left, axis labels right
-    auto cornerArea = headerColumn.removeFrom(timelineArea, trackHeaderWidth);
+    headerColumn.removeSpacing(result.timelineArea, layout.componentSpacing);
+    result.trackHeadersArea = headerColumn.removeFrom(bounds, trackHeaderWidth);
+    headerColumn.removeSpacing(bounds, layout.componentSpacing);
+
+    result.trackContentArea = bounds;
+    result.overlayArea = bounds;
+    result.playheadArea = bounds.withTop(getTimelineHeight() - 20);
+
+    return result;
+}
+
+void MainView::resized() {
+    auto arrangementLayout = computeArrangementLayout();
+    auto& layout = LayoutConfig::getInstance();
+
+    horizontalZoomScrollBar->setBounds(arrangementLayout.horizontalScrollBarArea);
+    verticalZoomScrollBar->setBounds(arrangementLayout.verticalScrollBarArea);
+
+    if (masterVisible_) {
+        masterHeaderPanel->setBounds(arrangementLayout.masterHeaderArea);
+        masterContentPanel->setBounds(arrangementLayout.masterContentArea);
+    }
+
+    if (auxVisible_) {
+        auxHeadersPanel->setBounds(arrangementLayout.auxHeadersArea);
+        auxContentPanel->setBounds(arrangementLayout.auxContentArea);
+    }
+
     {
+        auto cornerArea = arrangementLayout.cornerArea;
         int btnSize = 24;
         int gap = 6;
         int sepGap = 8;
@@ -795,13 +811,14 @@ void MainView::resized() {
         // Store separator line position (drawn in paint())
         // Span the full header column width (corner area + componentSpacing gap)
         int sepY = topRow.getBottom() + sepGap / 2;
-        int lineX = swapped ? cornerArea.getX() - layout.componentSpacing : cornerArea.getX();
+        int lineX = arrangementLayout.swapped ? cornerArea.getX() - layout.componentSpacing
+                                              : cornerArea.getX();
         int lineW = cornerArea.getWidth() + layout.componentSpacing;
         cornerSeparatorLine = juce::Rectangle<int>(lineX, sepY, lineW, 1);
 
         // Top row: action buttons on inner side, axis label on outer side
-        SideColumn btnSide(!swapped);  // buttons: left normally, right when swapped
-        SideColumn axisSide(swapped);  // axis icons: right normally, left when swapped
+        SideColumn btnSide(!arrangementLayout.swapped);
+        SideColumn axisSide(arrangementLayout.swapped);
 
         zoomFitButton->setBounds(btnSide.removeFrom(topRow, btnSize));
         btnSide.removeSpacing(topRow, gap);
@@ -825,39 +842,19 @@ void MainView::resized() {
         vAxisIcon->setBounds(axisSide.removeFrom(botRow, btnSize));
     }
 
-    // Add padding space for the resize handle
-    headerColumn.removeSpacing(timelineArea, layout.componentSpacing);
-
-    // Timeline takes the remaining width
-    timelineViewport->setBounds(timelineArea);
-
-    // Track headers viewport in the header column
-    auto trackHeadersArea = headerColumn.removeFrom(bounds, trackHeaderWidth);
-    trackHeadersViewport->setBounds(trackHeadersArea);
-
-    // Remove padding space between headers and content
-    headerColumn.removeSpacing(bounds, layout.componentSpacing);
-
-    // Track content viewport gets the remaining space
-    trackContentViewport->setBounds(bounds);
-
-    // Grid and selection overlays cover the track content area
-    auto overlayArea = bounds;
+    timelineViewport->setBounds(arrangementLayout.timelineArea);
+    trackHeadersViewport->setBounds(arrangementLayout.trackHeadersArea);
+    trackContentViewport->setBounds(arrangementLayout.trackContentArea);
 
     // Grid overlay (bottom layer - draws vertical time grid lines)
-    gridOverlay->setBounds(overlayArea);
+    gridOverlay->setBounds(arrangementLayout.overlayArea);
     gridOverlay->setScrollOffset(trackContentViewport->getViewPositionX());
 
     // Selection overlay (above grid)
-    selectionOverlay->setBounds(overlayArea);
+    selectionOverlay->setBounds(arrangementLayout.overlayArea);
 
-    // Playhead component extends from above timeline down to track content
-    // This allows the triangle to be drawn in the timeline area
-    auto playheadArea = bounds;
-    playheadArea =
-        playheadArea.withTop(getTimelineHeight() - 20);  // Start 20px above timeline border
     // No trim needed — internal viewport scrollbars are hidden
-    playheadComponent->setBounds(playheadArea);
+    playheadComponent->setBounds(arrangementLayout.playheadArea);
 
     // Notify controller about viewport resize
     auto viewportWidth = timelineViewport->getWidth();

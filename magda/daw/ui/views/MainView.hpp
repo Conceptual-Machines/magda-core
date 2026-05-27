@@ -191,6 +191,24 @@ class MainView : public juce::Component,
         return LayoutConfig::getInstance().getTimelineHeight();
     }
     int trackHeaderWidth = LayoutConfig::getInstance().defaultTrackHeaderWidth;
+    static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = 20;
+
+    struct ArrangementLayout {
+        bool swapped = false;
+        juce::Rectangle<int> cornerArea;
+        juce::Rectangle<int> timelineArea;
+        juce::Rectangle<int> trackHeadersArea;
+        juce::Rectangle<int> trackContentArea;
+        juce::Rectangle<int> overlayArea;
+        juce::Rectangle<int> playheadArea;
+        juce::Rectangle<int> horizontalScrollBarArea;
+        juce::Rectangle<int> verticalScrollBarArea;
+        juce::Rectangle<int> masterHeaderArea;
+        juce::Rectangle<int> masterContentArea;
+        juce::Rectangle<int> auxHeadersArea;
+        juce::Rectangle<int> auxContentArea;
+    };
+    ArrangementLayout computeArrangementLayout() const;
 
     // Resize handle state (horizontal - track header width)
     bool isResizingHeaders = false;
