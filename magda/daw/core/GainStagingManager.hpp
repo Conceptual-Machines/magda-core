@@ -3,6 +3,7 @@
 #include <juce_events/juce_events.h>
 
 #include <map>
+#include <utility>
 #include <vector>
 
 #include "ChainNodePath.hpp"
@@ -149,6 +150,42 @@ class GainStagingManager : private juce::Timer {
      * (The Idle case opens the pre-pass dialog from the UI, not here.)
      */
     void toggle(TrackId trackId);
+
+    // ------------------------------------------------------------------
+    // AI pass (phase 2)
+    // ------------------------------------------------------------------
+    // stopCollection() applies the flat-target cascade. For an AI pass the UI
+    // instead calls finishCaptureForAi() to freeze + read the capture, runs the
+    // agent off the message thread, then applyAiMoves() with the decisions. On
+    // failure or cancel the UI calls reset() to drop the frozen capture.
+
+    /** One parameter setting, sent so the agent can reason about thresholds,
+     *  drive, ceilings, etc. (populated for MAGDA/internal devices only). */
+    struct ParamSnapshot {
+        juce::String name;
+        float value = 0.0f;  // real units (dB, Hz, %, ...)
+        juce::String unit;
+    };
+
+    /** One device's captured state, handed to the AI agent. */
+    struct DeviceSnapshot {
+        DeviceId deviceId = INVALID_DEVICE_ID;
+        juce::String name;
+        juce::String pluginId;
+        bool isInstrument = false;
+        float capturedPeakDb = kGainStageSilenceDb;
+        float currentGainDb = 0.0f;
+        std::vector<ParamSnapshot> params;  // current settings, MAGDA devices only
+    };
+
+    /** Stop the timer and return the captured per-device snapshot WITHOUT
+     *  applying anything. The capture is retained for a following applyAiMoves()
+     *  or reset(). Mode returns to Idle. */
+    std::vector<DeviceSnapshot> finishCaptureForAi();
+
+    /** Apply externally-decided output gains (the AI result) as one undoable
+     *  command, marking the moved devices, then clear the frozen capture. */
+    void applyAiMoves(const std::vector<std::pair<DeviceId, float>>& deviceNewGainDb);
 
     /** Per-device staging info for the *current* pass, or nullptr. Transient:
      *  cleared by reset(). */

@@ -220,6 +220,92 @@ void GainStagingManager::toggle(TrackId trackId) {
     }
 }
 
+std::vector<GainStagingManager::DeviceSnapshot> GainStagingManager::finishCaptureForAi() {
+    std::vector<DeviceSnapshot> out;
+    if (mode_ != GainStagingMode::Collecting)
+        return out;
+
+    stopTimer();
+    auto& tm = TrackManager::getInstance();
+
+    for (const auto& staged : staged_) {
+        auto it = info_.find(staged.deviceId);
+        if (it == info_.end())
+            continue;
+        const auto* device = tm.getDeviceInChainByPath(staged.path);
+        if (device == nullptr)
+            continue;
+
+        DeviceSnapshot s;
+        s.deviceId = staged.deviceId;
+        s.name = device->name;
+        s.pluginId = device->pluginId;
+        s.isInstrument = device->isInstrument;
+        s.capturedPeakDb = it->second.capturedPeakDb;
+        s.currentGainDb = device->gainDb;
+
+        // Send current settings for MAGDA/internal devices so the agent can
+        // reason about thresholds, drive, ceilings. External plugins are
+        // skipped (their parameter sets are large and opaque).
+        if (device->format == PluginFormat::Internal) {
+            for (const auto& p : device->parameters)
+                s.params.push_back({p.name, p.currentValue, p.unit});
+        }
+
+        out.push_back(s);
+    }
+
+    // Return to idle, but KEEP staged_/info_ so applyAiMoves() can resolve paths
+    // and reset() can drop the capture if the agent fails.
+    mode_ = GainStagingMode::Idle;
+    notifyMode();
+    return out;
+}
+
+void GainStagingManager::applyAiMoves(
+    const std::vector<std::pair<DeviceId, float>>& deviceNewGainDb) {
+    auto& tm = TrackManager::getInstance();
+
+    std::vector<GainStageMove> moves;
+    for (const auto& [deviceId, requestedGainDb] : deviceNewGainDb) {
+        // Resolve the device's path from the frozen capture, falling back to a
+        // fresh lookup.
+        ChainNodePath path;
+        for (const auto& staged : staged_) {
+            if (staged.deviceId == deviceId) {
+                path = staged.path;
+                break;
+            }
+        }
+        if (!path.isValid())
+            path = tm.findDevicePath(deviceId);
+        if (!path.isValid())
+            continue;
+
+        const auto* device = tm.getDeviceInChainByPath(path);
+        if (device == nullptr)
+            continue;
+
+        const float newGainDb =
+            juce::jlimit(kGainStageMinGainDb, kGainStageMaxGainDb, requestedGainDb);
+        if (std::abs(newGainDb - device->gainDb) < 0.05f)
+            continue;  // negligible move
+
+        moves.push_back({path, deviceId, device->gainDb, newGainDb});
+    }
+
+    if (!moves.empty())
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<GainStageCommand>(std::move(moves)));
+
+    // Drop the frozen capture; the applied marks live on in appliedDeltas_.
+    staged_.clear();
+    info_.clear();
+    activeTrackId_ = INVALID_TRACK_ID;
+    mode_ = GainStagingMode::Idle;
+    notifyMode();
+}
+
 const DeviceGainStageInfo* GainStagingManager::getDeviceInfo(DeviceId deviceId) const {
     auto it = info_.find(deviceId);
     return it != info_.end() ? &it->second : nullptr;

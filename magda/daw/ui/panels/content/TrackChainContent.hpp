@@ -119,6 +119,11 @@ class TrackChainContent : public PanelContent,
     // Reflect the gain-staging mode onto the toolbar button (active tint + tooltip).
     void refreshGainStagingButton();
 
+    // Finish the capture and hand it to the AI agent off the message thread,
+    // applying the agent's gain decisions when it returns.
+    void runAiGainStagingPass();
+    bool aiProcessing_ = false;  // an AI pass is waiting on the agent
+
     // Header bar controls - LEFT side (action buttons)
     std::unique_ptr<magda::SvgButton> globalModsButton_;   // Toggle global modulators panel
     std::unique_ptr<magda::SvgButton> gainStagingButton_;  // Start/stop a gain-staging pass

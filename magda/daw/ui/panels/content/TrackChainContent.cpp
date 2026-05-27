@@ -3,7 +3,9 @@
 #include <BinaryData.h>
 
 #include <cmath>
+#include <thread>
 
+#include "../../../../agents/gain_staging_agent.hpp"
 #include "../../debug/DebugSettings.hpp"
 #include "../../dialogs/ChainTreeDialog.hpp"
 #include "../../dialogs/GainStagingDialog.hpp"
@@ -877,11 +879,11 @@ TrackChainContent::TrackChainContent()
     gainStagingButton_->setActiveColor(juce::Colours::white.darker(0.18f));
     gainStagingButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     gainStagingButton_->onClick = [this]() {
-        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID || aiProcessing_)
             return;
         auto& gsm = magda::GainStagingManager::getInstance();
-        // Idle -> ask for the target and AI choice, then start. Collecting /
-        // Staged just advance (stop+apply / clear) without a dialog.
+        // Idle -> ask for the target and AI choice, then start. Collecting ->
+        // stop: the AI path hands off to the agent, otherwise the flat cascade.
         if (gsm.getMode() == magda::GainStagingMode::Idle) {
             const auto trackId = selectedTrackId_;
             magda::GainStagingDialog::showDialog(
@@ -892,8 +894,11 @@ TrackChainContent::TrackChainContent()
                     m.setUseAi(settings.useAi);
                     m.startCollection(trackId);
                 });
-        } else {
-            gsm.toggle(selectedTrackId_);
+        } else if (gsm.getMode() == magda::GainStagingMode::Collecting) {
+            if (gsm.getUseAi())
+                runAiGainStagingPass();
+            else
+                gsm.stopCollection();
         }
     };
     addChildComponent(*gainStagingButton_);
@@ -2030,7 +2035,13 @@ void TrackChainContent::refreshGainStagingButton() {
     const bool onThisTrack = gs.getActiveTrack() == selectedTrackId_;
     const bool collecting = gs.getMode() == magda::GainStagingMode::Collecting && onThisTrack;
 
-    if (collecting) {
+    if (aiProcessing_) {
+        // Waiting on the AI agent — blue, distinct from the red capture state.
+        const auto blue = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        gainStagingButton_->setActiveBackgroundColor(blue.withAlpha(0.20f));
+        gainStagingButton_->setActiveBorderColor(blue);
+        gainStagingButton_->setTooltip("Gain staging: AI is analysing the chain...");
+    } else if (collecting) {
         const auto red = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
         gainStagingButton_->setActiveBackgroundColor(red.withAlpha(0.20f));
         gainStagingButton_->setActiveBorderColor(red);
@@ -2039,10 +2050,72 @@ void TrackChainContent::refreshGainStagingButton() {
         gainStagingButton_->setTooltip("Gain staging: capture levels, then auto-set device gains");
     }
 
-    gainStagingButton_->setActive(collecting);
+    gainStagingButton_->setActive(aiProcessing_ || collecting);
 
-    // Centered banner mirrors the link-mode label, shown only while capturing.
-    gainStagingLabel_.setVisible(collecting);
+    // Centered banner, shown while capturing or while the agent is thinking.
+    gainStagingLabel_.setVisible(aiProcessing_ || collecting);
+    if (aiProcessing_) {
+        gainStagingLabel_.setText("ANALYSING (AI)", juce::dontSendNotification);
+        gainStagingLabel_.setColour(juce::Label::textColourId,
+                                    DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    } else if (collecting) {
+        gainStagingLabel_.setText("GAIN STAGING", juce::dontSendNotification);
+        gainStagingLabel_.setColour(juce::Label::textColourId,
+                                    DarkTheme::getColour(DarkTheme::STATUS_DANGER));
+    }
+}
+
+void TrackChainContent::runAiGainStagingPass() {
+    auto& gsm = magda::GainStagingManager::getInstance();
+    auto snapshot = gsm.finishCaptureForAi();
+    if (snapshot.empty()) {
+        gsm.reset();
+        return;
+    }
+    const float target = gsm.getTargetDb();
+
+    // Map the manager snapshot onto the agent's input.
+    std::vector<magda::GainStagingAgent::DeviceLevel> levels;
+    levels.reserve(snapshot.size());
+    for (const auto& s : snapshot) {
+        magda::GainStagingAgent::DeviceLevel lvl;
+        lvl.deviceId = s.deviceId;
+        lvl.name = s.name.toStdString();
+        lvl.pluginId = s.pluginId.toStdString();
+        lvl.isInstrument = s.isInstrument;
+        lvl.capturedPeakDb = s.capturedPeakDb;
+        lvl.currentGainDb = s.currentGainDb;
+        for (const auto& p : s.params)
+            lvl.params.push_back({p.name.toStdString(), (double)p.value, p.unit.toStdString()});
+        levels.push_back(std::move(lvl));
+    }
+
+    aiProcessing_ = true;
+    refreshGainStagingButton();
+
+    // The LLM call blocks; run it off the message thread and apply on return.
+    juce::Component::SafePointer<TrackChainContent> safe(this);
+    std::thread([safe, levels = std::move(levels), target]() {
+        magda::GainStagingAgent agent;
+        auto result = agent.generate(target, levels);
+        juce::MessageManager::callAsync([safe, result]() {
+            if (safe == nullptr)
+                return;
+            safe->aiProcessing_ = false;
+            auto& m = magda::GainStagingManager::getInstance();
+            if (result.hasError) {
+                juce::Logger::writeToLog("[GainStaging] AI error: " + juce::String(result.error));
+                m.reset();  // drop the frozen capture
+            } else {
+                std::vector<std::pair<magda::DeviceId, float>> moves;
+                for (const auto& d : result.decisions)
+                    moves.push_back({d.deviceId, d.newGainDb});
+                m.applyAiMoves(moves);
+                juce::Logger::writeToLog("[GainStaging] AI: " + juce::String(result.summary));
+            }
+            safe->refreshGainStagingButton();
+        });
+    }).detach();
 }
 
 void TrackChainContent::updateFromSelectedTrack() {
