@@ -55,6 +55,11 @@ class AutoAliasGenerator {
      * @param deviceId  The MAGDA device to regenerate aliases for.
      */
     static void regenerateForDevice(DeviceId deviceId);
+
+    /**
+     * @brief Regenerate auto-gen aliases for a concrete device path.
+     */
+    static void regenerateForDevice(const ChainNodePath& devicePath);
 };
 
 }  // namespace magda

@@ -562,7 +562,7 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
             if (magda::isDevice(element)) {
                 auto& device = magda::getDevice(element);
                 const auto oldDeviceId = device.id;
-                device.id = nextDeviceId_++;
+                device.id = nextFxDeviceId_++;
                 remap.devices[oldDeviceId] = device.id;
             } else if (magda::isRack(element)) {
                 auto& rack = magda::getRack(element);
@@ -1245,7 +1245,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = device;
-        newDevice.id = nextDeviceId_++;
+        newDevice.id = nextFxDeviceId_++;
         stampDefaultKitIfMissing(newDevice);
         if (isAnalysisDevice(newDevice.pluginId))
             newDevice.deviceType = DeviceType::Analysis;
@@ -1268,7 +1268,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = device;
-        newDevice.id = nextDeviceId_++;
+        newDevice.id = nextFxDeviceId_++;
         stampDefaultKitIfMissing(newDevice);
         if (isAnalysisDevice(newDevice.pluginId))
             newDevice.deviceType = DeviceType::Analysis;
@@ -1329,7 +1329,7 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
     }
 
     DeviceInfo newDevice = device;
-    newDevice.id = nextDeviceId_++;
+    newDevice.id = nextPostFxDeviceId_++;
     if (isAnalysisDevice(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
 
@@ -1390,7 +1390,7 @@ DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInf
     }
 
     DeviceInfo newDevice = device;
-    newDevice.id = nextDeviceId_++;
+    newDevice.id = nextMixerAnalysisDeviceId_++;
     if (isAnalysisDevice(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
     track->chain.mixerAnalysisElements.push_back(PostFxChainElement{newDevice});
@@ -2081,8 +2081,12 @@ void TrackManager::createDefaultTracks(int count) {
 void TrackManager::clearAllTracks() {
     tracks_.clear();
     masterTrack_.chain.fxChainElements.clear();
+    masterTrack_.chain.postFxChainElements.clear();
+    masterTrack_.chain.mixerAnalysisElements.clear();
     nextTrackId_ = 1;
-    nextDeviceId_ = 1;
+    nextFxDeviceId_ = 1;
+    nextPostFxDeviceId_ = 1;
+    nextMixerAnalysisDeviceId_ = 1;
     nextRackId_ = 1;
     nextChainId_ = 1;
     nextAuxBusIndex_ = 0;
@@ -2109,7 +2113,9 @@ void TrackManager::clearAllTracks() {
 
 void TrackManager::refreshIdCountersFromTracks() {
     int maxTrackId = 0;
-    int maxDeviceId = 0;
+    int maxFxDeviceId = 0;
+    int maxPostFxDeviceId = 0;
+    int maxMixerAnalysisDeviceId = 0;
     int maxRackId = 0;
     int maxChainId = 0;
 
@@ -2117,8 +2123,8 @@ void TrackManager::refreshIdCountersFromTracks() {
     auto scanChainElement = [&](const ChainElement& element, auto& self) -> void {
         if (std::holds_alternative<DeviceInfo>(element)) {
             const auto& device = std::get<DeviceInfo>(element);
-            maxDeviceId = std::max(maxDeviceId, device.id);
-            scanEmbeddedDeviceIds(device.pluginState, maxDeviceId);
+            maxFxDeviceId = std::max(maxFxDeviceId, device.id);
+            scanEmbeddedDeviceIds(device.pluginState, maxFxDeviceId);
         } else if (std::holds_alternative<std::unique_ptr<RackInfo>>(element)) {
             const auto& rackPtr = std::get<std::unique_ptr<RackInfo>>(element);
             if (rackPtr) {
@@ -2151,21 +2157,34 @@ void TrackManager::refreshIdCountersFromTracks() {
         for (const auto& element : track.chain.fxChainElements) {
             scanChainElement(element, scanChainElement);
         }
-        // Flat sections (post-FX, mixer-analysis) hold DeviceInfo directly —
-        // also their ids count against the device-id pool.
+        // Flat sections each have their own section-local DeviceId counter.
         for (const auto& elem : track.chain.postFxChainElements) {
-            maxDeviceId = std::max(maxDeviceId, elem.device.id);
-            scanEmbeddedDeviceIds(elem.device.pluginState, maxDeviceId);
+            maxPostFxDeviceId = std::max(maxPostFxDeviceId, elem.device.id);
+            scanEmbeddedDeviceIds(elem.device.pluginState, maxPostFxDeviceId);
         }
         for (const auto& elem : track.chain.mixerAnalysisElements) {
-            maxDeviceId = std::max(maxDeviceId, elem.device.id);
-            scanEmbeddedDeviceIds(elem.device.pluginState, maxDeviceId);
+            maxMixerAnalysisDeviceId = std::max(maxMixerAnalysisDeviceId, elem.device.id);
+            scanEmbeddedDeviceIds(elem.device.pluginState, maxMixerAnalysisDeviceId);
         }
+    }
+
+    for (const auto& element : masterTrack_.chain.fxChainElements) {
+        scanChainElement(element, scanChainElement);
+    }
+    for (const auto& elem : masterTrack_.chain.postFxChainElements) {
+        maxPostFxDeviceId = std::max(maxPostFxDeviceId, elem.device.id);
+        scanEmbeddedDeviceIds(elem.device.pluginState, maxPostFxDeviceId);
+    }
+    for (const auto& elem : masterTrack_.chain.mixerAnalysisElements) {
+        maxMixerAnalysisDeviceId = std::max(maxMixerAnalysisDeviceId, elem.device.id);
+        scanEmbeddedDeviceIds(elem.device.pluginState, maxMixerAnalysisDeviceId);
     }
 
     // Update counters to max + 1
     nextTrackId_ = maxTrackId + 1;
-    nextDeviceId_ = maxDeviceId + 1;
+    nextFxDeviceId_ = maxFxDeviceId + 1;
+    nextPostFxDeviceId_ = maxPostFxDeviceId + 1;
+    nextMixerAnalysisDeviceId_ = maxMixerAnalysisDeviceId + 1;
     nextRackId_ = maxRackId + 1;
     nextChainId_ = maxChainId + 1;
     nextAuxBusIndex_ = maxAuxBusIndex + 1;

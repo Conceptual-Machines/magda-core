@@ -593,13 +593,7 @@ te::Plugin::Ptr AudioBridge::getPlugin(DeviceId deviceId) const {
 }
 
 te::Plugin::Ptr AudioBridge::getPlugin(const ChainNodePath& devicePath) const {
-    // Stage 2 of the section-scoped id refactor: paths route through the same
-    // global syncedDevices_ map for now via the embedded DeviceId. When the
-    // map gets rekeyed to ChainNodePath the body changes; callers don't.
-    const DeviceId id = devicePath.getDeviceId();
-    if (id == INVALID_DEVICE_ID)
-        return {};
-    return pluginManager_.getPlugin(id);
+    return pluginManager_.getPlugin(devicePath);
 }
 
 AudioBridge::ResolvedDevice AudioBridge::resolveDevice(const ChainNodePath& devicePath) const {

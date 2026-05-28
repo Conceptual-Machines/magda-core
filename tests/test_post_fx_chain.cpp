@@ -43,6 +43,34 @@ TEST_CASE("addDeviceToPostFx appends devices with unique ids", "[postfx]") {
     REQUIRE(tm.getChainElements(track).empty());
 }
 
+TEST_CASE("device ids are scoped to the chain section", "[postfx]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    TrackId track = tm.createTrack("Track");
+
+    DeviceInfo fx = makeDevice("FX");
+    fx.pluginId = "fx";
+    DeviceInfo post = makeDevice("Post");
+    post.pluginId = "post";
+    DeviceInfo analysis = makeDevice("Analysis");
+    analysis.pluginId = "oscilloscope";
+
+    REQUIRE(tm.addDeviceToTrack(track, fx) == 1);
+    REQUIRE(tm.addDeviceToPostFx(track, post) == 1);
+    REQUIRE(tm.addDeviceToMixerAnalysis(track, analysis) == 1);
+
+    tm.refreshIdCountersFromTracks();
+
+    fx.name = "FX 2";
+    post.name = "Post 2";
+    analysis.name = "Analysis 2";
+    analysis.pluginId = "spectrumanalyzer";
+
+    REQUIRE(tm.addDeviceToTrack(track, fx) == 2);
+    REQUIRE(tm.addDeviceToPostFx(track, post) == 2);
+    REQUIRE(tm.addDeviceToMixerAnalysis(track, analysis) == 2);
+}
+
 TEST_CASE("addDeviceToPostFx rejects instruments", "[postfx]") {
     resetState();
     auto& tm = TrackManager::getInstance();

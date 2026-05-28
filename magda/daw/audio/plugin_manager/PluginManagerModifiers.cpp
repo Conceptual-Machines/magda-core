@@ -33,7 +33,7 @@ te::Plugin* PluginManager::lookupTargetPluginForModifier(DeviceId id) const {
     te::Plugin::Ptr plugin;
     {
         juce::ScopedLock lock(pluginLock_);
-        auto sdIt = syncedDevices_.find(id);
+        auto sdIt = findSyncedDeviceById(id);
         if (sdIt != syncedDevices_.end())
             plugin = sdIt->second.plugin;
     }
@@ -83,14 +83,14 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
             }
         }
         for (const auto& [drumGridDevId, padDevIds] : drumGridPadDevices_) {
-            auto sdIt = syncedDevices_.find(drumGridDevId);
+            auto sdIt = findSyncedDeviceById(drumGridDevId);
             if (sdIt == syncedDevices_.end() || sdIt->second.trackId != trackId)
                 continue;
             for (auto padDevId : padDevIds) {
                 te::Plugin::Ptr plugin;
                 {
                     juce::ScopedLock lock(pluginLock_);
-                    auto pIt = syncedDevices_.find(padDevId);
+                    auto pIt = findSyncedDeviceById(padDevId);
                     if (pIt != syncedDevices_.end())
                         plugin = pIt->second.plugin;
                 }
@@ -110,7 +110,7 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
             continue;
 
         const auto& device = getDevice(element);
-        auto sdIt = syncedDevices_.find(device.id);
+        auto sdIt = findSyncedDeviceById(device.id);
         if (sdIt == syncedDevices_.end())
             continue;
 
@@ -171,14 +171,14 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
             }
         }
         for (const auto& [drumGridDevId, padDevIds] : drumGridPadDevices_) {
-            auto sdIt = syncedDevices_.find(drumGridDevId);
+            auto sdIt = findSyncedDeviceById(drumGridDevId);
             if (sdIt == syncedDevices_.end() || sdIt->second.trackId != trackId)
                 continue;
             for (auto padDevId : padDevIds) {
                 te::Plugin::Ptr plugin;
                 {
                     juce::ScopedLock lock(pluginLock_);
-                    auto pIt = syncedDevices_.find(padDevId);
+                    auto pIt = findSyncedDeviceById(padDevId);
                     if (pIt != syncedDevices_.end())
                         plugin = pIt->second.plugin;
                 }
@@ -226,7 +226,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
         ctx.forEachScopePlugin = forEachPlugin;
         ctx.hasCrossTrackSidechain = device.sidechain.sourceTrackId != INVALID_TRACK_ID;
 
-        auto& sd = syncedDevices_[device.id];
+        auto& sd = syncedDevices_[ChainNodePath::topLevelDevice(trackId, device.id)];
         ModifierSyncState state{sd.modifiers, sd.curveSnapshots, sd.macroParams};
         ModifierSyncWalker::syncStructure(node, ctx, state, deferredHolders_);
     }
@@ -273,7 +273,7 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
         if (device.sidechain.sourceTrackId != INVALID_TRACK_ID)
             continue;
 
-        auto it = syncedDevices_.find(device.id);
+        auto it = findSyncedDeviceById(device.id);
         if (it == syncedDevices_.end())
             continue;
 
@@ -382,13 +382,13 @@ void PluginManager::prepareForRendering() {
     // message-thread gate management can't keep up with render speed.
     {
         juce::ScopedLock lock(pluginLock_);
-        for (auto& [deviceId, sd] : syncedDevices_) {
+        for (auto& [devicePath, sd] : syncedDevices_) {
             for (auto& [_modId, mod] : sd.modifiers) {
                 if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
                     bool wasGated = lfo->isGated();
                     lfo->setGated(false);
                     DBG("[RENDER] un-gated device LFO devId="
-                        << deviceId << " wasGated=" << (int)wasGated
+                        << devicePath.getDeviceId() << " wasGated=" << (int)wasGated
                         << " syncType=" << juce::roundToInt(lfo->syncTypeParam->getCurrentValue())
                         << " curValue=" << lfo->getCurrentValue());
                 }
@@ -418,13 +418,13 @@ void PluginManager::prepareForRendering() {
     // Log assignment state after update
     {
         juce::ScopedLock lock(pluginLock_);
-        for (auto& [deviceId, sd] : syncedDevices_) {
+        for (auto& [devicePath, sd] : syncedDevices_) {
             size_t modIdx = 0;
             for (auto& [_modId, mod] : sd.modifiers) {
                 if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
                     DBG("[RENDER] post-update device LFO devId="
-                        << deviceId << " modIdx=" << modIdx << " gated=" << (int)lfo->isGated()
-                        << " curValue=" << lfo->getCurrentValue()
+                        << devicePath.getDeviceId() << " modIdx=" << modIdx << " gated="
+                        << (int)lfo->isGated() << " curValue=" << lfo->getCurrentValue()
                         << " depth=" << lfo->depthParam->getCurrentValue()
                         << " wave=" << juce::roundToInt(lfo->waveParam->getCurrentValue()));
                 }
@@ -518,10 +518,12 @@ void PluginManager::syncLFOValuesToVisuals() {
     // live in syncedDevices_ keyed by DeviceId).
     {
         juce::ScopedLock lock(pluginLock_);
-        for (auto& [deviceId, sd] : syncedDevices_) {
+        for (auto& [devicePath, sd] : syncedDevices_) {
             if (sd.modifiers.empty())
                 continue;
-            auto* device = tm.getDevice(sd.trackId, deviceId);
+            auto* device = tm.getDeviceInChainByPath(devicePath);
+            if (!device)
+                device = tm.getDevice(sd.trackId, devicePath.getDeviceId());
             if (!device)
                 continue;
             for (auto& magdaMod : device->mods) {
@@ -563,7 +565,7 @@ void PluginManager::rebuildSidechainLFOCache() {
         // ones, since the MAGDA-side filter advanced past it but the TE-side
         // index didn't).
         auto collectDeviceLFOs = [&](const DeviceInfo& device) {
-            auto it = syncedDevices_.find(device.id);
+            auto it = findSyncedDeviceById(device.id);
             if (it == syncedDevices_.end())
                 return;
             for (const auto& modInfo : device.mods) {
@@ -781,10 +783,12 @@ te::AutomatableParameter* PluginManager::findModifierParameterForAutomation(
                                                                   modParamIndex);
             case ChainNodeType::TopLevelDevice:
             case ChainNodeType::Device: {
-                auto it = syncedDevices_.find(devicePath.getDeviceId());
+                auto it = findSyncedDevice(devicePath);
                 if (it == syncedDevices_.end())
                     return nullptr;
-                DeviceInfo* device = tm.getDevice(it->second.trackId, it->first);
+                DeviceInfo* device = tm.getDeviceInChainByPath(devicePath);
+                if (!device)
+                    device = tm.getDevice(it->second.trackId, devicePath.getDeviceId());
                 if (!device)
                     return nullptr;
                 return resolveFromMap(device->mods, it->second.modifiers);

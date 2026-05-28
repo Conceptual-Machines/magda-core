@@ -64,7 +64,7 @@ void PluginManager::setMacroValue(TrackId trackId, ChainScope scope, int ownerId
 }
 
 void PluginManager::setMacroValue(DeviceId deviceId, int macroIndex, float value) {
-    auto it = syncedDevices_.find(deviceId);
+    auto it = findSyncedDeviceById(deviceId);
     if (it == syncedDevices_.end())
         return;
 
@@ -85,7 +85,7 @@ te::AutomatableParameter* PluginManager::findMacroParameterForAutomation(
                 return rackSyncManager_.findRackMacroParameter(devicePath.getRackId(), macroIndex);
             case ChainNodeType::TopLevelDevice:
             case ChainNodeType::Device: {
-                auto it = syncedDevices_.find(devicePath.getDeviceId());
+                auto it = findSyncedDevice(devicePath);
                 if (it == syncedDevices_.end())
                     return nullptr;
                 auto macroIt = it->second.macroParams.find(macroIndex);

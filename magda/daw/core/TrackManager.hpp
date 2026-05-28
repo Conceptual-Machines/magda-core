@@ -126,9 +126,9 @@ class TrackManager {
     TrackManager(const TrackManager&) = delete;
     TrackManager& operator=(const TrackManager&) = delete;
 
-    // Allocate a unique DeviceId (used by DrumGrid for per-pad chain plugins)
+    // Allocate an FX-section DeviceId (used by DrumGrid for per-pad chain plugins)
     DeviceId allocateDeviceId() {
-        return nextDeviceId_++;
+        return nextFxDeviceId_++;
     }
     RackId allocateRackId() {
         return nextRackId_++;
@@ -136,9 +136,9 @@ class TrackManager {
     ChainId allocateChainId() {
         return nextChainId_++;
     }
-    // Ensure the counter is above a restored ID (prevents collisions on project load)
+    // Ensure restored DrumGrid pad/plugin IDs do not collide with FX-section IDs.
     void ensureDeviceIdAbove(DeviceId id) {
-        nextDeviceId_ = std::max(nextDeviceId_, id + 1);
+        nextFxDeviceId_ = std::max(nextFxDeviceId_, id + 1);
     }
 
     /**
@@ -734,7 +734,9 @@ class TrackManager {
 
     AudioEngine* audioEngine_ = nullptr;  // Non-owning pointer for routing operations
     int nextTrackId_ = 1;
-    int nextDeviceId_ = 1;
+    int nextFxDeviceId_ = 1;
+    int nextPostFxDeviceId_ = 1;
+    int nextMixerAnalysisDeviceId_ = 1;
     int nextRackId_ = 1;
     int nextChainId_ = 1;
     int nextAuxBusIndex_ = 0;

@@ -215,6 +215,20 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         return count;
     }
 
+    static int countTrackPluginPathMappings(te::AudioTrack* track,
+                                            magda::PluginManager& pluginManager,
+                                            const magda::ChainNodePath& devicePath) {
+        if (track == nullptr)
+            return 0;
+
+        int count = 0;
+        for (int i = 0; i < track->pluginList.size(); ++i) {
+            if (pluginManager.getDevicePathForPlugin(track->pluginList[i]) == devicePath)
+                ++count;
+        }
+        return count;
+    }
+
     static int pluginIndex(te::AudioTrack* track, te::Plugin* plugin) {
         return track != nullptr && plugin != nullptr ? track->pluginList.indexOf(plugin) : -1;
     }
@@ -761,6 +775,10 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
             trackId, makeInternalDevice(magda::INVALID_DEVICE_ID, "Post Delay", "delay"));
         expect(fxId != magda::INVALID_DEVICE_ID, "FX device must be added");
         expect(postFxId != magda::INVALID_DEVICE_ID, "Post-FX device must be added");
+        expectEquals(fxId, postFxId, "FX and post-FX devices should use section-local ids");
+
+        const auto fxPath = magda::ChainNodePath::topLevelDevice(trackId, fxId);
+        const auto postFxPath = magda::ChainNodePath::postFxDevice(trackId, postFxId);
 
         bridge->syncTrackPlugins(trackId);
 
@@ -776,10 +794,11 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         int fxIdx = -1, postFxIdx = -1, faderIdx = -1, meterIdx = -1;
         for (int i = 0; i < teTrack->pluginList.size(); ++i) {
             auto* plugin = teTrack->pluginList[i];
+            const auto devPath = pluginManager.getDevicePathForPlugin(plugin);
             const auto devId = pluginManager.getDeviceIdForPlugin(plugin);
-            if (devId == fxId)
+            if (devPath == fxPath)
                 fxIdx = i;
-            else if (devId == postFxId)
+            else if (devPath == postFxPath)
                 postFxIdx = i;
             // The fader is a VolumeAndPanPlugin that is NOT a MAGDA device
             // (Utility/gain devices are also VolumeAndPanPlugins).
@@ -799,10 +818,9 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         expect(faderIdx < meterIdx, "Fader must come before the meter");
 
         // Removing the post-FX device must drop its TE plugin.
-        trackManager.removeDeviceFromChainByPath(
-            magda::ChainNodePath::postFxDevice(trackId, postFxId));
+        trackManager.removeDeviceFromChainByPath(postFxPath);
         bridge->syncTrackPlugins(trackId);
-        expectEquals(countTrackPluginMappings(teTrack, pluginManager, postFxId), 0,
+        expectEquals(countTrackPluginPathMappings(teTrack, pluginManager, postFxPath), 0,
                      "Removing the post-FX device must remove its TE plugin");
 
         trackManager.clearAllTracks();

@@ -167,7 +167,7 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
     }
     if (auto* chain = getChain(trackId, rackId, chainId)) {
         DeviceInfo newDevice = device;
-        newDevice.id = nextDeviceId_++;
+        newDevice.id = nextFxDeviceId_++;
         stampDefaultKitIfMissing(newDevice);
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
@@ -228,7 +228,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
         // Add the device
         DeviceInfo newDevice = device;
-        newDevice.id = nextDeviceId_++;
+        newDevice.id = nextFxDeviceId_++;
         stampDefaultKitIfMissing(newDevice);
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(chainPath.trackId);
@@ -289,7 +289,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
         // Add the device at the specified index
         DeviceInfo newDevice = device;
-        newDevice.id = nextDeviceId_++;
+        newDevice.id = nextFxDeviceId_++;
         stampDefaultKitIfMissing(newDevice);
 
         // Clamp insert index to valid range
@@ -1551,7 +1551,7 @@ bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo
             if (magda::isDevice(element)) {
                 auto& device = magda::getDevice(element);
                 const auto oldId = device.id;
-                device.id = nextDeviceId_++;
+                device.id = nextFxDeviceId_++;
                 remap.devices[oldId] = device.id;
             } else if (magda::isRack(element)) {
                 auto& nested = magda::getRack(element);
@@ -1599,7 +1599,7 @@ bool TrackManager::applyChainPreset(TrackId trackId, std::vector<ChainElement> p
             if (magda::isDevice(element)) {
                 auto& device = magda::getDevice(element);
                 const auto oldId = device.id;
-                device.id = nextDeviceId_++;
+                device.id = nextFxDeviceId_++;
                 remap.devices[oldId] = device.id;
             } else if (magda::isRack(element)) {
                 auto& nested = magda::getRack(element);
