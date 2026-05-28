@@ -98,8 +98,19 @@ struct DeviceInfo {
     // owning DeviceSlotComponent on any notifyTrackDevicesChanged).
     juce::String aiPanelOutput;
 
-    // Device parameters (populated by DeviceProcessor)
+    // Device parameters (populated by DeviceProcessor) — the plugin's own
+    // automatable parameters. Wrapper-injected slot params (e.g. TE's
+    // PluginWetDryAutomatableParam pair) belong in `wrapperParameters` and
+    // must not be mixed in here.
     std::vector<ParameterInfo> parameters;
+
+    // Wrapper-owned slot parameters. These come from the host wrapper, not
+    // the plugin itself — TE's slot-level dry/wet on external plugins, and
+    // anywhere else a wrapper synthesises parameters that the plugin author
+    // never declared. Rendered by device-header chrome, never by the
+    // parameter grid. `paramIndex` still addresses the underlying TE slot so
+    // host writes, automation and aliases work the same as for plugin params.
+    std::vector<ParameterInfo> wrapperParameters;
 
     // User-selected visible parameters (indices into plugin parameter list)
     // If empty, show first N parameters; otherwise show these specific indices
