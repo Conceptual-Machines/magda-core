@@ -158,7 +158,25 @@ void SpectrumAnalyzerUI::setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin) {
     rebuildFft(plugin_->getFftOrder());
 }
 
+void SpectrumAnalyzerUI::setCompact(bool compact) {
+    if (compact_ == compact)
+        return;
+    compact_ = compact;
+    fftLabel_.setVisible(!compact);
+    fftCombo_.setVisible(!compact);
+    slopeLabel_.setVisible(!compact);
+    slopeCombo_.setVisible(!compact);
+    speedLabel_.setVisible(!compact);
+    speedCombo_.setVisible(!compact);
+    colourLabel_.setVisible(!compact);
+    colourCombo_.setVisible(!compact);
+    resized();
+    repaint();
+}
+
 void SpectrumAnalyzerUI::resized() {
+    if (compact_)
+        return;
     auto controls = getLocalBounds().removeFromBottom(kControlRowH);
     auto cell = [&controls](int labelW, int comboW) {
         controls.removeFromLeft(4);
@@ -223,7 +241,8 @@ float SpectrumAnalyzerUI::dbToY(float db, juce::Rectangle<float> area) const {
 
 juce::Rectangle<float> SpectrumAnalyzerUI::plotArea() const {
     auto a = getLocalBounds();
-    a.removeFromBottom(kControlRowH);
+    if (!compact_)
+        a.removeFromBottom(kControlRowH);
     return a.toFloat().reduced(4.0f);
 }
 
@@ -243,24 +262,28 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         const float y = dbToY(db, plot);
         g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));
         g.drawHorizontalLine(static_cast<int>(y), plot.getX(), plot.getRight());
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-        const float ly = (db >= kMaxDb - 0.01f) ? y + 1.0f : y - 11.0f;  // top label sits below
-        g.drawText(juce::String(static_cast<int>(db)),
-                   juce::Rectangle<float>(plot.getX() + 2.0f, ly, 30.0f, 11.0f),
-                   juce::Justification::topLeft);
+        if (!compact_) {
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            const float ly = (db >= kMaxDb - 0.01f) ? y + 1.0f : y - 11.0f;
+            g.drawText(juce::String(static_cast<int>(db)),
+                       juce::Rectangle<float>(plot.getX() + 2.0f, ly, 30.0f, 11.0f),
+                       juce::Justification::topLeft);
+        }
     }
 
     // Frequency axis labels along the bottom of the plot.
-    g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-    auto freqLabel = [&](float f, const juce::String& s) {
-        const float x = freqToX(f, plot);
-        g.drawText(s, juce::Rectangle<float>(x - 18.0f, plot.getBottom() - 13.0f, 36.0f, 12.0f),
-                   juce::Justification::centred);
-    };
-    freqLabel(100.0f, "100");
-    freqLabel(1000.0f, "1k");
-    freqLabel(10000.0f, "10k");
+    if (!compact_) {
+        g.setFont(FontManager::getInstance().getUIFont(9.0f));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        auto freqLabel = [&](float f, const juce::String& s) {
+            const float x = freqToX(f, plot);
+            g.drawText(s, juce::Rectangle<float>(x - 18.0f, plot.getBottom() - 13.0f, 36.0f, 12.0f),
+                       juce::Justification::centred);
+        };
+        freqLabel(100.0f, "100");
+        freqLabel(1000.0f, "1k");
+        freqLabel(10000.0f, "10k");
+    }
 
     if (smoothedDb_.empty())
         return;

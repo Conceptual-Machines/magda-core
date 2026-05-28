@@ -1367,6 +1367,50 @@ DeviceId TrackManager::findPostFxDevice(TrackId trackId, const juce::String& plu
     return INVALID_DEVICE_ID;
 }
 
+const std::vector<PostFxChainElement>& TrackManager::getMixerAnalysisElements(
+    TrackId trackId) const {
+    static const std::vector<PostFxChainElement> empty;
+    if (const auto* track = getTrack(trackId))
+        return track->chain.mixerAnalysisElements;
+    return empty;
+}
+
+DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInfo& device) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return INVALID_DEVICE_ID;
+    if (device.isInstrument) {
+        DBG("Cannot add instrument to mixer-analysis section");
+        return INVALID_DEVICE_ID;
+    }
+    // Mixer-analysis is rail-managed and unique per pluginId on each track.
+    if (findMixerAnalysisDevice(trackId, device.pluginId) != INVALID_DEVICE_ID) {
+        DBG("Mixer-analysis already has " << device.pluginId << "; skipping duplicate");
+        return INVALID_DEVICE_ID;
+    }
+
+    DeviceInfo newDevice = device;
+    newDevice.id = nextDeviceId_++;
+    if (isAnalysisDevice(newDevice.pluginId))
+        newDevice.deviceType = DeviceType::Analysis;
+    track->chain.mixerAnalysisElements.push_back(PostFxChainElement{newDevice});
+    notifyTrackDevicesChanged(trackId);
+    DBG("Added mixer-analysis device: " << newDevice.name << " (id=" << newDevice.id
+                                        << ") to track " << trackId);
+    return newDevice.id;
+}
+
+DeviceId TrackManager::findMixerAnalysisDevice(TrackId trackId,
+                                               const juce::String& pluginId) const {
+    if (const auto* track = getTrack(trackId)) {
+        for (const auto& e : track->chain.mixerAnalysisElements) {
+            if (e.device.pluginId == pluginId)
+                return e.device.id;
+        }
+    }
+    return INVALID_DEVICE_ID;
+}
+
 void TrackManager::removeDeviceFromTrack(TrackId trackId, DeviceId deviceId) {
     if (auto* track = getTrack(trackId)) {
         auto& elements = track->chain.fxChainElements;
@@ -1393,6 +1437,20 @@ void TrackManager::removeDeviceFromTrack(TrackId trackId, DeviceId deviceId) {
             SelectionManager::getInstance().clearSelectionForDeletedChainNode(
                 ChainNodePath::postFxDevice(trackId, deviceId));
             postElements.erase(pit);
+            notifyTrackDevicesChanged(trackId);
+            return;
+        }
+        // Mixer-analysis section (rail-managed mini Oscilloscope / Spectrum).
+        auto& miniElements = track->chain.mixerAnalysisElements;
+        auto mit = std::find_if(
+            miniElements.begin(), miniElements.end(),
+            [deviceId](const PostFxChainElement& e) { return e.device.id == deviceId; });
+        if (mit != miniElements.end()) {
+            DBG("Removed mixer-analysis device: " << mit->device.name << " (id=" << deviceId
+                                                  << ") from track " << trackId);
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
+                ChainNodePath::mixerAnalysisDevice(trackId, deviceId));
+            miniElements.erase(mit);
             notifyTrackDevicesChanged(trackId);
         }
     }
@@ -1443,6 +1501,11 @@ DeviceInfo* TrackManager::getDevice(TrackId trackId, DeviceId deviceId) {
         }
         // Post-fader FX list (flat device list).
         for (auto& e : track->chain.postFxChainElements) {
+            if (e.device.id == deviceId)
+                return &e.device;
+        }
+        // Mixer-analysis section.
+        for (auto& e : track->chain.mixerAnalysisElements) {
             if (e.device.id == deviceId)
                 return &e.device;
         }

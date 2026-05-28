@@ -15,7 +15,7 @@ namespace magda {
  * implicit default (paths with no Segment step address the main FX chain);
  * post-fx paths carry an explicit Segment(PostFx) step as their first step.
  */
-enum class ChainSegment { Fx, PostFx };
+enum class ChainSegment { Fx, PostFx, MixerAnalysis };
 
 /**
  * @brief Type of element in a chain path step
@@ -101,6 +101,11 @@ struct ChainNodePath {
     bool isPostFx() const {
         return !steps.empty() && steps.front().type == ChainStepType::Segment &&
                steps.front().id == static_cast<int>(ChainSegment::PostFx);
+    }
+
+    bool isMixerAnalysis() const {
+        return !steps.empty() && steps.front().type == ChainStepType::Segment &&
+               steps.front().id == static_cast<int>(ChainSegment::MixerAnalysis);
     }
 
     bool operator==(const ChainNodePath& other) const {
@@ -198,6 +203,16 @@ struct ChainNodePath {
         return p;
     }
 
+    // A device in the rail-managed mixer-analysis section (mini scope/spec).
+    // Flat by construction: Track > Segment(MixerAnalysis) > Device.
+    static ChainNodePath mixerAnalysisDevice(TrackId track, DeviceId device) {
+        ChainNodePath p;
+        p.trackId = track;
+        p.steps.push_back({ChainStepType::Segment, static_cast<int>(ChainSegment::MixerAnalysis)});
+        p.steps.push_back({ChainStepType::Device, device});
+        return p;
+    }
+
     // Create a path by extending an existing path
     ChainNodePath withRack(RackId r) const {
         ChainNodePath p = *this;
@@ -240,11 +255,13 @@ struct ChainNodePath {
                 case ChainStepType::Device:
                     result += " > Device[" + juce::String(step.id) + "]";
                     break;
-                case ChainStepType::Segment:
-                    result += (step.id == static_cast<int>(ChainSegment::PostFx))
-                                  ? juce::String(" > Segment[PostFx]")
-                                  : juce::String(" > Segment[Fx]");
+                case ChainStepType::Segment: {
+                    auto seg = static_cast<ChainSegment>(step.id);
+                    result += seg == ChainSegment::PostFx          ? " > Segment[PostFx]"
+                              : seg == ChainSegment::MixerAnalysis ? " > Segment[MixerAnalysis]"
+                                                                   : " > Segment[Fx]";
                     break;
+                }
             }
         }
         if (topLevelDeviceId != INVALID_DEVICE_ID) {

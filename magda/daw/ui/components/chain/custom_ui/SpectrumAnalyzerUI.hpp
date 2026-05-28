@@ -25,6 +25,10 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
 
     void setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin);
 
+    // Compact mode hides the control row (FFT/slope/speed/colour) and uses the
+    // full bounds for the plot — used by the mini visualizer on the mixer.
+    void setCompact(bool compact);
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseMove(const juce::MouseEvent& e) override;
@@ -37,6 +41,7 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     float dbToY(float db, juce::Rectangle<float> area) const;
     juce::Rectangle<float> plotArea() const;  // plot region (excludes the control row)
 
+    bool compact_ = false;
     daw::audio::SpectrumAnalyzerPlugin* plugin_ = nullptr;
 
     int fftOrder_ = 11;

@@ -98,6 +98,18 @@ void OscilloscopeUI::setPlugin(daw::audio::OscilloscopePlugin* plugin) {
     colourCombo_.setSelectedId(plugin_->getTraceColourIndex() + 1, juce::dontSendNotification);
 }
 
+void OscilloscopeUI::setCompact(bool compact) {
+    if (compact_ == compact)
+        return;
+    compact_ = compact;
+    timeLabel_.setVisible(!compact);
+    timeSlider_.setVisible(!compact);
+    timeValueLabel_.setVisible(!compact);
+    colourCombo_.setVisible(!compact);
+    resized();
+    repaint();
+}
+
 void OscilloscopeUI::updateTimeReadout() {
     const double ms = timeSlider_.getValue();
     const juce::String text = ms >= 1000.0 ? juce::String(ms / 1000.0, 2) + " s"
@@ -114,6 +126,8 @@ void OscilloscopeUI::applyTimebase() {
 }
 
 void OscilloscopeUI::resized() {
+    if (compact_)
+        return;
     auto controls = getLocalBounds().removeFromBottom(kControlRowH);
     timeLabel_.setBounds(controls.removeFromLeft(40));
     colourCombo_.setBounds(controls.removeFromRight(72).reduced(2, 2));
@@ -129,7 +143,8 @@ void OscilloscopeUI::timerCallback() {
 
 void OscilloscopeUI::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
-    bounds.removeFromBottom(kControlRowH);
+    if (!compact_)
+        bounds.removeFromBottom(kControlRowH);
     auto area = bounds.toFloat().reduced(4.0f);
 
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -148,10 +163,12 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));
         g.drawHorizontalLine(static_cast<int>(yTop), area.getX(), area.getRight());
         g.drawHorizontalLine(static_cast<int>(yBot), area.getX(), area.getRight());
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-        g.drawText(juce::String(static_cast<int>(dbfs)),
-                   juce::Rectangle<float>(area.getX() + 2.0f, yTop - 6.0f, 28.0f, 12.0f),
-                   juce::Justification::centredLeft);
+        if (!compact_) {
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            g.drawText(juce::String(static_cast<int>(dbfs)),
+                       juce::Rectangle<float>(area.getX() + 2.0f, yTop - 6.0f, 28.0f, 12.0f),
+                       juce::Justification::centredLeft);
+        }
     }
     // Centre line (0 reference / silence).
     g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));

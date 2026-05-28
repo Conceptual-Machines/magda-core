@@ -311,6 +311,9 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // Include them so stale-removal keeps their plugins (and removes deleted ones).
     for (const auto& postElem : trackInfo->chain.postFxChainElements)
         magdaDevices.push_back(postElem.device.id);
+    // Mixer-analysis devices: same shape as post-FX, rail-managed.
+    for (const auto& miniElem : trackInfo->chain.mixerAnalysisElements)
+        magdaDevices.push_back(miniElem.device.id);
 
     // Remove TE plugins that no longer exist in MAGDA for THIS track.
     // Uses the stored trackId for ownership — no TE owner-track heuristic needed.
@@ -692,30 +695,34 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // Create TE plugins for post-FX devices (flat list, no racks/instruments).
     // Inserted at -1 (append); the reorder pass below places them after the fx
     // tree and ensureVolumePluginPosition keeps the fader after them, so the
-    // final order is [fx..., postFx..., VolumeAndPan, LevelMeter].
-    for (const auto& postElem : trackInfo->chain.postFxChainElements) {
-        const auto& device = postElem.device;
-        juce::ScopedLock lock(pluginLock_);
-        if (syncedDevices_.find(device.id) != syncedDevices_.end())
-            continue;
-        auto plugin = loadDeviceAsPlugin(trackId, device, -1);
-        if (!plugin)
-            continue;
-        syncedDevices_[device.id].trackId = trackId;
-        syncedDevices_[device.id].plugin = plugin;
-        pluginToDevice_[plugin.get()] = device.id;
+    // final order is [fx..., postFx..., mixerAnalysis..., VolumeAndPan, LevelMeter].
+    auto loadFlatSection = [&](const std::vector<PostFxChainElement>& section, auto pathBuilder) {
+        for (const auto& elem : section) {
+            const auto& device = elem.device;
+            juce::ScopedLock lock(pluginLock_);
+            if (syncedDevices_.find(device.id) != syncedDevices_.end())
+                continue;
+            auto plugin = loadDeviceAsPlugin(trackId, device, -1);
+            if (!plugin)
+                continue;
+            syncedDevices_[device.id].trackId = trackId;
+            syncedDevices_[device.id].plugin = plugin;
+            pluginToDevice_[plugin.get()] = device.id;
 
-        if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
-            if (extPlugin->isInitialisingAsync()) {
-                syncedDevices_[device.id].isPendingLoad = true;
-                if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(
-                        ChainNodePath::postFxDevice(trackId, device.id)))
-                    devInfo->loadState = DeviceLoadState::Loading;
-                TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
-                pollAsyncPluginLoad(trackId, device.id, plugin);
+            if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+                if (extPlugin->isInitialisingAsync()) {
+                    syncedDevices_[device.id].isPendingLoad = true;
+                    if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(
+                            pathBuilder(trackId, device.id)))
+                        devInfo->loadState = DeviceLoadState::Loading;
+                    TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+                    pollAsyncPluginLoad(trackId, device.id, plugin);
+                }
             }
         }
-    }
+    };
+    loadFlatSection(trackInfo->chain.postFxChainElements, &ChainNodePath::postFxDevice);
+    loadFlatSection(trackInfo->chain.mixerAnalysisElements, &ChainNodePath::mixerAnalysisDevice);
 
     // Reorder TE plugins to match the MAGDA chain element order.
     // This handles moveNode (drag-and-drop reorder) where the MAGDA chain changed
@@ -741,16 +748,21 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
             }
         }
 
-        // Post-FX devices come after the fx tree but before the fader: append
-        // their plugins so the move below sequences them last (the fader and
-        // meter are then pushed past them by ensureVolumePluginPosition).
-        for (const auto& postElem : trackInfo->chain.postFxChainElements) {
-            juce::ScopedLock lock(pluginLock_);
-            auto it = syncedDevices_.find(postElem.device.id);
-            if (it != syncedDevices_.end() && it->second.plugin &&
-                teTrack->pluginList.indexOf(it->second.plugin.get()) >= 0)
-                desiredOrder.push_back(it->second.plugin.get());
-        }
+        // Post-FX devices come after the fx tree but before the fader; mixer-
+        // analysis devices come after post-FX. Append both groups so the move
+        // below sequences them last (the fader and meter are then pushed past
+        // them by ensureVolumePluginPosition).
+        auto appendSection = [&](const std::vector<PostFxChainElement>& section) {
+            for (const auto& elem : section) {
+                juce::ScopedLock lock(pluginLock_);
+                auto it = syncedDevices_.find(elem.device.id);
+                if (it != syncedDevices_.end() && it->second.plugin &&
+                    teTrack->pluginList.indexOf(it->second.plugin.get()) >= 0)
+                    desiredOrder.push_back(it->second.plugin.get());
+            }
+        };
+        appendSection(trackInfo->chain.postFxChainElements);
+        appendSection(trackInfo->chain.mixerAnalysisElements);
 
         // Walk the desired order and move each plugin to its correct position
         // using ValueTree::moveChild on the plugin list's state.

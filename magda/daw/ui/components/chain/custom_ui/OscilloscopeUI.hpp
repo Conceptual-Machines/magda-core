@@ -22,6 +22,10 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
 
     void setPlugin(daw::audio::OscilloscopePlugin* plugin);
 
+    // Compact mode hides the time/colour control row and uses the full
+    // bounds for the waveform — used by the mini visualizer on the mixer.
+    void setCompact(bool compact);
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -30,6 +34,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     void applyTimebase();      // recompute displaySamples_ / readCount_ from timebase + sample rate
     void updateTimeReadout();  // format the slider value into the themed value label
 
+    bool compact_ = false;
     daw::audio::OscilloscopePlugin* plugin_ = nullptr;
 
     // window_ holds the whole tap ring; each frame we read readCount_ samples

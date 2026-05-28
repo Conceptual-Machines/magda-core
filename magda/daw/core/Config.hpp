@@ -718,6 +718,16 @@ class Config {
         mixerShowFxChain_ = v;
     }
 
+    // Persist the rail-driven mixer-analysis devices into the project file.
+    // Default false (session-only); flip on if users want mini-visualizer
+    // settings to survive project save/load.
+    bool getPersistMixerAnalysis() const {
+        return persistMixerAnalysis_;
+    }
+    void setPersistMixerAnalysis(bool v) {
+        persistMixerAnalysis_ = v;
+    }
+
     // Analysis device defaults: the last-used settings, applied to every newly
     // created Oscilloscope / Spectrum Analyzer. A device restored from a project
     // keeps its own saved state; only fresh devices pick these up. Persisted in
@@ -920,6 +930,7 @@ class Config {
     bool mixerShowOscilloscope_ = false;
     bool mixerShowSpectrum_ = false;
     bool mixerShowFxChain_ = false;
+    bool persistMixerAnalysis_ = false;
 
     // Analysis device last-used defaults (see getters above).
     OscilloscopeDefaults oscilloscopeDefaults_;

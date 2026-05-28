@@ -281,6 +281,13 @@ class TrackManager {
     // spectrum) are unique per kind in post-fx, so add* rejects a second one.
     DeviceId findPostFxDevice(TrackId trackId, const juce::String& pluginId) const;
 
+    // Mixer-analysis section: rail-managed Oscilloscope / Spectrum instances
+    // separate from post-FX. Same shape as post-FX, but driven by the mixer
+    // rail toggle (not user content) and skipped at project save.
+    const std::vector<PostFxChainElement>& getMixerAnalysisElements(TrackId trackId) const;
+    DeviceId addDeviceToMixerAnalysis(TrackId trackId, const DeviceInfo& device);
+    DeviceId findMixerAnalysisDevice(TrackId trackId, const juce::String& pluginId) const;
+
     // Device management on track
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device);
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device, int insertIndex);

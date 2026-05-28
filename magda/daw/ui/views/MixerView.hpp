@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../components/chain/custom_ui/OscilloscopeUI.hpp"
+#include "../components/chain/custom_ui/SpectrumAnalyzerUI.hpp"
 #include "../components/common/MixerDebugPanel.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../components/mixer/MasterChannelStrip.hpp"
@@ -169,6 +171,8 @@ class MixerView : public juce::Component,
         juce::Rectangle<int> faderRegion_;  // Entire fader area (for border)
         juce::Rectangle<int> faderArea_;
         juce::Rectangle<int> meterArea_;
+        int sendsRegionBottomY_ = -1;  // Y at the bottom of the sends region
+                                       // (used to draw a divider). -1 = hidden.
 
         // dB scale component (ticks + labels between fader and meter)
         class DbScale;
@@ -184,6 +188,18 @@ class MixerView : public juce::Component,
         std::vector<std::unique_ptr<SendSlot>> sendSlots_;
         std::unique_ptr<juce::Viewport> sendViewport_;
         std::unique_ptr<juce::Component> sendContainer_;
+
+        // "+ Add Send" button shown below the sends list when the Sends pane
+        // is visible. Click pops the same destination menu as the strip's
+        // right-click "Add Send" submenu.
+        std::unique_ptr<juce::Button> addSendButton_;
+        void showAddSendMenu();
+
+        // Mini Oscilloscope / Spectrum visualizers — shown when the matching
+        // mixer rail toggle is on and the track has the post-FX device.
+        std::unique_ptr<daw::ui::OscilloscopeUI> miniOscilloscopeUI_;
+        std::unique_ptr<daw::ui::SpectrumAnalyzerUI> miniSpectrumUI_;
+        void refreshMiniAnalyzers();
 
         // Send area resize handle
         class SendResizeHandle;
@@ -263,6 +279,9 @@ class MixerView : public juce::Component,
     void rebuildChannelStrips();
     void updateStripWidths();
     void relayoutAllStrips();
+    // Ensure every non-master track has (or lacks) the Oscilloscope /
+    // Spectrum Analyzer post-FX device to match the mixer rail toggles.
+    void reconcileAnalysisDevices();
     bool isResizeDragging_ = false;
     bool pendingResizeUpdate_ = false;
     bool pendingSendResizeUpdate_ = false;

@@ -1010,21 +1010,28 @@ int TrackManager::getChainElementIndex(const ChainNodePath& elementPath) {
 }
 
 void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) {
-    // Post-fader FX list: flat, Segment(PostFx) > Device.
-    if (devicePath.isPostFx()) {
-        auto* track = getTrack(devicePath.trackId);
-        if (!track)
-            return;
+    auto removeFromFlatSection = [&](std::vector<PostFxChainElement>& elements, const char* label) {
         DeviceId id = devicePath.getDeviceId();
-        auto& elements = track->chain.postFxChainElements;
         auto it = std::find_if(elements.begin(), elements.end(),
                                [id](const PostFxChainElement& e) { return e.device.id == id; });
         if (it != elements.end()) {
-            DBG("Removed post-fx device: " << it->device.name << " (id=" << id << ")");
+            DBG("Removed " << label << " device: " << it->device.name << " (id=" << id << ")");
             SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
             elements.erase(it);
             notifyTrackDevicesChanged(devicePath.trackId);
         }
+    };
+
+    // Post-fader FX list: flat, Segment(PostFx) > Device.
+    if (devicePath.isPostFx()) {
+        if (auto* track = getTrack(devicePath.trackId))
+            removeFromFlatSection(track->chain.postFxChainElements, "post-fx");
+        return;
+    }
+    // Mixer-analysis section: flat, Segment(MixerAnalysis) > Device.
+    if (devicePath.isMixerAnalysis()) {
+        if (auto* track = getTrack(devicePath.trackId))
+            removeFromFlatSection(track->chain.mixerAnalysisElements, "mixer-analysis");
         return;
     }
 
@@ -1083,16 +1090,24 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
 }
 
 DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath) {
-    // Post-fader FX list: flat, so the path is Segment(PostFx) > Device.
-    if (devicePath.isPostFx()) {
-        auto* track = getTrack(devicePath.trackId);
-        if (!track)
-            return nullptr;
+    auto lookupInFlatSection = [&](std::vector<PostFxChainElement>& elements) -> DeviceInfo* {
         DeviceId id = devicePath.getDeviceId();
-        for (auto& e : track->chain.postFxChainElements) {
+        for (auto& e : elements) {
             if (e.device.id == id)
                 return &e.device;
         }
+        return nullptr;
+    };
+    // Post-fader FX list: flat, so the path is Segment(PostFx) > Device.
+    if (devicePath.isPostFx()) {
+        if (auto* track = getTrack(devicePath.trackId))
+            return lookupInFlatSection(track->chain.postFxChainElements);
+        return nullptr;
+    }
+    // Mixer-analysis section: flat, Segment(MixerAnalysis) > Device.
+    if (devicePath.isMixerAnalysis()) {
+        if (auto* track = getTrack(devicePath.trackId))
+            return lookupInFlatSection(track->chain.mixerAnalysisElements);
         return nullptr;
     }
 

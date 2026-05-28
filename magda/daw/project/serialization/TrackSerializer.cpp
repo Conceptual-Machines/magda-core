@@ -1,3 +1,4 @@
+#include "../../core/Config.hpp"
 #include "../../core/ViewModeState.hpp"
 #include "ProjectSerializer.hpp"
 #include "SerializationHelpers.hpp"
@@ -89,6 +90,16 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
         postFxArray.add(serializeDeviceInfo(element.device));
     }
     obj->setProperty("postFxChainElements", juce::var(postFxArray));
+
+    // Mixer-analysis section: rail-managed, session-only by default. The user
+    // can opt in to persistence via Config::setPersistMixerAnalysis(true).
+    if (Config::getInstance().getPersistMixerAnalysis()) {
+        juce::Array<juce::var> mixerAnalysisArray;
+        for (const auto& element : track.chain.mixerAnalysisElements) {
+            mixerAnalysisArray.add(serializeDeviceInfo(element.device));
+        }
+        obj->setProperty("mixerAnalysisElements", juce::var(mixerAnalysisArray));
+    }
 
     // Track-level mods and macros
     juce::Array<juce::var> trackModsArray;
@@ -243,6 +254,20 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
                 return false;
             }
             outTrack.chain.postFxChainElements.push_back(PostFxChainElement{std::move(device)});
+        }
+    }
+
+    // Mixer-analysis section (only present when persistMixerAnalysis is set;
+    // otherwise the rail toggle reconciles the section from scratch on load).
+    auto mixerAnalysisVar = obj->getProperty("mixerAnalysisElements");
+    if (mixerAnalysisVar.isArray()) {
+        auto* arr = mixerAnalysisVar.getArray();
+        for (const auto& elementVar : *arr) {
+            DeviceInfo device;
+            if (!deserializeDeviceInfo(elementVar, device)) {
+                return false;
+            }
+            outTrack.chain.mixerAnalysisElements.push_back(PostFxChainElement{std::move(device)});
         }
     }
 

@@ -46,19 +46,32 @@ void MixerToggleRail::paint(juce::Graphics& g) {
 void MixerToggleRail::resized() {
     constexpr int BTN_SIZE = 28;
     constexpr int BTN_SPACING = 6;
-    constexpr int TOP_PADDING = 8;
+    constexpr int EDGE_PADDING = 8;
 
     auto bounds = getLocalBounds();
     int x = (bounds.getWidth() - BTN_SIZE) / 2;
-    int y = TOP_PADDING;
 
-    SvgButton* buttons[] = {sendsButton_.get(),        routingButton_.get(),  monitorButton_.get(),
-                            oscilloscopeButton_.get(), spectrumButton_.get(), fxChainButton_.get()};
+    // Rail mirrors the channel-strip layout: things that live near the top of
+    // the strip (analyzers / sends / FX chain) anchor to the top of the rail;
+    // things that live near the bottom of the strip (routing / monitor)
+    // anchor to the bottom.
+    SvgButton* topGroup[] = {oscilloscopeButton_.get(), spectrumButton_.get(), sendsButton_.get(),
+                             fxChainButton_.get()};
+    SvgButton* bottomGroup[] = {routingButton_.get(), monitorButton_.get()};
 
-    for (auto* btn : buttons) {
+    int yTop = EDGE_PADDING;
+    for (auto* btn : topGroup) {
         if (btn != nullptr) {
-            btn->setBounds(x, y, BTN_SIZE, BTN_SIZE);
-            y += BTN_SIZE + BTN_SPACING;
+            btn->setBounds(x, yTop, BTN_SIZE, BTN_SIZE);
+            yTop += BTN_SIZE + BTN_SPACING;
+        }
+    }
+
+    int yBottom = bounds.getHeight() - EDGE_PADDING - BTN_SIZE;
+    for (auto* btn : bottomGroup) {
+        if (btn != nullptr) {
+            btn->setBounds(x, yBottom, BTN_SIZE, BTN_SIZE);
+            yBottom -= BTN_SIZE + BTN_SPACING;
         }
     }
 }

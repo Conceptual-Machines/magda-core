@@ -98,6 +98,7 @@ void Config::save() {
     root->setProperty("mixerShowOscilloscope", mixerShowOscilloscope_);
     root->setProperty("mixerShowSpectrum", mixerShowSpectrum_);
     root->setProperty("mixerShowFxChain", mixerShowFxChain_);
+    root->setProperty("persistMixerAnalysis", persistMixerAnalysis_);
     root->setProperty("previewOutputChannel", previewOutputChannel);
 
     // Auto-save
@@ -393,6 +394,7 @@ void Config::load() {
     mixerShowOscilloscope_ = getBool("mixerShowOscilloscope", mixerShowOscilloscope_);
     mixerShowSpectrum_ = getBool("mixerShowSpectrum", mixerShowSpectrum_);
     mixerShowFxChain_ = getBool("mixerShowFxChain", mixerShowFxChain_);
+    persistMixerAnalysis_ = getBool("persistMixerAnalysis", persistMixerAnalysis_);
     previewOutputChannel = getInt("previewOutputChannel", previewOutputChannel);
 
     autoSaveEnabled = getBool("autoSaveEnabled", autoSaveEnabled);

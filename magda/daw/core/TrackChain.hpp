@@ -41,6 +41,13 @@ struct TrackChain {
     std::vector<ChainElement> fxChainElements;            // main / pre-fader (tree)
     std::vector<PostFxChainElement> postFxChainElements;  // post-fader (flat)
 
+    // Rail-managed analysis devices (mini Oscilloscope / Spectrum on the
+    // mixer). Same shape as post-FX devices but populated by the mixer rail
+    // toggle, not by the user — kept separate so the two never confuse each
+    // other, and skipped at serialization (session-only state, restored from
+    // the rail toggle in Config).
+    std::vector<PostFxChainElement> mixerAnalysisElements;
+
     TrackChain() = default;
 
     // Move is trivial (default).
@@ -64,7 +71,8 @@ struct TrackChain {
         fxChainElements.reserve(other.fxChainElements.size());
         for (const auto& element : other.fxChainElements)
             fxChainElements.push_back(deepCopyElement(element));
-        postFxChainElements = other.postFxChainElements;  // DeviceInfo is copyable
+        postFxChainElements = other.postFxChainElements;
+        mixerAnalysisElements = other.mixerAnalysisElements;
     }
 };
 

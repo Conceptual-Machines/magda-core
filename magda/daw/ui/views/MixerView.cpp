@@ -15,6 +15,7 @@
 #include "../components/mixer/RoutingSyncHelper.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
@@ -24,6 +25,48 @@
 #include "core/ViewModeController.hpp"
 
 namespace magda {
+
+// "Add Send" row — "Add Send" label on the left, square "+" on the right
+// aligned with the existing send rows' delete (x) button. Whole row is one
+// button; click anywhere fires the destination picker.
+class AddSendButton : public juce::Button {
+  public:
+    AddSendButton() : juce::Button("AddSend") {
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    }
+
+    void paintButton(juce::Graphics& g, bool isHighlighted, bool isDown) override {
+        auto bounds = getLocalBounds();
+        constexpr int plusWidth = 16;  // matches send row's delete button width
+        auto plusRect = bounds.removeFromRight(plusWidth);
+
+        auto textBg = DarkTheme::getColour(DarkTheme::BUTTON_NORMAL);
+        if (isDown)
+            textBg = textBg.darker(0.2f);
+        else if (isHighlighted)
+            textBg = textBg.brighter(0.1f);
+        g.setColour(textBg);
+        g.fillRect(bounds);
+
+        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.drawText("Add Send", bounds.reduced(6, 0), juce::Justification::centredLeft);
+
+        // Inverted from the Add Send row: text colour as background, button
+        // background as the "+" glyph colour.
+        auto plusBg = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        if (isDown)
+            plusBg = plusBg.darker(0.2f);
+        else if (isHighlighted)
+            plusBg = plusBg.brighter(0.1f);
+        g.setColour(plusBg);
+        g.fillRect(plusRect);
+
+        g.setFont(FontManager::getInstance().getUIFont(11.0f));
+        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        g.drawText("+", plusRect, juce::Justification::centred);
+    }
+};
 
 // dB conversion helpers
 namespace {
@@ -557,6 +600,26 @@ void MixerView::ChannelStrip::setupControls() {
         sendViewport_->setScrollBarsShown(false, false, true, false);  // hidden but scrollable
         addAndMakeVisible(*sendViewport_);
 
+        // "+ Add Send" button — visible whenever the Sends pane is on, sits
+        // below any existing send rows. Shares the destination picker with
+        // the strip's right-click "Add Send" submenu.
+        addSendButton_ = std::make_unique<AddSendButton>();
+        addSendButton_->onClick = [this]() { showAddSendMenu(); };
+        addSendButton_->setVisible(false);
+        addAndMakeVisible(*addSendButton_);
+
+        // Mini Oscilloscope / Spectrum — rendered in compact mode (no control
+        // row), pointer to the live plugin is wired by refreshMiniAnalyzers().
+        miniOscilloscopeUI_ = std::make_unique<daw::ui::OscilloscopeUI>();
+        miniOscilloscopeUI_->setCompact(true);
+        miniOscilloscopeUI_->setVisible(false);
+        addAndMakeVisible(*miniOscilloscopeUI_);
+
+        miniSpectrumUI_ = std::make_unique<daw::ui::SpectrumAnalyzerUI>();
+        miniSpectrumUI_->setCompact(true);
+        miniSpectrumUI_->setVisible(false);
+        addAndMakeVisible(*miniSpectrumUI_);
+
         // Resize handle (thin horizontal bar above the fader). Controls
         // faderTopInset — drag down shrinks the fader, drag up grows it. Sends
         // auto-size to their slot count and are not user-resizable.
@@ -772,6 +835,62 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
     };
 }
 
+void MixerView::ChannelStrip::refreshMiniAnalyzers() {
+    if (isMaster_)
+        return;
+    auto& tm = TrackManager::getInstance();
+    auto* bridge = audioEngine_ ? audioEngine_->getAudioBridge() : nullptr;
+
+    if (miniOscilloscopeUI_) {
+        daw::audio::OscilloscopePlugin* osc = nullptr;
+        if (bridge) {
+            DeviceId id = tm.findMixerAnalysisDevice(trackId_, "oscilloscope");
+            if (id != INVALID_DEVICE_ID) {
+                auto pluginPtr = bridge->getPlugin(id);
+                osc = dynamic_cast<daw::audio::OscilloscopePlugin*>(pluginPtr.get());
+            }
+        }
+        miniOscilloscopeUI_->setPlugin(osc);
+    }
+
+    if (miniSpectrumUI_) {
+        daw::audio::SpectrumAnalyzerPlugin* spec = nullptr;
+        if (bridge) {
+            DeviceId id = tm.findMixerAnalysisDevice(trackId_, "spectrumanalyzer");
+            if (id != INVALID_DEVICE_ID) {
+                auto pluginPtr = bridge->getPlugin(id);
+                spec = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(pluginPtr.get());
+            }
+        }
+        miniSpectrumUI_->setPlugin(spec);
+    }
+}
+
+void MixerView::ChannelStrip::showAddSendMenu() {
+    if (isMaster_)
+        return;
+    juce::PopupMenu menu;
+    const auto& tracks = TrackManager::getInstance().getTracks();
+    std::set<TrackId> existingSendDests;
+    if (auto* thisTrack = TrackManager::getInstance().getTrack(trackId_)) {
+        for (const auto& send : thisTrack->sends)
+            existingSendDests.insert(send.destTrackId);
+    }
+    for (const auto& t : tracks) {
+        if (t.id != trackId_ && t.type != TrackType::Master &&
+            existingSendDests.find(t.id) == existingSendDests.end()) {
+            menu.addItem(t.id, t.name);
+        }
+    }
+    if (menu.getNumItems() == 0)
+        menu.addItem(-1, "(No tracks available)", false);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(addSendButton_.get()), [this](int result) {
+            if (result > 0)
+                TrackManager::getInstance().addSend(trackId_, static_cast<TrackId>(result));
+        });
+}
+
 void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& sends) {
     // Remove old slots from send container
     for (auto& slot : sendSlots_) {
@@ -879,6 +998,12 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
                 g.fillRect(0, 4 + tintHeight, ownBounds.getWidth() - 1, 1);
             }
         }
+    }
+
+    // Divider at the bottom of the sends region
+    if (sendsRegionBottomY_ >= 0) {
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.fillRect(0, sendsRegionBottomY_, ownBounds.getWidth() - 1, 1);
     }
 
     // Draw fader region border (top and bottom lines)
@@ -1002,6 +1127,29 @@ void MixerView::ChannelStrip::resized() {
 
     bool isMultiOut = trackType_ == TrackType::MultiOut;
 
+    // Mini analyzers (Oscilloscope / Spectrum) sit just below the header.
+    // Each takes a fixed compact height when its rail toggle is on.
+    constexpr int miniAnalyzerHeight = 64;
+    const auto& cfg = Config::getInstance();
+    const bool showOsc = cfg.getMixerShowOscilloscope();
+    const bool showSpec = cfg.getMixerShowSpectrum();
+    if (!isMaster_) {
+        if (showOsc && miniOscilloscopeUI_) {
+            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(miniAnalyzerHeight));
+            miniOscilloscopeUI_->setVisible(true);
+            bounds.removeFromTop(2);
+        } else if (miniOscilloscopeUI_) {
+            miniOscilloscopeUI_->setVisible(false);
+        }
+        if (showSpec && miniSpectrumUI_) {
+            miniSpectrumUI_->setBounds(bounds.removeFromTop(miniAnalyzerHeight));
+            miniSpectrumUI_->setVisible(true);
+            bounds.removeFromTop(2);
+        } else if (miniSpectrumUI_) {
+            miniSpectrumUI_->setVisible(false);
+        }
+    }
+
     // Sends auto-size to their slot count (no user resize). The horizontal
     // handle sits just above the fader and controls faderTopInset — that is
     // the only thing the user can drag.
@@ -1023,13 +1171,39 @@ void MixerView::ChannelStrip::resized() {
 
         bounds.removeFromTop(2);  // Gap between track header and sends/handle
 
-        if (sendsVisible && totalContentHeight > 0) {
-            sendViewport_->setBounds(bounds.removeFromTop(totalContentHeight));
-            sendViewport_->setVisible(true);
+        if (sendsVisible) {
+            // Reserve uniform height across all strips so faders line up.
+            // Height = Add Send row + max-sends-on-any-track slot rows.
+            size_t maxSends = 0;
+            for (const auto& t : TrackManager::getInstance().getTracks())
+                maxSends = std::max(maxSends, t.sends.size());
+            int uniformSendsRegion = sendSlotHeight;  // Add Send row itself
+            if (maxSends > 0)
+                uniformSendsRegion += 1 + static_cast<int>(maxSends) * (sendSlotHeight + 1) - 1;
+            auto sendsRegion = bounds.removeFromTop(uniformSendsRegion);
+            sendsRegionBottomY_ = sendsRegion.getBottom();
+
+            if (addSendButton_) {
+                addSendButton_->setBounds(sendsRegion.removeFromTop(sendSlotHeight));
+                addSendButton_->setVisible(true);
+            }
+            if (totalContentHeight > 0) {
+                sendsRegion.removeFromTop(1);  // 1px gap matching inter-slot spacing
+                sendViewport_->setBounds(sendsRegion.removeFromTop(totalContentHeight));
+                sendViewport_->setVisible(true);
+            } else {
+                sendViewport_->setVisible(false);
+            }
         } else {
             sendViewport_->setVisible(false);
+            if (addSendButton_)
+                addSendButton_->setVisible(false);
+            sendsRegionBottomY_ = -1;
         }
 
+        // Breathing room between the sends area and the resize handle.
+        if (sendsVisible)
+            bounds.removeFromTop(6);
         bounds.removeFromTop(metrics.faderTopInset);
 
         if (sendResizeHandle_) {
@@ -1254,37 +1428,29 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
     if (event.mods.isPopupMenu()) {
         if (fromChild)
             return;  // children manage their own right-click behaviour
-        juce::PopupMenu menu;
-
-        // Per-track operations only. Global "Show X" toggles live on the
-        // MixerView left rail (see MixerToggleRail).
-        const int deleteTrackId = -101;
-
-        // Add Send submenu (not for master)
-        if (!isMaster_) {
-            juce::PopupMenu sendSubMenu;
-            const auto& tracks = TrackManager::getInstance().getTracks();
-            std::set<TrackId> existingSendDests;
-            if (auto* thisTrack = TrackManager::getInstance().getTrack(trackId_)) {
-                for (const auto& send : thisTrack->sends)
-                    existingSendDests.insert(send.destTrackId);
-            }
-            for (const auto& t : tracks) {
-                if (t.id != trackId_ && t.type != TrackType::Master &&
-                    existingSendDests.find(t.id) == existingSendDests.end()) {
-                    sendSubMenu.addItem(t.id, t.name);
-                }
-            }
-            if (sendSubMenu.getNumItems() == 0) {
-                sendSubMenu.addItem(-1, "(No tracks available)", false);
-            }
-            menu.addSubMenu("Add Send", sendSubMenu);
-            menu.addSeparator();
-            menu.addItem(deleteTrackId, "Delete Track");
-        }
-
-        if (menu.getNumItems() == 0)
+        if (isMaster_)
             return;  // master strip has nothing to offer here
+
+        juce::PopupMenu menu;
+        juce::PopupMenu sendSubMenu;
+        const auto& tracks = TrackManager::getInstance().getTracks();
+        std::set<TrackId> existingSendDests;
+        if (auto* thisTrack = TrackManager::getInstance().getTrack(trackId_)) {
+            for (const auto& send : thisTrack->sends)
+                existingSendDests.insert(send.destTrackId);
+        }
+        for (const auto& t : tracks) {
+            if (t.id != trackId_ && t.type != TrackType::Master &&
+                existingSendDests.find(t.id) == existingSendDests.end()) {
+                sendSubMenu.addItem(t.id, t.name);
+            }
+        }
+        if (sendSubMenu.getNumItems() == 0)
+            sendSubMenu.addItem(-1, "(No tracks available)", false);
+        menu.addSubMenu("Add Send", sendSubMenu);
+        menu.addSeparator();
+        const int deleteTrackId = -101;
+        menu.addItem(deleteTrackId, "Delete Track");
 
         menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
             if (result == -101) {
@@ -1383,6 +1549,7 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Left-edge toggle rail
     toggleRail_ = std::make_unique<MixerToggleRail>();
     toggleRail_->onToggleChanged = [this]() {
+        reconcileAnalysisDevices();
         resized();
         relayoutAllStrips();
     };
@@ -1608,6 +1775,27 @@ void MixerView::rebuildChannelStrips() {
     // Sync selection with TrackManager's current selection
     trackSelectionChanged(TrackManager::getInstance().getSelectedTrack());
 
+    // New tracks may need analyzer devices added (e.g. saved-on toggle).
+    reconcileAnalysisDevices();
+
+    // Newly built strips need their analyzer plugin pointers resolved. The
+    // immediate refresh handles the steady-state case; the deferred one
+    // catches project load, where PluginManagerSync may not yet have attached
+    // the actual TE plugins to AudioBridge by the time we get here.
+    for (auto& strip : channelStrips)
+        strip->refreshMiniAnalyzers();
+    for (auto& strip : auxChannelStrips)
+        strip->refreshMiniAnalyzers();
+    juce::Component::SafePointer<MixerView> safeThis(this);
+    juce::MessageManager::callAsync([safeThis]() {
+        if (auto* self = safeThis.getComponent()) {
+            for (auto& strip : self->channelStrips)
+                strip->refreshMiniAnalyzers();
+            for (auto& strip : self->auxChannelStrips)
+                strip->refreshMiniAnalyzers();
+        }
+    });
+
     resized();
 }
 
@@ -1641,6 +1829,16 @@ void MixerView::trackPropertyChanged(int trackId) {
 void MixerView::trackDevicesChanged(TrackId trackId) {
     // Sends are notified via trackDevicesChanged — update the strip
     trackPropertyChanged(trackId);
+    // Re-resolve the changed strip's mini analyzer plugin pointers
+    for (auto& strip : channelStrips) {
+        if (strip->getTrackId() == trackId) {
+            strip->refreshMiniAnalyzers();
+            break;
+        }
+    }
+    // Sends region is uniform across strips (max-sends-on-any-track), so a
+    // change on one strip forces a relayout on every strip and the master.
+    relayoutAllStrips();
 }
 
 void MixerView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
@@ -1823,6 +2021,37 @@ void MixerView::updateStripWidths() {
             auxChannelStrips[i]->setBounds(i * metrics.channelWidth, 0, metrics.channelWidth,
                                            auxContainer->getHeight());
         }
+    }
+}
+
+void MixerView::reconcileAnalysisDevices() {
+    auto& tm = TrackManager::getInstance();
+    const auto& cfg = Config::getInstance();
+    const bool wantOsc = cfg.getMixerShowOscilloscope();
+    const bool wantSpec = cfg.getMixerShowSpectrum();
+
+    auto reconcileOne = [&](TrackId tid, const juce::String& pluginId,
+                            const juce::String& displayName, bool want) {
+        DeviceId existing = tm.findMixerAnalysisDevice(tid, pluginId);
+        const bool has = (existing != INVALID_DEVICE_ID);
+        if (want && !has) {
+            DeviceInfo device;
+            device.name = displayName;
+            device.manufacturer = "MAGDA";
+            device.pluginId = pluginId;
+            device.deviceType = DeviceType::Analysis;
+            device.format = PluginFormat::Internal;
+            tm.addDeviceToMixerAnalysis(tid, device);
+        } else if (!want && has) {
+            tm.removeDeviceFromChainByPath(ChainNodePath::mixerAnalysisDevice(tid, existing));
+        }
+    };
+
+    for (const auto& t : tm.getTracks()) {
+        if (t.type == TrackType::Master)
+            continue;
+        reconcileOne(t.id, "oscilloscope", "Oscilloscope", wantOsc);
+        reconcileOne(t.id, "spectrumanalyzer", "Spectrum Analyzer", wantSpec);
     }
 }
 

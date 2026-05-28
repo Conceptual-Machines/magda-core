@@ -9,6 +9,7 @@
 #include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
+#include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 
@@ -529,10 +530,24 @@ void MasterChannelStrip::resized() {
 
         bounds.removeFromTop(metrics.controlSpacing);
 
-        // Mirror channel-strip layout: 2px gap, then fader-top inset, then the
-        // resize handle. Master strip has no sends viewport of its own, so the
-        // inset alone is what aligns the handle with channel strips' handles.
+        // Mirror channel-strip layout so the handle and fader line up: 2px
+        // gap, then reserve the same sends region (Add Send row + max sends
+        // across all tracks) when sends are visible, then the fader-top
+        // inset, then the resize handle.
         bounds.removeFromTop(2);
+
+        if (Config::getInstance().getMixerShowSends()) {
+            const int sendSlotHeight = 18;
+            size_t maxSends = 0;
+            for (const auto& t : TrackManager::getInstance().getTracks())
+                maxSends = std::max(maxSends, t.sends.size());
+            int uniformSendsRegion = sendSlotHeight;
+            if (maxSends > 0)
+                uniformSendsRegion += 1 + static_cast<int>(maxSends) * (sendSlotHeight + 1) - 1;
+            bounds.removeFromTop(uniformSendsRegion);
+            bounds.removeFromTop(6);  // breathing room before handle
+        }
+
         bounds.removeFromTop(metrics.faderTopInset);
 
         if (resizeHandle_) {
