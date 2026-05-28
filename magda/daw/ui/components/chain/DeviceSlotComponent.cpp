@@ -134,6 +134,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // edits and playback without polling.
     magda::AutomationManager::getInstance().addListener(this);
 
+    // Register for gain-staging state so the slot can draw its staging overlay.
+    magda::GainStagingManager::getInstance().addListener(this);
+
     // Note: BindingRegistry / ControllerRegistry listening is done by
     // NodeComponent (the base class) — it owns the controller-indicator
     // dots and the refresh logic.
@@ -265,6 +268,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         // Use TrackManager method to notify AudioBridge for audio sync
         magda::TrackManager::getInstance().setDeviceGainDb(
             nodePath_, static_cast<float>(gainLabel_.getValue()));
+        // A manual gain edit supersedes any gain-staging mark on this device.
+        magda::GainStagingManager::getInstance().clearApplied(device_.id);
     };
     addAndMakeVisible(gainLabel_);
 
@@ -317,6 +322,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     gainSlider_->onValueChange = [this]() {
         magda::TrackManager::getInstance().setDeviceGainDb(
             nodePath_, static_cast<float>(gainSlider_->getValue()));
+        // A manual gain edit supersedes any gain-staging mark on this device.
+        magda::GainStagingManager::getInstance().clearApplied(device_.id);
     };
     addAndMakeVisible(*gainSlider_);
 
@@ -786,6 +793,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 DeviceSlotComponent::~DeviceSlotComponent() {
     magda::TrackManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
+    magda::GainStagingManager::getInstance().removeListener(this);
     stopTimer();
 }
 
@@ -1337,10 +1345,109 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
                                      onButton_.get(), exportClipButton_.get()});
 }
 
-// paintOverChildren is now handled entirely by NodeComponent — controller
-// indicator dots, bypass dim, and selection border live there. The
-// device-specific overlay code that used to live here was the dot-painting
-// logic, which has been moved to the base.
+void DeviceSlotComponent::deviceGainStageChanged(magda::DeviceId deviceId,
+                                                 const magda::DeviceGainStageInfo& info) {
+    if (deviceId != device_.id)
+        return;
+
+    // The gain controls don't refresh on programmatic gain changes, so when a
+    // pass moves this device's gain, pull the new value onto the slider/label.
+    if (const auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
+        device_.gainDb = dev->gainDb;
+        device_.gainValue = dev->gainValue;
+        gainLabel_.setValue(dev->gainDb, juce::dontSendNotification);
+        if (gainSlider_ != nullptr)
+            gainSlider_->setValue(dev->gainDb, juce::dontSendNotification);
+    }
+
+    // Surface the move in the gain slider's tooltip. While collecting we show
+    // the live capture; otherwise we show the persistent applied move.
+    if (auto* gs = dynamic_cast<GainSliderWithMeterTooltip*>(gainSlider_.get())) {
+        auto& gsm = magda::GainStagingManager::getInstance();
+        const bool collecting = info.state == magda::DeviceGainStageState::Collecting;
+        const float* applied = gsm.getAppliedDelta(device_.id);
+        juce::String line;
+        if (collecting) {
+            line = "Gain staging: capturing";
+            if (info.capturedPeakDb > magda::kGainStageSilenceDb + 0.5f)
+                line += juce::String::formatted(" (peak %+.1f dB)", info.capturedPeakDb);
+        } else if (applied != nullptr) {
+            const char* verb = *applied < -0.05f ? "lowered" : *applied > 0.05f ? "raised" : "set";
+            line = juce::String("Gain staging: ") + verb +
+                   juce::String::formatted(" %+.1f dB", *applied);
+        }
+        gs->setStagingInfo(line);
+    }
+
+    repaint();
+}
+
+void DeviceSlotComponent::paintOverChildren(juce::Graphics& g) {
+    // Base draws controller-indicator dots, bypass dim, and the selection
+    // border; we add the gain-staging mark on top.
+    NodeComponent::paintOverChildren(g);
+
+    auto& gsm = magda::GainStagingManager::getInstance();
+    const auto* info = gsm.getDeviceInfo(device_.id);
+    const bool collecting =
+        info != nullptr && info->state == magda::DeviceGainStageState::Collecting;
+    // Persistent record of the move staging left on this device — outlives the
+    // pass so the user can see which devices were touched.
+    const float* applied = gsm.getAppliedDelta(device_.id);
+
+    if (collecting) {
+        // During analysis: highlight the WHOLE device and read out the live
+        // captured peak, sitting to the left of the device's gain control.
+        const auto colour = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
+        auto bounds = getLocalBounds().toFloat().reduced(1.0f);
+        g.setColour(colour.withAlpha(0.10f));
+        g.fillRoundedRectangle(bounds, 4.0f);
+        g.setColour(colour.withAlpha(0.9f));
+        g.drawRoundedRectangle(bounds, 4.0f, 2.0f);
+
+        const juce::String badge = info->capturedPeakDb > magda::kGainStageSilenceDb + 0.5f
+                                       ? juce::String(info->capturedPeakDb, 1) + " dB"
+                                       : juce::String("...");
+        constexpr int badgeW = 52;
+        constexpr int badgeH = 16;
+        juce::Rectangle<int> badgeArea;
+        if (gainLabel_.isVisible() && !gainLabel_.getBounds().isEmpty()) {
+            auto gb = gainLabel_.getBounds();
+            badgeArea = {juce::jmax(2, gb.getX() - badgeW - 2), gb.getY(), badgeW, gb.getHeight()};
+        } else {
+            badgeArea = {6, juce::jmax(2, getHeaderHeight() + 4), badgeW, badgeH};
+        }
+        g.setColour(colour.withAlpha(0.92f));
+        g.fillRoundedRectangle(badgeArea.toFloat(), 3.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
+        g.drawText(badge, badgeArea, juce::Justification::centred);
+        return;
+    }
+
+    if (applied == nullptr)
+        return;
+
+    // After applying: highlight ONLY the fader (volume slider over the meter).
+    // The exact move stays in the slider's tooltip.
+    juce::Rectangle<int> meterArea;
+    if (gainSlider_ != nullptr && gainSlider_->isVisible() && !gainSlider_->getBounds().isEmpty())
+        meterArea = gainSlider_->getBounds();
+    else if (levelMeter_.isVisible() && !levelMeter_.getBounds().isEmpty())
+        meterArea = levelMeter_.getBounds();
+    else
+        return;
+
+    // Staging only trims, so applied is normally negative (amber); a cooler hue
+    // covers the rare non-negative case.
+    const auto colour = *applied < -0.05f ? DarkTheme::getColour(DarkTheme::STATUS_WARNING)
+                                          : DarkTheme::getColour(DarkTheme::ACCENT_CYAN);
+    auto r = meterArea.toFloat().expanded(1.0f);
+    g.setColour(colour.withAlpha(0.16f));
+    g.fillRoundedRectangle(r, 2.0f);
+    g.setColour(colour.withAlpha(0.95f));
+    g.drawRoundedRectangle(r, 2.0f, 1.5f);
+}
 
 juce::Point<float> DeviceSlotComponent::getControllerIndicatorAnchor() const {
     if (auto anchor = drum_grid_slot::getControllerIndicatorAnchor(
