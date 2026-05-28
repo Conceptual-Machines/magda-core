@@ -288,14 +288,17 @@ void FooterBar::setupButtons() {
         ViewMode mode;
         const char* name;
         const char* tooltipKey;
+        juce::Colour accent;
     };
 
     const std::array<IconData, NUM_MODES> icons = {{
-        {BinaryData::Session_svg, BinaryData::Session_svgSize, ViewMode::Live, "Session",
-         "footer.tooltip.session"},
-        {BinaryData::Arrangement_svg, BinaryData::Arrangement_svgSize, ViewMode::Arrange,
-         "Arrangement", "footer.tooltip.arrangement"},
-        {BinaryData::Mix_svg, BinaryData::Mix_svgSize, ViewMode::Mix, "Mix", "footer.tooltip.mix"},
+        {BinaryData::iconsessionboldm_svg, BinaryData::iconsessionboldm_svgSize, ViewMode::Live,
+         "Session", "footer.tooltip.session", DarkTheme::getColour(DarkTheme::ACCENT_GREEN)},
+        {BinaryData::iconarrangementboldm_svg, BinaryData::iconarrangementboldm_svgSize,
+         ViewMode::Arrange, "Arrangement", "footer.tooltip.arrangement",
+         DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)},
+        {BinaryData::iconmixboldm_svg, BinaryData::iconmixboldm_svgSize, ViewMode::Mix, "Mix",
+         "footer.tooltip.mix", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)},
     }};
 
     for (size_t i = 0; i < NUM_MODES; ++i) {
@@ -309,12 +312,13 @@ void FooterBar::setupButtons() {
             ViewModeController::getInstance().setViewMode(mode);
         };
 
-        // Set colors for the SvgButton
+        // Per-stage accent — same restrained palette the mixer uses for track
+        // strips: muted normal/hover, full-strength accent on the active stage
+        // with a low-alpha tint behind it.
         modeButtons[i]->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         modeButtons[i]->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        modeButtons[i]->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
-        modeButtons[i]->setActiveBackgroundColor(
-            DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.2f));
+        modeButtons[i]->setActiveColor(icons[i].accent);
+        modeButtons[i]->setActiveBackgroundColor(icons[i].accent.withAlpha(0.2f));
 
         addAndMakeVisible(*modeButtons[i]);  // Safe with ManagedChild
     }

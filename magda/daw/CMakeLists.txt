@@ -165,6 +165,10 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/toolbar/vertical.svg
     ../../assets/icons/toolbar/io_routing.svg
     # Footer view mode icons
+    ../../assets/icons/footer/icon-session-boldm.svg
+    ../../assets/icons/footer/icon-arrangement-boldm.svg
+    ../../assets/icons/footer/icon-mix-boldm.svg
+    # Legacy view mode icons (still used by the clip inspector view toggle)
     ../../assets/icons/footer/Session.svg
     ../../assets/icons/footer/Arrangement.svg
     ../../assets/icons/footer/Mix.svg
