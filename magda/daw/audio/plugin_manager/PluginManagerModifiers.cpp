@@ -82,15 +82,15 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                     visit(inner);
             }
         }
-        for (const auto& [drumGridDevId, padDevIds] : drumGridPadDevices_) {
-            auto sdIt = findSyncedDeviceById(drumGridDevId);
+        for (const auto& [drumGridPath, padPaths] : drumGridPadDevices_) {
+            auto sdIt = findSyncedDevice(drumGridPath);
             if (sdIt == syncedDevices_.end() || sdIt->second.trackId != trackId)
                 continue;
-            for (auto padDevId : padDevIds) {
+            for (const auto& padPath : padPaths) {
                 te::Plugin::Ptr plugin;
                 {
                     juce::ScopedLock lock(pluginLock_);
-                    auto pIt = findSyncedDeviceById(padDevId);
+                    auto pIt = findSyncedDevice(padPath);
                     if (pIt != syncedDevices_.end())
                         plugin = pIt->second.plugin;
                 }
@@ -110,7 +110,7 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
             continue;
 
         const auto& device = getDevice(element);
-        auto sdIt = findSyncedDeviceById(device.id);
+        auto sdIt = findSyncedDevice(ChainNodePath::topLevelDevice(trackId, device.id));
         if (sdIt == syncedDevices_.end())
             continue;
 
@@ -170,15 +170,15 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                     visit(inner);
             }
         }
-        for (const auto& [drumGridDevId, padDevIds] : drumGridPadDevices_) {
-            auto sdIt = findSyncedDeviceById(drumGridDevId);
+        for (const auto& [drumGridPath, padPaths] : drumGridPadDevices_) {
+            auto sdIt = findSyncedDevice(drumGridPath);
             if (sdIt == syncedDevices_.end() || sdIt->second.trackId != trackId)
                 continue;
-            for (auto padDevId : padDevIds) {
+            for (const auto& padPath : padPaths) {
                 te::Plugin::Ptr plugin;
                 {
                     juce::ScopedLock lock(pluginLock_);
-                    auto pIt = findSyncedDeviceById(padDevId);
+                    auto pIt = findSyncedDevice(padPath);
                     if (pIt != syncedDevices_.end())
                         plugin = pIt->second.plugin;
                 }
@@ -273,7 +273,7 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
         if (device.sidechain.sourceTrackId != INVALID_TRACK_ID)
             continue;
 
-        auto it = findSyncedDeviceById(device.id);
+        auto it = findSyncedDevice(ChainNodePath::topLevelDevice(trackId, device.id));
         if (it == syncedDevices_.end())
             continue;
 
@@ -565,7 +565,7 @@ void PluginManager::rebuildSidechainLFOCache() {
         // ones, since the MAGDA-side filter advanced past it but the TE-side
         // index didn't).
         auto collectDeviceLFOs = [&](const DeviceInfo& device) {
-            auto it = findSyncedDeviceById(device.id);
+            auto it = findSyncedDevice(ChainNodePath::topLevelDevice(track.id, device.id));
             if (it == syncedDevices_.end())
                 return;
             for (const auto& modInfo : device.mods) {

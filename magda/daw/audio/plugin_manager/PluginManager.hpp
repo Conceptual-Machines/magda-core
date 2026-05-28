@@ -231,7 +231,6 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * parameter layout post-construction (FaustPlugin reloading a
      * .dsp). No-op if no processor is registered for the device.
      */
-    void refreshDeviceParameters(DeviceId deviceId);
     void refreshDeviceParameters(const ChainNodePath& devicePath);
 
     /**
@@ -289,11 +288,10 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * Reads DeviceInfo::pluginState and, if non-empty, sets it on the TE
      * plugin's ValueTree state property so the plugin reads it during init.
      *
-     * @param trackId The track containing the device
-     * @param deviceId The device whose state to restore
+     * @param devicePath The device whose state to restore
      * @param plugin The TE plugin to apply state to
      */
-    void restorePluginState(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin);
+    void restorePluginState(const ChainNodePath& devicePath, te::Plugin::Ptr plugin);
 
     // =========================================================================
     // Utilities
@@ -510,19 +508,19 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     /**
      * @brief Set a device macro parameter value on the TE MacroParameter
      */
-    void setMacroValue(DeviceId deviceId, int macroIndex, float value);
+    void setMacroValue(const ChainNodePath& devicePath, int macroIndex, float value);
 
     /**
      * @brief Sync multi-out tracks for a DrumGrid device
      * Activates/deactivates multi-out pairs to match current non-empty chains.
      */
-    void syncDrumGridMultiOutTracks(TrackId trackId, DeviceId deviceId,
+    void syncDrumGridMultiOutTracks(const ChainNodePath& drumGridPath,
                                     daw::audio::DrumGridPlugin* drumGrid);
 
     /**
      * @brief Register per-pad chain plugins in syncedDevices_ for macro/mod linking
      */
-    void syncDrumGridPadPlugins(TrackId trackId, DeviceId drumGridDeviceId,
+    void syncDrumGridPadPlugins(const ChainNodePath& drumGridPath,
                                 daw::audio::DrumGridPlugin* drumGrid);
 
     // DrumGridPlugin::Listener
@@ -537,8 +535,9 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     te::Plugin::Ptr loadDeviceAsPlugin(const ChainNodePath& devicePath, const DeviceInfo& device,
                                        int insertIndex = -1);
 
-    void detachDeviceRuntimeForChainMove(TrackId trackId, DeviceId deviceId);
+    void detachDeviceRuntimeForChainMove(const ChainNodePath& devicePath);
     void detachRackRuntimeForChainMove(RackId rackId);
+    void removeDrumGridPadDevicesLocked(const ChainNodePath& drumGridPath);
 
     // Poll for async plugin load completion (TE's background thread instantiation)
     void pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plugin::Ptr plugin);
@@ -602,8 +601,6 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
 
     SyncedDeviceMap::iterator findSyncedDevice(const ChainNodePath& devicePath);
     SyncedDeviceMap::const_iterator findSyncedDevice(const ChainNodePath& devicePath) const;
-    SyncedDeviceMap::iterator findSyncedDeviceById(DeviceId deviceId);
-    SyncedDeviceMap::const_iterator findSyncedDeviceById(DeviceId deviceId) const;
 
     SyncedDeviceMap syncedDevices_;
 
@@ -624,8 +621,8 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Used to decide if resyncDeviceModifiers needs a full rebuild or just property update.
     std::map<TrackId, std::pair<int, int>> modLinkFingerprints_;
 
-    // DrumGrid DeviceId → set of pad-plugin DeviceIds registered in syncedDevices_
-    std::map<DeviceId, std::set<DeviceId>> drumGridPadDevices_;
+    // DrumGrid ChainNodePath -> pad-plugin ChainNodePaths registered in syncedDevices_
+    std::map<ChainNodePath, std::set<ChainNodePath>> drumGridPadDevices_;
 
     // Sidechain monitor plugins (sourceTrackId → SidechainMonitorPlugin)
     std::map<TrackId, te::Plugin::Ptr> sidechainMonitors_;

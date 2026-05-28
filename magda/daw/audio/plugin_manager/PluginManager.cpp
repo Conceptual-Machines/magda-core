@@ -30,22 +30,6 @@ namespace magda {
 
 namespace {
 
-// Find the DeviceInfo for a synced device id across every track and chain
-// segment. Plain getDevice() only sees top-level fx devices on regular tracks:
-// the master track lives outside getTracks(), and post-fx devices live in the
-// flat post-fx list (reached via a postFxDevice path), so both are missed.
-DeviceInfo* findCapturableDeviceInfo(TrackManager& tm, DeviceId id) {
-    auto onTrack = [&](TrackId t) -> DeviceInfo* {
-        if (auto* d = tm.getDevice(t, id))
-            return d;
-        return tm.getDeviceInChainByPath(ChainNodePath::postFxDevice(t, id));
-    };
-    for (auto& track : tm.getTracks())
-        if (auto* d = onTrack(track.id))
-            return d;
-    return onTrack(MASTER_TRACK_ID);
-}
-
 // Resolve the TE param for a macro/mod link whose target is another modifier
 // on the same scope (device or track). modParamIndex 0 == Rate; we pick the
 // LFO's `rate` param when tempoSync is off and `rateType` when it's on, so
@@ -96,21 +80,65 @@ ChainNodePath parentContainerForMoveSource(const ChainNodePath& sourceElementPat
     return parent;
 }
 
-void collectDeviceIdsForMove(const RackInfo& rack, std::vector<DeviceId>& out);
+void collectDevicePathsForMove(const RackInfo& rack, const ChainNodePath& rackPath,
+                               std::vector<ChainNodePath>& out);
 
-void collectDeviceIdsForMove(const ChainElement& element, std::vector<DeviceId>& out) {
+void collectDevicePathsForMove(const ChainElement& element, const ChainNodePath& parentChainPath,
+                               std::vector<ChainNodePath>& out) {
     if (isDevice(element)) {
-        out.push_back(getDevice(element).id);
+        out.push_back(parentChainPath.withDevice(getDevice(element).id));
     } else if (isRack(element)) {
-        collectDeviceIdsForMove(getRack(element), out);
+        const auto& rack = getRack(element);
+        collectDevicePathsForMove(rack, parentChainPath.withRack(rack.id), out);
     }
 }
 
-void collectDeviceIdsForMove(const RackInfo& rack, std::vector<DeviceId>& out) {
+void collectDevicePathsForMove(const RackInfo& rack, const ChainNodePath& rackPath,
+                               std::vector<ChainNodePath>& out) {
     for (const auto& chain : rack.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
         for (const auto& child : chain.elements)
-            collectDeviceIdsForMove(child, out);
+            collectDevicePathsForMove(child, chainPath, out);
     }
+}
+
+void collectValidDevicePaths(const std::vector<ChainElement>& elements,
+                             const ChainNodePath& parentPath,
+                             std::set<ChainNodePath>& validDevicePaths,
+                             std::set<RackId>& validRackIds) {
+    for (const auto& element : elements) {
+        if (isDevice(element)) {
+            validDevicePaths.insert(parentPath.withDevice(getDevice(element).id));
+        } else if (isRack(element)) {
+            const auto& rack = getRack(element);
+            validRackIds.insert(rack.id);
+            const auto rackPath = parentPath.withRack(rack.id);
+            for (const auto& chain : rack.chains)
+                collectValidDevicePaths(chain.elements, rackPath.withChain(chain.id),
+                                        validDevicePaths, validRackIds);
+        }
+    }
+}
+
+void collectValidDevicePaths(const TrackInfo& track, std::set<ChainNodePath>& validDevicePaths,
+                             std::set<RackId>& validRackIds) {
+    for (const auto& element : track.chain.fxChainElements) {
+        if (isDevice(element)) {
+            validDevicePaths.insert(ChainNodePath::topLevelDevice(track.id, getDevice(element).id));
+        } else if (isRack(element)) {
+            const auto& rack = getRack(element);
+            validRackIds.insert(rack.id);
+            const auto rackPath = ChainNodePath::rack(track.id, rack.id);
+            for (const auto& chain : rack.chains)
+                collectValidDevicePaths(chain.elements, rackPath.withChain(chain.id),
+                                        validDevicePaths, validRackIds);
+        }
+    }
+
+    for (const auto& elem : track.chain.postFxChainElements)
+        validDevicePaths.insert(ChainNodePath::postFxDevice(track.id, elem.device.id));
+    for (const auto& elem : track.chain.mixerAnalysisElements)
+        validDevicePaths.insert(ChainNodePath::mixerAnalysisDevice(track.id, elem.device.id));
 }
 
 }  // namespace
@@ -136,19 +164,6 @@ PluginManager::SyncedDeviceMap::const_iterator PluginManager::findSyncedDevice(
     return syncedDevices_.find(devicePath);
 }
 
-PluginManager::SyncedDeviceMap::iterator PluginManager::findSyncedDeviceById(DeviceId deviceId) {
-    return std::find_if(
-        syncedDevices_.begin(), syncedDevices_.end(),
-        [deviceId](const auto& entry) { return entry.first.getDeviceId() == deviceId; });
-}
-
-PluginManager::SyncedDeviceMap::const_iterator PluginManager::findSyncedDeviceById(
-    DeviceId deviceId) const {
-    return std::find_if(
-        syncedDevices_.begin(), syncedDevices_.end(),
-        [deviceId](const auto& entry) { return entry.first.getDeviceId() == deviceId; });
-}
-
 void PluginManager::prepareForChainElementMove(const ChainNodePath& sourceElementPath,
                                                const ChainNodePath& destinationChainPath) {
     captureAllPluginStates();
@@ -160,24 +175,24 @@ void PluginManager::prepareForChainElementMove(const ChainNodePath& sourceElemen
     }
 
     auto& trackManager = TrackManager::getInstance();
-    std::vector<DeviceId> deviceIds;
+    std::vector<ChainNodePath> devicePaths;
 
     if (sourceElementPath.topLevelDeviceId != INVALID_DEVICE_ID) {
-        deviceIds.push_back(sourceElementPath.topLevelDeviceId);
+        devicePaths.push_back(sourceElementPath);
     } else if (!sourceElementPath.steps.empty() &&
                sourceElementPath.steps.back().type == ChainStepType::Device) {
-        deviceIds.push_back(sourceElementPath.steps.back().id);
+        devicePaths.push_back(sourceElementPath);
     } else if (!sourceElementPath.steps.empty() &&
                sourceElementPath.steps.back().type == ChainStepType::Rack) {
         if (auto* rack = trackManager.getRackByPath(sourceElementPath)) {
-            collectDeviceIdsForMove(*rack, deviceIds);
+            collectDevicePathsForMove(*rack, sourceElementPath, devicePaths);
         }
     }
 
-    DBG("[ChainMove] runtime prepare: detaching " << static_cast<int>(deviceIds.size())
+    DBG("[ChainMove] runtime prepare: detaching " << static_cast<int>(devicePaths.size())
                                                   << " device mapping(s)");
-    for (auto deviceId : deviceIds)
-        detachDeviceRuntimeForChainMove(sourceElementPath.trackId, deviceId);
+    for (const auto& devicePath : devicePaths)
+        detachDeviceRuntimeForChainMove(devicePath);
 
     if (!sourceElementPath.steps.empty() &&
         sourceElementPath.steps.back().type == ChainStepType::Rack)
@@ -410,12 +425,9 @@ void PluginManager::captureAllPluginStates() {
                 sd.processor->populateParameters(liveSnapshot);
 
             // Always overwrite pluginState (even if empty) to avoid stale state.
-            // Searches regular tracks + master, fx + post-fx (see helper).
             auto& trackManager = TrackManager::getInstance();
             const auto deviceId = devicePath.getDeviceId();
             auto* devInfo = trackManager.getDeviceInChainByPath(devicePath);
-            if (!devInfo)
-                devInfo = findCapturableDeviceInfo(trackManager, deviceId);
             if (devInfo) {
                 devInfo->pluginState = stateStr;
                 if (hasProcessor)
@@ -477,14 +489,31 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
     }
 }
 
-void PluginManager::detachDeviceRuntimeForChainMove(TrackId trackId, DeviceId deviceId) {
+void PluginManager::removeDrumGridPadDevicesLocked(const ChainNodePath& drumGridPath) {
+    auto padIt = drumGridPadDevices_.find(drumGridPath);
+    if (padIt == drumGridPadDevices_.end())
+        return;
+
+    for (const auto& padPath : padIt->second) {
+        auto padSdIt = findSyncedDevice(padPath);
+        if (padSdIt != syncedDevices_.end()) {
+            if (padSdIt->second.plugin)
+                pluginToDevice_.erase(padSdIt->second.plugin.get());
+            syncedDevices_.erase(padSdIt);
+        }
+    }
+    drumGridPadDevices_.erase(padIt);
+}
+
+void PluginManager::detachDeviceRuntimeForChainMove(const ChainNodePath& devicePath) {
+    const auto deviceId = devicePath.getDeviceId();
     te::Plugin::Ptr plugin;
     te::Plugin::Ptr midiReceivePlugin;
     bool wasMapped = false;
 
     {
         juce::ScopedLock lock(pluginLock_);
-        auto it = findSyncedDeviceById(deviceId);
+        auto it = findSyncedDevice(devicePath);
         if (it == syncedDevices_.end())
             return;
 
@@ -497,18 +526,7 @@ void PluginManager::detachDeviceRuntimeForChainMove(TrackId trackId, DeviceId de
 
         if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get())) {
             dg->removeListener(this);
-            auto padIt = drumGridPadDevices_.find(deviceId);
-            if (padIt != drumGridPadDevices_.end()) {
-                for (auto padDevId : padIt->second) {
-                    auto padSdIt = findSyncedDeviceById(padDevId);
-                    if (padSdIt != syncedDevices_.end()) {
-                        if (padSdIt->second.plugin)
-                            pluginToDevice_.erase(padSdIt->second.plugin.get());
-                        syncedDevices_.erase(padSdIt);
-                    }
-                }
-                drumGridPadDevices_.erase(padIt);
-            }
+            removeDrumGridPadDevicesLocked(devicePath);
         }
 
         if (it->second.plugin)
@@ -533,18 +551,17 @@ void PluginManager::detachDeviceRuntimeForChainMove(TrackId trackId, DeviceId de
         plugin->deleteFromParent();
     }
 
-    DBG("[ChainMove] runtime detached device id=" << deviceId << " from track=" << trackId);
+    DBG("[ChainMove] runtime detached device path=" << devicePath.toString());
 }
 
 void PluginManager::detachRackRuntimeForChainMove(RackId rackId) {
     rackSyncManager_.removeRackForMove(rackId);
 }
 
-void PluginManager::restorePluginState(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin) {
+void PluginManager::restorePluginState(const ChainNodePath& devicePath, te::Plugin::Ptr plugin) {
+    const auto deviceId = devicePath.getDeviceId();
     auto& tm = TrackManager::getInstance();
-    auto* devInfo = tm.getDevice(trackId, deviceId);
-    if (!devInfo)  // post-fx devices aren't top-level fx; reach them by path
-        devInfo = tm.getDeviceInChainByPath(ChainNodePath::postFxDevice(trackId, deviceId));
+    auto* devInfo = tm.getDeviceInChainByPath(devicePath);
     if (!devInfo || devInfo->pluginState.isEmpty()) {
         DBG("restorePluginState: no state to restore for device "
             << deviceId << " (devInfo=" << (devInfo ? "found" : "null") << ", state="
@@ -553,7 +570,7 @@ void PluginManager::restorePluginState(TrackId trackId, DeviceId deviceId, te::P
     }
 
     DBG("restorePluginState: restoring device "
-        << deviceId << " on track " << trackId
+        << deviceId << " at " << devicePath.toString()
         << ", state length=" << devInfo->pluginState.length());
 
     if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
@@ -574,56 +591,20 @@ void PluginManager::restorePluginState(TrackId trackId, DeviceId deviceId, te::P
 void PluginManager::purgeStaleEntries() {
     auto& tm = TrackManager::getInstance();
 
-    // Collect all valid DeviceIds from TrackManager (including rack inner devices and flat
-    // post-fx / mixer-analysis sections).
-    std::set<DeviceId> validDeviceIds;
+    // Collect all valid device paths from TrackManager (including rack inner
+    // devices and flat post-fx / mixer-analysis sections).
+    std::set<ChainNodePath> validDevicePaths;
     std::set<TrackId> validTrackIds;
     std::set<RackId> validRackIds;
 
     for (const auto& track : tm.getTracks()) {
         validTrackIds.insert(track.id);
-
-        std::function<void(const std::vector<ChainElement>&)> collectIds;
-        collectIds = [&](const std::vector<ChainElement>& elements) {
-            for (const auto& element : elements) {
-                if (isDevice(element)) {
-                    validDeviceIds.insert(getDevice(element).id);
-                } else if (isRack(element)) {
-                    const auto& rack = getRack(element);
-                    validRackIds.insert(rack.id);
-                    for (const auto& chain : rack.chains) {
-                        collectIds(chain.elements);
-                    }
-                }
-            }
-        };
-        collectIds(track.chain.fxChainElements);
-        for (const auto& elem : track.chain.postFxChainElements)
-            validDeviceIds.insert(elem.device.id);
-        for (const auto& elem : track.chain.mixerAnalysisElements)
-            validDeviceIds.insert(elem.device.id);
+        collectValidDevicePaths(track, validDevicePaths, validRackIds);
     }
 
     if (auto* masterTrack = tm.getTrack(MASTER_TRACK_ID)) {
         validTrackIds.insert(MASTER_TRACK_ID);
-        std::function<void(const std::vector<ChainElement>&)> collectIds;
-        collectIds = [&](const std::vector<ChainElement>& elements) {
-            for (const auto& element : elements) {
-                if (isDevice(element)) {
-                    validDeviceIds.insert(getDevice(element).id);
-                } else if (isRack(element)) {
-                    const auto& rack = getRack(element);
-                    validRackIds.insert(rack.id);
-                    for (const auto& chain : rack.chains)
-                        collectIds(chain.elements);
-                }
-            }
-        };
-        collectIds(masterTrack->chain.fxChainElements);
-        for (const auto& elem : masterTrack->chain.postFxChainElements)
-            validDeviceIds.insert(elem.device.id);
-        for (const auto& elem : masterTrack->chain.mixerAnalysisElements)
-            validDeviceIds.insert(elem.device.id);
+        collectValidDevicePaths(*masterTrack, validDevicePaths, validRackIds);
     }
 
     // Purge stale entries from maps
@@ -637,7 +618,7 @@ void PluginManager::purgeStaleEntries() {
         // syncedDevices_ (consolidates all per-device maps)
         deferredHolders_.clear();  // Drain previous cycle's deferred holders
         for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
-            if (validDeviceIds.find(it->first.getDeviceId()) == validDeviceIds.end()) {
+            if (validDevicePaths.find(it->first) == validDevicePaths.end()) {
                 // Clear LFO callbacks before destroying CurveSnapshotHolders
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
                 deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);

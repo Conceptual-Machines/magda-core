@@ -58,13 +58,14 @@ void PluginManager::setMacroValue(TrackId trackId, ChainScope scope, int ownerId
             return;
         }
         case ChainScope::Device:
-            setMacroValue(static_cast<DeviceId>(ownerId), macroIndex, value);
+            setMacroValue(ChainNodePath::topLevelDevice(trackId, static_cast<DeviceId>(ownerId)),
+                          macroIndex, value);
             return;
     }
 }
 
-void PluginManager::setMacroValue(DeviceId deviceId, int macroIndex, float value) {
-    auto it = findSyncedDeviceById(deviceId);
+void PluginManager::setMacroValue(const ChainNodePath& devicePath, int macroIndex, float value) {
+    auto it = findSyncedDevice(devicePath);
     if (it == syncedDevices_.end())
         return;
 
