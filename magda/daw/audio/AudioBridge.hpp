@@ -846,6 +846,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @return true if sample was loaded successfully
      */
     bool loadSamplerSample(DeviceId deviceId, const juce::File& file);
+    bool loadSamplerSample(const ChainNodePath& devicePath, const juce::File& file);
 
   private:
     // Timer callback for metering updates (runs on message thread)

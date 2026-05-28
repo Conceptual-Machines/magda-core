@@ -6,6 +6,7 @@
 
 namespace magda {
 
+struct ChainNodePath;
 class PluginManager;
 
 class SamplerFileLoader {
@@ -13,6 +14,7 @@ class SamplerFileLoader {
     explicit SamplerFileLoader(PluginManager& pluginManager);
 
     bool loadSample(DeviceId deviceId, const juce::File& file);
+    bool loadSample(const ChainNodePath& devicePath, const juce::File& file);
 
   private:
     PluginManager& pluginManager_;

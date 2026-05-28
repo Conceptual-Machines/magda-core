@@ -521,7 +521,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
             auto* bridge = audioEngine->getAudioBridge();
             if (!bridge)
                 return;
-            if (bridge->loadSamplerSample(path.getDeviceId(), file)) {
+            if (bridge->loadSamplerSample(path, file)) {
                 auto plugin = bridge->getPlugin(path);
                 if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
                     samplerUI_->updateParameters(

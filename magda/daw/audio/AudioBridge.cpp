@@ -1326,6 +1326,10 @@ bool AudioBridge::loadSamplerSample(DeviceId deviceId, const juce::File& file) {
     return samplerFileLoader_.loadSample(deviceId, file);
 }
 
+bool AudioBridge::loadSamplerSample(const ChainNodePath& devicePath, const juce::File& file) {
+    return samplerFileLoader_.loadSample(devicePath, file);
+}
+
 // =============================================================================
 // Warp Markers (delegated to ClipSynchronizer)
 // =============================================================================

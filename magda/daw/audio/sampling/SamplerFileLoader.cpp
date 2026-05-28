@@ -1,5 +1,6 @@
 #include "sampling/SamplerFileLoader.hpp"
 
+#include "core/ChainNodePath.hpp"
 #include "plugin_manager/PluginManager.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 
@@ -19,6 +20,10 @@ bool SamplerFileLoader::loadSample(DeviceId deviceId, const juce::File& file) {
 
     sampler->loadSample(file);
     return true;
+}
+
+bool SamplerFileLoader::loadSample(const ChainNodePath& devicePath, const juce::File& file) {
+    return loadSample(devicePath.getDeviceId(), file);
 }
 
 }  // namespace magda
