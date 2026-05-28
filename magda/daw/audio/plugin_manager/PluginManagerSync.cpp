@@ -160,6 +160,27 @@ DeviceInfo* getDeviceInfoForPath(const ChainNodePath& devicePath) {
         return device;
     return tm.getDevice(devicePath.trackId, devicePath.getDeviceId());
 }
+
+bool savedPluginStateMatchesRequestedType(const juce::ValueTree& savedState,
+                                          const juce::String& requestedType) {
+    const auto savedType = savedState.getProperty(te::IDs::type).toString();
+    if (savedType.isEmpty())
+        return false;
+    if (savedType.equalsIgnoreCase(requestedType))
+        return true;
+
+    if (auto* requestedCompiled = daw::audio::compiled::findCompiledPluginSpec(requestedType)) {
+        auto* savedCompiled = daw::audio::compiled::findCompiledPluginSpec(savedType);
+        return savedCompiled == requestedCompiled;
+    }
+
+    if (auto* requestedInternal = daw::audio::findInternalPluginSpecForLoadType(requestedType)) {
+        auto* savedInternal = daw::audio::findInternalPluginSpecForLoadType(savedType);
+        return savedInternal == requestedInternal;
+    }
+
+    return false;
+}
 }  // namespace
 
 // =============================================================================
@@ -2377,12 +2398,22 @@ te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeN
                 << " numProps=" << savedState.getNumProperties()
                 << " numChildren=" << savedState.getNumChildren());
             if (savedState.isValid()) {
-                stripTracktionIdsRecursive(savedState);
-                auto plugin = edit_.getPluginCache().createNewPlugin(savedState);
-                DBG("createInternalPlugin: from saved state -> plugin="
-                    << (plugin ? plugin->getName().toRawUTF8() : "NULL")
-                    << " itemID=" << (plugin ? (juce::int64)plugin->itemID.getRawID() : -1));
-                return plugin;
+                const auto savedType = savedState.getProperty(te::IDs::type).toString();
+                if (savedPluginStateMatchesRequestedType(savedState, xmlTypeName)) {
+                    stripTracktionIdsRecursive(savedState);
+                    auto plugin = edit_.getPluginCache().createNewPlugin(savedState);
+                    DBG("createInternalPlugin: from saved state -> plugin="
+                        << (plugin ? plugin->getName().toRawUTF8() : "NULL")
+                        << " itemID=" << (plugin ? (juce::int64)plugin->itemID.getRawID() : -1));
+                    if (plugin)
+                        return plugin;
+                    DBG("createInternalPlugin: WARNING - saved state failed to instantiate; "
+                        "falling back to fresh plugin");
+                } else {
+                    DBG("createInternalPlugin: WARNING - ignoring saved state for type "
+                        << savedType.toRawUTF8() << " while loading requested type "
+                        << xmlTypeName.toRawUTF8());
+                }
             }
         } else {
             DBG("createInternalPlugin: WARNING - failed to parse XML from saved state");
