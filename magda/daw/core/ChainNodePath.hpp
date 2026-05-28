@@ -117,6 +117,27 @@ struct ChainNodePath {
         return !(*this == other);
     }
 
+    // Total order for use as a std::map / std::set key. The exact ordering
+    // is an implementation detail (lexicographic on the tuple of fields);
+    // callers should treat it as opaque.
+    bool operator<(const ChainNodePath& other) const {
+        if (trackId != other.trackId)
+            return trackId < other.trackId;
+        if (isTrackLevel != other.isTrackLevel)
+            return !isTrackLevel && other.isTrackLevel;
+        if (topLevelDeviceId != other.topLevelDeviceId)
+            return topLevelDeviceId < other.topLevelDeviceId;
+        if (steps.size() != other.steps.size())
+            return steps.size() < other.steps.size();
+        for (size_t i = 0; i < steps.size(); ++i) {
+            if (steps[i].type != other.steps[i].type)
+                return static_cast<int>(steps[i].type) < static_cast<int>(other.steps[i].type);
+            if (steps[i].id != other.steps[i].id)
+                return steps[i].id < other.steps[i].id;
+        }
+        return false;
+    }
+
     // Get nesting depth (0 = top-level rack, 1 = chain in rack, 2 = nested rack, etc.)
     size_t depth() const {
         return steps.size();
