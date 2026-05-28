@@ -70,13 +70,10 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
             if (!resolved.valid || !resolved.device)
                 return std::nullopt;
-            if (target.paramIndex < 0 ||
-                target.paramIndex >= static_cast<int>(resolved.device->parameters.size())) {
+            const auto* stored = resolved.device->findParameterByIndex(target.paramIndex);
+            if (!stored)
                 return std::nullopt;
-            }
-            return deviceCurrentValueToLaneNormalized(
-                resolved.device->parameters[static_cast<size_t>(target.paramIndex)].currentValue,
-                paramInfo);
+            return deviceCurrentValueToLaneNormalized(stored->currentValue, paramInfo);
         }
         case ControlTarget::Kind::DeviceMacro: {
             const auto* track = TrackManager::getInstance().getTrack(target.devicePath.trackId);

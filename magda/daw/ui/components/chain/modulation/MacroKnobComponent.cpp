@@ -516,15 +516,14 @@ void MacroKnobComponent::showLinkMenu() {
 
         juce::PopupMenu deviceMenu;
 
-        // Get real param names for this device, fall back to "Parameter N"
         auto it = deviceParamNames_.find(deviceId);
-        int paramCount = (it != deviceParamNames_.end()) ? static_cast<int>(it->second.size()) : 16;
+        if (it == deviceParamNames_.end())
+            continue;
 
-        for (int paramIdx = 0; paramIdx < paramCount; ++paramIdx) {
-            juce::String paramName =
-                (it != deviceParamNames_.end() && paramIdx < static_cast<int>(it->second.size()))
-                    ? it->second[static_cast<size_t>(paramIdx)]
-                    : "Parameter " + juce::String(paramIdx + 1);
+        for (int paramIdx = 0; paramIdx < static_cast<int>(it->second.size()); ++paramIdx) {
+            juce::String paramName = it->second[static_cast<size_t>(paramIdx)];
+            if (paramName.isEmpty())
+                continue;
 
             // Check if this param is in the links vector
             magda::ControlTarget t;
@@ -556,9 +555,9 @@ void MacroKnobComponent::showLinkMenu() {
             if (it != deviceParamNames_.end() && link.target.paramIndex >= 0 &&
                 link.target.paramIndex < static_cast<int>(it->second.size())) {
                 paramName = it->second[static_cast<size_t>(link.target.paramIndex)];
-            } else {
-                paramName = "P" + juce::String(link.target.paramIndex + 1);
             }
+            if (paramName.isEmpty())
+                paramName = "Unresolved parameter";
             // Find device name for context
             for (const auto& [devId, devName] : availableTargets_) {
                 if (devId == link.target.deviceId()) {
@@ -695,9 +694,13 @@ void MacroKnobComponent::showLinkMenu() {
         // Calculate which device and param was selected
         int itemId = 1;
         for (const auto& [deviceId, deviceName] : targets) {
+            juce::ignoreUnused(deviceName);
             auto it = paramNames.find(deviceId);
-            int paramCount = (it != paramNames.end()) ? static_cast<int>(it->second.size()) : 16;
-            for (int paramIdx = 0; paramIdx < paramCount; ++paramIdx) {
+            if (it == paramNames.end())
+                continue;
+            for (int paramIdx = 0; paramIdx < static_cast<int>(it->second.size()); ++paramIdx) {
+                if (it->second[static_cast<size_t>(paramIdx)].isEmpty())
+                    continue;
                 if (itemId == result) {
                     // Add to links vector (not legacy target)
                     magda::ControlTarget t;

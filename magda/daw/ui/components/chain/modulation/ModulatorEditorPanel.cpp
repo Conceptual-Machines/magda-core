@@ -1500,7 +1500,7 @@ void ModulatorEditorPanel::updateModMatrix() {
         } else if (paramNameResolver_) {
             row.paramName = paramNameResolver_(link.target.deviceId(), link.target.paramIndex);
         } else {
-            row.paramName = "P" + juce::String(link.target.paramIndex);
+            row.paramName = "Unresolved parameter";
         }
 
         rows.push_back(row);

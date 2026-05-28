@@ -15,27 +15,24 @@ namespace magda::daw::ui {
 
 namespace {
 
-std::vector<magda::ParameterInfo>::iterator findParameterInfo(magda::DeviceInfo& device,
-                                                              int paramIndex) {
-    auto it = std::find_if(
-        device.parameters.begin(), device.parameters.end(),
-        [paramIndex](const magda::ParameterInfo& param) { return param.paramIndex == paramIndex; });
-
-    if (it == device.parameters.end() && paramIndex >= 0 &&
-        paramIndex < static_cast<int>(device.parameters.size())) {
-        it = device.parameters.begin() + paramIndex;
+int visibleIndexForParameter(const magda::DeviceInfo& device, int paramIndex) {
+    if (device.visibleParameters.empty()) {
+        auto it = std::find_if(device.parameters.begin(), device.parameters.end(),
+                               [paramIndex](const magda::ParameterInfo& param) {
+                                   return param.paramIndex == paramIndex;
+                               });
+        if (it == device.parameters.end())
+            return -1;
+        return static_cast<int>(std::distance(device.parameters.begin(), it));
     }
 
-    return it;
-}
-
-int visibleIndexForParameter(const magda::DeviceInfo& device, int paramIndex) {
-    if (device.visibleParameters.empty())
-        return paramIndex;
-
-    for (int i = 0; i < static_cast<int>(device.visibleParameters.size()); ++i)
-        if (device.visibleParameters[static_cast<size_t>(i)] == paramIndex)
+    for (int i = 0; i < static_cast<int>(device.visibleParameters.size()); ++i) {
+        const int paramArrayIndex = device.visibleParameters[static_cast<size_t>(i)];
+        if (paramArrayIndex < 0 || paramArrayIndex >= static_cast<int>(device.parameters.size()))
+            continue;
+        if (device.parameters[static_cast<size_t>(paramArrayIndex)].paramIndex == paramIndex)
             return i;
+    }
 
     return -1;
 }
@@ -49,8 +46,8 @@ void ParameterLearnHighlightState::reset() {
 }
 
 void updateCachedParameterValue(magda::DeviceInfo& device, int paramIndex, float newValue) {
-    if (auto it = findParameterInfo(device, paramIndex); it != device.parameters.end())
-        it->currentValue = newValue;
+    if (auto* param = device.findParameterByIndex(paramIndex))
+        param->currentValue = newValue;
 }
 
 bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device,
@@ -70,18 +67,17 @@ bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device,
             if (compiled != nullptr) {
                 if (auto* proc = bridge->getDeviceProcessor(devicePath)) {
                     for (int slotIndex = 0; slotIndex < compiled->hostSlotCount(); ++slotIndex) {
-                        if (auto paramIt = findParameterInfo(device, slotIndex);
-                            paramIt != device.parameters.end()) {
+                        if (auto* paramInfo = device.findParameterByIndex(slotIndex)) {
                             auto refreshedInfo = proc->getParameterInfo(slotIndex);
-                            refreshedInfo.currentValue = paramIt->currentValue;
+                            refreshedInfo.currentValue = paramInfo->currentValue;
 
-                            if (paramIt->hidden != refreshedInfo.hidden)
+                            if (paramInfo->hidden != refreshedInfo.hidden)
                                 layoutNeedsRefresh = true;
 
                             const bool refreshMetadata =
-                                slotIndex == modeSlot || paramIt->hidden != refreshedInfo.hidden;
+                                slotIndex == modeSlot || paramInfo->hidden != refreshedInfo.hidden;
                             if (refreshMetadata)
-                                *paramIt = refreshedInfo;
+                                *paramInfo = refreshedInfo;
 
                             if (!layoutNeedsRefresh && slotIndex == modeSlot &&
                                 changedParamIndex != modeSlot &&
@@ -167,10 +163,10 @@ void updateCurrentPageParameterSlotValue(const magda::DeviceInfo& device,
     const auto findIt = std::find_if(
         device.parameters.begin(), device.parameters.end(),
         [paramIndex](const magda::ParameterInfo& p) { return p.paramIndex == paramIndex; });
-    const int paramArrayIndex =
-        (findIt != device.parameters.end())
-            ? static_cast<int>(std::distance(device.parameters.begin(), findIt))
-            : paramIndex;
+    if (findIt == device.parameters.end())
+        return;
+
+    const int paramArrayIndex = static_cast<int>(std::distance(device.parameters.begin(), findIt));
 
     for (int slotIndex = 0; slotIndex < paramsPerPage; ++slotIndex) {
         const auto cell = layout.cellFor(device, slotIndex, currentPage);

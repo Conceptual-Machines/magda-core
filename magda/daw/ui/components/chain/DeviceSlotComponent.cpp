@@ -1663,9 +1663,12 @@ std::vector<std::pair<magda::DeviceId, juce::String>> DeviceSlotComponent::getAv
 std::map<magda::DeviceId, std::vector<juce::String>> DeviceSlotComponent::getDeviceParamNames()
     const {
     std::vector<juce::String> names;
-    names.reserve(device_.parameters.size());
     for (const auto& param : device_.parameters) {
-        names.push_back(param.name);
+        if (param.paramIndex < 0)
+            continue;
+        if (param.paramIndex >= static_cast<int>(names.size()))
+            names.resize(static_cast<size_t>(param.paramIndex + 1));
+        names[static_cast<size_t>(param.paramIndex)] = param.name;
     }
     std::map<magda::DeviceId, std::vector<juce::String>> result = {{device_.id, std::move(names)}};
     drum_grid_slot::appendDeviceParamNames(customUI_.getDrumGridUI(), result);
@@ -1879,18 +1882,8 @@ void DeviceSlotComponent::updateParameterSlots() {
             if (!self->nodePath_.isValid())
                 return;
             // Update local cache immediately for responsive UI
-            auto paramIt =
-                std::find_if(self->device_.parameters.begin(), self->device_.parameters.end(),
-                             [paramIndex](const magda::ParameterInfo& param) {
-                                 return param.paramIndex == paramIndex;
-                             });
-            if (paramIt == self->device_.parameters.end() && paramIndex >= 0 &&
-                paramIndex < static_cast<int>(self->device_.parameters.size())) {
-                paramIt = self->device_.parameters.begin() + paramIndex;
-            }
-            if (paramIt != self->device_.parameters.end()) {
-                paramIt->currentValue = static_cast<float>(value);
-            }
+            if (auto* param = self->device_.findParameterByIndex(paramIndex))
+                param->currentValue = static_cast<float>(value);
             if (self->compiledPanel_)
                 self->compiledPanel_->updateFromDevice(self->device_);
             magda::TrackManager::getInstance().setDeviceParameterValue(self->nodePath_, paramIndex,
