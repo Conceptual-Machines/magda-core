@@ -784,6 +784,8 @@ class TrackManager {
     void notifyModParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
                                    int paramIndex, float value);
 
+    void syncMultiOutChildOutputsForSource(TrackId sourceTrackId);
+
     // Helper for recursive mod updates
     void updateRackMods(const RackInfo& rack, double deltaTime);
 

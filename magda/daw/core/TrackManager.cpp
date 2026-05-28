@@ -679,6 +679,29 @@ void TrackManager::moveTrack(TrackId trackId, int newIndex) {
 // Hierarchy Operations
 // ============================================================================
 
+void TrackManager::syncMultiOutChildOutputsForSource(TrackId sourceTrackId) {
+    auto* sourceTrack = getTrack(sourceTrackId);
+    if (!sourceTrack)
+        return;
+
+    for (auto& track : tracks_) {
+        if (track.type != TrackType::MultiOut || !track.multiOutLink ||
+            track.multiOutLink->sourceTrackId != sourceTrackId)
+            continue;
+
+        // If the multi-out track is explicitly grouped, its own group routing
+        // wins. Otherwise it follows the source instrument track's output.
+        if (track.hasParent())
+            continue;
+
+        if (track.audioOutputDevice == sourceTrack->audioOutputDevice)
+            continue;
+
+        track.audioOutputDevice = sourceTrack->audioOutputDevice;
+        notifyTrackPropertyChanged(track.id);
+    }
+}
+
 void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
     auto* track = getTrack(trackId);
     auto* group = getTrack(groupId);
@@ -704,11 +727,10 @@ void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
     track->parentId = groupId;
     group->childIds.push_back(trackId);
 
-    // Auto-route child's audio output to the group track
-    // Multi-out tracks keep their routing to the source track's output
-    if (track->type != TrackType::MultiOut)
-        track->audioOutputDevice = "track:" + juce::String(groupId);
+    // Auto-route child's audio output to the group track.
+    track->audioOutputDevice = "track:" + juce::String(groupId);
     notifyTrackPropertyChanged(trackId);
+    syncMultiOutChildOutputsForSource(trackId);
 
     notifyTracksChanged();
     DBG("Added track " << track->name << " to group " << group->name);
@@ -729,6 +751,7 @@ void TrackManager::removeTrackFromGroup(TrackId trackId) {
     // Revert audio output to master when removed from group
     track->audioOutputDevice = "master";
     notifyTrackPropertyChanged(trackId);
+    syncMultiOutChildOutputsForSource(trackId);
 
     notifyTracksChanged();
 }
@@ -1093,6 +1116,7 @@ void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& devic
 
     // Notify listeners
     notifyTrackPropertyChanged(trackId);
+    syncMultiOutChildOutputsForSource(trackId);
 }
 
 void TrackManager::setTrackAudioOutput(TrackId trackId, const juce::String& routing) {
