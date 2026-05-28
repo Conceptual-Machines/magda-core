@@ -200,6 +200,10 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         updateLabel();
     }
 
+    void setShowText(bool show) {
+        valueControl_.setShowText(show);
+    }
+
     void setEmptyText(const juce::String& text) {
         emptyText_ = text;
         updateLabel();
@@ -329,30 +333,24 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         auto bounds = getLocalBounds();
 
         if (orientation_ == Orientation::Vertical) {
-            // Vertical fader mode: fill from bottom to current position + handle
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-            g.fillRect(bounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.drawRect(bounds);
-
-            // Fill from bottom up to current value position
+            // Fader-over-meter mode: paint nothing behind so the LevelMeter
+            // sitting underneath shows through, then draw the thumb as a thin
+            // pale horizontal bar at the value position.
             float norm = static_cast<float>(getNormalizedValue());
-            int fillHeight = static_cast<int>(bounds.getHeight() * norm);
-            auto fillRect = bounds.withTop(bounds.getBottom() - fillHeight);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
-            g.fillRect(fillRect);
-
-            // Draw handle at current position
+            int fillHeight = static_cast<int>(std::round(bounds.getHeight() * norm));
             int handleY = bounds.getBottom() - fillHeight;
-            const int handleH = 6;
-            auto handleRect = juce::Rectangle<int>(bounds.getX() + 1, handleY - handleH / 2,
-                                                   bounds.getWidth() - 2, handleH);
-            g.setColour(juce::Colour(0xFF888888));
-            g.fillRect(handleRect);
-            // Center line on handle
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-            g.drawHorizontalLine(handleY, static_cast<float>(handleRect.getX() + 2),
-                                 static_cast<float>(handleRect.getRight() - 2));
+
+            const int handleH = 3;
+            const int handleOverhang = 2;
+            auto thumbRect =
+                juce::Rectangle<int>(bounds.getX() - handleOverhang, handleY - handleH / 2,
+                                     bounds.getWidth() + handleOverhang * 2, handleH);
+
+            g.setColour(juce::Colour(0xFF000000).withAlpha(0.55f));
+            g.fillRect(thumbRect.translated(0, 1));
+
+            g.setColour(juce::Colour(0xFFE0E0E0));
+            g.fillRect(thumbRect);
         } else if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
             g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
             g.fillRoundedRectangle(bounds.toFloat(), 2.0f);

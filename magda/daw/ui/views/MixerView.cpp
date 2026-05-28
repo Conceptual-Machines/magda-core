@@ -207,20 +207,21 @@ class MixerView::ChannelStrip::DbScale : public juce::Component {
         const float dbValues[] = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f,
                                   -12.0f, -18.0f, -24.0f, -36.0f, -48.0f};
 
-        // The component extends above/below the fader area by thumbRadius.
-        // JUCE's slider thumb travels within [bounds.Y + thumbRad, bounds.Bottom - thumbRad],
-        // so from this component's top, the travel area starts at 2*thumbRad.
-        float paddingTop = 2.0f * metrics.thumbRadius();
-        float paddingBottom = 2.0f * metrics.thumbRadius();
+        // The scale sits to the right of the meter and spans the same vertical
+        // travel — labels can overflow above/below by half a line.
+        float paddingTop = metrics.labelTextHeight / 2.0f + 1.0f;
+        float paddingBottom = metrics.labelTextHeight / 2.0f;
         float top = paddingTop;
         float height = static_cast<float>(bounds.getHeight()) - paddingTop - paddingBottom;
         float totalWidth = static_cast<float>(bounds.getWidth());
 
-        float tickW = metrics.tickWidth();
-        float labelWidth = metrics.labelTextWidth;
-        float centre = totalWidth / 2.0f;
+        const float tickShort = metrics.tickWidth();  // regular tick: ~5px
+        const float tickLong = tickShort * 1.8f;      // 0 dB tick is noticeably longer
+        const float labelLeftPad = tickLong + 2.0f;   // labels start past the longest tick
+        const float labelWidth = totalWidth - labelLeftPad;
 
-        g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
+        const juce::Font baseFont = FontManager::getInstance().getUIFont(metrics.labelFontSize);
+        const juce::Font boldFont = baseFont.boldened();
 
         float minSpacing = metrics.labelTextHeight + 2.0f;
         float lastDrawnY = -1000.0f;
@@ -233,10 +234,12 @@ class MixerView::ChannelStrip::DbScale : public juce::Component {
                 continue;
             lastDrawnY = y;
 
+            const bool isZero = std::abs(db) < 0.01f;
             float tickHeight = metrics.tickHeight();
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.fillRect(0.0f, y - tickHeight / 2.0f, tickW - 1.0f, tickHeight);
-            g.fillRect(totalWidth - tickW + 1.0f, y - tickHeight / 2.0f, tickW - 1.0f, tickHeight);
+            float tickW = isZero ? tickLong : tickShort;
+
+            g.setColour(DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::BORDER));
+            g.fillRect(0.0f, y - tickHeight / 2.0f, tickW, tickHeight);
 
             juce::String labelText;
             int dbInt = static_cast<int>(db);
@@ -246,14 +249,15 @@ class MixerView::ChannelStrip::DbScale : public juce::Component {
                 labelText = juce::String(std::abs(dbInt));
             }
 
-            float textHeight = metrics.labelTextHeight;
-            float textX = centre - labelWidth / 2.0f;
-            float textY = y - textHeight / 2.0f;
+            g.setFont(isZero ? boldFont : baseFont);
+            g.setColour(
+                DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::TEXT_SECONDARY));
 
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
+            float textHeight = metrics.labelTextHeight;
+            float textY = y - textHeight / 2.0f;
+            g.drawText(labelText, static_cast<int>(labelLeftPad), static_cast<int>(textY),
                        static_cast<int>(labelWidth), static_cast<int>(textHeight),
-                       juce::Justification::centred, false);
+                       juce::Justification::centredLeft, false);
         }
     }
 };
@@ -426,13 +430,14 @@ void MixerView::ChannelStrip::setupControls() {
     dbScale_ = std::make_unique<DbScale>();
     addAndMakeVisible(*dbScale_);
 
-    // Peak label
+    // Peak / fader-value readout above the fader (replaces the old "-inf"
+    // slot). Mono font keeps the digits in a tabular grid so they don't
+    // shift sideways as the value changes.
     peakLabel = std::make_unique<juce::Label>();
     peakLabel->setText("-inf", juce::dontSendNotification);
     peakLabel->setJustificationType(juce::Justification::centred);
-    peakLabel->setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    peakLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
+    peakLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    peakLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
     addAndMakeVisible(*peakLabel);
 
     // Volume slider (vertical TextSlider, 0-1 range with power curve mapping)
@@ -489,6 +494,10 @@ void MixerView::ChannelStrip::setupControls() {
         }
     };
     volumeSlider->onDragEnd = [this]() { multiTrackBaseVolumes_.clear(); };
+    // Suppress the inner dB text — the readout is shown above the fader by
+    // peakLabel, and the slider itself only paints the thumb on top of the
+    // LevelMeter that shares its bounds.
+    volumeSlider->setShowText(false);
     if (!isMaster_) {
         AutomationTarget volTarget;
         volTarget.kind = ControlTarget::Kind::TrackVolume;
@@ -1012,39 +1021,25 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     // Channel color indicator at top — skip for group parents with children (group header provides
     // colouring)
     if (!hasGroupChildren) {
-        int tintHeight = 34;
+        const int stripHeight = 4;
+        const int labelRowBottom = stripHeight + 26;
         if (selected) {
-            // Selected: black header with white text
+            // Selected: black strip + black label background
             g.setColour(juce::Colours::black);
-            g.fillRect(0, 0, ownBounds.getWidth() - 1, 4 + tintHeight);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.fillRect(0, 4 + tintHeight, ownBounds.getWidth() - 1, 1);
+            g.fillRect(0, 0, ownBounds.getWidth() - 1, labelRowBottom);
         } else {
-            // Colour bar
+            // Thin colour bar only — label sits on the regular panel background
             g.setColour(trackColour_);
-            g.fillRect(0, 0, ownBounds.getWidth() - 1, 4);
-
-            // Tinted name area
-            {
-                g.setColour(trackColour_.withAlpha(0.5f));
-                g.fillRect(0, 4, ownBounds.getWidth() - 1, tintHeight);
-                g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-                g.fillRect(0, 4 + tintHeight, ownBounds.getWidth() - 1, 1);
-            }
+            g.fillRect(0, 0, ownBounds.getWidth() - 1, stripHeight);
         }
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.fillRect(0, labelRowBottom, ownBounds.getWidth() - 1, 1);
     }
 
     // Divider at the bottom of the sends region
     if (sendsRegionBottomY_ >= 0) {
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
         g.fillRect(0, sendsRegionBottomY_, ownBounds.getWidth() - 1, 1);
-    }
-
-    // Draw fader region border (top and bottom lines)
-    if (!faderRegion_.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.fillRect(faderRegion_.getX(), faderRegion_.getY(), faderRegion_.getWidth(), 1);
-        g.fillRect(faderRegion_.getX(), faderRegion_.getBottom() - 1, faderRegion_.getWidth(), 1);
     }
 
     // dB ticks and labels are drawn by the DbScale component
@@ -1415,37 +1410,28 @@ void MixerView::ChannelStrip::resized() {
     // Small gap before fader region
     bounds.removeFromTop(2);
 
-    // Layout: [fader] [gap] [leftTicks] [labels] [rightTicks] [gap] [meter]
-    // Fader and meter scale proportionally with channel width
-    int availWidth = bounds.getWidth();
-    int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
-    int meterWidthVal = faderWidth;  // Same width as fader
-    int gap = metrics.tickToFaderGap;
-
-    // Store the entire fader region for border drawing
+    // New layout: meter fills the column on the left, slider overlays it, dB
+    // scale (tick + label) sits on the right. The slider has no body of its
+    // own — only the thumb is drawn (see TextSlider's vertical paint).
     faderRegion_ = bounds;
-
-    // Add vertical padding inside the border
-    bounds.removeFromTop(6);
-    bounds.removeFromBottom(3);
-
     auto layoutArea = bounds;
 
-    // Volume TextSlider on left
-    faderArea_ = layoutArea.removeFromLeft(faderWidth);
-    volumeSlider->setBounds(faderArea_);
+    const int scaleWidth = 22;  // enough for "36" / "-inf"
+    const int scaleGap = metrics.tickToMeterGap;
 
-    // Meter on right
-    meterArea_ = layoutArea.removeFromRight(meterWidthVal);
+    auto scaleColumn = layoutArea.removeFromRight(scaleWidth);
+    layoutArea.removeFromRight(scaleGap);
+
+    meterArea_ = layoutArea;
+    faderArea_ = layoutArea;
     levelMeter->setBounds(meterArea_);
+    volumeSlider->setBounds(faderArea_);
+    volumeSlider->toFront(false);  // thumb sits on top of the meter
 
-    // dB scale component — extends above/below fader area for label overflow
     if (dbScale_) {
-        int thumbRad = static_cast<int>(metrics.thumbRadius());
-        int scaleLeft = faderArea_.getRight() + gap;
-        int scaleRight = meterArea_.getX() - metrics.tickToMeterGap;
-        dbScale_->setBounds(scaleLeft, layoutArea.getY() - thumbRad, scaleRight - scaleLeft,
-                            layoutArea.getHeight() + thumbRad * 2);
+        const int labelPad = static_cast<int>(metrics.labelTextHeight / 2.0f + 1.0f);
+        dbScale_->setBounds(scaleColumn.getX(), meterArea_.getY() - labelPad,
+                            scaleColumn.getWidth(), meterArea_.getHeight() + labelPad * 2);
     }
 }
 

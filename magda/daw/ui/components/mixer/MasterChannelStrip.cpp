@@ -137,11 +137,13 @@ class MasterChannelStrip::DbScale : public juce::Component {
         float height = static_cast<float>(bounds.getHeight()) - paddingTop - paddingBottom;
         float totalWidth = static_cast<float>(bounds.getWidth());
 
-        float tickW = metrics.tickWidth();
-        float labelWidth = metrics.labelTextWidth;
-        float centre = totalWidth / 2.0f;
+        const float tickShort = metrics.tickWidth();
+        const float tickLong = tickShort * 1.8f;
+        const float labelLeftPad = tickLong + 2.0f;
+        const float labelWidth = totalWidth - labelLeftPad;
 
-        g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
+        const juce::Font baseFont = FontManager::getInstance().getUIFont(metrics.labelFontSize);
+        const juce::Font boldFont = baseFont.boldened();
 
         float minSpacing = metrics.labelTextHeight + 2.0f;
         float lastDrawnY = -1000.0f;
@@ -154,10 +156,12 @@ class MasterChannelStrip::DbScale : public juce::Component {
                 continue;
             lastDrawnY = y;
 
+            const bool isZero = std::abs(db) < 0.01f;
             float tickHeight = metrics.tickHeight();
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.fillRect(0.0f, y - tickHeight / 2.0f, tickW - 1.0f, tickHeight);
-            g.fillRect(totalWidth - tickW + 1.0f, y - tickHeight / 2.0f, tickW - 1.0f, tickHeight);
+            float tickW = isZero ? tickLong : tickShort;
+
+            g.setColour(DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::BORDER));
+            g.fillRect(0.0f, y - tickHeight / 2.0f, tickW, tickHeight);
 
             juce::String labelText;
             int dbInt = static_cast<int>(db);
@@ -167,14 +171,15 @@ class MasterChannelStrip::DbScale : public juce::Component {
                 labelText = juce::String(std::abs(dbInt));
             }
 
-            float textHeight = metrics.labelTextHeight;
-            float textX = centre - labelWidth / 2.0f;
-            float textY = y - textHeight / 2.0f;
+            g.setFont(isZero ? boldFont : baseFont);
+            g.setColour(
+                DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::TEXT_SECONDARY));
 
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
+            float textHeight = metrics.labelTextHeight;
+            float textY = y - textHeight / 2.0f;
+            g.drawText(labelText, static_cast<int>(labelLeftPad), static_cast<int>(textY),
                        static_cast<int>(labelWidth), static_cast<int>(textHeight),
-                       juce::Justification::centred, false);
+                       juce::Justification::centredLeft, false);
         }
     }
 };
@@ -376,13 +381,14 @@ void MasterChannelStrip::setupControls() {
     peakMeter = std::make_unique<LevelMeter>();
     addAndMakeVisible(*peakMeter);
 
-    // Peak value label
+    // Peak / fader-value readout above the fader. Mono font keeps digits in
+    // a tabular grid so they don't shift sideways as the value changes.
     peakValueLabel = std::make_unique<juce::Label>();
     peakValueLabel->setText("-inf", juce::dontSendNotification);
     peakValueLabel->setJustificationType(juce::Justification::centred);
     peakValueLabel->setColour(juce::Label::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    peakValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
+                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    peakValueLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
     addAndMakeVisible(*peakValueLabel);
 
     // Volume slider - TextSlider with vertical orientation and dB display
@@ -412,6 +418,8 @@ void MasterChannelStrip::setupControls() {
         float db = t.getFloatValue();
         return static_cast<double>(dbToMeterPos(db));
     });
+
+    volumeSlider->setShowText(false);
 
     volumeSlider->onValueChanged = [](double pos) {
         float db = meterPosToDb(static_cast<float>(pos));
@@ -526,25 +534,14 @@ void MasterChannelStrip::paint(juce::Graphics& g) {
     g.drawRect(getLocalBounds(), 1);
 
     auto ownBounds = getLocalBounds();
-    int tintHeight = 34;
+    const int stripHeight = 4;
+    const int labelRowBottom = stripHeight + 26;
     if (selected_) {
-        // Selected: black header with white text
         g.setColour(juce::Colours::black);
-        g.fillRect(1, 1, ownBounds.getWidth() - 2, 4 + tintHeight);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.fillRect(1, 4 + tintHeight, ownBounds.getWidth() - 2, 1);
-    } else {
-        // No colour bar/tint for master — clean look
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.fillRect(1, 4 + tintHeight, ownBounds.getWidth() - 2, 1);
+        g.fillRect(1, 1, ownBounds.getWidth() - 2, labelRowBottom);
     }
-
-    // Draw fader region border (top and bottom lines)
-    if (!faderRegion_.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.fillRect(faderRegion_.getX(), faderRegion_.getY(), faderRegion_.getWidth(), 1);
-        g.fillRect(faderRegion_.getX(), faderRegion_.getBottom() - 1, faderRegion_.getWidth(), 1);
-    }
+    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.fillRect(1, labelRowBottom, ownBounds.getWidth() - 2, 1);
 }
 
 void MasterChannelStrip::setSelected(bool shouldBeSelected) {
@@ -635,36 +632,25 @@ void MasterChannelStrip::resized() {
         const int labelHeight = 12;
         peakValueLabel->setBounds(bounds.removeFromTop(labelHeight));
 
-        // Calculate proportional widths like channel strips
-        int availWidth = bounds.getWidth();
-        int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
-        int meterWidthVal = faderWidth;  // Same width as fader
-        int gap = metrics.tickToFaderGap;
-        int meterGapVal = metrics.tickToMeterGap;
-
-        // Store the entire fader region for border drawing
+        // Slider overlays the peak meter; dB scale (tick + label) sits to the
+        // right. The slider paints only the thumb so the meter shows through.
         faderRegion_ = bounds;
-
-        // Add vertical padding inside the border
-        bounds.removeFromTop(6);
-        bounds.removeFromBottom(3);
-
         auto layoutArea = bounds;
 
-        // Fader on left
-        faderArea_ = layoutArea.removeFromLeft(faderWidth);
-        volumeSlider->setBounds(faderArea_);
+        const int scaleWidth = 22;
+        const int scaleGap = metrics.tickToMeterGap;
+        auto scaleColumn = layoutArea.removeFromRight(scaleWidth);
+        layoutArea.removeFromRight(scaleGap);
 
-        // Peak meter on right
-        peakMeterArea_ = layoutArea.removeFromRight(meterWidthVal);
+        peakMeterArea_ = layoutArea;
+        faderArea_ = layoutArea;
         peakMeter->setBounds(peakMeterArea_);
+        volumeSlider->setBounds(faderArea_);
+        volumeSlider->toFront(false);
 
-        // DbScale component — extends above/below for label overflow
         int labelPad = static_cast<int>(metrics.labelTextHeight / 2.0f + 1.0f);
-        int scaleLeft = faderArea_.getRight() + gap;
-        int scaleRight = peakMeterArea_.getX() - meterGapVal;
-        dbScale_->setBounds(scaleLeft, layoutArea.getY() - labelPad, scaleRight - scaleLeft,
-                            layoutArea.getHeight() + labelPad * 2);
+        dbScale_->setBounds(scaleColumn.getX(), peakMeterArea_.getY() - labelPad,
+                            scaleColumn.getWidth(), peakMeterArea_.getHeight() + labelPad * 2);
     } else {
         // Horizontal layout (for Arrange view - at bottom of track content)
         titleLabel->setBounds(bounds.removeFromLeft(60));
