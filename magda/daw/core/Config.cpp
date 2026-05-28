@@ -90,6 +90,14 @@ void Config::save() {
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     root->setProperty("openMacrosOnSelect", openMacrosOnSelect);
+
+    // Mixer view-toggle rail
+    root->setProperty("mixerShowSends", mixerShowSends_);
+    root->setProperty("mixerShowRouting", mixerShowRouting_);
+    root->setProperty("mixerShowMonitor", mixerShowMonitor_);
+    root->setProperty("mixerShowOscilloscope", mixerShowOscilloscope_);
+    root->setProperty("mixerShowSpectrum", mixerShowSpectrum_);
+    root->setProperty("mixerShowFxChain", mixerShowFxChain_);
     root->setProperty("previewOutputChannel", previewOutputChannel);
 
     // Auto-save
@@ -378,6 +386,13 @@ void Config::load() {
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     openMacrosOnSelect = getBool("openMacrosOnSelect", openMacrosOnSelect);
+
+    mixerShowSends_ = getBool("mixerShowSends", mixerShowSends_);
+    mixerShowRouting_ = getBool("mixerShowRouting", mixerShowRouting_);
+    mixerShowMonitor_ = getBool("mixerShowMonitor", mixerShowMonitor_);
+    mixerShowOscilloscope_ = getBool("mixerShowOscilloscope", mixerShowOscilloscope_);
+    mixerShowSpectrum_ = getBool("mixerShowSpectrum", mixerShowSpectrum_);
+    mixerShowFxChain_ = getBool("mixerShowFxChain", mixerShowFxChain_);
     previewOutputChannel = getInt("previewOutputChannel", previewOutputChannel);
 
     autoSaveEnabled = getBool("autoSaveEnabled", autoSaveEnabled);

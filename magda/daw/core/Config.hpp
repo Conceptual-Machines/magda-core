@@ -679,6 +679,45 @@ class Config {
         openMacrosOnSelect = enabled;
     }
 
+    // Mixer view-toggle rail: per-toggle visibility for the mixer's optional
+    // panes. All default off; the user opts in via the left rail.
+    bool getMixerShowSends() const {
+        return mixerShowSends_;
+    }
+    void setMixerShowSends(bool v) {
+        mixerShowSends_ = v;
+    }
+    bool getMixerShowRouting() const {
+        return mixerShowRouting_;
+    }
+    void setMixerShowRouting(bool v) {
+        mixerShowRouting_ = v;
+    }
+    bool getMixerShowMonitor() const {
+        return mixerShowMonitor_;
+    }
+    void setMixerShowMonitor(bool v) {
+        mixerShowMonitor_ = v;
+    }
+    bool getMixerShowOscilloscope() const {
+        return mixerShowOscilloscope_;
+    }
+    void setMixerShowOscilloscope(bool v) {
+        mixerShowOscilloscope_ = v;
+    }
+    bool getMixerShowSpectrum() const {
+        return mixerShowSpectrum_;
+    }
+    void setMixerShowSpectrum(bool v) {
+        mixerShowSpectrum_ = v;
+    }
+    bool getMixerShowFxChain() const {
+        return mixerShowFxChain_;
+    }
+    void setMixerShowFxChain(bool v) {
+        mixerShowFxChain_ = v;
+    }
+
     // Analysis device defaults: the last-used settings, applied to every newly
     // created Oscilloscope / Spectrum Analyzer. A device restored from a project
     // keeps its own saved state; only fresh devices pick these up. Persisted in
@@ -873,6 +912,14 @@ class Config {
 
     // Device chain behaviour
     bool openMacrosOnSelect = true;  // Open macro panel when selecting a device/rack
+
+    // Mixer view-toggle rail (default all off; users opt in via the rail)
+    bool mixerShowSends_ = false;
+    bool mixerShowRouting_ = false;
+    bool mixerShowMonitor_ = false;
+    bool mixerShowOscilloscope_ = false;
+    bool mixerShowSpectrum_ = false;
+    bool mixerShowFxChain_ = false;
 
     // Analysis device last-used defaults (see getters above).
     OscilloscopeDefaults oscilloscopeDefaults_;

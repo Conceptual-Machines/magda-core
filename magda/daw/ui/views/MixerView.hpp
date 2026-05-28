@@ -11,6 +11,7 @@
 #include "../components/common/MixerDebugPanel.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../components/mixer/MasterChannelStrip.hpp"
+#include "../components/mixer/MixerToggleRail.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
@@ -253,6 +254,11 @@ class MixerView : public juce::Component,
         int dragStartX_ = 0;
     };
     std::unique_ptr<ChannelResizeHandle> channelResizeHandle_;
+
+    // Left-edge vertical rail of view-toggle buttons (sends, routing, monitor,
+    // mini oscilloscope, mini spectrum, mini FX chain). State persisted via
+    // Config; the rail's onToggleChanged triggers a relayout of all strips.
+    std::unique_ptr<MixerToggleRail> toggleRail_;
 
     void rebuildChannelStrips();
     void updateStripWidths();

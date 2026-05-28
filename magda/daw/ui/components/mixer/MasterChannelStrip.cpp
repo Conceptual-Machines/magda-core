@@ -6,6 +6,7 @@
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "BinaryData.h"
+#include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
 #include "core/TrackPropertyCommands.hpp"
@@ -385,18 +386,18 @@ void MasterChannelStrip::setupControls() {
     dbScale_ = std::make_unique<DbScale>();
     addAndMakeVisible(*dbScale_);
 
-    // Send area resize handle
+    // Resize handle — controls faderTopInset to mirror channel strips.
     resizeHandle_ = std::make_unique<ResizeHandle>();
     resizeHandle_->onResize = [this](int deltaY) {
         auto& metrics = MixerMetrics::getInstance();
-        // Clamp max to available space minus fixed elements
         int fixedHeight = 38 + metrics.controlSpacing + 120 + 24 + metrics.buttonSize +
                           metrics.channelPadding * 2;
-        int maxHeight = juce::jmax(0, getHeight() - fixedHeight);
-        int newHeight = juce::jlimit(MixerMetrics::minSendAreaHeight, maxHeight,
-                                     metrics.sendAreaHeight + deltaY);
-        if (metrics.sendAreaHeight != newHeight) {
-            metrics.sendAreaHeight = newHeight;
+        int maxInset = juce::jmax(MixerMetrics::minFaderTopInset, getHeight() - fixedHeight);
+        int newInset = juce::jlimit(MixerMetrics::minFaderTopInset,
+                                    juce::jmin(maxInset, MixerMetrics::maxFaderTopInset),
+                                    metrics.faderTopInset + deltaY);
+        if (metrics.faderTopInset != newInset) {
+            metrics.faderTopInset = newInset;
             if (onSendAreaResized)
                 onSendAreaResized();
         }
@@ -528,12 +529,12 @@ void MasterChannelStrip::resized() {
 
         bounds.removeFromTop(metrics.controlSpacing);
 
-        // Send area space — reserve same height as channel strips for alignment
+        // Mirror channel-strip layout: 2px gap, then fader-top inset, then the
+        // resize handle. Master strip has no sends viewport of its own, so the
+        // inset alone is what aligns the handle with channel strips' handles.
         bounds.removeFromTop(2);
-        int sendAreaHeight = juce::jmax(metrics.sendAreaHeight, 0);
-        bounds.removeFromTop(sendAreaHeight);
+        bounds.removeFromTop(metrics.faderTopInset);
 
-        // Resize handle
         if (resizeHandle_) {
             resizeHandle_->setBounds(bounds.removeFromTop(6));
             resizeHandle_->setAlwaysOnTop(true);

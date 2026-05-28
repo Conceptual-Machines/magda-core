@@ -15,6 +15,7 @@
 #include "../components/mixer/RoutingSyncHelper.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
 #include "core/TrackCommands.hpp"
@@ -556,30 +557,38 @@ void MixerView::ChannelStrip::setupControls() {
         sendViewport_->setScrollBarsShown(false, false, true, false);  // hidden but scrollable
         addAndMakeVisible(*sendViewport_);
 
-        // Send area resize handle (thin horizontal bar below sends viewport)
+        // Resize handle (thin horizontal bar above the fader). Controls
+        // faderTopInset — drag down shrinks the fader, drag up grows it. Sends
+        // auto-size to their slot count and are not user-resizable.
         sendResizeHandle_ = std::make_unique<SendResizeHandle>();
         sendResizeHandle_->onResize = [this](int deltaY) {
             auto& metrics = MixerMetrics::getInstance();
-            // Min height = actual content height (can't shrink below sends)
-            int contentHeight = 0;
-            for (size_t i = 0; i < sendSlots_.size(); ++i)
-                contentHeight += 18 + 1;  // sendSlotHeight + gap
-            int minHeight = juce::jmax(MixerMetrics::minSendAreaHeight, contentHeight);
-            // Max height: total height minus fixed UI elements
+            // Max inset: clamp so the fader region keeps at least 120px.
             int fixedHeight = 38                        // colour bar + label
                               + metrics.controlSpacing  // spacing after label
-                              + 2                       // gap before sends
+                              + 2                       // gap before handle
                               + 6                       // resize handle
                               + 120                     // minimum fader region
                               + 24                      // pan + gaps
                               + metrics.buttonSize      // M/S row
-                              + (metrics.showMonitor ? metrics.buttonSize + 2 : 0)  // R/Mon row
-                              + (metrics.showRouting ? 40 : 0)                      // routing rows
+                              +
+                              (Config::getInstance().getMixerShowMonitor() ? metrics.buttonSize + 2
+                                                                           : 0)         // R/Mon row
+                              + (Config::getInstance().getMixerShowRouting() ? 40 : 0)  // routing
                               + metrics.channelPadding * 2;  // top+bottom padding
-            int maxHeight = juce::jmax(minHeight, getHeight() - fixedHeight);
-            int newHeight = juce::jlimit(minHeight, maxHeight, metrics.sendAreaHeight + deltaY);
-            if (metrics.sendAreaHeight != newHeight) {
-                metrics.sendAreaHeight = newHeight;
+            // Sends viewport also eats vertical space when visible.
+            int sendsHeight = 0;
+            if (Config::getInstance().getMixerShowSends()) {
+                for (size_t i = 0; i < sendSlots_.size(); ++i)
+                    sendsHeight += 18 + 1;
+            }
+            int maxInset =
+                juce::jmax(MixerMetrics::minFaderTopInset, getHeight() - fixedHeight - sendsHeight);
+            int newInset = juce::jlimit(MixerMetrics::minFaderTopInset,
+                                        juce::jmin(maxInset, MixerMetrics::maxFaderTopInset),
+                                        metrics.faderTopInset + deltaY);
+            if (metrics.faderTopInset != newInset) {
+                metrics.faderTopInset = newInset;
                 if (onSendAreaResized)
                     onSendAreaResized();
             }
@@ -993,10 +1002,12 @@ void MixerView::ChannelStrip::resized() {
 
     bool isMultiOut = trackType_ == TrackType::MultiOut;
 
-    // Sends area (scrollable viewport)
+    // Sends auto-size to their slot count (no user resize). The horizontal
+    // handle sits just above the fader and controls faderTopInset — that is
+    // the only thing the user can drag.
     if (!isMaster_ && sendViewport_) {
+        const bool sendsVisible = Config::getInstance().getMixerShowSends();
         const int sendSlotHeight = 18;
-        // Layout send slots inside the container
         int containerWidth = bounds.getWidth();
         int totalContentHeight = 0;
         for (auto& slot : sendSlots_) {
@@ -1009,14 +1020,18 @@ void MixerView::ChannelStrip::resized() {
         }
 
         sendContainer_->setBounds(0, 0, containerWidth, totalContentHeight);
+
         bounds.removeFromTop(2);  // Gap between track header and sends/handle
 
-        // Clamp send area height: never smaller than actual content
-        int sendAreaHeight = juce::jmax(metrics.sendAreaHeight, totalContentHeight);
-        sendViewport_->setBounds(bounds.removeFromTop(sendAreaHeight));
-        sendViewport_->setVisible(totalContentHeight > 0);
+        if (sendsVisible && totalContentHeight > 0) {
+            sendViewport_->setBounds(bounds.removeFromTop(totalContentHeight));
+            sendViewport_->setVisible(true);
+        } else {
+            sendViewport_->setVisible(false);
+        }
 
-        // Send resize handle — always visible
+        bounds.removeFromTop(metrics.faderTopInset);
+
         if (sendResizeHandle_) {
             sendResizeHandle_->setVisible(true);
             sendResizeHandle_->setBounds(bounds.removeFromTop(6));
@@ -1032,7 +1047,7 @@ void MixerView::ChannelStrip::resized() {
 
     // Routing selectors (bottommost)
     if (audioInSelector && audioOutSelector && midiInSelector && midiOutSelector) {
-        if (metrics.showRouting) {
+        if (Config::getInstance().getMixerShowRouting()) {
             bool showInputs = !isMultiOut;
             bool showMidi = !isMultiOut;
 
@@ -1101,7 +1116,7 @@ void MixerView::ChannelStrip::resized() {
             if (monitorButton)
                 monitorButton->setVisible(false);
         } else {
-            if (metrics.showMonitor) {
+            if (Config::getInstance().getMixerShowMonitor()) {
                 // Bottom row: R | M(onitor)
                 auto row2 = bounds.removeFromBottom(metrics.buttonSize);
                 int halfWidth = (row2.getWidth() - 2) / 2;
@@ -1241,6 +1256,10 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
             return;  // children manage their own right-click behaviour
         juce::PopupMenu menu;
 
+        // Per-track operations only. Global "Show X" toggles live on the
+        // MixerView left rail (see MixerToggleRail).
+        const int deleteTrackId = -101;
+
         // Add Send submenu (not for master)
         if (!isMaster_) {
             juce::PopupMenu sendSubMenu;
@@ -1261,33 +1280,14 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
             }
             menu.addSubMenu("Add Send", sendSubMenu);
             menu.addSeparator();
-        }
-
-        // Show/hide I/O routing toggle
-        auto& metrics = MixerMetrics::getInstance();
-        const int toggleRoutingId = -100;
-        const int deleteTrackId = -101;
-        const int toggleMonitorId = -102;
-        menu.addItem(toggleRoutingId, "Show I/O Routing", true, metrics.showRouting);
-        menu.addItem(toggleMonitorId, "Show Monitor", true, metrics.showMonitor);
-
-        if (!isMaster_) {
-            menu.addSeparator();
             menu.addItem(deleteTrackId, "Delete Track");
         }
 
+        if (menu.getNumItems() == 0)
+            return;  // master strip has nothing to offer here
+
         menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
-            if (result == -100) {
-                auto& m = MixerMetrics::getInstance();
-                m.showRouting = !m.showRouting;
-                if (onSendAreaResized)
-                    onSendAreaResized();
-            } else if (result == -102) {
-                auto& m = MixerMetrics::getInstance();
-                m.showMonitor = !m.showMonitor;
-                if (onSendAreaResized)
-                    onSendAreaResized();
-            } else if (result == -101) {
+            if (result == -101) {
                 UndoManager::getInstance().executeCommand(
                     std::make_unique<DeleteTrackCommand>(trackId_));
             } else if (result > 0) {
@@ -1380,6 +1380,14 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     };
     channelContainer->addAndMakeVisible(*channelResizeHandle_);
 
+    // Left-edge toggle rail
+    toggleRail_ = std::make_unique<MixerToggleRail>();
+    toggleRail_->onToggleChanged = [this]() {
+        resized();
+        relayoutAllStrips();
+    };
+    addAndMakeVisible(*toggleRail_);
+
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 
@@ -1436,6 +1444,7 @@ MixerView::~MixerView() {
     channelContainer.reset();
     channelViewport.reset();
     channelResizeHandle_.reset();
+    toggleRail_.reset();
 }
 
 void MixerView::rebuildChannelStrips() {
@@ -1695,6 +1704,11 @@ void MixerView::paint(juce::Graphics& g) {
 void MixerView::resized() {
     const auto& metrics = MixerMetrics::getInstance();
     auto bounds = getLocalBounds();
+
+    // Left-edge toggle rail (always visible)
+    if (toggleRail_) {
+        toggleRail_->setBounds(bounds.removeFromLeft(MixerToggleRail::RAIL_WIDTH));
+    }
 
     // Master strip on the right (only if visible)
     if (masterStrip->isVisible()) {
