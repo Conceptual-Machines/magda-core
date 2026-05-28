@@ -124,6 +124,11 @@ void ExternalPluginProcessor::populateParameters(DeviceInfo& info) const {
                 info.parameters.push_back(std::move(paramInfo));
             }
         }
+        DBG("[MixKnob.populate] device='"
+            << ext->getName() << "' params=" << (int)info.parameters.size()
+            << " wrapper=" << (int)info.wrapperParameters.size()
+            << " dryNonNull=" << (int)(ext->dryGain.get() != nullptr)
+            << " wetNonNull=" << (int)(ext->wetGain.get() != nullptr));
     }
 }
 

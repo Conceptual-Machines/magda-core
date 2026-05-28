@@ -33,6 +33,48 @@ class FlatGainSliderLookAndFeel : public juce::LookAndFeel_V4 {
     }
 };
 
+// Compact rotary used for the device wet/dry mix knob at the top of the
+// meter strip. Draws a small filled circle with a single pointer line —
+// no track, no labels — so it reads at ~16px.
+class MixKnobLookAndFeel : public juce::LookAndFeel_V4 {
+  public:
+    void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
+                          float sliderPosProportional, float /*rotaryStartAngle*/,
+                          float /*rotaryEndAngle*/, juce::Slider& /*slider*/) override {
+        auto bounds = juce::Rectangle<int>(x, y, width, height).toFloat();
+        const float radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.5f - 1.0f;
+        if (radius <= 0.0f)
+            return;
+        const float cx = bounds.getCentreX();
+        const float cy = bounds.getCentreY();
+
+        // Body
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillEllipse(cx - radius, cy - radius, radius * 2.0f, radius * 2.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawEllipse(cx - radius, cy - radius, radius * 2.0f, radius * 2.0f, 1.0f);
+
+        // Pointer: -135deg = fully dry, +135deg = fully wet (standard knob sweep)
+        constexpr float startAngle = -2.356194f;  // -3π/4
+        constexpr float endAngle = 2.356194f;     // +3π/4
+        const float angle = startAngle + sliderPosProportional * (endAngle - startAngle);
+        const float pointerR = radius - 2.0f;
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        const float px = cx + std::sin(angle) * pointerR;
+        const float py = cy - std::cos(angle) * pointerR;
+        g.drawLine(cx, cy, px, py, 1.5f);
+    }
+
+    int getSliderThumbRadius(juce::Slider&) override {
+        return 6;
+    }
+
+    static MixKnobLookAndFeel& getInstance() {
+        static MixKnobLookAndFeel instance;
+        return instance;
+    }
+};
+
 // Slider subclass that returns a dynamic tooltip showing both the current
 // gain value and the meter's peak-hold dB level.
 class GainSliderWithMeterTooltip : public juce::Slider {

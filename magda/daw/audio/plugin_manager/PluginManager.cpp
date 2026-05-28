@@ -430,19 +430,14 @@ void PluginManager::captureAllPluginStates() {
                     stateStr = xml->toString();
             }
 
-            DeviceInfo liveSnapshot;
-            const bool hasProcessor = sd.processor != nullptr;
-            if (hasProcessor)
-                sd.processor->populateParameters(liveSnapshot);
-
             // Always overwrite pluginState (even if empty) to avoid stale state.
             auto& trackManager = TrackManager::getInstance();
             const auto deviceId = devicePath.getDeviceId();
             auto* devInfo = trackManager.getDeviceInChainByPath(devicePath);
             if (devInfo) {
                 devInfo->pluginState = stateStr;
-                if (hasProcessor)
-                    devInfo->parameters = liveSnapshot.parameters;
+                if (sd.processor != nullptr)
+                    sd.processor->populateParameters(*devInfo);
                 ++capturedTopLevel;
                 DBG("[ChainMove] captureAll top-level device id="
                     << deviceId << " name='" << devInfo->name << "' stateLen=" << stateStr.length()
@@ -486,11 +481,8 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
     auto& trackManager = TrackManager::getInstance();
     if (auto* devInfo = trackManager.getDeviceInChainByPath(devicePath)) {
         devInfo->pluginState = stateStr;
-        DeviceInfo liveSnapshot;
-        if (it->second.processor) {
-            it->second.processor->populateParameters(liveSnapshot);
-            devInfo->parameters = liveSnapshot.parameters;
-        }
+        if (it->second.processor)
+            it->second.processor->populateParameters(*devInfo);
         DBG("[ChainMove] captureOne device id=" << deviceId << " name='" << devInfo->name
                                                 << "' stateLen=" << stateStr.length()
                                                 << " params=" << devInfo->parameters.size());

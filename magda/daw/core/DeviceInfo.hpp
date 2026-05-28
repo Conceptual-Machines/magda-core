@@ -150,6 +150,24 @@ struct DeviceInfo {
     // UI state
     int currentParameterPage = 0;  // Current parameter page (for multi-page param display)
 
+    // Resolve a TE-relative paramIndex to the matching ParameterInfo in either
+    // bucket. The argument is ALWAYS a TE index (ParameterInfo::paramIndex),
+    // never an array position. Returns nullptr if no entry matches.
+    ParameterInfo* findParameterByIndex(int paramIndex) {
+        if (paramIndex < 0)
+            return nullptr;
+        for (auto& p : parameters)
+            if (p.paramIndex == paramIndex)
+                return &p;
+        for (auto& p : wrapperParameters)
+            if (p.paramIndex == paramIndex)
+                return &p;
+        return nullptr;
+    }
+    const ParameterInfo* findParameterByIndex(int paramIndex) const {
+        return const_cast<DeviceInfo*>(this)->findParameterByIndex(paramIndex);
+    }
+
     juce::String getFormatString() const {
         switch (format) {
             case PluginFormat::VST3:

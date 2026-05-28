@@ -1993,12 +1993,15 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
         // Restore parameter values from DeviceInfo onto the newly created plugin
         processor->syncFromDeviceInfo(device);
 
-        // Populate parameters back to TrackManager so the DeviceInfo has parameter metadata
-        // (needed for UI controls to function — setDeviceParameterValue checks params.size())
-        DeviceInfo tempInfo;
-        processor->populateParameters(tempInfo);
-        DBG("[ChainMove] restore rack after sync params: " << describeChainMoveParams(tempInfo));
-        TrackManager::getInstance().updateDeviceParametersByPath(devicePath, tempInfo.parameters);
+        // Populate processor-owned fields directly into the canonical
+        // DeviceInfo. Snapshotting into a temp and copying only `.parameters`
+        // back loses any other processor-populated field (wrapperParameters,
+        // per-param displayText, etc.).
+        if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
+            processor->populateParameters(*devInfo);
+            DBG("[ChainMove] restore rack after sync params: "
+                << describeChainMoveParams(*devInfo));
+        }
         AutoAliasGenerator::regenerateForDevice(devicePath);
 
         juce::ScopedLock lock(pluginLock_);
@@ -2025,11 +2028,11 @@ void PluginManager::refreshDeviceParameters(const ChainNodePath& devicePath) {
         processor = it->second.processor.get();
     }
 
-    DeviceInfo tempInfo;
-    processor->populateParameters(tempInfo);
-    DBG("[PluginManager] refreshDeviceParameters: path populateParameters -> "
-        << static_cast<int>(tempInfo.parameters.size()) << " params");
-    TrackManager::getInstance().updateDeviceParametersByPath(devicePath, tempInfo.parameters);
+    if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
+        processor->populateParameters(*devInfo);
+        DBG("[PluginManager] refreshDeviceParameters: path populateParameters -> "
+            << static_cast<int>(devInfo->parameters.size()) << " params");
+    }
     AutoAliasGenerator::regenerateForDevice(devicePath);
 }
 
@@ -2227,13 +2230,13 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
             DBG("[ChainMove] restore track input params: " << describeChainMoveParams(device));
             processor->syncFromDeviceInfo(device);
 
-            // Populate parameters back to TrackManager
-            DeviceInfo tempInfo;
-            processor->populateParameters(tempInfo);
-            DBG("[ChainMove] restore track after sync params: "
-                << describeChainMoveParams(tempInfo));
-            TrackManager::getInstance().updateDeviceParametersByPath(devicePath,
-                                                                     tempInfo.parameters);
+            // Populate processor-owned fields directly into the canonical
+            // DeviceInfo (see comment in registerRackPluginProcessor).
+            if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
+                processor->populateParameters(*devInfo);
+                DBG("[ChainMove] restore track after sync params: "
+                    << describeChainMoveParams(*devInfo));
+            }
             AutoAliasGenerator::regenerateForDevice(devicePath);
 
             syncedDevices_[devicePath].processor = std::move(processor);

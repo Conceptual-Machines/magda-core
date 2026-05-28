@@ -1418,9 +1418,9 @@ void NodeComponent::initializeModsMacrosPanels() {
                 }
             }
         }
-        if (device && device->id == deviceId && paramIndex >= 0 &&
-            paramIndex < static_cast<int>(device->parameters.size())) {
-            return device->parameters[static_cast<size_t>(paramIndex)].name;
+        if (device && device->id == deviceId) {
+            if (const auto* info = device->findParameterByIndex(paramIndex))
+                return info->name;
         }
         return "P" + juce::String(paramIndex);
     });

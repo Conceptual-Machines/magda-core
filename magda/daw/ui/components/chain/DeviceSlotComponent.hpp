@@ -258,17 +258,14 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<juce::TextButton> presetsButton_;
     // Vertical gain slider overlaid on the meter
     std::unique_ptr<juce::Slider> gainSlider_;
-    // Slider mode: Gain drives the device's post-processing gainDb (default);
-    // Mix drives an equal-power crossfade between TE's slot dry/wet wrapper
-    // params on external plugins. Only available when the device has the
-    // DryGain+WetGain pair in wrapperParameters.
-    enum class SliderMode { Gain, Mix };
-    SliderMode sliderMode_ = SliderMode::Gain;
-    std::unique_ptr<juce::TextButton> mixToggleButton_;
+    // Small rotary at the top of the meter strip that drives an equal-power
+    // crossfade between TE's slot DryGain/WetGain wrapper params. Only shown
+    // when the device exposes that wrapper pair (external plugins via TE).
+    // The meter and gain slider shrink to leave room above when present.
+    std::unique_ptr<juce::Slider> mixKnob_;
     bool hasWrapperMixPair() const;
-    void applySliderMode();
-    void syncSliderFromDevice();
     double currentMixPosition() const;
+    void syncMixKnobFromDevice();
     int lastMidiNote_ = -1;
     std::array<int, 32> lastChordNotes_{};
     int lastChordCount_ = 0;

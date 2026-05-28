@@ -320,21 +320,6 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     gainSlider_->setSliderSnapsToMousePosition(false);
     gainSlider_->setDoubleClickReturnValue(true, 0.0);
     gainSlider_->onValueChange = [this]() {
-        if (sliderMode_ == SliderMode::Mix) {
-            const double pos = juce::jlimit(0.0, 1.0, gainSlider_->getValue());
-            const double dry = std::cos(pos * juce::MathConstants<double>::halfPi);
-            const double wet = std::sin(pos * juce::MathConstants<double>::halfPi);
-            for (const auto& p : device_.wrapperParameters) {
-                if (p.wrapperRole == magda::WrapperRole::DryGain) {
-                    magda::TrackManager::getInstance().setDeviceParameterValue(
-                        nodePath_, p.paramIndex, static_cast<float>(dry));
-                } else if (p.wrapperRole == magda::WrapperRole::WetGain) {
-                    magda::TrackManager::getInstance().setDeviceParameterValue(
-                        nodePath_, p.paramIndex, static_cast<float>(wet));
-                }
-            }
-            return;
-        }
         magda::TrackManager::getInstance().setDeviceGainDb(
             nodePath_, static_cast<float>(gainSlider_->getValue()));
         // A manual gain edit supersedes any gain-staging mark on this device.
@@ -342,20 +327,32 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     };
     addAndMakeVisible(*gainSlider_);
 
-    // G/M slider-mode toggle (bottom of meter strip). Hidden when the device
-    // has no Mix to switch to (i.e. no DryGain+WetGain wrapper pair).
-    mixToggleButton_ = std::make_unique<juce::TextButton>("G");
-    mixToggleButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    mixToggleButton_->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    mixToggleButton_->setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getSecondaryTextColour());
-    mixToggleButton_->setTooltip("Slider: Gain (click for Wet/Dry Mix)");
-    mixToggleButton_->onClick = [this]() {
-        sliderMode_ = (sliderMode_ == SliderMode::Gain) ? SliderMode::Mix : SliderMode::Gain;
-        applySliderMode();
+    // Mix knob sits at the top of the meter strip. Drives an equal-power
+    // crossfade between TE's DryGain/WetGain wrapper params. Hidden when the
+    // device has no such pair (native MAGDA / Faust devices).
+    mixKnob_ = std::make_unique<juce::Slider>(juce::Slider::RotaryHorizontalVerticalDrag,
+                                              juce::Slider::NoTextBox);
+    mixKnob_->setLookAndFeel(&node_header::MixKnobLookAndFeel::getInstance());
+    mixKnob_->setRange(0.0, 1.0, 0.001);
+    mixKnob_->setValue(1.0, juce::dontSendNotification);  // default to fully wet
+    mixKnob_->setDoubleClickReturnValue(true, 1.0);
+    mixKnob_->setSliderSnapsToMousePosition(false);
+    mixKnob_->setTooltip("Wet / Dry Mix (equal-power)");
+    mixKnob_->onValueChange = [this]() {
+        const double pos = juce::jlimit(0.0, 1.0, mixKnob_->getValue());
+        const double dry = std::cos(pos * juce::MathConstants<double>::halfPi);
+        const double wet = std::sin(pos * juce::MathConstants<double>::halfPi);
+        for (const auto& p : device_.wrapperParameters) {
+            if (p.wrapperRole == magda::WrapperRole::DryGain) {
+                magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, p.paramIndex,
+                                                                           static_cast<float>(dry));
+            } else if (p.wrapperRole == magda::WrapperRole::WetGain) {
+                magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, p.paramIndex,
+                                                                           static_cast<float>(wet));
+            }
+        }
     };
-    addChildComponent(*mixToggleButton_);
+    addChildComponent(*mixKnob_);
 
     // Sidechain button (only visible when plugin supports sidechain)
     scButton_ = std::make_unique<juce::TextButton>("SC");
@@ -816,6 +813,20 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // setCollapsed triggers resized() which accesses onButton_, uiButton_, etc.
     setCollapsed(!device.expanded);
 
+    // First-load mix knob visibility — device_ already carries the wrapper
+    // pair when the processor populated it before the slot was constructed.
+    // updateFromDevice() only fires on preset load, so without this the knob
+    // stays hidden on initial paint even when it should be on.
+    if (mixKnob_) {
+        const bool show = hasWrapperMixPair();
+        DBG("[MixKnob.ctor] device='" << device.name
+                                      << "' wrapperParams=" << (int)device.wrapperParameters.size()
+                                      << " hasPair=" << (int)show);
+        mixKnob_->setVisible(show);
+        if (show)
+            syncMixKnobFromDevice();
+    }
+
     // Start timer for UI button state sync and meter updates (~30 FPS)
     startTimerHz(30);
 }
@@ -904,8 +915,8 @@ void DeviceSlotComponent::showAutomationLaneForParam(int paramIndex) {
     target.devicePath = nodePath_;
     target.paramIndex = paramIndex;
     juce::String pName = "Param " + juce::String(paramIndex);
-    if (paramIndex >= 0 && paramIndex < static_cast<int>(device_.parameters.size()))
-        pName = device_.parameters[static_cast<size_t>(paramIndex)].name;
+    if (const auto* info = device_.findParameterByIndex(paramIndex))
+        pName = info->name;
     auto& automationMgr = magda::AutomationManager::getInstance();
     auto laneId = automationMgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
     automationMgr.setLaneVisible(laneId, true);
@@ -935,37 +946,23 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
         return;
 
     const int paramIndex = lane->target.paramIndex;
-    if (paramIndex < 0 || paramIndex >= static_cast<int>(device_.parameters.size()))
+    auto* stored = device_.findParameterByIndex(paramIndex);
+    if (stored == nullptr)
         return;
 
     // Convert the lane's MAGDA-normalized [0,1] back to the plugin's NATIVE
-    // range (what te::AutomatableParameter actually stores).
-    //
-    // When info.min/max match the TE-native range (internal plugins; external
-    // VSTs before any AI-Detect override) go through normalizedToReal so log
-    // scales and scaleAnchors are honoured — the audio path
-    // (AutomationPlaybackEngine) and record path do the same, and anything
-    // less makes the cached currentValue drift from what TE actually stores
-    // (e.g. 4OSC filterFreq with scaleAnchor=69 picks note 69 / 440 Hz at
-    // norm 0.5, not the linear midpoint note 67.5 / 404 Hz).
-    //
-    // When info min/max differ from TE range (external VST with an AI-Detect
-    // display range) fall back to a linear mapping onto the native TE range.
-    // normalizedToReal would return a display-range value (e.g. -2.49 st) and
-    // fight ExternalPluginProcessor::propagateParameterChange, which writes
-    // the native 0..1 via its listener — the two writers alternate and the
-    // slot flickers. teMin/teMax were captured at makeInfoFromTeParam time
-    // (before any AI-Detect override) so this projection is safe without a
-    // live plugin lookup.
-    const auto& info = device_.parameters[static_cast<size_t>(paramIndex)];
+    // range (what te::AutomatableParameter actually stores). See the long
+    // comment that used to live here for why we project against the param's
+    // teMin/teMax instead of its display range when an AI-Detect override
+    // diverges them.
     const float modelValue =
         magda::ParameterUtils::normalizedToModelValue(
-            magda::ParameterNormalizedValue::clamped(static_cast<float>(normalizedValue)), info)
+            magda::ParameterNormalizedValue::clamped(static_cast<float>(normalizedValue)), *stored)
             .value;
 
     // Keep the cached value in sync so any non-automation refresh path and
     // custom UI read the same value-space that live parameter writes use.
-    device_.parameters[static_cast<size_t>(paramIndex)].currentValue = modelValue;
+    stored->currentValue = modelValue;
 
     // Push into the param slot (if the matching parameter is on the current
     // page) and into any active custom UI so the on-device knob follows too.
@@ -1227,16 +1224,26 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setActive(!device.bypassed);
     gainLabel_.setValue(device.gainDb, juce::dontSendNotification);
-    if (sliderMode_ == SliderMode::Mix && !hasWrapperMixPair())
-        sliderMode_ = SliderMode::Gain;  // device lost its wrapper pair (reload etc.)
-    syncSliderFromDevice();
-    if (mixToggleButton_) {
+    if (gainSlider_)
+        gainSlider_->setValue(device.gainDb, juce::dontSendNotification);
+    if (mixKnob_) {
         const bool show = hasWrapperMixPair();
-        mixToggleButton_->setVisible(show);
-        if (!show && sliderMode_ != SliderMode::Gain) {
-            sliderMode_ = SliderMode::Gain;
-            applySliderMode();
+        const bool wasVisible = mixKnob_->isVisible();
+        DBG("[MixKnob.update] device='"
+            << device.name << "' wrapperParams=" << (int)device.wrapperParameters.size()
+            << " hasPair=" << (int)show << " wasVisible=" << (int)wasVisible << " parentVisible="
+            << (int)isVisible() << " bounds=" << mixKnob_->getBounds().toString());
+        for (const auto& p : device.wrapperParameters) {
+            DBG("[MixKnob.update]   wrap idx=" << p.paramIndex << " name='" << p.name << "' role="
+                                               << (int)p.wrapperRole << " val=" << p.currentValue);
         }
+        mixKnob_->setVisible(show);
+        if (show)
+            syncMixKnobFromDevice();
+        if (show != wasVisible)
+            resized();  // setVisible alone doesn't re-run layoutMeterStrip
+    } else {
+        DBG("[MixKnob.update] mixKnob_ is null on device '" << device.name << "'");
     }
 
     // Plugin instance may have just become available (or its program list changed
@@ -1398,7 +1405,7 @@ void DeviceSlotComponent::deviceGainStageChanged(magda::DeviceId deviceId,
         device_.gainDb = dev->gainDb;
         device_.gainValue = dev->gainValue;
         gainLabel_.setValue(dev->gainDb, juce::dontSendNotification);
-        if (gainSlider_ != nullptr && sliderMode_ == SliderMode::Gain)
+        if (gainSlider_ != nullptr)
             gainSlider_->setValue(dev->gainDb, juce::dontSendNotification);
     }
 
@@ -1544,7 +1551,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
              .macroButton = macroButton_.get(),
              .uiButton = uiButton_.get(),
              .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
-             .mixToggle = mixToggleButton_.get()},
+             .mixKnob = mixKnob_.get()},
             stripsAnalysisChrome() ? 0 : METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT)) {
         return;
     }
@@ -2460,8 +2467,8 @@ void DeviceSlotComponent::setupCustomUILinking() {
         // Single source of truth: the processor-published ParameterInfo drives
         // range/skew/formatter/parser on the slider. Overrides whatever the
         // custom UI hardcoded at construction.
-        if (paramIdx >= 0 && paramIdx < static_cast<int>(device_.parameters.size()))
-            slider->setParameterInfo(device_.parameters[static_cast<size_t>(paramIdx)]);
+        if (const auto* info = device_.findParameterByIndex(paramIdx))
+            slider->setParameterInfo(*info);
         slider->setAvailableMods(mods);
         slider->setAvailableRackMods(rackMods);
         slider->setAvailableMacros(macros);
@@ -2877,9 +2884,9 @@ bool DeviceSlotComponent::hasWrapperMixPair() const {
 }
 
 double DeviceSlotComponent::currentMixPosition() const {
-    // Derive crossfade position from current dry+wet wrapper values, so the
-    // slider reflects external edits (preset load, automation, native UI).
-    // pos = atan2(wet, dry) / (π/2) — inverse of cos/sin pair we write.
+    // Inverse of the cos/sin pair we write — derive crossfade position from
+    // current dry+wet wrapper values so the knob reflects external edits
+    // (preset load, automation, plugin native UI).
     float dry = 1.0f, wet = 0.0f;
     for (const auto& p : device_.wrapperParameters) {
         if (p.wrapperRole == magda::WrapperRole::DryGain)
@@ -2893,38 +2900,9 @@ double DeviceSlotComponent::currentMixPosition() const {
     return juce::jlimit(0.0, 1.0, angle / juce::MathConstants<double>::halfPi);
 }
 
-void DeviceSlotComponent::syncSliderFromDevice() {
-    if (gainSlider_ == nullptr)
-        return;
-    if (sliderMode_ == SliderMode::Mix) {
-        gainSlider_->setValue(currentMixPosition(), juce::dontSendNotification);
-    } else {
-        gainSlider_->setValue(device_.gainDb, juce::dontSendNotification);
-    }
-}
-
-void DeviceSlotComponent::applySliderMode() {
-    if (gainSlider_ == nullptr)
-        return;
-
-    if (sliderMode_ == SliderMode::Mix) {
-        gainSlider_->setRange(0.0, 1.0, 0.001);
-        gainSlider_->setDoubleClickReturnValue(true, 1.0);  // fully wet on dbl-click
-        gainSlider_->setTooltip("Wet / Dry Mix (equal-power)");
-        if (mixToggleButton_) {
-            mixToggleButton_->setButtonText("M");
-            mixToggleButton_->setTooltip("Slider: Wet/Dry Mix (click for Gain)");
-        }
-    } else {
-        gainSlider_->setRange(-60.0, 12.0, 0.1);
-        gainSlider_->setDoubleClickReturnValue(true, 0.0);
-        gainSlider_->setTooltip("Device Gain (dB)");
-        if (mixToggleButton_) {
-            mixToggleButton_->setButtonText("G");
-            mixToggleButton_->setTooltip("Slider: Gain (click for Wet/Dry Mix)");
-        }
-    }
-    syncSliderFromDevice();
+void DeviceSlotComponent::syncMixKnobFromDevice() {
+    if (mixKnob_ != nullptr)
+        mixKnob_->setValue(currentMixPosition(), juce::dontSendNotification);
 }
 
 }  // namespace magda::daw::ui

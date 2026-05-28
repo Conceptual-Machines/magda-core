@@ -49,17 +49,20 @@ void layoutMeterStrip(juce::Rectangle<int>& contentArea, const DeviceSlotTraits&
     auto stripBounds = contentArea.removeFromRight(meterStripWidth).reduced(1, 3);
     contentArea.removeFromRight(4);
 
-    // Mix-mode toggle (tiny G/M letter) lives at the very bottom of the meter
-    // strip when the host wires one in. The meter and slider only see the area
-    // above it.
-    constexpr int kMixToggleHeight = 14;
-    if (controls.mixToggle != nullptr && controls.mixToggle->isVisible() &&
-        stripBounds.getHeight() > kMixToggleHeight + 4) {
-        controls.mixToggle->setBounds(stripBounds.removeFromBottom(kMixToggleHeight));
-        stripBounds.removeFromBottom(2);
-        controls.mixToggle->toFront(false);
-    } else if (controls.mixToggle != nullptr) {
-        controls.mixToggle->setVisible(false);
+    // Mix knob at the very top of the meter strip when the host wires one in.
+    // The meter (and the overlaid gain slider) shrink to leave room. Visible
+    // only when the device has a DryGain+WetGain wrapper pair — that decision
+    // lives on the host, which sets the knob's visibility before relayout.
+    constexpr int kMixKnobHeight = 18;
+    if (controls.mixKnob != nullptr && controls.mixKnob->isVisible() &&
+        stripBounds.getHeight() > kMixKnobHeight + 8) {
+        controls.mixKnob->setBounds(stripBounds.removeFromTop(kMixKnobHeight));
+        stripBounds.removeFromTop(2);
+        controls.mixKnob->toFront(false);
+        DBG("[MixKnob.layout] positioned at " << controls.mixKnob->getBounds().toString());
+    } else if (controls.mixKnob != nullptr) {
+        DBG("[MixKnob.layout] SKIPPED — visible=" << (int)controls.mixKnob->isVisible()
+                                                  << " stripH=" << stripBounds.getHeight());
     }
 
     const bool usesNoteStrip = isMidiUtility(traits);
