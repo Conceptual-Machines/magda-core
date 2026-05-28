@@ -155,9 +155,11 @@ ChainNode TrackManager::resolveChainNode(const ChainNodePath& path) {
                 return ChainNode{};
             node.scope = ChainScope::Device;
             node.deviceId = device->id;
+            node.params = &device->parameters;
+            if (path.isPostFx())
+                return node;
             node.macros = &device->macros;
             node.mods = &device->mods;
-            node.params = &device->parameters;
             return node;
         }
         case ChainNodeType::Chain:
@@ -198,9 +200,11 @@ ConstChainNode TrackManager::resolveChainNode(const ChainNodePath& path) const {
                 return ConstChainNode{};
             node.scope = ChainScope::Device;
             node.deviceId = device->id;
+            node.params = &device->parameters;
+            if (path.isPostFx())
+                return node;
             node.macros = &device->macros;
             node.mods = &device->mods;
-            node.params = &device->parameters;
             return node;
         }
         case ChainNodeType::Chain:

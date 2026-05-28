@@ -318,6 +318,8 @@ class DeviceSlotComponent : public NodeComponent,
     // An analysis device sitting in post-FX: the header toggle owns add/remove
     // and bypass/presets are meaningless, so its slot drops power/preset/delete.
     bool stripsAnalysisChrome() const;
+    bool exposesDeviceModulation() const;
+    void syncModMacroControlsAvailability();
 
     // Helper to create custom UI for internal devices
     void createCustomUI();

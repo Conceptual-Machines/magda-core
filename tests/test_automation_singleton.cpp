@@ -72,6 +72,21 @@ TEST_CASE("AutomationManager::createLane returns the existing id for a duplicate
     REQUIRE(mgr.getLanesForTrack(trackId).size() == 1);
 }
 
+TEST_CASE("AutomationManager rejects post-fx device-scoped lanes", "[automation][postfx]") {
+    resetState();
+    auto trackId = makeTrack("T");
+    auto postFxPath = ChainNodePath::postFxDevice(trackId, 1);
+    auto& mgr = AutomationManager::getInstance();
+
+    REQUIRE(mgr.createLane(ControlTarget::pluginParam(postFxPath, 0),
+                           AutomationLaneType::Absolute) == INVALID_AUTOMATION_LANE_ID);
+    REQUIRE(mgr.createLane(ControlTarget::deviceMacro(postFxPath, 0),
+                           AutomationLaneType::Absolute) == INVALID_AUTOMATION_LANE_ID);
+    REQUIRE(mgr.createLane(ControlTarget::modParam(postFxPath, 1, 0),
+                           AutomationLaneType::Absolute) == INVALID_AUTOMATION_LANE_ID);
+    REQUIRE(mgr.getLanes().empty());
+}
+
 TEST_CASE("AutomationManager: different target types on the same track coexist",
           "[automation][singleton]") {
     resetState();

@@ -216,6 +216,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
     modButton_->setActive(modPanelVisible_);
     modButton_->onClick = [this]() {
+        if (!exposesDeviceModulation())
+            return;
         modButton_->setActive(modButton_->getToggleState());
         setModPanelVisible(modButton_->getToggleState());
     };
@@ -228,6 +230,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
     macroButton_->setActive(paramPanelVisible_);
     macroButton_->onClick = [this]() {
+        if (!exposesDeviceModulation())
+            return;
         macroButton_->setActive(macroButton_->getToggleState());
         setParamPanelVisible(macroButton_->getToggleState());
     };
@@ -906,6 +910,9 @@ void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& dev
 }
 
 void DeviceSlotComponent::showAutomationLaneForParam(int paramIndex) {
+    if (nodePath_.isPostFx())
+        return;
+
     auto trackId = nodePath_.trackId;
     if (trackId == magda::INVALID_TRACK_ID)
         return;
@@ -1000,6 +1007,30 @@ bool DeviceSlotComponent::stripsAnalysisChrome() const {
     return magda::isAnalysisDevice(device_.pluginId) && nodePath_.isPostFx();
 }
 
+bool DeviceSlotComponent::exposesDeviceModulation() const {
+    return !nodePath_.isPostFx();
+}
+
+void DeviceSlotComponent::syncModMacroControlsAvailability() {
+    if (exposesDeviceModulation()) {
+        return;
+    }
+
+    setModPanelVisible(false);
+    setParamPanelVisible(false);
+
+    if (modButton_) {
+        modButton_->setToggleState(false, juce::dontSendNotification);
+        modButton_->setActive(false);
+        modButton_->setVisible(false);
+    }
+    if (macroButton_) {
+        macroButton_->setToggleState(false, juce::dontSendNotification);
+        macroButton_->setActive(false);
+        macroButton_->setVisible(false);
+    }
+}
+
 void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
     customUI_.setDevicePath(path);
@@ -1011,6 +1042,8 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     presetButton_->setVisible(!strip);
     setDeleteButtonVisible(!strip);
     levelMeter_.setVisible(!strip);  // peak meter is redundant on an analyzer
+
+    syncModMacroControlsAvailability();
 
     // Now that nodePath_ is valid, update param slots with the device path
     updateParamModulation();
@@ -1219,6 +1252,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     device_ = device;
     refreshDeviceTraits(device.pluginId);
+    syncModMacroControlsAvailability();
     drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
     setBypassed(device.bypassed);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
@@ -1389,7 +1423,8 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
     NodeComponent::paint(g);
 
     drum_grid_slot::paintHeaderLogo(g, traits_.isDrumGrid, collapsed_, getHeaderHeight(),
-                                    getWidth(), modButton_.get(),
+                                    getWidth(),
+                                    exposesDeviceModulation() ? modButton_.get() : nullptr,
                                     {uiButton_.get(), scButton_.get(), multiOutButton_.get(),
                                      onButton_.get(), exportClipButton_.get()});
 }
@@ -1500,7 +1535,8 @@ void DeviceSlotComponent::paintOverChildren(juce::Graphics& g) {
 
 juce::Point<float> DeviceSlotComponent::getControllerIndicatorAnchor() const {
     if (auto anchor = drum_grid_slot::getControllerIndicatorAnchor(
-            traits_.isDrumGrid, collapsed_, getHeaderHeight(), modButton_.get()))
+            traits_.isDrumGrid, collapsed_, getHeaderHeight(),
+            exposesDeviceModulation() ? modButton_.get() : nullptr))
         return *anchor;
 
     return NodeComponent::getControllerIndicatorAnchor();
@@ -1547,8 +1583,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
              .magdaPresetButton = stripsAnalysisChrome() ? nullptr : presetButton_.get(),
              .activeCustomUI = activeCustomUI,
              .compiledPanel = compiledPanelComponent,
-             .modButton = modButton_.get(),
-             .macroButton = macroButton_.get(),
+             .modButton = exposesDeviceModulation() ? modButton_.get() : nullptr,
+             .macroButton = exposesDeviceModulation() ? macroButton_.get() : nullptr,
              .uiButton = uiButton_.get(),
              .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
              .mixKnob = mixKnob_.get()},
@@ -1587,8 +1623,8 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     layoutExpandedDeviceSlotHeader(
         headerArea, traits_, device_, isInternalDevice(),
         {.gainLabel = &gainLabel_,
-         .macroButton = macroButton_.get(),
-         .modButton = modButton_.get(),
+         .macroButton = exposesDeviceModulation() ? macroButton_.get() : nullptr,
+         .modButton = exposesDeviceModulation() ? modButton_.get() : nullptr,
          .aiButton = aiButton_.get(),
          .learnButton = learnButton_.get(),
          .sidechainButton = scButton_.get(),
@@ -1617,8 +1653,8 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
          .midiNoteStrip = &midiNoteStrip_,
          .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
          .uiButton = uiButton_.get(),
-         .macroButton = macroButton_.get(),
-         .modButton = modButton_.get(),
+         .macroButton = exposesDeviceModulation() ? macroButton_.get() : nullptr,
+         .modButton = exposesDeviceModulation() ? modButton_.get() : nullptr,
          .aiButton = aiButton_.get(),
          .multiOutButton = multiOutButton_.get()},
         BUTTON_SIZE);
@@ -1630,14 +1666,16 @@ juce::String DeviceSlotComponent::getCollapsedName() const {
 }
 
 int DeviceSlotComponent::getModPanelWidth() const {
-    return modPanelVisible_ ? DEFAULT_PANEL_WIDTH : 0;
+    return exposesDeviceModulation() && modPanelVisible_ ? DEFAULT_PANEL_WIDTH : 0;
 }
 
 int DeviceSlotComponent::getParamPanelWidth() const {
-    return paramPanelVisible_ ? DEFAULT_PANEL_WIDTH : 0;
+    return exposesDeviceModulation() && paramPanelVisible_ ? DEFAULT_PANEL_WIDTH : 0;
 }
 
 const magda::ModArray* DeviceSlotComponent::getModsData() const {
+    if (!exposesDeviceModulation())
+        return nullptr;
     if (auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
         return &dev->mods;
     }
@@ -1645,6 +1683,8 @@ const magda::ModArray* DeviceSlotComponent::getModsData() const {
 }
 
 const magda::MacroArray* DeviceSlotComponent::getMacrosData() const {
+    if (!exposesDeviceModulation())
+        return nullptr;
     if (auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
         if (magda::isAnalysisDevice(dev->pluginId))
             return nullptr;  // analysis devices expose no macros
@@ -1937,7 +1977,7 @@ void DeviceSlotComponent::goToNextPage() {
 
 void DeviceSlotComponent::openMacroPanelForSelectionIfNeeded() {
     if (!magda::Config::getInstance().getOpenMacrosOnSelect() || paramPanelVisible_ ||
-        !macroButton_ || !nodePath_.isValid()) {
+        !macroButton_ || !nodePath_.isValid() || !exposesDeviceModulation()) {
         return;
     }
 

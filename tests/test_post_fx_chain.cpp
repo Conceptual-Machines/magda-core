@@ -113,6 +113,40 @@ TEST_CASE("post-fx device is reachable and removable by path", "[postfx]") {
     REQUIRE(tm.getDeviceInChainByPath(path) == nullptr);
 }
 
+TEST_CASE("post-fx devices expose params but no device mods or macros", "[postfx]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    TrackId track = tm.createTrack("Track");
+
+    auto device = makeDevice("Post");
+    ParameterInfo param;
+    param.paramIndex = 7;
+    param.name = "Gain";
+    device.parameters.push_back(param);
+
+    DeviceId id = tm.addDeviceToPostFx(track, device);
+    auto path = ChainNodePath::postFxDevice(track, id);
+
+    const auto& ctm = tm;
+    auto node = ctm.resolveChainNode(path);
+    REQUIRE(node.params != nullptr);
+    REQUIRE(node.params->size() == 1);
+    REQUIRE(node.params->front().paramIndex == 7);
+    REQUIRE(node.macros == nullptr);
+    REQUIRE(node.mods == nullptr);
+    REQUIRE_FALSE(node.valid());
+
+    auto* stored = tm.getDeviceInChainByPath(path);
+    REQUIRE(stored != nullptr);
+    const auto originalMacroName = stored->macros.front().name;
+
+    tm.setMacroName(path, 0, "Blocked");
+    tm.addMod(path, 0, ModType::LFO);
+
+    REQUIRE(stored->macros.front().name == originalMacroName);
+    REQUIRE(stored->mods.empty());
+}
+
 TEST_CASE("post-fx enforces one analysis device per kind, FX repeatable", "[postfx]") {
     resetState();
     auto& tm = TrackManager::getInstance();

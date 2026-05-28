@@ -305,7 +305,8 @@ void ModKnobComponent::showContextMenu() {
 
     bool isEnabled = currentMod_.enabled;
     menu.addItem(kRenameId, "Rename");
-    menu.addItem(kShowAutomationLaneId, "Show Automation Lane");
+    if (!parentPath_.isPostFx())
+        menu.addItem(kShowAutomationLaneId, "Show Automation Lane");
     menu.addItem(kToggleEnabledId, isEnabled ? "Disable" : "Enable");
 
     menu.addSeparator();
@@ -458,6 +459,9 @@ void ModKnobComponent::showContextMenu() {
             return;
         }
         if (result == kShowAutomationLaneId) {
+            if (parentPath.isPostFx())
+                return;
+
             auto target = magda::ControlTarget::modParam(parentPath, modId,
                                                          /*modParamIndex=*/0);
             auto& mgr = magda::AutomationManager::getInstance();

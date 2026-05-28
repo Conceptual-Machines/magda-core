@@ -1375,7 +1375,7 @@ TEST_CASE("Section-scoped device ids survive project roundtrip",
     REQUIRE(trackManager.addDeviceToMixerAnalysis(trackId, analysis) == 2);
 }
 
-TEST_CASE("Automation target keeps section path when device ids overlap",
+TEST_CASE("Post-fx device params are not automation targets",
           "[project][serialization][automation]") {
     ProjectTestFixture fixture;
 
@@ -1395,11 +1395,11 @@ TEST_CASE("Automation target keeps section path when device ids overlap",
     REQUIRE(fxId == 1);
     REQUIRE(postId == 1);
 
-    const auto fxPath = ChainNodePath::topLevelDevice(trackId, fxId);
+    juce::ignoreUnused(fxId);
     const auto postFxPath = ChainNodePath::postFxDevice(trackId, postId);
     const auto laneId = automationManager.createLane(ControlTarget::pluginParam(postFxPath, 0),
                                                      AutomationLaneType::Absolute);
-    REQUIRE(laneId != INVALID_AUTOMATION_LANE_ID);
+    REQUIRE(laneId == INVALID_AUTOMATION_LANE_ID);
 
     ProjectInfo info;
     auto json = ProjectSerializer::serializeProject(info);
@@ -1408,11 +1408,7 @@ TEST_CASE("Automation target keeps section path when device ids overlap",
     REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
 
     const auto& lanes = automationManager.getLanes();
-    REQUIRE(lanes.size() == 1);
-    REQUIRE(lanes[0].target.devicePath == postFxPath);
-    REQUIRE(lanes[0].target.devicePath != fxPath);
-    REQUIRE(lanes[0].target.devicePath.isPostFx());
-    REQUIRE(lanes[0].target.deviceId() == 1);
+    REQUIRE(lanes.empty());
 }
 
 TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][parameter]") {

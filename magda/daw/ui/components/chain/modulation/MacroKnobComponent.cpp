@@ -129,7 +129,8 @@ void MacroKnobComponent::updateAutomationTarget() {
     // Build the AutomationTarget for this macro so TextSlider can listen to
     // AutomationManager and paint the standard purple highlight when a lane
     // exists. Mirrors the way plugin-param sliders register themselves.
-    if (parentPath_.trackId == magda::INVALID_TRACK_ID || macroIndex_ < 0) {
+    if (parentPath_.trackId == magda::INVALID_TRACK_ID || parentPath_.isPostFx() ||
+        macroIndex_ < 0) {
         valueSlider_.clearAutomationTarget();
         return;
     }
@@ -152,7 +153,7 @@ magda::AutomationTarget MacroKnobComponent::makeAutomationTarget() const {
 
 void MacroKnobComponent::beginAutomationGesture() {
     auto target = makeAutomationTarget();
-    if (!target.isValid())
+    if (!target.isValid() || target.devicePath.isPostFx())
         return;
 
     auto& mgr = magda::AutomationManager::getInstance();
@@ -164,7 +165,7 @@ void MacroKnobComponent::beginAutomationGesture() {
 
 void MacroKnobComponent::endAutomationGesture() {
     auto target = makeAutomationTarget();
-    if (!target.isValid())
+    if (!target.isValid() || target.devicePath.isPostFx())
         return;
 
     auto& mgr = magda::AutomationManager::getInstance();
@@ -453,7 +454,8 @@ void MacroKnobComponent::showLinkMenu() {
     constexpr int kShowAutomationLaneId = 30000;
     constexpr int kRenameId = 60000;
     menu.addItem(kRenameId, "Rename");
-    menu.addItem(kShowAutomationLaneId, "Show Automation Lane");
+    if (!parentPath_.isPostFx())
+        menu.addItem(kShowAutomationLaneId, "Show Automation Lane");
     menu.addSeparator();
 
     menu.addSectionHeader("Link to Parameter...");
@@ -658,6 +660,9 @@ void MacroKnobComponent::showLinkMenu() {
         // Show automation lane for this macro
         constexpr int kShowAutomationLaneId = 30000;
         if (result == kShowAutomationLaneId) {
+            if (safeThis->parentPath_.isPostFx())
+                return;
+
             magda::AutomationTarget target;
             target.kind = magda::ControlTarget::Kind::DeviceMacro;
             target.devicePath.trackId = safeThis->parentPath_.trackId;

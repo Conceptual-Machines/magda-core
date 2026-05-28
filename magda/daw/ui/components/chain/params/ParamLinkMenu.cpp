@@ -143,9 +143,10 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
         }
     }
 
-    // Automation
-    menu.addSeparator();
-    menu.addItem(5000, "Show Automation Lane");
+    if (!ctx.devicePath.isPostFx()) {
+        menu.addSeparator();
+        menu.addItem(5000, "Show Automation Lane");
+    }
 
     // MIDI section
     menu.addSeparator();

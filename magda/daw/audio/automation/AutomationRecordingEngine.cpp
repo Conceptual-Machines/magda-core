@@ -334,6 +334,8 @@ void AutomationRecordingEngine::onDeviceParameterChanged(DeviceId deviceId, int 
         return;
 
     auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+    if (laneId == INVALID_AUTOMATION_LANE_ID)
+        return;
 
     // Touch bounce-back baseline. For device params there's no engine-side
     // pre-touch value (unlike volume/pan which use mix state), so we read

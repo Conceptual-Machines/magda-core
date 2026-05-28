@@ -11,6 +11,24 @@
 
 namespace magda {
 
+namespace {
+
+bool isPostFxAutomationTarget(const AutomationTarget& target) {
+    switch (target.kind) {
+        case ControlTarget::Kind::PluginParam:
+        case ControlTarget::Kind::DeviceMacro:
+        case ControlTarget::Kind::ModParam:
+            return target.devicePath.isPostFx();
+        case ControlTarget::Kind::TrackVolume:
+        case ControlTarget::Kind::TrackPan:
+        case ControlTarget::Kind::SendLevel:
+            return false;
+    }
+    return false;
+}
+
+}  // namespace
+
 // Convert linear gain to dB
 static float gainToDb(float gain) {
     constexpr float MIN_DB = -60.0f;
@@ -227,6 +245,9 @@ void AutomationManager::trackPropertyChanged(int trackId) {
 
 AutomationLaneId AutomationManager::createLane(const AutomationTarget& target,
                                                AutomationLaneType type) {
+    if (isPostFxAutomationTarget(target))
+        return INVALID_AUTOMATION_LANE_ID;
+
     // Enforce lane singletons: at most one lane per (target) pair. A duplicate
     // volume/pan/param lane is always a bug — either the caller forgot to
     // check, or two code paths raced. Return the existing id either way.
@@ -1022,6 +1043,9 @@ void AutomationManager::clearAll() {
 }
 
 void AutomationManager::restoreLane(AutomationLaneInfo& lane) {
+    if (isPostFxAutomationTarget(lane.target))
+        return;
+
     // Dedup at restore time too — a saved project with duplicate lanes for
     // the same target is always corrupt data from a pre-singleton-enforcement
     // session. Keep the first one and drop the rest. Undo-driven restore is
