@@ -16,31 +16,6 @@ namespace magda {
 
 namespace {
 
-/**
- * @brief Recursively search chain elements for a DeviceInfo with the given ID
- *
- * Searches top-level devices and recurses into RackInfo.chains[].elements[].
- */
-const DeviceInfo* findDeviceRecursive(const std::vector<ChainElement>& elements,
-                                      DeviceId deviceId) {
-    for (const auto& element : elements) {
-        if (isDevice(element)) {
-            const auto& device = getDevice(element);
-            if (device.id == deviceId) {
-                return &device;
-            }
-        } else if (isRack(element)) {
-            const auto& rack = getRack(element);
-            for (const auto& chain : rack.chains) {
-                auto* found = findDeviceRecursive(chain.elements, deviceId);
-                if (found)
-                    return found;
-            }
-        }
-    }
-    return nullptr;
-}
-
 bool inputHasTarget(te::InputDeviceInstance& input, te::EditItemID targetID) {
     for (auto existingTargetID : input.getTargets()) {
         if (existingTargetID == targetID)
@@ -403,9 +378,10 @@ void AudioBridge::masterChannelChanged() {
     }
 }
 
-void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
+void AudioBridge::deviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
+                                         float newValue) {
     // A single device parameter changed - sync only that parameter to processor
-    auto* processor = getDeviceProcessor(deviceId);
+    auto* processor = getDeviceProcessor(devicePath);
     if (!processor) {
         return;
     }
@@ -413,51 +389,45 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
     processor->setParameterByIndex(paramIndex, ParameterModelValue{newValue});
 
     // Forward to automation recording engine
-    automationRecording_.onDeviceParameterChanged(deviceId, paramIndex, newValue);
+    automationRecording_.onDeviceParameterChanged(devicePath.getDeviceId(), paramIndex, newValue);
 }
 
-void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
+void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
+    const auto deviceId = devicePath.getDeviceId();
     // A device property changed (gain, bypass, etc.) - sync to processor
-    auto* processor = getDeviceProcessor(deviceId);
+    auto* processor = getDeviceProcessor(devicePath);
 
-    // Find the DeviceInfo to get updated values
-    // Search through all tracks, recursing into racks
-    auto& tm = TrackManager::getInstance();
-    for (const auto& track : tm.getTracks()) {
-        auto* device = findDeviceRecursive(track.chain.fxChainElements, deviceId);
-        if (device) {
-            if (processor) {
-                processor->syncFromDeviceInfo(*device);
-            } else {
-                // For plugins without a processor (e.g. Chord Engine), sync bypass directly
-                auto tePlugin = pluginManager_.getPlugin(deviceId);
-                if (tePlugin)
-                    tePlugin->setEnabled(!device->bypassed);
-            }
+    auto* device = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    if (!device)
+        return;
 
-            // Wrapped instruments consume MIDI while active. When bypassed, disable the
-            // wrapper rack itself so TE skips it and passes MIDI to later devices.
-            if (auto* rackInstance =
-                    pluginManager_.getInstrumentRackManager().getRackInstance(deviceId)) {
-                rackInstance->setEnabled(!device->bypassed);
-            }
-
-            // Push gain to the audio-graph atomic so DeviceGainNode picks it up.
-            // DeviceGainNode sits OUTSIDE the plugin in the TE graph (between the plugin and
-            // the level meter), so it stays active even when the plugin is bypassed. Force
-            // unity while bypassed so the slider stops attenuating signal that isn't going
-            // through the plugin (#1189). The user's gainValue is preserved on DeviceInfo
-            // and gets re-pushed when the device is re-enabled.
-            deviceMetering_.setGain(deviceId, device->bypassed ? 1.0f : device->gainValue);
-
-            // When bypass changes, resync modifiers so they are removed/restored
-            pluginManager_.resyncDeviceModifiers(track.id);
-
-            sidechainRouting_.handleDeviceSidechainChanged(track.id, *device);
-
-            return;
-        }
+    if (processor) {
+        processor->syncFromDeviceInfo(*device);
+    } else {
+        // For plugins without a processor (e.g. Chord Engine), sync bypass directly.
+        auto tePlugin = pluginManager_.getPlugin(devicePath);
+        if (tePlugin)
+            tePlugin->setEnabled(!device->bypassed);
     }
+
+    // Wrapped instruments consume MIDI while active. When bypassed, disable the
+    // wrapper rack itself so TE skips it and passes MIDI to later devices.
+    if (auto* rackInstance = pluginManager_.getInstrumentRackManager().getRackInstance(deviceId)) {
+        rackInstance->setEnabled(!device->bypassed);
+    }
+
+    // Push gain to the audio-graph atomic so DeviceGainNode picks it up.
+    // DeviceGainNode sits OUTSIDE the plugin in the TE graph (between the plugin and
+    // the level meter), so it stays active even when the plugin is bypassed. Force
+    // unity while bypassed so the slider stops attenuating signal that isn't going
+    // through the plugin (#1189). The user's gainValue is preserved on DeviceInfo
+    // and gets re-pushed when the device is re-enabled.
+    deviceMetering_.setGain(deviceId, device->bypassed ? 1.0f : device->gainValue);
+
+    // When bypass changes, resync modifiers so they are removed/restored
+    pluginManager_.resyncDeviceModifiers(devicePath.trackId);
+
+    sidechainRouting_.handleDeviceSidechainChanged(devicePath.trackId, *device);
 }
 
 // =============================================================================
@@ -588,10 +558,6 @@ TrackId AudioBridge::getTrackIdForTeTrack(te::EditItemID itemId) const {
     return result;
 }
 
-te::Plugin::Ptr AudioBridge::getPlugin(DeviceId deviceId) const {
-    return pluginManager_.getPlugin(deviceId);
-}
-
 te::Plugin::Ptr AudioBridge::getPlugin(const ChainNodePath& devicePath) const {
     return pluginManager_.getPlugin(devicePath);
 }
@@ -605,10 +571,6 @@ AudioBridge::ResolvedDevice AudioBridge::resolveDevice(const ChainNodePath& devi
 
 te::AutomatableParameter* AudioBridge::resolveControlTarget(const ControlTarget& target) const {
     return controlTargetResolver_.resolve(target);
-}
-
-DeviceProcessor* AudioBridge::getDeviceProcessor(DeviceId deviceId) const {
-    return pluginManager_.getDeviceProcessor(deviceId);
 }
 
 DeviceProcessor* AudioBridge::getDeviceProcessor(const ChainNodePath& devicePath) const {
@@ -764,9 +726,10 @@ void AudioBridge::removeAudioTrack(TrackId trackId) {
 // Parameter Queue
 // =============================================================================
 
-bool AudioBridge::pushParameterChange(DeviceId deviceId, int paramIndex, float value) {
+bool AudioBridge::pushParameterChange(const ChainNodePath& devicePath, int paramIndex,
+                                      float value) {
     // Delegate to ParameterManager
-    return parameterManager_.pushChange(deviceId, paramIndex, value);
+    return parameterManager_.pushChange(devicePath, paramIndex, value);
 }
 
 // =============================================================================
@@ -851,7 +814,7 @@ void AudioBridge::processParameterChanges() {
 
     ParameterChange change;
     while (parameterManager_.popChange(change)) {
-        auto plugin = getPlugin(change.deviceId);
+        auto plugin = getPlugin(change.devicePath);
         if (plugin) {
             // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign) - false positive from
             // profiling macros
@@ -1238,36 +1201,6 @@ bool AudioBridge::setSessionSlotMidiRecordingTarget(TrackId trackId, int sceneIn
 // Plugin Editor Windows (delegates to PluginWindowManager)
 // =============================================================================
 
-void AudioBridge::showPluginWindow(DeviceId deviceId) {
-    auto plugin = getPlugin(deviceId);
-    if (plugin) {
-        pluginWindowBridge_.showPluginWindow(deviceId, plugin);
-    }
-}
-
-void AudioBridge::hidePluginWindow(DeviceId deviceId) {
-    auto plugin = getPlugin(deviceId);
-    if (plugin) {
-        pluginWindowBridge_.hidePluginWindow(deviceId, plugin);
-    }
-}
-
-bool AudioBridge::isPluginWindowOpen(DeviceId deviceId) const {
-    auto plugin = getPlugin(deviceId);
-    if (plugin) {
-        return pluginWindowBridge_.isPluginWindowOpen(plugin);
-    }
-    return false;
-}
-
-bool AudioBridge::togglePluginWindow(DeviceId deviceId) {
-    auto plugin = getPlugin(deviceId);
-    if (plugin) {
-        return pluginWindowBridge_.togglePluginWindow(deviceId, plugin);
-    }
-    return false;
-}
-
 void AudioBridge::showPluginWindow(const ChainNodePath& devicePath) {
     auto plugin = getPlugin(devicePath);
     if (plugin)
@@ -1289,10 +1222,6 @@ bool AudioBridge::togglePluginWindow(const ChainNodePath& devicePath) {
     auto plugin = getPlugin(devicePath);
     return plugin ? pluginWindowBridge_.togglePluginWindow(devicePath.getDeviceId(), plugin)
                   : false;
-}
-
-bool AudioBridge::loadSamplerSample(DeviceId deviceId, const juce::File& file) {
-    return samplerFileLoader_.loadSample(deviceId, file);
 }
 
 bool AudioBridge::loadSamplerSample(const ChainNodePath& devicePath, const juce::File& file) {

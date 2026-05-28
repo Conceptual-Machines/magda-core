@@ -1178,7 +1178,7 @@ const DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devi
 void TrackManager::setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         device->bypassed = bypassed;
-        notifyDevicePropertyChanged(device->id);
+        notifyDevicePropertyChanged(devicePath);
     }
 }
 
@@ -1191,7 +1191,7 @@ void TrackManager::setDeviceGainDb(const ChainNodePath& devicePath, float gainDb
         device->gainDb = gainDb;
         // Convert dB to linear: 10^(dB/20)
         device->gainValue = std::pow(10.0f, gainDb / 20.0f);
-        notifyDevicePropertyChanged(device->id);
+        notifyDevicePropertyChanged(devicePath);
     }
 }
 
@@ -1200,7 +1200,7 @@ void TrackManager::setDeviceLevel(const ChainNodePath& devicePath, float level) 
         device->gainValue = level;
         // Convert linear to dB: 20 * log10(level)
         device->gainDb = (level > 0.0f) ? 20.0f * std::log10(level) : -100.0f;
-        notifyDevicePropertyChanged(device->id);
+        notifyDevicePropertyChanged(devicePath);
     }
 }
 
@@ -1315,7 +1315,7 @@ void TrackManager::setDeviceKitRowLabel(TrackId trackId, DeviceId deviceId, int 
     if (device == nullptr || noteNumber < 0 || noteNumber > 127)
         return;
     if (updateKitRow(device->kitRows, noteNumber, &label, nullptr)) {
-        notifyDevicePropertyChanged(deviceId);
+        notifyDevicePropertyChanged(ChainNodePath::topLevelDevice(trackId, deviceId));
         mirrorKitToPreferences(*device);
     }
 }
@@ -1326,7 +1326,7 @@ void TrackManager::setDeviceKitRowRole(TrackId trackId, DeviceId deviceId, int n
     if (device == nullptr || noteNumber < 0 || noteNumber > 127)
         return;
     if (updateKitRow(device->kitRows, noteNumber, nullptr, &role)) {
-        notifyDevicePropertyChanged(deviceId);
+        notifyDevicePropertyChanged(ChainNodePath::topLevelDevice(trackId, deviceId));
         mirrorKitToPreferences(*device);
     }
 }
@@ -1341,7 +1341,7 @@ void TrackManager::clearDeviceKitRow(TrackId trackId, DeviceId deviceId, int not
     if (it == rows.end())
         return;
     rows.erase(it);
-    notifyDevicePropertyChanged(deviceId);
+    notifyDevicePropertyChanged(ChainNodePath::topLevelDevice(trackId, deviceId));
     mirrorKitToPreferences(*device);
 }
 
@@ -1351,7 +1351,7 @@ void TrackManager::setDeviceKitRows(TrackId trackId, DeviceId deviceId,
     if (device == nullptr)
         return;
     device->kitRows = rows;
-    notifyDevicePropertyChanged(deviceId);
+    notifyDevicePropertyChanged(ChainNodePath::topLevelDevice(trackId, deviceId));
     mirrorKitToPreferences(*device);
 }
 
@@ -1463,7 +1463,7 @@ void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int 
         if (storedIndex >= 0) {
             device->parameters[static_cast<size_t>(storedIndex)].currentValue = value.value;
             // Use granular notification - only sync this one parameter, not all 543
-            notifyDeviceParameterChanged(device->id, paramIndex, value.value);
+            notifyDeviceParameterChanged(devicePath, paramIndex, value.value);
         }
     }
 }
@@ -1516,9 +1516,9 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     // Notify listeners — devicePropertyChanged covers gain/macros/mods refresh
     // via the AudioBridge sync path, then push each parameter individually so
     // the UI's ParamGrid pickup matches what the preset captured.
-    notifyDevicePropertyChanged(live->id);
+    notifyDevicePropertyChanged(devicePath);
     for (size_t i = 0; i < live->parameters.size(); ++i) {
-        notifyDeviceParameterChanged(live->id, static_cast<int>(i),
+        notifyDeviceParameterChanged(devicePath, static_cast<int>(i),
                                      live->parameters[i].currentValue);
     }
     return true;
@@ -1638,7 +1638,7 @@ void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& device
             device->parameters[static_cast<size_t>(storedIndex)].currentValue = value;
 
             // Notify listeners about parameter change (for UI updates)
-            notifyDeviceParameterChanged(device->id, paramIndex, value);
+            notifyDeviceParameterChanged(devicePath, paramIndex, value);
         }
     }
 }
@@ -1995,7 +1995,7 @@ void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack
                 if (device.id == targetDevice) {
                     device.sidechain.type = type;
                     device.sidechain.sourceTrackId = sourceTrack;
-                    notifyDevicePropertyChanged(targetDevice);
+                    notifyDevicePropertyChanged(findDevicePath(targetDevice));
                     return true;
                 }
             } else if (magda::isRack(element)) {

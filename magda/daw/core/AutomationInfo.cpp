@@ -158,6 +158,7 @@ ParameterInfo getParameterInfoForTarget(const AutomationTarget& target) {
             auto& stored = device->parameters[static_cast<size_t>(target.paramIndex)];
             if (!stored.displayText && target.devicePath.getDeviceId() != INVALID_DEVICE_ID) {
                 auto provider = std::make_shared<ParameterInfo::DisplayTextProvider>();
+                provider->devicePath = target.devicePath;
                 provider->deviceId = target.devicePath.getDeviceId();
                 provider->paramIndex = target.paramIndex;
                 stored.displayText = std::move(provider);

@@ -402,11 +402,12 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
     // Delete plugins outside lock to avoid blocking other threads
     for (size_t i = 0; i < toRemove.size(); ++i) {
-        const auto deviceId = toRemove[i].getDeviceId();
+        const auto devicePath = toRemove[i];
+        const auto deviceId = devicePath.getDeviceId();
         pluginWindowBridge_.closeWindowsForDevice(deviceId);
 
         // Remove any orphaned MidiReceivePlugin for this device
-        removeMidiReceive(trackId, deviceId);
+        removeMidiReceive(devicePath);
 
         // If this was a wrapped instrument, unwrap it (removes rack + rack type)
         if (instrumentRackManager_.getInnerPlugin(deviceId) != nullptr) {
@@ -1015,7 +1016,7 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
                 if (isDevice(element)) {
                     const auto& device = getDevice(element);
                     if (device.sidechain.isActive() && device.sidechain.sourceTrackId == trackId) {
-                        auto plugin = getPlugin(device.id);
+                        auto plugin = getPlugin(ChainNodePath::topLevelDevice(track.id, device.id));
                         if (plugin && plugin->canSidechain()) {
                             plugin->setSidechainSourceID({});
                         }

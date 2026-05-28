@@ -77,9 +77,9 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         // Verify AudioBridge has the window manager wired
         auto* bridge = wrapper.getAudioBridge();
         if (bridge && wrapper.getPluginWindowManager() != nullptr) {
-            // togglePluginWindow with invalid device should return false but not crash
-            bool result = bridge->togglePluginWindow(9999);
-            expect(!result, "togglePluginWindow with invalid device should return false");
+            // togglePluginWindow with invalid device path should return false but not crash
+            bool result = bridge->togglePluginWindow(magda::ChainNodePath::topLevelDevice(1, 9999));
+            expect(!result, "togglePluginWindow with invalid device path should return false");
         }
     }
 

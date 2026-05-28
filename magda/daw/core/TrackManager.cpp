@@ -1493,7 +1493,7 @@ void TrackManager::setChainBypassed(TrackId trackId, bool bypassed) {
             }
         }
         for (auto deviceId : affectedDevices) {
-            notifyDevicePropertyChanged(deviceId);
+            notifyDevicePropertyChanged(ChainNodePath::topLevelDevice(trackId, deviceId));
         }
         notifyTrackDevicesChanged(trackId);
     }
@@ -2258,19 +2258,20 @@ void TrackManager::notifyAudioSidechainTriggered(TrackId sourceTrackId) {
     }
 }
 
-void TrackManager::notifyDevicePropertyChanged(DeviceId deviceId) {
+void TrackManager::notifyDevicePropertyChanged(const ChainNodePath& devicePath) {
     ScopedNotifyGuard guard(*this);
     for (size_t i = 0; i < listeners_.size(); ++i) {
         if (listeners_[i])
-            listeners_[i]->devicePropertyChanged(deviceId);
+            listeners_[i]->devicePropertyChanged(devicePath);
     }
 }
 
-void TrackManager::notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
+void TrackManager::notifyDeviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
+                                                float newValue) {
     ScopedNotifyGuard guard(*this);
     for (size_t i = 0; i < listeners_.size(); ++i) {
         if (listeners_[i])
-            listeners_[i]->deviceParameterChanged(deviceId, paramIndex, newValue);
+            listeners_[i]->deviceParameterChanged(devicePath, paramIndex, newValue);
     }
 }
 

@@ -197,7 +197,7 @@ juce::String applyFourOscPresetToPath(const FourOscAgent::Preset& preset,
     // fires the notify once the panel has persisted its final text.
     if (auto* engine = tm.getAudioEngine()) {
         if (auto* bridge = engine->getAudioBridge()) {
-            bridge->getPluginManager().capturePluginState(device->id);
+            bridge->getPluginManager().capturePluginState(path);
         }
     }
 

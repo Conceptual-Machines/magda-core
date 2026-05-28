@@ -98,8 +98,8 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
 // Look up the TE plugin for a link.target, and return its automatable parameter
 // at `paramIndex` if in range.
 te::AutomatableParameter* resolveLinkTargetParam(const ModifierSyncContext& ctx,
-                                                 DeviceId targetDeviceId, int paramIndex) {
-    auto* plugin = ctx.lookup ? ctx.lookup->getPlugin(targetDeviceId) : nullptr;
+                                                 const ChainNodePath& targetPath, int paramIndex) {
+    auto* plugin = ctx.lookup ? ctx.lookup->getPlugin(targetPath) : nullptr;
     if (!plugin)
         return nullptr;
     auto params = plugin->getAutomatableParameters();
@@ -229,8 +229,8 @@ void ModifierSyncWalker::syncStructure(
                     continue;
                 }
 
-                if (auto* param = resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(),
-                                                         link.target.paramIndex))
+                if (auto* param =
+                        resolveLinkTargetParam(ctx, link.target.devicePath, link.target.paramIndex))
                     addLinkModifier(*param, sourceMod, link);
             }
         }
@@ -264,8 +264,8 @@ void ModifierSyncWalker::syncStructure(
                     continue;
                 }
 
-                auto* param = resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(),
-                                                     link.target.paramIndex);
+                auto* param =
+                    resolveLinkTargetParam(ctx, link.target.devicePath, link.target.paramIndex);
                 if (!param)
                     continue;
 
@@ -328,8 +328,8 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                         continue;  // Self-target — skipped, see syncStructure.
                     param = resolveSameScopeModParam(link, *node.mods, state.modifiers);
                 } else {
-                    param = resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(),
-                                                   link.target.paramIndex);
+                    param =
+                        resolveLinkTargetParam(ctx, link.target.devicePath, link.target.paramIndex);
                 }
                 if (!param)
                     continue;
@@ -357,8 +357,8 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                     param = node.mods ? resolveSameScopeModParam(link, *node.mods, state.modifiers)
                                       : nullptr;
                 } else {
-                    param = resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(),
-                                                   link.target.paramIndex);
+                    param =
+                        resolveLinkTargetParam(ctx, link.target.devicePath, link.target.paramIndex);
                 }
                 if (!param)
                     continue;

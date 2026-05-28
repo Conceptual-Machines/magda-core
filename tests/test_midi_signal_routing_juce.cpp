@@ -634,8 +634,10 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
             return;
         }
 
-        auto targetPlugin = pluginManager.getPlugin(sidechainedFxId);
-        auto downstreamPlugin = pluginManager.getPlugin(downstreamFxId);
+        auto targetPlugin = pluginManager.getPlugin(
+            magda::ChainNodePath::topLevelDevice(destinationTrackId, sidechainedFxId));
+        auto downstreamPlugin = pluginManager.getPlugin(
+            magda::ChainNodePath::topLevelDevice(destinationTrackId, downstreamFxId));
         expect(targetPlugin != nullptr, "Sidechained FX plugin must exist");
         expect(downstreamPlugin != nullptr, "Downstream FX plugin must exist");
         if (!targetPlugin || !downstreamPlugin) {

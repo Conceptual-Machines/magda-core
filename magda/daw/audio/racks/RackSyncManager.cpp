@@ -1129,8 +1129,8 @@ void RackSyncManager::applyBypassState(SyncedRack& synced, const RackInfo& rackI
 struct RackSyncManager::InnerPluginLookup : TargetPluginLookup {
     SyncedRack& synced;
     explicit InnerPluginLookup(SyncedRack& s) : synced(s) {}
-    te::Plugin* getPlugin(DeviceId id) const override {
-        auto it = synced.innerPlugins.find(id);
+    te::Plugin* getPlugin(const ChainNodePath& path) const override {
+        auto it = synced.innerPlugins.find(path.getDeviceId());
         return (it != synced.innerPlugins.end() && it->second) ? it->second.get() : nullptr;
     }
 };

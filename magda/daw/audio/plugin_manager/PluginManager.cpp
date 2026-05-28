@@ -188,20 +188,6 @@ void PluginManager::prepareForChainElementMove(const ChainNodePath& sourceElemen
 // Plugin/Device Lookup
 // =============================================================================
 
-te::Plugin::Ptr PluginManager::getPlugin(DeviceId deviceId) const {
-    juce::ScopedLock lock(pluginLock_);
-    auto it = findSyncedDeviceById(deviceId);
-    if (it != syncedDevices_.end() && it->second.plugin)
-        return it->second.plugin;
-
-    // Fall through to rack sync manager for plugins inside racks
-    auto* innerPlugin = rackSyncManager_.getInnerPlugin(deviceId);
-    if (innerPlugin)
-        return innerPlugin;
-
-    return nullptr;
-}
-
 te::Plugin::Ptr PluginManager::getPlugin(const ChainNodePath& devicePath) const {
     juce::ScopedLock lock(pluginLock_);
     auto it = findSyncedDevice(devicePath);
@@ -214,12 +200,6 @@ te::Plugin::Ptr PluginManager::getPlugin(const ChainNodePath& devicePath) const 
         return innerPlugin;
 
     return nullptr;
-}
-
-DeviceProcessor* PluginManager::getDeviceProcessor(DeviceId deviceId) const {
-    juce::ScopedLock lock(pluginLock_);
-    auto it = findSyncedDeviceById(deviceId);
-    return it != syncedDevices_.end() ? it->second.processor.get() : nullptr;
 }
 
 DeviceProcessor* PluginManager::getDeviceProcessor(const ChainNodePath& devicePath) const {
@@ -263,17 +243,19 @@ ChainNodePath PluginManager::getDevicePathForPlugin(te::Plugin* plugin) const {
 // MIDI Receive Plugin Lifecycle
 // =============================================================================
 
-void PluginManager::ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackId sourceTrackId) {
+void PluginManager::ensureMidiReceive(const ChainNodePath& devicePath, TrackId sourceTrackId) {
+    const auto trackId = devicePath.trackId;
+    const auto deviceId = devicePath.getDeviceId();
     auto* teTrack = trackController_.getAudioTrack(trackId);
     if (!teTrack)
         return;
 
-    auto it = findSyncedDeviceById(deviceId);
+    auto it = findSyncedDevice(devicePath);
     if (it == syncedDevices_.end())
         return;
 
     // Find the target device's TE plugin to insert before it
-    auto targetPlugin = getPlugin(deviceId);
+    auto targetPlugin = getPlugin(devicePath);
     int insertPos = -1;
     if (targetPlugin) {
         for (int i = 0; i < teTrack->pluginList.size(); ++i) {
@@ -371,8 +353,9 @@ void PluginManager::ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackI
     it->second.trackId = trackId;
 }
 
-void PluginManager::removeMidiReceive(TrackId /*trackId*/, DeviceId deviceId) {
-    auto it = findSyncedDeviceById(deviceId);
+void PluginManager::removeMidiReceive(const ChainNodePath& devicePath) {
+    const auto deviceId = devicePath.getDeviceId();
+    auto it = findSyncedDevice(devicePath);
     if (it == syncedDevices_.end())
         return;
 
@@ -448,23 +431,6 @@ void PluginManager::captureAllPluginStates() {
     // Also capture state from plugins inside racks
     rackSyncManager_.captureAllPluginStates();
     DBG("[ChainMove] captureAll complete topLevel=" << capturedTopLevel);
-}
-
-void PluginManager::capturePluginState(DeviceId deviceId) {
-    ChainNodePath devicePath;
-    {
-        juce::ScopedLock lock(pluginLock_);
-        auto it = findSyncedDeviceById(deviceId);
-        if (it != syncedDevices_.end())
-            devicePath = it->first;
-    }
-
-    if (!devicePath.isValid()) {
-        DBG("capturePluginState: device " << deviceId << " not found in syncedDevices");
-        return;
-    }
-
-    capturePluginState(devicePath);
 }
 
 void PluginManager::capturePluginState(const ChainNodePath& devicePath) {

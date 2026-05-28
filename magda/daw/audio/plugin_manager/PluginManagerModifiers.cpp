@@ -29,17 +29,17 @@
 
 namespace magda {
 
-te::Plugin* PluginManager::lookupTargetPluginForModifier(DeviceId id) const {
+te::Plugin* PluginManager::lookupTargetPluginForModifier(const ChainNodePath& devicePath) const {
     te::Plugin::Ptr plugin;
     {
         juce::ScopedLock lock(pluginLock_);
-        auto sdIt = findSyncedDeviceById(id);
+        auto sdIt = findSyncedDevice(devicePath);
         if (sdIt != syncedDevices_.end())
             plugin = sdIt->second.plugin;
     }
     if (plugin)
         return plugin.get();
-    return instrumentRackManager_.getInnerPlugin(id);
+    return instrumentRackManager_.getInnerPlugin(devicePath.getDeviceId());
 }
 
 namespace {
@@ -49,8 +49,8 @@ namespace {
 struct DeviceTargetLookup : TargetPluginLookup {
     const PluginManager& pm;
     explicit DeviceTargetLookup(const PluginManager& p) : pm(p) {}
-    te::Plugin* getPlugin(DeviceId id) const override {
-        return pm.lookupTargetPluginForModifier(id);
+    te::Plugin* getPlugin(const ChainNodePath& path) const override {
+        return pm.lookupTargetPluginForModifier(path);
     }
 };
 

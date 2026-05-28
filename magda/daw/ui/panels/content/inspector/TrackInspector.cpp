@@ -913,10 +913,10 @@ void TrackInspector::masterChannelChanged() {
     }
 }
 
-void TrackInspector::deviceParameterChanged(magda::DeviceId deviceId, int paramIndex,
+void TrackInspector::deviceParameterChanged(const magda::ChainNodePath& devicePath, int paramIndex,
                                             float newValue) {
     // Not relevant for track inspector
-    (void)deviceId;
+    (void)devicePath;
     (void)paramIndex;
     (void)newValue;
 }

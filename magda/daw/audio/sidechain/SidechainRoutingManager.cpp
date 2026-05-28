@@ -20,7 +20,8 @@ void SidechainRoutingManager::refreshAllSourceMonitors() {
 
 void SidechainRoutingManager::handleDeviceSidechainChanged(TrackId destinationTrackId,
                                                            const DeviceInfo& device) {
-    auto* tePlugin = pluginManager_.getPlugin(device.id).get();
+    const auto devicePath = ChainNodePath::topLevelDevice(destinationTrackId, device.id);
+    auto* tePlugin = pluginManager_.getPlugin(devicePath).get();
     if (tePlugin && tePlugin->canSidechain()) {
         if (device.sidechain.isActive() && device.sidechain.type == SidechainConfig::Type::Audio) {
             auto* sourceTrack = trackController_.getAudioTrack(device.sidechain.sourceTrackId);
@@ -41,14 +42,13 @@ void SidechainRoutingManager::handleDeviceSidechainChanged(TrackId destinationTr
         DBG("SidechainRoutingManager::handleDeviceSidechainChanged - sidechain set (type="
             << (int)device.sidechain.type << "), ensuring MidiReceive + monitors for source track "
             << device.sidechain.sourceTrackId);
-        pluginManager_.ensureMidiReceive(destinationTrackId, device.id,
-                                         device.sidechain.sourceTrackId);
+        pluginManager_.ensureMidiReceive(devicePath, device.sidechain.sourceTrackId);
         if (device.sidechain.type == SidechainConfig::Type::MIDI)
             pluginManager_.checkSidechainMonitor(device.sidechain.sourceTrackId);
         if (device.sidechain.type == SidechainConfig::Type::Audio)
             pluginManager_.checkAudioSidechainMonitor(device.sidechain.sourceTrackId);
     } else {
-        pluginManager_.removeMidiReceive(destinationTrackId, device.id);
+        pluginManager_.removeMidiReceive(devicePath);
     }
 
     // Re-check monitors on current track (may no longer need them).

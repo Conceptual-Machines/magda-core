@@ -316,7 +316,8 @@ void RemoveDeviceFromTrackCommand::execute() {
     if (auto* engine = tm.getAudioEngine()) {
         if (auto* bridge = engine->getAudioBridge()) {
             DBG("UNDO: Capturing plugin state for device " << deviceId_);
-            bridge->getPluginManager().capturePluginState(deviceId_);
+            bridge->getPluginManager().capturePluginState(
+                ChainNodePath::topLevelDevice(trackId_, deviceId_));
         } else {
             DBG("UNDO: WARNING - no AudioBridge, cannot capture plugin state");
         }

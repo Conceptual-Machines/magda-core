@@ -18,7 +18,7 @@ namespace magda {
 namespace te = tracktion;
 
 /**
- * @brief DeviceId → te::Plugin* lookup the walker uses to materialise link targets.
+ * @brief ChainNodePath → te::Plugin* lookup the walker uses to materialise link targets.
  *
  * Implementers hold whatever state is needed to find the plugin (RackSyncManager
  * looks in its inner-plugin map; PluginManagerModifiers looks in syncedDevices_
@@ -32,7 +32,7 @@ namespace te = tracktion;
 class TargetPluginLookup {
   public:
     virtual ~TargetPluginLookup() = default;
-    virtual te::Plugin* getPlugin(DeviceId id) const = 0;
+    virtual te::Plugin* getPlugin(const ChainNodePath& path) const = 0;
 };
 
 /**
@@ -79,7 +79,7 @@ struct ModifierSyncContext {
     /// TE macro parameter list to insert/remove this node's macros.
     te::MacroParameterList* macroList = nullptr;
 
-    /// deviceId → te::Plugin* lookup for resolving link targets. Returns
+    /// devicePath → te::Plugin* lookup for resolving link targets. Returns
     /// nullptr if the device isn't reachable from this scope (the walker
     /// silently drops such links — matches today's behaviour).
     /// Non-owning; the lookup must outlive the sync call.

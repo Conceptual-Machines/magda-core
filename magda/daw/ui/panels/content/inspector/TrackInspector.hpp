@@ -55,7 +55,8 @@ class TrackInspector : public BaseInspector,
     void trackDevicesChanged(magda::TrackId trackId) override;
     void trackSelectionChanged(magda::TrackId trackId) override;
     void masterChannelChanged() override;
-    void deviceParameterChanged(magda::DeviceId deviceId, int paramIndex, float newValue) override;
+    void deviceParameterChanged(const magda::ChainNodePath& devicePath, int paramIndex,
+                                float newValue) override;
 
     // Timer for polling MIDI device changes
     void timerCallback() override;

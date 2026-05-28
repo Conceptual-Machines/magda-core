@@ -47,7 +47,8 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
     };
 
     auto syncTopLevelDevice = [&](const DeviceInfo& device) {
-        auto plugin = getPlugin(device.id);
+        const auto devicePath = ChainNodePath::topLevelDevice(trackId, device.id);
+        auto plugin = getPlugin(devicePath);
 
         // --- Audio sidechain (TE native) ---
         if (plugin && plugin->canSidechain()) {
@@ -66,9 +67,9 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
         // --- MIDI sidechain (MidiReceivePlugin injection) ---
         if (const auto* route = findTopLevelRoutingNode(device.id);
             route != nullptr && route->usesExternalMidiSidechain()) {
-            ensureMidiReceive(trackId, device.id, route->midiSidechainSourceTrackId);
+            ensureMidiReceive(devicePath, route->midiSidechainSourceTrackId);
         } else {
-            removeMidiReceive(trackId, device.id);
+            removeMidiReceive(devicePath);
         }
     };
 

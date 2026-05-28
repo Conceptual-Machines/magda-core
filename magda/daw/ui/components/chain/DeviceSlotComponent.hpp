@@ -196,7 +196,8 @@ class DeviceSlotComponent : public NodeComponent,
 
     // TrackManagerListener - only implement parameter change notification
     void tracksChanged() override {}
-    void deviceParameterChanged(magda::DeviceId deviceId, int paramIndex, float newValue) override;
+    void deviceParameterChanged(const magda::ChainNodePath& devicePath, int paramIndex,
+                                float newValue) override;
 
     // AutomationManagerListener — pure-callback slider updates from curve edits
     // and playback. We only react to DeviceParameter lanes that target this

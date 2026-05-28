@@ -79,13 +79,14 @@ class TrackManagerListener {
     }
 
     // Called when a device parameter changes (gain, level, etc.)
-    virtual void devicePropertyChanged(DeviceId deviceId) {
-        juce::ignoreUnused(deviceId);
+    virtual void devicePropertyChanged(const ChainNodePath& devicePath) {
+        juce::ignoreUnused(devicePath);
     }
 
     // Called when a device parameter value changes (for live parameter updates)
-    virtual void deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
-        juce::ignoreUnused(deviceId, paramIndex, newValue);
+    virtual void deviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
+                                        float newValue) {
+        juce::ignoreUnused(devicePath, paramIndex, newValue);
     }
 
     // Called when a macro knob value changes (for audio engine sync).
@@ -775,8 +776,9 @@ class TrackManager {
     void notifyTrackSelectionChanged(TrackId trackId);
     void notifyDeviceModifiersChanged(TrackId trackId);
     void notifyAudioSidechainTriggered(TrackId sourceTrackId);
-    void notifyDevicePropertyChanged(DeviceId deviceId);
-    void notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue);
+    void notifyDevicePropertyChanged(const ChainNodePath& devicePath);
+    void notifyDeviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
+                                      float newValue);
     void notifyMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,
                                  float value);
     void notifyModParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,

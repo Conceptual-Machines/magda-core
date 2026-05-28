@@ -5,7 +5,7 @@
 #include <array>
 #include <atomic>
 
-#include "../../core/TypeIds.hpp"
+#include "../../core/ChainNodePath.hpp"
 
 namespace magda {
 
@@ -13,7 +13,7 @@ namespace magda {
  * @brief A parameter change request from UI to audio thread
  */
 struct ParameterChange {
-    DeviceId deviceId = INVALID_DEVICE_ID;
+    ChainNodePath devicePath;
     int paramIndex = -1;
     float value = 0.0f;
 
@@ -124,10 +124,11 @@ class BatchedParameterQueue {
     /**
      * @brief Push a batch of changes for a single device
      */
-    bool pushBatch(DeviceId deviceId, const std::vector<std::pair<int, float>>& changes) {
+    bool pushBatch(const ChainNodePath& devicePath,
+                   const std::vector<std::pair<int, float>>& changes) {
         for (const auto& [paramIndex, value] : changes) {
             ParameterChange change;
-            change.deviceId = deviceId;
+            change.devicePath = devicePath;
             change.paramIndex = paramIndex;
             change.value = value;
             if (!queue_.push(change)) {

@@ -5,6 +5,8 @@
 #include <memory>
 #include <vector>
 
+#include "ChainNodePath.hpp"
+
 namespace magda {
 
 /**
@@ -107,6 +109,7 @@ struct ParameterInfo {
     // gone). Preferred over valueTable when set — exact values, no quantization.
     // Shared so ParameterInfo copies remain cheap.
     struct DisplayTextProvider {
+        ChainNodePath devicePath;
         int deviceId = -1;
         int paramIndex = -1;
         juce::String format(float normalizedValue) const;

@@ -839,9 +839,9 @@ void DeviceSlotComponent::timerCallback() {
     }
 }
 
-void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int paramIndex,
-                                                 float newValue) {
-    if (deviceId != device_.id)
+void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& devicePath,
+                                                 int paramIndex, float newValue) {
+    if (devicePath != nodePath_)
         return;
 
     updateCachedParameterValue(device_, paramIndex, newValue);

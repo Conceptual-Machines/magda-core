@@ -14,7 +14,14 @@ juce::String ParameterInfo::DisplayTextProvider::format(float normalizedValue) c
     auto* bridge = engine->getAudioBridge();
     if (!bridge)
         return {};
-    auto* processor = bridge->getDeviceProcessor(deviceId);
+
+    auto path = devicePath;
+    if (!path.isValid() && deviceId != INVALID_DEVICE_ID)
+        path = TrackManager::getInstance().findDevicePath(deviceId);
+    if (!path.isValid())
+        return {};
+
+    auto* processor = bridge->getDeviceProcessor(path);
     if (!processor)
         return {};
     return processor->formatParameterValue(paramIndex, normalizedValue);

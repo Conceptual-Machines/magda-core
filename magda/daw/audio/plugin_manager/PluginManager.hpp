@@ -82,21 +82,9 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Plugin/Device Lookup
     // =========================================================================
 
-    /**
-     * @brief Get the Tracktion Plugin for a MAGDA device
-     * @param deviceId MAGDA device ID
-     * @return The Plugin, or nullptr if not found
-     */
-    te::Plugin::Ptr getPlugin(DeviceId deviceId) const;
-    // Path-based variant — same lookup, but the section is part of the key.
+    // Path-based lookup — the section is part of the key.
     te::Plugin::Ptr getPlugin(const ChainNodePath& devicePath) const;
 
-    /**
-     * @brief Get the DeviceProcessor for a MAGDA device
-     * @param deviceId MAGDA device ID
-     * @return The DeviceProcessor, or nullptr if not found
-     */
-    DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
     DeviceProcessor* getDeviceProcessor(const ChainNodePath& devicePath) const;
 
     /**
@@ -293,7 +281,6 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @brief Capture a single device's plugin state into its DeviceInfo.
      * Call before removing a device to preserve its state for undo.
      */
-    void capturePluginState(DeviceId deviceId);
     void capturePluginState(const ChainNodePath& devicePath);
 
     /**
@@ -511,14 +498,14 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @param deviceId The device that needs MIDI injection
      * @param sourceTrackId The source track providing MIDI
      */
-    void ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackId sourceTrackId);
+    void ensureMidiReceive(const ChainNodePath& devicePath, TrackId sourceTrackId);
 
     /**
      * @brief Remove a MidiReceivePlugin for a device when its MIDI sidechain is cleared.
      * @param trackId The destination track
      * @param deviceId The device that no longer needs MIDI injection
      */
-    void removeMidiReceive(TrackId trackId, DeviceId deviceId);
+    void removeMidiReceive(const ChainNodePath& devicePath);
 
     /**
      * @brief Set a device macro parameter value on the TE MacroParameter
@@ -541,9 +528,9 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // DrumGridPlugin::Listener
     void drumGridChainsChanged(daw::audio::DrumGridPlugin* plugin) override;
 
-    // Resolve a DeviceId to a te::Plugin* for ModifierSync's TargetPluginLookup.
+    // Resolve a ChainNodePath to a te::Plugin* for ModifierSync's TargetPluginLookup.
     // Track-bound plugin first; falls back to instrument-rack inner plugin.
-    te::Plugin* lookupTargetPluginForModifier(DeviceId id) const;
+    te::Plugin* lookupTargetPluginForModifier(const ChainNodePath& devicePath) const;
 
   private:
     // Internal device → plugin conversion (used by syncTrackPlugins)
