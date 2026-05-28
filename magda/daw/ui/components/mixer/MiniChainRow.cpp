@@ -6,6 +6,7 @@
 #include "../../../engine/AudioEngine.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "core/ChainNodePath.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 
@@ -75,7 +76,9 @@ void MiniChainRow::resolveParams() {
     auto* bridge = engine_->getAudioBridge();
     if (bridge == nullptr)
         return;
-    auto pluginPtr = bridge->getPlugin(deviceId_);
+    // Top-level fx device path: rack/nested-chain devices don't appear in
+    // the mixer's mini chain (racks render as a name-only summary row).
+    auto pluginPtr = bridge->getPlugin(ChainNodePath::topLevelDevice(trackId_, deviceId_));
     if (pluginPtr == nullptr)
         return;
 
@@ -212,7 +215,8 @@ void MiniChainRow::mouseDown(const juce::MouseEvent& event) {
         return;
     const auto pos = event.getPosition();
     if (bypassRect_.contains(pos)) {
-        TrackManager::getInstance().setDeviceBypassed(trackId_, deviceId_, !bypassed_);
+        TrackManager::getInstance().setDeviceBypassedByPath(
+            ChainNodePath::topLevelDevice(trackId_, deviceId_), !bypassed_);
         bypassed_ = !bypassed_;
         repaint();
         return;

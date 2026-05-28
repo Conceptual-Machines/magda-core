@@ -878,7 +878,8 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
         if (bridge) {
             DeviceId id = tm.findMixerAnalysisDevice(trackId_, "oscilloscope");
             if (id != INVALID_DEVICE_ID) {
-                auto pluginPtr = bridge->getPlugin(id);
+                auto pluginPtr =
+                    bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
                 osc = dynamic_cast<daw::audio::OscilloscopePlugin*>(pluginPtr.get());
             }
         }
@@ -890,7 +891,8 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
         if (bridge) {
             DeviceId id = tm.findMixerAnalysisDevice(trackId_, "spectrumanalyzer");
             if (id != INVALID_DEVICE_ID) {
-                auto pluginPtr = bridge->getPlugin(id);
+                auto pluginPtr =
+                    bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
                 spec = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(pluginPtr.get());
             }
         }
