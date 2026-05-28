@@ -147,7 +147,7 @@ std::optional<magda::DeviceInfo> snapshotDeviceForPreset(const magda::DeviceInfo
                                                          const magda::ChainNodePath& nodePath) {
     auto& trackManager = magda::TrackManager::getInstance();
     if (auto* bridge = getAudioBridge())
-        bridge->getPluginManager().capturePluginState(fallbackDevice.id);
+        bridge->getPluginManager().capturePluginState(nodePath);
 
     if (auto* live = trackManager.getDeviceInChainByPath(nodePath))
         return *live;

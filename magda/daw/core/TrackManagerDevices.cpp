@@ -1649,7 +1649,7 @@ double TrackManager::getDeviceLatencySeconds(const ChainNodePath& devicePath) {
         return 0.0;
 
     if (auto* bridge = audioEngine_->getAudioBridge()) {
-        if (auto* processor = bridge->getPluginManager().getDeviceProcessor(device->id)) {
+        if (auto* processor = bridge->getPluginManager().getDeviceProcessor(devicePath)) {
             if (auto plugin = processor->getPlugin())
                 return plugin->getLatencySeconds();
         }
@@ -1673,8 +1673,8 @@ double TrackManager::getTrackLatencySeconds(TrackId trackId) {
     double total = 0.0;
 
     // Helper to get latency for a single device
-    auto getDeviceLatency = [&](const DeviceInfo& device) -> double {
-        if (auto* proc = pm.getDeviceProcessor(device.id)) {
+    auto getDeviceLatency = [&](const ChainNodePath& devicePath) -> double {
+        if (auto* proc = pm.getDeviceProcessor(devicePath)) {
             if (auto plugin = proc->getPlugin())
                 return plugin->getLatencySeconds();
         }
@@ -1684,7 +1684,8 @@ double TrackManager::getTrackLatencySeconds(TrackId trackId) {
     // Sum latency across top-level chain elements
     for (const auto& element : track->chain.fxChainElements) {
         if (magda::isDevice(element)) {
-            total += getDeviceLatency(magda::getDevice(element));
+            const auto& device = magda::getDevice(element);
+            total += getDeviceLatency(ChainNodePath::topLevelDevice(trackId, device.id));
         } else if (magda::isRack(element)) {
             // For racks: each chain is parallel, so take the max chain latency
             const auto& rack = magda::getRack(element);
@@ -1692,8 +1693,11 @@ double TrackManager::getTrackLatencySeconds(TrackId trackId) {
             for (const auto& chain : rack.chains) {
                 double chainLatency = 0.0;
                 for (const auto& chainElem : chain.elements) {
-                    if (magda::isDevice(chainElem))
-                        chainLatency += getDeviceLatency(magda::getDevice(chainElem));
+                    if (magda::isDevice(chainElem)) {
+                        const auto& device = magda::getDevice(chainElem);
+                        chainLatency += getDeviceLatency(
+                            ChainNodePath::chainDevice(trackId, rack.id, chain.id, device.id));
+                    }
                 }
                 maxChainLatency = std::max(maxChainLatency, chainLatency);
             }

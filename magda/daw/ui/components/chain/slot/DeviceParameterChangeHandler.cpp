@@ -68,7 +68,7 @@ bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device,
                 modeSlot = compiled->engineAwareModeSlot();
 
             if (compiled != nullptr) {
-                if (auto* proc = bridge->getDeviceProcessor(devicePath.getDeviceId())) {
+                if (auto* proc = bridge->getDeviceProcessor(devicePath)) {
                     for (int slotIndex = 0; slotIndex < compiled->hostSlotCount(); ++slotIndex) {
                         if (auto paramIt = findParameterInfo(device, slotIndex);
                             paramIt != device.parameters.end()) {

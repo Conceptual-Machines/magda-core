@@ -611,49 +611,15 @@ DeviceProcessor* AudioBridge::getDeviceProcessor(DeviceId deviceId) const {
     return pluginManager_.getDeviceProcessor(deviceId);
 }
 
+DeviceProcessor* AudioBridge::getDeviceProcessor(const ChainNodePath& devicePath) const {
+    return pluginManager_.getDeviceProcessor(devicePath);
+}
+
 namespace {
 te::ExternalPlugin* asExternalPlugin(te::Plugin::Ptr plugin) {
     return dynamic_cast<te::ExternalPlugin*>(plugin.get());
 }
 }  // namespace
-
-int AudioBridge::getPluginNumPrograms(DeviceId deviceId) const {
-    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
-        if (auto* pi = ext->getAudioPluginInstance())
-            return pi->getNumPrograms();
-    }
-    return 0;
-}
-
-int AudioBridge::getPluginCurrentProgram(DeviceId deviceId) const {
-    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
-        if (auto* pi = ext->getAudioPluginInstance())
-            return pi->getCurrentProgram();
-    }
-    return 0;
-}
-
-juce::String AudioBridge::getPluginProgramName(DeviceId deviceId, int programIndex) const {
-    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
-        if (auto* pi = ext->getAudioPluginInstance()) {
-            if (programIndex >= 0 && programIndex < pi->getNumPrograms())
-                return pi->getProgramName(programIndex);
-        }
-    }
-    return {};
-}
-
-bool AudioBridge::setPluginCurrentProgram(DeviceId deviceId, int programIndex) {
-    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
-        if (auto* pi = ext->getAudioPluginInstance()) {
-            if (programIndex >= 0 && programIndex < pi->getNumPrograms()) {
-                pi->setCurrentProgram(programIndex);
-                return true;
-            }
-        }
-    }
-    return false;
-}
 
 namespace {
 
@@ -678,11 +644,47 @@ struct Vst3PresetVisitor : juce::ExtensionsVisitor {
 
 }  // namespace
 
-bool AudioBridge::loadPluginPresetFile(DeviceId deviceId, const juce::File& presetFile) {
+int AudioBridge::getPluginNumPrograms(const ChainNodePath& devicePath) const {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath))) {
+        if (auto* pi = ext->getAudioPluginInstance())
+            return pi->getNumPrograms();
+    }
+    return 0;
+}
+int AudioBridge::getPluginCurrentProgram(const ChainNodePath& devicePath) const {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath))) {
+        if (auto* pi = ext->getAudioPluginInstance())
+            return pi->getCurrentProgram();
+    }
+    return 0;
+}
+juce::String AudioBridge::getPluginProgramName(const ChainNodePath& devicePath,
+                                               int programIndex) const {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath))) {
+        if (auto* pi = ext->getAudioPluginInstance()) {
+            if (programIndex >= 0 && programIndex < pi->getNumPrograms())
+                return pi->getProgramName(programIndex);
+        }
+    }
+    return {};
+}
+bool AudioBridge::setPluginCurrentProgram(const ChainNodePath& devicePath, int programIndex) {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath))) {
+        if (auto* pi = ext->getAudioPluginInstance()) {
+            if (programIndex >= 0 && programIndex < pi->getNumPrograms()) {
+                pi->setCurrentProgram(programIndex);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+bool AudioBridge::loadPluginPresetFile(const ChainNodePath& devicePath,
+                                       const juce::File& presetFile) {
     if (!presetFile.existsAsFile())
         return false;
 
-    auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId));
+    auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath));
     if (ext == nullptr)
         return false;
     auto* pi = ext->getAudioPluginInstance();
@@ -705,24 +707,17 @@ bool AudioBridge::loadPluginPresetFile(DeviceId deviceId, const juce::File& pres
         juce::MemoryBlock raw;
         if (!presetFile.loadFileAsData(raw))
             return false;
-        // JUCE's AU wrapper reads the plist directly and pushes it to the
-        // unit via kAudioUnitProperty_ClassInfo. Note: setStateInformation
-        // is NOT what we want — that's JUCE's own state envelope, which
-        // wraps the AU class-info plist and would not match a bare .aupreset.
         pi->setCurrentProgramStateInformation(raw.getData(), (int)raw.getSize());
-        applied = true;  // AU API doesn't report success; assume ok.
+        applied = true;
     }
 
-    if (applied) {
-        // Persist the new state into TE's ValueTree so project save / undo
-        // / param refresh sees it. Mirrors PluginManager::capturePluginState.
+    if (applied)
         ext->flushPluginStateToValueTree();
-    }
     return applied;
 }
-
-bool AudioBridge::savePluginPresetFile(DeviceId deviceId, const juce::File& presetFile) {
-    auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId));
+bool AudioBridge::savePluginPresetFile(const ChainNodePath& devicePath,
+                                       const juce::File& presetFile) {
+    auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath));
     if (ext == nullptr)
         return false;
     auto* pi = ext->getAudioPluginInstance();
@@ -751,33 +746,6 @@ bool AudioBridge::savePluginPresetFile(DeviceId deviceId, const juce::File& pres
     }
 
     return false;
-}
-
-// -----------------------------------------------------------------------------
-// Path-based overloads for the preset / program surface. Thin delegates while
-// syncedDevices_ is still keyed by DeviceId.
-// -----------------------------------------------------------------------------
-
-int AudioBridge::getPluginNumPrograms(const ChainNodePath& devicePath) const {
-    return getPluginNumPrograms(devicePath.getDeviceId());
-}
-int AudioBridge::getPluginCurrentProgram(const ChainNodePath& devicePath) const {
-    return getPluginCurrentProgram(devicePath.getDeviceId());
-}
-juce::String AudioBridge::getPluginProgramName(const ChainNodePath& devicePath,
-                                               int programIndex) const {
-    return getPluginProgramName(devicePath.getDeviceId(), programIndex);
-}
-bool AudioBridge::setPluginCurrentProgram(const ChainNodePath& devicePath, int programIndex) {
-    return setPluginCurrentProgram(devicePath.getDeviceId(), programIndex);
-}
-bool AudioBridge::loadPluginPresetFile(const ChainNodePath& devicePath,
-                                       const juce::File& presetFile) {
-    return loadPluginPresetFile(devicePath.getDeviceId(), presetFile);
-}
-bool AudioBridge::savePluginPresetFile(const ChainNodePath& devicePath,
-                                       const juce::File& presetFile) {
-    return savePluginPresetFile(devicePath.getDeviceId(), presetFile);
 }
 
 te::VirtualMidiInputDevice* AudioBridge::getQwertyMidiDevice() {
@@ -1301,19 +1269,26 @@ bool AudioBridge::togglePluginWindow(DeviceId deviceId) {
 }
 
 void AudioBridge::showPluginWindow(const ChainNodePath& devicePath) {
-    showPluginWindow(devicePath.getDeviceId());
+    auto plugin = getPlugin(devicePath);
+    if (plugin)
+        pluginWindowBridge_.showPluginWindow(devicePath.getDeviceId(), plugin);
 }
 
 void AudioBridge::hidePluginWindow(const ChainNodePath& devicePath) {
-    hidePluginWindow(devicePath.getDeviceId());
+    auto plugin = getPlugin(devicePath);
+    if (plugin)
+        pluginWindowBridge_.hidePluginWindow(devicePath.getDeviceId(), plugin);
 }
 
 bool AudioBridge::isPluginWindowOpen(const ChainNodePath& devicePath) const {
-    return isPluginWindowOpen(devicePath.getDeviceId());
+    auto plugin = getPlugin(devicePath);
+    return plugin ? pluginWindowBridge_.isPluginWindowOpen(plugin) : false;
 }
 
 bool AudioBridge::togglePluginWindow(const ChainNodePath& devicePath) {
-    return togglePluginWindow(devicePath.getDeviceId());
+    auto plugin = getPlugin(devicePath);
+    return plugin ? pluginWindowBridge_.togglePluginWindow(devicePath.getDeviceId(), plugin)
+                  : false;
 }
 
 bool AudioBridge::loadSamplerSample(DeviceId deviceId, const juce::File& file) {

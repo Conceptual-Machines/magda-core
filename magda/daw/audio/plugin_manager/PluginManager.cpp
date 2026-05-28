@@ -222,6 +222,12 @@ DeviceProcessor* PluginManager::getDeviceProcessor(DeviceId deviceId) const {
     return it != syncedDevices_.end() ? it->second.processor.get() : nullptr;
 }
 
+DeviceProcessor* PluginManager::getDeviceProcessor(const ChainNodePath& devicePath) const {
+    juce::ScopedLock lock(pluginLock_);
+    auto it = findSyncedDevice(devicePath);
+    return it != syncedDevices_.end() ? it->second.processor.get() : nullptr;
+}
+
 DeviceId PluginManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
     if (!plugin)
         return INVALID_DEVICE_ID;
@@ -445,11 +451,29 @@ void PluginManager::captureAllPluginStates() {
 }
 
 void PluginManager::capturePluginState(DeviceId deviceId) {
+    ChainNodePath devicePath;
+    {
+        juce::ScopedLock lock(pluginLock_);
+        auto it = findSyncedDeviceById(deviceId);
+        if (it != syncedDevices_.end())
+            devicePath = it->first;
+    }
+
+    if (!devicePath.isValid()) {
+        DBG("capturePluginState: device " << deviceId << " not found in syncedDevices");
+        return;
+    }
+
+    capturePluginState(devicePath);
+}
+
+void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
     juce::ScopedLock lock(pluginLock_);
 
-    auto it = findSyncedDeviceById(deviceId);
+    const auto deviceId = devicePath.getDeviceId();
+    auto it = findSyncedDevice(devicePath);
     if (it == syncedDevices_.end() || !it->second.plugin) {
-        DBG("capturePluginState: device " << deviceId << " not found in syncedDevices");
+        DBG("capturePluginState: device path not found in syncedDevices");
         return;
     }
 
@@ -471,7 +495,7 @@ void PluginManager::capturePluginState(DeviceId deviceId) {
     }
 
     auto& trackManager = TrackManager::getInstance();
-    if (auto* devInfo = findCapturableDeviceInfo(trackManager, deviceId)) {
+    if (auto* devInfo = trackManager.getDeviceInChainByPath(devicePath)) {
         devInfo->pluginState = stateStr;
         DeviceInfo liveSnapshot;
         if (it->second.processor) {
@@ -483,7 +507,7 @@ void PluginManager::capturePluginState(DeviceId deviceId) {
                                                 << " params=" << devInfo->parameters.size());
         DBG("capturePluginState: saved to DeviceInfo");
     } else {
-        DBG("capturePluginState: WARNING - device " << deviceId << " not found in any track");
+        DBG("capturePluginState: WARNING - device path not found in TrackManager");
     }
 }
 

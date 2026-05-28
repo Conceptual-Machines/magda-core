@@ -330,9 +330,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     };
     ResolvedDevice resolveDevice(const ChainNodePath& devicePath) const;
 
-    // Path-based variants of the plugin-window methods. Forward through to
-    // the bare-id versions for now; PluginWindowManager rekeys to paths in
-    // stage 4 of the section-scoped device-id refactor.
+    // Path-based variants of the plugin-window methods.
     void showPluginWindow(const ChainNodePath& devicePath);
     void hidePluginWindow(const ChainNodePath& devicePath);
     bool isPluginWindowOpen(const ChainNodePath& devicePath) const;
@@ -355,21 +353,14 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @return The DeviceProcessor, or nullptr if not found
      */
     DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
+    DeviceProcessor* getDeviceProcessor(const ChainNodePath& devicePath) const;
 
     // ------------------------------------------------------------------------
     // VST/AU plugin program (factory preset) access for hosted external plugins.
     // All return zero/empty for non-external (internal/MAGDA) devices.
     // ------------------------------------------------------------------------
-    int getPluginNumPrograms(DeviceId deviceId) const;
-    int getPluginCurrentProgram(DeviceId deviceId) const;
-    juce::String getPluginProgramName(DeviceId deviceId, int programIndex) const;
-    /** Switch the plugin's current program. Returns true on success. */
-    bool setPluginCurrentProgram(DeviceId deviceId, int programIndex);
-
     // Path-based overloads — new code uses these so the section is part of
-    // the lookup. Internally delegate to the bare-id versions for now;
-    // they'll route through ChainNodePath directly once syncedDevices_ is
-    // rekeyed in stage 4.
+    // the lookup.
     int getPluginNumPrograms(const ChainNodePath& devicePath) const;
     int getPluginCurrentProgram(const ChainNodePath& devicePath) const;
     juce::String getPluginProgramName(const ChainNodePath& devicePath, int programIndex) const;
@@ -384,8 +375,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     //       parses the .aupreset plist and calls
     //       AudioUnitSetProperty(kAudioUnitProperty_ClassInfo).
     // ------------------------------------------------------------------------
-    bool loadPluginPresetFile(DeviceId deviceId, const juce::File& presetFile);
-    bool savePluginPresetFile(DeviceId deviceId, const juce::File& presetFile);
     bool loadPluginPresetFile(const ChainNodePath& devicePath, const juce::File& presetFile);
     bool savePluginPresetFile(const ChainNodePath& devicePath, const juce::File& presetFile);
 

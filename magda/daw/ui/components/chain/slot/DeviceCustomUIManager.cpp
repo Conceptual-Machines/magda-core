@@ -1259,7 +1259,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
                     impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
 
                 // Capture plugin state so the IR persists in the project
-                bridge->getPluginManager().capturePluginState(path.getDeviceId());
+                bridge->getPluginManager().capturePluginState(path);
             } else {
                 DBG("IR load: loadImpulseResponse returned false for: " << file.getFullPathName());
             }

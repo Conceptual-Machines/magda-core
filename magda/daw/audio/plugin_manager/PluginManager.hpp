@@ -97,6 +97,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @return The DeviceProcessor, or nullptr if not found
      */
     DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
+    DeviceProcessor* getDeviceProcessor(const ChainNodePath& devicePath) const;
 
     /**
      * @brief Reverse lookup: get DeviceId for a TE Plugin pointer
@@ -243,6 +244,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * .dsp). No-op if no processor is registered for the device.
      */
     void refreshDeviceParameters(DeviceId deviceId);
+    void refreshDeviceParameters(const ChainNodePath& devicePath);
 
     /**
      * @brief Sync a multi-output track's plugin chain
@@ -292,6 +294,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * Call before removing a device to preserve its state for undo.
      */
     void capturePluginState(DeviceId deviceId);
+    void capturePluginState(const ChainNodePath& devicePath);
 
     /**
      * @brief Restore plugin native state from DeviceInfo onto a TE plugin

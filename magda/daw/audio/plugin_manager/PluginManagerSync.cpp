@@ -1894,30 +1894,44 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
 }
 
 void PluginManager::refreshDeviceParameters(DeviceId deviceId) {
-    DBG("[PluginManager] refreshDeviceParameters id=" << (int)deviceId);
-    DeviceProcessor* processor = nullptr;
     ChainNodePath devicePath;
     {
         juce::ScopedLock lock(pluginLock_);
         auto it = findSyncedDeviceById(deviceId);
+        if (it != syncedDevices_.end())
+            devicePath = it->first;
+    }
+
+    if (!devicePath.isValid()) {
+        DBG("[PluginManager] refreshDeviceParameters: id=" << (int)deviceId
+                                                           << " NOT in syncedDevices_");
+        return;
+    }
+
+    refreshDeviceParameters(devicePath);
+}
+
+void PluginManager::refreshDeviceParameters(const ChainNodePath& devicePath) {
+    DBG("[PluginManager] refreshDeviceParameters path deviceId=" << (int)devicePath.getDeviceId());
+    DeviceProcessor* processor = nullptr;
+    {
+        juce::ScopedLock lock(pluginLock_);
+        auto it = findSyncedDevice(devicePath);
         if (it == syncedDevices_.end()) {
-            DBG("[PluginManager] refreshDeviceParameters: id=" << (int)deviceId
-                                                               << " NOT in syncedDevices_");
+            DBG("[PluginManager] refreshDeviceParameters: path NOT in syncedDevices_");
             return;
         }
         if (it->second.processor == nullptr) {
-            DBG("[PluginManager] refreshDeviceParameters: id=" << (int)deviceId
-                                                               << " has no processor");
+            DBG("[PluginManager] refreshDeviceParameters: path has no processor");
             return;
         }
-        devicePath = it->first;
         processor = it->second.processor.get();
     }
+
     DeviceInfo tempInfo;
     processor->populateParameters(tempInfo);
-    DBG("[PluginManager] refreshDeviceParameters: id="
-        << (int)deviceId << " populateParameters → " << static_cast<int>(tempInfo.parameters.size())
-        << " params");
+    DBG("[PluginManager] refreshDeviceParameters: path populateParameters -> "
+        << static_cast<int>(tempInfo.parameters.size()) << " params");
     TrackManager::getInstance().updateDeviceParametersByPath(devicePath, tempInfo.parameters);
     AutoAliasGenerator::regenerateForDevice(devicePath);
 }
