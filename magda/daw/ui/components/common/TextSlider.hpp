@@ -349,7 +349,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
             g.setColour(juce::Colour(0xFF000000).withAlpha(0.55f));
             g.fillRect(thumbRect.translated(0, 1));
 
-            g.setColour(juce::Colour(0xFFE0E0E0));
+            g.setColour(juce::Colour(0xFFBCD4E8));
             g.fillRect(thumbRect);
         } else if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
             g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));

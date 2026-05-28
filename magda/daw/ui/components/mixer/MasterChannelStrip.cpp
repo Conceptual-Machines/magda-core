@@ -626,11 +626,14 @@ void MasterChannelStrip::resized() {
         headphoneIcon_->setBounds(cueRow.removeFromLeft(18));
         cueRow.removeFromLeft(2);
         cueVolumeSlider_->setBounds(cueRow);
-        bounds.removeFromBottom(2);  // Gap between cue row and fader region
+        bounds.removeFromBottom(2);  // Gap between cue row and readout
 
-        // Peak value label above fader region
+        // Readout sits just below the fader, with a small breathing strip
+        // beneath it so the number doesn't kiss the cue row.
         const int labelHeight = 12;
-        peakValueLabel->setBounds(bounds.removeFromTop(labelHeight));
+        const int bottomStrip = 4;
+        bounds.removeFromBottom(bottomStrip);
+        peakValueLabel->setBounds(bounds.removeFromBottom(labelHeight));
 
         // Slider overlays the peak meter; dB scale (tick + label) sits to the
         // right. The slider paints only the thumb so the meter shows through.

@@ -1402,13 +1402,12 @@ void MixerView::ChannelStrip::resized() {
         bounds.removeFromBottom(2);
     }
 
-    // Peak value label above fader region
+    // Readout sits just below the fader. A small breathing strip is left
+    // beneath it so the number doesn't kiss the pan slider above.
     const int labelHeight = 12;
-    bounds.removeFromTop(2);
-    peakLabel->setBounds(bounds.removeFromTop(labelHeight));
-
-    // Small gap before fader region
-    bounds.removeFromTop(2);
+    const int bottomStrip = 4;
+    bounds.removeFromBottom(bottomStrip);
+    peakLabel->setBounds(bounds.removeFromBottom(labelHeight));
 
     // New layout: meter fills the column on the left, slider overlays it, dB
     // scale (tick + label) sits on the right. The slider has no body of its
