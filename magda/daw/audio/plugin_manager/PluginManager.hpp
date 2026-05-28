@@ -88,6 +88,8 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @return The Plugin, or nullptr if not found
      */
     te::Plugin::Ptr getPlugin(DeviceId deviceId) const;
+    // Path-based variant — same lookup, but the section is part of the key.
+    te::Plugin::Ptr getPlugin(const ChainNodePath& devicePath) const;
 
     /**
      * @brief Get the DeviceProcessor for a MAGDA device

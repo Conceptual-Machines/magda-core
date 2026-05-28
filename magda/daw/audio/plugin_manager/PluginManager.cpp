@@ -178,6 +178,16 @@ te::Plugin::Ptr PluginManager::getPlugin(DeviceId deviceId) const {
     return nullptr;
 }
 
+te::Plugin::Ptr PluginManager::getPlugin(const ChainNodePath& devicePath) const {
+    // Stage 2 of the section-scoped device-id refactor: the underlying map
+    // is still keyed by DeviceId, so unwrap. Once syncedDevices_ moves to
+    // ChainNodePath this body changes; callers don't.
+    const DeviceId id = devicePath.getDeviceId();
+    if (id == INVALID_DEVICE_ID)
+        return {};
+    return getPlugin(id);
+}
+
 DeviceProcessor* PluginManager::getDeviceProcessor(DeviceId deviceId) const {
     juce::ScopedLock lock(pluginLock_);
     auto it = syncedDevices_.find(deviceId);

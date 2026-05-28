@@ -40,10 +40,9 @@ te::AutomatableParameter* ControlTargetResolver::resolve(const ControlTarget& ta
         }
 
         case ControlTarget::Kind::PluginParam: {
-            DeviceId deviceId = target.devicePath.getDeviceId();
-            if (deviceId == INVALID_DEVICE_ID)
+            if (target.devicePath.getDeviceId() == INVALID_DEVICE_ID)
                 return nullptr;
-            auto plugin = pluginManager_.getPlugin(deviceId);
+            auto plugin = pluginManager_.getPlugin(target.devicePath);
             if (!plugin)
                 return nullptr;
             if (auto* compiled =
