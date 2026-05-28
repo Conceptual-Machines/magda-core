@@ -1262,27 +1262,16 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
     // Load parameters from new format or legacy format
     device.visibleParameters.clear();
 
-    // TE prepends synthetic dry/wet params (dryGain, wetGain) to its automatable
-    // list, but the config dialog scans a fresh JUCE instance without them.
-    // Detect the offset by checking if the first device params are dry/wet.
-    int teOffset = 0;
-    if (device.parameters.size() >= 2) {
-        auto p0 = device.parameters[0].name.toLowerCase();
-        auto p1 = device.parameters[1].name.toLowerCase();
-        if ((p0.contains("dry") || p0.contains("wet")) &&
-            (p1.contains("dry") || p1.contains("wet"))) {
-            teOffset = 2;
-        }
-    }
-
+    // device.parameters now holds only the plugin's own params — TE's slot
+    // dry/wet live in device.wrapperParameters — so the XML's stored index
+    // maps 1:1 to the device array. (Configs saved before the wrapper-param
+    // split assumed indices 0/1 were dry/wet; those will resolve to the
+    // wrong slots once and need to be re-saved.)
     if (auto* paramsElem = xml->getChildByName("Parameters")) {
         for (auto* paramElem : paramsElem->getChildIterator()) {
-            int xmlIndex = paramElem->getIntAttribute("index", -1);
-            if (xmlIndex < 0)
+            int deviceIndex = paramElem->getIntAttribute("index", -1);
+            if (deviceIndex < 0)
                 continue;
-
-            // Map config index to device index (account for TE dry/wet prefix)
-            int deviceIndex = xmlIndex + teOffset;
 
             auto xmlName = paramElem->getStringAttribute("name");
             bool visible = paramElem->getBoolAttribute("visible", false);
@@ -1321,8 +1310,7 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
         }
     } else if (auto* visibleParams = xml->getChildByName("VisibleParameters")) {
         for (auto* paramElem : visibleParams->getChildIterator()) {
-            int index = paramElem->getIntAttribute("index", -1);
-            int deviceIndex = index + teOffset;
+            int deviceIndex = paramElem->getIntAttribute("index", -1);
             if (deviceIndex >= 0 && deviceIndex < static_cast<int>(device.parameters.size())) {
                 device.visibleParameters.push_back(deviceIndex);
             }
