@@ -51,7 +51,7 @@ class FaustCoderAgent : public CoderAgent {
                 return "(target device is not a Faust plugin)";
             auto* engine = tm.getAudioEngine();
             auto* bridge = engine ? engine->getAudioBridge() : nullptr;
-            auto plugin = bridge ? bridge->getPlugin(device->id) : nullptr;
+            auto plugin = bridge ? bridge->getPlugin(path) : nullptr;
             auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get());
             if (faust == nullptr)
                 return "(could not resolve live Faust plugin)";
