@@ -5,6 +5,8 @@
 #include <functional>
 #include <memory>
 
+#include "../chain/custom_ui/OscilloscopeUI.hpp"
+#include "../chain/custom_ui/SpectrumAnalyzerUI.hpp"
 #include "../common/TextSlider.hpp"
 #include "core/TrackManager.hpp"
 
@@ -67,6 +69,15 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     class ResizeHandle;
     std::unique_ptr<ResizeHandle> resizeHandle_;
 
+    // Mini Oscilloscope / Spectrum — driven by the mixer rail toggles and
+    // bound to a MixerAnalysis device on the master track.
+    std::unique_ptr<daw::ui::OscilloscopeUI> miniOscilloscopeUI_;
+    std::unique_ptr<daw::ui::SpectrumAnalyzerUI> miniSpectrumUI_;
+
+  public:
+    void refreshMiniAnalyzers();
+
+  private:
     // Layout regions for fader area
     juce::Rectangle<int> faderRegion_;
     juce::Rectangle<int> faderArea_;

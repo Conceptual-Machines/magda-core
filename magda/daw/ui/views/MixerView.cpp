@@ -1786,6 +1786,8 @@ void MixerView::rebuildChannelStrips() {
         strip->refreshMiniAnalyzers();
     for (auto& strip : auxChannelStrips)
         strip->refreshMiniAnalyzers();
+    if (masterStrip)
+        masterStrip->refreshMiniAnalyzers();
     juce::Component::SafePointer<MixerView> safeThis(this);
     juce::MessageManager::callAsync([safeThis]() {
         if (auto* self = safeThis.getComponent()) {
@@ -1793,6 +1795,8 @@ void MixerView::rebuildChannelStrips() {
                 strip->refreshMiniAnalyzers();
             for (auto& strip : self->auxChannelStrips)
                 strip->refreshMiniAnalyzers();
+            if (self->masterStrip)
+                self->masterStrip->refreshMiniAnalyzers();
         }
     });
 
@@ -1830,10 +1834,15 @@ void MixerView::trackDevicesChanged(TrackId trackId) {
     // Sends are notified via trackDevicesChanged — update the strip
     trackPropertyChanged(trackId);
     // Re-resolve the changed strip's mini analyzer plugin pointers
-    for (auto& strip : channelStrips) {
-        if (strip->getTrackId() == trackId) {
-            strip->refreshMiniAnalyzers();
-            break;
+    if (trackId == MASTER_TRACK_ID) {
+        if (masterStrip)
+            masterStrip->refreshMiniAnalyzers();
+    } else {
+        for (auto& strip : channelStrips) {
+            if (strip->getTrackId() == trackId) {
+                strip->refreshMiniAnalyzers();
+                break;
+            }
         }
     }
     // Sends region is uniform across strips (max-sends-on-any-track), so a
@@ -2053,6 +2062,8 @@ void MixerView::reconcileAnalysisDevices() {
         reconcileOne(t.id, "oscilloscope", "Oscilloscope", wantOsc);
         reconcileOne(t.id, "spectrumanalyzer", "Spectrum Analyzer", wantSpec);
     }
+    reconcileOne(MASTER_TRACK_ID, "oscilloscope", "Oscilloscope", wantOsc);
+    reconcileOne(MASTER_TRACK_ID, "spectrumanalyzer", "Spectrum Analyzer", wantSpec);
 }
 
 void MixerView::relayoutAllStrips() {

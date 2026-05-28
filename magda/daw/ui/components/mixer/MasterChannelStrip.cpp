@@ -2,10 +2,15 @@
 
 #include <cmath>
 
+#include "../../../audio/AudioBridge.hpp"
+#include "../../../audio/plugins/OscilloscopePlugin.hpp"
+#include "../../../audio/plugins/SpectrumAnalyzerPlugin.hpp"
+#include "../../../engine/AudioEngine.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "BinaryData.h"
+#include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
@@ -326,6 +331,36 @@ MasterChannelStrip::~MasterChannelStrip() {
     TrackManager::getInstance().removeListener(this);
 }
 
+void MasterChannelStrip::refreshMiniAnalyzers() {
+    auto& tm = TrackManager::getInstance();
+    auto* engine = tm.getAudioEngine();
+    auto* bridge = engine ? engine->getAudioBridge() : nullptr;
+
+    if (miniOscilloscopeUI_) {
+        daw::audio::OscilloscopePlugin* osc = nullptr;
+        if (bridge) {
+            DeviceId id = tm.findMixerAnalysisDevice(MASTER_TRACK_ID, "oscilloscope");
+            if (id != INVALID_DEVICE_ID) {
+                auto pluginPtr = bridge->getPlugin(id);
+                osc = dynamic_cast<daw::audio::OscilloscopePlugin*>(pluginPtr.get());
+            }
+        }
+        miniOscilloscopeUI_->setPlugin(osc);
+    }
+
+    if (miniSpectrumUI_) {
+        daw::audio::SpectrumAnalyzerPlugin* spec = nullptr;
+        if (bridge) {
+            DeviceId id = tm.findMixerAnalysisDevice(MASTER_TRACK_ID, "spectrumanalyzer");
+            if (id != INVALID_DEVICE_ID) {
+                auto pluginPtr = bridge->getPlugin(id);
+                spec = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(pluginPtr.get());
+            }
+        }
+        miniSpectrumUI_->setPlugin(spec);
+    }
+}
+
 void MasterChannelStrip::setupControls() {
     // Title label
     titleLabel = std::make_unique<juce::Label>("Master", tr("common.master"));
@@ -404,6 +439,18 @@ void MasterChannelStrip::setupControls() {
         }
     };
     addAndMakeVisible(*resizeHandle_);
+
+    // Mini Oscilloscope / Spectrum bound to the master track's MixerAnalysis
+    // section; rail toggle controls their visibility.
+    miniOscilloscopeUI_ = std::make_unique<daw::ui::OscilloscopeUI>();
+    miniOscilloscopeUI_->setCompact(true);
+    miniOscilloscopeUI_->setVisible(false);
+    addAndMakeVisible(*miniOscilloscopeUI_);
+
+    miniSpectrumUI_ = std::make_unique<daw::ui::SpectrumAnalyzerUI>();
+    miniSpectrumUI_->setCompact(true);
+    miniSpectrumUI_->setVisible(false);
+    addAndMakeVisible(*miniSpectrumUI_);
 
     // Headphone icon (non-interactive, just a label)
     auto hpIcon = juce::Drawable::createFromImageData(BinaryData::headphones_svg,
@@ -529,6 +576,25 @@ void MasterChannelStrip::resized() {
         titleLabel->setBounds(titleRow);
 
         bounds.removeFromTop(metrics.controlSpacing);
+
+        // Mini analyzers, mirrored from ChannelStrip. Rail toggles control
+        // visibility; refreshMiniAnalyzers() resolves the live plugin.
+        constexpr int miniAnalyzerHeight = 64;
+        const auto& cfg = Config::getInstance();
+        if (cfg.getMixerShowOscilloscope() && miniOscilloscopeUI_) {
+            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(miniAnalyzerHeight));
+            miniOscilloscopeUI_->setVisible(true);
+            bounds.removeFromTop(2);
+        } else if (miniOscilloscopeUI_) {
+            miniOscilloscopeUI_->setVisible(false);
+        }
+        if (cfg.getMixerShowSpectrum() && miniSpectrumUI_) {
+            miniSpectrumUI_->setBounds(bounds.removeFromTop(miniAnalyzerHeight));
+            miniSpectrumUI_->setVisible(true);
+            bounds.removeFromTop(2);
+        } else if (miniSpectrumUI_) {
+            miniSpectrumUI_->setVisible(false);
+        }
 
         // Mirror channel-strip layout so the handle and fader line up: 2px
         // gap, then reserve the same sends region (Add Send row + max sends

@@ -1515,6 +1515,8 @@ void PluginManager::syncMasterPlugins() {
     }
     for (const auto& postElem : trackInfo->chain.postFxChainElements)
         magdaDevices.push_back(postElem.device.id);
+    for (const auto& miniElem : trackInfo->chain.mixerAnalysisElements)
+        magdaDevices.push_back(miniElem.device.id);
 
     // Remove synced plugins that are no longer in MAGDA's master chain
     std::vector<DeviceId> toRemove;
@@ -1647,6 +1649,49 @@ void PluginManager::syncMasterPlugins() {
                 juce::ScopedLock lock(pluginLock_);
                 syncedDevices_[device.id].isPendingLoad = true;
                 if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(postPath))
+                    devInfo->loadState = DeviceLoadState::Loading;
+                TrackManager::getInstance().notifyTrackDevicesChanged(MASTER_TRACK_ID);
+                pollAsyncPluginLoad(MASTER_TRACK_ID, device.id, plugin);
+            }
+        }
+    }
+
+    // Mixer-analysis devices: same shape as post-FX, sequenced after them.
+    for (const auto& miniElem : trackInfo->chain.mixerAnalysisElements) {
+        const auto& device = miniElem.device;
+        {
+            juce::ScopedLock lock(pluginLock_);
+            if (syncedDevices_.find(device.id) != syncedDevices_.end())
+                continue;
+        }
+
+        auto plugin = createPluginOnly(MASTER_TRACK_ID, device);
+        if (!plugin)
+            continue;
+
+        masterList.insertPlugin(plugin, -1, nullptr);
+        {
+            juce::ScopedLock lock(pluginLock_);
+            syncedDevices_[device.id].trackId = MASTER_TRACK_ID;
+            syncedDevices_[device.id].plugin = plugin;
+            pluginToDevice_[plugin.get()] = device.id;
+        }
+
+        registerRackPluginProcessor(device.id, plugin, device);
+
+        const auto miniPath = ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, device.id);
+        if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(miniPath)) {
+            if (plugin->canSidechain())
+                devInfo->canSidechain = true;
+            if (plugin->takesMidiInput() && !device.isInstrument)
+                devInfo->canReceiveMidi = true;
+        }
+
+        if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+            if (extPlugin->isInitialisingAsync()) {
+                juce::ScopedLock lock(pluginLock_);
+                syncedDevices_[device.id].isPendingLoad = true;
+                if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(miniPath))
                     devInfo->loadState = DeviceLoadState::Loading;
                 TrackManager::getInstance().notifyTrackDevicesChanged(MASTER_TRACK_ID);
                 pollAsyncPluginLoad(MASTER_TRACK_ID, device.id, plugin);

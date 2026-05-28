@@ -18,8 +18,8 @@ MixerToggleRail::MixerToggleRail() {
                 BinaryData::io_routing_svgSize, "Show I/O routing", cfg.getMixerShowRouting(),
                 [](bool v) { Config::getInstance().setMixerShowRouting(v); });
 
-    setupButton(monitorButton_, "MixerShowMonitor", BinaryData::headphones_svg,
-                BinaryData::headphones_svgSize, "Show record/monitor row",
+    setupButton(monitorButton_, "MixerShowMonitor", BinaryData::recordmonitor_svg,
+                BinaryData::recordmonitor_svgSize, "Show record/monitor row",
                 cfg.getMixerShowMonitor(),
                 [](bool v) { Config::getInstance().setMixerShowMonitor(v); });
 
