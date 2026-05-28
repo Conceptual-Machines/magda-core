@@ -80,14 +80,6 @@ ParameterInfo ExternalPluginProcessor::getParameterInfo(int index) const {
     auto* param = params[static_cast<size_t>(index)];
     auto info = makeInfoFromTeParam(index, param);
 
-    // TE adds a slot-level Dry/Wet mix pair to every ExternalPlugin
-    // (PluginWetDryAutomatableParam, ids "dry level" / "wet level"). They
-    // are not the plugin's own parameters — hide them from MAGDA's grids
-    // and from the mini-chain rows. Underlying TE params stay addressable
-    // for automation / aliases / host writes via paramIndex.
-    if (param == ext->dryGain.get() || param == ext->wetGain.get())
-        info.hidden = true;
-
     // Live display text provider: all display paths (param grid, automation
     // lane, curve tooltip) query the plugin's valueToString() at call time
     // through a safe TrackManager -> AudioBridge -> Processor lookup. No
@@ -104,13 +96,28 @@ ParameterInfo ExternalPluginProcessor::getParameterInfo(int index) const {
 
 void ExternalPluginProcessor::populateParameters(DeviceInfo& info) const {
     info.parameters.clear();
+    info.wrapperParameters.clear();
 
     if (auto* ext = getExternalPlugin()) {
         auto params = ext->getAutomatableParameters();
         int maxParams = static_cast<int>(params.size());
 
+        // TE prepends a slot-level Dry/Wet mix pair (PluginWetDryAutomatableParam)
+        // to every ExternalPlugin's automatable list. Those aren't the plugin's
+        // own parameters — split them into `wrapperParameters` so the param
+        // grid sees only the plugin's params and the device-header chrome can
+        // render the wrapper pair as a single Mix crossfader. paramIndex on
+        // both buckets keeps addressing the underlying TE slot, so host writes,
+        // automation, and aliases still work the same.
         for (int i = 0; i < maxParams; ++i) {
-            info.parameters.push_back(getParameterInfo(i));
+            auto* param = params[static_cast<size_t>(i)];
+            if (param == nullptr)
+                continue;
+            auto paramInfo = getParameterInfo(i);
+            if (param == ext->dryGain.get() || param == ext->wetGain.get())
+                info.wrapperParameters.push_back(std::move(paramInfo));
+            else
+                info.parameters.push_back(std::move(paramInfo));
         }
     }
 }
@@ -123,13 +130,20 @@ void ExternalPluginProcessor::syncFromDeviceInfo(const DeviceInfo& info) {
 
     if (auto* ext = getExternalPlugin()) {
         auto params = ext->getAutomatableParameters();
-        for (size_t i = 0; i < info.parameters.size() && i < static_cast<size_t>(params.size());
-             ++i) {
-            if (params[i]) {
-                params[i]->setParameterFromHost(info.parameters[i].currentValue,
-                                                juce::dontSendNotification);
+        // Address via `paramIndex` (the TE index), not array position, because
+        // `info.parameters` no longer matches `params` 1:1 — the wrapper dry/wet
+        // pair lives in `info.wrapperParameters`. Both buckets carry the
+        // original TE index in `paramIndex`.
+        auto apply = [&](const std::vector<ParameterInfo>& bucket) {
+            for (const auto& p : bucket) {
+                const int idx = p.paramIndex;
+                if (idx >= 0 && idx < params.size() && params[idx]) {
+                    params[idx]->setParameterFromHost(p.currentValue, juce::dontSendNotification);
+                }
             }
-        }
+        };
+        apply(info.parameters);
+        apply(info.wrapperParameters);
     }
 
     settingParameterFromUI_ = false;

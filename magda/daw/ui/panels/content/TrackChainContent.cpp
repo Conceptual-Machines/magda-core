@@ -1298,9 +1298,18 @@ void TrackChainContent::initGlobalModsPanel() {
                 for (const auto& element : elements) {
                     if (magda::isDevice(element)) {
                         const auto& device = magda::getDevice(element);
-                        if (device.id == deviceId && paramIndex >= 0 &&
-                            paramIndex < static_cast<int>(device.parameters.size())) {
-                            return device.parameters[static_cast<size_t>(paramIndex)].name;
+                        if (device.id == deviceId && paramIndex >= 0) {
+                            // paramIndex is the TE index — search both buckets
+                            // by ParameterInfo::paramIndex, not by array
+                            // position, since the wrapper dry/wet pair lives
+                            // in wrapperParameters (so the array no longer
+                            // mirrors TE indices 1:1).
+                            for (const auto& p : device.parameters)
+                                if (p.paramIndex == paramIndex)
+                                    return p.name;
+                            for (const auto& p : device.wrapperParameters)
+                                if (p.paramIndex == paramIndex)
+                                    return p.name;
                         }
                     } else {
                         const auto& rack = magda::getRack(element);
@@ -1419,9 +1428,18 @@ void TrackChainContent::initGlobalMacrosPanel() {
                 for (const auto& element : elements) {
                     if (magda::isDevice(element)) {
                         const auto& device = magda::getDevice(element);
-                        if (device.id == deviceId && paramIndex >= 0 &&
-                            paramIndex < static_cast<int>(device.parameters.size())) {
-                            return device.parameters[static_cast<size_t>(paramIndex)].name;
+                        if (device.id == deviceId && paramIndex >= 0) {
+                            // paramIndex is the TE index — search both buckets
+                            // by ParameterInfo::paramIndex, not by array
+                            // position, since the wrapper dry/wet pair lives
+                            // in wrapperParameters (so the array no longer
+                            // mirrors TE indices 1:1).
+                            for (const auto& p : device.parameters)
+                                if (p.paramIndex == paramIndex)
+                                    return p.name;
+                            for (const auto& p : device.wrapperParameters)
+                                if (p.paramIndex == paramIndex)
+                                    return p.name;
                         }
                     } else {
                         const auto& rack = magda::getRack(element);
