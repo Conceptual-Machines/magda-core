@@ -332,8 +332,10 @@ void PluginManager::ensureMidiReceive(const ChainNodePath& devicePath, TrackId s
             auto& listState = teTrack->pluginList.state;
             const int receiveChild = listState.indexOf(it->second.midiReceivePlugin->state);
             const int targetChild = listState.indexOf(targetPlugin->state);
-            if (receiveChild >= 0 && targetChild >= 0)
+            if (receiveChild >= 0 && targetChild >= 0) {
                 listState.moveChild(receiveChild, targetChild, nullptr);
+                requestPluginOrderGraphRestart(trackId, "midi-sidechain-receive");
+            }
         }
     }
 
@@ -360,8 +362,10 @@ void PluginManager::ensureMidiReceive(const ChainNodePath& devicePath, TrackId s
             auto& listState = teTrack->pluginList.state;
             const int restoreChild = listState.indexOf(it->second.midiRestorePlugin->state);
             const int targetChild = listState.indexOf(targetPlugin->state);
-            if (restoreChild >= 0 && targetChild >= 0)
+            if (restoreChild >= 0 && targetChild >= 0) {
                 listState.moveChild(restoreChild, targetChild + 1, nullptr);
+                requestPluginOrderGraphRestart(trackId, "midi-sidechain-restore");
+            }
         }
     }
 
@@ -384,6 +388,13 @@ void PluginManager::removeMidiReceive(const ChainNodePath& devicePath) {
         plugin->deleteFromParent();
     if (restorePlugin)
         restorePlugin->deleteFromParent();
+}
+
+void PluginManager::requestPluginOrderGraphRestart(TrackId trackId, const juce::String& reason) {
+    DBG("[PluginOrder] graph restart requested trackId=" << trackId << " reason=" << reason);
+    if (onPluginOrderGraphRestartRequested)
+        onPluginOrderGraphRestartRequested(trackId, reason);
+    edit_.restartPlayback();
 }
 
 // =============================================================================
@@ -688,6 +699,19 @@ void PluginManager::validateMappingConsistency() {
         }
         auto* owner = sd.plugin->getOwnerTrack();
         if (owner) {
+            if (devicePath.trackId == MASTER_TRACK_ID) {
+                const auto& masterList = edit_.getMasterPluginList();
+                bool foundOnMaster = false;
+                for (int i = 0; i < masterList.size(); ++i) {
+                    if (masterList[i] == sd.plugin.get()) {
+                        foundOnMaster = true;
+                        break;
+                    }
+                }
+                if (foundOnMaster)
+                    continue;
+            }
+
             bool found = false;
             for (auto trackId : trackController_.getAllTrackIds()) {
                 if (trackController_.getAudioTrack(trackId) == owner) {

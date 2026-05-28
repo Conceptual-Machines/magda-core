@@ -759,6 +759,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // Reorder TE plugins to match the MAGDA chain element order.
     // This handles moveNode (drag-and-drop reorder) where the MAGDA chain changed
     // but existing TE plugins haven't moved.
+    bool pluginOrderChanged = false;
     {
         // Build the desired order of TE plugin indices from the MAGDA chain
         std::vector<te::Plugin*> desiredOrder;
@@ -821,14 +822,24 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                             targetVtIdx = c + 1;
                     }
                 }
-                if (vtChildIdx != targetVtIdx)
+                if (vtChildIdx != targetVtIdx) {
+                    DBG("[PluginOrder] move trackId=" << trackId << " plugin='"
+                                                      << desiredOrder[i]->getName() << "' child="
+                                                      << vtChildIdx << " -> " << targetVtIdx);
                     listState.moveChild(vtChildIdx, targetVtIdx, nullptr);
+                    pluginOrderChanged = true;
+                }
             } else {
                 // Move after the previous desired plugin
                 int prevVtIdx = listState.indexOf(desiredOrder[i - 1]->state);
                 int curVtIdx = listState.indexOf(desiredOrder[i]->state);
-                if (curVtIdx >= 0 && prevVtIdx >= 0 && curVtIdx != prevVtIdx + 1)
+                if (curVtIdx >= 0 && prevVtIdx >= 0 && curVtIdx != prevVtIdx + 1) {
+                    DBG("[PluginOrder] move trackId=" << trackId << " plugin='"
+                                                      << desiredOrder[i]->getName() << "' child="
+                                                      << curVtIdx << " -> " << (prevVtIdx + 1));
                     listState.moveChild(curVtIdx, prevVtIdx + 1, nullptr);
+                    pluginOrderChanged = true;
+                }
             }
         }
     }
@@ -845,6 +856,12 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
     // Ensure LevelMeter is at the end of the plugin chain for metering
     addLevelMeterToTrack(trackId);
+
+    // TE restarts playback for plugin add/remove, but not for ValueTree child
+    // order changes. After moveChild(), PluginList reports the new order while
+    // the active playback graph can still process the previous order.
+    if (pluginOrderChanged)
+        requestPluginOrderGraphRestart(trackId, "track-plugin-order");
 
     // Rebuild sidechain LFO cache so audio/MIDI threads see current state
     rebuildSidechainLFOCache();
@@ -1549,6 +1566,7 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     loadFlatSection(trackInfo.chain.mixerAnalysisElements, &ChainNodePath::mixerAnalysisDevice);
 
     // Reorder TE plugins to match the MAGDA chain element order (same as syncTrackPlugins)
+    bool pluginOrderChanged = false;
     {
         std::vector<te::Plugin*> desiredOrder;
         for (const auto& element : trackInfo.chain.fxChainElements) {
@@ -1601,13 +1619,23 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
                             break;
                     }
                 }
-                if (vtChildIdx != targetVtIdx)
+                if (vtChildIdx != targetVtIdx) {
+                    DBG("[PluginOrder] move multiout trackId="
+                        << trackId << " plugin='" << desiredOrder[i]->getName()
+                        << "' child=" << vtChildIdx << " -> " << targetVtIdx);
                     listState.moveChild(vtChildIdx, targetVtIdx, nullptr);
+                    pluginOrderChanged = true;
+                }
             } else {
                 int prevVtIdx = listState.indexOf(desiredOrder[i - 1]->state);
                 int curVtIdx = listState.indexOf(desiredOrder[i]->state);
-                if (curVtIdx >= 0 && prevVtIdx >= 0 && curVtIdx != prevVtIdx + 1)
+                if (curVtIdx >= 0 && prevVtIdx >= 0 && curVtIdx != prevVtIdx + 1) {
+                    DBG("[PluginOrder] move multiout trackId="
+                        << trackId << " plugin='" << desiredOrder[i]->getName()
+                        << "' child=" << curVtIdx << " -> " << (prevVtIdx + 1));
                     listState.moveChild(curVtIdx, prevVtIdx + 1, nullptr);
+                    pluginOrderChanged = true;
+                }
             }
         }
     }
@@ -1615,6 +1643,9 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     // Ensure VolumeAndPan and LevelMeter are present
     ensureVolumePluginPosition(teTrack);
     addLevelMeterToTrack(trackId);
+
+    if (pluginOrderChanged)
+        requestPluginOrderGraphRestart(trackId, "multiout-plugin-order");
 
     // Set audio output routing (e.g. "track:N" to route back to parent)
     if (trackInfo.audioOutputDevice.isNotEmpty())
@@ -2420,16 +2451,46 @@ te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeN
         }
     }
 
-    // Try the string overload first (works for built-in TE plugins like delay, reverb, etc.)
-    auto plugin = edit_.getPluginCache().createNewPlugin(xmlTypeName, {});
-
-    // For custom plugins (chord engine, arpeggiator, step sequencer, etc.) the string overload
-    // doesn't work — TE only routes the ValueTree overload through createCustomPlugin.
-    if (!plugin) {
+    auto createFromValueTree = [&]() {
         juce::ValueTree pluginState(te::IDs::PLUGIN);
         pluginState.setProperty(te::IDs::type, xmlTypeName, nullptr);
-        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
-    }
+        return edit_.getPluginCache().createNewPlugin(pluginState);
+    };
+
+    auto shouldUseTracktionStringFactory = [&]() {
+        const auto* spec = daw::audio::findInternalPluginSpecForLoadType(xmlTypeName);
+        if (spec == nullptr)
+            return true;
+
+        switch (spec->kind) {
+            case InternalDeviceKind::TeEq:
+            case InternalDeviceKind::TeCompressor:
+            case InternalDeviceKind::TeReverb:
+            case InternalDeviceKind::TeDelay:
+            case InternalDeviceKind::TeChorus:
+            case InternalDeviceKind::TePhaser:
+            case InternalDeviceKind::TeLowpass:
+            case InternalDeviceKind::TePitchShift:
+            case InternalDeviceKind::TeImpulseResponse:
+            case InternalDeviceKind::TeVolumeAndPan:
+            case InternalDeviceKind::TeFourOsc:
+            case InternalDeviceKind::TeToneGenerator:
+            case InternalDeviceKind::TeLevelMeter:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    te::Plugin::Ptr plugin;
+    if (shouldUseTracktionStringFactory())
+        plugin = edit_.getPluginCache().createNewPlugin(xmlTypeName, {});
+
+    // For custom MAGDA plugins (analyzers, MIDI tools, etc.) the string overload
+    // returns null and asserts in TE debug builds. The ValueTree overload routes
+    // through createCustomPlugin.
+    if (!plugin)
+        plugin = createFromValueTree();
 
     // Override TE's default band freqs on a fresh EQ — the stock values cluster
     // the four bands close together, so the curve looks like one bump instead

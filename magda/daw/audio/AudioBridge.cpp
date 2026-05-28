@@ -422,6 +422,7 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     // unity while bypassed so the slider stops attenuating signal that isn't going
     // through the plugin (#1189). The user's gainValue is preserved on DeviceInfo
     // and gets re-pushed when the device is re-enabled.
+    deviceMetering_.setGain(devicePath, device->bypassed ? 1.0f : device->gainValue);
     deviceMetering_.setGain(deviceId, device->bypassed ? 1.0f : device->gainValue);
 
     // When bypass changes, resync modifiers so they are removed/restored

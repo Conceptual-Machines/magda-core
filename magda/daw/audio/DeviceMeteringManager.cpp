@@ -8,33 +8,46 @@ namespace magda {
 std::map<te::Edit*, DeviceMeteringManager*> DeviceMeteringManager::editMap_;
 juce::CriticalSection DeviceMeteringManager::editMapLock_;
 
-te::LevelMeasurer& DeviceMeteringManager::getOrCreateMeasurer(DeviceId deviceId) {
-    juce::ScopedLock sl(lock_);
-    auto it = entries_.find(deviceId);
-    if (it != entries_.end()) {
-        if (!it->second->clientRegistered) {
-            it->second->measurer.addClient(it->second->client);
-            it->second->clientRegistered = true;
-        }
-        return it->second->measurer;
-    }
-
-    auto entry = std::make_unique<Entry>();
-    entry->measurer.addClient(entry->client);
-    entry->clientRegistered = true;
-    auto& measurer = entry->measurer;
-    entries_[deviceId] = std::move(entry);
-    return measurer;
+ChainNodePath DeviceMeteringManager::legacyPathForDeviceId(DeviceId deviceId) {
+    ChainNodePath path;
+    path.topLevelDeviceId = deviceId;
+    return path;
 }
 
-void DeviceMeteringManager::removeMeasurer(DeviceId deviceId) {
+DeviceMeteringManager::Entry& DeviceMeteringManager::ensureEntryLocked(
+    const ChainNodePath& devicePath) {
+    auto& entry = entries_[devicePath];
+    if (!entry)
+        entry = std::make_unique<Entry>();
+    return *entry;
+}
+
+te::LevelMeasurer& DeviceMeteringManager::getOrCreateMeasurer(const ChainNodePath& devicePath) {
     juce::ScopedLock sl(lock_);
-    auto it = entries_.find(deviceId);
+    auto& entry = ensureEntryLocked(devicePath);
+    if (!entry.clientRegistered) {
+        entry.measurer.addClient(entry.client);
+        entry.clientRegistered = true;
+    }
+    return entry.measurer;
+}
+
+te::LevelMeasurer& DeviceMeteringManager::getOrCreateMeasurer(DeviceId deviceId) {
+    return getOrCreateMeasurer(legacyPathForDeviceId(deviceId));
+}
+
+void DeviceMeteringManager::removeMeasurer(const ChainNodePath& devicePath) {
+    juce::ScopedLock sl(lock_);
+    auto it = entries_.find(devicePath);
     if (it != entries_.end()) {
         if (it->second->clientRegistered)
             it->second->measurer.removeClient(it->second->client);
         entries_.erase(it);
     }
+}
+
+void DeviceMeteringManager::removeMeasurer(DeviceId deviceId) {
+    removeMeasurer(legacyPathForDeviceId(deviceId));
 }
 
 DeviceId DeviceMeteringManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
@@ -44,9 +57,16 @@ DeviceId DeviceMeteringManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
     return pluginManager_->getDeviceIdForPlugin(plugin);
 }
 
+ChainNodePath DeviceMeteringManager::getDevicePathForPlugin(te::Plugin* plugin) const {
+    if (!pluginManager_ || !plugin)
+        return {};
+
+    return pluginManager_->getDevicePathForPlugin(plugin);
+}
+
 void DeviceMeteringManager::updateAllClients() {
     juce::ScopedLock sl(lock_);
-    for (auto& [deviceId, entry] : entries_) {
+    for (auto& [devicePath, entry] : entries_) {
         if (!entry->clientRegistered) {
             if (entry->realtimeTap) {
                 entry->peakL.store(
@@ -70,9 +90,10 @@ void DeviceMeteringManager::updateAllClients() {
     }
 }
 
-bool DeviceMeteringManager::getLatestLevels(DeviceId deviceId, DeviceMeterData& out) const {
+bool DeviceMeteringManager::getLatestLevels(const ChainNodePath& devicePath,
+                                            DeviceMeterData& out) const {
     juce::ScopedLock sl(lock_);
-    auto it = entries_.find(deviceId);
+    auto it = entries_.find(devicePath);
     if (it == entries_.end())
         return false;
 
@@ -81,9 +102,13 @@ bool DeviceMeteringManager::getLatestLevels(DeviceId deviceId, DeviceMeterData& 
     return true;
 }
 
-void DeviceMeteringManager::setGain(DeviceId deviceId, float gain) {
+bool DeviceMeteringManager::getLatestLevels(DeviceId deviceId, DeviceMeterData& out) const {
+    return getLatestLevels(legacyPathForDeviceId(deviceId), out);
+}
+
+void DeviceMeteringManager::setGain(const ChainNodePath& devicePath, float gain) {
     juce::ScopedLock sl(lock_);
-    auto it = entries_.find(deviceId);
+    auto it = entries_.find(devicePath);
     if (it != entries_.end()) {
         it->second->gainLinear.store(gain, std::memory_order_relaxed);
         if (it->second->realtimeTap)
@@ -91,44 +116,62 @@ void DeviceMeteringManager::setGain(DeviceId deviceId, float gain) {
     }
 }
 
-std::atomic<float>* DeviceMeteringManager::getGainAtomic(DeviceId deviceId) {
+void DeviceMeteringManager::setGain(DeviceId deviceId, float gain) {
+    setGain(legacyPathForDeviceId(deviceId), gain);
+}
+
+std::atomic<float>* DeviceMeteringManager::getGainAtomic(const ChainNodePath& devicePath) {
     juce::ScopedLock sl(lock_);
-    auto it = entries_.find(deviceId);
+    auto it = entries_.find(devicePath);
     if (it != entries_.end())
         return &it->second->gainLinear;
     return nullptr;
 }
 
-void DeviceMeteringManager::setDirectLevels(DeviceId deviceId, float peakL, float peakR) {
+std::atomic<float>* DeviceMeteringManager::getGainAtomic(DeviceId deviceId) {
+    return getGainAtomic(legacyPathForDeviceId(deviceId));
+}
+
+void DeviceMeteringManager::setDirectLevels(const ChainNodePath& devicePath, float peakL,
+                                            float peakR) {
     juce::ScopedLock sl(lock_);
-    auto it = entries_.find(deviceId);
+    auto it = entries_.find(devicePath);
     if (it != entries_.end()) {
         it->second->peakL.store(peakL, std::memory_order_relaxed);
         it->second->peakR.store(peakR, std::memory_order_relaxed);
     }
 }
 
-void DeviceMeteringManager::ensureEntry(DeviceId deviceId) {
+void DeviceMeteringManager::setDirectLevels(DeviceId deviceId, float peakL, float peakR) {
+    setDirectLevels(legacyPathForDeviceId(deviceId), peakL, peakR);
+}
+
+void DeviceMeteringManager::ensureEntry(const ChainNodePath& devicePath) {
     juce::ScopedLock sl(lock_);
-    if (entries_.find(deviceId) == entries_.end()) {
-        entries_[deviceId] = std::make_unique<Entry>();
+    ensureEntryLocked(devicePath);
+}
+
+void DeviceMeteringManager::ensureEntry(DeviceId deviceId) {
+    ensureEntry(legacyPathForDeviceId(deviceId));
+}
+
+DeviceMeteringManager::RealtimeTap DeviceMeteringManager::getRealtimeTap(
+    const ChainNodePath& devicePath) {
+    juce::ScopedLock sl(lock_);
+    auto& entry = ensureEntryLocked(devicePath);
+
+    if (!entry.realtimeTap) {
+        entry.realtimeTap = std::make_shared<RealtimeTapStorage>();
+        entry.realtimeTap->gainLinear.store(entry.gainLinear.load(std::memory_order_relaxed),
+                                            std::memory_order_relaxed);
     }
+
+    auto storage = entry.realtimeTap;
+    return {storage, &storage->peakL, &storage->peakR, &storage->gainLinear};
 }
 
 DeviceMeteringManager::RealtimeTap DeviceMeteringManager::getRealtimeTap(DeviceId deviceId) {
-    juce::ScopedLock sl(lock_);
-    auto& entry = entries_[deviceId];
-    if (!entry)
-        entry = std::make_unique<Entry>();
-
-    if (!entry->realtimeTap) {
-        entry->realtimeTap = std::make_shared<RealtimeTapStorage>();
-        entry->realtimeTap->gainLinear.store(entry->gainLinear.load(std::memory_order_relaxed),
-                                             std::memory_order_relaxed);
-    }
-
-    auto storage = entry->realtimeTap;
-    return {storage, &storage->peakL, &storage->peakR, &storage->gainLinear};
+    return getRealtimeTap(legacyPathForDeviceId(deviceId));
 }
 
 void DeviceMeteringManager::setRackDirectLevels(RackId rackId, float peakL, float peakR) {
@@ -159,7 +202,7 @@ bool DeviceMeteringManager::getRackLatestLevels(RackId rackId, DeviceMeterData& 
 
 void DeviceMeteringManager::clear() {
     juce::ScopedLock sl(lock_);
-    for (auto& [deviceId, entry] : entries_) {
+    for (auto& [devicePath, entry] : entries_) {
         if (entry->clientRegistered)
             entry->measurer.removeClient(entry->client);
     }

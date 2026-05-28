@@ -388,7 +388,8 @@ void GainStagingManager::buildStagedDeviceList(TrackId trackId) {
     }
 }
 
-bool GainStagingManager::readDevicePeakLinear(DeviceId deviceId, float& peakLinearOut) const {
+bool GainStagingManager::readDevicePeakLinear(const ChainNodePath& devicePath,
+                                              float& peakLinearOut) const {
     auto* engine = TrackManager::getInstance().getAudioEngine();
     if (engine == nullptr)
         return false;
@@ -398,7 +399,8 @@ bool GainStagingManager::readDevicePeakLinear(DeviceId deviceId, float& peakLine
         return false;
 
     DeviceMeteringManager::DeviceMeterData data;
-    if (!bridge->getDeviceMetering().getLatestLevels(deviceId, data))
+    if (!bridge->getDeviceMetering().getLatestLevels(devicePath, data) &&
+        !bridge->getDeviceMetering().getLatestLevels(devicePath.getDeviceId(), data))
         return false;
 
     peakLinearOut = std::max(data.peakL, data.peakR);
@@ -411,7 +413,7 @@ void GainStagingManager::timerCallback() {
 
     for (const auto& staged : staged_) {
         float peakLinear = 0.0f;
-        if (!readDevicePeakLinear(staged.deviceId, peakLinear))
+        if (!readDevicePeakLinear(staged.path, peakLinear))
             continue;
 
         auto& info = info_[staged.deviceId];

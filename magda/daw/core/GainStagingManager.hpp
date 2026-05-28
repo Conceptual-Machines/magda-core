@@ -234,7 +234,7 @@ class GainStagingManager : private juce::Timer {
 
     // Reads max(peakL, peakR) for a device from live metering. Returns false
     // if metering is unavailable or the device has no meter entry.
-    bool readDevicePeakLinear(DeviceId deviceId, float& peakLinearOut) const;
+    bool readDevicePeakLinear(const ChainNodePath& devicePath, float& peakLinearOut) const;
 
     void notifyMode();
     void notifyDevice(DeviceId deviceId);

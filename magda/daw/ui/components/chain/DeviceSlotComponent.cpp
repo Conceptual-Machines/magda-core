@@ -833,7 +833,8 @@ void DeviceSlotComponent::timerCallback() {
     } else {
         // Poll device peak levels for right-side meter strip
         magda::DeviceMeteringManager::DeviceMeterData data;
-        if (bridge->getDeviceMetering().getLatestLevels(device_.id, data)) {
+        if (bridge->getDeviceMetering().getLatestLevels(nodePath_, data) ||
+            bridge->getDeviceMetering().getLatestLevels(device_.id, data)) {
             levelMeter_.setLevels(data.peakL, data.peakR);
         }
     }

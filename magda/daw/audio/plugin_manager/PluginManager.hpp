@@ -192,6 +192,13 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      */
     std::function<void(TrackId)> onAsyncPluginLoaded;
 
+    /**
+     * @brief Callback invoked when a plugin-order-only change requires a TE
+     * playback graph restart. Primarily useful for diagnostics/tests because
+     * TE does not restart automatically for ValueTree child-order changes.
+     */
+    std::function<void(TrackId, const juce::String&)> onPluginOrderGraphRestartRequested;
+
     // =========================================================================
     // Rack Plugin Creation
     // =========================================================================
@@ -504,6 +511,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @param deviceId The device that no longer needs MIDI injection
      */
     void removeMidiReceive(const ChainNodePath& devicePath);
+    void requestPluginOrderGraphRestart(TrackId trackId, const juce::String& reason);
 
     /**
      * @brief Set a device macro parameter value on the TE MacroParameter
