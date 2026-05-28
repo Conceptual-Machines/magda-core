@@ -43,6 +43,20 @@ enum class DisplayFormat {
 };
 
 /**
+ * @brief Identifies a wrapper-injected parameter by its semantic role.
+ *
+ * Only set on entries in DeviceInfo::wrapperParameters — None for plugin
+ * params and unrecognised wrapper params. The role tag lets device-header
+ * chrome render a known pair (e.g. TE's DryGain + WetGain) as a single
+ * collapsed control like a Mix crossfader without name-sniffing.
+ */
+enum class WrapperRole {
+    None,
+    DryGain,  // TE PluginWetDryAutomatableParam, dry side
+    WetGain,  // TE PluginWetDryAutomatableParam, wet side
+};
+
+/**
  * @brief Metadata for a plugin parameter
  *
  * Contains all information needed to convert between normalized (0-1)
@@ -130,6 +144,11 @@ struct ParameterInfo {
     // UI-only visibility. Hidden parameters remain addressable for automation,
     // aliases, and host writes, but parameter-grid layouts omit their cell.
     bool hidden = false;
+
+    // Wrapper-role tag. Defaults to None. Processors that place an entry in
+    // DeviceInfo::wrapperParameters set the role so the device-header chrome
+    // can spot known pairs (e.g. DryGain+WetGain → Mix knob).
+    WrapperRole wrapperRole = WrapperRole::None;
 
     // Modulation constraints
     bool modulatable = true;         // Can mods affect this parameter?

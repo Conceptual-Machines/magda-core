@@ -114,10 +114,15 @@ void ExternalPluginProcessor::populateParameters(DeviceInfo& info) const {
             if (param == nullptr)
                 continue;
             auto paramInfo = getParameterInfo(i);
-            if (param == ext->dryGain.get() || param == ext->wetGain.get())
+            if (param == ext->dryGain.get()) {
+                paramInfo.wrapperRole = WrapperRole::DryGain;
                 info.wrapperParameters.push_back(std::move(paramInfo));
-            else
+            } else if (param == ext->wetGain.get()) {
+                paramInfo.wrapperRole = WrapperRole::WetGain;
+                info.wrapperParameters.push_back(std::move(paramInfo));
+            } else {
                 info.parameters.push_back(std::move(paramInfo));
+            }
         }
     }
 }
