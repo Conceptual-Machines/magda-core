@@ -759,6 +759,33 @@ bool AudioBridge::savePluginPresetFile(DeviceId deviceId, const juce::File& pres
     return false;
 }
 
+// -----------------------------------------------------------------------------
+// Path-based overloads for the preset / program surface. Thin delegates while
+// syncedDevices_ is still keyed by DeviceId.
+// -----------------------------------------------------------------------------
+
+int AudioBridge::getPluginNumPrograms(const ChainNodePath& devicePath) const {
+    return getPluginNumPrograms(devicePath.getDeviceId());
+}
+int AudioBridge::getPluginCurrentProgram(const ChainNodePath& devicePath) const {
+    return getPluginCurrentProgram(devicePath.getDeviceId());
+}
+juce::String AudioBridge::getPluginProgramName(const ChainNodePath& devicePath,
+                                               int programIndex) const {
+    return getPluginProgramName(devicePath.getDeviceId(), programIndex);
+}
+bool AudioBridge::setPluginCurrentProgram(const ChainNodePath& devicePath, int programIndex) {
+    return setPluginCurrentProgram(devicePath.getDeviceId(), programIndex);
+}
+bool AudioBridge::loadPluginPresetFile(const ChainNodePath& devicePath,
+                                       const juce::File& presetFile) {
+    return loadPluginPresetFile(devicePath.getDeviceId(), presetFile);
+}
+bool AudioBridge::savePluginPresetFile(const ChainNodePath& devicePath,
+                                       const juce::File& presetFile) {
+    return savePluginPresetFile(devicePath.getDeviceId(), presetFile);
+}
+
 te::VirtualMidiInputDevice* AudioBridge::getQwertyMidiDevice() {
     return midiInputRouter_.getQwertyMidiDevice();
 }

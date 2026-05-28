@@ -366,6 +366,15 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     /** Switch the plugin's current program. Returns true on success. */
     bool setPluginCurrentProgram(DeviceId deviceId, int programIndex);
 
+    // Path-based overloads — new code uses these so the section is part of
+    // the lookup. Internally delegate to the bare-id versions for now;
+    // they'll route through ChainNodePath directly once syncedDevices_ is
+    // rekeyed in stage 4.
+    int getPluginNumPrograms(const ChainNodePath& devicePath) const;
+    int getPluginCurrentProgram(const ChainNodePath& devicePath) const;
+    juce::String getPluginProgramName(const ChainNodePath& devicePath, int programIndex) const;
+    bool setPluginCurrentProgram(const ChainNodePath& devicePath, int programIndex);
+
     // ------------------------------------------------------------------------
     // Disk-based plugin preset loading / saving (.vstpreset / .aupreset).
     //
@@ -377,6 +386,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // ------------------------------------------------------------------------
     bool loadPluginPresetFile(DeviceId deviceId, const juce::File& presetFile);
     bool savePluginPresetFile(DeviceId deviceId, const juce::File& presetFile);
+    bool loadPluginPresetFile(const ChainNodePath& devicePath, const juce::File& presetFile);
+    bool savePluginPresetFile(const ChainNodePath& devicePath, const juce::File& presetFile);
 
     /**
      * @brief Get (or lazily create) the virtual MIDI input device used by

@@ -1132,14 +1132,15 @@ void DeviceSlotComponent::showPluginPresetMenu() {
         self->refreshPresetsButton();
     };
 
-    magda::daw::ui::showPluginPresetMenu(presetsButton_.get(), device_, isInternalDevice(),
-                                         currentPluginPresetFile_, std::move(actions));
+    magda::daw::ui::showPluginPresetMenu(presetsButton_.get(), device_, nodePath_,
+                                         isInternalDevice(), currentPluginPresetFile_,
+                                         std::move(actions));
 }
 
 void DeviceSlotComponent::loadPluginPresetFile(const juce::File& file) {
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
     magda::daw::ui::loadPluginPresetFile(
-        device_.id, file, [self](const juce::File& currentFile, const juce::String& displayName) {
+        nodePath_, file, [self](const juce::File& currentFile, const juce::String& displayName) {
             if (self == nullptr)
                 return;
             self->currentPluginPresetFile_ = currentFile;
@@ -1151,7 +1152,7 @@ void DeviceSlotComponent::loadPluginPresetFile(const juce::File& file) {
 void DeviceSlotComponent::showSavePluginPresetDialog() {
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
     magda::daw::ui::showSavePluginPresetDialog(
-        device_, pluginPresetName_,
+        device_, nodePath_, pluginPresetName_,
         [self](const juce::File& currentFile, const juce::String& displayName) {
             if (self == nullptr)
                 return;
