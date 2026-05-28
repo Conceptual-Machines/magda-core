@@ -1756,8 +1756,9 @@ void MixerView::rebuildChannelStrips() {
     }
 
     // Second pass: build orderedStrips_ and wire up parent-child hierarchy.
-    // Children of groups and multi-out parents all get
-    // nested inside their parent strip's groupChildren_ for envelope rendering.
+    // Only real group children are nested for envelope rendering. Multi-out
+    // tracks are routing-linked siblings, not child tracks, so they stay as
+    // plain mixer strips like they do in arrangement/session.
     // Use addChildComponent (not addAndMakeVisible) to avoid intermediate layouts.
 
     std::unordered_map<int, ChannelStrip*> stripByTrackId;
@@ -1770,7 +1771,7 @@ void MixerView::rebuildChannelStrips() {
         if (!trackInfo)
             continue;
 
-        // --- Nest inside parent (group tracks, DrumGrid with multi-out children, etc.) ---
+        // --- Nest inside parent group tracks ---
         if (trackInfo->hasParent()) {
             if (auto* parentTrack = TrackManager::getInstance().getTrack(trackInfo->parentId)) {
                 if (parentTrack->isGroup() || parentTrack->hasChildren()) {
@@ -1781,16 +1782,6 @@ void MixerView::rebuildChannelStrips() {
                         continue;
                     }
                 }
-            }
-        }
-
-        // --- Nest multi-out child inside its source track ---
-        if (trackInfo->multiOutLink) {
-            auto it = stripByTrackId.find(trackInfo->multiOutLink->sourceTrackId);
-            if (it != stripByTrackId.end()) {
-                it->second->addChildComponent(*strip);
-                it->second->groupChildren_.push_back(strip.get());
-                continue;
             }
         }
 

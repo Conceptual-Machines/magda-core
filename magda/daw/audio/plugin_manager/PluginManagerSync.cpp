@@ -1364,6 +1364,66 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     if (!teTrack)
         return;
 
+    std::vector<ChainNodePath> magdaDevices;
+    for (const auto& element : trackInfo.chain.fxChainElements) {
+        if (isDevice(element))
+            magdaDevices.push_back(ChainNodePath::topLevelDevice(trackId, getDevice(element).id));
+    }
+    for (const auto& postElem : trackInfo.chain.postFxChainElements)
+        magdaDevices.push_back(ChainNodePath::postFxDevice(trackId, postElem.device.id));
+    for (const auto& miniElem : trackInfo.chain.mixerAnalysisElements)
+        magdaDevices.push_back(ChainNodePath::mixerAnalysisDevice(trackId, miniElem.device.id));
+
+    std::vector<ChainNodePath> toRemove;
+    std::vector<te::Plugin::Ptr> pluginsToDelete;
+    {
+        juce::ScopedLock lock(pluginLock_);
+        for (const auto& [devicePath, sd] : syncedDevices_) {
+            if (!sd.plugin || sd.trackId != trackId)
+                continue;
+
+            const bool found = std::find(magdaDevices.begin(), magdaDevices.end(), devicePath) !=
+                               magdaDevices.end();
+            if (!found) {
+                toRemove.push_back(devicePath);
+                pluginsToDelete.push_back(sd.plugin);
+            }
+        }
+
+        deferredHolders_.clear();
+        std::vector<te::Plugin*> scopePlugins;
+        for (const auto& [_devicePath, sd] : syncedDevices_) {
+            if (sd.trackId == trackId && sd.plugin)
+                scopePlugins.push_back(sd.plugin.get());
+        }
+        auto* modifierList = teTrack->getModifierList();
+        auto* macroList = &teTrack->getMacroParameterListForWriting();
+        for (const auto& devicePath : toRemove) {
+            auto it = findSyncedDevice(devicePath);
+            if (it == syncedDevices_.end())
+                continue;
+
+            clearLFOCustomWaveCallbacks(it->second.modifiers);
+            teardownMacroMap(it->second.macroParams, it->second.modifiers, scopePlugins, macroList);
+            teardownModifierMap(it->second.modifiers, scopePlugins, modifierList);
+            deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
+            if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get())) {
+                dg->removeListener(this);
+                removeDrumGridPadDevicesLocked(devicePath);
+            }
+            if (it->second.plugin)
+                pluginToDevice_.erase(it->second.plugin.get());
+            syncedDevices_.erase(it);
+        }
+    }
+
+    for (size_t i = 0; i < toRemove.size(); ++i) {
+        pluginWindowBridge_.closeWindowsForDevice(toRemove[i].getDeviceId());
+        removeMidiReceive(toRemove[i]);
+        if (pluginsToDelete[i])
+            pluginsToDelete[i]->deleteFromParent();
+    }
+
     // Look up the output pair's actual pin mapping
     auto* device = TrackManager::getInstance().getDevice(link.sourceTrackId, link.sourceDeviceId);
     if (!device || !device->multiOut.isMultiOut)
@@ -1417,9 +1477,7 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
                         auto nextId = getDevice(trackInfo.chain.fxChainElements[j]).id;
                         auto it = findSyncedDevice(ChainNodePath::topLevelDevice(trackId, nextId));
                         if (it != syncedDevices_.end() && it->second.plugin) {
-                            auto* rackInst = instrumentRackManager_.getRackInstance(nextId);
-                            auto* pluginOnTrack = rackInst ? rackInst : it->second.plugin.get();
-                            int idx = teTrack->pluginList.indexOf(pluginOnTrack);
+                            int idx = teTrack->pluginList.indexOf(it->second.plugin.get());
                             if (idx >= 0) {
                                 teInsertIndex = idx;
                                 break;
@@ -1439,6 +1497,36 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
         }
     }
 
+    auto loadFlatSection = [&](const std::vector<PostFxChainElement>& section, auto pathBuilder) {
+        for (const auto& elem : section) {
+            const auto& flatDevice = elem.device;
+            const auto devicePath = pathBuilder(trackId, flatDevice.id);
+            juce::ScopedLock lock(pluginLock_);
+            if (findSyncedDevice(devicePath) != syncedDevices_.end())
+                continue;
+            auto plugin = loadDeviceAsPlugin(devicePath, flatDevice, -1);
+            if (!plugin)
+                continue;
+            auto& sd = syncedDevices_[devicePath];
+            sd.trackId = trackId;
+            sd.plugin = plugin;
+            pluginToDevice_[plugin.get()] = devicePath;
+
+            if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+                if (extPlugin->isInitialisingAsync()) {
+                    sd.isPendingLoad = true;
+                    if (auto* devInfo =
+                            TrackManager::getInstance().getDeviceInChainByPath(devicePath))
+                        devInfo->loadState = DeviceLoadState::Loading;
+                    TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+                    pollAsyncPluginLoad(devicePath, plugin);
+                }
+            }
+        }
+    };
+    loadFlatSection(trackInfo.chain.postFxChainElements, &ChainNodePath::postFxDevice);
+    loadFlatSection(trackInfo.chain.mixerAnalysisElements, &ChainNodePath::mixerAnalysisDevice);
+
     // Reorder TE plugins to match the MAGDA chain element order (same as syncTrackPlugins)
     {
         std::vector<te::Plugin*> desiredOrder;
@@ -1448,13 +1536,23 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
                 const auto deviceId = getDevice(element).id;
                 auto it = findSyncedDevice(ChainNodePath::topLevelDevice(trackId, deviceId));
                 if (it != syncedDevices_.end() && it->second.plugin) {
-                    auto* wrapped = instrumentRackManager_.getRackInstance(deviceId);
-                    auto* pluginToFind = wrapped ? wrapped : it->second.plugin.get();
-                    if (teTrack->pluginList.indexOf(pluginToFind) >= 0)
-                        desiredOrder.push_back(pluginToFind);
+                    if (teTrack->pluginList.indexOf(it->second.plugin.get()) >= 0)
+                        desiredOrder.push_back(it->second.plugin.get());
                 }
             }
         }
+        auto appendSection = [&](const std::vector<PostFxChainElement>& section, auto pathBuilder) {
+            for (const auto& elem : section) {
+                const auto devicePath = pathBuilder(trackId, elem.device.id);
+                juce::ScopedLock lock(pluginLock_);
+                auto it = findSyncedDevice(devicePath);
+                if (it != syncedDevices_.end() && it->second.plugin &&
+                    teTrack->pluginList.indexOf(it->second.plugin.get()) >= 0)
+                    desiredOrder.push_back(it->second.plugin.get());
+            }
+        };
+        appendSection(trackInfo.chain.postFxChainElements, &ChainNodePath::postFxDevice);
+        appendSection(trackInfo.chain.mixerAnalysisElements, &ChainNodePath::mixerAnalysisDevice);
 
         auto& listState = teTrack->pluginList.state;
         for (size_t i = 0; i < desiredOrder.size(); ++i) {
