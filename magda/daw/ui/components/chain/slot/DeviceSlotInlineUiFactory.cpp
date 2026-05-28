@@ -75,6 +75,7 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         return DeviceSlotInlineUiKind::Faust;
     }
 
+    storage.customUI.setDevicePath(nodePath);
     storage.customUI.create(device, &parent, makeCustomUiCallbacks(std::move(callbacks)));
     return DeviceSlotInlineUiKind::Custom;
 }

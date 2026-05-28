@@ -974,6 +974,7 @@ bool DeviceSlotComponent::stripsAnalysisChrome() const {
 
 void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
+    customUI_.setDevicePath(path);
 
     // Hide power / preset / delete for post-FX analysis devices (the getters
     // return nullptr too, so the header layout skips placing them).

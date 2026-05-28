@@ -104,6 +104,16 @@ class DeviceCustomUIManager {
      */
     void readAndPushModMatrix(magda::DeviceId deviceId);
 
+    /**
+     * Set the chain path of the device this custom UI is bound to. Once set,
+     * internal plugin lookups (FourOsc, Sampler, Faust, etc.) go through the
+     * path rather than a bare DeviceId — required for section-scoped ids.
+     * Callable repeatedly; latest value wins.
+     */
+    void setDevicePath(const magda::ChainNodePath& path) {
+        devicePath_ = path;
+    }
+
     // -------------------------------------------------------------------------
     // Queries
     // -------------------------------------------------------------------------
@@ -180,6 +190,11 @@ class DeviceCustomUIManager {
     }
 
   private:
+    // Path of the device this manager is bound to. Used by every internal
+    // plugin lookup; the bare device.id is no longer sufficient under
+    // section-scoped device ids.
+    magda::ChainNodePath devicePath_;
+
     // Custom UI unique_ptrs
     std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;
     std::unique_ptr<SamplerUI> samplerUI_;
