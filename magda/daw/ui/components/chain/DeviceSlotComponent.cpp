@@ -320,12 +320,42 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     gainSlider_->setSliderSnapsToMousePosition(false);
     gainSlider_->setDoubleClickReturnValue(true, 0.0);
     gainSlider_->onValueChange = [this]() {
+        if (sliderMode_ == SliderMode::Mix) {
+            const double pos = juce::jlimit(0.0, 1.0, gainSlider_->getValue());
+            const double dry = std::cos(pos * juce::MathConstants<double>::halfPi);
+            const double wet = std::sin(pos * juce::MathConstants<double>::halfPi);
+            for (const auto& p : device_.wrapperParameters) {
+                if (p.wrapperRole == magda::WrapperRole::DryGain) {
+                    magda::TrackManager::getInstance().setDeviceParameterValue(
+                        nodePath_, p.paramIndex, static_cast<float>(dry));
+                } else if (p.wrapperRole == magda::WrapperRole::WetGain) {
+                    magda::TrackManager::getInstance().setDeviceParameterValue(
+                        nodePath_, p.paramIndex, static_cast<float>(wet));
+                }
+            }
+            return;
+        }
         magda::TrackManager::getInstance().setDeviceGainDb(
             nodePath_, static_cast<float>(gainSlider_->getValue()));
         // A manual gain edit supersedes any gain-staging mark on this device.
         magda::GainStagingManager::getInstance().clearApplied(device_.id);
     };
     addAndMakeVisible(*gainSlider_);
+
+    // G/M slider-mode toggle (bottom of meter strip). Hidden when the device
+    // has no Mix to switch to (i.e. no DryGain+WetGain wrapper pair).
+    mixToggleButton_ = std::make_unique<juce::TextButton>("G");
+    mixToggleButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    mixToggleButton_->setColour(juce::TextButton::buttonColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+    mixToggleButton_->setColour(juce::TextButton::textColourOffId,
+                                DarkTheme::getSecondaryTextColour());
+    mixToggleButton_->setTooltip("Slider: Gain (click for Wet/Dry Mix)");
+    mixToggleButton_->onClick = [this]() {
+        sliderMode_ = (sliderMode_ == SliderMode::Gain) ? SliderMode::Mix : SliderMode::Gain;
+        applySliderMode();
+    };
+    addChildComponent(*mixToggleButton_);
 
     // Sidechain button (only visible when plugin supports sidechain)
     scButton_ = std::make_unique<juce::TextButton>("SC");
@@ -1197,8 +1227,17 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setActive(!device.bypassed);
     gainLabel_.setValue(device.gainDb, juce::dontSendNotification);
-    if (gainSlider_)
-        gainSlider_->setValue(device.gainDb, juce::dontSendNotification);
+    if (sliderMode_ == SliderMode::Mix && !hasWrapperMixPair())
+        sliderMode_ = SliderMode::Gain;  // device lost its wrapper pair (reload etc.)
+    syncSliderFromDevice();
+    if (mixToggleButton_) {
+        const bool show = hasWrapperMixPair();
+        mixToggleButton_->setVisible(show);
+        if (!show && sliderMode_ != SliderMode::Gain) {
+            sliderMode_ = SliderMode::Gain;
+            applySliderMode();
+        }
+    }
 
     // Plugin instance may have just become available (or its program list changed
     // due to a state restore) — repopulate.
@@ -1359,7 +1398,7 @@ void DeviceSlotComponent::deviceGainStageChanged(magda::DeviceId deviceId,
         device_.gainDb = dev->gainDb;
         device_.gainValue = dev->gainValue;
         gainLabel_.setValue(dev->gainDb, juce::dontSendNotification);
-        if (gainSlider_ != nullptr)
+        if (gainSlider_ != nullptr && sliderMode_ == SliderMode::Gain)
             gainSlider_->setValue(dev->gainDb, juce::dontSendNotification);
     }
 
@@ -1504,7 +1543,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
              .modButton = modButton_.get(),
              .macroButton = macroButton_.get(),
              .uiButton = uiButton_.get(),
-             .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get()},
+             .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
+             .mixToggle = mixToggleButton_.get()},
             stripsAnalysisChrome() ? 0 : METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT)) {
         return;
     }
@@ -2823,6 +2863,68 @@ void DeviceSlotComponent::updateScButtonState() {
         scButton_->setColour(juce::TextButton::textColourOffId,
                              DarkTheme::getSecondaryTextColour());
     }
+}
+
+bool DeviceSlotComponent::hasWrapperMixPair() const {
+    bool dry = false, wet = false;
+    for (const auto& p : device_.wrapperParameters) {
+        if (p.wrapperRole == magda::WrapperRole::DryGain)
+            dry = true;
+        else if (p.wrapperRole == magda::WrapperRole::WetGain)
+            wet = true;
+    }
+    return dry && wet;
+}
+
+double DeviceSlotComponent::currentMixPosition() const {
+    // Derive crossfade position from current dry+wet wrapper values, so the
+    // slider reflects external edits (preset load, automation, native UI).
+    // pos = atan2(wet, dry) / (π/2) — inverse of cos/sin pair we write.
+    float dry = 1.0f, wet = 0.0f;
+    for (const auto& p : device_.wrapperParameters) {
+        if (p.wrapperRole == magda::WrapperRole::DryGain)
+            dry = p.currentValue;
+        else if (p.wrapperRole == magda::WrapperRole::WetGain)
+            wet = p.currentValue;
+    }
+    if (dry <= 0.0f && wet <= 0.0f)
+        return 0.0;
+    const double angle = std::atan2(static_cast<double>(wet), static_cast<double>(dry));
+    return juce::jlimit(0.0, 1.0, angle / juce::MathConstants<double>::halfPi);
+}
+
+void DeviceSlotComponent::syncSliderFromDevice() {
+    if (gainSlider_ == nullptr)
+        return;
+    if (sliderMode_ == SliderMode::Mix) {
+        gainSlider_->setValue(currentMixPosition(), juce::dontSendNotification);
+    } else {
+        gainSlider_->setValue(device_.gainDb, juce::dontSendNotification);
+    }
+}
+
+void DeviceSlotComponent::applySliderMode() {
+    if (gainSlider_ == nullptr)
+        return;
+
+    if (sliderMode_ == SliderMode::Mix) {
+        gainSlider_->setRange(0.0, 1.0, 0.001);
+        gainSlider_->setDoubleClickReturnValue(true, 1.0);  // fully wet on dbl-click
+        gainSlider_->setTooltip("Wet / Dry Mix (equal-power)");
+        if (mixToggleButton_) {
+            mixToggleButton_->setButtonText("M");
+            mixToggleButton_->setTooltip("Slider: Wet/Dry Mix (click for Gain)");
+        }
+    } else {
+        gainSlider_->setRange(-60.0, 12.0, 0.1);
+        gainSlider_->setDoubleClickReturnValue(true, 0.0);
+        gainSlider_->setTooltip("Device Gain (dB)");
+        if (mixToggleButton_) {
+            mixToggleButton_->setButtonText("G");
+            mixToggleButton_->setTooltip("Slider: Gain (click for Wet/Dry Mix)");
+        }
+    }
+    syncSliderFromDevice();
 }
 
 }  // namespace magda::daw::ui

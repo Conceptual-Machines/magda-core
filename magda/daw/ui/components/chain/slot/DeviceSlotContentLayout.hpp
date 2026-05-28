@@ -24,6 +24,11 @@ struct DeviceSlotContentFrameControls {
     juce::Component* macroButton = nullptr;
     juce::Component* uiButton = nullptr;
     juce::Component* powerButton = nullptr;
+    // Tiny G/M letter at the bottom of the meter strip that switches the
+    // slider between device-gain (G) and wrapper-dry/wet mix (M). Only set
+    // when the device has a Mix to switch to (i.e. wrapperParameters
+    // contains the DryGain+WetGain pair).
+    juce::Component* mixToggle = nullptr;
 };
 
 struct DeviceSlotContentBodyControls {

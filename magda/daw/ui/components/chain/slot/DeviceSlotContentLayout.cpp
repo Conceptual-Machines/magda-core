@@ -49,6 +49,19 @@ void layoutMeterStrip(juce::Rectangle<int>& contentArea, const DeviceSlotTraits&
     auto stripBounds = contentArea.removeFromRight(meterStripWidth).reduced(1, 3);
     contentArea.removeFromRight(4);
 
+    // Mix-mode toggle (tiny G/M letter) lives at the very bottom of the meter
+    // strip when the host wires one in. The meter and slider only see the area
+    // above it.
+    constexpr int kMixToggleHeight = 14;
+    if (controls.mixToggle != nullptr && controls.mixToggle->isVisible() &&
+        stripBounds.getHeight() > kMixToggleHeight + 4) {
+        controls.mixToggle->setBounds(stripBounds.removeFromBottom(kMixToggleHeight));
+        stripBounds.removeFromBottom(2);
+        controls.mixToggle->toFront(false);
+    } else if (controls.mixToggle != nullptr) {
+        controls.mixToggle->setVisible(false);
+    }
+
     const bool usesNoteStrip = isMidiUtility(traits);
     if (controls.levelMeter != nullptr) {
         controls.levelMeter->setBounds(stripBounds);
