@@ -13,6 +13,7 @@
 #include "../components/common/MixerDebugPanel.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../components/mixer/MasterChannelStrip.hpp"
+#include "../components/mixer/MiniChainRow.hpp"
 #include "../components/mixer/MixerToggleRail.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
@@ -200,6 +201,12 @@ class MixerView : public juce::Component,
         std::unique_ptr<daw::ui::OscilloscopeUI> miniOscilloscopeUI_;
         std::unique_ptr<daw::ui::SpectrumAnalyzerUI> miniSpectrumUI_;
         void refreshMiniAnalyzers();
+
+        // Mini FX chain: one MiniChainRow per top-level fx device on this
+        // track. Built from TrackInfo::chain.fxChainElements; nested racks
+        // collapse to a single row labelled with the rack name.
+        std::vector<std::unique_ptr<MiniChainRow>> miniChainRows_;
+        void rebuildMiniChainRows();
 
         // Send area resize handle
         class SendResizeHandle;

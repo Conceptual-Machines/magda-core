@@ -80,6 +80,14 @@ ParameterInfo ExternalPluginProcessor::getParameterInfo(int index) const {
     auto* param = params[static_cast<size_t>(index)];
     auto info = makeInfoFromTeParam(index, param);
 
+    // TE adds a slot-level Dry/Wet mix pair to every ExternalPlugin
+    // (PluginWetDryAutomatableParam, ids "dry level" / "wet level"). They
+    // are not the plugin's own parameters — hide them from MAGDA's grids
+    // and from the mini-chain rows. Underlying TE params stay addressable
+    // for automation / aliases / host writes via paramIndex.
+    if (param == ext->dryGain.get() || param == ext->wetGain.get())
+        info.hidden = true;
+
     // Live display text provider: all display paths (param grid, automation
     // lane, curve tooltip) query the plugin's valueToString() at call time
     // through a safe TrackManager -> AudioBridge -> Processor lookup. No

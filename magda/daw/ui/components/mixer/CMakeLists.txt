@@ -1,11 +1,13 @@
 target_sources(magda_daw_app PRIVATE
     MasterChannelStrip.cpp
     InputTypeSelector.cpp
+    MiniChainRow.cpp
     MixerToggleRail.cpp
     RoutingSelector.cpp
     MasterChannelStrip.hpp
     InputTypeSelector.hpp
     MidiNoteStrip.hpp
+    MiniChainRow.hpp
     MixerToggleRail.hpp
     RoutingSelector.hpp
 )

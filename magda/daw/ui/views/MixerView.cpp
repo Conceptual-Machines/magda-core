@@ -321,6 +321,10 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
                                       juce::dontSendNotification);
     }
 
+    // Sync mini FX chain rows from the track's chain elements
+    if (!isMaster_)
+        rebuildMiniChainRows();
+
     // Sync send slots
     if (!isMaster_) {
         bool sendsCountChanged = sendSlots_.size() != track.sends.size();
@@ -835,6 +839,34 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
     };
 }
 
+void MixerView::ChannelStrip::rebuildMiniChainRows() {
+    miniChainRows_.clear();
+    if (isMaster_)
+        return;
+    const auto* track = TrackManager::getInstance().getTrack(trackId_);
+    if (track == nullptr)
+        return;
+    for (const auto& element : track->chain.fxChainElements) {
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
+            auto row = std::make_unique<MiniChainRow>();
+            row->setDevice(trackId_, device.id, audioEngine_, device.name, device.bypassed);
+            row->onExpandChanged = [this]() {
+                if (auto* parent = findParentComponentOfClass<MixerView>())
+                    parent->relayoutAllStrips();
+            };
+            addAndMakeVisible(*row);
+            miniChainRows_.push_back(std::move(row));
+        } else if (isRack(element)) {
+            const auto& rack = getRack(element);
+            auto row = std::make_unique<MiniChainRow>();
+            row->setDevice(trackId_, INVALID_DEVICE_ID, audioEngine_, rack.name, false);
+            addAndMakeVisible(*row);
+            miniChainRows_.push_back(std::move(row));
+        }
+    }
+}
+
 void MixerView::ChannelStrip::refreshMiniAnalyzers() {
     if (isMaster_)
         return;
@@ -1127,10 +1159,11 @@ void MixerView::ChannelStrip::resized() {
 
     bool isMultiOut = trackType_ == TrackType::MultiOut;
 
-    // Mini analyzers (Oscilloscope / Spectrum) sit just below the header.
+    const auto& cfg = Config::getInstance();
+
+    // Mini analyzers (Oscilloscope / Spectrum) sit below the header.
     // Each takes a fixed compact height when its rail toggle is on.
     constexpr int miniAnalyzerHeight = 64;
-    const auto& cfg = Config::getInstance();
     const bool showOsc = cfg.getMixerShowOscilloscope();
     const bool showSpec = cfg.getMixerShowSpectrum();
     if (!isMaster_) {
@@ -1204,6 +1237,41 @@ void MixerView::ChannelStrip::resized() {
         // Breathing room between the sends area and the resize handle.
         if (sendsVisible)
             bounds.removeFromTop(6);
+
+        // Mini FX chain: shown between sends and the fader's top inset.
+        // Faders line up across strips by reserving the max total chain
+        // block height (sum of preferred heights, accounting for expanded
+        // rows) of any visible strip.
+        if (cfg.getMixerShowFxChain()) {
+            auto chainBlockHeight = [](const ChannelStrip& s) {
+                int h = 0;
+                for (const auto& r : s.miniChainRows_)
+                    h += r->preferredHeight() + 1;
+                return h;
+            };
+            int maxChainHeight = 0;
+            if (auto* parent = findParentComponentOfClass<MixerView>()) {
+                for (const auto& s : parent->channelStrips)
+                    maxChainHeight = std::max(maxChainHeight, chainBlockHeight(*s));
+            }
+            int myHeight = 0;
+            for (auto& row : miniChainRows_) {
+                const int h = row->preferredHeight();
+                row->setBounds(bounds.removeFromTop(h));
+                row->setVisible(true);
+                bounds.removeFromTop(1);
+                myHeight += h + 1;
+            }
+            const int pad = maxChainHeight - myHeight;
+            if (pad > 0)
+                bounds.removeFromTop(pad);
+            if (maxChainHeight > 0)
+                bounds.removeFromTop(4);
+        } else {
+            for (auto& row : miniChainRows_)
+                row->setVisible(false);
+        }
+
         bounds.removeFromTop(metrics.faderTopInset);
 
         if (sendResizeHandle_) {
