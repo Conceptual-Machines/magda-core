@@ -1499,7 +1499,7 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     // Push the new pluginState into the running plugin.
     if (audioEngine_) {
         if (auto* bridge = audioEngine_->getAudioBridge()) {
-            if (auto plugin = bridge->getPlugin(live->id)) {
+            if (auto plugin = bridge->getPlugin(devicePath)) {
                 if (auto* ext = dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin.get())) {
                     ext->state.setProperty(tracktion::engine::IDs::state, live->pluginState,
                                            nullptr);

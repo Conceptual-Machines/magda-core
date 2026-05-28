@@ -1293,7 +1293,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         // Connect to the plugin instance
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device.id);
+                auto plugin = bridge->getPlugin(devicePath_);
                 if (auto* cp = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
                     chordEngineUI_->setChordEngine(cp, magda::INVALID_TRACK_ID);
                     chordPlugin_ = cp;
@@ -1305,7 +1305,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         parent->addAndMakeVisible(*arpeggiatorUI_);
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device.id);
+                auto plugin = bridge->getPlugin(devicePath_);
                 if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
                     arpeggiatorUI_->setArpeggiator(arp);
                     arpPlugin_ = arp;
@@ -1317,7 +1317,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         parent->addAndMakeVisible(*stepSequencerUI_);
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device.id);
+                auto plugin = bridge->getPlugin(devicePath_);
                 if (auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get())) {
                     stepSequencerUI_->setPlugin(seq);
                     stepSeqPlugin_ = seq;
@@ -1329,7 +1329,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         parent->addAndMakeVisible(*oscilloscopeUI_);
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device.id);
+                auto plugin = bridge->getPlugin(devicePath_);
                 if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get())) {
                     oscilloscopeUI_->setPlugin(scope);
                 }
@@ -1341,7 +1341,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         parent->addAndMakeVisible(*spectrumAnalyzerUI_);
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device.id);
+                auto plugin = bridge->getPlugin(devicePath_);
                 if (auto* sa = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
                     spectrumAnalyzerUI_->setPlugin(sa);
                 }
@@ -1404,7 +1404,7 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
         if (audioEngine) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device.id);
+                auto plugin = bridge->getPlugin(devicePath_);
                 if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
                     auto file = sampler->getSampleFile();
                     if (file.existsAsFile())
@@ -1433,7 +1433,7 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
         if (audioEngine) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device.id);
+                auto plugin = bridge->getPlugin(devicePath_);
                 if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
                     for (int i = 0; i < daw::audio::DrumGridPlugin::maxPads; ++i) {
                         drumGridUI_->updatePadInfo(i, "", false, false, 0.0f, 0.0f, -1);
@@ -1478,7 +1478,7 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
         if (audioEngine) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device.id);
+                auto plugin = bridge->getPlugin(devicePath_);
                 if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
                     FourOscPluginState state;
                     for (int i = 0; i < 4; ++i) {
@@ -1543,7 +1543,7 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
         if (audioEngine) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device.id);
+                auto plugin = bridge->getPlugin(devicePath_);
                 if (auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get())) {
                     impulseResponseUI_->setIRName(ir->name.get());
                 }
