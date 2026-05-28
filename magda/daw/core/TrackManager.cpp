@@ -2144,6 +2144,16 @@ void TrackManager::refreshIdCountersFromTracks() {
         for (const auto& element : track.chain.fxChainElements) {
             scanChainElement(element, scanChainElement);
         }
+        // Flat sections (post-FX, mixer-analysis) hold DeviceInfo directly —
+        // also their ids count against the device-id pool.
+        for (const auto& elem : track.chain.postFxChainElements) {
+            maxDeviceId = std::max(maxDeviceId, elem.device.id);
+            scanEmbeddedDeviceIds(elem.device.pluginState, maxDeviceId);
+        }
+        for (const auto& elem : track.chain.mixerAnalysisElements) {
+            maxDeviceId = std::max(maxDeviceId, elem.device.id);
+            scanEmbeddedDeviceIds(elem.device.pluginState, maxDeviceId);
+        }
     }
 
     // Update counters to max + 1
