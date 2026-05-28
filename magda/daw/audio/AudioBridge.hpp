@@ -312,6 +312,25 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     te::Plugin::Ptr getPlugin(DeviceId deviceId) const;
 
     /**
+     * @brief Path-based lookup — preferred for new code. Resolves the live TE
+     * plugin behind the device referenced by `devicePath`. Sections are
+     * walked in the same way getDeviceInChainByPath() walks them.
+     */
+    te::Plugin::Ptr getPlugin(const ChainNodePath& devicePath) const;
+
+    /**
+     * @brief Convenience: resolve both the MAGDA DeviceInfo and the live TE
+     * plugin from a single path. Avoids two independent chain walks for
+     * callers (UI mainly) that need both. Either field may be nullptr if
+     * the device or its plugin isn't currently materialised.
+     */
+    struct ResolvedDevice {
+        DeviceInfo* info = nullptr;
+        te::Plugin::Ptr plugin;
+    };
+    ResolvedDevice resolveDevice(const ChainNodePath& devicePath) const;
+
+    /**
      * @brief Resolve any ControlTarget to its writable te::AutomatableParameter.
      *
      * Single dispatch site for the unified parameter addressing scheme — used

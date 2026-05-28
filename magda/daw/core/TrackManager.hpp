@@ -293,6 +293,9 @@ class TrackManager {
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device, int insertIndex);
     void removeDeviceFromTrack(TrackId trackId, DeviceId deviceId);
     void setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool bypassed);
+    // Path-based variant — preferred for new code; sections will become
+    // id-scoped, at which point the bare-id version goes away.
+    void setDeviceBypassedByPath(const ChainNodePath& devicePath, bool bypassed);
     void setChainBypassed(TrackId trackId, bool bypassed);
     DeviceInfo* getDevice(TrackId trackId, DeviceId deviceId);
 
@@ -403,6 +406,9 @@ class TrackManager {
 
     // Update device parameters (called by AudioBridge when processor is created)
     void updateDeviceParameters(DeviceId deviceId, const std::vector<ParameterInfo>& params);
+    // Path-based variant — preferred for new code.
+    void updateDeviceParametersByPath(const ChainNodePath& devicePath,
+                                      const std::vector<ParameterInfo>& params);
     void setDeviceVisibleParameters(DeviceId deviceId, const std::vector<int>& visibleParams);
 
     // Set a specific device parameter value in ParameterInfo model units,

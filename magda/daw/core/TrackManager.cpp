@@ -1463,6 +1463,13 @@ void TrackManager::setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool by
     }
 }
 
+void TrackManager::setDeviceBypassedByPath(const ChainNodePath& devicePath, bool bypassed) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        device->bypassed = bypassed;
+        notifyTrackDevicesChanged(devicePath.trackId);
+    }
+}
+
 void TrackManager::setChainBypassed(TrackId trackId, bool bypassed) {
     if (auto* track = getTrack(trackId)) {
         std::vector<DeviceId> affectedDevices;

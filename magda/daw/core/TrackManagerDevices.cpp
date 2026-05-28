@@ -1418,6 +1418,12 @@ void TrackManager::updateDeviceParameters(DeviceId deviceId,
     DBG("  -> NOT FOUND!");
 }
 
+void TrackManager::updateDeviceParametersByPath(const ChainNodePath& devicePath,
+                                                const std::vector<ParameterInfo>& params) {
+    if (auto* device = getDeviceInChainByPath(devicePath))
+        device->parameters = params;
+}
+
 void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
                                               const std::vector<int>& visibleParams) {
     // Check master track first
