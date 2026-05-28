@@ -330,6 +330,14 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     };
     ResolvedDevice resolveDevice(const ChainNodePath& devicePath) const;
 
+    // Path-based variants of the plugin-window methods. Forward through to
+    // the bare-id versions for now; PluginWindowManager rekeys to paths in
+    // stage 4 of the section-scoped device-id refactor.
+    void showPluginWindow(const ChainNodePath& devicePath);
+    void hidePluginWindow(const ChainNodePath& devicePath);
+    bool isPluginWindowOpen(const ChainNodePath& devicePath) const;
+    bool togglePluginWindow(const ChainNodePath& devicePath);
+
     /**
      * @brief Resolve any ControlTarget to its writable te::AutomatableParameter.
      *

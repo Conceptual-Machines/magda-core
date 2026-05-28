@@ -361,7 +361,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
         if (audioEngine) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
-                bool isOpen = bridge->togglePluginWindow(device_.id);
+                bool isOpen = bridge->togglePluginWindow(nodePath_);
                 uiButton_->setToggleState(isOpen, juce::dontSendNotification);
                 uiButton_->setActive(isOpen);
                 learnButton_->setEnabled(isOpen);
@@ -811,7 +811,7 @@ void DeviceSlotComponent::timerCallback() {
         // Analysis devices use the popout AnalyzerWindow, not a native plugin window.
         const bool isOpen = magda::isAnalysisDevice(device_.pluginId)
                                 ? (analyzerWindow_ != nullptr && analyzerWindow_->isVisible())
-                                : bridge->isPluginWindowOpen(device_.id);
+                                : bridge->isPluginWindowOpen(nodePath_);
         bool currentState = uiButton_->getToggleState();
 
         // Only update if state changed to avoid unnecessary repaints
@@ -2036,7 +2036,7 @@ void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
             toggleAnalyzerWindow();
         } else if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
-                bool isOpen = bridge->togglePluginWindow(device_.id);
+                bool isOpen = bridge->togglePluginWindow(nodePath_);
                 uiButton_->setToggleState(isOpen, juce::dontSendNotification);
                 uiButton_->setActive(isOpen);
             }

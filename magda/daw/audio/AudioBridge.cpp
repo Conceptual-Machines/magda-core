@@ -1279,6 +1279,22 @@ bool AudioBridge::togglePluginWindow(DeviceId deviceId) {
     return false;
 }
 
+void AudioBridge::showPluginWindow(const ChainNodePath& devicePath) {
+    showPluginWindow(devicePath.getDeviceId());
+}
+
+void AudioBridge::hidePluginWindow(const ChainNodePath& devicePath) {
+    hidePluginWindow(devicePath.getDeviceId());
+}
+
+bool AudioBridge::isPluginWindowOpen(const ChainNodePath& devicePath) const {
+    return isPluginWindowOpen(devicePath.getDeviceId());
+}
+
+bool AudioBridge::togglePluginWindow(const ChainNodePath& devicePath) {
+    return togglePluginWindow(devicePath.getDeviceId());
+}
+
 bool AudioBridge::loadSamplerSample(DeviceId deviceId, const juce::File& file) {
     return samplerFileLoader_.loadSample(deviceId, file);
 }
