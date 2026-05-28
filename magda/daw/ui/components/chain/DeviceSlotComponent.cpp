@@ -1006,7 +1006,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     refreshControllerIndicators();
 
     // Update MIDI custom UIs with the now-valid trackId (createCustomUI runs before setNodePath).
-    bindDeviceSlotMidiCustomUIs(customUI_, device_.id, nodePath_);
+    bindDeviceSlotMidiCustomUIs(customUI_, nodePath_);
 }
 
 int DeviceSlotComponent::getCustomUITabIndex() const {

@@ -13,7 +13,7 @@
 
 namespace magda::daw::ui {
 
-void bindDeviceSlotMidiCustomUIs(DeviceCustomUIManager& customUI, magda::DeviceId deviceId,
+void bindDeviceSlotMidiCustomUIs(DeviceCustomUIManager& customUI,
                                  const magda::ChainNodePath& nodePath) {
     if (nodePath.trackId == magda::INVALID_TRACK_ID)
         return;

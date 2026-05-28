@@ -63,8 +63,10 @@ juce::String getEnvVar(const char* name) {
 struct ProjectTestFixture {
     std::vector<juce::File> tempFiles;
     std::vector<juce::File> tempDirs;
+    bool previousPersistMixerAnalysis = false;
 
-    ProjectTestFixture() {
+    ProjectTestFixture()
+        : previousPersistMixerAnalysis(Config::getInstance().getPersistMixerAnalysis()) {
         // Clear all singleton state before each test
         TrackManager::getInstance().clearAllTracks();
         ClipManager::getInstance().clearAllClips();
@@ -90,6 +92,7 @@ struct ProjectTestFixture {
         TrackManager::getInstance().clearAllTracks();
         ClipManager::getInstance().clearAllClips();
         AutomationManager::getInstance().clearAll();
+        Config::getInstance().setPersistMixerAnalysis(previousPersistMixerAnalysis);
     }
 
     // Helper to create unique temp file with automatic cleanup
@@ -1323,6 +1326,93 @@ TEST_CASE("DeviceInfo panel UI state roundtrip", "[project][serialization][devic
     REQUIRE(loaded.paramPanelOpen);
     REQUIRE(loaded.aiPanelOpen);
     REQUIRE(loaded.aiPanelOutput.isEmpty());
+}
+
+TEST_CASE("Section-scoped device ids survive project roundtrip",
+          "[project][serialization][devices]") {
+    ProjectTestFixture fixture;
+    Config::getInstance().setPersistMixerAnalysis(true);
+
+    auto& trackManager = TrackManager::getInstance();
+    auto trackId = trackManager.createTrack("Section IDs", TrackType::Audio);
+
+    DeviceInfo fx;
+    fx.name = "FX";
+    fx.pluginId = "fx";
+    DeviceInfo post;
+    post.name = "Post";
+    post.pluginId = "post";
+    DeviceInfo analysis;
+    analysis.name = "Analysis";
+    analysis.pluginId = "oscilloscope";
+
+    REQUIRE(trackManager.addDeviceToTrack(trackId, fx) == 1);
+    REQUIRE(trackManager.addDeviceToPostFx(trackId, post) == 1);
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(trackId, analysis) == 1);
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+
+    ProjectInfo loadedInfo;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
+
+    auto* loadedTrack = trackManager.getTrack(trackId);
+    REQUIRE(loadedTrack != nullptr);
+    REQUIRE(loadedTrack->chain.fxChainElements.size() == 1);
+    REQUIRE(loadedTrack->chain.postFxChainElements.size() == 1);
+    REQUIRE(loadedTrack->chain.mixerAnalysisElements.size() == 1);
+    REQUIRE(getDevice(loadedTrack->chain.fxChainElements[0]).id == 1);
+    REQUIRE(loadedTrack->chain.postFxChainElements[0].device.id == 1);
+    REQUIRE(loadedTrack->chain.mixerAnalysisElements[0].device.id == 1);
+
+    fx.name = "FX 2";
+    post.name = "Post 2";
+    analysis.name = "Spectrum";
+    analysis.pluginId = "spectrumanalyzer";
+
+    REQUIRE(trackManager.addDeviceToTrack(trackId, fx) == 2);
+    REQUIRE(trackManager.addDeviceToPostFx(trackId, post) == 2);
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(trackId, analysis) == 2);
+}
+
+TEST_CASE("Automation target keeps section path when device ids overlap",
+          "[project][serialization][automation]") {
+    ProjectTestFixture fixture;
+
+    auto& trackManager = TrackManager::getInstance();
+    auto& automationManager = AutomationManager::getInstance();
+    auto trackId = trackManager.createTrack("Automation Section IDs", TrackType::Audio);
+
+    DeviceInfo fx;
+    fx.name = "FX";
+    fx.pluginId = "fx";
+    DeviceInfo post;
+    post.name = "Post";
+    post.pluginId = "post";
+
+    auto fxId = trackManager.addDeviceToTrack(trackId, fx);
+    auto postId = trackManager.addDeviceToPostFx(trackId, post);
+    REQUIRE(fxId == 1);
+    REQUIRE(postId == 1);
+
+    const auto fxPath = ChainNodePath::topLevelDevice(trackId, fxId);
+    const auto postFxPath = ChainNodePath::postFxDevice(trackId, postId);
+    const auto laneId = automationManager.createLane(ControlTarget::pluginParam(postFxPath, 0),
+                                                     AutomationLaneType::Absolute);
+    REQUIRE(laneId != INVALID_AUTOMATION_LANE_ID);
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+
+    ProjectInfo loadedInfo;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
+
+    const auto& lanes = automationManager.getLanes();
+    REQUIRE(lanes.size() == 1);
+    REQUIRE(lanes[0].target.devicePath == postFxPath);
+    REQUIRE(lanes[0].target.devicePath != fxPath);
+    REQUIRE(lanes[0].target.devicePath.isPostFx());
+    REQUIRE(lanes[0].target.deviceId() == 1);
 }
 
 TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][parameter]") {
