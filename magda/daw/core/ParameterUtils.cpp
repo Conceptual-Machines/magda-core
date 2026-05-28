@@ -433,9 +433,10 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
 
     // Sampled value table fallback (from ParameterConfigDialog or legacy).
     if (!info.valueTable.empty()) {
+        const float normalized = realToNormalized(realValue, info);
         int idx =
             juce::jlimit(0, static_cast<int>(info.valueTable.size()) - 1,
-                         static_cast<int>(std::round(realValue * (info.valueTable.size() - 1))));
+                         static_cast<int>(std::round(normalized * (info.valueTable.size() - 1))));
         auto text = info.valueTable[static_cast<size_t>(idx)].trim();
         if (text.isNotEmpty())
             return text;

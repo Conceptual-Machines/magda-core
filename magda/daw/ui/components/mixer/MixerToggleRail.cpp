@@ -32,8 +32,8 @@ MixerToggleRail::MixerToggleRail() {
                 BinaryData::spectrum_svgSize, "Show mini spectrum", cfg.getMixerShowSpectrum(),
                 [](bool v) { Config::getInstance().setMixerShowSpectrum(v); });
 
-    setupButton(fxChainButton_, "MixerShowFxChain", BinaryData::rack_svg, BinaryData::rack_svgSize,
-                "Show mini FX chain", cfg.getMixerShowFxChain(),
+    setupButton(fxChainButton_, "MixerShowFxChain", BinaryData::fxchain_svg,
+                BinaryData::fxchain_svgSize, "Show mini FX chain", cfg.getMixerShowFxChain(),
                 [](bool v) { Config::getInstance().setMixerShowFxChain(v); });
 }
 

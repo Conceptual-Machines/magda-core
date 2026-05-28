@@ -225,6 +225,12 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         updateLabel();
     }
 
+    void clearValueFormatter() {
+        valueFormatter_ = nullptr;
+        hasExplicitFormatter_ = false;
+        updateLabel();
+    }
+
     // Custom value parser - takes user input string, returns the slider's real value.
     void setValueParser(std::function<double(const juce::String&)> parser) {
         valueParser_ = std::move(parser);

@@ -10,22 +10,13 @@
 namespace magda::daw::ui {
 
 void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& info) {
+    slider.clearValueFormatter();
     slider.setParameterInfo(info);
 
-    // Live plugin display text — exact values, no quantization.
-    //
     // DisplayTextProvider::format is a thin wrapper around TE's
     // valueToString, so the argument MUST be a plugin-native (TE raw)
-    // value. The generic slot slider operates in MAGDA-normalized 0..1
-    // space; project back to the TE range, honouring any scaleAnchor /
-    // log skew when info.min/max match the TE range (internal plugins
-    // and VSTs without AI-Detect). For external VSTs with an AI-Detect
-    // display range the info differs from TE, in which case
-    // normalizedToReal would return a display-range value — fall back
-    // to a linear projection onto TE there so the provider still sees
-    // the native value. This mirrors
-    // AutomationPlaybackEngine::convertMagdaNormalizedToTeRaw and
-    // DeviceSlotComponent::automationValueChanged.
+    // value. For text entry, project from MAGDA-normalized samples back
+    // to TE raw so typed plugin display values can be matched by probing.
     if (info.displayText) {
         auto provider = info.displayText;
         const magda::ParameterInfo infoCopy = info;
@@ -41,11 +32,6 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
             }
             return teMin + static_cast<float>(normalized) * teSpan;
         };
-        slider.setValueFormatter([provider, projectToTe, infoCopy](double real) {
-            const float normalized =
-                magda::ParameterUtils::realToNormalized(static_cast<float>(real), infoCopy);
-            return provider->format(projectToTe(normalized));
-        });
         // Reverse-lookup parser: strip unit suffix, parse number, find closest
         // normalized value by querying the plugin at sample points.
         slider.setValueParser([provider, projectToTe,
@@ -74,15 +60,8 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
         return;
     }
 
-    // If we have a full value table from the plugin, use it directly
+    // If we have a full value table from the plugin, use it for text entry.
     if (!info.valueTable.empty()) {
-        slider.setValueFormatter([vt = info.valueTable, infoCopy = info](double real) {
-            const float normalized =
-                magda::ParameterUtils::realToNormalized(static_cast<float>(real), infoCopy);
-            int idx = juce::jlimit(0, static_cast<int>(vt.size()) - 1,
-                                   static_cast<int>(std::round(normalized * (vt.size() - 1))));
-            return vt[static_cast<size_t>(idx)].trim();
-        });
         // Reverse-lookup parser: strip any unit suffix, parse the number,
         // then find the closest value table entry by numeric distance.
         slider.setValueParser(

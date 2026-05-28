@@ -7,6 +7,9 @@ namespace magda::daw::ui {
 
 void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
                        const ParamLinkMenuCallbacks& callbacks) {
+    if (ctx.devicePath.isPostFx())
+        return;
+
     juce::PopupMenu menu;
 
     magda::ControlTarget thisTarget =
