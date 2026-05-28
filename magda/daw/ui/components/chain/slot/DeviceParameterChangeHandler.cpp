@@ -53,21 +53,22 @@ void updateCachedParameterValue(magda::DeviceInfo& device, int paramIndex, float
         it->currentValue = newValue;
 }
 
-bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device, magda::DeviceId deviceId,
-                                     int changedParamIndex, ParamHostComponent& paramGrid) {
+bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device,
+                                     const magda::ChainNodePath& devicePath, int changedParamIndex,
+                                     ParamHostComponent& paramGrid) {
     int modeSlot = -1;
     bool layoutNeedsRefresh = false;
 
     if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
         if (auto* bridge = audioEngine->getAudioBridge()) {
-            auto plugin = bridge->getPlugin(deviceId);
+            auto plugin = bridge->getPlugin(devicePath);
             daw::audio::compiled::ICompiledFaustPlugin* compiled = nullptr;
             compiled = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin.get());
             if (compiled != nullptr)
                 modeSlot = compiled->engineAwareModeSlot();
 
             if (compiled != nullptr) {
-                if (auto* proc = bridge->getDeviceProcessor(deviceId)) {
+                if (auto* proc = bridge->getDeviceProcessor(devicePath.getDeviceId())) {
                     for (int slotIndex = 0; slotIndex < compiled->hostSlotCount(); ++slotIndex) {
                         if (auto paramIt = findParameterInfo(device, slotIndex);
                             paramIt != device.parameters.end()) {

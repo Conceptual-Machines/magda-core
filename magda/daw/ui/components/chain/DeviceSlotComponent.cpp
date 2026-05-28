@@ -847,7 +847,7 @@ void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int p
     updateCachedParameterValue(device_, paramIndex, newValue);
 
     if (traits_.compiledPresentation &&
-        refreshEngineAwareCompiledSlots(device_, device_.id, paramIndex, *paramGrid_)) {
+        refreshEngineAwareCompiledSlots(device_, nodePath_, paramIndex, *paramGrid_)) {
         updateParameterSlots();
         updateParamModulation();
     }
@@ -1315,7 +1315,7 @@ void DeviceSlotComponent::updateParamModulation() {
     if (compiledPanel_) {
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device_.id);
+                auto plugin = bridge->getPlugin(nodePath_);
                 compiledPanel_->bindPlugin(plugin.get());
             }
         }
@@ -1847,7 +1847,7 @@ void DeviceSlotComponent::updateParameterSlots() {
             magda::TrackManager::getInstance().setDeviceParameterValue(self->nodePath_, paramIndex,
                                                                        static_cast<float>(value));
             if (self->traits_.compiledPresentation &&
-                refreshEngineAwareCompiledSlots(self->device_, self->device_.id, paramIndex,
+                refreshEngineAwareCompiledSlots(self->device_, self->nodePath_, paramIndex,
                                                 *self->paramGrid_)) {
                 self->updateParameterSlots();
                 self->updateParamModulation();
@@ -1998,7 +1998,7 @@ void DeviceSlotComponent::toggleAnalyzerWindow() {
     auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
     if (bridge == nullptr)
         return;
-    auto plugin = bridge->getPlugin(device_.id);
+    auto plugin = bridge->getPlugin(nodePath_);
     std::unique_ptr<juce::Component> content;
     if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get())) {
         auto ui = std::make_unique<OscilloscopeUI>();
