@@ -6,4 +6,6 @@ target_sources(magda_daw PRIVATE
     TimelineState.hpp
     TimelineEvents.hpp
     TimelineController.hpp
+    KeyMappingStore.cpp
+    KeyMappingStore.hpp
 )

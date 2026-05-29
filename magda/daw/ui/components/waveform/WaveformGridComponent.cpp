@@ -1074,10 +1074,11 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
         // Shift + click inside waveform = zoom (instead of adding warp marker)
         if (shiftHeld && isInsideWaveform(x, *clip)) {
             dragMode_ = DragMode::Zoom;
+            zoomDragStartX_ = x;
             zoomDragStartY_ = event.y;
             zoomDragAnchorX_ = x;  // already viewport-relative (component is viewport-sized)
             if (onZoomDrag)
-                onZoomDrag(0, zoomDragAnchorX_);  // Signal drag start
+                onZoomDrag(0, 0, zoomDragAnchorX_, event.mods);  // Signal drag start
             return;
         }
 
@@ -1163,10 +1164,11 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     // branch's shift+inside-waveform → zoom precedence above.
     if (shiftHeld && isInsideWaveform(x, *clip)) {
         dragMode_ = DragMode::Zoom;
+        zoomDragStartX_ = x;
         zoomDragStartY_ = event.y;
         zoomDragAnchorX_ = x;
         if (onZoomDrag)
-            onZoomDrag(0, zoomDragAnchorX_);
+            onZoomDrag(0, 0, zoomDragAnchorX_, event.mods);
         return;
     }
 
@@ -1181,10 +1183,11 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     } else if (isInsideWaveform(x, *clip)) {
         // Inside waveform but not near edges — zoom drag
         dragMode_ = DragMode::Zoom;
+        zoomDragStartX_ = x;
         zoomDragStartY_ = event.y;
         zoomDragAnchorX_ = x;  // already viewport-relative (component is viewport-sized)
         if (onZoomDrag)
-            onZoomDrag(0, zoomDragAnchorX_);  // Signal drag start
+            onZoomDrag(0, 0, zoomDragAnchorX_, event.mods);  // Signal drag start
         return;
     } else {
         dragMode_ = DragMode::None;
@@ -1236,14 +1239,16 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
 
     // Zoom drag
     if (dragMode_ == DragMode::Zoom) {
-        int deltaY = zoomDragStartY_ - event.y;
-        if (deltaY > 0) {
+        const int deltaX = event.x - zoomDragStartX_;
+        const int deltaY = zoomDragStartY_ - event.y;
+        const int cursorDelta = std::abs(deltaX) > std::abs(deltaY) ? deltaX : deltaY;
+        if (cursorDelta > 0) {
             setMouseCursor(magda::CursorManager::getInstance().getZoomInCursor());
-        } else if (deltaY < 0) {
+        } else if (cursorDelta < 0) {
             setMouseCursor(magda::CursorManager::getInstance().getZoomOutCursor());
         }
         if (onZoomDrag) {
-            onZoomDrag(deltaY, zoomDragAnchorX_);
+            onZoomDrag(deltaX, deltaY, zoomDragAnchorX_, event.mods);
         }
         return;
     }

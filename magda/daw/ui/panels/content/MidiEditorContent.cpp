@@ -41,6 +41,7 @@ void VerticalZoomStrip::paint(juce::Graphics& g) {
 }
 
 void VerticalZoomStrip::mouseDown(const juce::MouseEvent& event) {
+    mouseDownX_ = event.x;
     mouseDownY_ = event.y;
     startValue_ = juce::jlimit(minValue_, maxValue_, getValue ? getValue() : minValue_);
     lastSentValue_ = startValue_;
@@ -49,17 +50,25 @@ void VerticalZoomStrip::mouseDown(const juce::MouseEvent& event) {
 }
 
 void VerticalZoomStrip::mouseDrag(const juce::MouseEvent& event) {
-    const int yDelta = mouseDownY_ - event.y;
-    if (std::abs(yDelta) > 3)
+    const int deltaX = event.x - mouseDownX_;
+    const int deltaY = mouseDownY_ - event.y;
+    const auto axis = std::abs(deltaX) > std::abs(deltaY) ? magda::GestureAxis::Horizontal
+                                                          : magda::GestureAxis::Vertical;
+    const int dragDelta = axis == magda::GestureAxis::Horizontal ? deltaX : deltaY;
+    if (std::abs(dragDelta) > 3)
         dragging_ = true;
 
     if (!dragging_)
         return;
 
-    const double sensitivity = 30.0;
-    const double exponent = static_cast<double>(yDelta) / sensitivity;
-    const int rawValue =
-        static_cast<int>(std::round(static_cast<double>(startValue_) * std::pow(2.0, exponent)));
+    const auto gesture = magda::GestureRouter::getInstance().resolveDrag(
+        gestureContext_, magda::GestureArea::ZoomStrip, axis, event.mods,
+        static_cast<float>(dragDelta), {mouseDownX_, mouseDownY_});
+    if (gesture.type != magda::GestureActionType::ZoomVertical)
+        return;
+
+    const int rawValue = static_cast<int>(
+        std::round(static_cast<double>(startValue_) * std::pow(2.0, gesture.magnitude)));
     const int newValue = juce::jlimit(minValue_, maxValue_, rawValue);
     if (newValue == lastSentValue_)
         return;

@@ -13,6 +13,7 @@
 #include "../components/tracks/TrackHeadersPanel.hpp"
 #include "../layout/LayoutConfig.hpp"
 #include "../state/TimelineController.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 
@@ -274,6 +275,11 @@ class MainView : public juce::Component,
 
     // Helper methods
     void updateContentSizes();
+    // Translate a resolved arrangement mouse-gesture (#21 GestureRouter) into
+    // the corresponding TimelineController / viewport action.
+    void dispatchArrangementGesture(const ResolvedGesture& gesture);
+    // Apply a new vertical track-height zoom multiplier and resync the panels.
+    void applyVerticalZoom(double newVerticalZoom);
     void syncHorizontalScrolling();
     void syncTrackHeights();
     void setupTrackSynchronization();

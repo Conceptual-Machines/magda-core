@@ -6,6 +6,8 @@
 #include <functional>
 #include <set>
 
+#include "core/GestureRouter.hpp"
+
 namespace magda {
 
 /**
@@ -56,6 +58,7 @@ class PianoRollKeyboard : public juce::Component {
     int mouseDownX_ = 0;
     int mouseDownY_ = 0;
     int lastDragY_ = 0;
+    GestureAxis dragGestureAxis_ = GestureAxis::Horizontal;
     int zoomStartHeight_ = 0;
     int zoomAnchorNote_ = 0;
     static constexpr int DRAG_THRESHOLD = 3;

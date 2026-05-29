@@ -56,8 +56,19 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     // nullopt to clear the filter. Re-runs the search.
     void setKindFilter(std::optional<std::string> kind);
 
-    // Fired when the user clicks a result row.
+    // Fired when the user clicks a result row OR selects a different row
+    // via the keyboard. The parent uses this to drive audition / autoplay,
+    // so keyboard nav (UP/DOWN/PgUp/PgDn/Home/End) needs to fire it too —
+    // not only mouse clicks. See ResultsTable::keyPressed.
     std::function<void(const juce::File&)> onFileSelected;
+
+    // Keyboard transport hooks for the results list (issue #1339):
+    //   LEFT  arrow → onPreviewStopRequest  (stop the current preview)
+    //   RIGHT arrow → onPreviewReplayRequest (restart preview from 0)
+    // Parent (MediaExplorerContent) owns the audio transport, so these
+    // bubble out instead of being handled here.
+    std::function<void()> onPreviewStopRequest;
+    std::function<void()> onPreviewReplayRequest;
 
     // Indexing-progress callbacks. Empty string in onIndexingStatus means
     // "no indexing in progress" — the parent component uses these to
@@ -90,12 +101,28 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
             juce::TableListBox::selectedRowsChanged(row);
         }
 
+        // Keyboard handling for issue #1339 — make UP/DOWN navigation
+        // audition the highlighted row (the model's cellClicked path only
+        // fires on mouse) and bind LEFT/RIGHT to stop / replay-from-zero.
+        // We intercept *after* the base class moves the selection so we
+        // can read the post-move row, and only fire when the row actually
+        // changed (avoids re-trigger when arrowing past the list edge).
+        bool keyPressed(const juce::KeyPress& key) override;
+
         void syncSelectionSnapshot() {
             lastKnownSelection_ = getSelectedRows();
             preClickSelection_ = lastKnownSelection_;
         }
 
         juce::SparseSet<int> preClickSelection_;
+
+        // Wired from MediaDbBrowserContent ctor. Fired with the new row
+        // index after a keyboard nav key changes the selection.
+        std::function<void(int row)> onKeyboardRowSelected;
+        // Wired from MediaDbBrowserContent ctor; forwarded to the parent
+        // browser's transport via the public onPreviewStop/Replay hooks.
+        std::function<void()> onStopRequest;
+        std::function<void()> onReplayRequest;
 
       private:
         juce::SparseSet<int> lastKnownSelection_;
