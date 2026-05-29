@@ -18,6 +18,17 @@
 
 namespace magda::media {
 
+// True when the build includes the ONNX-backed CLAP encoders (semantic
+// text→audio search, zero-shot tagging). Currently false on Intel macOS;
+// see CMakeLists.txt for the gate.
+constexpr bool clapBackendAvailable() noexcept {
+#if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
+    return true;
+#else
+    return false;
+#endif
+}
+
 class MediaDatabase;
 class ClapAudioEncoder;
 class ClapTextEncoder;

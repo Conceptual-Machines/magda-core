@@ -618,27 +618,31 @@ int TrackContentPanel::getTrackYPosition(int trackIndex) const {
 
 void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lane*/,
                                        juce::Rectangle<int> area, bool isSelected, int trackIndex) {
+    auto paintArea = area.getIntersection(g.getClipBounds());
+    if (paintArea.isEmpty())
+        return;
+
     // Background (semi-transparent to let grid show through)
     auto bgColour = isSelected ? DarkTheme::getColour(DarkTheme::TRACK_SELECTED)
                                : DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
     g.setColour(bgColour.withAlpha(0.7f));
-    g.fillRect(area);
+    g.fillRect(paintArea);
 
     // Border (horizontal separators between tracks)
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawRect(area, 1);
+    g.drawRect(paintArea, 1);
 
     // Frozen overlay
     if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
         auto* trackInfo = TrackManager::getInstance().getTrack(visibleTrackIds_[trackIndex]);
         if (trackInfo && trackInfo->frozen) {
             g.setColour(juce::Colours::black.withAlpha(0.25f));
-            g.fillRect(area);
+            g.fillRect(paintArea);
         }
         // Session mode overlay — dim track lane when in Session mode
         if (trackInfo && trackInfo->playbackMode == TrackPlaybackMode::Session) {
             g.setColour(juce::Colours::black.withAlpha(0.25f));
-            g.fillRect(area);
+            g.fillRect(paintArea);
         }
 
         // Group extent indicator — show the time range covered by all child clips
@@ -653,14 +657,17 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lan
                 int x2 = timeToPixel(latest);
                 auto extentArea =
                     juce::Rectangle<int>(x1, area.getY() + 2, x2 - x1, area.getHeight() - 4);
+                auto visibleExtentArea = extentArea.getIntersection(g.getClipBounds());
+                if (visibleExtentArea.isEmpty())
+                    return;
 
                 // Subtle filled background
                 g.setColour(juce::Colours::white.withAlpha(0.06f));
-                g.fillRoundedRectangle(extentArea.toFloat(), 3.0f);
+                g.fillRoundedRectangle(visibleExtentArea.toFloat(), 3.0f);
 
                 // Outline
                 g.setColour(juce::Colours::white.withAlpha(0.15f));
-                g.drawRoundedRectangle(extentArea.toFloat(), 3.0f, 1.0f);
+                g.drawRoundedRectangle(visibleExtentArea.toFloat(), 3.0f, 1.0f);
             }
         }
     }
@@ -932,8 +939,18 @@ double TrackContentPanel::pixelToBeats(int pixel) const {
     return 0.0;
 }
 
+double TrackContentPanel::secondsToBeats(double timeInSeconds) const {
+    return timeInSeconds * tempoBPM / 60.0;
+}
+
+double TrackContentPanel::beatsToSeconds(double beats) const {
+    if (tempoBPM > 0)
+        return beats * 60.0 / tempoBPM;
+    return 0.0;
+}
+
 int TrackContentPanel::timeToPixel(double time) const {
-    return beatsToPixel(time * tempoBPM / 60.0);
+    return beatsToPixel(secondsToBeats(time));
 }
 
 int TrackContentPanel::getTrackIndexAtY(int y) const {
@@ -961,9 +978,9 @@ bool TrackContentPanel::isOnExistingSelection(int x, int y) const {
         return false;
     }
 
-    // Check horizontal bounds (time-based)
-    double clickTime = pixelToTime(x);
-    if (clickTime < selection.startTime || clickTime > selection.endTime) {
+    // Check horizontal bounds in the timeline's native beat domain.
+    double clickBeats = pixelToBeats(x);
+    if (clickBeats < selection.startBeats || clickBeats > selection.endBeats) {
         return false;
     }
 
@@ -995,8 +1012,8 @@ bool TrackContentPanel::isOnSelectionEdge(int x, int y, bool& isLeftEdge) const 
 
     // Check if mouse is near the edges (within EDGE_THRESHOLD pixels)
     static constexpr int EDGE_THRESHOLD = 8;
-    int startX = timeToPixel(selection.startTime);
-    int endX = timeToPixel(selection.endTime);
+    int startX = beatsToPixel(selection.startBeats);
+    int endX = beatsToPixel(selection.endBeats);
 
     if (std::abs(x - startX) <= EDGE_THRESHOLD) {
         isLeftEdge = true;
@@ -1117,8 +1134,8 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             isCreatingSelection = false;
             isMovingSelection = false;
             SelectionManager::getInstance().clearSelection();
-            if (onTimeSelectionChanged)
-                onTimeSelectionChanged(-1.0, -1.0, {});
+            if (onTimeSelectionBeatsChanged)
+                onTimeSelectionBeatsChanged(-1.0, -1.0, {});
             repaintVisible();
             grabKeyboardFocus();
             return;
@@ -1141,8 +1158,8 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
         // Clear time selection when clicking in upper zone outside the selection area
         if (timelineController && timelineController->getState().selection.isActive()) {
             if (!isOnExistingSelection(event.x, event.y)) {
-                if (onTimeSelectionChanged) {
-                    onTimeSelectionChanged(-1.0, -1.0, {});
+                if (onTimeSelectionBeatsChanged) {
+                    onTimeSelectionBeatsChanged(-1.0, -1.0, {});
                 }
             }
         }
@@ -1225,8 +1242,8 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             // Clicked outside time selection in lower zone - clear it and start new one
             if (timelineController && timelineController->getState().selection.isActive()) {
                 // Clear existing time selection
-                if (onTimeSelectionChanged) {
-                    onTimeSelectionChanged(-1.0, -1.0, {});
+                if (onTimeSelectionBeatsChanged) {
+                    onTimeSelectionBeatsChanged(-1.0, -1.0, {});
                 }
             }
             // Prepare for new time selection
@@ -1275,8 +1292,9 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
         }
 
         // Update time selection visually
-        if (onTimeSelectionChanged) {
-            onTimeSelectionChanged(newStart, newEnd, moveSelectionOriginalTracks);
+        if (onTimeSelectionBeatsChanged) {
+            onTimeSelectionBeatsChanged(secondsToBeats(newStart), secondsToBeats(newEnd),
+                                        moveSelectionOriginalTracks);
         }
     } else if (isMovingSelection) {
         // Split clips at selection boundaries on first drag motion
@@ -1320,8 +1338,9 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
         moveClipsWithTimeSelection(deltaTime);
 
         // Notify about selection change (preserve original track indices)
-        if (onTimeSelectionChanged) {
-            onTimeSelectionChanged(newStart, newEnd, moveSelectionOriginalTracks);
+        if (onTimeSelectionBeatsChanged) {
+            onTimeSelectionBeatsChanged(secondsToBeats(newStart), secondsToBeats(newEnd),
+                                        moveSelectionOriginalTracks);
         }
     } else if (isMarqueeActive_) {
         // Already in marquee mode - continue updating
@@ -1391,13 +1410,15 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
         }
 
         // Notify about selection change
-        if (onTimeSelectionChanged) {
+        if (onTimeSelectionBeatsChanged) {
             double start = juce::jmin(selectionStartTime, selectionEndTime);
             double end = juce::jmax(selectionStartTime, selectionEndTime);
-            if (!automationLaneIds.empty() && onMixedTimeSelectionChanged) {
-                onMixedTimeSelectionChanged(start, end, trackIndices, automationLaneIds);
+            if (!automationLaneIds.empty() && onMixedTimeSelectionBeatsChanged) {
+                onMixedTimeSelectionBeatsChanged(secondsToBeats(start), secondsToBeats(end),
+                                                 trackIndices, automationLaneIds);
             } else {
-                onTimeSelectionChanged(start, end, trackIndices);
+                onTimeSelectionBeatsChanged(secondsToBeats(start), secondsToBeats(end),
+                                            trackIndices);
             }
         }
     }
@@ -1501,8 +1522,9 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         }
 
         // Update time selection to reflect new bounds
-        if (onTimeSelectionChanged) {
-            onTimeSelectionChanged(newStart, newEnd, moveSelectionOriginalTracks);
+        if (onTimeSelectionBeatsChanged) {
+            onTimeSelectionBeatsChanged(secondsToBeats(newStart), secondsToBeats(newEnd),
+                                        moveSelectionOriginalTracks);
         }
 
         // Clear drag state
@@ -1687,10 +1709,12 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
                     }
                 }
 
-                if (!automationLaneIds.empty() && onMixedTimeSelectionChanged) {
-                    onMixedTimeSelectionChanged(start, end, trackIndices, automationLaneIds);
-                } else if (onTimeSelectionChanged) {
-                    onTimeSelectionChanged(start, end, trackIndices);
+                if (!automationLaneIds.empty() && onMixedTimeSelectionBeatsChanged) {
+                    onMixedTimeSelectionBeatsChanged(secondsToBeats(start), secondsToBeats(end),
+                                                     trackIndices, automationLaneIds);
+                } else if (onTimeSelectionBeatsChanged) {
+                    onTimeSelectionBeatsChanged(secondsToBeats(start), secondsToBeats(end),
+                                                trackIndices);
                 }
 
                 // Shift+drag: split clips at selection boundaries
@@ -2861,7 +2885,7 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
             entry.component->onTimeSelectionChanged = [this, trackId, laneId](AutomationLaneId,
                                                                               double startBeat,
                                                                               double endBeat) {
-                if (!onAutomationTimeSelectionChanged || tempoBPM <= 0.0)
+                if (!onAutomationTimeSelectionBeatsChanged || tempoBPM <= 0.0)
                     return;
 
                 auto trackIt = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), trackId);
@@ -2872,8 +2896,7 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
                     static_cast<int>(std::distance(visibleTrackIds_.begin(), trackIt));
                 std::set<int> trackIndices{trackIndex};
                 std::set<AutomationLaneId> laneIds{laneId};
-                onAutomationTimeSelectionChanged(startBeat * 60.0 / tempoBPM,
-                                                 endBeat * 60.0 / tempoBPM, trackIndices, laneIds);
+                onAutomationTimeSelectionBeatsChanged(startBeat, endBeat, trackIndices, laneIds);
             };
 
             addAndMakeVisible(*entry.component);

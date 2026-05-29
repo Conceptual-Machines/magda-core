@@ -8,14 +8,14 @@ void LoopMarkerInteraction::setHost(Host host) {
     host_ = std::move(host);
 }
 
-void LoopMarkerInteraction::setLoopRegion(double start, double end, bool enabled) {
-    startTime_ = start;
-    endTime_ = end;
+void LoopMarkerInteraction::setLoopRange(double start, double end, bool enabled) {
+    startPosition_ = start;
+    endPosition_ = end;
     enabled_ = enabled;
 }
 
 bool LoopMarkerInteraction::mouseDown(int x, int y) {
-    if (startTime_ < 0 || endTime_ <= startTime_)
+    if (startPosition_ < 0 || endPosition_ <= startPosition_)
         return false;
 
     bool isStart = false;
@@ -27,8 +27,8 @@ bool LoopMarkerInteraction::mouseDown(int x, int y) {
 
     if (isOnTopBorder(x, y)) {
         draggingRegion_ = true;
-        double clickTime = host_.pixelToTime(x);
-        dragOffset_ = clickTime - startTime_;
+        double clickPosition = host_.pixelToPosition(x);
+        dragOffset_ = clickPosition - startPosition_;
         return true;
     }
 
@@ -37,41 +37,41 @@ bool LoopMarkerInteraction::mouseDown(int x, int y) {
 
 bool LoopMarkerInteraction::mouseDrag(int x, int /*y*/) {
     if (draggingStart_ || draggingEnd_) {
-        double newTime = host_.pixelToTime(x);
-        newTime = juce::jlimit(0.0, host_.maxTime, newTime);
-        newTime = applySnap(newTime);
+        double newPosition = host_.pixelToPosition(x);
+        newPosition = juce::jlimit(0.0, host_.maxPosition, newPosition);
+        newPosition = applySnap(newPosition);
 
         if (draggingStart_) {
-            startTime_ = juce::jmin(newTime, endTime_ - 0.01);
+            startPosition_ = juce::jmin(newPosition, endPosition_ - 0.01);
         } else {
-            endTime_ = juce::jmax(newTime, startTime_ + 0.01);
+            endPosition_ = juce::jmax(newPosition, startPosition_ + 0.01);
         }
 
         if (host_.onLoopChanged)
-            host_.onLoopChanged(startTime_, endTime_);
+            host_.onLoopChanged(startPosition_, endPosition_);
         if (host_.onRepaint)
             host_.onRepaint();
         return true;
     }
 
     if (draggingRegion_) {
-        double loopDuration = endTime_ - startTime_;
-        double clickTime = host_.pixelToTime(x);
-        double newStart = clickTime - dragOffset_;
+        double loopDuration = endPosition_ - startPosition_;
+        double clickPosition = host_.pixelToPosition(x);
+        double newStart = clickPosition - dragOffset_;
         newStart = applySnap(newStart);
         newStart = juce::jmax(0.0, newStart);
         double newEnd = newStart + loopDuration;
 
-        if (newEnd > host_.maxTime) {
-            newEnd = host_.maxTime;
+        if (newEnd > host_.maxPosition) {
+            newEnd = host_.maxPosition;
             newStart = newEnd - loopDuration;
         }
 
-        startTime_ = newStart;
-        endTime_ = newEnd;
+        startPosition_ = newStart;
+        endPosition_ = newEnd;
 
         if (host_.onLoopChanged)
-            host_.onLoopChanged(startTime_, endTime_);
+            host_.onLoopChanged(startPosition_, endPosition_);
         if (host_.onRepaint)
             host_.onRepaint();
         return true;
@@ -89,7 +89,7 @@ bool LoopMarkerInteraction::mouseUp(int /*x*/, int /*y*/) {
 }
 
 juce::MouseCursor LoopMarkerInteraction::getCursor(int x, int y) const {
-    if (startTime_ < 0 || endTime_ <= startTime_)
+    if (startPosition_ < 0 || endPosition_ <= startPosition_)
         return {};
 
     bool isStart = false;
@@ -111,15 +111,15 @@ bool LoopMarkerInteraction::isOnMarker(int x, bool& isStart) const {
 }
 
 bool LoopMarkerInteraction::isOnMarker(int x, int y, bool& isStart) const {
-    if (!host_.timeToPixel)
+    if (!host_.positionToPixel)
         return false;
 
     // Only respond within the strip and tick area (from topBorderY downward)
     if (y >= 0 && y < host_.topBorderY)
         return false;
 
-    int startX = host_.timeToPixel(startTime_);
-    int endX = host_.timeToPixel(endTime_);
+    int startX = host_.positionToPixel(startPosition_);
+    int endX = host_.positionToPixel(endPosition_);
 
     if (std::abs(x - startX) <= HIT_THRESHOLD) {
         isStart = true;
@@ -133,7 +133,7 @@ bool LoopMarkerInteraction::isOnMarker(int x, int y, bool& isStart) const {
 }
 
 bool LoopMarkerInteraction::isOnTopBorder(int x, int y) const {
-    if (!host_.timeToPixel)
+    if (!host_.positionToPixel)
         return false;
 
     // Asymmetric hit zone around the strip's top edge: clicks just slightly
@@ -147,16 +147,16 @@ bool LoopMarkerInteraction::isOnTopBorder(int x, int y) const {
     if (y < host_.topBorderY - aboveTolerance || y > host_.topBorderY + host_.topBorderThreshold)
         return false;
 
-    int startX = host_.timeToPixel(startTime_);
-    int endX = host_.timeToPixel(endTime_);
+    int startX = host_.positionToPixel(startPosition_);
+    int endX = host_.positionToPixel(endPosition_);
 
     return x > (startX + REGION_HORIZONTAL_MARGIN) && x < (endX - REGION_HORIZONTAL_MARGIN);
 }
 
-double LoopMarkerInteraction::applySnap(double time) const {
-    if (host_.snapToGrid)
-        return host_.snapToGrid(time);
-    return time;
+double LoopMarkerInteraction::applySnap(double position) const {
+    if (host_.snapPosition)
+        return host_.snapPosition(position);
+    return position;
 }
 
 }  // namespace magda

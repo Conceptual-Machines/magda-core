@@ -154,6 +154,8 @@ class TrackContentPanel : public juce::Component,
     // Beat/pixel conversion (native domain — zoom is ppb)
     int beatsToPixel(double beats) const;
     double pixelToBeats(int pixel) const;
+    double secondsToBeats(double timeInSeconds) const;
+    double beatsToSeconds(double beats) const;
 
     // Time/pixel conversion (convenience wrappers — convert through beats)
     double pixelToTime(int pixel) const;
@@ -168,15 +170,16 @@ class TrackContentPanel : public juce::Component,
     std::function<void(const juce::StringArray&)> onGhostHeadersChanged;
     std::function<void(int, int)> onTrackHeightChanged;
     std::function<void(double, double, std::set<int>)>
-        onTimeSelectionChanged;  // startTime, endTime, trackIndices
+        onTimeSelectionBeatsChanged;  // startBeats, endBeats, trackIndices
     std::function<void(double, double, std::set<int>, std::set<AutomationLaneId>)>
-        onMixedTimeSelectionChanged;  // clip selection plus explicit automation lanes
+        onMixedTimeSelectionBeatsChanged;  // clip selection plus explicit automation lanes
     std::function<void(double, double, std::set<int>, std::set<AutomationLaneId>)>
-        onAutomationTimeSelectionChanged;                   // automation-only selection
-    std::function<void(double)> onPlayheadPositionChanged;  // Called when playhead is set via click
-    std::function<void(ClipId)> onClipRenderRequested;      // Render clip to new file
-    std::function<void()> onRenderTimeSelectionRequested;   // Render time selection
-    std::function<void(ClipId)> onBounceInPlaceRequested;   // Bounce MIDI clip in place
+        onAutomationTimeSelectionBeatsChanged;  // automation-only selection
+    std::function<void(double)>
+        onPlayheadPositionBeatsChanged;                    // Called when playhead is set via click
+    std::function<void(ClipId)> onClipRenderRequested;     // Render clip to new file
+    std::function<void()> onRenderTimeSelectionRequested;  // Render time selection
+    std::function<void(ClipId)> onBounceInPlaceRequested;  // Bounce MIDI clip in place
     std::function<void(ClipId)> onBounceToNewTrackRequested;  // Bounce clip to new track
     std::function<double(double)>
         snapTimeToGrid;  // Callback to snap time to grid (provided by MainView)
@@ -220,7 +223,7 @@ class TrackContentPanel : public juce::Component,
     std::vector<std::unique_ptr<TrackLane>> trackLanes;
     std::vector<TrackId> visibleTrackIds_;  // Track IDs in display order
     int selectedTrackIndex = -1;
-    double currentZoom = 1.0;     // pixels per second (horizontal zoom)
+    double currentZoom = 1.0;     // horizontal zoom in pixels per beat
     double verticalZoom = 1.0;    // track height multiplier
     double timelineLength = 0.0;  // Will be loaded from config
     ViewMode currentViewMode_ = ViewMode::Arrange;

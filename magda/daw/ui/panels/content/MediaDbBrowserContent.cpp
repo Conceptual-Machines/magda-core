@@ -688,10 +688,12 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                          !owner_.indexing_ && selectedCount == 1 && rowMissing);
             menu.addItem(5, "Delete selected rows (" + juce::String(selectedCount) + ")",
                          !owner_.indexing_);
-            menu.addSeparator();
-            menu.addItem(1, "Find similar sounds to \"" + fileName + "\"");
-            menu.addSeparator();
-            menu.addItem(2, "Analyze selected rows (" + juce::String(selectedCount) + ")");
+            if constexpr (magda::media::clapBackendAvailable()) {
+                menu.addSeparator();
+                menu.addItem(1, "Find similar sounds to \"" + fileName + "\"");
+                menu.addSeparator();
+                menu.addItem(2, "Analyze selected rows (" + juce::String(selectedCount) + ")");
+            }
             const juce::Component::SafePointer<MediaDbBrowserContent> self(&owner_);
             const auto seedId = r.fileId;
             const auto seedName = fileName;
@@ -2067,9 +2069,11 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
             }
         } else {
             text = "No results match the current filters.";
-            if (!queryText_.isEmpty() && !magda::media::SampleTaggerDownloader::isInstalled()) {
-                text += "\n\nText search is filename / tag only without the AI Sample "
-                        "Analyzer.\nInstall it from AI Settings > Sample Analyzer.";
+            if constexpr (magda::media::clapBackendAvailable()) {
+                if (!queryText_.isEmpty() && !magda::media::SampleTaggerDownloader::isInstalled()) {
+                    text += "\n\nText search is filename / tag only without the AI Sample "
+                            "Analyzer.\nInstall it from AI Settings > Sample Analyzer.";
+                }
             }
         }
         emptyState_.setText(text, juce::dontSendNotification);
@@ -2188,24 +2192,26 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
             }));
     };
 
-    if (!magda::media::SampleTaggerDownloader::isInstalled()) {
-        const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
-        juce::AlertWindow::showAsync(
-            juce::MessageBoxOptions()
-                .withIconType(juce::MessageBoxIconType::InfoIcon)
-                .withTitle("AI Sample Analyzer not installed")
-                .withMessage(
-                    "Indexing will run, but without the Sample Analyzer the library can only do "
-                    "filename / tag / family / BPM filtering - no semantic text search.\n\n"
-                    "Install it any time from AI Settings > Sample Analyzer.")
-                .withButton("Continue indexing")
-                .withButton("Cancel"),
-            [self, presentTagOptionsDialog = std::move(presentTagOptionsDialog)](int result) {
-                if (auto* page = self.getComponent(); page != nullptr && result == 1) {
-                    presentTagOptionsDialog();
-                }
-            });
-        return;
+    if constexpr (magda::media::clapBackendAvailable()) {
+        if (!magda::media::SampleTaggerDownloader::isInstalled()) {
+            const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
+            juce::AlertWindow::showAsync(
+                juce::MessageBoxOptions()
+                    .withIconType(juce::MessageBoxIconType::InfoIcon)
+                    .withTitle("AI Sample Analyzer not installed")
+                    .withMessage(
+                        "Indexing will run, but without the Sample Analyzer the library can only "
+                        "do filename / tag / family / BPM filtering - no semantic text search.\n\n"
+                        "Install it any time from AI Settings > Sample Analyzer.")
+                    .withButton("Continue indexing")
+                    .withButton("Cancel"),
+                [self, presentTagOptionsDialog = std::move(presentTagOptionsDialog)](int result) {
+                    if (auto* page = self.getComponent(); page != nullptr && result == 1) {
+                        presentTagOptionsDialog();
+                    }
+                });
+            return;
+        }
     }
     presentTagOptionsDialog();
 }

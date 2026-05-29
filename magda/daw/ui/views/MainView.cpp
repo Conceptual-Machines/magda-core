@@ -431,8 +431,8 @@ void MainView::setupComponents() {
 
 void MainView::setupCallbacks() {
     // Set up timeline callbacks
-    timeline->onPlayheadPositionChanged = [this](double position) {
-        timelineController->dispatch(SetPlayheadPositionEvent{position});
+    timeline->onPlayheadPositionBeatsChanged = [this](double positionBeats) {
+        timelineController->dispatch(SetPlayheadPositionBeatsEvent{positionBeats});
     };
 
     // Handle scroll requests from timeline (for trackpad scrolling over ruler)
@@ -447,13 +447,13 @@ void MainView::setupCallbacks() {
     };
 
     // Handle time selection from timeline ruler
-    timeline->onTimeSelectionChanged = [this](double start, double end) {
-        if (start < 0 || end < 0) {
+    timeline->onTimeSelectionBeatsChanged = [this](double startBeats, double endBeats) {
+        if (startBeats < 0 || endBeats < 0) {
             timelineController->dispatch(ClearTimeSelectionEvent{});
         } else {
-            timelineController->dispatch(SetTimeSelectionEvent{start, end, {}});
+            timelineController->dispatch(SetTimeSelectionBeatsEvent{startBeats, endBeats, {}});
             // Move playhead to follow the left side of selection
-            timelineController->dispatch(SetPlayheadPositionEvent{start});
+            timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
         }
     };
 
@@ -561,7 +561,7 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
         timeSelection = state.selection;
 
         if (timeSelection.isVisuallyActive()) {
-            timeline->setTimeSelection(timeSelection.startTime, timeSelection.endTime);
+            timeline->setTimeSelectionBeats(timeSelection.startBeats, timeSelection.endBeats);
         } else {
             timeline->clearTimeSelection();
         }
@@ -587,7 +587,7 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
         isUpdatingLoopRegion = true;
 
         if (loopRegion.isValid()) {
-            timeline->setLoopRegion(loopRegion.startTime, loopRegion.endTime);
+            timeline->setLoopRegionBeats(loopRegion.startBeats, loopRegion.endBeats);
             timeline->setLoopEnabled(loopRegion.enabled);
         } else {
             timeline->clearLoopRegion();
@@ -1267,7 +1267,7 @@ void MainView::updateVerticalZoomScrollBar() {
 
 void MainView::setupTimelineCallbacks() {
     // Set up timeline zoom callback - dispatches to TimelineController
-    timeline->onZoomChanged = [this](double newZoom, double anchorTime, int anchorContentX) {
+    timeline->onZoomChanged = [this](double newZoom, double anchorBeats, int anchorContentX) {
         // Set crosshair cursor during zoom operations
         setMouseCursor(juce::MouseCursor::CrosshairCursor);
 
@@ -1280,7 +1280,7 @@ void MainView::setupTimelineCallbacks() {
 
         // Dispatch to controller with anchor information
         timelineController->dispatch(
-            SetZoomAnchoredEvent{newZoom, anchorTime, zoomAnchorViewportX});
+            SetZoomAnchoredBeatsEvent{newZoom, anchorBeats, zoomAnchorViewportX});
     };
 
     // Set up timeline zoom end callback
@@ -1293,12 +1293,12 @@ void MainView::setupTimelineCallbacks() {
     };
 
     // Set up zoom-to-fit callback (e.g., double-click to fit loop region)
-    timeline->onZoomToFitRequested = [this](double startTime, double endTime) {
-        if (endTime <= startTime)
+    timeline->onZoomToFitBeatsRequested = [this](double startBeats, double endBeats) {
+        if (endBeats <= startBeats)
             return;
 
         // Dispatch to controller
-        timelineController->dispatch(ZoomToFitEvent{startTime, endTime, 0.05});
+        timelineController->dispatch(ZoomToFitBeatsEvent{startBeats, endBeats, 0.05});
     };
 }
 
@@ -1672,57 +1672,58 @@ void MainView::setupSelectionCallbacks() {
     };
 
     // Set up time selection callback from track content panel
-    trackContentPanel->onTimeSelectionChanged = [this](double start, double end,
-                                                       std::set<int> trackIndices) {
-        if (start < 0 || end < 0) {
-            timelineController->dispatch(ClearTimeSelectionEvent{});
-        } else {
-            timelineController->dispatch(SetTimeSelectionEvent{start, end, trackIndices});
-            // Move playhead to follow the left side of selection
-            timelineController->dispatch(SetPlayheadPositionEvent{start});
-        }
-    };
-
-    trackContentPanel->onMixedTimeSelectionChanged = [this](double start, double end,
-                                                            std::set<int> trackIndices,
-                                                            std::set<AutomationLaneId> laneIds) {
-        if (start < 0 || end < 0) {
+    trackContentPanel->onTimeSelectionBeatsChanged = [this](double startBeats, double endBeats,
+                                                            std::set<int> trackIndices) {
+        if (startBeats < 0 || endBeats < 0) {
             timelineController->dispatch(ClearTimeSelectionEvent{});
         } else {
             timelineController->dispatch(
-                SetTimeSelectionEvent{start, end, trackIndices, false, std::move(laneIds)});
-            timelineController->dispatch(SetPlayheadPositionEvent{start});
+                SetTimeSelectionBeatsEvent{startBeats, endBeats, trackIndices});
+            // Move playhead to follow the left side of selection
+            timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
         }
     };
 
-    trackContentPanel->onAutomationTimeSelectionChanged =
-        [this](double start, double end, std::set<int> trackIndices,
+    trackContentPanel->onMixedTimeSelectionBeatsChanged =
+        [this](double startBeats, double endBeats, std::set<int> trackIndices,
                std::set<AutomationLaneId> laneIds) {
-            if (start < 0 || end < 0) {
+            if (startBeats < 0 || endBeats < 0) {
                 timelineController->dispatch(ClearTimeSelectionEvent{});
             } else {
-                timelineController->dispatch(
-                    SetTimeSelectionEvent{start, end, trackIndices, true, std::move(laneIds)});
-                timelineController->dispatch(SetPlayheadPositionEvent{start});
+                timelineController->dispatch(SetTimeSelectionBeatsEvent{
+                    startBeats, endBeats, trackIndices, false, std::move(laneIds)});
+                timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
+            }
+        };
+
+    trackContentPanel->onAutomationTimeSelectionBeatsChanged =
+        [this](double startBeats, double endBeats, std::set<int> trackIndices,
+               std::set<AutomationLaneId> laneIds) {
+            if (startBeats < 0 || endBeats < 0) {
+                timelineController->dispatch(ClearTimeSelectionEvent{});
+            } else {
+                timelineController->dispatch(SetTimeSelectionBeatsEvent{
+                    startBeats, endBeats, trackIndices, true, std::move(laneIds)});
+                timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
             }
         };
 
     // Set up playhead position callback from track content panel (click to set playhead)
-    trackContentPanel->onPlayheadPositionChanged = [this](double position) {
-        timelineController->dispatch(SetPlayheadPositionEvent{position});
+    trackContentPanel->onPlayheadPositionBeatsChanged = [this](double positionBeats) {
+        timelineController->dispatch(SetPlayheadPositionBeatsEvent{positionBeats});
     };
 
     // Set up loop region callback from timeline
-    timeline->onLoopRegionChanged = [this](double start, double end) {
+    timeline->onLoopRegionBeatsChanged = [this](double startBeats, double endBeats) {
         // Prevent recursive updates - only dispatch if user changed it, not programmatic update
         if (isUpdatingLoopRegion) {
             return;
         }
 
-        if (start < 0 || end < 0) {
+        if (startBeats < 0 || endBeats < 0) {
             timelineController->dispatch(ClearLoopRegionEvent{});
         } else {
-            timelineController->dispatch(SetLoopRegionEvent{start, end});
+            timelineController->dispatch(SetLoopRegionBeatsEvent{startBeats, endBeats});
         }
     };
 }

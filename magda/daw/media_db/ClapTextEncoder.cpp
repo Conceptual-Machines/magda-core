@@ -1,5 +1,7 @@
 #include "ClapTextEncoder.hpp"
 
+#if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
+
 #include <onnxruntime_cxx_api.h>
 
 #include <array>
@@ -142,3 +144,39 @@ std::vector<float> ClapTextEncoder::embedTokens(const std::vector<int64_t>& inpu
 }
 
 }  // namespace magda::media
+
+#else  // MAGDA_HAVE_CLAP
+
+// Stub implementation for builds without ONNX Runtime (currently Intel macOS).
+// MediaDbContext's encoder factory catches the ctor throw and leaves the
+// encoder pointer null; downstream callers already null-check, so embedTokens
+// is unreachable in practice.
+// NOLINTBEGIN(readability-convert-member-functions-to-static,performance-unnecessary-value-param,hicpp-named-parameter)
+namespace magda::media {
+
+struct ClapTextEncoder::Impl {};
+
+ClapTextEncoder::ClapTextEncoder(const std::filesystem::path& /*modelPath*/) {
+    throw ClapTextEncoderError("CLAP backend not available on this build");
+}
+ClapTextEncoder::~ClapTextEncoder() = default;
+ClapTextEncoder::ClapTextEncoder(ClapTextEncoder&&) noexcept = default;
+ClapTextEncoder& ClapTextEncoder::operator=(ClapTextEncoder&&) noexcept = default;
+
+int ClapTextEncoder::dim() const noexcept { return 512; }
+
+const std::string& ClapTextEncoder::modelId() const noexcept {
+    static const std::string kEmpty;
+    return kEmpty;
+}
+void ClapTextEncoder::setModelId(std::string /*id*/) {}
+
+std::vector<float> ClapTextEncoder::embedTokens(const std::vector<int64_t>& /*inputIds*/,
+                                                const std::vector<int64_t>& /*attentionMask*/) {
+    return {};
+}
+
+}  // namespace magda::media
+// NOLINTEND(readability-convert-member-functions-to-static,performance-unnecessary-value-param,hicpp-named-parameter)
+
+#endif  // MAGDA_HAVE_CLAP

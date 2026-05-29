@@ -1,5 +1,7 @@
 #include "ClapAudioEncoder.hpp"
 
+#if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
+
 #include <onnxruntime_cxx_api.h>
 
 #include <algorithm>
@@ -160,3 +162,39 @@ std::vector<float> ClapAudioEncoder::embed(const float* mono, int numSamples) {
 }
 
 }  // namespace magda::media
+
+#else  // MAGDA_HAVE_CLAP
+
+// Stub implementation for builds without ONNX Runtime (currently Intel macOS).
+// MediaDbContext's encoder factory catches the ctor throw and leaves the
+// encoder pointer null; downstream callers already null-check, so embed() etc.
+// are unreachable in practice.
+// NOLINTBEGIN(readability-convert-member-functions-to-static,performance-unnecessary-value-param,hicpp-named-parameter)
+namespace magda::media {
+
+struct ClapAudioEncoder::Impl {};
+
+ClapAudioEncoder::ClapAudioEncoder(const std::filesystem::path& /*modelPath*/) {
+    throw ClapEncoderError("CLAP backend not available on this build");
+}
+ClapAudioEncoder::~ClapAudioEncoder() = default;
+ClapAudioEncoder::ClapAudioEncoder(ClapAudioEncoder&&) noexcept = default;
+ClapAudioEncoder& ClapAudioEncoder::operator=(ClapAudioEncoder&&) noexcept = default;
+
+int ClapAudioEncoder::dim() const noexcept { return 512; }
+int ClapAudioEncoder::sampleRate() const noexcept { return 48000; }
+
+const std::string& ClapAudioEncoder::modelId() const noexcept {
+    static const std::string kEmpty;
+    return kEmpty;
+}
+void ClapAudioEncoder::setModelId(std::string /*id*/) {}
+
+std::vector<float> ClapAudioEncoder::embed(const float* /*mono*/, int /*numSamples*/) {
+    return {};
+}
+
+}  // namespace magda::media
+// NOLINTEND(readability-convert-member-functions-to-static,performance-unnecessary-value-param,hicpp-named-parameter)
+
+#endif  // MAGDA_HAVE_CLAP

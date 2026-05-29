@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/api/transport_api_live.hpp"
+#include "magda/daw/ui/layout/LayoutConfig.hpp"
 #include "magda/daw/ui/state/TimelineController.hpp"
 
 namespace {
@@ -122,6 +123,93 @@ TEST_CASE("TimelineController playhead and ranges are beat-authoritative",
     REQUIRE(state.loop.startTime == Catch::Approx(12.0));
     REQUIRE(state.selection.endBeats == Catch::Approx(32.0));
     REQUIRE(state.selection.endTime == Catch::Approx(32.0));
+}
+
+TEST_CASE("TimelineController fractional beat ranges survive tempo changes",
+          "[timeline][beats][tempo][regression]") {
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetTempoEvent{127.5});
+    controller.dispatch(magda::SetTimelineLengthBeatsEvent{512.0});
+    controller.dispatch(magda::SetEditPositionBeatsEvent{33.375});
+    controller.dispatch(magda::StartPlaybackEvent{});
+    controller.dispatch(magda::SetPlaybackPositionBeatsEvent{41.625});
+    controller.dispatch(magda::SetLoopRegionBeatsEvent{7.25, 63.75});
+    controller.dispatch(magda::SetTimeSelectionBeatsEvent{91.125, 143.875, {2, 4}});
+
+    const auto& state = controller.getState();
+    REQUIRE(state.playhead.editPositionBeats == Catch::Approx(33.375));
+    REQUIRE(state.playhead.playbackPositionBeats == Catch::Approx(41.625));
+    REQUIRE(state.loop.startBeats == Catch::Approx(7.25));
+    REQUIRE(state.loop.endBeats == Catch::Approx(63.75));
+    REQUIRE(state.selection.startBeats == Catch::Approx(91.125));
+    REQUIRE(state.selection.endBeats == Catch::Approx(143.875));
+
+    controller.dispatch(magda::SetTempoEvent{73.0});
+
+    REQUIRE(state.playhead.editPositionBeats == Catch::Approx(33.375));
+    REQUIRE(state.playhead.playbackPositionBeats == Catch::Approx(41.625));
+    REQUIRE(state.loop.startBeats == Catch::Approx(7.25));
+    REQUIRE(state.loop.endBeats == Catch::Approx(63.75));
+    REQUIRE(state.selection.startBeats == Catch::Approx(91.125));
+    REQUIRE(state.selection.endBeats == Catch::Approx(143.875));
+    REQUIRE(state.loop.startTime == Catch::Approx(7.25 * 60.0 / 73.0));
+    REQUIRE(state.selection.endTime == Catch::Approx(143.875 * 60.0 / 73.0));
+}
+
+TEST_CASE("Anchored beat zoom keeps bar one pinned to the gutter",
+          "[timeline][zoom][beats][regression]") {
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetTimelineLengthBeatsEvent{256.0});
+    controller.dispatch(magda::ViewportResizedEvent{900, 600});
+    controller.dispatch(magda::SetScrollPositionEvent{0, 0});
+    controller.dispatch(
+        magda::SetZoomAnchoredBeatsEvent{20.0, 0.0, magda::LayoutConfig::TIMELINE_LEFT_PADDING});
+
+    const auto& state = controller.getState();
+    REQUIRE(state.zoom.scrollX == 0);
+    REQUIRE(state.zoom.horizontalZoom == Catch::Approx(20.0));
+}
+
+TEST_CASE("Anchored beat zoom preserves the selected beat's screen position",
+          "[timeline][zoom][beats]") {
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetTimelineLengthBeatsEvent{512.0});
+    controller.dispatch(magda::ViewportResizedEvent{1000, 600});
+
+    constexpr double anchorBeats = 24.0;
+    constexpr double pixelsPerBeat = 18.0;
+    constexpr int anchorScreenX = 320;
+    controller.dispatch(
+        magda::SetZoomAnchoredBeatsEvent{pixelsPerBeat, anchorBeats, anchorScreenX});
+
+    const auto& state = controller.getState();
+    const int anchorContentX = static_cast<int>(anchorBeats * state.zoom.horizontalZoom) +
+                               magda::LayoutConfig::TIMELINE_LEFT_PADDING;
+
+    REQUIRE(state.zoom.horizontalZoom == Catch::Approx(pixelsPerBeat));
+    REQUIRE(anchorContentX - state.zoom.scrollX == anchorScreenX);
+}
+
+TEST_CASE("Zoom-to-fit beat range is independent of tempo", "[timeline][zoom][beats][tempo]") {
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetTempoEvent{120.0});
+    controller.dispatch(magda::SetTimelineLengthBeatsEvent{256.0});
+    controller.dispatch(magda::ViewportResizedEvent{1280, 720});
+    controller.dispatch(magda::ZoomToFitBeatsEvent{32.0, 96.0, 0.10});
+
+    const auto& state = controller.getState();
+    const double zoomBeforeTempoChange = state.zoom.horizontalZoom;
+    const int scrollBeforeTempoChange = state.zoom.scrollX;
+
+    controller.dispatch(magda::SetTempoEvent{83.0});
+
+    REQUIRE(state.zoom.horizontalZoom == Catch::Approx(zoomBeforeTempoChange));
+    REQUIRE(state.zoom.scrollX == scrollBeforeTempoChange);
+    REQUIRE(state.timelineLengthBeats == Catch::Approx(256.0));
 }
 
 TEST_CASE("TimelineController arrangement sections are beat-authoritative",
