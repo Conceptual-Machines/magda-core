@@ -20,7 +20,8 @@ class MediaDbBrowserContent;  // forward decl — defined in MediaDbBrowserConte
 class MediaExplorerContent : public PanelContent,
                              public juce::FileBrowserListener,
                              public juce::ChangeListener,
-                             public juce::Timer {
+                             public juce::Timer,
+                             public juce::KeyListener {
   public:
     MediaExplorerContent();
     ~MediaExplorerContent() override;
@@ -57,6 +58,16 @@ class MediaExplorerContent : public PanelContent,
     // Mouse event overrides (Component already is a MouseListener)
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+
+    // KeyListener — intercepts LEFT/RIGHT on the filesystem file list to
+    // stop / replay the current preview (issue #1339). UP/DOWN are left
+    // to FileListComponent's built-in selection handling, which already
+    // routes through selectionChanged() and triggers autoplay.
+    // The `using` un-hides the inherited Component::keyPressed(KeyPress)
+    // overload that the two-arg KeyListener override would otherwise
+    // shadow (-Woverloaded-virtual).
+    using juce::Component::keyPressed;
+    bool keyPressed(const juce::KeyPress& key, juce::Component* origin) override;
 
   private:
     // Routes a click on the audio/MIDI/preset type icon to either the
@@ -175,6 +186,11 @@ class MediaExplorerContent : public PanelContent,
     void loadFileForPreview(const juce::File& file);
     void playPreview();
     void stopPreview();
+    // Restart the current preview from t=0, even if it's already playing.
+    // playPreview() short-circuits when isPlaying_ is true, so the RIGHT
+    // arrow / DB browser onPreviewReplayRequest path goes through this
+    // wrapper instead of calling playPreview() directly.
+    void restartPreview();
     void setPreviewLockedForIndexing(bool locked);
     void updateFileInfo(const juce::File& file);
     void navigateToDirectory(const juce::File& directory);
