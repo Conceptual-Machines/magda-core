@@ -161,6 +161,9 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     // Center the view on middle C (C4)
     void centerOnNote(int noteNumber);
     void centerOnNotes();
+    // Scrolls vertically only if the note is off-screen, and only far enough to
+    // bring it flush to the nearest edge (no re-centering, no horizontal move).
+    void ensureNoteVisible(int noteNumber);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PianoRollContent)
 };

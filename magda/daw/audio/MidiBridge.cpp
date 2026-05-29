@@ -411,6 +411,16 @@ void MidiBridge::broadcastSynthesizedNote(const juce::String& sourceDeviceId, in
             TrackManager::getInstance().triggerMidiNoteOff(trackId);
         }
 
+        // Mirror the physical-MIDI note callback so monitored UI (e.g. the
+        // piano roll keyboard highlight) reacts to QWERTY-synthesized notes too.
+        if (monitoredTracks_.find(trackId) != monitoredTracks_.end() && onNoteEvent) {
+            MidiNoteEvent noteEvent;
+            noteEvent.noteNumber = noteNumber;
+            noteEvent.velocity = velocity;
+            noteEvent.isNoteOn = isNoteOn;
+            onNoteEvent(trackId, noteEvent);
+        }
+
         // Preview queue push is armed-only.
         if (!recordingQueue_ || !transportPosition_)
             continue;

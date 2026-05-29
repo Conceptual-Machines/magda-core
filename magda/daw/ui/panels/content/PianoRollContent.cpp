@@ -275,7 +275,13 @@ void PianoRollContent::handleMidiNoteEvent(magda::TrackId trackId,
     if (clip == nullptr || clip->trackId != trackId)
         return;
 
-    keyboard_->setNotePressed(event.noteNumber, event.isNoteOn && event.velocity > 0);
+    const bool noteOn = event.isNoteOn && event.velocity > 0;
+    keyboard_->setNotePressed(event.noteNumber, noteOn);
+
+    // Bring the played key into view only when it falls off-screen, so live
+    // input stays visible without yanking the view around on every note.
+    if (noteOn)
+        ensureNoteVisible(event.noteNumber);
 }
 
 void PianoRollContent::setupGridCallbacks() {
@@ -1703,6 +1709,36 @@ void PianoRollContent::centerOnNote(int noteNumber) {
     keyboard_->setScrollOffset(scrollY);
     if (octaveLabelStrip_)
         octaveLabelStrip_->setScrollOffset(scrollY);
+}
+
+void PianoRollContent::ensureNoteVisible(int noteNumber) {
+    if (!viewport_ || noteHeight_ <= 0)
+        return;
+
+    const int noteTop = (MAX_NOTE - noteNumber) * noteHeight_;
+    const int noteBottom = noteTop + noteHeight_;
+    const int viewTop = viewport_->getViewPositionY();
+    const int viewHeight = viewport_->getHeight();
+    const int viewBottom = viewTop + viewHeight;
+
+    // Already fully visible — leave the view untouched.
+    if (noteTop >= viewTop && noteBottom <= viewBottom)
+        return;
+
+    int newScrollY = viewTop;
+    if (noteTop < viewTop)
+        newScrollY = noteTop;  // off the top — bring flush to the top edge
+    else
+        newScrollY = noteBottom - viewHeight;  // off the bottom — flush to bottom edge
+
+    newScrollY = juce::jmax(0, newScrollY);
+    if (newScrollY == viewTop)
+        return;
+
+    viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
+    keyboard_->setScrollOffset(newScrollY);
+    if (octaveLabelStrip_)
+        octaveLabelStrip_->setScrollOffset(newScrollY);
 }
 
 void PianoRollContent::centerOnNotes() {
