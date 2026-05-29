@@ -29,24 +29,24 @@ TEST_CASE("GestureRouter: arrangement default bindings", "[gesture]") {
     auto& router = GestureRouter::getInstance();
     router.resetToDefaults();
 
-    SECTION("plain wheel scrolls horizontally (Linux: only deltaY present)") {
+    SECTION("plain wheel scrolls tracks vertically (matches the headers)") {
         auto g = router.resolve(GestureContext::Arrangement, wheel(0.0f, 0.195f),
                                 juce::ModifierKeys(), kAnchor);
-        REQUIRE(g.type == GestureActionType::ScrollHorizontal);
+        REQUIRE(g.type == GestureActionType::ScrollVertical);
         REQUIRE(g.magnitude > 0.0f);
         REQUIRE_FALSE(g.hasAnchor);
     }
 
-    SECTION("trackpad horizontal swipe also scrolls horizontally") {
+    SECTION("trackpad horizontal swipe scrolls the timeline horizontally") {
         auto g = router.resolve(GestureContext::Arrangement, wheel(0.5f, 0.0f),
                                 juce::ModifierKeys(), kAnchor);
         REQUIRE(g.type == GestureActionType::ScrollHorizontal);
     }
 
-    SECTION("Shift+wheel scrolls vertically") {
+    SECTION("Shift+wheel is the mouse-only horizontal scroll default") {
         auto g = router.resolve(GestureContext::Arrangement, wheel(0.0f, 0.195f),
                                 juce::ModifierKeys(juce::ModifierKeys::shiftModifier), kAnchor);
-        REQUIRE(g.type == GestureActionType::ScrollVertical);
+        REQUIRE(g.type == GestureActionType::ScrollHorizontal);
     }
 
     SECTION("Command+wheel zooms horizontally, anchored at the cursor") {
@@ -130,7 +130,7 @@ TEST_CASE("GestureRouter: persistence stores only overrides", "[gesture]") {
         const auto* shift = router.findBinding(GestureContext::Arrangement, GestureAxis::Vertical,
                                                GestureMod_Shift);
         REQUIRE(shift != nullptr);
-        REQUIRE(shift->action == GestureActionType::ScrollVertical);
+        REQUIRE(shift->action == GestureActionType::ScrollHorizontal);
 
         router.resetToDefaults();
     }

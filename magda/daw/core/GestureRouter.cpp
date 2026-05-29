@@ -11,8 +11,17 @@ namespace magda {
 // site migrates it keeps its own constants.
 // ----------------------------------------------------------------------------
 namespace {
+// Scroll: magnitude is a pixel delta, so sensitivity scales the raw wheel
+// delta (~0.195 per mouse tick on X11) into a sensible pixel step.
 constexpr float kScrollSensitivity = 50.0f;
-constexpr float kZoomSensitivity = 1.0f;
+// Vertical track scroll matches juce::Viewport's default wheel formula
+// (deltaY * 14 * singleStepSize=16), the same factor TrackHeadersPanel uses,
+// so the arrangement body and the headers scroll in lockstep.
+constexpr float kViewportScrollSensitivity = 14.0f * 16.0f;
+// Zoom: magnitude is a power-of-two exponent (the consumer applies
+// newZoom = oldZoom * 2^magnitude), so sensitivity is the zoom feel per wheel
+// unit. ~0.5 gives roughly a 7% zoom step per mouse tick.
+constexpr float kZoomSensitivity = 0.5f;
 }  // namespace
 
 uint8_t gestureModifierMaskFrom(const juce::ModifierKeys& mods) {
@@ -45,16 +54,21 @@ uint32_t GestureRouter::makeKey(GestureContext context, GestureAxis axis, uint8_
 void GestureRouter::installDefaults() {
     bindings_.clear();
 
-    // Arrangement: the Linux-friendly defaults. A plain wheel (vertical input,
-    // the only axis X11 emits) scrolls the timeline horizontally; a trackpad
-    // horizontal swipe (deltaX) does the same. Shift routes to vertical scroll,
-    // Command zooms horizontally about the cursor, Alt zooms track height.
+    // Arrangement defaults. A plain wheel scrolls the tracks vertically, the
+    // same as the headers and as every system default, so it never surprises a
+    // trackpad or a mouse user. A trackpad horizontal swipe (deltaX) scrolls
+    // the timeline horizontally, preserving that workflow. The real gap this
+    // addresses is horizontal scroll on a vertical-only mouse, which has no
+    // deltaX at all: Shift+wheel is a sensible default for it, but it is just a
+    // default. Every one of these is user-overridable (#22), because there is
+    // no universal convention for mouse horizontal scroll. Command zooms the
+    // timeline about the cursor; Alt zooms track height.
     setBinding(GestureContext::Arrangement, GestureAxis::Vertical, GestureMod_None,
-               {GestureActionType::ScrollHorizontal, kScrollSensitivity, false});
+               {GestureActionType::ScrollVertical, kViewportScrollSensitivity, false});
     setBinding(GestureContext::Arrangement, GestureAxis::Horizontal, GestureMod_None,
                {GestureActionType::ScrollHorizontal, kScrollSensitivity, false});
     setBinding(GestureContext::Arrangement, GestureAxis::Vertical, GestureMod_Shift,
-               {GestureActionType::ScrollVertical, kScrollSensitivity, false});
+               {GestureActionType::ScrollHorizontal, kScrollSensitivity, false});
     setBinding(GestureContext::Arrangement, GestureAxis::Vertical, GestureMod_Command,
                {GestureActionType::ZoomHorizontal, kZoomSensitivity, false});
     setBinding(GestureContext::Arrangement, GestureAxis::Vertical, GestureMod_Alt,

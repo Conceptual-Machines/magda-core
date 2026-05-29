@@ -722,20 +722,15 @@ void TimelineComponent::mouseUp(const juce::MouseEvent& event) {
 
 void TimelineComponent::mouseWheelMove(const juce::MouseEvent& event,
                                        const juce::MouseWheelDetails& wheel) {
-    juce::ignoreUnused(event);
+    // Wheel over the ruler resolves through the same GestureRouter path as the
+    // track content (#21/#26). event.getPosition() is content-space (this
+    // component is the viewed component of the timeline viewport), so it
+    // doubles as the zoom anchor.
+    const auto gesture = GestureRouter::getInstance().resolve(GestureContext::Arrangement, wheel,
+                                                              event.mods, event.getPosition());
 
-    // Forward horizontal scroll to parent via callback
-    // This allows scrolling when the mouse is over the timeline ruler
-    if (onScrollRequested) {
-        // Use deltaX for horizontal scroll (trackpad left/right)
-        // Also allow vertical scroll to trigger horizontal scroll when shift is held
-        float deltaX = wheel.deltaX;
-        float deltaY = wheel.deltaY;
-
-        // If there's horizontal movement, scroll horizontally
-        if (std::abs(deltaX) > 0.0f || std::abs(deltaY) > 0.0f) {
-            onScrollRequested(deltaX, deltaY);
-        }
+    if (!gesture.isNone() && onArrangementGesture) {
+        onArrangementGesture(gesture);
     }
 }
 

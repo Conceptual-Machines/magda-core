@@ -2039,6 +2039,27 @@ void TrackContentPanel::mouseMove(const juce::MouseEvent& event) {
     updateCursorForPosition(event.x, event.y, event.mods.isShiftDown());
 }
 
+void TrackContentPanel::mouseWheelMove(const juce::MouseEvent& event,
+                                       const juce::MouseWheelDetails& wheel) {
+    // Resolve the wheel into a parametric arrangement action (#21) and hand it
+    // to MainView (#26). event.getPosition() is content-space here (this panel
+    // is the viewed component of the track-content viewport), so it doubles as
+    // the cursor anchor for zoom. Consuming the event keeps the enclosing
+    // Viewport from doing its own (vertical-only) scroll, which is what left a
+    // plain wheel dead over the arrangement on Linux.
+    const auto gesture = GestureRouter::getInstance().resolve(GestureContext::Arrangement, wheel,
+                                                              event.mods, event.getPosition());
+
+    if (gesture.isNone()) {
+        Component::mouseWheelMove(event, wheel);
+        return;
+    }
+
+    if (onArrangementGesture) {
+        onArrangementGesture(gesture);
+    }
+}
+
 bool TrackContentPanel::isInUpperTrackZone(int y) const {
     int trackIndex = getTrackIndexAtY(y);
     if (trackIndex < 0) {

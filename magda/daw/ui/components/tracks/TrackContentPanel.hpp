@@ -13,6 +13,7 @@
 #include "core/AutomationManager.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -164,6 +165,11 @@ class TrackContentPanel : public juce::Component,
     // Callbacks
     std::function<void(int)> onTrackSelected;
 
+    // Fires on a mouse-wheel gesture over the arrangement body, carrying the
+    // action already resolved by GestureRouter (#21). MainView translates it to
+    // a scroll/zoom (#26).
+    std::function<void(const ResolvedGesture&)> onArrangementGesture;
+
     // Fires during file-drag with the list of audio filenames that are about
     // to spawn new tracks (empty = clear ghost). Wired by MainView to push
     // ghost-header previews into TrackHeadersPanel.
@@ -250,6 +256,8 @@ class TrackContentPanel : public juce::Component,
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
+    void mouseWheelMove(const juce::MouseEvent& event,
+                        const juce::MouseWheelDetails& wheel) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
     void showEmptySpaceContextMenu(const juce::MouseEvent& event);
 
