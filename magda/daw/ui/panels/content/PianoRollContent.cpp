@@ -276,6 +276,17 @@ void PianoRollContent::handleMidiNoteEvent(magda::TrackId trackId,
         return;
 
     const bool noteOn = event.isNoteOn && event.velocity > 0;
+
+    // Only highlight notes the track is actually monitoring — with input
+    // monitoring off the note never reaches the track, so highlighting it would
+    // be misleading. Note-offs always fall through to clear any existing
+    // highlight, so toggling monitor off mid-hold can't strand a pressed key.
+    if (noteOn) {
+        const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        if (track == nullptr || track->inputMonitor == magda::InputMonitorMode::Off)
+            return;
+    }
+
     keyboard_->setNotePressed(event.noteNumber, noteOn);
 
     // Bring the played key into view only when it falls off-screen, so live

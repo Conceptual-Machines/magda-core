@@ -272,6 +272,11 @@ class MidiBridge : public juce::MidiInputCallback {
     void handleIncomingMidiMessage(juce::MidiInput* source,
                                    const juce::MidiMessage& message) override;
 
+    // Shared note-event fan-out for both real MIDI (handleIncomingMidiMessage)
+    // and synthesized QWERTY notes (broadcastSynthesizedNote): fires onNoteEvent
+    // only when the track is being monitored. Caller must hold routingLock_.
+    void notifyNoteEventIfMonitored(TrackId trackId, int noteNumber, int velocity, bool isNoteOn);
+
     te::Engine& engine_;
 
     // AudioBridge reference for triggering MIDI activity (not owned)
