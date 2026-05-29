@@ -175,6 +175,7 @@ target_sources(magda_juce_tests PRIVATE
     test_clip_inspector_juce.cpp
     test_multiband_curve_view_juce.cpp
     test_timeline_extreme_zoom_paint_juce.cpp
+    test_arrange_beat_native_juce.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorSections.cpp
@@ -234,3 +235,6 @@ add_test(NAME multiband_curve_view_juce
 
 add_test(NAME timeline_extreme_zoom_paint_juce
          COMMAND magda_juce_tests "Timeline Extreme Zoom Paint Tests")
+
+add_test(NAME arrange_beat_native_juce
+         COMMAND magda_juce_tests "Arrange Beat Native Tests")

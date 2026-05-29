@@ -35,9 +35,9 @@ class TimelineExtremeZoomPaintTest final : public juce::UnitTest {
         timeline.setTimelineLength(600.0);
         timeline.setZoom(10000.0);
         timeline.setSize(10000000, getTimelinePaintHeight());
-        timeline.addSection("Long section", 0.0, 600.0, juce::Colours::blue);
-        timeline.setLoopRegion(0.0, 600.0);
-        timeline.setTimeSelection(60.0, 540.0);
+        timeline.addSectionBeats("Long section", 0.0, 1200.0, juce::Colours::blue);
+        timeline.setLoopRegionBeats(0.0, 1200.0);
+        timeline.setTimeSelectionBeats(120.0, 1080.0);
 
         paintVisibleSlice(timeline, 0);
         paintVisibleSlice(timeline, 5000000);

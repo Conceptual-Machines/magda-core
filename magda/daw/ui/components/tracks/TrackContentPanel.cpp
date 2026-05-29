@@ -939,8 +939,18 @@ double TrackContentPanel::pixelToBeats(int pixel) const {
     return 0.0;
 }
 
+double TrackContentPanel::secondsToBeats(double timeInSeconds) const {
+    return timeInSeconds * tempoBPM / 60.0;
+}
+
+double TrackContentPanel::beatsToSeconds(double beats) const {
+    if (tempoBPM > 0)
+        return beats * 60.0 / tempoBPM;
+    return 0.0;
+}
+
 int TrackContentPanel::timeToPixel(double time) const {
-    return beatsToPixel(time * tempoBPM / 60.0);
+    return beatsToPixel(secondsToBeats(time));
 }
 
 int TrackContentPanel::getTrackIndexAtY(int y) const {
@@ -968,9 +978,9 @@ bool TrackContentPanel::isOnExistingSelection(int x, int y) const {
         return false;
     }
 
-    // Check horizontal bounds (time-based)
-    double clickTime = pixelToTime(x);
-    if (clickTime < selection.startTime || clickTime > selection.endTime) {
+    // Check horizontal bounds in the timeline's native beat domain.
+    double clickBeats = pixelToBeats(x);
+    if (clickBeats < selection.startBeats || clickBeats > selection.endBeats) {
         return false;
     }
 
@@ -1002,8 +1012,8 @@ bool TrackContentPanel::isOnSelectionEdge(int x, int y, bool& isLeftEdge) const 
 
     // Check if mouse is near the edges (within EDGE_THRESHOLD pixels)
     static constexpr int EDGE_THRESHOLD = 8;
-    int startX = timeToPixel(selection.startTime);
-    int endX = timeToPixel(selection.endTime);
+    int startX = beatsToPixel(selection.startBeats);
+    int endX = beatsToPixel(selection.endBeats);
 
     if (std::abs(x - startX) <= EDGE_THRESHOLD) {
         isLeftEdge = true;
@@ -1124,8 +1134,8 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             isCreatingSelection = false;
             isMovingSelection = false;
             SelectionManager::getInstance().clearSelection();
-            if (onTimeSelectionChanged)
-                onTimeSelectionChanged(-1.0, -1.0, {});
+            if (onTimeSelectionBeatsChanged)
+                onTimeSelectionBeatsChanged(-1.0, -1.0, {});
             repaintVisible();
             grabKeyboardFocus();
             return;
@@ -1148,8 +1158,8 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
         // Clear time selection when clicking in upper zone outside the selection area
         if (timelineController && timelineController->getState().selection.isActive()) {
             if (!isOnExistingSelection(event.x, event.y)) {
-                if (onTimeSelectionChanged) {
-                    onTimeSelectionChanged(-1.0, -1.0, {});
+                if (onTimeSelectionBeatsChanged) {
+                    onTimeSelectionBeatsChanged(-1.0, -1.0, {});
                 }
             }
         }
@@ -1232,8 +1242,8 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             // Clicked outside time selection in lower zone - clear it and start new one
             if (timelineController && timelineController->getState().selection.isActive()) {
                 // Clear existing time selection
-                if (onTimeSelectionChanged) {
-                    onTimeSelectionChanged(-1.0, -1.0, {});
+                if (onTimeSelectionBeatsChanged) {
+                    onTimeSelectionBeatsChanged(-1.0, -1.0, {});
                 }
             }
             // Prepare for new time selection
@@ -1282,8 +1292,9 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
         }
 
         // Update time selection visually
-        if (onTimeSelectionChanged) {
-            onTimeSelectionChanged(newStart, newEnd, moveSelectionOriginalTracks);
+        if (onTimeSelectionBeatsChanged) {
+            onTimeSelectionBeatsChanged(secondsToBeats(newStart), secondsToBeats(newEnd),
+                                        moveSelectionOriginalTracks);
         }
     } else if (isMovingSelection) {
         // Split clips at selection boundaries on first drag motion
@@ -1327,8 +1338,9 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
         moveClipsWithTimeSelection(deltaTime);
 
         // Notify about selection change (preserve original track indices)
-        if (onTimeSelectionChanged) {
-            onTimeSelectionChanged(newStart, newEnd, moveSelectionOriginalTracks);
+        if (onTimeSelectionBeatsChanged) {
+            onTimeSelectionBeatsChanged(secondsToBeats(newStart), secondsToBeats(newEnd),
+                                        moveSelectionOriginalTracks);
         }
     } else if (isMarqueeActive_) {
         // Already in marquee mode - continue updating
@@ -1398,13 +1410,15 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
         }
 
         // Notify about selection change
-        if (onTimeSelectionChanged) {
+        if (onTimeSelectionBeatsChanged) {
             double start = juce::jmin(selectionStartTime, selectionEndTime);
             double end = juce::jmax(selectionStartTime, selectionEndTime);
-            if (!automationLaneIds.empty() && onMixedTimeSelectionChanged) {
-                onMixedTimeSelectionChanged(start, end, trackIndices, automationLaneIds);
+            if (!automationLaneIds.empty() && onMixedTimeSelectionBeatsChanged) {
+                onMixedTimeSelectionBeatsChanged(secondsToBeats(start), secondsToBeats(end),
+                                                 trackIndices, automationLaneIds);
             } else {
-                onTimeSelectionChanged(start, end, trackIndices);
+                onTimeSelectionBeatsChanged(secondsToBeats(start), secondsToBeats(end),
+                                            trackIndices);
             }
         }
     }
@@ -1508,8 +1522,9 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         }
 
         // Update time selection to reflect new bounds
-        if (onTimeSelectionChanged) {
-            onTimeSelectionChanged(newStart, newEnd, moveSelectionOriginalTracks);
+        if (onTimeSelectionBeatsChanged) {
+            onTimeSelectionBeatsChanged(secondsToBeats(newStart), secondsToBeats(newEnd),
+                                        moveSelectionOriginalTracks);
         }
 
         // Clear drag state
@@ -1694,10 +1709,12 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
                     }
                 }
 
-                if (!automationLaneIds.empty() && onMixedTimeSelectionChanged) {
-                    onMixedTimeSelectionChanged(start, end, trackIndices, automationLaneIds);
-                } else if (onTimeSelectionChanged) {
-                    onTimeSelectionChanged(start, end, trackIndices);
+                if (!automationLaneIds.empty() && onMixedTimeSelectionBeatsChanged) {
+                    onMixedTimeSelectionBeatsChanged(secondsToBeats(start), secondsToBeats(end),
+                                                     trackIndices, automationLaneIds);
+                } else if (onTimeSelectionBeatsChanged) {
+                    onTimeSelectionBeatsChanged(secondsToBeats(start), secondsToBeats(end),
+                                                trackIndices);
                 }
 
                 // Shift+drag: split clips at selection boundaries
@@ -2868,7 +2885,7 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
             entry.component->onTimeSelectionChanged = [this, trackId, laneId](AutomationLaneId,
                                                                               double startBeat,
                                                                               double endBeat) {
-                if (!onAutomationTimeSelectionChanged || tempoBPM <= 0.0)
+                if (!onAutomationTimeSelectionBeatsChanged || tempoBPM <= 0.0)
                     return;
 
                 auto trackIt = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), trackId);
@@ -2879,8 +2896,7 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
                     static_cast<int>(std::distance(visibleTrackIds_.begin(), trackIt));
                 std::set<int> trackIndices{trackIndex};
                 std::set<AutomationLaneId> laneIds{laneId};
-                onAutomationTimeSelectionChanged(startBeat * 60.0 / tempoBPM,
-                                                 endBeat * 60.0 / tempoBPM, trackIndices, laneIds);
+                onAutomationTimeSelectionBeatsChanged(startBeat, endBeat, trackIndices, laneIds);
             };
 
             addAndMakeVisible(*entry.component);

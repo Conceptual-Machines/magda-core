@@ -38,6 +38,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // Timeline controls
     void setTimelineLength(double lengthInSeconds);
     void setPlayheadPosition(double position);
+    void setPlayheadPositionBeats(double positionBeats);
     void setZoom(double pixelsPerBeat);
     void setViewportWidth(int width);  // For calculating minimum zoom
 
@@ -75,8 +76,8 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
                         const juce::MouseWheelDetails& wheel) override;
 
     // Arrangement section management
-    void addSection(const juce::String& name, double startTime, double endTime,
-                    juce::Colour colour = juce::Colours::blue);
+    void addSectionBeats(const juce::String& name, double startBeats, double endBeats,
+                         juce::Colour colour = juce::Colours::blue);
     void removeSection(int index);
     void clearSections();
 
@@ -89,17 +90,17 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     }
 
     // Loop region management
-    void setLoopRegion(double startTime, double endTime);
+    void setLoopRegionBeats(double startBeats, double endBeats);
     void clearLoopRegion();
     bool isLoopEnabled() const {
         return loopInteraction_.isEnabled();
     }
     void setLoopEnabled(bool enabled);
-    double getLoopStartTime() const {
-        return loopInteraction_.getStartTime();
+    double getLoopStartBeats() const {
+        return loopInteraction_.getStartPosition();
     }
-    double getLoopEndTime() const {
-        return loopInteraction_.getEndTime();
+    double getLoopEndBeats() const {
+        return loopInteraction_.getEndPosition();
     }
 
     // Snap to grid
@@ -113,23 +114,24 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     double getSnapInterval() const;  // Returns current snap interval based on zoom and display mode
 
     // Time selection (for visual feedback in ruler area)
-    void setTimeSelection(double startTime, double endTime);
+    void setTimeSelectionBeats(double startBeats, double endBeats);
     void clearTimeSelection();
 
     // Callback for playhead position changes
-    std::function<void(double)> onPlayheadPositionChanged;
+    std::function<void(double)> onPlayheadPositionBeatsChanged;
     std::function<void(int, const ArrangementSection&)> onSectionChanged;
-    std::function<void(const juce::String&, double, double)> onSectionAdded;
+    std::function<void(const juce::String&, double, double)> onSectionAddedBeats;
     std::function<void(double, double, int)>
         onZoomChanged;  // Callback for zoom changes (newZoom, anchorBeats, anchorScreenX)
-    std::function<void()> onZoomEnd;                          // Callback when zoom operation ends
-    std::function<void(double, double)> onLoopRegionChanged;  // Callback when loop region changes
+    std::function<void()> onZoomEnd;  // Callback when zoom operation ends
+    std::function<void(double, double)>
+        onLoopRegionBeatsChanged;  // Callback when loop region changes
     std::function<void(float deltaX, float deltaY)>
         onScrollRequested;  // Callback for scroll requests from mouse wheel
     std::function<void(double, double)>
-        onTimeSelectionChanged;  // Callback when time selection changes in ruler
+        onTimeSelectionBeatsChanged;  // Callback when time selection changes in ruler
     std::function<void(double, double)>
-        onZoomToFitRequested;  // Callback to zoom to fit a time range (startTime, endTime)
+        onZoomToFitBeatsRequested;  // Callback to zoom to fit a beat range (startBeats, endBeats)
 
   private:
     // RAII listener guard — destroyed before cached state below
@@ -140,7 +142,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // Local state (cached from controller for quick access during rendering)
     // These are updated via TimelineStateListener callbacks
     double timelineLength = 300.0;  // 5 minutes
-    double playheadPosition = 0.0;
+    double playheadPositionBeats = 0.0;
     double pixelsPerBeat = 1.0;  // Horizontal zoom
     int viewportWidth = 1500;    // Default viewport width for minimum zoom calculation
 
@@ -167,10 +169,10 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     GridQuantize gridQuantize;  // Grid quantize settings
 
     // Time selection state (for ruler highlight)
-    double timeSelectionStart = -1.0;
-    double timeSelectionEnd = -1.0;
+    double timeSelectionStartBeats = -1.0;
+    double timeSelectionEndBeats = -1.0;
     bool isDraggingTimeSelection = false;
-    double timeSelectionDragStart = -1.0;  // Initial drag position for time selection
+    double timeSelectionDragStartBeats = -1.0;  // Initial drag position for time selection
 
     // Mouse interaction state
     bool isZooming = false;
@@ -182,12 +184,14 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     int zoomAnchorScreenX = 0;                // Screen X position where anchor should stay
     static constexpr int DRAG_THRESHOLD = 5;  // Pixels of movement before it's a drag
 
-    // Helper methods — beats are the native domain, time wrappers go through beats
+    // Helper methods — beats are the native domain
     int beatsToPixel(double beats) const;
     double pixelToBeats(int pixel) const;
-    double pixelToTime(int pixel) const;
-    int timeToPixel(double time) const;
-    int timeDurationToPixels(double duration) const;  // For calculating spacing/widths
+    double secondsToBeats(double timeInSeconds) const;
+    double beatsToSeconds(double beats) const;
+    double getTimelineLengthBeats() const;
+    double snapBeatsToGrid(double beats) const;
+    int secondsDurationToPixels(double durationSeconds) const;  // Seconds display mode only
     void drawTimeMarkers(juce::Graphics& g);
     void drawPlayhead(juce::Graphics& g);
     void drawArrangementSections(juce::Graphics& g);
