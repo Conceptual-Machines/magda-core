@@ -45,6 +45,7 @@ enum {
     duplicateTrackContentOnly = 0x3004,  // Cmd/Ctrl+Alt+D: clips only, no FX chain
     toggleMuteSelectedTracks = 0x3005,   // M
     toggleSoloSelectedTracks = 0x3006,   // Shift+S
+    audioLevelTest = 0x3007,             // Cmd/Ctrl+Shift+A: create two -12dB tone tracks
 
     // View menu
     zoom = 0x4000,

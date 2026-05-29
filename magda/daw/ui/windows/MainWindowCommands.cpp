@@ -79,6 +79,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         // Track
         newAudioTrack, newMidiTrack, deleteTrack, duplicateTrackNoContent,
         duplicateTrackContentOnly, toggleMuteSelectedTracks, toggleSoloSelectedTracks,
+        audioLevelTest,
         // View
         zoom, toggleArrangeSession, cycleViewForward, cycleViewBackward, uiScaleUp, uiScaleDown,
         togglePianoRollFullscreen,
@@ -262,6 +263,13 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case toggleSoloSelectedTracks:
             result.setInfo("Toggle Solo", "Toggle solo on the selected track(s)", "Track", 0);
             result.addDefaultKeypress('s', juce::ModifierKeys::shiftModifier);
+            break;
+
+        case audioLevelTest:
+            result.setInfo("Audio Level Test", "Create two -12dB tone tracks for level testing",
+                           "Track", 0);
+            result.addDefaultKeypress('a', juce::ModifierKeys::commandModifier |
+                                               juce::ModifierKeys::shiftModifier);
             break;
 
         // View
@@ -679,8 +687,29 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 }
 
                 duplicateSelectedArrangementClips(false);
+                return true;
             }
-            return true;
+
+            if (mainView &&
+                mainView->getTimelineController().getState().selection.isVisuallyActive()) {
+                return false;
+            }
+
+            const auto& selectedTracks = selectionManager.getSelectedTracks();
+            if (!selectedTracks.empty()) {
+                if (selectedTracks.size() > 1) {
+                    UndoManager::getInstance().beginCompoundOperation("Duplicate Tracks");
+                }
+                for (auto trackId : selectedTracks) {
+                    auto cmd = std::make_unique<DuplicateTrackCommand>(trackId, true);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                }
+                if (selectedTracks.size() > 1) {
+                    UndoManager::getInstance().endCompoundOperation();
+                }
+                return true;
+            }
+            return false;
         }
 
         case duplicateClipWithAutomation:
@@ -1181,6 +1210,44 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             return true;
         }
 
+        case audioLevelTest: {
+            auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+            if (teWrapper == nullptr)
+                return false;
+
+            auto* bridge = teWrapper->getAudioBridge();
+            if (bridge == nullptr)
+                return false;
+
+            auto& tm = TrackManager::getInstance();
+            constexpr float minus12dB = 0.251189f;
+
+            for (int i = 0; i < 2; ++i) {
+                TrackId trackId = tm.createTrack("Tone " + std::to_string(i + 1), TrackType::Audio);
+
+                auto plugin = bridge->loadBuiltInPlugin(trackId, "tone");
+                if (plugin) {
+                    auto params = plugin->getAutomatableParameters();
+                    for (auto* param : params) {
+                        if (param->getParameterName().containsIgnoreCase("freq")) {
+                            const float freq = (i == 0) ? 0.4f : 0.45f;
+                            param->setParameter(freq, juce::dontSendNotification);
+                        } else if (param->getParameterName().containsIgnoreCase("level")) {
+                            param->setParameter(1.0f, juce::dontSendNotification);
+                        }
+                    }
+                }
+
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackVolumeCommand>(trackId, minus12dB));
+                DBG("Track " << trackId << ": tone @ 0dB, fader @ -12dB");
+            }
+
+            teWrapper->play();
+            DBG("Audio test: 2 tracks @ -12dB each, expect -6dB on master");
+            return true;
+        }
+
         case newAudioTrack: {
             TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
             auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio, juce::String(),
@@ -1231,82 +1298,6 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
     auto commandID = commandManager.getKeyMappings()->findCommandForKeyPress(key);
     if (commandID != 0) {
         return commandManager.invokeDirectly(commandID, false);
-    }
-
-    // Cmd/Ctrl+Shift+A: Audio Test - Two tracks with -12dB each (expect -6dB on master)
-    if (key ==
-        juce::KeyPress('a', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
-                       0)) {
-        auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_.get());
-        if (teWrapper) {
-            auto* bridge = teWrapper->getAudioBridge();
-            if (bridge) {
-                auto& tm = TrackManager::getInstance();
-
-                // -12dB as linear gain = 10^(-12/20) = 0.251
-                const float minus12dB = 0.251189f;
-
-                // Create two tracks with tone generators, faders at -12dB each
-                // When summed, two -12dB signals = -6dB on master
-                for (int i = 0; i < 2; ++i) {
-                    TrackId trackId =
-                        tm.createTrack("Tone " + std::to_string(i + 1), TrackType::Audio);
-
-                    // Load tone generator at full level (0dB)
-                    auto plugin = bridge->loadBuiltInPlugin(trackId, "tone");
-                    if (plugin) {
-                        auto params = plugin->getAutomatableParameters();
-                        for (auto* param : params) {
-                            if (param->getParameterName().containsIgnoreCase("freq")) {
-                                // Use slightly different frequencies to hear both
-                                float freq = (i == 0) ? 0.4f : 0.45f;  // ~350Hz and ~400Hz
-                                param->setParameter(freq, juce::dontSendNotification);
-                            } else if (param->getParameterName().containsIgnoreCase("level")) {
-                                // Full level (0dB) from plugin
-                                param->setParameter(1.0f, juce::dontSendNotification);
-                            }
-                        }
-                    }
-
-                    // Set track fader to -12dB
-                    UndoManager::getInstance().executeCommand(
-                        std::make_unique<SetTrackVolumeCommand>(trackId, minus12dB));
-                    DBG("Track " << trackId << ": tone @ 0dB, fader @ -12dB");
-                }
-
-                // Start playback
-                teWrapper->play();
-                DBG("Audio test: 2 tracks @ -12dB each, expect -6dB on master");
-            }
-        }
-        return true;
-    }
-
-    // Cmd+T and Cmd+Shift+T are now handled by the command manager
-    // (newAudioTrack / newMidiTrack) — no raw keyPressed handler needed.
-
-    // Cmd/Ctrl+D: Duplicate selected track(s) with content (through undo system)
-    if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
-        if (mainView && mainView->getTimelineController().getState().selection.isVisuallyActive()) {
-            return false;
-        }
-
-        const auto& selectedTracks = SelectionManager::getInstance().getSelectedTracks();
-        if (!selectedTracks.empty()) {
-            if (selectedTracks.size() > 1) {
-                UndoManager::getInstance().beginCompoundOperation("Duplicate Tracks");
-            }
-            for (auto trackId : selectedTracks) {
-                auto cmd = std::make_unique<DuplicateTrackCommand>(trackId, true);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-            }
-            if (selectedTracks.size() > 1) {
-                UndoManager::getInstance().endCompoundOperation();
-            }
-            return true;
-        }
-        // No track was duplicated, let the key press fall through to duplicate clips
-        return false;
     }
 
     return false;

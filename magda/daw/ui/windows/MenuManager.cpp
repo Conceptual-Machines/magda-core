@@ -230,8 +230,12 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                              keyHint(CommandIDs::duplicateTrackContentOnly),
                          true, false);
             menu.addSeparator();
-            menu.addItem(MuteTrack, tr("menu.track.mute") + "\tM", true, false);
-            menu.addItem(SoloTrack, tr("menu.track.solo") + "\tS", true, false);
+            menu.addItem(MuteTrack,
+                         tr("menu.track.mute") + keyHint(CommandIDs::toggleMuteSelectedTracks),
+                         true, false);
+            menu.addItem(SoloTrack,
+                         tr("menu.track.solo") + keyHint(CommandIDs::toggleSoloSelectedTracks),
+                         true, false);
             break;
         }
 
