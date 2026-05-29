@@ -12,6 +12,7 @@
 namespace magda {
 
 class AudioEngine;
+class SvgButton;
 namespace te = tracktion;
 
 /**
@@ -43,6 +44,14 @@ class MiniChainRow : public juce::Component, private juce::Timer {
         return expanded_;
     }
 
+    // Sync the bypass dot to the authoritative device state without rebuilding
+    // the row (used when bypass is toggled elsewhere, e.g. the device slot).
+    void setBypassedState(bool bypassed);
+
+    DeviceId deviceId() const {
+        return deviceId_;
+    }
+
     int preferredHeight() const;
 
     void paint(juce::Graphics& g) override;
@@ -63,6 +72,10 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     juce::Rectangle<int> bypassRect_;
     juce::Rectangle<int> nameRect_;
     juce::Rectangle<int> chevronRect_;
+
+    // "Open native editor" icon in the collapsed header (top-level non-analysis
+    // devices only). Toggles the plugin window via the audio bridge.
+    std::unique_ptr<SvgButton> uiButton_;
 
     // Up to kMaxExpandedParams parameter sliders shown when expanded. Built
     // lazily on first expand. paramLabels_ holds the corresponding name on

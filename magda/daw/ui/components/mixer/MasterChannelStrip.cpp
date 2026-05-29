@@ -635,12 +635,16 @@ void MasterChannelStrip::resized() {
         bounds.removeFromBottom(bottomStrip);
         peakValueLabel->setBounds(bounds.removeFromBottom(labelHeight));
 
+        // Reserve room above the meter so the top dB label (+6) isn't clipped
+        // by the always-on-top resize handle (matches the track strips).
+        bounds.removeFromTop(static_cast<int>(metrics.labelTextHeight / 2.0f + 2.0f));
+
         // Slider overlays the peak meter; dB scale (tick + label) sits to the
         // right. The slider paints only the thumb so the meter shows through.
         faderRegion_ = bounds;
         auto layoutArea = bounds;
 
-        const int scaleWidth = 22;
+        const int scaleWidth = 28;
         const int scaleGap = metrics.tickToMeterGap;
         auto scaleColumn = layoutArea.removeFromRight(scaleWidth);
         layoutArea.removeFromRight(scaleGap);

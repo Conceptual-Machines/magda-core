@@ -6,11 +6,49 @@
 #include "../../../engine/AudioEngine.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../chain/layout/NodeHeaderStyles.hpp"
+#include "../common/SvgButton.hpp"
 #include "core/ChainNodePath.hpp"
+#include "core/InternalDeviceKind.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 
 namespace magda {
+
+namespace {
+// Hand-picked "money" parameters surfaced in the mixer mini chain for MAGDA's
+// native devices, keyed by device kind. Names match ParameterInfo::name (the
+// TE display name). Devices not listed (external VST/AU, Faust, instruments)
+// fall back to the first few non-hidden parameters.
+std::vector<juce::String> curatedParamNames(InternalDeviceKind kind) {
+    switch (kind) {
+        case InternalDeviceKind::TeEq:
+            return {"Low-shelf gain", "Mid gain 1", "High-shelf gain"};
+        case InternalDeviceKind::TeCompressor:
+            return {"Threshold", "Ratio", "Output gain"};
+        case InternalDeviceKind::TeReverb:
+            return {"Room Size", "Damping", "Wet Level"};
+        case InternalDeviceKind::TeDelay:
+            return {"Length", "Feedback", "Mix proportion"};
+        case InternalDeviceKind::TeChorus:
+            return {"Depth", "Speed", "Mix"};
+        case InternalDeviceKind::TePhaser:
+            return {"Depth", "Rate", "Feedback"};
+        case InternalDeviceKind::TeLowpass:
+            return {"Frequency"};
+        case InternalDeviceKind::TePitchShift:
+            return {"Semitones"};
+        case InternalDeviceKind::TeImpulseResponse:
+            return {"Mix", "Gain", "Low Pass Cutoff"};
+        case InternalDeviceKind::TeToneGenerator:
+            return {"Frequency", "Level"};
+        case InternalDeviceKind::TeVolumeAndPan:
+            return {"Volume", "Pan"};
+        default:
+            return {};
+    }
+}
+}  // namespace
 
 MiniChainRow::MiniChainRow() {
     setInterceptsMouseClicks(true, true);
@@ -35,6 +73,41 @@ void MiniChainRow::setDevice(TrackId trackId, DeviceId deviceId, AudioEngine* en
         paramSliders_.clear();
         trackedParams_.clear();
     }
+
+    // "Open native editor" icon. Top-level devices only (racks render as a
+    // name-only summary row); analysis devices have inline mixer UI and no
+    // native editor, so they get no icon.
+    const auto* devInfo = deviceId_ != INVALID_DEVICE_ID
+                              ? TrackManager::getInstance().getDevice(trackId_, deviceId_)
+                              : nullptr;
+    const bool wantUiButton = devInfo != nullptr && !isAnalysisDevice(devInfo->pluginId);
+    if (wantUiButton && uiButton_ == nullptr) {
+        uiButton_ = std::make_unique<SvgButton>("UI", BinaryData::open_in_new_svg,
+                                                BinaryData::open_in_new_svgSize);
+        daw::ui::node_header::applyHeaderIconStyle(*uiButton_,
+                                                   DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        uiButton_->onClick = [this]() {
+            if (engine_ == nullptr)
+                return;
+            if (auto* bridge = engine_->getAudioBridge()) {
+                const bool isOpen =
+                    bridge->togglePluginWindow(ChainNodePath::topLevelDevice(trackId_, deviceId_));
+                uiButton_->setToggleState(isOpen, juce::dontSendNotification);
+                uiButton_->setActive(isOpen);
+            }
+        };
+        addAndMakeVisible(*uiButton_);
+    }
+    if (uiButton_)
+        uiButton_->setVisible(wantUiButton);
+
+    repaint();
+}
+
+void MiniChainRow::setBypassedState(bool bypassed) {
+    if (bypassed_ == bypassed)
+        return;
+    bypassed_ = bypassed;
     repaint();
 }
 
@@ -90,17 +163,12 @@ void MiniChainRow::resolveParams() {
         return;
     auto teParams = pluginPtr->getAutomatableParameters();
 
-    int placed = 0;
-    for (const auto& paramInfo : devInfo->parameters) {
-        if (placed >= kMaxExpandedParams)
-            break;
-        if (paramInfo.hidden)
-            continue;
+    auto addParamSlider = [&](const ParameterInfo& paramInfo) {
         if (paramInfo.paramIndex < 0 || paramInfo.paramIndex >= teParams.size())
-            continue;
+            return;
         auto* param = teParams[paramInfo.paramIndex];
         if (param == nullptr)
-            continue;
+            return;
 
         trackedParams_.push_back(param);
 
@@ -132,7 +200,32 @@ void MiniChainRow::resolveParams() {
         slider->setVisible(expanded_);
         addAndMakeVisible(*slider);
         paramSliders_.push_back(std::move(slider));
-        ++placed;
+    };
+
+    // 1) Hand-curated parameter list for MAGDA native devices: match the wanted
+    //    names against the device's parameters, in curated order.
+    const auto curated = curatedParamNames(classifyInternalDevice(devInfo->pluginId));
+    for (const auto& wanted : curated) {
+        if (static_cast<int>(trackedParams_.size()) >= kMaxExpandedParams)
+            break;
+        for (const auto& paramInfo : devInfo->parameters) {
+            if (!paramInfo.hidden && paramInfo.name.equalsIgnoreCase(wanted)) {
+                addParamSlider(paramInfo);
+                break;
+            }
+        }
+    }
+
+    // 2) Fallback (external plugins, Faust, anything uncurated, or no matches):
+    //    first N non-hidden parameters in device order.
+    if (trackedParams_.empty()) {
+        for (const auto& paramInfo : devInfo->parameters) {
+            if (static_cast<int>(trackedParams_.size()) >= kMaxExpandedParams)
+                break;
+            if (paramInfo.hidden)
+                continue;
+            addParamSlider(paramInfo);
+        }
     }
 }
 
@@ -190,6 +283,10 @@ void MiniChainRow::resized() {
     constexpr int chevronZoneWidth = 14;
     bypassRect_ = headRect.removeFromLeft(dotZoneWidth);
     chevronRect_ = headRect.removeFromRight(chevronZoneWidth);
+    if (uiButton_ != nullptr && uiButton_->isVisible()) {
+        auto uiZone = headRect.removeFromRight(16);
+        uiButton_->setBounds(uiZone.withSizeKeepingCentre(14, 14));
+    }
     nameRect_ = headRect;
 
     if (expanded_ && !paramSliders_.empty()) {
@@ -215,10 +312,14 @@ void MiniChainRow::mouseDown(const juce::MouseEvent& event) {
         return;
     const auto pos = event.getPosition();
     if (bypassRect_.contains(pos)) {
-        TrackManager::getInstance().setDeviceBypassedByPath(
-            ChainNodePath::topLevelDevice(trackId_, deviceId_), !bypassed_);
-        bypassed_ = !bypassed_;
+        // Update local state and repaint first, then notify. setDeviceInChain
+        // BypassedByPath fires a synchronous devicePropertyChanged that may
+        // rebuild/destroy this row, so touch no members after the call.
+        const bool newBypassed = !bypassed_;
+        const auto path = ChainNodePath::topLevelDevice(trackId_, deviceId_);
+        bypassed_ = newBypassed;
         repaint();
+        TrackManager::getInstance().setDeviceInChainBypassedByPath(path, newBypassed);
         return;
     }
     // Toggle expand on click anywhere else in the row head.

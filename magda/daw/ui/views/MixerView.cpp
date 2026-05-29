@@ -1409,13 +1409,18 @@ void MixerView::ChannelStrip::resized() {
     bounds.removeFromBottom(bottomStrip);
     peakLabel->setBounds(bounds.removeFromBottom(labelHeight));
 
+    // Reserve room above the meter so the top dB label (+6) isn't clipped by
+    // the always-on-top resize handle: the scale draws half a line above the
+    // meter top, and that overhang must land in clear space, not under chrome.
+    bounds.removeFromTop(static_cast<int>(metrics.labelTextHeight / 2.0f + 2.0f));
+
     // New layout: meter fills the column on the left, slider overlays it, dB
     // scale (tick + label) sits on the right. The slider has no body of its
     // own — only the thumb is drawn (see TextSlider's vertical paint).
     faderRegion_ = bounds;
     auto layoutArea = bounds;
 
-    const int scaleWidth = 22;  // enough for "36" / "-inf"
+    const int scaleWidth = 28;  // wider column: narrower fader, bigger numbers
     const int scaleGap = metrics.tickToMeterGap;
 
     auto scaleColumn = layoutArea.removeFromRight(scaleWidth);
