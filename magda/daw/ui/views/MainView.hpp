@@ -217,17 +217,31 @@ class MainView : public juce::Component,
     float verticalScrollbarRevealProgress = 0.0f;
     int horizontalScrollbarRevealFrames = 0;
     int verticalScrollbarRevealFrames = 0;
+    int horizontalHoverDwellFrames = 0;
+    int verticalHoverDwellFrames = 0;
     bool isHorizontalScrollbarHovered = false;
     bool isVerticalScrollbarHovered = false;
-    bool isHorizontalScrollbarReserved = false;
-    bool isVerticalScrollbarReserved = false;
     bool isUpdatingArrangementScrollbarLayout = false;
     juce::Rectangle<int> horizontalScrollbarHitArea;
     juce::Rectangle<int> verticalScrollbarHitArea;
-    static constexpr float ARRANGEMENT_SCROLLBAR_FADE_IN_STEP = 0.22f;
-    static constexpr float HORIZONTAL_SCROLLBAR_FADE_OUT_STEP = 0.055f;
-    static constexpr float VERTICAL_SCROLLBAR_FADE_OUT_STEP = 0.08f;
-    static constexpr int ARRANGEMENT_SCROLLBAR_REVEAL_HOLD_FRAMES = 0;
+    // Fade timings target 60Hz timer (~16ms/frame). Steps chosen so:
+    //   fade-in   ~12 frames (~200ms), fade-out ~30 frames (~500ms).
+    static constexpr float ARRANGEMENT_SCROLLBAR_FADE_IN_STEP = 0.08f;
+    static constexpr float HORIZONTAL_SCROLLBAR_FADE_OUT_STEP = 0.028f;
+    static constexpr float VERTICAL_SCROLLBAR_FADE_OUT_STEP = 0.04f;
+    // Hold frames keep the scrollbar fully visible briefly after the trigger
+    // ends (mouse exit, last scroll/zoom event) so small mouse movements or
+    // pauses between scrolls don't restart the fade cycle. ~300ms at 60Hz.
+    static constexpr int ARRANGEMENT_SCROLLBAR_REVEAL_HOLD_FRAMES = 18;
+    // Reveal hit strip is intentionally narrower than the scrollbar's visible
+    // width — the cursor has to be pushed right against the panel edge to
+    // reveal it. Avoids accidental triggers when editing clips near bar 1.
+    // (.reduced(1, 0) below trims to ~6px effective.)
+    static constexpr int ARRANGEMENT_SCROLLBAR_HIT_EDGE = 8;
+    // Dwell time before edge-hover triggers a reveal — filters out quick
+    // grazes through the hit strip in transit. ~80ms at 60Hz. Bypassed
+    // while the bar is already visible so the user can still re-grab it.
+    static constexpr int ARRANGEMENT_SCROLLBAR_HOVER_DWELL_FRAMES = 5;
 
     // Resize handle state (horizontal - track header width)
     bool isResizingHeaders = false;

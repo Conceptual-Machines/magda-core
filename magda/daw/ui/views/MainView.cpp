@@ -171,8 +171,8 @@ MainView::MainView(AudioEngine* audioEngine)
     const auto& master = TrackManager::getInstance().getMasterChannel();
     masterVisible_ = master.isVisibleIn(currentViewMode_);
 
-    // Start timer for metering updates (30 FPS)
-    startTimerHz(30);
+    // Start timer for metering + scrollbar fade animation (60 FPS for smooth fades)
+    startTimerHz(60);
 }
 
 void MainView::setupTimelineController() {
@@ -747,16 +747,24 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
 
     result.swapped = Config::getInstance().getScrollbarOnLeft();
     SideColumn headerColumn(!result.swapped);
-    SideColumn zoomColumn(false);
+    // Scrollbar lives opposite the header column. When the user picks
+    // "headers on right", the vertical scrollbar sits on the left edge
+    // (and vice versa) so the two never share an edge and the headers
+    // never have to slide aside when the scrollbar reveals.
+    SideColumn zoomColumn(result.swapped);
 
     const int fullVerticalScrollbarWidth = ARRANGEMENT_SCROLLBAR_SIZE + 2;
-    const int verticalScrollbarWidth = isVerticalScrollbarReserved ? fullVerticalScrollbarWidth : 0;
+    // Interpolate reserved width with the fade progress so the header column
+    // slides smoothly in/out with the scrollbar (avoids a layout snap when the
+    // scrollbar shares an edge with the track headers).
+    const int verticalScrollbarWidth = juce::roundToInt(
+        juce::jlimit(0.0f, 1.0f, verticalScrollbarRevealProgress) * fullVerticalScrollbarWidth);
     const int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
 
     {
         auto hitBounds = bounds;
         result.verticalScrollBarHitArea =
-            zoomColumn.removeFrom(hitBounds, fullVerticalScrollbarWidth);
+            zoomColumn.removeFrom(hitBounds, ARRANGEMENT_SCROLLBAR_HIT_EDGE);
     }
 
     result.verticalScrollBarArea = zoomColumn.removeFrom(bounds, verticalScrollbarWidth);
@@ -1326,8 +1334,8 @@ void MainView::revealHorizontalArrangementScrollbar() {
 
     horizontalScrollbarRevealFrames =
         juce::jmax(horizontalScrollbarRevealFrames, ARRANGEMENT_SCROLLBAR_REVEAL_HOLD_FRAMES);
-    isHorizontalScrollbarReserved = true;
-    horizontalScrollbarRevealProgress = 1.0f;
+    horizontalScrollbarRevealProgress =
+        juce::jmax(horizontalScrollbarRevealProgress, ARRANGEMENT_SCROLLBAR_FADE_IN_STEP);
     horizontalZoomScrollBar->setAlpha(horizontalScrollbarRevealProgress);
     horizontalZoomScrollBar->setVisible(true);
     repaint(horizontalZoomScrollBar->getBounds().expanded(0, 2));
@@ -1336,7 +1344,6 @@ void MainView::revealHorizontalArrangementScrollbar() {
 void MainView::revealVerticalArrangementScrollbar() {
     verticalScrollbarRevealFrames =
         juce::jmax(verticalScrollbarRevealFrames, ARRANGEMENT_SCROLLBAR_REVEAL_HOLD_FRAMES);
-    isVerticalScrollbarReserved = true;
     verticalScrollbarRevealProgress =
         juce::jmax(verticalScrollbarRevealProgress, ARRANGEMENT_SCROLLBAR_FADE_IN_STEP);
     verticalZoomScrollBar->setAlpha(verticalScrollbarRevealProgress);
@@ -1354,25 +1361,51 @@ void MainView::updateArrangementScrollbarVisibility() {
         return;
 
     auto mousePosition = getLocalPoint(nullptr, juce::Desktop::getInstance().getMousePosition());
-    isHorizontalScrollbarHovered = horizontalScrollbarHitArea.contains(mousePosition);
-    isVerticalScrollbarHovered = verticalScrollbarHitArea.contains(mousePosition);
 
-    if (!isHorizontalScrollbarHovered && !horizontalZoomScrollBar->isDragging() &&
-        horizontalScrollbarRevealFrames > 0) {
-        --horizontalScrollbarRevealFrames;
-    }
+    // Edge dwell: require the cursor to rest in the narrow hit strip for a few
+    // frames before counting as a hover, so quick grazes don't trigger a fade
+    // cycle. Once the bar is already visible the dwell is bypassed — moving
+    // the cursor over the visible bar should keep it open immediately.
+    const bool inVerticalHitStrip = verticalScrollbarHitArea.contains(mousePosition);
+    const bool inHorizontalHitStrip = horizontalScrollbarHitArea.contains(mousePosition);
 
-    if (!isVerticalScrollbarHovered && !verticalZoomScrollBar->isDragging() &&
-        verticalScrollbarRevealFrames > 0) {
-        --verticalScrollbarRevealFrames;
-    }
+    verticalHoverDwellFrames = inVerticalHitStrip ? (verticalHoverDwellFrames + 1) : 0;
+    horizontalHoverDwellFrames = inHorizontalHitStrip ? (horizontalHoverDwellFrames + 1) : 0;
 
-    const bool targetHorizontalVisible = isHorizontalScrollbarHovered || isZoomActive ||
-                                         horizontalZoomScrollBar->isDragging() ||
-                                         horizontalScrollbarRevealFrames > 0;
-    const bool targetVerticalVisible = isVerticalScrollbarHovered ||
-                                       verticalZoomScrollBar->isDragging() ||
-                                       verticalScrollbarRevealFrames > 0;
+    const bool overVisibleVerticalBar = verticalZoomScrollBar->isVisible() &&
+                                        verticalZoomScrollBar->getBounds().contains(mousePosition);
+    const bool overVisibleHorizontalBar =
+        horizontalZoomScrollBar->isVisible() &&
+        horizontalZoomScrollBar->getBounds().contains(mousePosition);
+
+    isVerticalScrollbarHovered =
+        overVisibleVerticalBar ||
+        (inVerticalHitStrip &&
+         verticalHoverDwellFrames >= ARRANGEMENT_SCROLLBAR_HOVER_DWELL_FRAMES);
+    isHorizontalScrollbarHovered =
+        overVisibleHorizontalBar ||
+        (inHorizontalHitStrip &&
+         horizontalHoverDwellFrames >= ARRANGEMENT_SCROLLBAR_HOVER_DWELL_FRAMES);
+
+    // While the user is hovering or dragging the scrollbar, keep the hold-frames
+    // counter pinned at the full hold window. When the trigger ends (mouse
+    // leaves, drag stops), the counter decays — small re-entries within the
+    // hold window refresh it back to full instead of restarting the fade.
+    auto refreshHold = [](bool active, int& frames) {
+        if (active) {
+            frames = ARRANGEMENT_SCROLLBAR_REVEAL_HOLD_FRAMES;
+        } else if (frames > 0) {
+            --frames;
+        }
+    };
+    refreshHold(isHorizontalScrollbarHovered || horizontalZoomScrollBar->isDragging() ||
+                    isZoomActive,
+                horizontalScrollbarRevealFrames);
+    refreshHold(isVerticalScrollbarHovered || verticalZoomScrollBar->isDragging(),
+                verticalScrollbarRevealFrames);
+
+    const bool targetHorizontalVisible = horizontalScrollbarRevealFrames > 0;
+    const bool targetVerticalVisible = verticalScrollbarRevealFrames > 0;
 
     auto nextProgress = [](float current, bool targetVisible, float fadeOutStep) {
         if (targetVisible) {
@@ -1381,11 +1414,6 @@ void MainView::updateArrangementScrollbarVisibility() {
 
         return juce::jmax(0.0f, current - fadeOutStep);
     };
-
-    const bool oldVerticalReserved = isVerticalScrollbarReserved;
-
-    if (targetVerticalVisible)
-        isVerticalScrollbarReserved = true;
 
     auto nextHorizontalProgress =
         nextProgress(horizontalScrollbarRevealProgress, targetHorizontalVisible,
@@ -1400,22 +1428,15 @@ void MainView::updateArrangementScrollbarVisibility() {
     horizontalScrollbarRevealProgress = nextHorizontalProgress;
     verticalScrollbarRevealProgress = nextVerticalProgress;
 
-    if (verticalScrollbarRevealProgress <= 0.0f)
-        isVerticalScrollbarReserved = false;
-
-    if (oldVerticalReserved != isVerticalScrollbarReserved) {
+    // Vertical reveal progress feeds the reserved width in computeArrangementLayout,
+    // so any change has to re-run layout for headers to slide smoothly along.
+    // resized() also handles setAlpha/setVisible on the scrollbars.
+    {
         juce::ScopedValueSetter<bool> scrollbarLayoutUpdate(isUpdatingArrangementScrollbarLayout,
                                                             true);
         resized();
-        repaint();
-        return;
     }
-
-    horizontalZoomScrollBar->setAlpha(horizontalScrollbarRevealProgress);
-    verticalZoomScrollBar->setAlpha(verticalScrollbarRevealProgress);
-    horizontalZoomScrollBar->setVisible(horizontalScrollbarRevealProgress > 0.01f);
-    verticalZoomScrollBar->setVisible(verticalScrollbarRevealProgress > 0.01f);
-    repaint(verticalZoomScrollBar->getBounds().expanded(2, 0));
+    repaint();
 }
 
 void MainView::setupTimelineCallbacks() {
