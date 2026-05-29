@@ -7,6 +7,7 @@
 
 #include "PanelContent.hpp"
 #include "core/ClipManager.hpp"
+#include "core/GestureRouter.hpp"
 #include "ui/state/TimelineController.hpp"
 #include "ui/state/TimelineState.hpp"
 
@@ -29,12 +30,18 @@ class VerticalZoomStrip : public juce::Component {
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent& event) override;
 
+    void setGestureContext(magda::GestureContext context) {
+        gestureContext_ = context;
+    }
+
     std::function<int()> getValue;
     std::function<void(int, int)> onZoomChanged;  // newValue, anchorScreenY
 
   private:
+    magda::GestureContext gestureContext_ = magda::GestureContext::PianoRoll;
     int minValue_ = 1;
     int maxValue_ = 1;
+    int mouseDownX_ = 0;
     int mouseDownY_ = 0;
     int startValue_ = 1;
     int lastSentValue_ = 1;

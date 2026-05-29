@@ -56,6 +56,8 @@ class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
     /** Re-read layout settings (e.g. headers side) from Config and apply. */
     void applyLayoutFromConfig();
 
+    juce::ApplicationCommandManager& getCommandManager();
+
   private:
     void updateWindowTitle();
     class MainComponent;

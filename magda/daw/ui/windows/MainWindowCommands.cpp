@@ -1088,6 +1088,24 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 mainView->getTimelineController().dispatch(StopPlaybackEvent{});
             return true;
 
+        case record:
+            if (mainView)
+                mainView->getTimelineController().dispatch(StartRecordEvent{});
+            return true;
+
+        case goToStart:
+            if (mainView)
+                mainView->getTimelineController().dispatch(SetEditPositionBeatsEvent{0.0});
+            return true;
+
+        case goToEnd:
+            if (mainView) {
+                auto& timelineController = mainView->getTimelineController();
+                timelineController.dispatch(
+                    SetEditPositionBeatsEvent{timelineController.getState().timelineLengthBeats});
+            }
+            return true;
+
         case escapeAction: {
             // Exit any active link mode and clear the edit cursor (#1351).
             LinkModeManager::getInstance().exitAllLinkModes();

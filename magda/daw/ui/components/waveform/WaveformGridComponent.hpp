@@ -194,8 +194,9 @@ class WaveformGridComponent : public juce::Component {
     std::function<void()> onSliceWarpMarkersToDrumGrid;
     std::function<void()> onSliceAtGridToDrumGrid;
 
-    // Zoom drag callback (deltaY from start, anchorX in viewport coords)
-    std::function<void(int deltaY, int anchorX)> onZoomDrag;
+    // Zoom drag callback (deltas from start, anchorX in viewport coords)
+    std::function<void(int deltaX, int deltaY, int anchorX, const juce::ModifierKeys& mods)>
+        onZoomDrag;
 
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
@@ -240,6 +241,7 @@ class WaveformGridComponent : public juce::Component {
     double dragStartStartTime_ = 0.0;
     double dragStartLoopOffset_ = 0.0;  // Source-seconds phase at start of PhaseMarker drag
     int dragStartX_ = 0;
+    int zoomDragStartX_ = 0;
     int zoomDragStartY_ = 0;
     int zoomDragAnchorX_ = 0;
     double dragStartSpeedRatio_ = 1.0;

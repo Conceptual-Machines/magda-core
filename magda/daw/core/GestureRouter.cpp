@@ -25,6 +25,70 @@ constexpr float kZoomSensitivity = 0.5f;
 // Waveform editor horizontal scroll: preserves the editor's original
 // raw-delta * 800 sample step.
 constexpr float kWaveformScrollSensitivity = 800.0f;
+// MIDI editors historically used raw wheel delta * 100 for both axes.
+constexpr float kMidiEditorScrollSensitivity = 100.0f;
+// MIDI editor wheel zoom previously used 1 + deltaY * 0.1. Expressed as a
+// power-of-two exponent, this is roughly 0.14 for JUCE's normal wheel delta.
+constexpr float kMidiEditorZoomSensitivity = 0.14f;
+// Drag zoom sensitivity: pixels per power-of-two zoom step. Existing ruler and
+// zoom-strip drag paths mostly used 30 px per double/halve, while "turbo" shift
+// zoom used 8 px.
+constexpr float kDragZoomSensitivity = 30.0f;
+constexpr float kFastDragZoomSensitivity = 8.0f;
+constexpr float kFineDragZoomSensitivity = 90.0f;
+constexpr float kKeyboardDragZoomSensitivity = 10.0f;
+
+GestureBinding retuneLearnedDragBinding(
+    GestureContext context, GestureInput input, GestureBinding binding,
+    const std::unordered_map<uint64_t, GestureBinding>& defaults) {
+    if (input.kind != GestureInputKind::Drag ||
+        (binding.action != GestureActionType::ZoomHorizontal &&
+         binding.action != GestureActionType::ZoomVertical)) {
+        return binding;
+    }
+
+    auto keyFor = [](GestureContext c, GestureInput i) {
+        if (i.kind == GestureInputKind::Drag)
+            i.axis = GestureAxis::Vertical;
+
+        return (static_cast<uint64_t>(c) << 32) | (static_cast<uint64_t>(i.kind) << 24) |
+               (static_cast<uint64_t>(i.area) << 16) | (static_cast<uint64_t>(i.axis) << 8) |
+               static_cast<uint64_t>(i.modifiers);
+    };
+
+    auto findMatchingDefault = [&](const GestureInput& candidate) {
+        const auto it = defaults.find(keyFor(context, candidate));
+        return it != defaults.end() && it->second.action == binding.action ? &it->second : nullptr;
+    };
+
+    if (const auto* exact = findMatchingDefault(input)) {
+        if (binding.sensitivity < 2.0f || input.axis != GestureAxis::Vertical) {
+            binding.sensitivity = exact->sensitivity;
+            binding.invert = exact->invert;
+        }
+        return binding;
+    }
+
+    auto alternateAxis = input;
+    alternateAxis.axis =
+        input.axis == GestureAxis::Vertical ? GestureAxis::Horizontal : GestureAxis::Vertical;
+    if (const auto* alternate = findMatchingDefault(alternateAxis)) {
+        binding.sensitivity = alternate->sensitivity;
+        binding.invert = alternate->invert;
+        return binding;
+    }
+
+    auto unmodifiedAlternate = alternateAxis;
+    unmodifiedAlternate.modifiers = GestureMod_None;
+    if (const auto* unmodified = findMatchingDefault(unmodifiedAlternate)) {
+        binding.sensitivity = unmodified->sensitivity;
+        binding.invert = unmodified->invert;
+        return binding;
+    }
+
+    binding.sensitivity = kDragZoomSensitivity;
+    return binding;
+}
 }  // namespace
 
 uint8_t gestureModifierMaskFrom(const juce::ModifierKeys& mods) {
@@ -47,11 +111,21 @@ GestureRouter::GestureRouter() {
     installDefaults();
 }
 
-uint32_t GestureRouter::makeKey(GestureContext context, GestureAxis axis, uint8_t modifierMask) {
-    // Pack (context, axis, modifiers) into a single key. 8 bits each is ample:
-    // a handful of contexts, two axes, three modifier bits.
-    return (static_cast<uint32_t>(context) << 16) | (static_cast<uint32_t>(axis) << 8) |
-           static_cast<uint32_t>(modifierMask);
+uint64_t GestureRouter::makeKey(GestureContext context, const GestureInput& input) {
+    auto normalized = input;
+    if (normalized.kind == GestureInputKind::Drag)
+        normalized.axis = GestureAxis::Vertical;
+
+    // Pack each enum into 8 bits. This keeps old wheel rows compact while
+    // leaving room for more input kinds/areas without changing persistence.
+    return (static_cast<uint64_t>(context) << 32) | (static_cast<uint64_t>(normalized.kind) << 24) |
+           (static_cast<uint64_t>(normalized.area) << 16) |
+           (static_cast<uint64_t>(normalized.axis) << 8) |
+           static_cast<uint64_t>(normalized.modifiers);
+}
+
+GestureInput GestureRouter::makeWheelInput(GestureAxis axis, uint8_t modifierMask) {
+    return {GestureInputKind::Wheel, GestureArea::Main, axis, modifierMask};
 }
 
 void GestureRouter::installDefaults() {
@@ -77,17 +151,31 @@ void GestureRouter::installDefaults() {
     setBinding(GestureContext::Arrangement, GestureAxis::Vertical, GestureMod_Alt,
                {GestureActionType::ZoomVertical, kZoomSensitivity, false});
 
-    // Piano roll / drum grid: Alt+wheel zooms the lane height vertically; a
-    // plain wheel falls through to the enclosing viewport for content scroll.
-    // The zoom magnitude is computed by the view's own callback, so the binding
-    // only needs to select the action (sensitivity is unused here).
+    // MIDI editors share the same navigation vocabulary as arrangement:
+    // ordinary wheel scrolls vertically, Shift+wheel scrolls horizontally,
+    // trackpad deltaX scrolls horizontally, Command+wheel zooms the timebase,
+    // and Alt+wheel zooms note/row height.
+    setBinding(GestureContext::PianoRoll, GestureAxis::Vertical, GestureMod_None,
+               {GestureActionType::ScrollVertical, kMidiEditorScrollSensitivity, false});
+    setBinding(GestureContext::PianoRoll, GestureAxis::Horizontal, GestureMod_None,
+               {GestureActionType::ScrollHorizontal, kMidiEditorScrollSensitivity, false});
+    setBinding(GestureContext::PianoRoll, GestureAxis::Vertical, GestureMod_Shift,
+               {GestureActionType::ScrollHorizontal, kMidiEditorScrollSensitivity, false});
+    setBinding(GestureContext::PianoRoll, GestureAxis::Vertical, GestureMod_Command,
+               {GestureActionType::ZoomHorizontal, kMidiEditorZoomSensitivity, false});
     setBinding(GestureContext::PianoRoll, GestureAxis::Vertical, GestureMod_Alt,
                {GestureActionType::ZoomVertical, kZoomSensitivity, false});
+
+    setBinding(GestureContext::DrumGrid, GestureAxis::Vertical, GestureMod_None,
+               {GestureActionType::ScrollVertical, kMidiEditorScrollSensitivity, false});
+    setBinding(GestureContext::DrumGrid, GestureAxis::Horizontal, GestureMod_None,
+               {GestureActionType::ScrollHorizontal, kMidiEditorScrollSensitivity, false});
+    setBinding(GestureContext::DrumGrid, GestureAxis::Vertical, GestureMod_Shift,
+               {GestureActionType::ScrollHorizontal, kMidiEditorScrollSensitivity, false});
+    setBinding(GestureContext::DrumGrid, GestureAxis::Vertical, GestureMod_Command,
+               {GestureActionType::ZoomHorizontal, kMidiEditorZoomSensitivity, false});
     setBinding(GestureContext::DrumGrid, GestureAxis::Vertical, GestureMod_Alt,
                {GestureActionType::ZoomVertical, kZoomSensitivity, false});
-    // Drum grid also zooms the timebase horizontally with Command+wheel.
-    setBinding(GestureContext::DrumGrid, GestureAxis::Vertical, GestureMod_Command,
-               {GestureActionType::ZoomHorizontal, kZoomSensitivity, false});
 
     // Waveform editor: the wheel scrolls the sample view horizontally. The
     // sensitivity preserves the editor's original step (raw delta * 800).
@@ -95,6 +183,48 @@ void GestureRouter::installDefaults() {
                {GestureActionType::ScrollHorizontal, kWaveformScrollSensitivity, false});
     setBinding(GestureContext::Waveform, GestureAxis::Horizontal, GestureMod_None,
                {GestureActionType::ScrollHorizontal, kWaveformScrollSensitivity, false});
+    setBinding(GestureContext::Waveform, GestureAxis::Vertical, GestureMod_Command,
+               {GestureActionType::ZoomHorizontal, kZoomSensitivity, false});
+
+    // Drag zoom defaults. These make the existing ruler/body/keyboard/strip
+    // click-drag zoom paths visible to preferences and routeable through the
+    // same binding model as wheel gestures.
+    setBinding(GestureContext::Arrangement,
+               {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical, GestureMod_None},
+               {GestureActionType::ZoomHorizontal, kDragZoomSensitivity, false});
+    setBinding(
+        GestureContext::Arrangement,
+        {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical, GestureMod_Shift},
+        {GestureActionType::ZoomHorizontal, kFastDragZoomSensitivity, false});
+    setBinding(GestureContext::Arrangement,
+               {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical, GestureMod_Alt},
+               {GestureActionType::ZoomHorizontal, kFineDragZoomSensitivity, false});
+
+    for (auto context : {GestureContext::PianoRoll, GestureContext::DrumGrid}) {
+        setBinding(
+            context,
+            {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical, GestureMod_None},
+            {GestureActionType::ZoomHorizontal, kDragZoomSensitivity, false});
+        setBinding(context,
+                   {GestureInputKind::Drag, GestureArea::ZoomStrip, GestureAxis::Vertical,
+                    GestureMod_None},
+                   {GestureActionType::ZoomVertical, kDragZoomSensitivity, false});
+    }
+    setBinding(
+        GestureContext::PianoRoll,
+        {GestureInputKind::Drag, GestureArea::Keyboard, GestureAxis::Horizontal, GestureMod_None},
+        {GestureActionType::ZoomVertical, kKeyboardDragZoomSensitivity, false});
+
+    setBinding(GestureContext::Waveform,
+               {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical, GestureMod_None},
+               {GestureActionType::ZoomHorizontal, kDragZoomSensitivity, false});
+    setBinding(
+        GestureContext::Waveform,
+        {GestureInputKind::Drag, GestureArea::Header, GestureAxis::Vertical, GestureMod_None},
+        {GestureActionType::ZoomHorizontal, kDragZoomSensitivity, false});
+    setBinding(GestureContext::Waveform,
+               {GestureInputKind::Drag, GestureArea::Body, GestureAxis::Vertical, GestureMod_None},
+               {GestureActionType::ZoomHorizontal, kDragZoomSensitivity, false});
 
     // Snapshot the defaults so toVar() can emit only the user's overrides.
     defaults_ = bindings_;
@@ -102,13 +232,42 @@ void GestureRouter::installDefaults() {
 
 void GestureRouter::setBinding(GestureContext context, GestureAxis axis, uint8_t modifierMask,
                                const GestureBinding& binding) {
-    bindings_[makeKey(context, axis, modifierMask)] = binding;
+    setBinding(context, makeWheelInput(axis, modifierMask), binding);
+}
+
+void GestureRouter::setBinding(GestureContext context, const GestureInput& input,
+                               const GestureBinding& binding) {
+    bindings_[makeKey(context, input)] = binding;
+}
+
+void GestureRouter::clearBinding(GestureContext context, GestureAxis axis, uint8_t modifierMask) {
+    clearBinding(context, makeWheelInput(axis, modifierMask));
+}
+
+void GestureRouter::clearBinding(GestureContext context, const GestureInput& input) {
+    bindings_.erase(makeKey(context, input));
 }
 
 const GestureBinding* GestureRouter::findBinding(GestureContext context, GestureAxis axis,
                                                  uint8_t modifierMask) const {
-    auto it = bindings_.find(makeKey(context, axis, modifierMask));
+    return findBinding(context, makeWheelInput(axis, modifierMask));
+}
+
+const GestureBinding* GestureRouter::findBinding(GestureContext context,
+                                                 const GestureInput& input) const {
+    auto it = bindings_.find(makeKey(context, input));
     return it != bindings_.end() ? &it->second : nullptr;
+}
+
+const GestureBinding* GestureRouter::findDefaultBinding(GestureContext context, GestureAxis axis,
+                                                        uint8_t modifierMask) const {
+    return findDefaultBinding(context, makeWheelInput(axis, modifierMask));
+}
+
+const GestureBinding* GestureRouter::findDefaultBinding(GestureContext context,
+                                                        const GestureInput& input) const {
+    auto it = defaults_.find(makeKey(context, input));
+    return it != defaults_.end() ? &it->second : nullptr;
 }
 
 ResolvedGesture GestureRouter::resolve(GestureContext context, const juce::MouseWheelDetails& wheel,
@@ -141,6 +300,26 @@ ResolvedGesture GestureRouter::resolve(GestureContext context, const juce::Mouse
     return out;
 }
 
+ResolvedGesture GestureRouter::resolveDrag(GestureContext context, GestureArea area,
+                                           GestureAxis axis, const juce::ModifierKeys& mods,
+                                           float rawDelta, juce::Point<int> anchor) const {
+    const GestureInput input{GestureInputKind::Drag, area, axis, gestureModifierMaskFrom(mods)};
+    const auto* binding = findBinding(context, input);
+    if (binding == nullptr || binding->action == GestureActionType::None)
+        return {};
+
+    ResolvedGesture out;
+    out.type = binding->action;
+    const float divisor = juce::jmax(0.01f, binding->sensitivity);
+    out.magnitude = (rawDelta / divisor) * (binding->invert ? -1.0f : 1.0f);
+    if (binding->action == GestureActionType::ZoomHorizontal ||
+        binding->action == GestureActionType::ZoomVertical) {
+        out.anchor = anchor;
+        out.hasAnchor = true;
+    }
+    return out;
+}
+
 void GestureRouter::resetToDefaults() {
     bindings_ = defaults_;
 }
@@ -159,7 +338,9 @@ juce::var GestureRouter::toVar() const {
             continue;
 
         auto* obj = new juce::DynamicObject();
-        obj->setProperty("context", static_cast<int>((key >> 16) & 0xFF));
+        obj->setProperty("context", static_cast<int>((key >> 32) & 0xFF));
+        obj->setProperty("kind", static_cast<int>((key >> 24) & 0xFF));
+        obj->setProperty("area", static_cast<int>((key >> 16) & 0xFF));
         obj->setProperty("axis", static_cast<int>((key >> 8) & 0xFF));
         obj->setProperty("mods", static_cast<int>(key & 0xFF));
         obj->setProperty("action", static_cast<int>(binding.action));
@@ -181,6 +362,12 @@ void GestureRouter::loadFromVar(const juce::var& v) {
 
             const auto context =
                 static_cast<GestureContext>(static_cast<int>(obj->getProperty("context")));
+            const auto kindValue = obj->getProperty("kind");
+            const auto areaValue = obj->getProperty("area");
+            const auto kind =
+                static_cast<GestureInputKind>(kindValue.isVoid() ? 0 : static_cast<int>(kindValue));
+            const auto area =
+                static_cast<GestureArea>(areaValue.isVoid() ? 0 : static_cast<int>(areaValue));
             const auto axis = static_cast<GestureAxis>(static_cast<int>(obj->getProperty("axis")));
             const auto mask = static_cast<uint8_t>(static_cast<int>(obj->getProperty("mods")));
 
@@ -190,7 +377,15 @@ void GestureRouter::loadFromVar(const juce::var& v) {
             binding.sensitivity =
                 static_cast<float>(static_cast<double>(obj->getProperty("sensitivity")));
             binding.invert = static_cast<bool>(obj->getProperty("invert"));
-            setBinding(context, axis, mask, binding);
+            binding =
+                retuneLearnedDragBinding(context, {kind, area, axis, mask}, binding, defaults_);
+            if (kind == GestureInputKind::Drag && binding.action == GestureActionType::None) {
+                if (const auto* existing = findBinding(context, {kind, area, axis, mask});
+                    existing != nullptr && existing->action != GestureActionType::None) {
+                    continue;
+                }
+            }
+            setBinding(context, {kind, area, axis, mask}, binding);
         }
     }
 }

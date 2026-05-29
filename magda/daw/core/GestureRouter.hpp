@@ -54,9 +54,28 @@ enum class GestureContext {
     Unknown,
 };
 
-/** The wheel axis an event arrived on. Part of the binding key, because the
- *  same modifier set can mean different things for a horizontal vs vertical
- *  wheel (and X11 mice only ever emit Vertical). */
+/** The physical gesture kind. Older persisted rows omit this and default to
+ *  Wheel for backward compatibility. */
+enum class GestureInputKind {
+    Wheel,
+    Drag,
+};
+
+/** The interactive area a gesture originated in. Wheel gestures use Main;
+ *  drag gestures use this to distinguish ruler/body/keyboard/zoom-strip paths
+ *  within the same editor context. */
+enum class GestureArea {
+    Main,
+    Ruler,
+    Body,
+    Header,
+    Keyboard,
+    ZoomStrip,
+};
+
+/** The wheel axis or drag movement axis. Part of the binding key, because the
+ *  same modifier set can mean different things for horizontal vs vertical
+ *  movement. */
 enum class GestureAxis {
     Vertical,    // deltaY (plain mouse wheel; the only axis X11 emits)
     Horizontal,  // deltaX (trackpad horizontal swipe)
@@ -84,11 +103,21 @@ enum GestureModifier : uint8_t {
 /** Derive the normalized modifier mask from a JUCE modifier state. */
 uint8_t gestureModifierMaskFrom(const juce::ModifierKeys& mods);
 
-/** A single (context, axis, modifiers) -> action mapping plus its tuning. */
+/** A single gesture input identity. */
+struct GestureInput {
+    GestureInputKind kind = GestureInputKind::Wheel;
+    GestureArea area = GestureArea::Main;
+    GestureAxis axis = GestureAxis::Vertical;
+    uint8_t modifiers = GestureMod_None;
+};
+
+/** A single gesture input -> action mapping plus its tuning. For wheel
+ *  gestures, sensitivity multiplies the raw wheel delta. For drag gestures,
+ *  sensitivity is pixels per power-of-two zoom step, so larger is slower. */
 struct GestureBinding {
     GestureActionType action = GestureActionType::None;
-    float sensitivity = 1.0f;  // multiplies the raw wheel delta
-    bool invert = false;       // flips the sign of the magnitude
+    float sensitivity = 1.0f;
+    bool invert = false;  // flips the sign of the magnitude
 
     bool operator==(const GestureBinding& o) const {
         return action == o.action && juce::approximatelyEqual(sensitivity, o.sensitivity) &&
@@ -99,7 +128,7 @@ struct GestureBinding {
     }
 };
 
-/** The result of resolving a wheel event against the active bindings. */
+/** The result of resolving a gesture event against the active bindings. */
 struct ResolvedGesture {
     GestureActionType type = GestureActionType::None;
     float magnitude = 0.0f;   // signed, post-sensitivity, post-invert
@@ -121,14 +150,34 @@ class GestureRouter {
     ResolvedGesture resolve(GestureContext context, const juce::MouseWheelDetails& wheel,
                             const juce::ModifierKeys& mods, juce::Point<int> position) const;
 
+    /** Resolve a drag delta in a given context/area to a parametric action.
+     *  rawDelta is the movement in the binding axis, already signed in the
+     *  consumer's natural direction (e.g. drag up/right = positive zoom). */
+    ResolvedGesture resolveDrag(GestureContext context, GestureArea area, GestureAxis axis,
+                                const juce::ModifierKeys& mods, float rawDelta,
+                                juce::Point<int> anchor) const;
+
     /** Look up the binding for an exact (context, axis, modifiers) key, or
      *  nullptr if none is bound. */
     const GestureBinding* findBinding(GestureContext context, GestureAxis axis,
                                       uint8_t modifierMask) const;
+    const GestureBinding* findBinding(GestureContext context, const GestureInput& input) const;
+
+    /** Look up the code-defined default binding for an exact key. */
+    const GestureBinding* findDefaultBinding(GestureContext context, GestureAxis axis,
+                                             uint8_t modifierMask) const;
+    const GestureBinding* findDefaultBinding(GestureContext context,
+                                             const GestureInput& input) const;
 
     /** Install or replace a single binding. */
     void setBinding(GestureContext context, GestureAxis axis, uint8_t modifierMask,
                     const GestureBinding& binding);
+    void setBinding(GestureContext context, const GestureInput& input,
+                    const GestureBinding& binding);
+
+    /** Remove a non-default binding for an exact key. */
+    void clearBinding(GestureContext context, GestureAxis axis, uint8_t modifierMask);
+    void clearBinding(GestureContext context, const GestureInput& input);
 
     /** Restore all bindings to the code-defined defaults. */
     void resetToDefaults();
@@ -153,10 +202,11 @@ class GestureRouter {
 
     void installDefaults();
 
-    static uint32_t makeKey(GestureContext context, GestureAxis axis, uint8_t modifierMask);
+    static uint64_t makeKey(GestureContext context, const GestureInput& input);
+    static GestureInput makeWheelInput(GestureAxis axis, uint8_t modifierMask);
 
-    std::unordered_map<uint32_t, GestureBinding> bindings_;
-    std::unordered_map<uint32_t, GestureBinding> defaults_;
+    std::unordered_map<uint64_t, GestureBinding> bindings_;
+    std::unordered_map<uint64_t, GestureBinding> defaults_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GestureRouter)
 };

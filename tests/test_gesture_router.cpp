@@ -78,13 +78,19 @@ TEST_CASE("GestureRouter: editor context defaults (#1350)", "[gesture]") {
     const juce::ModifierKeys alt(juce::ModifierKeys::altModifier);
     const juce::ModifierKeys cmd(juce::ModifierKeys::commandModifier);
 
-    SECTION("piano roll / drum grid: Alt+wheel zooms vertically, plain wheel is unbound") {
-        REQUIRE(router.resolve(GestureContext::PianoRoll, wheel(0.0f, 0.2f), alt, kAnchor).type ==
-                GestureActionType::ZoomVertical);
+    SECTION("piano roll / drum grid: wheel gestures cover scroll and zoom") {
         REQUIRE(router
                     .resolve(GestureContext::PianoRoll, wheel(0.0f, 0.2f), juce::ModifierKeys(),
                              kAnchor)
-                    .isNone());
+                    .type == GestureActionType::ScrollVertical);
+        REQUIRE(router.resolve(GestureContext::PianoRoll, wheel(0.0f, 0.2f), cmd, kAnchor).type ==
+                GestureActionType::ZoomHorizontal);
+        REQUIRE(router.resolve(GestureContext::PianoRoll, wheel(0.0f, 0.2f), alt, kAnchor).type ==
+                GestureActionType::ZoomVertical);
+        REQUIRE(
+            router
+                .resolve(GestureContext::DrumGrid, wheel(0.0f, 0.2f), juce::ModifierKeys(), kAnchor)
+                .type == GestureActionType::ScrollVertical);
         REQUIRE(router.resolve(GestureContext::DrumGrid, wheel(0.0f, 0.2f), alt, kAnchor).type ==
                 GestureActionType::ZoomVertical);
         REQUIRE(router.resolve(GestureContext::DrumGrid, wheel(0.0f, 0.2f), cmd, kAnchor).type ==
@@ -96,6 +102,64 @@ TEST_CASE("GestureRouter: editor context defaults (#1350)", "[gesture]") {
                                 kAnchor);
         REQUIRE(g.type == GestureActionType::ScrollHorizontal);
         REQUIRE(std::abs(g.magnitude) == 800.0f);  // raw delta 1.0 * sensitivity 800
+        REQUIRE(router.resolve(GestureContext::Waveform, wheel(0.0f, 0.2f), cmd, kAnchor).type ==
+                GestureActionType::ZoomHorizontal);
+    }
+}
+
+TEST_CASE("GestureRouter: drag zoom defaults", "[gesture]") {
+    auto& router = GestureRouter::getInstance();
+    router.resetToDefaults();
+
+    SECTION("arrangement ruler vertical drag zooms horizontally") {
+        auto g = router.resolveDrag(GestureContext::Arrangement, GestureArea::Ruler,
+                                    GestureAxis::Vertical, juce::ModifierKeys(), 30.0f, kAnchor);
+        REQUIRE(g.type == GestureActionType::ZoomHorizontal);
+        REQUIRE(g.hasAnchor);
+        REQUIRE(g.anchor == kAnchor);
+        REQUIRE(g.magnitude == 1.0f);
+    }
+
+    SECTION("MIDI editor drag zones route to horizontal and vertical zoom") {
+        REQUIRE(router
+                    .resolveDrag(GestureContext::PianoRoll, GestureArea::Ruler,
+                                 GestureAxis::Vertical, juce::ModifierKeys(), 30.0f, kAnchor)
+                    .type == GestureActionType::ZoomHorizontal);
+        REQUIRE(router
+                    .resolveDrag(GestureContext::PianoRoll, GestureArea::ZoomStrip,
+                                 GestureAxis::Vertical, juce::ModifierKeys(), 30.0f, kAnchor)
+                    .type == GestureActionType::ZoomVertical);
+        REQUIRE(router
+                    .resolveDrag(GestureContext::PianoRoll, GestureArea::Keyboard,
+                                 GestureAxis::Horizontal, juce::ModifierKeys(), 10.0f, kAnchor)
+                    .type == GestureActionType::ZoomVertical);
+        REQUIRE(router
+                    .resolveDrag(GestureContext::DrumGrid, GestureArea::ZoomStrip,
+                                 GestureAxis::Vertical, juce::ModifierKeys(), 30.0f, kAnchor)
+                    .type == GestureActionType::ZoomVertical);
+    }
+
+    SECTION("waveform ruler/header/body drag zones zoom horizontally") {
+        for (auto area : {GestureArea::Ruler, GestureArea::Header, GestureArea::Body}) {
+            REQUIRE(router
+                        .resolveDrag(GestureContext::Waveform, area, GestureAxis::Vertical,
+                                     juce::ModifierKeys(), 30.0f, kAnchor)
+                        .type == GestureActionType::ZoomHorizontal);
+        }
+    }
+
+    SECTION("drag zoom can be learned on the horizontal axis") {
+        GestureInput input{GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Horizontal,
+                           GestureMod_None};
+        router.setBinding(GestureContext::Arrangement, input,
+                          {GestureActionType::ZoomHorizontal, 25.0f, false});
+
+        auto g = router.resolveDrag(GestureContext::Arrangement, GestureArea::Ruler,
+                                    GestureAxis::Horizontal, juce::ModifierKeys(), 25.0f, kAnchor);
+        REQUIRE(g.type == GestureActionType::ZoomHorizontal);
+        REQUIRE(g.magnitude == 1.0f);
+
+        router.resetToDefaults();
     }
 }
 
@@ -159,6 +223,113 @@ TEST_CASE("GestureRouter: persistence stores only overrides", "[gesture]") {
                                                GestureMod_Shift);
         REQUIRE(shift != nullptr);
         REQUIRE(shift->action == GestureActionType::ScrollHorizontal);
+
+        router.resetToDefaults();
+    }
+
+    SECTION("drag override round-trips through var") {
+        GestureInput input{GestureInputKind::Drag, GestureArea::Body, GestureAxis::Vertical,
+                           GestureMod_None};
+        router.setBinding(GestureContext::Waveform, input,
+                          {GestureActionType::ZoomHorizontal, 44.0f, true});
+
+        auto v = router.toVar();
+        REQUIRE(v.getArray()->size() == 1);
+
+        router.resetToDefaults();
+        router.loadFromVar(v);
+
+        const auto* b = router.findBinding(GestureContext::Waveform, input);
+        REQUIRE(b != nullptr);
+        REQUIRE(b->action == GestureActionType::ZoomHorizontal);
+        REQUIRE(b->sensitivity == 44.0f);
+        REQUIRE(b->invert);
+
+        router.resetToDefaults();
+    }
+
+    SECTION("drag binding axis is ignored") {
+        GestureInput horizontal{GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Horizontal,
+                                GestureMod_None};
+        router.setBinding(GestureContext::Arrangement, horizontal,
+                          {GestureActionType::ZoomHorizontal, 30.0f, false});
+
+        const auto fromHorizontal =
+            router.resolveDrag(GestureContext::Arrangement, GestureArea::Ruler,
+                               GestureAxis::Horizontal, juce::ModifierKeys(), 30.0f, kAnchor);
+        const auto fromVertical =
+            router.resolveDrag(GestureContext::Arrangement, GestureArea::Ruler,
+                               GestureAxis::Vertical, juce::ModifierKeys(), 30.0f, kAnchor);
+
+        REQUIRE(fromHorizontal.type == GestureActionType::ZoomHorizontal);
+        REQUIRE(fromVertical.type == GestureActionType::ZoomHorizontal);
+        REQUIRE(fromHorizontal.magnitude == 1.0f);
+        REQUIRE(fromVertical.magnitude == 1.0f);
+
+        router.resetToDefaults();
+    }
+
+    SECTION("learned drag zoom overrides using wheel sensitivity are retuned on load") {
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("context", static_cast<int>(GestureContext::Arrangement));
+        obj->setProperty("kind", static_cast<int>(GestureInputKind::Drag));
+        obj->setProperty("area", static_cast<int>(GestureArea::Ruler));
+        obj->setProperty("axis", static_cast<int>(GestureAxis::Horizontal));
+        obj->setProperty("mods", static_cast<int>(GestureMod_None));
+        obj->setProperty("action", static_cast<int>(GestureActionType::ZoomHorizontal));
+        obj->setProperty("sensitivity", 0.5);
+        obj->setProperty("invert", false);
+
+        juce::Array<juce::var> overrides;
+        overrides.add(juce::var(obj));
+        router.loadFromVar(juce::var(overrides));
+
+        const auto g =
+            router.resolveDrag(GestureContext::Arrangement, GestureArea::Ruler,
+                               GestureAxis::Horizontal, juce::ModifierKeys(), 30.0f, kAnchor);
+        const auto vertical =
+            router.resolveDrag(GestureContext::Arrangement, GestureArea::Ruler,
+                               GestureAxis::Vertical, juce::ModifierKeys(), 30.0f, kAnchor);
+        REQUIRE(g.type == GestureActionType::ZoomHorizontal);
+        REQUIRE(vertical.type == GestureActionType::ZoomHorizontal);
+        REQUIRE(g.magnitude == 1.0f);
+        REQUIRE(vertical.magnitude == 1.0f);
+
+        router.resetToDefaults();
+    }
+
+    SECTION("collapsed drag axis prefers learned binding over disabled legacy axis") {
+        juce::Array<juce::var> overrides;
+
+        auto* learned = new juce::DynamicObject();
+        learned->setProperty("context", static_cast<int>(GestureContext::Arrangement));
+        learned->setProperty("kind", static_cast<int>(GestureInputKind::Drag));
+        learned->setProperty("area", static_cast<int>(GestureArea::Ruler));
+        learned->setProperty("axis", static_cast<int>(GestureAxis::Horizontal));
+        learned->setProperty("mods", static_cast<int>(GestureMod_None));
+        learned->setProperty("action", static_cast<int>(GestureActionType::ZoomHorizontal));
+        learned->setProperty("sensitivity", 8.0);
+        learned->setProperty("invert", false);
+        overrides.add(juce::var(learned));
+
+        auto* disabled = new juce::DynamicObject();
+        disabled->setProperty("context", static_cast<int>(GestureContext::Arrangement));
+        disabled->setProperty("kind", static_cast<int>(GestureInputKind::Drag));
+        disabled->setProperty("area", static_cast<int>(GestureArea::Ruler));
+        disabled->setProperty("axis", static_cast<int>(GestureAxis::Vertical));
+        disabled->setProperty("mods", static_cast<int>(GestureMod_None));
+        disabled->setProperty("action", static_cast<int>(GestureActionType::None));
+        disabled->setProperty("sensitivity", 30.0);
+        disabled->setProperty("invert", false);
+        overrides.add(juce::var(disabled));
+
+        router.loadFromVar(juce::var(overrides));
+
+        const auto g =
+            router.resolveDrag(GestureContext::Arrangement, GestureArea::Ruler,
+                               GestureAxis::Vertical, juce::ModifierKeys(), 30.0f, kAnchor);
+        REQUIRE(g.type == GestureActionType::ZoomHorizontal);
+        REQUIRE(g.magnitude == 1.0f);
 
         router.resetToDefaults();
     }

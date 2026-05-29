@@ -327,6 +327,11 @@ void MainWindow::applyLayoutFromConfig() {
         mainComponent->mainView->resized();
 }
 
+juce::ApplicationCommandManager& MainWindow::getCommandManager() {
+    jassert(mainComponent != nullptr);
+    return mainComponent->getCommandManager();
+}
+
 void MainWindow::updateWindowTitle() {
     auto& pm = ProjectManager::getInstance();
     juce::String title = "MAGDA";

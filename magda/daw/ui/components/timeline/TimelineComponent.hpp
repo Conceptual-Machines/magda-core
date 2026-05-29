@@ -181,8 +181,9 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     int mouseDownX = 0;
     int mouseDownY = 0;
     double zoomStartValue = 1.0;
-    double zoomAnchorBeats = 0.0;             // Beat position to keep stable during zoom
-    int zoomAnchorScreenX = 0;                // Screen X position where anchor should stay
+    double zoomAnchorBeats = 0.0;  // Beat position to keep stable during zoom
+    int zoomAnchorScreenX = 0;     // Screen X position where anchor should stay
+    GestureAxis zoomDragAxis = GestureAxis::Vertical;
     static constexpr int DRAG_THRESHOLD = 5;  // Pixels of movement before it's a drag
 
     // Helper methods — beats are the native domain
