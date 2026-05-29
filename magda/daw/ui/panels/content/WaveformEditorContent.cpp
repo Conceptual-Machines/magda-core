@@ -13,6 +13,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipPropertyCommands.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -238,6 +239,7 @@ WaveformEditorContent::WaveformEditorContent() {
     // Create time ruler
     timeRuler_ = std::make_unique<magda::TimeRuler>();
     timeRuler_->setDisplayMode(magda::TimeRuler::DisplayMode::BarsBeats);
+    timeRuler_->setGestureContext(magda::GestureContext::Waveform);
     timeRuler_->setRelativeMode(relativeTimeMode_);
     timeRuler_->setLeftPadding(GRID_LEFT_PADDING);
 
@@ -563,10 +565,11 @@ WaveformEditorContent::WaveformEditorContent() {
     gridComponent_->onSliceWarpMarkersToDrumGrid = [this]() { sliceWarpMarkersToDrumGrid(); };
     gridComponent_->onSliceAtGridToDrumGrid = [this]() { sliceAtGridToDrumGrid(); };
 
-    // Zoom drag on waveform — same log-curve sensitivity as header drag
-    gridComponent_->onZoomDrag = [this](int deltaY, int anchorX) {
-        // deltaY == 0 signals drag start — capture starting zoom
-        if (deltaY == 0) {
+    // Zoom drag on waveform body, resolved through GestureRouter.
+    gridComponent_->onZoomDrag = [this](int deltaX, int deltaY, int anchorX,
+                                        const juce::ModifierKeys& mods) {
+        // zero deltas signal drag start — capture starting zoom
+        if (deltaX == 0 && deltaY == 0) {
             waveformZoomStartZoom_ = horizontalZoom_;
             return;
         }
@@ -575,23 +578,16 @@ WaveformEditorContent::WaveformEditorContent() {
         if (startZoom <= 0.0)
             startZoom = horizontalZoom_;
 
-        double zoomRange = std::log(MAX_ZOOM) - std::log(MIN_ZOOM);
-        double zoomPosition = (std::log(startZoom) - std::log(MIN_ZOOM)) / zoomRange;
+        const auto axis = std::abs(deltaX) > std::abs(deltaY) ? magda::GestureAxis::Horizontal
+                                                              : magda::GestureAxis::Vertical;
+        const int dragDelta = axis == magda::GestureAxis::Horizontal ? deltaX : deltaY;
+        const auto gesture = magda::GestureRouter::getInstance().resolveDrag(
+            magda::GestureContext::Waveform, magda::GestureArea::Body, axis, mods,
+            static_cast<float>(dragDelta), {anchorX, 0});
+        if (gesture.type != magda::GestureActionType::ZoomHorizontal)
+            return;
 
-        double minSensitivity = 20.0;
-        double maxSensitivity = 30.0;
-        double baseSensitivity = minSensitivity + zoomPosition * (maxSensitivity - minSensitivity);
-
-        double sensitivity = baseSensitivity;
-
-        double absDeltaY = std::abs(static_cast<double>(deltaY));
-        if (absDeltaY > 80.0) {
-            double accelerationFactor = 1.0 + (absDeltaY - 80.0) / 150.0;
-            sensitivity /= accelerationFactor;
-        }
-
-        double exponent = static_cast<double>(deltaY) / sensitivity;
-        double newZoom = startZoom * std::pow(2.0, exponent);
+        double newZoom = startZoom * std::pow(2.0, gesture.magnitude);
         newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, newZoom);
 
         if (newZoom != horizontalZoom_) {
@@ -725,6 +721,7 @@ void WaveformEditorContent::mouseDown(const juce::MouseEvent& event) {
     bool overHeader = event.y < (TOOLBAR_HEIGHT + TIME_RULER_HEIGHT);
     if (overHeader) {
         headerDragActive_ = true;
+        headerDragStartX_ = event.x;
         headerDragStartY_ = event.y;
         headerDragAnchorX_ = event.x - viewport_->getX();
         headerDragStartZoom_ = horizontalZoom_;
@@ -733,41 +730,24 @@ void WaveformEditorContent::mouseDown(const juce::MouseEvent& event) {
 
 void WaveformEditorContent::mouseDrag(const juce::MouseEvent& event) {
     if (headerDragActive_) {
-        // Vertical drag: up = zoom in, down = zoom out (matches arranger)
-        int deltaY = headerDragStartY_ - event.y;
+        const int deltaX = event.x - headerDragStartX_;
+        const int deltaY = headerDragStartY_ - event.y;
+        const auto axis = std::abs(deltaX) > std::abs(deltaY) ? magda::GestureAxis::Horizontal
+                                                              : magda::GestureAxis::Vertical;
+        const int dragDelta = axis == magda::GestureAxis::Horizontal ? deltaX : deltaY;
+        const auto gesture = magda::GestureRouter::getInstance().resolveDrag(
+            magda::GestureContext::Waveform, magda::GestureArea::Header, axis, event.mods,
+            static_cast<float>(dragDelta), {headerDragAnchorX_, headerDragStartY_});
+        if (gesture.type != magda::GestureActionType::ZoomHorizontal)
+            return;
 
-        // Zoom-level-dependent sensitivity (log curve):
-        // When zoomed out → lower sensitivity (faster zoom)
-        // When zoomed in → higher sensitivity (finer control)
-        double zoomRange = std::log(MAX_ZOOM) - std::log(MIN_ZOOM);
-        double zoomPosition = (std::log(headerDragStartZoom_) - std::log(MIN_ZOOM)) / zoomRange;
-
-        double minSensitivity = 20.0;  // Fast when zoomed out
-        double maxSensitivity = 30.0;  // Finer when zoomed in
-        double baseSensitivity = minSensitivity + zoomPosition * (maxSensitivity - minSensitivity);
-
-        double sensitivity = baseSensitivity;
-        if (event.mods.isShiftDown()) {
-            sensitivity = 8.0;  // Turbo
-        } else if (event.mods.isAltDown()) {
-            sensitivity = baseSensitivity * 3.0;  // Fine
-        }
-
-        // Progressive acceleration after 80px of drag
-        double absDeltaY = std::abs(static_cast<double>(deltaY));
-        if (absDeltaY > 80.0) {
-            double accelerationFactor = 1.0 + (absDeltaY - 80.0) / 150.0;
-            sensitivity /= accelerationFactor;
-        }
-
-        double exponent = static_cast<double>(deltaY) / sensitivity;
-        double newZoom = headerDragStartZoom_ * std::pow(2.0, exponent);
+        double newZoom = headerDragStartZoom_ * std::pow(2.0, gesture.magnitude);
         newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, newZoom);
 
         if (newZoom != horizontalZoom_) {
-            if (deltaY > 0) {
+            if (dragDelta > 0) {
                 setMouseCursor(magda::CursorManager::getInstance().getZoomInCursor());
-            } else if (deltaY < 0) {
+            } else if (dragDelta < 0) {
                 setMouseCursor(magda::CursorManager::getInstance().getZoomOutCursor());
             }
 
@@ -791,11 +771,20 @@ void WaveformEditorContent::mouseMove(const juce::MouseEvent& event) {
 
 void WaveformEditorContent::mouseWheelMove(const juce::MouseEvent& event,
                                            const juce::MouseWheelDetails& wheel) {
-    juce::ignoreUnused(event);
+    // Wheel scrolls the sample view horizontally, via GestureRouter (#1350).
+    // The Waveform binding carries the editor's original sensitivity (800), so
+    // magnitude reproduces the previous raw-delta * 800 step.
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::Waveform, wheel, event.mods, event.getPosition());
+    if (gesture.type == magda::GestureActionType::ScrollHorizontal) {
+        setVirtualScrollX(virtualScrollX_ - static_cast<int>(gesture.magnitude));
+        return;
+    }
 
-    const float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
-    int scrollDelta = static_cast<int>(-delta * 800.0f);
-    setVirtualScrollX(virtualScrollX_ + scrollDelta);
+    if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
+        int anchorX = event.x - viewport_->getX();
+        performAnchorPointZoom(std::pow(2.0, static_cast<double>(gesture.magnitude)), anchorX);
+    }
 }
 
 void WaveformEditorContent::mouseMagnify(const juce::MouseEvent& event, float scaleFactor) {

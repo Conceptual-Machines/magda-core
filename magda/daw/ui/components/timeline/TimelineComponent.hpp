@@ -9,6 +9,7 @@
 #include "../../layout/LayoutConfig.hpp"
 #include "../../state/TimelineController.hpp"
 #include "LoopMarkerInteraction.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/TempoUtils.hpp"
 
 namespace magda {
@@ -126,8 +127,8 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     std::function<void()> onZoomEnd;  // Callback when zoom operation ends
     std::function<void(double, double)>
         onLoopRegionBeatsChanged;  // Callback when loop region changes
-    std::function<void(float deltaX, float deltaY)>
-        onScrollRequested;  // Callback for scroll requests from mouse wheel
+    std::function<void(const ResolvedGesture&)>
+        onArrangementGesture;  // Wheel gesture resolved via GestureRouter (#21/#26)
     std::function<void(double, double)>
         onTimeSelectionBeatsChanged;  // Callback when time selection changes in ruler
     std::function<void(double, double)>
@@ -180,8 +181,9 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     int mouseDownX = 0;
     int mouseDownY = 0;
     double zoomStartValue = 1.0;
-    double zoomAnchorBeats = 0.0;             // Beat position to keep stable during zoom
-    int zoomAnchorScreenX = 0;                // Screen X position where anchor should stay
+    double zoomAnchorBeats = 0.0;  // Beat position to keep stable during zoom
+    int zoomAnchorScreenX = 0;     // Screen X position where anchor should stay
+    GestureAxis zoomDragAxis = GestureAxis::Vertical;
     static constexpr int DRAG_THRESHOLD = 5;  // Pixels of movement before it's a drag
 
     // Helper methods — beats are the native domain

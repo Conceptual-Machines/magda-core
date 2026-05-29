@@ -28,9 +28,10 @@ enum {
     toggleClipLoop = 0x100D,       // Cmd+L: toggle loop on/off for selected clip
     duplicateClipWithAutomation = 0x100E,
     duplicateClipWithoutAutomation = 0x100F,
+    escapeAction = 0x1010,  // Esc: exit link mode / clear edit cursor
 
     // Transport menu
-    play = 0x2000,
+    play = 0x2000,  // Space: toggles play/stop (perform() already toggles)
     stop = 0x2001,
     record = 0x2002,
     goToStart = 0x2003,
@@ -40,6 +41,11 @@ enum {
     newAudioTrack = 0x3000,
     newMidiTrack = 0x3001,
     deleteTrack = 0x3002,
+    duplicateTrackNoContent = 0x3003,    // Cmd/Ctrl+Shift+D: header only, no clips
+    duplicateTrackContentOnly = 0x3004,  // Cmd/Ctrl+Alt+D: clips only, no FX chain
+    toggleMuteSelectedTracks = 0x3005,   // M
+    toggleSoloSelectedTracks = 0x3006,   // Shift+S
+    audioLevelTest = 0x3007,             // Cmd/Ctrl+Shift+A: create two -12dB tone tracks
 
     // View menu
     zoom = 0x4000,

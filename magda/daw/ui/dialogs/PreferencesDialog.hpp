@@ -17,7 +17,7 @@ class ShortcutsPage;
  */
 class PreferencesDialog : public juce::Component {
   public:
-    PreferencesDialog();
+    explicit PreferencesDialog(juce::ApplicationCommandManager* commandManager = nullptr);
     ~PreferencesDialog() override;
 
     void resized() override;

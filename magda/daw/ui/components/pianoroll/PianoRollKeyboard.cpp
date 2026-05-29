@@ -1,8 +1,11 @@
 #include "PianoRollKeyboard.hpp"
 
+#include <cmath>
+
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/ClipInfo.hpp"
+#include "core/GestureRouter.hpp"
 
 namespace magda {
 
@@ -136,6 +139,7 @@ void PianoRollKeyboard::mouseDown(const juce::MouseEvent& event) {
     lastDragY_ = event.y;
     zoomStartHeight_ = noteHeight_;
     dragMode_ = DragMode::None;
+    dragGestureAxis_ = GestureAxis::Horizontal;
 
     // Capture anchor note at mouse position
     zoomAnchorNote_ = yToNoteNumber(event.y);
@@ -173,18 +177,31 @@ void PianoRollKeyboard::mouseDrag(const juce::MouseEvent& event) {
                 currentPlayingNote_ = -1;
             }
 
-            // Vertical drag = scroll (along keyboard), horizontal drag = zoom
-            dragMode_ = (deltaY > deltaX) ? DragMode::Scrolling : DragMode::Zooming;
+            dragGestureAxis_ = (deltaX > deltaY) ? GestureAxis::Horizontal : GestureAxis::Vertical;
+            const int dragDelta = dragGestureAxis_ == GestureAxis::Horizontal
+                                      ? event.x - mouseDownX_
+                                      : mouseDownY_ - event.y;
+            const auto gesture = GestureRouter::getInstance().resolveDrag(
+                GestureContext::PianoRoll, GestureArea::Keyboard, dragGestureAxis_, event.mods,
+                static_cast<float>(dragDelta), {mouseDownX_, mouseDownY_});
+            dragMode_ = gesture.type == GestureActionType::ZoomVertical
+                            ? DragMode::Zooming
+                            : (dragGestureAxis_ == GestureAxis::Vertical ? DragMode::Scrolling
+                                                                         : DragMode::None);
         }
     }
 
     if (dragMode_ == DragMode::Zooming) {
-        // Drag left = zoom out (smaller notes), drag right = zoom in (larger notes)
-        int xDelta = event.x - mouseDownX_;
+        const int dragDelta = dragGestureAxis_ == GestureAxis::Horizontal ? event.x - mouseDownX_
+                                                                          : mouseDownY_ - event.y;
+        const auto gesture = GestureRouter::getInstance().resolveDrag(
+            GestureContext::PianoRoll, GestureArea::Keyboard, dragGestureAxis_, event.mods,
+            static_cast<float>(dragDelta), {mouseDownX_, mouseDownY_});
+        if (gesture.type != GestureActionType::ZoomVertical)
+            return;
 
-        // Linear zoom - each 10 pixels of drag changes height by 1
-        int heightDelta = xDelta / 10;
-        int newHeight = zoomStartHeight_ + heightDelta;
+        int newHeight = static_cast<int>(
+            std::round(static_cast<double>(zoomStartHeight_) * std::pow(2.0, gesture.magnitude)));
 
         // Clamp to reasonable limits
         newHeight = juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT,
@@ -219,7 +236,12 @@ void PianoRollKeyboard::mouseUp(const juce::MouseEvent& /*event*/) {
 
 void PianoRollKeyboard::mouseWheelMove(const juce::MouseEvent& event,
                                        const juce::MouseWheelDetails& wheel) {
-    if (event.mods.isAltDown() && onZoomChanged) {
+    // Alt+wheel = note-height (vertical) zoom, resolved via GestureRouter so the
+    // binding matches the piano-roll grid and is configurable (#1350). The
+    // zoom magnitude stays in this handler.
+    const auto gesture = GestureRouter::getInstance().resolve(GestureContext::PianoRoll, wheel,
+                                                              event.mods, event.getPosition());
+    if (gesture.type == GestureActionType::ZoomVertical && onZoomChanged) {
         const int anchorNote = yToNoteNumber(event.y);
         const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
         onZoomChanged(juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT,

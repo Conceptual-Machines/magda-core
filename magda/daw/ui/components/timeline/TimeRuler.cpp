@@ -208,6 +208,7 @@ void TimeRuler::mouseDown(const juce::MouseEvent& event) {
     lastDragX = event.x;
     zoomStartValue = zoom;
     dragMode = DragMode::None;
+    dragGestureAxis = GestureAxis::Vertical;
 
     // Capture anchor time at mouse position
     zoomAnchorTime = pixelToTime(event.x);
@@ -238,32 +239,42 @@ void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
     if (loopInteraction_.mouseDrag(event.x, event.y))
         return;
 
-    int deltaX = std::abs(event.x - mouseDownX);
-    int deltaY = std::abs(event.y - mouseDownY);
+    const int deltaX = std::abs(event.x - mouseDownX);
+    const int deltaY = std::abs(event.y - mouseDownY);
 
     // Determine drag mode if not yet set
     if (dragMode == DragMode::None) {
         if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
-            // Horizontal drag = scroll, vertical drag = zoom
-            dragMode = (deltaX > deltaY) ? DragMode::Scrolling : DragMode::Zooming;
+            dragGestureAxis = (deltaX > deltaY) ? GestureAxis::Horizontal : GestureAxis::Vertical;
+            const int dragDelta = dragGestureAxis == GestureAxis::Horizontal ? event.x - mouseDownX
+                                                                             : mouseDownY - event.y;
+            const auto gesture = GestureRouter::getInstance().resolveDrag(
+                gestureContext_, GestureArea::Ruler, dragGestureAxis, event.mods,
+                static_cast<float>(dragDelta), {mouseDownX, mouseDownY});
+            dragMode = gesture.type == GestureActionType::ZoomHorizontal
+                           ? DragMode::Zooming
+                           : (dragGestureAxis == GestureAxis::Horizontal ? DragMode::Scrolling
+                                                                         : DragMode::None);
         }
     }
 
     if (dragMode == DragMode::Zooming) {
-        // Drag up = zoom in, drag down = zoom out
-        int yDelta = mouseDownY - event.y;
+        const int dragDelta = dragGestureAxis == GestureAxis::Horizontal ? event.x - mouseDownX
+                                                                         : mouseDownY - event.y;
+        const auto gesture = GestureRouter::getInstance().resolveDrag(
+            gestureContext_, GestureArea::Ruler, dragGestureAxis, event.mods,
+            static_cast<float>(dragDelta), {mouseDownX, mouseDownY});
+        if (gesture.type != GestureActionType::ZoomHorizontal)
+            return;
 
-        // Exponential zoom for smooth feel
-        double sensitivity = 30.0;  // pixels to double/halve zoom
-        double exponent = static_cast<double>(yDelta) / sensitivity;
-        double newZoom = zoomStartValue * std::pow(2.0, exponent);
+        double newZoom = zoomStartValue * std::pow(2.0, gesture.magnitude);
 
         // Clamp zoom to reasonable limits (pixels per beat)
         newZoom = juce::jlimit(1.0, 50000.0, newZoom);
 
-        if (yDelta > 0) {
+        if (dragDelta > 0) {
             setMouseCursor(CursorManager::getInstance().getZoomInCursor());
-        } else if (yDelta < 0) {
+        } else if (dragDelta < 0) {
             setMouseCursor(CursorManager::getInstance().getZoomOutCursor());
         }
 

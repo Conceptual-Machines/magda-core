@@ -17,6 +17,7 @@ target_sources(magda_daw PRIVATE
     SessionLaunchService.cpp
     MidiFileWriter.cpp
     SelectionManager.cpp
+    GestureRouter.cpp
     AutomationInfo.cpp
     AutomationManager.cpp
     LinkModeManager.cpp

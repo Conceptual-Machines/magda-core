@@ -10,6 +10,7 @@
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/DeviceInfo.hpp"
+#include "../../../core/GestureRouter.hpp"
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/PluginPreferences.hpp"
 #include "../../../core/RackInfo.hpp"
@@ -2777,12 +2778,17 @@ void TrackHeadersPanel::mouseDrag(const juce::MouseEvent& event) {
 
 void TrackHeadersPanel::mouseWheelMove(const juce::MouseEvent& event,
                                        const juce::MouseWheelDetails& wheel) {
-    if (scrollTarget_) {
-        // Match JUCE Viewport's scroll formula: deltaY * 14.0f * singleStepSize (default 16)
+    // Vertical track scroll resolves through GestureRouter (#1350) using the
+    // same Arrangement ScrollVertical binding as the track body, so the headers
+    // and content scroll in lockstep at one shared sensitivity.
+    const auto gesture = GestureRouter::getInstance().resolve(GestureContext::Arrangement, wheel,
+                                                              event.mods, event.getPosition());
+    if (scrollTarget_ && gesture.type == GestureActionType::ScrollVertical) {
         auto pos = scrollTarget_->getViewPosition();
-        float distance = wheel.deltaY * 14.0f * 16.0f;
-        int step = juce::roundToInt(distance < 0.0f ? juce::jmin(distance, -1.0f)
-                                                    : juce::jmax(distance, 1.0f));
+        // Preserve the original min-1px step so small wheel ticks still move.
+        const float distance = gesture.magnitude;
+        const int step = juce::roundToInt(distance < 0.0f ? juce::jmin(distance, -1.0f)
+                                                          : juce::jmax(distance, 1.0f));
         scrollTarget_->setViewPosition(pos.x, pos.y - step);
     } else {
         juce::Component::mouseWheelMove(event, wheel);

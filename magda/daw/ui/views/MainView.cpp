@@ -430,20 +430,25 @@ void MainView::setupComponents() {
 }
 
 void MainView::setupCallbacks() {
+    // Apply any user gesture-binding overrides saved in config.json on top of
+    // the code-defined defaults (#22). Safe to call here: Config is loaded from
+    // disk before the UI is built.
+    GestureRouter::getInstance().loadFromConfig();
+
     // Set up timeline callbacks
     timeline->onPlayheadPositionBeatsChanged = [this](double positionBeats) {
         timelineController->dispatch(SetPlayheadPositionBeatsEvent{positionBeats});
     };
 
-    // Handle scroll requests from timeline (for trackpad scrolling over ruler)
-    timeline->onScrollRequested = [this](float deltaX, float deltaY) {
-        // Calculate scroll amount (scale delta for smooth scrolling)
-        const float scrollSpeed = 50.0f;
-        int scrollDeltaX = static_cast<int>(-deltaX * scrollSpeed);
-        int scrollDeltaY = static_cast<int>(-deltaY * scrollSpeed);
-
-        // Dispatch to controller
-        timelineController->dispatch(ScrollByDeltaEvent{scrollDeltaX, scrollDeltaY});
+    // Mouse-wheel gestures over the arrangement (ruler + track content) resolve
+    // through GestureRouter (#21) and dispatch here (#26). This is the first
+    // real consumer of the gesture system and supersedes the per-platform wheel
+    // handling that left a plain wheel dead over the arrangement on Linux.
+    timeline->onArrangementGesture = [this](const ResolvedGesture& g) {
+        dispatchArrangementGesture(g);
+    };
+    trackContentPanel->onArrangementGesture = [this](const ResolvedGesture& g) {
+        dispatchArrangementGesture(g);
     };
 
     // Handle time selection from timeline ruler
@@ -459,6 +464,79 @@ void MainView::setupCallbacks() {
 
     // Set up selection and loop callbacks
     setupSelectionCallbacks();
+}
+
+void MainView::dispatchArrangementGesture(const ResolvedGesture& gesture) {
+    // Magnitude is the wheel delta already scaled by the binding's sensitivity
+    // (and sign-corrected for invert / natural-scroll). The sign convention
+    // here matches the old hand-rolled handler: a positive magnitude scrolls
+    // the content the same way the wheel was pushed.
+    switch (gesture.type) {
+        case GestureActionType::ScrollHorizontal: {
+            timelineController->dispatch(
+                ScrollByDeltaEvent{-static_cast<int>(gesture.magnitude), 0});
+            break;
+        }
+        case GestureActionType::ScrollVertical: {
+            // Vertical scroll is driven straight through the viewport, not the
+            // controller (timelineStateChanged intentionally ignores scrollY).
+            // The vertical scrollbar listener syncs the track headers.
+            const auto pos = trackContentViewport->getViewPosition();
+            trackContentViewport->setViewPosition(pos.x,
+                                                  pos.y - static_cast<int>(gesture.magnitude));
+            break;
+        }
+        case GestureActionType::ZoomHorizontal: {
+            const auto& state = timelineController->getState();
+            const double currentZoom = state.zoom.horizontalZoom;
+            if (currentZoom <= 0.0)
+                break;
+
+            // Multiplicative (exponential) zoom: magnitude is the power-of-two
+            // exponent (already scaled by the binding's zoom sensitivity, which
+            // is the configurable per-tick feel). Positive zooms in.
+            double newZoom = currentZoom * std::pow(2.0, gesture.magnitude);
+
+            auto& config = magda::Config::getInstance();
+            newZoom = juce::jlimit(config.getMinZoomLevel(), config.getMaxZoomLevel(), newZoom);
+
+            // Keep the beat under the cursor pinned. anchor.x is content-space
+            // (the panels are the viewed components), so the beat comes from the
+            // current zoom and the viewport-relative X is anchor.x - scrollX.
+            const double anchorBeats = juce::jlimit(
+                0.0, state.timelineLengthBeats,
+                static_cast<double>(gesture.anchor.x - LayoutConfig::TIMELINE_LEFT_PADDING) /
+                    currentZoom);
+            const int anchorViewportX = gesture.anchor.x - state.zoom.scrollX;
+
+            timelineController->dispatch(
+                SetZoomAnchoredBeatsEvent{newZoom, anchorBeats, anchorViewportX});
+            break;
+        }
+        case GestureActionType::ZoomVertical: {
+            applyVerticalZoom(verticalZoom * std::pow(2.0, gesture.magnitude));
+            break;
+        }
+        case GestureActionType::Pan:
+        case GestureActionType::None:
+            break;
+    }
+}
+
+void MainView::applyVerticalZoom(double newVerticalZoom) {
+    verticalZoom = juce::jlimit(0.5, 3.0, newVerticalZoom);
+
+    trackContentPanel->setVerticalZoom(verticalZoom);
+    trackHeadersPanel->setVerticalZoom(verticalZoom);
+
+    // Both panels must end at the exact same content height to stay in scroll
+    // sync (see the vertical zoom scrollbar handler for the rationale).
+    const int scaledHeight = trackHeadersPanel->getTotalTracksHeight();
+    trackContentPanel->setSize(trackContentPanel->getWidth(), scaledHeight);
+    trackHeadersPanel->setSize(trackHeaderWidth, scaledHeight);
+
+    updateVerticalZoomScrollBar();
+    playheadComponent->repaint();
 }
 
 MainView::~MainView() {
