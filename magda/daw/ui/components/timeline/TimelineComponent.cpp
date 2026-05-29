@@ -62,7 +62,7 @@ void TimelineComponent::setController(TimelineController* controller) {
         // Sync initial state
         const auto& state = controller->getState();
         timelineLength = state.timelineLength;
-        zoom = state.zoom.horizontalZoom;
+        pixelsPerBeat = state.zoom.horizontalZoom;
         playheadPosition = state.playhead.getPosition();
         displayMode = state.display.timeDisplayMode;
         tempoBPM = state.tempo.bpm;
@@ -101,7 +101,7 @@ void TimelineComponent::timelineStateChanged(const TimelineState& state, ChangeF
 
     // Zoom/scroll changes
     if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll)) {
-        zoom = state.zoom.horizontalZoom;
+        pixelsPerBeat = state.zoom.horizontalZoom;
         needsRepaint = true;
     }
 
@@ -243,8 +243,8 @@ void TimelineComponent::setPlayheadPosition(double position) {
     // Don't repaint - timeline doesn't draw playhead anymore
 }
 
-void TimelineComponent::setZoom(double pixelsPerSecond) {
-    zoom = pixelsPerSecond;
+void TimelineComponent::setZoom(double pixelsPerBeatIn) {
+    pixelsPerBeat = pixelsPerBeatIn;
     repaint();
 }
 
@@ -328,7 +328,7 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
     // Store initial mouse position for drag detection
     mouseDownX = event.x;
     mouseDownY = event.y;
-    zoomStartValue = zoom;
+    zoomStartValue = pixelsPerBeat;
     isZooming = false;
     isPendingPlayheadClick = false;
     isDraggingTimeSelection = false;
@@ -751,12 +751,12 @@ void TimelineComponent::clearSections() {
 }
 
 int TimelineComponent::beatsToPixel(double beats) const {
-    return static_cast<int>(std::round(beats * zoom));
+    return static_cast<int>(std::round(beats * pixelsPerBeat));
 }
 
 double TimelineComponent::pixelToBeats(int pixel) const {
-    if (zoom > 0)
-        return static_cast<double>(pixel - LayoutConfig::TIMELINE_LEFT_PADDING) / zoom;
+    if (pixelsPerBeat > 0)
+        return static_cast<double>(pixel - LayoutConfig::TIMELINE_LEFT_PADDING) / pixelsPerBeat;
     return 0.0;
 }
 
@@ -772,7 +772,7 @@ int TimelineComponent::timeToPixel(double time) const {
 
 int TimelineComponent::timeDurationToPixels(double duration) const {
     double beats = duration * tempoBPM / 60.0;
-    return static_cast<int>(std::round(beats * zoom));
+    return static_cast<int>(std::round(beats * pixelsPerBeat));
 }
 
 void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
@@ -831,11 +831,11 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         auto clipBounds = g.getClipBounds();
         double visibleStartTime = juce::jmax(
             0.0, static_cast<double>(clipBounds.getX() - LayoutConfig::TIMELINE_LEFT_PADDING) /
-                     (tempoBPM / 60.0 * zoom));
+                     (tempoBPM / 60.0 * pixelsPerBeat));
         double visibleEndTime =
             juce::jmin(timelineLength, static_cast<double>(clipBounds.getRight() -
                                                            LayoutConfig::TIMELINE_LEFT_PADDING) /
-                                           (tempoBPM / 60.0 * zoom));
+                                           (tempoBPM / 60.0 * pixelsPerBeat));
         double startTime = std::floor(visibleStartTime / markerInterval) * markerInterval;
         double endTime = juce::jmin(timelineLength, visibleEndTime + markerInterval);
 
@@ -909,7 +909,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         // ===== BARS/BEATS MODE =====
         // Everything in beats — zoom is pixels per beat (ppb)
         double markerIntervalBeats = GridConstants::computeGridInterval(
-            gridQuantize, zoom, timeSignatureNumerator, minPixelSpacing);
+            gridQuantize, pixelsPerBeat, timeSignatureNumerator, minPixelSpacing);
 
         double barLengthBeats = static_cast<double>(timeSignatureNumerator);
 
@@ -920,9 +920,9 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         bool gridAligned = alignsWithBars && alignsWithBeats;
 
         // Pixel spacings directly from zoom (no seconds conversion)
-        double pixelsPerBeat = zoom;
-        double pixelsPerBar = zoom * barLengthBeats;
-        double pixelsPerSubdiv = zoom * markerIntervalBeats;
+        double beatPixelSpacing = pixelsPerBeat;
+        double pixelsPerBar = pixelsPerBeat * barLengthBeats;
+        double pixelsPerSubdiv = pixelsPerBeat * markerIntervalBeats;
 
         // Determine bar label interval: show a label at every grid line that
         // falls on a bar boundary.  When the grid interval spans multiple bars
@@ -949,11 +949,11 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         double totalTimelineBeats = timelineLength * tempoBPM / 60.0;
         double visStartBeat = juce::jmax(
             0.0, static_cast<double>(clipBoundsRect.getX() - LayoutConfig::TIMELINE_LEFT_PADDING) /
-                     zoom);
+                     pixelsPerBeat);
         double visEndBeat = juce::jmin(
             totalTimelineBeats,
             static_cast<double>(clipBoundsRect.getRight() - LayoutConfig::TIMELINE_LEFT_PADDING) /
-                zoom);
+                pixelsPerBeat);
         double startBeat = std::floor(visStartBeat / markerIntervalBeats) * markerIntervalBeats;
         double endBeat = juce::jmin(totalTimelineBeats, visEndBeat + markerIntervalBeats);
 
@@ -1017,7 +1017,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                     g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
                     g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
                                juce::Justification::centredTop);
-                } else if (isBeatStart && !isBarStart && pixelsPerBeat >= 50) {
+                } else if (isBeatStart && !isBarStart && beatPixelSpacing >= 50) {
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
                     g.setFont(FontManager::getInstance().getUIFont(10.0f));
                     g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY,
@@ -1435,13 +1435,14 @@ double TimelineComponent::getSnapInterval() const {
         // zoom is in pixels per beat
         double secondsPerBeat = 60.0 / tempoBPM;
 
-        double frac = GridConstants::findBeatSubdivision(zoom, minPixelSpacing);
+        double frac = GridConstants::findBeatSubdivision(pixelsPerBeat, minPixelSpacing);
         if (frac > 0) {
             return secondsPerBeat * frac;
         }
 
         // Fall back to bar multiples
-        int mult = GridConstants::findBarMultiple(zoom, timeSignatureNumerator, minPixelSpacing);
+        int mult =
+            GridConstants::findBarMultiple(pixelsPerBeat, timeSignatureNumerator, minPixelSpacing);
         return secondsPerBeat * timeSignatureNumerator * mult;
     }
 }

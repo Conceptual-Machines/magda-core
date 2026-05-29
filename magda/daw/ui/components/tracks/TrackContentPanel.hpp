@@ -220,7 +220,7 @@ class TrackContentPanel : public juce::Component,
     std::vector<std::unique_ptr<TrackLane>> trackLanes;
     std::vector<TrackId> visibleTrackIds_;  // Track IDs in display order
     int selectedTrackIndex = -1;
-    double currentZoom = 1.0;     // pixels per second (horizontal zoom)
+    double currentZoom = 1.0;     // horizontal zoom in pixels per beat
     double verticalZoom = 1.0;    // track height multiplier
     double timelineLength = 0.0;  // Will be loaded from config
     ViewMode currentViewMode_ = ViewMode::Arrange;

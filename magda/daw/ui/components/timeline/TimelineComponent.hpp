@@ -38,7 +38,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // Timeline controls
     void setTimelineLength(double lengthInSeconds);
     void setPlayheadPosition(double position);
-    void setZoom(double pixelsPerSecond);
+    void setZoom(double pixelsPerBeat);
     void setViewportWidth(int width);  // For calculating minimum zoom
 
     // Time display mode
@@ -141,8 +141,8 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // These are updated via TimelineStateListener callbacks
     double timelineLength = 300.0;  // 5 minutes
     double playheadPosition = 0.0;
-    double zoom = 1.0;         // pixels per beat
-    int viewportWidth = 1500;  // Default viewport width for minimum zoom calculation
+    double pixelsPerBeat = 1.0;  // Horizontal zoom
+    int viewportWidth = 1500;    // Default viewport width for minimum zoom calculation
 
     // Time display mode and tempo
     TimeDisplayMode displayMode = TimeDisplayMode::BarsBeats;

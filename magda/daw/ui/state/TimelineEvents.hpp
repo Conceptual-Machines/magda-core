@@ -13,42 +13,43 @@ namespace magda {
 // ===== Zoom Events =====
 
 /**
- * @brief Set zoom to a specific value
+ * @brief Set horizontal timeline zoom to a specific pixels-per-beat value
  */
 struct SetZoomEvent {
-    double zoom;
+    double pixelsPerBeat;
 };
 
 /**
- * @brief Set zoom centered at a specific beat position
+ * @brief Set horizontal timeline zoom centered at a specific beat position
  */
 struct SetZoomCenteredBeatsEvent {
-    double zoom;
+    double pixelsPerBeat;
     double centerBeats;
 };
 
 /**
- * @brief Set zoom centered at a specific time position (compatibility boundary)
+ * @brief Set horizontal timeline zoom centered at a specific time position (compatibility boundary)
  */
 struct SetZoomCenteredEvent {
-    double zoom;
+    double pixelsPerBeat;
     double centerTime;
 };
 
 /**
- * @brief Set zoom while keeping a beat position anchored
+ * @brief Set horizontal timeline zoom while keeping a beat position anchored
  */
 struct SetZoomAnchoredBeatsEvent {
-    double zoom;
+    double pixelsPerBeat;
     double anchorBeats;
     int anchorScreenX;
 };
 
 /**
- * @brief Set zoom while keeping a screen position anchored (compatibility boundary)
+ * @brief Set horizontal timeline zoom while keeping a screen position anchored
+ * (compatibility boundary)
  */
 struct SetZoomAnchoredEvent {
-    double zoom;
+    double pixelsPerBeat;
     double anchorTime;
     int anchorScreenX;
 };
