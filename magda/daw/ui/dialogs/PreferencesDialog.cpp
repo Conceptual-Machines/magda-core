@@ -145,6 +145,8 @@ class GeneralPage : public juce::Component {
 
         setupSectionHeader(*this, layoutHeader, tr("preferences.section.layout"));
         setupToggle(*this, headersOnRightToggle, tr("preferences.toggle.headers_on_right"));
+        setupToggle(*this, autoHideScrollbarsToggle,
+                    tr("preferences.toggle.autohide_arrangement_scrollbars"));
 
         setupSectionHeader(*this, behaviorHeader, tr("preferences.section.behavior"));
         setupToggle(*this, confirmTrackDeleteToggle, tr("preferences.toggle.confirm_track_delete"));
@@ -227,6 +229,8 @@ class GeneralPage : public juce::Component {
                                         juce::dontSendNotification);
         headersOnRightToggle.setToggleState(config.getScrollbarOnLeft(),
                                             juce::dontSendNotification);
+        autoHideScrollbarsToggle.setToggleState(config.getArrangementScrollbarsAutoHide(),
+                                                juce::dontSendNotification);
         confirmTrackDeleteToggle.setToggleState(config.getConfirmTrackDelete(),
                                                 juce::dontSendNotification);
         autoMonitorToggle.setToggleState(config.getAutoMonitorSelectedTrack(),
@@ -273,6 +277,7 @@ class GeneralPage : public juce::Component {
         config.setAutoSaveEnabled(autoSaveToggle.getToggleState());
         config.setAutoSaveIntervalSeconds(static_cast<int>(autoSaveIntervalSlider.getValue()));
         config.setScrollbarOnLeft(headersOnRightToggle.getToggleState());
+        config.setArrangementScrollbarsAutoHide(autoHideScrollbarsToggle.getToggleState());
         config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
         config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
         config.setOpenMacrosOnSelect(openMacrosOnSelectToggle.getToggleState());
@@ -376,6 +381,8 @@ class GeneralPage : public juce::Component {
         layoutHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
         headersOnRightToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        autoHideScrollbarsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(secGap);
 
         // Behaviour
@@ -449,6 +456,8 @@ class GeneralPage : public juce::Component {
         layoutHeader.setBounds(right.removeFromTop(headerH));
         right.removeFromTop(4);
         headersOnRightToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        autoHideScrollbarsToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(secGap);
 
         // Behaviour
@@ -561,6 +570,7 @@ class GeneralPage : public juce::Component {
     juce::Label autoSaveIntervalLabel;
     juce::Label layoutHeader, behaviorHeader, languageHeader, scaleHeader;
     juce::ToggleButton headersOnRightToggle;
+    juce::ToggleButton autoHideScrollbarsToggle;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, openMacrosOnSelectToggle;
     juce::ToggleButton showTooltipsToggle;
     juce::Label languageLabel;

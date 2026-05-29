@@ -754,13 +754,15 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     SideColumn zoomColumn(result.swapped);
 
     const int fullVerticalScrollbarWidth = ARRANGEMENT_SCROLLBAR_SIZE + 2;
-    // Interpolate reserved width/height with the fade progress so the column
-    // (header) and row (master) slide smoothly in/out with the scrollbar
-    // instead of snapping when the reservation toggles.
+    // Interpolate reserved width with the fade progress so the header column
+    // slides smoothly in/out with the scrollbar (avoids a layout snap when the
+    // scrollbar shares an edge with the track headers).
     const int verticalScrollbarWidth = juce::roundToInt(
         juce::jlimit(0.0f, 1.0f, verticalScrollbarRevealProgress) * fullVerticalScrollbarWidth);
-    const int horizontalScrollbarHeight = juce::roundToInt(
-        juce::jlimit(0.0f, 1.0f, horizontalScrollbarRevealProgress) * ARRANGEMENT_SCROLLBAR_SIZE);
+    // Reserve a fixed-height row for the horizontal scrollbar: the bar still
+    // fades in/out via alpha, but the master strip stays put instead of sliding
+    // up/down as the bar reveals/hides.
+    const int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
 
     {
         auto hitBounds = bounds;
@@ -833,6 +835,16 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
 }
 
 void MainView::resized() {
+    // Detect a genuine window/layout size change (not the per-frame relayout the
+    // reveal state machine triggers, which keeps our bounds constant) and arm a
+    // short window during which scrollbar reveals are ignored, so the bars don't
+    // flash open while the window edge is being dragged.
+    if (getWidth() != previousArrangementWidth || getHeight() != previousArrangementHeight) {
+        arrangementScrollbarResizeSuppressFrames = ARRANGEMENT_SCROLLBAR_RESIZE_SUPPRESS_FRAMES;
+        previousArrangementWidth = getWidth();
+        previousArrangementHeight = getHeight();
+    }
+
     auto arrangementLayout = computeArrangementLayout();
     auto& layout = LayoutConfig::getInstance();
 
@@ -1333,6 +1345,10 @@ void MainView::updateVerticalZoomScrollBar() {
 void MainView::revealHorizontalArrangementScrollbar() {
     if (isUpdatingArrangementScrollbarLayout)
         return;
+    if (arrangementScrollbarResizeSuppressFrames > 0)
+        return;
+    if (!Config::getInstance().getArrangementScrollbarsAutoHide())
+        return;
 
     horizontalScrollbarRevealFrames =
         juce::jmax(horizontalScrollbarRevealFrames, ARRANGEMENT_SCROLLBAR_REVEAL_HOLD_FRAMES);
@@ -1344,6 +1360,11 @@ void MainView::revealHorizontalArrangementScrollbar() {
 }
 
 void MainView::revealVerticalArrangementScrollbar() {
+    if (arrangementScrollbarResizeSuppressFrames > 0)
+        return;
+    if (!Config::getInstance().getArrangementScrollbarsAutoHide())
+        return;
+
     verticalScrollbarRevealFrames =
         juce::jmax(verticalScrollbarRevealFrames, ARRANGEMENT_SCROLLBAR_REVEAL_HOLD_FRAMES);
     verticalScrollbarRevealProgress =
@@ -1361,6 +1382,25 @@ void MainView::updateArrangementScrollbarHover(const juce::MouseEvent& event) {
 void MainView::updateArrangementScrollbarVisibility() {
     if (!horizontalZoomScrollBar || !verticalZoomScrollBar)
         return;
+
+    if (arrangementScrollbarResizeSuppressFrames > 0)
+        --arrangementScrollbarResizeSuppressFrames;
+
+    // Classic mode (auto-hide disabled): pin both scrollbars fully visible and
+    // skip the entire fade/hover state machine. The first tick after the user
+    // toggles the preference will snap progress to 1.0 and re-run layout so the
+    // reservation reaches its full width/height.
+    if (!Config::getInstance().getArrangementScrollbarsAutoHide()) {
+        if (horizontalScrollbarRevealProgress < 1.0f || verticalScrollbarRevealProgress < 1.0f) {
+            horizontalScrollbarRevealProgress = 1.0f;
+            verticalScrollbarRevealProgress = 1.0f;
+            juce::ScopedValueSetter<bool> scrollbarLayoutUpdate(
+                isUpdatingArrangementScrollbarLayout, true);
+            resized();
+            repaint();
+        }
+        return;
+    }
 
     auto mousePosition = getLocalPoint(nullptr, juce::Desktop::getInstance().getMousePosition());
 
@@ -1766,11 +1806,10 @@ juce::Rectangle<int> MainView::getMasterResizeHandleArea() const {
     }
 
     // Position the resize handle in the gap between track content and master strip.
-    // Horizontal scrollbar height is interpolated with its fade progress, so the
-    // handle follows the master strip as it slides during the reveal/hide.
+    // The horizontal scrollbar row is a fixed-height reservation, so the handle
+    // stays put while the bar fades in/out within that slot.
     int effectiveAuxHeight = auxVisible_ ? auxSectionHeight : 0;
-    int horizontalScrollbarHeight = juce::roundToInt(
-        juce::jlimit(0.0f, 1.0f, horizontalScrollbarRevealProgress) * ARRANGEMENT_SCROLLBAR_SIZE);
+    int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
     int resizeHandleY = getHeight() - horizontalScrollbarHeight - masterStripHeight -
                         MASTER_RESIZE_HANDLE_HEIGHT - effectiveAuxHeight;
     return juce::Rectangle<int>(0, resizeHandleY, getWidth(), MASTER_RESIZE_HANDLE_HEIGHT);

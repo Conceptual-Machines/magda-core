@@ -224,6 +224,13 @@ class MainView : public juce::Component,
     bool isUpdatingArrangementScrollbarLayout = false;
     juce::Rectangle<int> horizontalScrollbarHitArea;
     juce::Rectangle<int> verticalScrollbarHitArea;
+    // While the window is being resized the content's visible fraction changes,
+    // which fires the scrollbars' onRangeChanged and would pop them open. Track
+    // the last laid-out size so resized() can detect a genuine size change and
+    // arm a short window during which reveals are ignored.
+    int previousArrangementWidth = 0;
+    int previousArrangementHeight = 0;
+    int arrangementScrollbarResizeSuppressFrames = 0;
     // Fade timings target 60Hz timer (~16ms/frame). Steps chosen so:
     //   fade-in   ~12 frames (~200ms), fade-out ~30 frames (~500ms).
     static constexpr float ARRANGEMENT_SCROLLBAR_FADE_IN_STEP = 0.08f;
@@ -242,6 +249,10 @@ class MainView : public juce::Component,
     // grazes through the hit strip in transit. ~80ms at 60Hz. Bypassed
     // while the bar is already visible so the user can still re-grab it.
     static constexpr int ARRANGEMENT_SCROLLBAR_HOVER_DWELL_FRAMES = 5;
+    // Reveals are ignored for this many frames after a window resize so the
+    // bars don't flash while dragging the window edge. Re-armed on every resize
+    // event, so it stays suppressed for the whole drag and ~150ms after. 60Hz.
+    static constexpr int ARRANGEMENT_SCROLLBAR_RESIZE_SUPPRESS_FRAMES = 10;
 
     // Resize handle state (horizontal - track header width)
     bool isResizingHeaders = false;
