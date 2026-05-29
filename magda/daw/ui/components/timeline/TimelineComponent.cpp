@@ -11,6 +11,34 @@
 
 namespace magda {
 
+namespace {
+
+juce::Range<int> getVisibleXRange(const juce::Graphics& g, int componentWidth) {
+    auto clip = g.getClipBounds();
+    int left = juce::jlimit(0, componentWidth, clip.getX());
+    int right = juce::jlimit(0, componentWidth, clip.getRight());
+    return {left, right};
+}
+
+juce::Rectangle<int> getVisibleRect(const juce::Graphics& g, int componentWidth, int startX,
+                                    int endX, int y, int height) {
+    auto visibleX = getVisibleXRange(g, componentWidth);
+    int left = juce::jmax(startX, visibleX.getStart());
+    int right = juce::jmin(endX, visibleX.getEnd());
+
+    if (right <= left || height <= 0)
+        return {};
+
+    return {left, y, right - left, height};
+}
+
+bool isXVisible(const juce::Graphics& g, int componentWidth, int x) {
+    auto visibleX = getVisibleXRange(g, componentWidth);
+    return x >= visibleX.getStart() && x <= visibleX.getEnd();
+}
+
+}  // namespace
+
 TimelineComponent::TimelineComponent() {
     // Load configuration, converting bars → seconds at default tempo
     auto& config = magda::Config::getInstance();
@@ -142,15 +170,31 @@ void TimelineComponent::paint(juce::Graphics& g) {
     int arrangementHeight = layout.arrangementBarHeight;
     int arrangementTop = chordHeight;  // Arrangement starts below chord row
 
-    // Draw border
+    auto visibleX = getVisibleXRange(g, getWidth());
+    const float visibleLeft = static_cast<float>(visibleX.getStart());
+    const float visibleRight = static_cast<float>(visibleX.getEnd());
+
+    // Draw border for the visible slice only. At deep zoom the timeline component can be
+    // millions of pixels wide, and sending that full rectangle to JUCE's software renderer
+    // can build pathological edge tables on Linux.
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawRect(getLocalBounds(), 1);
+    if (visibleX.getLength() > 0) {
+        g.drawLine(visibleLeft, 0.0f, visibleRight, 0.0f, 1.0f);
+        g.drawLine(visibleLeft, static_cast<float>(getHeight() - 1), visibleRight,
+                   static_cast<float>(getHeight() - 1), 1.0f);
+    }
+    if (isXVisible(g, getWidth(), 0))
+        g.drawLine(0.0f, 0.0f, 0.0f, static_cast<float>(getHeight()), 1.0f);
+    if (isXVisible(g, getWidth(), getWidth() - 1)) {
+        float rightEdge = static_cast<float>(getWidth() - 1);
+        g.drawLine(rightEdge, 0.0f, rightEdge, static_cast<float>(getHeight()), 1.0f);
+    }
 
     // Show visual feedback when actively zooming
     if (isZooming) {
         // Slightly brighten the background when zooming
         g.setColour(DarkTheme::getColour(DarkTheme::TIMELINE_BACKGROUND).brighter(0.1f));
-        g.fillRect(getLocalBounds().reduced(1));
+        g.fillRect(g.getClipBounds());
     }
 
     // Draw time selection (background layer)
@@ -167,15 +211,14 @@ void TimelineComponent::paint(juce::Graphics& g) {
 
     // Draw separator line between arrangement and time ruler
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
-    g.drawLine(0, static_cast<float>(arrangementTop + arrangementHeight),
-               static_cast<float>(getWidth()),
+    g.drawLine(visibleLeft, static_cast<float>(arrangementTop + arrangementHeight), visibleRight,
                static_cast<float>(arrangementTop + arrangementHeight), 1.0f);
 
     // Draw separator line above ticks
     int tickAreaTop =
         arrangementTop + arrangementHeight + layout.timeRulerHeight - layout.rulerMajorTickHeight;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawLine(0, static_cast<float>(tickAreaTop), static_cast<float>(getWidth()),
+    g.drawLine(visibleLeft, static_cast<float>(tickAreaTop), visibleRight,
                static_cast<float>(tickAreaTop), 1.0f);
 
     // Draw loop marker flags on top (triangular indicators)
@@ -480,9 +523,9 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
         if (!isZooming) {
             isZooming = true;
             isPendingPlayheadClick = false;  // Cancel any pending playhead click
-            // Capture the time position under the mouse at zoom start (using initial zoom level)
-            zoomAnchorTime = pixelToTime(mouseDownX);
-            zoomAnchorTime = juce::jlimit(0.0, timelineLength, zoomAnchorTime);
+            // Capture the beat position under the mouse at zoom start (using initial zoom level)
+            zoomAnchorBeats = pixelToBeats(mouseDownX);
+            zoomAnchorBeats = juce::jlimit(0.0, timelineLength * tempoBPM / 60.0, zoomAnchorBeats);
             // Capture the screen X position where the mouse is (relative to this component)
             zoomAnchorScreenX = mouseDownX;
             repaint();
@@ -560,9 +603,9 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
             newZoom = maxZoomLevel;
         }
 
-        // Call the callback with zoom value, anchor time, and screen position
+        // Call the callback with zoom value, anchor beat, and screen position
         if (onZoomChanged) {
-            onZoomChanged(newZoom, zoomAnchorTime, zoomAnchorScreenX);
+            onZoomChanged(newZoom, zoomAnchorBeats, zoomAnchorScreenX);
         }
     }
 }
@@ -666,6 +709,8 @@ void TimelineComponent::mouseUp(const juce::MouseEvent& event) {
 
 void TimelineComponent::mouseWheelMove(const juce::MouseEvent& event,
                                        const juce::MouseWheelDetails& wheel) {
+    juce::ignoreUnused(event);
+
     // Forward horizontal scroll to parent via callback
     // This allows scrolling when the mouse is over the timeline ruler
     if (onScrollRequested) {
@@ -1073,22 +1118,19 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
                                     bool isSelected) const {
     int startX = timeToPixel(section.startTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
     int endX = timeToPixel(section.endTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
-    int width = endX - startX;
 
-    if (width <= 0 || startX >= getWidth() || endX <= 0) {
+    if (endX <= startX) {
         return;
     }
-
-    // Clip to visible area
-    startX = juce::jmax(0, startX);
-    endX = juce::jmin(getWidth(), endX);
-    width = endX - startX;
 
     // Draw section background using arrangement bar height from LayoutConfig
     auto& layout = LayoutConfig::getInstance();
     int chordHeight = layout.chordRowHeight;
     int arrangementHeight = layout.arrangementBarHeight;
-    auto sectionArea = juce::Rectangle<int>(startX, chordHeight, width, arrangementHeight);
+    auto sectionArea = getVisibleRect(g, getWidth(), startX, endX, chordHeight, arrangementHeight);
+
+    if (sectionArea.isEmpty())
+        return;
 
     // Section background - dimmed if locked
     float alpha = arrangementLocked ? 0.2f : 0.3f;
@@ -1101,22 +1143,33 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
         // Draw dotted border to indicate locked state
         const float dashLengths[] = {2.0f, 2.0f};
         float sectionTop = static_cast<float>(chordHeight);
-        g.drawDashedLine(juce::Line<float>(startX, sectionTop, startX, sectionArea.getBottom()),
+        auto sectionBottom = static_cast<float>(sectionArea.getBottom());
+
+        if (isXVisible(g, getWidth(), startX)) {
+            g.drawDashedLine(juce::Line<float>(static_cast<float>(startX), sectionTop,
+                                               static_cast<float>(startX), sectionBottom),
+                             dashLengths, 2, 1.0f);
+        }
+        if (isXVisible(g, getWidth(), endX)) {
+            g.drawDashedLine(juce::Line<float>(static_cast<float>(endX), sectionTop,
+                                               static_cast<float>(endX), sectionBottom),
+                             dashLengths, 2, 1.0f);
+        }
+
+        g.drawDashedLine(juce::Line<float>(static_cast<float>(sectionArea.getX()), sectionTop,
+                                           static_cast<float>(sectionArea.getRight()), sectionTop),
                          dashLengths, 2, 1.0f);
-        g.drawDashedLine(juce::Line<float>(endX, sectionTop, endX, sectionArea.getBottom()),
+        g.drawDashedLine(juce::Line<float>(static_cast<float>(sectionArea.getX()), sectionBottom,
+                                           static_cast<float>(sectionArea.getRight()),
+                                           sectionBottom),
                          dashLengths, 2, 1.0f);
-        g.drawDashedLine(juce::Line<float>(startX, sectionTop, endX, sectionTop), dashLengths, 2,
-                         1.0f);
-        g.drawDashedLine(
-            juce::Line<float>(startX, sectionArea.getBottom(), endX, sectionArea.getBottom()),
-            dashLengths, 2, 1.0f);
     } else {
         g.setColour(isSelected ? section.colour.brighter(0.5f) : section.colour);
         g.drawRect(sectionArea, isSelected ? 2 : 1);
     }
 
     // Section name
-    if (width > 40) {  // Only draw text if there's enough space
+    if (sectionArea.getWidth() > 40) {  // Only draw text if there's enough space
         g.setColour(arrangementLocked ? DarkTheme::getColour(DarkTheme::TEXT_SECONDARY)
                                       : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -1225,10 +1278,9 @@ void TimelineComponent::drawLoopMarkers(juce::Graphics& g) {
     int startX = timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
     int endX = timeToPixel(loopEndTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
-    // Skip if completely out of view
-    if (endX < 0 || startX > getWidth()) {
+    auto loopStripArea = getVisibleRect(g, getWidth(), startX, endX, stripTop, LOOP_STRIP_HEIGHT);
+    if (loopStripArea.isEmpty())
         return;
-    }
 
     // Use different colors based on enabled state
     juce::Colour regionColour =
@@ -1236,16 +1288,21 @@ void TimelineComponent::drawLoopMarkers(juce::Graphics& g) {
 
     // Draw shaded region in the loop strip area (above ticks)
     g.setColour(regionColour);
-    g.fillRect(startX, stripTop, endX - startX, LOOP_STRIP_HEIGHT);
+    g.fillRect(loopStripArea);
 
     // Draw vertical lines at loop boundaries in the strip area
     juce::Colour markerColour =
         loopEnabled ? DarkTheme::getColour(DarkTheme::LOOP_MARKER) : juce::Colour(0xFF606060);
     g.setColour(markerColour);
-    g.drawLine(static_cast<float>(startX), static_cast<float>(stripTop), static_cast<float>(startX),
-               static_cast<float>(stripTop + LOOP_STRIP_HEIGHT), 2.0f);
-    g.drawLine(static_cast<float>(endX), static_cast<float>(stripTop), static_cast<float>(endX),
-               static_cast<float>(stripTop + LOOP_STRIP_HEIGHT), 2.0f);
+    if (isXVisible(g, getWidth(), startX)) {
+        g.drawLine(static_cast<float>(startX), static_cast<float>(stripTop),
+                   static_cast<float>(startX), static_cast<float>(stripTop + LOOP_STRIP_HEIGHT),
+                   2.0f);
+    }
+    if (isXVisible(g, getWidth(), endX)) {
+        g.drawLine(static_cast<float>(endX), static_cast<float>(stripTop), static_cast<float>(endX),
+                   static_cast<float>(stripTop + LOOP_STRIP_HEIGHT), 2.0f);
+    }
 }
 
 void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
@@ -1268,10 +1325,9 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     int startX = timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
     int endX = timeToPixel(loopEndTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
-    // Skip if completely out of view
-    if (endX < 0 || startX > getWidth()) {
+    auto loopStripArea = getVisibleRect(g, getWidth(), startX, endX, stripTop, LOOP_STRIP_HEIGHT);
+    if (loopStripArea.isEmpty())
         return;
-    }
 
     // Use different colors based on enabled state
     juce::Colour markerColour =
@@ -1283,18 +1339,18 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     g.setGradientFill(juce::ColourGradient(
         flagFill.withAlpha(0.45f), 0.0f, static_cast<float>(stripTop), flagFill.withAlpha(0.1f),
         0.0f, static_cast<float>(stripTop + LOOP_STRIP_HEIGHT), false));
-    g.fillRect(startX, stripTop, endX - startX, LOOP_STRIP_HEIGHT);
+    g.fillRect(loopStripArea);
 
     // Connecting lines at top and bottom of strip
     g.setColour(markerColour);
-    g.fillRect(startX, stripTop, endX - startX, 2);
-    g.fillRect(startX, stripTop + LOOP_STRIP_HEIGHT - 1, endX - startX, 1);
+    g.fillRect(loopStripArea.getX(), stripTop, loopStripArea.getWidth(), 2);
+    g.fillRect(loopStripArea.getX(), stripTop + LOOP_STRIP_HEIGHT - 1, loopStripArea.getWidth(), 1);
 
     // 2px vertical marker lines spanning the strip
-    if (startX >= 0 && startX <= getWidth()) {
+    if (isXVisible(g, getWidth(), startX)) {
         g.fillRect(startX - 1, stripTop, 2, LOOP_STRIP_HEIGHT);
     }
-    if (endX >= 0 && endX <= getWidth()) {
+    if (isXVisible(g, getWidth(), endX)) {
         g.fillRect(endX - 1, stripTop, 2, LOOP_STRIP_HEIGHT);
     }
 
@@ -1306,18 +1362,23 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     int flagW = juce::jlimit(4, 8, maxFlagW);
 
     g.setColour(markerColour);
-    juce::Path startFlag;
-    startFlag.addTriangle(static_cast<float>(startX), static_cast<float>(flagTop),
-                          static_cast<float>(startX), static_cast<float>(flagTop + flagH),
-                          static_cast<float>(startX + flagW),
-                          static_cast<float>(flagTop + flagH / 2));
-    g.fillPath(startFlag);
+    if (isXVisible(g, getWidth(), startX)) {
+        juce::Path startFlag;
+        startFlag.addTriangle(static_cast<float>(startX), static_cast<float>(flagTop),
+                              static_cast<float>(startX), static_cast<float>(flagTop + flagH),
+                              static_cast<float>(startX + flagW),
+                              static_cast<float>(flagTop + flagH / 2));
+        g.fillPath(startFlag);
+    }
 
-    juce::Path endFlag;
-    endFlag.addTriangle(static_cast<float>(endX), static_cast<float>(flagTop),
-                        static_cast<float>(endX), static_cast<float>(flagTop + flagH),
-                        static_cast<float>(endX - flagW), static_cast<float>(flagTop + flagH / 2));
-    g.fillPath(endFlag);
+    if (isXVisible(g, getWidth(), endX)) {
+        juce::Path endFlag;
+        endFlag.addTriangle(static_cast<float>(endX), static_cast<float>(flagTop),
+                            static_cast<float>(endX), static_cast<float>(flagTop + flagH),
+                            static_cast<float>(endX - flagW),
+                            static_cast<float>(flagTop + flagH / 2));
+        g.fillPath(endFlag);
+    }
 }
 
 void TimelineComponent::initLoopInteraction() {
@@ -1419,25 +1480,29 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
     int startX = timeToPixel(timeSelectionStart) + LayoutConfig::TIMELINE_LEFT_PADDING;
     int endX = timeToPixel(timeSelectionEnd) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
-    // Skip if out of view
-    if (endX < 0 || startX > getWidth()) {
-        return;
-    }
-
     // Selection only in content area (below the ruler)
     auto& layout = LayoutConfig::getInstance();
     int rulerBottom = layout.chordRowHeight + layout.arrangementBarHeight + layout.timeRulerHeight;
+    auto selectionArea =
+        getVisibleRect(g, getWidth(), startX, endX, rulerBottom, getHeight() - rulerBottom);
+
+    if (selectionArea.isEmpty())
+        return;
 
     // Draw selection highlight covering content area only
     g.setColour(DarkTheme::getColour(DarkTheme::TIME_SELECTION));
-    g.fillRect(startX, rulerBottom, endX - startX, getHeight() - rulerBottom);
+    g.fillRect(selectionArea);
 
     // Draw selection edges
     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
-    g.drawLine(static_cast<float>(startX), static_cast<float>(rulerBottom),
-               static_cast<float>(startX), static_cast<float>(getHeight()), 1.0f);
-    g.drawLine(static_cast<float>(endX), static_cast<float>(rulerBottom), static_cast<float>(endX),
-               static_cast<float>(getHeight()), 1.0f);
+    if (isXVisible(g, getWidth(), startX)) {
+        g.drawLine(static_cast<float>(startX), static_cast<float>(rulerBottom),
+                   static_cast<float>(startX), static_cast<float>(getHeight()), 1.0f);
+    }
+    if (isXVisible(g, getWidth(), endX)) {
+        g.drawLine(static_cast<float>(endX), static_cast<float>(rulerBottom),
+                   static_cast<float>(endX), static_cast<float>(getHeight()), 1.0f);
+    }
 }
 
 }  // namespace magda

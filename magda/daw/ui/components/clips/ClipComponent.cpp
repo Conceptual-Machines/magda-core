@@ -102,6 +102,9 @@ void ClipComponent::paint(juce::Graphics& g) {
     }
 
     auto bounds = getLocalBounds();
+    auto visibleBounds = bounds.getIntersection(g.getClipBounds());
+    if (visibleBounds.isEmpty())
+        return;
 
     // Draw based on clip type
     if (clip->isAudio()) {
@@ -206,21 +209,21 @@ void ClipComponent::paint(juce::Graphics& g) {
     // Marquee highlight overlay (during marquee drag)
     if (isMarqueeHighlighted_) {
         g.setColour(juce::Colours::white.withAlpha(0.2f));
-        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
+        g.fillRect(visibleBounds);
     }
 
     // Frozen overlay — dim clip on frozen tracks
     auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
     if (trackInfo && trackInfo->frozen) {
         g.setColour(juce::Colours::black.withAlpha(0.35f));
-        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
+        g.fillRect(visibleBounds);
     }
 
     // Session mode overlay — dim arrangement clips when track is in Session mode
     if (trackInfo && trackInfo->playbackMode == TrackPlaybackMode::Session &&
         clip->view == ClipView::Arrangement) {
         g.setColour(juce::Colours::black.withAlpha(0.35f));
-        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
+        g.fillRect(visibleBounds);
     }
 }
 
@@ -514,6 +517,10 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
 
 void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                                    juce::Rectangle<int> bounds) {
+    auto visibleBounds = bounds.getIntersection(g.getClipBounds());
+    if (visibleBounds.isEmpty())
+        return;
+
     auto waveformArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
 
     double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
@@ -541,13 +548,13 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     // pre-computed waveform cache (512 samples/point) so drawing from it is fast.
     auto bgColour = clip.colour.darker(0.3f);
     g.setColour(bgColour);
-    g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
+    g.fillRect(visibleBounds);
 
     if (clip.audio().source.filePath.isNotEmpty())
         paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength);
 
     g.setColour(clip.colour.withAlpha(0.45f));
-    g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
+    g.drawRect(visibleBounds, 1);
 
     // Fade overlays
     if (clip.fadeIn > 0.0 || clip.fadeOut > 0.0) {
@@ -561,15 +568,19 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
 
 void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
                                   juce::Rectangle<int> bounds) {
+    auto visibleBounds = bounds.getIntersection(g.getClipBounds());
+    if (visibleBounds.isEmpty())
+        return;
+
     auto bgColour = clip.colour.darker(0.3f);
     g.setColour(bgColour);
-    g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
+    g.fillRect(visibleBounds);
 
     auto noteArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
     paintMidiNotes(g, clip, noteArea, juce::Colours::black);
 
     g.setColour(clip.colour.withAlpha(0.45f));
-    g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
+    g.drawRect(visibleBounds, 1);
 }
 
 void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
@@ -712,15 +723,22 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     const auto headerForeground =
         selected ? juce::Colours::white : DarkTheme::getColour(DarkTheme::BACKGROUND);
 
+    auto visibleHeaderArea =
+        headerArea.withBottom(headerArea.getBottom() + 2).getIntersection(g.getClipBounds());
+    if (visibleHeaderArea.isEmpty())
+        return;
+
     g.setColour(headerColour);
-    g.fillRoundedRectangle(headerArea.toFloat().withBottom(headerArea.getBottom() + 2),
-                           CORNER_RADIUS);
+    g.fillRect(visibleHeaderArea);
 
     // Clip name
     if (bounds.getWidth() > MIN_WIDTH_FOR_NAME) {
-        g.setColour(headerForeground);
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.drawText(clip.name, headerArea.reduced(4, 0), juce::Justification::centredLeft, true);
+        auto nameArea = headerArea.withWidth(juce::jmin(headerArea.getWidth(), 300)).reduced(4, 0);
+        if (nameArea.intersects(g.getClipBounds())) {
+            g.setColour(headerForeground);
+            g.setFont(FontManager::getInstance().getUIFont(10.0f));
+            g.drawText(clip.name, nameArea, juce::Justification::centredLeft, true);
+        }
     }
 
     // Musical mode indicator (auto-tempo)
@@ -923,8 +941,11 @@ void ClipComponent::paintVolumeLine(juce::Graphics& g, const ClipInfo& clip,
     auto lineColour = juce::Colours::white.withAlpha(
         hoverVolumeHandle_ || dragMode_ == DragMode::VolumeDrag ? 0.8f : 0.4f);
     g.setColour(lineColour);
-    g.drawHorizontalLine(static_cast<int>(lineY), static_cast<float>(waveformArea.getX()),
-                         static_cast<float>(waveformArea.getRight()));
+    auto visibleWaveformArea = waveformArea.getIntersection(g.getClipBounds());
+    if (visibleWaveformArea.isEmpty())
+        return;
+    g.drawHorizontalLine(static_cast<int>(lineY), static_cast<float>(visibleWaveformArea.getX()),
+                         static_cast<float>(visibleWaveformArea.getRight()));
 
     // Show dB text during drag
     if (dragMode_ == DragMode::VolumeDrag) {

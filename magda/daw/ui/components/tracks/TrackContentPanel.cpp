@@ -618,27 +618,31 @@ int TrackContentPanel::getTrackYPosition(int trackIndex) const {
 
 void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lane*/,
                                        juce::Rectangle<int> area, bool isSelected, int trackIndex) {
+    auto paintArea = area.getIntersection(g.getClipBounds());
+    if (paintArea.isEmpty())
+        return;
+
     // Background (semi-transparent to let grid show through)
     auto bgColour = isSelected ? DarkTheme::getColour(DarkTheme::TRACK_SELECTED)
                                : DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
     g.setColour(bgColour.withAlpha(0.7f));
-    g.fillRect(area);
+    g.fillRect(paintArea);
 
     // Border (horizontal separators between tracks)
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawRect(area, 1);
+    g.drawRect(paintArea, 1);
 
     // Frozen overlay
     if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
         auto* trackInfo = TrackManager::getInstance().getTrack(visibleTrackIds_[trackIndex]);
         if (trackInfo && trackInfo->frozen) {
             g.setColour(juce::Colours::black.withAlpha(0.25f));
-            g.fillRect(area);
+            g.fillRect(paintArea);
         }
         // Session mode overlay — dim track lane when in Session mode
         if (trackInfo && trackInfo->playbackMode == TrackPlaybackMode::Session) {
             g.setColour(juce::Colours::black.withAlpha(0.25f));
-            g.fillRect(area);
+            g.fillRect(paintArea);
         }
 
         // Group extent indicator — show the time range covered by all child clips
@@ -653,14 +657,17 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lan
                 int x2 = timeToPixel(latest);
                 auto extentArea =
                     juce::Rectangle<int>(x1, area.getY() + 2, x2 - x1, area.getHeight() - 4);
+                auto visibleExtentArea = extentArea.getIntersection(g.getClipBounds());
+                if (visibleExtentArea.isEmpty())
+                    return;
 
                 // Subtle filled background
                 g.setColour(juce::Colours::white.withAlpha(0.06f));
-                g.fillRoundedRectangle(extentArea.toFloat(), 3.0f);
+                g.fillRoundedRectangle(visibleExtentArea.toFloat(), 3.0f);
 
                 // Outline
                 g.setColour(juce::Colours::white.withAlpha(0.15f));
-                g.drawRoundedRectangle(extentArea.toFloat(), 3.0f, 1.0f);
+                g.drawRoundedRectangle(visibleExtentArea.toFloat(), 3.0f, 1.0f);
             }
         }
     }

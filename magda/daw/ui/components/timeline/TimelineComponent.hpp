@@ -121,7 +121,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     std::function<void(int, const ArrangementSection&)> onSectionChanged;
     std::function<void(const juce::String&, double, double)> onSectionAdded;
     std::function<void(double, double, int)>
-        onZoomChanged;  // Callback for zoom changes (newZoom, anchorTime, anchorScreenX)
+        onZoomChanged;  // Callback for zoom changes (newZoom, anchorBeats, anchorScreenX)
     std::function<void()> onZoomEnd;                          // Callback when zoom operation ends
     std::function<void(double, double)> onLoopRegionChanged;  // Callback when loop region changes
     std::function<void(float deltaX, float deltaY)>
@@ -178,7 +178,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     int mouseDownX = 0;
     int mouseDownY = 0;
     double zoomStartValue = 1.0;
-    double zoomAnchorTime = 0.0;              // Time position to keep stable during zoom
+    double zoomAnchorBeats = 0.0;             // Beat position to keep stable during zoom
     int zoomAnchorScreenX = 0;                // Screen X position where anchor should stay
     static constexpr int DRAG_THRESHOLD = 5;  // Pixels of movement before it's a drag
 

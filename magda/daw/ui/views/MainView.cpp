@@ -1267,7 +1267,7 @@ void MainView::updateVerticalZoomScrollBar() {
 
 void MainView::setupTimelineCallbacks() {
     // Set up timeline zoom callback - dispatches to TimelineController
-    timeline->onZoomChanged = [this](double newZoom, double anchorTime, int anchorContentX) {
+    timeline->onZoomChanged = [this](double newZoom, double anchorBeats, int anchorContentX) {
         // Set crosshair cursor during zoom operations
         setMouseCursor(juce::MouseCursor::CrosshairCursor);
 
@@ -1280,7 +1280,7 @@ void MainView::setupTimelineCallbacks() {
 
         // Dispatch to controller with anchor information
         timelineController->dispatch(
-            SetZoomAnchoredEvent{newZoom, anchorTime, zoomAnchorViewportX});
+            SetZoomAnchoredBeatsEvent{newZoom, anchorBeats, zoomAnchorViewportX});
     };
 
     // Set up timeline zoom end callback
