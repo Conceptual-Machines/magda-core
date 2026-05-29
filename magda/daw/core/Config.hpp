@@ -527,6 +527,14 @@ class Config {
         localLlamaUrl = url;
     }
 
+    // User-selected Ollama model (overrides per-role preset defaults when set)
+    std::string getOllamaModel() const {
+        return ollamaModel;
+    }
+    void setOllamaModel(const std::string& m) {
+        ollamaModel = m;
+    }
+
     // Local llama-server managed process settings
     std::string getLocalModelPath() const {
         return localModelPath;
@@ -957,6 +965,7 @@ class Config {
     };
     std::map<std::string, std::string> aiCredentials;  // provider → API key
     std::string localLlamaUrl = "http://127.0.0.1:8080/v1";
+    std::string ollamaModel;  // user-selected Ollama model; empty = use preset defaults
     std::string localModelPath;
     std::string localLlamaBinary;  // empty = search PATH
     int localLlamaPort = 8080;

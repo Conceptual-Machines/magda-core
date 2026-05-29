@@ -17,7 +17,11 @@ inline constexpr const char* GEMINI = "gemini";
 inline constexpr const char* DEEPSEEK = "deepseek";
 inline constexpr const char* OPENROUTER = "openrouter";
 inline constexpr const char* LLAMA_LOCAL = "llama_local";
+inline constexpr const char* OLLAMA = "ollama";
 }  // namespace provider
+
+// Default base URL for an Ollama server (overridable per credential).
+inline constexpr const char* DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
 
 // --- Preset IDs ---
 namespace preset {
@@ -27,6 +31,7 @@ inline constexpr const char* CLOUD_ANTHROPIC = "cloud_anthropic";
 inline constexpr const char* CLOUD_GEMINI = "cloud_gemini";
 inline constexpr const char* CLOUD_DEEPSEEK = "cloud_deepseek";
 inline constexpr const char* CLOUD_OPENROUTER = "cloud_openrouter";
+inline constexpr const char* LOCAL_OLLAMA = "local_ollama";
 inline constexpr const char* HYBRID_SPEED = "hybrid_speed";
 inline constexpr const char* HYBRID_QUALITY = "hybrid_quality";
 }  // namespace preset
@@ -53,6 +58,9 @@ inline constexpr const char* DEEPSEEK_CHAT = "deepseek-chat";
 inline constexpr const char* DEEPSEEK_REASONER = "deepseek-reasoner";
 // OpenRouter
 inline constexpr const char* LLAMA_70B = "meta-llama/llama-3.3-70b-instruct";
+// Ollama (defaults — must already be pulled with `ollama pull <name>`)
+inline constexpr const char* OLLAMA_LLAMA31 = "llama3.1:8b";
+inline constexpr const char* OLLAMA_QWEN25 = "qwen2.5:7b";
 }  // namespace model
 
 // --- Agent roles ---

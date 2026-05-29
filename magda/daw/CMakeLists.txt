@@ -232,6 +232,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/cloud_providers/gemini.svg
     ../../assets/icons/cloud_providers/deepseek.svg
     ../../assets/icons/cloud_providers/openrouter.svg
+    ../../assets/icons/cloud_providers/ollama.svg
     # App logo
     ../../assets/magda-lisa.svg
     # Curated alias dictionaries (JSON path is reserved for third-party

@@ -142,6 +142,7 @@ void Config::save() {
         }
         aiObj->setProperty("credentials", juce::var(credsObj));
         aiObj->setProperty("localLlamaUrl", toJuceString(localLlamaUrl));
+        aiObj->setProperty("ollamaModel", toJuceString(ollamaModel));
         aiObj->setProperty("localModelPath", toJuceString(localModelPath));
         aiObj->setProperty("localLlamaBinary", toJuceString(localLlamaBinary));
         aiObj->setProperty("localLlamaPort", localLlamaPort);
@@ -429,6 +430,8 @@ void Config::load() {
             // Local llama settings
             if (aiObj->hasProperty("localLlamaUrl"))
                 localLlamaUrl = aiObj->getProperty("localLlamaUrl").toString().toStdString();
+            if (aiObj->hasProperty("ollamaModel"))
+                ollamaModel = aiObj->getProperty("ollamaModel").toString().toStdString();
             if (aiObj->hasProperty("localModelPath"))
                 localModelPath = aiObj->getProperty("localModelPath").toString().toStdString();
             if (aiObj->hasProperty("localLlamaBinary"))

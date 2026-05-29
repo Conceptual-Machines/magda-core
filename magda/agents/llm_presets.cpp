@@ -67,6 +67,18 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             },
         },
         {
+            preset::LOCAL_OLLAMA,
+            "Local (Ollama)",
+            {
+                // baseUrl left empty -> resolved from the "ollama" credential
+                // entry (set in the Cloud tab) or DEFAULT_OLLAMA_BASE_URL.
+                {role::ROUTER, {provider::OLLAMA, "", "", model::OLLAMA_LLAMA31}},
+                {role::COMMAND, {provider::OLLAMA, "", "", model::OLLAMA_LLAMA31}},
+                {role::MUSIC, {provider::OLLAMA, "", "", model::OLLAMA_QWEN25}},
+                {role::CONTROLLER, {provider::OLLAMA, "", "", model::OLLAMA_LLAMA31}},
+            },
+        },
+        {
             preset::HYBRID_SPEED,
             "Hybrid - Optimize for Speed",
             {

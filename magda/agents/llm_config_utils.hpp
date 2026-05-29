@@ -18,7 +18,7 @@ inline llm::Provider providerFromString(const std::string& s) {
         return llm::Provider::Anthropic;
     if (s == provider::GEMINI)
         return llm::Provider::Gemini;
-    // deepseek, openrouter, openai_chat all use the OpenAI Chat Completions format
+    // deepseek, openrouter, openai_chat, ollama all use the OpenAI Chat Completions format
     return llm::Provider::OpenAIChat;
 }
 
@@ -32,6 +32,8 @@ inline juce::String defaultBaseUrl(const std::string& providerStr) {
         return "https://api.anthropic.com/v1";
     if (providerStr == provider::GEMINI)
         return "https://generativelanguage.googleapis.com";
+    if (providerStr == provider::OLLAMA)
+        return DEFAULT_OLLAMA_BASE_URL;
     // openai_chat and openai_responses share the same base URL
     return "https://api.openai.com/v1";
 }
@@ -47,6 +49,29 @@ inline llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& con
     pc.model = juce::String(config.model);
     pc.baseUrl =
         config.baseUrl.empty() ? defaultBaseUrl(config.provider) : juce::String(config.baseUrl);
+
+    // Ollama: the "credential" slot stores the base URL override (not a key).
+    // Per-agent baseUrl wins; otherwise fall back to the credential string;
+    // otherwise the default localhost URL. Inject a placeholder bearer token so
+    // the Authorization header is well-formed (Ollama ignores it).
+    if (config.provider == provider::OLLAMA) {
+        if (config.baseUrl.empty()) {
+            auto urlOverride = Config::getInstance().getAICredential(provider::OLLAMA);
+            if (!urlOverride.empty())
+                pc.baseUrl = juce::String(urlOverride);
+        }
+        // User-picked model override (set from the Cloud tab Model dropdown)
+        auto modelOverride = Config::getInstance().getOllamaModel();
+        if (!modelOverride.empty())
+            pc.model = juce::String(modelOverride);
+        if (pc.apiKey.isEmpty())
+            pc.apiKey = "ollama";  // placeholder; Ollama ignores bearer tokens
+        pc.userAgent = juce::String("MAGDA/") + MAGDA_VERSION;
+        if (!agentName.empty())
+            pc.userAgent += " (" + juce::String(agentName) + ")";
+        pc.appUrl = "https://magda.dev";
+        return pc;
+    }
 
     // API key: per-agent value first, then per-provider credential, then env var
     if (!config.apiKey.empty()) {
