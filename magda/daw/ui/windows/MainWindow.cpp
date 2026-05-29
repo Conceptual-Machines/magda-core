@@ -369,9 +369,15 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // Register this component as a command target for keyboard shortcuts
     commandManager.registerAllCommandsForTarget(this);
 
-    // Make this the first command target so shortcuts (Cmd+Z, etc.) work
-    // regardless of which child component has keyboard focus.
-    commandManager.setFirstCommandTarget(this);
+    // Context-aware command resolution (#25): leave the first target unset so
+    // ApplicationCommandManager resolves from the focused component up the
+    // ApplicationCommandTarget chain. MainComponent is the top-level target
+    // every child walks up to, so global shortcuts (Cmd+Z, save, play...)
+    // still resolve from anywhere; a focused view that implements
+    // ApplicationCommandTarget (and chains getNextCommandTarget() back here)
+    // can intercept its own context commands first. With MainComponent as the
+    // only target today this is behaviour-neutral.
+    commandManager.setFirstCommandTarget(nullptr);
 
     // Register command manager key mappings on this component so that
     // registered shortcuts (Cmd+Z, Cmd+Shift+Z, etc.) are handled
