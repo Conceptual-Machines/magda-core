@@ -150,19 +150,20 @@ ParameterInfo getParameterInfoForTarget(const AutomationTarget& target) {
             auto* device = TrackManager::getInstance().getDeviceInChainByPath(target.devicePath);
             if (!device)
                 break;
-            if (target.paramIndex >= static_cast<int>(device->parameters.size()))
+            auto* stored = device->findParameterByIndex(target.paramIndex);
+            if (!stored)
                 break;
             // Backstop: ensure every PluginParam info carries a working
             // DisplayTextProvider so the lane scale labels and tooltips route
             // display through the plugin's own valueToString.
-            auto& stored = device->parameters[static_cast<size_t>(target.paramIndex)];
-            if (!stored.displayText && target.devicePath.getDeviceId() != INVALID_DEVICE_ID) {
+            if (!stored->displayText && target.devicePath.getDeviceId() != INVALID_DEVICE_ID) {
                 auto provider = std::make_shared<ParameterInfo::DisplayTextProvider>();
+                provider->devicePath = target.devicePath;
                 provider->deviceId = target.devicePath.getDeviceId();
                 provider->paramIndex = target.paramIndex;
-                stored.displayText = std::move(provider);
+                stored->displayText = std::move(provider);
             }
-            return stored;
+            return *stored;
         }
 
         case ControlTarget::Kind::ModParam: {
@@ -182,7 +183,7 @@ ParameterInfo getParameterInfoForTarget(const AutomationTarget& target) {
             break;
     }
 
-    // Fallback for unresolved targets.
+    // Generic info for unresolved targets.
     return ParameterPresets::percent(-1, getDisplayNameForTarget(target));
 }
 

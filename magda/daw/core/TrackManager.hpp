@@ -79,13 +79,14 @@ class TrackManagerListener {
     }
 
     // Called when a device parameter changes (gain, level, etc.)
-    virtual void devicePropertyChanged(DeviceId deviceId) {
-        juce::ignoreUnused(deviceId);
+    virtual void devicePropertyChanged(const ChainNodePath& devicePath) {
+        juce::ignoreUnused(devicePath);
     }
 
     // Called when a device parameter value changes (for live parameter updates)
-    virtual void deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
-        juce::ignoreUnused(deviceId, paramIndex, newValue);
+    virtual void deviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
+                                        float newValue) {
+        juce::ignoreUnused(devicePath, paramIndex, newValue);
     }
 
     // Called when a macro knob value changes (for audio engine sync).
@@ -126,9 +127,9 @@ class TrackManager {
     TrackManager(const TrackManager&) = delete;
     TrackManager& operator=(const TrackManager&) = delete;
 
-    // Allocate a unique DeviceId (used by DrumGrid for per-pad chain plugins)
+    // Allocate an FX-section DeviceId (used by DrumGrid for per-pad chain plugins)
     DeviceId allocateDeviceId() {
-        return nextDeviceId_++;
+        return nextFxDeviceId_++;
     }
     RackId allocateRackId() {
         return nextRackId_++;
@@ -136,9 +137,9 @@ class TrackManager {
     ChainId allocateChainId() {
         return nextChainId_++;
     }
-    // Ensure the counter is above a restored ID (prevents collisions on project load)
+    // Ensure restored DrumGrid pad/plugin IDs do not collide with FX-section IDs.
     void ensureDeviceIdAbove(DeviceId id) {
-        nextDeviceId_ = std::max(nextDeviceId_, id + 1);
+        nextFxDeviceId_ = std::max(nextFxDeviceId_, id + 1);
     }
 
     /**
@@ -267,11 +268,35 @@ class TrackManager {
     const std::vector<ChainElement>& getChainElements(TrackId trackId) const;
     void moveNode(TrackId trackId, int fromIndex, int toIndex);
 
+    // Post-fader FX chain (flat device list; never racks or instruments).
+    // Getting/removing a post-fx device goes through the path-based APIs
+    // (getDeviceInChainByPath / removeDeviceFromChainByPath with a
+    // ChainNodePath::postFxDevice path, both already post-fx aware); these
+    // add/reorder helpers complete the surface.
+    const std::vector<PostFxChainElement>& getPostFxChainElements(TrackId trackId) const;
+    DeviceId addDeviceToPostFx(TrackId trackId, const DeviceInfo& device);
+    DeviceId addDeviceToPostFx(TrackId trackId, const DeviceInfo& device, int insertIndex);
+    void movePostFxDevice(TrackId trackId, int fromIndex, int toIndex);
+    // First post-fx device on the track with this pluginId, or INVALID_DEVICE_ID.
+    // Drives the analysis-device header toggles: analysis devices (oscilloscope /
+    // spectrum) are unique per kind in post-fx, so add* rejects a second one.
+    DeviceId findPostFxDevice(TrackId trackId, const juce::String& pluginId) const;
+
+    // Mixer-analysis section: rail-managed Oscilloscope / Spectrum instances
+    // separate from post-FX. Same shape as post-FX, but driven by the mixer
+    // rail toggle (not user content) and skipped at project save.
+    const std::vector<PostFxChainElement>& getMixerAnalysisElements(TrackId trackId) const;
+    DeviceId addDeviceToMixerAnalysis(TrackId trackId, const DeviceInfo& device);
+    DeviceId findMixerAnalysisDevice(TrackId trackId, const juce::String& pluginId) const;
+
     // Device management on track
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device);
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device, int insertIndex);
     void removeDeviceFromTrack(TrackId trackId, DeviceId deviceId);
     void setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool bypassed);
+    // Path-based variant — preferred for new code; sections will become
+    // id-scoped, at which point the bare-id version goes away.
+    void setDeviceBypassedByPath(const ChainNodePath& devicePath, bool bypassed);
     void setChainBypassed(TrackId trackId, bool bypassed);
     DeviceInfo* getDevice(TrackId trackId, DeviceId deviceId);
 
@@ -382,6 +407,9 @@ class TrackManager {
 
     // Update device parameters (called by AudioBridge when processor is created)
     void updateDeviceParameters(DeviceId deviceId, const std::vector<ParameterInfo>& params);
+    // Path-based variant — preferred for new code.
+    void updateDeviceParametersByPath(const ChainNodePath& devicePath,
+                                      const std::vector<ParameterInfo>& params);
     void setDeviceVisibleParameters(DeviceId deviceId, const std::vector<int>& visibleParams);
 
     // Set a specific device parameter value in ParameterInfo model units,
@@ -422,7 +450,7 @@ class TrackManager {
     /**
      * @brief Replace a track's FX chain with a loaded chain preset's elements.
      *
-     * Replaces track.chainElements wholesale with the preset's elements. The
+     * Replaces track.chain.fxChainElements wholesale with the preset's elements. The
      * track's identity (id, name, type, send routing, master volume/pan/etc.)
      * is preserved — only the inline chain is swapped. All chain / device /
      * nested-rack ids in the preset are reassigned to fresh runtime values to
@@ -707,7 +735,9 @@ class TrackManager {
 
     AudioEngine* audioEngine_ = nullptr;  // Non-owning pointer for routing operations
     int nextTrackId_ = 1;
-    int nextDeviceId_ = 1;
+    int nextFxDeviceId_ = 1;
+    int nextPostFxDeviceId_ = 1;
+    int nextMixerAnalysisDeviceId_ = 1;
     int nextRackId_ = 1;
     int nextChainId_ = 1;
     int nextAuxBusIndex_ = 0;
@@ -746,12 +776,15 @@ class TrackManager {
     void notifyTrackSelectionChanged(TrackId trackId);
     void notifyDeviceModifiersChanged(TrackId trackId);
     void notifyAudioSidechainTriggered(TrackId sourceTrackId);
-    void notifyDevicePropertyChanged(DeviceId deviceId);
-    void notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue);
+    void notifyDevicePropertyChanged(const ChainNodePath& devicePath);
+    void notifyDeviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
+                                      float newValue);
     void notifyMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,
                                  float value);
     void notifyModParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
                                    int paramIndex, float value);
+
+    void syncMultiOutChildOutputsForSource(TrackId sourceTrackId);
 
     // Helper for recursive mod updates
     void updateRackMods(const RackInfo& rack, double deltaTime);

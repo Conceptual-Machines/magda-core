@@ -26,7 +26,7 @@ TEST_CASE("AudioBridge - Const method signatures compile", "[audiobridge][const]
             constBridge->getTrackAudioOutput(1);
             constBridge->getTrackAudioInput(1);
             constBridge->getTrackMidiInput(1);
-            constBridge->isPluginWindowOpen(1);
+            constBridge->isPluginWindowOpen(magda::ChainNodePath{});
         }
 
         REQUIRE(true);  // Test passes if it compiles
@@ -46,7 +46,7 @@ TEST_CASE("AudioBridge - Const reference compatibility", "[audiobridge][const]")
             juce::String output = bridge.getTrackAudioOutput(1);
             juce::String input = bridge.getTrackAudioInput(1);
             juce::String midi = bridge.getTrackMidiInput(1);
-            bool isOpen = bridge.isPluginWindowOpen(1);
+            bool isOpen = bridge.isPluginWindowOpen(magda::ChainNodePath{});
 
             // Verify defaults
             (void)vol;
@@ -83,8 +83,8 @@ TEST_CASE("AudioBridge - Const correctness fix requirements", "[audiobridge][doc
     SECTION("Changes needed in AudioBridge.hpp") {
         // 1. Change: mutable juce::CriticalSection mappingLock_;
         // 2. Change: te::AudioTrack* getAudioTrack(TrackId trackId) const;
-        // 3. Change: te::Plugin::Ptr getPlugin(DeviceId deviceId) const;
-        // 4. Change: DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
+        // 3. Change: te::Plugin::Ptr getPlugin(const ChainNodePath& devicePath) const;
+        // 4. Change: DeviceProcessor* getDeviceProcessor(const ChainNodePath& devicePath) const;
         REQUIRE(true);
     }
 

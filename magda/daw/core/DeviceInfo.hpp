@@ -18,10 +18,12 @@ enum class PluginFormat { VST3, AU, VST, Internal };
 /**
  * @brief Device type classification
  *
- * Instruments generate audio/MIDI, effects process audio,
- * and MIDI devices process or analyse MIDI without audio I/O.
+ * Instruments generate audio/MIDI, effects process audio, MIDI devices process
+ * or analyse MIDI without audio I/O, and Analysis devices are transparent
+ * passthroughs (oscilloscope, spectrum) that visualise the signal and expose
+ * no macros or mods.
  */
-enum class DeviceType { Instrument, Effect, MIDI };
+enum class DeviceType { Instrument, Effect, MIDI, Analysis };
 
 /**
  * @brief Describes a single stereo output pair from a multi-output plugin
@@ -96,8 +98,19 @@ struct DeviceInfo {
     // owning DeviceSlotComponent on any notifyTrackDevicesChanged).
     juce::String aiPanelOutput;
 
-    // Device parameters (populated by DeviceProcessor)
+    // Device parameters (populated by DeviceProcessor) — the plugin's own
+    // automatable parameters. Wrapper-injected slot params (e.g. TE's
+    // PluginWetDryAutomatableParam pair) belong in `wrapperParameters` and
+    // must not be mixed in here.
     std::vector<ParameterInfo> parameters;
+
+    // Wrapper-owned slot parameters. These come from the host wrapper, not
+    // the plugin itself — TE's slot-level dry/wet on external plugins, and
+    // anywhere else a wrapper synthesises parameters that the plugin author
+    // never declared. Rendered by device-header chrome, never by the
+    // parameter grid. `paramIndex` still addresses the underlying TE slot so
+    // host writes, automation and aliases work the same as for plugin params.
+    std::vector<ParameterInfo> wrapperParameters;
 
     // User-selected visible parameters (indices into plugin parameter list)
     // If empty, show first N parameters; otherwise show these specific indices
@@ -136,6 +149,24 @@ struct DeviceInfo {
 
     // UI state
     int currentParameterPage = 0;  // Current parameter page (for multi-page param display)
+
+    // Resolve a TE-relative paramIndex to the matching ParameterInfo in either
+    // bucket. The argument is ALWAYS a TE index (ParameterInfo::paramIndex),
+    // never an array position. Returns nullptr if no entry matches.
+    ParameterInfo* findParameterByIndex(int paramIndex) {
+        if (paramIndex < 0)
+            return nullptr;
+        for (auto& p : parameters)
+            if (p.paramIndex == paramIndex)
+                return &p;
+        for (auto& p : wrapperParameters)
+            if (p.paramIndex == paramIndex)
+                return &p;
+        return nullptr;
+    }
+    const ParameterInfo* findParameterByIndex(int paramIndex) const {
+        return const_cast<DeviceInfo*>(this)->findParameterByIndex(paramIndex);
+    }
 
     juce::String getFormatString() const {
         switch (format) {

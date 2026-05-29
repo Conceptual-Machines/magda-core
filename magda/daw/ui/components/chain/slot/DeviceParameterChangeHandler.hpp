@@ -9,7 +9,8 @@
 
 namespace magda {
 struct DeviceInfo;
-}
+struct ChainNodePath;
+}  // namespace magda
 
 namespace magda::daw::ui {
 
@@ -25,8 +26,9 @@ struct ParameterLearnHighlightState {
 
 void updateCachedParameterValue(magda::DeviceInfo& device, int paramIndex, float newValue);
 
-bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device, magda::DeviceId deviceId,
-                                     int changedParamIndex, ParamHostComponent& paramGrid);
+bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device,
+                                     const magda::ChainNodePath& devicePath, int changedParamIndex,
+                                     ParamHostComponent& paramGrid);
 
 void applyLearnModeParameterHighlight(magda::DeviceInfo& device, ParamHostComponent& paramGrid,
                                       int paramIndex, float newValue,

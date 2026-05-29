@@ -14,19 +14,19 @@ namespace magda {
 class LoopMarkerInteraction {
   public:
     struct Host {
-        std::function<double(int pixel)> pixelToTime;
-        std::function<int(double time)> timeToPixel;
-        std::function<double(double time)> snapToGrid;  // nullable — no snap if null
+        std::function<double(int pixel)> pixelToPosition;
+        std::function<int(double position)> positionToPixel;
+        std::function<double(double position)> snapPosition;  // nullable — no snap if null
         std::function<void(double start, double end)> onLoopChanged;
         std::function<void()> onRepaint;
-        double maxTime = 0.0;
+        double maxPosition = 0.0;
         int topBorderY = 0;          // Y position of the flag connecting line (top of strip)
         int topBorderThreshold = 6;  // How far BELOW topBorderY still counts as the strip body
                                      // (a small fixed tolerance above the line is added internally)
     };
 
     void setHost(Host host);
-    void setLoopRegion(double start, double end, bool enabled);
+    void setLoopRange(double start, double end, bool enabled);
 
     // Delegate mouse events from host component — returns true if handled
     bool mouseDown(int x, int y);
@@ -36,11 +36,11 @@ class LoopMarkerInteraction {
 
     bool isDragging() const;
 
-    double getStartTime() const {
-        return startTime_;
+    double getStartPosition() const {
+        return startPosition_;
     }
-    double getEndTime() const {
-        return endTime_;
+    double getEndPosition() const {
+        return endPosition_;
     }
     bool isEnabled() const {
         return enabled_;
@@ -48,8 +48,8 @@ class LoopMarkerInteraction {
 
   private:
     Host host_;
-    double startTime_ = -1.0;
-    double endTime_ = -1.0;
+    double startPosition_ = -1.0;
+    double endPosition_ = -1.0;
     bool enabled_ = false;
 
     bool draggingStart_ = false;
@@ -65,7 +65,7 @@ class LoopMarkerInteraction {
     bool isOnMarker(int x, int y, bool& isStart) const;
     bool isOnTopBorder(int x, int y) const;
 
-    double applySnap(double time) const;
+    double applySnap(double position) const;
 };
 
 }  // namespace magda

@@ -68,6 +68,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/open_in_new.svg
     ../../assets/icons/general/power_on.svg
     ../../assets/icons/general/rack.svg
+    ../../assets/icons/general/fxchain.svg
     ../../assets/icons/general/tree.svg
     ../../assets/icons/general/save.svg
     ../../assets/icons/general/folder-open.svg
@@ -82,6 +83,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/speaker_off.svg
     ../../assets/BoldMGlyph.svg
     ../../assets/icons/general/headphones.svg
+    ../../assets/icons/general/record-monitor.svg
     ../../assets/icons/general/metronome.svg
     ../../assets/icons/general/project_home.svg
     ../../assets/icons/general/harddrive.svg
@@ -147,6 +149,12 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/waveform/bezier.svg
     ../../assets/icons/waveform/bend-in-out.svg
     ../../assets/icons/waveform/curve.svg
+    # Analysis device icons
+    ../../assets/icons/analysis/oscilloscope.svg
+    ../../assets/icons/analysis/spectrum.svg
+    ../../assets/icons/analysis/postfx.svg
+    # Track-chain header icons
+    ../../assets/icons/trackchain/gain-staging.svg
     # Toolbar icons
     ../../assets/icons/toolbar/density_small.svg
     ../../assets/icons/toolbar/density_medium.svg
@@ -158,6 +166,10 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/toolbar/vertical.svg
     ../../assets/icons/toolbar/io_routing.svg
     # Footer view mode icons
+    ../../assets/icons/footer/icon-session-boldm.svg
+    ../../assets/icons/footer/icon-arrangement-boldm.svg
+    ../../assets/icons/footer/icon-mix-boldm.svg
+    # Legacy view mode icons (still used by the clip inspector view toggle)
     ../../assets/icons/footer/Session.svg
     ../../assets/icons/footer/Arrangement.svg
     ../../assets/icons/footer/Mix.svg
@@ -266,7 +278,7 @@ add_library(magda_daw STATIC
 
 # JUCE GUI app — sources contributed below via add_subdirectory().
 juce_add_gui_app(magda_daw_app
-    VERSION "0.1.0"
+    VERSION "${MAGDA_BUNDLE_VERSION}"
     COMPANY_NAME "MAGDA"
     PRODUCT_NAME "MAGDA"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/app_icon.png"
@@ -319,7 +331,7 @@ endif()
 
 # Out-of-process plugin scanner.
 juce_add_console_app(magda_plugin_scanner
-    VERSION "1.0.0"
+    VERSION "${MAGDA_BUNDLE_VERSION}"
     COMPANY_NAME "MAGDA"
     PRODUCT_NAME "MAGDA Plugin Scanner"
 )
@@ -624,32 +636,35 @@ endif()
 # the FetchContent `_deps/onnxruntime-src/lib/` build-dir path into the binary's
 # rpath, which does not exist on an end-user machine, so the distributed app
 # must carry the runtime library itself or it aborts at launch ("Library not
-# loaded: @rpath/libonnxruntime.1.dylib").
-if(APPLE)
-    # Place the dylib in the bundle's Frameworks/ — the release codesign step
-    # already signs everything there — and add an rpath so the loader finds it.
-    # The executable references @rpath/libonnxruntime.1.dylib (the lib's own
-    # install name), so the bundled file must use that exact name.
-    add_custom_command(TARGET magda_daw_app POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Frameworks"
-        COMMAND ${CMAKE_COMMAND} -E copy
-            "${ONNXRUNTIME_LIB_DIR}/libonnxruntime.dylib"
-            "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Frameworks/libonnxruntime.1.dylib"
-        COMMENT "Bundling ONNX Runtime dylib into app Frameworks"
-    )
-    set_property(TARGET magda_daw_app APPEND PROPERTY
-        BUILD_RPATH "@executable_path/../Frameworks")
-elseif(WIN32)
-    # Windows only searches the exe's directory, the cwd, and PATH — none of
-    # which include the FetchContent lib dir — so without this copy the first
-    # ORT call (Sample Tagger load) faults when the delay-loaded DLL fails to
-    # resolve.
-    add_custom_command(TARGET magda_daw_app POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll"
-            "${ONNXRUNTIME_LIB_DIR}/onnxruntime_providers_shared.dll"
-            "$<TARGET_FILE_DIR:magda_daw_app>"
-        COMMENT "Copying ONNX Runtime DLLs alongside app executable"
-    )
+# loaded: @rpath/libonnxruntime.1.dylib"). Skipped when MAGDA_HAVE_CLAP is off
+# (Intel macOS) since there's no ORT to bundle.
+if(MAGDA_HAVE_CLAP)
+    if(APPLE)
+        # Place the dylib in the bundle's Frameworks/ — the release codesign step
+        # already signs everything there — and add an rpath so the loader finds it.
+        # The executable references @rpath/libonnxruntime.1.dylib (the lib's own
+        # install name), so the bundled file must use that exact name.
+        add_custom_command(TARGET magda_daw_app POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Frameworks"
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "${ONNXRUNTIME_LIB_DIR}/libonnxruntime.dylib"
+                "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Frameworks/libonnxruntime.1.dylib"
+            COMMENT "Bundling ONNX Runtime dylib into app Frameworks"
+        )
+        set_property(TARGET magda_daw_app APPEND PROPERTY
+            BUILD_RPATH "@executable_path/../Frameworks")
+    elseif(WIN32)
+        # Windows only searches the exe's directory, the cwd, and PATH — none of
+        # which include the FetchContent lib dir — so without this copy the first
+        # ORT call (Sample Tagger load) faults when the delay-loaded DLL fails to
+        # resolve.
+        add_custom_command(TARGET magda_daw_app POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll"
+                "${ONNXRUNTIME_LIB_DIR}/onnxruntime_providers_shared.dll"
+                "$<TARGET_FILE_DIR:magda_daw_app>"
+            COMMENT "Copying ONNX Runtime DLLs alongside app executable"
+        )
+    endif()
 endif()

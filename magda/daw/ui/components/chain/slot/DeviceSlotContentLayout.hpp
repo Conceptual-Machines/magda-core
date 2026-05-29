@@ -24,6 +24,9 @@ struct DeviceSlotContentFrameControls {
     juce::Component* macroButton = nullptr;
     juce::Component* uiButton = nullptr;
     juce::Component* powerButton = nullptr;
+    // Small rotary at the top of the meter strip driving wet/dry mix. Only
+    // populated when the device exposes a DryGain+WetGain wrapper pair.
+    juce::Component* mixKnob = nullptr;
 };
 
 struct DeviceSlotContentBodyControls {

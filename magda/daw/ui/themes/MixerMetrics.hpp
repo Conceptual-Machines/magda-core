@@ -37,9 +37,9 @@ struct MixerMetrics {
     }
 
     // === Label dimensions ===
-    float labelTextWidth = 22.0f;  // Wide enough for "-inf"
-    float labelTextHeight = 10.0f;
-    float labelFontSize = 10.0f;
+    float labelTextWidth = 22.0f;   // Wide enough for "-inf"
+    float labelTextHeight = 12.0f;  // Box height for the dB readout numbers
+    float labelFontSize = 11.0f;    // dB scale readout font
 
     // === Channel strip dimensions ===
     int channelWidth = 100;
@@ -58,14 +58,17 @@ struct MixerMetrics {
     int knobSize = 32;
     int headerHeight = 30;
 
-    // === Send area ===
-    int sendAreaHeight = 60;
-    static constexpr int minSendAreaHeight = 0;
-    static constexpr int maxSendAreaHeight = 400;
+    // Empty space inserted just above the fader region. The horizontal handle
+    // below the track header controls this value — drag down to shrink the
+    // fader, drag up to grow it. Independent of sends (which auto-size to
+    // their slot count).
+    int faderTopInset = 0;
+    static constexpr int minFaderTopInset = 0;
+    static constexpr int maxFaderTopInset = 400;
 
-    // === Visibility ===
-    bool showRouting = true;  // Show/hide I/O routing selectors on channel strips
-    bool showMonitor = true;  // Show/hide R/Monitor row on channel strips
+    // Visibility toggles live on Config (mixerShowRouting / mixerShowMonitor /
+    // mixerShowSends / mixerShowOscilloscope / mixerShowSpectrum /
+    // mixerShowFxChain) — see MixerToggleRail.
 
     // === Spacing ===
     int controlSpacing = 4;

@@ -3,6 +3,7 @@
 #include <map>
 #include <vector>
 
+#include "../../../core/GainStagingManager.hpp"
 #include "../../../core/LinkModeManager.hpp"
 #include "../../themes/MixerLookAndFeel.hpp"
 #include "PanelContent.hpp"
@@ -38,6 +39,7 @@ class TrackChainContent : public PanelContent,
                           public magda::TrackManagerListener,
                           public magda::SelectionManagerListener,
                           public magda::LinkModeManagerListener,
+                          public magda::GainStagingListener,
                           private juce::Timer {
   public:
     TrackChainContent();
@@ -89,6 +91,9 @@ class TrackChainContent : public PanelContent,
     void modLinkModeChanged(bool active, const magda::ModSelection& selection) override;
     void macroLinkModeChanged(bool active, const magda::MacroSelection& selection) override;
 
+    // GainStagingListener
+    void gainStagingModeChanged(magda::GainStagingMode mode, magda::TrackId trackId) override;
+
     // Selection state for plugin browser context menu
     bool hasSelectedTrack() const;
     bool hasSelectedChain() const;
@@ -108,14 +113,60 @@ class TrackChainContent : public PanelContent,
 
   private:
     juce::Label noSelectionLabel_;
-    juce::Label linkModeLabel_;  // Shows "LINK MODE" when mod/macro linking is active
+    juce::Label linkModeLabel_;     // Shows "LINK MODE" when mod/macro linking is active
+    juce::Label gainStagingLabel_;  // Shows "GAIN STAGING" while a staging pass is active
+
+    // Reflect the gain-staging mode onto the toolbar button (active tint + tooltip).
+    void refreshGainStagingButton();
+
+    // Finish the capture and hand it to the AI agent off the message thread,
+    // applying the agent's gain decisions when it returns.
+    void runAiGainStagingPass();
+    bool aiProcessing_ = false;  // an AI pass is waiting on the agent
+
+    // Header feedback for an AI pass: a blink timer drives the "GETTING AI
+    // RESULTS" banner while waiting, then the agent's summary is shown briefly.
+    struct LambdaTimer : public juce::Timer {
+        std::function<void()> onTick;
+        void timerCallback() override {
+            if (onTick)
+                onTick();
+        }
+    };
+    LambdaTimer aiBlinkTimer_;
+    bool aiBlinkOn_ = true;
+
+    // Transient overlay showing the agent's reasoning after a pass; any click
+    // dismisses it.
+    std::unique_ptr<juce::Component> aiReasoningOverlay_;
+    void showAiReasoning(const juce::String& text);
 
     // Header bar controls - LEFT side (action buttons)
-    std::unique_ptr<magda::SvgButton> globalModsButton_;  // Toggle global modulators panel
-    std::unique_ptr<magda::SvgButton> macroButton_;       // Toggle global macros panel
-    std::unique_ptr<magda::SvgButton> addRackButton_;     // Add rack button
-    std::unique_ptr<magda::SvgButton> treeViewButton_;    // Show chain tree dialog
-    std::unique_ptr<magda::SvgButton> presetButton_;      // MAGDA track-chain presets menu
+    std::unique_ptr<magda::SvgButton> globalModsButton_;   // Toggle global modulators panel
+    std::unique_ptr<magda::SvgButton> gainStagingButton_;  // Start/stop a gain-staging pass
+    std::unique_ptr<magda::SvgButton> macroButton_;        // Toggle global macros panel
+    std::unique_ptr<magda::SvgButton> addRackButton_;      // Add rack button
+    std::unique_ptr<magda::SvgButton> treeViewButton_;     // Show chain tree dialog
+    std::unique_ptr<magda::SvgButton> presetButton_;       // MAGDA track-chain presets menu
+    std::unique_ptr<magda::SvgButton> oscToggleButton_;    // Toggle oscilloscope in post-fx
+    std::unique_ptr<magda::SvgButton> specToggleButton_;   // Toggle spectrum analyzer in post-fx
+    std::unique_ptr<magda::SvgButton> postFxPanelButton_;  // Show/hide the post-fx panel
+
+    // Add or remove the named analysis device in the selected track's post-fx
+    // (osc/spectrum are unique per kind there), then refresh the toggle states.
+    void togglePostFxAnalysisDevice(const juce::String& pluginId, const juce::String& displayName);
+    void refreshAnalysisToggles();  // light osc/spec buttons when present in post-fx
+
+  public:
+    // The post-fx panel lives in BottomPanel; the toggle button lives here.
+    // BottomPanel wires these: onPostFxPanelToggled fires when the user clicks
+    // the button, and setPostFxPanelOpen reflects the panel's open state back
+    // onto the button.
+    std::function<void(bool open)> onPostFxPanelToggled;
+    void setPostFxPanelOpen(bool open);
+
+  private:
+    bool postFxPanelOpen_ = false;  // mirrored panel state, for the button's lit look
 
     // Currently-loaded chain preset name for the selected track (empty when
     // none). Cleared on track selection change so each track gets a fresh

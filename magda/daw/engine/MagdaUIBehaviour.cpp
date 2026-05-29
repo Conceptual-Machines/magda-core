@@ -3,8 +3,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <tracktion_engine/tracktion_engine.h>
 
-#include "../ui/themes/MainLookAndFeel.hpp"
-
 namespace magda {
 
 // =============================================================================
@@ -97,23 +95,11 @@ std::unique_ptr<juce::Component> MagdaUIBehaviour::createPluginWindow(
 
 PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
                                        tracktion::PluginWindowState& state)
-    : DocumentWindow(plugin.getName(),
-                     juce::LookAndFeel::getDefaultLookAndFeel().findColour(
-                         juce::ResizableWindow::backgroundColourId),
-                     DocumentWindow::minimiseButton | DocumentWindow::closeButton),
-      plugin_(plugin),
-      state_(state) {
-    // IMPORTANT: Do NOT use native title bar!
-    // With native title bar, macOS controls the close button behavior and may
-    // try to close the window after closeButtonPressed() returns, conflicting
-    // with Tracktion's window ownership. Using JUCE's title bar gives us
-    // complete control - nothing happens after closeButtonPressed() unless we do it.
-    setUsingNativeTitleBar(false);
-    setTitleBarHeight(MainLookAndFeel::kTitleBarHeight);
-
-    // Keep plugin window always on top so it doesn't go behind main window when user interacts with
-    // parameters
-    setAlwaysOnTop(true);
+    : daw::ui::FloatingHostWindow(plugin.getName()), plugin_(plugin), state_(state) {
+    // Chrome (themed non-native title bar + always-on-top) comes from
+    // FloatingHostWindow. The non-native bar is essential here: native macOS close
+    // can try to close the window after closeButtonPressed() returns, racing
+    // Tracktion's window ownership; JUCE's bar gives us full control.
 
     // Try to create the plugin's editor
     std::unique_ptr<juce::Component> editor;

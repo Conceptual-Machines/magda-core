@@ -7,6 +7,9 @@ namespace magda::daw::ui {
 
 void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
                        const ParamLinkMenuCallbacks& callbacks) {
+    if (ctx.devicePath.isPostFx())
+        return;
+
     juce::PopupMenu menu;
 
     magda::ControlTarget thisTarget =
@@ -143,9 +146,10 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
         }
     }
 
-    // Automation
-    menu.addSeparator();
-    menu.addItem(5000, "Show Automation Lane");
+    if (!ctx.devicePath.isPostFx()) {
+        menu.addSeparator();
+        menu.addItem(5000, "Show Automation Lane");
+    }
 
     // MIDI section
     menu.addSeparator();

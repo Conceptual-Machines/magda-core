@@ -63,8 +63,10 @@ juce::String getEnvVar(const char* name) {
 struct ProjectTestFixture {
     std::vector<juce::File> tempFiles;
     std::vector<juce::File> tempDirs;
+    bool previousPersistMixerAnalysis = false;
 
-    ProjectTestFixture() {
+    ProjectTestFixture()
+        : previousPersistMixerAnalysis(Config::getInstance().getPersistMixerAnalysis()) {
         // Clear all singleton state before each test
         TrackManager::getInstance().clearAllTracks();
         ClipManager::getInstance().clearAllClips();
@@ -90,6 +92,7 @@ struct ProjectTestFixture {
         TrackManager::getInstance().clearAllTracks();
         ClipManager::getInstance().clearAllClips();
         AutomationManager::getInstance().clearAll();
+        Config::getInstance().setPersistMixerAnalysis(previousPersistMixerAnalysis);
     }
 
     // Helper to create unique temp file with automatic cleanup
@@ -1077,9 +1080,9 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         REQUIRE(tracks[0].type == TrackType::Audio);
 
         // Verify the device was restored
-        REQUIRE(tracks[0].chainElements.size() == 1);
-        REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
-        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chain.fxChainElements[0]) == true);
+        const auto& restoredDevice = getDevice(tracks[0].chain.fxChainElements[0]);
         REQUIRE(restoredDevice.name == "Test Synth");
         REQUIRE(restoredDevice.isInstrument == true);
 
@@ -1124,9 +1127,9 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         REQUIRE(tracks.size() == 1);
 
         // Verify the rack was restored
-        REQUIRE(tracks[0].chainElements.size() == 1);
-        REQUIRE(isRack(tracks[0].chainElements[0]) == true);
-        const auto& restoredRack = getRack(tracks[0].chainElements[0]);
+        REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
+        REQUIRE(isRack(tracks[0].chain.fxChainElements[0]) == true);
+        const auto& restoredRack = getRack(tracks[0].chain.fxChainElements[0]);
         REQUIRE(restoredRack.name == "Test Rack");
 
         // Cleanup
@@ -1215,10 +1218,10 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
 
         const auto& tracks = trackManager.getTracks();
         REQUIRE(tracks.size() == 1);
-        REQUIRE(tracks[0].chainElements.size() == 1);
-        REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
+        REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chain.fxChainElements[0]) == true);
 
-        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        const auto& restoredDevice = getDevice(tracks[0].chain.fxChainElements[0]);
         REQUIRE(restoredDevice.pluginState == juce::String("SGVsbG8gV29ybGQ="));
     }
 
@@ -1245,9 +1248,9 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
 
         const auto& tracks = trackManager.getTracks();
         REQUIRE(tracks.size() == 1);
-        REQUIRE(tracks[0].chainElements.size() == 1);
-        REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
-        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chain.fxChainElements[0]) == true);
+        const auto& restoredDevice = getDevice(tracks[0].chain.fxChainElements[0]);
         REQUIRE(restoredDevice.pluginState.isEmpty());
     }
 }
@@ -1315,14 +1318,97 @@ TEST_CASE("DeviceInfo panel UI state roundtrip", "[project][serialization][devic
     REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
     auto* loadedTrack = trackManager.getTrack(trackId);
     REQUIRE(loadedTrack != nullptr);
-    REQUIRE(loadedTrack->chainElements.size() == 1);
-    REQUIRE(isDevice(loadedTrack->chainElements[0]));
-    const auto& loaded = getDevice(loadedTrack->chainElements[0]);
+    REQUIRE(loadedTrack->chain.fxChainElements.size() == 1);
+    REQUIRE(isDevice(loadedTrack->chain.fxChainElements[0]));
+    const auto& loaded = getDevice(loadedTrack->chain.fxChainElements[0]);
     REQUIRE(loaded.modPanelOpen);
     REQUIRE(loaded.gainPanelOpen);
     REQUIRE(loaded.paramPanelOpen);
     REQUIRE(loaded.aiPanelOpen);
     REQUIRE(loaded.aiPanelOutput.isEmpty());
+}
+
+TEST_CASE("Section-scoped device ids survive project roundtrip",
+          "[project][serialization][devices]") {
+    ProjectTestFixture fixture;
+    Config::getInstance().setPersistMixerAnalysis(true);
+
+    auto& trackManager = TrackManager::getInstance();
+    auto trackId = trackManager.createTrack("Section IDs", TrackType::Audio);
+
+    DeviceInfo fx;
+    fx.name = "FX";
+    fx.pluginId = "fx";
+    DeviceInfo post;
+    post.name = "Post";
+    post.pluginId = "post";
+    DeviceInfo analysis;
+    analysis.name = "Analysis";
+    analysis.pluginId = "oscilloscope";
+
+    REQUIRE(trackManager.addDeviceToTrack(trackId, fx) == 1);
+    REQUIRE(trackManager.addDeviceToPostFx(trackId, post) == 1);
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(trackId, analysis) == 1);
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+
+    ProjectInfo loadedInfo;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
+
+    auto* loadedTrack = trackManager.getTrack(trackId);
+    REQUIRE(loadedTrack != nullptr);
+    REQUIRE(loadedTrack->chain.fxChainElements.size() == 1);
+    REQUIRE(loadedTrack->chain.postFxChainElements.size() == 1);
+    REQUIRE(loadedTrack->chain.mixerAnalysisElements.size() == 1);
+    REQUIRE(getDevice(loadedTrack->chain.fxChainElements[0]).id == 1);
+    REQUIRE(loadedTrack->chain.postFxChainElements[0].device.id == 1);
+    REQUIRE(loadedTrack->chain.mixerAnalysisElements[0].device.id == 1);
+
+    fx.name = "FX 2";
+    post.name = "Post 2";
+    analysis.name = "Spectrum";
+    analysis.pluginId = "spectrumanalyzer";
+
+    REQUIRE(trackManager.addDeviceToTrack(trackId, fx) == 2);
+    REQUIRE(trackManager.addDeviceToPostFx(trackId, post) == 2);
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(trackId, analysis) == 2);
+}
+
+TEST_CASE("Post-fx device params are not automation targets",
+          "[project][serialization][automation]") {
+    ProjectTestFixture fixture;
+
+    auto& trackManager = TrackManager::getInstance();
+    auto& automationManager = AutomationManager::getInstance();
+    auto trackId = trackManager.createTrack("Automation Section IDs", TrackType::Audio);
+
+    DeviceInfo fx;
+    fx.name = "FX";
+    fx.pluginId = "fx";
+    DeviceInfo post;
+    post.name = "Post";
+    post.pluginId = "post";
+
+    auto fxId = trackManager.addDeviceToTrack(trackId, fx);
+    auto postId = trackManager.addDeviceToPostFx(trackId, post);
+    REQUIRE(fxId == 1);
+    REQUIRE(postId == 1);
+
+    juce::ignoreUnused(fxId);
+    const auto postFxPath = ChainNodePath::postFxDevice(trackId, postId);
+    const auto laneId = automationManager.createLane(ControlTarget::pluginParam(postFxPath, 0),
+                                                     AutomationLaneType::Absolute);
+    REQUIRE(laneId == INVALID_AUTOMATION_LANE_ID);
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+
+    ProjectInfo loadedInfo;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
+
+    const auto& lanes = automationManager.getLanes();
+    REQUIRE(lanes.empty());
 }
 
 TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][parameter]") {
@@ -1399,9 +1485,9 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
     auto* loadedTrack = trackManager.getTrack(trackId);
     REQUIRE(loadedTrack != nullptr);
-    REQUIRE(loadedTrack->chainElements.size() == 1);
-    REQUIRE(isDevice(loadedTrack->chainElements[0]));
-    const auto& loadedDevice = getDevice(loadedTrack->chainElements[0]);
+    REQUIRE(loadedTrack->chain.fxChainElements.size() == 1);
+    REQUIRE(isDevice(loadedTrack->chain.fxChainElements[0]));
+    const auto& loadedDevice = getDevice(loadedTrack->chain.fxChainElements[0]);
     REQUIRE(loadedDevice.parameters.size() == 1);
     const auto& loaded = loadedDevice.parameters[0];
     REQUIRE(loaded.paramIndex == 12);

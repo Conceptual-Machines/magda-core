@@ -2,6 +2,8 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "../ui/components/common/FloatingHostWindow.hpp"
+
 namespace tracktion {
 inline namespace engine {
 class Plugin;
@@ -50,7 +52,7 @@ class MagdaUIBehaviour : public tracktion::UIBehaviour {
  * and manages its lifecycle. Uses JUCE's title bar (not native) so we have complete
  * control over window close behavior.
  */
-class PluginEditorWindow final : public juce::DocumentWindow {
+class PluginEditorWindow final : public daw::ui::FloatingHostWindow {
   public:
     PluginEditorWindow(tracktion::Plugin& plugin, tracktion::PluginWindowState& state);
     ~PluginEditorWindow() override;

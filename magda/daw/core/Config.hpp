@@ -679,6 +679,84 @@ class Config {
         openMacrosOnSelect = enabled;
     }
 
+    // Mixer view-toggle rail: per-toggle visibility for the mixer's optional
+    // panes. All default off; the user opts in via the left rail.
+    bool getMixerShowSends() const {
+        return mixerShowSends_;
+    }
+    void setMixerShowSends(bool v) {
+        mixerShowSends_ = v;
+    }
+    bool getMixerShowRouting() const {
+        return mixerShowRouting_;
+    }
+    void setMixerShowRouting(bool v) {
+        mixerShowRouting_ = v;
+    }
+    bool getMixerShowMonitor() const {
+        return mixerShowMonitor_;
+    }
+    void setMixerShowMonitor(bool v) {
+        mixerShowMonitor_ = v;
+    }
+    bool getMixerShowOscilloscope() const {
+        return mixerShowOscilloscope_;
+    }
+    void setMixerShowOscilloscope(bool v) {
+        mixerShowOscilloscope_ = v;
+    }
+    bool getMixerShowSpectrum() const {
+        return mixerShowSpectrum_;
+    }
+    void setMixerShowSpectrum(bool v) {
+        mixerShowSpectrum_ = v;
+    }
+    bool getMixerShowFxChain() const {
+        return mixerShowFxChain_;
+    }
+    void setMixerShowFxChain(bool v) {
+        mixerShowFxChain_ = v;
+    }
+
+    // Persist the rail-driven mixer-analysis devices into the project file.
+    // Default false (session-only); flip on if users want mini-visualizer
+    // settings to survive project save/load.
+    bool getPersistMixerAnalysis() const {
+        return persistMixerAnalysis_;
+    }
+    void setPersistMixerAnalysis(bool v) {
+        persistMixerAnalysis_ = v;
+    }
+
+    // Analysis device defaults: the last-used settings, applied to every newly
+    // created Oscilloscope / Spectrum Analyzer. A device restored from a project
+    // keeps its own saved state; only fresh devices pick these up. Persisted in
+    // config.json under "analysisDefaults". Field defaults below mirror the
+    // plugins' own hardcoded fallbacks.
+    struct OscilloscopeDefaults {
+        int traceColour = 0;
+        float timebaseMs = 10.0f;
+    };
+    struct SpectrumDefaults {
+        int traceColour = 0;
+        int fftOrder = 11;  // 11 = 2048, 12 = 4096
+        float slopeDbPerOct = 4.5f;
+        float smoothing = 0.5f;
+    };
+
+    OscilloscopeDefaults getOscilloscopeDefaults() const {
+        return oscilloscopeDefaults_;
+    }
+    void setOscilloscopeDefaults(const OscilloscopeDefaults& d) {
+        oscilloscopeDefaults_ = d;
+    }
+    SpectrumDefaults getSpectrumDefaults() const {
+        return spectrumDefaults_;
+    }
+    void setSpectrumDefaults(const SpectrumDefaults& d) {
+        spectrumDefaults_ = d;
+    }
+
     // Preview output channel (stereo pair offset: 0 = outputs 1-2, 2 = outputs 3-4, etc.)
     int getPreviewOutputChannel() const {
         return previewOutputChannel;
@@ -844,6 +922,19 @@ class Config {
 
     // Device chain behaviour
     bool openMacrosOnSelect = true;  // Open macro panel when selecting a device/rack
+
+    // Mixer view-toggle rail (default all off; users opt in via the rail)
+    bool mixerShowSends_ = false;
+    bool mixerShowRouting_ = false;
+    bool mixerShowMonitor_ = false;
+    bool mixerShowOscilloscope_ = false;
+    bool mixerShowSpectrum_ = false;
+    bool mixerShowFxChain_ = false;
+    bool persistMixerAnalysis_ = false;
+
+    // Analysis device last-used defaults (see getters above).
+    OscilloscopeDefaults oscilloscopeDefaults_;
+    SpectrumDefaults spectrumDefaults_;
 
     // Auto-save settings
     bool autoSaveEnabled = true;       // Auto-save enabled by default

@@ -11,10 +11,10 @@ namespace magda::daw::ui {
 
 namespace {
 
-tracktion::engine::Plugin::Ptr getLivePlugin(magda::DeviceId deviceId) {
+tracktion::engine::Plugin::Ptr getLivePlugin(const magda::ChainNodePath& path) {
     if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
         if (auto* bridge = audioEngine->getAudioBridge())
-            return bridge->getPlugin(deviceId);
+            return bridge->getPlugin(path);
     }
 
     return {};
@@ -49,7 +49,7 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         if (callbacks.onLayoutChanged)
             storage.compiledPanel->setOnLayoutChanged(callbacks.onLayoutChanged);
 
-        if (auto plugin = getLivePlugin(device.id))
+        if (auto plugin = getLivePlugin(nodePath))
             storage.compiledPanel->bindPlugin(plugin.get());
 
         storage.compiledPanel->updateFromDevice(device);
@@ -60,7 +60,7 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
     if (device.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
         storage.faustUI = std::make_unique<FaustUI>();
 
-        if (auto plugin = getLivePlugin(device.id)) {
+        if (auto plugin = getLivePlugin(nodePath)) {
             if (auto* faustPlugin = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get())) {
                 storage.faustUI->setPlugin(faustPlugin);
                 storage.faustCustomView = FaustCustomUIRegistry::getInstance().create(
@@ -75,6 +75,7 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         return DeviceSlotInlineUiKind::Faust;
     }
 
+    storage.customUI.setDevicePath(nodePath);
     storage.customUI.create(device, &parent, makeCustomUiCallbacks(std::move(callbacks)));
     return DeviceSlotInlineUiKind::Custom;
 }

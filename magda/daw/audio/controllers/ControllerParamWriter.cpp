@@ -1,6 +1,5 @@
 #include "controllers/ControllerParamWriter.hpp"
 
-#include <algorithm>
 #include <cmath>
 
 #include "../../core/AutomationInfo.hpp"
@@ -15,16 +14,7 @@ namespace magda {
 namespace {
 
 const ParameterInfo* findDeviceParameterInfo(const DeviceInfo& device, int paramIndex) {
-    auto it = std::find_if(
-        device.parameters.begin(), device.parameters.end(),
-        [paramIndex](const ParameterInfo& param) { return param.paramIndex == paramIndex; });
-    if (it != device.parameters.end())
-        return &*it;
-
-    if (paramIndex >= 0 && paramIndex < static_cast<int>(device.parameters.size()))
-        return &device.parameters[static_cast<size_t>(paramIndex)];
-
-    return nullptr;
+    return device.findParameterByIndex(paramIndex);
 }
 
 }  // namespace

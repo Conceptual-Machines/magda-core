@@ -26,6 +26,8 @@ dsl_grammar.hpp
     music_agent.cpp
     drummer_agent.hpp
     drummer_agent.cpp
+    gain_staging_agent.hpp
+    gain_staging_agent.cpp
     automation_parser.hpp
     automation_parser.cpp
     automation_executor.hpp

@@ -6,7 +6,7 @@
 #include <map>
 #include <memory>
 
-#include "../core/TypeIds.hpp"
+#include "../core/ChainNodePath.hpp"
 
 namespace magda {
 
@@ -42,15 +42,20 @@ class DeviceMeteringManager {
 
     /**
      * @brief Get or create a LevelMeasurer for a device (called during graph building)
-     * @param deviceId The MAGDA device ID
+     * @param devicePath The MAGDA device path
      * @return Reference to the LevelMeasurer for this device
      */
+    te::LevelMeasurer& getOrCreateMeasurer(const ChainNodePath& devicePath);
+
+    // Legacy bare-id entry point used by instrument meter taps that do not yet
+    // persist a full ChainNodePath. Prefer the path overload for visible devices.
     te::LevelMeasurer& getOrCreateMeasurer(DeviceId deviceId);
 
     /**
      * @brief Remove the measurer for a device (called when device is removed)
-     * @param deviceId The MAGDA device ID
+     * @param devicePath The MAGDA device path
      */
+    void removeMeasurer(const ChainNodePath& devicePath);
     void removeMeasurer(DeviceId deviceId);
 
     /**
@@ -59,6 +64,13 @@ class DeviceMeteringManager {
      * @return The DeviceId, or INVALID_DEVICE_ID if not found
      */
     DeviceId getDeviceIdForPlugin(te::Plugin* plugin) const;
+
+    /**
+     * @brief Look up ChainNodePath from a TE plugin pointer
+     * @param plugin The TE plugin to look up
+     * @return The ChainNodePath, or an invalid path if not found
+     */
+    ChainNodePath getDevicePathForPlugin(te::Plugin* plugin) const;
 
     /**
      * @brief Poll all clients and store latest peaks (called from AudioBridge timer)
@@ -75,24 +87,27 @@ class DeviceMeteringManager {
 
     /**
      * @brief Read latest level for a device (called from UI thread, lock-free)
-     * @param deviceId The MAGDA device ID
+     * @param devicePath The MAGDA device path
      * @param out Output data
      * @return true if device was found
      */
+    bool getLatestLevels(const ChainNodePath& devicePath, DeviceMeterData& out) const;
     bool getLatestLevels(DeviceId deviceId, DeviceMeterData& out) const;
 
     /**
      * @brief Set per-device gain (linear) for use in the audio graph
-     * @param deviceId The MAGDA device ID
+     * @param devicePath The MAGDA device path
      * @param gainLinear Gain value in linear scale (1.0 = unity)
      */
+    void setGain(const ChainNodePath& devicePath, float gainLinear);
     void setGain(DeviceId deviceId, float gainLinear);
 
     /**
      * @brief Get pointer to gain atomic for a device (for DeviceGainNode in the graph)
-     * @param deviceId The MAGDA device ID
+     * @param devicePath The MAGDA device path
      * @return Pointer to the atomic, or nullptr if device not found
      */
+    std::atomic<float>* getGainAtomic(const ChainNodePath& devicePath);
     std::atomic<float>* getGainAtomic(DeviceId deviceId);
 
     /**
@@ -101,11 +116,13 @@ class DeviceMeteringManager {
      * Used when the device is inside a MAGDA rack where we can't intercept
      * per-plugin audio buffers.  Feed the rack's output levels instead.
      */
+    void setDirectLevels(const ChainNodePath& devicePath, float peakL, float peakR);
     void setDirectLevels(DeviceId deviceId, float peakL, float peakR);
 
     /**
      * @brief Ensure an entry exists for a device (creates if missing)
      */
+    void ensureEntry(const ChainNodePath& devicePath);
     void ensureEntry(DeviceId deviceId);
 
     struct RealtimeTapStorage {
@@ -133,6 +150,7 @@ class DeviceMeteringManager {
      * removeMeasurer() and clear() can drop manager entries without invalidating
      * an already-wired audio-thread tap.
      */
+    RealtimeTap getRealtimeTap(const ChainNodePath& devicePath);
     RealtimeTap getRealtimeTap(DeviceId deviceId);
 
     /**
@@ -176,7 +194,10 @@ class DeviceMeteringManager {
         std::atomic<float> peakR{0.f};
     };
 
-    std::map<DeviceId, std::unique_ptr<Entry>> entries_;
+    static ChainNodePath legacyPathForDeviceId(DeviceId deviceId);
+    Entry& ensureEntryLocked(const ChainNodePath& devicePath);
+
+    std::map<ChainNodePath, std::unique_ptr<Entry>> entries_;
     std::map<RackId, std::unique_ptr<SimpleEntry>> rackEntries_;
     juce::CriticalSection lock_;
     PluginManager* pluginManager_ = nullptr;

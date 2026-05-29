@@ -70,6 +70,12 @@ void AutoAliasGenerator::regenerateForDevice(DeviceId deviceId) {
     if (!devicePath.isValid())
         return;
 
+    regenerateForDevice(devicePath);
+}
+
+void AutoAliasGenerator::regenerateForDevice(const ChainNodePath& devicePath) {
+    auto& tm = TrackManager::getInstance();
+
     // Retrieve the DeviceInfo (parameters must already be populated).
     const DeviceInfo* devInfo = tm.getDeviceInChainByPath(devicePath);
     if (devInfo == nullptr)

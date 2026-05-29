@@ -23,19 +23,6 @@ bool targetPointsAtDevice(const ControlTarget& target, DeviceId deviceId) {
     return deviceId != INVALID_DEVICE_ID && target.devicePath.getDeviceId() == deviceId;
 }
 
-int findStoredParameterIndex(const DeviceInfo& device, int paramIndex) {
-    auto byIdentity = std::find_if(
-        device.parameters.begin(), device.parameters.end(),
-        [paramIndex](const ParameterInfo& param) { return param.paramIndex == paramIndex; });
-    if (byIdentity != device.parameters.end())
-        return static_cast<int>(std::distance(device.parameters.begin(), byIdentity));
-
-    if (paramIndex >= 0 && paramIndex < static_cast<int>(device.parameters.size()))
-        return paramIndex;
-
-    return -1;
-}
-
 void retargetPresetLink(ControlTarget& target, DeviceId presetDeviceId,
                         const ChainNodePath& liveDevicePath) {
     if (targetPointsAtDevice(target, presetDeviceId))
@@ -85,6 +72,8 @@ void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
             case ChainStepType::Device:
                 touched = remapId(remap.devices, step.id) || touched;
                 break;
+            case ChainStepType::Segment:
+                break;  // Segment steps carry no remappable ID
         }
     }
 
@@ -165,7 +154,7 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
     }
     if (auto* chain = getChain(trackId, rackId, chainId)) {
         DeviceInfo newDevice = device;
-        newDevice.id = nextDeviceId_++;
+        newDevice.id = nextFxDeviceId_++;
         stampDefaultKitIfMissing(newDevice);
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
@@ -226,7 +215,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
         // Add the device
         DeviceInfo newDevice = device;
-        newDevice.id = nextDeviceId_++;
+        newDevice.id = nextFxDeviceId_++;
         stampDefaultKitIfMissing(newDevice);
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(chainPath.trackId);
@@ -287,7 +276,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
         // Add the device at the specified index
         DeviceInfo newDevice = device;
-        newDevice.id = nextDeviceId_++;
+        newDevice.id = nextFxDeviceId_++;
         stampDefaultKitIfMissing(newDevice);
 
         // Clamp insert index to valid range
@@ -458,7 +447,7 @@ static std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& 
 
     if (chainPath.steps.empty()) {
         if (auto* track = tm.getTrack(chainPath.trackId))
-            return &track->chainElements;
+            return &track->chain.fxChainElements;
         return nullptr;
     }
 
@@ -545,7 +534,7 @@ static void retargetLinksInElements(std::vector<ChainElement>& elements,
 
 static void retargetMovedLinksInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
     retargetMovedLinks(track.macros, track.mods, movedPaths);
-    retargetLinksInElements(track.chainElements, movedPaths);
+    retargetLinksInElements(track.chain.fxChainElements, movedPaths);
 }
 
 static bool targetPointsAtMovedDevice(const ControlTarget& target,
@@ -592,7 +581,7 @@ static void removeMovedTargetsInElements(std::vector<ChainElement>& elements,
 
 static void removeMovedTargetsInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
     removeMovedTargets(track.macros, track.mods, movedPaths);
-    removeMovedTargetsInElements(track.chainElements, movedPaths);
+    removeMovedTargetsInElements(track.chain.fxChainElements, movedPaths);
 }
 
 static ChainNodePath getInsertedElementPath(const ChainNodePath& destinationChainPath,
@@ -1008,12 +997,37 @@ int TrackManager::getChainElementIndex(const ChainNodePath& elementPath) {
 }
 
 void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) {
+    auto removeFromFlatSection = [&](std::vector<PostFxChainElement>& elements, const char* label) {
+        DeviceId id = devicePath.getDeviceId();
+        auto it = std::find_if(elements.begin(), elements.end(),
+                               [id](const PostFxChainElement& e) { return e.device.id == id; });
+        if (it != elements.end()) {
+            DBG("Removed " << label << " device: " << it->device.name << " (id=" << id << ")");
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
+            elements.erase(it);
+            notifyTrackDevicesChanged(devicePath.trackId);
+        }
+    };
+
+    // Post-fader FX list: flat, Segment(PostFx) > Device.
+    if (devicePath.isPostFx()) {
+        if (auto* track = getTrack(devicePath.trackId))
+            removeFromFlatSection(track->chain.postFxChainElements, "post-fx");
+        return;
+    }
+    // Mixer-analysis section: flat, Segment(MixerAnalysis) > Device.
+    if (devicePath.isMixerAnalysis()) {
+        if (auto* track = getTrack(devicePath.trackId))
+            removeFromFlatSection(track->chain.mixerAnalysisElements, "mixer-analysis");
+        return;
+    }
+
     // Handle top-level device (uses topLevelDeviceId field)
     if (devicePath.topLevelDeviceId != INVALID_DEVICE_ID) {
         auto* track = getTrack(devicePath.trackId);
         if (!track)
             return;
-        auto& elements = track->chainElements;
+        auto& elements = track->chain.fxChainElements;
         auto it =
             std::find_if(elements.begin(), elements.end(), [&devicePath](const ChainElement& e) {
                 return magda::isDevice(e) && magda::getDevice(e).id == devicePath.topLevelDeviceId;
@@ -1063,12 +1077,33 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
 }
 
 DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath) {
+    auto lookupInFlatSection = [&](std::vector<PostFxChainElement>& elements) -> DeviceInfo* {
+        DeviceId id = devicePath.getDeviceId();
+        for (auto& e : elements) {
+            if (e.device.id == id)
+                return &e.device;
+        }
+        return nullptr;
+    };
+    // Post-fader FX list: flat, so the path is Segment(PostFx) > Device.
+    if (devicePath.isPostFx()) {
+        if (auto* track = getTrack(devicePath.trackId))
+            return lookupInFlatSection(track->chain.postFxChainElements);
+        return nullptr;
+    }
+    // Mixer-analysis section: flat, Segment(MixerAnalysis) > Device.
+    if (devicePath.isMixerAnalysis()) {
+        if (auto* track = getTrack(devicePath.trackId))
+            return lookupInFlatSection(track->chain.mixerAnalysisElements);
+        return nullptr;
+    }
+
     // Handle top-level device (legacy path format with topLevelDeviceId)
     if (devicePath.topLevelDeviceId != INVALID_DEVICE_ID) {
         auto* track = getTrack(devicePath.trackId);
         if (!track)
             return nullptr;
-        for (auto& element : track->chainElements) {
+        for (auto& element : track->chain.fxChainElements) {
             if (magda::isDevice(element) &&
                 magda::getDevice(element).id == devicePath.topLevelDeviceId) {
                 return &magda::getDevice(element);
@@ -1101,7 +1136,7 @@ DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath
         auto* track = getTrack(devicePath.trackId);
         if (!track)
             return nullptr;
-        for (auto& element : track->chainElements) {
+        for (auto& element : track->chain.fxChainElements) {
             if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
                 return &magda::getDevice(element);
             }
@@ -1130,7 +1165,7 @@ const DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devi
 void TrackManager::setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         device->bypassed = bypassed;
-        notifyDevicePropertyChanged(device->id);
+        notifyDevicePropertyChanged(devicePath);
     }
 }
 
@@ -1143,7 +1178,7 @@ void TrackManager::setDeviceGainDb(const ChainNodePath& devicePath, float gainDb
         device->gainDb = gainDb;
         // Convert dB to linear: 10^(dB/20)
         device->gainValue = std::pow(10.0f, gainDb / 20.0f);
-        notifyDevicePropertyChanged(device->id);
+        notifyDevicePropertyChanged(devicePath);
     }
 }
 
@@ -1152,7 +1187,7 @@ void TrackManager::setDeviceLevel(const ChainNodePath& devicePath, float level) 
         device->gainValue = level;
         // Convert linear to dB: 20 * log10(level)
         device->gainDb = (level > 0.0f) ? 20.0f * std::log10(level) : -100.0f;
-        notifyDevicePropertyChanged(device->id);
+        notifyDevicePropertyChanged(devicePath);
     }
 }
 
@@ -1208,7 +1243,7 @@ DeviceInfo* findDeviceByIdIn(std::vector<ChainElement>& elements, DeviceId devic
 }
 
 DeviceInfo* findDeviceOnTrack(TrackInfo* track, DeviceId deviceId) {
-    return track != nullptr ? findDeviceByIdIn(track->chainElements, deviceId) : nullptr;
+    return track != nullptr ? findDeviceByIdIn(track->chain.fxChainElements, deviceId) : nullptr;
 }
 }  // namespace
 
@@ -1220,7 +1255,7 @@ DeviceInfo* TrackManager::getPrimaryInstrument(TrackId trackId) {
     auto* track = getTrack(trackId);
     if (track == nullptr)
         return nullptr;
-    return findPrimaryInstrumentIn(track->chainElements);
+    return findPrimaryInstrumentIn(track->chain.fxChainElements);
 }
 
 namespace {
@@ -1267,7 +1302,7 @@ void TrackManager::setDeviceKitRowLabel(TrackId trackId, DeviceId deviceId, int 
     if (device == nullptr || noteNumber < 0 || noteNumber > 127)
         return;
     if (updateKitRow(device->kitRows, noteNumber, &label, nullptr)) {
-        notifyDevicePropertyChanged(deviceId);
+        notifyDevicePropertyChanged(ChainNodePath::topLevelDevice(trackId, deviceId));
         mirrorKitToPreferences(*device);
     }
 }
@@ -1278,7 +1313,7 @@ void TrackManager::setDeviceKitRowRole(TrackId trackId, DeviceId deviceId, int n
     if (device == nullptr || noteNumber < 0 || noteNumber > 127)
         return;
     if (updateKitRow(device->kitRows, noteNumber, nullptr, &role)) {
-        notifyDevicePropertyChanged(deviceId);
+        notifyDevicePropertyChanged(ChainNodePath::topLevelDevice(trackId, deviceId));
         mirrorKitToPreferences(*device);
     }
 }
@@ -1293,7 +1328,7 @@ void TrackManager::clearDeviceKitRow(TrackId trackId, DeviceId deviceId, int not
     if (it == rows.end())
         return;
     rows.erase(it);
-    notifyDevicePropertyChanged(deviceId);
+    notifyDevicePropertyChanged(ChainNodePath::topLevelDevice(trackId, deviceId));
     mirrorKitToPreferences(*device);
 }
 
@@ -1303,14 +1338,14 @@ void TrackManager::setDeviceKitRows(TrackId trackId, DeviceId deviceId,
     if (device == nullptr)
         return;
     device->kitRows = rows;
-    notifyDevicePropertyChanged(deviceId);
+    notifyDevicePropertyChanged(ChainNodePath::topLevelDevice(trackId, deviceId));
     mirrorKitToPreferences(*device);
 }
 
 ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {
     // Search all tracks for a device by ID and return its full path
     for (const auto& track : tracks_) {
-        for (const auto& element : track.chainElements) {
+        for (const auto& element : track.chain.fxChainElements) {
             if (magda::isDevice(element) && magda::getDevice(element).id == deviceId)
                 return ChainNodePath::topLevelDevice(track.id, deviceId);
             if (magda::isRack(element)) {
@@ -1327,7 +1362,7 @@ ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {
         }
     }
     // Also check master track
-    for (const auto& element : masterTrack_.chainElements) {
+    for (const auto& element : masterTrack_.chain.fxChainElements) {
         if (magda::isDevice(element) && magda::getDevice(element).id == deviceId)
             return ChainNodePath::topLevelDevice(MASTER_TRACK_ID, deviceId);
     }
@@ -1337,7 +1372,7 @@ ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {
 void TrackManager::updateDeviceParameters(DeviceId deviceId,
                                           const std::vector<ParameterInfo>& params) {
     // Check master track first
-    for (auto& element : masterTrack_.chainElements) {
+    for (auto& element : masterTrack_.chain.fxChainElements) {
         if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
             magda::getDevice(element).parameters = params;
             return;
@@ -1346,7 +1381,7 @@ void TrackManager::updateDeviceParameters(DeviceId deviceId,
 
     // Search all tracks for the device and update its parameters
     for (auto& track : tracks_) {
-        for (auto& element : track.chainElements) {
+        for (auto& element : track.chain.fxChainElements) {
             if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
                 magda::getDevice(element).parameters = params;
                 DBG("  -> found on track " << track.id << " (top-level)");
@@ -1370,10 +1405,16 @@ void TrackManager::updateDeviceParameters(DeviceId deviceId,
     DBG("  -> NOT FOUND!");
 }
 
+void TrackManager::updateDeviceParametersByPath(const ChainNodePath& devicePath,
+                                                const std::vector<ParameterInfo>& params) {
+    if (auto* device = getDeviceInChainByPath(devicePath))
+        device->parameters = params;
+}
+
 void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
                                               const std::vector<int>& visibleParams) {
     // Check master track first
-    for (auto& element : masterTrack_.chainElements) {
+    for (auto& element : masterTrack_.chain.fxChainElements) {
         if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
             magda::getDevice(element).visibleParameters = visibleParams;
             return;
@@ -1382,7 +1423,7 @@ void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
 
     // Search all tracks for the device and update visible parameters
     for (auto& track : tracks_) {
-        for (auto& element : track.chainElements) {
+        for (auto& element : track.chain.fxChainElements) {
             if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
                 magda::getDevice(element).visibleParameters = visibleParams;
                 return;
@@ -1405,11 +1446,10 @@ void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
 void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex,
                                            ParameterModelValue value) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
-        const int storedIndex = findStoredParameterIndex(*device, paramIndex);
-        if (storedIndex >= 0) {
-            device->parameters[static_cast<size_t>(storedIndex)].currentValue = value.value;
+        if (auto* stored = device->findParameterByIndex(paramIndex)) {
+            stored->currentValue = value.value;
             // Use granular notification - only sync this one parameter, not all 543
-            notifyDeviceParameterChanged(device->id, paramIndex, value.value);
+            notifyDeviceParameterChanged(devicePath, paramIndex, value.value);
         }
     }
 }
@@ -1445,7 +1485,7 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     // Push the new pluginState into the running plugin.
     if (audioEngine_) {
         if (auto* bridge = audioEngine_->getAudioBridge()) {
-            if (auto plugin = bridge->getPlugin(live->id)) {
+            if (auto plugin = bridge->getPlugin(devicePath)) {
                 if (auto* ext = dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin.get())) {
                     ext->state.setProperty(tracktion::engine::IDs::state, live->pluginState,
                                            nullptr);
@@ -1462,9 +1502,9 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     // Notify listeners — devicePropertyChanged covers gain/macros/mods refresh
     // via the AudioBridge sync path, then push each parameter individually so
     // the UI's ParamGrid pickup matches what the preset captured.
-    notifyDevicePropertyChanged(live->id);
+    notifyDevicePropertyChanged(devicePath);
     for (size_t i = 0; i < live->parameters.size(); ++i) {
-        notifyDeviceParameterChanged(live->id, static_cast<int>(i),
+        notifyDeviceParameterChanged(devicePath, static_cast<int>(i),
                                      live->parameters[i].currentValue);
     }
     return true;
@@ -1497,7 +1537,7 @@ bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo
             if (magda::isDevice(element)) {
                 auto& device = magda::getDevice(element);
                 const auto oldId = device.id;
-                device.id = nextDeviceId_++;
+                device.id = nextFxDeviceId_++;
                 remap.devices[oldId] = device.id;
             } else if (magda::isRack(element)) {
                 auto& nested = magda::getRack(element);
@@ -1545,7 +1585,7 @@ bool TrackManager::applyChainPreset(TrackId trackId, std::vector<ChainElement> p
             if (magda::isDevice(element)) {
                 auto& device = magda::getDevice(element);
                 const auto oldId = device.id;
-                device.id = nextDeviceId_++;
+                device.id = nextFxDeviceId_++;
                 remap.devices[oldId] = device.id;
             } else if (magda::isRack(element)) {
                 auto& nested = magda::getRack(element);
@@ -1564,7 +1604,7 @@ bool TrackManager::applyChainPreset(TrackId trackId, std::vector<ChainElement> p
     reassignIds(presetElements);
     remapPresetLinksRecursive(presetElements, remap);
 
-    track->chainElements = std::move(presetElements);
+    track->chain.fxChainElements = std::move(presetElements);
 
     notifyTrackDevicesChanged(trackId);
     return true;
@@ -1579,12 +1619,11 @@ void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& device
     // Instead, we notify UI listeners directly about the parameter change.
 
     if (auto* device = getDeviceInChainByPath(devicePath)) {
-        const int storedIndex = findStoredParameterIndex(*device, paramIndex);
-        if (storedIndex >= 0) {
-            device->parameters[static_cast<size_t>(storedIndex)].currentValue = value;
+        if (auto* stored = device->findParameterByIndex(paramIndex)) {
+            stored->currentValue = value;
 
             // Notify listeners about parameter change (for UI updates)
-            notifyDeviceParameterChanged(device->id, paramIndex, value);
+            notifyDeviceParameterChanged(devicePath, paramIndex, value);
         }
     }
 }
@@ -1595,7 +1634,7 @@ double TrackManager::getDeviceLatencySeconds(const ChainNodePath& devicePath) {
         return 0.0;
 
     if (auto* bridge = audioEngine_->getAudioBridge()) {
-        if (auto* processor = bridge->getPluginManager().getDeviceProcessor(device->id)) {
+        if (auto* processor = bridge->getPluginManager().getDeviceProcessor(devicePath)) {
             if (auto plugin = processor->getPlugin())
                 return plugin->getLatencySeconds();
         }
@@ -1619,8 +1658,8 @@ double TrackManager::getTrackLatencySeconds(TrackId trackId) {
     double total = 0.0;
 
     // Helper to get latency for a single device
-    auto getDeviceLatency = [&](const DeviceInfo& device) -> double {
-        if (auto* proc = pm.getDeviceProcessor(device.id)) {
+    auto getDeviceLatency = [&](const ChainNodePath& devicePath) -> double {
+        if (auto* proc = pm.getDeviceProcessor(devicePath)) {
             if (auto plugin = proc->getPlugin())
                 return plugin->getLatencySeconds();
         }
@@ -1628,9 +1667,10 @@ double TrackManager::getTrackLatencySeconds(TrackId trackId) {
     };
 
     // Sum latency across top-level chain elements
-    for (const auto& element : track->chainElements) {
+    for (const auto& element : track->chain.fxChainElements) {
         if (magda::isDevice(element)) {
-            total += getDeviceLatency(magda::getDevice(element));
+            const auto& device = magda::getDevice(element);
+            total += getDeviceLatency(ChainNodePath::topLevelDevice(trackId, device.id));
         } else if (magda::isRack(element)) {
             // For racks: each chain is parallel, so take the max chain latency
             const auto& rack = magda::getRack(element);
@@ -1638,8 +1678,11 @@ double TrackManager::getTrackLatencySeconds(TrackId trackId) {
             for (const auto& chain : rack.chains) {
                 double chainLatency = 0.0;
                 for (const auto& chainElem : chain.elements) {
-                    if (magda::isDevice(chainElem))
-                        chainLatency += getDeviceLatency(magda::getDevice(chainElem));
+                    if (magda::isDevice(chainElem)) {
+                        const auto& device = magda::getDevice(chainElem);
+                        chainLatency += getDeviceLatency(
+                            ChainNodePath::chainDevice(trackId, rack.id, chain.id, device.id));
+                    }
                 }
                 maxChainLatency = std::max(maxChainLatency, chainLatency);
             }
@@ -1660,7 +1703,7 @@ RackId TrackManager::wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
     if (!track)
         return INVALID_RACK_ID;
 
-    auto& elements = track->chainElements;
+    auto& elements = track->chain.fxChainElements;
 
     // Find the device in the top-level chain
     auto it = std::find_if(elements.begin(), elements.end(), [deviceId](const ChainElement& e) {
@@ -1937,7 +1980,7 @@ void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack
                 if (device.id == targetDevice) {
                     device.sidechain.type = type;
                     device.sidechain.sourceTrackId = sourceTrack;
-                    notifyDevicePropertyChanged(targetDevice);
+                    notifyDevicePropertyChanged(findDevicePath(targetDevice));
                     return true;
                 }
             } else if (magda::isRack(element)) {
@@ -1953,7 +1996,7 @@ void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack
 
     // Search all tracks for the target device
     for (auto& track : tracks_) {
-        if (updateElements(updateElements, track.chainElements))
+        if (updateElements(updateElements, track.chain.fxChainElements))
             return;
     }
 }

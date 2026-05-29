@@ -239,9 +239,9 @@ void ProjectSerializer::commitStaged(StagedProjectData& data) {
         auto& tm = TrackManager::getInstance();
         auto* masterTrack = tm.getTrack(MASTER_TRACK_ID);
         if (masterTrack) {
-            masterTrack->chainElements = std::move(data.masterTrack->chainElements);
+            masterTrack->chain.fxChainElements = std::move(data.masterTrack->chain.fxChainElements);
             // Update device ID counter to include master chain devices
-            for (const auto& element : masterTrack->chainElements) {
+            for (const auto& element : masterTrack->chain.fxChainElements) {
                 if (isDevice(element))
                     tm.ensureDeviceIdAbove(getDevice(element).id);
             }
@@ -313,7 +313,7 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
 
     // Serialize master track separately (its chain elements hold master bus plugins)
     auto* masterTrack = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
-    if (masterTrack && !masterTrack->chainElements.empty()) {
+    if (masterTrack && !masterTrack->chain.fxChainElements.empty()) {
         obj->setProperty("masterTrack", serializeTrackInfo(*masterTrack));
     }
 
@@ -445,8 +445,9 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
             auto& tm = TrackManager::getInstance();
             auto* masterTrack = tm.getTrack(MASTER_TRACK_ID);
             if (masterTrack) {
-                masterTrack->chainElements = std::move(masterTrackData.chainElements);
-                for (const auto& element : masterTrack->chainElements) {
+                masterTrack->chain.fxChainElements =
+                    std::move(masterTrackData.chain.fxChainElements);
+                for (const auto& element : masterTrack->chain.fxChainElements) {
                     if (isDevice(element))
                         tm.ensureDeviceIdAbove(getDevice(element).id);
                 }

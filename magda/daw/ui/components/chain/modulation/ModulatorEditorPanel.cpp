@@ -611,7 +611,8 @@ void ModulatorEditorPanel::setOwnerPath(magda::TrackId trackId,
 }
 
 void ModulatorEditorPanel::updateRateAutomationTarget() {
-    if (ownerTrackId_ == magda::INVALID_TRACK_ID || currentMod_.id == magda::INVALID_MOD_ID) {
+    if (ownerTrackId_ == magda::INVALID_TRACK_ID || ownerDevicePath_.isPostFx() ||
+        currentMod_.id == magda::INVALID_MOD_ID) {
         rateSlider_.clearAutomationTarget();
         syncDivisionSlider_.clearAutomationTarget();
         return;
@@ -642,7 +643,8 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
     juce::PopupMenu menu;
     constexpr int kShowLaneId = 1;
     constexpr int kUnlinkBaseId = 100;
-    menu.addItem(kShowLaneId, "Show Automation Lane");
+    if (!ownerDevicePath_.isPostFx())
+        menu.addItem(kShowLaneId, "Show Automation Lane");
 
     // Walk every macro / mod scope that could host an incoming link to this
     // mod's rate, collect the ones that actually do, and add an "Unlink"
@@ -746,6 +748,9 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
         if (safeThis == nullptr || result == 0)
             return;
         if (result == kShowLaneId) {
+            if (target.devicePath.isPostFx())
+                return;
+
             auto& mgr = magda::AutomationManager::getInstance();
             auto laneId = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
             mgr.setLaneVisible(laneId, true);
@@ -1500,7 +1505,7 @@ void ModulatorEditorPanel::updateModMatrix() {
         } else if (paramNameResolver_) {
             row.paramName = paramNameResolver_(link.target.deviceId(), link.target.paramIndex);
         } else {
-            row.paramName = "P" + juce::String(link.target.paramIndex);
+            row.paramName = "Unresolved parameter";
         }
 
         rows.push_back(row);

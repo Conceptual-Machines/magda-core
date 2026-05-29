@@ -95,7 +95,7 @@ TEST_CASE("Master track chain elements survive save/load", "[project][serializat
     // Verify it's on the master track
     auto* master = tm.getTrack(MASTER_TRACK_ID);
     REQUIRE(master != nullptr);
-    REQUIRE(master->chainElements.size() == 1);
+    REQUIRE(master->chain.fxChainElements.size() == 1);
 
     // Save
     auto tempFile = fixture.createTempProjectFile(".mgd");
@@ -107,7 +107,7 @@ TEST_CASE("Master track chain elements survive save/load", "[project][serializat
     // Clear state
     tm.clearAllTracks();
     master = tm.getTrack(MASTER_TRACK_ID);
-    REQUIRE(master->chainElements.empty());
+    REQUIRE(master->chain.fxChainElements.empty());
 
     // Load back
     bool loaded = pm.loadProject(actualFile);
@@ -116,9 +116,9 @@ TEST_CASE("Master track chain elements survive save/load", "[project][serializat
     // Verify master chain was restored
     master = tm.getTrack(MASTER_TRACK_ID);
     REQUIRE(master != nullptr);
-    REQUIRE(master->chainElements.size() == 1);
+    REQUIRE(master->chain.fxChainElements.size() == 1);
 
-    auto& element = master->chainElements[0];
+    auto& element = master->chain.fxChainElements[0];
     REQUIRE(isDevice(element));
     REQUIRE(getDevice(element).pluginId == "eq");
 }
@@ -144,7 +144,7 @@ TEST_CASE("Master track chain with multiple devices roundtrips",
     tm.addDeviceToTrack(MASTER_TRACK_ID, comp);
 
     auto* master = tm.getTrack(MASTER_TRACK_ID);
-    REQUIRE(master->chainElements.size() == 2);
+    REQUIRE(master->chain.fxChainElements.size() == 2);
 
     // Save and reload
     auto tempFile = fixture.createTempProjectFile(".mgd");
@@ -154,7 +154,7 @@ TEST_CASE("Master track chain with multiple devices roundtrips",
     REQUIRE(pm.loadProject(actualFile));
 
     master = tm.getTrack(MASTER_TRACK_ID);
-    REQUIRE(master->chainElements.size() == 2);
-    REQUIRE(getDevice(master->chainElements[0]).pluginId == "eq");
-    REQUIRE(getDevice(master->chainElements[1]).pluginId == "compressor");
+    REQUIRE(master->chain.fxChainElements.size() == 2);
+    REQUIRE(getDevice(master->chain.fxChainElements[0]).pluginId == "eq");
+    REQUIRE(getDevice(master->chain.fxChainElements[1]).pluginId == "compressor");
 }

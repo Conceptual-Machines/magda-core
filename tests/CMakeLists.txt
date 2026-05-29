@@ -20,6 +20,7 @@ set(TEST_SOURCES
     test_control_target.cpp
     test_chain_fingerprint.cpp
     test_chain_routing_model.cpp
+    test_post_fx_chain.cpp
     test_group_tracks_and_macros.cpp
     test_parameter_utils.cpp
     test_update_checker.cpp
@@ -172,8 +173,11 @@ target_sources(magda_juce_tests PRIVATE
     test_session_slot_recording_juce.cpp
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
+    test_section_scoped_device_ids_juce.cpp
     test_clip_inspector_juce.cpp
     test_multiband_curve_view_juce.cpp
+    test_timeline_extreme_zoom_paint_juce.cpp
+    test_arrange_beat_native_juce.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorSections.cpp
@@ -186,6 +190,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/common/ValueLabelControl.cpp
     ../magda/daw/ui/components/common/DraggableValueLabel.cpp
     ../magda/daw/ui/components/common/SvgButton.cpp
+    ../magda/daw/ui/themes/CursorManager.cpp
     ../magda/daw/ui/themes/FontManager.cpp
     test_automation_modes_juce.cpp
     test_arrangement_transport_loop_juce.cpp
@@ -229,3 +234,9 @@ add_test(NAME arrangement_transport_loop_juce
 
 add_test(NAME multiband_curve_view_juce
          COMMAND magda_juce_tests "Multiband Curve View Tests")
+
+add_test(NAME timeline_extreme_zoom_paint_juce
+         COMMAND magda_juce_tests "Timeline Extreme Zoom Paint Tests")
+
+add_test(NAME arrange_beat_native_juce
+         COMMAND magda_juce_tests "Arrange Beat Native Tests")

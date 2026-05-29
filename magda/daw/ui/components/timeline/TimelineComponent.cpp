@@ -11,6 +11,34 @@
 
 namespace magda {
 
+namespace {
+
+juce::Range<int> getVisibleXRange(const juce::Graphics& g, int componentWidth) {
+    auto clip = g.getClipBounds();
+    int left = juce::jlimit(0, componentWidth, clip.getX());
+    int right = juce::jlimit(0, componentWidth, clip.getRight());
+    return {left, right};
+}
+
+juce::Rectangle<int> getVisibleRect(const juce::Graphics& g, int componentWidth, int startX,
+                                    int endX, int y, int height) {
+    auto visibleX = getVisibleXRange(g, componentWidth);
+    int left = juce::jmax(startX, visibleX.getStart());
+    int right = juce::jmin(endX, visibleX.getEnd());
+
+    if (right <= left || height <= 0)
+        return {};
+
+    return {left, y, right - left, height};
+}
+
+bool isXVisible(const juce::Graphics& g, int componentWidth, int x) {
+    auto visibleX = getVisibleXRange(g, componentWidth);
+    return x >= visibleX.getStart() && x <= visibleX.getEnd();
+}
+
+}  // namespace
+
 TimelineComponent::TimelineComponent() {
     // Load configuration, converting bars → seconds at default tempo
     auto& config = magda::Config::getInstance();
@@ -21,7 +49,7 @@ TimelineComponent::TimelineComponent() {
     setWantsKeyboardFocus(false);
     setSize(800, 40);
 
-    // Arrangement sections are empty by default - can be added via addSection()
+    // Arrangement sections are empty by default - can be added via addSectionBeats()
     arrangementLocked = true;
 }
 
@@ -34,8 +62,8 @@ void TimelineComponent::setController(TimelineController* controller) {
         // Sync initial state
         const auto& state = controller->getState();
         timelineLength = state.timelineLength;
-        zoom = state.zoom.horizontalZoom;
-        playheadPosition = state.playhead.getPosition();
+        pixelsPerBeat = state.zoom.horizontalZoom;
+        playheadPositionBeats = state.playhead.getCurrentPositionBeats();
         displayMode = state.display.timeDisplayMode;
         tempoBPM = state.tempo.bpm;
         timeSignatureNumerator = state.tempo.timeSignatureNumerator;
@@ -46,8 +74,8 @@ void TimelineComponent::setController(TimelineController* controller) {
 
         // Sync loop region
         if (state.loop.isValid()) {
-            loopInteraction_.setLoopRegion(state.loop.startTime, state.loop.endTime,
-                                           state.loop.enabled);
+            loopInteraction_.setLoopRange(state.loop.startBeats, state.loop.endBeats,
+                                          state.loop.enabled);
         }
 
         // Initialize loop interaction helper
@@ -55,11 +83,11 @@ void TimelineComponent::setController(TimelineController* controller) {
 
         // Sync time selection (only if visually active)
         if (state.selection.isVisuallyActive()) {
-            timeSelectionStart = state.selection.startTime;
-            timeSelectionEnd = state.selection.endTime;
+            timeSelectionStartBeats = state.selection.startBeats;
+            timeSelectionEndBeats = state.selection.endBeats;
         } else {
-            timeSelectionStart = -1.0;
-            timeSelectionEnd = -1.0;
+            timeSelectionStartBeats = -1.0;
+            timeSelectionEndBeats = -1.0;
         }
 
         repaint();
@@ -73,17 +101,17 @@ void TimelineComponent::timelineStateChanged(const TimelineState& state, ChangeF
 
     // Zoom/scroll changes
     if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll)) {
-        zoom = state.zoom.horizontalZoom;
+        pixelsPerBeat = state.zoom.horizontalZoom;
         needsRepaint = true;
     }
 
     // Loop changes
     if (hasFlag(changes, ChangeFlags::Loop)) {
         if (state.loop.isValid()) {
-            loopInteraction_.setLoopRegion(state.loop.startTime, state.loop.endTime,
-                                           state.loop.enabled);
+            loopInteraction_.setLoopRange(state.loop.startBeats, state.loop.endBeats,
+                                          state.loop.enabled);
         } else {
-            loopInteraction_.setLoopRegion(-1.0, -1.0, false);
+            loopInteraction_.setLoopRange(-1.0, -1.0, false);
         }
         needsRepaint = true;
     }
@@ -91,11 +119,11 @@ void TimelineComponent::timelineStateChanged(const TimelineState& state, ChangeF
     // Selection changes
     if (hasFlag(changes, ChangeFlags::Selection)) {
         if (state.selection.isVisuallyActive()) {
-            timeSelectionStart = state.selection.startTime;
-            timeSelectionEnd = state.selection.endTime;
+            timeSelectionStartBeats = state.selection.startBeats;
+            timeSelectionEndBeats = state.selection.endBeats;
         } else {
-            timeSelectionStart = -1.0;
-            timeSelectionEnd = -1.0;
+            timeSelectionStartBeats = -1.0;
+            timeSelectionEndBeats = -1.0;
         }
         needsRepaint = true;
     }
@@ -124,7 +152,11 @@ void TimelineComponent::timelineStateChanged(const TimelineState& state, ChangeF
         needsRepaint = true;
     }
 
-    // Tempo/time-sig don't affect pixel positions (ppb zoom) — just store them
+    // Playhead and tempo/time-sig don't affect cached pixel positions (ppb zoom) directly.
+    if (hasFlag(changes, ChangeFlags::Playhead)) {
+        playheadPositionBeats = state.playhead.getCurrentPositionBeats();
+        needsRepaint = true;
+    }
     tempoBPM = state.tempo.bpm;
     timeSignatureNumerator = state.tempo.timeSignatureNumerator;
     timeSignatureDenominator = state.tempo.timeSignatureDenominator;
@@ -142,15 +174,31 @@ void TimelineComponent::paint(juce::Graphics& g) {
     int arrangementHeight = layout.arrangementBarHeight;
     int arrangementTop = chordHeight;  // Arrangement starts below chord row
 
-    // Draw border
+    auto visibleX = getVisibleXRange(g, getWidth());
+    const float visibleLeft = static_cast<float>(visibleX.getStart());
+    const float visibleRight = static_cast<float>(visibleX.getEnd());
+
+    // Draw border for the visible slice only. At deep zoom the timeline component can be
+    // millions of pixels wide, and sending that full rectangle to JUCE's software renderer
+    // can build pathological edge tables on Linux.
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawRect(getLocalBounds(), 1);
+    if (visibleX.getLength() > 0) {
+        g.drawLine(visibleLeft, 0.0f, visibleRight, 0.0f, 1.0f);
+        g.drawLine(visibleLeft, static_cast<float>(getHeight() - 1), visibleRight,
+                   static_cast<float>(getHeight() - 1), 1.0f);
+    }
+    if (isXVisible(g, getWidth(), 0))
+        g.drawLine(0.0f, 0.0f, 0.0f, static_cast<float>(getHeight()), 1.0f);
+    if (isXVisible(g, getWidth(), getWidth() - 1)) {
+        float rightEdge = static_cast<float>(getWidth() - 1);
+        g.drawLine(rightEdge, 0.0f, rightEdge, static_cast<float>(getHeight()), 1.0f);
+    }
 
     // Show visual feedback when actively zooming
     if (isZooming) {
         // Slightly brighten the background when zooming
         g.setColour(DarkTheme::getColour(DarkTheme::TIMELINE_BACKGROUND).brighter(0.1f));
-        g.fillRect(getLocalBounds().reduced(1));
+        g.fillRect(g.getClipBounds());
     }
 
     // Draw time selection (background layer)
@@ -167,15 +215,14 @@ void TimelineComponent::paint(juce::Graphics& g) {
 
     // Draw separator line between arrangement and time ruler
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
-    g.drawLine(0, static_cast<float>(arrangementTop + arrangementHeight),
-               static_cast<float>(getWidth()),
+    g.drawLine(visibleLeft, static_cast<float>(arrangementTop + arrangementHeight), visibleRight,
                static_cast<float>(arrangementTop + arrangementHeight), 1.0f);
 
     // Draw separator line above ticks
     int tickAreaTop =
         arrangementTop + arrangementHeight + layout.timeRulerHeight - layout.rulerMajorTickHeight;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawLine(0, static_cast<float>(tickAreaTop), static_cast<float>(getWidth()),
+    g.drawLine(visibleLeft, static_cast<float>(tickAreaTop), visibleRight,
                static_cast<float>(tickAreaTop), 1.0f);
 
     // Draw loop marker flags on top (triangular indicators)
@@ -196,12 +243,16 @@ void TimelineComponent::setTimelineLength(double lengthInSeconds) {
 }
 
 void TimelineComponent::setPlayheadPosition(double position) {
-    playheadPosition = juce::jlimit(0.0, timelineLength, position);
+    setPlayheadPositionBeats(secondsToBeats(position));
+}
+
+void TimelineComponent::setPlayheadPositionBeats(double positionBeats) {
+    playheadPositionBeats = juce::jlimit(0.0, getTimelineLengthBeats(), positionBeats);
     // Don't repaint - timeline doesn't draw playhead anymore
 }
 
-void TimelineComponent::setZoom(double pixelsPerSecond) {
-    zoom = pixelsPerSecond;
+void TimelineComponent::setZoom(double pixelsPerBeatIn) {
+    pixelsPerBeat = pixelsPerBeatIn;
     repaint();
 }
 
@@ -285,7 +336,7 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
     // Store initial mouse position for drag detection
     mouseDownX = event.x;
     mouseDownY = event.y;
-    zoomStartValue = zoom;
+    zoomStartValue = pixelsPerBeat;
     isZooming = false;
     isPendingPlayheadClick = false;
     isDraggingTimeSelection = false;
@@ -317,14 +368,14 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
     // Zone 1a: Lower ruler area (near tick labels) - start time selection
     if (inTimeSelectionZone) {
         isDraggingTimeSelection = true;
-        double startTime = pixelToTime(event.x);
-        startTime = juce::jlimit(0.0, timelineLength, startTime);
+        double startBeats = pixelToBeats(event.x);
+        startBeats = juce::jlimit(0.0, getTimelineLengthBeats(), startBeats);
         if (snapEnabled) {
-            startTime = snapTimeToGrid(startTime);
+            startBeats = snapBeatsToGrid(startBeats);
         }
-        timeSelectionDragStart = startTime;
-        timeSelectionStart = startTime;
-        timeSelectionEnd = startTime;
+        timeSelectionDragStartBeats = startBeats;
+        timeSelectionStartBeats = startBeats;
+        timeSelectionEndBeats = startBeats;
         repaint();
         return;
     }
@@ -410,23 +461,23 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
 void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
     // Handle time selection dragging first
     if (isDraggingTimeSelection) {
-        double currentTime = pixelToTime(event.x);
-        currentTime = juce::jlimit(0.0, timelineLength, currentTime);
+        double currentBeats = pixelToBeats(event.x);
+        currentBeats = juce::jlimit(0.0, getTimelineLengthBeats(), currentBeats);
         if (snapEnabled) {
-            currentTime = snapTimeToGrid(currentTime);
+            currentBeats = snapBeatsToGrid(currentBeats);
         }
 
         // Update selection based on drag direction
-        if (currentTime < timeSelectionDragStart) {
-            timeSelectionStart = currentTime;
-            timeSelectionEnd = timeSelectionDragStart;
+        if (currentBeats < timeSelectionDragStartBeats) {
+            timeSelectionStartBeats = currentBeats;
+            timeSelectionEndBeats = timeSelectionDragStartBeats;
         } else {
-            timeSelectionStart = timeSelectionDragStart;
-            timeSelectionEnd = currentTime;
+            timeSelectionStartBeats = timeSelectionDragStartBeats;
+            timeSelectionEndBeats = currentBeats;
         }
 
-        if (onTimeSelectionChanged) {
-            onTimeSelectionChanged(timeSelectionStart, timeSelectionEnd);
+        if (onTimeSelectionBeatsChanged) {
+            onTimeSelectionBeatsChanged(timeSelectionStartBeats, timeSelectionEndBeats);
         }
         repaint();
         return;
@@ -440,12 +491,12 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
     if (!arrangementLocked && isDraggingSection && selectedSectionIndex >= 0) {
         // Move entire section
         auto& section = *sections[selectedSectionIndex];
-        double sectionDuration = section.endTime - section.startTime;
-        double newStartTime = juce::jmax(0.0, pixelToTime(event.x));
-        double newEndTime = juce::jmin(timelineLength, newStartTime + sectionDuration);
+        double sectionDurationBeats = section.getDurationBeats();
+        double newStartBeats = juce::jmax(0.0, pixelToBeats(event.x));
+        double newEndBeats =
+            juce::jmin(getTimelineLengthBeats(), newStartBeats + sectionDurationBeats);
 
-        section.startTime = newStartTime;
-        section.endTime = newEndTime;
+        section.setFromBeats(newStartBeats, newEndBeats, tempoBPM);
 
         if (onSectionChanged) {
             onSectionChanged(selectedSectionIndex, section);
@@ -457,12 +508,17 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
     if (!arrangementLocked && isDraggingEdge && selectedSectionIndex >= 0) {
         // Resize section
         auto& section = *sections[selectedSectionIndex];
-        double newTime = juce::jmax(0.0, juce::jmin(timelineLength, pixelToTime(event.x)));
+        double newBeats =
+            juce::jmax(0.0, juce::jmin(getTimelineLengthBeats(), pixelToBeats(event.x)));
+        constexpr double minDurationBeats = 1.0;
 
         if (isDraggingStart) {
-            section.startTime = juce::jmin(newTime, section.endTime - 1.0);
+            section.setFromBeats(juce::jmin(newBeats, section.endBeats - minDurationBeats),
+                                 section.endBeats, tempoBPM);
         } else {
-            section.endTime = juce::jmax(newTime, section.startTime + 1.0);
+            section.setFromBeats(section.startBeats,
+                                 juce::jmax(newBeats, section.startBeats + minDurationBeats),
+                                 tempoBPM);
         }
 
         if (onSectionChanged) {
@@ -480,9 +536,9 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
         if (!isZooming) {
             isZooming = true;
             isPendingPlayheadClick = false;  // Cancel any pending playhead click
-            // Capture the time position under the mouse at zoom start (using initial zoom level)
-            zoomAnchorTime = pixelToTime(mouseDownX);
-            zoomAnchorTime = juce::jlimit(0.0, timelineLength, zoomAnchorTime);
+            // Capture the beat position under the mouse at zoom start (using initial zoom level)
+            zoomAnchorBeats = pixelToBeats(mouseDownX);
+            zoomAnchorBeats = juce::jlimit(0.0, getTimelineLengthBeats(), zoomAnchorBeats);
             // Capture the screen X position where the mouse is (relative to this component)
             zoomAnchorScreenX = mouseDownX;
             repaint();
@@ -560,9 +616,9 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
             newZoom = maxZoomLevel;
         }
 
-        // Call the callback with zoom value, anchor time, and screen position
+        // Call the callback with zoom value, anchor beat, and screen position
         if (onZoomChanged) {
-            onZoomChanged(newZoom, zoomAnchorTime, zoomAnchorScreenX);
+            onZoomChanged(newZoom, zoomAnchorBeats, zoomAnchorScreenX);
         }
     }
 }
@@ -574,11 +630,11 @@ void TimelineComponent::mouseDoubleClick(const juce::MouseEvent& event) {
     // Check if double-click is in the ruler area (below chord and arrangement)
     if (event.y >= rulerTop) {
         // Double-click in ruler area - zoom to fit loop if enabled
-        if (loopInteraction_.isEnabled() && loopInteraction_.getStartTime() >= 0 &&
-            loopInteraction_.getEndTime() > loopInteraction_.getStartTime()) {
-            if (onZoomToFitRequested) {
-                onZoomToFitRequested(loopInteraction_.getStartTime(),
-                                     loopInteraction_.getEndTime());
+        if (loopInteraction_.isEnabled() && loopInteraction_.getStartPosition() >= 0 &&
+            loopInteraction_.getEndPosition() > loopInteraction_.getStartPosition()) {
+            if (onZoomToFitBeatsRequested) {
+                onZoomToFitBeatsRequested(loopInteraction_.getStartPosition(),
+                                          loopInteraction_.getEndPosition());
             }
             return;
         }
@@ -605,22 +661,22 @@ void TimelineComponent::mouseUp(const juce::MouseEvent& event) {
     // Finalize time selection if we were dragging
     if (isDraggingTimeSelection) {
         // If selection is too small (just a click), move playhead instead
-        if (std::abs(timeSelectionEnd - timeSelectionStart) < 0.01) {
+        if (std::abs(timeSelectionEndBeats - timeSelectionStartBeats) < 0.01) {
             // Clear the selection
-            timeSelectionStart = -1.0;
-            timeSelectionEnd = -1.0;
-            if (onTimeSelectionChanged) {
-                onTimeSelectionChanged(-1.0, -1.0);
+            timeSelectionStartBeats = -1.0;
+            timeSelectionEndBeats = -1.0;
+            if (onTimeSelectionBeatsChanged) {
+                onTimeSelectionBeatsChanged(-1.0, -1.0);
             }
             // Move playhead to click position
-            double clickTime = pixelToTime(event.x);
-            clickTime = juce::jlimit(0.0, timelineLength, clickTime);
+            double clickBeats = pixelToBeats(event.x);
+            clickBeats = juce::jlimit(0.0, getTimelineLengthBeats(), clickBeats);
             if (snapEnabled) {
-                clickTime = snapTimeToGrid(clickTime);
+                clickBeats = snapBeatsToGrid(clickBeats);
             }
-            setPlayheadPosition(clickTime);
-            if (onPlayheadPositionChanged) {
-                onPlayheadPositionChanged(clickTime);
+            setPlayheadPositionBeats(clickBeats);
+            if (onPlayheadPositionBeatsChanged) {
+                onPlayheadPositionBeatsChanged(clickBeats);
             }
         }
         isDraggingTimeSelection = false;
@@ -648,12 +704,12 @@ void TimelineComponent::mouseUp(const juce::MouseEvent& event) {
 
         if (deltaX <= DRAG_THRESHOLD && deltaY <= DRAG_THRESHOLD) {
             // It was a click - set playhead position
-            double clickTime = pixelToTime(mouseDownX);
-            clickTime = juce::jlimit(0.0, timelineLength, clickTime);
-            setPlayheadPosition(clickTime);
+            double clickBeats = pixelToBeats(mouseDownX);
+            clickBeats = juce::jlimit(0.0, getTimelineLengthBeats(), clickBeats);
+            setPlayheadPositionBeats(clickBeats);
 
-            if (onPlayheadPositionChanged) {
-                onPlayheadPositionChanged(clickTime);
+            if (onPlayheadPositionBeatsChanged) {
+                onPlayheadPositionBeatsChanged(clickBeats);
             }
         }
     }
@@ -666,6 +722,8 @@ void TimelineComponent::mouseUp(const juce::MouseEvent& event) {
 
 void TimelineComponent::mouseWheelMove(const juce::MouseEvent& event,
                                        const juce::MouseWheelDetails& wheel) {
+    juce::ignoreUnused(event);
+
     // Forward horizontal scroll to parent via callback
     // This allows scrolling when the mouse is over the timeline ruler
     if (onScrollRequested) {
@@ -681,9 +739,11 @@ void TimelineComponent::mouseWheelMove(const juce::MouseEvent& event,
     }
 }
 
-void TimelineComponent::addSection(const juce::String& name, double startTime, double endTime,
-                                   juce::Colour colour) {
-    sections.push_back(std::make_unique<ArrangementSection>(startTime, endTime, name, colour));
+void TimelineComponent::addSectionBeats(const juce::String& name, double startBeats,
+                                        double endBeats, juce::Colour colour) {
+    auto section = std::make_unique<ArrangementSection>(0.0, 0.0, name, colour);
+    section->setFromBeats(startBeats, endBeats, tempoBPM);
+    sections.push_back(std::move(section));
     repaint();
 }
 
@@ -706,28 +766,44 @@ void TimelineComponent::clearSections() {
 }
 
 int TimelineComponent::beatsToPixel(double beats) const {
-    return static_cast<int>(std::round(beats * zoom));
+    return static_cast<int>(std::round(beats * pixelsPerBeat));
 }
 
 double TimelineComponent::pixelToBeats(int pixel) const {
-    if (zoom > 0)
-        return static_cast<double>(pixel - LayoutConfig::TIMELINE_LEFT_PADDING) / zoom;
+    if (pixelsPerBeat > 0)
+        return static_cast<double>(pixel - LayoutConfig::TIMELINE_LEFT_PADDING) / pixelsPerBeat;
     return 0.0;
 }
 
-double TimelineComponent::pixelToTime(int pixel) const {
+double TimelineComponent::secondsToBeats(double timeInSeconds) const {
+    return timeInSeconds * tempoBPM / 60.0;
+}
+
+double TimelineComponent::beatsToSeconds(double beats) const {
     if (tempoBPM > 0)
-        return pixelToBeats(pixel) * 60.0 / tempoBPM;
+        return beats * 60.0 / tempoBPM;
     return 0.0;
 }
 
-int TimelineComponent::timeToPixel(double time) const {
-    return beatsToPixel(time * tempoBPM / 60.0);
+double TimelineComponent::getTimelineLengthBeats() const {
+    return secondsToBeats(timelineLength);
 }
 
-int TimelineComponent::timeDurationToPixels(double duration) const {
-    double beats = duration * tempoBPM / 60.0;
-    return static_cast<int>(std::round(beats * zoom));
+double TimelineComponent::snapBeatsToGrid(double beats) const {
+    if (!snapEnabled)
+        return beats;
+
+    double intervalSeconds = getSnapInterval();
+    double intervalBeats = secondsToBeats(intervalSeconds);
+    if (intervalBeats <= 0.0)
+        return beats;
+
+    return std::round(beats / intervalBeats) * intervalBeats;
+}
+
+int TimelineComponent::secondsDurationToPixels(double durationSeconds) const {
+    double beats = secondsToBeats(durationSeconds);
+    return static_cast<int>(std::round(beats * pixelsPerBeat));
 }
 
 void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
@@ -750,12 +826,13 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     int tickBottom = rulerBottom;
 
     // Cache loop region pixel bounds for tick coloring
-    double loopStartTime = loopInteraction_.getStartTime();
-    double loopEndTime = loopInteraction_.getEndTime();
-    bool hasLoop = loopStartTime >= 0 && loopEndTime > loopStartTime;
+    double loopStartBeats = loopInteraction_.getStartPosition();
+    double loopEndBeats = loopInteraction_.getEndPosition();
+    bool hasLoop = loopStartBeats >= 0 && loopEndBeats > loopStartBeats;
     int loopStartPx =
-        hasLoop ? (timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING) : -1;
-    int loopEndPx = hasLoop ? (timeToPixel(loopEndTime) + LayoutConfig::TIMELINE_LEFT_PADDING) : -1;
+        hasLoop ? (beatsToPixel(loopStartBeats) + LayoutConfig::TIMELINE_LEFT_PADDING) : -1;
+    int loopEndPx =
+        hasLoop ? (beatsToPixel(loopEndBeats) + LayoutConfig::TIMELINE_LEFT_PADDING) : -1;
     auto loopTickColour = DarkTheme::getColour(
         loopInteraction_.isEnabled() ? DarkTheme::LOOP_MARKER : DarkTheme::TEXT_DISABLED);
 
@@ -776,7 +853,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
 
         double markerInterval = 1.0;
         for (double interval : intervals) {
-            if (timeDurationToPixels(interval) >= minPixelSpacing) {
+            if (secondsDurationToPixels(interval) >= minPixelSpacing) {
                 markerInterval = interval;
                 break;
             }
@@ -786,17 +863,17 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         auto clipBounds = g.getClipBounds();
         double visibleStartTime = juce::jmax(
             0.0, static_cast<double>(clipBounds.getX() - LayoutConfig::TIMELINE_LEFT_PADDING) /
-                     (tempoBPM / 60.0 * zoom));
+                     (tempoBPM / 60.0 * pixelsPerBeat));
         double visibleEndTime =
             juce::jmin(timelineLength, static_cast<double>(clipBounds.getRight() -
                                                            LayoutConfig::TIMELINE_LEFT_PADDING) /
-                                           (tempoBPM / 60.0 * zoom));
+                                           (tempoBPM / 60.0 * pixelsPerBeat));
         double startTime = std::floor(visibleStartTime / markerInterval) * markerInterval;
         double endTime = juce::jmin(timelineLength, visibleEndTime + markerInterval);
 
         // Draw ticks and labels
         for (double time = startTime; time <= endTime; time += markerInterval) {
-            int x = timeToPixel(time) + LayoutConfig::TIMELINE_LEFT_PADDING;
+            int x = beatsToPixel(secondsToBeats(time)) + LayoutConfig::TIMELINE_LEFT_PADDING;
             if (x >= 0 && x < getWidth()) {
                 bool isMajor = false;
                 if (markerInterval >= 1.0) {
@@ -864,7 +941,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         // ===== BARS/BEATS MODE =====
         // Everything in beats — zoom is pixels per beat (ppb)
         double markerIntervalBeats = GridConstants::computeGridInterval(
-            gridQuantize, zoom, timeSignatureNumerator, minPixelSpacing);
+            gridQuantize, pixelsPerBeat, timeSignatureNumerator, minPixelSpacing);
 
         double barLengthBeats = static_cast<double>(timeSignatureNumerator);
 
@@ -875,9 +952,9 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         bool gridAligned = alignsWithBars && alignsWithBeats;
 
         // Pixel spacings directly from zoom (no seconds conversion)
-        double pixelsPerBeat = zoom;
-        double pixelsPerBar = zoom * barLengthBeats;
-        double pixelsPerSubdiv = zoom * markerIntervalBeats;
+        double beatPixelSpacing = pixelsPerBeat;
+        double pixelsPerBar = pixelsPerBeat * barLengthBeats;
+        double pixelsPerSubdiv = pixelsPerBeat * markerIntervalBeats;
 
         // Determine bar label interval: show a label at every grid line that
         // falls on a bar boundary.  When the grid interval spans multiple bars
@@ -904,11 +981,11 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         double totalTimelineBeats = timelineLength * tempoBPM / 60.0;
         double visStartBeat = juce::jmax(
             0.0, static_cast<double>(clipBoundsRect.getX() - LayoutConfig::TIMELINE_LEFT_PADDING) /
-                     zoom);
+                     pixelsPerBeat);
         double visEndBeat = juce::jmin(
             totalTimelineBeats,
             static_cast<double>(clipBoundsRect.getRight() - LayoutConfig::TIMELINE_LEFT_PADDING) /
-                zoom);
+                pixelsPerBeat);
         double startBeat = std::floor(visStartBeat / markerIntervalBeats) * markerIntervalBeats;
         double endBeat = juce::jmin(totalTimelineBeats, visEndBeat + markerIntervalBeats);
 
@@ -972,7 +1049,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                     g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
                     g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
                                juce::Justification::centredTop);
-                } else if (isBeatStart && !isBarStart && pixelsPerBeat >= 50) {
+                } else if (isBeatStart && !isBarStart && beatPixelSpacing >= 50) {
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
                     g.setFont(FontManager::getInstance().getUIFont(10.0f));
                     g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY,
@@ -1052,7 +1129,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
 }
 
 void TimelineComponent::drawPlayhead(juce::Graphics& g) {
-    int playheadX = timeToPixel(playheadPosition) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int playheadX = beatsToPixel(playheadPositionBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
     if (playheadX >= 0 && playheadX < getWidth()) {
         // Draw shadow for better visibility
         g.setColour(juce::Colours::black.withAlpha(0.6f));
@@ -1071,24 +1148,21 @@ void TimelineComponent::drawArrangementSections(juce::Graphics& g) {
 
 void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection& section,
                                     bool isSelected) const {
-    int startX = timeToPixel(section.startTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
-    int endX = timeToPixel(section.endTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
-    int width = endX - startX;
+    int startX = beatsToPixel(section.startBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = beatsToPixel(section.endBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
-    if (width <= 0 || startX >= getWidth() || endX <= 0) {
+    if (endX <= startX) {
         return;
     }
-
-    // Clip to visible area
-    startX = juce::jmax(0, startX);
-    endX = juce::jmin(getWidth(), endX);
-    width = endX - startX;
 
     // Draw section background using arrangement bar height from LayoutConfig
     auto& layout = LayoutConfig::getInstance();
     int chordHeight = layout.chordRowHeight;
     int arrangementHeight = layout.arrangementBarHeight;
-    auto sectionArea = juce::Rectangle<int>(startX, chordHeight, width, arrangementHeight);
+    auto sectionArea = getVisibleRect(g, getWidth(), startX, endX, chordHeight, arrangementHeight);
+
+    if (sectionArea.isEmpty())
+        return;
 
     // Section background - dimmed if locked
     float alpha = arrangementLocked ? 0.2f : 0.3f;
@@ -1101,22 +1175,33 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
         // Draw dotted border to indicate locked state
         const float dashLengths[] = {2.0f, 2.0f};
         float sectionTop = static_cast<float>(chordHeight);
-        g.drawDashedLine(juce::Line<float>(startX, sectionTop, startX, sectionArea.getBottom()),
+        auto sectionBottom = static_cast<float>(sectionArea.getBottom());
+
+        if (isXVisible(g, getWidth(), startX)) {
+            g.drawDashedLine(juce::Line<float>(static_cast<float>(startX), sectionTop,
+                                               static_cast<float>(startX), sectionBottom),
+                             dashLengths, 2, 1.0f);
+        }
+        if (isXVisible(g, getWidth(), endX)) {
+            g.drawDashedLine(juce::Line<float>(static_cast<float>(endX), sectionTop,
+                                               static_cast<float>(endX), sectionBottom),
+                             dashLengths, 2, 1.0f);
+        }
+
+        g.drawDashedLine(juce::Line<float>(static_cast<float>(sectionArea.getX()), sectionTop,
+                                           static_cast<float>(sectionArea.getRight()), sectionTop),
                          dashLengths, 2, 1.0f);
-        g.drawDashedLine(juce::Line<float>(endX, sectionTop, endX, sectionArea.getBottom()),
+        g.drawDashedLine(juce::Line<float>(static_cast<float>(sectionArea.getX()), sectionBottom,
+                                           static_cast<float>(sectionArea.getRight()),
+                                           sectionBottom),
                          dashLengths, 2, 1.0f);
-        g.drawDashedLine(juce::Line<float>(startX, sectionTop, endX, sectionTop), dashLengths, 2,
-                         1.0f);
-        g.drawDashedLine(
-            juce::Line<float>(startX, sectionArea.getBottom(), endX, sectionArea.getBottom()),
-            dashLengths, 2, 1.0f);
     } else {
         g.setColour(isSelected ? section.colour.brighter(0.5f) : section.colour);
         g.drawRect(sectionArea, isSelected ? 2 : 1);
     }
 
     // Section name
-    if (width > 40) {  // Only draw text if there's enough space
+    if (sectionArea.getWidth() > 40) {  // Only draw text if there's enough space
         g.setColour(arrangementLocked ? DarkTheme::getColour(DarkTheme::TEXT_SECONDARY)
                                       : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -1136,10 +1221,10 @@ int TimelineComponent::findSectionAtPosition(int x, int y) const {
         return -1;
     }
 
-    double time = pixelToTime(x);
+    double beats = pixelToBeats(x);
     for (size_t i = 0; i < sections.size(); ++i) {
         const auto& section = *sections[i];
-        if (time >= section.startTime && time <= section.endTime) {
+        if (beats >= section.startBeats && beats <= section.endBeats) {
             return static_cast<int>(i);
         }
     }
@@ -1152,8 +1237,8 @@ bool TimelineComponent::isOnSectionEdge(int x, int sectionIndex, bool& isStartEd
     }
 
     const auto& section = *sections[sectionIndex];
-    int startX = timeToPixel(section.startTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
-    int endX = timeToPixel(section.endTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int startX = beatsToPixel(section.startBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = beatsToPixel(section.endBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
     const int edgeThreshold = 5;  // 5 pixels from edge
 
@@ -1172,34 +1257,34 @@ juce::String TimelineComponent::getDefaultSectionName() const {
     return "Section " + juce::String(sections.size() + 1);
 }
 
-void TimelineComponent::setLoopRegion(double startTime, double endTime) {
-    double s = juce::jmax(0.0, startTime);
-    double e = juce::jmin(timelineLength, endTime);
+void TimelineComponent::setLoopRegionBeats(double startBeats, double endBeats) {
+    double s = juce::jmax(0.0, startBeats);
+    double e = juce::jmin(getTimelineLengthBeats(), endBeats);
     bool valid = (s >= 0 && e > s);
-    loopInteraction_.setLoopRegion(s, e, valid);
+    loopInteraction_.setLoopRange(s, e, valid);
 
-    if (onLoopRegionChanged) {
-        onLoopRegionChanged(s, e);
+    if (onLoopRegionBeatsChanged) {
+        onLoopRegionBeatsChanged(s, e);
     }
 
     repaint();
 }
 
 void TimelineComponent::clearLoopRegion() {
-    loopInteraction_.setLoopRegion(-1.0, -1.0, false);
+    loopInteraction_.setLoopRange(-1.0, -1.0, false);
 
-    if (onLoopRegionChanged) {
-        onLoopRegionChanged(-1.0, -1.0);
+    if (onLoopRegionBeatsChanged) {
+        onLoopRegionBeatsChanged(-1.0, -1.0);
     }
 
     repaint();
 }
 
 void TimelineComponent::setLoopEnabled(bool enabled) {
-    double s = loopInteraction_.getStartTime();
-    double e = loopInteraction_.getEndTime();
+    double s = loopInteraction_.getStartPosition();
+    double e = loopInteraction_.getEndPosition();
     if (s >= 0 && e > s) {
-        loopInteraction_.setLoopRegion(s, e, enabled);
+        loopInteraction_.setLoopRange(s, e, enabled);
         repaint();
     }
 }
@@ -1207,11 +1292,11 @@ void TimelineComponent::setLoopEnabled(bool enabled) {
 void TimelineComponent::drawLoopMarkers(juce::Graphics& g) {
     // Draw background elements: shaded region and vertical lines
     // Time markers will be drawn on top of this
-    double loopStartTime = loopInteraction_.getStartTime();
-    double loopEndTime = loopInteraction_.getEndTime();
+    double loopStartBeats = loopInteraction_.getStartPosition();
+    double loopEndBeats = loopInteraction_.getEndPosition();
     bool loopEnabled = loopInteraction_.isEnabled();
 
-    if (loopStartTime < 0 || loopEndTime <= loopStartTime) {
+    if (loopStartBeats < 0 || loopEndBeats <= loopStartBeats) {
         return;
     }
 
@@ -1222,13 +1307,12 @@ void TimelineComponent::drawLoopMarkers(juce::Graphics& g) {
     static constexpr int LOOP_STRIP_HEIGHT = LayoutConfig::loopStripHeight;
     int stripTop = tickAreaTop - LOOP_STRIP_HEIGHT;
 
-    int startX = timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
-    int endX = timeToPixel(loopEndTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int startX = beatsToPixel(loopStartBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = beatsToPixel(loopEndBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
-    // Skip if completely out of view
-    if (endX < 0 || startX > getWidth()) {
+    auto loopStripArea = getVisibleRect(g, getWidth(), startX, endX, stripTop, LOOP_STRIP_HEIGHT);
+    if (loopStripArea.isEmpty())
         return;
-    }
 
     // Use different colors based on enabled state
     juce::Colour regionColour =
@@ -1236,25 +1320,30 @@ void TimelineComponent::drawLoopMarkers(juce::Graphics& g) {
 
     // Draw shaded region in the loop strip area (above ticks)
     g.setColour(regionColour);
-    g.fillRect(startX, stripTop, endX - startX, LOOP_STRIP_HEIGHT);
+    g.fillRect(loopStripArea);
 
     // Draw vertical lines at loop boundaries in the strip area
     juce::Colour markerColour =
         loopEnabled ? DarkTheme::getColour(DarkTheme::LOOP_MARKER) : juce::Colour(0xFF606060);
     g.setColour(markerColour);
-    g.drawLine(static_cast<float>(startX), static_cast<float>(stripTop), static_cast<float>(startX),
-               static_cast<float>(stripTop + LOOP_STRIP_HEIGHT), 2.0f);
-    g.drawLine(static_cast<float>(endX), static_cast<float>(stripTop), static_cast<float>(endX),
-               static_cast<float>(stripTop + LOOP_STRIP_HEIGHT), 2.0f);
+    if (isXVisible(g, getWidth(), startX)) {
+        g.drawLine(static_cast<float>(startX), static_cast<float>(stripTop),
+                   static_cast<float>(startX), static_cast<float>(stripTop + LOOP_STRIP_HEIGHT),
+                   2.0f);
+    }
+    if (isXVisible(g, getWidth(), endX)) {
+        g.drawLine(static_cast<float>(endX), static_cast<float>(stripTop), static_cast<float>(endX),
+                   static_cast<float>(stripTop + LOOP_STRIP_HEIGHT), 2.0f);
+    }
 }
 
 void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     // Draw loop strip at the very bottom of the ruler area
-    double loopStartTime = loopInteraction_.getStartTime();
-    double loopEndTime = loopInteraction_.getEndTime();
+    double loopStartBeats = loopInteraction_.getStartPosition();
+    double loopEndBeats = loopInteraction_.getEndPosition();
     bool loopEnabled = loopInteraction_.isEnabled();
 
-    if (loopStartTime < 0 || loopEndTime <= loopStartTime) {
+    if (loopStartBeats < 0 || loopEndBeats <= loopStartBeats) {
         return;
     }
 
@@ -1265,13 +1354,12 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     static constexpr int LOOP_STRIP_HEIGHT = LayoutConfig::loopStripHeight;
     int stripTop = tickAreaTop - LOOP_STRIP_HEIGHT;
 
-    int startX = timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
-    int endX = timeToPixel(loopEndTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int startX = beatsToPixel(loopStartBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = beatsToPixel(loopEndBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
-    // Skip if completely out of view
-    if (endX < 0 || startX > getWidth()) {
+    auto loopStripArea = getVisibleRect(g, getWidth(), startX, endX, stripTop, LOOP_STRIP_HEIGHT);
+    if (loopStripArea.isEmpty())
         return;
-    }
 
     // Use different colors based on enabled state
     juce::Colour markerColour =
@@ -1283,18 +1371,18 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     g.setGradientFill(juce::ColourGradient(
         flagFill.withAlpha(0.45f), 0.0f, static_cast<float>(stripTop), flagFill.withAlpha(0.1f),
         0.0f, static_cast<float>(stripTop + LOOP_STRIP_HEIGHT), false));
-    g.fillRect(startX, stripTop, endX - startX, LOOP_STRIP_HEIGHT);
+    g.fillRect(loopStripArea);
 
     // Connecting lines at top and bottom of strip
     g.setColour(markerColour);
-    g.fillRect(startX, stripTop, endX - startX, 2);
-    g.fillRect(startX, stripTop + LOOP_STRIP_HEIGHT - 1, endX - startX, 1);
+    g.fillRect(loopStripArea.getX(), stripTop, loopStripArea.getWidth(), 2);
+    g.fillRect(loopStripArea.getX(), stripTop + LOOP_STRIP_HEIGHT - 1, loopStripArea.getWidth(), 1);
 
     // 2px vertical marker lines spanning the strip
-    if (startX >= 0 && startX <= getWidth()) {
+    if (isXVisible(g, getWidth(), startX)) {
         g.fillRect(startX - 1, stripTop, 2, LOOP_STRIP_HEIGHT);
     }
-    if (endX >= 0 && endX <= getWidth()) {
+    if (isXVisible(g, getWidth(), endX)) {
         g.fillRect(endX - 1, stripTop, 2, LOOP_STRIP_HEIGHT);
     }
 
@@ -1306,39 +1394,44 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     int flagW = juce::jlimit(4, 8, maxFlagW);
 
     g.setColour(markerColour);
-    juce::Path startFlag;
-    startFlag.addTriangle(static_cast<float>(startX), static_cast<float>(flagTop),
-                          static_cast<float>(startX), static_cast<float>(flagTop + flagH),
-                          static_cast<float>(startX + flagW),
-                          static_cast<float>(flagTop + flagH / 2));
-    g.fillPath(startFlag);
+    if (isXVisible(g, getWidth(), startX)) {
+        juce::Path startFlag;
+        startFlag.addTriangle(static_cast<float>(startX), static_cast<float>(flagTop),
+                              static_cast<float>(startX), static_cast<float>(flagTop + flagH),
+                              static_cast<float>(startX + flagW),
+                              static_cast<float>(flagTop + flagH / 2));
+        g.fillPath(startFlag);
+    }
 
-    juce::Path endFlag;
-    endFlag.addTriangle(static_cast<float>(endX), static_cast<float>(flagTop),
-                        static_cast<float>(endX), static_cast<float>(flagTop + flagH),
-                        static_cast<float>(endX - flagW), static_cast<float>(flagTop + flagH / 2));
-    g.fillPath(endFlag);
+    if (isXVisible(g, getWidth(), endX)) {
+        juce::Path endFlag;
+        endFlag.addTriangle(static_cast<float>(endX), static_cast<float>(flagTop),
+                            static_cast<float>(endX), static_cast<float>(flagTop + flagH),
+                            static_cast<float>(endX - flagW),
+                            static_cast<float>(flagTop + flagH / 2));
+        g.fillPath(endFlag);
+    }
 }
 
 void TimelineComponent::initLoopInteraction() {
     auto& layout = LayoutConfig::getInstance();
 
     LoopMarkerInteraction::Host host;
-    host.pixelToTime = [this](int pixel) { return pixelToTime(pixel); };
-    host.timeToPixel = [this](double time) {
-        return timeToPixel(time) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    host.pixelToPosition = [this](int pixel) { return pixelToBeats(pixel); };
+    host.positionToPixel = [this](double beats) {
+        return beatsToPixel(beats) + LayoutConfig::TIMELINE_LEFT_PADDING;
     };
-    host.snapToGrid = [this](double time) -> double {
+    host.snapPosition = [this](double beats) -> double {
         if (snapEnabled)
-            return snapTimeToGrid(time);
-        return time;
+            return snapBeatsToGrid(beats);
+        return beats;
     };
     host.onLoopChanged = [this](double start, double end) {
-        if (onLoopRegionChanged)
-            onLoopRegionChanged(start, end);
+        if (onLoopRegionBeatsChanged)
+            onLoopRegionBeatsChanged(start, end);
     };
     host.onRepaint = [this]() { repaint(); };
-    host.maxTime = timelineLength;
+    host.maxPosition = getTimelineLengthBeats();
     int rulerBottom = layout.chordRowHeight + layout.arrangementBarHeight + layout.timeRulerHeight;
     int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
     host.topBorderY = tickAreaTop - LayoutConfig::loopStripHeight;
@@ -1364,7 +1457,7 @@ double TimelineComponent::getSnapInterval() const {
                                     0.5,   1.0,   2.0,   5.0,  10.0, 15.0, 30.0, 60.0};
 
         for (double interval : intervals) {
-            if (timeDurationToPixels(interval) >= minPixelSpacing) {
+            if (secondsDurationToPixels(interval) >= minPixelSpacing) {
                 return interval;
             }
         }
@@ -1374,13 +1467,14 @@ double TimelineComponent::getSnapInterval() const {
         // zoom is in pixels per beat
         double secondsPerBeat = 60.0 / tempoBPM;
 
-        double frac = GridConstants::findBeatSubdivision(zoom, minPixelSpacing);
+        double frac = GridConstants::findBeatSubdivision(pixelsPerBeat, minPixelSpacing);
         if (frac > 0) {
             return secondsPerBeat * frac;
         }
 
         // Fall back to bar multiples
-        int mult = GridConstants::findBarMultiple(zoom, timeSignatureNumerator, minPixelSpacing);
+        int mult =
+            GridConstants::findBarMultiple(pixelsPerBeat, timeSignatureNumerator, minPixelSpacing);
         return secondsPerBeat * timeSignatureNumerator * mult;
     }
 }
@@ -1399,45 +1493,50 @@ double TimelineComponent::snapTimeToGrid(double time) const {
     return std::round(time / interval) * interval;
 }
 
-void TimelineComponent::setTimeSelection(double startTime, double endTime) {
-    timeSelectionStart = startTime;
-    timeSelectionEnd = endTime;
+void TimelineComponent::setTimeSelectionBeats(double startBeats, double endBeats) {
+    timeSelectionStartBeats = startBeats;
+    timeSelectionEndBeats = endBeats;
     repaint();
 }
 
 void TimelineComponent::clearTimeSelection() {
-    timeSelectionStart = -1.0;
-    timeSelectionEnd = -1.0;
+    timeSelectionStartBeats = -1.0;
+    timeSelectionEndBeats = -1.0;
     repaint();
 }
 
 void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
-    if (timeSelectionStart < 0 || timeSelectionEnd < 0 || timeSelectionEnd <= timeSelectionStart) {
+    if (timeSelectionStartBeats < 0 || timeSelectionEndBeats < 0 ||
+        timeSelectionEndBeats <= timeSelectionStartBeats) {
         return;
     }
 
-    int startX = timeToPixel(timeSelectionStart) + LayoutConfig::TIMELINE_LEFT_PADDING;
-    int endX = timeToPixel(timeSelectionEnd) + LayoutConfig::TIMELINE_LEFT_PADDING;
-
-    // Skip if out of view
-    if (endX < 0 || startX > getWidth()) {
-        return;
-    }
+    int startX = beatsToPixel(timeSelectionStartBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = beatsToPixel(timeSelectionEndBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Selection only in content area (below the ruler)
     auto& layout = LayoutConfig::getInstance();
     int rulerBottom = layout.chordRowHeight + layout.arrangementBarHeight + layout.timeRulerHeight;
+    auto selectionArea =
+        getVisibleRect(g, getWidth(), startX, endX, rulerBottom, getHeight() - rulerBottom);
+
+    if (selectionArea.isEmpty())
+        return;
 
     // Draw selection highlight covering content area only
     g.setColour(DarkTheme::getColour(DarkTheme::TIME_SELECTION));
-    g.fillRect(startX, rulerBottom, endX - startX, getHeight() - rulerBottom);
+    g.fillRect(selectionArea);
 
     // Draw selection edges
     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
-    g.drawLine(static_cast<float>(startX), static_cast<float>(rulerBottom),
-               static_cast<float>(startX), static_cast<float>(getHeight()), 1.0f);
-    g.drawLine(static_cast<float>(endX), static_cast<float>(rulerBottom), static_cast<float>(endX),
-               static_cast<float>(getHeight()), 1.0f);
+    if (isXVisible(g, getWidth(), startX)) {
+        g.drawLine(static_cast<float>(startX), static_cast<float>(rulerBottom),
+                   static_cast<float>(startX), static_cast<float>(getHeight()), 1.0f);
+    }
+    if (isXVisible(g, getWidth(), endX)) {
+        g.drawLine(static_cast<float>(endX), static_cast<float>(rulerBottom),
+                   static_cast<float>(endX), static_cast<float>(getHeight()), 1.0f);
+    }
 }
 
 }  // namespace magda

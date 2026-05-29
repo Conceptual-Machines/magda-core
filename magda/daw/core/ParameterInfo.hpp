@@ -5,6 +5,8 @@
 #include <memory>
 #include <vector>
 
+#include "ChainNodePath.hpp"
+
 namespace magda {
 
 /**
@@ -38,6 +40,20 @@ enum class DisplayFormat {
     MidiNote,  // 0..127 → "C-1".."G9"
     Beats,     // float beats: "2.25 beats"
     BarsBeats  // float beats: "1.1.000" bars.beats.ticks (480 ticks/beat)
+};
+
+/**
+ * @brief Identifies a wrapper-injected parameter by its semantic role.
+ *
+ * Only set on entries in DeviceInfo::wrapperParameters — None for plugin
+ * params and unrecognised wrapper params. The role tag lets device-header
+ * chrome render a known pair (e.g. TE's DryGain + WetGain) as a single
+ * collapsed control like a Mix crossfader without name-sniffing.
+ */
+enum class WrapperRole {
+    None,
+    DryGain,  // TE PluginWetDryAutomatableParam, dry side
+    WetGain,  // TE PluginWetDryAutomatableParam, wet side
 };
 
 /**
@@ -107,6 +123,7 @@ struct ParameterInfo {
     // gone). Preferred over valueTable when set — exact values, no quantization.
     // Shared so ParameterInfo copies remain cheap.
     struct DisplayTextProvider {
+        ChainNodePath devicePath;
         int deviceId = -1;
         int paramIndex = -1;
         juce::String format(float normalizedValue) const;
@@ -127,6 +144,11 @@ struct ParameterInfo {
     // UI-only visibility. Hidden parameters remain addressable for automation,
     // aliases, and host writes, but parameter-grid layouts omit their cell.
     bool hidden = false;
+
+    // Wrapper-role tag. Defaults to None. Processors that place an entry in
+    // DeviceInfo::wrapperParameters set the role so the device-header chrome
+    // can spot known pairs (e.g. DryGain+WetGain → Mix knob).
+    WrapperRole wrapperRole = WrapperRole::None;
 
     // Modulation constraints
     bool modulatable = true;         // Can mods affect this parameter?

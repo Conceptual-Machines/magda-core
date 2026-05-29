@@ -464,21 +464,30 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
     if (rackInfo == nullptr)
         return;
 
-    std::function<DeviceInfo*(std::vector<ChainElement>&, DeviceId)> findInChains;
-    findInChains = [&](std::vector<ChainElement>& elements, DeviceId id) -> DeviceInfo* {
+    std::function<bool(std::vector<ChainElement>&, const ChainNodePath&, DeviceId, DeviceInfo*&,
+                       ChainNodePath&)>
+        findInChains;
+    findInChains = [&](std::vector<ChainElement>& elements, const ChainNodePath& parentChainPath,
+                       DeviceId id, DeviceInfo*& outDevice, ChainNodePath& outPath) -> bool {
         for (auto& element : elements) {
             if (isDevice(element)) {
                 auto& dev = getDevice(element);
-                if (dev.id == id)
-                    return &dev;
+                if (dev.id == id) {
+                    outDevice = &dev;
+                    outPath = parentChainPath.withDevice(id);
+                    return true;
+                }
             } else if (isRack(element)) {
-                for (auto& chain : getRack(element).chains) {
-                    if (auto* found = findInChains(chain.elements, id))
-                        return found;
+                auto& nestedRack = getRack(element);
+                const auto nestedRackPath = parentChainPath.withRack(nestedRack.id);
+                for (auto& chain : nestedRack.chains) {
+                    if (findInChains(chain.elements, nestedRackPath.withChain(chain.id), id,
+                                     outDevice, outPath))
+                        return true;
                 }
             }
         }
-        return nullptr;
+        return false;
     };
 
     for (auto& [deviceId, plugin] : synced.innerPlugins) {
@@ -501,10 +510,14 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
                 stateStr = xml->toString();
         }
 
+        const auto rackPath = ChainNodePath::rack(synced.trackId, synced.rackId);
         for (auto& chain : rackInfo->chains) {
-            if (auto* devInfo = findInChains(chain.elements, deviceId)) {
+            DeviceInfo* devInfo = nullptr;
+            ChainNodePath devicePath;
+            if (findInChains(chain.elements, rackPath.withChain(chain.id), deviceId, devInfo,
+                             devicePath)) {
                 devInfo->pluginState = stateStr;
-                pluginManager_.refreshDeviceParameters(deviceId);
+                pluginManager_.refreshDeviceParameters(devicePath);
                 DBG("[ChainMove] captureAll rack device id="
                     << deviceId << " name='" << devInfo->name << "' rack=" << synced.rackId
                     << " stateLen=" << stateStr.length()
@@ -654,7 +667,7 @@ void RackSyncManager::resyncAllModifiers(TrackId trackId) {
         for (const auto& track : tm.getTracks()) {
             if (track.id != trackId)
                 continue;
-            for (const auto& element : track.chainElements) {
+            for (const auto& element : track.chain.fxChainElements) {
                 if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
                     if (!*rackPtr || (*rackPtr)->id != rackId)
                         continue;
@@ -693,7 +706,7 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
         for (const auto& track : tm.getTracks()) {
             if (track.id != trackId)
                 continue;
-            for (const auto& element : track.chainElements) {
+            for (const auto& element : track.chain.fxChainElements) {
                 if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
                     if (!*rackPtr || (*rackPtr)->id != rackId)
                         continue;
@@ -730,7 +743,8 @@ void RackSyncManager::loadRackContents(SyncedRack& synced, TrackId trackId,
                         synced.innerPlugins[device.id] = plugin;
 
                         // Register processor for parameter enumeration
-                        pluginManager_.registerRackPluginProcessor(device.id, plugin, device);
+                        pluginManager_.registerRackPluginProcessor(chainPath.withDevice(device.id),
+                                                                   plugin, device);
 
                         // Apply bypass state
                         plugin->setEnabled(!device.bypassed);
@@ -1128,8 +1142,8 @@ void RackSyncManager::applyBypassState(SyncedRack& synced, const RackInfo& rackI
 struct RackSyncManager::InnerPluginLookup : TargetPluginLookup {
     SyncedRack& synced;
     explicit InnerPluginLookup(SyncedRack& s) : synced(s) {}
-    te::Plugin* getPlugin(DeviceId id) const override {
-        auto it = synced.innerPlugins.find(id);
+    te::Plugin* getPlugin(const ChainNodePath& path) const override {
+        auto it = synced.innerPlugins.find(path.getDeviceId());
         return (it != synced.innerPlugins.end() && it->second) ? it->second.get() : nullptr;
     }
 };
@@ -1344,7 +1358,7 @@ bool RackSyncManager::needsModifierResync(TrackId trackId) const {
     if (!trackInfo)
         return false;
 
-    for (const auto& element : trackInfo->chainElements) {
+    for (const auto& element : trackInfo->chain.fxChainElements) {
         if (!isRack(element))
             continue;
 

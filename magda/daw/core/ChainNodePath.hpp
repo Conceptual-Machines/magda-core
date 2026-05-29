@@ -9,9 +9,21 @@
 namespace magda {
 
 /**
- * @brief Type of element in a chain path step
+ * @brief Which of a track's two FX lists a path descends into.
+ *
+ * Encoded as the id of a leading ChainStepType::Segment step. Fx is the
+ * implicit default (paths with no Segment step address the main FX chain);
+ * post-fx paths carry an explicit Segment(PostFx) step as their first step.
  */
-enum class ChainStepType { Rack, Chain, Device };
+enum class ChainSegment { Fx, PostFx, MixerAnalysis };
+
+/**
+ * @brief Type of element in a chain path step
+ *
+ * Segment is appended last so the persisted integer values of Rack/Chain/
+ * Device (serialized in automation targets) stay stable.
+ */
+enum class ChainStepType { Rack, Chain, Device, Segment };
 
 /**
  * @brief A single step in a chain node path
@@ -74,12 +86,26 @@ struct ChainNodePath {
                 return ChainNodeType::Chain;
             case ChainStepType::Device:
                 return ChainNodeType::Device;
+            case ChainStepType::Segment:
+                return ChainNodeType::None;  // a bare segment is not a selectable node
         }
         return ChainNodeType::None;
     }
 
     bool isValid() const {
         return getType() != ChainNodeType::None;
+    }
+
+    // True when this path descends into the track's post-fader FX list. Post-fx
+    // is flat, so such a path is always Segment(PostFx) followed by a Device step.
+    bool isPostFx() const {
+        return !steps.empty() && steps.front().type == ChainStepType::Segment &&
+               steps.front().id == static_cast<int>(ChainSegment::PostFx);
+    }
+
+    bool isMixerAnalysis() const {
+        return !steps.empty() && steps.front().type == ChainStepType::Segment &&
+               steps.front().id == static_cast<int>(ChainSegment::MixerAnalysis);
     }
 
     bool operator==(const ChainNodePath& other) const {
@@ -89,6 +115,27 @@ struct ChainNodePath {
 
     bool operator!=(const ChainNodePath& other) const {
         return !(*this == other);
+    }
+
+    // Total order for use as a std::map / std::set key. The exact ordering
+    // is an implementation detail (lexicographic on the tuple of fields);
+    // callers should treat it as opaque.
+    bool operator<(const ChainNodePath& other) const {
+        if (trackId != other.trackId)
+            return trackId < other.trackId;
+        if (isTrackLevel != other.isTrackLevel)
+            return !isTrackLevel && other.isTrackLevel;
+        if (topLevelDeviceId != other.topLevelDeviceId)
+            return topLevelDeviceId < other.topLevelDeviceId;
+        if (steps.size() != other.steps.size())
+            return steps.size() < other.steps.size();
+        for (size_t i = 0; i < steps.size(); ++i) {
+            if (steps[i].type != other.steps[i].type)
+                return static_cast<int>(steps[i].type) < static_cast<int>(other.steps[i].type);
+            if (steps[i].id != other.steps[i].id)
+                return steps[i].id < other.steps[i].id;
+        }
+        return false;
     }
 
     // Get nesting depth (0 = top-level rack, 1 = chain in rack, 2 = nested rack, etc.)
@@ -167,6 +214,26 @@ struct ChainNodePath {
         return p;
     }
 
+    // A device in the track's post-fader FX list. Flat by construction:
+    //   Track > Segment(PostFx) > Device
+    static ChainNodePath postFxDevice(TrackId track, DeviceId device) {
+        ChainNodePath p;
+        p.trackId = track;
+        p.steps.push_back({ChainStepType::Segment, static_cast<int>(ChainSegment::PostFx)});
+        p.steps.push_back({ChainStepType::Device, device});
+        return p;
+    }
+
+    // A device in the rail-managed mixer-analysis section (mini scope/spec).
+    // Flat by construction: Track > Segment(MixerAnalysis) > Device.
+    static ChainNodePath mixerAnalysisDevice(TrackId track, DeviceId device) {
+        ChainNodePath p;
+        p.trackId = track;
+        p.steps.push_back({ChainStepType::Segment, static_cast<int>(ChainSegment::MixerAnalysis)});
+        p.steps.push_back({ChainStepType::Device, device});
+        return p;
+    }
+
     // Create a path by extending an existing path
     ChainNodePath withRack(RackId r) const {
         ChainNodePath p = *this;
@@ -209,6 +276,13 @@ struct ChainNodePath {
                 case ChainStepType::Device:
                     result += " > Device[" + juce::String(step.id) + "]";
                     break;
+                case ChainStepType::Segment: {
+                    auto seg = static_cast<ChainSegment>(step.id);
+                    result += seg == ChainSegment::PostFx          ? " > Segment[PostFx]"
+                              : seg == ChainSegment::MixerAnalysis ? " > Segment[MixerAnalysis]"
+                                                                   : " > Segment[Fx]";
+                    break;
+                }
             }
         }
         if (topLevelDeviceId != INVALID_DEVICE_ID) {

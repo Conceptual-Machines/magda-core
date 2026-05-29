@@ -3605,21 +3605,21 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                         // Params submenu
                         if (!device.parameters.empty()) {
                             juce::PopupMenu paramsMenu;
-                            for (int i = 0; i < static_cast<int>(device.parameters.size()); ++i) {
+                            for (const auto& p : device.parameters) {
                                 AutomationTarget target;
                                 target.kind = ControlTarget::Kind::PluginParam;
                                 target.devicePath.trackId = trackId;
                                 target.devicePath = devicePath;
-                                target.paramIndex = i;
-                                device.parameters[static_cast<size_t>(i)].name;
+                                // Address by TE index, not array position —
+                                // wrapper params live in a separate bucket so
+                                // the array no longer mirrors TE indices 1:1.
+                                target.paramIndex = p.paramIndex;
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                                 bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                paramsMenu.addItem(itemId,
-                                                   device.parameters[static_cast<size_t>(i)].name,
-                                                   true, ticked);
+                                paramsMenu.addItem(itemId, p.name, true, ticked);
                             }
                             deviceMenu.addSubMenu("Params", paramsMenu);
                         }
@@ -3763,7 +3763,7 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
             };
 
         ChainNodePath rootPath = ChainNodePath::trackLevel(trackId);
-        buildMenu(trackInfo->chainElements, rootPath, addNewMenu);
+        buildMenu(trackInfo->chain.fxChainElements, rootPath, addNewMenu);
     }
 
     menu.addSubMenu("Add New Lane...", addNewMenu);

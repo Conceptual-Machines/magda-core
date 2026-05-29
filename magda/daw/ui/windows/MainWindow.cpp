@@ -22,7 +22,6 @@
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
-#include "../themes/MainLookAndFeel.hpp"
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
@@ -187,15 +186,14 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     : DocumentWindow("MAGDA", DarkTheme::getBackgroundColour(), DocumentWindow::allButtons),
       externalAudioEngine_(audioEngine) {
     juce::Logger::writeToLog("[MainWindow] Constructor started");
-#if JUCE_LINUX
-    // KWin/Wayland clips the top of the client area for XWayland windows that
-    // request native decorations, hiding the menu bar. JUCE-drawn decorations
-    // lay out the menu correctly on every WM.
-    setUsingNativeTitleBar(false);
-    setTitleBarHeight(MainLookAndFeel::kTitleBarHeight);
-#else
+    // Use native window decorations on every platform, including Linux. Linux
+    // previously forced JUCE-drawn decorations to dodge KWin/Wayland clipping
+    // the top of the client area (and hiding the menu bar) for XWayland windows
+    // that request native decorations. JUCE's drawn title bar brought its own
+    // problems though: its maximise button toggled WM fullscreen instead of a
+    // real maximise (#1279). Native decorations let the WM handle maximise
+    // correctly. The menu-bar clipping may still surface under Wayland/XWayland.
     setUsingNativeTitleBar(true);
-#endif
     setResizable(true, true);
 
     juce::Logger::writeToLog("[MainWindow] Creating MainComponent...");

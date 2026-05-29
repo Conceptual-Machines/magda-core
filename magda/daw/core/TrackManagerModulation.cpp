@@ -155,9 +155,11 @@ ChainNode TrackManager::resolveChainNode(const ChainNodePath& path) {
                 return ChainNode{};
             node.scope = ChainScope::Device;
             node.deviceId = device->id;
+            node.params = &device->parameters;
+            if (path.isPostFx())
+                return node;
             node.macros = &device->macros;
             node.mods = &device->mods;
-            node.params = &device->parameters;
             return node;
         }
         case ChainNodeType::Chain:
@@ -198,9 +200,11 @@ ConstChainNode TrackManager::resolveChainNode(const ChainNodePath& path) const {
                 return ConstChainNode{};
             node.scope = ChainScope::Device;
             node.deviceId = device->id;
+            node.params = &device->parameters;
+            if (path.isPostFx())
+                return node;
             node.macros = &device->macros;
             node.mods = &device->mods;
-            node.params = &device->parameters;
             return node;
         }
         case ChainNodeType::Chain:
@@ -590,7 +594,7 @@ const ModInfo* TrackManager::getModById(TrackId trackId, ModId modId) const {
         if (mod.id == modId)
             return &mod;
     }
-    for (const auto& element : track->chainElements) {
+    for (const auto& element : track->chain.fxChainElements) {
         if (std::holds_alternative<DeviceInfo>(element)) {
             for (const auto& mod : std::get<DeviceInfo>(element).mods) {
                 if (mod.id == modId)
@@ -928,7 +932,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         }
 
         // Device/rack-level mods
-        for (auto& element : track.chainElements) {
+        for (auto& element : track.chain.fxChainElements) {
             trackChanged |= updateElementMods(element, trackMidiTriggered, trackMidiNoteOff,
                                               trackAudioPeak, track.id);
         }

@@ -145,10 +145,10 @@ void TimeRuler::setLoopRegion(double offsetSeconds, double lengthSeconds, bool e
         if (enabled && lengthSeconds > 0.0) {
             double loopStartTime = relativeMode ? loopOffset : (timeOffset + loopOffset);
             double loopEndTime = loopStartTime + loopLength;
-            loopInteraction_.setLoopRegion(loopStartTime, loopEndTime, true);
+            loopInteraction_.setLoopRange(loopStartTime, loopEndTime, true);
             initLoopInteraction();
         } else {
-            loopInteraction_.setLoopRegion(-1.0, -1.0, false);
+            loopInteraction_.setLoopRange(-1.0, -1.0, false);
         }
     }
 
@@ -301,7 +301,7 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
     // Complete loop marker interaction
     if (loopInteraction_.mouseUp(event.x, event.y)) {
         if (onLoopDragEnded)
-            onLoopDragEnded(loopInteraction_.getStartTime(), loopInteraction_.getEndTime());
+            onLoopDragEnded(loopInteraction_.getStartPosition(), loopInteraction_.getEndPosition());
         return;
     }
 
@@ -973,15 +973,15 @@ double TimeRuler::snapTimeToGrid(double time) const {
 
 void TimeRuler::initLoopInteraction() {
     LoopMarkerInteraction::Host host;
-    host.pixelToTime = [this](int pixel) { return pixelToTime(pixel); };
-    host.timeToPixel = [this](double time) { return timeToPixel(time); };
-    host.snapToGrid = [this](double time) -> double { return snapTimeToGrid(time); };
+    host.pixelToPosition = [this](int pixel) { return pixelToTime(pixel); };
+    host.positionToPixel = [this](double time) { return timeToPixel(time); };
+    host.snapPosition = [this](double time) -> double { return snapTimeToGrid(time); };
     host.onLoopChanged = [this](double start, double end) {
         if (onLoopRegionChanged)
             onLoopRegionChanged(start, end);
     };
     host.onRepaint = [this]() { repaint(); };
-    host.maxTime = timelineLength;
+    host.maxPosition = timelineLength;
     host.topBorderY = getHeight() - tickHeightMajor() - LOOP_STRIP_HEIGHT;
     host.topBorderThreshold = LOOP_STRIP_HEIGHT;
     loopInteraction_.setHost(std::move(host));

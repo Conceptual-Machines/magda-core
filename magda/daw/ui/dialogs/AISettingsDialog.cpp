@@ -1433,7 +1433,9 @@ AISettingsDialog::AISettingsDialog() {
     cloudPage_ = std::make_unique<CloudPage>();
     localPage_ = std::make_unique<LocalPage>();
     configPage_ = std::make_unique<ConfigPage>();
-    samplePage_ = std::make_unique<SampleTaggerPage>();
+    if constexpr (magda::media::clapBackendAvailable()) {
+        samplePage_ = std::make_unique<SampleTaggerPage>();
+    }
 
     // Wire config page to sibling pages
     configPage_->cloudPage = cloudPage_.get();
@@ -1443,7 +1445,9 @@ AISettingsDialog::AISettingsDialog() {
     tabbedComponent_.addTab("Cloud", tabBg, cloudPage_.get(), false);
     tabbedComponent_.addTab("Local", tabBg, localPage_.get(), false);
     tabbedComponent_.addTab("Config", tabBg, configPage_.get(), false);
-    tabbedComponent_.addTab("Sample Analyzer", tabBg, samplePage_.get(), false);
+    if (samplePage_) {
+        tabbedComponent_.addTab("Sample Analyzer", tabBg, samplePage_.get(), false);
+    }
 
     // Refresh config combos when switching to Config tab
     tabbedComponent_.onTabChanged = [this](int tabIndex) {
@@ -1496,7 +1500,9 @@ void AISettingsDialog::loadSettings() {
     cloudPage_->load(config);
     localPage_->load(config);
     configPage_->load(config);
-    samplePage_->load(config);
+    if (samplePage_) {
+        samplePage_->load(config);
+    }
 }
 
 void AISettingsDialog::applySettings() {
@@ -1504,7 +1510,9 @@ void AISettingsDialog::applySettings() {
     cloudPage_->apply(config);
     localPage_->apply(config);
     configPage_->apply(config);
-    samplePage_->apply(config);
+    if (samplePage_) {
+        samplePage_->apply(config);
+    }
     config.save();
 }
 

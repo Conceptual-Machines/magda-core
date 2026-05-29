@@ -76,7 +76,7 @@ void TimelineController::removeAudioEngineListener(AudioEngineListener* listener
 // ===== Zoom Event Handlers =====
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomEvent& e) {
-    double newZoom = clampZoom(e.zoom);
+    double newZoom = clampZoom(e.pixelsPerBeat);
     if (newZoom == state.zoom.horizontalZoom) {
         return ChangeFlags::None;
     }
@@ -89,7 +89,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomEve
 
 TimelineController::ChangeFlags TimelineController::handleEvent(
     const SetZoomCenteredBeatsEvent& e) {
-    double newZoom = clampZoom(e.zoom);
+    double newZoom = clampZoom(e.pixelsPerBeat);
 
     int viewportCenter = state.zoom.viewportWidth / 2;
     int timeContentX =
@@ -104,12 +104,13 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomCenteredEvent& e) {
-    return handleEvent(SetZoomCenteredBeatsEvent{e.zoom, state.secondsToBeats(e.centerTime)});
+    return handleEvent(
+        SetZoomCenteredBeatsEvent{e.pixelsPerBeat, state.secondsToBeats(e.centerTime)});
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(
     const SetZoomAnchoredBeatsEvent& e) {
-    double newZoom = clampZoom(e.zoom);
+    double newZoom = clampZoom(e.pixelsPerBeat);
 
     int anchorPixelPos =
         static_cast<int>(e.anchorBeats * newZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
@@ -123,8 +124,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomAnchoredEvent& e) {
-    return handleEvent(
-        SetZoomAnchoredBeatsEvent{e.zoom, state.secondsToBeats(e.anchorTime), e.anchorScreenX});
+    return handleEvent(SetZoomAnchoredBeatsEvent{
+        e.pixelsPerBeat, state.secondsToBeats(e.anchorTime), e.anchorScreenX});
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const ZoomToFitBeatsEvent& e) {

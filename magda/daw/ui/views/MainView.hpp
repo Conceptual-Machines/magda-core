@@ -169,7 +169,7 @@ class MainView : public juce::Component,
 
     // Cached state from controller for quick access
     // These are updated when TimelineStateListener callbacks are called
-    double horizontalZoom = 1.0;  // Pixels per second
+    double horizontalZoom = 1.0;  // Pixels per beat
     double verticalZoom = 1.0;    // Track height multiplier
     double timelineLength = 0.0;  // Total timeline length in seconds
     double playheadPosition = 0.0;

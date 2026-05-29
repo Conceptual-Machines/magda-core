@@ -50,7 +50,8 @@ magda::ChainNodePath resolveTargetDevicePath(const magda::ChainNodePath& parentP
     magda::ChainNodePath resolved;
     if (parentPath.isTrackLevel) {
         if (const auto* track = tm.getTrack(parentPath.trackId)) {
-            if (findDevicePathInElements(track->chainElements, parentPath, deviceId, resolved))
+            if (findDevicePathInElements(track->chain.fxChainElements, parentPath, deviceId,
+                                         resolved))
                 return resolved;
         }
     } else if (parentPath.getType() == magda::ChainNodeType::Rack) {
@@ -304,7 +305,8 @@ void ModKnobComponent::showContextMenu() {
 
     bool isEnabled = currentMod_.enabled;
     menu.addItem(kRenameId, "Rename");
-    menu.addItem(kShowAutomationLaneId, "Show Automation Lane");
+    if (!parentPath_.isPostFx())
+        menu.addItem(kShowAutomationLaneId, "Show Automation Lane");
     menu.addItem(kToggleEnabledId, isEnabled ? "Disable" : "Enable");
 
     menu.addSeparator();
@@ -358,13 +360,13 @@ void ModKnobComponent::showContextMenu() {
 
         juce::PopupMenu deviceMenu;
         auto it = deviceParamNames_.find(deviceId);
-        int paramCount = (it != deviceParamNames_.end()) ? static_cast<int>(it->second.size()) : 16;
+        if (it == deviceParamNames_.end())
+            continue;
 
-        for (int paramIdx = 0; paramIdx < paramCount; ++paramIdx) {
-            juce::String paramName =
-                (it != deviceParamNames_.end() && paramIdx < static_cast<int>(it->second.size()))
-                    ? it->second[static_cast<size_t>(paramIdx)]
-                    : "Parameter " + juce::String(paramIdx + 1);
+        for (int paramIdx = 0; paramIdx < static_cast<int>(it->second.size()); ++paramIdx) {
+            juce::String paramName = it->second[static_cast<size_t>(paramIdx)];
+            if (paramName.isEmpty())
+                continue;
 
             magda::ControlTarget t;
             t.devicePath = resolveTargetDevicePath(parentPath_, deviceId);
@@ -392,9 +394,9 @@ void ModKnobComponent::showContextMenu() {
             if (it != deviceParamNames_.end() && link.target.paramIndex >= 0 &&
                 link.target.paramIndex < static_cast<int>(it->second.size())) {
                 paramName = it->second[static_cast<size_t>(link.target.paramIndex)];
-            } else {
-                paramName = "P" + juce::String(link.target.paramIndex + 1);
             }
+            if (paramName.isEmpty())
+                paramName = "Unresolved parameter";
             for (const auto& [devId, devName] : availableTargets_) {
                 if (devId == link.target.deviceId()) {
                     paramName = devName + " - " + paramName;
@@ -457,6 +459,9 @@ void ModKnobComponent::showContextMenu() {
             return;
         }
         if (result == kShowAutomationLaneId) {
+            if (parentPath.isPostFx())
+                return;
+
             auto target = magda::ControlTarget::modParam(parentPath, modId,
                                                          /*modParamIndex=*/0);
             auto& mgr = magda::AutomationManager::getInstance();
@@ -532,8 +537,11 @@ void ModKnobComponent::showContextMenu() {
                 continue;
 
             auto it = paramNames.find(deviceId);
-            int paramCount = (it != paramNames.end()) ? static_cast<int>(it->second.size()) : 16;
-            for (int paramIdx = 0; paramIdx < paramCount; ++paramIdx) {
+            if (it == paramNames.end())
+                continue;
+            for (int paramIdx = 0; paramIdx < static_cast<int>(it->second.size()); ++paramIdx) {
+                if (it->second[static_cast<size_t>(paramIdx)].isEmpty())
+                    continue;
                 if (itemId == result) {
                     magda::ControlTarget t;
                     t.devicePath = resolveTargetDevicePath(parentPath, deviceId);
