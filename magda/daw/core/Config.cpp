@@ -84,6 +84,7 @@ void Config::save() {
 
     // UI / behaviour
     root->setProperty("scrollbarOnLeft", scrollbarOnLeft);
+    root->setProperty("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
     root->setProperty("uiScale", uiScale);
     root->setProperty("uiFontScale", uiFontScale);
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
@@ -387,6 +388,8 @@ void Config::load() {
 
     language = getString("language", language);
     scrollbarOnLeft = getBool("scrollbarOnLeft", scrollbarOnLeft);
+    arrangementScrollbarsAutoHide =
+        getBool("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
     uiScale = getDouble("uiScale", uiScale);
     setUIFontScale(getDouble("uiFontScale", uiFontScale));
     confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
