@@ -754,12 +754,13 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     SideColumn zoomColumn(result.swapped);
 
     const int fullVerticalScrollbarWidth = ARRANGEMENT_SCROLLBAR_SIZE + 2;
-    // Interpolate reserved width with the fade progress so the header column
-    // slides smoothly in/out with the scrollbar (avoids a layout snap when the
-    // scrollbar shares an edge with the track headers).
+    // Interpolate reserved width/height with the fade progress so the column
+    // (header) and row (master) slide smoothly in/out with the scrollbar
+    // instead of snapping when the reservation toggles.
     const int verticalScrollbarWidth = juce::roundToInt(
         juce::jlimit(0.0f, 1.0f, verticalScrollbarRevealProgress) * fullVerticalScrollbarWidth);
-    const int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
+    const int horizontalScrollbarHeight = juce::roundToInt(
+        juce::jlimit(0.0f, 1.0f, horizontalScrollbarRevealProgress) * ARRANGEMENT_SCROLLBAR_SIZE);
 
     {
         auto hitBounds = bounds;
@@ -771,7 +772,8 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
 
     {
         auto hitBounds = bounds;
-        result.horizontalScrollBarHitArea = hitBounds.removeFromBottom(ARRANGEMENT_SCROLLBAR_SIZE);
+        result.horizontalScrollBarHitArea =
+            hitBounds.removeFromBottom(ARRANGEMENT_SCROLLBAR_HIT_EDGE);
         headerColumn.removeSpacing(result.horizontalScrollBarHitArea,
                                    trackHeaderWidth + layout.componentSpacing);
     }
@@ -1763,9 +1765,12 @@ juce::Rectangle<int> MainView::getMasterResizeHandleArea() const {
         return {};
     }
 
-    // Position the resize handle in the gap between track content and master strip
+    // Position the resize handle in the gap between track content and master strip.
+    // Horizontal scrollbar height is interpolated with its fade progress, so the
+    // handle follows the master strip as it slides during the reveal/hide.
     int effectiveAuxHeight = auxVisible_ ? auxSectionHeight : 0;
-    int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
+    int horizontalScrollbarHeight = juce::roundToInt(
+        juce::jlimit(0.0f, 1.0f, horizontalScrollbarRevealProgress) * ARRANGEMENT_SCROLLBAR_SIZE);
     int resizeHandleY = getHeight() - horizontalScrollbarHeight - masterStripHeight -
                         MASTER_RESIZE_HANDLE_HEIGHT - effectiveAuxHeight;
     return juce::Rectangle<int>(0, resizeHandleY, getWidth(), MASTER_RESIZE_HANDLE_HEIGHT);
