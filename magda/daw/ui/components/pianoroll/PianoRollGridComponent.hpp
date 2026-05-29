@@ -32,6 +32,7 @@ class PianoRollGridComponent : public juce::Component,
                                public juce::DragAndDropTarget,
                                public juce::FileDragAndDropTarget,
                                public juce::Timer,
+                               public juce::ApplicationCommandTarget,
                                public ClipManagerListener,
                                public NoteGridHost {
   public:
@@ -56,6 +57,14 @@ class PianoRollGridComponent : public juce::Component,
 
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
+
+    // ApplicationCommandTarget: context-scoped commands (#25). When the grid is
+    // focused these win over the global handlers; getNextCommandTarget() chains
+    // back to the global target so non-piano-roll commands still fall through.
+    juce::ApplicationCommandTarget* getNextCommandTarget() override;
+    void getAllCommands(juce::Array<juce::CommandID>& commands) override;
+    void getCommandInfo(juce::CommandID commandID, juce::ApplicationCommandInfo& result) override;
+    bool perform(const InvocationInfo& info) override;
 
     // Set the clip(s) to display/edit
     void setClip(ClipId clipId);  // Single clip (backward compatibility)
