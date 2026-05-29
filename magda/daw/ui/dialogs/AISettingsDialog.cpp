@@ -153,6 +153,14 @@ class AISettingsDialog::CloudPage : public juce::Component {
         addBtn_.onClick = [this]() { addCurrentProvider(); };
         addAndMakeVisible(addBtn_);
 
+        // Ollama-only: optional API key (for OpenAI-compat servers like GPUStack)
+        ollamaKeyLabel_.setText("API Key", juce::dontSendNotification);
+        styleLabel(ollamaKeyLabel_);
+        addChildComponent(ollamaKeyLabel_);
+
+        styleEditor(ollamaKeyEditor_, "Optional (leave blank for Ollama)", true);
+        addChildComponent(ollamaKeyEditor_);
+
         // Ollama-only: Model picker row (label + combo + Refresh)
         modelLabel_.setText("Model", juce::dontSendNotification);
         styleLabel(modelLabel_);
@@ -196,6 +204,14 @@ class AISettingsDialog::CloudPage : public juce::Component {
         row.removeFromRight(4);
         keyEditor_.setBounds(row.reduced(0, 1));
         bounds.removeFromTop(2);
+
+        // Optional API key row — visible only for Ollama
+        if (ollamaKeyEditor_.isVisible()) {
+            auto keyRow = bounds.removeFromTop(rowH);
+            ollamaKeyLabel_.setBounds(keyRow.removeFromLeft(labelW));
+            ollamaKeyEditor_.setBounds(keyRow.reduced(0, 2));
+            bounds.removeFromTop(2);
+        }
 
         // Model picker row — visible only for Ollama
         if (modelCombo_.isVisible()) {
@@ -276,6 +292,8 @@ class AISettingsDialog::CloudPage : public juce::Component {
             modelCombo_.addItem(savedModel, 1);
             modelCombo_.setSelectedId(1, juce::dontSendNotification);
         }
+        ollamaKeyEditor_.setText(juce::String(config.getOllamaApiKey()),
+                                  juce::dontSendNotification);
 
         updateProviderComboState();
         resized();
@@ -289,6 +307,14 @@ class AISettingsDialog::CloudPage : public juce::Component {
         // Write stored credentials
         for (const auto& [id, key] : credentials_)
             config.setAICredential(id, key.toStdString());
+
+        // Always persist the current Ollama model + optional key from the
+        // form fields. Clicking OK is enough — no need to Add first, and
+        // changing the picked model later (then OK) is honoured.
+        if (modelCombo_.isVisible())
+            config.setOllamaModel(modelCombo_.getText().toStdString());
+        if (ollamaKeyEditor_.isVisible())
+            config.setOllamaApiKey(ollamaKeyEditor_.getText().trim().toStdString());
     }
 
     /** Return list of configured provider IDs (those with non-empty keys). */
@@ -335,59 +361,103 @@ class AISettingsDialog::CloudPage : public juce::Component {
             DarkTheme::getColour(DarkTheme::TEXT_DIM));
         keyEditor_.repaint();
 
-        // Model picker only makes sense for Ollama
+        // Optional key + model picker only make sense for Ollama-style providers
+        ollamaKeyLabel_.setVisible(isUrl);
+        ollamaKeyEditor_.setVisible(isUrl);
         modelLabel_.setVisible(isUrl);
         modelCombo_.setVisible(isUrl);
         refreshModelsBtn_.setVisible(isUrl);
+
+        // When Ollama is reselected, prefill all three fields from saved state
+        // so the user can edit the URL / key / model and re-Add to update.
+        if (isUrl) {
+            auto savedUrl = credentials_.count(id) ? credentials_[id] : juce::String();
+            if (savedUrl.isEmpty())
+                savedUrl = juce::String(Config::getInstance().getAICredential(id));
+            keyEditor_.setText(savedUrl, juce::dontSendNotification);
+
+            ollamaKeyEditor_.setText(juce::String(Config::getInstance().getOllamaApiKey()),
+                                      juce::dontSendNotification);
+
+            auto savedModel = juce::String(Config::getInstance().getOllamaModel());
+            if (savedModel.isNotEmpty()) {
+                bool present = false;
+                for (int i = 0; i < modelCombo_.getNumItems(); ++i)
+                    if (modelCombo_.getItemText(i) == savedModel) {
+                        modelCombo_.setSelectedId(modelCombo_.getItemId(i),
+                                                  juce::dontSendNotification);
+                        present = true;
+                        break;
+                    }
+                if (!present) {
+                    int newId = modelCombo_.getNumItems() + 1;
+                    modelCombo_.addItem(savedModel, newId);
+                    modelCombo_.setSelectedId(newId, juce::dontSendNotification);
+                }
+            }
+        }
         resized();
     }
 
-    /** Fetch /api/tags from the entered URL on a background thread and
-        populate modelCombo_ with the returned model names. */
+    /** Probe an OpenAI-compatible /v1/models endpoint on a background thread
+        and populate modelCombo_ with the returned model IDs. Works for both
+        Ollama (no key) and OpenAI-compat local servers (e.g. GPUStack) that
+        require a bearer token. */
     void refreshOllamaModels() {
         auto baseUrl = keyEditor_.getText().trim();
         if (baseUrl.isEmpty())
             baseUrl = juce::String(magda::DEFAULT_OLLAMA_BASE_URL);
-        // /api/tags is at the server root, not under /v1
-        auto root = baseUrl;
-        if (root.endsWith("/v1"))
-            root = root.dropLastCharacters(3);
-        if (root.endsWithChar('/'))
-            root = root.dropLastCharacters(1);
-        auto tagsUrl = root + "/api/tags";
+        // OpenAI-compat endpoint is at <baseUrl>/models when baseUrl ends in /v1
+        auto trimmed = baseUrl;
+        if (trimmed.endsWithChar('/'))
+            trimmed = trimmed.dropLastCharacters(1);
+        auto modelsUrl =
+            trimmed.endsWith("/v1") ? (trimmed + "/models") : (trimmed + "/v1/models");
+        auto apiKey = ollamaKeyEditor_.getText().trim();
 
         refreshModelsBtn_.setEnabled(false);
-        statusLabel_.setText("Fetching models...", juce::dontSendNotification);
+        testBtn_.setEnabled(false);
+        statusLabel_.setText("Probing endpoint...", juce::dontSendNotification);
         statusLabel_.setColour(juce::Label::textColourId,
                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
 
         auto safeThis = juce::Component::SafePointer<CloudPage>(this);
-        juce::Thread::launch([safeThis, tagsUrl]() {
-            juce::URL url(tagsUrl);
+        juce::Thread::launch([safeThis, modelsUrl, apiKey]() {
+            juce::URL url(modelsUrl);
             juce::String body;
             bool ok = false;
             juce::StringArray names;
+            juce::String extraHeaders;
+            if (apiKey.isNotEmpty())
+                extraHeaders = "Authorization: Bearer " + apiKey + "\r\n";
+            int statusCode = 0;
             auto stream = url.createInputStream(
                 juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-                    .withConnectionTimeoutMs(4000));
+                    .withConnectionTimeoutMs(4000)
+                    .withExtraHeaders(extraHeaders)
+                    .withStatusCode(&statusCode));
             if (stream != nullptr) {
                 body = stream->readEntireStreamAsString();
                 auto json = juce::JSON::parse(body);
-                if (auto* arr = json["models"].getArray()) {
+                // OpenAI format: {"data": [{"id": "...", ...}, ...]}
+                if (auto* arr = json["data"].getArray()) {
                     for (const auto& m : *arr) {
-                        auto n = m["name"].toString();
+                        auto n = m["id"].toString();
                         if (n.isNotEmpty())
                             names.add(n);
                     }
                     ok = true;
                 }
             }
-            juce::MessageManager::callAsync([safeThis, ok, names, body]() {
+            juce::MessageManager::callAsync([safeThis, ok, names, body, statusCode]() {
                 if (!safeThis)
                     return;
                 safeThis->refreshModelsBtn_.setEnabled(true);
+                safeThis->testBtn_.setEnabled(true);
                 if (!ok) {
-                    safeThis->statusLabel_.setText("Could not reach " + body.substring(0, 80),
+                    auto detail = statusCode > 0 ? "HTTP " + juce::String(statusCode) + ": "
+                                                 : juce::String("Connection failed: ");
+                    safeThis->statusLabel_.setText(detail + body.substring(0, 80),
                                                     juce::dontSendNotification);
                     safeThis->statusLabel_.setColour(juce::Label::textColourId,
                                                      juce::Colours::orange);
@@ -441,10 +511,11 @@ class AISettingsDialog::CloudPage : public juce::Component {
         // Store credential
         credentials_[providerId] = key;
 
-        // For Ollama, also persist the picked model (empty = keep preset defaults)
+        // For Ollama, also persist the picked model + optional API key
         if (isUrlProvider(providerId)) {
             auto picked = modelCombo_.getText();
             Config::getInstance().setOllamaModel(picked.toStdString());
+            Config::getInstance().setOllamaApiKey(ollamaKeyEditor_.getText().trim().toStdString());
         }
 
         // Check if already in list, update; otherwise add
@@ -542,8 +613,11 @@ class AISettingsDialog::CloudPage : public juce::Component {
     void updateProviderComboState() {
         const auto& providers = getKnownProviders();
         for (int i = 0; i < static_cast<int>(providers.size()); ++i) {
-            bool registered = credentials_.count(providers[static_cast<size_t>(i)].id) > 0;
-            providerCombo_.setItemEnabled(i + 1, !registered);
+            const auto& p = providers[static_cast<size_t>(i)];
+            bool registered = credentials_.count(p.id) > 0;
+            // URL providers (Ollama) stay selectable so the user can revisit
+            // and change the picked model / optional API key after adding.
+            providerCombo_.setItemEnabled(i + 1, !registered || isUrlProvider(p.id));
         }
 
         // If current selection is disabled, select the first enabled one
@@ -560,12 +634,16 @@ class AISettingsDialog::CloudPage : public juce::Component {
 
     void testKey() {
         auto providerId = getSelectedProviderId();
+
+        // For Ollama-style providers, "Test" probes /v1/models — same logic
+        // as Refresh. Doesn't require a model to be picked, and validates
+        // both the URL and the optional API key in one call.
+        if (isUrlProvider(providerId)) {
+            refreshOllamaModels();
+            return;
+        }
+
         auto key = keyEditor_.getText().trim();
-
-        // For URL providers, blank means "use default URL"
-        if (isUrlProvider(providerId) && key.isEmpty())
-            key = juce::String(magda::DEFAULT_OLLAMA_BASE_URL);
-
         if (providerId.empty() || key.isEmpty()) {
             statusLabel_.setText("Enter an API key first", juce::dontSendNotification);
             statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
@@ -584,22 +662,13 @@ class AISettingsDialog::CloudPage : public juce::Component {
         auto testProvider = std::string(info->testProvider);
         auto testBaseUrl = std::string(info->testBaseUrl);
         auto testModel = std::string(info->testModel);
-        bool urlMode = isUrlProvider(providerId);
-        // Prefer the user-picked model from the Model combo, if any
-        if (urlMode) {
-            auto picked = modelCombo_.getText().toStdString();
-            if (!picked.empty())
-                testModel = picked;
-        }
         auto safeThis = juce::Component::SafePointer<CloudPage>(this);
 
-        juce::Thread::launch([safeThis, key, testProvider, testBaseUrl, testModel, urlMode]() {
+        juce::Thread::launch([safeThis, key, testProvider, testBaseUrl, testModel]() {
             Config::AgentLLMConfig cfg;
             cfg.provider = testProvider;
-            // For URL providers the typed value IS the base URL; the apiKey
-            // path is handled inside toLLMProviderConfig (placeholder bearer).
-            cfg.baseUrl = urlMode ? key.toStdString() : testBaseUrl;
-            cfg.apiKey = urlMode ? std::string{} : key.toStdString();
+            cfg.baseUrl = testBaseUrl;
+            cfg.apiKey = key.toStdString();
             cfg.model = testModel;
 
             auto pc = toLLMProviderConfig(cfg);
@@ -639,7 +708,9 @@ class AISettingsDialog::CloudPage : public juce::Component {
     juce::TextButton testBtn_, addBtn_;
     juce::Label statusLabel_;
 
-    // Ollama-only model picker (hidden for other providers)
+    // Ollama-only optional API key + model picker (hidden for other providers)
+    juce::Label ollamaKeyLabel_;
+    juce::TextEditor ollamaKeyEditor_;
     juce::Label modelLabel_;
     juce::ComboBox modelCombo_;
     juce::TextButton refreshModelsBtn_;
@@ -1181,10 +1252,19 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             config.setAIPreset(presetId);
 
             auto* preset = magda::findPreset(presetId);
+            // For the Ollama preset, override the preset's hardcoded per-role
+            // models with the user's picked model (if any) so every consumer
+            // of agent.model — including the chat status bar — shows the
+            // real model being used.
+            auto ollamaModelOverride = (presetId == magda::preset::LOCAL_OLLAMA)
+                                           ? config.getOllamaModel()
+                                           : std::string{};
             if (preset) {
                 for (const auto& [role, presetCfg] : preset->agents) {
                     auto cfg = presetCfg;
                     cfg.apiKey = "";
+                    if (!ollamaModelOverride.empty())
+                        cfg.model = ollamaModelOverride;
                     config.setAgentLLMConfig(role, cfg);
                 }
             }

@@ -60,12 +60,25 @@ inline llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& con
             if (!urlOverride.empty())
                 pc.baseUrl = juce::String(urlOverride);
         }
+        // Normalise: the OpenAI-Chat client appends "/chat/completions"
+        // verbatim. Accept both http://host:port and http://host:port/v1
+        // from the user, always send to http://host:port/v1/chat/completions.
+        if (pc.baseUrl.endsWithChar('/'))
+            pc.baseUrl = pc.baseUrl.dropLastCharacters(1);
+        if (!pc.baseUrl.endsWith("/v1"))
+            pc.baseUrl += "/v1";
         // User-picked model override (set from the Cloud tab Model dropdown)
         auto modelOverride = Config::getInstance().getOllamaModel();
         if (!modelOverride.empty())
             pc.model = juce::String(modelOverride);
-        if (pc.apiKey.isEmpty())
-            pc.apiKey = "ollama";  // placeholder; Ollama ignores bearer tokens
+        if (pc.apiKey.isEmpty()) {
+            // OpenAI-compat servers like GPUStack require a real key; vanilla
+            // Ollama doesn't care. Use the user-supplied key when set,
+            // otherwise a harmless placeholder so the Authorization header
+            // is well-formed.
+            auto k = Config::getInstance().getOllamaApiKey();
+            pc.apiKey = k.empty() ? juce::String("ollama") : juce::String(k);
+        }
         pc.userAgent = juce::String("MAGDA/") + MAGDA_VERSION;
         if (!agentName.empty())
             pc.userAgent += " (" + juce::String(agentName) + ")";

@@ -535,6 +535,15 @@ class Config {
         ollamaModel = m;
     }
 
+    // Optional API key for OpenAI-compatible local servers (e.g. GPUStack).
+    // Empty for vanilla Ollama, which ignores the Authorization header.
+    std::string getOllamaApiKey() const {
+        return ollamaApiKey;
+    }
+    void setOllamaApiKey(const std::string& k) {
+        ollamaApiKey = k;
+    }
+
     // Local llama-server managed process settings
     std::string getLocalModelPath() const {
         return localModelPath;
@@ -966,6 +975,7 @@ class Config {
     std::map<std::string, std::string> aiCredentials;  // provider → API key
     std::string localLlamaUrl = "http://127.0.0.1:8080/v1";
     std::string ollamaModel;  // user-selected Ollama model; empty = use preset defaults
+    std::string ollamaApiKey;  // optional bearer token for OpenAI-compat local servers
     std::string localModelPath;
     std::string localLlamaBinary;  // empty = search PATH
     int localLlamaPort = 8080;
