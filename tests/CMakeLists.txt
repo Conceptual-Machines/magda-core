@@ -88,6 +88,8 @@ set(TEST_SOURCES
     test_controller_router.cpp
     # Gesture router tests (epic:command-registry -- #21)
     test_gesture_router.cpp
+    # Key mapping persistence tests (epic:command-registry -- #20)
+    test_key_mapping_store.cpp
     # MIDI device identifier matcher tests (issue #1050)
     test_midi_device_match.cpp
     # MIDI Learn session tests (issue #924)

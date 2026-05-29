@@ -19,6 +19,7 @@
 #include "../panels/LeftPanel.hpp"
 #include "../panels/RightPanel.hpp"
 #include "../panels/TransportPanel.hpp"
+#include "../state/KeyMappingStore.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
@@ -376,6 +377,15 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // registered shortcuts (Cmd+Z, Cmd+Shift+Z, etc.) are handled
     // globally when key events bubble up to this top-level component.
     addKeyListener(commandManager.getKeyMappings());
+
+    // Now that the commands (and their default keys) are registered, load any
+    // user shortcut remaps and keep them persisted on change (#20).
+    keyMappingStore_ = std::make_unique<KeyMappingStore>(commandManager);
+    keyMappingStore_->restore();
+
+    // Let the menu bar render its shortcut hints from these (live) mappings
+    // instead of hardcoded per-platform strings (#1352).
+    MenuManager::getInstance().setCommandManager(&commandManager);
 
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
@@ -1017,6 +1027,9 @@ void MainWindow::MainComponent::setupDeviceLoadingCallback() {
 
 MainWindow::MainComponent::~MainComponent() {
     DBG("    [5d] MainComponent::~MainComponent start");
+
+    // Drop the menu bar's reference to our command manager before it dies.
+    MenuManager::getInstance().setCommandManager(nullptr);
 
     // Save panel collapse state and sizes to Config for persistence
     auto& config = Config::getInstance();

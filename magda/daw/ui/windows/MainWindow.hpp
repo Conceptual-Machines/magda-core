@@ -32,6 +32,7 @@ class FooterBar;
 class AudioEngine;
 class QwertyMidiKeyboard;
 class PlaybackPositionTimer;
+class KeyMappingStore;
 
 class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
   public:
@@ -164,6 +165,10 @@ class MainWindow::MainComponent : public juce::Component,
   private:
     // Command manager for keyboard shortcuts and menu commands
     juce::ApplicationCommandManager commandManager;
+
+    // Persists user keyboard-shortcut remaps (#20). Created after the commands
+    // are registered; loads saved overrides and re-saves on any change.
+    std::unique_ptr<KeyMappingStore> keyMappingStore_;
 
     // Current view mode
     ViewMode currentViewMode = ViewMode::Arrange;

@@ -98,6 +98,14 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
     // Set up the menu bar
     void initialize(const MenuCallbacks& callbacks);
 
+    // Source of truth for menu shortcut hints (#1352). When set, menu items
+    // render the command's current key from the mapping set instead of a
+    // hardcoded per-platform string, so remaps (#20) stay in sync. Owned by
+    // MainComponent; cleared (nullptr) on its destruction.
+    void setCommandManager(juce::ApplicationCommandManager* commandManager) {
+        commandManager_ = commandManager;
+    }
+
     // Update menu item states
     void updateMenuStates(bool canUndo, bool canRedo, bool hasSelection, bool hasEditCursor,
                           bool leftPanelVisible, bool rightPanelVisible, bool bottomPanelVisible,
@@ -126,6 +134,12 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
     juce::StringArray getMenuBarNames() override;
     juce::PopupMenu getMenuForIndex(int topLevelMenuIndex, const juce::String& menuName) override;
     void menuItemSelected(int menuItemID, int topLevelMenuIndex) override;
+
+    // Tab-prefixed shortcut hint for a command's current key (platform-correct
+    // via getTextDescriptionWithIcons), or "" if unbound / no command manager.
+    juce::String keyHint(juce::CommandID commandID) const;
+
+    juce::ApplicationCommandManager* commandManager_ = nullptr;
 
     // Menu IDs
     enum MenuIDs {
