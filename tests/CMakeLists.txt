@@ -86,6 +86,8 @@ set(TEST_SOURCES
     test_binding_registry.cpp
     # Controller router tests (issue #1050 -- Phase C)
     test_controller_router.cpp
+    # Gesture router tests (epic:command-registry -- #21)
+    test_gesture_router.cpp
     # MIDI device identifier matcher tests (issue #1050)
     test_midi_device_match.cpp
     # MIDI Learn session tests (issue #924)

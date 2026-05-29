@@ -842,6 +842,28 @@ class Config {
         globalBindings_ = b;
     }
 
+    // User keyboard-shortcut overrides (serialized to/from config.json
+    // "keyboardBindings" key). Opaque blob: a string holding the XML produced
+    // by juce::KeyPressMappingSet::createXml(); empty/void means "use the
+    // code-defined defaults". Owned by the command registry (see #20).
+    juce::var getKeyboardBindings() const {
+        return keyboardBindings_;
+    }
+    void setKeyboardBindings(const juce::var& b) {
+        keyboardBindings_ = b;
+    }
+
+    // User mouse-gesture overrides (serialized to/from config.json
+    // "gestureBindings" key). Opaque blob owned by GestureRouter (see #21):
+    // GestureRouter::toVar() produces it, loadFromVar() restores it. Void
+    // means "use the code-defined defaults".
+    juce::var getGestureBindings() const {
+        return gestureBindings_;
+    }
+    void setGestureBindings(const juce::var& b) {
+        gestureBindings_ = b;
+    }
+
     // MIDI Learn default scope ("project" or "global"; default is Project).
     // Stored in config.json under "midiLearn" -> "defaultScope".
     // Returns 0 for Global, 1 for Project (mirrors BindingScope enum order).
@@ -1076,6 +1098,14 @@ class Config {
 
     // Global bindings (opaque JSON blob, managed by BindingRegistry)
     juce::var globalBindings_;
+
+    // User keyboard-shortcut overrides (opaque KeyPressMappingSet XML string,
+    // managed by the command registry; see #20)
+    juce::var keyboardBindings_;
+
+    // User mouse-gesture overrides (opaque JSON blob, managed by GestureRouter;
+    // see #21)
+    juce::var gestureBindings_;
 };
 
 }  // namespace magda

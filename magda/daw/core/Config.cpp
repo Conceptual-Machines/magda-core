@@ -255,6 +255,12 @@ void Config::save() {
     if (!globalBindings_.isVoid())
         root->setProperty("globalBindings", globalBindings_);
 
+    // Keyboard-shortcut overrides (#20) and mouse-gesture overrides (#21)
+    if (!keyboardBindings_.isVoid())
+        root->setProperty("keyboardBindings", keyboardBindings_);
+    if (!gestureBindings_.isVoid())
+        root->setProperty("gestureBindings", gestureBindings_);
+
     // MIDI Learn settings
     {
         auto* mlObj = new juce::DynamicObject();
@@ -636,6 +642,12 @@ void Config::load() {
     // Global bindings
     if (obj->hasProperty("globalBindings"))
         globalBindings_ = obj->getProperty("globalBindings");
+
+    // Keyboard-shortcut overrides (#20) and mouse-gesture overrides (#21)
+    if (obj->hasProperty("keyboardBindings"))
+        keyboardBindings_ = obj->getProperty("keyboardBindings");
+    if (obj->hasProperty("gestureBindings"))
+        gestureBindings_ = obj->getProperty("gestureBindings");
 
     // MIDI Learn settings
     if (obj->hasProperty("midiLearn")) {
