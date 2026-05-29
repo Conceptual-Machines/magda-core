@@ -71,6 +71,34 @@ TEST_CASE("GestureRouter: arrangement default bindings", "[gesture]") {
     }
 }
 
+TEST_CASE("GestureRouter: editor context defaults (#1350)", "[gesture]") {
+    auto& router = GestureRouter::getInstance();
+    router.resetToDefaults();
+
+    const juce::ModifierKeys alt(juce::ModifierKeys::altModifier);
+    const juce::ModifierKeys cmd(juce::ModifierKeys::commandModifier);
+
+    SECTION("piano roll / drum grid: Alt+wheel zooms vertically, plain wheel is unbound") {
+        REQUIRE(router.resolve(GestureContext::PianoRoll, wheel(0.0f, 0.2f), alt, kAnchor).type ==
+                GestureActionType::ZoomVertical);
+        REQUIRE(router
+                    .resolve(GestureContext::PianoRoll, wheel(0.0f, 0.2f), juce::ModifierKeys(),
+                             kAnchor)
+                    .isNone());
+        REQUIRE(router.resolve(GestureContext::DrumGrid, wheel(0.0f, 0.2f), alt, kAnchor).type ==
+                GestureActionType::ZoomVertical);
+        REQUIRE(router.resolve(GestureContext::DrumGrid, wheel(0.0f, 0.2f), cmd, kAnchor).type ==
+                GestureActionType::ZoomHorizontal);
+    }
+
+    SECTION("waveform: plain wheel scrolls horizontally at the editor's sensitivity") {
+        auto g = router.resolve(GestureContext::Waveform, wheel(0.0f, 1.0f), juce::ModifierKeys(),
+                                kAnchor);
+        REQUIRE(g.type == GestureActionType::ScrollHorizontal);
+        REQUIRE(std::abs(g.magnitude) == 800.0f);  // raw delta 1.0 * sensitivity 800
+    }
+}
+
 TEST_CASE("GestureRouter: magnitude sign and reversal", "[gesture]") {
     auto& router = GestureRouter::getInstance();
     router.resetToDefaults();

@@ -17,6 +17,7 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/DrumkitManager.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -704,7 +705,12 @@ class DrumGridClipGrid : public juce::Component,
     }
 
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
-        if (e.mods.isAltDown() && onVerticalZoomRequested) {
+        // Alt+wheel = vertical zoom (via GestureRouter, #1350); the callback
+        // owns the zoom math, the binding only selects the action. A plain
+        // wheel falls through to the viewport for content scroll.
+        const auto gesture = magda::GestureRouter::getInstance().resolve(
+            magda::GestureContext::DrumGrid, wheel, e.mods, e.getPosition());
+        if (gesture.type == magda::GestureActionType::ZoomVertical && onVerticalZoomRequested) {
             onVerticalZoomRequested(e.y, wheel);
             return;
         }
@@ -1767,7 +1773,12 @@ class DrumGridRowLabels : public juce::Component {
     }
 
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
-        if (e.mods.isAltDown() && onVerticalZoomRequested) {
+        // Alt+wheel = vertical zoom (via GestureRouter, #1350); the callback
+        // owns the zoom math, the binding only selects the action. A plain
+        // wheel falls through to the viewport for content scroll.
+        const auto gesture = magda::GestureRouter::getInstance().resolve(
+            magda::GestureContext::DrumGrid, wheel, e.mods, e.getPosition());
+        if (gesture.type == magda::GestureActionType::ZoomVertical && onVerticalZoomRequested) {
             onVerticalZoomRequested(e.y, wheel);
             return;
         }
@@ -2296,8 +2307,14 @@ void DrumGridClipContent::resized() {
 
 void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
                                          const juce::MouseWheelDetails& wheel) {
-    // Cmd/Ctrl + scroll = horizontal zoom (uses shared base method)
-    if (e.mods.isCommandDown()) {
+    // Modifier-driven zoom is resolved through GestureRouter (#1350) so the
+    // bindings are configurable; each branch keeps its own zoom math, and the
+    // positional plain-wheel scrolling below stays in this handler.
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::DrumGrid, wheel, e.mods, e.getPosition());
+
+    // Horizontal (timebase) zoom about the cursor.
+    if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
         double zoomFactor = 1.0 + (wheel.deltaY * 0.1);
         int mouseXInViewport =
             e.x - SIDEBAR_WIDTH - ZOOM_STRIP_WIDTH - labelWidth_ - LABEL_DIVIDER_WIDTH;
@@ -2305,8 +2322,8 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
         return;
     }
 
-    // Alt/Option + scroll = vertical zoom (row height)
-    if (e.mods.isAltDown()) {
+    // Vertical (row height) zoom.
+    if (gesture.type == magda::GestureActionType::ZoomVertical) {
         const int mouseYInContent = e.y - RULER_HEIGHT + viewport_->getViewPositionY();
         const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
                                            mouseYInContent / juce::jmax(1, rowHeight_));

@@ -9,6 +9,7 @@
 #include "PhaseMarker.hpp"
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/ClipManager.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -804,7 +805,13 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
 
 void PianoRollGridComponent::mouseWheelMove(const juce::MouseEvent& e,
                                             const juce::MouseWheelDetails& wheel) {
-    if (e.mods.isAltDown() && onVerticalZoomRequested) {
+    // Alt+wheel = vertical (lane height) zoom, resolved via GestureRouter so the
+    // binding is configurable (#1350). The view's callback keeps its own zoom
+    // magnitude math, so the gesture only selects the action. A plain wheel
+    // falls through to the enclosing viewport for content scroll.
+    const auto gesture = GestureRouter::getInstance().resolve(GestureContext::PianoRoll, wheel,
+                                                              e.mods, e.getPosition());
+    if (gesture.type == GestureActionType::ZoomVertical && onVerticalZoomRequested) {
         onVerticalZoomRequested(e.y, wheel);
         return;
     }

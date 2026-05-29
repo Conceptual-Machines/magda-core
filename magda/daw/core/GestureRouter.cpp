@@ -22,6 +22,9 @@ constexpr float kViewportScrollSensitivity = 14.0f * 16.0f;
 // newZoom = oldZoom * 2^magnitude), so sensitivity is the zoom feel per wheel
 // unit. ~0.5 gives roughly a 7% zoom step per mouse tick.
 constexpr float kZoomSensitivity = 0.5f;
+// Waveform editor horizontal scroll: preserves the editor's original
+// raw-delta * 800 sample step.
+constexpr float kWaveformScrollSensitivity = 800.0f;
 }  // namespace
 
 uint8_t gestureModifierMaskFrom(const juce::ModifierKeys& mods) {
@@ -73,6 +76,25 @@ void GestureRouter::installDefaults() {
                {GestureActionType::ZoomHorizontal, kZoomSensitivity, false});
     setBinding(GestureContext::Arrangement, GestureAxis::Vertical, GestureMod_Alt,
                {GestureActionType::ZoomVertical, kZoomSensitivity, false});
+
+    // Piano roll / drum grid: Alt+wheel zooms the lane height vertically; a
+    // plain wheel falls through to the enclosing viewport for content scroll.
+    // The zoom magnitude is computed by the view's own callback, so the binding
+    // only needs to select the action (sensitivity is unused here).
+    setBinding(GestureContext::PianoRoll, GestureAxis::Vertical, GestureMod_Alt,
+               {GestureActionType::ZoomVertical, kZoomSensitivity, false});
+    setBinding(GestureContext::DrumGrid, GestureAxis::Vertical, GestureMod_Alt,
+               {GestureActionType::ZoomVertical, kZoomSensitivity, false});
+    // Drum grid also zooms the timebase horizontally with Command+wheel.
+    setBinding(GestureContext::DrumGrid, GestureAxis::Vertical, GestureMod_Command,
+               {GestureActionType::ZoomHorizontal, kZoomSensitivity, false});
+
+    // Waveform editor: the wheel scrolls the sample view horizontally. The
+    // sensitivity preserves the editor's original step (raw delta * 800).
+    setBinding(GestureContext::Waveform, GestureAxis::Vertical, GestureMod_None,
+               {GestureActionType::ScrollHorizontal, kWaveformScrollSensitivity, false});
+    setBinding(GestureContext::Waveform, GestureAxis::Horizontal, GestureMod_None,
+               {GestureActionType::ScrollHorizontal, kWaveformScrollSensitivity, false});
 
     // Snapshot the defaults so toVar() can emit only the user's overrides.
     defaults_ = bindings_;

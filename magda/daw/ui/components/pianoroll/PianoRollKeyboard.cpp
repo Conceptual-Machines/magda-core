@@ -3,6 +3,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/ClipInfo.hpp"
+#include "core/GestureRouter.hpp"
 
 namespace magda {
 
@@ -219,7 +220,12 @@ void PianoRollKeyboard::mouseUp(const juce::MouseEvent& /*event*/) {
 
 void PianoRollKeyboard::mouseWheelMove(const juce::MouseEvent& event,
                                        const juce::MouseWheelDetails& wheel) {
-    if (event.mods.isAltDown() && onZoomChanged) {
+    // Alt+wheel = note-height (vertical) zoom, resolved via GestureRouter so the
+    // binding matches the piano-roll grid and is configurable (#1350). The
+    // zoom magnitude stays in this handler.
+    const auto gesture = GestureRouter::getInstance().resolve(GestureContext::PianoRoll, wheel,
+                                                              event.mods, event.getPosition());
+    if (gesture.type == GestureActionType::ZoomVertical && onZoomChanged) {
         const int anchorNote = yToNoteNumber(event.y);
         const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
         onZoomChanged(juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT,

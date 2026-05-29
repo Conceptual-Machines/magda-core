@@ -13,6 +13,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipPropertyCommands.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -791,11 +792,14 @@ void WaveformEditorContent::mouseMove(const juce::MouseEvent& event) {
 
 void WaveformEditorContent::mouseWheelMove(const juce::MouseEvent& event,
                                            const juce::MouseWheelDetails& wheel) {
-    juce::ignoreUnused(event);
-
-    const float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
-    int scrollDelta = static_cast<int>(-delta * 800.0f);
-    setVirtualScrollX(virtualScrollX_ + scrollDelta);
+    // Wheel scrolls the sample view horizontally, via GestureRouter (#1350).
+    // The Waveform binding carries the editor's original sensitivity (800), so
+    // magnitude reproduces the previous raw-delta * 800 step.
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::Waveform, wheel, event.mods, event.getPosition());
+    if (gesture.type == magda::GestureActionType::ScrollHorizontal) {
+        setVirtualScrollX(virtualScrollX_ - static_cast<int>(gesture.magnitude));
+    }
 }
 
 void WaveformEditorContent::mouseMagnify(const juce::MouseEvent& event, float scaleFactor) {
