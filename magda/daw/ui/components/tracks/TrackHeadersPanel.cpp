@@ -24,6 +24,7 @@
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
+#include "../mixer/LevelMeterBallistics.hpp"
 #include "../mixer/RoutingSyncHelper.hpp"
 #include "BinaryData.h"
 
@@ -358,15 +359,17 @@ class TrackMeter : public juce::Component, private juce::Timer {
         float rightDb = gainToDb(targetR_);
         if (leftDb > peakLeftDb_) {
             peakLeftDb_ = leftDb;
-            peakLeftHold_ = PEAK_HOLD_MS;
+            peakLeftHold_ = level_meter_ballistics::peakHoldMs;
         }
         if (rightDb > peakRightDb_) {
             peakRightDb_ = rightDb;
-            peakRightHold_ = PEAK_HOLD_MS;
+            peakRightHold_ = level_meter_ballistics::peakHoldMs;
         }
 
-        if (!isTimerRunning())
+        if (!isTimerRunning()) {
+            lastUpdateMs_ = level_meter_ballistics::restartClock();
             startTimerHz(60);
+        }
     }
 
     void paint(juce::Graphics& g) override {
@@ -412,46 +415,24 @@ class TrackMeter : public juce::Component, private juce::Timer {
     float peakLeftDb_ = -60.0f, peakRightDb_ = -60.0f;
     float peakLeftHold_ = 0.0f, peakRightHold_ = 0.0f;
     int nameRowY_ = -1;
-
-    static constexpr float ATTACK_COEFF = 0.9f;
-    static constexpr float RELEASE_COEFF = 0.05f;
-    static constexpr float PEAK_HOLD_MS = 1500.0f;
-    static constexpr float PEAK_DECAY_DB_PER_FRAME = 0.8f;
+    double lastUpdateMs_ = 0.0;
 
     void timerCallback() override {
+        const float elapsedMs = level_meter_ballistics::getElapsedMs(lastUpdateMs_);
         bool changed = false;
-        changed |= updateLevel(displayL_, targetL_);
-        changed |= updateLevel(displayR_, targetR_);
-        changed |= updatePeak(peakLeftDb_, peakLeftHold_, gainToDb(targetL_));
-        changed |= updatePeak(peakRightDb_, peakRightHold_, gainToDb(targetR_));
+        changed |= level_meter_ballistics::updateLevel(displayL_, targetL_, elapsedMs);
+        changed |= level_meter_ballistics::updateLevel(displayR_, targetR_, elapsedMs);
+        changed |= level_meter_ballistics::updatePeak(peakLeftDb_, peakLeftHold_,
+                                                      gainToDb(targetL_), MIN_DB, elapsedMs);
+        changed |= level_meter_ballistics::updatePeak(peakRightDb_, peakRightHold_,
+                                                      gainToDb(targetR_), MIN_DB, elapsedMs);
         if (changed)
             repaint();
-        else if (displayL_ < 0.001f && displayR_ < 0.001f && peakLeftDb_ <= -60.0f &&
-                 peakRightDb_ <= -60.0f)
+        else if (displayL_ < 0.001f && displayR_ < 0.001f && peakLeftDb_ <= MIN_DB &&
+                 peakRightDb_ <= MIN_DB) {
             stopTimer();
-    }
-
-    static bool updateLevel(float& display, float target) {
-        float prev = display;
-        display += (target - display) * (target > display ? ATTACK_COEFF : RELEASE_COEFF);
-        if (display < 0.001f)
-            display = 0.0f;
-        return std::abs(display - prev) > 0.0001f;
-    }
-
-    static bool updatePeak(float& peakDb, float& holdTime, float currentDb) {
-        float prev = peakDb;
-        if (currentDb > peakDb) {
-            peakDb = currentDb;
-            holdTime = PEAK_HOLD_MS;
-        } else if (holdTime > 0.0f) {
-            holdTime -= 1000.0f / 60.0f;
-        } else {
-            peakDb -= PEAK_DECAY_DB_PER_FRAME;
-            if (peakDb < -60.0f)
-                peakDb = -60.0f;
+            lastUpdateMs_ = 0.0;
         }
-        return std::abs(peakDb - prev) > 0.01f;
     }
 
     void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level, float peakDb) {
