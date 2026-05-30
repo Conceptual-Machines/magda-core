@@ -31,6 +31,10 @@ class ZoomScrollBar : public juce::Component {
     // Set the visible range (0.0 to 1.0 representing portion of content)
     void setVisibleRange(double start, double end);
 
+    bool isDragging() const {
+        return dragMode != DragMode::None;
+    }
+
     // Get the current visible range
     double getVisibleStart() const {
         return visibleStart;

@@ -180,6 +180,15 @@ class Config {
         scrollbarOnLeft = onLeft;
     }
 
+    // When true, the arrangement scrollbars hide on idle and fade in on hover.
+    // When false, they are always visible (classic behaviour).
+    bool getArrangementScrollbarsAutoHide() const {
+        return arrangementScrollbarsAutoHide;
+    }
+    void setArrangementScrollbarsAutoHide(bool autoHide) {
+        arrangementScrollbarsAutoHide = autoHide;
+    }
+
     // UI scale factor for HiDPI displays.
     // 0 = Auto (pick from primary display DPI at startup); >0 = explicit factor (e.g. 1.5).
     double getUIScale() const {
@@ -972,7 +981,8 @@ class Config {
     std::vector<TrackColourEntry> trackColourPalette;
 
     // Layout settings
-    bool scrollbarOnLeft = false;  // Scrollbar on right by default
+    bool scrollbarOnLeft = false;               // Scrollbar on right by default
+    bool arrangementScrollbarsAutoHide = true;  // Hover-reveal scrollbars by default
 
     // UI scale: 0 = Auto (pick from display DPI), otherwise an explicit factor (1.0, 1.25, …)
     double uiScale = 0.0;
