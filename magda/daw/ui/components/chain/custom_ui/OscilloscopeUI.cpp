@@ -161,7 +161,10 @@ void OscilloscopeUI::setControlsExpanded(bool expanded) {
 int OscilloscopeUI::expandedControlsHeight() const {
     if (!compact_ || !showControls())
         return 0;
-    return 2 * kStackRowH + 4;  // Time + Color rows, plus top padding
+    constexpr int fullHeight = 2 * kStackRowH + 4;  // Time + Color rows, plus top padding
+    if (!controlsFadeActive_)
+        return controlsExpanded_ ? fullHeight : 0;
+    return juce::roundToInt(static_cast<float>(fullHeight) * controlsAlpha_);
 }
 
 void OscilloscopeUI::updateControlVisibility() {
@@ -195,6 +198,10 @@ void OscilloscopeUI::advanceControlsFade() {
     controlsAlpha_ =
         controlsFadeStartAlpha_ + (controlsFadeTargetAlpha_ - controlsFadeStartAlpha_) * progress;
     applyControlsAlpha();
+    if (onControlsExpandedChanged)
+        onControlsExpandedChanged();
+    resized();
+    repaint();
 
     if (progress < 1.0f)
         return;
@@ -202,11 +209,10 @@ void OscilloscopeUI::advanceControlsFade() {
     controlsFadeActive_ = false;
     controlsAlpha_ = controlsExpanded_ ? 1.0f : 0.0f;
     updateControlVisibility();
+    if (onControlsExpandedChanged)
+        onControlsExpandedChanged();
     resized();
     repaint();
-
-    if (!controlsExpanded_ && onControlsExpandedChanged)
-        onControlsExpandedChanged();
 }
 
 void OscilloscopeUI::applyControlsAlpha() {
@@ -240,15 +246,16 @@ void OscilloscopeUI::resized() {
     if (compact_) {
         auto area = getLocalBounds();
         // Stacked controls (when expanded) sit at the very bottom.
-        auto controls = controlsExpanded_ ? area.removeFromBottom(expandedControlsHeight())
-                                          : juce::Rectangle<int>();
+        const int controlsHeight = expandedControlsHeight();
+        auto controls =
+            controlsHeight > 0 ? area.removeFromBottom(controlsHeight) : juce::Rectangle<int>();
         // Dedicated chevron/pop-out strip directly below the waveform.
         auto strip = area.removeFromBottom(kChevronStripH);
         chevronRect_ = juce::Rectangle<int>(strip.getCentreX() - 7, strip.getCentreY() - 7, 14, 14);
         popoutRect_ = juce::Rectangle<int>(strip.getRight() - 19, strip.getCentreY() - 7, 14, 14);
         if (popoutButton_)
             popoutButton_->setBounds(popoutRect_);
-        if (controlsExpanded_) {
+        if (controlsHeight > 0 && showControls()) {
             controls.removeFromTop(2);
             auto timeRow = controls.removeFromTop(kStackRowH);
             timeLabel_.setBounds(timeRow.removeFromLeft(kStackLabelW));
@@ -299,8 +306,7 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
     if (!compact_) {
         bounds.removeFromBottom(kControlRowH);
     } else {
-        if (controlsExpanded_)
-            bounds.removeFromBottom(expandedControlsHeight());
+        bounds.removeFromBottom(expandedControlsHeight());
         bounds.removeFromBottom(kChevronStripH);  // reserve the chevron/pop-out strip
     }
     auto area = bounds.toFloat().reduced(4.0f);
@@ -393,8 +399,7 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
     // Chevron/pop-out strip directly below the waveform.
     if (compact_) {
         auto strip = getLocalBounds();
-        if (controlsExpanded_)
-            strip.removeFromBottom(expandedControlsHeight());
+        strip.removeFromBottom(expandedControlsHeight());
         strip = strip.removeFromBottom(kChevronStripH);
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRect(strip);

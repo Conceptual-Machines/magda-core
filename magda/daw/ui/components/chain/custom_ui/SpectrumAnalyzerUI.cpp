@@ -225,7 +225,11 @@ void SpectrumAnalyzerUI::setControlsExpanded(bool expanded) {
 int SpectrumAnalyzerUI::expandedControlsHeight() const {
     if (!compact_ || !showControls())
         return 0;
-    return 4 * kStackRowH + 4;  // FFT + Slope + Time + Color rows, plus top padding
+    constexpr int fullHeight =
+        4 * kStackRowH + 4;  // FFT + Slope + Time + Color rows, plus top padding
+    if (!controlsFadeActive_)
+        return controlsExpanded_ ? fullHeight : 0;
+    return juce::roundToInt(static_cast<float>(fullHeight) * controlsAlpha_);
 }
 
 void SpectrumAnalyzerUI::updateControlVisibility() {
@@ -261,6 +265,10 @@ void SpectrumAnalyzerUI::advanceControlsFade() {
     controlsAlpha_ =
         controlsFadeStartAlpha_ + (controlsFadeTargetAlpha_ - controlsFadeStartAlpha_) * progress;
     applyControlsAlpha();
+    if (onControlsExpandedChanged)
+        onControlsExpandedChanged();
+    resized();
+    repaint();
 
     if (progress < 1.0f)
         return;
@@ -268,11 +276,10 @@ void SpectrumAnalyzerUI::advanceControlsFade() {
     controlsFadeActive_ = false;
     controlsAlpha_ = controlsExpanded_ ? 1.0f : 0.0f;
     updateControlVisibility();
+    if (onControlsExpandedChanged)
+        onControlsExpandedChanged();
     resized();
     repaint();
-
-    if (!controlsExpanded_ && onControlsExpandedChanged)
-        onControlsExpandedChanged();
 }
 
 void SpectrumAnalyzerUI::applyControlsAlpha() {
@@ -294,15 +301,16 @@ int SpectrumAnalyzerUI::compactExtraHeight() const {
 void SpectrumAnalyzerUI::resized() {
     if (compact_) {
         auto area = getLocalBounds();
-        auto controls = controlsExpanded_ ? area.removeFromBottom(expandedControlsHeight())
-                                          : juce::Rectangle<int>();
+        const int controlsHeight = expandedControlsHeight();
+        auto controls =
+            controlsHeight > 0 ? area.removeFromBottom(controlsHeight) : juce::Rectangle<int>();
         // Dedicated chevron/pop-out strip directly below the plot.
         auto strip = area.removeFromBottom(kChevronStripH);
         chevronRect_ = juce::Rectangle<int>(strip.getCentreX() - 7, strip.getCentreY() - 7, 14, 14);
         popoutRect_ = juce::Rectangle<int>(strip.getRight() - 19, strip.getCentreY() - 7, 14, 14);
         if (popoutButton_)
             popoutButton_->setBounds(popoutRect_);
-        if (controlsExpanded_) {
+        if (controlsHeight > 0 && showControls()) {
             controls.removeFromTop(2);
             auto stackRow = [&controls](juce::Label& label, juce::ComboBox& combo) {
                 auto row = controls.removeFromTop(kStackRowH);
@@ -405,8 +413,7 @@ juce::Rectangle<float> SpectrumAnalyzerUI::plotArea() const {
     if (!compact_) {
         a.removeFromBottom(kControlRowH);
     } else {
-        if (controlsExpanded_)
-            a.removeFromBottom(expandedControlsHeight());
+        a.removeFromBottom(expandedControlsHeight());
         a.removeFromBottom(kChevronStripH);  // chevron/pop-out strip
     }
     return a.toFloat().reduced(4.0f);
@@ -456,8 +463,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
             return;
         // Chevron/pop-out strip directly below the plot.
         auto strip = getLocalBounds();
-        if (controlsExpanded_)
-            strip.removeFromBottom(expandedControlsHeight());
+        strip.removeFromBottom(expandedControlsHeight());
         strip = strip.removeFromBottom(kChevronStripH);
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRect(strip);

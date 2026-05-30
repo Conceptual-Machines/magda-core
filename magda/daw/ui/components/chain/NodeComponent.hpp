@@ -414,6 +414,8 @@ class NodeComponent : public juce::Component,
     bool isModPanelLaidOut() const {
         return modPanelVisible_ || retainModPanelForFadeOut_;
     }
+    float paramPanelAlpha_ = 1.0f;
+    float modPanelAlpha_ = 1.0f;
     void fadeInParamPanelContent();
     void fadeOutParamPanelContent();
     void cancelParamPanelContentFade();

@@ -74,14 +74,17 @@ juce::Image createChainNodeDragImage(const juce::String& label, int itemCount) {
 }  // namespace
 
 struct NodeComponent::PanelFadeTimer : private juce::Timer {
-    void fadeIn(const std::vector<juce::Component*>& components, int durationMs) {
+    void fadeIn(const std::vector<juce::Component*>& components, int durationMs,
+                std::function<void(float)> onProgress = nullptr) {
         stopTimer();
         targets_.clear();
         onComplete_ = nullptr;
+        onProgress_ = std::move(onProgress);
         durationMs_ = juce::jmax(1, durationMs);
         startMs_ = juce::Time::getMillisecondCounterHiRes();
         startAlpha_ = 0.0f;
         targetAlpha_ = 1.0f;
+        notifyProgress(startAlpha_);
 
         for (auto* component : components) {
             if (component == nullptr)
@@ -91,21 +94,27 @@ struct NodeComponent::PanelFadeTimer : private juce::Timer {
             targets_.push_back(component);
         }
 
-        if (targets_.empty())
+        if (targets_.empty()) {
+            notifyProgress(targetAlpha_);
+            onProgress_ = nullptr;
             return;
+        }
 
         startTimerHz(60);
     }
 
     void fadeOut(const std::vector<juce::Component*>& components, int durationMs,
-                 std::function<void()> onComplete) {
+                 std::function<void()> onComplete,
+                 std::function<void(float)> onProgress = nullptr) {
         stopTimer();
         targets_.clear();
         onComplete_ = std::move(onComplete);
+        onProgress_ = std::move(onProgress);
         durationMs_ = juce::jmax(1, durationMs);
         startMs_ = juce::Time::getMillisecondCounterHiRes();
         startAlpha_ = 1.0f;
         targetAlpha_ = 0.0f;
+        notifyProgress(startAlpha_);
 
         for (auto* component : components) {
             if (component == nullptr)
@@ -131,9 +140,16 @@ struct NodeComponent::PanelFadeTimer : private juce::Timer {
         }
         targets_.clear();
         onComplete_ = nullptr;
+        notifyProgress(1.0f);
+        onProgress_ = nullptr;
     }
 
   private:
+    void notifyProgress(float alpha) {
+        if (onProgress_)
+            onProgress_(alpha);
+    }
+
     void timerCallback() override {
         const auto elapsed = juce::Time::getMillisecondCounterHiRes() - startMs_;
         const auto progress = juce::jlimit(0.0, 1.0, elapsed / static_cast<double>(durationMs_));
@@ -144,6 +160,7 @@ struct NodeComponent::PanelFadeTimer : private juce::Timer {
             if (auto* component = target.getComponent())
                 component->setAlpha(alpha);
         }
+        notifyProgress(alpha);
 
         if (progress >= 1.0)
             finish();
@@ -153,17 +170,20 @@ struct NodeComponent::PanelFadeTimer : private juce::Timer {
         stopTimer();
         for (auto& target : targets_) {
             if (auto* component = target.getComponent())
-                component->setAlpha(1.0f);
+                component->setAlpha(targetAlpha_);
         }
+        notifyProgress(targetAlpha_);
         targets_.clear();
         auto onComplete = std::move(onComplete_);
         onComplete_ = nullptr;
+        onProgress_ = nullptr;
         if (onComplete)
             onComplete();
     }
 
     std::vector<juce::Component::SafePointer<juce::Component>> targets_;
     std::function<void()> onComplete_;
+    std::function<void(float)> onProgress_;
     double startMs_ = 0.0;
     int durationMs_ = 1;
     float startAlpha_ = 0.0f;
@@ -278,11 +298,14 @@ void NodeComponent::paint(juce::Graphics& g) {
         // === LEFT SIDE PANELS (even when collapsed): [Macros][MacroEditor][Mods][ModEditor] ===
         if (isParamPanelLaidOut()) {
             auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
+            g.saveState();
+            g.setOpacity(paramPanelAlpha_);
             g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(paramArea);
             g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
             g.drawRect(paramArea);
             paintParamPanel(g, paramArea);
+            g.restoreState();
         }
 
         // Macro editor panel - after macros, before mods
@@ -298,11 +321,14 @@ void NodeComponent::paint(juce::Graphics& g) {
 
         if (isModPanelLaidOut()) {
             auto modArea = bounds.removeFromLeft(getModPanelWidth());
+            g.saveState();
+            g.setOpacity(modPanelAlpha_);
             g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(modArea);
             g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
             g.drawRect(modArea);
             paintModPanel(g, modArea);
+            g.restoreState();
         }
 
         // Mod editor panel - after mods, before main content
@@ -368,11 +394,14 @@ void NodeComponent::paint(juce::Graphics& g) {
     // === LEFT SIDE PANELS: [Macros][MacroEditor][Mods][ModEditor] (squared corners) ===
     if (isParamPanelLaidOut()) {
         auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
+        g.saveState();
+        g.setOpacity(paramPanelAlpha_);
         g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(paramArea);
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawRect(paramArea);
         paintParamPanel(g, paramArea);
+        g.restoreState();
     }
 
     // Macro editor panel - after macros, before mods
@@ -388,11 +417,14 @@ void NodeComponent::paint(juce::Graphics& g) {
 
     if (isModPanelLaidOut()) {
         auto modArea = bounds.removeFromLeft(getModPanelWidth());
+        g.saveState();
+        g.setOpacity(modPanelAlpha_);
         g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(modArea);
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawRect(modArea);
         paintModPanel(g, modArea);
+        g.restoreState();
     }
 
     // Mod editor panel - after mods, before main content
@@ -744,8 +776,10 @@ void NodeComponent::setModPanelVisible(bool visible) {
         if (opening) {
             cancelModPanelContentFade();
             retainModPanelForFadeOut_ = false;
+            modPanelAlpha_ = 0.0f;
         } else {
             retainModPanelForFadeOut_ = true;
+            modPanelAlpha_ = 1.0f;
         }
         modPanelVisible_ = visible;
 
@@ -779,8 +813,10 @@ void NodeComponent::setParamPanelVisible(bool visible) {
         if (opening) {
             cancelParamPanelContentFade();
             retainParamPanelForFadeOut_ = false;
+            paramPanelAlpha_ = 0.0f;
         } else {
             retainParamPanelForFadeOut_ = true;
+            paramPanelAlpha_ = 1.0f;
         }
         paramPanelVisible_ = visible;
 
@@ -1693,8 +1729,16 @@ void NodeComponent::updateMacroValueDisplay(int macroIndex, float value) {
 }
 
 void NodeComponent::fadeInParamPanelContent() {
+    auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
+    auto repaintPanel = [safeThis](float alpha) {
+        if (safeThis == nullptr)
+            return;
+        safeThis->paramPanelAlpha_ = alpha;
+        safeThis->repaint();
+    };
+
     if (macroPanel_) {
-        paramPanelFadeTimer_->fadeIn({macroPanel_.get()}, SIDE_PANEL_FADE_IN_MS);
+        paramPanelFadeTimer_->fadeIn({macroPanel_.get()}, SIDE_PANEL_FADE_IN_MS, repaintPanel);
         return;
     }
 
@@ -1702,7 +1746,7 @@ void NodeComponent::fadeInParamPanelContent() {
     targets.reserve(paramKnobs_.size());
     for (auto& knob : paramKnobs_)
         targets.push_back(knob.get());
-    paramPanelFadeTimer_->fadeIn(targets, SIDE_PANEL_FADE_IN_MS);
+    paramPanelFadeTimer_->fadeIn(targets, SIDE_PANEL_FADE_IN_MS, repaintPanel);
 }
 
 void NodeComponent::cancelParamPanelContentFade() {
@@ -1720,20 +1764,37 @@ void NodeComponent::fadeOutParamPanelContent() {
     }
 
     auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
-    paramPanelFadeTimer_->fadeOut(targets, SIDE_PANEL_FADE_IN_MS, [safeThis]() {
-        if (safeThis == nullptr)
-            return;
-        safeThis->retainParamPanelForFadeOut_ = false;
-        safeThis->resized();
-        safeThis->repaint();
-        if (safeThis->onLayoutChanged)
-            safeThis->onLayoutChanged();
-    });
+    paramPanelFadeTimer_->fadeOut(
+        targets, SIDE_PANEL_FADE_IN_MS,
+        [safeThis]() {
+            if (safeThis == nullptr)
+                return;
+            safeThis->retainParamPanelForFadeOut_ = false;
+            safeThis->paramPanelAlpha_ = 1.0f;
+            safeThis->resized();
+            safeThis->repaint();
+            if (safeThis->onLayoutChanged)
+                safeThis->onLayoutChanged();
+        },
+        [safeThis](float alpha) {
+            if (safeThis == nullptr)
+                return;
+            safeThis->paramPanelAlpha_ = alpha;
+            safeThis->repaint();
+        });
 }
 
 void NodeComponent::fadeInModPanelContent() {
+    auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
+    auto repaintPanel = [safeThis](float alpha) {
+        if (safeThis == nullptr)
+            return;
+        safeThis->modPanelAlpha_ = alpha;
+        safeThis->repaint();
+    };
+
     if (modsPanel_) {
-        modPanelFadeTimer_->fadeIn({modsPanel_.get()}, SIDE_PANEL_FADE_IN_MS);
+        modPanelFadeTimer_->fadeIn({modsPanel_.get()}, SIDE_PANEL_FADE_IN_MS, repaintPanel);
         return;
     }
 
@@ -1741,7 +1802,7 @@ void NodeComponent::fadeInModPanelContent() {
     targets.reserve(3);
     for (auto& button : modSlotButtons_)
         targets.push_back(button.get());
-    modPanelFadeTimer_->fadeIn(targets, SIDE_PANEL_FADE_IN_MS);
+    modPanelFadeTimer_->fadeIn(targets, SIDE_PANEL_FADE_IN_MS, repaintPanel);
 }
 
 void NodeComponent::cancelModPanelContentFade() {
@@ -1759,15 +1820,24 @@ void NodeComponent::fadeOutModPanelContent() {
     }
 
     auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
-    modPanelFadeTimer_->fadeOut(targets, SIDE_PANEL_FADE_IN_MS, [safeThis]() {
-        if (safeThis == nullptr)
-            return;
-        safeThis->retainModPanelForFadeOut_ = false;
-        safeThis->resized();
-        safeThis->repaint();
-        if (safeThis->onLayoutChanged)
-            safeThis->onLayoutChanged();
-    });
+    modPanelFadeTimer_->fadeOut(
+        targets, SIDE_PANEL_FADE_IN_MS,
+        [safeThis]() {
+            if (safeThis == nullptr)
+                return;
+            safeThis->retainModPanelForFadeOut_ = false;
+            safeThis->modPanelAlpha_ = 1.0f;
+            safeThis->resized();
+            safeThis->repaint();
+            if (safeThis->onLayoutChanged)
+                safeThis->onLayoutChanged();
+        },
+        [safeThis](float alpha) {
+            if (safeThis == nullptr)
+                return;
+            safeThis->modPanelAlpha_ = alpha;
+            safeThis->repaint();
+        });
 }
 
 void NodeComponent::refreshPanels() {

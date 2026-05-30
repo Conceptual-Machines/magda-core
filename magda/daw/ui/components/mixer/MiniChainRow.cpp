@@ -110,7 +110,10 @@ void MiniChainRow::setExpanded(bool expanded) {
 int MiniChainRow::preferredHeight() const {
     if (!isParamsLaidOut() || trackedParams_.empty())
         return kCollapsedHeight;
-    return kCollapsedHeight + static_cast<int>(trackedParams_.size()) * kParamRowHeight + 2;
+    const int fullParamsHeight = static_cast<int>(trackedParams_.size()) * kParamRowHeight + 2;
+    if (!paramsFadeActive_)
+        return kCollapsedHeight + (expanded_ ? fullParamsHeight : 0);
+    return kCollapsedHeight + juce::roundToInt(static_cast<float>(fullParamsHeight) * paramsAlpha_);
 }
 
 void MiniChainRow::resolveParams() {
@@ -220,6 +223,10 @@ void MiniChainRow::advanceParamsFade() {
     paramsAlpha_ =
         paramsFadeStartAlpha_ + (paramsFadeTargetAlpha_ - paramsFadeStartAlpha_) * progress;
     applyParamsAlpha();
+    resized();
+    repaint();
+    if (onExpandChanged)
+        onExpandChanged();
 
     if (progress < 1.0f)
         return;
@@ -234,12 +241,12 @@ void MiniChainRow::advanceParamsFade() {
         for (auto& label : paramLabels_)
             if (label)
                 label->setVisible(false);
-        if (onExpandChanged)
-            onExpandChanged();
     }
     applyParamsAlpha();
     resized();
     repaint();
+    if (onExpandChanged)
+        onExpandChanged();
     updateTimerState();
 }
 
