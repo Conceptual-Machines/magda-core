@@ -214,7 +214,13 @@ void TrackContentPanel::tracksChanged() {
     }
 
     resized();
-    updateClipComponentPositions();
+    // The visible-track set just changed (track add/remove/reorder, group
+    // collapse/expand). rebuildClipComponents only creates components for clips
+    // on currently-visible tracks, so a clip on a collapsed group's child has
+    // no component. Rebuild here rather than only repositioning, otherwise a
+    // child clip whose component was dropped while collapsed never reappears on
+    // expand (it keeps playing from the model — the lane just looks empty).
+    rebuildClipComponents();
     repaintVisible();
 }
 
