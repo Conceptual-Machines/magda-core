@@ -6,6 +6,7 @@
 #include <limits>
 
 #include "AnalyzerColours.hpp"
+#include "AnalyzerWindow.hpp"
 #include "core/Config.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -14,9 +15,10 @@
 namespace magda::daw::ui {
 
 namespace {
-constexpr int kControlRowH = 22;  // full-editor horizontal control row
-constexpr int kStackRowH = 18;    // one row of the compact vertical control stack
-constexpr int kStackLabelW = 34;  // label column width in the stacked layout
+constexpr int kControlRowH = 22;    // full-editor horizontal control row
+constexpr int kStackRowH = 18;      // one row of the compact vertical control stack
+constexpr int kStackLabelW = 34;    // label column width in the stacked layout
+constexpr int kChevronStripH = 16;  // dedicated strip below the plot for the chevron
 constexpr float kSlopeOptions[] = {0.0f, 3.0f, 4.5f, 6.0f};  // dB/oct
 constexpr float kSpeedOptions[] = {0.15f, 0.4f, 0.8f};       // smoothing (Slow/Med/Fast)
 
@@ -148,6 +150,8 @@ void SpectrumAnalyzerUI::rebuildFft(int order) {
 
 void SpectrumAnalyzerUI::setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin) {
     plugin_ = plugin;
+    if (popoutUI_ != nullptr)
+        popoutUI_->setPlugin(plugin);  // keep the popped-out window live
     if (plugin_ == nullptr)
         return;
 
@@ -200,31 +204,37 @@ void SpectrumAnalyzerUI::updateControlVisibility() {
     colourCombo_.setVisible(show);
 }
 
-void SpectrumAnalyzerUI::resized() {
-    auto b = getLocalBounds();
-    chevronRect_ = compact_ ? juce::Rectangle<int>(b.getCentreX() - 7, b.getBottom() - 15, 14, 14)
-                            : juce::Rectangle<int>();
-    if (!showControls())
-        return;
+int SpectrumAnalyzerUI::compactExtraHeight() const {
+    return compact_ ? kChevronStripH + expandedControlsHeight() : 0;
+}
 
+void SpectrumAnalyzerUI::resized() {
     if (compact_) {
-        // Stacked vertical controls open at the top of the monitor (one combo
-        // per row) so they fit a narrow mixer strip.
-        auto controls = b.removeFromTop(expandedControlsHeight());
-        controls.removeFromTop(2);
-        auto stackRow = [&controls](juce::Label& label, juce::ComboBox& combo) {
-            auto row = controls.removeFromTop(kStackRowH);
-            label.setBounds(row.removeFromLeft(kStackLabelW));
-            combo.setBounds(row.reduced(2, 1));
-        };
-        stackRow(fftLabel_, fftCombo_);
-        stackRow(slopeLabel_, slopeCombo_);
-        stackRow(speedLabel_, speedCombo_);
-        stackRow(colourLabel_, colourCombo_);
+        auto area = getLocalBounds();
+        auto controls = controlsExpanded_ ? area.removeFromBottom(expandedControlsHeight())
+                                          : juce::Rectangle<int>();
+        // Dedicated chevron/pop-out strip directly below the plot.
+        auto strip = area.removeFromBottom(kChevronStripH);
+        chevronRect_ = juce::Rectangle<int>(strip.getCentreX() - 7, strip.getCentreY() - 7, 14, 14);
+        popoutRect_ = juce::Rectangle<int>(strip.getRight() - 19, strip.getCentreY() - 7, 14, 14);
+        if (controlsExpanded_) {
+            controls.removeFromTop(2);
+            auto stackRow = [&controls](juce::Label& label, juce::ComboBox& combo) {
+                auto row = controls.removeFromTop(kStackRowH);
+                label.setBounds(row.removeFromLeft(kStackLabelW));
+                combo.setBounds(row.reduced(2, 1));
+            };
+            stackRow(fftLabel_, fftCombo_);
+            stackRow(slopeLabel_, slopeCombo_);
+            stackRow(speedLabel_, speedCombo_);
+            stackRow(colourLabel_, colourCombo_);
+        }
         return;
     }
 
-    auto controls = b.removeFromBottom(kControlRowH);
+    chevronRect_ = juce::Rectangle<int>();
+    popoutRect_ = juce::Rectangle<int>();
+    auto controls = getLocalBounds().removeFromBottom(kControlRowH);
     auto cell = [&controls](int labelW, int comboW) {
         controls.removeFromLeft(4);
         auto label = controls.removeFromLeft(labelW);
@@ -246,8 +256,24 @@ void SpectrumAnalyzerUI::resized() {
 }
 
 void SpectrumAnalyzerUI::mouseDown(const juce::MouseEvent& e) {
-    if (compact_ && chevronRect_.contains(e.getPosition()))
+    if (!compact_)
+        return;
+    if (popoutRect_.contains(e.getPosition()))
+        openPopout();
+    else if (chevronRect_.contains(e.getPosition()))
         setControlsExpanded(!controlsExpanded_);
+}
+
+void SpectrumAnalyzerUI::openPopout() {
+    if (popoutWindow_ == nullptr) {
+        auto content = std::make_unique<SpectrumAnalyzerUI>();  // full-size (not compact)
+        popoutUI_ = content.get();
+        popoutUI_->setPlugin(plugin_);
+        popoutWindow_ = std::make_unique<AnalyzerWindow>("Spectrum Analyzer", std::move(content));
+    } else {
+        popoutWindow_->setVisible(true);
+        popoutWindow_->toFront(true);
+    }
 }
 
 void SpectrumAnalyzerUI::timerCallback() {
@@ -293,10 +319,13 @@ float SpectrumAnalyzerUI::dbToY(float db, juce::Rectangle<float> area) const {
 
 juce::Rectangle<float> SpectrumAnalyzerUI::plotArea() const {
     auto a = getLocalBounds();
-    if (!compact_)
+    if (!compact_) {
         a.removeFromBottom(kControlRowH);
-    else if (controlsExpanded_)
-        a.removeFromTop(expandedControlsHeight());
+    } else {
+        if (controlsExpanded_)
+            a.removeFromBottom(expandedControlsHeight());
+        a.removeFromBottom(kChevronStripH);  // chevron/pop-out strip
+    }
     return a.toFloat().reduced(4.0f);
 }
 
@@ -340,11 +369,23 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
     }
 
     auto drawChevron = [&] {
-        // Controls open at the top, so the bottom chevron points up to open and
-        // down to close.
-        if (compact_)
-            drawAnalyzerExpandChevron(g, chevronRect_, !controlsExpanded_,
-                                      DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        if (!compact_)
+            return;
+        // Chevron/pop-out strip directly below the plot.
+        auto strip = getLocalBounds();
+        if (controlsExpanded_)
+            strip.removeFromBottom(expandedControlsHeight());
+        strip = strip.removeFromBottom(kChevronStripH);
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRect(strip);
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.drawHorizontalLine(strip.getY(), static_cast<float>(strip.getX()),
+                             static_cast<float>(strip.getRight()));
+        // Chevron points down to open (controls below) and up to collapse.
+        drawAnalyzerExpandChevron(g, chevronRect_, controlsExpanded_,
+                                  DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        if (plugin_ != nullptr)
+            drawAnalyzerPopoutIcon(g, popoutRect_, DarkTheme::getColour(DarkTheme::TEXT_DIM));
     };
 
     if (smoothedDb_.empty()) {

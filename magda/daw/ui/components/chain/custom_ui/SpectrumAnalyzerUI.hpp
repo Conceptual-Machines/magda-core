@@ -11,6 +11,8 @@
 
 namespace magda::daw::ui {
 
+class AnalyzerWindow;
+
 /**
  * @brief FFT spectrum display for the Spectrum Analyzer analysis device.
  *
@@ -38,6 +40,8 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
         return controlsExpanded_;
     }
     int expandedControlsHeight() const;  // 0 when collapsed or in full-editor mode
+    // Chevron strip (always, in compact) plus the expanded controls.
+    int compactExtraHeight() const;
     std::function<void()> onControlsExpandedChanged;
 
     void paint(juce::Graphics& g) override;
@@ -53,6 +57,7 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     float dbToY(float db, juce::Rectangle<float> area) const;
     juce::Rectangle<float> plotArea() const;  // plot region (excludes the control row)
     void updateControlVisibility();
+    void openPopout();  // open/re-show the full analyzer in a floating window
     bool showControls() const {
         return !compact_ || controlsExpanded_;
     }
@@ -83,8 +88,15 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     juce::ComboBox fftCombo_, slopeCombo_, speedCombo_, colourCombo_;
     juce::Label fftLabel_, slopeLabel_, speedLabel_, colourLabel_;
 
-    // Compact-mode expand toggle hit area (top-right of the plot).
-    juce::Rectangle<int> chevronRect_;
+    // Hit areas in the dedicated strip below the plot (compact mode only).
+    juce::Rectangle<int> chevronRect_;  // expand/collapse the controls
+    juce::Rectangle<int> popoutRect_;   // open the floating full-size window
+
+    // Floating full-size analyzer, lazily created on first pop-out. Owned here,
+    // so it dies with this component. popoutUI_ is a non-owning view for
+    // forwarding setPlugin.
+    std::unique_ptr<AnalyzerWindow> popoutWindow_;
+    SpectrumAnalyzerUI* popoutUI_ = nullptr;
 
     juce::Point<int> mousePos_;
     bool mouseOver_ = false;

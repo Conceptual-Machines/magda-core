@@ -3,11 +3,14 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <memory>
 #include <vector>
 
 #include "audio/plugins/OscilloscopePlugin.hpp"
 
 namespace magda::daw::ui {
+
+class AnalyzerWindow;
 
 /**
  * @brief Waveform display for the Oscilloscope analysis device.
@@ -37,6 +40,9 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     // Height the stacked control rows need beneath the display (0 when collapsed
     // or in full-editor mode).
     int expandedControlsHeight() const;
+    // Total extra height the compact monitor needs below the waveform: the
+    // chevron strip (always) plus the expanded controls. 0 in full-editor mode.
+    int compactExtraHeight() const;
     std::function<void()> onControlsExpandedChanged;
 
     void paint(juce::Graphics& g) override;
@@ -48,6 +54,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     void applyTimebase();      // recompute displaySamples_ / readCount_ from timebase + sample rate
     void updateTimeReadout();  // format the slider value into the themed value label
     void updateControlVisibility();
+    void openPopout();  // open/re-show the full analyzer in a floating window
     bool showControls() const {
         return !compact_ || controlsExpanded_;
     }
@@ -70,8 +77,15 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     juce::Label colourLabel_;  // "Color" — only shown in the stacked compact layout
     juce::ComboBox colourCombo_;
 
-    // Compact-mode expand toggle hit area (top-right of the display).
-    juce::Rectangle<int> chevronRect_;
+    // Hit areas in the dedicated strip below the waveform (compact mode only).
+    juce::Rectangle<int> chevronRect_;  // expand/collapse the controls
+    juce::Rectangle<int> popoutRect_;   // open the floating full-size window
+
+    // Floating full-size analyzer, lazily created on first pop-out. Owned here,
+    // so it dies with this component (well before app/JUCE shutdown). popoutUI_
+    // is a non-owning view into the window's content so setPlugin can forward.
+    std::unique_ptr<AnalyzerWindow> popoutWindow_;
+    OscilloscopeUI* popoutUI_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscilloscopeUI)
 };

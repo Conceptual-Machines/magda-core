@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "AnalyzerColours.hpp"
+#include "AnalyzerWindow.hpp"
 #include "core/Config.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -12,9 +13,10 @@
 namespace magda::daw::ui {
 
 namespace {
-constexpr int kControlRowH = 22;  // full-editor horizontal control row
-constexpr int kStackRowH = 18;    // one row of the compact vertical control stack
-constexpr int kStackLabelW = 34;  // label column width in the stacked layout
+constexpr int kControlRowH = 22;    // full-editor horizontal control row
+constexpr int kStackRowH = 18;      // one row of the compact vertical control stack
+constexpr int kStackLabelW = 34;    // label column width in the stacked layout
+constexpr int kChevronStripH = 16;  // dedicated strip below the waveform for the chevron
 }  // namespace
 
 OscilloscopeUI::OscilloscopeUI() {
@@ -98,6 +100,8 @@ OscilloscopeUI::~OscilloscopeUI() {
 
 void OscilloscopeUI::setPlugin(daw::audio::OscilloscopePlugin* plugin) {
     plugin_ = plugin;
+    if (popoutUI_ != nullptr)
+        popoutUI_->setPlugin(plugin);  // keep the popped-out window live
     if (plugin_ == nullptr)
         return;
     timeSlider_.setValue(plugin_->getTimebaseMs(), juce::dontSendNotification);
@@ -159,29 +163,35 @@ void OscilloscopeUI::applyTimebase() {
     readCount_ = juce::jmin(displaySamples_ + kTriggerSearch, kMaxWindow);
 }
 
-void OscilloscopeUI::resized() {
-    auto b = getLocalBounds();
-    // Compact mode keeps a small chevron toggle centred along the bottom edge.
-    chevronRect_ = compact_ ? juce::Rectangle<int>(b.getCentreX() - 7, b.getBottom() - 15, 14, 14)
-                            : juce::Rectangle<int>();
-    if (!showControls())
-        return;
+int OscilloscopeUI::compactExtraHeight() const {
+    return compact_ ? kChevronStripH + expandedControlsHeight() : 0;
+}
 
+void OscilloscopeUI::resized() {
     if (compact_) {
-        // Stacked vertical controls open at the top of the monitor (a mixer
-        // strip is too narrow for the full editor's horizontal row).
-        auto controls = b.removeFromTop(expandedControlsHeight());
-        controls.removeFromTop(2);
-        auto timeRow = controls.removeFromTop(kStackRowH);
-        timeLabel_.setBounds(timeRow.removeFromLeft(kStackLabelW));
-        timeSlider_.setBounds(timeRow.reduced(4, 2));
-        auto colourRow = controls.removeFromTop(kStackRowH);
-        colourLabel_.setBounds(colourRow.removeFromLeft(kStackLabelW));
-        colourCombo_.setBounds(colourRow.reduced(2, 1));
+        auto area = getLocalBounds();
+        // Stacked controls (when expanded) sit at the very bottom.
+        auto controls = controlsExpanded_ ? area.removeFromBottom(expandedControlsHeight())
+                                          : juce::Rectangle<int>();
+        // Dedicated chevron/pop-out strip directly below the waveform.
+        auto strip = area.removeFromBottom(kChevronStripH);
+        chevronRect_ = juce::Rectangle<int>(strip.getCentreX() - 7, strip.getCentreY() - 7, 14, 14);
+        popoutRect_ = juce::Rectangle<int>(strip.getRight() - 19, strip.getCentreY() - 7, 14, 14);
+        if (controlsExpanded_) {
+            controls.removeFromTop(2);
+            auto timeRow = controls.removeFromTop(kStackRowH);
+            timeLabel_.setBounds(timeRow.removeFromLeft(kStackLabelW));
+            timeSlider_.setBounds(timeRow.reduced(4, 2));
+            auto colourRow = controls.removeFromTop(kStackRowH);
+            colourLabel_.setBounds(colourRow.removeFromLeft(kStackLabelW));
+            colourCombo_.setBounds(colourRow.reduced(2, 1));
+        }
         return;
     }
 
-    auto controls = b.removeFromBottom(kControlRowH);
+    chevronRect_ = juce::Rectangle<int>();
+    popoutRect_ = juce::Rectangle<int>();
+    auto controls = getLocalBounds().removeFromBottom(kControlRowH);
     timeLabel_.setBounds(controls.removeFromLeft(40));
     colourCombo_.setBounds(controls.removeFromRight(72).reduced(2, 2));
     timeValueLabel_.setBounds(controls.removeFromRight(54));
@@ -189,8 +199,24 @@ void OscilloscopeUI::resized() {
 }
 
 void OscilloscopeUI::mouseDown(const juce::MouseEvent& e) {
-    if (compact_ && chevronRect_.contains(e.getPosition()))
+    if (!compact_)
+        return;
+    if (popoutRect_.contains(e.getPosition()))
+        openPopout();
+    else if (chevronRect_.contains(e.getPosition()))
         setControlsExpanded(!controlsExpanded_);
+}
+
+void OscilloscopeUI::openPopout() {
+    if (popoutWindow_ == nullptr) {
+        auto content = std::make_unique<OscilloscopeUI>();  // full-size (not compact)
+        popoutUI_ = content.get();
+        popoutUI_->setPlugin(plugin_);
+        popoutWindow_ = std::make_unique<AnalyzerWindow>("Oscilloscope", std::move(content));
+    } else {
+        popoutWindow_->setVisible(true);
+        popoutWindow_->toFront(true);
+    }
 }
 
 void OscilloscopeUI::timerCallback() {
@@ -201,10 +227,13 @@ void OscilloscopeUI::timerCallback() {
 
 void OscilloscopeUI::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
-    if (!compact_)
+    if (!compact_) {
         bounds.removeFromBottom(kControlRowH);
-    else if (controlsExpanded_)
-        bounds.removeFromTop(expandedControlsHeight());
+    } else {
+        if (controlsExpanded_)
+            bounds.removeFromBottom(expandedControlsHeight());
+        bounds.removeFromBottom(kChevronStripH);  // reserve the chevron/pop-out strip
+    }
     auto area = bounds.toFloat().reduced(4.0f);
 
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -292,11 +321,23 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
         }
     }
 
-    // Controls open at the top, so the bottom chevron points up to open and
-    // down to close (drawAnalyzerExpandChevron draws up when its flag is true).
-    if (compact_)
-        drawAnalyzerExpandChevron(g, chevronRect_, !controlsExpanded_,
+    // Chevron/pop-out strip directly below the waveform.
+    if (compact_) {
+        auto strip = getLocalBounds();
+        if (controlsExpanded_)
+            strip.removeFromBottom(expandedControlsHeight());
+        strip = strip.removeFromBottom(kChevronStripH);
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRect(strip);
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.drawHorizontalLine(strip.getY(), static_cast<float>(strip.getX()),
+                             static_cast<float>(strip.getRight()));
+        // Chevron points down to open (controls below) and up to collapse.
+        drawAnalyzerExpandChevron(g, chevronRect_, controlsExpanded_,
                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        if (plugin_ != nullptr)
+            drawAnalyzerPopoutIcon(g, popoutRect_, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    }
 }
 
 }  // namespace magda::daw::ui

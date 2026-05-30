@@ -1183,7 +1183,7 @@ void MixerView::ChannelStrip::resized() {
     const bool showSpec = cfg.getMixerShowSpectrum();
     if (!isMaster_) {
         if (showOsc && miniOscilloscopeUI_) {
-            const int h = miniAnalyzerHeight + miniOscilloscopeUI_->expandedControlsHeight();
+            const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
             miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
             miniOscilloscopeUI_->setVisible(true);
             bounds.removeFromTop(2);
@@ -1191,7 +1191,7 @@ void MixerView::ChannelStrip::resized() {
             miniOscilloscopeUI_->setVisible(false);
         }
         if (showSpec && miniSpectrumUI_) {
-            const int h = miniAnalyzerHeight + miniSpectrumUI_->expandedControlsHeight();
+            const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
             miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
             miniSpectrumUI_->setVisible(true);
             bounds.removeFromTop(2);
