@@ -24,12 +24,13 @@ PluginPreferences& PluginPreferences::getInstance() {
 }
 
 PluginPreferences::PluginPreferences() {
-    load();
+    loadUnlocked();
 }
 
 bool PluginPreferences::prefersDrumGrid(const juce::String& pluginIdentifier) const {
     if (pluginIdentifier.isEmpty())
         return false;
+    std::lock_guard<std::mutex> lock(mutex_);
     if (drumGridPlugins_.find(pluginIdentifier) != drumGridPlugins_.end())
         return true;
     // Built-in default: MAGDA's DrumGrid plugin opens in the drum-grid view
@@ -40,17 +41,19 @@ bool PluginPreferences::prefersDrumGrid(const juce::String& pluginIdentifier) co
 void PluginPreferences::setPrefersDrumGrid(const juce::String& pluginIdentifier, bool prefer) {
     if (pluginIdentifier.isEmpty())
         return;
+    std::lock_guard<std::mutex> lock(mutex_);
     if (prefer)
         drumGridPlugins_.insert(pluginIdentifier);
     else
         drumGridPlugins_.erase(pluginIdentifier);
-    save();
+    saveUnlocked();
 }
 
 std::vector<magda::KitRow> PluginPreferences::defaultKitRows(
     const juce::String& pluginIdentifier) const {
     if (pluginIdentifier.isEmpty() || !hasGlobalKitDefault(pluginIdentifier))
         return {};
+    std::lock_guard<std::mutex> lock(mutex_);
     auto it = defaultKits_.find(pluginIdentifier);
     if (it == defaultKits_.end())
         return {};
@@ -61,14 +64,15 @@ void PluginPreferences::setDefaultKitRows(const juce::String& pluginIdentifier,
                                           const std::vector<KitRow>& rows) {
     if (pluginIdentifier.isEmpty() || !hasGlobalKitDefault(pluginIdentifier))
         return;
+    std::lock_guard<std::mutex> lock(mutex_);
     if (rows.empty())
         defaultKits_.erase(pluginIdentifier);
     else
         defaultKits_[pluginIdentifier] = rows;
-    save();
+    saveUnlocked();
 }
 
-void PluginPreferences::load() {
+void PluginPreferences::loadUnlocked() {
     drumGridPlugins_.clear();
     defaultKits_.clear();
     auto file = magda::paths::pluginPreferencesFile();
@@ -122,7 +126,7 @@ void PluginPreferences::load() {
     }
 }
 
-void PluginPreferences::save() const {
+void PluginPreferences::saveUnlocked() const {
     juce::Array<juce::var> prefersList;
     for (const auto& id : drumGridPlugins_)
         prefersList.add(juce::var(id));
