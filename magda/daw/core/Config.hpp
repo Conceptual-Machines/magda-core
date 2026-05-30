@@ -727,9 +727,9 @@ class Config {
         mixerShowFxChain_ = v;
     }
 
-    // Persist the rail-driven mixer-analysis devices into the project file.
-    // Default false (session-only); flip on if users want mini-visualizer
-    // settings to survive project save/load.
+    // Legacy config value retained for compatibility with existing config.json
+    // files. Mixer-analysis devices are now serialized whenever they exist so
+    // per-device mini-visualizer settings survive project save/load.
     bool getPersistMixerAnalysis() const {
         return persistMixerAnalysis_;
     }
