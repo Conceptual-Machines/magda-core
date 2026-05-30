@@ -1503,6 +1503,17 @@ void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
 }
 
 void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
+    // A group parent strip listens recursively to its nested child strips, so a
+    // click inside a child also fires the parent's handler. Only the strip that
+    // actually owns the clicked component should act — otherwise shift/cmd
+    // selection on a nested strip (e.g. a grouped multi-out channel) resolves to
+    // the parent's track id and the child never gets selected.
+    for (juce::Component* c = event.originalComponent; c != nullptr && c != this;
+         c = c->getParentComponent()) {
+        if (dynamic_cast<ChannelStrip*>(c) != nullptr)
+            return;  // a nested child strip handles its own click
+    }
+
     // Clicks on children are forwarded to us via addMouseListener so that
     // Cmd/Shift-click anywhere on the strip can drive multi-selection. A
     // plain click on a child must NOT also single-select the track (otherwise
