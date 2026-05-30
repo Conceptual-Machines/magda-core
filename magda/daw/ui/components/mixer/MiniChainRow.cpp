@@ -81,6 +81,13 @@ void MiniChainRow::setBypassedState(bool bypassed) {
     repaint();
 }
 
+void MiniChainRow::setPluginEditorOpen(bool open) {
+    if (uiButton_ == nullptr)
+        return;
+    uiButton_->setToggleState(open, juce::dontSendNotification);
+    uiButton_->setActive(open);
+}
+
 void MiniChainRow::setExpanded(bool expanded) {
     if (expanded_ == expanded)
         return;

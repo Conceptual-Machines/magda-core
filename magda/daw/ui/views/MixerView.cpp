@@ -9,6 +9,7 @@
 #include "../../audio/MidiBridge.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../engine/AudioEngine.hpp"
+#include "../../engine/PluginWindowManager.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../components/mixer/LevelMeter.hpp"
@@ -896,6 +897,17 @@ void MixerView::ChannelStrip::syncMiniChainRowState(DeviceId deviceId, bool bypa
     }
 }
 
+void MixerView::ChannelStrip::syncMiniChainPluginWindow(DeviceId deviceId, bool isOpen) {
+    if (deviceId == INVALID_DEVICE_ID)
+        return;
+    for (auto& row : miniChainRows_) {
+        if (row->deviceId() == deviceId) {
+            row->setPluginEditorOpen(isOpen);
+            return;
+        }
+    }
+}
+
 void MixerView::ChannelStrip::refreshMiniAnalyzers() {
     if (isMaster_)
         return;
@@ -1587,6 +1599,24 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Get current view mode
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
 
+    // Keep the mini-chain "open editor" icons in sync with the actual plugin
+    // window state. PluginWindowManager fires this on open AND on close (incl.
+    // the window's own X), so the icon un-engages when the window is closed.
+    if (auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_)) {
+        if (auto* pwm = teWrapper->getPluginWindowManager()) {
+            juce::Component::SafePointer<MixerView> safeThis(this);
+            pwm->onWindowStateChanged = [safeThis](DeviceId deviceId, bool isOpen) {
+                auto* self = safeThis.getComponent();
+                if (self == nullptr)
+                    return;
+                for (auto& strip : self->channelStrips)
+                    strip->syncMiniChainPluginWindow(deviceId, isOpen);
+                for (auto& strip : self->auxChannelStrips)
+                    strip->syncMiniChainPluginWindow(deviceId, isOpen);
+            };
+        }
+    }
+
     // Create channel container
     channelContainer = std::make_unique<juce::Component>();
     channelContainer->setPaintingIsUnclipped(true);
@@ -1651,6 +1681,10 @@ void MixerView::midiDeviceListChanged() {
 }
 
 MixerView::~MixerView() {
+    if (auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_)) {
+        if (auto* pwm = teWrapper->getPluginWindowManager())
+            pwm->onWindowStateChanged = nullptr;
+    }
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->removeMidiDeviceListListener(this);

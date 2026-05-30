@@ -51,6 +51,10 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     // the row (used when bypass is toggled elsewhere, e.g. the device slot).
     void setBypassedState(bool bypassed);
 
+    // Reflect the plugin editor window's open state on the "open editor" icon
+    // (e.g. so it un-engages when the window is closed via its X button).
+    void setPluginEditorOpen(bool open);
+
     DeviceId deviceId() const {
         return deviceId_;
     }

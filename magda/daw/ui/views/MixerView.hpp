@@ -214,6 +214,11 @@ class MixerView : public juce::Component,
         // that a row's own bypass toggle fires). No-op if no row matches.
         void syncMiniChainRowState(DeviceId deviceId, bool bypassed);
 
+        // Reflect a device's plugin-editor window open state on the matching
+        // row's "open editor" icon (so it un-engages when the window is closed
+        // via its X). No-op if no row matches.
+        void syncMiniChainPluginWindow(DeviceId deviceId, bool isOpen);
+
         // Send area resize handle
         class SendResizeHandle;
         std::unique_ptr<SendResizeHandle> sendResizeHandle_;
