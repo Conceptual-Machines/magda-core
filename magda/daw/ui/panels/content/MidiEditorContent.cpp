@@ -2,9 +2,12 @@
 
 #include <cmath>
 
+#include "audio/MidiBridge.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "engine/AudioEngine.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/VelocityLaneComponent.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
@@ -257,11 +260,83 @@ MidiEditorContent::MidiEditorContent() {
 
 MidiEditorContent::~MidiEditorContent() {
     blinkTimer_.stopTimer();
+    uninstallMidiNoteMonitor();  // safety net; subclasses uninstall in onDeactivated
     magda::ClipManager::getInstance().removeListener(this);
 
     if (auto* controller = magda::TimelineController::getCurrent()) {
         controller->removeListener(this);
     }
+}
+
+// ============================================================================
+// Live MIDI note monitor (shared by PianoRoll keyboard + DrumGrid pad rows)
+// ============================================================================
+
+void MidiEditorContent::installMidiNoteMonitor() {
+    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+    auto* midiBridge = engine != nullptr ? engine->getMidiBridge() : nullptr;
+    if (midiBridge == nullptr)
+        return;
+
+    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ == midiBridge)
+        return;
+
+    uninstallMidiNoteMonitor();
+
+    monitoredMidiBridge_ = midiBridge;
+    previousMidiNoteCallback_ = midiBridge->onNoteEvent;
+    juce::Component::SafePointer<MidiEditorContent> safeThis(this);
+    auto previousCallback = previousMidiNoteCallback_;
+
+    midiBridge->onNoteEvent = [safeThis, previousCallback](magda::TrackId trackId,
+                                                           const magda::MidiNoteEvent& event) {
+        if (previousCallback)
+            previousCallback(trackId, event);
+
+        juce::MessageManager::callAsync([safeThis, trackId, event]() {
+            if (auto* self = safeThis.getComponent())
+                self->handleMidiNoteEvent(trackId, event);
+        });
+    };
+    midiNoteMonitorInstalled_ = true;
+}
+
+void MidiEditorContent::uninstallMidiNoteMonitor() {
+    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ != nullptr)
+        monitoredMidiBridge_->onNoteEvent = previousMidiNoteCallback_;
+
+    midiNoteMonitorInstalled_ = false;
+    monitoredMidiBridge_ = nullptr;
+    previousMidiNoteCallback_ = nullptr;
+}
+
+void MidiEditorContent::handleMidiNoteEvent(magda::TrackId trackId,
+                                            const magda::MidiNoteEvent& event) {
+    if (!midiNoteMonitorInstalled_ || editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (clip == nullptr || clip->trackId != trackId)
+        return;
+
+    const bool noteOn = event.isNoteOn && event.velocity > 0;
+
+    // Only highlight notes the track is actually monitoring — with input
+    // monitoring off the note never reaches the track, so highlighting it would
+    // be misleading. Note-offs always fall through to clear any existing
+    // highlight, so toggling monitor off mid-hold can't strand a pressed key.
+    if (noteOn) {
+        const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        if (track == nullptr || track->inputMonitor == magda::InputMonitorMode::Off)
+            return;
+    }
+
+    highlightMonitoredNote(event.noteNumber, noteOn);
+
+    // Bring the played note into view only when it falls off-screen, so live
+    // input stays visible without yanking the view around on every note.
+    if (noteOn)
+        ensureMonitoredNoteVisible(event.noteNumber);
 }
 
 // ============================================================================

@@ -227,72 +227,13 @@ void PianoRollContent::loadNoteHeightFromClip(magda::ClipId clipId) {
     }
 }
 
-void PianoRollContent::installMidiNoteMonitor() {
-    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-    auto* midiBridge = engine != nullptr ? engine->getMidiBridge() : nullptr;
-    if (midiBridge == nullptr)
-        return;
-
-    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ == midiBridge)
-        return;
-
-    uninstallMidiNoteMonitor();
-
-    monitoredMidiBridge_ = midiBridge;
-    previousMidiNoteCallback_ = midiBridge->onNoteEvent;
-    juce::Component::SafePointer<PianoRollContent> safeThis(this);
-    auto previousCallback = previousMidiNoteCallback_;
-
-    midiBridge->onNoteEvent = [safeThis, previousCallback](magda::TrackId trackId,
-                                                           const magda::MidiNoteEvent& event) {
-        if (previousCallback)
-            previousCallback(trackId, event);
-
-        juce::MessageManager::callAsync([safeThis, trackId, event]() {
-            if (auto* self = safeThis.getComponent())
-                self->handleMidiNoteEvent(trackId, event);
-        });
-    };
-    midiNoteMonitorInstalled_ = true;
+void PianoRollContent::highlightMonitoredNote(int noteNumber, bool noteOn) {
+    if (keyboard_)
+        keyboard_->setNotePressed(noteNumber, noteOn);
 }
 
-void PianoRollContent::uninstallMidiNoteMonitor() {
-    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ != nullptr)
-        monitoredMidiBridge_->onNoteEvent = previousMidiNoteCallback_;
-
-    midiNoteMonitorInstalled_ = false;
-    monitoredMidiBridge_ = nullptr;
-    previousMidiNoteCallback_ = nullptr;
-}
-
-void PianoRollContent::handleMidiNoteEvent(magda::TrackId trackId,
-                                           const magda::MidiNoteEvent& event) {
-    if (!midiNoteMonitorInstalled_ || keyboard_ == nullptr ||
-        editingClipId_ == magda::INVALID_CLIP_ID)
-        return;
-
-    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-    if (clip == nullptr || clip->trackId != trackId)
-        return;
-
-    const bool noteOn = event.isNoteOn && event.velocity > 0;
-
-    // Only highlight notes the track is actually monitoring — with input
-    // monitoring off the note never reaches the track, so highlighting it would
-    // be misleading. Note-offs always fall through to clear any existing
-    // highlight, so toggling monitor off mid-hold can't strand a pressed key.
-    if (noteOn) {
-        const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
-        if (track == nullptr || track->inputMonitor == magda::InputMonitorMode::Off)
-            return;
-    }
-
-    keyboard_->setNotePressed(event.noteNumber, noteOn);
-
-    // Bring the played key into view only when it falls off-screen, so live
-    // input stays visible without yanking the view around on every note.
-    if (noteOn)
-        ensureNoteVisible(event.noteNumber);
+void PianoRollContent::ensureMonitoredNoteVisible(int noteNumber) {
+    ensureNoteVisible(noteNumber);
 }
 
 void PianoRollContent::setupGridCallbacks() {

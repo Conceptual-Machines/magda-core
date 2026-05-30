@@ -133,15 +133,12 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
     std::unique_ptr<magda::SvgButton> velocityToggle_;
 
-    magda::MidiBridge* monitoredMidiBridge_ = nullptr;
-    std::function<void(magda::TrackId, const magda::MidiNoteEvent&)> previousMidiNoteCallback_;
-    bool midiNoteMonitorInstalled_ = false;
+    // Live MIDI note monitor hooks (plumbing lives in MidiEditorContent).
+    void highlightMonitoredNote(int noteNumber, bool noteOn) override;
+    void ensureMonitoredNoteVisible(int noteNumber) override;
 
     // Grid component management
     void setupGridCallbacks();
-    void installMidiNoteMonitor();
-    void uninstallMidiNoteMonitor();
-    void handleMidiNoteEvent(magda::TrackId trackId, const magda::MidiNoteEvent& event);
     void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
     void drawChordRow(juce::Graphics& g, juce::Rectangle<int> area);
     void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
