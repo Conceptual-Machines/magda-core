@@ -91,7 +91,10 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     // the left; paramSliders_ holds the slider on the right.
     std::vector<std::unique_ptr<daw::ui::TextSlider>> paramSliders_;
     std::vector<std::unique_ptr<juce::Label>> paramLabels_;
-    std::vector<te::AutomatableParameter*> trackedParams_;
+    // Device parameter indices (ParameterInfo::paramIndex) surfaced as rows.
+    // Values are read/written in display units through the device model so
+    // Faust devices (whose live param is normalized) stay in sync.
+    std::vector<int> trackedParamIndices_;
     bool paramsResolved_ = false;
 
     void resolveParams();
