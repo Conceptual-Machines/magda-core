@@ -202,16 +202,16 @@ void SpectrumAnalyzerUI::updateControlVisibility() {
 
 void SpectrumAnalyzerUI::resized() {
     auto b = getLocalBounds();
-    chevronRect_ = compact_ ? juce::Rectangle<int>(b.getRight() - 16, b.getY() + 2, 14, 14)
+    chevronRect_ = compact_ ? juce::Rectangle<int>(b.getCentreX() - 7, b.getBottom() - 15, 14, 14)
                             : juce::Rectangle<int>();
     if (!showControls())
         return;
 
     if (compact_) {
-        // Stacked vertical controls beneath the plot (one combo per row) so they
-        // fit a narrow mixer strip.
-        auto controls = b.removeFromBottom(expandedControlsHeight());
-        controls.removeFromTop(4);
+        // Stacked vertical controls open at the top of the monitor (one combo
+        // per row) so they fit a narrow mixer strip.
+        auto controls = b.removeFromTop(expandedControlsHeight());
+        controls.removeFromTop(2);
         auto stackRow = [&controls](juce::Label& label, juce::ComboBox& combo) {
             auto row = controls.removeFromTop(kStackRowH);
             label.setBounds(row.removeFromLeft(kStackLabelW));
@@ -296,7 +296,7 @@ juce::Rectangle<float> SpectrumAnalyzerUI::plotArea() const {
     if (!compact_)
         a.removeFromBottom(kControlRowH);
     else if (controlsExpanded_)
-        a.removeFromBottom(expandedControlsHeight());
+        a.removeFromTop(expandedControlsHeight());
     return a.toFloat().reduced(4.0f);
 }
 
@@ -340,8 +340,10 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
     }
 
     auto drawChevron = [&] {
+        // Controls open at the top, so the bottom chevron points up to open and
+        // down to close.
         if (compact_)
-            drawAnalyzerExpandChevron(g, chevronRect_, controlsExpanded_,
+            drawAnalyzerExpandChevron(g, chevronRect_, !controlsExpanded_,
                                       DarkTheme::getColour(DarkTheme::TEXT_DIM));
     };
 

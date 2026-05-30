@@ -161,17 +161,17 @@ void OscilloscopeUI::applyTimebase() {
 
 void OscilloscopeUI::resized() {
     auto b = getLocalBounds();
-    // Compact mode keeps a small chevron toggle in the top-right of the display.
-    chevronRect_ = compact_ ? juce::Rectangle<int>(b.getRight() - 16, b.getY() + 2, 14, 14)
+    // Compact mode keeps a small chevron toggle centred along the bottom edge.
+    chevronRect_ = compact_ ? juce::Rectangle<int>(b.getCentreX() - 7, b.getBottom() - 15, 14, 14)
                             : juce::Rectangle<int>();
     if (!showControls())
         return;
 
     if (compact_) {
-        // Stacked vertical controls beneath the waveform (a mixer strip is too
-        // narrow for the full editor's horizontal row).
-        auto controls = b.removeFromBottom(expandedControlsHeight());
-        controls.removeFromTop(4);
+        // Stacked vertical controls open at the top of the monitor (a mixer
+        // strip is too narrow for the full editor's horizontal row).
+        auto controls = b.removeFromTop(expandedControlsHeight());
+        controls.removeFromTop(2);
         auto timeRow = controls.removeFromTop(kStackRowH);
         timeLabel_.setBounds(timeRow.removeFromLeft(kStackLabelW));
         timeSlider_.setBounds(timeRow.reduced(4, 2));
@@ -204,7 +204,7 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
     if (!compact_)
         bounds.removeFromBottom(kControlRowH);
     else if (controlsExpanded_)
-        bounds.removeFromBottom(expandedControlsHeight());
+        bounds.removeFromTop(expandedControlsHeight());
     auto area = bounds.toFloat().reduced(4.0f);
 
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -292,8 +292,10 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
         }
     }
 
+    // Controls open at the top, so the bottom chevron points up to open and
+    // down to close (drawAnalyzerExpandChevron draws up when its flag is true).
     if (compact_)
-        drawAnalyzerExpandChevron(g, chevronRect_, controlsExpanded_,
+        drawAnalyzerExpandChevron(g, chevronRect_, !controlsExpanded_,
                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
 }
 

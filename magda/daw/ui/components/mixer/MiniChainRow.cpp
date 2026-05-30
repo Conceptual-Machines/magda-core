@@ -9,7 +9,6 @@
 #include "../chain/layout/NodeHeaderStyles.hpp"
 #include "../common/SvgButton.hpp"
 #include "core/ChainNodePath.hpp"
-#include "core/InternalDeviceKind.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 
@@ -39,14 +38,14 @@ void MiniChainRow::setDevice(TrackId trackId, DeviceId deviceId, AudioEngine* en
         trackedParams_.clear();
     }
 
-    // "Open native editor" icon. Only external (VST3/AU) plugins have a native
-    // editor window worth popping; MAGDA's own devices (TE built-ins, native
-    // instruments, analysis) edit inline in the device slot, so they get no icon.
+    // "Open native editor" icon. Only genuine external plugins (VST3/AU/VST)
+    // have a native editor window worth popping; every MAGDA-internal device
+    // (TE built-ins, the magda_* Faust effects, native instruments, analysis)
+    // reports PluginFormat::Internal and edits inline, so it gets no icon.
     const auto* devInfo = deviceId_ != INVALID_DEVICE_ID
                               ? TrackManager::getInstance().getDevice(trackId_, deviceId_)
                               : nullptr;
-    const bool wantUiButton = devInfo != nullptr && classifyInternalDevice(devInfo->pluginId) ==
-                                                        InternalDeviceKind::External;
+    const bool wantUiButton = devInfo != nullptr && devInfo->format != PluginFormat::Internal;
     if (wantUiButton && uiButton_ == nullptr) {
         uiButton_ = std::make_unique<SvgButton>("UI", BinaryData::open_in_new_svg,
                                                 BinaryData::open_in_new_svgSize);
