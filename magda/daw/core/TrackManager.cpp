@@ -736,6 +736,31 @@ void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
     DBG("Added track " << track->name << " to group " << group->name);
 }
 
+void TrackManager::moveChildWithinGroup(TrackId childId, TrackId beforeChildId) {
+    if (childId == beforeChildId)
+        return;
+    auto* track = getTrack(childId);
+    if (!track || !track->hasParent())
+        return;
+    auto* parent = getTrack(track->parentId);
+    if (!parent)
+        return;
+
+    auto& children = parent->childIds;
+    auto cur = std::find(children.begin(), children.end(), childId);
+    if (cur == children.end())
+        return;
+    children.erase(cur);
+
+    // Insert before beforeChildId, or append when it's absent / INVALID.
+    auto insertPos = (beforeChildId == INVALID_TRACK_ID)
+                         ? children.end()
+                         : std::find(children.begin(), children.end(), beforeChildId);
+    children.insert(insertPos, childId);
+
+    notifyTracksChanged();
+}
+
 void TrackManager::removeTrackFromGroup(TrackId trackId) {
     auto* track = getTrack(trackId);
     if (!track || !track->hasParent())
