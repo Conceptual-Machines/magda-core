@@ -12,8 +12,10 @@
 namespace magda::daw::ui {
 
 namespace {
-constexpr int kControlRowH = 22;
-}
+constexpr int kControlRowH = 22;  // full-editor horizontal control row
+constexpr int kStackRowH = 18;    // one row of the compact vertical control stack
+constexpr int kStackLabelW = 34;  // label column width in the stacked layout
+}  // namespace
 
 OscilloscopeUI::OscilloscopeUI() {
     window_.assign(static_cast<size_t>(kMaxWindow), 0.0f);
@@ -61,6 +63,12 @@ OscilloscopeUI::OscilloscopeUI() {
     addAndMakeVisible(timeValueLabel_);
     updateTimeReadout();
 
+    colourLabel_.setText("Color", juce::dontSendNotification);
+    colourLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    colourLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    colourLabel_.setJustificationType(juce::Justification::centredRight);
+    addChildComponent(colourLabel_);  // only shown in the stacked compact layout
+
     colourCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     colourCombo_.setColour(juce::ComboBox::backgroundColourId,
                            DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
@@ -102,12 +110,38 @@ void OscilloscopeUI::setCompact(bool compact) {
     if (compact_ == compact)
         return;
     compact_ = compact;
-    timeLabel_.setVisible(!compact);
-    timeSlider_.setVisible(!compact);
-    timeValueLabel_.setVisible(!compact);
-    colourCombo_.setVisible(!compact);
+    if (!compact_)
+        controlsExpanded_ = false;  // the full editor always shows controls; no toggle
+    updateControlVisibility();
     resized();
     repaint();
+}
+
+void OscilloscopeUI::setControlsExpanded(bool expanded) {
+    if (!compact_ || controlsExpanded_ == expanded)
+        return;
+    controlsExpanded_ = expanded;
+    updateControlVisibility();
+    resized();
+    repaint();
+    if (onControlsExpandedChanged)
+        onControlsExpandedChanged();
+}
+
+int OscilloscopeUI::expandedControlsHeight() const {
+    if (!compact_ || !controlsExpanded_)
+        return 0;
+    return 2 * kStackRowH + 4;  // Time + Color rows, plus top padding
+}
+
+void OscilloscopeUI::updateControlVisibility() {
+    const bool full = !compact_;
+    const bool stacked = compact_ && controlsExpanded_;
+    timeLabel_.setVisible(full || stacked);
+    timeSlider_.setVisible(full || stacked);
+    timeValueLabel_.setVisible(full);  // numeric readout only fits the full editor
+    colourCombo_.setVisible(full || stacked);
+    colourLabel_.setVisible(stacked);  // the stacked layout labels the colour combo
 }
 
 void OscilloscopeUI::updateTimeReadout() {
@@ -126,13 +160,37 @@ void OscilloscopeUI::applyTimebase() {
 }
 
 void OscilloscopeUI::resized() {
-    if (compact_)
+    auto b = getLocalBounds();
+    // Compact mode keeps a small chevron toggle in the top-right of the display.
+    chevronRect_ = compact_ ? juce::Rectangle<int>(b.getRight() - 16, b.getY() + 2, 14, 14)
+                            : juce::Rectangle<int>();
+    if (!showControls())
         return;
-    auto controls = getLocalBounds().removeFromBottom(kControlRowH);
+
+    if (compact_) {
+        // Stacked vertical controls beneath the waveform (a mixer strip is too
+        // narrow for the full editor's horizontal row).
+        auto controls = b.removeFromBottom(expandedControlsHeight());
+        controls.removeFromTop(4);
+        auto timeRow = controls.removeFromTop(kStackRowH);
+        timeLabel_.setBounds(timeRow.removeFromLeft(kStackLabelW));
+        timeSlider_.setBounds(timeRow.reduced(4, 2));
+        auto colourRow = controls.removeFromTop(kStackRowH);
+        colourLabel_.setBounds(colourRow.removeFromLeft(kStackLabelW));
+        colourCombo_.setBounds(colourRow.reduced(2, 1));
+        return;
+    }
+
+    auto controls = b.removeFromBottom(kControlRowH);
     timeLabel_.setBounds(controls.removeFromLeft(40));
     colourCombo_.setBounds(controls.removeFromRight(72).reduced(2, 2));
     timeValueLabel_.setBounds(controls.removeFromRight(54));
     timeSlider_.setBounds(controls.reduced(4, 2));
+}
+
+void OscilloscopeUI::mouseDown(const juce::MouseEvent& e) {
+    if (compact_ && chevronRect_.contains(e.getPosition()))
+        setControlsExpanded(!controlsExpanded_);
 }
 
 void OscilloscopeUI::timerCallback() {
@@ -145,6 +203,8 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
     if (!compact_)
         bounds.removeFromBottom(kControlRowH);
+    else if (controlsExpanded_)
+        bounds.removeFromBottom(expandedControlsHeight());
     auto area = bounds.toFloat().reduced(4.0f);
 
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -231,6 +291,10 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
             g.drawLine(xPos, yTop, xPos, yBot, 1.0f);
         }
     }
+
+    if (compact_)
+        drawAnalyzerExpandChevron(g, chevronRect_, controlsExpanded_,
+                                  DarkTheme::getColour(DarkTheme::TEXT_DIM));
 }
 
 }  // namespace magda::daw::ui

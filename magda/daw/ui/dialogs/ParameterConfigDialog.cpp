@@ -69,6 +69,9 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
                     owner_.parameters_[static_cast<size_t>(paramIndex)].isVisible =
                         toggle_.getToggleState();
                     owner_.updateTitle();
+                } else if (column_ == ColumnIds::Mini) {
+                    owner_.parameters_[static_cast<size_t>(paramIndex)].inMiniMixer =
+                        toggle_.getToggleState();
                 }
             }
         };
@@ -83,6 +86,10 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
             const auto& param = owner_.parameters_[static_cast<size_t>(paramIndex)];
             if (column_ == ColumnIds::Visible) {
                 toggle_.setToggleState(param.isVisible, juce::dontSendNotification);
+                toggle_.setEnabled(true);
+                toggle_.setVisible(true);
+            } else if (column_ == ColumnIds::Mini) {
+                toggle_.setToggleState(param.inMiniMixer, juce::dontSendNotification);
                 toggle_.setEnabled(true);
                 toggle_.setVisible(true);
             }
@@ -317,6 +324,7 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     auto& header = table_.getHeader();
     header.addColumn("Parameter", ParamName, 150, 100, 300);
     header.addColumn("Visible", Visible, 60, 60, 60);
+    header.addColumn("Mini", Mini, 50, 50, 50);
     header.addColumn("Unit", Unit, 90, 70, 120);
     header.addColumn("Range", Range, 180, 120, 300);
 
@@ -554,7 +562,7 @@ juce::Component* ParameterConfigDialog::refreshComponentForCell(int rowNumber, i
     if (columnId == ParamName)
         return nullptr;
 
-    if (columnId == Visible) {
+    if (columnId == Visible || columnId == Mini) {
         auto* toggle = dynamic_cast<ToggleCell*>(existingComponent);
         if (toggle == nullptr) {
             toggle = new ToggleCell(*this, rowNumber, columnId);
@@ -1122,6 +1130,7 @@ void ParameterConfigDialog::saveParameterConfiguration() {
         paramElem->setAttribute("index", static_cast<int>(i));
         paramElem->setAttribute("name", p.name);
         paramElem->setAttribute("visible", p.isVisible);
+        paramElem->setAttribute("mini", p.inMiniMixer);
         paramElem->setAttribute("unit", p.unit);
         paramElem->setAttribute("scale", scaleToXmlString(p.scale));
         paramElem->setAttribute("min", static_cast<double>(p.rangeMin));
@@ -1192,6 +1201,7 @@ void ParameterConfigDialog::loadParameterConfiguration() {
             if (index >= 0 && index < static_cast<int>(parameters_.size())) {
                 auto& p = parameters_[static_cast<size_t>(index)];
                 p.isVisible = paramElem->getBoolAttribute("visible", false);
+                p.inMiniMixer = paramElem->getBoolAttribute("mini", false);
                 if (paramElem->hasAttribute("unit"))
                     p.unit = paramElem->getStringAttribute("unit");
                 if (paramElem->hasAttribute("scale"))
@@ -1261,6 +1271,7 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
 
     // Load parameters from new format or legacy format
     device.visibleParameters.clear();
+    device.miniMixerParameters.clear();
 
     // device.parameters now holds only the plugin's own params — TE's slot
     // dry/wet live in device.wrapperParameters — so the XML's stored index
@@ -1275,9 +1286,13 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
 
             auto xmlName = paramElem->getStringAttribute("name");
             bool visible = paramElem->getBoolAttribute("visible", false);
+            bool mini = paramElem->getBoolAttribute("mini", false);
 
             if (visible && deviceIndex < static_cast<int>(device.parameters.size())) {
                 device.visibleParameters.push_back(deviceIndex);
+            }
+            if (mini && deviceIndex < static_cast<int>(device.parameters.size())) {
+                device.miniMixerParameters.push_back(deviceIndex);
             }
 
             // Apply detection data to device parameters

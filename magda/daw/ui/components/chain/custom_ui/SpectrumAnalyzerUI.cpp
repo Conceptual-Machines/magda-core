@@ -14,7 +14,9 @@
 namespace magda::daw::ui {
 
 namespace {
-constexpr int kControlRowH = 22;
+constexpr int kControlRowH = 22;  // full-editor horizontal control row
+constexpr int kStackRowH = 18;    // one row of the compact vertical control stack
+constexpr int kStackLabelW = 34;  // label column width in the stacked layout
 constexpr float kSlopeOptions[] = {0.0f, 3.0f, 4.5f, 6.0f};  // dB/oct
 constexpr float kSpeedOptions[] = {0.15f, 0.4f, 0.8f};       // smoothing (Slow/Med/Fast)
 
@@ -162,22 +164,67 @@ void SpectrumAnalyzerUI::setCompact(bool compact) {
     if (compact_ == compact)
         return;
     compact_ = compact;
-    fftLabel_.setVisible(!compact);
-    fftCombo_.setVisible(!compact);
-    slopeLabel_.setVisible(!compact);
-    slopeCombo_.setVisible(!compact);
-    speedLabel_.setVisible(!compact);
-    speedCombo_.setVisible(!compact);
-    colourLabel_.setVisible(!compact);
-    colourCombo_.setVisible(!compact);
+    if (!compact_)
+        controlsExpanded_ = false;  // the full editor always shows controls; no toggle
+    updateControlVisibility();
     resized();
     repaint();
 }
 
-void SpectrumAnalyzerUI::resized() {
-    if (compact_)
+void SpectrumAnalyzerUI::setControlsExpanded(bool expanded) {
+    if (!compact_ || controlsExpanded_ == expanded)
         return;
-    auto controls = getLocalBounds().removeFromBottom(kControlRowH);
+    controlsExpanded_ = expanded;
+    updateControlVisibility();
+    resized();
+    repaint();
+    if (onControlsExpandedChanged)
+        onControlsExpandedChanged();
+}
+
+int SpectrumAnalyzerUI::expandedControlsHeight() const {
+    if (!compact_ || !controlsExpanded_)
+        return 0;
+    return 4 * kStackRowH + 4;  // FFT + Slope + Time + Color rows, plus top padding
+}
+
+void SpectrumAnalyzerUI::updateControlVisibility() {
+    const bool show = !compact_ || controlsExpanded_;
+    fftLabel_.setVisible(show);
+    fftCombo_.setVisible(show);
+    slopeLabel_.setVisible(show);
+    slopeCombo_.setVisible(show);
+    speedLabel_.setVisible(show);
+    speedCombo_.setVisible(show);
+    colourLabel_.setVisible(show);
+    colourCombo_.setVisible(show);
+}
+
+void SpectrumAnalyzerUI::resized() {
+    auto b = getLocalBounds();
+    chevronRect_ = compact_ ? juce::Rectangle<int>(b.getRight() - 16, b.getY() + 2, 14, 14)
+                            : juce::Rectangle<int>();
+    if (!showControls())
+        return;
+
+    if (compact_) {
+        // Stacked vertical controls beneath the plot (one combo per row) so they
+        // fit a narrow mixer strip.
+        auto controls = b.removeFromBottom(expandedControlsHeight());
+        controls.removeFromTop(4);
+        auto stackRow = [&controls](juce::Label& label, juce::ComboBox& combo) {
+            auto row = controls.removeFromTop(kStackRowH);
+            label.setBounds(row.removeFromLeft(kStackLabelW));
+            combo.setBounds(row.reduced(2, 1));
+        };
+        stackRow(fftLabel_, fftCombo_);
+        stackRow(slopeLabel_, slopeCombo_);
+        stackRow(speedLabel_, speedCombo_);
+        stackRow(colourLabel_, colourCombo_);
+        return;
+    }
+
+    auto controls = b.removeFromBottom(kControlRowH);
     auto cell = [&controls](int labelW, int comboW) {
         controls.removeFromLeft(4);
         auto label = controls.removeFromLeft(labelW);
@@ -196,6 +243,11 @@ void SpectrumAnalyzerUI::resized() {
     auto [colL, colC] = cell(34, 70);
     colourLabel_.setBounds(colL);
     colourCombo_.setBounds(colC.reduced(2, 1));
+}
+
+void SpectrumAnalyzerUI::mouseDown(const juce::MouseEvent& e) {
+    if (compact_ && chevronRect_.contains(e.getPosition()))
+        setControlsExpanded(!controlsExpanded_);
 }
 
 void SpectrumAnalyzerUI::timerCallback() {
@@ -243,6 +295,8 @@ juce::Rectangle<float> SpectrumAnalyzerUI::plotArea() const {
     auto a = getLocalBounds();
     if (!compact_)
         a.removeFromBottom(kControlRowH);
+    else if (controlsExpanded_)
+        a.removeFromBottom(expandedControlsHeight());
     return a.toFloat().reduced(4.0f);
 }
 
@@ -285,8 +339,16 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         freqLabel(10000.0f, "10k");
     }
 
-    if (smoothedDb_.empty())
+    auto drawChevron = [&] {
+        if (compact_)
+            drawAnalyzerExpandChevron(g, chevronRect_, controlsExpanded_,
+                                      DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    };
+
+    if (smoothedDb_.empty()) {
+        drawChevron();
         return;
+    }
 
     const double sr = (plugin_ != nullptr) ? plugin_->getSampleRate() : 44100.0;
     const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
@@ -339,6 +401,8 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         g.drawText(txt, box, juce::Justification::centredLeft);
     }
+
+    drawChevron();
 }
 
 void SpectrumAnalyzerUI::mouseMove(const juce::MouseEvent& e) {

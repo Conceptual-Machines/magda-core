@@ -411,6 +411,7 @@ class TrackManager {
     void updateDeviceParametersByPath(const ChainNodePath& devicePath,
                                       const std::vector<ParameterInfo>& params);
     void setDeviceVisibleParameters(DeviceId deviceId, const std::vector<int>& visibleParams);
+    void setDeviceMiniMixerParameters(DeviceId deviceId, const std::vector<int>& miniParams);
 
     // Set a specific device parameter value in ParameterInfo model units,
     // not MAGDA-normalized automation/controller units.

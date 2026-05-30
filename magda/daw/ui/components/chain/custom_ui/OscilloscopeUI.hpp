@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <vector>
 
 #include "audio/plugins/OscilloscopePlugin.hpp"
@@ -26,15 +27,33 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     // bounds for the waveform — used by the mini visualizer on the mixer.
     void setCompact(bool compact);
 
+    // Compact-mode expand toggle: reveal the controls stacked vertically beneath
+    // the waveform (the full editor's horizontal row doesn't fit a mixer strip).
+    // Fires onControlsExpandedChanged so the host strip can grow/relayout.
+    void setControlsExpanded(bool expanded);
+    bool areControlsExpanded() const {
+        return controlsExpanded_;
+    }
+    // Height the stacked control rows need beneath the display (0 when collapsed
+    // or in full-editor mode).
+    int expandedControlsHeight() const;
+    std::function<void()> onControlsExpandedChanged;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent& e) override;
 
   private:
     void timerCallback() override;
     void applyTimebase();      // recompute displaySamples_ / readCount_ from timebase + sample rate
     void updateTimeReadout();  // format the slider value into the themed value label
+    void updateControlVisibility();
+    bool showControls() const {
+        return !compact_ || controlsExpanded_;
+    }
 
     bool compact_ = false;
+    bool controlsExpanded_ = false;
     daw::audio::OscilloscopePlugin* plugin_ = nullptr;
 
     // window_ holds the whole tap ring; each frame we read readCount_ samples
@@ -48,7 +67,11 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     juce::Slider timeSlider_;
     juce::Label timeLabel_;
     juce::Label timeValueLabel_;
+    juce::Label colourLabel_;  // "Color" — only shown in the stacked compact layout
     juce::ComboBox colourCombo_;
+
+    // Compact-mode expand toggle hit area (top-right of the display).
+    juce::Rectangle<int> chevronRect_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscilloscopeUI)
 };

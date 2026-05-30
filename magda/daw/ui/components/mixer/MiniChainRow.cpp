@@ -15,41 +15,6 @@
 
 namespace magda {
 
-namespace {
-// Hand-picked "money" parameters surfaced in the mixer mini chain for MAGDA's
-// native devices, keyed by device kind. Names match ParameterInfo::name (the
-// TE display name). Devices not listed (external VST/AU, Faust, instruments)
-// fall back to the first few non-hidden parameters.
-std::vector<juce::String> curatedParamNames(InternalDeviceKind kind) {
-    switch (kind) {
-        case InternalDeviceKind::TeEq:
-            return {"Low-shelf gain", "Mid gain 1", "High-shelf gain"};
-        case InternalDeviceKind::TeCompressor:
-            return {"Threshold", "Ratio", "Output gain"};
-        case InternalDeviceKind::TeReverb:
-            return {"Room Size", "Damping", "Wet Level"};
-        case InternalDeviceKind::TeDelay:
-            return {"Length", "Feedback", "Mix proportion"};
-        case InternalDeviceKind::TeChorus:
-            return {"Depth", "Speed", "Mix"};
-        case InternalDeviceKind::TePhaser:
-            return {"Depth", "Rate", "Feedback"};
-        case InternalDeviceKind::TeLowpass:
-            return {"Frequency"};
-        case InternalDeviceKind::TePitchShift:
-            return {"Semitones"};
-        case InternalDeviceKind::TeImpulseResponse:
-            return {"Mix", "Gain", "Low Pass Cutoff"};
-        case InternalDeviceKind::TeToneGenerator:
-            return {"Frequency", "Level"};
-        case InternalDeviceKind::TeVolumeAndPan:
-            return {"Volume", "Pan"};
-        default:
-            return {};
-    }
-}
-}  // namespace
-
 MiniChainRow::MiniChainRow() {
     setInterceptsMouseClicks(true, true);
     paramSliders_.reserve(kMaxExpandedParams);
@@ -74,13 +39,14 @@ void MiniChainRow::setDevice(TrackId trackId, DeviceId deviceId, AudioEngine* en
         trackedParams_.clear();
     }
 
-    // "Open native editor" icon. Top-level devices only (racks render as a
-    // name-only summary row); analysis devices have inline mixer UI and no
-    // native editor, so they get no icon.
+    // "Open native editor" icon. Only external (VST3/AU) plugins have a native
+    // editor window worth popping; MAGDA's own devices (TE built-ins, native
+    // instruments, analysis) edit inline in the device slot, so they get no icon.
     const auto* devInfo = deviceId_ != INVALID_DEVICE_ID
                               ? TrackManager::getInstance().getDevice(trackId_, deviceId_)
                               : nullptr;
-    const bool wantUiButton = devInfo != nullptr && !isAnalysisDevice(devInfo->pluginId);
+    const bool wantUiButton = devInfo != nullptr && classifyInternalDevice(devInfo->pluginId) ==
+                                                        InternalDeviceKind::External;
     if (wantUiButton && uiButton_ == nullptr) {
         uiButton_ = std::make_unique<SvgButton>("UI", BinaryData::open_in_new_svg,
                                                 BinaryData::open_in_new_svgSize);
@@ -155,9 +121,9 @@ void MiniChainRow::resolveParams() {
     if (pluginPtr == nullptr)
         return;
 
-    // Curated parameter list: skips slot-level Dry/Wet and hidden params,
-    // uses the plugin spec's names / units / scales. paramIndex is the
-    // TE-side index so we can still resolve the live AutomatableParameter.
+    // Resolve the params to surface: skips hidden params and uses the plugin
+    // spec's names / units / scales. paramIndex is the TE-side index so we can
+    // still resolve the live AutomatableParameter.
     const auto* devInfo = TrackManager::getInstance().getDevice(trackId_, deviceId_);
     if (devInfo == nullptr)
         return;
@@ -202,22 +168,20 @@ void MiniChainRow::resolveParams() {
         paramSliders_.push_back(std::move(slider));
     };
 
-    // 1) Hand-curated parameter list for MAGDA native devices: match the wanted
-    //    names against the device's parameters, in curated order.
-    const auto curated = curatedParamNames(classifyInternalDevice(devInfo->pluginId));
-    for (const auto& wanted : curated) {
+    // 1) Explicit user selection from the parameter config dialog's "Mini"
+    //    column (indices into devInfo->parameters), in the order chosen.
+    for (int idx : devInfo->miniMixerParameters) {
         if (static_cast<int>(trackedParams_.size()) >= kMaxExpandedParams)
             break;
-        for (const auto& paramInfo : devInfo->parameters) {
-            if (!paramInfo.hidden && paramInfo.name.equalsIgnoreCase(wanted)) {
+        if (idx >= 0 && idx < static_cast<int>(devInfo->parameters.size())) {
+            const auto& paramInfo = devInfo->parameters[static_cast<size_t>(idx)];
+            if (!paramInfo.hidden)
                 addParamSlider(paramInfo);
-                break;
-            }
         }
     }
 
-    // 2) Fallback (external plugins, Faust, anything uncurated, or no matches):
-    //    first N non-hidden parameters in device order.
+    // 2) Fallback (no explicit selection): first N non-hidden parameters in
+    //    device order.
     if (trackedParams_.empty()) {
         for (const auto& paramInfo : devInfo->parameters) {
             if (static_cast<int>(trackedParams_.size()) >= kMaxExpandedParams)

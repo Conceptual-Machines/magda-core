@@ -621,16 +621,23 @@ void MixerView::ChannelStrip::setupControls() {
         addSendButton_->setVisible(false);
         addAndMakeVisible(*addSendButton_);
 
-        // Mini Oscilloscope / Spectrum — rendered in compact mode (no control
-        // row), pointer to the live plugin is wired by refreshMiniAnalyzers().
+        // Mini Oscilloscope / Spectrum — rendered in compact mode, pointer to
+        // the live plugin is wired by refreshMiniAnalyzers(). The chevron reveals
+        // their controls stacked beneath; the strip relayouts taller to fit.
+        auto relayoutOnExpand = [this]() {
+            if (auto* parent = findParentComponentOfClass<MixerView>())
+                parent->relayoutAllStrips();
+        };
         miniOscilloscopeUI_ = std::make_unique<daw::ui::OscilloscopeUI>();
         miniOscilloscopeUI_->setCompact(true);
         miniOscilloscopeUI_->setVisible(false);
+        miniOscilloscopeUI_->onControlsExpandedChanged = relayoutOnExpand;
         addAndMakeVisible(*miniOscilloscopeUI_);
 
         miniSpectrumUI_ = std::make_unique<daw::ui::SpectrumAnalyzerUI>();
         miniSpectrumUI_->setCompact(true);
         miniSpectrumUI_->setVisible(false);
+        miniSpectrumUI_->onControlsExpandedChanged = relayoutOnExpand;
         addAndMakeVisible(*miniSpectrumUI_);
 
         // Resize handle (thin horizontal bar above the fader). Controls
@@ -1176,14 +1183,16 @@ void MixerView::ChannelStrip::resized() {
     const bool showSpec = cfg.getMixerShowSpectrum();
     if (!isMaster_) {
         if (showOsc && miniOscilloscopeUI_) {
-            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(miniAnalyzerHeight));
+            const int h = miniAnalyzerHeight + miniOscilloscopeUI_->expandedControlsHeight();
+            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
             miniOscilloscopeUI_->setVisible(true);
             bounds.removeFromTop(2);
         } else if (miniOscilloscopeUI_) {
             miniOscilloscopeUI_->setVisible(false);
         }
         if (showSpec && miniSpectrumUI_) {
-            miniSpectrumUI_->setBounds(bounds.removeFromTop(miniAnalyzerHeight));
+            const int h = miniAnalyzerHeight + miniSpectrumUI_->expandedControlsHeight();
+            miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
             miniSpectrumUI_->setVisible(true);
             bounds.removeFromTop(2);
         } else if (miniSpectrumUI_) {

@@ -26,6 +26,7 @@ struct MockParameterInfo {
     magda::ParameterScale scale = magda::ParameterScale::Linear;
     std::vector<juce::String> choices;     // For discrete params
     std::vector<juce::String> valueTable;  // Full getText() lookup table
+    bool inMiniMixer = false;              // Surfaced in the mixer mini-chain row
 };
 
 /**
@@ -34,6 +35,7 @@ struct MockParameterInfo {
  * Shows a table with columns:
  * - Parameter name
  * - Visible toggle
+ * - Mini toggle (surface this param in the mixer mini-chain row)
  * - Custom unit
  * - Custom range (min/max/center)
  */
@@ -93,7 +95,7 @@ class ParameterConfigDialog : public juce::Component,
     juce::Label searchLabel_;
 
     // Column IDs
-    enum ColumnIds { ParamName = 1, Visible, Unit, Range };
+    enum ColumnIds { ParamName = 1, Visible, Mini, Unit, Range };
 
     // Scan inputs cached from loadParameters for detection
     std::vector<magda::ParameterScanInput> scanInputs_;

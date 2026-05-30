@@ -3,6 +3,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -29,10 +30,21 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     // full bounds for the plot — used by the mini visualizer on the mixer.
     void setCompact(bool compact);
 
+    // Compact-mode expand toggle: reveal the controls stacked vertically beneath
+    // the plot (the full editor's horizontal row doesn't fit a mixer strip).
+    // Fires onControlsExpandedChanged so the host strip can grow/relayout.
+    void setControlsExpanded(bool expanded);
+    bool areControlsExpanded() const {
+        return controlsExpanded_;
+    }
+    int expandedControlsHeight() const;  // 0 when collapsed or in full-editor mode
+    std::function<void()> onControlsExpandedChanged;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseMove(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
+    void mouseDown(const juce::MouseEvent& e) override;
 
   private:
     void timerCallback() override;
@@ -40,8 +52,13 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     float freqToX(float hz, juce::Rectangle<float> area) const;
     float dbToY(float db, juce::Rectangle<float> area) const;
     juce::Rectangle<float> plotArea() const;  // plot region (excludes the control row)
+    void updateControlVisibility();
+    bool showControls() const {
+        return !compact_ || controlsExpanded_;
+    }
 
     bool compact_ = false;
+    bool controlsExpanded_ = false;
     daw::audio::SpectrumAnalyzerPlugin* plugin_ = nullptr;
 
     int fftOrder_ = 11;
@@ -65,6 +82,9 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
 
     juce::ComboBox fftCombo_, slopeCombo_, speedCombo_, colourCombo_;
     juce::Label fftLabel_, slopeLabel_, speedLabel_, colourLabel_;
+
+    // Compact-mode expand toggle hit area (top-right of the plot).
+    juce::Rectangle<int> chevronRect_;
 
     juce::Point<int> mousePos_;
     bool mouseOver_ = false;
