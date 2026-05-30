@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "LevelMeterBallistics.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda {
@@ -40,15 +41,17 @@ class LevelMeter : public juce::Component, private juce::Timer {
 
         if (leftDb > peakLeftDb_) {
             peakLeftDb_ = leftDb;
-            peakLeftHoldTime_ = PEAK_HOLD_MS;
+            peakLeftHoldTime_ = level_meter_ballistics::peakHoldMs;
         }
         if (rightDb > peakRightDb_) {
             peakRightDb_ = rightDb;
-            peakRightHoldTime_ = PEAK_HOLD_MS;
+            peakRightHoldTime_ = level_meter_ballistics::peakHoldMs;
         }
 
-        if (!isTimerRunning())
+        if (!isTimerRunning()) {
+            lastUpdateMs_ = level_meter_ballistics::restartClock();
             startTimerHz(60);
+        }
     }
 
     float getLevel() const {
@@ -96,19 +99,12 @@ class LevelMeter : public juce::Component, private juce::Timer {
     float peakRightDb_ = MIN_DB;
     float peakLeftHoldTime_ = 0.0f;
     float peakRightHoldTime_ = 0.0f;
+    double lastUpdateMs_ = 0.0;
 
     // dB conversion helpers
     static constexpr float MIN_DB = -60.0f;
     static constexpr float MAX_DB = 6.0f;
     static constexpr float METER_CURVE_EXPONENT = 2.0f;
-
-    // Ballistics (tuned for 60Hz refresh)
-    static constexpr float ATTACK_COEFF = 0.9f;    // Near-instant attack for transients
-    static constexpr float RELEASE_COEFF = 0.05f;  // Slow decay — smooth falloff
-
-    // Peak hold
-    static constexpr float PEAK_HOLD_MS = 1500.0f;
-    static constexpr float PEAK_DECAY_DB_PER_FRAME = 0.8f;
 
     static float gainToDb(float gain) {
         if (gain <= 0.0f)
@@ -126,48 +122,24 @@ class LevelMeter : public juce::Component, private juce::Timer {
     }
 
     void timerCallback() override {
+        const float elapsedMs = level_meter_ballistics::getElapsedMs(lastUpdateMs_);
         bool changed = false;
-        changed |= updateLevel(displayLeftLevel_, targetLeftLevel_);
-        changed |= updateLevel(displayRightLevel_, targetRightLevel_);
-        changed |= updatePeak(peakLeftDb_, peakLeftHoldTime_, gainToDb(targetLeftLevel_));
-        changed |= updatePeak(peakRightDb_, peakRightHoldTime_, gainToDb(targetRightLevel_));
+        changed |=
+            level_meter_ballistics::updateLevel(displayLeftLevel_, targetLeftLevel_, elapsedMs);
+        changed |=
+            level_meter_ballistics::updateLevel(displayRightLevel_, targetRightLevel_, elapsedMs);
+        changed |= level_meter_ballistics::updatePeak(
+            peakLeftDb_, peakLeftHoldTime_, gainToDb(targetLeftLevel_), MIN_DB, elapsedMs);
+        changed |= level_meter_ballistics::updatePeak(
+            peakRightDb_, peakRightHoldTime_, gainToDb(targetRightLevel_), MIN_DB, elapsedMs);
 
         if (changed) {
             repaint();
         } else if (displayLeftLevel_ < 0.001f && displayRightLevel_ < 0.001f &&
                    peakLeftDb_ <= MIN_DB && peakRightDb_ <= MIN_DB) {
             stopTimer();
+            lastUpdateMs_ = 0.0;
         }
-    }
-
-    bool updateLevel(float& display, float target) {
-        float prev = display;
-        if (target > display) {
-            // Attack: fast rise
-            display += (target - display) * ATTACK_COEFF;
-        } else {
-            // Release: slow decay
-            display += (target - display) * RELEASE_COEFF;
-        }
-        // Snap to zero when very small
-        if (display < 0.001f)
-            display = 0.0f;
-        return std::abs(display - prev) > 0.0001f;
-    }
-
-    bool updatePeak(float& peakDb, float& holdTime, float currentDb) {
-        float prev = peakDb;
-        if (currentDb > peakDb) {
-            peakDb = currentDb;
-            holdTime = PEAK_HOLD_MS;
-        } else if (holdTime > 0.0f) {
-            holdTime -= 1000.0f / 60.0f;  // ~16.7ms per frame at 60Hz
-        } else {
-            peakDb -= PEAK_DECAY_DB_PER_FRAME;
-            if (peakDb < MIN_DB)
-                peakDb = MIN_DB;
-        }
-        return std::abs(peakDb - prev) > 0.01f;
     }
 
     void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level, float peakDb) {
