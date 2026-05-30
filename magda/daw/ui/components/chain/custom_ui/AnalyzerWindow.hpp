@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <memory>
 #include <utility>
 
@@ -34,7 +35,13 @@ class AnalyzerWindow : public FloatingHostWindow {
 
     void closeButtonPressed() override {
         setVisible(false);
+        if (onClose)
+            onClose();
     }
+
+    // Fired when the window is closed via its X button, so the owning UI can
+    // un-engage its pop-out toggle.
+    std::function<void()> onClose;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AnalyzerWindow)
 };

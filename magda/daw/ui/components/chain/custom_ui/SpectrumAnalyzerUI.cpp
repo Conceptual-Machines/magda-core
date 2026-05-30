@@ -356,15 +356,26 @@ void SpectrumAnalyzerUI::mouseDown(const juce::MouseEvent& e) {
 }
 
 void SpectrumAnalyzerUI::openPopout() {
+    // popoutButton_ is a toggle: its state after the click is the desired open
+    // state, so the icon and window stay in sync (and the window X clears it).
+    const bool wantOpen = (popoutButton_ == nullptr) || popoutButton_->getToggleState();
+
     if (popoutWindow_ == nullptr) {
+        if (!wantOpen)
+            return;
         auto content = std::make_unique<SpectrumAnalyzerUI>();  // full-size (not compact)
         popoutUI_ = content.get();
         popoutUI_->setPersistGlobalDefaults(persistGlobalDefaults_);
         popoutUI_->setPlugin(plugin_);
         popoutWindow_ = std::make_unique<AnalyzerWindow>("Spectrum Analyzer", std::move(content));
+        popoutWindow_->onClose = [this]() {
+            if (popoutButton_)
+                popoutButton_->setToggleState(false, juce::dontSendNotification);
+        };
     } else {
-        popoutWindow_->setVisible(true);
-        popoutWindow_->toFront(true);
+        popoutWindow_->setVisible(wantOpen);
+        if (wantOpen)
+            popoutWindow_->toFront(true);
     }
 }
 

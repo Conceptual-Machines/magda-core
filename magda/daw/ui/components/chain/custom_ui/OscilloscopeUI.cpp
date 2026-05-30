@@ -284,15 +284,27 @@ void OscilloscopeUI::mouseDown(const juce::MouseEvent& e) {
 }
 
 void OscilloscopeUI::openPopout() {
+    // popoutButton_ is a toggle: its state after the click is the desired open
+    // state. This keeps the icon and the window in sync — clicking while open
+    // hides it, and closing via the window X clears the toggle (onClose below).
+    const bool wantOpen = (popoutButton_ == nullptr) || popoutButton_->getToggleState();
+
     if (popoutWindow_ == nullptr) {
+        if (!wantOpen)
+            return;
         auto content = std::make_unique<OscilloscopeUI>();  // full-size (not compact)
         popoutUI_ = content.get();
         popoutUI_->setPersistGlobalDefaults(persistGlobalDefaults_);
         popoutUI_->setPlugin(plugin_);
         popoutWindow_ = std::make_unique<AnalyzerWindow>("Oscilloscope", std::move(content));
+        popoutWindow_->onClose = [this]() {
+            if (popoutButton_)
+                popoutButton_->setToggleState(false, juce::dontSendNotification);
+        };
     } else {
-        popoutWindow_->setVisible(true);
-        popoutWindow_->toFront(true);
+        popoutWindow_->setVisible(wantOpen);
+        if (wantOpen)
+            popoutWindow_->toFront(true);
     }
 }
 
