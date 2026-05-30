@@ -1075,29 +1075,25 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
             g.setColour(juce::Colours::black);
             g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
         } else {
-            // Fill the header banner with track colour (darkened to keep hue consistent)
-            g.setColour(trackColour_.darker(0.4f));
+            // Plain panel background, with just a thin colour bar on top (like a
+            // regular channel header) — not the full-width colour flood.
+            g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
             g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
 
-            // Colour bar across entire top
             g.setColour(trackColour_);
             g.fillRect(2, 2, fullBounds.getWidth() - 4, 4);
         }
 
-        // Horizontal separator below header
-        g.setColour(selected ? DarkTheme::getColour(DarkTheme::BORDER)
-                             : trackColour_.withAlpha(0.5f));
+        // Horizontal separator below header (neutral, not the track colour)
+        g.setColour(DarkTheme::getColour(selected ? DarkTheme::BORDER : DarkTheme::SEPARATOR));
         g.fillRect(0, groupHeaderHeight, fullBounds.getWidth(), 1);
     }
 }
 
 void MixerView::ChannelStrip::paintOverChildren(juce::Graphics& g) {
-    // Group envelope border — drawn over children so it's not obscured
-    if (!groupChildren_.empty()) {
-        auto fullBounds = getLocalBounds();
-        g.setColour(trackColour_.withAlpha(0.6f));
-        g.drawRect(fullBounds, 2);
-    }
+    // The group is indicated by its coloured header banner only; the full-height
+    // coloured envelope border around the children is intentionally omitted so
+    // the colour stays on the top strip rather than the whole group.
 
     // Skip overlay for child tracks nested inside a group envelope
     if (!isChildTrack_)
