@@ -405,7 +405,7 @@ class NodeComponent : public juce::Component,
     void updateModsPanel();
     void fadeInParamPanelContent();
     void cancelParamPanelContentFade();
-    static constexpr int PARAM_PANEL_FADE_IN_MS = 200;
+    static constexpr int PARAM_PANEL_FADE_IN_MS = 420;
 
   public:
     // Public so external TrackManagerListener callbacks (e.g. controller writes)
