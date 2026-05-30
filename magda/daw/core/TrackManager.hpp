@@ -141,6 +141,12 @@ class TrackManager {
     void ensureDeviceIdAbove(DeviceId id) {
         nextFxDeviceId_ = std::max(nextFxDeviceId_, id + 1);
     }
+    void ensurePostFxDeviceIdAbove(DeviceId id) {
+        nextPostFxDeviceId_ = std::max(nextPostFxDeviceId_, id + 1);
+    }
+    void ensureMixerAnalysisDeviceIdAbove(DeviceId id) {
+        nextMixerAnalysisDeviceId_ = std::max(nextMixerAnalysisDeviceId_, id + 1);
+    }
 
     /**
      * @brief Set the audio engine reference for routing operations

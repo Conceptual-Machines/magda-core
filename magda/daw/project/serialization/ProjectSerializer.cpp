@@ -250,9 +250,9 @@ void ProjectSerializer::commitStaged(StagedProjectData& data) {
                     tm.ensureDeviceIdAbove(getDevice(element).id);
             }
             for (const auto& element : masterTrack->chain.postFxChainElements)
-                tm.ensureDeviceIdAbove(element.device.id);
+                tm.ensurePostFxDeviceIdAbove(element.device.id);
             for (const auto& element : masterTrack->chain.mixerAnalysisElements)
-                tm.ensureDeviceIdAbove(element.device.id);
+                tm.ensureMixerAnalysisDeviceIdAbove(element.device.id);
             // Notify listeners so audio bridge creates TE plugins for master devices
             tm.notifyTrackDevicesChanged(MASTER_TRACK_ID);
         }
@@ -466,9 +466,9 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
                         tm.ensureDeviceIdAbove(getDevice(element).id);
                 }
                 for (const auto& element : masterTrack->chain.postFxChainElements)
-                    tm.ensureDeviceIdAbove(element.device.id);
+                    tm.ensurePostFxDeviceIdAbove(element.device.id);
                 for (const auto& element : masterTrack->chain.mixerAnalysisElements)
-                    tm.ensureDeviceIdAbove(element.device.id);
+                    tm.ensureMixerAnalysisDeviceIdAbove(element.device.id);
                 tm.notifyTrackDevicesChanged(MASTER_TRACK_ID);
             }
         }

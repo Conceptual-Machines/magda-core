@@ -258,8 +258,8 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
         }
     }
 
-    // Mixer-analysis section (only present when persistMixerAnalysis is set;
-    // otherwise the rail toggle reconciles the section from scratch on load).
+    // Mixer-analysis section. Older projects may omit this and let the rail
+    // toggle reconcile the section from scratch on load.
     auto mixerAnalysisVar = obj->getProperty("mixerAnalysisElements");
     if (mixerAnalysisVar.isArray()) {
         auto* arr = mixerAnalysisVar.getArray();

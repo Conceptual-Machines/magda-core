@@ -1446,6 +1446,11 @@ TEST_CASE("Master mixer analysis plugin state survives project roundtrip",
     REQUIRE(masterTrack->chain.mixerAnalysisElements.size() == 1);
     REQUIRE(masterTrack->chain.mixerAnalysisElements[0].device.pluginState ==
             juce::String("<PLUGIN type=\"oscilloscope\" traceColour=\"3\"/>"));
+
+    auto childTrackId = trackManager.createTrack("Later Track", TrackType::Audio);
+    DeviceInfo siblingScope = scope;
+    siblingScope.pluginState = "<PLUGIN type=\"oscilloscope\" traceColour=\"6\"/>";
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(childTrackId, siblingScope) == 2);
 }
 
 TEST_CASE("Post-fx device params are not automation targets",

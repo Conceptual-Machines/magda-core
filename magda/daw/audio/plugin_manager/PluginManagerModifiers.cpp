@@ -39,7 +39,10 @@ te::Plugin* PluginManager::lookupTargetPluginForModifier(const ChainNodePath& de
     }
     if (plugin)
         return plugin.get();
-    return instrumentRackManager_.getInnerPlugin(devicePath.getDeviceId());
+    if (devicePath.topLevelDeviceId == INVALID_DEVICE_ID && !devicePath.isPostFx() &&
+        !devicePath.isMixerAnalysis())
+        return instrumentRackManager_.getInnerPlugin(devicePath.getDeviceId());
+    return nullptr;
 }
 
 namespace {
