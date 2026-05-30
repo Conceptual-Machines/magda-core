@@ -10,6 +10,10 @@
 #include "core/DeviceInfo.hpp"
 #include "core/ParameterDetector.hpp"
 
+namespace magda::daw::audio {
+struct InternalPluginSpec;
+}
+
 namespace magda::daw::ui {
 
 /**
@@ -71,6 +75,9 @@ class ParameterConfigDialog : public juce::Component,
   private:
     juce::String pluginName_;
     juce::String pluginUniqueId_;  // For saving/loading parameter configuration
+    // True for MAGDA internal devices: their params are scanned live (not mock)
+    // and the dialog hides the Visible column, exposing only the Mini FX choice.
+    bool isInternalPlugin_ = false;
     std::vector<MockParameterInfo> parameters_;
     std::vector<int> filteredIndices_;  // Indices of filtered parameters
     juce::String currentSearchText_;
@@ -105,6 +112,10 @@ class ParameterConfigDialog : public juce::Component,
     void updateTitle();
     void buildMockParameters();
     void loadParameters(const juce::String& uniqueId);
+    // Scan a MAGDA device's live automatable parameters (internal-registry or
+    // compiled-Faust) into parameters_/scanInputs_. Returns false if the
+    // engine/edit/plugin is unavailable so the caller can fall back to mock.
+    bool scanInternalParameters(const juce::String& pluginId);
     void runHeuristicDetection();
     void runDetection();
     void applyDetectionResults(const std::vector<magda::DetectedParameterInfo>& results);
