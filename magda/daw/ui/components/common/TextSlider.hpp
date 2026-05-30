@@ -609,7 +609,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
             if (e.mods.isPopupMenu()) {
                 if (rightClickEditsText_ || e.mods.isShiftDown()) {
                     // Right-click to edit text directly
-                    valueControl_.showEditor(currentDisplayText());
+                    showValueEditor();
                 } else if (onRightClicked) {
                     // Right-click callback (for context menus, etc.)
                     onRightClicked();
@@ -628,7 +628,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         cancelGesture();
 
         if (e.mods.isShiftDown())
-            valueControl_.showEditor(currentDisplayText());
+            showValueEditor();
         else
             resetToDefaultValue();
     }
@@ -654,6 +654,30 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         }
 
         setValueFromUser(text.getDoubleValue());
+    }
+
+    juce::Rectangle<int> compactVerticalEditorBounds() const {
+        auto bounds = valueControl_.getLocalBounds().reduced(1);
+        if (bounds.isEmpty())
+            return bounds;
+
+        const int editorH = juce::jmin(20, juce::jmax(8, bounds.getHeight()));
+        const int handleY = bounds.getBottom() -
+                            static_cast<int>(std::round(bounds.getHeight() * getNormalizedValue()));
+        int editorY = handleY - editorH - 3;
+        if (editorY < bounds.getY())
+            editorY = handleY + 3;
+        editorY = juce::jlimit(bounds.getY(), bounds.getBottom() - editorH, editorY);
+
+        return {bounds.getX(), editorY, bounds.getWidth(), editorH};
+    }
+
+    void showValueEditor() {
+        if (orientation_ == Orientation::Vertical)
+            valueControl_.setEditorBoundsOverride(compactVerticalEditorBounds());
+        else
+            valueControl_.setEditorBoundsOverride(std::nullopt);
+        valueControl_.showEditor(currentDisplayText());
     }
 
     void setValueFromUser(double newValue) {

@@ -45,6 +45,7 @@ class ValueLabelControl : public juce::Component {
     void setVertical(bool vertical);
     void setShowText(bool show);
     void setEditorBoundsProvider(std::function<juce::Rectangle<int>()> provider);
+    void setEditorBoundsOverride(std::optional<juce::Rectangle<int>> bounds);
 
     bool isEditing() const;
     void showEditor(const juce::String& initialText);
@@ -91,6 +92,7 @@ class ValueLabelControl : public juce::Component {
     std::optional<juce::Colour> customBackgroundColour_;
     std::function<juce::Rectangle<int>()> editorBoundsProvider_;
     std::unique_ptr<juce::TextEditor> editor_;
+    std::optional<juce::Rectangle<int>> editorBoundsOverride_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ValueLabelControl)
 };

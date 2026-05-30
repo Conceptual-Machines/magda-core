@@ -135,6 +135,12 @@ void ValueLabelControl::setVertical(bool vertical) {
     repaint();
 }
 
+void ValueLabelControl::setEditorBoundsOverride(std::optional<juce::Rectangle<int>> bounds) {
+    editorBoundsOverride_ = bounds;
+    if (editor_)
+        editor_->setBounds(editorBounds());
+}
+
 bool ValueLabelControl::isEditing() const {
     return editor_ != nullptr;
 }
@@ -194,6 +200,8 @@ juce::Rectangle<int> ValueLabelControl::editorBounds() const {
         if (!bounds.isEmpty())
             return bounds.getIntersection(getLocalBounds());
     }
+    if (editorBoundsOverride_)
+        return *editorBoundsOverride_;
     return getLocalBounds().reduced(1);
 }
 
