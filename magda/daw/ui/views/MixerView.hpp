@@ -67,6 +67,7 @@ class MixerView : public juce::Component,
     void midiDeviceListChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
+    void devicePropertyChanged(const ChainNodePath& devicePath) override;
     void masterChannelChanged() override;
     void trackSelectionChanged(TrackId trackId) override;
 
@@ -207,6 +208,11 @@ class MixerView : public juce::Component,
         // collapse to a single row labelled with the rack name.
         std::vector<std::unique_ptr<MiniChainRow>> miniChainRows_;
         void rebuildMiniChainRows();
+
+        // Sync the bypass dot of the row bound to deviceId to its authoritative
+        // state without rebuilding (safe under the synchronous devicePropertyChanged
+        // that a row's own bypass toggle fires). No-op if no row matches.
+        void syncMiniChainRowState(DeviceId deviceId, bool bypassed);
 
         // Send area resize handle
         class SendResizeHandle;

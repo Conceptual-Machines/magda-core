@@ -876,6 +876,17 @@ void MixerView::ChannelStrip::rebuildMiniChainRows() {
     }
 }
 
+void MixerView::ChannelStrip::syncMiniChainRowState(DeviceId deviceId, bool bypassed) {
+    if (deviceId == INVALID_DEVICE_ID)
+        return;
+    for (auto& row : miniChainRows_) {
+        if (row->deviceId() == deviceId) {
+            row->setBypassedState(bypassed);
+            return;
+        }
+    }
+}
+
 void MixerView::ChannelStrip::refreshMiniAnalyzers() {
     if (isMaster_)
         return;
@@ -1899,6 +1910,34 @@ void MixerView::trackDevicesChanged(TrackId trackId) {
     // Sends region is uniform across strips (max-sends-on-any-track), so a
     // change on one strip forces a relayout on every strip and the master.
     relayoutAllStrips();
+}
+
+void MixerView::devicePropertyChanged(const ChainNodePath& devicePath) {
+    // A device's bypass/gain/label changed. Sync the matching mini-chain row's
+    // bypass dot in place. We deliberately do NOT rebuild rows here: this fires
+    // synchronously from a row's own bypass toggle, so a rebuild would destroy
+    // the row mid-callback. setBypassedState only repaints, which is re-entrant-safe.
+    const TrackId trackId = devicePath.trackId;
+    const DeviceId deviceId = devicePath.getDeviceId();
+    if (trackId == INVALID_TRACK_ID || deviceId == INVALID_DEVICE_ID)
+        return;
+
+    const auto* device = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    if (device == nullptr)
+        return;
+
+    for (auto& strip : channelStrips) {
+        if (strip->getTrackId() == trackId) {
+            strip->syncMiniChainRowState(deviceId, device->bypassed);
+            return;
+        }
+    }
+    for (auto& strip : auxChannelStrips) {
+        if (strip->getTrackId() == trackId) {
+            strip->syncMiniChainRowState(deviceId, device->bypassed);
+            return;
+        }
+    }
 }
 
 void MixerView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
