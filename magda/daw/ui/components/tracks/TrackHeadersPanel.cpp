@@ -3322,12 +3322,20 @@ void TrackHeadersPanel::executeDrop() {
             // no visible effect. Insert before the sibling under the drop gap
             // (or append to the group when the gap is past its children).
             if (targetParentId != INVALID_TRACK_ID && track->parentId == targetParentId) {
+                // If the drop gap sits on a track that is itself part of the
+                // moving selection, the drop lands inside the block being moved.
+                // Reordering relative to a sibling that is also about to move
+                // scrambles the order, so treat it as a no-op.
+                const bool dropInsideSelection = dropBeforeTrackId != INVALID_TRACK_ID &&
+                                                 std::find(tracksToMove.begin(), tracksToMove.end(),
+                                                           dropBeforeTrackId) != tracksToMove.end();
+                if (dropInsideSelection)
+                    continue;
+
                 TrackId beforeChildId = INVALID_TRACK_ID;
                 const auto* beforeTrack = trackManager.getTrack(dropBeforeTrackId);
-                if (dropBeforeTrackId != trackId && beforeTrack != nullptr &&
-                    beforeTrack->parentId == targetParentId) {
+                if (beforeTrack != nullptr && beforeTrack->parentId == targetParentId)
                     beforeChildId = dropBeforeTrackId;
-                }
                 trackManager.moveChildWithinGroup(trackId, beforeChildId);
                 continue;
             }

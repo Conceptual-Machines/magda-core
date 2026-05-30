@@ -784,7 +784,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 // Update our local copy
                 device_.visibleParameters = tempDevice.visibleParameters;
             }
-            // Mixer mini-chain selection (empty = fall back to curated defaults).
+            // Mixer mini-chain selection (empty = fall back to first non-hidden params).
             // Pushed unconditionally so deselecting all clears a prior selection.
             magda::TrackManager::getInstance().setDeviceMiniMixerParameters(
                 device_.id, tempDevice.miniMixerParameters);
@@ -1310,7 +1310,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
                     device_.id, tempDevice.visibleParameters);
                 device_.visibleParameters = tempDevice.visibleParameters;
             }
-            // Mixer mini-chain selection (empty = fall back to curated defaults).
+            // Mixer mini-chain selection (empty = fall back to first non-hidden params).
             // Pushed unconditionally so deselecting all clears a prior selection.
             magda::TrackManager::getInstance().setDeviceMiniMixerParameters(
                 device_.id, tempDevice.miniMixerParameters);

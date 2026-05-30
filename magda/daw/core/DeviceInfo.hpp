@@ -117,8 +117,8 @@ struct DeviceInfo {
     std::vector<int> visibleParameters;
 
     // User-selected parameters surfaced in the mixer mini-chain row (indices into
-    // the plugin parameter list). If empty, the mini row falls back to the
-    // hand-curated per-device defaults, then to the first non-hidden params.
+    // the plugin parameter list). If empty, the mini row falls back to the first
+    // non-hidden parameters in device order.
     std::vector<int> miniMixerParameters;
 
     // Device volume (gain knob on each device slot)

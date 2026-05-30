@@ -435,16 +435,25 @@ void MasterChannelStrip::setupControls() {
 
     // Mini Oscilloscope / Spectrum bound to the master track's MixerAnalysis
     // section; rail toggle controls their visibility.
+    // Expanding the compact analyzer controls grows the strip; relayout so the
+    // plot isn't squeezed into the fixed height (mirrors the channel strips).
+    auto relayoutOnExpand = [this]() {
+        if (onSendAreaResized)
+            onSendAreaResized();
+    };
+
     miniOscilloscopeUI_ = std::make_unique<daw::ui::OscilloscopeUI>();
     miniOscilloscopeUI_->setCompact(true);
     miniOscilloscopeUI_->setPersistGlobalDefaults(false);
     miniOscilloscopeUI_->setVisible(false);
+    miniOscilloscopeUI_->onControlsExpandedChanged = relayoutOnExpand;
     addAndMakeVisible(*miniOscilloscopeUI_);
 
     miniSpectrumUI_ = std::make_unique<daw::ui::SpectrumAnalyzerUI>();
     miniSpectrumUI_->setCompact(true);
     miniSpectrumUI_->setPersistGlobalDefaults(false);
     miniSpectrumUI_->setVisible(false);
+    miniSpectrumUI_->onControlsExpandedChanged = relayoutOnExpand;
     addAndMakeVisible(*miniSpectrumUI_);
 
     // Headphone icon (non-interactive, just a label)
@@ -566,14 +575,16 @@ void MasterChannelStrip::resized() {
         constexpr int miniAnalyzerHeight = 64;
         const auto& cfg = Config::getInstance();
         if (cfg.getMixerShowOscilloscope() && miniOscilloscopeUI_) {
-            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(miniAnalyzerHeight));
+            const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
+            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
             miniOscilloscopeUI_->setVisible(true);
             bounds.removeFromTop(2);
         } else if (miniOscilloscopeUI_) {
             miniOscilloscopeUI_->setVisible(false);
         }
         if (cfg.getMixerShowSpectrum() && miniSpectrumUI_) {
-            miniSpectrumUI_->setBounds(bounds.removeFromTop(miniAnalyzerHeight));
+            const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
+            miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
             miniSpectrumUI_->setVisible(true);
             bounds.removeFromTop(2);
         } else if (miniSpectrumUI_) {
