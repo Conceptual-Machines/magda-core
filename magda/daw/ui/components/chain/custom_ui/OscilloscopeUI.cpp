@@ -162,9 +162,12 @@ int OscilloscopeUI::expandedControlsHeight() const {
     if (!compact_ || !showControls())
         return 0;
     constexpr int fullHeight = 2 * kStackRowH + 4;  // Time + Color rows, plus top padding
-    if (!controlsFadeActive_)
-        return controlsExpanded_ ? fullHeight : 0;
-    return juce::roundToInt(static_cast<float>(fullHeight) * controlsAlpha_);
+    // Reserve the full height for the whole fade (both directions) so the strip
+    // relayouts once on open and once on close, not every frame. The controls
+    // cross-fade their opacity over this stable area; animating the height each
+    // frame (and relaying out the whole mixer with it) is what made the reveal
+    // flicker.
+    return (controlsExpanded_ || controlsFadeActive_) ? fullHeight : 0;
 }
 
 void OscilloscopeUI::updateControlVisibility() {
@@ -197,10 +200,9 @@ void OscilloscopeUI::advanceControlsFade() {
         static_cast<float>(juce::jlimit(0.0, 1.0, elapsed / kCompactControlsFadeMs));
     controlsAlpha_ =
         controlsFadeStartAlpha_ + (controlsFadeTargetAlpha_ - controlsFadeStartAlpha_) * progress;
+    // Opacity-only during the fade — height is already reserved, so no per-frame
+    // relayout (that was the flicker). The strip relayouts once on completion.
     applyControlsAlpha();
-    if (onControlsExpandedChanged)
-        onControlsExpandedChanged();
-    resized();
     repaint();
 
     if (progress < 1.0f)
