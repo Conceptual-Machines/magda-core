@@ -13,6 +13,9 @@ namespace magda {
 
 class AudioEngine;
 class SvgButton;
+namespace daw::ui {
+class TextSlider;
+}
 namespace te = tracktion;
 
 /**
@@ -86,7 +89,7 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     // Up to kMaxExpandedParams parameter sliders shown when expanded. Built
     // lazily on first expand. paramLabels_ holds the corresponding name on
     // the left; paramSliders_ holds the slider on the right.
-    std::vector<std::unique_ptr<juce::Slider>> paramSliders_;
+    std::vector<std::unique_ptr<daw::ui::TextSlider>> paramSliders_;
     std::vector<std::unique_ptr<juce::Label>> paramLabels_;
     std::vector<te::AutomatableParameter*> trackedParams_;
     bool paramsResolved_ = false;

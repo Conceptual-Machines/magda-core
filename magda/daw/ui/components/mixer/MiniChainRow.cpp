@@ -8,6 +8,7 @@
 #include "../../themes/FontManager.hpp"
 #include "../chain/layout/NodeHeaderStyles.hpp"
 #include "../common/SvgButton.hpp"
+#include "../common/TextSlider.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -160,20 +161,15 @@ void MiniChainRow::resolveParams() {
         addAndMakeVisible(*label);
         paramLabels_.push_back(std::move(label));
 
-        auto slider =
-            std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox);
-        slider->setRange(0.0, 1.0, 0.0);
-        slider->setValue(param->getCurrentNormalisedValue(), juce::dontSendNotification);
-        slider->setColour(juce::Slider::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-        slider->setColour(juce::Slider::trackColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        slider->setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE_LIGHT));
-        slider->setWantsKeyboardFocus(false);
-        slider->onValueChange = [param, sliderPtr = slider.get()]() {
-            param->setParameterFromHost(static_cast<float>(sliderPtr->getValue()),
-                                        juce::sendNotificationSync);
+        // Same value control as the device chain: a TextSlider that displays
+        // the parameter's real value and formats/parses it from ParameterInfo.
+        auto slider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decimal);
+        slider->setParameterInfo(paramInfo);
+        slider->setValue(param->getCurrentValue(), juce::dontSendNotification);
+        slider->setFont(FontManager::getInstance().getUIFont(10.0f));
+        slider->setTextColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        slider->onValueChanged = [param](double v) {
+            param->setParameterFromHost(static_cast<float>(v), juce::sendNotificationSync);
         };
         slider->setAlpha(paramsAlpha_);
         slider->setVisible(isParamsLaidOut());
@@ -278,8 +274,10 @@ void MiniChainRow::timerCallback() {
         auto* param = (i < trackedParams_.size()) ? trackedParams_[i] : nullptr;
         if (slider == nullptr || param == nullptr)
             continue;
-        const auto v = static_cast<double>(param->getCurrentNormalisedValue());
-        if (std::abs(slider->getValue() - v) > 1e-4)
+        if (slider->isBeingDragged())
+            continue;
+        const auto v = static_cast<double>(param->getCurrentValue());
+        if (std::abs(slider->getValue() - v) > 1e-6)
             slider->setValue(v, juce::dontSendNotification);
     }
 }
