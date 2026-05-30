@@ -133,15 +133,12 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
     std::unique_ptr<magda::SvgButton> velocityToggle_;
 
-    magda::MidiBridge* monitoredMidiBridge_ = nullptr;
-    std::function<void(magda::TrackId, const magda::MidiNoteEvent&)> previousMidiNoteCallback_;
-    bool midiNoteMonitorInstalled_ = false;
+    // Live MIDI note monitor hooks (plumbing lives in MidiEditorContent).
+    void highlightMonitoredNote(int noteNumber, bool noteOn) override;
+    void ensureMonitoredNoteVisible(int noteNumber) override;
 
     // Grid component management
     void setupGridCallbacks();
-    void installMidiNoteMonitor();
-    void uninstallMidiNoteMonitor();
-    void handleMidiNoteEvent(magda::TrackId trackId, const magda::MidiNoteEvent& event);
     void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
     void drawChordRow(juce::Graphics& g, juce::Rectangle<int> area);
     void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
@@ -161,6 +158,9 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     // Center the view on middle C (C4)
     void centerOnNote(int noteNumber);
     void centerOnNotes();
+    // Scrolls vertically only if the note is off-screen, and only far enough to
+    // bring it flush to the nearest edge (no re-centering, no horizontal move).
+    void ensureNoteVisible(int noteNumber);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PianoRollContent)
 };

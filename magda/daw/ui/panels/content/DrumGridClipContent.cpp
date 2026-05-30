@@ -1570,6 +1570,21 @@ class DrumGridRowLabels : public juce::Component {
         repaint();
     }
 
+    // Live-input highlight: tints the pad row while a monitored note is held,
+    // mirroring the piano roll keyboard's pressed-key highlight.
+    void setNotePressed(int noteNumber, bool pressed) {
+        const bool changed = pressed ? pressedNotes_.insert(noteNumber).second
+                                     : (pressedNotes_.erase(noteNumber) > 0);
+        if (changed)
+            repaint();
+    }
+    void clearPressedNotes() {
+        if (!pressedNotes_.empty()) {
+            pressedNotes_.clear();
+            repaint();
+        }
+    }
+
     // Callback: noteNumber, isNoteOn
     std::function<void(int, bool)> onNotePreview;
     std::function<void(int, const juce::MouseWheelDetails&)> onVerticalZoomRequested;
@@ -1654,6 +1669,12 @@ class DrumGridRowLabels : public juce::Component {
             g.drawHorizontalLine(y + rowHeight_, 0.0f, static_cast<float>(bounds.getWidth()));
 
             const auto& padRow = (*padRows_)[i];
+
+            // Live-input highlight for monitored notes currently held.
+            if (pressedNotes_.count(padRow.noteNumber) != 0) {
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
+                g.fillRect(0, y, bounds.getWidth(), rowHeight_);
+            }
 
             if (rowHeight_ >= 10) {
                 int textX = 4;
@@ -1794,6 +1815,7 @@ class DrumGridRowLabels : public juce::Component {
     int scrollOffsetY_ = 0;
     int playingNoteNumber_ = -1;
     int hoverRow_ = -1;
+    std::set<int> pressedNotes_;  // live-monitored notes currently held
     std::unique_ptr<juce::TextEditor> rowEditor_;
     int editingNote_ = -1;
 
@@ -2132,7 +2154,9 @@ DrumGridClipContent::DrumGridClipContent() {
     }
 }
 
-DrumGridClipContent::~DrumGridClipContent() = default;
+DrumGridClipContent::~DrumGridClipContent() {
+    uninstallMidiNoteMonitor();
+}
 
 int DrumGridClipContent::getMaxVerticalScroll() const {
     if (!viewport_ || !gridComponent_)
@@ -2365,6 +2389,8 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
 // ============================================================================
 
 void DrumGridClipContent::onActivated() {
+    installMidiNoteMonitor();
+
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClip);
@@ -2377,7 +2403,47 @@ void DrumGridClipContent::onActivated() {
 }
 
 void DrumGridClipContent::onDeactivated() {
+    uninstallMidiNoteMonitor();
+    if (rowLabels_)
+        rowLabels_->clearPressedNotes();
     stopTimer();
+}
+
+void DrumGridClipContent::highlightMonitoredNote(int noteNumber, bool noteOn) {
+    if (rowLabels_)
+        rowLabels_->setNotePressed(noteNumber, noteOn);
+}
+
+void DrumGridClipContent::ensureMonitoredNoteVisible(int noteNumber) {
+    if (!viewport_ || rowHeight_ <= 0)
+        return;
+
+    int rowIndex = -1;
+    for (int i = 0; i < static_cast<int>(padRows_.size()); ++i) {
+        if (padRows_[static_cast<size_t>(i)].noteNumber == noteNumber) {
+            rowIndex = i;
+            break;
+        }
+    }
+    if (rowIndex < 0)
+        return;
+
+    const int rowTop = rowIndex * rowHeight_;
+    const int rowBottom = rowTop + rowHeight_;
+    const int viewTop = viewport_->getViewPositionY();
+    const int viewHeight = viewport_->getHeight();
+    const int viewBottom = viewTop + viewHeight;
+
+    // Already fully visible — leave the view untouched.
+    if (rowTop >= viewTop && rowBottom <= viewBottom)
+        return;
+
+    const int target = (rowTop < viewTop) ? rowTop : rowBottom - viewHeight;
+    const int newScrollY = clampVerticalScrollY(juce::jmax(0, target));
+    if (newScrollY == viewTop)
+        return;
+
+    viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
 }
 
 // ============================================================================

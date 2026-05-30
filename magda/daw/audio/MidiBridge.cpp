@@ -336,24 +336,17 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
                 TrackManager::getInstance().triggerMidiNoteOff(trackId);
             }
 
-            // Check if monitoring is enabled for this track for callbacks
-            if (monitoredTracks_.find(trackId) != monitoredTracks_.end()) {
-                // Call callbacks if set (for note/CC monitoring)
-                if (message.isNoteOn() || message.isNoteOff()) {
-                    if (onNoteEvent) {
-                        MidiNoteEvent noteEvent;
-                        noteEvent.noteNumber = message.getNoteNumber();
-                        noteEvent.velocity = message.getVelocity();
-                        noteEvent.isNoteOn = message.isNoteOn();
-                        onNoteEvent(trackId, noteEvent);
-                    }
-                } else if (message.isController()) {
-                    if (onCCEvent) {
-                        MidiCCEvent ccEvent;
-                        ccEvent.controller = message.getControllerNumber();
-                        ccEvent.value = message.getControllerValue();
-                        onCCEvent(trackId, ccEvent);
-                    }
+            // Fan out note/CC callbacks for monitored tracks.
+            if (message.isNoteOn() || message.isNoteOff()) {
+                notifyNoteEventIfMonitored(trackId, message.getNoteNumber(), message.getVelocity(),
+                                           message.isNoteOn());
+            } else if (message.isController() &&
+                       monitoredTracks_.find(trackId) != monitoredTracks_.end()) {
+                if (onCCEvent) {
+                    MidiCCEvent ccEvent;
+                    ccEvent.controller = message.getControllerNumber();
+                    ccEvent.value = message.getControllerValue();
+                    onCCEvent(trackId, ccEvent);
                 }
             }
 
@@ -393,6 +386,18 @@ void MidiBridge::removeRawMidiListener(RawMidiListener* listener) {
     rawMidiListeners_.removeAllInstancesOf(listener);
 }
 
+void MidiBridge::notifyNoteEventIfMonitored(TrackId trackId, int noteNumber, int velocity,
+                                            bool isNoteOn) {
+    if (monitoredTracks_.find(trackId) == monitoredTracks_.end() || !onNoteEvent)
+        return;
+
+    MidiNoteEvent noteEvent;
+    noteEvent.noteNumber = noteNumber;
+    noteEvent.velocity = velocity;
+    noteEvent.isNoteOn = isNoteOn;
+    onNoteEvent(trackId, noteEvent);
+}
+
 void MidiBridge::broadcastSynthesizedNote(const juce::String& sourceDeviceId, int noteNumber,
                                           int velocity, bool isNoteOn) {
     juce::ScopedLock lock(routingLock_);
@@ -410,6 +415,10 @@ void MidiBridge::broadcastSynthesizedNote(const juce::String& sourceDeviceId, in
         } else {
             TrackManager::getInstance().triggerMidiNoteOff(trackId);
         }
+
+        // Mirror the physical-MIDI note callback so monitored UI (e.g. the
+        // piano roll keyboard highlight) reacts to QWERTY-synthesized notes too.
+        notifyNoteEventIfMonitored(trackId, noteNumber, velocity, isNoteOn);
 
         // Preview queue push is armed-only.
         if (!recordingQueue_ || !transportPosition_)

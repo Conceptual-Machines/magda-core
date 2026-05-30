@@ -15,6 +15,8 @@ namespace magda {
 class TimeRuler;
 class VelocityLaneComponent;
 class MidiDrawerComponent;
+class MidiBridge;
+struct MidiNoteEvent;
 }  // namespace magda
 
 namespace magda::daw::ui {
@@ -203,6 +205,30 @@ class MidiEditorContent : public PanelContent,
     virtual void updateGridLoopRegion() {}
     virtual void setGridPhasePreview(double /*beats*/, bool /*active*/) {}
 
+    // --- Live MIDI note monitor ---
+    // Highlights notes as they play while a clip is open, by chaining onto the
+    // MidiBridge note callback. Shared by the piano roll (keyboard) and the drum
+    // grid (pad rows); subclasses implement the highlight surface via the hooks
+    // below. Install on activation, uninstall on deactivation/destruction.
+    void installMidiNoteMonitor();
+    void uninstallMidiNoteMonitor();
+
+    // Subclass hooks fired for a played note that passes the monitor gate (clip
+    // matches the played track and the track has input monitoring on). Default
+    // no-ops so a subclass can opt into either independently.
+    virtual void highlightMonitoredNote(int /*noteNumber*/, bool /*noteOn*/) {}
+    virtual void ensureMonitoredNoteVisible(int /*noteNumber*/) {}
+
+  private:
+    // Applies the monitor gate (clip/track match + input monitoring) then fans
+    // out to the highlight hooks. Invoked from the chained MidiBridge callback.
+    void handleMidiNoteEvent(magda::TrackId trackId, const magda::MidiNoteEvent& event);
+
+    magda::MidiBridge* monitoredMidiBridge_ = nullptr;
+    std::function<void(magda::TrackId, const magda::MidiNoteEvent&)> previousMidiNoteCallback_;
+    bool midiNoteMonitorInstalled_ = false;
+
+  protected:
     // --- Velocity lane methods (legacy, used by velocity-only path) ---
     void setupVelocityLane();
     virtual void updateVelocityLane();

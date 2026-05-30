@@ -177,6 +177,7 @@ target_sources(magda_juce_tests PRIVATE
     test_session_slot_recording_juce.cpp
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
+    test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
     test_clip_inspector_juce.cpp
     test_multiband_curve_view_juce.cpp
@@ -244,3 +245,6 @@ add_test(NAME timeline_extreme_zoom_paint_juce
 
 add_test(NAME arrange_beat_native_juce
          COMMAND magda_juce_tests "Arrange Beat Native Tests")
+
+add_test(NAME midi_bridge_note_events_juce
+         COMMAND magda_juce_tests "MidiBridge Note Events Tests")

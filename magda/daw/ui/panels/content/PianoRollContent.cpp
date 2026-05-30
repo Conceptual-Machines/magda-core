@@ -227,55 +227,13 @@ void PianoRollContent::loadNoteHeightFromClip(magda::ClipId clipId) {
     }
 }
 
-void PianoRollContent::installMidiNoteMonitor() {
-    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-    auto* midiBridge = engine != nullptr ? engine->getMidiBridge() : nullptr;
-    if (midiBridge == nullptr)
-        return;
-
-    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ == midiBridge)
-        return;
-
-    uninstallMidiNoteMonitor();
-
-    monitoredMidiBridge_ = midiBridge;
-    previousMidiNoteCallback_ = midiBridge->onNoteEvent;
-    juce::Component::SafePointer<PianoRollContent> safeThis(this);
-    auto previousCallback = previousMidiNoteCallback_;
-
-    midiBridge->onNoteEvent = [safeThis, previousCallback](magda::TrackId trackId,
-                                                           const magda::MidiNoteEvent& event) {
-        if (previousCallback)
-            previousCallback(trackId, event);
-
-        juce::MessageManager::callAsync([safeThis, trackId, event]() {
-            if (auto* self = safeThis.getComponent())
-                self->handleMidiNoteEvent(trackId, event);
-        });
-    };
-    midiNoteMonitorInstalled_ = true;
+void PianoRollContent::highlightMonitoredNote(int noteNumber, bool noteOn) {
+    if (keyboard_)
+        keyboard_->setNotePressed(noteNumber, noteOn);
 }
 
-void PianoRollContent::uninstallMidiNoteMonitor() {
-    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ != nullptr)
-        monitoredMidiBridge_->onNoteEvent = previousMidiNoteCallback_;
-
-    midiNoteMonitorInstalled_ = false;
-    monitoredMidiBridge_ = nullptr;
-    previousMidiNoteCallback_ = nullptr;
-}
-
-void PianoRollContent::handleMidiNoteEvent(magda::TrackId trackId,
-                                           const magda::MidiNoteEvent& event) {
-    if (!midiNoteMonitorInstalled_ || keyboard_ == nullptr ||
-        editingClipId_ == magda::INVALID_CLIP_ID)
-        return;
-
-    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-    if (clip == nullptr || clip->trackId != trackId)
-        return;
-
-    keyboard_->setNotePressed(event.noteNumber, event.isNoteOn && event.velocity > 0);
+void PianoRollContent::ensureMonitoredNoteVisible(int noteNumber) {
+    ensureNoteVisible(noteNumber);
 }
 
 void PianoRollContent::setupGridCallbacks() {
@@ -1703,6 +1661,36 @@ void PianoRollContent::centerOnNote(int noteNumber) {
     keyboard_->setScrollOffset(scrollY);
     if (octaveLabelStrip_)
         octaveLabelStrip_->setScrollOffset(scrollY);
+}
+
+void PianoRollContent::ensureNoteVisible(int noteNumber) {
+    if (!viewport_ || noteHeight_ <= 0)
+        return;
+
+    const int noteTop = (MAX_NOTE - noteNumber) * noteHeight_;
+    const int noteBottom = noteTop + noteHeight_;
+    const int viewTop = viewport_->getViewPositionY();
+    const int viewHeight = viewport_->getHeight();
+    const int viewBottom = viewTop + viewHeight;
+
+    // Already fully visible — leave the view untouched.
+    if (noteTop >= viewTop && noteBottom <= viewBottom)
+        return;
+
+    int newScrollY = viewTop;
+    if (noteTop < viewTop)
+        newScrollY = noteTop;  // off the top — bring flush to the top edge
+    else
+        newScrollY = noteBottom - viewHeight;  // off the bottom — flush to bottom edge
+
+    newScrollY = juce::jmax(0, newScrollY);
+    if (newScrollY == viewTop)
+        return;
+
+    viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
+    keyboard_->setScrollOffset(newScrollY);
+    if (octaveLabelStrip_)
+        octaveLabelStrip_->setScrollOffset(newScrollY);
 }
 
 void PianoRollContent::centerOnNotes() {
