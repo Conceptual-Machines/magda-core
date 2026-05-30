@@ -6,6 +6,7 @@
 #include "../state/TimelineController.hpp"
 #include "TabbedPanel.hpp"
 #include "core/ClipManager.hpp"
+#include "core/PluginPreferences.hpp"
 #include "core/TrackManager.hpp"
 #include "utils/ScopedListener.hpp"
 
@@ -33,6 +34,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
                     public juce::DragAndDropTarget,
                     public ClipManagerListener,
                     public TrackManagerListener,
+                    public PluginPreferences::Listener,
                     public TimelineStateListener {
   public:
     BottomPanel();
@@ -66,6 +68,9 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // TrackManagerListener
     void tracksChanged() override;
     void trackSelectionChanged(TrackId trackId) override;
+
+    // PluginPreferences::Listener
+    void drumGridPreferenceChanged(const juce::String& pluginIdentifier) override;
 
     // TimelineStateListener
     void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;

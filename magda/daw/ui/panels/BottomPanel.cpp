@@ -44,70 +44,16 @@ class RightClickForwarder : public juce::MouseListener {
     }
 };
 
-// First synth (instrument) plugin on `trackId`, walking into racks. Returns
-// nullptr if the track has none.
-te::Plugin* findPrimaryInstrumentForTrack(TrackId trackId) {
-    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return nullptr;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return nullptr;
-    auto* teTrack = bridge->getAudioTrack(trackId);
-    if (!teTrack)
-        return nullptr;
-
-    for (auto* plugin : teTrack->pluginList) {
-        if (plugin != nullptr && plugin->isSynth())
-            return plugin;
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (innerPlugin != nullptr && innerPlugin->isSynth())
-                        return innerPlugin;
-                }
-            }
-        }
-    }
-    return nullptr;
-}
-
-// True if any instrument plugin on `trackId` has its preferred clip editor set
-// to Drum Grid (via magda::PluginPreferences). Walks the track's plugin list
-// and into any racks. The DrumGrid plugin has an implicit DrumGrid preference
-// in PluginPreferences so existing behaviour is preserved without user setup.
+// True if the track's model-level primary instrument has its preferred clip
+// editor set to Drum Grid. This deliberately uses TrackInfo/DeviceInfo rather
+// than the TE plugin graph, where instruments are hidden behind a shared "rack"
+// wrapper id.
 bool trackPrefersDrumGrid(TrackId trackId) {
-    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
+    const auto* instrument = TrackManager::getInstance().getPrimaryInstrument(trackId);
+    if (instrument == nullptr)
         return false;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return false;
-    auto* teTrack = bridge->getAudioTrack(trackId);
-    if (!teTrack)
-        return false;
-
-    auto& prefs = magda::PluginPreferences::getInstance();
-
-    auto pluginPrefersDrumGrid = [&](te::Plugin* plugin) {
-        if (plugin == nullptr || !plugin->isSynth())
-            return false;
-        return prefs.prefersDrumGrid(plugin->getIdentifierString());
-    };
-
-    for (auto* plugin : teTrack->pluginList) {
-        if (pluginPrefersDrumGrid(plugin))
-            return true;
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (pluginPrefersDrumGrid(innerPlugin))
-                        return true;
-                }
-            }
-        }
-    }
-    return false;
+    return magda::PluginPreferences::getInstance().prefersDrumGrid(
+        magda::PluginPreferences::identifierForDevice(*instrument));
 }
 /** Return the first MidiChordEnginePlugin on a track, or nullptr. */
 daw::audio::MidiChordEnginePlugin* findChordEngine(TrackId trackId) {
@@ -303,6 +249,7 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     // Register as listener for selection changes
     ClipManager::getInstance().addListener(this);
     TrackManager::getInstance().addListener(this);
+    PluginPreferences::getInstance().addListener(this);
 
     // Register as TimelineStateListener for grid sync
     // Note: TimelineController may not exist yet at construction time.
@@ -329,6 +276,7 @@ BottomPanel::~BottomPanel() {
 
     ClipManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
+    PluginPreferences::getInstance().removeListener(this);
     // TimelineController listener removed automatically by timelineListenerGuard_
 
     // Explicitly destroy before base class teardown to avoid repaint during partial destruction
@@ -768,6 +716,24 @@ void BottomPanel::trackSelectionChanged(TrackId /*trackId*/) {
     updateContentBasedOnSelection();
 }
 
+void BottomPanel::drumGridPreferenceChanged(const juce::String& pluginIdentifier) {
+    auto& clipManager = ClipManager::getInstance();
+    const auto selectedClip = clipManager.getSelectedClip();
+    const auto* clip =
+        (selectedClip != INVALID_CLIP_ID) ? clipManager.getClip(selectedClip) : nullptr;
+    if (clip == nullptr || !clip->isMidi())
+        return;
+
+    const auto* instrument = TrackManager::getInstance().getPrimaryInstrument(clip->trackId);
+    if (instrument == nullptr ||
+        PluginPreferences::identifierForDevice(*instrument) != pluginIdentifier) {
+        return;
+    }
+
+    lastEditorClipId_ = INVALID_CLIP_ID;
+    updateContentBasedOnSelection();
+}
+
 void BottomPanel::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
     if (hasFlag(changes, ChangeFlags::Display)) {
         // If a MIDI editor is active, the controls reflect clip state -- skip arrangement sync
@@ -1131,19 +1097,22 @@ void BottomPanel::showDrumGridTabContextMenu(juce::Point<int> screenPos) {
         (selectedClip != INVALID_CLIP_ID) ? clipManager.getClip(selectedClip) : nullptr;
 
     juce::PopupMenu menu;
-    auto* plugin = (clip != nullptr) ? findPrimaryInstrumentForTrack(clip->trackId) : nullptr;
+    const auto* instrument = (clip != nullptr)
+                                 ? TrackManager::getInstance().getPrimaryInstrument(clip->trackId)
+                                 : nullptr;
 
-    if (plugin == nullptr) {
+    if (instrument == nullptr) {
         menu.addItem(0, "No instrument plugin on this track", false, false);
     } else {
         auto& prefs = magda::PluginPreferences::getInstance();
-        const auto identifier = plugin->getIdentifierString();
+        const auto identifier = magda::PluginPreferences::identifierForDevice(*instrument);
         const bool prefersGrid = prefs.prefersDrumGrid(identifier);
-        menu.addItem(1, "Use Drum Grid by default for " + plugin->getName(), true, prefersGrid);
+        menu.addItem(1, "Use Drum Grid by default for " + instrument->name, true, prefersGrid);
     }
 
-    const juce::String identifier =
-        (plugin != nullptr) ? plugin->getIdentifierString() : juce::String();
+    const juce::String identifier = (instrument != nullptr)
+                                        ? magda::PluginPreferences::identifierForDevice(*instrument)
+                                        : juce::String();
     auto rect = juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(rect),
                        [identifier](int result) {

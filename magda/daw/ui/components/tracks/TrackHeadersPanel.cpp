@@ -31,36 +31,6 @@ namespace magda {
 // dB conversion helpers for volume
 namespace {
 
-namespace te = tracktion::engine;
-
-// First synth (instrument) plugin on `trackId`, walking into racks. Returns
-// nullptr if the track has none.
-te::Plugin* findPrimaryInstrumentForTrack(TrackId trackId) {
-    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return nullptr;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return nullptr;
-    auto* teTrack = bridge->getAudioTrack(trackId);
-    if (!teTrack)
-        return nullptr;
-
-    for (auto* plugin : teTrack->pluginList) {
-        if (plugin != nullptr && plugin->isSynth())
-            return plugin;
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (innerPlugin != nullptr && innerPlugin->isSynth())
-                        return innerPlugin;
-                }
-            }
-        }
-    }
-    return nullptr;
-}
-
 bool dragObjectToChainNodePathAt(const juce::DynamicObject& obj, int index, ChainNodePath& path) {
     path = {};
     const auto suffix = juce::String(index);
@@ -3058,12 +3028,12 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Prefer Drum Grid for the track's primary instrument plugin. The flag
     // lives at the plugin-identifier level (user-global), so all tracks using
     // the same instrument get the same default editor.
-    auto* primaryInstrument = findPrimaryInstrumentForTrack(header.trackId);
+    auto* primaryInstrument = TrackManager::getInstance().getPrimaryInstrument(header.trackId);
     if (primaryInstrument != nullptr) {
-        const auto identifier = primaryInstrument->getIdentifierString();
+        const auto identifier = magda::PluginPreferences::identifierForDevice(*primaryInstrument);
         const bool prefersGrid =
             magda::PluginPreferences::getInstance().prefersDrumGrid(identifier);
-        menu.addItem(PreferDrumGrid, "Prefer Drum Grid for " + primaryInstrument->getName(), true,
+        menu.addItem(PreferDrumGrid, "Prefer Drum Grid for " + primaryInstrument->name, true,
                      prefersGrid);
     }
 
@@ -3115,9 +3085,10 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                     TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
                 }
             } else if (result == PreferDrumGrid) {
-                if (auto* plugin = findPrimaryInstrumentForTrack(trackId)) {
+                if (auto* instrument = TrackManager::getInstance().getPrimaryInstrument(trackId)) {
                     auto& prefs = magda::PluginPreferences::getInstance();
-                    const auto identifier = plugin->getIdentifierString();
+                    const auto identifier =
+                        magda::PluginPreferences::identifierForDevice(*instrument);
                     prefs.setPrefersDrumGrid(identifier, !prefs.prefersDrumGrid(identifier));
                 }
             } else if (result >= RemoveSendBase) {

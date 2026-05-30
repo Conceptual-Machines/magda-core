@@ -1162,7 +1162,7 @@ namespace {
 // to any instance becomes the default applied to new instances of the same
 // plugin. Empty identifier (no plugin loaded yet) is a no-op.
 void mirrorKitToPreferences(const DeviceInfo& device) {
-    const auto identifier = device.uniqueId.isNotEmpty() ? device.uniqueId : device.pluginId;
+    const auto identifier = PluginPreferences::identifierForDevice(device);
     if (identifier.isEmpty())
         return;
     PluginPreferences::getInstance().setDefaultKitRows(identifier, device.kitRows);

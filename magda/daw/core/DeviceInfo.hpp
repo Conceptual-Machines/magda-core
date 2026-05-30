@@ -70,15 +70,25 @@ enum class DeviceLoadState { Loaded, Loading, Failed };
  */
 struct DeviceInfo {
     DeviceId id = INVALID_DEVICE_ID;
-    juce::String name;          // Display name (e.g., "Pro-Q 3")
-    juce::String pluginId;      // Unique plugin identifier for loading
+    juce::String name;  // Display name (e.g., "Pro-Q 3")
+
+    // MAGDA's loader/model id for this device. For internal devices this is
+    // the canonical id ("4osc", "drumgrid"). For external plugins it is
+    // usually initialised from the scanned plugin identifier, but call sites
+    // that need a user-global plugin key should use
+    // PluginPreferences::identifierForDevice() rather than choosing between
+    // pluginId and uniqueId themselves.
+    juce::String pluginId;
+
     juce::String manufacturer;  // Plugin vendor
     PluginFormat format = PluginFormat::VST3;
     bool isInstrument = false;  // true for instruments (synths, samplers), false for effects
     DeviceType deviceType = DeviceType::Effect;  // Instrument, Effect, or MIDI
 
-    // External plugin identification (for VST3/AU plugins)
-    juce::String uniqueId;          // PluginDescription::createIdentifierString()
+    // External plugin identity from JUCE. Populated for scanned VST/AU/etc.
+    // plugins using PluginDescription::createIdentifierString(); it is not
+    // guaranteed for internal MAGDA devices.
+    juce::String uniqueId;
     juce::String fileOrIdentifier;  // Path to plugin file or AU identifier
 
     bool bypassed = false;  // Device bypass state

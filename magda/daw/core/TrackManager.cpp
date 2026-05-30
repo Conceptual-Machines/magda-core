@@ -1226,7 +1226,7 @@ void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {
 void TrackManager::stampDefaultKitIfMissing(DeviceInfo& dev) {
     if (!dev.isInstrument || !dev.kitRows.empty())
         return;
-    const auto identifier = dev.uniqueId.isNotEmpty() ? dev.uniqueId : dev.pluginId;
+    const auto identifier = PluginPreferences::identifierForDevice(dev);
     if (identifier.isEmpty())
         return;
     dev.kitRows = PluginPreferences::getInstance().defaultKitRows(identifier);

@@ -8,6 +8,7 @@ namespace magda {
 namespace {
 constexpr const char* kKind = "plugin_preferences";
 constexpr const char* kDrumGridBuiltinId = "drumgrid";
+constexpr const char* kInstrumentRackWrapperId = "rack";
 
 // Plugins whose per-instance kit should NOT be mirrored to a user-global
 // default. Internal DrumGrid is the canonical case: its kit is built
@@ -28,7 +29,7 @@ PluginPreferences::PluginPreferences() {
 }
 
 bool PluginPreferences::prefersDrumGrid(const juce::String& pluginIdentifier) const {
-    if (pluginIdentifier.isEmpty())
+    if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
         return false;
     if (drumGridPlugins_.find(pluginIdentifier) != drumGridPlugins_.end())
         return true;
@@ -38,13 +39,32 @@ bool PluginPreferences::prefersDrumGrid(const juce::String& pluginIdentifier) co
 }
 
 void PluginPreferences::setPrefersDrumGrid(const juce::String& pluginIdentifier, bool prefer) {
-    if (pluginIdentifier.isEmpty())
+    if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
         return;
-    if (prefer)
-        drumGridPlugins_.insert(pluginIdentifier);
-    else
-        drumGridPlugins_.erase(pluginIdentifier);
+    const bool changed = prefer ? drumGridPlugins_.insert(pluginIdentifier).second
+                                : drumGridPlugins_.erase(pluginIdentifier) > 0;
+    if (!changed)
+        return;
     save();
+    notifyDrumGridPreferenceChanged(pluginIdentifier);
+}
+
+juce::String PluginPreferences::identifierForDevice(const DeviceInfo& device) {
+    return device.uniqueId.isNotEmpty() ? device.uniqueId : device.pluginId;
+}
+
+void PluginPreferences::addListener(Listener* listener) {
+    listeners_.add(listener);
+}
+
+void PluginPreferences::removeListener(Listener* listener) {
+    listeners_.remove(listener);
+}
+
+void PluginPreferences::notifyDrumGridPreferenceChanged(const juce::String& pluginIdentifier) {
+    listeners_.call([&pluginIdentifier](Listener& listener) {
+        listener.drumGridPreferenceChanged(pluginIdentifier);
+    });
 }
 
 std::vector<magda::KitRow> PluginPreferences::defaultKitRows(
@@ -88,7 +108,7 @@ void PluginPreferences::load() {
     if (prefersVar.isArray()) {
         for (const auto& entry : *prefersVar.getArray()) {
             auto id = entry.toString();
-            if (id.isNotEmpty())
+            if (id.isNotEmpty() && id != kInstrumentRackWrapperId)
                 drumGridPlugins_.insert(id);
         }
     }
