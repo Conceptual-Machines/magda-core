@@ -282,7 +282,12 @@ class MixerView : public juce::Component,
         bool hasConfirmedHorizontalDrag_ = false;
         int dragStartX_ = 0;
     };
-    std::unique_ptr<ChannelResizeHandle> channelResizeHandle_;
+    // One resize handle per top-level strip, sitting on each strip's right edge
+    // so a grab point exists between every pair of channel headers (not just at
+    // the far right). All handles drive the same global channel width.
+    std::vector<std::unique_ptr<ChannelResizeHandle>> channelResizeHandles_;
+    void wireChannelResizeHandle(ChannelResizeHandle& handle);
+    void layoutChannelResizeHandles(int containerHeight);
 
     // Left-edge vertical rail of view-toggle buttons (sends, routing, monitor,
     // mini oscilloscope, mini spectrum, mini FX chain). State persisted via

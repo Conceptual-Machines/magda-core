@@ -1610,36 +1610,8 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     masterStrip->onSendAreaResized = [this]() { relayoutAllStrips(); };
     addAndMakeVisible(*masterStrip);
 
-    // Create channel resize handle (thin, overlaps right edge of last channel strip)
-    channelResizeHandle_ = std::make_unique<ChannelResizeHandle>();
-    channelResizeHandle_->onResize = [this](int deltaX) {
-        auto& metrics = MixerMetrics::getInstance();
-        int newWidth =
-            juce::jlimit(minChannelWidth_, maxChannelWidth_, metrics.channelWidth + deltaX);
-        if (metrics.channelWidth != newWidth) {
-            isResizeDragging_ = true;
-            metrics.channelWidth = newWidth;
-            // Coalesce: just store the new width, apply on next vblank
-            if (!pendingResizeUpdate_) {
-                pendingResizeUpdate_ = true;
-                juce::Component::SafePointer<MixerView> safeThis(this);
-                juce::MessageManager::callAsync([safeThis]() {
-                    if (auto* self = safeThis.getComponent()) {
-                        if (self->pendingResizeUpdate_) {
-                            self->pendingResizeUpdate_ = false;
-                            self->updateStripWidths();
-                        }
-                    }
-                });
-            }
-        }
-    };
-    channelResizeHandle_->onResizeEnd = [this]() {
-        isResizeDragging_ = false;
-        pendingResizeUpdate_ = false;
-        updateStripWidths();  // Ensure final width is applied
-    };
-    channelContainer->addAndMakeVisible(*channelResizeHandle_);
+    // Channel resize handles are created lazily, one per top-level strip, in
+    // layoutChannelResizeHandles().
 
     // Left-edge toggle rail
     toggleRail_ = std::make_unique<MixerToggleRail>();
@@ -1705,7 +1677,7 @@ MixerView::~MixerView() {
     auxContainer.reset();
     channelContainer.reset();
     channelViewport.reset();
-    channelResizeHandle_.reset();
+    channelResizeHandles_.clear();
     toggleRail_.reset();
 }
 
@@ -2089,12 +2061,67 @@ void MixerView::resized() {
         xPos += stripWidth;
     }
 
-    // Resize handle centered on right border of last channel strip
-    if (!orderedStrips_.empty() && channelResizeHandle_) {
-        const int handleWidth = 8;
-        int handleX = containerWidth - handleWidth / 2;
-        channelResizeHandle_->setBounds(handleX, 0, handleWidth, containerHeight);
-        channelResizeHandle_->toFront(false);
+    layoutChannelResizeHandles(containerHeight);
+}
+
+void MixerView::wireChannelResizeHandle(ChannelResizeHandle& handle) {
+    handle.onResize = [this](int deltaX) {
+        auto& metrics = MixerMetrics::getInstance();
+        int newWidth =
+            juce::jlimit(minChannelWidth_, maxChannelWidth_, metrics.channelWidth + deltaX);
+        if (metrics.channelWidth != newWidth) {
+            isResizeDragging_ = true;
+            metrics.channelWidth = newWidth;
+            // Coalesce: just store the new width, apply on next vblank
+            if (!pendingResizeUpdate_) {
+                pendingResizeUpdate_ = true;
+                juce::Component::SafePointer<MixerView> safeThis(this);
+                juce::MessageManager::callAsync([safeThis]() {
+                    if (auto* self = safeThis.getComponent()) {
+                        if (self->pendingResizeUpdate_) {
+                            self->pendingResizeUpdate_ = false;
+                            self->updateStripWidths();
+                        }
+                    }
+                });
+            }
+        }
+    };
+    handle.onResizeEnd = [this]() {
+        isResizeDragging_ = false;
+        pendingResizeUpdate_ = false;
+        updateStripWidths();  // Ensure final width is applied
+    };
+}
+
+void MixerView::layoutChannelResizeHandles(int containerHeight) {
+    const auto& metrics = MixerMetrics::getInstance();
+
+    // Keep one handle per top-level strip (grow/shrink the pool as strips
+    // change). Each sits on its strip's right edge, so there's a grab point
+    // between every pair of headers — and they all resize the shared width.
+    while (channelResizeHandles_.size() < orderedStrips_.size()) {
+        auto handle = std::make_unique<ChannelResizeHandle>();
+        wireChannelResizeHandle(*handle);
+        channelContainer->addAndMakeVisible(*handle);
+        channelResizeHandles_.push_back(std::move(handle));
+    }
+    while (channelResizeHandles_.size() > orderedStrips_.size())
+        channelResizeHandles_.pop_back();
+
+    constexpr int handleWidth = 8;
+    int xPos = 0;
+    for (size_t i = 0; i < orderedStrips_.size(); ++i) {
+        int stripWidth = metrics.channelWidth;
+        if (auto* cs = dynamic_cast<ChannelStrip*>(orderedStrips_[i])) {
+            if (!cs->groupChildren_.empty())
+                stripWidth =
+                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
+        }
+        xPos += stripWidth;
+        channelResizeHandles_[i]->setBounds(xPos - handleWidth / 2, 0, handleWidth,
+                                            containerHeight);
+        channelResizeHandles_[i]->toFront(false);
     }
 }
 
@@ -2128,13 +2155,7 @@ void MixerView::updateStripWidths() {
         xPos += stripWidth;
     }
 
-    // Update resize handle position
-    if (!orderedStrips_.empty() && channelResizeHandle_) {
-        const int handleWidth = 8;
-        int handleX = containerWidth - handleWidth / 2;
-        channelResizeHandle_->setBounds(handleX, 0, handleWidth, containerHeight);
-        channelResizeHandle_->toFront(false);
-    }
+    layoutChannelResizeHandles(containerHeight);
 
     // Update aux strips
     int numAux = static_cast<int>(auxChannelStrips.size());
