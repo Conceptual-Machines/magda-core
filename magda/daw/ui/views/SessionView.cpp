@@ -38,6 +38,8 @@ namespace magda {
 // dB conversion helpers for faders
 namespace {
 constexpr float MIN_DB = -60.0f;
+constexpr float MAX_DB = 6.0f;
+constexpr float METER_CURVE_EXPONENT = 2.0f;
 
 juce::String formatTrackIds(const std::vector<TrackId>& trackIds) {
     juce::String text("[");
@@ -82,6 +84,26 @@ float dbToGain(float db) {
     if (db <= MIN_DB)
         return 0.0f;
     return std::pow(10.0f, db / 20.0f);
+}
+
+float dbToMeterPos(float db) {
+    if (db <= MIN_DB)
+        return 0.0f;
+    if (db >= MAX_DB)
+        return 1.0f;
+
+    float normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
+    return std::pow(normalized, METER_CURVE_EXPONENT);
+}
+
+float meterPosToDb(float pos) {
+    if (pos <= 0.0f)
+        return MIN_DB;
+    if (pos >= 1.0f)
+        return MAX_DB;
+
+    float normalized = std::pow(pos, 1.0f / METER_CURVE_EXPONENT);
+    return MIN_DB + normalized * (MAX_DB - MIN_DB);
 }
 
 // Multi-track edit fan-out: when a strip is part of a multi-selection, every
@@ -970,12 +992,30 @@ class SessionView::MiniChannelStrip : public juce::Component {
         volumeSlider_ =
             std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
         volumeSlider_->setOrientation(daw::ui::TextSlider::Orientation::Vertical);
-        volumeSlider_->setRange(-60.0, 6.0, 0.1);
+        volumeSlider_->setRange(0.0, 1.0, 0.001);
         volumeSlider_->setFont(FontManager::getInstance().getUIFont(9.0f));
         float db = gainToDb(track.volume);
-        volumeSlider_->setValue(db, juce::dontSendNotification);
+        volumeSlider_->setValue(dbToMeterPos(db), juce::dontSendNotification);
+        volumeSlider_->setValueFormatter([](double pos) -> juce::String {
+            float db = meterPosToDb(static_cast<float>(pos));
+            if (db <= MIN_DB)
+                return "-inf";
+            if (std::abs(db) < 0.05f)
+                db = 0.0f;
+            return juce::String(db, 1);
+        });
+        volumeSlider_->setValueParser([](const juce::String& text) -> double {
+            auto t = text.trim();
+            if (t.endsWithIgnoreCase("db"))
+                t = t.dropLastCharacters(2).trim();
+            if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
+                return 0.0;
+            return static_cast<double>(dbToMeterPos(t.getFloatValue()));
+        });
+        volumeSlider_->setShowText(false);
         volumeSlider_->onValueChanged = [this](double newValue) {
-            const float currentGain = dbToGain(static_cast<float>(newValue));
+            const float currentDb = meterPosToDb(static_cast<float>(newValue));
+            const float currentGain = dbToGain(currentDb);
             auto& sel = SelectionManager::getInstance();
             const bool multi = sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
             if (multi) {
@@ -984,12 +1024,13 @@ class SessionView::MiniChannelStrip : public juce::Component {
                     for (auto tid : sel.getSelectedTracks())
                         if (auto* t = tm.getTrack(tid))
                             multiTrackBaseVolumes_[tid] = t->volume;
-                    multiTrackDragStartDb_ = newValue;
+                    multiTrackDragStartDb_ = currentDb;
                 }
-                const double deltaDb = newValue - multiTrackDragStartDb_;
+                const double deltaDb = currentDb - multiTrackDragStartDb_;
                 for (auto& [tid, baseVol] : multiTrackBaseVolumes_) {
                     float baseDb = gainToDb(baseVol);
-                    float newDb = juce::jlimit(MIN_DB, 6.0f, static_cast<float>(baseDb + deltaDb));
+                    float newDb =
+                        juce::jlimit(MIN_DB, MAX_DB, static_cast<float>(baseDb + deltaDb));
                     float newGain = dbToGain(newDb);
                     UndoManager::getInstance().executeCommand(
                         std::make_unique<SetTrackVolumeCommand>(tid, newGain));
@@ -1208,22 +1249,23 @@ class SessionView::MiniChannelStrip : public juce::Component {
         auto panRow = bounds.removeFromBottom(14);
         panSlider_->setBounds(panRow);
 
-        // Layout: fader | dbScale | meter
-        int meterW = juce::jmax(8, bounds.getWidth() * 30 / 100);
-        auto meterBounds = bounds.removeFromRight(meterW);
-        levelMeter_->setBounds(meterBounds.reduced(1, 2));
-
-        // dB scale labels — narrow column between fader and meter
-        static constexpr int DB_SCALE_WIDTH = 16;
-        if (bounds.getWidth() > DB_SCALE_WIDTH + 20) {
+        // Layout mirrors MixerView: meter and fader share the same bounds, with
+        // the fader thumb drawn above the peak meter and dB labels on the right.
+        static constexpr int DB_SCALE_WIDTH = 18;
+        static constexpr int SCALE_GAP = 2;
+        if (bounds.getWidth() > DB_SCALE_WIDTH + SCALE_GAP + 20) {
             auto scaleBounds = bounds.removeFromRight(DB_SCALE_WIDTH);
+            bounds.removeFromRight(SCALE_GAP);
             dbScale_->setBounds(scaleBounds.withTrimmedTop(2).withTrimmedBottom(2));
             dbScale_->setVisible(true);
         } else {
             dbScale_->setVisible(false);
         }
 
-        volumeSlider_->setBounds(bounds.reduced(1, 0));
+        auto faderBounds = bounds.reduced(1, 2);
+        levelMeter_->setBounds(faderBounds);
+        volumeSlider_->setBounds(faderBounds);
+        volumeSlider_->toFront(false);
     }
 
     void setMeterLevels(float left, float right) {
@@ -1232,7 +1274,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
 
     void updateFromTrack(const TrackInfo& track) {
         float db = gainToDb(track.volume);
-        volumeSlider_->setValue(db, juce::dontSendNotification);
+        volumeSlider_->setValue(dbToMeterPos(db), juce::dontSendNotification);
         panSlider_->setValue(track.pan, juce::dontSendNotification);
         muteButton_->setToggleState(track.muted, juce::dontSendNotification);
         soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
@@ -1289,15 +1331,32 @@ class SessionView::MiniMasterStrip : public juce::Component {
         volumeSlider_ =
             std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
         volumeSlider_->setOrientation(daw::ui::TextSlider::Orientation::Vertical);
-        volumeSlider_->setRange(-60.0, 6.0, 0.1);
+        volumeSlider_->setRange(0.0, 1.0, 0.001);
         volumeSlider_->setFont(FontManager::getInstance().getUIFont(9.0f));
 
         const auto& master = TrackManager::getInstance().getMasterChannel();
         float db = gainToDb(master.volume);
-        volumeSlider_->setValue(db, juce::dontSendNotification);
+        volumeSlider_->setValue(dbToMeterPos(db), juce::dontSendNotification);
+        volumeSlider_->setValueFormatter([](double pos) -> juce::String {
+            float db = meterPosToDb(static_cast<float>(pos));
+            if (db <= MIN_DB)
+                return "-inf";
+            if (std::abs(db) < 0.05f)
+                db = 0.0f;
+            return juce::String(db, 1);
+        });
+        volumeSlider_->setValueParser([](const juce::String& text) -> double {
+            auto t = text.trim();
+            if (t.endsWithIgnoreCase("db"))
+                t = t.dropLastCharacters(2).trim();
+            if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
+                return 0.0;
+            return static_cast<double>(dbToMeterPos(t.getFloatValue()));
+        });
+        volumeSlider_->setShowText(false);
 
         volumeSlider_->onValueChanged = [](double newValue) {
-            float gain = dbToGain(static_cast<float>(newValue));
+            float gain = dbToGain(meterPosToDb(static_cast<float>(newValue)));
             UndoManager::getInstance().executeCommand(
                 std::make_unique<SetMasterVolumeCommand>(gain));
         };
@@ -1335,26 +1394,26 @@ class SessionView::MiniMasterStrip : public juce::Component {
         auto bounds = getLocalBounds();
         bounds.removeFromTop(3);
 
-        int meterW = juce::jmax(8, bounds.getWidth() * 40 / 100);
-        auto meterBounds = bounds.removeFromRight(meterW);
-        levelMeter_->setBounds(meterBounds.reduced(1, 2));
-
-        // dB scale labels — narrow column between fader and meter
-        static constexpr int DB_SCALE_WIDTH = 16;
-        if (bounds.getWidth() > DB_SCALE_WIDTH + 20) {
+        static constexpr int DB_SCALE_WIDTH = 18;
+        static constexpr int SCALE_GAP = 2;
+        if (bounds.getWidth() > DB_SCALE_WIDTH + SCALE_GAP + 20) {
             auto scaleBounds = bounds.removeFromRight(DB_SCALE_WIDTH);
+            bounds.removeFromRight(SCALE_GAP);
             dbScale_->setBounds(scaleBounds.withTrimmedTop(2).withTrimmedBottom(2));
             dbScale_->setVisible(true);
         } else {
             dbScale_->setVisible(false);
         }
 
-        volumeSlider_->setBounds(bounds.reduced(1, 0));
+        auto faderBounds = bounds.reduced(1, 2);
+        levelMeter_->setBounds(faderBounds);
+        volumeSlider_->setBounds(faderBounds);
+        volumeSlider_->toFront(false);
     }
 
     void updateVolume(float volume) {
         float db = gainToDb(volume);
-        volumeSlider_->setValue(db, juce::dontSendNotification);
+        volumeSlider_->setValue(dbToMeterPos(db), juce::dontSendNotification);
     }
 
     void setMeterLevels(float left, float right) {
@@ -1490,9 +1549,7 @@ SessionView::SessionView() {
     masterLabel_->setColour(juce::TextButton::textColourOffId,
                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     masterLabel_->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
-    masterLabel_->onClick = [this]() {
-        SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
-    };
+    masterLabel_->onClick = []() { SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID); };
     addAndMakeVisible(*masterLabel_);
 
     // Create master strip in the fader row (scene column area)

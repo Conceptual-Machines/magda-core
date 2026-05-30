@@ -129,6 +129,12 @@ void ValueLabelControl::setVertical(bool vertical) {
     repaint();
 }
 
+void ValueLabelControl::setEditorBoundsOverride(std::optional<juce::Rectangle<int>> bounds) {
+    editorBoundsOverride_ = bounds;
+    if (editor_)
+        editor_->setBounds(editorBoundsOverride_.value_or(getLocalBounds().reduced(1)));
+}
+
 bool ValueLabelControl::isEditing() const {
     return editor_ != nullptr;
 }
@@ -138,7 +144,7 @@ void ValueLabelControl::showEditor(const juce::String& initialText) {
         return;
 
     editor_ = std::make_unique<juce::TextEditor>();
-    editor_->setBounds(getLocalBounds().reduced(1));
+    editor_->setBounds(editorBoundsOverride_.value_or(getLocalBounds().reduced(1)));
     editor_->setFont(font_);
     editor_->setText(initialText, false);
     editor_->selectAll();
@@ -278,7 +284,7 @@ void ValueLabelControl::paint(juce::Graphics& g) {
 
 void ValueLabelControl::resized() {
     if (editor_)
-        editor_->setBounds(getLocalBounds().reduced(1));
+        editor_->setBounds(editorBoundsOverride_.value_or(getLocalBounds().reduced(1)));
 }
 
 void ValueLabelControl::mouseDown(const juce::MouseEvent& e) {
