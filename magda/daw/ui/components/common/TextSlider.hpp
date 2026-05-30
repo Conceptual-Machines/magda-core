@@ -762,6 +762,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         valueControl_.setRange(minValue_, maxValue_);
         valueControl_.setValue(value_);
         valueControl_.setDisplayText(currentDisplayText());
+        valueControl_.setVertical(orientation_ == Orientation::Vertical);
         valueControl_.setFillMode(format_ == Format::Pan
                                       ? ValueLabelControl::FillMode::PanCentre
                                       : ValueLabelControl::FillMode::LeftToRight);
@@ -772,6 +773,26 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         valueControl_.setDrawBorder(orientation_ == Orientation::Horizontal && !hasMeter);
         valueControl_.setDragging(isLeftButtonDrag_);
         valueControl_.setTintState(toControlTintState(automationVisualState_));
+        valueControl_.setEditorBoundsProvider(orientation_ == Orientation::Vertical
+                                                  ? [this] { return verticalEditorBounds(); }
+                                                  : std::function<juce::Rectangle<int>()>{});
+    }
+
+    juce::Rectangle<int> verticalEditorBounds() const {
+        auto bounds = valueControl_.getLocalBounds();
+        if (bounds.isEmpty())
+            return {};
+
+        const float norm = static_cast<float>(getNormalizedValue());
+        const int handleY =
+            bounds.getBottom() - static_cast<int>(std::round(bounds.getHeight() * norm));
+        constexpr int editorW = 32;
+        constexpr int editorH = 16;
+        const int x = bounds.getCentreX() - editorW / 2;
+        const int minY = bounds.getY() + 1;
+        const int maxY = bounds.getBottom() - editorH - 1;
+        const int y = juce::jlimit(minY, maxY, handleY - editorH / 2);
+        return juce::Rectangle<int>(x, y, editorW, editorH).getIntersection(bounds.reduced(1));
     }
 
     float meterPeakL_ = 0.f;
