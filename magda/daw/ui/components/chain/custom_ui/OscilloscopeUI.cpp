@@ -130,8 +130,11 @@ void OscilloscopeUI::setCompact(bool compact) {
     if (compact_ == compact)
         return;
     compact_ = compact;
-    if (!compact_)
+    if (!compact_) {
         controlsExpanded_ = false;  // the full editor always shows controls; no toggle
+        controlsFadeActive_ = false;
+        controlsAlpha_ = 1.0f;
+    }
     updateControlVisibility();
     resized();
     repaint();
@@ -147,22 +150,23 @@ void OscilloscopeUI::setControlsExpanded(bool expanded) {
     if (!compact_ || controlsExpanded_ == expanded)
         return;
     controlsExpanded_ = expanded;
+    startControlsFade(expanded);
     updateControlVisibility();
     resized();
     repaint();
-    if (onControlsExpandedChanged)
+    if (expanded && onControlsExpandedChanged)
         onControlsExpandedChanged();
 }
 
 int OscilloscopeUI::expandedControlsHeight() const {
-    if (!compact_ || !controlsExpanded_)
+    if (!compact_ || !showControls())
         return 0;
     return 2 * kStackRowH + 4;  // Time + Color rows, plus top padding
 }
 
 void OscilloscopeUI::updateControlVisibility() {
     const bool full = !compact_;
-    const bool stacked = compact_ && controlsExpanded_;
+    const bool stacked = compact_ && showControls();
     timeLabel_.setVisible(full || stacked);
     timeSlider_.setVisible(full || stacked);
     timeValueLabel_.setVisible(full);  // numeric readout only fits the full editor
@@ -170,6 +174,47 @@ void OscilloscopeUI::updateControlVisibility() {
     colourLabel_.setVisible(stacked);  // the stacked layout labels the colour combo
     if (popoutButton_)
         popoutButton_->setVisible(compact_);  // lives in the strip, compact only
+    applyControlsAlpha();
+}
+
+void OscilloscopeUI::startControlsFade(bool expanding) {
+    controlsFadeActive_ = true;
+    controlsFadeStartMs_ = juce::Time::getMillisecondCounterHiRes();
+    controlsFadeStartAlpha_ = expanding ? 0.0f : controlsAlpha_;
+    controlsFadeTargetAlpha_ = expanding ? 1.0f : 0.0f;
+    controlsAlpha_ = controlsFadeStartAlpha_;
+}
+
+void OscilloscopeUI::advanceControlsFade() {
+    if (!controlsFadeActive_)
+        return;
+
+    const auto elapsed = juce::Time::getMillisecondCounterHiRes() - controlsFadeStartMs_;
+    const auto progress =
+        static_cast<float>(juce::jlimit(0.0, 1.0, elapsed / kCompactControlsFadeMs));
+    controlsAlpha_ =
+        controlsFadeStartAlpha_ + (controlsFadeTargetAlpha_ - controlsFadeStartAlpha_) * progress;
+    applyControlsAlpha();
+
+    if (progress < 1.0f)
+        return;
+
+    controlsFadeActive_ = false;
+    controlsAlpha_ = controlsExpanded_ ? 1.0f : 0.0f;
+    updateControlVisibility();
+    resized();
+    repaint();
+
+    if (!controlsExpanded_ && onControlsExpandedChanged)
+        onControlsExpandedChanged();
+}
+
+void OscilloscopeUI::applyControlsAlpha() {
+    const float alpha = compact_ ? controlsAlpha_ : 1.0f;
+    timeLabel_.setAlpha(alpha);
+    timeSlider_.setAlpha(alpha);
+    colourLabel_.setAlpha(alpha);
+    colourCombo_.setAlpha(alpha);
 }
 
 void OscilloscopeUI::updateTimeReadout() {
@@ -243,6 +288,7 @@ void OscilloscopeUI::openPopout() {
 }
 
 void OscilloscopeUI::timerCallback() {
+    advanceControlsFade();
     if (plugin_ != nullptr)
         plugin_->getTapBuffer().readLatest(window_.data(), readCount_);
     repaint();

@@ -73,7 +73,61 @@ juce::Image createChainNodeDragImage(const juce::String& label, int itemCount) {
 }
 }  // namespace
 
+struct NodeComponent::PanelFadeTimer : private juce::Timer {
+    void fadeIn(const std::vector<juce::Component*>& components, int durationMs) {
+        stopTimer();
+        targets_.clear();
+        durationMs_ = juce::jmax(1, durationMs);
+        startMs_ = juce::Time::getMillisecondCounterHiRes();
+
+        for (auto* component : components) {
+            if (component == nullptr)
+                continue;
+            component->setAlpha(0.0f);
+            component->setVisible(true);
+            targets_.push_back(component);
+        }
+
+        if (targets_.empty())
+            return;
+
+        startTimerHz(60);
+    }
+
+    void cancel() {
+        stopTimer();
+        for (auto& target : targets_) {
+            if (auto* component = target.getComponent())
+                component->setAlpha(1.0f);
+        }
+        targets_.clear();
+    }
+
+  private:
+    void timerCallback() override {
+        const auto elapsed = juce::Time::getMillisecondCounterHiRes() - startMs_;
+        const auto progress = juce::jlimit(0.0, 1.0, elapsed / static_cast<double>(durationMs_));
+        const auto alpha = static_cast<float>(progress);
+
+        for (auto& target : targets_) {
+            if (auto* component = target.getComponent())
+                component->setAlpha(alpha);
+        }
+
+        if (progress >= 1.0) {
+            cancel();
+        }
+    }
+
+    std::vector<juce::Component::SafePointer<juce::Component>> targets_;
+    double startMs_ = 0.0;
+    int durationMs_ = 1;
+};
+
 NodeComponent::NodeComponent() {
+    paramPanelFadeTimer_ = std::make_unique<PanelFadeTimer>();
+    modPanelFadeTimer_ = std::make_unique<PanelFadeTimer>();
+
     // Register as SelectionManager listener for centralized selection
     magda::SelectionManager::getInstance().addListener(this);
     // Listen for binding/controller changes so the header dot reflects the
@@ -640,6 +694,9 @@ void NodeComponent::setFrozen(bool frozen) {
 
 void NodeComponent::setModPanelVisible(bool visible) {
     if (modPanelVisible_ != visible) {
+        const bool opening = visible;
+        if (!opening)
+            cancelModPanelContentFade();
         modPanelVisible_ = visible;
 
         // When hiding the mod panel, also hide the modulator editor
@@ -647,11 +704,14 @@ void NodeComponent::setModPanelVisible(bool visible) {
             hideModulatorEditor();
         }
 
+        resized();
+        repaint();
+        auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
+        if (safeThis != nullptr && opening)
+            safeThis->fadeInModPanelContent();
         if (onModPanelToggled) {
             onModPanelToggled(modPanelVisible_);
         }
-        resized();
-        repaint();
         if (onLayoutChanged) {
             onLayoutChanged();
         }
@@ -1574,44 +1634,37 @@ void NodeComponent::updateMacroValueDisplay(int macroIndex, float value) {
 }
 
 void NodeComponent::fadeInParamPanelContent() {
-    auto& animator = juce::Desktop::getInstance().getAnimator();
-
-    auto fadeIn = [&animator](juce::Component* component) {
-        if (component == nullptr)
-            return;
-        animator.cancelAnimation(component, false);
-        const auto targetBounds = component->getBounds();
-        component->setBounds(targetBounds.translated(10, 0));
-        component->setAlpha(0.0f);
-        component->setVisible(true);
-        animator.animateComponent(component, targetBounds, 1.0f, PARAM_PANEL_FADE_IN_MS, false, 1.0,
-                                  1.0);
-    };
-
     if (macroPanel_) {
-        fadeIn(macroPanel_.get());
+        paramPanelFadeTimer_->fadeIn({macroPanel_.get()}, SIDE_PANEL_FADE_IN_MS);
         return;
     }
 
+    std::vector<juce::Component*> targets;
+    targets.reserve(paramKnobs_.size());
     for (auto& knob : paramKnobs_)
-        fadeIn(knob.get());
+        targets.push_back(knob.get());
+    paramPanelFadeTimer_->fadeIn(targets, SIDE_PANEL_FADE_IN_MS);
 }
 
 void NodeComponent::cancelParamPanelContentFade() {
-    auto& animator = juce::Desktop::getInstance().getAnimator();
+    paramPanelFadeTimer_->cancel();
+}
 
-    auto cancel = [&animator](juce::Component* component) {
-        if (component == nullptr)
-            return;
-        animator.cancelAnimation(component, false);
-        component->setAlpha(1.0f);
-    };
+void NodeComponent::fadeInModPanelContent() {
+    if (modsPanel_) {
+        modPanelFadeTimer_->fadeIn({modsPanel_.get()}, SIDE_PANEL_FADE_IN_MS);
+        return;
+    }
 
-    if (macroPanel_)
-        cancel(macroPanel_.get());
+    std::vector<juce::Component*> targets;
+    targets.reserve(3);
+    for (auto& button : modSlotButtons_)
+        targets.push_back(button.get());
+    modPanelFadeTimer_->fadeIn(targets, SIDE_PANEL_FADE_IN_MS);
+}
 
-    for (auto& knob : paramKnobs_)
-        cancel(knob.get());
+void NodeComponent::cancelModPanelContentFade() {
+    modPanelFadeTimer_->cancel();
 }
 
 void NodeComponent::refreshPanels() {

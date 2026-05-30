@@ -62,13 +62,21 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     float dbToY(float db, juce::Rectangle<float> area) const;
     juce::Rectangle<float> plotArea() const;  // plot region (excludes the control row)
     void updateControlVisibility();
+    void startControlsFade(bool expanding);
+    void advanceControlsFade();
+    void applyControlsAlpha();
     void openPopout();  // open/re-show the full analyzer in a floating window
     bool showControls() const {
-        return !compact_ || controlsExpanded_;
+        return !compact_ || controlsExpanded_ || controlsFadeActive_;
     }
 
     bool compact_ = false;
     bool controlsExpanded_ = false;
+    bool controlsFadeActive_ = false;
+    float controlsAlpha_ = 1.0f;
+    float controlsFadeStartAlpha_ = 1.0f;
+    float controlsFadeTargetAlpha_ = 1.0f;
+    double controlsFadeStartMs_ = 0.0;
     bool persistGlobalDefaults_ = true;
     daw::audio::SpectrumAnalyzerPlugin* plugin_ = nullptr;
 
@@ -110,6 +118,8 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
 
     juce::Point<int> mousePos_;
     bool mouseOver_ = false;
+
+    static constexpr int kCompactControlsFadeMs = 420;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAnalyzerUI)
 };

@@ -194,8 +194,11 @@ void SpectrumAnalyzerUI::setCompact(bool compact) {
     if (compact_ == compact)
         return;
     compact_ = compact;
-    if (!compact_)
+    if (!compact_) {
         controlsExpanded_ = false;  // the full editor always shows controls; no toggle
+        controlsFadeActive_ = false;
+        controlsAlpha_ = 1.0f;
+    }
     updateControlVisibility();
     resized();
     repaint();
@@ -211,21 +214,22 @@ void SpectrumAnalyzerUI::setControlsExpanded(bool expanded) {
     if (!compact_ || controlsExpanded_ == expanded)
         return;
     controlsExpanded_ = expanded;
+    startControlsFade(expanded);
     updateControlVisibility();
     resized();
     repaint();
-    if (onControlsExpandedChanged)
+    if (expanded && onControlsExpandedChanged)
         onControlsExpandedChanged();
 }
 
 int SpectrumAnalyzerUI::expandedControlsHeight() const {
-    if (!compact_ || !controlsExpanded_)
+    if (!compact_ || !showControls())
         return 0;
     return 4 * kStackRowH + 4;  // FFT + Slope + Time + Color rows, plus top padding
 }
 
 void SpectrumAnalyzerUI::updateControlVisibility() {
-    const bool show = !compact_ || controlsExpanded_;
+    const bool show = showControls();
     fftLabel_.setVisible(show);
     fftCombo_.setVisible(show);
     slopeLabel_.setVisible(show);
@@ -236,6 +240,51 @@ void SpectrumAnalyzerUI::updateControlVisibility() {
     colourCombo_.setVisible(show);
     if (popoutButton_)
         popoutButton_->setVisible(compact_);  // lives in the strip, compact only
+    applyControlsAlpha();
+}
+
+void SpectrumAnalyzerUI::startControlsFade(bool expanding) {
+    controlsFadeActive_ = true;
+    controlsFadeStartMs_ = juce::Time::getMillisecondCounterHiRes();
+    controlsFadeStartAlpha_ = expanding ? 0.0f : controlsAlpha_;
+    controlsFadeTargetAlpha_ = expanding ? 1.0f : 0.0f;
+    controlsAlpha_ = controlsFadeStartAlpha_;
+}
+
+void SpectrumAnalyzerUI::advanceControlsFade() {
+    if (!controlsFadeActive_)
+        return;
+
+    const auto elapsed = juce::Time::getMillisecondCounterHiRes() - controlsFadeStartMs_;
+    const auto progress =
+        static_cast<float>(juce::jlimit(0.0, 1.0, elapsed / kCompactControlsFadeMs));
+    controlsAlpha_ =
+        controlsFadeStartAlpha_ + (controlsFadeTargetAlpha_ - controlsFadeStartAlpha_) * progress;
+    applyControlsAlpha();
+
+    if (progress < 1.0f)
+        return;
+
+    controlsFadeActive_ = false;
+    controlsAlpha_ = controlsExpanded_ ? 1.0f : 0.0f;
+    updateControlVisibility();
+    resized();
+    repaint();
+
+    if (!controlsExpanded_ && onControlsExpandedChanged)
+        onControlsExpandedChanged();
+}
+
+void SpectrumAnalyzerUI::applyControlsAlpha() {
+    const float alpha = compact_ ? controlsAlpha_ : 1.0f;
+    fftLabel_.setAlpha(alpha);
+    fftCombo_.setAlpha(alpha);
+    slopeLabel_.setAlpha(alpha);
+    slopeCombo_.setAlpha(alpha);
+    speedLabel_.setAlpha(alpha);
+    speedCombo_.setAlpha(alpha);
+    colourLabel_.setAlpha(alpha);
+    colourCombo_.setAlpha(alpha);
 }
 
 int SpectrumAnalyzerUI::compactExtraHeight() const {
@@ -310,6 +359,7 @@ void SpectrumAnalyzerUI::openPopout() {
 }
 
 void SpectrumAnalyzerUI::timerCallback() {
+    advanceControlsFade();
     if (plugin_ == nullptr || fft_ == nullptr) {
         repaint();
         return;

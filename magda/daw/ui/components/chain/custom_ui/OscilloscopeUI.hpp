@@ -59,13 +59,21 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     void applyTimebase();      // recompute displaySamples_ / readCount_ from timebase + sample rate
     void updateTimeReadout();  // format the slider value into the themed value label
     void updateControlVisibility();
+    void startControlsFade(bool expanding);
+    void advanceControlsFade();
+    void applyControlsAlpha();
     void openPopout();  // open/re-show the full analyzer in a floating window
     bool showControls() const {
-        return !compact_ || controlsExpanded_;
+        return !compact_ || controlsExpanded_ || controlsFadeActive_;
     }
 
     bool compact_ = false;
     bool controlsExpanded_ = false;
+    bool controlsFadeActive_ = false;
+    float controlsAlpha_ = 1.0f;
+    float controlsFadeStartAlpha_ = 1.0f;
+    float controlsFadeTargetAlpha_ = 1.0f;
+    double controlsFadeStartMs_ = 0.0;
     bool persistGlobalDefaults_ = true;
     daw::audio::OscilloscopePlugin* plugin_ = nullptr;
 
@@ -96,6 +104,8 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     // is a non-owning view into the window's content so setPlugin can forward.
     std::unique_ptr<AnalyzerWindow> popoutWindow_;
     OscilloscopeUI* popoutUI_ = nullptr;
+
+    static constexpr int kCompactControlsFadeMs = 420;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscilloscopeUI)
 };

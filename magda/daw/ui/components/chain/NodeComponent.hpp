@@ -403,9 +403,14 @@ class NodeComponent : public juce::Component,
     // Mod/Macro panel management
     void initializeModsMacrosPanels();
     void updateModsPanel();
+    struct PanelFadeTimer;
+    std::unique_ptr<PanelFadeTimer> paramPanelFadeTimer_;
+    std::unique_ptr<PanelFadeTimer> modPanelFadeTimer_;
     void fadeInParamPanelContent();
     void cancelParamPanelContentFade();
-    static constexpr int PARAM_PANEL_FADE_IN_MS = 420;
+    void fadeInModPanelContent();
+    void cancelModPanelContentFade();
+    static constexpr int SIDE_PANEL_FADE_IN_MS = 420;
 
   public:
     // Public so external TrackManagerListener callbacks (e.g. controller writes)
