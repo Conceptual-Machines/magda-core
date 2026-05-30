@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 #include "AnalyzerColours.hpp"
 #include "AnalyzerWindow.hpp"
@@ -54,7 +55,7 @@ OscilloscopeUI::OscilloscopeUI() {
     };
     // Persist as the global last-used default on release (not per drag tick).
     timeSlider_.onDragEnd = [this] {
-        if (plugin_ == nullptr)
+        if (plugin_ == nullptr || !persistGlobalDefaults_)
             return;
         auto d = Config::getInstance().getOscilloscopeDefaults();
         d.timebaseMs = plugin_->getTimebaseMs();
@@ -86,11 +87,15 @@ OscilloscopeUI::OscilloscopeUI() {
     colourCombo_.onChange = [this] {
         if (plugin_ == nullptr)
             return;
+        DBG("[AnalyzerColour] OscilloscopeUI colour change ui=0x"
+            << juce::String::toHexString(
+                   static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(this)))
+            << " compact=" << static_cast<int>(compact_) << " plugin=0x"
+            << juce::String::toHexString(
+                   static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(plugin_)))
+            << " selectedId=" << colourCombo_.getSelectedId()
+            << " requestedColour=" << (colourCombo_.getSelectedId() - 1));
         plugin_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
-        auto d = Config::getInstance().getOscilloscopeDefaults();
-        d.traceColour = plugin_->getTraceColourIndex();
-        Config::getInstance().setOscilloscopeDefaults(d);
-        Config::getInstance().save();
     };
     addAndMakeVisible(colourCombo_);
 
@@ -130,6 +135,12 @@ void OscilloscopeUI::setCompact(bool compact) {
     updateControlVisibility();
     resized();
     repaint();
+}
+
+void OscilloscopeUI::setPersistGlobalDefaults(bool persist) {
+    persistGlobalDefaults_ = persist;
+    if (popoutUI_ != nullptr)
+        popoutUI_->setPersistGlobalDefaults(persist);
 }
 
 void OscilloscopeUI::setControlsExpanded(bool expanded) {
@@ -222,6 +233,7 @@ void OscilloscopeUI::openPopout() {
     if (popoutWindow_ == nullptr) {
         auto content = std::make_unique<OscilloscopeUI>();  // full-size (not compact)
         popoutUI_ = content.get();
+        popoutUI_->setPersistGlobalDefaults(persistGlobalDefaults_);
         popoutUI_->setPlugin(plugin_);
         popoutWindow_ = std::make_unique<AnalyzerWindow>("Oscilloscope", std::move(content));
     } else {

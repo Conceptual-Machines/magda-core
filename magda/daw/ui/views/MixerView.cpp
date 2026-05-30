@@ -630,12 +630,14 @@ void MixerView::ChannelStrip::setupControls() {
         };
         miniOscilloscopeUI_ = std::make_unique<daw::ui::OscilloscopeUI>();
         miniOscilloscopeUI_->setCompact(true);
+        miniOscilloscopeUI_->setPersistGlobalDefaults(false);
         miniOscilloscopeUI_->setVisible(false);
         miniOscilloscopeUI_->onControlsExpandedChanged = relayoutOnExpand;
         addAndMakeVisible(*miniOscilloscopeUI_);
 
         miniSpectrumUI_ = std::make_unique<daw::ui::SpectrumAnalyzerUI>();
         miniSpectrumUI_->setCompact(true);
+        miniSpectrumUI_->setPersistGlobalDefaults(false);
         miniSpectrumUI_->setVisible(false);
         miniSpectrumUI_->onControlsExpandedChanged = relayoutOnExpand;
         addAndMakeVisible(*miniSpectrumUI_);
@@ -902,8 +904,9 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
 
     if (miniOscilloscopeUI_) {
         daw::audio::OscilloscopePlugin* osc = nullptr;
+        DeviceId id = INVALID_DEVICE_ID;
         if (bridge) {
-            DeviceId id = tm.findMixerAnalysisDevice(trackId_, "oscilloscope");
+            id = tm.findMixerAnalysisDevice(trackId_, "oscilloscope");
             if (id != INVALID_DEVICE_ID) {
                 auto pluginPtr =
                     bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
@@ -915,8 +918,9 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
 
     if (miniSpectrumUI_) {
         daw::audio::SpectrumAnalyzerPlugin* spec = nullptr;
+        DeviceId id = INVALID_DEVICE_ID;
         if (bridge) {
-            DeviceId id = tm.findMixerAnalysisDevice(trackId_, "spectrumanalyzer");
+            id = tm.findMixerAnalysisDevice(trackId_, "spectrumanalyzer");
             if (id != INVALID_DEVICE_ID) {
                 auto pluginPtr =
                     bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));

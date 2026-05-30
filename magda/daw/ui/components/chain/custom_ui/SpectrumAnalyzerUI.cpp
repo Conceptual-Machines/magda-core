@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iterator>
 #include <limits>
 
@@ -43,11 +44,10 @@ template <typename Range> int nearestId(const Range& options, float value) {
 
 // Snapshot the plugin's current settings as the global last-used spectrum
 // default (config.json), so the next freshly-created spectrum adopts them.
-void persistSpectrumDefaults(daw::audio::SpectrumAnalyzerPlugin* p) {
-    if (p == nullptr)
+void persistSpectrumDefaults(daw::audio::SpectrumAnalyzerPlugin* p, bool enabled) {
+    if (p == nullptr || !enabled)
         return;
     Config::SpectrumDefaults d;
-    d.traceColour = p->getTraceColourIndex();
     d.fftOrder = p->getFftOrder();
     d.slopeDbPerOct = p->getSlopeDbPerOct();
     d.smoothing = p->getSmoothing();
@@ -81,7 +81,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
         if (plugin_ != nullptr)
             plugin_->setFftOrder(order);
         rebuildFft(order);
-        persistSpectrumDefaults(plugin_);
+        persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
     };
     styleCombo(fftCombo_);
 
@@ -96,7 +96,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
             slopeDbPerOct_ = kSlopeOptions[static_cast<size_t>(idx)];
             if (plugin_ != nullptr)
                 plugin_->setSlopeDbPerOct(slopeDbPerOct_);
-            persistSpectrumDefaults(plugin_);
+            persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
         }
     };
     styleCombo(slopeCombo_);
@@ -111,7 +111,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
             smoothing_ = kSpeedOptions[static_cast<size_t>(idx)];
             if (plugin_ != nullptr)
                 plugin_->setSmoothing(smoothing_);
-            persistSpectrumDefaults(plugin_);
+            persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
         }
     };
     styleCombo(speedCombo_);
@@ -120,9 +120,24 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     for (int i = 0; i < kAnalyzerColourCount; ++i)
         colourCombo_.addItem(kAnalyzerColourNames[i], i + 1);
     colourCombo_.onChange = [this] {
-        if (plugin_ != nullptr)
+        if (plugin_ != nullptr) {
+            DBG("[AnalyzerColour] SpectrumAnalyzerUI colour change ui=0x"
+                << juce::String::toHexString(
+                       static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(this)))
+                << " compact=" << static_cast<int>(compact_) << " plugin=0x"
+                << juce::String::toHexString(
+                       static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(plugin_)))
+                << " selectedId=" << colourCombo_.getSelectedId()
+                << " requestedColour=" << (colourCombo_.getSelectedId() - 1));
             plugin_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
-        persistSpectrumDefaults(plugin_);
+        } else {
+            DBG("[AnalyzerColour] SpectrumAnalyzerUI colour change ignored ui=0x"
+                << juce::String::toHexString(
+                       static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(this)))
+                << " compact=" << static_cast<int>(compact_) << " plugin=null"
+                << " selectedId=" << colourCombo_.getSelectedId());
+        }
+        persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
     };
     styleCombo(colourCombo_);
 
@@ -184,6 +199,12 @@ void SpectrumAnalyzerUI::setCompact(bool compact) {
     updateControlVisibility();
     resized();
     repaint();
+}
+
+void SpectrumAnalyzerUI::setPersistGlobalDefaults(bool persist) {
+    persistGlobalDefaults_ = persist;
+    if (popoutUI_ != nullptr)
+        popoutUI_->setPersistGlobalDefaults(persist);
 }
 
 void SpectrumAnalyzerUI::setControlsExpanded(bool expanded) {
@@ -279,6 +300,7 @@ void SpectrumAnalyzerUI::openPopout() {
     if (popoutWindow_ == nullptr) {
         auto content = std::make_unique<SpectrumAnalyzerUI>();  // full-size (not compact)
         popoutUI_ = content.get();
+        popoutUI_->setPersistGlobalDefaults(persistGlobalDefaults_);
         popoutUI_->setPlugin(plugin_);
         popoutWindow_ = std::make_unique<AnalyzerWindow>("Spectrum Analyzer", std::move(content));
     } else {

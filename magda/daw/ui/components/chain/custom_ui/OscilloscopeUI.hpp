@@ -33,6 +33,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     // Compact mode hides the time/colour control row and uses the full
     // bounds for the waveform — used by the mini visualizer on the mixer.
     void setCompact(bool compact);
+    void setPersistGlobalDefaults(bool persist);
 
     // Compact-mode expand toggle: reveal the controls stacked vertically beneath
     // the waveform (the full editor's horizontal row doesn't fit a mixer strip).
@@ -65,6 +66,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
 
     bool compact_ = false;
     bool controlsExpanded_ = false;
+    bool persistGlobalDefaults_ = true;
     daw::audio::OscilloscopePlugin* plugin_ = nullptr;
 
     // window_ holds the whole tap ring; each frame we read readCount_ samples

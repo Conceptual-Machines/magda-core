@@ -343,8 +343,9 @@ void MasterChannelStrip::refreshMiniAnalyzers() {
 
     if (miniOscilloscopeUI_) {
         daw::audio::OscilloscopePlugin* osc = nullptr;
+        DeviceId id = INVALID_DEVICE_ID;
         if (bridge) {
-            DeviceId id = tm.findMixerAnalysisDevice(MASTER_TRACK_ID, "oscilloscope");
+            id = tm.findMixerAnalysisDevice(MASTER_TRACK_ID, "oscilloscope");
             if (id != INVALID_DEVICE_ID) {
                 auto pluginPtr =
                     bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, id));
@@ -356,8 +357,9 @@ void MasterChannelStrip::refreshMiniAnalyzers() {
 
     if (miniSpectrumUI_) {
         daw::audio::SpectrumAnalyzerPlugin* spec = nullptr;
+        DeviceId id = INVALID_DEVICE_ID;
         if (bridge) {
-            DeviceId id = tm.findMixerAnalysisDevice(MASTER_TRACK_ID, "spectrumanalyzer");
+            id = tm.findMixerAnalysisDevice(MASTER_TRACK_ID, "spectrumanalyzer");
             if (id != INVALID_DEVICE_ID) {
                 auto pluginPtr =
                     bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, id));
@@ -454,11 +456,13 @@ void MasterChannelStrip::setupControls() {
     // section; rail toggle controls their visibility.
     miniOscilloscopeUI_ = std::make_unique<daw::ui::OscilloscopeUI>();
     miniOscilloscopeUI_->setCompact(true);
+    miniOscilloscopeUI_->setPersistGlobalDefaults(false);
     miniOscilloscopeUI_->setVisible(false);
     addAndMakeVisible(*miniOscilloscopeUI_);
 
     miniSpectrumUI_ = std::make_unique<daw::ui::SpectrumAnalyzerUI>();
     miniSpectrumUI_->setCompact(true);
+    miniSpectrumUI_->setPersistGlobalDefaults(false);
     miniSpectrumUI_->setVisible(false);
     addAndMakeVisible(*miniSpectrumUI_);
 

@@ -660,9 +660,12 @@ void NodeComponent::setModPanelVisible(bool visible) {
 
 void NodeComponent::setParamPanelVisible(bool visible) {
     if (paramPanelVisible_ != visible) {
+        const bool opening = visible;
         DBG("NodeComponent::setParamPanelVisible - changing from "
             << (paramPanelVisible_ ? "visible" : "hidden") << " to "
             << (visible ? "visible" : "hidden"));
+        if (!opening)
+            cancelParamPanelContentFade();
         paramPanelVisible_ = visible;
 
         // When hiding the macro panel, also hide the macro editor
@@ -675,8 +678,12 @@ void NodeComponent::setParamPanelVisible(bool visible) {
         }
         resized();
         repaint();
+        auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
         if (onLayoutChanged) {
             onLayoutChanged();
+        }
+        if (safeThis != nullptr && opening) {
+            safeThis->fadeInParamPanelContent();
         }
     }
 }
@@ -1564,6 +1571,44 @@ void NodeComponent::updateModsPanel() {
 void NodeComponent::updateMacroValueDisplay(int macroIndex, float value) {
     if (macroPanel_)
         macroPanel_->updateMacroValueDisplay(macroIndex, value);
+}
+
+void NodeComponent::fadeInParamPanelContent() {
+    auto& animator = juce::Desktop::getInstance().getAnimator();
+
+    auto fadeIn = [&animator](juce::Component* component) {
+        if (component == nullptr)
+            return;
+        animator.cancelAnimation(component, false);
+        component->setAlpha(0.0f);
+        component->setVisible(true);
+        animator.fadeIn(component, PARAM_PANEL_FADE_IN_MS);
+    };
+
+    if (macroPanel_) {
+        fadeIn(macroPanel_.get());
+        return;
+    }
+
+    for (auto& knob : paramKnobs_)
+        fadeIn(knob.get());
+}
+
+void NodeComponent::cancelParamPanelContentFade() {
+    auto& animator = juce::Desktop::getInstance().getAnimator();
+
+    auto cancel = [&animator](juce::Component* component) {
+        if (component == nullptr)
+            return;
+        animator.cancelAnimation(component, false);
+        component->setAlpha(1.0f);
+    };
+
+    if (macroPanel_)
+        cancel(macroPanel_.get());
+
+    for (auto& knob : paramKnobs_)
+        cancel(knob.get());
 }
 
 void NodeComponent::refreshPanels() {

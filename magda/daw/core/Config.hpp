@@ -737,17 +737,14 @@ class Config {
         persistMixerAnalysis_ = v;
     }
 
-    // Analysis device defaults: the last-used settings, applied to every newly
-    // created Oscilloscope / Spectrum Analyzer. A device restored from a project
-    // keeps its own saved state; only fresh devices pick these up. Persisted in
-    // config.json under "analysisDefaults". Field defaults below mirror the
-    // plugins' own hardcoded fallbacks.
+    // Analysis device defaults: the last-used non-colour settings, applied to
+    // every newly created Oscilloscope / Spectrum Analyzer. Trace colour is
+    // intentionally per-device only; a device restored from a project keeps its
+    // own saved colour in pluginState.
     struct OscilloscopeDefaults {
-        int traceColour = 0;
         float timebaseMs = 10.0f;
     };
     struct SpectrumDefaults {
-        int traceColour = 0;
         int fftOrder = 11;  // 11 = 2048, 12 = 4096
         float slopeDbPerOct = 4.5f;
         float smoothing = 0.5f;
