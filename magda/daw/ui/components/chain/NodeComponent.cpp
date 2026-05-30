@@ -673,17 +673,17 @@ void NodeComponent::setParamPanelVisible(bool visible) {
             hideMacroEditor();
         }
 
-        if (onParamPanelToggled) {
-            onParamPanelToggled(paramPanelVisible_);
-        }
         resized();
         repaint();
         auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
-        if (onLayoutChanged) {
-            onLayoutChanged();
-        }
         if (safeThis != nullptr && opening) {
             safeThis->fadeInParamPanelContent();
+        }
+        if (onParamPanelToggled) {
+            onParamPanelToggled(paramPanelVisible_);
+        }
+        if (onLayoutChanged) {
+            onLayoutChanged();
         }
     }
 }
@@ -1580,9 +1580,12 @@ void NodeComponent::fadeInParamPanelContent() {
         if (component == nullptr)
             return;
         animator.cancelAnimation(component, false);
+        const auto targetBounds = component->getBounds();
+        component->setBounds(targetBounds.translated(10, 0));
         component->setAlpha(0.0f);
         component->setVisible(true);
-        animator.fadeIn(component, PARAM_PANEL_FADE_IN_MS);
+        animator.animateComponent(component, targetBounds, 1.0f, PARAM_PANEL_FADE_IN_MS, false, 1.0,
+                                  1.0);
     };
 
     if (macroPanel_) {
