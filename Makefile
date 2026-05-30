@@ -5,6 +5,7 @@
 BUILD_DIR = cmake-build-debug
 BUILD_DIR_RELEASE = cmake-build-release
 BUILD_DIR_ASAN = cmake-build-asan
+BUILD_DIR_TSAN = cmake-build-tsan
 CACHE_ROOT = $(CURDIR)/.cache
 BUILD_ENV = CCACHE_DIR=$(CACHE_ROOT)/ccache TMPDIR=$(CACHE_ROOT)/tmp XDG_CACHE_HOME=$(CACHE_ROOT)/xdg
 TEST_ENV = $(BUILD_ENV) HOME=$(CACHE_ROOT)/home CFFIXED_USER_HOME=$(CACHE_ROOT)/home
@@ -17,12 +18,14 @@ UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
     APP_BINARY_DEBUG   := $(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA
     APP_BINARY_ASAN    := $(BUILD_DIR_ASAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA
+    APP_BINARY_TSAN    := $(BUILD_DIR_TSAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA
     APP_BUNDLE_DEBUG   := $(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app
     APP_BUNDLE_RELEASE := $(BUILD_DIR_RELEASE)/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app
     LAUNCH             := open
 else
     APP_BINARY_DEBUG   := $(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA
     APP_BINARY_ASAN    := $(BUILD_DIR_ASAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA
+    APP_BINARY_TSAN    := $(BUILD_DIR_TSAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA
     APP_BUNDLE_DEBUG   := $(APP_BINARY_DEBUG)
     APP_BUNDLE_RELEASE := $(BUILD_DIR_RELEASE)/magda/daw/magda_daw_app_artefacts/Release/MAGDA
     LAUNCH             :=
@@ -97,6 +100,28 @@ asan:
 run-asan: asan
 	@echo "🔬 Running MAGDA DAW with AddressSanitizer..."
 	"$(APP_BINARY_ASAN)"
+
+# TSAN (ThreadSanitizer) build — catches data races that ASAN cannot see.
+.PHONY: tsan
+tsan:
+	@echo "🧵 Building MAGDA DAW (Debug + ThreadSanitizer)..."
+	@mkdir -p $(BUILD_DIR_TSAN) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@if [ ! -f $(BUILD_DIR_TSAN)/CMakeCache.txt ]; then \
+		echo "📝 Configuring project with TSAN..."; \
+		cd $(BUILD_DIR_TSAN) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+			-DCMAKE_CXX_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=thread" \
+			-DCMAKE_C_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=thread" \
+			-DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" \
+			-DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=thread" \
+			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+	fi
+	cd $(BUILD_DIR_TSAN) && $(BUILD_ENV) ninja
+
+# Run with TSAN
+.PHONY: run-tsan
+run-tsan: tsan
+	@echo "🧵 Running MAGDA DAW with ThreadSanitizer..."
+	"$(APP_BINARY_TSAN)"
 
 # Run the application
 .PHONY: run
@@ -327,6 +352,8 @@ help:
 	@echo "  run-profile    - Run with performance profiling enabled"
 	@echo "  asan           - Build with AddressSanitizer"
 	@echo "  run-asan       - Build and run with AddressSanitizer"
+	@echo "  tsan           - Build with ThreadSanitizer (catches data races)"
+	@echo "  run-tsan       - Build and run with ThreadSanitizer"
 	@echo ""
 	@echo "Test targets:"
 	@echo "  test-build     - Build tests only"
