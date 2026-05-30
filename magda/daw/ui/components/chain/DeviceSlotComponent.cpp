@@ -1676,11 +1676,11 @@ juce::String DeviceSlotComponent::getCollapsedName() const {
 }
 
 int DeviceSlotComponent::getModPanelWidth() const {
-    return exposesDeviceModulation() && modPanelVisible_ ? DEFAULT_PANEL_WIDTH : 0;
+    return exposesDeviceModulation() && isModPanelLaidOut() ? DEFAULT_PANEL_WIDTH : 0;
 }
 
 int DeviceSlotComponent::getParamPanelWidth() const {
-    return exposesDeviceModulation() && paramPanelVisible_ ? DEFAULT_PANEL_WIDTH : 0;
+    return exposesDeviceModulation() && isParamPanelLaidOut() ? DEFAULT_PANEL_WIDTH : 0;
 }
 
 const magda::ModArray* DeviceSlotComponent::getModsData() const {

@@ -422,7 +422,7 @@ class NodeComponent : public juce::Component,
     void fadeInModPanelContent();
     void fadeOutModPanelContent();
     void cancelModPanelContentFade();
-    static constexpr int SIDE_PANEL_FADE_IN_MS = 650;
+    static constexpr int SIDE_PANEL_FADE_IN_MS = 450;
 
   public:
     // Public so external TrackManagerListener callbacks (e.g. controller writes)

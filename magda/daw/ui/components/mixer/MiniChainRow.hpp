@@ -101,7 +101,7 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     void updateTimerState();
     void timerCallback() override;
 
-    static constexpr int kParamsFadeMs = 650;
+    static constexpr int kParamsFadeMs = 450;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MiniChainRow)
 };

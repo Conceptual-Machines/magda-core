@@ -105,7 +105,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     std::unique_ptr<AnalyzerWindow> popoutWindow_;
     OscilloscopeUI* popoutUI_ = nullptr;
 
-    static constexpr int kCompactControlsFadeMs = 650;
+    static constexpr int kCompactControlsFadeMs = 450;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscilloscopeUI)
 };
