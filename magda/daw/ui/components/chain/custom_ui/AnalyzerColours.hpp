@@ -43,23 +43,4 @@ inline void drawAnalyzerExpandChevron(juce::Graphics& g, juce::Rectangle<int> re
     g.strokePath(chev, juce::PathStrokeType(1.4f));
 }
 
-// "Open in floating window" glyph (a small frame with an arrow leaving the
-// top-right corner). Drawn in the bottom-right of a compact mixer analyzer.
-inline void drawAnalyzerPopoutIcon(juce::Graphics& g, juce::Rectangle<int> rect,
-                                   juce::Colour colour) {
-    if (rect.isEmpty())
-        return;
-    const auto c = rect.toFloat().reduced(3.0f);
-    const float t = 1.2f;
-    g.setColour(colour);
-    // Frame, biased down-left to leave room for the outgoing arrow.
-    const juce::Rectangle<float> frame(c.getX(), c.getY() + c.getHeight() * 0.30f,
-                                       c.getWidth() * 0.68f, c.getHeight() * 0.70f);
-    g.drawRect(frame, t);
-    // Diagonal arrow exiting the top-right corner, with a small arrowhead.
-    g.drawLine(c.getCentreX(), c.getCentreY(), c.getRight(), c.getY(), t);
-    g.drawLine(c.getRight(), c.getY(), c.getRight() - c.getWidth() * 0.42f, c.getY(), t);
-    g.drawLine(c.getRight(), c.getY(), c.getRight(), c.getY() + c.getHeight() * 0.42f, t);
-}
-
 }  // namespace magda::daw::ui

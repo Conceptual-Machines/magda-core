@@ -9,6 +9,10 @@
 
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 
+namespace magda {
+class SvgButton;
+}
+
 namespace magda::daw::ui {
 
 class AnalyzerWindow;
@@ -91,6 +95,10 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     // Hit areas in the dedicated strip below the plot (compact mode only).
     juce::Rectangle<int> chevronRect_;  // expand/collapse the controls
     juce::Rectangle<int> popoutRect_;   // open the floating full-size window
+
+    // Pop-out button (same open_in_new icon as the plugin rows), shown in the
+    // strip in compact mode.
+    std::unique_ptr<magda::SvgButton> popoutButton_;
 
     // Floating full-size analyzer, lazily created on first pop-out. Owned here,
     // so it dies with this component. popoutUI_ is a non-owning view for

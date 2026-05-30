@@ -1,5 +1,7 @@
 #include "SpectrumAnalyzerUI.hpp"
 
+#include <BinaryData.h>
+
 #include <algorithm>
 #include <cmath>
 #include <iterator>
@@ -8,6 +10,8 @@
 #include "AnalyzerColours.hpp"
 #include "AnalyzerWindow.hpp"
 #include "core/Config.hpp"
+#include "ui/components/chain/layout/NodeHeaderStyles.hpp"
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
@@ -122,6 +126,13 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     };
     styleCombo(colourCombo_);
 
+    popoutButton_ = std::make_unique<magda::SvgButton>("Pop out", BinaryData::open_in_new_svg,
+                                                       BinaryData::open_in_new_svgSize);
+    daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
+                                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    popoutButton_->onClick = [this] { openPopout(); };
+    addChildComponent(*popoutButton_);  // shown only in compact mode
+
     rebuildFft(11);
     startTimerHz(30);
 }
@@ -202,6 +213,8 @@ void SpectrumAnalyzerUI::updateControlVisibility() {
     speedCombo_.setVisible(show);
     colourLabel_.setVisible(show);
     colourCombo_.setVisible(show);
+    if (popoutButton_)
+        popoutButton_->setVisible(compact_);  // lives in the strip, compact only
 }
 
 int SpectrumAnalyzerUI::compactExtraHeight() const {
@@ -217,6 +230,8 @@ void SpectrumAnalyzerUI::resized() {
         auto strip = area.removeFromBottom(kChevronStripH);
         chevronRect_ = juce::Rectangle<int>(strip.getCentreX() - 7, strip.getCentreY() - 7, 14, 14);
         popoutRect_ = juce::Rectangle<int>(strip.getRight() - 19, strip.getCentreY() - 7, 14, 14);
+        if (popoutButton_)
+            popoutButton_->setBounds(popoutRect_);
         if (controlsExpanded_) {
             controls.removeFromTop(2);
             auto stackRow = [&controls](juce::Label& label, juce::ComboBox& combo) {
@@ -256,12 +271,8 @@ void SpectrumAnalyzerUI::resized() {
 }
 
 void SpectrumAnalyzerUI::mouseDown(const juce::MouseEvent& e) {
-    if (!compact_)
-        return;
-    if (popoutRect_.contains(e.getPosition()))
-        openPopout();
-    else if (chevronRect_.contains(e.getPosition()))
-        setControlsExpanded(!controlsExpanded_);
+    if (compact_ && chevronRect_.contains(e.getPosition()))
+        setControlsExpanded(!controlsExpanded_);  // pop-out is handled by popoutButton_
 }
 
 void SpectrumAnalyzerUI::openPopout() {
@@ -384,8 +395,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         // Chevron points down to open (controls below) and up to collapse.
         drawAnalyzerExpandChevron(g, chevronRect_, controlsExpanded_,
                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
-        if (plugin_ != nullptr)
-            drawAnalyzerPopoutIcon(g, popoutRect_, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        // Pop-out is the SvgButton (open_in_new) positioned in the strip.
     };
 
     if (smoothedDb_.empty()) {
