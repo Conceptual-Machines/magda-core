@@ -68,6 +68,12 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     juce::String deviceName_;
     bool bypassed_ = false;
     bool expanded_ = false;
+    bool retainExpandedForFadeOut_ = false;
+    bool paramsFadeActive_ = false;
+    float paramsAlpha_ = 1.0f;
+    float paramsFadeStartAlpha_ = 1.0f;
+    float paramsFadeTargetAlpha_ = 1.0f;
+    double paramsFadeStartMs_ = 0.0;
 
     juce::Rectangle<int> bypassRect_;
     juce::Rectangle<int> nameRect_;
@@ -86,7 +92,16 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     bool paramsResolved_ = false;
 
     void resolveParams();
+    bool isParamsLaidOut() const {
+        return expanded_ || retainExpandedForFadeOut_;
+    }
+    void startParamsFade(bool expanding);
+    void advanceParamsFade();
+    void applyParamsAlpha();
+    void updateTimerState();
     void timerCallback() override;
+
+    static constexpr int kParamsFadeMs = 650;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MiniChainRow)
 };

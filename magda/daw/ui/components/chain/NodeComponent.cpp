@@ -77,19 +77,48 @@ struct NodeComponent::PanelFadeTimer : private juce::Timer {
     void fadeIn(const std::vector<juce::Component*>& components, int durationMs) {
         stopTimer();
         targets_.clear();
+        onComplete_ = nullptr;
         durationMs_ = juce::jmax(1, durationMs);
         startMs_ = juce::Time::getMillisecondCounterHiRes();
+        startAlpha_ = 0.0f;
+        targetAlpha_ = 1.0f;
 
         for (auto* component : components) {
             if (component == nullptr)
                 continue;
-            component->setAlpha(0.0f);
+            component->setAlpha(startAlpha_);
             component->setVisible(true);
             targets_.push_back(component);
         }
 
         if (targets_.empty())
             return;
+
+        startTimerHz(60);
+    }
+
+    void fadeOut(const std::vector<juce::Component*>& components, int durationMs,
+                 std::function<void()> onComplete) {
+        stopTimer();
+        targets_.clear();
+        onComplete_ = std::move(onComplete);
+        durationMs_ = juce::jmax(1, durationMs);
+        startMs_ = juce::Time::getMillisecondCounterHiRes();
+        startAlpha_ = 1.0f;
+        targetAlpha_ = 0.0f;
+
+        for (auto* component : components) {
+            if (component == nullptr)
+                continue;
+            component->setAlpha(startAlpha_);
+            component->setVisible(true);
+            targets_.push_back(component);
+        }
+
+        if (targets_.empty()) {
+            finish();
+            return;
+        }
 
         startTimerHz(60);
     }
@@ -101,27 +130,44 @@ struct NodeComponent::PanelFadeTimer : private juce::Timer {
                 component->setAlpha(1.0f);
         }
         targets_.clear();
+        onComplete_ = nullptr;
     }
 
   private:
     void timerCallback() override {
         const auto elapsed = juce::Time::getMillisecondCounterHiRes() - startMs_;
         const auto progress = juce::jlimit(0.0, 1.0, elapsed / static_cast<double>(durationMs_));
-        const auto alpha = static_cast<float>(progress);
+        const auto alpha =
+            startAlpha_ + (targetAlpha_ - startAlpha_) * static_cast<float>(progress);
 
         for (auto& target : targets_) {
             if (auto* component = target.getComponent())
                 component->setAlpha(alpha);
         }
 
-        if (progress >= 1.0) {
-            cancel();
+        if (progress >= 1.0)
+            finish();
+    }
+
+    void finish() {
+        stopTimer();
+        for (auto& target : targets_) {
+            if (auto* component = target.getComponent())
+                component->setAlpha(1.0f);
         }
+        targets_.clear();
+        auto onComplete = std::move(onComplete_);
+        onComplete_ = nullptr;
+        if (onComplete)
+            onComplete();
     }
 
     std::vector<juce::Component::SafePointer<juce::Component>> targets_;
+    std::function<void()> onComplete_;
     double startMs_ = 0.0;
     int durationMs_ = 1;
+    float startAlpha_ = 0.0f;
+    float targetAlpha_ = 1.0f;
 };
 
 NodeComponent::NodeComponent() {
@@ -230,7 +276,7 @@ void NodeComponent::paint(juce::Graphics& g) {
     // BUT still draw side panels if visible
     if (collapsed_) {
         // === LEFT SIDE PANELS (even when collapsed): [Macros][MacroEditor][Mods][ModEditor] ===
-        if (paramPanelVisible_) {
+        if (isParamPanelLaidOut()) {
             auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
             g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(paramArea);
@@ -250,7 +296,7 @@ void NodeComponent::paint(juce::Graphics& g) {
             paintExtraRightPanel(g, extraRightArea);
         }
 
-        if (modPanelVisible_) {
+        if (isModPanelLaidOut()) {
             auto modArea = bounds.removeFromLeft(getModPanelWidth());
             g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(modArea);
@@ -320,7 +366,7 @@ void NodeComponent::paint(juce::Graphics& g) {
     }
 
     // === LEFT SIDE PANELS: [Macros][MacroEditor][Mods][ModEditor] (squared corners) ===
-    if (paramPanelVisible_) {
+    if (isParamPanelLaidOut()) {
         auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
         g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(paramArea);
@@ -340,7 +386,7 @@ void NodeComponent::paint(juce::Graphics& g) {
         paintExtraRightPanel(g, extraRightArea);
     }
 
-    if (modPanelVisible_) {
+    if (isModPanelLaidOut()) {
         auto modArea = bounds.removeFromLeft(getModPanelWidth());
         g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(modArea);
@@ -454,7 +500,7 @@ void NodeComponent::resized() {
     // BUT still layout side panels if visible
     if (collapsed_) {
         // === LEFT SIDE PANELS (even when collapsed): [Macros][MacroEditor][Mods][ModEditor] ===
-        if (paramPanelVisible_) {
+        if (isParamPanelLaidOut()) {
             auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
             resizedParamPanel(paramArea);
         } else {
@@ -474,7 +520,7 @@ void NodeComponent::resized() {
             resizedExtraRightPanel(extraRightArea);
         }
 
-        if (modPanelVisible_) {
+        if (isModPanelLaidOut()) {
             auto modArea = bounds.removeFromLeft(getModPanelWidth());
             resizedModPanel(modArea);
         } else {
@@ -549,7 +595,7 @@ void NodeComponent::resized() {
     }
 
     // === LEFT SIDE PANELS: [Macros][MacroEditor][Mods][ModEditor] ===
-    if (paramPanelVisible_) {
+    if (isParamPanelLaidOut()) {
         auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
         resizedParamPanel(paramArea);
     } else {
@@ -569,7 +615,7 @@ void NodeComponent::resized() {
         resizedExtraRightPanel(extraRightArea);
     }
 
-    if (modPanelVisible_) {
+    if (isModPanelLaidOut()) {
         auto modArea = bounds.removeFromLeft(getModPanelWidth());
         resizedModPanel(modArea);
     } else {
@@ -695,8 +741,12 @@ void NodeComponent::setFrozen(bool frozen) {
 void NodeComponent::setModPanelVisible(bool visible) {
     if (modPanelVisible_ != visible) {
         const bool opening = visible;
-        if (!opening)
+        if (opening) {
             cancelModPanelContentFade();
+            retainModPanelForFadeOut_ = false;
+        } else {
+            retainModPanelForFadeOut_ = true;
+        }
         modPanelVisible_ = visible;
 
         // When hiding the mod panel, also hide the modulator editor
@@ -709,6 +759,8 @@ void NodeComponent::setModPanelVisible(bool visible) {
         auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
         if (safeThis != nullptr && opening)
             safeThis->fadeInModPanelContent();
+        if (safeThis != nullptr && !opening)
+            safeThis->fadeOutModPanelContent();
         if (onModPanelToggled) {
             onModPanelToggled(modPanelVisible_);
         }
@@ -724,8 +776,12 @@ void NodeComponent::setParamPanelVisible(bool visible) {
         DBG("NodeComponent::setParamPanelVisible - changing from "
             << (paramPanelVisible_ ? "visible" : "hidden") << " to "
             << (visible ? "visible" : "hidden"));
-        if (!opening)
+        if (opening) {
             cancelParamPanelContentFade();
+            retainParamPanelForFadeOut_ = false;
+        } else {
+            retainParamPanelForFadeOut_ = true;
+        }
         paramPanelVisible_ = visible;
 
         // When hiding the macro panel, also hide the macro editor
@@ -738,6 +794,9 @@ void NodeComponent::setParamPanelVisible(bool visible) {
         auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
         if (safeThis != nullptr && opening) {
             safeThis->fadeInParamPanelContent();
+        }
+        if (safeThis != nullptr && !opening) {
+            safeThis->fadeOutParamPanelContent();
         }
         if (onParamPanelToggled) {
             onParamPanelToggled(paramPanelVisible_);
@@ -798,10 +857,10 @@ void NodeComponent::resizedHeaderExtra(juce::Rectangle<int>& /*headerArea*/) {
 
 int NodeComponent::getLeftPanelsWidth() const {
     int width = 0;
-    if (modPanelVisible_)
+    if (isModPanelLaidOut())
         width += getModPanelWidth();
     width += getExtraLeftPanelWidth();  // Extra left panel (e.g., mod editor)
-    if (paramPanelVisible_)
+    if (isParamPanelLaidOut())
         width += getParamPanelWidth();
     width += getExtraRightPanelWidth();  // Extra "right" panel (e.g., macro editor) - still left of
                                          // main content
@@ -1650,6 +1709,28 @@ void NodeComponent::cancelParamPanelContentFade() {
     paramPanelFadeTimer_->cancel();
 }
 
+void NodeComponent::fadeOutParamPanelContent() {
+    std::vector<juce::Component*> targets;
+    if (macroPanel_) {
+        targets.push_back(macroPanel_.get());
+    } else {
+        targets.reserve(paramKnobs_.size());
+        for (auto& knob : paramKnobs_)
+            targets.push_back(knob.get());
+    }
+
+    auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
+    paramPanelFadeTimer_->fadeOut(targets, SIDE_PANEL_FADE_IN_MS, [safeThis]() {
+        if (safeThis == nullptr)
+            return;
+        safeThis->retainParamPanelForFadeOut_ = false;
+        safeThis->resized();
+        safeThis->repaint();
+        if (safeThis->onLayoutChanged)
+            safeThis->onLayoutChanged();
+    });
+}
+
 void NodeComponent::fadeInModPanelContent() {
     if (modsPanel_) {
         modPanelFadeTimer_->fadeIn({modsPanel_.get()}, SIDE_PANEL_FADE_IN_MS);
@@ -1667,10 +1748,32 @@ void NodeComponent::cancelModPanelContentFade() {
     modPanelFadeTimer_->cancel();
 }
 
+void NodeComponent::fadeOutModPanelContent() {
+    std::vector<juce::Component*> targets;
+    if (modsPanel_) {
+        targets.push_back(modsPanel_.get());
+    } else {
+        targets.reserve(3);
+        for (auto& button : modSlotButtons_)
+            targets.push_back(button.get());
+    }
+
+    auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
+    modPanelFadeTimer_->fadeOut(targets, SIDE_PANEL_FADE_IN_MS, [safeThis]() {
+        if (safeThis == nullptr)
+            return;
+        safeThis->retainModPanelForFadeOut_ = false;
+        safeThis->resized();
+        safeThis->repaint();
+        if (safeThis->onLayoutChanged)
+            safeThis->onLayoutChanged();
+    });
+}
+
 void NodeComponent::refreshPanels() {
-    if (paramPanelVisible_)
+    if (isParamPanelLaidOut())
         updateMacroPanel();
-    if (modPanelVisible_)
+    if (isModPanelLaidOut())
         updateModsPanel();
     if (modulatorEditorVisible_)
         updateModulatorEditor();

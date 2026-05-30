@@ -267,6 +267,8 @@ class NodeComponent : public juce::Component,
     // Panel visibility state (accessible to subclasses)
     bool modPanelVisible_ = false;
     bool paramPanelVisible_ = false;
+    bool retainModPanelForFadeOut_ = false;
+    bool retainParamPanelForFadeOut_ = false;
     bool gainPanelVisible_ = false;
     bool aiPanelVisible_ = false;
 
@@ -406,11 +408,19 @@ class NodeComponent : public juce::Component,
     struct PanelFadeTimer;
     std::unique_ptr<PanelFadeTimer> paramPanelFadeTimer_;
     std::unique_ptr<PanelFadeTimer> modPanelFadeTimer_;
+    bool isParamPanelLaidOut() const {
+        return paramPanelVisible_ || retainParamPanelForFadeOut_;
+    }
+    bool isModPanelLaidOut() const {
+        return modPanelVisible_ || retainModPanelForFadeOut_;
+    }
     void fadeInParamPanelContent();
+    void fadeOutParamPanelContent();
     void cancelParamPanelContentFade();
     void fadeInModPanelContent();
+    void fadeOutModPanelContent();
     void cancelModPanelContentFade();
-    static constexpr int SIDE_PANEL_FADE_IN_MS = 420;
+    static constexpr int SIDE_PANEL_FADE_IN_MS = 650;
 
   public:
     // Public so external TrackManagerListener callbacks (e.g. controller writes)

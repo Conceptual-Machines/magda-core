@@ -119,7 +119,7 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     juce::Point<int> mousePos_;
     bool mouseOver_ = false;
 
-    static constexpr int kCompactControlsFadeMs = 420;
+    static constexpr int kCompactControlsFadeMs = 650;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAnalyzerUI)
 };

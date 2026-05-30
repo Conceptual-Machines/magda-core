@@ -35,7 +35,11 @@ void MiniChainRow::setDevice(TrackId trackId, DeviceId deviceId, AudioEngine* en
     if (deviceChanged) {
         paramsResolved_ = false;
         paramSliders_.clear();
+        paramLabels_.clear();
         trackedParams_.clear();
+        retainExpandedForFadeOut_ = false;
+        paramsFadeActive_ = false;
+        paramsAlpha_ = 1.0f;
     }
 
     // "Open native editor" icon. Only genuine external plugins (VST3/AU/VST)
@@ -80,18 +84,23 @@ void MiniChainRow::setExpanded(bool expanded) {
     if (expanded_ == expanded)
         return;
     expanded_ = expanded;
-    if (expanded_ && !paramsResolved_)
-        resolveParams();
+    if (expanded_) {
+        retainExpandedForFadeOut_ = false;
+        if (!paramsResolved_)
+            resolveParams();
+    } else {
+        retainExpandedForFadeOut_ = !trackedParams_.empty();
+    }
+    startParamsFade(expanded_);
+    const bool showParams = isParamsLaidOut();
     for (auto& slider : paramSliders_)
         if (slider)
-            slider->setVisible(expanded_);
+            slider->setVisible(showParams);
     for (auto& label : paramLabels_)
         if (label)
-            label->setVisible(expanded_);
-    if (expanded_ && !trackedParams_.empty())
-        startTimerHz(15);
-    else
-        stopTimer();
+            label->setVisible(showParams);
+    applyParamsAlpha();
+    updateTimerState();
     resized();
     repaint();
     if (onExpandChanged)
@@ -99,7 +108,7 @@ void MiniChainRow::setExpanded(bool expanded) {
 }
 
 int MiniChainRow::preferredHeight() const {
-    if (!expanded_ || trackedParams_.empty())
+    if (!isParamsLaidOut() || trackedParams_.empty())
         return kCollapsedHeight;
     return kCollapsedHeight + static_cast<int>(trackedParams_.size()) * kParamRowHeight + 2;
 }
@@ -143,7 +152,8 @@ void MiniChainRow::resolveParams() {
         label->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
         label->setJustificationType(juce::Justification::centredLeft);
         label->setInterceptsMouseClicks(false, false);
-        label->setVisible(expanded_);
+        label->setAlpha(paramsAlpha_);
+        label->setVisible(isParamsLaidOut());
         addAndMakeVisible(*label);
         paramLabels_.push_back(std::move(label));
 
@@ -162,7 +172,8 @@ void MiniChainRow::resolveParams() {
             param->setParameterFromHost(static_cast<float>(sliderPtr->getValue()),
                                         juce::sendNotificationSync);
         };
-        slider->setVisible(expanded_);
+        slider->setAlpha(paramsAlpha_);
+        slider->setVisible(isParamsLaidOut());
         addAndMakeVisible(*slider);
         paramSliders_.push_back(std::move(slider));
     };
@@ -192,9 +203,69 @@ void MiniChainRow::resolveParams() {
     }
 }
 
+void MiniChainRow::startParamsFade(bool expanding) {
+    paramsFadeActive_ = true;
+    paramsFadeStartMs_ = juce::Time::getMillisecondCounterHiRes();
+    paramsFadeStartAlpha_ = expanding ? 0.0f : paramsAlpha_;
+    paramsFadeTargetAlpha_ = expanding ? 1.0f : 0.0f;
+    paramsAlpha_ = paramsFadeStartAlpha_;
+}
+
+void MiniChainRow::advanceParamsFade() {
+    if (!paramsFadeActive_)
+        return;
+
+    const auto elapsed = juce::Time::getMillisecondCounterHiRes() - paramsFadeStartMs_;
+    const auto progress = static_cast<float>(juce::jlimit(0.0, 1.0, elapsed / kParamsFadeMs));
+    paramsAlpha_ =
+        paramsFadeStartAlpha_ + (paramsFadeTargetAlpha_ - paramsFadeStartAlpha_) * progress;
+    applyParamsAlpha();
+
+    if (progress < 1.0f)
+        return;
+
+    paramsFadeActive_ = false;
+    paramsAlpha_ = expanded_ ? 1.0f : 0.0f;
+    if (!expanded_) {
+        retainExpandedForFadeOut_ = false;
+        for (auto& slider : paramSliders_)
+            if (slider)
+                slider->setVisible(false);
+        for (auto& label : paramLabels_)
+            if (label)
+                label->setVisible(false);
+        if (onExpandChanged)
+            onExpandChanged();
+    }
+    applyParamsAlpha();
+    resized();
+    repaint();
+    updateTimerState();
+}
+
+void MiniChainRow::applyParamsAlpha() {
+    for (auto& slider : paramSliders_)
+        if (slider)
+            slider->setAlpha(paramsAlpha_);
+    for (auto& label : paramLabels_)
+        if (label)
+            label->setAlpha(paramsAlpha_);
+}
+
+void MiniChainRow::updateTimerState() {
+    if ((expanded_ && !trackedParams_.empty()) || paramsFadeActive_)
+        startTimerHz(30);
+    else
+        stopTimer();
+}
+
 void MiniChainRow::timerCallback() {
+    advanceParamsFade();
+
     // Keep the sliders in sync with the live parameter values (automation,
     // external changes, etc.). Skips notification to avoid feedback loops.
+    if (!expanded_)
+        return;
     for (size_t i = 0; i < paramSliders_.size(); ++i) {
         auto* slider = paramSliders_[i].get();
         auto* param = (i < trackedParams_.size()) ? trackedParams_[i] : nullptr;
@@ -252,7 +323,7 @@ void MiniChainRow::resized() {
     }
     nameRect_ = headRect;
 
-    if (expanded_ && !paramSliders_.empty()) {
+    if (isParamsLaidOut() && !paramSliders_.empty()) {
         auto paramsArea = getLocalBounds().withTrimmedTop(kCollapsedHeight + 2);
         for (size_t i = 0; i < paramSliders_.size(); ++i) {
             auto* slider = paramSliders_[i].get();
