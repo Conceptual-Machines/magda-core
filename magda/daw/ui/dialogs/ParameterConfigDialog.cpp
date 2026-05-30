@@ -72,6 +72,7 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
                 } else if (column_ == ColumnIds::Mini) {
                     owner_.parameters_[static_cast<size_t>(paramIndex)].inMiniMixer =
                         toggle_.getToggleState();
+                    owner_.updateTitle();
                 }
             }
         };
@@ -324,7 +325,7 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     auto& header = table_.getHeader();
     header.addColumn("Parameter", ParamName, 150, 100, 300);
     header.addColumn("Visible", Visible, 60, 60, 60);
-    header.addColumn("Mini", Mini, 50, 50, 50);
+    header.addColumn("Mini FX", Mini, 64, 64, 72);
     header.addColumn("Unit", Unit, 90, 70, 120);
     header.addColumn("Range", Range, 180, 120, 300);
 
@@ -460,7 +461,7 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     buildMockParameters();
     rebuildFilteredList();
 
-    setSize(620, 500);
+    setSize(660, 500);
 }
 
 void ParameterConfigDialog::paint(juce::Graphics& g) {
@@ -594,32 +595,51 @@ juce::Component* ParameterConfigDialog::refreshComponentForCell(int rowNumber, i
 
 void ParameterConfigDialog::updateTitle() {
     int visibleCount = 0;
+    int miniCount = 0;
     for (const auto& p : parameters_)
-        if (p.isVisible)
+        if (p.isVisible) {
             visibleCount++;
+        }
+    for (const auto& p : parameters_)
+        if (p.inMiniMixer)
+            miniCount++;
     titleLabel_.setText(pluginName_ + " - " + juce::String(visibleCount) + " / " +
-                            juce::String(parameters_.size()) + " params visible",
+                            juce::String(parameters_.size()) + " params visible, " +
+                            juce::String(miniCount) + " mini FX",
                         juce::dontSendNotification);
 }
 
 void ParameterConfigDialog::buildMockParameters() {
     // Mock parameters that might be in a typical plugin like FabFilter Pro-Q 3
+    auto makeParam = [](juce::String name, float defaultValue, bool visible, juce::String unit,
+                        float min, float max, float centre) {
+        MockParameterInfo param;
+        param.name = std::move(name);
+        param.defaultValue = defaultValue;
+        param.isVisible = visible;
+        param.unit = std::move(unit);
+        param.rangeMin = min;
+        param.rangeMax = max;
+        param.rangeCenter = centre;
+        return param;
+    };
+
     parameters_ = {
-        {"Output Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, {}, {}},
-        {"Mix", 1.0f, true, "%", 0.0f, 100.0f, 50.0f, {}, {}},
-        {"Band 1 Frequency", 0.3f, true, "Hz", 20.0f, 20000.0f, 1000.0f, {}, {}},
-        {"Band 1 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, {}, {}},
-        {"Band 1 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f, {}, {}},
-        {"Band 1 Type", 0.0f, true, "%", 0.0f, 1.0f, 0.5f, {}, {}},
-        {"Band 2 Frequency", 0.5f, true, "Hz", 20.0f, 20000.0f, 1000.0f, {}, {}},
-        {"Band 2 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, {}, {}},
-        {"Band 2 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f, {}, {}},
-        {"Band 3 Frequency", 0.7f, true, "Hz", 20.0f, 20000.0f, 1000.0f, {}, {}},
-        {"Band 3 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, {}, {}},
-        {"Band 3 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f, {}, {}},
-        {"Analyzer Mode", 0.0f, false, "%", 0.0f, 1.0f, 0.5f, {}, {}},
-        {"Auto Gain", 0.0f, true, "%", 0.0f, 1.0f, 0.5f, {}, {}},
-        {"Master Level", 0.8f, true, "dB", -60.0f, 12.0f, 0.0f, {}, {}},
+        makeParam("Output Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f),
+        makeParam("Mix", 1.0f, true, "%", 0.0f, 100.0f, 50.0f),
+        makeParam("Band 1 Frequency", 0.3f, true, "Hz", 20.0f, 20000.0f, 1000.0f),
+        makeParam("Band 1 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f),
+        makeParam("Band 1 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f),
+        makeParam("Band 1 Type", 0.0f, true, "%", 0.0f, 1.0f, 0.5f),
+        makeParam("Band 2 Frequency", 0.5f, true, "Hz", 20.0f, 20000.0f, 1000.0f),
+        makeParam("Band 2 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f),
+        makeParam("Band 2 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f),
+        makeParam("Band 3 Frequency", 0.7f, true, "Hz", 20.0f, 20000.0f, 1000.0f),
+        makeParam("Band 3 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f),
+        makeParam("Band 3 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f),
+        makeParam("Analyzer Mode", 0.0f, false, "%", 0.0f, 1.0f, 0.5f),
+        makeParam("Auto Gain", 0.0f, true, "%", 0.0f, 1.0f, 0.5f),
+        makeParam("Master Level", 0.8f, true, "dB", -60.0f, 12.0f, 0.0f),
     };
 }
 
@@ -888,6 +908,7 @@ void ParameterConfigDialog::resetParameterConfiguration() {
         param.rangeMax = 1.0f;
         param.rangeCenter = 0.5f;
         param.choices.clear();
+        param.inMiniMixer = false;
     }
 
     rebuildFilteredList();
