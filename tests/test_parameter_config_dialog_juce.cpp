@@ -30,8 +30,11 @@ struct DataDirScope {
         if (const char* value = std::getenv("MAGDA_DATA_DIR"))
             previousDataDir = juce::String::fromUTF8(value);
 
-        root = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                   .getNonexistentChildFile("magda-param-config-test", {});
+        juce::File tempRoot(
+            std::getenv("TMPDIR") != nullptr
+                ? juce::String::fromUTF8(std::getenv("TMPDIR"))
+                : juce::File::getSpecialLocation(juce::File::tempDirectory).getFullPathName());
+        root = tempRoot.getNonexistentChildFile("magda-param-config-test", {});
         root.createDirectory();
         setEnv("MAGDA_DATA_DIR", root.getFullPathName().toRawUTF8());
         magda::Config::getInstance().setDataDir({});
@@ -53,9 +56,11 @@ struct DataDirScope {
     juce::File root;
 };
 
-void writeParameterConfig(const juce::String& uniqueId) {
+bool writeParameterConfig(const juce::String& uniqueId) {
     auto configDir = magda::paths::pluginConfigsDir();
-    configDir.createDirectory();
+    if (!configDir.createDirectory())
+        return false;
+
     auto configFile =
         configDir.getChildFile(uniqueId.replaceCharacters(":/\\,; ", "______") + ".xml");
 
@@ -74,7 +79,7 @@ void writeParameterConfig(const juce::String& uniqueId) {
         param->setAttribute("max", 1.0);
         param->setAttribute("center", 0.5);
     }
-    root.writeTo(configFile);
+    return configFile.replaceWithText(root.toString());
 }
 
 magda::DeviceInfo makeConfiguredDevice(const juce::String& uniqueId) {
@@ -116,7 +121,7 @@ class ParameterConfigDialogTest final : public juce::UnitTest {
         trackManager.clearAllTracks();
 
         const juce::String uniqueId = "test-plugin-browser-mini-fx";
-        writeParameterConfig(uniqueId);
+        expect(writeParameterConfig(uniqueId), "Test parameter config should be writable");
 
         auto probe = makeConfiguredDevice(uniqueId);
         expect(magda::daw::ui::ParameterConfigDialog::applyConfigToDevice(uniqueId, probe),

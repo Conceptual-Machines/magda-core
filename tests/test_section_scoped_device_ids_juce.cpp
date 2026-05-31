@@ -51,8 +51,8 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
 
     void runTest() override {
         testOverlappingIdsResolveByPath();
-        testRemovingPostFxAnalyzerDoesNotUnwrapTopLevelInstrument();
-        testPostFxPropertyChangeDoesNotBypassTopLevelInstrument();
+        testRemovingPostFxDeviceDoesNotRemoveSameIdTopLevelDevice();
+        testPostFxPropertyChangeDoesNotBypassSameIdTopLevelDevice();
         testParameterConfigWritesArePathScoped();
         testTrackChainBypassNotifiesNestedDevicePaths();
         testDeviceMetersArePathKeyed();
@@ -125,8 +125,8 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
         trackManager.setAudioEngine(nullptr);
     }
 
-    void testRemovingPostFxAnalyzerDoesNotUnwrapTopLevelInstrument() {
-        beginTest("Removing post-FX analyzer does not unwrap same-id top-level instrument");
+    void testRemovingPostFxDeviceDoesNotRemoveSameIdTopLevelDevice() {
+        beginTest("Removing post-FX device does not remove same-id top-level device");
 
         auto& wrapper = magda::test::getSharedEngine();
         magda::test::resetTransport(wrapper);
@@ -140,31 +140,29 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
         trackManager.clearAllTracks();
         trackManager.setAudioEngine(&wrapper);
 
-        const auto trackId = trackManager.createTrack("Instrument plus analyzer");
+        const auto trackId = trackManager.createTrack("FX plus analyzer");
 
-        auto synth = makeInternalDevice("4OSC Synth", "4OSC Synth");
-        synth.isInstrument = true;
-        const auto synthId = trackManager.addDeviceToTrack(trackId, synth);
+        const auto fxId =
+            trackManager.addDeviceToTrack(trackId, makeInternalDevice("FX Filter", "magda_filter"));
         const auto analyzerId =
             trackManager.addDeviceToPostFx(trackId, makeInternalDevice("Scope", "oscilloscope"));
 
-        expectEquals(synthId, 1, "First top-level instrument should use id 1");
+        expectEquals(fxId, 1, "First top-level device should use id 1");
         expectEquals(analyzerId, 1, "First post-FX analyzer should use id 1");
 
-        const auto synthPath = magda::ChainNodePath::topLevelDevice(trackId, synthId);
+        const auto fxPath = magda::ChainNodePath::topLevelDevice(trackId, fxId);
         const auto analyzerPath = magda::ChainNodePath::postFxDevice(trackId, analyzerId);
 
         bridge->syncTrackPlugins(trackId);
 
-        auto synthPlugin = bridge->getPlugin(synthPath);
-        auto& rackManager = bridge->getPluginManager().getInstrumentRackManager();
-        auto* rackBeforeRemove = rackManager.getRackInstance(synthId);
+        auto fxPlugin = bridge->getPlugin(fxPath);
+        auto analyzerPlugin = bridge->getPlugin(analyzerPath);
         auto* teTrack = bridge->getAudioTrack(trackId);
 
-        expect(synthPlugin != nullptr, "4OSC plugin should be created");
-        expect(rackBeforeRemove != nullptr, "4OSC should be wrapped in an instrument rack");
+        expect(fxPlugin != nullptr, "Top-level FX plugin should be created");
+        expect(analyzerPlugin != nullptr, "Post-FX analyzer plugin should be created");
         expect(teTrack != nullptr, "Tracktion track should exist");
-        if (!synthPlugin || rackBeforeRemove == nullptr || teTrack == nullptr) {
+        if (!fxPlugin || !analyzerPlugin || teTrack == nullptr) {
             trackManager.clearAllTracks();
             trackManager.setAudioEngine(nullptr);
             return;
@@ -175,19 +173,17 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
 
         expect(bridge->getPlugin(analyzerPath) == nullptr,
                "Removed post-FX analyzer should not remain synced");
-        expect(bridge->getPlugin(synthPath) == synthPlugin,
-               "Removing same-id post-FX analyzer must not remove the 4OSC plugin");
-        expect(rackManager.getRackInstance(synthId) == rackBeforeRemove,
-               "Removing same-id post-FX analyzer must not unwrap the 4OSC rack");
-        expect(teTrack->pluginList.indexOf(rackBeforeRemove) >= 0,
-               "4OSC rack should remain on the Tracktion plugin list");
+        expect(bridge->getPlugin(fxPath) == fxPlugin,
+               "Removing same-id post-FX analyzer must not remove the top-level FX plugin");
+        expect(teTrack->pluginList.indexOf(fxPlugin.get()) >= 0,
+               "Top-level FX plugin should remain on the Tracktion plugin list");
 
         trackManager.clearAllTracks();
         trackManager.setAudioEngine(nullptr);
     }
 
-    void testPostFxPropertyChangeDoesNotBypassTopLevelInstrument() {
-        beginTest("Post-FX property changes do not toggle same-id top-level instrument rack");
+    void testPostFxPropertyChangeDoesNotBypassSameIdTopLevelDevice() {
+        beginTest("Post-FX property changes do not toggle same-id top-level device");
 
         auto& wrapper = magda::test::getSharedEngine();
         magda::test::resetTransport(wrapper);
@@ -201,32 +197,30 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
         trackManager.clearAllTracks();
         trackManager.setAudioEngine(&wrapper);
 
-        const auto trackId = trackManager.createTrack("Instrument plus bypassed analyzer");
+        const auto trackId = trackManager.createTrack("FX plus bypassed analyzer");
 
-        auto synth = makeInternalDevice("4OSC Synth", "4OSC Synth");
-        synth.isInstrument = true;
-        const auto synthId = trackManager.addDeviceToTrack(trackId, synth);
+        const auto fxId =
+            trackManager.addDeviceToTrack(trackId, makeInternalDevice("FX Filter", "magda_filter"));
         const auto analyzerId =
             trackManager.addDeviceToPostFx(trackId, makeInternalDevice("Scope", "oscilloscope"));
 
-        expectEquals(synthId, 1, "First top-level instrument should use id 1");
+        expectEquals(fxId, 1, "First top-level device should use id 1");
         expectEquals(analyzerId, 1, "First post-FX analyzer should use id 1");
 
-        const auto synthPath = magda::ChainNodePath::topLevelDevice(trackId, synthId);
+        const auto fxPath = magda::ChainNodePath::topLevelDevice(trackId, fxId);
         const auto analyzerPath = magda::ChainNodePath::postFxDevice(trackId, analyzerId);
 
         bridge->syncTrackPlugins(trackId);
 
-        auto& rackManager = bridge->getPluginManager().getInstrumentRackManager();
-        auto* rackInstance = rackManager.getRackInstance(synthId);
-        expect(rackInstance != nullptr, "4OSC should be wrapped in an instrument rack");
-        if (!rackInstance) {
+        auto fxPlugin = bridge->getPlugin(fxPath);
+        expect(fxPlugin != nullptr, "Top-level FX plugin should be created");
+        if (!fxPlugin) {
             trackManager.clearAllTracks();
             trackManager.setAudioEngine(nullptr);
             return;
         }
 
-        rackInstance->setEnabled(true);
+        fxPlugin->setEnabled(true);
         if (auto* analyzer = trackManager.getDeviceInChainByPath(analyzerPath)) {
             analyzer->bypassed = true;
             bridge->devicePropertyChanged(analyzerPath);
@@ -234,16 +228,16 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
             expect(false, "Post-FX analyzer should resolve by path");
         }
 
-        expect(rackInstance->isEnabled(),
-               "Bypassing same-id post-FX analyzer must not disable the 4OSC rack");
+        expect(fxPlugin->isEnabled(),
+               "Bypassing same-id post-FX analyzer must not disable the top-level FX plugin");
 
-        if (auto* synthDevice = trackManager.getDeviceInChainByPath(synthPath)) {
-            synthDevice->bypassed = true;
-            bridge->devicePropertyChanged(synthPath);
+        if (auto* fxDevice = trackManager.getDeviceInChainByPath(fxPath)) {
+            fxDevice->bypassed = true;
+            bridge->devicePropertyChanged(fxPath);
         }
 
-        expect(!rackInstance->isEnabled(),
-               "Bypassing the top-level instrument itself should still disable its wrapper");
+        expect(!fxPlugin->isEnabled(),
+               "Bypassing the top-level device itself should still disable its plugin");
 
         trackManager.clearAllTracks();
         trackManager.setAudioEngine(nullptr);
