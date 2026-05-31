@@ -152,6 +152,12 @@ void ExternalPluginProcessor::syncFromDeviceInfo(const DeviceInfo& info) {
                 }
             }
         };
+        // Apply the saved parameter array as a BASELINE. For an external plugin
+        // with a native state chunk this gets overwritten by the chunk overlay
+        // (see restoreDeviceStateWithChunkOverlay in PluginManagerSync.cpp), but it
+        // is the fallback that survives when the chunk is missing, rejected, or
+        // doesn't cover every host-automatable parameter. For a parameter-only
+        // device (no chunk) it is the sole source of truth.
         apply(info.parameters);
         apply(info.wrapperParameters);
     }

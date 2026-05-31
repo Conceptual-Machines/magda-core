@@ -199,6 +199,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/themes/FontManager.cpp
     test_automation_modes_juce.cpp
     test_arrangement_transport_loop_juce.cpp
+    test_external_plugin_state_restore_juce.cpp
 )
 
 # Link required libraries for JUCE tests
@@ -248,3 +249,6 @@ add_test(NAME arrange_beat_native_juce
 
 add_test(NAME midi_bridge_note_events_juce
          COMMAND magda_juce_tests "MidiBridge Note Events Tests")
+
+add_test(NAME external_plugin_state_restore_juce
+         COMMAND magda_juce_tests "External Plugin State Restore Tests")
