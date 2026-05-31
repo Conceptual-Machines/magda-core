@@ -9,6 +9,7 @@
 #include "../core/ClipManager.hpp"
 #include "../core/TempoUtils.hpp"
 #include "../core/TrackManager.hpp"
+#include "../engine/AudioEngine.hpp"
 #include "serialization/ProjectSerializer.hpp"
 #include "version.hpp"
 
@@ -44,6 +45,17 @@ juce::File getWritableTempRoot() {
         return privateTmp;
 
     return systemRoot;
+}
+
+void resetTransportForProjectBoundary() {
+    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return;
+
+    audioEngine->stop();
+    audioEngine->deactivateAllSessionClips();
+    audioEngine->setLooping(false);
+    audioEngine->locate(0.0);
 }
 
 }  // namespace
@@ -86,6 +98,8 @@ bool ProjectManager::newProject() {
     if (isDirty_ && !showUnsavedChangesDialog()) {
         return false;
     }
+
+    resetTransportForProjectBoundary();
 
     // Clear all project content from singleton managers
     TrackManager::getInstance().clearAllTracks();
@@ -218,6 +232,8 @@ bool ProjectManager::loadProject(const juce::File& file,
         return false;
     }
 
+    resetTransportForProjectBoundary();
+
     // Set tempo/time sig/loop on the audio engine BEFORE committing tracks & clips,
     // so that audio engine clip sync uses the correct BPM.
     if (onBeforeCommit)
@@ -308,6 +324,8 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
         juce::MessageManager::callAsync([this, staged, ok, error, originalFile,
                                          recoveredFromAutosave, onBeforeCommit, onComplete]() {
             if (ok) {
+                resetTransportForProjectBoundary();
+
                 // Set tempo/time sig/loop BEFORE committing tracks & clips,
                 // so that audio engine clip sync uses the correct BPM.
                 if (onBeforeCommit)
@@ -351,6 +369,8 @@ bool ProjectManager::closeProject() {
     }
 
     deleteAutosaveFile();
+
+    resetTransportForProjectBoundary();
 
     // Clear all project content from singleton managers
     TrackManager::getInstance().clearAllTracks();
