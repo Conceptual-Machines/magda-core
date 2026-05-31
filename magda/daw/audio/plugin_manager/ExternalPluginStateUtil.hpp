@@ -29,6 +29,12 @@ inline void refreshExternalPluginParameterCache(tracktion::engine::Plugin* plugi
     auto* ext = dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin);
     if (ext == nullptr)
         return;
+    // Only meaningful once the instance is live. Before async instantiation
+    // completes there are no ExternalAutomatableParameters to refresh, and TE
+    // rebuilds + refreshes the cache itself on completion
+    // (completePluginInstanceCreation). Guard explicitly, matching createPluginOnly.
+    if (ext->isInitialisingAsync() || ext->getAudioPluginInstance() == nullptr)
+        return;
     for (auto* p : ext->getAutomatableParameters())
         if (auto* ep = dynamic_cast<tracktion::engine::ExternalAutomatableParameter*>(p))
             ep->valueChangedByPlugin();
@@ -45,7 +51,13 @@ inline void applyExternalPluginChunk(tracktion::engine::Plugin* plugin, const ju
     auto* ext = dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin);
     if (ext == nullptr)
         return;
+    // Always publish the chunk on the state property: TE reads it during async
+    // instantiation, so this is how an async plugin receives its state.
     ext->state.setProperty(tracktion::engine::IDs::state, chunk, nullptr);
+    // Apply + refresh only once the instance is live (matches createPluginOnly's
+    // guard); for an async plugin TE applies the property itself on completion.
+    if (ext->isInitialisingAsync() || ext->getAudioPluginInstance() == nullptr)
+        return;
     ext->restorePluginStateFromValueTree(ext->state);
     refreshExternalPluginParameterCache(ext);
 }
