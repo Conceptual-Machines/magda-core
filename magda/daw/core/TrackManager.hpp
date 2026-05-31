@@ -421,6 +421,10 @@ class TrackManager {
     // Path-based variant — preferred for new code.
     void updateDeviceParametersByPath(const ChainNodePath& devicePath,
                                       const std::vector<ParameterInfo>& params);
+    void setDeviceVisibleParameters(const ChainNodePath& devicePath,
+                                    const std::vector<int>& visibleParams);
+    void setDeviceMiniMixerParameters(const ChainNodePath& devicePath,
+                                      const std::vector<int>& miniParams);
     void setDeviceVisibleParameters(DeviceId deviceId, const std::vector<int>& visibleParams);
     void setDeviceMiniMixerParameters(DeviceId deviceId, const std::vector<int>& miniParams);
 

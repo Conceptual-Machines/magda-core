@@ -1,6 +1,7 @@
 #include "gain_staging_agent.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "../daw/core/Config.hpp"
 #include "../daw/core/GainStagingManager.hpp"
@@ -44,6 +45,23 @@ juce::String stripToJsonObject(const juce::String& raw) {
     if (start >= 0 && end > start)
         return raw.substring(start, end + 1);
     return raw;
+}
+
+bool isNumericVar(const juce::var& value) {
+    return value.isInt() || value.isInt64() || value.isDouble();
+}
+
+bool parseDecisionIndex(const juce::var& value, int& indexOut) {
+    if (!isNumericVar(value))
+        return false;
+
+    const double asDouble = static_cast<double>(value);
+    const double rounded = std::round(asDouble);
+    if (std::abs(asDouble - rounded) > 0.000001)
+        return false;
+
+    indexOut = static_cast<int>(rounded);
+    return true;
 }
 
 }  // namespace
@@ -132,24 +150,58 @@ void GainStagingAgent::parseDecisions(const juce::String& rawText,
         result.summary = summary.toString().toStdString();
 
     auto decisions = obj->getProperty("decisions");
+    std::vector<bool> seen(static_cast<size_t>(deviceCount), false);
+    juce::StringArray problems;
+
     if (auto* arr = decisions.getArray()) {
         for (const auto& item : *arr) {
             auto* d = item.getDynamicObject();
-            if (d == nullptr)
+            if (d == nullptr) {
+                problems.add("decision is not an object");
                 continue;
+            }
 
-            const int index = (int)d->getProperty("id");
-            if (index < 0 || index >= deviceCount)
+            int index = -1;
+            if (!d->hasProperty("id") || !parseDecisionIndex(d->getProperty("id"), index)) {
+                problems.add("decision missing numeric integer id");
+                continue;
+            }
+            if (index < 0 || index >= deviceCount) {
+                problems.add("decision id out of range: " + juce::String(index));
                 continue;  // ignore indices the model invented
+            }
+            if (seen[static_cast<size_t>(index)]) {
+                problems.add("duplicate decision id: " + juce::String(index));
+                continue;
+            }
+
+            const auto gainDb = d->getProperty("gainDb");
+            if (!d->hasProperty("gainDb") || !isNumericVar(gainDb)) {
+                problems.add("decision " + juce::String(index) + " missing numeric gainDb");
+                continue;
+            }
 
             Decision dec;
             dec.index = index;
             dec.newGainDb = juce::jlimit(kGainStageMinGainDb, kGainStageMaxGainDb,
-                                         (float)(double)d->getProperty("gainDb"));
+                                         static_cast<float>(static_cast<double>(gainDb)));
             if (auto reason = d->getProperty("reason"); reason.isString())
                 dec.reason = reason.toString().toStdString();
             result.decisions.push_back(dec);
+            seen[static_cast<size_t>(index)] = true;
         }
+    }
+
+    for (int index = 0; index < deviceCount; ++index) {
+        if (!seen[static_cast<size_t>(index)])
+            problems.add("missing decision id: " + juce::String(index));
+    }
+
+    if (!problems.isEmpty()) {
+        result.hasError = true;
+        result.error = "AI response contained malformed decisions: " +
+                       problems.joinIntoString("; ").toStdString();
+        return;
     }
 
     if (result.decisions.empty()) {

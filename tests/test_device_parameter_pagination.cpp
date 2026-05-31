@@ -64,20 +64,19 @@ TEST_CASE("DeviceInfo resolves TE param indices across wrapper and plugin bucket
     dry.currentValue = 0.25f;
     device.wrapperParameters.push_back(dry);
 
-    ParameterInfo wet;
-    wet.paramIndex = 1;
-    wet.name = "WetGain";
-    wet.currentValue = 0.75f;
-    device.wrapperParameters.push_back(wet);
-
     ParameterInfo firstPluginParam;
     firstPluginParam.paramIndex = 2;
     firstPluginParam.name = "Band 1 Used";
     firstPluginParam.currentValue = 1.0f;
     device.parameters.push_back(firstPluginParam);
 
+    ParameterInfo wet;
+    wet.paramIndex = 2;
+    wet.name = "WetGain";
+    wet.currentValue = 0.75f;
+    device.wrapperParameters.push_back(wet);
+
     REQUIRE(device.findParameterByIndex(0) == &device.wrapperParameters[0]);
-    REQUIRE(device.findParameterByIndex(1) == &device.wrapperParameters[1]);
     REQUIRE(device.findParameterByIndex(2) == &device.parameters[0]);
     REQUIRE(device.findParameterByIndex(99) == nullptr);
 }

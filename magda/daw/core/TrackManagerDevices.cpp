@@ -1306,6 +1306,12 @@ void TrackManager::updateDeviceParametersByPath(const ChainNodePath& devicePath,
         device->parameters = params;
 }
 
+void TrackManager::setDeviceVisibleParameters(const ChainNodePath& devicePath,
+                                              const std::vector<int>& visibleParams) {
+    if (auto* device = getDeviceInChainByPath(devicePath))
+        device->visibleParameters = visibleParams;
+}
+
 void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
                                               const std::vector<int>& visibleParams) {
     // Check master track first
@@ -1336,6 +1342,12 @@ void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
             }
         }
     }
+}
+
+void TrackManager::setDeviceMiniMixerParameters(const ChainNodePath& devicePath,
+                                                const std::vector<int>& miniParams) {
+    if (auto* device = getDeviceInChainByPath(devicePath))
+        device->miniMixerParameters = miniParams;
 }
 
 void TrackManager::setDeviceMiniMixerParameters(DeviceId deviceId,

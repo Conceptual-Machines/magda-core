@@ -59,10 +59,6 @@ void layoutMeterStrip(juce::Rectangle<int>& contentArea, const DeviceSlotTraits&
         controls.mixKnob->setBounds(stripBounds.removeFromTop(kMixKnobHeight));
         stripBounds.removeFromTop(2);
         controls.mixKnob->toFront(false);
-        DBG("[MixKnob.layout] positioned at " << controls.mixKnob->getBounds().toString());
-    } else if (controls.mixKnob != nullptr) {
-        DBG("[MixKnob.layout] SKIPPED — visible=" << (int)controls.mixKnob->isVisible()
-                                                  << " stripH=" << stripBounds.getHeight());
     }
 
     const bool usesNoteStrip = isMidiUtility(traits);

@@ -1331,7 +1331,6 @@ TEST_CASE("DeviceInfo panel UI state roundtrip", "[project][serialization][devic
 TEST_CASE("Section-scoped device ids survive project roundtrip",
           "[project][serialization][devices]") {
     ProjectTestFixture fixture;
-    Config::getInstance().setPersistMixerAnalysis(true);
 
     auto& trackManager = TrackManager::getInstance();
     auto trackId = trackManager.createTrack("Section IDs", TrackType::Audio);
@@ -1378,7 +1377,6 @@ TEST_CASE("Section-scoped device ids survive project roundtrip",
 TEST_CASE("Mixer analysis plugin state survives project roundtrip",
           "[project][serialization][devices][pluginState]") {
     ProjectTestFixture fixture;
-    Config::getInstance().setPersistMixerAnalysis(false);
 
     auto& trackManager = TrackManager::getInstance();
     auto& projectManager = ProjectManager::getInstance();
@@ -1420,7 +1418,6 @@ TEST_CASE("Mixer analysis plugin state survives project roundtrip",
 TEST_CASE("Master mixer analysis plugin state survives project roundtrip",
           "[project][serialization][master][pluginState]") {
     ProjectTestFixture fixture;
-    Config::getInstance().setPersistMixerAnalysis(false);
 
     auto& trackManager = TrackManager::getInstance();
     auto& projectManager = ProjectManager::getInstance();

@@ -53,6 +53,7 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
         testOverlappingIdsResolveByPath();
         testRemovingPostFxAnalyzerDoesNotUnwrapTopLevelInstrument();
         testPostFxPropertyChangeDoesNotBypassTopLevelInstrument();
+        testParameterConfigWritesArePathScoped();
         testTrackChainBypassNotifiesNestedDevicePaths();
         testDeviceMetersArePathKeyed();
         testTopLevelReorderMovesLivePlugins();
@@ -246,6 +247,51 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
 
         trackManager.clearAllTracks();
         trackManager.setAudioEngine(nullptr);
+    }
+
+    void testParameterConfigWritesArePathScoped() {
+        beginTest("Visible and mini-mixer parameter config writes are path scoped");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.clearAllTracks();
+
+        const auto trackId = trackManager.createTrack("Parameter config sections");
+        const auto fxId =
+            trackManager.addDeviceToTrack(trackId, makeInternalDevice("FX Filter", "magda_filter"));
+        const auto postFxId =
+            trackManager.addDeviceToPostFx(trackId, makeInternalDevice("Post Delay", "delay"));
+        const auto analysisId = trackManager.addDeviceToMixerAnalysis(
+            trackId, makeInternalDevice("Mini Scope", "oscilloscope"));
+
+        expectEquals(fxId, 1, "First FX device should use id 1");
+        expectEquals(postFxId, 1, "First post-FX device should use id 1");
+        expectEquals(analysisId, 1, "First mixer-analysis device should use id 1");
+
+        const auto fxPath = magda::ChainNodePath::topLevelDevice(trackId, fxId);
+        const auto postFxPath = magda::ChainNodePath::postFxDevice(trackId, postFxId);
+        const auto analysisPath = magda::ChainNodePath::mixerAnalysisDevice(trackId, analysisId);
+
+        trackManager.setDeviceVisibleParameters(postFxPath, {4, 5});
+        trackManager.setDeviceMiniMixerParameters(postFxPath, {6});
+        trackManager.setDeviceVisibleParameters(analysisPath, {7});
+        trackManager.setDeviceMiniMixerParameters(analysisPath, {8, 9});
+
+        auto* fx = trackManager.getDeviceInChainByPath(fxPath);
+        auto* postFx = trackManager.getDeviceInChainByPath(postFxPath);
+        auto* analysis = trackManager.getDeviceInChainByPath(analysisPath);
+
+        expect(fx != nullptr && fx->visibleParameters.empty() && fx->miniMixerParameters.empty(),
+               "Path-scoped writes must not alter the same-id FX device");
+        expect(postFx != nullptr && postFx->visibleParameters == std::vector<int>{4, 5},
+               "Post-FX visible parameters should be written to the post-FX device");
+        expect(postFx != nullptr && postFx->miniMixerParameters == std::vector<int>{6},
+               "Post-FX mini-mixer parameters should be written to the post-FX device");
+        expect(analysis != nullptr && analysis->visibleParameters == std::vector<int>{7},
+               "Mixer-analysis visible parameters should be written to the analysis device");
+        expect(analysis != nullptr && analysis->miniMixerParameters == std::vector<int>{8, 9},
+               "Mixer-analysis mini-mixer parameters should be written to the analysis device");
+
+        trackManager.clearAllTracks();
     }
 
     void testTrackChainBypassNotifiesNestedDevicePaths() {

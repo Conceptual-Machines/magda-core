@@ -780,14 +780,14 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
             // Config was loaded successfully - update TrackManager with the visible parameters
             if (!tempDevice.visibleParameters.empty()) {
                 magda::TrackManager::getInstance().setDeviceVisibleParameters(
-                    device_.id, tempDevice.visibleParameters);
+                    nodePath_, tempDevice.visibleParameters);
                 // Update our local copy
                 device_.visibleParameters = tempDevice.visibleParameters;
             }
             // Mixer mini-chain selection (empty = fall back to first non-hidden params).
             // Pushed unconditionally so deselecting all clears a prior selection.
             magda::TrackManager::getInstance().setDeviceMiniMixerParameters(
-                device_.id, tempDevice.miniMixerParameters);
+                nodePath_, tempDevice.miniMixerParameters);
             device_.miniMixerParameters = tempDevice.miniMixerParameters;
             // Apply detected parameter metadata (unit, scale, range, choices)
             device_.parameters = tempDevice.parameters;
@@ -1293,13 +1293,13 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         if (ParameterConfigDialog::applyConfigToDevice(tempDevice.uniqueId, tempDevice)) {
             if (!tempDevice.visibleParameters.empty()) {
                 magda::TrackManager::getInstance().setDeviceVisibleParameters(
-                    device_.id, tempDevice.visibleParameters);
+                    nodePath_, tempDevice.visibleParameters);
                 device_.visibleParameters = tempDevice.visibleParameters;
             }
             // Mixer mini-chain selection (empty = fall back to first non-hidden params).
             // Pushed unconditionally so deselecting all clears a prior selection.
             magda::TrackManager::getInstance().setDeviceMiniMixerParameters(
-                device_.id, tempDevice.miniMixerParameters);
+                nodePath_, tempDevice.miniMixerParameters);
             device_.miniMixerParameters = tempDevice.miniMixerParameters;
             // Apply detected parameter metadata (unit, scale, range, choices)
             device_.parameters = tempDevice.parameters;

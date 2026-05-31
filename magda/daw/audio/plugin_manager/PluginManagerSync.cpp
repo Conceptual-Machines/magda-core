@@ -1054,8 +1054,9 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
         }
     }
 
-    if (!plugin) {
-    }
+    if (!plugin)
+        juce::Logger::writeToLog("Failed to create internal plugin '" + type + "' for track " +
+                                 juce::String(trackId));
 
     return plugin;
 }
