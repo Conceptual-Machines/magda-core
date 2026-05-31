@@ -254,6 +254,14 @@
     "button.export": "エクスポート",
     "dialog.title": "MIDIをエクスポート"
   },
+  "gain_staging": {
+    "dialog.title": "ゲインステージング",
+    "description": "曲の一番盛り上がる部分を再生してから停止してください。エフェクトチェーン全体が目標のヘッドルームを維持できるよう、各プラグインの出力ゲインが自動で微調整されます。",
+    "label.target": "目標とするピーク値：",
+    "toggle.use_ai": "AI を使用",
+    "hint.use_ai": "一律の目標値に合わせるのではなく、AIにリミッターやサチュレーターの影響、エフェクトの接続順まで考慮して判断させます。",
+    "button.start": "スタート"
+  },
   "plugin_settings": {
     "section.system_directories": "システムプラグインのパス",
     "section.custom_directories": "カスタムプラグインのパス",
@@ -371,6 +379,7 @@
     "toggle.expand_right_panel": "右パネルを展開（インスペクター）",
     "toggle.expand_bottom_panel": "下部パネルを展開(ミキサー)",
     "toggle.headers_on_right": "ヘッダーを右側に",
+    "toggle.autohide_arrangement_scrollbars": "",
     "toggle.confirm_track_delete": "トラックを削除する前に確認する",
     "toggle.auto_monitor": "選択したトラックを自動でモニターする",
     "toggle.open_macros_on_select": "デバイスまたはラック選択時にマクロを開く",
