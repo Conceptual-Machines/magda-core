@@ -12,8 +12,7 @@ namespace magda::daw::audio {
 class OscilloscopePlugin : public AnalysisTapPlugin {
   public:
     explicit OscilloscopePlugin(const te::PluginCreationInfo& info)
-        : AnalysisTapPlugin(info, 262144,  // ~5.4 s at 48k
-                            magda::Config::getInstance().getOscilloscopeDefaults().traceColour) {
+        : AnalysisTapPlugin(info, 262144) {  // ~5.4 s at 48k
         timebaseMsValue.referTo(state, juce::Identifier("timebaseMs"), getUndoManager(),
                                 magda::Config::getInstance().getOscilloscopeDefaults().timebaseMs);
     }

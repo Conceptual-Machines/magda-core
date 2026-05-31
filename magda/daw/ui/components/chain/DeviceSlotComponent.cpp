@@ -784,6 +784,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 // Update our local copy
                 device_.visibleParameters = tempDevice.visibleParameters;
             }
+            // Mixer mini-chain selection (empty = fall back to first non-hidden params).
+            // Pushed unconditionally so deselecting all clears a prior selection.
+            magda::TrackManager::getInstance().setDeviceMiniMixerParameters(
+                device_.id, tempDevice.miniMixerParameters);
+            device_.miniMixerParameters = tempDevice.miniMixerParameters;
             // Apply detected parameter metadata (unit, scale, range, choices)
             device_.parameters = tempDevice.parameters;
 
@@ -1305,6 +1310,11 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
                     device_.id, tempDevice.visibleParameters);
                 device_.visibleParameters = tempDevice.visibleParameters;
             }
+            // Mixer mini-chain selection (empty = fall back to first non-hidden params).
+            // Pushed unconditionally so deselecting all clears a prior selection.
+            magda::TrackManager::getInstance().setDeviceMiniMixerParameters(
+                device_.id, tempDevice.miniMixerParameters);
+            device_.miniMixerParameters = tempDevice.miniMixerParameters;
             // Apply detected parameter metadata (unit, scale, range, choices)
             device_.parameters = tempDevice.parameters;
         }
@@ -1666,11 +1676,11 @@ juce::String DeviceSlotComponent::getCollapsedName() const {
 }
 
 int DeviceSlotComponent::getModPanelWidth() const {
-    return exposesDeviceModulation() && modPanelVisible_ ? DEFAULT_PANEL_WIDTH : 0;
+    return exposesDeviceModulation() && isModPanelLaidOut() ? DEFAULT_PANEL_WIDTH : 0;
 }
 
 int DeviceSlotComponent::getParamPanelWidth() const {
-    return exposesDeviceModulation() && paramPanelVisible_ ? DEFAULT_PANEL_WIDTH : 0;
+    return exposesDeviceModulation() && isParamPanelLaidOut() ? DEFAULT_PANEL_WIDTH : 0;
 }
 
 const magda::ModArray* DeviceSlotComponent::getModsData() const {

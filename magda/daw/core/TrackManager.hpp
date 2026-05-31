@@ -141,6 +141,12 @@ class TrackManager {
     void ensureDeviceIdAbove(DeviceId id) {
         nextFxDeviceId_ = std::max(nextFxDeviceId_, id + 1);
     }
+    void ensurePostFxDeviceIdAbove(DeviceId id) {
+        nextPostFxDeviceId_ = std::max(nextPostFxDeviceId_, id + 1);
+    }
+    void ensureMixerAnalysisDeviceIdAbove(DeviceId id) {
+        nextMixerAnalysisDeviceId_ = std::max(nextMixerAnalysisDeviceId_, id + 1);
+    }
 
     /**
      * @brief Set the audio engine reference for routing operations
@@ -200,6 +206,11 @@ class TrackManager {
     // Hierarchy operations
     void addTrackToGroup(TrackId trackId, TrackId groupId);
     void removeTrackFromGroup(TrackId trackId);
+    // Reorder a track within its parent group's child list (the display order
+    // for group children comes from childIds, not the flat track order, so this
+    // is what moves a child up/down inside a group). Inserts childId just before
+    // beforeChildId; pass INVALID_TRACK_ID to move it to the end of the group.
+    void moveChildWithinGroup(TrackId childId, TrackId beforeChildId);
     TrackId createTrackInGroup(TrackId groupId, const juce::String& name = "",
                                TrackType type = TrackType::Audio);
     std::vector<TrackId> getChildTracks(TrackId groupId) const;
@@ -411,6 +422,7 @@ class TrackManager {
     void updateDeviceParametersByPath(const ChainNodePath& devicePath,
                                       const std::vector<ParameterInfo>& params);
     void setDeviceVisibleParameters(DeviceId deviceId, const std::vector<int>& visibleParams);
+    void setDeviceMiniMixerParameters(DeviceId deviceId, const std::vector<int>& miniParams);
 
     // Set a specific device parameter value in ParameterInfo model units,
     // not MAGDA-normalized automation/controller units.

@@ -9,6 +9,7 @@
 #include "../../audio/MidiBridge.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../engine/AudioEngine.hpp"
+#include "../../engine/PluginWindowManager.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../components/mixer/LevelMeter.hpp"
@@ -621,16 +622,25 @@ void MixerView::ChannelStrip::setupControls() {
         addSendButton_->setVisible(false);
         addAndMakeVisible(*addSendButton_);
 
-        // Mini Oscilloscope / Spectrum — rendered in compact mode (no control
-        // row), pointer to the live plugin is wired by refreshMiniAnalyzers().
+        // Mini Oscilloscope / Spectrum — rendered in compact mode, pointer to
+        // the live plugin is wired by refreshMiniAnalyzers(). The chevron reveals
+        // their controls stacked beneath; the strip relayouts taller to fit.
+        auto relayoutOnExpand = [this]() {
+            if (auto* parent = findParentComponentOfClass<MixerView>())
+                parent->relayoutAllStrips();
+        };
         miniOscilloscopeUI_ = std::make_unique<daw::ui::OscilloscopeUI>();
         miniOscilloscopeUI_->setCompact(true);
+        miniOscilloscopeUI_->setPersistGlobalDefaults(false);
         miniOscilloscopeUI_->setVisible(false);
+        miniOscilloscopeUI_->onControlsExpandedChanged = relayoutOnExpand;
         addAndMakeVisible(*miniOscilloscopeUI_);
 
         miniSpectrumUI_ = std::make_unique<daw::ui::SpectrumAnalyzerUI>();
         miniSpectrumUI_->setCompact(true);
+        miniSpectrumUI_->setPersistGlobalDefaults(false);
         miniSpectrumUI_->setVisible(false);
+        miniSpectrumUI_->onControlsExpandedChanged = relayoutOnExpand;
         addAndMakeVisible(*miniSpectrumUI_);
 
         // Resize handle (thin horizontal bar above the fader). Controls
@@ -876,6 +886,28 @@ void MixerView::ChannelStrip::rebuildMiniChainRows() {
     }
 }
 
+void MixerView::ChannelStrip::syncMiniChainRowState(DeviceId deviceId, bool bypassed) {
+    if (deviceId == INVALID_DEVICE_ID)
+        return;
+    for (auto& row : miniChainRows_) {
+        if (row->deviceId() == deviceId) {
+            row->setBypassedState(bypassed);
+            return;
+        }
+    }
+}
+
+void MixerView::ChannelStrip::syncMiniChainPluginWindow(DeviceId deviceId, bool isOpen) {
+    if (deviceId == INVALID_DEVICE_ID)
+        return;
+    for (auto& row : miniChainRows_) {
+        if (row->deviceId() == deviceId) {
+            row->setPluginEditorOpen(isOpen);
+            return;
+        }
+    }
+}
+
 void MixerView::ChannelStrip::refreshMiniAnalyzers() {
     if (isMaster_)
         return;
@@ -884,8 +916,9 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
 
     if (miniOscilloscopeUI_) {
         daw::audio::OscilloscopePlugin* osc = nullptr;
+        DeviceId id = INVALID_DEVICE_ID;
         if (bridge) {
-            DeviceId id = tm.findMixerAnalysisDevice(trackId_, "oscilloscope");
+            id = tm.findMixerAnalysisDevice(trackId_, "oscilloscope");
             if (id != INVALID_DEVICE_ID) {
                 auto pluginPtr =
                     bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
@@ -897,8 +930,9 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
 
     if (miniSpectrumUI_) {
         daw::audio::SpectrumAnalyzerPlugin* spec = nullptr;
+        DeviceId id = INVALID_DEVICE_ID;
         if (bridge) {
-            DeviceId id = tm.findMixerAnalysisDevice(trackId_, "spectrumanalyzer");
+            id = tm.findMixerAnalysisDevice(trackId_, "spectrumanalyzer");
             if (id != INVALID_DEVICE_ID) {
                 auto pluginPtr =
                     bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
@@ -1053,29 +1087,25 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
             g.setColour(juce::Colours::black);
             g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
         } else {
-            // Fill the header banner with track colour (darkened to keep hue consistent)
-            g.setColour(trackColour_.darker(0.4f));
+            // Plain panel background, with just a thin colour bar on top (like a
+            // regular channel header) — not the full-width colour flood.
+            g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
             g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
 
-            // Colour bar across entire top
             g.setColour(trackColour_);
             g.fillRect(2, 2, fullBounds.getWidth() - 4, 4);
         }
 
-        // Horizontal separator below header
-        g.setColour(selected ? DarkTheme::getColour(DarkTheme::BORDER)
-                             : trackColour_.withAlpha(0.5f));
+        // Horizontal separator below header (neutral, not the track colour)
+        g.setColour(DarkTheme::getColour(selected ? DarkTheme::BORDER : DarkTheme::SEPARATOR));
         g.fillRect(0, groupHeaderHeight, fullBounds.getWidth(), 1);
     }
 }
 
 void MixerView::ChannelStrip::paintOverChildren(juce::Graphics& g) {
-    // Group envelope border — drawn over children so it's not obscured
-    if (!groupChildren_.empty()) {
-        auto fullBounds = getLocalBounds();
-        g.setColour(trackColour_.withAlpha(0.6f));
-        g.drawRect(fullBounds, 2);
-    }
+    // The group is indicated by its coloured header banner only; the full-height
+    // coloured envelope border around the children is intentionally omitted so
+    // the colour stays on the top strip rather than the whole group.
 
     // Skip overlay for child tracks nested inside a group envelope
     if (!isChildTrack_)
@@ -1165,14 +1195,16 @@ void MixerView::ChannelStrip::resized() {
     const bool showSpec = cfg.getMixerShowSpectrum();
     if (!isMaster_) {
         if (showOsc && miniOscilloscopeUI_) {
-            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(miniAnalyzerHeight));
+            const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
+            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
             miniOscilloscopeUI_->setVisible(true);
             bounds.removeFromTop(2);
         } else if (miniOscilloscopeUI_) {
             miniOscilloscopeUI_->setVisible(false);
         }
         if (showSpec && miniSpectrumUI_) {
-            miniSpectrumUI_->setBounds(bounds.removeFromTop(miniAnalyzerHeight));
+            const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
+            miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
             miniSpectrumUI_->setVisible(true);
             bounds.removeFromTop(2);
         } else if (miniSpectrumUI_) {
@@ -1479,6 +1511,17 @@ void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
 }
 
 void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
+    // A group parent strip listens recursively to its nested child strips, so a
+    // click inside a child also fires the parent's handler. Only the strip that
+    // actually owns the clicked component should act — otherwise shift/cmd
+    // selection on a nested strip (e.g. a grouped multi-out channel) resolves to
+    // the parent's track id and the child never gets selected.
+    for (juce::Component* c = event.originalComponent; c != nullptr && c != this;
+         c = c->getParentComponent()) {
+        if (dynamic_cast<ChannelStrip*>(c) != nullptr)
+            return;  // a nested child strip handles its own click
+    }
+
     // Clicks on children are forwarded to us via addMouseListener so that
     // Cmd/Shift-click anywhere on the strip can drive multi-selection. A
     // plain click on a child must NOT also single-select the track (otherwise
@@ -1556,6 +1599,24 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Get current view mode
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
 
+    // Keep the mini-chain "open editor" icons in sync with the actual plugin
+    // window state. PluginWindowManager fires this on open AND on close (incl.
+    // the window's own X), so the icon un-engages when the window is closed.
+    if (auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_)) {
+        if (auto* pwm = teWrapper->getPluginWindowManager()) {
+            juce::Component::SafePointer<MixerView> safeThis(this);
+            pwm->onWindowStateChanged = [safeThis](DeviceId deviceId, bool isOpen) {
+                auto* self = safeThis.getComponent();
+                if (self == nullptr)
+                    return;
+                for (auto& strip : self->channelStrips)
+                    strip->syncMiniChainPluginWindow(deviceId, isOpen);
+                for (auto& strip : self->auxChannelStrips)
+                    strip->syncMiniChainPluginWindow(deviceId, isOpen);
+            };
+        }
+    }
+
     // Create channel container
     channelContainer = std::make_unique<juce::Component>();
     channelContainer->setPaintingIsUnclipped(true);
@@ -1575,36 +1636,8 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     masterStrip->onSendAreaResized = [this]() { relayoutAllStrips(); };
     addAndMakeVisible(*masterStrip);
 
-    // Create channel resize handle (thin, overlaps right edge of last channel strip)
-    channelResizeHandle_ = std::make_unique<ChannelResizeHandle>();
-    channelResizeHandle_->onResize = [this](int deltaX) {
-        auto& metrics = MixerMetrics::getInstance();
-        int newWidth =
-            juce::jlimit(minChannelWidth_, maxChannelWidth_, metrics.channelWidth + deltaX);
-        if (metrics.channelWidth != newWidth) {
-            isResizeDragging_ = true;
-            metrics.channelWidth = newWidth;
-            // Coalesce: just store the new width, apply on next vblank
-            if (!pendingResizeUpdate_) {
-                pendingResizeUpdate_ = true;
-                juce::Component::SafePointer<MixerView> safeThis(this);
-                juce::MessageManager::callAsync([safeThis]() {
-                    if (auto* self = safeThis.getComponent()) {
-                        if (self->pendingResizeUpdate_) {
-                            self->pendingResizeUpdate_ = false;
-                            self->updateStripWidths();
-                        }
-                    }
-                });
-            }
-        }
-    };
-    channelResizeHandle_->onResizeEnd = [this]() {
-        isResizeDragging_ = false;
-        pendingResizeUpdate_ = false;
-        updateStripWidths();  // Ensure final width is applied
-    };
-    channelContainer->addAndMakeVisible(*channelResizeHandle_);
+    // Channel resize handles are created lazily, one per top-level strip, in
+    // layoutChannelResizeHandles().
 
     // Left-edge toggle rail
     toggleRail_ = std::make_unique<MixerToggleRail>();
@@ -1648,6 +1681,10 @@ void MixerView::midiDeviceListChanged() {
 }
 
 MixerView::~MixerView() {
+    if (auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_)) {
+        if (auto* pwm = teWrapper->getPluginWindowManager())
+            pwm->onWindowStateChanged = nullptr;
+    }
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->removeMidiDeviceListListener(this);
@@ -1670,7 +1707,7 @@ MixerView::~MixerView() {
     auxContainer.reset();
     channelContainer.reset();
     channelViewport.reset();
-    channelResizeHandle_.reset();
+    channelResizeHandles_.clear();
     toggleRail_.reset();
 }
 
@@ -1901,6 +1938,34 @@ void MixerView::trackDevicesChanged(TrackId trackId) {
     relayoutAllStrips();
 }
 
+void MixerView::devicePropertyChanged(const ChainNodePath& devicePath) {
+    // A device's bypass/gain/label changed. Sync the matching mini-chain row's
+    // bypass dot in place. We deliberately do NOT rebuild rows here: this fires
+    // synchronously from a row's own bypass toggle, so a rebuild would destroy
+    // the row mid-callback. setBypassedState only repaints, which is re-entrant-safe.
+    const TrackId trackId = devicePath.trackId;
+    const DeviceId deviceId = devicePath.getDeviceId();
+    if (trackId == INVALID_TRACK_ID || deviceId == INVALID_DEVICE_ID)
+        return;
+
+    const auto* device = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    if (device == nullptr)
+        return;
+
+    for (auto& strip : channelStrips) {
+        if (strip->getTrackId() == trackId) {
+            strip->syncMiniChainRowState(deviceId, device->bypassed);
+            return;
+        }
+    }
+    for (auto& strip : auxChannelStrips) {
+        if (strip->getTrackId() == trackId) {
+            strip->syncMiniChainRowState(deviceId, device->bypassed);
+            return;
+        }
+    }
+}
+
 void MixerView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
     currentViewMode_ = mode;
     rebuildChannelStrips();
@@ -2026,12 +2091,67 @@ void MixerView::resized() {
         xPos += stripWidth;
     }
 
-    // Resize handle centered on right border of last channel strip
-    if (!orderedStrips_.empty() && channelResizeHandle_) {
-        const int handleWidth = 8;
-        int handleX = containerWidth - handleWidth / 2;
-        channelResizeHandle_->setBounds(handleX, 0, handleWidth, containerHeight);
-        channelResizeHandle_->toFront(false);
+    layoutChannelResizeHandles(containerHeight);
+}
+
+void MixerView::wireChannelResizeHandle(ChannelResizeHandle& handle) {
+    handle.onResize = [this](int deltaX) {
+        auto& metrics = MixerMetrics::getInstance();
+        int newWidth =
+            juce::jlimit(minChannelWidth_, maxChannelWidth_, metrics.channelWidth + deltaX);
+        if (metrics.channelWidth != newWidth) {
+            isResizeDragging_ = true;
+            metrics.channelWidth = newWidth;
+            // Coalesce: just store the new width, apply on next vblank
+            if (!pendingResizeUpdate_) {
+                pendingResizeUpdate_ = true;
+                juce::Component::SafePointer<MixerView> safeThis(this);
+                juce::MessageManager::callAsync([safeThis]() {
+                    if (auto* self = safeThis.getComponent()) {
+                        if (self->pendingResizeUpdate_) {
+                            self->pendingResizeUpdate_ = false;
+                            self->updateStripWidths();
+                        }
+                    }
+                });
+            }
+        }
+    };
+    handle.onResizeEnd = [this]() {
+        isResizeDragging_ = false;
+        pendingResizeUpdate_ = false;
+        updateStripWidths();  // Ensure final width is applied
+    };
+}
+
+void MixerView::layoutChannelResizeHandles(int containerHeight) {
+    const auto& metrics = MixerMetrics::getInstance();
+
+    // Keep one handle per top-level strip (grow/shrink the pool as strips
+    // change). Each sits on its strip's right edge, so there's a grab point
+    // between every pair of headers — and they all resize the shared width.
+    while (channelResizeHandles_.size() < orderedStrips_.size()) {
+        auto handle = std::make_unique<ChannelResizeHandle>();
+        wireChannelResizeHandle(*handle);
+        channelContainer->addAndMakeVisible(*handle);
+        channelResizeHandles_.push_back(std::move(handle));
+    }
+    while (channelResizeHandles_.size() > orderedStrips_.size())
+        channelResizeHandles_.pop_back();
+
+    constexpr int handleWidth = 8;
+    int xPos = 0;
+    for (size_t i = 0; i < orderedStrips_.size(); ++i) {
+        int stripWidth = metrics.channelWidth;
+        if (auto* cs = dynamic_cast<ChannelStrip*>(orderedStrips_[i])) {
+            if (!cs->groupChildren_.empty())
+                stripWidth =
+                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
+        }
+        xPos += stripWidth;
+        channelResizeHandles_[i]->setBounds(xPos - handleWidth / 2, 0, handleWidth,
+                                            containerHeight);
+        channelResizeHandles_[i]->toFront(false);
     }
 }
 
@@ -2065,13 +2185,7 @@ void MixerView::updateStripWidths() {
         xPos += stripWidth;
     }
 
-    // Update resize handle position
-    if (!orderedStrips_.empty() && channelResizeHandle_) {
-        const int handleWidth = 8;
-        int handleX = containerWidth - handleWidth / 2;
-        channelResizeHandle_->setBounds(handleX, 0, handleWidth, containerHeight);
-        channelResizeHandle_->toFront(false);
-    }
+    layoutChannelResizeHandles(containerHeight);
 
     // Update aux strips
     int numAux = static_cast<int>(auxChannelStrips.size());

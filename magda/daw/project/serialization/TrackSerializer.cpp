@@ -1,4 +1,3 @@
-#include "../../core/Config.hpp"
 #include "../../core/ViewModeState.hpp"
 #include "ProjectSerializer.hpp"
 #include "SerializationHelpers.hpp"
@@ -91,9 +90,11 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     }
     obj->setProperty("postFxChainElements", juce::var(postFxArray));
 
-    // Mixer-analysis section: rail-managed, session-only by default. The user
-    // can opt in to persistence via Config::setPersistMixerAnalysis(true).
-    if (Config::getInstance().getPersistMixerAnalysis()) {
+    // Mixer-analysis section: rail-managed mini oscilloscope / spectrum devices.
+    // Persist their per-device pluginState so UI settings (e.g. trace colour)
+    // survive project save/load instead of falling back to global last-used
+    // defaults.
+    if (!track.chain.mixerAnalysisElements.empty()) {
         juce::Array<juce::var> mixerAnalysisArray;
         for (const auto& element : track.chain.mixerAnalysisElements) {
             mixerAnalysisArray.add(serializeDeviceInfo(element.device));
@@ -257,8 +258,8 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
         }
     }
 
-    // Mixer-analysis section (only present when persistMixerAnalysis is set;
-    // otherwise the rail toggle reconciles the section from scratch on load).
+    // Mixer-analysis section. Older projects may omit this and let the rail
+    // toggle reconcile the section from scratch on load.
     auto mixerAnalysisVar = obj->getProperty("mixerAnalysisElements");
     if (mixerAnalysisVar.isArray()) {
         auto* arr = mixerAnalysisVar.getArray();

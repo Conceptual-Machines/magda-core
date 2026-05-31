@@ -1375,6 +1375,84 @@ TEST_CASE("Section-scoped device ids survive project roundtrip",
     REQUIRE(trackManager.addDeviceToMixerAnalysis(trackId, analysis) == 2);
 }
 
+TEST_CASE("Mixer analysis plugin state survives project roundtrip",
+          "[project][serialization][devices][pluginState]") {
+    ProjectTestFixture fixture;
+    Config::getInstance().setPersistMixerAnalysis(false);
+
+    auto& trackManager = TrackManager::getInstance();
+    auto& projectManager = ProjectManager::getInstance();
+    auto firstTrackId = trackManager.createTrack("First", TrackType::Audio);
+    auto secondTrackId = trackManager.createTrack("Second", TrackType::Audio);
+
+    DeviceInfo firstScope;
+    firstScope.name = "Oscilloscope";
+    firstScope.pluginId = "oscilloscope";
+    firstScope.format = PluginFormat::Internal;
+    firstScope.deviceType = DeviceType::Analysis;
+    firstScope.pluginState = "<PLUGIN type=\"oscilloscope\" traceColour=\"1\"/>";
+
+    DeviceInfo secondScope = firstScope;
+    secondScope.pluginState = "<PLUGIN type=\"oscilloscope\" traceColour=\"5\"/>";
+
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(firstTrackId, firstScope) != INVALID_DEVICE_ID);
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(secondTrackId, secondScope) != INVALID_DEVICE_ID);
+
+    auto tempFile = fixture.createTempProjectFile(".mgd");
+    auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
+    REQUIRE(projectManager.saveProjectAs(tempFile));
+
+    trackManager.clearAllTracks();
+    REQUIRE(projectManager.loadProject(actualFile));
+
+    auto* firstTrack = trackManager.getTrack(firstTrackId);
+    auto* secondTrack = trackManager.getTrack(secondTrackId);
+    REQUIRE(firstTrack != nullptr);
+    REQUIRE(secondTrack != nullptr);
+    REQUIRE(firstTrack->chain.mixerAnalysisElements.size() == 1);
+    REQUIRE(secondTrack->chain.mixerAnalysisElements.size() == 1);
+    REQUIRE(firstTrack->chain.mixerAnalysisElements[0].device.pluginState ==
+            juce::String("<PLUGIN type=\"oscilloscope\" traceColour=\"1\"/>"));
+    REQUIRE(secondTrack->chain.mixerAnalysisElements[0].device.pluginState ==
+            juce::String("<PLUGIN type=\"oscilloscope\" traceColour=\"5\"/>"));
+}
+
+TEST_CASE("Master mixer analysis plugin state survives project roundtrip",
+          "[project][serialization][master][pluginState]") {
+    ProjectTestFixture fixture;
+    Config::getInstance().setPersistMixerAnalysis(false);
+
+    auto& trackManager = TrackManager::getInstance();
+    auto& projectManager = ProjectManager::getInstance();
+
+    DeviceInfo scope;
+    scope.name = "Oscilloscope";
+    scope.pluginId = "oscilloscope";
+    scope.format = PluginFormat::Internal;
+    scope.deviceType = DeviceType::Analysis;
+    scope.pluginState = "<PLUGIN type=\"oscilloscope\" traceColour=\"3\"/>";
+
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(MASTER_TRACK_ID, scope) != INVALID_DEVICE_ID);
+
+    auto tempFile = fixture.createTempProjectFile(".mgd");
+    auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
+    REQUIRE(projectManager.saveProjectAs(tempFile));
+
+    trackManager.clearAllTracks();
+    REQUIRE(projectManager.loadProject(actualFile));
+
+    auto* masterTrack = trackManager.getTrack(MASTER_TRACK_ID);
+    REQUIRE(masterTrack != nullptr);
+    REQUIRE(masterTrack->chain.mixerAnalysisElements.size() == 1);
+    REQUIRE(masterTrack->chain.mixerAnalysisElements[0].device.pluginState ==
+            juce::String("<PLUGIN type=\"oscilloscope\" traceColour=\"3\"/>"));
+
+    auto childTrackId = trackManager.createTrack("Later Track", TrackType::Audio);
+    DeviceInfo siblingScope = scope;
+    siblingScope.pluginState = "<PLUGIN type=\"oscilloscope\" traceColour=\"6\"/>";
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(childTrackId, siblingScope) == 2);
+}
+
 TEST_CASE("Post-fx device params are not automation targets",
           "[project][serialization][automation]") {
     ProjectTestFixture fixture;

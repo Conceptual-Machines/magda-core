@@ -13,6 +13,9 @@ namespace magda {
 
 class AudioEngine;
 class SvgButton;
+namespace daw::ui {
+class TextSlider;
+}
 namespace te = tracktion;
 
 /**
@@ -48,6 +51,10 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     // the row (used when bypass is toggled elsewhere, e.g. the device slot).
     void setBypassedState(bool bypassed);
 
+    // Reflect the plugin editor window's open state on the "open editor" icon
+    // (e.g. so it un-engages when the window is closed via its X button).
+    void setPluginEditorOpen(bool open);
+
     DeviceId deviceId() const {
         return deviceId_;
     }
@@ -68,6 +75,12 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     juce::String deviceName_;
     bool bypassed_ = false;
     bool expanded_ = false;
+    bool retainExpandedForFadeOut_ = false;
+    bool paramsFadeActive_ = false;
+    float paramsAlpha_ = 1.0f;
+    float paramsFadeStartAlpha_ = 1.0f;
+    float paramsFadeTargetAlpha_ = 1.0f;
+    double paramsFadeStartMs_ = 0.0;
 
     juce::Rectangle<int> bypassRect_;
     juce::Rectangle<int> nameRect_;
@@ -80,13 +93,25 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     // Up to kMaxExpandedParams parameter sliders shown when expanded. Built
     // lazily on first expand. paramLabels_ holds the corresponding name on
     // the left; paramSliders_ holds the slider on the right.
-    std::vector<std::unique_ptr<juce::Slider>> paramSliders_;
+    std::vector<std::unique_ptr<daw::ui::TextSlider>> paramSliders_;
     std::vector<std::unique_ptr<juce::Label>> paramLabels_;
-    std::vector<te::AutomatableParameter*> trackedParams_;
+    // Device parameter indices (ParameterInfo::paramIndex) surfaced as rows.
+    // Values are read/written in display units through the device model so
+    // Faust devices (whose live param is normalized) stay in sync.
+    std::vector<int> trackedParamIndices_;
     bool paramsResolved_ = false;
 
     void resolveParams();
+    bool isParamsLaidOut() const {
+        return expanded_ || retainExpandedForFadeOut_;
+    }
+    void startParamsFade(bool expanding);
+    void advanceParamsFade();
+    void applyParamsAlpha();
+    void updateTimerState();
     void timerCallback() override;
+
+    static constexpr int kParamsFadeMs = 450;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MiniChainRow)
 };

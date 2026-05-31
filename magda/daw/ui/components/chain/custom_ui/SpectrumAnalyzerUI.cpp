@@ -1,12 +1,18 @@
 #include "SpectrumAnalyzerUI.hpp"
 
+#include <BinaryData.h>
+
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iterator>
 #include <limits>
 
 #include "AnalyzerColours.hpp"
+#include "AnalyzerWindow.hpp"
 #include "core/Config.hpp"
+#include "ui/components/chain/layout/NodeHeaderStyles.hpp"
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
@@ -14,7 +20,10 @@
 namespace magda::daw::ui {
 
 namespace {
-constexpr int kControlRowH = 22;
+constexpr int kControlRowH = 22;    // full-editor horizontal control row
+constexpr int kStackRowH = 18;      // one row of the compact vertical control stack
+constexpr int kStackLabelW = 34;    // label column width in the stacked layout
+constexpr int kChevronStripH = 16;  // dedicated strip below the plot for the chevron
 constexpr float kSlopeOptions[] = {0.0f, 3.0f, 4.5f, 6.0f};  // dB/oct
 constexpr float kSpeedOptions[] = {0.15f, 0.4f, 0.8f};       // smoothing (Slow/Med/Fast)
 
@@ -35,11 +44,10 @@ template <typename Range> int nearestId(const Range& options, float value) {
 
 // Snapshot the plugin's current settings as the global last-used spectrum
 // default (config.json), so the next freshly-created spectrum adopts them.
-void persistSpectrumDefaults(daw::audio::SpectrumAnalyzerPlugin* p) {
-    if (p == nullptr)
+void persistSpectrumDefaults(daw::audio::SpectrumAnalyzerPlugin* p, bool enabled) {
+    if (p == nullptr || !enabled)
         return;
     Config::SpectrumDefaults d;
-    d.traceColour = p->getTraceColourIndex();
     d.fftOrder = p->getFftOrder();
     d.slopeDbPerOct = p->getSlopeDbPerOct();
     d.smoothing = p->getSmoothing();
@@ -73,7 +81,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
         if (plugin_ != nullptr)
             plugin_->setFftOrder(order);
         rebuildFft(order);
-        persistSpectrumDefaults(plugin_);
+        persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
     };
     styleCombo(fftCombo_);
 
@@ -88,7 +96,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
             slopeDbPerOct_ = kSlopeOptions[static_cast<size_t>(idx)];
             if (plugin_ != nullptr)
                 plugin_->setSlopeDbPerOct(slopeDbPerOct_);
-            persistSpectrumDefaults(plugin_);
+            persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
         }
     };
     styleCombo(slopeCombo_);
@@ -103,7 +111,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
             smoothing_ = kSpeedOptions[static_cast<size_t>(idx)];
             if (plugin_ != nullptr)
                 plugin_->setSmoothing(smoothing_);
-            persistSpectrumDefaults(plugin_);
+            persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
         }
     };
     styleCombo(speedCombo_);
@@ -112,11 +120,33 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     for (int i = 0; i < kAnalyzerColourCount; ++i)
         colourCombo_.addItem(kAnalyzerColourNames[i], i + 1);
     colourCombo_.onChange = [this] {
-        if (plugin_ != nullptr)
+        if (plugin_ != nullptr) {
+            DBG("[AnalyzerColour] SpectrumAnalyzerUI colour change ui=0x"
+                << juce::String::toHexString(
+                       static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(this)))
+                << " compact=" << static_cast<int>(compact_) << " plugin=0x"
+                << juce::String::toHexString(
+                       static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(plugin_)))
+                << " selectedId=" << colourCombo_.getSelectedId()
+                << " requestedColour=" << (colourCombo_.getSelectedId() - 1));
             plugin_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
-        persistSpectrumDefaults(plugin_);
+        } else {
+            DBG("[AnalyzerColour] SpectrumAnalyzerUI colour change ignored ui=0x"
+                << juce::String::toHexString(
+                       static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(this)))
+                << " compact=" << static_cast<int>(compact_) << " plugin=null"
+                << " selectedId=" << colourCombo_.getSelectedId());
+        }
+        persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
     };
     styleCombo(colourCombo_);
+
+    popoutButton_ = std::make_unique<magda::SvgButton>("Pop out", BinaryData::open_in_new_svg,
+                                                       BinaryData::open_in_new_svgSize);
+    daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
+                                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    popoutButton_->onClick = [this] { openPopout(); };
+    addChildComponent(*popoutButton_);  // shown only in compact mode
 
     rebuildFft(11);
     startTimerHz(30);
@@ -146,6 +176,8 @@ void SpectrumAnalyzerUI::rebuildFft(int order) {
 
 void SpectrumAnalyzerUI::setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin) {
     plugin_ = plugin;
+    if (popoutUI_ != nullptr)
+        popoutUI_->setPlugin(plugin);  // keep the popped-out window live
     if (plugin_ == nullptr)
         return;
 
@@ -162,21 +194,141 @@ void SpectrumAnalyzerUI::setCompact(bool compact) {
     if (compact_ == compact)
         return;
     compact_ = compact;
-    fftLabel_.setVisible(!compact);
-    fftCombo_.setVisible(!compact);
-    slopeLabel_.setVisible(!compact);
-    slopeCombo_.setVisible(!compact);
-    speedLabel_.setVisible(!compact);
-    speedCombo_.setVisible(!compact);
-    colourLabel_.setVisible(!compact);
-    colourCombo_.setVisible(!compact);
+    if (!compact_) {
+        controlsExpanded_ = false;  // the full editor always shows controls; no toggle
+        controlsFadeActive_ = false;
+        controlsAlpha_ = 1.0f;
+    }
+    updateControlVisibility();
     resized();
     repaint();
 }
 
-void SpectrumAnalyzerUI::resized() {
-    if (compact_)
+void SpectrumAnalyzerUI::setPersistGlobalDefaults(bool persist) {
+    persistGlobalDefaults_ = persist;
+    if (popoutUI_ != nullptr)
+        popoutUI_->setPersistGlobalDefaults(persist);
+}
+
+void SpectrumAnalyzerUI::setControlsExpanded(bool expanded) {
+    if (!compact_ || controlsExpanded_ == expanded)
         return;
+    controlsExpanded_ = expanded;
+    startControlsFade(expanded);
+    updateControlVisibility();
+    resized();
+    repaint();
+    if (expanded && onControlsExpandedChanged)
+        onControlsExpandedChanged();
+}
+
+int SpectrumAnalyzerUI::expandedControlsHeight() const {
+    if (!compact_ || !showControls())
+        return 0;
+    constexpr int fullHeight =
+        4 * kStackRowH + 4;  // FFT + Slope + Time + Color rows, plus top padding
+    // Reserve the full height for the whole fade (both directions) so the strip
+    // relayouts once on open and once on close, not every frame. The controls
+    // cross-fade their opacity over this stable area; animating the height each
+    // frame (and relaying out the whole mixer with it) is what made the reveal
+    // flicker.
+    return (controlsExpanded_ || controlsFadeActive_) ? fullHeight : 0;
+}
+
+void SpectrumAnalyzerUI::updateControlVisibility() {
+    const bool show = showControls();
+    fftLabel_.setVisible(show);
+    fftCombo_.setVisible(show);
+    slopeLabel_.setVisible(show);
+    slopeCombo_.setVisible(show);
+    speedLabel_.setVisible(show);
+    speedCombo_.setVisible(show);
+    colourLabel_.setVisible(show);
+    colourCombo_.setVisible(show);
+    if (popoutButton_)
+        popoutButton_->setVisible(compact_);  // lives in the strip, compact only
+    applyControlsAlpha();
+}
+
+void SpectrumAnalyzerUI::startControlsFade(bool expanding) {
+    controlsFadeActive_ = true;
+    controlsFadeStartMs_ = juce::Time::getMillisecondCounterHiRes();
+    controlsFadeStartAlpha_ = expanding ? 0.0f : controlsAlpha_;
+    controlsFadeTargetAlpha_ = expanding ? 1.0f : 0.0f;
+    controlsAlpha_ = controlsFadeStartAlpha_;
+}
+
+void SpectrumAnalyzerUI::advanceControlsFade() {
+    if (!controlsFadeActive_)
+        return;
+
+    const auto elapsed = juce::Time::getMillisecondCounterHiRes() - controlsFadeStartMs_;
+    const auto progress =
+        static_cast<float>(juce::jlimit(0.0, 1.0, elapsed / kCompactControlsFadeMs));
+    controlsAlpha_ =
+        controlsFadeStartAlpha_ + (controlsFadeTargetAlpha_ - controlsFadeStartAlpha_) * progress;
+    // Opacity-only during the fade — height is already reserved, so no per-frame
+    // relayout (that was the flicker). The strip relayouts once on completion.
+    applyControlsAlpha();
+    repaint();
+
+    if (progress < 1.0f)
+        return;
+
+    controlsFadeActive_ = false;
+    controlsAlpha_ = controlsExpanded_ ? 1.0f : 0.0f;
+    updateControlVisibility();
+    if (onControlsExpandedChanged)
+        onControlsExpandedChanged();
+    resized();
+    repaint();
+}
+
+void SpectrumAnalyzerUI::applyControlsAlpha() {
+    const float alpha = compact_ ? controlsAlpha_ : 1.0f;
+    fftLabel_.setAlpha(alpha);
+    fftCombo_.setAlpha(alpha);
+    slopeLabel_.setAlpha(alpha);
+    slopeCombo_.setAlpha(alpha);
+    speedLabel_.setAlpha(alpha);
+    speedCombo_.setAlpha(alpha);
+    colourLabel_.setAlpha(alpha);
+    colourCombo_.setAlpha(alpha);
+}
+
+int SpectrumAnalyzerUI::compactExtraHeight() const {
+    return compact_ ? kChevronStripH + expandedControlsHeight() : 0;
+}
+
+void SpectrumAnalyzerUI::resized() {
+    if (compact_) {
+        auto area = getLocalBounds();
+        const int controlsHeight = expandedControlsHeight();
+        auto controls =
+            controlsHeight > 0 ? area.removeFromBottom(controlsHeight) : juce::Rectangle<int>();
+        // Dedicated chevron/pop-out strip directly below the plot.
+        auto strip = area.removeFromBottom(kChevronStripH);
+        chevronRect_ = juce::Rectangle<int>(strip.getCentreX() - 7, strip.getCentreY() - 7, 14, 14);
+        popoutRect_ = juce::Rectangle<int>(strip.getRight() - 19, strip.getCentreY() - 7, 14, 14);
+        if (popoutButton_)
+            popoutButton_->setBounds(popoutRect_);
+        if (controlsHeight > 0 && showControls()) {
+            controls.removeFromTop(2);
+            auto stackRow = [&controls](juce::Label& label, juce::ComboBox& combo) {
+                auto row = controls.removeFromTop(kStackRowH);
+                label.setBounds(row.removeFromLeft(kStackLabelW));
+                combo.setBounds(row.reduced(2, 1));
+            };
+            stackRow(fftLabel_, fftCombo_);
+            stackRow(slopeLabel_, slopeCombo_);
+            stackRow(speedLabel_, speedCombo_);
+            stackRow(colourLabel_, colourCombo_);
+        }
+        return;
+    }
+
+    chevronRect_ = juce::Rectangle<int>();
+    popoutRect_ = juce::Rectangle<int>();
     auto controls = getLocalBounds().removeFromBottom(kControlRowH);
     auto cell = [&controls](int labelW, int comboW) {
         controls.removeFromLeft(4);
@@ -198,7 +350,37 @@ void SpectrumAnalyzerUI::resized() {
     colourCombo_.setBounds(colC.reduced(2, 1));
 }
 
+void SpectrumAnalyzerUI::mouseDown(const juce::MouseEvent& e) {
+    if (compact_ && chevronRect_.contains(e.getPosition()))
+        setControlsExpanded(!controlsExpanded_);  // pop-out is handled by popoutButton_
+}
+
+void SpectrumAnalyzerUI::openPopout() {
+    // popoutButton_ is a toggle: its state after the click is the desired open
+    // state, so the icon and window stay in sync (and the window X clears it).
+    const bool wantOpen = (popoutButton_ == nullptr) || popoutButton_->getToggleState();
+
+    if (popoutWindow_ == nullptr) {
+        if (!wantOpen)
+            return;
+        auto content = std::make_unique<SpectrumAnalyzerUI>();  // full-size (not compact)
+        popoutUI_ = content.get();
+        popoutUI_->setPersistGlobalDefaults(persistGlobalDefaults_);
+        popoutUI_->setPlugin(plugin_);
+        popoutWindow_ = std::make_unique<AnalyzerWindow>("Spectrum Analyzer", std::move(content));
+        popoutWindow_->onClose = [this]() {
+            if (popoutButton_)
+                popoutButton_->setToggleState(false, juce::dontSendNotification);
+        };
+    } else {
+        popoutWindow_->setVisible(wantOpen);
+        if (wantOpen)
+            popoutWindow_->toFront(true);
+    }
+}
+
 void SpectrumAnalyzerUI::timerCallback() {
+    advanceControlsFade();
     if (plugin_ == nullptr || fft_ == nullptr) {
         repaint();
         return;
@@ -241,8 +423,12 @@ float SpectrumAnalyzerUI::dbToY(float db, juce::Rectangle<float> area) const {
 
 juce::Rectangle<float> SpectrumAnalyzerUI::plotArea() const {
     auto a = getLocalBounds();
-    if (!compact_)
+    if (!compact_) {
         a.removeFromBottom(kControlRowH);
+    } else {
+        a.removeFromBottom(expandedControlsHeight());
+        a.removeFromBottom(kChevronStripH);  // chevron/pop-out strip
+    }
     return a.toFloat().reduced(4.0f);
 }
 
@@ -285,8 +471,28 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         freqLabel(10000.0f, "10k");
     }
 
-    if (smoothedDb_.empty())
+    auto drawChevron = [&] {
+        if (!compact_)
+            return;
+        // Chevron/pop-out strip directly below the plot.
+        auto strip = getLocalBounds();
+        strip.removeFromBottom(expandedControlsHeight());
+        strip = strip.removeFromBottom(kChevronStripH);
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRect(strip);
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.drawHorizontalLine(strip.getY(), static_cast<float>(strip.getX()),
+                             static_cast<float>(strip.getRight()));
+        // Chevron points down to open (controls below) and up to collapse.
+        drawAnalyzerExpandChevron(g, chevronRect_, controlsExpanded_,
+                                  DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        // Pop-out is the SvgButton (open_in_new) positioned in the strip.
+    };
+
+    if (smoothedDb_.empty()) {
+        drawChevron();
         return;
+    }
 
     const double sr = (plugin_ != nullptr) ? plugin_->getSampleRate() : 44100.0;
     const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
@@ -339,6 +545,8 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         g.drawText(txt, box, juce::Justification::centredLeft);
     }
+
+    drawChevron();
 }
 
 void SpectrumAnalyzerUI::mouseMove(const juce::MouseEvent& e) {

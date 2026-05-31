@@ -8,52 +8,17 @@
 #include "../../themes/FontManager.hpp"
 #include "../chain/layout/NodeHeaderStyles.hpp"
 #include "../common/SvgButton.hpp"
+#include "../common/TextSlider.hpp"
 #include "core/ChainNodePath.hpp"
-#include "core/InternalDeviceKind.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 
 namespace magda {
 
-namespace {
-// Hand-picked "money" parameters surfaced in the mixer mini chain for MAGDA's
-// native devices, keyed by device kind. Names match ParameterInfo::name (the
-// TE display name). Devices not listed (external VST/AU, Faust, instruments)
-// fall back to the first few non-hidden parameters.
-std::vector<juce::String> curatedParamNames(InternalDeviceKind kind) {
-    switch (kind) {
-        case InternalDeviceKind::TeEq:
-            return {"Low-shelf gain", "Mid gain 1", "High-shelf gain"};
-        case InternalDeviceKind::TeCompressor:
-            return {"Threshold", "Ratio", "Output gain"};
-        case InternalDeviceKind::TeReverb:
-            return {"Room Size", "Damping", "Wet Level"};
-        case InternalDeviceKind::TeDelay:
-            return {"Length", "Feedback", "Mix proportion"};
-        case InternalDeviceKind::TeChorus:
-            return {"Depth", "Speed", "Mix"};
-        case InternalDeviceKind::TePhaser:
-            return {"Depth", "Rate", "Feedback"};
-        case InternalDeviceKind::TeLowpass:
-            return {"Frequency"};
-        case InternalDeviceKind::TePitchShift:
-            return {"Semitones"};
-        case InternalDeviceKind::TeImpulseResponse:
-            return {"Mix", "Gain", "Low Pass Cutoff"};
-        case InternalDeviceKind::TeToneGenerator:
-            return {"Frequency", "Level"};
-        case InternalDeviceKind::TeVolumeAndPan:
-            return {"Volume", "Pan"};
-        default:
-            return {};
-    }
-}
-}  // namespace
-
 MiniChainRow::MiniChainRow() {
     setInterceptsMouseClicks(true, true);
     paramSliders_.reserve(kMaxExpandedParams);
-    trackedParams_.reserve(kMaxExpandedParams);
+    trackedParamIndices_.reserve(kMaxExpandedParams);
 }
 
 MiniChainRow::~MiniChainRow() {
@@ -71,16 +36,21 @@ void MiniChainRow::setDevice(TrackId trackId, DeviceId deviceId, AudioEngine* en
     if (deviceChanged) {
         paramsResolved_ = false;
         paramSliders_.clear();
-        trackedParams_.clear();
+        paramLabels_.clear();
+        trackedParamIndices_.clear();
+        retainExpandedForFadeOut_ = false;
+        paramsFadeActive_ = false;
+        paramsAlpha_ = 1.0f;
     }
 
-    // "Open native editor" icon. Top-level devices only (racks render as a
-    // name-only summary row); analysis devices have inline mixer UI and no
-    // native editor, so they get no icon.
+    // "Open native editor" icon. Only genuine external plugins (VST3/AU/VST)
+    // have a native editor window worth popping; every MAGDA-internal device
+    // (TE built-ins, the magda_* Faust effects, native instruments, analysis)
+    // reports PluginFormat::Internal and edits inline, so it gets no icon.
     const auto* devInfo = deviceId_ != INVALID_DEVICE_ID
                               ? TrackManager::getInstance().getDevice(trackId_, deviceId_)
                               : nullptr;
-    const bool wantUiButton = devInfo != nullptr && !isAnalysisDevice(devInfo->pluginId);
+    const bool wantUiButton = devInfo != nullptr && devInfo->format != PluginFormat::Internal;
     if (wantUiButton && uiButton_ == nullptr) {
         uiButton_ = std::make_unique<SvgButton>("UI", BinaryData::open_in_new_svg,
                                                 BinaryData::open_in_new_svgSize);
@@ -111,22 +81,34 @@ void MiniChainRow::setBypassedState(bool bypassed) {
     repaint();
 }
 
+void MiniChainRow::setPluginEditorOpen(bool open) {
+    if (uiButton_ == nullptr)
+        return;
+    uiButton_->setToggleState(open, juce::dontSendNotification);
+    uiButton_->setActive(open);
+}
+
 void MiniChainRow::setExpanded(bool expanded) {
     if (expanded_ == expanded)
         return;
     expanded_ = expanded;
-    if (expanded_ && !paramsResolved_)
-        resolveParams();
+    if (expanded_) {
+        retainExpandedForFadeOut_ = false;
+        if (!paramsResolved_)
+            resolveParams();
+    } else {
+        retainExpandedForFadeOut_ = !trackedParamIndices_.empty();
+    }
+    startParamsFade(expanded_);
+    const bool showParams = isParamsLaidOut();
     for (auto& slider : paramSliders_)
         if (slider)
-            slider->setVisible(expanded_);
+            slider->setVisible(showParams);
     for (auto& label : paramLabels_)
         if (label)
-            label->setVisible(expanded_);
-    if (expanded_ && !trackedParams_.empty())
-        startTimerHz(15);
-    else
-        stopTimer();
+            label->setVisible(showParams);
+    applyParamsAlpha();
+    updateTimerState();
     resized();
     repaint();
     if (onExpandChanged)
@@ -134,43 +116,37 @@ void MiniChainRow::setExpanded(bool expanded) {
 }
 
 int MiniChainRow::preferredHeight() const {
-    if (!expanded_ || trackedParams_.empty())
+    if (!isParamsLaidOut() || trackedParamIndices_.empty())
         return kCollapsedHeight;
-    return kCollapsedHeight + static_cast<int>(trackedParams_.size()) * kParamRowHeight + 2;
+    const int fullParamsHeight =
+        static_cast<int>(trackedParamIndices_.size()) * kParamRowHeight + 2;
+    if (!paramsFadeActive_)
+        return kCollapsedHeight + (expanded_ ? fullParamsHeight : 0);
+    return kCollapsedHeight + juce::roundToInt(static_cast<float>(fullParamsHeight) * paramsAlpha_);
 }
 
 void MiniChainRow::resolveParams() {
     paramsResolved_ = true;
     paramSliders_.clear();
     paramLabels_.clear();
-    trackedParams_.clear();
+    trackedParamIndices_.clear();
     if (deviceId_ == INVALID_DEVICE_ID || engine_ == nullptr)
         return;
-    auto* bridge = engine_->getAudioBridge();
-    if (bridge == nullptr)
-        return;
-    // Top-level fx device path: rack/nested-chain devices don't appear in
-    // the mixer's mini chain (racks render as a name-only summary row).
-    auto pluginPtr = bridge->getPlugin(ChainNodePath::topLevelDevice(trackId_, deviceId_));
-    if (pluginPtr == nullptr)
-        return;
 
-    // Curated parameter list: skips slot-level Dry/Wet and hidden params,
-    // uses the plugin spec's names / units / scales. paramIndex is the
-    // TE-side index so we can still resolve the live AutomatableParameter.
+    // Read values from the device model and write through TrackManager, both in
+    // display units. This is the same path the device chain uses, so the mini
+    // row stays in sync regardless of how the device maps display values onto
+    // its live parameter (Faust devices keep a normalized 0..1 native param).
     const auto* devInfo = TrackManager::getInstance().getDevice(trackId_, deviceId_);
     if (devInfo == nullptr)
         return;
-    auto teParams = pluginPtr->getAutomatableParameters();
+    const auto path = ChainNodePath::topLevelDevice(trackId_, deviceId_);
 
     auto addParamSlider = [&](const ParameterInfo& paramInfo) {
-        if (paramInfo.paramIndex < 0 || paramInfo.paramIndex >= teParams.size())
-            return;
-        auto* param = teParams[paramInfo.paramIndex];
-        if (param == nullptr)
+        if (paramInfo.paramIndex < 0)
             return;
 
-        trackedParams_.push_back(param);
+        trackedParamIndices_.push_back(paramInfo.paramIndex);
 
         auto label = std::make_unique<juce::Label>();
         label->setText(paramInfo.name, juce::dontSendNotification);
@@ -178,49 +154,46 @@ void MiniChainRow::resolveParams() {
         label->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
         label->setJustificationType(juce::Justification::centredLeft);
         label->setInterceptsMouseClicks(false, false);
-        label->setVisible(expanded_);
+        label->setAlpha(paramsAlpha_);
+        label->setVisible(isParamsLaidOut());
         addAndMakeVisible(*label);
         paramLabels_.push_back(std::move(label));
 
-        auto slider =
-            std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox);
-        slider->setRange(0.0, 1.0, 0.0);
-        slider->setValue(param->getCurrentNormalisedValue(), juce::dontSendNotification);
-        slider->setColour(juce::Slider::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-        slider->setColour(juce::Slider::trackColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        slider->setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE_LIGHT));
-        slider->setWantsKeyboardFocus(false);
-        slider->onValueChange = [param, sliderPtr = slider.get()]() {
-            param->setParameterFromHost(static_cast<float>(sliderPtr->getValue()),
-                                        juce::sendNotificationSync);
+        // Same value control as the device chain: a TextSlider that displays
+        // the parameter's real value and formats/parses it from ParameterInfo.
+        auto slider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decimal);
+        slider->setParameterInfo(paramInfo);
+        slider->setValue(paramInfo.currentValue, juce::dontSendNotification);
+        slider->setFont(FontManager::getInstance().getUIFont(10.0f));
+        slider->setTextColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        const int paramIndex = paramInfo.paramIndex;
+        slider->onValueChanged = [path, paramIndex](double v) {
+            TrackManager::getInstance().setDeviceParameterValue(path, paramIndex,
+                                                                static_cast<float>(v));
         };
-        slider->setVisible(expanded_);
+        slider->setAlpha(paramsAlpha_);
+        slider->setVisible(isParamsLaidOut());
         addAndMakeVisible(*slider);
         paramSliders_.push_back(std::move(slider));
     };
 
-    // 1) Hand-curated parameter list for MAGDA native devices: match the wanted
-    //    names against the device's parameters, in curated order.
-    const auto curated = curatedParamNames(classifyInternalDevice(devInfo->pluginId));
-    for (const auto& wanted : curated) {
-        if (static_cast<int>(trackedParams_.size()) >= kMaxExpandedParams)
+    // 1) Explicit user selection from the parameter config dialog's "Mini"
+    //    column (indices into devInfo->parameters), in the order chosen.
+    for (int idx : devInfo->miniMixerParameters) {
+        if (static_cast<int>(trackedParamIndices_.size()) >= kMaxExpandedParams)
             break;
-        for (const auto& paramInfo : devInfo->parameters) {
-            if (!paramInfo.hidden && paramInfo.name.equalsIgnoreCase(wanted)) {
+        if (idx >= 0 && idx < static_cast<int>(devInfo->parameters.size())) {
+            const auto& paramInfo = devInfo->parameters[static_cast<size_t>(idx)];
+            if (!paramInfo.hidden)
                 addParamSlider(paramInfo);
-                break;
-            }
         }
     }
 
-    // 2) Fallback (external plugins, Faust, anything uncurated, or no matches):
-    //    first N non-hidden parameters in device order.
-    if (trackedParams_.empty()) {
+    // 2) Fallback (no explicit selection): first N non-hidden parameters in
+    //    device order.
+    if (trackedParamIndices_.empty()) {
         for (const auto& paramInfo : devInfo->parameters) {
-            if (static_cast<int>(trackedParams_.size()) >= kMaxExpandedParams)
+            if (static_cast<int>(trackedParamIndices_.size()) >= kMaxExpandedParams)
                 break;
             if (paramInfo.hidden)
                 continue;
@@ -229,16 +202,86 @@ void MiniChainRow::resolveParams() {
     }
 }
 
+void MiniChainRow::startParamsFade(bool expanding) {
+    paramsFadeActive_ = true;
+    paramsFadeStartMs_ = juce::Time::getMillisecondCounterHiRes();
+    paramsFadeStartAlpha_ = expanding ? 0.0f : paramsAlpha_;
+    paramsFadeTargetAlpha_ = expanding ? 1.0f : 0.0f;
+    paramsAlpha_ = paramsFadeStartAlpha_;
+}
+
+void MiniChainRow::advanceParamsFade() {
+    if (!paramsFadeActive_)
+        return;
+
+    const auto elapsed = juce::Time::getMillisecondCounterHiRes() - paramsFadeStartMs_;
+    const auto progress = static_cast<float>(juce::jlimit(0.0, 1.0, elapsed / kParamsFadeMs));
+    paramsAlpha_ =
+        paramsFadeStartAlpha_ + (paramsFadeTargetAlpha_ - paramsFadeStartAlpha_) * progress;
+    applyParamsAlpha();
+    resized();
+    repaint();
+    if (onExpandChanged)
+        onExpandChanged();
+
+    if (progress < 1.0f)
+        return;
+
+    paramsFadeActive_ = false;
+    paramsAlpha_ = expanded_ ? 1.0f : 0.0f;
+    if (!expanded_) {
+        retainExpandedForFadeOut_ = false;
+        for (auto& slider : paramSliders_)
+            if (slider)
+                slider->setVisible(false);
+        for (auto& label : paramLabels_)
+            if (label)
+                label->setVisible(false);
+    }
+    applyParamsAlpha();
+    resized();
+    repaint();
+    if (onExpandChanged)
+        onExpandChanged();
+    updateTimerState();
+}
+
+void MiniChainRow::applyParamsAlpha() {
+    for (auto& slider : paramSliders_)
+        if (slider)
+            slider->setAlpha(paramsAlpha_);
+    for (auto& label : paramLabels_)
+        if (label)
+            label->setAlpha(paramsAlpha_);
+}
+
+void MiniChainRow::updateTimerState() {
+    if ((expanded_ && !trackedParamIndices_.empty()) || paramsFadeActive_)
+        startTimerHz(30);
+    else
+        stopTimer();
+}
+
 void MiniChainRow::timerCallback() {
+    advanceParamsFade();
+
     // Keep the sliders in sync with the live parameter values (automation,
     // external changes, etc.). Skips notification to avoid feedback loops.
+    if (!expanded_)
+        return;
+    const auto* devInfo = TrackManager::getInstance().getDevice(trackId_, deviceId_);
+    if (devInfo == nullptr)
+        return;
     for (size_t i = 0; i < paramSliders_.size(); ++i) {
         auto* slider = paramSliders_[i].get();
-        auto* param = (i < trackedParams_.size()) ? trackedParams_[i] : nullptr;
-        if (slider == nullptr || param == nullptr)
+        if (slider == nullptr || slider->isBeingDragged())
             continue;
-        const auto v = static_cast<double>(param->getCurrentNormalisedValue());
-        if (std::abs(slider->getValue() - v) > 1e-4)
+        const int paramIndex = (i < trackedParamIndices_.size()) ? trackedParamIndices_[i] : -1;
+        const auto* pInfo = devInfo->findParameterByIndex(paramIndex);
+        if (pInfo == nullptr)
+            continue;
+        const auto v = static_cast<double>(pInfo->currentValue);
+        if (std::abs(slider->getValue() - v) > 1e-6)
             slider->setValue(v, juce::dontSendNotification);
     }
 }
@@ -289,7 +332,7 @@ void MiniChainRow::resized() {
     }
     nameRect_ = headRect;
 
-    if (expanded_ && !paramSliders_.empty()) {
+    if (isParamsLaidOut() && !paramSliders_.empty()) {
         auto paramsArea = getLocalBounds().withTrimmedTop(kCollapsedHeight + 2);
         for (size_t i = 0; i < paramSliders_.size(); ++i) {
             auto* slider = paramSliders_[i].get();

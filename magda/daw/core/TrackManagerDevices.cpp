@@ -1443,6 +1443,38 @@ void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
     }
 }
 
+void TrackManager::setDeviceMiniMixerParameters(DeviceId deviceId,
+                                                const std::vector<int>& miniParams) {
+    // Check master track first
+    for (auto& element : masterTrack_.chain.fxChainElements) {
+        if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
+            magda::getDevice(element).miniMixerParameters = miniParams;
+            return;
+        }
+    }
+
+    // Search all tracks (and rack chains) for the device.
+    for (auto& track : tracks_) {
+        for (auto& element : track.chain.fxChainElements) {
+            if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
+                magda::getDevice(element).miniMixerParameters = miniParams;
+                return;
+            }
+            if (magda::isRack(element)) {
+                for (auto& chain : magda::getRack(element).chains) {
+                    for (auto& chainElement : chain.elements) {
+                        if (magda::isDevice(chainElement) &&
+                            magda::getDevice(chainElement).id == deviceId) {
+                            magda::getDevice(chainElement).miniMixerParameters = miniParams;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex,
                                            ParameterModelValue value) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {

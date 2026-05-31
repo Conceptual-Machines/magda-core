@@ -5,6 +5,8 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
+#include "audio/plugins/InternalPluginRegistry.hpp"
+#include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 #include "core/TrackManager.hpp"
@@ -69,6 +71,10 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
                     owner_.parameters_[static_cast<size_t>(paramIndex)].isVisible =
                         toggle_.getToggleState();
                     owner_.updateTitle();
+                } else if (column_ == ColumnIds::Mini) {
+                    owner_.parameters_[static_cast<size_t>(paramIndex)].inMiniMixer =
+                        toggle_.getToggleState();
+                    owner_.updateTitle();
                 }
             }
         };
@@ -83,6 +89,10 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
             const auto& param = owner_.parameters_[static_cast<size_t>(paramIndex)];
             if (column_ == ColumnIds::Visible) {
                 toggle_.setToggleState(param.isVisible, juce::dontSendNotification);
+                toggle_.setEnabled(true);
+                toggle_.setVisible(true);
+            } else if (column_ == ColumnIds::Mini) {
+                toggle_.setToggleState(param.inMiniMixer, juce::dontSendNotification);
                 toggle_.setEnabled(true);
                 toggle_.setVisible(true);
             }
@@ -317,6 +327,7 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     auto& header = table_.getHeader();
     header.addColumn("Parameter", ParamName, 150, 100, 300);
     header.addColumn("Visible", Visible, 60, 60, 60);
+    header.addColumn("Mini FX", Mini, 64, 64, 72);
     header.addColumn("Unit", Unit, 90, 70, 120);
     header.addColumn("Range", Range, 180, 120, 300);
 
@@ -452,7 +463,7 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     buildMockParameters();
     rebuildFilteredList();
 
-    setSize(620, 500);
+    setSize(660, 500);
 }
 
 void ParameterConfigDialog::paint(juce::Graphics& g) {
@@ -554,7 +565,7 @@ juce::Component* ParameterConfigDialog::refreshComponentForCell(int rowNumber, i
     if (columnId == ParamName)
         return nullptr;
 
-    if (columnId == Visible) {
+    if (columnId == Visible || columnId == Mini) {
         auto* toggle = dynamic_cast<ToggleCell*>(existingComponent);
         if (toggle == nullptr) {
             toggle = new ToggleCell(*this, rowNumber, columnId);
@@ -585,33 +596,60 @@ juce::Component* ParameterConfigDialog::refreshComponentForCell(int rowNumber, i
 }
 
 void ParameterConfigDialog::updateTitle() {
+    int miniCount = 0;
+    for (const auto& p : parameters_)
+        if (p.inMiniMixer)
+            miniCount++;
+
+    // Internal devices expose only the Mini FX choice (no Visible column).
+    if (isInternalPlugin_) {
+        titleLabel_.setText(pluginName_ + " - " + juce::String(miniCount) + " / " +
+                                juce::String(parameters_.size()) + " mini FX",
+                            juce::dontSendNotification);
+        return;
+    }
+
     int visibleCount = 0;
     for (const auto& p : parameters_)
         if (p.isVisible)
             visibleCount++;
     titleLabel_.setText(pluginName_ + " - " + juce::String(visibleCount) + " / " +
-                            juce::String(parameters_.size()) + " params visible",
+                            juce::String(parameters_.size()) + " params visible, " +
+                            juce::String(miniCount) + " mini FX",
                         juce::dontSendNotification);
 }
 
 void ParameterConfigDialog::buildMockParameters() {
     // Mock parameters that might be in a typical plugin like FabFilter Pro-Q 3
+    auto makeParam = [](juce::String name, float defaultValue, bool visible, juce::String unit,
+                        float min, float max, float centre) {
+        MockParameterInfo param;
+        param.name = std::move(name);
+        param.defaultValue = defaultValue;
+        param.isVisible = visible;
+        param.unit = std::move(unit);
+        param.rangeMin = min;
+        param.rangeMax = max;
+        param.rangeCenter = centre;
+        return param;
+    };
+
     parameters_ = {
-        {"Output Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, {}, {}},
-        {"Mix", 1.0f, true, "%", 0.0f, 100.0f, 50.0f, {}, {}},
-        {"Band 1 Frequency", 0.3f, true, "Hz", 20.0f, 20000.0f, 1000.0f, {}, {}},
-        {"Band 1 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, {}, {}},
-        {"Band 1 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f, {}, {}},
-        {"Band 1 Type", 0.0f, true, "%", 0.0f, 1.0f, 0.5f, {}, {}},
-        {"Band 2 Frequency", 0.5f, true, "Hz", 20.0f, 20000.0f, 1000.0f, {}, {}},
-        {"Band 2 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, {}, {}},
-        {"Band 2 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f, {}, {}},
-        {"Band 3 Frequency", 0.7f, true, "Hz", 20.0f, 20000.0f, 1000.0f, {}, {}},
-        {"Band 3 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, {}, {}},
-        {"Band 3 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f, {}, {}},
-        {"Analyzer Mode", 0.0f, false, "%", 0.0f, 1.0f, 0.5f, {}, {}},
-        {"Auto Gain", 0.0f, true, "%", 0.0f, 1.0f, 0.5f, {}, {}},
-        {"Master Level", 0.8f, true, "dB", -60.0f, 12.0f, 0.0f, {}, {}},
+        makeParam("Output Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f),
+        makeParam("Mix", 1.0f, true, "%", 0.0f, 100.0f, 50.0f),
+        makeParam("Band 1 Frequency", 0.3f, true, "Hz", 20.0f, 20000.0f, 1000.0f),
+        makeParam("Band 1 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f),
+        makeParam("Band 1 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f),
+        makeParam("Band 1 Type", 0.0f, true, "%", 0.0f, 1.0f, 0.5f),
+        makeParam("Band 2 Frequency", 0.5f, true, "Hz", 20.0f, 20000.0f, 1000.0f),
+        makeParam("Band 2 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f),
+        makeParam("Band 2 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f),
+        makeParam("Band 3 Frequency", 0.7f, true, "Hz", 20.0f, 20000.0f, 1000.0f),
+        makeParam("Band 3 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f),
+        makeParam("Band 3 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f),
+        makeParam("Analyzer Mode", 0.0f, false, "%", 0.0f, 1.0f, 0.5f),
+        makeParam("Auto Gain", 0.0f, true, "%", 0.0f, 1.0f, 0.5f),
+        makeParam("Master Level", 0.8f, true, "dB", -60.0f, 12.0f, 0.0f),
     };
 }
 
@@ -638,6 +676,12 @@ void ParameterConfigDialog::showForPlugin(const juce::String& uniqueId,
     // Load parameters from the plugin
     dialog->loadParameters(uniqueId);
 
+    // MAGDA internal devices have full native UIs, so the generic "Visible"
+    // param-grid selection is meaningless for them. Drop that column and expose
+    // only the Mini FX choice (which params surface in the mixer mini-chain row).
+    if (dialog->isInternalPlugin_)
+        dialog->table_.getHeader().removeColumn(ColumnIds::Visible);
+
     // Rebuild filtered list to include all loaded parameters
     dialog->rebuildFilteredList();
 
@@ -660,12 +704,29 @@ void ParameterConfigDialog::showForPlugin(const juce::String& uniqueId,
 }
 
 void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
+    // MAGDA devices are identified by their pluginId (not present in the
+    // external KnownPluginList) via either the internal-device registry or the
+    // compiled-Faust registry. They scan real params and hide the Visible col.
+    isInternalPlugin_ = (magda::daw::audio::findInternalPluginSpec(uniqueId) != nullptr ||
+                         magda::daw::audio::compiled::findCompiledPluginSpec(uniqueId) != nullptr);
+
     // Check if we have cached parameters for this plugin
     auto it = parameterCache_.find(uniqueId);
     if (it != parameterCache_.end()) {
         DBG("Loading cached parameters for " << uniqueId);
         parameters_ = it->second.parameters;
         scanInputs_ = it->second.scanInputs;
+        return;
+    }
+
+    // MAGDA device: scan its live automatable parameters.
+    if (isInternalPlugin_) {
+        if (scanInternalParameters(uniqueId)) {
+            parameterCache_[uniqueId] = {parameters_, scanInputs_};
+            return;
+        }
+        DBG("Internal parameter scan failed for " << uniqueId << " - falling back to mock");
+        buildMockParameters();
         return;
     }
 
@@ -843,9 +904,111 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
     parameterCache_[uniqueId] = {parameters_, scanInputs_};
 }
 
+bool ParameterConfigDialog::scanInternalParameters(const juce::String& pluginId) {
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    auto* tracktionEngine = dynamic_cast<magda::TracktionEngineWrapper*>(audioEngine);
+    if (tracktionEngine == nullptr) {
+        DBG("No TracktionEngineWrapper for internal scan");
+        return false;
+    }
+
+    auto* edit = tracktionEngine->getEdit();
+    if (edit == nullptr) {
+        DBG("No edit for internal scan");
+        return false;
+    }
+
+    // Spin up a throwaway instance just to read its parameter list. It lives in
+    // the edit's plugin cache (never added to a track) and is released when this
+    // Ptr drops at the end of the scan. Internal-registry devices go through
+    // their spec (which handles short ids / fresh-state quirks); compiled-Faust
+    // devices instantiate by xmlTypeName via the engine's createCustomPlugin.
+    namespace te = tracktion::engine;
+    te::Plugin::Ptr plugin;
+    if (const auto* internalSpec = magda::daw::audio::findInternalPluginSpec(pluginId)) {
+        plugin = magda::daw::audio::createInternalPluginFromSpec(*internalSpec, *edit);
+    } else {
+        // Compiled-Faust devices: instantiate from a typed PLUGIN ValueTree
+        // (the bare-string createNewPlugin overload doesn't route custom types).
+        juce::ValueTree pluginState(te::IDs::PLUGIN);
+        pluginState.setProperty(te::IDs::type, pluginId, nullptr);
+        plugin = edit->getPluginCache().createNewPlugin(pluginState);
+    }
+
+    if (plugin == nullptr) {
+        DBG("Failed to create plugin for scan: " << pluginId);
+        return false;
+    }
+
+    parameters_.clear();
+    scanInputs_.clear();
+
+    const float samplePoints[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+
+    auto teParams = plugin->getAutomatableParameters();
+    for (int i = 0; i < teParams.size(); ++i) {
+        auto* param = teParams[i];
+        if (param == nullptr)
+            continue;
+
+        auto name = param->getParameterName();
+        if (name.isEmpty())
+            continue;
+
+        const auto range = param->getValueRange();
+        const float rangeMin = range.getStart();
+        const float rangeMax = range.getEnd();
+
+        MockParameterInfo info;
+        info.name = name;
+        info.isVisible = true;  // unused for internal devices (Visible col hidden)
+        info.defaultValue = param->getDefaultValue().value_or(rangeMin);
+        info.rangeMin = rangeMin;
+        info.rangeMax = rangeMax;
+        info.rangeCenter = (rangeMin + rangeMax) * 0.5f;
+        info.unit = "%";  // Detect can refine units/scale from the display texts
+
+        const int numStates = param->getNumberOfStates();
+        if (numStates == 2)
+            info.scale = magda::ParameterScale::Boolean;
+        else if (numStates > 0 && numStates <= 12)
+            info.scale = magda::ParameterScale::Discrete;
+        else
+            info.scale = magda::ParameterScale::Linear;
+
+        magda::ParameterScanInput scanInput;
+        scanInput.paramIndex = i;
+        scanInput.name = name;
+        scanInput.label = param->getLabel();
+        scanInput.rangeMin = rangeMin;
+        scanInput.rangeMax = rangeMax;
+        scanInput.stateCount = (numStates > 1 && numStates <= 1000) ? numStates : 0;
+
+        // Sample display texts so Detect can infer real units/scales. TE's
+        // valueToString expects a plugin-native (raw) value.
+        for (float sp : samplePoints) {
+            const float raw = rangeMin + (rangeMax - rangeMin) * sp;
+            scanInput.displayTexts.push_back(param->valueToString(raw));
+        }
+        if (info.scale == magda::ParameterScale::Discrete ||
+            info.scale == magda::ParameterScale::Boolean)
+            info.valueTable = scanInput.displayTexts;
+
+        parameters_.push_back(std::move(info));
+        scanInputs_.push_back(std::move(scanInput));
+    }
+
+    DBG("Scanned " << parameters_.size() << " internal params for " << pluginId);
+    return !parameters_.empty();
+}
+
 void ParameterConfigDialog::selectAllParameters() {
+    // Internal devices only expose the Mini FX choice; Select All targets that.
     for (auto& param : parameters_) {
-        param.isVisible = true;
+        if (isInternalPlugin_)
+            param.inMiniMixer = true;
+        else
+            param.isVisible = true;
     }
     table_.updateContent();
     updateTitle();
@@ -880,6 +1043,7 @@ void ParameterConfigDialog::resetParameterConfiguration() {
         param.rangeMax = 1.0f;
         param.rangeCenter = 0.5f;
         param.choices.clear();
+        param.inMiniMixer = false;
     }
 
     rebuildFilteredList();
@@ -926,7 +1090,10 @@ void ParameterConfigDialog::runHeuristicDetection() {
 
 void ParameterConfigDialog::deselectAllParameters() {
     for (auto& param : parameters_) {
-        param.isVisible = false;
+        if (isInternalPlugin_)
+            param.inMiniMixer = false;
+        else
+            param.isVisible = false;
     }
     table_.updateContent();
     updateTitle();
@@ -1121,7 +1288,10 @@ void ParameterConfigDialog::saveParameterConfiguration() {
         auto* paramElem = paramsElem->createNewChildElement("Param");
         paramElem->setAttribute("index", static_cast<int>(i));
         paramElem->setAttribute("name", p.name);
-        paramElem->setAttribute("visible", p.isVisible);
+        // Internal devices intentionally expose no Visible params (only Mini FX),
+        // so never persist visibility for them regardless of the default state.
+        paramElem->setAttribute("visible", !isInternalPlugin_ && p.isVisible);
+        paramElem->setAttribute("mini", p.inMiniMixer);
         paramElem->setAttribute("unit", p.unit);
         paramElem->setAttribute("scale", scaleToXmlString(p.scale));
         paramElem->setAttribute("min", static_cast<double>(p.rangeMin));
@@ -1192,6 +1362,7 @@ void ParameterConfigDialog::loadParameterConfiguration() {
             if (index >= 0 && index < static_cast<int>(parameters_.size())) {
                 auto& p = parameters_[static_cast<size_t>(index)];
                 p.isVisible = paramElem->getBoolAttribute("visible", false);
+                p.inMiniMixer = paramElem->getBoolAttribute("mini", false);
                 if (paramElem->hasAttribute("unit"))
                     p.unit = paramElem->getStringAttribute("unit");
                 if (paramElem->hasAttribute("scale"))
@@ -1261,6 +1432,7 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
 
     // Load parameters from new format or legacy format
     device.visibleParameters.clear();
+    device.miniMixerParameters.clear();
 
     // device.parameters now holds only the plugin's own params — TE's slot
     // dry/wet live in device.wrapperParameters — so the XML's stored index
@@ -1275,9 +1447,13 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
 
             auto xmlName = paramElem->getStringAttribute("name");
             bool visible = paramElem->getBoolAttribute("visible", false);
+            bool mini = paramElem->getBoolAttribute("mini", false);
 
             if (visible && deviceIndex < static_cast<int>(device.parameters.size())) {
                 device.visibleParameters.push_back(deviceIndex);
+            }
+            if (mini && deviceIndex < static_cast<int>(device.parameters.size())) {
+                device.miniMixerParameters.push_back(deviceIndex);
             }
 
             // Apply detection data to device parameters

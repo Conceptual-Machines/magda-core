@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -40,9 +41,10 @@ class PluginPreferences {
 
   private:
     PluginPreferences();
-    void load();
-    void save() const;
+    void loadUnlocked();
+    void saveUnlocked() const;
 
+    mutable std::mutex mutex_;
     std::unordered_set<juce::String> drumGridPlugins_;
     std::unordered_map<juce::String, std::vector<magda::KitRow>> defaultKits_;
 

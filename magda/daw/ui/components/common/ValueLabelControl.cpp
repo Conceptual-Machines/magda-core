@@ -18,6 +18,12 @@ void ValueLabelControl::setShowText(bool show) {
     repaint();
 }
 
+void ValueLabelControl::setEditorBoundsProvider(std::function<juce::Rectangle<int>()> provider) {
+    editorBoundsProvider_ = std::move(provider);
+    if (editor_)
+        editor_->setBounds(editorBounds());
+}
+
 void ValueLabelControl::setRange(double min, double max) {
     minValue_ = min;
     maxValue_ = max;
@@ -132,7 +138,7 @@ void ValueLabelControl::setVertical(bool vertical) {
 void ValueLabelControl::setEditorBoundsOverride(std::optional<juce::Rectangle<int>> bounds) {
     editorBoundsOverride_ = bounds;
     if (editor_)
-        editor_->setBounds(editorBoundsOverride_.value_or(getLocalBounds().reduced(1)));
+        editor_->setBounds(editorBounds());
 }
 
 bool ValueLabelControl::isEditing() const {
@@ -144,7 +150,7 @@ void ValueLabelControl::showEditor(const juce::String& initialText) {
         return;
 
     editor_ = std::make_unique<juce::TextEditor>();
-    editor_->setBounds(editorBoundsOverride_.value_or(getLocalBounds().reduced(1)));
+    editor_->setBounds(editorBounds());
     editor_->setFont(font_);
     editor_->setText(initialText, false);
     editor_->selectAll();
@@ -186,6 +192,17 @@ void ValueLabelControl::finishEditing() {
     if (onEditCommit)
         onEditCommit(text);
     repaint();
+}
+
+juce::Rectangle<int> ValueLabelControl::editorBounds() const {
+    if (editorBoundsProvider_) {
+        auto bounds = editorBoundsProvider_();
+        if (!bounds.isEmpty())
+            return bounds.getIntersection(getLocalBounds());
+    }
+    if (editorBoundsOverride_)
+        return *editorBoundsOverride_;
+    return getLocalBounds().reduced(1);
 }
 
 void ValueLabelControl::paint(juce::Graphics& g) {
@@ -284,7 +301,7 @@ void ValueLabelControl::paint(juce::Graphics& g) {
 
 void ValueLabelControl::resized() {
     if (editor_)
-        editor_->setBounds(editorBoundsOverride_.value_or(getLocalBounds().reduced(1)));
+        editor_->setBounds(editorBounds());
 }
 
 void ValueLabelControl::mouseDown(const juce::MouseEvent& e) {

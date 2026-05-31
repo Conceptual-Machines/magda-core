@@ -67,6 +67,7 @@ class MixerView : public juce::Component,
     void midiDeviceListChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
+    void devicePropertyChanged(const ChainNodePath& devicePath) override;
     void masterChannelChanged() override;
     void trackSelectionChanged(TrackId trackId) override;
 
@@ -208,6 +209,16 @@ class MixerView : public juce::Component,
         std::vector<std::unique_ptr<MiniChainRow>> miniChainRows_;
         void rebuildMiniChainRows();
 
+        // Sync the bypass dot of the row bound to deviceId to its authoritative
+        // state without rebuilding (safe under the synchronous devicePropertyChanged
+        // that a row's own bypass toggle fires). No-op if no row matches.
+        void syncMiniChainRowState(DeviceId deviceId, bool bypassed);
+
+        // Reflect a device's plugin-editor window open state on the matching
+        // row's "open editor" icon (so it un-engages when the window is closed
+        // via its X). No-op if no row matches.
+        void syncMiniChainPluginWindow(DeviceId deviceId, bool isOpen);
+
         // Send area resize handle
         class SendResizeHandle;
         std::unique_ptr<SendResizeHandle> sendResizeHandle_;
@@ -276,7 +287,12 @@ class MixerView : public juce::Component,
         bool hasConfirmedHorizontalDrag_ = false;
         int dragStartX_ = 0;
     };
-    std::unique_ptr<ChannelResizeHandle> channelResizeHandle_;
+    // One resize handle per top-level strip, sitting on each strip's right edge
+    // so a grab point exists between every pair of channel headers (not just at
+    // the far right). All handles drive the same global channel width.
+    std::vector<std::unique_ptr<ChannelResizeHandle>> channelResizeHandles_;
+    void wireChannelResizeHandle(ChannelResizeHandle& handle);
+    void layoutChannelResizeHandles(int containerHeight);
 
     // Left-edge vertical rail of view-toggle buttons (sends, routing, monitor,
     // mini oscilloscope, mini spectrum, mini FX chain). State persisted via

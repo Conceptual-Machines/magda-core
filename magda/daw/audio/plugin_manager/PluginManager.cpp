@@ -210,9 +210,14 @@ te::Plugin::Ptr PluginManager::getPlugin(const ChainNodePath& devicePath) const 
         return it->second.plugin;
 
     // RackSyncManager is still the fallback for rack internals that have not
-    // been mirrored into syncedDevices_ yet.
-    if (auto* innerPlugin = rackSyncManager_.getInnerPlugin(devicePath.getDeviceId()))
-        return innerPlugin;
+    // been mirrored into syncedDevices_ yet. Flat track sections are keyed by
+    // full ChainNodePath; falling back by bare DeviceId can alias master,
+    // post-FX, mixer-analysis, or sibling multi-out devices.
+    if (devicePath.topLevelDeviceId == INVALID_DEVICE_ID && !devicePath.isPostFx() &&
+        !devicePath.isMixerAnalysis()) {
+        if (auto* innerPlugin = rackSyncManager_.getInnerPlugin(devicePath.getDeviceId()))
+            return innerPlugin;
+    }
 
     return nullptr;
 }

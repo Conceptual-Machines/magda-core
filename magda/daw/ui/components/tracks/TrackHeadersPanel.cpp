@@ -3305,12 +3305,40 @@ void TrackHeadersPanel::executeDrop() {
             baseTargetIndex = trackManager.getTrackIndex(targetTrackId);
         }
 
+        // The track just below the drop gap, used to position within a group.
+        TrackId dropBeforeTrackId = INVALID_TRACK_ID;
+        if (dropTargetIndex_ < static_cast<int>(visibleTrackIds_.size()))
+            dropBeforeTrackId = visibleTrackIds_[dropTargetIndex_];
+
         // Move each track in display order, adjusting target index as we go
         int insertAt = baseTargetIndex;
         for (auto trackId : tracksToMove) {
             const auto* track = trackManager.getTrack(trackId);
             if (!track)
                 continue;
+
+            // Reorder within the same group: child display order lives in the
+            // parent's childIds, not the flat track list, so moveTrack alone has
+            // no visible effect. Insert before the sibling under the drop gap
+            // (or append to the group when the gap is past its children).
+            if (targetParentId != INVALID_TRACK_ID && track->parentId == targetParentId) {
+                // If the drop gap sits on a track that is itself part of the
+                // moving selection, the drop lands inside the block being moved.
+                // Reordering relative to a sibling that is also about to move
+                // scrambles the order, so treat it as a no-op.
+                const bool dropInsideSelection = dropBeforeTrackId != INVALID_TRACK_ID &&
+                                                 std::find(tracksToMove.begin(), tracksToMove.end(),
+                                                           dropBeforeTrackId) != tracksToMove.end();
+                if (dropInsideSelection)
+                    continue;
+
+                TrackId beforeChildId = INVALID_TRACK_ID;
+                const auto* beforeTrack = trackManager.getTrack(dropBeforeTrackId);
+                if (beforeTrack != nullptr && beforeTrack->parentId == targetParentId)
+                    beforeChildId = dropBeforeTrackId;
+                trackManager.moveChildWithinGroup(trackId, beforeChildId);
+                continue;
+            }
 
             // Update group membership if needed
             if (track->parentId != targetParentId) {

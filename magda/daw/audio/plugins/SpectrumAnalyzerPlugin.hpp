@@ -12,8 +12,7 @@ namespace magda::daw::audio {
 class SpectrumAnalyzerPlugin : public AnalysisTapPlugin {
   public:
     explicit SpectrumAnalyzerPlugin(const te::PluginCreationInfo& info)
-        : AnalysisTapPlugin(info, 8192,  // one FFT frame (max 4096) + headroom
-                            magda::Config::getInstance().getSpectrumDefaults().traceColour) {
+        : AnalysisTapPlugin(info, 8192) {  // one FFT frame (max 4096) + headroom
         const auto d = magda::Config::getInstance().getSpectrumDefaults();
         auto* um = getUndoManager();
         fftOrderValue.referTo(state, juce::Identifier("fftOrder"), um, d.fftOrder);  // 11 = 2048
