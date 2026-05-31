@@ -10,6 +10,7 @@ namespace magda {
 
 namespace {
 const juce::URL kConceptualMachinesUrl("https://conceptualmachines.co.uk");
+const juce::String kConceptualMachinesCopyright("(C) 2026 Conceptual Machines");
 }  // namespace
 
 // =============================================================================
@@ -36,6 +37,10 @@ class SplashScreen::ContentComponent : public juce::Component {
                 juce::String::fromUTF8(BinaryData::conceptualmachinesbadge_svg,
                                        BinaryData::conceptualmachinesbadge_svgSize))) {
             conceptualMachinesBadge_ = juce::Drawable::createFromSVG(*xml);
+            if (conceptualMachinesBadge_) {
+                conceptualMachinesBadge_->replaceColour(juce::Colour(0xFFE7DFD2),
+                                                        juce::Colour(DarkTheme::TEXT_DIM));
+            }
         }
 
         // Load Tracktion Engine logo
@@ -111,17 +116,6 @@ class SplashScreen::ContentComponent : public juce::Component {
         g.setColour(juce::Colour(DarkTheme::ACCENT_BLUE));
         g.drawText(statusText_, bounds.removeFromTop(18), juce::Justification::centred);
 
-        // Conceptual Machines badge
-        bounds.removeFromTop(8);
-        if (conceptualMachinesBadge_) {
-            badgeBounds_ = bounds.removeFromTop(70).withSizeKeepingCentre(62, 62);
-            conceptualMachinesBadge_->drawWithin(g, badgeBounds_.toFloat(),
-                                                 juce::RectanglePlacement::centred, 1.0f);
-        } else {
-            badgeBounds_ = {};
-            bounds.removeFromTop(70);
-        }
-
         // Credits line
         bounds.removeFromTop(6);
         auto creditsArea = bounds.reduced(10, 0);
@@ -195,6 +189,21 @@ class SplashScreen::ContentComponent : public juce::Component {
         if (faustLogo_)
             faustLogo_->drawWithin(g, centred.removeFromLeft(faustLogoW).toFloat(),
                                    juce::RectanglePlacement::centred, 1.0f);
+
+        // Conceptual Machines badge sits under the attribution row.
+        creditsArea.removeFromTop(6);
+        if (conceptualMachinesBadge_) {
+            auto linkArea = creditsArea.removeFromTop(56).withSizeKeepingCentre(170, 56);
+            auto badgeArea = linkArea.removeFromTop(38).withSizeKeepingCentre(36, 36);
+            conceptualMachinesBadge_->drawWithin(g, badgeArea.toFloat(),
+                                                 juce::RectanglePlacement::centred, 1.0f);
+            g.setFont(fm.getUIFont(9.0f));
+            g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
+            g.drawText(kConceptualMachinesCopyright, linkArea, juce::Justification::centred);
+            badgeBounds_ = badgeArea.getUnion(linkArea);
+        } else {
+            badgeBounds_ = {};
+        }
     }
 
     void setStatus(const juce::String& text) {

@@ -10,6 +10,7 @@ namespace magda {
 
 namespace {
 const juce::URL kConceptualMachinesUrl("https://conceptualmachines.co.uk");
+const juce::String kConceptualMachinesCopyright("(C) 2026 Conceptual Machines");
 }  // namespace
 
 // =============================================================================
@@ -35,6 +36,10 @@ class AboutDialog::ContentComponent : public juce::Component {
                 juce::String::fromUTF8(BinaryData::conceptualmachinesbadge_svg,
                                        BinaryData::conceptualmachinesbadge_svgSize))) {
             conceptualMachinesBadge_ = juce::Drawable::createFromSVG(*xml);
+            if (conceptualMachinesBadge_) {
+                conceptualMachinesBadge_->replaceColour(juce::Colour(0xFFE7DFD2),
+                                                        juce::Colour(DarkTheme::TEXT_DIM));
+            }
         }
 
         // Load Tracktion Engine logo
@@ -112,16 +117,6 @@ class AboutDialog::ContentComponent : public juce::Component {
         g.drawText(tr("about.version_prefix") + MAGDA_VERSION, bounds.removeFromTop(20),
                    juce::Justification::centred);
 
-        // Conceptual Machines badge
-        bounds.removeFromTop(12);
-        if (conceptualMachinesBadge_) {
-            auto badgeArea = bounds.removeFromTop(72).withSizeKeepingCentre(64, 64);
-            conceptualMachinesBadge_->drawWithin(g, badgeArea.toFloat(),
-                                                 juce::RectanglePlacement::centred, 1.0f);
-        } else {
-            bounds.removeFromTop(72);
-        }
-
         // Credits line
         bounds.removeFromTop(10);
         auto creditsArea = bounds.reduced(10, 0);
@@ -195,6 +190,18 @@ class AboutDialog::ContentComponent : public juce::Component {
         if (faustLogo_)
             faustLogo_->drawWithin(g, centred.removeFromLeft(faustLogoW).toFloat(),
                                    juce::RectanglePlacement::centred, 1.0f);
+
+        // Conceptual Machines badge sits under the attribution row.
+        creditsArea.removeFromTop(6);
+        if (conceptualMachinesBadge_) {
+            auto badgeArea = creditsArea.removeFromTop(42).withSizeKeepingCentre(38, 38);
+            conceptualMachinesBadge_->drawWithin(g, badgeArea.toFloat(),
+                                                 juce::RectanglePlacement::centred, 1.0f);
+        }
+        g.setFont(fm.getUIFont(9.0f));
+        g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
+        g.drawText(kConceptualMachinesCopyright, creditsArea.removeFromTop(16),
+                   juce::Justification::centred);
     }
 
     void resized() override {
@@ -209,9 +216,13 @@ class AboutDialog::ContentComponent : public juce::Component {
             bounds.removeFromTop(40);   // title
             bounds.removeFromTop(24);   // subtitle
             bounds.removeFromTop(20);   // version
-            bounds.removeFromTop(12);
+            bounds.removeFromTop(10);   // credits top gap
+            auto creditsArea = bounds.reduced(10, 0);
+            creditsArea.removeFromTop(6);   // divider padding
+            creditsArea.removeFromTop(20);  // attribution row
+            creditsArea.removeFromTop(6);
             conceptualMachinesLink_->setBounds(
-                bounds.removeFromTop(72).withSizeKeepingCentre(64, 64));
+                creditsArea.removeFromTop(58).withSizeKeepingCentre(170, 58));
         }
     }
 
