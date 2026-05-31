@@ -1,10 +1,16 @@
 #pragma once
 
+// clang-format off
+// Order is load-bearing and MUST NOT be sorted: the internal header
+// tracktion_ExternalAutomatableParameter.h is not self-contained (it needs
+// juce::AudioProcessorParameter + AutomatableParameter from the umbrella) and is
+// not exposed via the module umbrella. With SortIncludes on, clang-format would
+// sort "plugins/..." ahead of "tracktion_engine.h" and break the build, so this
+// block is fenced off. We need the internal header for the public
+// valueChangedByPlugin(), which refreshes TE's parameter cache after a restore.
 #include <tracktion_engine/tracktion_engine.h>
-// Internal TE header: ExternalAutomatableParameter is not exposed via the module
-// umbrella, but its public valueChangedByPlugin() is how we refresh TE's parameter
-// cache from a synth after restoring its native state chunk.
 #include <tracktion_engine/plugins/external/tracktion_ExternalAutomatableParameter.h>
+// clang-format on
 
 namespace magda {
 
@@ -20,10 +26,11 @@ namespace magda {
  * with the plugin so the graph build is a no-op. No-op for internal plugins / no
  * instance.
  *
- * This is the single source of truth for the parameter clobber: it does NOT
- * depend on call ordering relative to ExternalPluginProcessor::syncFromDeviceInfo,
- * because syncFromDeviceInfo deliberately does not write the saved per-parameter
- * array while a chunk is present (see ExternalPluginProcessor.cpp).
+ * This is the final step of the baseline -> overlay -> refresh restore sequence
+ * (see restoreDeviceStateWithChunkOverlay in PluginManagerSync.cpp):
+ * syncFromDeviceInfo applies the saved parameter array as a baseline, the native
+ * chunk is applied as the authoritative overlay, then this refreshes TE's cache
+ * to match the resulting plugin state.
  */
 inline void refreshExternalPluginParameterCache(tracktion::engine::Plugin* plugin) {
     auto* ext = dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin);
