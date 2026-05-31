@@ -1,11 +1,16 @@
 #include <juce_core/juce_core.h>
-#include <tracktion_engine/plugins/external/tracktion_ExternalAutomatableParameter.h>
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <vector>
 
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
+// Pulls in ExternalAutomatableParameter (used directly below) in the correct
+// order behind the tracktion_engine umbrella. Do NOT include the internal
+// tracktion_ExternalAutomatableParameter.h header directly here: it is not
+// self-contained, and clang-format will sort it ahead of the umbrella, breaking
+// the build.
+#include "magda/daw/audio/plugin_manager/ExternalPluginStateUtil.hpp"
 #include "magda/daw/audio/plugin_manager/PluginManager.hpp"
 #include "magda/daw/core/DeviceInfo.hpp"
 #include "magda/daw/core/ParameterInfo.hpp"
