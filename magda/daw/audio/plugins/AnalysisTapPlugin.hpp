@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <cstdint>
 #include <vector>
 
 #include "analysis/AudioTapBuffer.hpp"
@@ -55,13 +54,7 @@ class AnalysisTapPlugin : public te::Plugin {
         return traceColourValue_.get();
     }
     void setTraceColourIndex(int index) {
-        const auto oldIndex = traceColourValue_.get();
         traceColourValue_ = index;
-        DBG("[AnalyzerColour] setTraceColour plugin="
-            << getName() << " ptr=0x"
-            << juce::String::toHexString(
-                   static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(this)))
-            << " old=" << oldIndex << " new=" << traceColourValue_.get());
     }
 
     void initialise(const te::PluginInitialisationInfo& info) override {

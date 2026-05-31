@@ -388,8 +388,10 @@ void AudioBridge::deviceParameterChanged(const ChainNodePath& devicePath, int pa
 
     processor->setParameterByIndex(paramIndex, ParameterModelValue{newValue});
 
-    // Forward to automation recording engine
-    automationRecording_.onDeviceParameterChanged(devicePath.getDeviceId(), paramIndex, newValue);
+    // Forward to automation recording engine. Pass the full path: under
+    // section-local IDs the bare DeviceId is ambiguous (FX and post-FX devices
+    // share ids), so the recorder must record against the exact section.
+    automationRecording_.onDeviceParameterChanged(devicePath, paramIndex, newValue);
 }
 
 void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
@@ -410,10 +412,14 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
             tePlugin->setEnabled(!device->bypassed);
     }
 
-    // Wrapped instruments consume MIDI while active. When bypassed, disable the
-    // wrapper rack itself so TE skips it and passes MIDI to later devices.
-    if (auto* rackInstance = pluginManager_.getInstrumentRackManager().getRackInstance(deviceId)) {
-        rackInstance->setEnabled(!device->bypassed);
+    // Wrapped instruments consume MIDI while active. Only top-level devices own
+    // instrument wrapper racks; post-fx/mixer-analysis ids are section-local and
+    // can overlap with a top-level instrument id.
+    if (devicePath.getType() == ChainNodeType::TopLevelDevice) {
+        if (auto* rackInstance =
+                pluginManager_.getInstrumentRackManager().getRackInstance(deviceId)) {
+            rackInstance->setEnabled(!device->bypassed);
+        }
     }
 
     // Push gain to the audio-graph atomic so DeviceGainNode picks it up.
@@ -423,7 +429,6 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     // through the plugin (#1189). The user's gainValue is preserved on DeviceInfo
     // and gets re-pushed when the device is re-enabled.
     deviceMetering_.setGain(devicePath, device->bypassed ? 1.0f : device->gainValue);
-    deviceMetering_.setGain(deviceId, device->bypassed ? 1.0f : device->gainValue);
 
     // When bypass changes, resync modifiers so they are removed/restored
     pluginManager_.resyncDeviceModifiers(devicePath.trackId);

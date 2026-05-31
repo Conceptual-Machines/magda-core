@@ -2113,12 +2113,15 @@ void TrackChainContent::runAiGainStagingPass() {
     }
     const float target = gsm.getTargetDb();
 
-    // Map the manager snapshot onto the agent's input.
+    // Map the manager snapshot onto the agent's input. The agent identifies
+    // devices by list index (DeviceId is section-local and not unique), so keep
+    // a parallel paths_ vector to translate decisions back to a concrete device.
     std::vector<magda::GainStagingAgent::DeviceLevel> levels;
+    std::vector<magda::ChainNodePath> paths;
     levels.reserve(snapshot.size());
+    paths.reserve(snapshot.size());
     for (const auto& s : snapshot) {
         magda::GainStagingAgent::DeviceLevel lvl;
-        lvl.deviceId = s.deviceId;
         lvl.name = s.name.toStdString();
         lvl.pluginId = s.pluginId.toStdString();
         lvl.isInstrument = s.isInstrument;
@@ -2128,6 +2131,7 @@ void TrackChainContent::runAiGainStagingPass() {
         for (const auto& p : s.params)
             lvl.params.push_back({p.name.toStdString(), (double)p.value, p.unit.toStdString()});
         levels.push_back(std::move(lvl));
+        paths.push_back(s.path);
     }
 
     aiProcessing_ = true;
@@ -2138,7 +2142,7 @@ void TrackChainContent::runAiGainStagingPass() {
 
     // The LLM call blocks; run it off the message thread and apply on return.
     juce::Component::SafePointer<TrackChainContent> safe(this);
-    std::thread([safe, levels = std::move(levels), target]() {
+    std::thread([safe, levels = std::move(levels), paths = std::move(paths), target]() {
         magda::GainStagingAgent agent;
         auto result = agent.generate(target, levels);
 
@@ -2151,11 +2155,8 @@ void TrackChainContent::runAiGainStagingPass() {
                 reasoning << juce::String(result.summary) << "\n\n";
             for (const auto& d : result.decisions) {
                 juce::String name;
-                for (const auto& lvl : levels)
-                    if (lvl.deviceId == d.deviceId) {
-                        name = juce::String(lvl.name);
-                        break;
-                    }
+                if (d.index >= 0 && d.index < (int)levels.size())
+                    name = juce::String(levels[(size_t)d.index].name);
                 reasoning << name << ":  " << (d.newGainDb >= 0.0f ? "+" : "")
                           << juce::String(d.newGainDb, 1) << " dB";
                 if (!d.reason.empty())
@@ -2164,7 +2165,7 @@ void TrackChainContent::runAiGainStagingPass() {
             }
         }
 
-        juce::MessageManager::callAsync([safe, result, reasoning]() {
+        juce::MessageManager::callAsync([safe, result, reasoning, paths]() {
             if (safe == nullptr)
                 return;
             safe->aiProcessing_ = false;
@@ -2175,9 +2176,10 @@ void TrackChainContent::runAiGainStagingPass() {
                 juce::Logger::writeToLog("[GainStaging] AI error: " + juce::String(result.error));
                 m.reset();  // drop the frozen capture
             } else {
-                std::vector<std::pair<magda::DeviceId, float>> moves;
+                std::vector<std::pair<magda::ChainNodePath, float>> moves;
                 for (const auto& d : result.decisions)
-                    moves.push_back({d.deviceId, d.newGainDb});
+                    if (d.index >= 0 && d.index < (int)paths.size())
+                        moves.push_back({paths[(size_t)d.index], d.newGainDb});
                 m.applyAiMoves(moves);
                 juce::Logger::writeToLog("[GainStaging] AI: " + juce::String(result.summary));
             }

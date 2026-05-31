@@ -34,7 +34,8 @@ class ParameterManager {
      */
     bool pushChange(const ChainNodePath& devicePath, int paramIndex, float value) {
         ParameterChange change;
-        change.devicePath = devicePath;
+        if (!change.setDevicePath(devicePath))
+            return false;
         change.paramIndex = paramIndex;
         change.value = value;
         return queue_.push(change);

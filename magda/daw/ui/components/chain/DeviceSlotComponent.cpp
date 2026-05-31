@@ -273,7 +273,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         magda::TrackManager::getInstance().setDeviceGainDb(
             nodePath_, static_cast<float>(gainLabel_.getValue()));
         // A manual gain edit supersedes any gain-staging mark on this device.
-        magda::GainStagingManager::getInstance().clearApplied(device_.id);
+        magda::GainStagingManager::getInstance().clearApplied(nodePath_);
     };
     addAndMakeVisible(gainLabel_);
 
@@ -327,7 +327,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         magda::TrackManager::getInstance().setDeviceGainDb(
             nodePath_, static_cast<float>(gainSlider_->getValue()));
         // A manual gain edit supersedes any gain-staging mark on this device.
-        magda::GainStagingManager::getInstance().clearApplied(device_.id);
+        magda::GainStagingManager::getInstance().clearApplied(nodePath_);
     };
     addAndMakeVisible(*gainSlider_);
 
@@ -828,9 +828,6 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // stays hidden on initial paint even when it should be on.
     if (mixKnob_) {
         const bool show = hasWrapperMixPair();
-        DBG("[MixKnob.ctor] device='" << device.name
-                                      << "' wrapperParams=" << (int)device.wrapperParameters.size()
-                                      << " hasPair=" << (int)show);
         mixKnob_->setVisible(show);
         if (show)
             syncMixKnobFromDevice();
@@ -883,8 +880,7 @@ void DeviceSlotComponent::timerCallback() {
     } else {
         // Poll device peak levels for right-side meter strip
         magda::DeviceMeteringManager::DeviceMeterData data;
-        if (bridge->getDeviceMetering().getLatestLevels(nodePath_, data) ||
-            bridge->getDeviceMetering().getLatestLevels(device_.id, data)) {
+        if (bridge->getDeviceMetering().getLatestLevels(nodePath_, data)) {
             levelMeter_.setLevels(data.peakL, data.peakR);
         }
     }
@@ -1268,21 +1264,11 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     if (mixKnob_) {
         const bool show = hasWrapperMixPair();
         const bool wasVisible = mixKnob_->isVisible();
-        DBG("[MixKnob.update] device='"
-            << device.name << "' wrapperParams=" << (int)device.wrapperParameters.size()
-            << " hasPair=" << (int)show << " wasVisible=" << (int)wasVisible << " parentVisible="
-            << (int)isVisible() << " bounds=" << mixKnob_->getBounds().toString());
-        for (const auto& p : device.wrapperParameters) {
-            DBG("[MixKnob.update]   wrap idx=" << p.paramIndex << " name='" << p.name << "' role="
-                                               << (int)p.wrapperRole << " val=" << p.currentValue);
-        }
         mixKnob_->setVisible(show);
         if (show)
             syncMixKnobFromDevice();
         if (show != wasVisible)
             resized();  // setVisible alone doesn't re-run layoutMeterStrip
-    } else {
-        DBG("[MixKnob.update] mixKnob_ is null on device '" << device.name << "'");
     }
 
     // Plugin instance may have just become available (or its program list changed
@@ -1439,9 +1425,9 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
                                      onButton_.get(), exportClipButton_.get()});
 }
 
-void DeviceSlotComponent::deviceGainStageChanged(magda::DeviceId deviceId,
+void DeviceSlotComponent::deviceGainStageChanged(const magda::ChainNodePath& devicePath,
                                                  const magda::DeviceGainStageInfo& info) {
-    if (deviceId != device_.id)
+    if (devicePath != nodePath_)
         return;
 
     // The gain controls don't refresh on programmatic gain changes, so when a
@@ -1459,7 +1445,7 @@ void DeviceSlotComponent::deviceGainStageChanged(magda::DeviceId deviceId,
     if (auto* gs = dynamic_cast<GainSliderWithMeterTooltip*>(gainSlider_.get())) {
         auto& gsm = magda::GainStagingManager::getInstance();
         const bool collecting = info.state == magda::DeviceGainStageState::Collecting;
-        const float* applied = gsm.getAppliedDelta(device_.id);
+        const float* applied = gsm.getAppliedDelta(nodePath_);
         juce::String line;
         if (collecting) {
             line = "Gain staging: capturing";
@@ -1482,12 +1468,12 @@ void DeviceSlotComponent::paintOverChildren(juce::Graphics& g) {
     NodeComponent::paintOverChildren(g);
 
     auto& gsm = magda::GainStagingManager::getInstance();
-    const auto* info = gsm.getDeviceInfo(device_.id);
+    const auto* info = gsm.getDeviceInfo(nodePath_);
     const bool collecting =
         info != nullptr && info->state == magda::DeviceGainStageState::Collecting;
     // Persistent record of the move staging left on this device — outlives the
     // pass so the user can see which devices were touched.
-    const float* applied = gsm.getAppliedDelta(device_.id);
+    const float* applied = gsm.getAppliedDelta(nodePath_);
 
     if (collecting) {
         // During analysis: highlight the WHOLE device and read out the live

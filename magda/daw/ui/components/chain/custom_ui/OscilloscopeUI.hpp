@@ -53,9 +53,12 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
+    void visibilityChanged() override;
+    void parentHierarchyChanged() override;
 
   private:
     void timerCallback() override;
+    void updateTimerState();
     void applyTimebase();      // recompute displaySamples_ / readCount_ from timebase + sample rate
     void updateTimeReadout();  // format the slider value into the themed value label
     void updateControlVisibility();
@@ -84,6 +87,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     std::vector<float> window_;
     int displaySamples_ = 1024;
     int readCount_ = 1024 + kTriggerSearch;
+    size_t lastTapWritePosition_ = 0;
 
     juce::Slider timeSlider_;
     juce::Label timeLabel_;
@@ -105,6 +109,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     std::unique_ptr<AnalyzerWindow> popoutWindow_;
     OscilloscopeUI* popoutUI_ = nullptr;
 
+    static constexpr int kTimerHz = 60;
     static constexpr int kCompactControlsFadeMs = 450;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscilloscopeUI)

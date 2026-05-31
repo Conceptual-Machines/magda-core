@@ -80,8 +80,10 @@ class GainStagingListener {
     virtual void gainStagingModeChanged([[maybe_unused]] GainStagingMode mode,
                                         [[maybe_unused]] TrackId trackId) {}
 
-    /** A single device's staging state changed. */
-    virtual void deviceGainStageChanged([[maybe_unused]] DeviceId deviceId,
+    /** A single device's staging state changed. Identified by full path: under
+     *  section-local DeviceIds a bare id is ambiguous (an FX device and a
+     *  post-FX device on one track routinely share an id). */
+    virtual void deviceGainStageChanged([[maybe_unused]] const ChainNodePath& devicePath,
                                         [[maybe_unused]] const DeviceGainStageInfo& info) {}
 };
 
@@ -170,6 +172,7 @@ class GainStagingManager : private juce::Timer {
     /** One device's captured state, handed to the AI agent. */
     struct DeviceSnapshot {
         DeviceId deviceId = INVALID_DEVICE_ID;
+        ChainNodePath path;  // unique device identity (deviceId alone is ambiguous)
         juce::String name;
         juce::String pluginId;
         bool isInstrument = false;
@@ -185,12 +188,13 @@ class GainStagingManager : private juce::Timer {
     std::vector<DeviceSnapshot> finishCaptureForAi();
 
     /** Apply externally-decided output gains (the AI result) as one undoable
-     *  command, marking the moved devices, then clear the frozen capture. */
-    void applyAiMoves(const std::vector<std::pair<DeviceId, float>>& deviceNewGainDb);
+     *  command, marking the moved devices, then clear the frozen capture.
+     *  Keyed by path so post-FX and FX devices that share an id stay distinct. */
+    void applyAiMoves(const std::vector<std::pair<ChainNodePath, float>>& deviceNewGainDb);
 
     /** Per-device staging info for the *current* pass, or nullptr. Transient:
      *  cleared by reset(). */
-    const DeviceGainStageInfo* getDeviceInfo(DeviceId deviceId) const;
+    const DeviceGainStageInfo* getDeviceInfo(const ChainNodePath& devicePath) const;
 
     // ------------------------------------------------------------------
     // Persistent applied marks
@@ -202,13 +206,13 @@ class GainStagingManager : private juce::Timer {
     // device, or on undo.
 
     /** Applied gain delta (dB) for a device, or nullptr if none is recorded. */
-    const float* getAppliedDelta(DeviceId deviceId) const;
+    const float* getAppliedDelta(const ChainNodePath& devicePath) const;
 
     /** Record an applied move (called by the staging command on do/redo). */
-    void markApplied(DeviceId deviceId, float deltaDb);
+    void markApplied(const ChainNodePath& devicePath, float deltaDb);
 
     /** Drop a device's applied mark (manual gain edit, restage, or undo). */
-    void clearApplied(DeviceId deviceId);
+    void clearApplied(const ChainNodePath& devicePath);
 
     // ------------------------------------------------------------------
     // Listeners
@@ -237,7 +241,7 @@ class GainStagingManager : private juce::Timer {
     bool readDevicePeakLinear(const ChainNodePath& devicePath, float& peakLinearOut) const;
 
     void notifyMode();
-    void notifyDevice(DeviceId deviceId);
+    void notifyDevice(const ChainNodePath& devicePath);
 
     GainStagingMode mode_ = GainStagingMode::Idle;
     TrackId activeTrackId_ = INVALID_TRACK_ID;
@@ -245,8 +249,8 @@ class GainStagingManager : private juce::Timer {
     bool useAi_ = false;
 
     std::vector<StagedDevice> staged_;
-    std::map<DeviceId, DeviceGainStageInfo> info_;  // transient: current pass
-    std::map<DeviceId, float> appliedDeltas_;       // persistent: applied marks
+    std::map<ChainNodePath, DeviceGainStageInfo> info_;  // transient: current pass
+    std::map<ChainNodePath, float> appliedDeltas_;       // persistent: applied marks
     std::vector<GainStagingListener*> listeners_;
 };
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "../daw/core/Config.hpp"
+#include "../daw/core/GainStagingManager.hpp"
 #include "llm_client_factory.hpp"
 #include "llm_config_utils.hpp"
 #include "llm_presets.hpp"
@@ -81,9 +82,10 @@ const char* GainStagingAgent::getSystemPrompt() {
 juce::String GainStagingAgent::buildUserMessage(float targetPeakDb,
                                                 const std::vector<DeviceLevel>& devices) const {
     juce::Array<juce::var> arr;
-    for (const auto& d : devices) {
+    for (int i = 0; i < (int)devices.size(); ++i) {
+        const auto& d = devices[(size_t)i];
         auto* obj = new juce::DynamicObject();
-        obj->setProperty("id", (int)d.deviceId);
+        obj->setProperty("id", i);  // list index (signal order), unique handle
         obj->setProperty("name", juce::String(d.name));
         obj->setProperty("kind", juce::String(classifyKind(d)));
         obj->setProperty("peakDb", juce::String(d.capturedPeakDb, 1).getDoubleValue());
@@ -116,9 +118,7 @@ void GainStagingAgent::parseDecisions(const juce::String& rawText,
                                       Result& result) const {
     result.rawOutput = rawText.toStdString();
 
-    std::vector<DeviceId> known;
-    for (const auto& d : devices)
-        known.push_back(d.deviceId);
+    const int deviceCount = (int)devices.size();
 
     auto parsed = juce::JSON::parse(stripToJsonObject(rawText));
     auto* obj = parsed.getDynamicObject();
@@ -138,13 +138,14 @@ void GainStagingAgent::parseDecisions(const juce::String& rawText,
             if (d == nullptr)
                 continue;
 
-            const auto id = (DeviceId)(int)d->getProperty("id");
-            if (std::find(known.begin(), known.end(), id) == known.end())
-                continue;  // ignore ids the model invented
+            const int index = (int)d->getProperty("id");
+            if (index < 0 || index >= deviceCount)
+                continue;  // ignore indices the model invented
 
             Decision dec;
-            dec.deviceId = id;
-            dec.newGainDb = juce::jlimit(-60.0f, 12.0f, (float)(double)d->getProperty("gainDb"));
+            dec.index = index;
+            dec.newGainDb = juce::jlimit(kGainStageMinGainDb, kGainStageMaxGainDb,
+                                         (float)(double)d->getProperty("gainDb"));
             if (auto reason = d->getProperty("reason"); reason.isString())
                 dec.reason = reason.toString().toStdString();
             result.decisions.push_back(dec);

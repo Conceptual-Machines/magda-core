@@ -177,6 +177,35 @@ void remapDuplicatedElements(std::vector<ChainElement>& elements, const ChainNod
     }
 }
 
+ChainNodePath childDevicePath(const ChainNodePath& parentPath, DeviceId deviceId) {
+    return parentPath.isTrackLevel ? ChainNodePath::topLevelDevice(parentPath.trackId, deviceId)
+                                   : parentPath.withDevice(deviceId);
+}
+
+ChainNodePath childRackPath(const ChainNodePath& parentPath, RackId rackId) {
+    return parentPath.isTrackLevel ? ChainNodePath::rack(parentPath.trackId, rackId)
+                                   : parentPath.withRack(rackId);
+}
+
+void setChainElementsBypassed(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
+                              bool bypassed, std::vector<ChainNodePath>& affectedDevices) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            device.bypassed = bypassed;
+            affectedDevices.push_back(childDevicePath(parentPath, device.id));
+            continue;
+        }
+
+        auto& rack = magda::getRack(element);
+        rack.bypassed = bypassed;
+        const auto rackPath = childRackPath(parentPath, rack.id);
+        for (auto& chain : rack.chains)
+            setChainElementsBypassed(chain.elements, rackPath.withChain(chain.id), bypassed,
+                                     affectedDevices);
+    }
+}
+
 }  // namespace
 
 TrackManager& TrackManager::getInstance() {
@@ -545,9 +574,14 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
     newTrack.name = it->name + " Copy";
     newTrack.childIds.clear();  // Don't duplicate children references
 
-    // Content-only duplication: strip the FX chain so the duplicate starts clean.
+    // Content-only duplication: strip every device section so the duplicate
+    // starts clean. Post-FX and mixer-analysis are flat DeviceInfo lists that
+    // the copy above brought along, so they must be cleared too - otherwise a
+    // "no plugins / racks / chain elements" duplicate silently keeps them.
     if (!includeDevices) {
         newTrack.chain.fxChainElements.clear();
+        newTrack.chain.postFxChainElements.clear();
+        newTrack.chain.mixerAnalysisElements.clear();
     }
 
     // Reassign all device/rack/chain IDs so the duplicate gets its own
@@ -583,6 +617,15 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
                          remap);
     remapDuplicatedElements(newTrack.chain.fxChainElements, ChainNodePath::trackLevel(newTrack.id),
                             remap);
+
+    // Flat post-FX / mixer-analysis sections each carry their own section-local
+    // DeviceId counter, so the copied devices must be re-stamped with fresh ids
+    // from the right counter (sharing ids = sharing audio-engine plugin slots).
+    // Empty when !includeDevices, so these loops are no-ops in that case.
+    for (auto& element : newTrack.chain.postFxChainElements)
+        element.device.id = nextPostFxDeviceId_++;
+    for (auto& element : newTrack.chain.mixerAnalysisElements)
+        element.device.id = nextMixerAnalysisDeviceId_++;
 
     // Log all device IDs after reassignment
     DBG("duplicateTrack: original trackId=" << trackId << " -> newTrackId=" << newTrack.id);
@@ -1521,29 +1564,11 @@ void TrackManager::setDeviceBypassedByPath(const ChainNodePath& devicePath, bool
 
 void TrackManager::setChainBypassed(TrackId trackId, bool bypassed) {
     if (auto* track = getTrack(trackId)) {
-        std::vector<DeviceId> affectedDevices;
-        for (auto& element : track->chain.fxChainElements) {
-            if (magda::isDevice(element)) {
-                auto& device = magda::getDevice(element);
-                device.bypassed = bypassed;
-                affectedDevices.push_back(device.id);
-            } else if (magda::isRack(element)) {
-                auto& rack = magda::getRack(element);
-                rack.bypassed = bypassed;
-                for (auto& chain : rack.chains) {
-                    for (auto& chainElement : chain.elements) {
-                        if (magda::isDevice(chainElement)) {
-                            auto& device = magda::getDevice(chainElement);
-                            device.bypassed = bypassed;
-                            affectedDevices.push_back(device.id);
-                        }
-                    }
-                }
-            }
-        }
-        for (auto deviceId : affectedDevices) {
-            notifyDevicePropertyChanged(ChainNodePath::topLevelDevice(trackId, deviceId));
-        }
+        std::vector<ChainNodePath> affectedDevices;
+        setChainElementsBypassed(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
+                                 bypassed, affectedDevices);
+        for (const auto& devicePath : affectedDevices)
+            notifyDevicePropertyChanged(devicePath);
         notifyTrackDevicesChanged(trackId);
     }
 }

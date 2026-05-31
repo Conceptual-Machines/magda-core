@@ -5,7 +5,7 @@
 
 #include <map>
 
-#include "../../core/TypeIds.hpp"
+#include "../../core/ChainNodePath.hpp"
 
 namespace magda {
 
@@ -73,9 +73,9 @@ class InstrumentRackManager {
      * @param innerPlugin The actual instrument plugin inside the rack
      * @param rackInstance The RackInstance plugin on the track
      */
-    void recordWrapping(DeviceId deviceId, te::RackType::Ptr rackType, te::Plugin::Ptr innerPlugin,
-                        te::Plugin::Ptr rackInstance, bool isMultiOut = false,
-                        int numOutputChannels = 2);
+    void recordWrapping(const ChainNodePath& devicePath, te::RackType::Ptr rackType,
+                        te::Plugin::Ptr innerPlugin, te::Plugin::Ptr rackInstance,
+                        bool isMultiOut = false, int numOutputChannels = 2);
 
     /**
      * @brief Get the inner instrument plugin for parameter/window access

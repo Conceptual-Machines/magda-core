@@ -149,7 +149,6 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
                                         const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
         if (track->type == TrackType::Group && device.isInstrument) {
-            DBG("Cannot add instrument plugin to group track");
             return INVALID_DEVICE_ID;
         }
     }
@@ -159,8 +158,6 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
         stampDefaultKitIfMissing(newDevice);
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
-        DBG("Added device: " << newDevice.name << " (id=" << newDevice.id << ") to chain "
-                             << chainId);
         return newDevice.id;
     }
     return INVALID_DEVICE_ID;
@@ -170,15 +167,12 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
                                               const DeviceInfo& device) {
     if (auto* track = getTrack(chainPath.trackId)) {
         if (track->type == TrackType::Group && device.isInstrument) {
-            DBG("Cannot add instrument plugin to group track");
             return INVALID_DEVICE_ID;
         }
     }
     // The chainPath should end with a Chain step
-    DBG("addDeviceToChainByPath called with path steps=" << chainPath.steps.size());
 
     if (chainPath.steps.empty()) {
-        DBG("addDeviceToChainByPath FAILED - empty path!");
         return INVALID_DEVICE_ID;
     }
 
@@ -187,7 +181,6 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
     if (chainPath.steps.back().type == ChainStepType::Chain) {
         chainId = chainPath.steps.back().id;
     } else {
-        DBG("addDeviceToChainByPath FAILED - path doesn't end with Chain step!");
         return INVALID_DEVICE_ID;
     }
 
@@ -210,7 +203,6 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
         }
 
         if (!chain) {
-            DBG("addDeviceToChainByPath FAILED - chain not found in rack!");
             return INVALID_DEVICE_ID;
         }
 
@@ -220,12 +212,9 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
         stampDefaultKitIfMissing(newDevice);
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(chainPath.trackId);
-        DBG("Added device via path: " << newDevice.name << " (id=" << newDevice.id << ") to chain "
-                                      << chainId);
         return newDevice.id;
     }
 
-    DBG("addDeviceToChainByPath FAILED - rack not found via path!");
     return INVALID_DEVICE_ID;
 }
 
@@ -233,13 +222,11 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
                                               const DeviceInfo& device, int insertIndex) {
     if (auto* track = getTrack(chainPath.trackId)) {
         if (track->type == TrackType::Group && device.isInstrument) {
-            DBG("Cannot add instrument plugin to group track");
             return INVALID_DEVICE_ID;
         }
     }
     // Similar to the non-indexed version but inserts at a specific position
     if (chainPath.steps.empty()) {
-        DBG("addDeviceToChainByPath (indexed) FAILED - empty path!");
         return INVALID_DEVICE_ID;
     }
 
@@ -248,7 +235,6 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
     if (chainPath.steps.back().type == ChainStepType::Chain) {
         chainId = chainPath.steps.back().id;
     } else {
-        DBG("addDeviceToChainByPath (indexed) FAILED - path doesn't end with Chain step!");
         return INVALID_DEVICE_ID;
     }
 
@@ -271,7 +257,6 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
         }
 
         if (!chain) {
-            DBG("addDeviceToChainByPath (indexed) FAILED - chain not found in rack!");
             return INVALID_DEVICE_ID;
         }
 
@@ -286,12 +271,9 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
         chain->elements.insert(chain->elements.begin() + insertIndex, makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(chainPath.trackId);
-        DBG("Added device via path: " << newDevice.name << " (id=" << newDevice.id << ") to chain "
-                                      << chainId << " at index " << insertIndex);
         return newDevice.id;
     }
 
-    DBG("addDeviceToChainByPath (indexed) FAILED - rack not found via path!");
     return INVALID_DEVICE_ID;
 }
 
@@ -303,8 +285,6 @@ void TrackManager::removeDeviceFromChain(TrackId trackId, RackId rackId, ChainId
             return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
         });
         if (it != elements.end()) {
-            DBG("Removed device: " << magda::getDevice(*it).name << " (id=" << deviceId
-                                   << ") from chain " << chainId);
             SelectionManager::getInstance().clearSelectionForDeletedChainNode(
                 ChainNodePath::chainDevice(trackId, rackId, chainId, deviceId));
             elements.erase(it);
@@ -337,7 +317,6 @@ void TrackManager::moveElementInChainByPath(const ChainNodePath& chainPath, int 
                                             int toIndex) {
     // The chainPath should end with a Chain step
     if (chainPath.steps.empty()) {
-        DBG("moveElementInChainByPath FAILED - empty path!");
         return;
     }
 
@@ -346,7 +325,6 @@ void TrackManager::moveElementInChainByPath(const ChainNodePath& chainPath, int 
     if (chainPath.steps.back().type == ChainStepType::Chain) {
         chainId = chainPath.steps.back().id;
     } else {
-        DBG("moveElementInChainByPath FAILED - path doesn't end with Chain step!");
         return;
     }
 
@@ -360,7 +338,6 @@ void TrackManager::moveElementInChainByPath(const ChainNodePath& chainPath, int 
     // Get the parent rack (mutable)
     RackInfo* rack = getRackByPath(rackPath);
     if (!rack) {
-        DBG("moveElementInChainByPath FAILED - rack not found via path!");
         return;
     }
 
@@ -374,7 +351,6 @@ void TrackManager::moveElementInChainByPath(const ChainNodePath& chainPath, int 
     }
 
     if (!chain) {
-        DBG("moveElementInChainByPath FAILED - chain not found in rack!");
         return;
     }
 
@@ -654,55 +630,10 @@ static bool elementContainsInstrument(const ChainElement& element) {
     return false;
 }
 
-static juce::String describeMoveParams(const DeviceInfo& device, int maxParams = 8) {
-    juce::String text;
-    const int count = std::min(maxParams, static_cast<int>(device.parameters.size()));
-    for (int i = 0; i < count; ++i) {
-        const auto& p = device.parameters[static_cast<size_t>(i)];
-        if (i > 0)
-            text << " | ";
-        text << "#" << i << "(" << p.paramIndex << ") " << p.name << "=" << p.currentValue;
-    }
-    if (static_cast<int>(device.parameters.size()) > count)
-        text << " | ...";
-    return text;
-}
-
-static void logMoveDeviceState(const DeviceInfo& device, const juce::String& label) {
-    DBG("[ChainMove] " << label << " device id=" << device.id << " name='" << device.name
-                       << "' pluginId='" << device.pluginId << "' stateLen="
-                       << device.pluginState.length() << " params=" << device.parameters.size()
-                       << " gainDb=" << device.gainDb << " bypassed=" << (int)device.bypassed);
-    DBG("[ChainMove] " << label << " params: " << describeMoveParams(device));
-}
-
-static void logMoveElementState(const ChainElement& element, const juce::String& label) {
-    if (magda::isDevice(element)) {
-        logMoveDeviceState(magda::getDevice(element), label);
-        return;
-    }
-
-    const auto& rack = magda::getRack(element);
-    DBG("[ChainMove] " << label << " rack id=" << rack.id << " name='" << rack.name
-                       << "' chains=" << rack.chains.size());
-    for (const auto& chain : rack.chains) {
-        int index = 0;
-        for (const auto& child : chain.elements) {
-            logMoveElementState(child, label + " rackChain=" + juce::String(chain.id) +
-                                           " child=" + juce::String(index++));
-        }
-    }
-}
-
 bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
                                     const ChainNodePath& destinationChainPath, int insertIndex) {
-    DBG("[ChainMove] request source=" << sourceElementPath.toString()
-                                      << " destination=" << destinationChainPath.toString()
-                                      << " requestedIndex=" << insertIndex);
-
     if (sourceElementPath.trackId == INVALID_TRACK_ID ||
         destinationChainPath.trackId == INVALID_TRACK_ID) {
-        DBG("[ChainMove] rejected: invalid source/destination track");
         return false;
     }
 
@@ -722,22 +653,17 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         sourceChainPath.steps.assign(sourceElementPath.steps.begin(),
                                      sourceElementPath.steps.end() - 1);
     } else {
-        DBG("[ChainMove] rejected: source path does not point at device/rack");
         return false;
     }
 
     if (sourceType == ChainStepType::Rack &&
         chainPathContainsRack(destinationChainPath, sourceElementPath)) {
-        DBG("moveChainElement rejected recursive rack move");
         return false;
     }
 
     auto* sourceElements = getElementContainerForChainPath(*this, sourceChainPath);
     auto* destinationElements = getElementContainerForChainPath(*this, destinationChainPath);
     if (sourceElements == nullptr || destinationElements == nullptr) {
-        DBG("[ChainMove] rejected: source/destination container missing sourceContainer="
-            << (int)(sourceElements != nullptr)
-            << " destinationContainer=" << (int)(destinationElements != nullptr));
         return false;
     }
 
@@ -749,8 +675,6 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
             return magda::isRack(element) && magda::getRack(element).id == sourceId;
         });
     if (sourceIt == sourceElements->end()) {
-        DBG("[ChainMove] rejected: source element not found type=" << static_cast<int>(sourceType)
-                                                                   << " id=" << sourceId);
         return false;
     }
 
@@ -759,7 +683,6 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
                                                       destinationTrack->type == TrackType::Group ||
                                                       destinationTrack->type == TrackType::Master;
         if (destinationCannotHostInstruments && elementContainsInstrument(*sourceIt)) {
-            DBG("moveChainElement rejected instrument move to non-instrument destination track");
             return false;
         }
     } else {
@@ -771,31 +694,18 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
     const int destinationSize = static_cast<int>(destinationElements->size());
     insertIndex = std::clamp(insertIndex, 0, destinationSize);
 
-    DBG("[ChainMove] resolved sourceIndex=" << sourceIndex << " destinationSize=" << destinationSize
-                                            << " clampedIndex=" << insertIndex
-                                            << " sameContainer=" << (int)sameContainer);
-
     if (sameContainer && (insertIndex == sourceIndex || insertIndex == sourceIndex + 1)) {
-        DBG("[ChainMove] no-op: same-container adjacent drop");
         return false;
     }
 
     if (audioEngine_) {
         if (auto* bridge = audioEngine_->getAudioBridge()) {
-            DBG("[ChainMove] preparing live plugin runtime before model move");
             bridge->getPluginManager().prepareForChainElementMove(sourceElementPath,
                                                                   destinationChainPath);
-        } else {
-            DBG("[ChainMove] no AudioBridge available for pre-move capture");
         }
-    } else {
-        DBG("[ChainMove] no AudioEngine available for pre-move capture");
     }
 
-    logMoveElementState(*sourceIt, "afterCapture/source");
-
     ChainElement element = std::move(*sourceIt);
-    logMoveElementState(element, "movingElement");
     sourceElements->erase(sourceElements->begin() + sourceIndex);
 
     if (sameContainer && insertIndex > sourceIndex)
@@ -816,12 +726,6 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         if (auto* sourceTrack = getTrack(sourceElementPath.trackId))
             removeMovedTargetsInTrack(*sourceTrack, movedPaths);
     }
-
-    logMoveElementState((*destinationElements)[static_cast<size_t>(insertIndex)],
-                        "afterInsert/destination");
-    DBG("[ChainMove] notifying sourceTrack=" << sourceElementPath.trackId
-                                             << " destinationTrack=" << destinationChainPath.trackId
-                                             << " finalIndex=" << insertIndex);
 
     notifyTrackDevicesChanged(sourceElementPath.trackId);
     if (destinationChainPath.trackId != sourceElementPath.trackId)
@@ -998,12 +902,11 @@ int TrackManager::getChainElementIndex(const ChainNodePath& elementPath) {
 }
 
 void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) {
-    auto removeFromFlatSection = [&](std::vector<PostFxChainElement>& elements, const char* label) {
+    auto removeFromFlatSection = [&](std::vector<PostFxChainElement>& elements) {
         DeviceId id = devicePath.getDeviceId();
         auto it = std::find_if(elements.begin(), elements.end(),
                                [id](const PostFxChainElement& e) { return e.device.id == id; });
         if (it != elements.end()) {
-            DBG("Removed " << label << " device: " << it->device.name << " (id=" << id << ")");
             SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
             elements.erase(it);
             notifyTrackDevicesChanged(devicePath.trackId);
@@ -1013,13 +916,13 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
     // Post-fader FX list: flat, Segment(PostFx) > Device.
     if (devicePath.isPostFx()) {
         if (auto* track = getTrack(devicePath.trackId))
-            removeFromFlatSection(track->chain.postFxChainElements, "post-fx");
+            removeFromFlatSection(track->chain.postFxChainElements);
         return;
     }
     // Mixer-analysis section: flat, Segment(MixerAnalysis) > Device.
     if (devicePath.isMixerAnalysis()) {
         if (auto* track = getTrack(devicePath.trackId))
-            removeFromFlatSection(track->chain.mixerAnalysisElements, "mixer-analysis");
+            removeFromFlatSection(track->chain.mixerAnalysisElements);
         return;
     }
 
@@ -1034,8 +937,6 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
                 return magda::isDevice(e) && magda::getDevice(e).id == devicePath.topLevelDeviceId;
             });
         if (it != elements.end()) {
-            DBG("Removed top-level device: " << magda::getDevice(*it).name
-                                             << " (id=" << devicePath.topLevelDeviceId << ")");
             SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
             elements.erase(it);
             notifyTrackDevicesChanged(devicePath.trackId);
@@ -1051,7 +952,6 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
     if (devicePath.steps.back().type == ChainStepType::Device) {
         deviceId = devicePath.steps.back().id;
     } else {
-        DBG("removeDeviceFromChainByPath FAILED - path doesn't end with Device step!");
         return;
     }
 
@@ -1068,8 +968,6 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
             return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
         });
         if (it != elements.end()) {
-            DBG("Removed nested device via path: " << magda::getDevice(*it).name
-                                                   << " (id=" << deviceId << ")");
             SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
             elements.erase(it);
             notifyTrackDevicesChanged(devicePath.trackId);
@@ -1385,7 +1283,6 @@ void TrackManager::updateDeviceParameters(DeviceId deviceId,
         for (auto& element : track.chain.fxChainElements) {
             if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
                 magda::getDevice(element).parameters = params;
-                DBG("  -> found on track " << track.id << " (top-level)");
                 return;
             }
             if (magda::isRack(element)) {
@@ -1394,8 +1291,6 @@ void TrackManager::updateDeviceParameters(DeviceId deviceId,
                         if (magda::isDevice(chainElement) &&
                             magda::getDevice(chainElement).id == deviceId) {
                             magda::getDevice(chainElement).parameters = params;
-                            DBG("  -> found in rack chain " << chain.id << " on track "
-                                                            << track.id);
                             return;
                         }
                     }
@@ -1403,7 +1298,6 @@ void TrackManager::updateDeviceParameters(DeviceId deviceId,
             }
         }
     }
-    DBG("  -> NOT FOUND!");
 }
 
 void TrackManager::updateDeviceParametersByPath(const ChainNodePath& devicePath,
@@ -1491,14 +1385,11 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
                                      const DeviceInfo& presetDevice) {
     auto* live = getDeviceInChainByPath(devicePath);
     if (!live) {
-        DBG("applyDevicePreset: no live device at path");
         return false;
     }
 
     // Don't load a preset captured from a different plugin onto this slot.
     if (live->pluginId != presetDevice.pluginId) {
-        DBG("applyDevicePreset: pluginId mismatch (live='" << live->pluginId << "', preset='"
-                                                           << presetDevice.pluginId << "')");
         return false;
     }
 
@@ -1564,7 +1455,6 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
 bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo& presetRack) {
     auto* live = getRackByPath(rackPath);
     if (!live) {
-        DBG("applyRackPreset: no live rack at path");
         return false;
     }
 
@@ -1621,7 +1511,6 @@ bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo
 bool TrackManager::applyChainPreset(TrackId trackId, std::vector<ChainElement> presetElements) {
     auto* track = getTrack(trackId);
     if (!track) {
-        DBG("applyChainPreset: no live track");
         return false;
     }
 
@@ -1773,7 +1662,6 @@ RackId TrackManager::wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
         createRackWithDevice(elements, insertIndex, std::move(extractedDevice), rackName);
 
     notifyTrackDevicesChanged(trackId);
-    DBG("Wrapped device " << deviceId << " in new rack " << newRackId << " on track " << trackId);
     return newRackId;
 }
 
@@ -1820,7 +1708,6 @@ RackId TrackManager::wrapDeviceInRackByPath(const ChainNodePath& devicePath,
         createRackWithDevice(elements, insertIndex, std::move(extractedDevice), rackName);
 
     notifyTrackDevicesChanged(devicePath.trackId);
-    DBG("Wrapped nested device " << deviceId << " in new rack " << newRackId);
     return newRackId;
 }
 
@@ -1862,7 +1749,6 @@ RackId TrackManager::addRackToChain(TrackId trackId, RackId parentRackId, ChainI
         chain->elements.push_back(makeRackElement(std::move(nestedRack)));
 
         notifyTrackDevicesChanged(trackId);
-        DBG("Added nested rack: " << name << " (id=" << newRackId << ") to chain " << chainId);
         return newRackId;
     }
     return INVALID_RACK_ID;
@@ -1871,14 +1757,10 @@ RackId TrackManager::addRackToChain(TrackId trackId, RackId parentRackId, ChainI
 RackId TrackManager::addRackToChainByPath(const ChainNodePath& chainPath,
                                           const juce::String& name) {
     // The chainPath should end with a Chain step - we add a rack to that chain
-    DBG("addRackToChainByPath called with path steps=" << chainPath.steps.size());
     for (size_t i = 0; i < chainPath.steps.size(); ++i) {
-        DBG("  step[" << i << "]: type=" << static_cast<int>(chainPath.steps[i].type)
-                      << ", id=" << chainPath.steps[i].id);
     }
 
     if (chainPath.steps.empty()) {
-        DBG("addRackToChainByPath FAILED - empty path!");
         return INVALID_RACK_ID;
     }
 
@@ -1887,7 +1769,6 @@ RackId TrackManager::addRackToChainByPath(const ChainNodePath& chainPath,
     if (chainPath.steps.back().type == ChainStepType::Chain) {
         chainId = chainPath.steps.back().id;
     } else {
-        DBG("addRackToChainByPath FAILED - path doesn't end with Chain step!");
         return INVALID_RACK_ID;
     }
 
@@ -1910,7 +1791,6 @@ RackId TrackManager::addRackToChainByPath(const ChainNodePath& chainPath,
         }
 
         if (!chain) {
-            DBG("addRackToChainByPath FAILED - chain not found in rack!");
             return INVALID_RACK_ID;
         }
 
@@ -1929,46 +1809,32 @@ RackId TrackManager::addRackToChainByPath(const ChainNodePath& chainPath,
         chain->elements.push_back(makeRackElement(std::move(nestedRack)));
 
         notifyTrackDevicesChanged(chainPath.trackId);
-        DBG("Added nested rack via path: " << nestedRack.name << " (id=" << newRackId
-                                           << ") to chain " << chainId);
         return newRackId;
     }
 
-    DBG("addRackToChainByPath FAILED - rack not found via path!");
     return INVALID_RACK_ID;
 }
 
 void TrackManager::removeRackFromChain(TrackId trackId, RackId parentRackId, ChainId chainId,
                                        RackId nestedRackId) {
-    DBG("removeRackFromChain: trackId=" << trackId << " parentRackId=" << parentRackId
-                                        << " chainId=" << chainId
-                                        << " nestedRackId=" << nestedRackId);
     if (auto* chain = getChain(trackId, parentRackId, chainId)) {
-        DBG("  found chain with " << chain->elements.size() << " elements");
         auto& elements = chain->elements;
         for (auto it = elements.begin(); it != elements.end(); ++it) {
             if (magda::isRack(*it)) {
-                DBG("    checking rack element id=" << magda::getRack(*it).id);
                 if (magda::getRack(*it).id == nestedRackId) {
                     elements.erase(it);
                     notifyTrackDevicesChanged(trackId);
-                    DBG("Removed nested rack: " << nestedRackId << " from chain " << chainId);
                     return;
                 }
             }
         }
-        DBG("  nested rack not found in chain elements");
     } else {
-        DBG("  FAILED: chain not found");
     }
 }
 
 void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
     // rackPath ends with a Rack step - we need to find the parent chain and remove this rack
-    DBG("removeRackFromChainByPath: path steps=" << rackPath.steps.size());
     for (size_t i = 0; i < rackPath.steps.size(); ++i) {
-        DBG("  step[" << i << "]: type=" << static_cast<int>(rackPath.steps[i].type)
-                      << ", id=" << rackPath.steps[i].id);
     }
 
     if (rackPath.steps.size() == 1 && rackPath.steps.back().type == ChainStepType::Rack) {
@@ -1977,7 +1843,6 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
     }
 
     if (rackPath.steps.size() < 2) {
-        DBG("removeRackFromChainByPath FAILED - path too short (need Rack or Chain > Rack)!");
         return;
     }
 
@@ -1986,7 +1851,6 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
     if (rackPath.steps.back().type == ChainStepType::Rack) {
         rackId = rackPath.steps.back().id;
     } else {
-        DBG("removeRackFromChainByPath FAILED - path doesn't end with Rack step!");
         return;
     }
 
@@ -1999,22 +1863,17 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
 
     // Get the parent chain using path-based lookup
     if (auto* chain = getChainFromPath(*this, chainPath)) {
-        DBG("  found chain via path with " << chain->elements.size() << " elements");
         auto& elements = chain->elements;
         for (auto it = elements.begin(); it != elements.end(); ++it) {
             if (magda::isRack(*it)) {
-                DBG("    checking rack element id=" << magda::getRack(*it).id);
                 if (magda::getRack(*it).id == rackId) {
                     elements.erase(it);
                     notifyTrackDevicesChanged(rackPath.trackId);
-                    DBG("Removed nested rack via path: " << rackId);
                     return;
                 }
             }
         }
-        DBG("  nested rack not found in chain elements");
     } else {
-        DBG("  FAILED: chain not found via path!");
     }
 }
 

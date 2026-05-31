@@ -328,7 +328,7 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
 
     // Sync mini FX chain rows from the track's chain elements
     if (!isMaster_)
-        rebuildMiniChainRows();
+        syncMiniChainRows(track);
 
     // Sync send slots
     if (!isMaster_) {
@@ -858,14 +858,35 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
     };
 }
 
-void MixerView::ChannelStrip::rebuildMiniChainRows() {
+std::vector<MixerView::ChannelStrip::MiniChainRowSignatureEntry>
+MixerView::ChannelStrip::buildMiniChainSignature(const TrackInfo& track) const {
+    std::vector<MiniChainRowSignatureEntry> signature;
+    signature.reserve(track.chain.fxChainElements.size());
+    for (const auto& element : track.chain.fxChainElements) {
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
+            signature.push_back({false, device.id, device.name});
+        } else if (isRack(element)) {
+            const auto& rack = getRack(element);
+            signature.push_back({true, rack.id, rack.name});
+        }
+    }
+    return signature;
+}
+
+void MixerView::ChannelStrip::syncMiniChainRows(const TrackInfo& track) {
+    auto signature = buildMiniChainSignature(track);
+    if (signature == miniChainSignature_)
+        return;
+
+    rebuildMiniChainRows(track, std::move(signature));
+}
+
+void MixerView::ChannelStrip::rebuildMiniChainRows(
+    const TrackInfo& track, std::vector<MiniChainRowSignatureEntry> signature) {
     miniChainRows_.clear();
-    if (isMaster_)
-        return;
-    const auto* track = TrackManager::getInstance().getTrack(trackId_);
-    if (track == nullptr)
-        return;
-    for (const auto& element : track->chain.fxChainElements) {
+    miniChainSignature_ = std::move(signature);
+    for (const auto& element : track.chain.fxChainElements) {
         if (isDevice(element)) {
             const auto& device = getDevice(element);
             auto row = std::make_unique<MiniChainRow>();

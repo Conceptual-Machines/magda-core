@@ -29,9 +29,11 @@ class GainStagingAgent {
         std::string unit;
     };
 
-    /** One device's state going into the decision. */
+    /** One device's state going into the decision. Devices are identified to the
+     *  model by their position in this list (signal order), not by DeviceId:
+     *  section-local ids are not unique within a track, so two devices could
+     *  otherwise collide on the same handle. */
     struct DeviceLevel {
-        DeviceId deviceId = INVALID_DEVICE_ID;
         std::string name;
         std::string pluginId;
         bool isInstrument = false;
@@ -41,9 +43,10 @@ class GainStagingAgent {
         std::vector<Param> params;       // current settings (MAGDA devices only)
     };
 
-    /** The agent's chosen output trim for one device. */
+    /** The agent's chosen output trim for one device, identified by its index
+     *  into the DeviceLevel list passed to generate(). */
     struct Decision {
-        DeviceId deviceId = INVALID_DEVICE_ID;
+        int index = -1;
         float newGainDb = 0.0f;
         std::string reason;
     };

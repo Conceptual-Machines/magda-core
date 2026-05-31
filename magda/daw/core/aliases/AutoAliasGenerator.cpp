@@ -82,10 +82,6 @@ void AutoAliasGenerator::regenerateForDevice(const ChainNodePath& devicePath) {
         return;
 
     auto entries = computeForDevice(*devInfo, devicePath);
-    DBG("AutoAliasGenerator: device '" << devInfo->name << "' -> " << (int)entries.size()
-                                       << " alias(es)");
-    for (const auto& [name, _] : entries)
-        DBG("  @" << name);
     AliasRegistry::getInstance().replaceAutoForDevice(devicePath, std::move(entries));
 }
 

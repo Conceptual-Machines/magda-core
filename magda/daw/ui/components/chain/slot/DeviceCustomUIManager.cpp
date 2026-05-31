@@ -1327,27 +1327,40 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
     } else if (device.pluginId.containsIgnoreCase(daw::audio::OscilloscopePlugin::xmlTypeName)) {
         oscilloscopeUI_ = std::make_unique<OscilloscopeUI>();
         parent->addAndMakeVisible(*oscilloscopeUI_);
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(devicePath_);
-                if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get())) {
-                    oscilloscopeUI_->setPlugin(scope);
-                }
-            }
-        }
+        // Plugin binding is deferred to bindAnalyzerPlugins(), re-run from
+        // setDevicePath(): create() runs before the slot's path is valid.
+        bindAnalyzerPlugins();
     } else if (device.pluginId.containsIgnoreCase(
                    daw::audio::SpectrumAnalyzerPlugin::xmlTypeName)) {
         spectrumAnalyzerUI_ = std::make_unique<SpectrumAnalyzerUI>();
         parent->addAndMakeVisible(*spectrumAnalyzerUI_);
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(devicePath_);
-                if (auto* sa = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
-                    spectrumAnalyzerUI_->setPlugin(sa);
-                }
-            }
-        }
+        bindAnalyzerPlugins();
     }
+}
+
+void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
+    devicePath_ = path;
+    // create() bound the analyzer UIs while the path was still invalid; now that
+    // it is set, resolve their plugin for real.
+    bindAnalyzerPlugins();
+}
+
+void DeviceCustomUIManager::bindAnalyzerPlugins() {
+    if (oscilloscopeUI_ == nullptr && spectrumAnalyzerUI_ == nullptr)
+        return;
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (audioEngine == nullptr)
+        return;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (bridge == nullptr)
+        return;
+    auto plugin = bridge->getPlugin(devicePath_);
+    if (oscilloscopeUI_ != nullptr)
+        if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get()))
+            oscilloscopeUI_->setPlugin(scope);
+    if (spectrumAnalyzerUI_ != nullptr)
+        if (auto* sa = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get()))
+            spectrumAnalyzerUI_->setPlugin(sa);
 }
 
 // =============================================================================

@@ -65,7 +65,7 @@ class AutomationRecordingEngine {
     void process();
 
     // Forwarded from AudioBridge's TrackManagerListener callbacks
-    void onDeviceParameterChanged(DeviceId deviceId, int paramIndex, float rawValue);
+    void onDeviceParameterChanged(const ChainNodePath& devicePath, int paramIndex, float rawValue);
     void onTrackPropertyChanged(int trackId);
     void onMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,
                              float value);

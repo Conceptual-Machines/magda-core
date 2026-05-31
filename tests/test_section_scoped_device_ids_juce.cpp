@@ -1,6 +1,8 @@
 #include <juce_core/juce_core.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <algorithm>
+
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
 #include "magda/daw/audio/DeviceMeteringManager.hpp"
@@ -25,6 +27,22 @@ juce::String makePluginStateXml(const juce::String& pluginType) {
     return {};
 }
 
+bool containsPath(const std::vector<magda::ChainNodePath>& paths,
+                  const magda::ChainNodePath& path) {
+    return std::find(paths.begin(), paths.end(), path) != paths.end();
+}
+
+class DevicePropertyRecordingListener final : public magda::TrackManagerListener {
+  public:
+    void tracksChanged() override {}
+
+    void devicePropertyChanged(const magda::ChainNodePath& devicePath) override {
+        devicePropertyPaths.push_back(devicePath);
+    }
+
+    std::vector<magda::ChainNodePath> devicePropertyPaths;
+};
+
 }  // namespace
 
 class SectionScopedDeviceIdsTest final : public juce::UnitTest {
@@ -33,6 +51,9 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
 
     void runTest() override {
         testOverlappingIdsResolveByPath();
+        testRemovingPostFxAnalyzerDoesNotUnwrapTopLevelInstrument();
+        testPostFxPropertyChangeDoesNotBypassTopLevelInstrument();
+        testTrackChainBypassNotifiesNestedDevicePaths();
         testDeviceMetersArePathKeyed();
         testTopLevelReorderMovesLivePlugins();
         testMismatchedCompiledPluginStateDoesNotOverridePluginId();
@@ -101,6 +122,176 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
 
         trackManager.clearAllTracks();
         trackManager.setAudioEngine(nullptr);
+    }
+
+    void testRemovingPostFxAnalyzerDoesNotUnwrapTopLevelInstrument() {
+        beginTest("Removing post-FX analyzer does not unwrap same-id top-level instrument");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        magda::test::resetTransport(wrapper);
+
+        auto* bridge = wrapper.getAudioBridge();
+        expect(bridge != nullptr, "AudioBridge must exist");
+        if (!bridge)
+            return;
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(&wrapper);
+
+        const auto trackId = trackManager.createTrack("Instrument plus analyzer");
+
+        auto synth = makeInternalDevice("4OSC Synth", "4OSC Synth");
+        synth.isInstrument = true;
+        const auto synthId = trackManager.addDeviceToTrack(trackId, synth);
+        const auto analyzerId =
+            trackManager.addDeviceToPostFx(trackId, makeInternalDevice("Scope", "oscilloscope"));
+
+        expectEquals(synthId, 1, "First top-level instrument should use id 1");
+        expectEquals(analyzerId, 1, "First post-FX analyzer should use id 1");
+
+        const auto synthPath = magda::ChainNodePath::topLevelDevice(trackId, synthId);
+        const auto analyzerPath = magda::ChainNodePath::postFxDevice(trackId, analyzerId);
+
+        bridge->syncTrackPlugins(trackId);
+
+        auto synthPlugin = bridge->getPlugin(synthPath);
+        auto& rackManager = bridge->getPluginManager().getInstrumentRackManager();
+        auto* rackBeforeRemove = rackManager.getRackInstance(synthId);
+        auto* teTrack = bridge->getAudioTrack(trackId);
+
+        expect(synthPlugin != nullptr, "4OSC plugin should be created");
+        expect(rackBeforeRemove != nullptr, "4OSC should be wrapped in an instrument rack");
+        expect(teTrack != nullptr, "Tracktion track should exist");
+        if (!synthPlugin || rackBeforeRemove == nullptr || teTrack == nullptr) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
+            return;
+        }
+
+        trackManager.removeDeviceFromChainByPath(analyzerPath);
+        bridge->syncTrackPlugins(trackId);
+
+        expect(bridge->getPlugin(analyzerPath) == nullptr,
+               "Removed post-FX analyzer should not remain synced");
+        expect(bridge->getPlugin(synthPath) == synthPlugin,
+               "Removing same-id post-FX analyzer must not remove the 4OSC plugin");
+        expect(rackManager.getRackInstance(synthId) == rackBeforeRemove,
+               "Removing same-id post-FX analyzer must not unwrap the 4OSC rack");
+        expect(teTrack->pluginList.indexOf(rackBeforeRemove) >= 0,
+               "4OSC rack should remain on the Tracktion plugin list");
+
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(nullptr);
+    }
+
+    void testPostFxPropertyChangeDoesNotBypassTopLevelInstrument() {
+        beginTest("Post-FX property changes do not toggle same-id top-level instrument rack");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        magda::test::resetTransport(wrapper);
+
+        auto* bridge = wrapper.getAudioBridge();
+        expect(bridge != nullptr, "AudioBridge must exist");
+        if (!bridge)
+            return;
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(&wrapper);
+
+        const auto trackId = trackManager.createTrack("Instrument plus bypassed analyzer");
+
+        auto synth = makeInternalDevice("4OSC Synth", "4OSC Synth");
+        synth.isInstrument = true;
+        const auto synthId = trackManager.addDeviceToTrack(trackId, synth);
+        const auto analyzerId =
+            trackManager.addDeviceToPostFx(trackId, makeInternalDevice("Scope", "oscilloscope"));
+
+        expectEquals(synthId, 1, "First top-level instrument should use id 1");
+        expectEquals(analyzerId, 1, "First post-FX analyzer should use id 1");
+
+        const auto synthPath = magda::ChainNodePath::topLevelDevice(trackId, synthId);
+        const auto analyzerPath = magda::ChainNodePath::postFxDevice(trackId, analyzerId);
+
+        bridge->syncTrackPlugins(trackId);
+
+        auto& rackManager = bridge->getPluginManager().getInstrumentRackManager();
+        auto* rackInstance = rackManager.getRackInstance(synthId);
+        expect(rackInstance != nullptr, "4OSC should be wrapped in an instrument rack");
+        if (!rackInstance) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
+            return;
+        }
+
+        rackInstance->setEnabled(true);
+        if (auto* analyzer = trackManager.getDeviceInChainByPath(analyzerPath)) {
+            analyzer->bypassed = true;
+            bridge->devicePropertyChanged(analyzerPath);
+        } else {
+            expect(false, "Post-FX analyzer should resolve by path");
+        }
+
+        expect(rackInstance->isEnabled(),
+               "Bypassing same-id post-FX analyzer must not disable the 4OSC rack");
+
+        if (auto* synthDevice = trackManager.getDeviceInChainByPath(synthPath)) {
+            synthDevice->bypassed = true;
+            bridge->devicePropertyChanged(synthPath);
+        }
+
+        expect(!rackInstance->isEnabled(),
+               "Bypassing the top-level instrument itself should still disable its wrapper");
+
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(nullptr);
+    }
+
+    void testTrackChainBypassNotifiesNestedDevicePaths() {
+        beginTest("Track chain bypass notifies nested devices with full paths");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.clearAllTracks();
+
+        const auto trackId = trackManager.createTrack("Nested bypass");
+        const auto topLevelId =
+            trackManager.addDeviceToTrack(trackId, makeInternalDevice("Top", "magda_filter"));
+        const auto rackId = trackManager.addRackToTrack(trackId, "Rack");
+
+        auto* rack = trackManager.getRack(trackId, rackId);
+        expect(rack != nullptr && !rack->chains.empty(), "Rack should have a default chain");
+        if (!rack || rack->chains.empty()) {
+            trackManager.clearAllTracks();
+            return;
+        }
+
+        const auto chainId = rack->chains.front().id;
+        const auto nestedId = trackManager.addDeviceToChain(trackId, rackId, chainId,
+                                                            makeInternalDevice("Nested", "delay"));
+
+        const auto topLevelPath = magda::ChainNodePath::topLevelDevice(trackId, topLevelId);
+        const auto nestedPath =
+            magda::ChainNodePath::chainDevice(trackId, rackId, chainId, nestedId);
+
+        DevicePropertyRecordingListener listener;
+        trackManager.addListener(&listener);
+        trackManager.setChainBypassed(trackId, true);
+        trackManager.removeListener(&listener);
+
+        expect(containsPath(listener.devicePropertyPaths, topLevelPath),
+               "Top-level device should still receive a property notification");
+        expect(containsPath(listener.devicePropertyPaths, nestedPath),
+               "Nested rack device should receive a property notification with its full path");
+        expect(!containsPath(listener.devicePropertyPaths,
+                             magda::ChainNodePath::topLevelDevice(trackId, nestedId)),
+               "Nested device must not be reported as a fabricated top-level path");
+
+        auto* nestedDevice = trackManager.getDeviceInChainByPath(nestedPath);
+        expect(nestedDevice != nullptr && nestedDevice->bypassed,
+               "Nested device model state should be bypassed");
+
+        trackManager.clearAllTracks();
     }
 
     void testDeviceMetersArePathKeyed() {

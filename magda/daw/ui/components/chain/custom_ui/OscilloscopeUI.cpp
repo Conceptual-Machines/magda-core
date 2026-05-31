@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 
 #include "AnalyzerColours.hpp"
 #include "AnalyzerWindow.hpp"
@@ -87,14 +86,6 @@ OscilloscopeUI::OscilloscopeUI() {
     colourCombo_.onChange = [this] {
         if (plugin_ == nullptr)
             return;
-        DBG("[AnalyzerColour] OscilloscopeUI colour change ui=0x"
-            << juce::String::toHexString(
-                   static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(this)))
-            << " compact=" << static_cast<int>(compact_) << " plugin=0x"
-            << juce::String::toHexString(
-                   static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(plugin_)))
-            << " selectedId=" << colourCombo_.getSelectedId()
-            << " requestedColour=" << (colourCombo_.getSelectedId() - 1));
         plugin_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
     };
     addAndMakeVisible(colourCombo_);
@@ -106,7 +97,7 @@ OscilloscopeUI::OscilloscopeUI() {
     popoutButton_->onClick = [this] { openPopout(); };
     addChildComponent(*popoutButton_);  // shown only in compact mode
 
-    startTimerHz(60);
+    updateTimerState();
 }
 
 OscilloscopeUI::~OscilloscopeUI() {
@@ -116,6 +107,7 @@ OscilloscopeUI::~OscilloscopeUI() {
 
 void OscilloscopeUI::setPlugin(daw::audio::OscilloscopePlugin* plugin) {
     plugin_ = plugin;
+    lastTapWritePosition_ = 0;
     if (popoutUI_ != nullptr)
         popoutUI_->setPlugin(plugin);  // keep the popped-out window live
     if (plugin_ == nullptr)
@@ -124,6 +116,14 @@ void OscilloscopeUI::setPlugin(daw::audio::OscilloscopePlugin* plugin) {
     updateTimeReadout();
     applyTimebase();
     colourCombo_.setSelectedId(plugin_->getTraceColourIndex() + 1, juce::dontSendNotification);
+}
+
+void OscilloscopeUI::visibilityChanged() {
+    updateTimerState();
+}
+
+void OscilloscopeUI::parentHierarchyChanged() {
+    updateTimerState();
 }
 
 void OscilloscopeUI::setCompact(bool compact) {
@@ -309,10 +309,30 @@ void OscilloscopeUI::openPopout() {
 }
 
 void OscilloscopeUI::timerCallback() {
+    const bool fadeWasActive = controlsFadeActive_;
     advanceControlsFade();
-    if (plugin_ != nullptr)
-        plugin_->getTapBuffer().readLatest(window_.data(), readCount_);
-    repaint();
+    bool needsRepaint = fadeWasActive || controlsFadeActive_;
+
+    if (!isShowing())
+        return;
+
+    if (plugin_ != nullptr) {
+        const auto writePosition = plugin_->getTapBuffer().writePosition();
+        if (writePosition != lastTapWritePosition_) {
+            lastTapWritePosition_ = plugin_->getTapBuffer().readLatest(window_.data(), readCount_);
+            needsRepaint = true;
+        }
+    }
+
+    if (needsRepaint)
+        repaint();
+}
+
+void OscilloscopeUI::updateTimerState() {
+    if (isVisible() && getParentComponent() != nullptr)
+        startTimerHz(kTimerHz);
+    else
+        stopTimer();
 }
 
 void OscilloscopeUI::paint(juce::Graphics& g) {

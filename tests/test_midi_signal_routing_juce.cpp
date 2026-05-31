@@ -125,10 +125,12 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
                "Meter tap right audio must feed rack output");
 
         constexpr magda::DeviceId deviceId = 4242;
+        const auto devicePath = magda::ChainNodePath::topLevelDevice(1, deviceId);
         magda::DeviceMeteringManager metering;
         magda::DeviceMeteringManager::registerForEdit(*edit, &metering);
 
-        rackManager.recordWrapping(deviceId, rackInstance->type, instrument, rackPlugin, false, 2);
+        rackManager.recordWrapping(devicePath, rackInstance->type, instrument, rackPlugin, false,
+                                   2);
 
         auto* typedTap = dynamic_cast<magda::daw::audio::InstrumentMeterTapPlugin*>(meterTap);
         expect(typedTap != nullptr, "Meter tap must be the MAGDA tap plugin");
@@ -139,7 +141,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         buffer.clear();
         buffer.setSample(0, 0, 0.5f);
         buffer.setSample(1, 0, -0.25f);
-        metering.setGain(deviceId, 0.5f);
+        metering.setGain(devicePath, 0.5f);
 
         te::MidiMessageArray midi;
         te::PluginRenderContext rc(
@@ -151,7 +153,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         magda::DeviceMeteringManager::DeviceMeterData levels;
         metering.updateAllClients();
-        expect(metering.getLatestLevels(deviceId, levels), "Meter levels should exist");
+        expect(metering.getLatestLevels(devicePath, levels), "Meter levels should exist");
         expectWithinAbsoluteError(buffer.getSample(0, 0), 0.25f, 0.0001f,
                                   "Meter tap should apply device gain to left channel");
         expectWithinAbsoluteError(buffer.getSample(1, 0), -0.125f, 0.0001f,

@@ -206,8 +206,23 @@ class MixerView : public juce::Component,
         // Mini FX chain: one MiniChainRow per top-level fx device on this
         // track. Built from TrackInfo::chain.fxChainElements; nested racks
         // collapse to a single row labelled with the rack name.
+        struct MiniChainRowSignatureEntry {
+            bool isRack = false;
+            int id = INVALID_DEVICE_ID;
+            juce::String name;
+
+            bool operator==(const MiniChainRowSignatureEntry& other) const {
+                return isRack == other.isRack && id == other.id && name == other.name;
+            }
+        };
+
         std::vector<std::unique_ptr<MiniChainRow>> miniChainRows_;
-        void rebuildMiniChainRows();
+        std::vector<MiniChainRowSignatureEntry> miniChainSignature_;
+        std::vector<MiniChainRowSignatureEntry> buildMiniChainSignature(
+            const TrackInfo& track) const;
+        void syncMiniChainRows(const TrackInfo& track);
+        void rebuildMiniChainRows(const TrackInfo& track,
+                                  std::vector<MiniChainRowSignatureEntry> signature);
 
         // Sync the bypass dot of the row bound to deviceId to its authoritative
         // state without rebuilding (safe under the synchronous devicePropertyChanged

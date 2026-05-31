@@ -197,12 +197,13 @@ class GestureRouter {
     /** Persist the current override diff into Config and save it. */
     void saveToConfig() const;
 
+    static uint64_t makeKey(GestureContext context, const GestureInput& input);
+
   private:
     GestureRouter();
 
     void installDefaults();
 
-    static uint64_t makeKey(GestureContext context, const GestureInput& input);
     static GestureInput makeWheelInput(GestureAxis axis, uint8_t modifierMask);
 
     std::unordered_map<uint64_t, GestureBinding> bindings_;

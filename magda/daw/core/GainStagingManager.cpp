@@ -1,5 +1,7 @@
 #include "GainStagingManager.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -18,7 +20,7 @@ namespace magda {
 namespace {
 
 float linearToDb(float linear) {
-    return linear > 1.0e-6f ? 20.0f * std::log10(linear) : kGainStageSilenceDb;
+    return juce::Decibels::gainToDecibels(linear, kGainStageSilenceDb);
 }
 
 void collectChainDeviceIds(const std::vector<ChainElement>& elements, std::vector<DeviceId>& out) {
@@ -31,6 +33,30 @@ void collectChainDeviceIds(const std::vector<ChainElement>& elements, std::vecto
                 collectChainDeviceIds(chain.elements, out);
         }
     }
+}
+
+struct CascadeSuggestion {
+    float gainDb = 0.0f;
+    float appliedDb = 0.0f;
+    bool sawSignal = false;
+    bool meaningful = false;
+};
+
+CascadeSuggestion computeCascadeSuggestion(float capturedPeakDb, float currentGainDb,
+                                           float cumulativeAppliedDb, float targetDb) {
+    CascadeSuggestion suggestion;
+    suggestion.gainDb = currentGainDb;
+    suggestion.sawSignal = capturedPeakDb > kGainStageSilenceDb + 0.5f;
+    if (!suggestion.sawSignal)
+        return suggestion;
+
+    const float effectiveOutputDb = capturedPeakDb + cumulativeAppliedDb;
+    const float deltaDb = juce::jmin(0.0f, targetDb - effectiveOutputDb);
+    suggestion.gainDb =
+        juce::jlimit(kGainStageMinGainDb, kGainStageMaxGainDb, currentGainDb + deltaDb);
+    suggestion.appliedDb = suggestion.gainDb - currentGainDb;
+    suggestion.meaningful = std::abs(suggestion.appliedDb) >= 0.05f;
+    return suggestion;
 }
 
 // One device's output-volume move, captured so the whole pass is a single
@@ -50,7 +76,7 @@ class GainStageCommand : public UndoableCommand {
         auto& tm = TrackManager::getInstance();
         for (const auto& move : moves_) {
             tm.setDeviceGainDb(move.path, move.newGainDb);
-            GainStagingManager::getInstance().markApplied(move.deviceId,
+            GainStagingManager::getInstance().markApplied(move.path,
                                                           move.newGainDb - move.oldGainDb);
         }
     }
@@ -59,7 +85,7 @@ class GainStageCommand : public UndoableCommand {
         auto& tm = TrackManager::getInstance();
         for (const auto& move : moves_) {
             tm.setDeviceGainDb(move.path, move.oldGainDb);
-            GainStagingManager::getInstance().clearApplied(move.deviceId);
+            GainStagingManager::getInstance().clearApplied(move.path);
         }
     }
 
@@ -104,12 +130,12 @@ void GainStagingManager::startCollection(TrackId trackId) {
 
     // A fresh pass on these devices supersedes any prior marks on them.
     for (const auto& staged : staged_)
-        appliedDeltas_.erase(staged.deviceId);
+        appliedDeltas_.erase(staged.path);
 
     mode_ = GainStagingMode::Collecting;
     notifyMode();
     for (const auto& staged : staged_)
-        notifyDevice(staged.deviceId);
+        notifyDevice(staged.path);
 
     startTimerHz(30);
 }
@@ -130,54 +156,44 @@ void GainStagingManager::stopCollection() {
     // still the AI phase's job; this is just the linear bookkeeping.
     float cumulativeAppliedDb = 0.0f;
     for (const auto& staged : staged_) {
-        auto it = info_.find(staged.deviceId);
+        auto it = info_.find(staged.path);
         if (it == info_.end())
             continue;
         auto& info = it->second;
 
-        // No signal seen during the pass -> leave the device untouched and
-        // don't let it perturb the running adjustment.
-        if (info.capturedPeakDb <= kGainStageSilenceDb + 0.5f) {
-            info.state = DeviceGainStageState::Idle;
-            notifyDevice(staged.deviceId);
-            continue;
-        }
-
         const auto* device = tm.getDeviceInChainByPath(staged.path);
         if (device == nullptr) {
             info.state = DeviceGainStageState::Idle;
-            notifyDevice(staged.deviceId);
+            notifyDevice(staged.path);
             continue;
         }
 
-        const float currentGainDb = device->gainDb;
-        // What this stage now outputs given the upstream moves already applied.
-        const float effectiveOutputDb = info.capturedPeakDb + cumulativeAppliedDb;
-        // Gain staging only TRIMS stages that exceed the target; it never boosts
-        // a stage up to the target. A stage already sitting below target (e.g.
-        // the last device after upstream trims) is left alone -- boosting it
-        // would just re-inflate level for no reason.
-        const float deltaDb = juce::jmin(0.0f, targetDb_ - effectiveOutputDb);
-        const float newGainDb =
-            juce::jlimit(kGainStageMinGainDb, kGainStageMaxGainDb, currentGainDb + deltaDb);
-        const float applied = newGainDb - currentGainDb;
-        const bool meaningful = std::abs(applied) >= 0.05f;
+        const auto suggestion = computeCascadeSuggestion(info.capturedPeakDb, device->gainDb,
+                                                         cumulativeAppliedDb, targetDb_);
 
-        if (meaningful) {
-            moves.push_back({staged.path, staged.deviceId, currentGainDb, newGainDb});
-            cumulativeAppliedDb += applied;
-            info.appliedDeltaDb = applied;
+        // No signal seen during the pass -> leave the device untouched and
+        // don't let it perturb the running adjustment.
+        if (!suggestion.sawSignal) {
+            info.state = DeviceGainStageState::Idle;
+            notifyDevice(staged.path);
+            continue;
+        }
+
+        if (suggestion.meaningful) {
+            moves.push_back({staged.path, staged.deviceId, device->gainDb, suggestion.gainDb});
+            cumulativeAppliedDb += suggestion.appliedDb;
+            info.appliedDeltaDb = suggestion.appliedDb;
         } else {
             info.appliedDeltaDb = 0.0f;
         }
 
         // Only flag devices that actually moved (or clipped during capture);
         // pass-through stages stay unmarked.
-        info.state = info.clipped ? DeviceGainStageState::Clipped
-                     : meaningful ? DeviceGainStageState::Adjusted
-                                  : DeviceGainStageState::Idle;
+        info.state = info.clipped            ? DeviceGainStageState::Clipped
+                     : suggestion.meaningful ? DeviceGainStageState::Adjusted
+                                             : DeviceGainStageState::Idle;
 
-        notifyDevice(staged.deviceId);
+        notifyDevice(staged.path);
     }
 
     if (!moves.empty())
@@ -197,9 +213,9 @@ void GainStagingManager::reset() {
     if (isTimerRunning())
         stopTimer();
 
-    for (auto& [deviceId, info] : info_) {
+    for (auto& [path, info] : info_) {
         info.state = DeviceGainStageState::Idle;
-        notifyDevice(deviceId);
+        notifyDevice(path);
     }
 
     staged_.clear();
@@ -235,7 +251,7 @@ std::vector<GainStagingManager::DeviceSnapshot> GainStagingManager::finishCaptur
     float cumulativeAppliedDb = 0.0f;
 
     for (const auto& staged : staged_) {
-        auto it = info_.find(staged.deviceId);
+        auto it = info_.find(staged.path);
         if (it == info_.end())
             continue;
         const auto* device = tm.getDeviceInChainByPath(staged.path);
@@ -244,24 +260,18 @@ std::vector<GainStagingManager::DeviceSnapshot> GainStagingManager::finishCaptur
 
         DeviceSnapshot s;
         s.deviceId = staged.deviceId;
+        s.path = staged.path;
         s.name = device->name;
         s.pluginId = device->pluginId;
         s.isInstrument = device->isInstrument;
         s.capturedPeakDb = it->second.capturedPeakDb;
         s.currentGainDb = device->gainDb;
 
-        // Flat-target cascade suggestion (attenuation-only), same as the
-        // algorithmic path; leaves a no-signal device unchanged.
-        s.suggestedGainDb = device->gainDb;
-        if (it->second.capturedPeakDb > kGainStageSilenceDb + 0.5f) {
-            const float effectiveOutputDb = it->second.capturedPeakDb + cumulativeAppliedDb;
-            const float deltaDb = juce::jmin(0.0f, targetDb_ - effectiveOutputDb);
-            s.suggestedGainDb =
-                juce::jlimit(kGainStageMinGainDb, kGainStageMaxGainDb, device->gainDb + deltaDb);
-            const float applied = s.suggestedGainDb - device->gainDb;
-            if (std::abs(applied) >= 0.05f)
-                cumulativeAppliedDb += applied;
-        }
+        const auto suggestion = computeCascadeSuggestion(it->second.capturedPeakDb, device->gainDb,
+                                                         cumulativeAppliedDb, targetDb_);
+        s.suggestedGainDb = suggestion.gainDb;
+        if (suggestion.meaningful)
+            cumulativeAppliedDb += suggestion.appliedDb;
 
         // Send current settings for MAGDA/internal devices so the agent can
         // reason about thresholds, drive, ceilings. External plugins are
@@ -281,7 +291,7 @@ std::vector<GainStagingManager::DeviceSnapshot> GainStagingManager::finishCaptur
     // fed the snapshot we just built).
     info_.clear();
     for (const auto& staged : staged_)
-        notifyDevice(staged.deviceId);
+        notifyDevice(staged.path);
 
     mode_ = GainStagingMode::Idle;
     notifyMode();
@@ -289,22 +299,11 @@ std::vector<GainStagingManager::DeviceSnapshot> GainStagingManager::finishCaptur
 }
 
 void GainStagingManager::applyAiMoves(
-    const std::vector<std::pair<DeviceId, float>>& deviceNewGainDb) {
+    const std::vector<std::pair<ChainNodePath, float>>& deviceNewGainDb) {
     auto& tm = TrackManager::getInstance();
 
     std::vector<GainStageMove> moves;
-    for (const auto& [deviceId, requestedGainDb] : deviceNewGainDb) {
-        // Resolve the device's path from the frozen capture, falling back to a
-        // fresh lookup.
-        ChainNodePath path;
-        for (const auto& staged : staged_) {
-            if (staged.deviceId == deviceId) {
-                path = staged.path;
-                break;
-            }
-        }
-        if (!path.isValid())
-            path = tm.findDevicePath(deviceId);
+    for (const auto& [path, requestedGainDb] : deviceNewGainDb) {
         if (!path.isValid())
             continue;
 
@@ -317,7 +316,7 @@ void GainStagingManager::applyAiMoves(
         if (std::abs(newGainDb - device->gainDb) < 0.05f)
             continue;  // negligible move
 
-        moves.push_back({path, deviceId, device->gainDb, newGainDb});
+        moves.push_back({path, path.getDeviceId(), device->gainDb, newGainDb});
     }
 
     if (!moves.empty())
@@ -332,24 +331,25 @@ void GainStagingManager::applyAiMoves(
     notifyMode();
 }
 
-const DeviceGainStageInfo* GainStagingManager::getDeviceInfo(DeviceId deviceId) const {
-    auto it = info_.find(deviceId);
+const DeviceGainStageInfo* GainStagingManager::getDeviceInfo(
+    const ChainNodePath& devicePath) const {
+    auto it = info_.find(devicePath);
     return it != info_.end() ? &it->second : nullptr;
 }
 
-const float* GainStagingManager::getAppliedDelta(DeviceId deviceId) const {
-    auto it = appliedDeltas_.find(deviceId);
+const float* GainStagingManager::getAppliedDelta(const ChainNodePath& devicePath) const {
+    auto it = appliedDeltas_.find(devicePath);
     return it != appliedDeltas_.end() ? &it->second : nullptr;
 }
 
-void GainStagingManager::markApplied(DeviceId deviceId, float deltaDb) {
-    appliedDeltas_[deviceId] = deltaDb;
-    notifyDevice(deviceId);
+void GainStagingManager::markApplied(const ChainNodePath& devicePath, float deltaDb) {
+    appliedDeltas_[devicePath] = deltaDb;
+    notifyDevice(devicePath);
 }
 
-void GainStagingManager::clearApplied(DeviceId deviceId) {
-    if (appliedDeltas_.erase(deviceId) > 0)
-        notifyDevice(deviceId);
+void GainStagingManager::clearApplied(const ChainNodePath& devicePath) {
+    if (appliedDeltas_.erase(devicePath) > 0)
+        notifyDevice(devicePath);
 }
 
 // ============================================================================
@@ -384,7 +384,7 @@ void GainStagingManager::buildStagedDeviceList(TrackId trackId) {
     for (const auto& staged : staged_) {
         DeviceGainStageInfo info;
         info.state = DeviceGainStageState::Collecting;
-        info_[staged.deviceId] = info;
+        info_[staged.path] = info;
     }
 }
 
@@ -399,8 +399,7 @@ bool GainStagingManager::readDevicePeakLinear(const ChainNodePath& devicePath,
         return false;
 
     DeviceMeteringManager::DeviceMeterData data;
-    if (!bridge->getDeviceMetering().getLatestLevels(devicePath, data) &&
-        !bridge->getDeviceMetering().getLatestLevels(devicePath.getDeviceId(), data))
+    if (!bridge->getDeviceMetering().getLatestLevels(devicePath, data))
         return false;
 
     peakLinearOut = std::max(data.peakL, data.peakR);
@@ -416,7 +415,7 @@ void GainStagingManager::timerCallback() {
         if (!readDevicePeakLinear(staged.path, peakLinear))
             continue;
 
-        auto& info = info_[staged.deviceId];
+        auto& info = info_[staged.path];
         const float peakDb = linearToDb(peakLinear);
 
         bool changed = false;
@@ -432,7 +431,7 @@ void GainStagingManager::timerCallback() {
         // Only push updates when the held peak rises, to avoid flooding the
         // message thread at the timer rate.
         if (changed)
-            notifyDevice(staged.deviceId);
+            notifyDevice(staged.path);
     }
 }
 
@@ -456,12 +455,12 @@ void GainStagingManager::notifyMode() {
         listener->gainStagingModeChanged(mode_, activeTrackId_);
 }
 
-void GainStagingManager::notifyDevice(DeviceId deviceId) {
+void GainStagingManager::notifyDevice(const ChainNodePath& devicePath) {
     static const DeviceGainStageInfo idleInfo{};
-    auto it = info_.find(deviceId);
+    auto it = info_.find(devicePath);
     const auto& info = (it != info_.end()) ? it->second : idleInfo;
     for (auto* listener : listeners_)
-        listener->deviceGainStageChanged(deviceId, info);
+        listener->deviceGainStageChanged(devicePath, info);
 }
 
 }  // namespace magda

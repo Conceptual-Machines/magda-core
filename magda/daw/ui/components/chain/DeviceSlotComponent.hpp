@@ -207,7 +207,7 @@ class DeviceSlotComponent : public NodeComponent,
 
     // GainStagingListener — repaint our slot's staging overlay when this
     // device's staging state changes.
-    void deviceGainStageChanged(magda::DeviceId deviceId,
+    void deviceGainStageChanged(const magda::ChainNodePath& devicePath,
                                 const magda::DeviceGainStageInfo& info) override;
 
   private:

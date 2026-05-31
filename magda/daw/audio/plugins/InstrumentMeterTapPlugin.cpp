@@ -41,6 +41,15 @@ void InstrumentMeterTapPlugin::getChannelNames(juce::StringArray* ins, juce::Str
 
 void InstrumentMeterTapPlugin::setDeviceId(DeviceId deviceId) {
     deviceId_.store(deviceId, std::memory_order_relaxed);
+    devicePath_ = {};
+    state.setProperty(deviceIdProperty, deviceId, getUndoManager());
+    bindRealtimeTap();
+}
+
+void InstrumentMeterTapPlugin::setDevicePath(const ChainNodePath& devicePath) {
+    devicePath_ = devicePath;
+    const auto deviceId = devicePath.getDeviceId();
+    deviceId_.store(deviceId, std::memory_order_relaxed);
     state.setProperty(deviceIdProperty, deviceId, getUndoManager());
     bindRealtimeTap();
 }
@@ -57,7 +66,8 @@ void InstrumentMeterTapPlugin::bindRealtimeTap() {
         return;
 
     if (auto* manager = DeviceMeteringManager::getInstanceForEdit(edit)) {
-        auto tap = manager->getRealtimeTap(deviceId);
+        auto tap = devicePath_.isValid() ? manager->getRealtimeTap(devicePath_)
+                                         : manager->getRealtimeTap(deviceId);
         if (tap.isValid()) {
             tapStorage_ = tap.storage;
             peakL_.store(tap.peakL, std::memory_order_release);

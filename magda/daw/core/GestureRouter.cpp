@@ -47,17 +47,8 @@ GestureBinding retuneLearnedDragBinding(
         return binding;
     }
 
-    auto keyFor = [](GestureContext c, GestureInput i) {
-        if (i.kind == GestureInputKind::Drag)
-            i.axis = GestureAxis::Vertical;
-
-        return (static_cast<uint64_t>(c) << 32) | (static_cast<uint64_t>(i.kind) << 24) |
-               (static_cast<uint64_t>(i.area) << 16) | (static_cast<uint64_t>(i.axis) << 8) |
-               static_cast<uint64_t>(i.modifiers);
-    };
-
     auto findMatchingDefault = [&](const GestureInput& candidate) {
-        const auto it = defaults.find(keyFor(context, candidate));
+        const auto it = defaults.find(GestureRouter::makeKey(context, candidate));
         return it != defaults.end() && it->second.action == binding.action ? &it->second : nullptr;
     };
 

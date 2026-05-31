@@ -54,9 +54,12 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     void mouseMove(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDown(const juce::MouseEvent& e) override;
+    void visibilityChanged() override;
+    void parentHierarchyChanged() override;
 
   private:
     void timerCallback() override;
+    void updateTimerState();
     void rebuildFft(int order);  // (re)allocate FFT + buffers for a 2^order transform
     float freqToX(float hz, juce::Rectangle<float> area) const;
     float dbToY(float db, juce::Rectangle<float> area) const;
@@ -89,6 +92,7 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     std::vector<float> fftData_;
     std::vector<float> smoothedDb_;
     std::vector<float> peakDb_;
+    size_t lastTapWritePosition_ = 0;
 
     float slopeDbPerOct_ = 4.5f;
     float smoothing_ = 0.5f;
@@ -119,6 +123,7 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     juce::Point<int> mousePos_;
     bool mouseOver_ = false;
 
+    static constexpr int kTimerHz = 30;
     static constexpr int kCompactControlsFadeMs = 450;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAnalyzerUI)

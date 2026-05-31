@@ -120,23 +120,8 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     for (int i = 0; i < kAnalyzerColourCount; ++i)
         colourCombo_.addItem(kAnalyzerColourNames[i], i + 1);
     colourCombo_.onChange = [this] {
-        if (plugin_ != nullptr) {
-            DBG("[AnalyzerColour] SpectrumAnalyzerUI colour change ui=0x"
-                << juce::String::toHexString(
-                       static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(this)))
-                << " compact=" << static_cast<int>(compact_) << " plugin=0x"
-                << juce::String::toHexString(
-                       static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(plugin_)))
-                << " selectedId=" << colourCombo_.getSelectedId()
-                << " requestedColour=" << (colourCombo_.getSelectedId() - 1));
+        if (plugin_ != nullptr)
             plugin_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
-        } else {
-            DBG("[AnalyzerColour] SpectrumAnalyzerUI colour change ignored ui=0x"
-                << juce::String::toHexString(
-                       static_cast<juce::int64>(reinterpret_cast<std::uintptr_t>(this)))
-                << " compact=" << static_cast<int>(compact_) << " plugin=null"
-                << " selectedId=" << colourCombo_.getSelectedId());
-        }
         persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
     };
     styleCombo(colourCombo_);
@@ -149,7 +134,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     addChildComponent(*popoutButton_);  // shown only in compact mode
 
     rebuildFft(11);
-    startTimerHz(30);
+    updateTimerState();
 }
 
 SpectrumAnalyzerUI::~SpectrumAnalyzerUI() {
@@ -176,6 +161,7 @@ void SpectrumAnalyzerUI::rebuildFft(int order) {
 
 void SpectrumAnalyzerUI::setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin) {
     plugin_ = plugin;
+    lastTapWritePosition_ = 0;
     if (popoutUI_ != nullptr)
         popoutUI_->setPlugin(plugin);  // keep the popped-out window live
     if (plugin_ == nullptr)
@@ -188,6 +174,14 @@ void SpectrumAnalyzerUI::setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin) {
     speedCombo_.setSelectedId(nearestId(kSpeedOptions, smoothing_), juce::dontSendNotification);
     colourCombo_.setSelectedId(plugin_->getTraceColourIndex() + 1, juce::dontSendNotification);
     rebuildFft(plugin_->getFftOrder());
+}
+
+void SpectrumAnalyzerUI::visibilityChanged() {
+    updateTimerState();
+}
+
+void SpectrumAnalyzerUI::parentHierarchyChanged() {
+    updateTimerState();
 }
 
 void SpectrumAnalyzerUI::setCompact(bool compact) {
@@ -380,13 +374,32 @@ void SpectrumAnalyzerUI::openPopout() {
 }
 
 void SpectrumAnalyzerUI::timerCallback() {
+    const bool fadeWasActive = controlsFadeActive_;
     advanceControlsFade();
+    bool needsRepaint = fadeWasActive || controlsFadeActive_;
+
+    if (!isShowing())
+        return;
+
     if (plugin_ == nullptr || fft_ == nullptr) {
+        if (needsRepaint)
+            repaint();
+        return;
+    }
+
+    const auto writePosition = plugin_->getTapBuffer().writePosition();
+    if (writePosition == lastTapWritePosition_) {
+        if (needsRepaint)
+            repaint();
+        return;
+    }
+
+    lastTapWritePosition_ = plugin_->getTapBuffer().readLatest(readBuf_.data(), fftSize_);
+    if (lastTapWritePosition_ == 0) {
         repaint();
         return;
     }
 
-    plugin_->getTapBuffer().readLatest(readBuf_.data(), fftSize_);
     std::copy(readBuf_.begin(), readBuf_.end(), fftData_.begin());
     std::fill(fftData_.begin() + fftSize_, fftData_.end(), 0.0f);
     window_->multiplyWithWindowingTable(fftData_.data(), static_cast<size_t>(fftSize_));
@@ -409,6 +422,13 @@ void SpectrumAnalyzerUI::timerCallback() {
         pk = sm > pk ? sm : juce::jmax(kMinDb, pk - kPeakDecayDb);
     }
     repaint();
+}
+
+void SpectrumAnalyzerUI::updateTimerState() {
+    if (isVisible() && getParentComponent() != nullptr)
+        startTimerHz(kTimerHz);
+    else
+        stopTimer();
 }
 
 float SpectrumAnalyzerUI::freqToX(float hz, juce::Rectangle<float> area) const {

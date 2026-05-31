@@ -109,10 +109,12 @@ class DeviceCustomUIManager {
      * internal plugin lookups (FourOsc, Sampler, Faust, etc.) go through the
      * path rather than a bare DeviceId — required for section-scoped ids.
      * Callable repeatedly; latest value wins.
+     *
+     * Also re-binds the analyzer UIs (oscilloscope / spectrum): create() runs
+     * before the slot knows its path, so those UIs are built while devicePath_
+     * is still invalid and would otherwise never resolve their plugin.
      */
-    void setDevicePath(const magda::ChainNodePath& path) {
-        devicePath_ = path;
-    }
+    void setDevicePath(const magda::ChainNodePath& path);
 
     // -------------------------------------------------------------------------
     // Queries
@@ -190,6 +192,11 @@ class DeviceCustomUIManager {
     }
 
   private:
+    // (Re-)resolve the live plugin for the oscilloscope / spectrum analyzer UIs
+    // from the current devicePath_ and hand it to them. Safe to call before the
+    // path or plugin exists (it simply binds nothing).
+    void bindAnalyzerPlugins();
+
     // Path of the device this manager is bound to. Used by every internal
     // plugin lookup; the bare device.id is no longer sufficient under
     // section-scoped device ids.
