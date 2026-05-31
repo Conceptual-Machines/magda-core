@@ -182,6 +182,24 @@ bool savedPluginStateMatchesRequestedType(const juce::ValueTree& savedState,
 
     return false;
 }
+
+// Restore a loaded device's state as ONE ordered operation, so the
+// baseline -> overlay -> cache-refresh sequence lives in a single place and
+// can't be reordered (or half-applied) by callers:
+//   1. syncFromDeviceInfo applies the saved per-parameter array (plus gain/bypass)
+//      as a BASELINE -- the fallback that survives a missing/rejected/incomplete
+//      native chunk, and the sole source of truth for parameter-only devices.
+//   2. applyExternalPluginChunk applies the native state chunk as the AUTHORITATIVE
+//      overlay (wins wherever it restores) and refreshes TE's parameter cache so
+//      the playback-graph build preserves the merged result rather than writing
+//      construction-time defaults back.
+// Safe for any device type: the overlay no-ops for internal plugins / empty chunk,
+// leaving just the baseline.
+void restoreDeviceStateWithChunkOverlay(DeviceProcessor& processor, const te::Plugin::Ptr& plugin,
+                                        const DeviceInfo& device) {
+    processor.syncFromDeviceInfo(device);
+    applyExternalPluginChunk(plugin.get(), device.pluginState);
+}
 }  // namespace
 
 // =============================================================================
@@ -1991,15 +2009,9 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
             << " params=" << device.parameters.size());
         DBG("[ChainMove] restore rack input params: " << describeChainMoveParams(device));
 
-        // Restore parameter values from DeviceInfo onto the newly created plugin
-        processor->syncFromDeviceInfo(device);
-
-        // For external plugins (rack / master / post-fx paths) the chunk was
-        // restored by createPluginOnly and owns the plugin's parameters
-        // (syncFromDeviceInfo skips the saved array while a chunk is present).
-        // Sync TE's parameter cache to the restored plugin. Same hazard and fix
-        // as loadDeviceAsPlugin.
-        refreshExternalPluginParameterCache(plugin.get());
+        // Saved params (baseline) then native chunk (authoritative overlay) then
+        // param-cache refresh -- one ordered op (same as loadDeviceAsPlugin).
+        restoreDeviceStateWithChunkOverlay(*processor, plugin, device);
 
         // Populate processor-owned fields directly into the canonical
         // DeviceInfo. Snapshotting into a temp and copying only `.parameters`
@@ -2239,15 +2251,9 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                 << device.id << " name='" << device.name << "' track=" << trackId << " stateLen="
                 << device.pluginState.length() << " params=" << device.parameters.size());
             DBG("[ChainMove] restore track input params: " << describeChainMoveParams(device));
-            processor->syncFromDeviceInfo(device);
-
-            // For an external plugin the chunk (restored above) is the source of
-            // truth for the plugin's parameters; syncFromDeviceInfo deliberately
-            // skips the saved array while a chunk is present, so it can't clobber
-            // the voice. Sync TE's parameter cache to the restored plugin so the
-            // playback-graph build doesn't write construction-time defaults back.
-            // populateParameters() then re-captures the canonical values.
-            refreshExternalPluginParameterCache(plugin.get());
+            // Saved params (baseline) then native chunk (authoritative overlay)
+            // then param-cache refresh -- one ordered op, see helper.
+            restoreDeviceStateWithChunkOverlay(*processor, plugin, device);
 
             // Populate processor-owned fields directly into the canonical
             // DeviceInfo (see comment in registerRackPluginProcessor).
