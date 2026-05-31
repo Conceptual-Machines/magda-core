@@ -8,7 +8,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../components/mixer/MixerToggleRail.hpp"
 #include "audio/MidiBridge.hpp"
 #include "core/ClipManager.hpp"
 #include "core/SelectionManager.hpp"
@@ -149,10 +148,10 @@ class SessionView : public juce::Component,
     // Master header (top-right corner)
     std::unique_ptr<juce::TextButton> masterLabel_;
 
-    // Left-edge vertical rail shared with MixerView. The session view consumes
-    // the routing/sends/monitor toggles; the remaining mixer toggles still
-    // update the shared Config state for consistency with MixerView.
-    std::unique_ptr<MixerToggleRail> toggleRail_;
+    // Session-specific left-edge rail for mixer-row visibility. It intentionally
+    // omits mixer-only analyzer / mini-chain controls.
+    class SessionToggleRail;
+    std::unique_ptr<SessionToggleRail> toggleRail_;
     void syncMixerVisibilityFromConfig();
     static constexpr int MIXER_TOGGLES_HEIGHT = 26;
 

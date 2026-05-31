@@ -76,16 +76,6 @@ void MixerToggleRail::resized() {
     }
 }
 
-void MixerToggleRail::refreshFromConfig() {
-    auto& cfg = Config::getInstance();
-    applyToggleState(sendsButton_.get(), cfg.getMixerShowSends());
-    applyToggleState(routingButton_.get(), cfg.getMixerShowRouting());
-    applyToggleState(monitorButton_.get(), cfg.getMixerShowMonitor());
-    applyToggleState(oscilloscopeButton_.get(), cfg.getMixerShowOscilloscope());
-    applyToggleState(spectrumButton_.get(), cfg.getMixerShowSpectrum());
-    applyToggleState(fxChainButton_.get(), cfg.getMixerShowFxChain());
-}
-
 void MixerToggleRail::setupButton(std::unique_ptr<SvgButton>& btn, const juce::String& name,
                                   const char* svgData, size_t svgSize, const juce::String& tooltip,
                                   bool initialState, std::function<void(bool)> setter) {

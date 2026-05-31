@@ -8,6 +8,10 @@
 
 namespace magda {
 
+namespace {
+const juce::URL kConceptualMachinesUrl("https://conceptualmachines.co.uk");
+}  // namespace
+
 // =============================================================================
 // Content Component
 // =============================================================================
@@ -24,6 +28,13 @@ class AboutDialog::ContentComponent : public juce::Component {
                 logo_->replaceColour(juce::Colour(0xFF000000),
                                      juce::Colour(DarkTheme::TEXT_SECONDARY));
             }
+        }
+
+        // Load Conceptual Machines badge
+        if (auto xml = juce::XmlDocument::parse(
+                juce::String::fromUTF8(BinaryData::conceptualmachinesbadge_svg,
+                                       BinaryData::conceptualmachinesbadge_svgSize))) {
+            conceptualMachinesBadge_ = juce::Drawable::createFromSVG(*xml);
         }
 
         // Load Tracktion Engine logo
@@ -63,6 +74,11 @@ class AboutDialog::ContentComponent : public juce::Component {
                               juce::Colour(DarkTheme::TEXT_PRIMARY));
         addAndMakeVisible(*titleLink_);
 
+        conceptualMachinesLink_ =
+            std::make_unique<juce::HyperlinkButton>("", kConceptualMachinesUrl);
+        conceptualMachinesLink_->setTooltip("Conceptual Machines");
+        addAndMakeVisible(*conceptualMachinesLink_);
+
         setSize(500, 440);
     }
 
@@ -95,6 +111,16 @@ class AboutDialog::ContentComponent : public juce::Component {
         g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
         g.drawText(tr("about.version_prefix") + MAGDA_VERSION, bounds.removeFromTop(20),
                    juce::Justification::centred);
+
+        // Conceptual Machines badge
+        bounds.removeFromTop(12);
+        if (conceptualMachinesBadge_) {
+            auto badgeArea = bounds.removeFromTop(72).withSizeKeepingCentre(64, 64);
+            conceptualMachinesBadge_->drawWithin(g, badgeArea.toFloat(),
+                                                 juce::RectanglePlacement::centred, 1.0f);
+        } else {
+            bounds.removeFromTop(72);
+        }
 
         // Credits line
         bounds.removeFromTop(10);
@@ -177,6 +203,16 @@ class AboutDialog::ContentComponent : public juce::Component {
             bounds.removeFromTop(200);  // skip logo area
             titleLink_->setBounds(bounds.removeFromTop(40));
         }
+        if (conceptualMachinesLink_) {
+            auto bounds = getLocalBounds();
+            bounds.removeFromTop(200);  // logo
+            bounds.removeFromTop(40);   // title
+            bounds.removeFromTop(24);   // subtitle
+            bounds.removeFromTop(20);   // version
+            bounds.removeFromTop(12);
+            conceptualMachinesLink_->setBounds(
+                bounds.removeFromTop(72).withSizeKeepingCentre(64, 64));
+        }
     }
 
     void mouseDown(const juce::MouseEvent&) override {
@@ -195,10 +231,12 @@ class AboutDialog::ContentComponent : public juce::Component {
 
   private:
     std::unique_ptr<juce::Drawable> logo_;
+    std::unique_ptr<juce::Drawable> conceptualMachinesBadge_;
     std::unique_ptr<juce::Drawable> teLogo_;
     std::unique_ptr<juce::Drawable> juceLogo_;
     std::unique_ptr<juce::Drawable> faustLogo_;
     std::unique_ptr<juce::HyperlinkButton> titleLink_;
+    std::unique_ptr<juce::HyperlinkButton> conceptualMachinesLink_;
 };
 
 // =============================================================================

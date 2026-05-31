@@ -12,9 +12,9 @@
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
+#include "../components/common/SvgButton.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../components/mixer/LevelMeter.hpp"
-#include "../components/mixer/MixerToggleRail.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
 #include "../components/mixer/RoutingSyncHelper.hpp"
 #include "../panels/state/PanelController.hpp"
@@ -120,6 +120,106 @@ std::vector<TrackId> getMultiEditTargets(TrackId clickedId) {
     return {clickedId};
 }
 }  // namespace
+
+class SessionView::SessionToggleRail : public juce::Component {
+  public:
+    SessionToggleRail() {
+        auto& cfg = Config::getInstance();
+
+        setupButton(sendsButton_, "SessionShowSends", BinaryData::send_svg,
+                    BinaryData::send_svgSize, "Show sends", cfg.getMixerShowSends(),
+                    [](bool v) { Config::getInstance().setMixerShowSends(v); });
+
+        setupButton(routingButton_, "SessionShowRouting", BinaryData::inputoutput_svg,
+                    BinaryData::inputoutput_svgSize, "Show I/O routing", cfg.getMixerShowRouting(),
+                    [](bool v) { Config::getInstance().setMixerShowRouting(v); });
+
+        setupButton(monitorButton_, "SessionShowMonitor", BinaryData::recordmonitor_svg,
+                    BinaryData::recordmonitor_svgSize, "Show record/monitor row",
+                    cfg.getMixerShowMonitor(),
+                    [](bool v) { Config::getInstance().setMixerShowMonitor(v); });
+    }
+
+    void paint(juce::Graphics& g) override {
+        auto bounds = getLocalBounds();
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.fillRect(bounds.getRight() - 1, bounds.getY(), 1, bounds.getHeight());
+    }
+
+    void resized() override {
+        constexpr int BTN_SIZE = 28;
+        constexpr int BTN_SPACING = 6;
+        constexpr int EDGE_PADDING = 8;
+
+        auto bounds = getLocalBounds();
+        const int x = (bounds.getWidth() - BTN_SIZE) / 2;
+
+        int yTop = EDGE_PADDING;
+        if (sendsButton_) {
+            sendsButton_->setBounds(x, yTop, BTN_SIZE, BTN_SIZE);
+            yTop += BTN_SIZE + BTN_SPACING;
+        }
+
+        int yBottom = bounds.getHeight() - EDGE_PADDING - BTN_SIZE;
+        if (monitorButton_) {
+            monitorButton_->setBounds(x, yBottom, BTN_SIZE, BTN_SIZE);
+            yBottom -= BTN_SIZE + BTN_SPACING;
+        }
+        if (routingButton_)
+            routingButton_->setBounds(x, yBottom, BTN_SIZE, BTN_SIZE);
+    }
+
+    void refreshFromConfig() {
+        auto& cfg = Config::getInstance();
+        applyToggleState(sendsButton_.get(), cfg.getMixerShowSends());
+        applyToggleState(routingButton_.get(), cfg.getMixerShowRouting());
+        applyToggleState(monitorButton_.get(), cfg.getMixerShowMonitor());
+    }
+
+    static constexpr int RAIL_WIDTH = 36;
+    std::function<void()> onToggleChanged;
+
+  private:
+    std::unique_ptr<SvgButton> sendsButton_;
+    std::unique_ptr<SvgButton> routingButton_;
+    std::unique_ptr<SvgButton> monitorButton_;
+
+    void setupButton(std::unique_ptr<SvgButton>& btn, const juce::String& name, const char* svgData,
+                     size_t svgSize, const juce::String& tooltip, bool initialState,
+                     std::function<void(bool)> setter) {
+        btn = std::make_unique<SvgButton>(name, svgData, svgSize);
+        btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        btn->setBorderThickness(1.0f);
+        btn->setTooltip(tooltip);
+        btn->setWantsKeyboardFocus(false);
+        applyToggleState(btn.get(), initialState);
+
+        btn->onClick = [this, raw = btn.get(), setter = std::move(setter)]() {
+            const bool newState = !raw->isActive();
+            setter(newState);
+            applyToggleState(raw, newState);
+            Config::getInstance().save();
+            if (onToggleChanged)
+                onToggleChanged();
+        };
+
+        addAndMakeVisible(*btn);
+    }
+
+    static void applyToggleState(SvgButton* btn, bool on) {
+        if (btn == nullptr)
+            return;
+        btn->setActive(on);
+        const auto base = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        btn->setNormalColor(on ? base : base.withAlpha(0.3f));
+        btn->repaint();
+    }
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionToggleRail)
+};
 
 // Custom grid content that draws track separators and empty cells
 class SessionView::GridContent : public juce::Component {
@@ -1463,7 +1563,7 @@ SessionView::SessionView() {
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
     syncMixerVisibilityFromConfig();
 
-    toggleRail_ = std::make_unique<MixerToggleRail>();
+    toggleRail_ = std::make_unique<SessionToggleRail>();
     toggleRail_->onToggleChanged = [this]() {
         syncMixerVisibilityFromConfig();
         resized();
@@ -2105,7 +2205,7 @@ void SessionView::resized() {
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
     if (toggleRail_)
-        toggleRail_->setBounds(bounds.removeFromLeft(MixerToggleRail::RAIL_WIDTH));
+        toggleRail_->setBounds(bounds.removeFromLeft(SessionToggleRail::RAIL_WIDTH));
 
     // Fader row at the bottom (tracks area + master strip in scene column).
     // A thin band along the top of the row hosts the beat indicators above

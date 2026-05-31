@@ -8,6 +8,10 @@
 
 namespace magda {
 
+namespace {
+const juce::URL kConceptualMachinesUrl("https://conceptualmachines.co.uk");
+}  // namespace
+
 // =============================================================================
 // Content Component
 // =============================================================================
@@ -25,6 +29,13 @@ class SplashScreen::ContentComponent : public juce::Component {
                 logo_->replaceColour(juce::Colour(0xFF000000),
                                      juce::Colour(DarkTheme::TEXT_SECONDARY));
             }
+        }
+
+        // Load Conceptual Machines badge
+        if (auto xml = juce::XmlDocument::parse(
+                juce::String::fromUTF8(BinaryData::conceptualmachinesbadge_svg,
+                                       BinaryData::conceptualmachinesbadge_svgSize))) {
+            conceptualMachinesBadge_ = juce::Drawable::createFromSVG(*xml);
         }
 
         // Load Tracktion Engine logo
@@ -99,6 +110,17 @@ class SplashScreen::ContentComponent : public juce::Component {
         g.setFont(fm.getUIFont(11.0f));
         g.setColour(juce::Colour(DarkTheme::ACCENT_BLUE));
         g.drawText(statusText_, bounds.removeFromTop(18), juce::Justification::centred);
+
+        // Conceptual Machines badge
+        bounds.removeFromTop(8);
+        if (conceptualMachinesBadge_) {
+            badgeBounds_ = bounds.removeFromTop(70).withSizeKeepingCentre(62, 62);
+            conceptualMachinesBadge_->drawWithin(g, badgeBounds_.toFloat(),
+                                                 juce::RectanglePlacement::centred, 1.0f);
+        } else {
+            badgeBounds_ = {};
+            bounds.removeFromTop(70);
+        }
 
         // Credits line
         bounds.removeFromTop(6);
@@ -180,11 +202,18 @@ class SplashScreen::ContentComponent : public juce::Component {
         repaint();
     }
 
+    void mouseDown(const juce::MouseEvent& e) override {
+        if (badgeBounds_.contains(e.getPosition()))
+            kConceptualMachinesUrl.launchInDefaultBrowser();
+    }
+
   private:
     std::unique_ptr<juce::Drawable> logo_;
+    std::unique_ptr<juce::Drawable> conceptualMachinesBadge_;
     std::unique_ptr<juce::Drawable> teLogo_;
     std::unique_ptr<juce::Drawable> juceLogo_;
     std::unique_ptr<juce::Drawable> faustLogo_;
+    juce::Rectangle<int> badgeBounds_;
     juce::String statusText_;
 };
 
