@@ -2,7 +2,9 @@ name: JUCE Tests (Linux)
 
 on:
   push:
-    branches: [ '**' ]
+    # Never run on the Crowdin localization branch (see ci.yml for the rationale):
+    # the sync force-pushes onto the latest HEAD, so paths-ignore can't catch it.
+    branches-ignore: [ 'l10n_crowdin_**' ]
     tags-ignore: [ '**' ]
     paths-ignore:
       - 'lang/**'
