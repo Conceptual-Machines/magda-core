@@ -24,6 +24,7 @@ class MixerToggleRail : public juce::Component {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void refreshFromConfig();
 
     static constexpr int RAIL_WIDTH = 36;
 
