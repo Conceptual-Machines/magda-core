@@ -1534,7 +1534,7 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
                     // the plugin's current ones. Leave live->parameters as captured
                     // and let the notification below apply them via syncFromDeviceInfo.
                     if (live->pluginState.isNotEmpty()) {
-                        reassertExternalPluginChunk(plugin.get(), live->pluginState);
+                        applyExternalPluginChunk(plugin.get(), live->pluginState);
                         if (auto* proc = bridge->getDeviceProcessor(devicePath))
                             proc->populateParameters(*live);
                     }

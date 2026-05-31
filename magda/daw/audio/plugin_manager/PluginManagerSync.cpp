@@ -1994,11 +1994,12 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
         // Restore parameter values from DeviceInfo onto the newly created plugin
         processor->syncFromDeviceInfo(device);
 
-        // For external plugins (rack / master / post-fx paths) the chunk is
-        // authoritative; re-assert it so the saved parameter array can't clobber
-        // the restored voice, then refresh TE's param cache. Same hazard and fix
+        // For external plugins (rack / master / post-fx paths) the chunk was
+        // restored by createPluginOnly and owns the plugin's parameters
+        // (syncFromDeviceInfo skips the saved array while a chunk is present).
+        // Sync TE's parameter cache to the restored plugin. Same hazard and fix
         // as loadDeviceAsPlugin.
-        reassertExternalPluginChunk(plugin.get(), device.pluginState);
+        refreshExternalPluginParameterCache(plugin.get());
 
         // Populate processor-owned fields directly into the canonical
         // DeviceInfo. Snapshotting into a temp and copying only `.parameters`
@@ -2240,10 +2241,13 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
             DBG("[ChainMove] restore track input params: " << describeChainMoveParams(device));
             processor->syncFromDeviceInfo(device);
 
-            // Make the native state chunk authoritative over the saved parameter
-            // array (the subsequent populateParameters() then re-captures the
-            // correct values into DeviceInfo, breaking the stale-array cycle).
-            reassertExternalPluginChunk(plugin.get(), device.pluginState);
+            // For an external plugin the chunk (restored above) is the source of
+            // truth for the plugin's parameters; syncFromDeviceInfo deliberately
+            // skips the saved array while a chunk is present, so it can't clobber
+            // the voice. Sync TE's parameter cache to the restored plugin so the
+            // playback-graph build doesn't write construction-time defaults back.
+            // populateParameters() then re-captures the canonical values.
+            refreshExternalPluginParameterCache(plugin.get());
 
             // Populate processor-owned fields directly into the canonical
             // DeviceInfo (see comment in registerRackPluginProcessor).

@@ -152,7 +152,14 @@ void ExternalPluginProcessor::syncFromDeviceInfo(const DeviceInfo& info) {
                 }
             }
         };
-        apply(info.parameters);
+        // The native state chunk is the single source of truth for an external
+        // plugin's own parameters: when one is present it has already restored the
+        // full voice, so writing the saved per-parameter array would overwrite it
+        // with a possibly-stale copy. Only apply the saved plugin parameters for a
+        // parameter-only device (no chunk). The wrapper dry/wet pair is MAGDA's,
+        // not part of the plugin chunk, so it is always applied.
+        if (info.pluginState.isEmpty())
+            apply(info.parameters);
         apply(info.wrapperParameters);
     }
 
