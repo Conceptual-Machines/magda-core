@@ -11,6 +11,7 @@
 #include "../PluginWindowBridge.hpp"
 #include "../TrackController.hpp"
 #include "../TracktionHelpers.hpp"
+#include "ExternalPluginStateUtil.hpp"
 #include "PluginManager.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
@@ -1993,6 +1994,12 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
         // Restore parameter values from DeviceInfo onto the newly created plugin
         processor->syncFromDeviceInfo(device);
 
+        // For external plugins (rack / master / post-fx paths) the chunk is
+        // authoritative; re-assert it so the saved parameter array can't clobber
+        // the restored voice, then refresh TE's param cache. Same hazard and fix
+        // as loadDeviceAsPlugin.
+        reassertExternalPluginChunk(plugin.get(), device.pluginState);
+
         // Populate processor-owned fields directly into the canonical
         // DeviceInfo. Snapshotting into a temp and copying only `.parameters`
         // back loses any other processor-populated field (wrapperParameters,
@@ -2181,7 +2188,10 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                     if (ext->isInitialisingAsync()) {
                         return plugin;  // Return bare wrapper; async poll handles the rest
                     }
-                    // Sync plugin already created — re-apply state now
+                    // Sync plugin already created — re-apply state now. (The
+                    // authoritative restore + param-cache refresh happens after
+                    // syncFromDeviceInfo below, where it can't be clobbered by the
+                    // saved per-parameter array.)
                     if (device.pluginState.isNotEmpty()) {
                         ext->restorePluginStateFromValueTree(ext->state);
                     }
@@ -2229,6 +2239,11 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                 << device.pluginState.length() << " params=" << device.parameters.size());
             DBG("[ChainMove] restore track input params: " << describeChainMoveParams(device));
             processor->syncFromDeviceInfo(device);
+
+            // Make the native state chunk authoritative over the saved parameter
+            // array (the subsequent populateParameters() then re-captures the
+            // correct values into DeviceInfo, breaking the stale-array cycle).
+            reassertExternalPluginChunk(plugin.get(), device.pluginState);
 
             // Populate processor-owned fields directly into the canonical
             // DeviceInfo (see comment in registerRackPluginProcessor).

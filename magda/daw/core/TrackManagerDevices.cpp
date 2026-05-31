@@ -3,6 +3,7 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
+#include "../audio/plugin_manager/ExternalPluginStateUtil.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
@@ -1518,10 +1519,25 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     if (audioEngine_) {
         if (auto* bridge = audioEngine_->getAudioBridge()) {
             if (auto plugin = bridge->getPlugin(devicePath)) {
-                if (auto* ext = dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin.get())) {
-                    ext->state.setProperty(tracktion::engine::IDs::state, live->pluginState,
-                                           nullptr);
-                    ext->restorePluginStateFromValueTree(ext->state);
+                if (dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin.get()) != nullptr) {
+                    // Only when the preset carries a native state chunk: it is the
+                    // authoritative source for the entire voice. Re-assert it +
+                    // refresh TE's param cache, then re-derive live->parameters from
+                    // the plugin, so the preset's (possibly stale) saved parameter
+                    // array can't clobber the restored voice when the
+                    // devicePropertyChanged notification below drives
+                    // syncFromDeviceInfo. (Same hazard + helper as loadDeviceAsPlugin.)
+                    //
+                    // For a parameter-only preset (no chunk -- e.g. a plugin that
+                    // returns no state, or a legacy preset) we must NOT repopulate:
+                    // that would overwrite the preset's saved parameter values with
+                    // the plugin's current ones. Leave live->parameters as captured
+                    // and let the notification below apply them via syncFromDeviceInfo.
+                    if (live->pluginState.isNotEmpty()) {
+                        reassertExternalPluginChunk(plugin.get(), live->pluginState);
+                        if (auto* proc = bridge->getDeviceProcessor(devicePath))
+                            proc->populateParameters(*live);
+                    }
                 } else if (auto xml = juce::parseXML(live->pluginState)) {
                     auto savedState = juce::ValueTree::fromXml(*xml);
                     if (savedState.isValid())
@@ -1533,11 +1549,14 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
 
     // Notify listeners — devicePropertyChanged covers gain/macros/mods refresh
     // via the AudioBridge sync path, then push each parameter individually so
-    // the UI's ParamGrid pickup matches what the preset captured.
+    // the UI's ParamGrid pickup matches what the preset captured. Address each by
+    // its real `paramIndex` (the TE automatable index), NOT the vector ordinal —
+    // ParameterInfo is not 1:1 with the TE parameter list (wrapper dry/wet live in
+    // wrapperParameters), and both the engine write (setParameterByIndex) and the
+    // UI lookup (findParameterByIndex) interpret the notified index as paramIndex.
     notifyDevicePropertyChanged(devicePath);
-    for (size_t i = 0; i < live->parameters.size(); ++i) {
-        notifyDeviceParameterChanged(devicePath, static_cast<int>(i),
-                                     live->parameters[i].currentValue);
+    for (const auto& p : live->parameters) {
+        notifyDeviceParameterChanged(devicePath, p.paramIndex, p.currentValue);
     }
     return true;
 }
