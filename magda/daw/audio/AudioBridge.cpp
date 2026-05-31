@@ -1024,9 +1024,9 @@ void AudioBridge::timerCallback() {
             if (!meteringBuffer_.peekLatest(trackId, trackMeter))
                 continue;
 
-            for (auto devId : info.deviceIds) {
-                deviceMetering_.ensureEntry(devId);
-                deviceMetering_.setDirectLevels(devId, trackMeter.peakL, trackMeter.peakR);
+            for (const auto& devicePath : info.devicePaths) {
+                deviceMetering_.ensureEntry(devicePath);
+                deviceMetering_.setDirectLevels(devicePath, trackMeter.peakL, trackMeter.peakR);
             }
 
             for (auto rackId : info.rackIds) {

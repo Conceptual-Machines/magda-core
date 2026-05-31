@@ -140,7 +140,7 @@ class RackSyncManager {
      */
     struct TrackMeteringInfo {
         std::vector<RackId> rackIds;
-        std::vector<DeviceId> deviceIds;
+        std::vector<ChainNodePath> devicePaths;
     };
     std::unordered_map<TrackId, TrackMeteringInfo> getMeteringMap() const;
 

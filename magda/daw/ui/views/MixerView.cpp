@@ -2237,8 +2237,6 @@ void MixerView::reconcileAnalysisDevices() {
             device.deviceType = DeviceType::Analysis;
             device.format = PluginFormat::Internal;
             tm.addDeviceToMixerAnalysis(tid, device);
-        } else if (!want && has) {
-            tm.removeDeviceFromChainByPath(ChainNodePath::mixerAnalysisDevice(tid, existing));
         }
     };
 

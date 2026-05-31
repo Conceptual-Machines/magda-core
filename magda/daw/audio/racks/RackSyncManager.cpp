@@ -333,12 +333,34 @@ std::vector<DeviceId> RackSyncManager::getInnerDeviceIdsForTrack(TrackId trackId
 std::unordered_map<TrackId, RackSyncManager::TrackMeteringInfo> RackSyncManager::getMeteringMap()
     const {
     std::unordered_map<TrackId, TrackMeteringInfo> map;
+    auto& tm = TrackManager::getInstance();
+
     for (const auto& [rackId, synced] : syncedRacks_) {
         auto& info = map[synced.trackId];
         info.rackIds.push_back(rackId);
-        for (const auto& [deviceId, plugin] : synced.innerPlugins) {
-            info.deviceIds.push_back(deviceId);
-        }
+
+        auto* rackInfo = tm.getRack(synced.trackId, rackId);
+        if (rackInfo == nullptr)
+            continue;
+
+        std::function<void(const RackInfo&, const ChainNodePath&)> collectPaths;
+        collectPaths = [&](const RackInfo& rack, const ChainNodePath& rackPath) {
+            for (const auto& chain : rack.chains) {
+                const auto chainPath = rackPath.withChain(chain.id);
+                for (const auto& element : chain.elements) {
+                    if (isDevice(element)) {
+                        const auto& device = getDevice(element);
+                        auto pluginIt = synced.innerPlugins.find(device.id);
+                        if (pluginIt != synced.innerPlugins.end() && pluginIt->second)
+                            info.devicePaths.push_back(chainPath.withDevice(device.id));
+                    } else if (isRack(element)) {
+                        const auto& nestedRack = getRack(element);
+                        collectPaths(nestedRack, chainPath.withRack(nestedRack.id));
+                    }
+                }
+            }
+        };
+        collectPaths(*rackInfo, ChainNodePath::rack(synced.trackId, rackId));
     }
     return map;
 }

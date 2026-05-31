@@ -390,6 +390,13 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     }
     obj->setProperty("visibleParameters", juce::var(visibleParamsArray));
 
+    // Mini mixer parameters
+    juce::Array<juce::var> miniMixerParamsArray;
+    for (auto index : device.miniMixerParameters) {
+        miniMixerParamsArray.add(index);
+    }
+    obj->setProperty("miniMixerParameters", juce::var(miniMixerParamsArray));
+
     // Device volume
     obj->setProperty("gainValue", device.gainValue);
     obj->setProperty("gainDb", device.gainDb);
@@ -518,6 +525,15 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         auto* arr = visibleParamsVar.getArray();
         for (const auto& indexVar : *arr) {
             outDevice.visibleParameters.push_back(static_cast<int>(indexVar));
+        }
+    }
+
+    // Mini mixer parameters
+    auto miniMixerParamsVar = obj->getProperty("miniMixerParameters");
+    if (miniMixerParamsVar.isArray()) {
+        auto* arr = miniMixerParamsVar.getArray();
+        for (const auto& indexVar : *arr) {
+            outDevice.miniMixerParameters.push_back(static_cast<int>(indexVar));
         }
     }
 
