@@ -1374,6 +1374,48 @@ TEST_CASE("Section-scoped device ids survive project roundtrip",
     REQUIRE(trackManager.addDeviceToMixerAnalysis(trackId, analysis) == 2);
 }
 
+TEST_CASE("Post-FX visible and mini mixer parameters survive project roundtrip",
+          "[project][serialization][devices]") {
+    ProjectTestFixture fixture;
+
+    auto& trackManager = TrackManager::getInstance();
+    auto trackId = trackManager.createTrack("Post FX Params", TrackType::Audio);
+
+    DeviceInfo fx;
+    fx.name = "FX";
+    fx.pluginId = "fx";
+    DeviceInfo post;
+    post.name = "Post";
+    post.pluginId = "post";
+
+    const auto fxId = trackManager.addDeviceToTrack(trackId, fx);
+    const auto postId = trackManager.addDeviceToPostFx(trackId, post);
+    REQUIRE(fxId == 1);
+    REQUIRE(postId == 1);
+
+    const auto fxPath = ChainNodePath::topLevelDevice(trackId, fxId);
+    const auto postPath = ChainNodePath::postFxDevice(trackId, postId);
+    trackManager.setDeviceVisibleParameters(fxPath, {1, 2});
+    trackManager.setDeviceMiniMixerParameters(fxPath, {3});
+    trackManager.setDeviceVisibleParameters(postPath, {4, 5});
+    trackManager.setDeviceMiniMixerParameters(postPath, {6, 7});
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+
+    ProjectInfo loadedInfo;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
+
+    auto* loadedFx = trackManager.getDeviceInChainByPath(fxPath);
+    auto* loadedPost = trackManager.getDeviceInChainByPath(postPath);
+    REQUIRE(loadedFx != nullptr);
+    REQUIRE(loadedPost != nullptr);
+    REQUIRE(loadedFx->visibleParameters == std::vector<int>{1, 2});
+    REQUIRE(loadedFx->miniMixerParameters == std::vector<int>{3});
+    REQUIRE(loadedPost->visibleParameters == std::vector<int>{4, 5});
+    REQUIRE(loadedPost->miniMixerParameters == std::vector<int>{6, 7});
+}
+
 TEST_CASE("Mixer analysis plugin state survives project roundtrip",
           "[project][serialization][devices][pluginState]") {
     ProjectTestFixture fixture;

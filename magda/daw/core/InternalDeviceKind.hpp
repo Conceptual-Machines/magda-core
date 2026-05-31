@@ -86,4 +86,12 @@ const InternalDeviceMetadata* getInternalDeviceMetadataForPluginId(const juce::S
  */
 bool isAnalysisDevice(const juce::String& pluginId);
 
+/**
+ * @brief Stable display / chain order for known post-FX analysis devices.
+ *
+ * Returns -1 for non-analysis devices. The Track FX post-FX area keeps
+ * Oscilloscope before Spectrum Analyzer whenever both are present.
+ */
+int postFxAnalysisDeviceOrder(const juce::String& pluginId);
+
 }  // namespace magda

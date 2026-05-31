@@ -72,6 +72,10 @@ class ParameterConfigDialog : public juce::Component,
     // Load saved parameter configuration and apply to DeviceInfo
     static bool applyConfigToDevice(const juce::String& uniqueId, magda::DeviceInfo& device);
 
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+    static void refreshLiveDevicesForParameterConfigForTest(const juce::String& uniqueId);
+#endif
+
   private:
     juce::String pluginName_;
     juce::String pluginUniqueId_;  // For saving/loading parameter configuration

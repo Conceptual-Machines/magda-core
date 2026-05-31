@@ -761,47 +761,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         };
     }
 
-    // Initialize pagination based on visible parameter count
-    {
-        int totalPages = juce::jmax(1, paramGrid_->getLayout().totalPages(device_));
-        int currentPage = device_.currentParameterPage;
-        // Clamp to valid range in case device had invalid page
-        if (currentPage >= totalPages)
-            currentPage = totalPages - 1;
-        if (currentPage < 0)
-            currentPage = 0;
-        paramGrid_->updatePageControls(currentPage, totalPages);
-    }
-
-    // Apply saved parameter configuration if available and parameters are loaded
-    if (!device_.uniqueId.isEmpty() && !device_.parameters.empty()) {
-        magda::DeviceInfo tempDevice = device_;
-        if (ParameterConfigDialog::applyConfigToDevice(tempDevice.uniqueId, tempDevice)) {
-            // Config was loaded successfully - update TrackManager with the visible parameters
-            if (!tempDevice.visibleParameters.empty()) {
-                magda::TrackManager::getInstance().setDeviceVisibleParameters(
-                    nodePath_, tempDevice.visibleParameters);
-                // Update our local copy
-                device_.visibleParameters = tempDevice.visibleParameters;
-            }
-            // Mixer mini-chain selection (empty = fall back to first non-hidden params).
-            // Pushed unconditionally so deselecting all clears a prior selection.
-            magda::TrackManager::getInstance().setDeviceMiniMixerParameters(
-                nodePath_, tempDevice.miniMixerParameters);
-            device_.miniMixerParameters = tempDevice.miniMixerParameters;
-            // Apply detected parameter metadata (unit, scale, range, choices)
-            device_.parameters = tempDevice.parameters;
-
-            // Recalculate pagination now that visible params have changed
-            int totalPages = juce::jmax(1, paramGrid_->getLayout().totalPages(device_));
-            int currentPage = device_.currentParameterPage;
-            if (currentPage >= totalPages)
-                currentPage = totalPages - 1;
-            if (currentPage < 0)
-                currentPage = 0;
-            paramGrid_->updatePageControls(currentPage, totalPages);
-        }
-    }
+    updateParameterPagination();
+    applySavedParameterConfig();
+    updateParameterPagination();
 
     // Load parameters for current page
     updateParameterSlots();
@@ -1035,6 +997,11 @@ void DeviceSlotComponent::syncModMacroControlsAvailability() {
 void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
     customUI_.setDevicePath(path);
+
+    if (applySavedParameterConfig()) {
+        updateParameterPagination();
+        updateParameterSlots();
+    }
 
     // Hide power / preset / delete for post-FX analysis devices (the getters
     // return nullptr too, so the header layout skips placing them).
@@ -1287,35 +1254,10 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     if (multiOutButton_)
         multiOutButton_->setVisible(device_.multiOut.isMultiOut);
 
-    // Apply saved parameter configuration if parameters are now available
-    if (!device_.uniqueId.isEmpty() && !device_.parameters.empty()) {
-        magda::DeviceInfo tempDevice = device_;
-        if (ParameterConfigDialog::applyConfigToDevice(tempDevice.uniqueId, tempDevice)) {
-            if (!tempDevice.visibleParameters.empty()) {
-                magda::TrackManager::getInstance().setDeviceVisibleParameters(
-                    nodePath_, tempDevice.visibleParameters);
-                device_.visibleParameters = tempDevice.visibleParameters;
-            }
-            // Mixer mini-chain selection (empty = fall back to first non-hidden params).
-            // Pushed unconditionally so deselecting all clears a prior selection.
-            magda::TrackManager::getInstance().setDeviceMiniMixerParameters(
-                nodePath_, tempDevice.miniMixerParameters);
-            device_.miniMixerParameters = tempDevice.miniMixerParameters;
-            // Apply detected parameter metadata (unit, scale, range, choices)
-            device_.parameters = tempDevice.parameters;
-        }
-    }
+    applySavedParameterConfig();
 
     // Update pagination based on visible parameter count, then clamp current page
-    {
-        int totalPages = juce::jmax(1, paramGrid_->getLayout().totalPages(device_));
-        int currentPage = device.currentParameterPage;
-        if (currentPage >= totalPages)
-            currentPage = totalPages - 1;
-        if (currentPage < 0)
-            currentPage = 0;
-        paramGrid_->updatePageControls(currentPage, totalPages);
-    }
+    updateParameterPagination();
 
     // Create custom UI if this is an internal device and we don't have one yet
     if (isInternalDevice() && !customUI_.hasAnyUI() && !faustUI_ && !compiledPanel_) {
@@ -1942,6 +1884,45 @@ void DeviceSlotComponent::updateParameterSlots() {
 void DeviceSlotComponent::updateParameterValues() {
     // Update only parameter values (no callback rewiring)
     paramGrid_->updateParameterValues(device_, paramGrid_->getCurrentPage());
+}
+
+bool DeviceSlotComponent::applySavedParameterConfig() {
+    if (!paramGrid_ || device_.uniqueId.isEmpty() || device_.parameters.empty())
+        return false;
+
+    magda::DeviceInfo tempDevice = device_;
+    if (!ParameterConfigDialog::applyConfigToDevice(tempDevice.uniqueId, tempDevice))
+        return false;
+
+    if (!tempDevice.visibleParameters.empty()) {
+        if (nodePath_.isValid())
+            magda::TrackManager::getInstance().setDeviceVisibleParameters(
+                nodePath_, tempDevice.visibleParameters);
+        device_.visibleParameters = tempDevice.visibleParameters;
+    }
+
+    // Mixer mini-chain selection (empty = fall back to first non-hidden params).
+    // Pushed unconditionally so deselecting all clears a prior selection.
+    if (nodePath_.isValid())
+        magda::TrackManager::getInstance().setDeviceMiniMixerParameters(
+            nodePath_, tempDevice.miniMixerParameters);
+    device_.miniMixerParameters = tempDevice.miniMixerParameters;
+
+    // Apply detected parameter metadata (unit, scale, range, choices).
+    device_.parameters = tempDevice.parameters;
+    return true;
+}
+
+void DeviceSlotComponent::updateParameterPagination() {
+    if (!paramGrid_)
+        return;
+    const int totalPages = juce::jmax(1, paramGrid_->getLayout().totalPages(device_));
+    int currentPage = device_.currentParameterPage;
+    if (currentPage >= totalPages)
+        currentPage = totalPages - 1;
+    if (currentPage < 0)
+        currentPage = 0;
+    paramGrid_->updatePageControls(currentPage, totalPages);
 }
 
 void DeviceSlotComponent::goToPrevPage() {

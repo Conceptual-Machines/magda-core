@@ -131,7 +131,7 @@ class MixerView : public juce::Component,
         }
 
         // Update from track info
-        void updateFromTrack(const TrackInfo& track);
+        void updateFromTrack(const TrackInfo& track, bool syncMiniChain = false);
 
         // Callback when channel is clicked
         std::function<void(int trackId, bool isMaster)> onClicked;
@@ -210,9 +210,11 @@ class MixerView : public juce::Component,
             bool isRack = false;
             int id = INVALID_DEVICE_ID;
             juce::String name;
+            std::vector<int> miniMixerParameters;
 
             bool operator==(const MiniChainRowSignatureEntry& other) const {
-                return isRack == other.isRack && id == other.id && name == other.name;
+                return isRack == other.isRack && id == other.id && name == other.name &&
+                       miniMixerParameters == other.miniMixerParameters;
             }
         };
 

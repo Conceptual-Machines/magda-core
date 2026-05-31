@@ -12,6 +12,7 @@
 #include "core/ChainNodePath.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "ui/dialogs/ParameterConfigDialog.hpp"
 
 namespace magda {
 
@@ -25,11 +26,10 @@ MiniChainRow::~MiniChainRow() {
     stopTimer();
 }
 
-void MiniChainRow::setDevice(TrackId trackId, DeviceId deviceId, AudioEngine* engine,
+void MiniChainRow::setDevice(const ChainNodePath& devicePath, AudioEngine* engine,
                              const juce::String& name, bool bypassed) {
-    const bool deviceChanged = (deviceId_ != deviceId || trackId_ != trackId);
-    trackId_ = trackId;
-    deviceId_ = deviceId;
+    const bool deviceChanged = devicePath_ != devicePath;
+    devicePath_ = devicePath;
     engine_ = engine;
     deviceName_ = name;
     bypassed_ = bypassed;
@@ -47,8 +47,8 @@ void MiniChainRow::setDevice(TrackId trackId, DeviceId deviceId, AudioEngine* en
     // have a native editor window worth popping; every MAGDA-internal device
     // (TE built-ins, the magda_* Faust effects, native instruments, analysis)
     // reports PluginFormat::Internal and edits inline, so it gets no icon.
-    const auto* devInfo = deviceId_ != INVALID_DEVICE_ID
-                              ? TrackManager::getInstance().getDevice(trackId_, deviceId_)
+    const auto* devInfo = devicePath_.isValid()
+                              ? TrackManager::getInstance().getDeviceInChainByPath(devicePath_)
                               : nullptr;
     const bool wantUiButton = devInfo != nullptr && devInfo->format != PluginFormat::Internal;
     if (wantUiButton && uiButton_ == nullptr) {
@@ -60,8 +60,7 @@ void MiniChainRow::setDevice(TrackId trackId, DeviceId deviceId, AudioEngine* en
             if (engine_ == nullptr)
                 return;
             if (auto* bridge = engine_->getAudioBridge()) {
-                const bool isOpen =
-                    bridge->togglePluginWindow(ChainNodePath::topLevelDevice(trackId_, deviceId_));
+                const bool isOpen = bridge->togglePluginWindow(devicePath_);
                 uiButton_->setToggleState(isOpen, juce::dontSendNotification);
                 uiButton_->setActive(isOpen);
             }
@@ -130,17 +129,19 @@ void MiniChainRow::resolveParams() {
     paramSliders_.clear();
     paramLabels_.clear();
     trackedParamIndices_.clear();
-    if (deviceId_ == INVALID_DEVICE_ID || engine_ == nullptr)
+    if (!devicePath_.isValid() || engine_ == nullptr)
         return;
 
     // Read values from the device model and write through TrackManager, both in
     // display units. This is the same path the device chain uses, so the mini
     // row stays in sync regardless of how the device maps display values onto
     // its live parameter (Faust devices keep a normalized 0..1 native param).
-    const auto* devInfo = TrackManager::getInstance().getDevice(trackId_, deviceId_);
+    auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath_);
     if (devInfo == nullptr)
         return;
-    const auto path = ChainNodePath::topLevelDevice(trackId_, deviceId_);
+    if (devInfo->uniqueId.isNotEmpty())
+        daw::ui::ParameterConfigDialog::applyConfigToDevice(devInfo->uniqueId, *devInfo);
+    const auto path = devicePath_;
 
     auto addParamSlider = [&](const ParameterInfo& paramInfo) {
         if (paramInfo.paramIndex < 0)
@@ -269,7 +270,7 @@ void MiniChainRow::timerCallback() {
     // external changes, etc.). Skips notification to avoid feedback loops.
     if (!expanded_)
         return;
-    const auto* devInfo = TrackManager::getInstance().getDevice(trackId_, deviceId_);
+    const auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath_);
     if (devInfo == nullptr)
         return;
     for (size_t i = 0; i < paramSliders_.size(); ++i) {
@@ -351,7 +352,7 @@ void MiniChainRow::resized() {
 }
 
 void MiniChainRow::mouseDown(const juce::MouseEvent& event) {
-    if (deviceId_ == INVALID_DEVICE_ID)
+    if (!devicePath_.isValid())
         return;
     const auto pos = event.getPosition();
     if (bypassRect_.contains(pos)) {
@@ -359,7 +360,7 @@ void MiniChainRow::mouseDown(const juce::MouseEvent& event) {
         // BypassedByPath fires a synchronous devicePropertyChanged that may
         // rebuild/destroy this row, so touch no members after the call.
         const bool newBypassed = !bypassed_;
-        const auto path = ChainNodePath::topLevelDevice(trackId_, deviceId_);
+        const auto path = devicePath_;
         bypassed_ = newBypassed;
         repaint();
         TrackManager::getInstance().setDeviceInChainBypassedByPath(path, newBypassed);

@@ -275,12 +275,12 @@ MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, AudioEngine* audio
       audioEngine_(audioEngine) {
     setOpaque(true);
     setupControls();
-    updateFromTrack(track);
+    updateFromTrack(track, true);
 }
 
 MixerView::ChannelStrip::~ChannelStrip() = default;
 
-void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
+void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncMiniChain) {
     bool wasChild = isChildTrack_;
     isChildTrack_ = track.hasParent();
     bool colourChanged = trackColour_ != track.colour;
@@ -326,8 +326,9 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
                                       juce::dontSendNotification);
     }
 
-    // Sync mini FX chain rows from the track's chain elements
-    if (!isMaster_)
+    // Sync mini FX chain rows only when the device list may have changed. Mixer
+    // property updates are frequent and should not rebuild chain signatures.
+    if (syncMiniChain && !isMaster_)
         syncMiniChainRows(track);
 
     // Sync send slots
@@ -865,10 +866,10 @@ MixerView::ChannelStrip::buildMiniChainSignature(const TrackInfo& track) const {
     for (const auto& element : track.chain.fxChainElements) {
         if (isDevice(element)) {
             const auto& device = getDevice(element);
-            signature.push_back({false, device.id, device.name});
+            signature.push_back({false, device.id, device.name, device.miniMixerParameters});
         } else if (isRack(element)) {
             const auto& rack = getRack(element);
-            signature.push_back({true, rack.id, rack.name});
+            signature.push_back({true, rack.id, rack.name, {}});
         }
     }
     return signature;
@@ -890,7 +891,8 @@ void MixerView::ChannelStrip::rebuildMiniChainRows(
         if (isDevice(element)) {
             const auto& device = getDevice(element);
             auto row = std::make_unique<MiniChainRow>();
-            row->setDevice(trackId_, device.id, audioEngine_, device.name, device.bypassed);
+            row->setDevice(ChainNodePath::topLevelDevice(trackId_, device.id), audioEngine_,
+                           device.name, device.bypassed);
             row->onExpandChanged = [this]() {
                 if (auto* parent = findParentComponentOfClass<MixerView>())
                     parent->relayoutAllStrips();
@@ -900,7 +902,7 @@ void MixerView::ChannelStrip::rebuildMiniChainRows(
         } else if (isRack(element)) {
             const auto& rack = getRack(element);
             auto row = std::make_unique<MiniChainRow>();
-            row->setDevice(trackId_, INVALID_DEVICE_ID, audioEngine_, rack.name, false);
+            row->setDevice({}, audioEngine_, rack.name, false);
             addAndMakeVisible(*row);
             miniChainRows_.push_back(std::move(row));
         }
@@ -1555,33 +1557,14 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
         if (isMaster_)
             return;  // master strip has nothing to offer here
 
-        juce::PopupMenu menu;
-        juce::PopupMenu sendSubMenu;
-        const auto& tracks = TrackManager::getInstance().getTracks();
-        std::set<TrackId> existingSendDests;
-        if (auto* thisTrack = TrackManager::getInstance().getTrack(trackId_)) {
-            for (const auto& send : thisTrack->sends)
-                existingSendDests.insert(send.destTrackId);
-        }
-        for (const auto& t : tracks) {
-            if (t.id != trackId_ && t.type != TrackType::Master &&
-                existingSendDests.find(t.id) == existingSendDests.end()) {
-                sendSubMenu.addItem(t.id, t.name);
-            }
-        }
-        if (sendSubMenu.getNumItems() == 0)
-            sendSubMenu.addItem(-1, "(No tracks available)", false);
-        menu.addSubMenu("Add Send", sendSubMenu);
-        menu.addSeparator();
         const int deleteTrackId = -101;
+        juce::PopupMenu menu;
         menu.addItem(deleteTrackId, "Delete Track");
 
         menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
             if (result == -101) {
                 UndoManager::getInstance().executeCommand(
                     std::make_unique<DeleteTrackCommand>(trackId_));
-            } else if (result > 0) {
-                TrackManager::getInstance().addSend(trackId_, static_cast<TrackId>(result));
             }
         });
     } else if (!isMaster_ && event.mods.isCommandDown()) {
@@ -1940,8 +1923,21 @@ void MixerView::trackPropertyChanged(int trackId) {
 }
 
 void MixerView::trackDevicesChanged(TrackId trackId) {
-    // Sends are notified via trackDevicesChanged — update the strip
-    trackPropertyChanged(trackId);
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    if (track) {
+        for (auto& strip : channelStrips) {
+            if (strip->getTrackId() == trackId) {
+                strip->updateFromTrack(*track, true);
+                break;
+            }
+        }
+        for (auto& strip : auxChannelStrips) {
+            if (strip->getTrackId() == trackId) {
+                strip->updateFromTrack(*track, true);
+                break;
+            }
+        }
+    }
     // Re-resolve the changed strip's mini analyzer plugin pointers
     if (trackId == MASTER_TRACK_ID) {
         if (masterStrip)

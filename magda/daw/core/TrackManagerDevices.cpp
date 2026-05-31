@@ -139,6 +139,46 @@ void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const Preset
     }
 }
 
+void collectDeviceIdMatches(std::vector<ChainElement>& elements, DeviceId deviceId,
+                            std::vector<DeviceInfo*>& matches) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            if (device.id == deviceId)
+                matches.push_back(&device);
+            continue;
+        }
+
+        if (magda::isRack(element)) {
+            for (auto& chain : magda::getRack(element).chains)
+                collectDeviceIdMatches(chain.elements, deviceId, matches);
+        }
+    }
+}
+
+void collectDeviceIdMatches(std::vector<PostFxChainElement>& elements, DeviceId deviceId,
+                            std::vector<DeviceInfo*>& matches) {
+    for (auto& element : elements)
+        if (element.device.id == deviceId)
+            matches.push_back(&element.device);
+}
+
+DeviceInfo* findUniqueBareDeviceIdMatch(TrackInfo& masterTrack, std::vector<TrackInfo>& tracks,
+                                        DeviceId deviceId) {
+    std::vector<DeviceInfo*> matches;
+    collectDeviceIdMatches(masterTrack.chain.fxChainElements, deviceId, matches);
+    collectDeviceIdMatches(masterTrack.chain.postFxChainElements, deviceId, matches);
+    collectDeviceIdMatches(masterTrack.chain.mixerAnalysisElements, deviceId, matches);
+
+    for (auto& track : tracks) {
+        collectDeviceIdMatches(track.chain.fxChainElements, deviceId, matches);
+        collectDeviceIdMatches(track.chain.postFxChainElements, deviceId, matches);
+        collectDeviceIdMatches(track.chain.mixerAnalysisElements, deviceId, matches);
+    }
+
+    return matches.size() == 1 ? matches.front() : nullptr;
+}
+
 }  // namespace
 
 // ============================================================================
@@ -1314,34 +1354,10 @@ void TrackManager::setDeviceVisibleParameters(const ChainNodePath& devicePath,
 
 void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
                                               const std::vector<int>& visibleParams) {
-    // Check master track first
-    for (auto& element : masterTrack_.chain.fxChainElements) {
-        if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
-            magda::getDevice(element).visibleParameters = visibleParams;
-            return;
-        }
-    }
-
-    // Search all tracks for the device and update visible parameters
-    for (auto& track : tracks_) {
-        for (auto& element : track.chain.fxChainElements) {
-            if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
-                magda::getDevice(element).visibleParameters = visibleParams;
-                return;
-            }
-            if (magda::isRack(element)) {
-                for (auto& chain : magda::getRack(element).chains) {
-                    for (auto& chainElement : chain.elements) {
-                        if (magda::isDevice(chainElement) &&
-                            magda::getDevice(chainElement).id == deviceId) {
-                            magda::getDevice(chainElement).visibleParameters = visibleParams;
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    }
+    if (auto* device = findUniqueBareDeviceIdMatch(masterTrack_, tracks_, deviceId))
+        device->visibleParameters = visibleParams;
+    else
+        DBG("Ignoring visible-parameter update for ambiguous device id " << deviceId);
 }
 
 void TrackManager::setDeviceMiniMixerParameters(const ChainNodePath& devicePath,
@@ -1352,34 +1368,10 @@ void TrackManager::setDeviceMiniMixerParameters(const ChainNodePath& devicePath,
 
 void TrackManager::setDeviceMiniMixerParameters(DeviceId deviceId,
                                                 const std::vector<int>& miniParams) {
-    // Check master track first
-    for (auto& element : masterTrack_.chain.fxChainElements) {
-        if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
-            magda::getDevice(element).miniMixerParameters = miniParams;
-            return;
-        }
-    }
-
-    // Search all tracks (and rack chains) for the device.
-    for (auto& track : tracks_) {
-        for (auto& element : track.chain.fxChainElements) {
-            if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
-                magda::getDevice(element).miniMixerParameters = miniParams;
-                return;
-            }
-            if (magda::isRack(element)) {
-                for (auto& chain : magda::getRack(element).chains) {
-                    for (auto& chainElement : chain.elements) {
-                        if (magda::isDevice(chainElement) &&
-                            magda::getDevice(chainElement).id == deviceId) {
-                            magda::getDevice(chainElement).miniMixerParameters = miniParams;
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    }
+    if (auto* device = findUniqueBareDeviceIdMatch(masterTrack_, tracks_, deviceId))
+        device->miniMixerParameters = miniParams;
+    else
+        DBG("Ignoring mini-mixer-parameter update for ambiguous device id " << deviceId);
 }
 
 void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex,

@@ -21,6 +21,61 @@ struct CachedPluginParams {
 };
 static std::map<juce::String, CachedPluginParams> parameterCache_;
 
+static bool applyConfigToMatchingDevice(const juce::String& uniqueId, magda::DeviceInfo& device) {
+    const auto deviceConfigId = device.uniqueId.isNotEmpty() ? device.uniqueId : device.pluginId;
+    if (deviceConfigId != uniqueId)
+        return false;
+
+    return ParameterConfigDialog::applyConfigToDevice(uniqueId, device);
+}
+
+static bool refreshElementParameterConfig(const juce::String& uniqueId,
+                                          std::vector<magda::ChainElement>& elements) {
+    bool changed = false;
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            changed = applyConfigToMatchingDevice(uniqueId, magda::getDevice(element)) || changed;
+        } else if (magda::isRack(element)) {
+            for (auto& chain : magda::getRack(element).chains)
+                changed = refreshElementParameterConfig(uniqueId, chain.elements) || changed;
+        }
+    }
+    return changed;
+}
+
+static bool refreshFlatParameterConfig(const juce::String& uniqueId,
+                                       std::vector<magda::PostFxChainElement>& elements) {
+    bool changed = false;
+    for (auto& element : elements)
+        changed = applyConfigToMatchingDevice(uniqueId, element.device) || changed;
+    return changed;
+}
+
+static void refreshLiveDevicesForParameterConfig(const juce::String& uniqueId) {
+    if (uniqueId.isEmpty())
+        return;
+
+    auto& tm = magda::TrackManager::getInstance();
+    std::vector<magda::TrackId> trackIds;
+    trackIds.reserve(tm.getTracks().size() + 1);
+    trackIds.push_back(magda::MASTER_TRACK_ID);
+    for (const auto& track : tm.getTracks())
+        trackIds.push_back(track.id);
+
+    for (auto trackId : trackIds) {
+        auto* track = tm.getTrack(trackId);
+        if (track == nullptr)
+            continue;
+
+        bool changed = refreshElementParameterConfig(uniqueId, track->chain.fxChainElements);
+        changed = refreshFlatParameterConfig(uniqueId, track->chain.postFxChainElements) || changed;
+        changed =
+            refreshFlatParameterConfig(uniqueId, track->chain.mixerAnalysisElements) || changed;
+        if (changed)
+            tm.notifyTrackDevicesChanged(trackId);
+    }
+}
+
 static juce::String scaleToXmlString(magda::ParameterScale scale) {
     switch (scale) {
         case magda::ParameterScale::Linear:
@@ -1322,6 +1377,7 @@ void ParameterConfigDialog::saveParameterConfiguration() {
     if (root.writeTo(configFile)) {
         DBG("Saved parameter config for " << pluginUniqueId_ << " - " << visibleCount
                                           << " visible params to " << configFile.getFullPathName());
+        refreshLiveDevicesForParameterConfig(pluginUniqueId_);
     } else {
         DBG("Failed to save parameter config for " << pluginUniqueId_);
     }
@@ -1495,6 +1551,13 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
 
     return true;
 }
+
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+void ParameterConfigDialog::refreshLiveDevicesForParameterConfigForTest(
+    const juce::String& uniqueId) {
+    refreshLiveDevicesForParameterConfig(uniqueId);
+}
+#endif
 
 void ParameterConfigDialog::rebuildFilteredList() {
     filteredIndices_.clear();

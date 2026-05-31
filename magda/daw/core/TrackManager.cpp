@@ -206,6 +206,19 @@ void setChainElementsBypassed(std::vector<ChainElement>& elements, const ChainNo
     }
 }
 
+void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
+    auto findAnalysis = [&elements](int order) {
+        return std::find_if(elements.begin(), elements.end(), [order](const auto& element) {
+            return postFxAnalysisDeviceOrder(element.device.pluginId) == order;
+        });
+    };
+
+    auto osc = findAnalysis(0);
+    auto spectrum = findAnalysis(1);
+    if (osc != elements.end() && spectrum != elements.end() && spectrum < osc)
+        std::iter_swap(osc, spectrum);
+}
+
 }  // namespace
 
 TrackManager& TrackManager::getInstance() {
@@ -1428,6 +1441,7 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
     auto& elements = track->chain.postFxChainElements;
     insertIndex = std::clamp(insertIndex, 0, static_cast<int>(elements.size()));
     elements.insert(elements.begin() + insertIndex, PostFxChainElement{newDevice});
+    enforcePostFxAnalysisDeviceOrder(elements);
     notifyTrackDevicesChanged(trackId);
     DBG("Added post-fx device: " << newDevice.name << " (id=" << newDevice.id << ") to track "
                                  << trackId << " at index " << insertIndex);
@@ -1445,6 +1459,7 @@ void TrackManager::movePostFxDevice(TrackId trackId, int fromIndex, int toIndex)
         PostFxChainElement element = std::move(elements[fromIndex]);
         elements.erase(elements.begin() + fromIndex);
         elements.insert(elements.begin() + toIndex, std::move(element));
+        enforcePostFxAnalysisDeviceOrder(elements);
         notifyTrackDevicesChanged(trackId);
     }
 }

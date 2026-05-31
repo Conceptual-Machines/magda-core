@@ -212,4 +212,15 @@ bool isAnalysisDevice(const juce::String& pluginId) {
     return kind == InternalDeviceKind::Oscilloscope || kind == InternalDeviceKind::SpectrumAnalyzer;
 }
 
+int postFxAnalysisDeviceOrder(const juce::String& pluginId) {
+    switch (classifyInternalDevice(pluginId)) {
+        case InternalDeviceKind::Oscilloscope:
+            return 0;
+        case InternalDeviceKind::SpectrumAnalyzer:
+            return 1;
+        default:
+            return -1;
+    }
+}
+
 }  // namespace magda

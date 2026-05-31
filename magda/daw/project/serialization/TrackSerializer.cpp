@@ -1,8 +1,28 @@
+#include <algorithm>
+
+#include "../../core/InternalDeviceKind.hpp"
 #include "../../core/ViewModeState.hpp"
 #include "ProjectSerializer.hpp"
 #include "SerializationHelpers.hpp"
 
 namespace magda {
+
+namespace {
+
+void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
+    auto findAnalysis = [&elements](int order) {
+        return std::find_if(elements.begin(), elements.end(), [order](const auto& element) {
+            return postFxAnalysisDeviceOrder(element.device.pluginId) == order;
+        });
+    };
+
+    auto osc = findAnalysis(0);
+    auto spectrum = findAnalysis(1);
+    if (osc != elements.end() && spectrum != elements.end() && spectrum < osc)
+        std::iter_swap(osc, spectrum);
+}
+
+}  // namespace
 
 // ============================================================================
 // Track serialization helpers
@@ -256,6 +276,7 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
             }
             outTrack.chain.postFxChainElements.push_back(PostFxChainElement{std::move(device)});
         }
+        enforcePostFxAnalysisDeviceOrder(outTrack.chain.postFxChainElements);
     }
 
     // Mixer-analysis section. Older projects may omit this and let the rail

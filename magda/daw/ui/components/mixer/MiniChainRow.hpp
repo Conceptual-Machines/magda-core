@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 
+#include "core/ChainNodePath.hpp"
 #include "core/TypeIds.hpp"
 
 namespace magda {
@@ -39,8 +40,8 @@ class MiniChainRow : public juce::Component, private juce::Timer {
 
     // Bind the row to a device on a track. Re-callable when device state
     // changes (refresh on trackDevicesChanged).
-    void setDevice(TrackId trackId, DeviceId deviceId, AudioEngine* engine,
-                   const juce::String& name, bool bypassed);
+    void setDevice(const ChainNodePath& devicePath, AudioEngine* engine, const juce::String& name,
+                   bool bypassed);
 
     void setExpanded(bool expanded);
     bool isExpanded() const {
@@ -56,7 +57,11 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     void setPluginEditorOpen(bool open);
 
     DeviceId deviceId() const {
-        return deviceId_;
+        return devicePath_.getDeviceId();
+    }
+
+    const ChainNodePath& devicePath() const {
+        return devicePath_;
     }
 
     int preferredHeight() const;
@@ -69,8 +74,7 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     std::function<void()> onExpandChanged;
 
   private:
-    TrackId trackId_ = INVALID_TRACK_ID;
-    DeviceId deviceId_ = INVALID_DEVICE_ID;
+    ChainNodePath devicePath_;
     AudioEngine* engine_ = nullptr;
     juce::String deviceName_;
     bool bypassed_ = false;

@@ -113,6 +113,29 @@ TEST_CASE("post-fx device is reachable and removable by path", "[postfx]") {
     REQUIRE(tm.getDeviceInChainByPath(path) == nullptr);
 }
 
+TEST_CASE("bare device-id parameter setters refuse section-ambiguous ids", "[postfx]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    TrackId track = tm.createTrack("Track");
+
+    auto fx = makeDevice("FX");
+    auto post = makeDevice("Post");
+    REQUIRE(tm.addDeviceToTrack(track, fx) == 1);
+    REQUIRE(tm.addDeviceToPostFx(track, post) == 1);
+
+    tm.setDeviceVisibleParameters(1, {1});
+    tm.setDeviceMiniMixerParameters(1, {2});
+
+    auto* topLevel = tm.getDeviceInChainByPath(ChainNodePath::topLevelDevice(track, 1));
+    auto* postFx = tm.getDeviceInChainByPath(ChainNodePath::postFxDevice(track, 1));
+    REQUIRE(topLevel != nullptr);
+    REQUIRE(postFx != nullptr);
+    REQUIRE(topLevel->visibleParameters.empty());
+    REQUIRE(topLevel->miniMixerParameters.empty());
+    REQUIRE(postFx->visibleParameters.empty());
+    REQUIRE(postFx->miniMixerParameters.empty());
+}
+
 TEST_CASE("post-fx devices expose params but no device mods or macros", "[postfx]") {
     resetState();
     auto& tm = TrackManager::getInstance();
@@ -180,6 +203,27 @@ TEST_CASE("post-fx enforces one analysis device per kind, FX repeatable", "[post
     REQUIRE(tm.addDeviceToPostFx(track, eq) != INVALID_DEVICE_ID);
     REQUIRE(tm.addDeviceToPostFx(track, eq) != INVALID_DEVICE_ID);
     REQUIRE(tm.getPostFxChainElements(track).size() == 4);
+}
+
+TEST_CASE("post-fx analysis devices keep oscilloscope before spectrum", "[postfx]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    TrackId track = tm.createTrack("Track");
+
+    DeviceInfo osc;
+    osc.name = "Oscilloscope";
+    osc.pluginId = "oscilloscope";
+
+    DeviceInfo spec;
+    spec.name = "Spectrum";
+    spec.pluginId = "spectrumanalyzer";
+
+    REQUIRE(tm.addDeviceToPostFx(track, spec) != INVALID_DEVICE_ID);
+    REQUIRE(tm.addDeviceToPostFx(track, osc) != INVALID_DEVICE_ID);
+    REQUIRE(postFxNames(track) == std::vector<juce::String>{"Oscilloscope", "Spectrum"});
+
+    tm.movePostFxDevice(track, 1, 0);
+    REQUIRE(postFxNames(track) == std::vector<juce::String>{"Oscilloscope", "Spectrum"});
 }
 
 TEST_CASE("movePostFxDevice reorders the flat list", "[postfx]") {
