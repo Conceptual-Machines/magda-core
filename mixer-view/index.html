@@ -777,6 +777,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#toggle-rail" class="md-nav__link">
+    <span class="md-ellipsis">
+      Toggle Rail
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#channel-strip-controls" class="md-nav__link">
     <span class="md-ellipsis">
       Channel Strip Controls
@@ -826,6 +835,24 @@
   <a href="#track-name-and-color" class="md-nav__link">
     <span class="md-ellipsis">
       Track Name and Color
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mini-fx-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mini FX Chain
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mini-analyzers" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mini Analyzers
     </span>
   </a>
   
@@ -1512,6 +1539,28 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../devices/analysis/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Analysis
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1934,6 +1983,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#toggle-rail" class="md-nav__link">
+    <span class="md-ellipsis">
+      Toggle Rail
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#channel-strip-controls" class="md-nav__link">
     <span class="md-ellipsis">
       Channel Strip Controls
@@ -1983,6 +2041,24 @@
   <a href="#track-name-and-color" class="md-nav__link">
     <span class="md-ellipsis">
       Track Name and Color
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mini-fx-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mini FX Chain
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mini-analyzers" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mini Analyzers
     </span>
   </a>
   
@@ -2083,12 +2159,23 @@
 <li><strong>Resizable width</strong> — Drag the edge of a channel strip to resize</li>
 </ul>
 <p>Click a channel strip to select it. Drag plugins onto a channel strip to add them to the track's FX chain.</p>
+<h2 id="toggle-rail">Toggle Rail<a class="headerlink" href="#toggle-rail" title="Permanent link">&para;</a></h2>
+<p>A vertical rail of toggles runs down the left edge of the mixer. Each button shows or hides a row across every channel strip, so you can pare the mixer back to just the controls you need:</p>
+<ul>
+<li><strong>Sends</strong> — the send section</li>
+<li><strong>I/O</strong> — input and output routing selectors</li>
+<li><strong>Monitor</strong> — input monitoring controls</li>
+<li><strong>Oscilloscope</strong> — a mini oscilloscope per strip</li>
+<li><strong>Spectrum</strong> — a mini spectrum analyzer per strip</li>
+<li><strong>FX Chain</strong> — the strip's mini FX chain</li>
+</ul>
+<p>The rail's on/off state is remembered between sessions.</p>
 <h2 id="channel-strip-controls">Channel Strip Controls<a class="headerlink" href="#channel-strip-controls" title="Permanent link">&para;</a></h2>
 <p>Each channel strip provides:</p>
 <h3 id="volume-fader">Volume Fader<a class="headerlink" href="#volume-fader" title="Permanent link">&para;</a></h3>
-<p>Drag the fader to adjust the track's output level. The dB scale is displayed alongside the fader.</p>
+<p>Drag the fader to adjust the track's output level. The fader sits over the track's peak meter, with the current level shown as a dB readout below the thumb.</p>
 <h3 id="level-meters">Level Meters<a class="headerlink" href="#level-meters" title="Permanent link">&para;</a></h3>
-<p>Stereo level meters (L/R) show the real-time signal level. A peak label displays the highest level reached — watch for clipping.</p>
+<p>The peak meter sits directly behind the fader and shows the real-time signal level. A peak value displays the highest level reached — watch for clipping.</p>
 <h3 id="pan">Pan<a class="headerlink" href="#pan" title="Permanent link">&para;</a></h3>
 <p>The pan control positions the track in the stereo field, from hard left to hard right.</p>
 <h3 id="mute-solo-record">Mute, Solo, Record<a class="headerlink" href="#mute-solo-record" title="Permanent link">&para;</a></h3>
@@ -2100,6 +2187,10 @@
 </ul>
 <h3 id="track-name-and-color">Track Name and Color<a class="headerlink" href="#track-name-and-color" title="Permanent link">&para;</a></h3>
 <p>The track name and color bar are displayed at the bottom of each strip for identification.</p>
+<h3 id="mini-fx-chain">Mini FX Chain<a class="headerlink" href="#mini-fx-chain" title="Permanent link">&para;</a></h3>
+<p>With the <strong>FX Chain</strong> toggle on, each strip shows a compact version of the track's FX chain. Each device row surfaces a handful of its parameters as faders, so you can tweak an effect without leaving the mixer. Choose exactly which parameters appear per device from the <strong>Mini</strong> column in the <a href="../plugin-parameters/">parameter config dialog</a> — if none are chosen, the strip falls back to the device's first visible parameters. Third-party plugins also show a button to open their own UI; native MAGDA devices do not.</p>
+<h3 id="mini-analyzers">Mini Analyzers<a class="headerlink" href="#mini-analyzers" title="Permanent link">&para;</a></h3>
+<p>With the <strong>Oscilloscope</strong> or <strong>Spectrum</strong> toggle on, a mini <a href="../devices/analysis/">analyzer</a> appears on each strip that carries the matching device. Click the expand chevron to unfold its controls beneath the trace, or the pop-out button to open the full analyzer in its own floating window.</p>
 <h2 id="master-channel-strip">Master Channel Strip<a class="headerlink" href="#master-channel-strip" title="Permanent link">&para;</a></h2>
 <p>The master strip controls the final output level of the mix. It has its own volume fader, meters, and pan control but no mute/solo/record buttons.</p>
 <h2 id="io-routing">I/O Routing<a class="headerlink" href="#io-routing" title="Permanent link">&para;</a></h2>
@@ -2111,13 +2202,13 @@
 <li><strong>MIDI output</strong> — Route MIDI to a specific device or virtual instrument</li>
 </ul>
 <h2 id="sends">Sends<a class="headerlink" href="#sends" title="Permanent link">&para;</a></h2>
-<p>Each channel strip has a send section for routing audio to auxiliary buses.</p>
+<p>Each channel strip has a send section for routing audio to auxiliary buses. Show or hide it with the <strong>Sends</strong> toggle in the rail.</p>
 <ul>
 <li><strong>Add a send</strong> — Create a new send slot to route signal to an aux track</li>
 <li><strong>Send level</strong> — Adjust how much signal is sent to the aux bus</li>
 <li><strong>Remove a send</strong> — Click the remove button on a send slot to delete it</li>
 </ul>
-<p>The send section is resizable — drag the resize handle to show more or fewer send slots.</p>
+<p>The send section sizes itself to the number of sends across your tracks, so every strip stays aligned.</p>
 <h2 id="multi-output-plugins">Multi-Output Plugins<a class="headerlink" href="#multi-output-plugins" title="Permanent link">&para;</a></h2>
 <p>When an instrument has multiple output pairs activated, each output appears as its own channel strip in the mixer — just like any other track. You can route these strips to groups or aux sends independently. See <a href="../tracks/#multi-output-plugins">Multi-Output Plugins</a> for setup details.</p>
 <h2 id="drumgrid-sub-channels">DrumGrid Sub-Channels<a class="headerlink" href="#drumgrid-sub-channels" title="Permanent link">&para;</a></h2>

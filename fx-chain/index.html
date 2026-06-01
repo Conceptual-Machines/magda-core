@@ -803,6 +803,24 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#post-fx-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      Post-FX Section
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gain-staging" class="md-nav__link">
+    <span class="md-ellipsis">
+      Gain Staging
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1518,6 +1536,28 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../devices/analysis/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Analysis
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2050,6 +2090,24 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#post-fx-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      Post-FX Section
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gain-staging" class="md-nav__link">
+    <span class="md-ellipsis">
+      Gain Staging
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2140,6 +2198,22 @@
 </ul>
 <h3 id="collapsible-devices">Collapsible Devices<a class="headerlink" href="#collapsible-devices" title="Permanent link">&para;</a></h3>
 <p>Individual devices inside a rack can be collapsed to save space. Click the collapse button on a device to shrink it to a compact header. The rack resizes dynamically as devices are collapsed or expanded. Collapsed states are preserved when the chain rebuilds (e.g. when adding or removing devices).</p>
+<h2 id="post-fx-section">Post-FX Section<a class="headerlink" href="#post-fx-section" title="Permanent link">&para;</a></h2>
+<p>In addition to the main FX chain, every track and the master have a <strong>post-FX area</strong> — a stage that runs <em>after</em> the main chain and <em>before</em> the track fader. It is the natural home for meters and analyzers, but any effect can live there.</p>
+<p>Toggle the post-FX area from the buttons in the track chain header, then drop an <a href="../devices/analysis/">Oscilloscope or Spectrum Analyzer</a>, or any effect, into it. The panel opens automatically when a track has post-FX devices.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Each analyzer kind is unique per track in the post-FX area — one Oscilloscope and one Spectrum Analyzer at most — while regular effects can repeat.</p>
+</div>
+<h2 id="gain-staging">Gain Staging<a class="headerlink" href="#gain-staging" title="Permanent link">&para;</a></h2>
+<p>Gain staging trims the output of every device in a chain so the whole chain holds a target headroom, without adjusting each one by hand.</p>
+<p>Open it from the gain-staging button in the track chain header, set your <strong>target peak</strong> (default -12 dBFS), play a representative section of the song, and stop. MAGDA works out the trims:</p>
+<ul>
+<li>It only <strong>attenuates</strong>, never boosts.</li>
+<li>It carries the gain forward down the chain, so later devices see consistent levels.</li>
+<li>Every fader it moves stays <strong>marked</strong> so you can see the pass at a glance, until you change it or run another pass.</li>
+</ul>
+<p>The whole pass is a single undoable step. An optional <strong>AI pass</strong> can weigh limiters and saturators in the chain instead of applying a flat target.</p>
 
 
 
