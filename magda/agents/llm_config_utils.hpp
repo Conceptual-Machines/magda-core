@@ -57,6 +57,11 @@ inline llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& con
         pc.model = model::CLAUDE_SONNET;
     else if (pc.model.startsWith("claude-haiku-"))
         pc.model = model::CLAUDE_HAIKU;
+
+    // Claude Opus 4.8 deprecated the temperature parameter (like GPT-5) and
+    // rejects requests that include it.
+    if (pc.model.startsWith("claude-opus-"))
+        pc.noTemperature = true;
     pc.baseUrl =
         config.baseUrl.empty() ? defaultBaseUrl(config.provider) : juce::String(config.baseUrl);
 

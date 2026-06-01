@@ -10,6 +10,7 @@
 #include "../daw/engine/AudioEngine.hpp"
 #include "faust_agent.hpp"
 #include "internal_plugins.hpp"
+#include "mcp/MCPServerManager.hpp"
 #include "sound_design_agent.hpp"
 
 namespace magda {
@@ -43,8 +44,14 @@ class FaustCoderAgent : public CoderAgent {
         if (result.hasError)
             return juce::String("error: ") + juce::String(result.error);
 
+        // faust-mcp drives the compile verification (and the auto-fix loop). If
+        // it's off, we generated the DSP but it hasn't been verified, so we
+        // stage the source into the editor instead of loading it live.
+        const bool verified = MCPServerManager::getInstance().isServerEnabled("faust-mcp");
+
         auto& mm = *juce::MessageManager::getInstance();
-        auto applyOnce = [name = result.name, source = result.source, path]() -> juce::String {
+        auto applyOnce = [name = result.name, source = result.source, path,
+                          verified]() -> juce::String {
             auto& tm = TrackManager::getInstance();
             auto* device = tm.getDeviceInChainByPath(path);
             if (device == nullptr ||
@@ -56,8 +63,17 @@ class FaustCoderAgent : public CoderAgent {
             auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get());
             if (faust == nullptr)
                 return "(could not resolve live Faust plugin)";
-            juce::String err;
             const auto displayName = name.empty() ? juce::String("AI DSP") : juce::String(name);
+
+            // Unverified (MCP off): stage the code into the editor for the user
+            // to compile manually, rather than load it live.
+            if (!verified) {
+                faust->stageSourceForEditing(displayName, juce::String(source));
+                return juce::String("generated \"") + displayName +
+                       "\" - open the editor to compile (Faust MCP off)";
+            }
+
+            juce::String err;
             if (!faust->loadDspSource(displayName, juce::String(source), err))
                 return juce::String("compile error: ") + err;
 

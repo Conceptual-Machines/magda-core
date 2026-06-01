@@ -86,6 +86,13 @@ class FaustPlugin : public te::Plugin {
     bool loadDspSource(const juce::String& name, const juce::String& source, juce::String& errorOut,
                        FaustCustomViewKind viewKind = FaustCustomViewKind::None);
 
+    // Stage source into the editable state WITHOUT compiling or swapping the
+    // live DSP. The code editor reads `dspSource` from state, so this puts
+    // generated code in front of the user to review and compile manually.
+    // Used when AI-generated code can't be auto-verified (faust-mcp off).
+    // Message thread only.
+    void stageSourceForEditing(const juce::String& name, const juce::String& source);
+
     // Read access for the UI / parameter-info bridge (Phase 4b). The
     // pool's slot table is mutated only by `loadDspSource` on the
     // message thread.
