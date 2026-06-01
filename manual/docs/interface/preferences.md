@@ -17,6 +17,7 @@ The dialog is organised into sections; each section is described below.
 
 - **Panel visibility defaults** — Choose which panels are shown on startup
 - **Behavior settings** — Configure UI interaction preferences
+- **Auto-hide arrangement scrollbars** — Keep the arrangement scrollbars hidden until you hover near them, for a cleaner workspace
 - **Language** — Select the UI language from the dropdown. The list is populated from the locale files (`.json`) shipped in MAGDA's `lang/` folder, so available languages grow as translations are contributed. A restart-required hint appears after switching; the new language takes effect the next time MAGDA launches. See [Localization](../localization.md) for how translations are managed and how to contribute.
 
 ### UI Scale
@@ -71,7 +72,9 @@ See [AI Settings](ai-settings.md) for the full reference.
 
 ## Shortcuts
 
-- **Keyboard shortcuts** — View and customize all keyboard shortcuts
-- **Reset to defaults** — Restore the default shortcut mappings
+Two tabs:
 
-See [Keyboard Shortcuts](../reference/keyboard-shortcuts.md) for the full default shortcut list.
+- **Keyboard** — view and remap every keyboard shortcut, with a reset-to-defaults option
+- **Gestures** — remap the mouse and trackpad wheel gestures (scroll, zoom, track height) per context
+
+Both are saved between sessions. See [Keyboard Shortcuts](../reference/keyboard-shortcuts.md) for the full default list of keys and gestures.

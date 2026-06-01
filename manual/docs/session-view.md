@@ -72,9 +72,9 @@ A **master strip** is also available for the main output level.
 
 The fader row is resizable — drag the top edge to make it taller or shorter.
 
-### I/O and Send Rows
+### Toggle Rail
 
-Optional rows for I/O routing and send levels can be toggled on or off to keep the view compact or show more detail.
+A toggle rail along the side of the mini mixer shows or hides its rows — I/O routing and sends among them — the same way the [Mixer View](mixer-view.md#toggle-rail) does. Keep the view compact or expand it for more detail.
 
 ## Drag and Drop
 

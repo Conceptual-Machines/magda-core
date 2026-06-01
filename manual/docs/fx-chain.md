@@ -89,3 +89,24 @@ Click the **+** button next to "Chains" to add a new parallel chain.
 ### Collapsible Devices
 
 Individual devices inside a rack can be collapsed to save space. Click the collapse button on a device to shrink it to a compact header. The rack resizes dynamically as devices are collapsed or expanded. Collapsed states are preserved when the chain rebuilds (e.g. when adding or removing devices).
+
+## Post-FX Section
+
+In addition to the main FX chain, every track and the master have a **post-FX area** — a stage that runs *after* the main chain and *before* the track fader. It is the natural home for meters and analyzers, but any effect can live there.
+
+Toggle the post-FX area from the buttons in the track chain header, then drop an [Oscilloscope or Spectrum Analyzer](devices/analysis.md), or any effect, into it. The panel opens automatically when a track has post-FX devices.
+
+!!! note
+    Each analyzer kind is unique per track in the post-FX area — one Oscilloscope and one Spectrum Analyzer at most — while regular effects can repeat.
+
+## Gain Staging
+
+Gain staging trims the output of every device in a chain so the whole chain holds a target headroom, without adjusting each one by hand.
+
+Open it from the gain-staging button in the track chain header, set your **target peak** (default -12 dBFS), play a representative section of the song, and stop. MAGDA works out the trims:
+
+- It only **attenuates**, never boosts.
+- It carries the gain forward down the chain, so later devices see consistent levels.
+- Every fader it moves stays **marked** so you can see the pass at a glance, until you change it or run another pass.
+
+The whole pass is a single undoable step. An optional **AI pass** can weigh limiters and saturators in the chain instead of applying a flat target.
