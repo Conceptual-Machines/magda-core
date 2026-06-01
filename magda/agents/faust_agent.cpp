@@ -125,47 +125,38 @@ FaustAgent::Result FaustAgent::parseJson(const juce::String& text) {
     return result;
 }
 
-FaustAgent::Result FaustAgent::generate(const std::string& message) {
-    Result result;
-    if (shouldStop_.load()) {
-        result.error = "Cancelled";
-        result.hasError = true;
-        return result;
-    }
-
-    auto agentConfig = Config::getInstance().getAgentLLMConfig(role::MUSIC);
-    auto providerConfig = toLLMProviderConfig(agentConfig, "faust");
-    logFaustAgentConfig(agentConfig, providerConfig);
-
-    if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty() &&
-        agentConfig.provider != provider::LLAMA_LOCAL) {
-        result.error = "Faust agent API key not configured.";
-        result.hasError = true;
-        return result;
-    }
-
-    auto client = createLLMClient(agentConfig, "faust");
-
-    llm::Request request;
-    request.systemPrompt = juce::String::fromUTF8(getSystemPrompt());
-    request.userMessage = buildUserMessage(message);
-    request.temperature = 0.3f;
-
-    auto response = client->sendRequest(request);
-    if (!response.success) {
-        result.error = response.error.toStdString();
-        result.hasError = true;
-        return result;
-    }
-
-    result = parseJson(response.text.trim());
-    if (!result.hasError)
-        result = validateWithMCP(std::move(result));
-    logFaustAgentResult(result);
-    return result;
+FaustAgent::Result FaustAgent::generate(const std::string& message,
+                                        llm::Conversation& conversation) {
+    return runConversational(message, conversation, {});
 }
 
 FaustAgent::Result FaustAgent::generateStreaming(const std::string& message,
+                                                 llm::Conversation& conversation,
+                                                 TokenCallback onToken) {
+    return runConversational(message, conversation, std::move(onToken));
+}
+
+bool FaustAgent::compileCheck(const std::string& name, const std::string& source,
+                              std::string& errorOut) {
+    auto* mcp = MCPServerManager::getInstance().getServer("faust-mcp");
+    if (mcp == nullptr)
+        return true;  // no validator configured — don't block generation
+
+    auto* args = new juce::DynamicObject();
+    args->setProperty("code", juce::String(source));
+    args->setProperty("name", juce::String(name));
+
+    auto mcpResult = mcp->callTool("compile_faust", juce::var(args));
+    if (mcpResult.success)
+        return true;
+
+    DBG("MCPClient compile_faust error: " + mcpResult.error);
+    errorOut = mcpResult.error.toStdString();
+    return false;
+}
+
+FaustAgent::Result FaustAgent::runConversational(const std::string& message,
+                                                 llm::Conversation& conversation,
                                                  TokenCallback onToken) {
     Result result;
     if (shouldStop_.load()) {
@@ -187,70 +178,73 @@ FaustAgent::Result FaustAgent::generateStreaming(const std::string& message,
 
     auto client = createLLMClient(agentConfig, "faust");
 
-    llm::Request request;
-    request.systemPrompt = juce::String::fromUTF8(getSystemPrompt());
-    request.userMessage = buildUserMessage(message);
-    request.temperature = 0.3f;
+    constexpr int kMaxAttempts = 3;
+    juce::String userTurn = juce::String::fromUTF8(message.c_str());
+    std::string lastError;
 
-    auto response = client->sendStreamingRequest(request, [&](const juce::String& token) {
-        if (shouldStop_.load())
-            return false;
+    for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+        if (shouldStop_.load()) {
+            result = Result{};
+            result.error = "Cancelled";
+            result.hasError = true;
+            return result;
+        }
+
+        llm::Request request;
+        request.systemPrompt = juce::String::fromUTF8(getSystemPrompt());
+        request.userMessage = userTurn;
+        request.temperature = 0.3f;
+
+        llm::Response response;
+        if (onToken) {
+            response = client->continueConversationStreaming(
+                conversation, request, [this, &onToken](const juce::String& token) {
+                    if (shouldStop_.load())
+                        return false;
+                    return onToken ? onToken(token) : true;
+                });
+        } else {
+            response = client->continueConversation(conversation, request);
+        }
+
+        if (!response.success) {
+            result = Result{};
+            result.error = response.error.toStdString();
+            result.hasError = true;
+            return result;
+        }
+
+        result = parseJson(response.text.trim());
+        if (result.hasError) {
+            // Not valid JSON — ask for a clean re-emit and try again.
+            lastError = result.error;
+            userTurn = "Your previous reply was not valid JSON. Output ONLY the JSON object "
+                       "with fields name, description and source.";
+            continue;
+        }
+
+        std::string compileErr;
+        if (compileCheck(result.name, result.source, compileErr)) {
+            logFaustAgentResult(result);
+            return result;  // success — conversation already holds the good turn
+        }
+
+        // Compile failed. The broken JSON is already the last assistant turn in
+        // `conversation`, so feed the compiler error back as the next user turn
+        // and let the model self-correct.
+        lastError = compileErr;
         if (onToken)
-            return onToken(token);
-        return true;
-    });
-
-    if (!response.success) {
-        result.error = response.error.toStdString();
-        result.hasError = true;
-        return result;
+            onToken(juce::String::fromUTF8("\n[compile failed, fixing...]\n"));
+        userTurn = "That failed to compile:\n" + juce::String(compileErr) +
+                   "\nFix the code and output the corrected JSON object.";
     }
 
-    result = parseJson(response.text.trim());
-    if (!result.hasError)
-        result = validateWithMCP(std::move(result));
+    result = Result{};
+    result.hasError = true;
+    result.error = "Faust compilation still failing after " + std::to_string(kMaxAttempts) +
+                   " attempts:\n" + lastError;
     logFaustAgentResult(result);
     return result;
-}
-
-FaustAgent::Result FaustAgent::validateWithMCP(Result result) {
-    auto* mcp = MCPServerManager::getInstance().getServer("faust-mcp");
-    if (mcp == nullptr) {
-        lastFailedSource_.clear();
-        lastCompileError_.clear();
-        return result;
-    }
-
-    auto* args = new juce::DynamicObject();
-    args->setProperty("code", juce::String(result.source));
-    args->setProperty("name", juce::String(result.name));
-
-    auto mcpResult = mcp->callTool("compile_faust", juce::var(args));
-    if (mcpResult.success) {
-        lastFailedSource_.clear();
-        lastCompileError_.clear();
-        return result;
-    }
-
-    DBG("MCPClient compile_faust error: " + mcpResult.error);
-    lastFailedSource_ = result.source;
-    lastCompileError_ = mcpResult.error.toStdString();
-
-    result.error = "Faust compilation failed:\n" + lastCompileError_ +
-                   "\n\nWould you like me to try fixing it?";
-    result.hasError = true;
-    return result;
-}
-
-juce::String FaustAgent::buildUserMessage(const std::string& message) const {
-    if (lastFailedSource_.empty())
-        return juce::String::fromUTF8(message.c_str());
-
-    return "My previous Faust code failed to compile:\n\n```\n" + juce::String(lastFailedSource_) +
-           "\n```\n\nCompiler error:\n" + juce::String(lastCompileError_) +
-           "\n\nUser request: " + juce::String::fromUTF8(message.c_str()) +
-           "\n\nFix the code based on the compiler error and the user's request. "
-           "Output the corrected JSON object.";
 }
 
 }  // namespace magda

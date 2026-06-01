@@ -54,7 +54,7 @@ class AIPanelComponent : public juce::Component {
     void submitPrompt();
     void appendOutput(const juce::String& line);
     void appendStreamingToken(const juce::String& token);
-    void onGenerationFinished(juce::String status);
+    void onGenerationFinished(juce::String status, juce::String conversationJson);
     void setBusy(bool busy);
     // Mirror output_'s text onto the bound DeviceInfo so slot rebuilds restore it.
     void persistOutput();

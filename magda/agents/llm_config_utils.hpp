@@ -45,6 +45,18 @@ inline llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& con
     llm::ProviderConfig pc;
     pc.provider = provider;
     pc.model = juce::String(config.model);
+
+    // Until full model customization ships, always resolve to the latest model
+    // per Claude family, so stale saved configs (or an older pinned id) don't
+    // keep loading a superseded model. Self-maintaining: bump the constant and
+    // every config follows. The families ARE the tiers, so collapsing within a
+    // family is safe (unlike GPT-5's sub-tiers, which stay as chosen).
+    if (pc.model.startsWith("claude-opus-"))
+        pc.model = model::CLAUDE_OPUS;
+    else if (pc.model.startsWith("claude-sonnet-"))
+        pc.model = model::CLAUDE_SONNET;
+    else if (pc.model.startsWith("claude-haiku-"))
+        pc.model = model::CLAUDE_HAIKU;
     pc.baseUrl =
         config.baseUrl.empty() ? defaultBaseUrl(config.provider) : juce::String(config.baseUrl);
 

@@ -1,6 +1,7 @@
 #include "ai/AIPanelComponent.hpp"
 
 #include <BinaryData.h>
+#include <juce_llm/juce_llm.h>
 
 #include "../../../../agents/llm_presets.hpp"
 #include "../../../../agents/mcp/MCPServerManager.hpp"
@@ -14,17 +15,18 @@ namespace magda::daw::ui {
 class AIPanelComponent::GenerateThread : public juce::Thread {
   public:
     GenerateThread(AIPanelComponent& owner, std::unique_ptr<DeviceAIAgent> agent,
-                   juce::String prompt, ChainNodePath path)
+                   juce::String prompt, ChainNodePath path, llm::Conversation conversation)
         : juce::Thread("MAGDA-DeviceAIAgent"),
           owner_(owner),
           agent_(std::move(agent)),
           prompt_(std::move(prompt)),
-          path_(path) {}
+          path_(path),
+          conversation_(std::move(conversation)) {}
 
     void run() override {
         auto safeOwner = juce::WeakReference<AIPanelComponent>(&owner_);
         if (threadShouldExit() || agent_ == nullptr) {
-            postResult(safeOwner, "no agent");
+            postResult(safeOwner, "no agent", {});
             return;
         }
 
@@ -40,10 +42,13 @@ class AIPanelComponent::GenerateThread : public juce::Thread {
             return true;
         };
 
-        auto status = agent_->generateAndApply(prompt_, path_, std::move(onToken));
+        // conversation_ is this thread's own copy (loaded from the device on
+        // submit). generateAndApply updates it in place; we serialise it back
+        // on the message thread so the next turn continues from here.
+        auto status = agent_->generateAndApply(prompt_, path_, conversation_, std::move(onToken));
         if (threadShouldExit())
             return;
-        postResult(safeOwner, status);
+        postResult(safeOwner, status, juce::JSON::toString(conversation_.toVar()));
     }
 
     void cancel() {
@@ -53,10 +58,11 @@ class AIPanelComponent::GenerateThread : public juce::Thread {
     }
 
   private:
-    static void postResult(juce::WeakReference<AIPanelComponent> safeOwner, juce::String status) {
-        juce::MessageManager::callAsync([safeOwner, status]() {
+    static void postResult(juce::WeakReference<AIPanelComponent> safeOwner, juce::String status,
+                           juce::String conversationJson) {
+        juce::MessageManager::callAsync([safeOwner, status, conversationJson]() {
             if (auto* p = safeOwner.get())
-                p->onGenerationFinished(status);
+                p->onGenerationFinished(status, conversationJson);
         });
     }
 
@@ -64,6 +70,7 @@ class AIPanelComponent::GenerateThread : public juce::Thread {
     std::unique_ptr<DeviceAIAgent> agent_;
     juce::String prompt_;
     ChainNodePath path_;
+    llm::Conversation conversation_;
 };
 
 AIPanelComponent::AIPanelComponent() {
@@ -363,7 +370,14 @@ void AIPanelComponent::submitPrompt() {
     streamingStart_ = output_.getText().length();
     persistOutput();
 
-    thread_ = std::make_unique<GenerateThread>(*this, std::move(agent), prompt, path_);
+    // Load the running conversation from the device (message thread) so the
+    // worker continues the multi-turn history. Empty / unparseable = fresh start.
+    llm::Conversation conversation;
+    if (auto* dev = TrackManager::getInstance().getDeviceInChainByPath(path_))
+        conversation = llm::Conversation::fromVar(juce::JSON::parse(dev->aiConversation));
+
+    thread_ = std::make_unique<GenerateThread>(*this, std::move(agent), prompt, path_,
+                                               std::move(conversation));
     thread_->startThread();
 }
 
@@ -379,8 +393,14 @@ void AIPanelComponent::appendStreamingToken(const juce::String& token) {
     persistOutput();
 }
 
-void AIPanelComponent::onGenerationFinished(juce::String status) {
+void AIPanelComponent::onGenerationFinished(juce::String status, juce::String conversationJson) {
     const bool succeeded = status.startsWith("applied");
+
+    // Persist the updated conversation onto the device (message thread) so the
+    // next turn continues the history. Survives the slot rebuild below the same
+    // way aiPanelOutput does.
+    if (auto* dev = TrackManager::getInstance().getDeviceInChainByPath(path_))
+        dev->aiConversation = conversationJson;
 
     // On success, replace the streamed JSON dump with just the preset's
     // description — the param/wave/fx blocks are noise once the apply has
@@ -388,8 +408,21 @@ void AIPanelComponent::onGenerationFinished(juce::String status) {
     // see what came back. Falls back to the streamed text untouched if the
     // description field can't be located.
     if (succeeded && streamingStart_ >= 0 && streamingStart_ < output_.getText().length()) {
-        auto streamed = output_.getText().substring(streamingStart_);
-        auto description = extractStringField(streamed, "description");
+        // Prefer the FINAL assistant turn from the conversation: after a retry
+        // the stream holds several JSON blobs, and the first (failed) one's
+        // description would be wrong. Fall back to the streamed text for agents
+        // with no conversation (4OSC sound design).
+        juce::String description;
+        auto conv = llm::Conversation::fromVar(juce::JSON::parse(conversationJson));
+        for (auto it = conv.messages.rbegin(); it != conv.messages.rend(); ++it) {
+            if (it->role == "assistant") {
+                description = extractStringField(it->content, "description");
+                break;
+            }
+        }
+        if (description.isEmpty())
+            description =
+                extractStringField(output_.getText().substring(streamingStart_), "description");
         if (description.isNotEmpty()) {
             output_.setHighlightedRegion(
                 juce::Range<int>(streamingStart_, output_.getText().length()));
@@ -487,6 +520,9 @@ void AIPanelComponent::persistOutput() {
 void AIPanelComponent::clearChat() {
     output_.setText("", juce::dontSendNotification);
     persistOutput();
+    // Reset the conversation too so the next prompt starts fresh.
+    if (auto* dev = TrackManager::getInstance().getDeviceInChainByPath(path_))
+        dev->aiConversation.clear();
 }
 
 void AIPanelComponent::refreshModelLabel() {

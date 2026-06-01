@@ -21,6 +21,7 @@ namespace {
 class FaustCoderAgent : public CoderAgent {
   public:
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
+                                  llm::Conversation& conversation,
                                   TokenCallback onToken = {}) override {
         agent_.resetCancel();
         if (shouldStop_.load())
@@ -33,9 +34,9 @@ class FaustCoderAgent : public CoderAgent {
                     return false;
                 return onToken(token);
             };
-            result = agent_.generateStreaming(prompt.toStdString(), fwd);
+            result = agent_.generateStreaming(prompt.toStdString(), conversation, fwd);
         } else {
-            result = agent_.generate(prompt.toStdString());
+            result = agent_.generate(prompt.toStdString(), conversation);
         }
         if (shouldStop_.load())
             return "cancelled";
