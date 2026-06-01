@@ -223,15 +223,6 @@ class AIChatConsoleContent : public PanelContent,
     void updateConfigStatus();
     bool isLocalPreset() const;
 
-    // Faust MCP status strip (top of the AI tab). A small status light + label
-    // showing whether the faust-mcp server is enabled / running, so it's clear
-    // at a glance that AI Faust generation has its compile-check backend.
-    juce::Label mcpStatusLabel_;
-    juce::Rectangle<int> mcpStripBounds_;
-    bool mcpEnabled_ = false;
-    bool mcpRunning_ = false;
-    void updateMcpStatus();
-
     // Plugin alias autocomplete
     struct AliasEntry {
         juce::String alias;       // e.g. "serum_2"

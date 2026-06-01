@@ -75,6 +75,16 @@ class AIPanelComponent : public juce::Component {
     void clearChat();
     void refreshModelLabel();
 
+    // Faust MCP status strip at the top (shown only for coder / Faust
+    // devices): a dot + "Faust MCP off/on/connected" so it's clear the
+    // compile-check backend is available when generating DSP.
+    juce::Label mcpStatusLabel_;
+    juce::Rectangle<int> mcpStripBounds_;
+    bool mcpStripVisible_ = false;
+    bool mcpEnabled_ = false;
+    bool mcpRunning_ = false;
+    void updateMcpStatus();
+
     // Track where the streaming response started so we can replace the
     // raw JSON the model emits with a clean status line on completion.
     int streamingStart_ = -1;

@@ -20,7 +20,6 @@
 #include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/llm_presets.hpp"
-#include "../../../../agents/mcp/MCPServerManager.hpp"
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/router_agent.hpp"
 #include "../../../api/magda_api_live.hpp"
@@ -947,14 +946,6 @@ AIChatConsoleContent::AIChatConsoleContent() {
     configStatusLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(configStatusLabel_);
 
-    // Faust MCP status strip (top of the AI tab). Text sits to the right of a
-    // status dot painted in paint(); see mcpStripBounds_ / updateMcpStatus().
-    mcpStatusLabel_.setFont(FontManager::getInstance().getMonoFont(10.0f));
-    mcpStatusLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-    mcpStatusLabel_.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(mcpStatusLabel_);
-    updateMcpStatus();
-
     // Model load/unload button (shown only for local_embedded preset)
     serverToggleButton_ = std::make_unique<magda::SvgButton>(
         "ModelToggle", BinaryData::server_play_svg, BinaryData::server_play_svgSize);
@@ -1294,20 +1285,6 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
 
     if (activeTab_ == ConsoleTab::AI) {
-        // Faust MCP status light: dot at the left of the top strip. Grey when
-        // disabled, green when enabled (brighter once actually connected).
-        if (!mcpStripBounds_.isEmpty()) {
-            const float r = 6.0f;
-            const float cx = static_cast<float>(mcpStripBounds_.getX()) + r;
-            const float cy = static_cast<float>(mcpStripBounds_.getCentreY());
-            const auto dot = !mcpEnabled_
-                                 ? DarkTheme::getSecondaryTextColour().withAlpha(0.4f)
-                                 : (mcpRunning_ ? juce::Colours::limegreen
-                                                : juce::Colours::limegreen.withAlpha(0.7f));
-            g.setColour(dot);
-            g.fillEllipse(cx - r * 0.5f, cy - r * 0.5f, r, r);
-        }
-
         // Draw chat history + status footer as one rounded panel
         auto chatBounds = chatHistory_.getBounds().toFloat();
         auto statusBounds = configStatusLabel_.getBounds().toFloat();
@@ -1380,13 +1357,6 @@ void AIChatConsoleContent::resized() {
     bounds.removeFromBottom(4);  // Spacing above tabs
 
     if (activeTab_ == ConsoleTab::AI) {
-        // Faust MCP status strip at the very top (dot painted in paint()).
-        auto mcpStrip = bounds.removeFromTop(18);
-        mcpStripBounds_ = mcpStrip;
-        mcpStatusLabel_.setBounds(mcpStrip.withTrimmedLeft(16));
-        mcpStatusLabel_.setVisible(true);
-        bounds.removeFromTop(6);  // gap below the strip
-
         // Context bar above tabs
         auto bottomBar = bounds.removeFromBottom(26);
         bottomBarBounds_ = bottomBar;
@@ -1432,10 +1402,6 @@ void AIChatConsoleContent::resized() {
         configStatusLabel_.setBounds(statusBar);
         configStatusLabel_.toFront(false);
     } else {
-        // DSL tab: no MCP strip
-        mcpStatusLabel_.setVisible(false);
-        mcpStripBounds_ = {};
-
         // DSL tab layout
         bounds.removeFromBottom(4);  // Spacing above status bar
         dslStatusLabel_.setBounds(bounds.removeFromBottom(20));
@@ -1450,7 +1416,6 @@ void AIChatConsoleContent::resized() {
 void AIChatConsoleContent::onActivated() {
     buildAliasList();
     updateConfigStatus();
-    updateMcpStatus();
     if (isShowing()) {
         if (activeTab_ == ConsoleTab::AI)
             inputBox_->grabKeyboardFocus();
@@ -1601,7 +1566,6 @@ void AIChatConsoleContent::projectOpened(const magda::ProjectInfo& /*info*/) {
 
 void AIChatConsoleContent::configChanged() {
     updateConfigStatus();
-    updateMcpStatus();
 }
 
 // ============================================================================
@@ -1922,29 +1886,6 @@ void AIChatConsoleContent::updateConfigStatus() {
 
     configStatusLabel_.setText(status, juce::dontSendNotification);
     resized();
-}
-
-void AIChatConsoleContent::updateMcpStatus() {
-    auto& mgr = magda::MCPServerManager::getInstance();
-    mcpEnabled_ = mgr.isServerEnabled("faust-mcp");
-    mcpRunning_ = mgr.isServerRunning("faust-mcp");
-
-    juce::String text;
-    juce::Colour colour;
-    if (!mcpEnabled_) {
-        text = "Faust MCP off";
-        colour = DarkTheme::getSecondaryTextColour().withAlpha(0.6f);
-    } else if (mcpRunning_) {
-        text = "Faust MCP connected";
-        colour = juce::Colours::limegreen;
-    } else {
-        text = "Faust MCP on";
-        colour = juce::Colours::limegreen.withAlpha(0.85f);
-    }
-
-    mcpStatusLabel_.setText(text, juce::dontSendNotification);
-    mcpStatusLabel_.setColour(juce::Label::textColourId, colour);
-    repaint();
 }
 
 bool AIChatConsoleContent::isLocalPreset() const {

@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 
 #include "../../../../agents/llm_presets.hpp"
+#include "../../../../agents/mcp/MCPServerManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/Config.hpp"
@@ -113,6 +114,16 @@ AIPanelComponent::AIPanelComponent() {
     clearButton_.setAlpha(0.5f);
     clearButton_.onClick = [this]() { clearChat(); };
     addAndMakeVisible(clearButton_);
+
+    // Faust MCP status strip (top). Visibility + content are set in
+    // setDevicePluginId / updateMcpStatus once the device type is known; the
+    // dot is painted in paint(). Hidden until then.
+    mcpStatusLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    mcpStatusLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    mcpStatusLabel_.setJustificationType(juce::Justification::centredLeft);
+    mcpStatusLabel_.setInterceptsMouseClicks(false, false);
+    mcpStatusLabel_.setVisible(false);
+    addAndMakeVisible(mcpStatusLabel_);
 
     refreshModelLabel();
 }
@@ -227,10 +238,29 @@ void AIPanelComponent::setDevicePluginId(const juce::String& pluginId) {
             "AI not supported for this device",
             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.4f));
     }
+
+    // The Faust MCP strip is only relevant to coder (Faust) devices — a 4OSC
+    // panel doesn't touch faust-mcp, so it shouldn't advertise it.
+    mcpStripVisible_ = coderSupported;
+    mcpStatusLabel_.setVisible(mcpStripVisible_);
+    updateMcpStatus();
+    resized();
 }
 
 void AIPanelComponent::resized() {
     auto bounds = getLocalBounds().reduced(4);
+
+    // Faust MCP status strip at the very top (coder devices only). Leaves a
+    // gutter on the left for the dot painted in paint().
+    if (mcpStripVisible_) {
+        auto strip = bounds.removeFromTop(14);
+        mcpStripBounds_ = strip;
+        mcpStatusLabel_.setBounds(strip.withTrimmedLeft(14));
+        bounds.removeFromTop(2);
+    } else {
+        mcpStripBounds_ = {};
+    }
+
     // Footer strip at the very bottom: model label + clear-chat button.
     auto footerArea = bounds.removeFromBottom(16);
     constexpr int footerButtonSize = 16;
@@ -254,6 +284,43 @@ void AIPanelComponent::paint(juce::Graphics& g) {
     // here so the panel has a consistent outline on all four sides.
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
+
+    // Faust MCP status light: dot at the left of the top strip. Grey when
+    // disabled, green when enabled (brighter once actually connected).
+    if (mcpStripVisible_ && !mcpStripBounds_.isEmpty()) {
+        const float r = 6.0f;
+        const float cx = static_cast<float>(mcpStripBounds_.getX()) + r * 0.5f + 2.0f;
+        const float cy = static_cast<float>(mcpStripBounds_.getCentreY());
+        const auto dot = !mcpEnabled_
+                             ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.3f)
+                             : (mcpRunning_ ? juce::Colours::limegreen
+                                            : juce::Colours::limegreen.withAlpha(0.7f));
+        g.setColour(dot);
+        g.fillEllipse(cx - r * 0.5f, cy - r * 0.5f, r, r);
+    }
+}
+
+void AIPanelComponent::updateMcpStatus() {
+    auto& mgr = magda::MCPServerManager::getInstance();
+    mcpEnabled_ = mgr.isServerEnabled("faust-mcp");
+    mcpRunning_ = mgr.isServerRunning("faust-mcp");
+
+    juce::String text;
+    juce::Colour colour;
+    if (!mcpEnabled_) {
+        text = "Faust MCP off";
+        colour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.5f);
+    } else if (mcpRunning_) {
+        text = "Faust MCP connected";
+        colour = juce::Colours::limegreen;
+    } else {
+        text = "Faust MCP on";
+        colour = juce::Colours::limegreen.withAlpha(0.85f);
+    }
+
+    mcpStatusLabel_.setText(text, juce::dontSendNotification);
+    mcpStatusLabel_.setColour(juce::Label::textColourId, colour);
+    repaint();
 }
 
 void AIPanelComponent::submitPrompt() {
@@ -332,9 +399,9 @@ void AIPanelComponent::onGenerationFinished(juce::String status) {
         }
     }
 
-    // For coder (Faust) devices a successful apply means the generated DSP
-    // passed both the MCP compile_faust check and the live interpreter
-    // compile, so confirm it compiled (green) before the apply line.
+    // For coder (Faust) devices, a successful result means the DSP passed the
+    // MCP compile_faust check before it was applied. Surface that as a green
+    // verification line; the "applied" line below confirms the live load.
     if (succeeded && isCoderSupported(pluginId_)) {
         output_.moveCaretToEnd();
         if (auto t = output_.getText(); t.isNotEmpty() && !t.endsWithChar('\n')) {
@@ -343,7 +410,8 @@ void AIPanelComponent::onGenerationFinished(juce::String status) {
             output_.insertTextAtCaret("\n");
         }
         output_.setColour(juce::TextEditor::textColourId, juce::Colours::limegreen);
-        output_.insertTextAtCaret(juce::String(juce::CharPointer_UTF8("\xe2\x9c\x93 compiled")));
+        output_.insertTextAtCaret(
+            juce::String(juce::CharPointer_UTF8("\xe2\x9c\x93 compilation verified (MCP)")));
         output_.setColour(juce::TextEditor::textColourId,
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     }
@@ -359,13 +427,14 @@ void AIPanelComponent::onGenerationFinished(juce::String status) {
                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     output_.insertTextAtCaret(juce::String(juce::CharPointer_UTF8("\xe2\x86\x92 ")) + status);
 
-    // Remind the user the preset is a starting point — only on a successful
-    // apply (status messages from cancel / error / timeout shouldn't suggest
-    // tweaking a preset that was never written). The disclaimer is rendered
-    // in yellow so it doesn't drown in the streamed text above; the marker
-    // string matches kDisclaimerMarker so restoreOutput can recolour it
-    // after a slot rebuild.
-    if (succeeded) {
+    // Remind the user the preset is a starting point — only for sound-design
+    // (4OSC) presets, and only on a successful apply (status messages from
+    // cancel / error / timeout shouldn't suggest tweaking something that was
+    // never written). Faust/coder devices get the "compiled" confirmation
+    // above instead, so the disclaimer would be noise there. Rendered in
+    // yellow; the marker matches kDisclaimerMarker so restoreOutput can
+    // recolour it after a slot rebuild.
+    if (succeeded && isSoundDesignSupported(pluginId_)) {
         output_.setColour(juce::TextEditor::textColourId, juce::Colours::yellow);
         // Wrap with CharPointer_UTF8 (matching the convention used for the
         // arrow above) so the em-dash byte sequence isn't decoded as Latin-1
@@ -379,6 +448,10 @@ void AIPanelComponent::onGenerationFinished(juce::String status) {
     streamingStart_ = -1;
     setBusy(false);
     persistOutput();
+
+    // A generation will have spawned faust-mcp via getServer(), so the strip
+    // can now reflect the live "connected" state.
+    updateMcpStatus();
 
     // Now that the final text is in place and persisted, fire the
     // tree-changed notification four_osc_apply intentionally skipped. The
