@@ -28,6 +28,10 @@ void deserializeMidiCurveHandle(const juce::var& json, MidiCurveHandle& handle) 
     }
 }
 
+double getValidProjectTempo(double projectTempo) {
+    return isValidBpm(projectTempo) ? projectTempo : DEFAULT_BPM;
+}
+
 }  // namespace
 
 juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
@@ -243,12 +247,26 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.view = static_cast<ClipView>(static_cast<int>(obj->getProperty("view")));
 
     auto* placementObj = obj->getProperty("placement").getDynamicObject();
-    if (placementObj == nullptr) {
+    if (placementObj != nullptr) {
+        outClip.setPlacementBeats(placementObj->getProperty("startBeat"),
+                                  placementObj->getProperty("lengthBeats"));
+    } else if (obj->hasProperty("startBeats") || obj->hasProperty("startTime")) {
+        const double legacyTempo = getValidProjectTempo(projectTempo);
+        const double legacyStartBeats =
+            obj->hasProperty("startBeats")
+                ? static_cast<double>(obj->getProperty("startBeats"))
+                : static_cast<double>(obj->getProperty("startTime")) * legacyTempo / 60.0;
+        double legacyLengthBeats = obj->hasProperty("lengthBeats")
+                                       ? static_cast<double>(obj->getProperty("lengthBeats"))
+                                       : 0.0;
+        if (legacyLengthBeats <= 0.0 && obj->hasProperty("length"))
+            legacyLengthBeats =
+                static_cast<double>(obj->getProperty("length")) * legacyTempo / 60.0;
+        outClip.setPlacementBeats(legacyStartBeats, legacyLengthBeats);
+    } else {
         lastError_ = "Clip is missing placement";
         return false;
     }
-    outClip.setPlacementBeats(placementObj->getProperty("startBeat"),
-                              placementObj->getProperty("lengthBeats"));
     outClip.deriveTimesFromBeats(projectTempo);
 
     // Loop settings
@@ -430,6 +448,26 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
                     outClip.warpMarkers.push_back(wm);
                 }
             }
+        }
+    } else if (outClip.isAudio() && obj->hasProperty("audioFilePath")) {
+        outClip.audio().source.filePath = obj->getProperty("audioFilePath").toString();
+        outClip.offset = obj->getProperty("offset");
+        outClip.offsetBeats = obj->getProperty("offsetBeats");
+        outClip.loopStart = obj->getProperty("loopStart");
+        outClip.loopLength = obj->getProperty("loopLength");
+        outClip.loopStartBeats = obj->getProperty("loopStartBeats");
+        outClip.loopLengthBeats = obj->getProperty("loopLengthBeats");
+        outClip.speedRatio = obj->getProperty("speedRatio");
+        if (outClip.speedRatio <= 0.0)
+            outClip.speedRatio = 1.0;
+
+        outClip.audio().interpretation.totalBeats = obj->getProperty("sourceNumBeats");
+        outClip.audio().interpretation.bpm = obj->getProperty("sourceBPM");
+        if (outClip.audio().source.durationSeconds <= 0.0 &&
+            outClip.audio().interpretation.totalBeats > 0.0 &&
+            outClip.audio().interpretation.bpm > 0.0) {
+            outClip.audio().source.durationSeconds = outClip.audio().interpretation.totalBeats *
+                                                     60.0 / outClip.audio().interpretation.bpm;
         }
     }
 

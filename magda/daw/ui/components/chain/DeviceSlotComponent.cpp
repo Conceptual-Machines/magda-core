@@ -997,6 +997,7 @@ void DeviceSlotComponent::syncModMacroControlsAvailability() {
 void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
     customUI_.setDevicePath(path);
+    updateCustomUI();
 
     if (applySavedParameterConfig()) {
         updateParameterPagination();

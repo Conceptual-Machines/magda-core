@@ -825,6 +825,10 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
         auto json = ProjectSerializer::serializeProject(info);
         auto* rootObj = json.getDynamicObject();
         REQUIRE(rootObj != nullptr);
+        auto* projectObj = rootObj->getProperty("project").getDynamicObject();
+        REQUIRE(projectObj != nullptr);
+        projectObj->setProperty("tempo", 0.0);
+
         auto* clips = rootObj->getProperty("clips").getArray();
         REQUIRE(clips != nullptr);
         auto* clipObj = clips->getReference(0).getDynamicObject();
@@ -905,6 +909,55 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
         REQUIRE(restored->warpMarkers.size() == 1);
         REQUIRE(restored->warpMarkers.front().sourceTime == Approx(1.0));
         REQUIRE(restored->warpMarkers.front().warpTime == Approx(1.25));
+    }
+
+    SECTION("Legacy flat audio clip payload migrates placement and audio model") {
+        auto json = ProjectSerializer::serializeProject(info);
+        auto* rootObj = json.getDynamicObject();
+        REQUIRE(rootObj != nullptr);
+        auto* clips = rootObj->getProperty("clips").getArray();
+        REQUIRE(clips != nullptr);
+        auto* clipObj = clips->getReference(0).getDynamicObject();
+        REQUIRE(clipObj != nullptr);
+
+        clipObj->removeProperty("placement");
+        clipObj->removeProperty("audio");
+        clipObj->setProperty("startTime", 2.0);
+        clipObj->setProperty("length", 6.0);
+        clipObj->removeProperty("startBeats");
+        clipObj->removeProperty("lengthBeats");
+        clipObj->setProperty("audioFilePath", "/tmp/flat-legacy.wav");
+        clipObj->setProperty("offset", 0.25);
+        clipObj->setProperty("offsetBeats", 0.5);
+        clipObj->setProperty("loopStart", 0.125);
+        clipObj->setProperty("loopLength", 6.0);
+        clipObj->setProperty("loopStartBeats", 0.25);
+        clipObj->setProperty("loopLengthBeats", 12.0);
+        clipObj->setProperty("speedRatio", 1.5);
+        clipObj->setProperty("sourceNumBeats", 12.0);
+        clipObj->setProperty("sourceBPM", 120.0);
+
+        ClipManager::getInstance().clearAllClips();
+
+        ProjectInfo loaded;
+        REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+        auto* restored = ClipManager::getInstance().getClip(clip.id);
+        REQUIRE(restored != nullptr);
+        REQUIRE(restored->isAudio());
+        REQUIRE(restored->placement.startBeat == Approx(4.0));
+        REQUIRE(restored->placement.lengthBeats == Approx(12.0));
+        REQUIRE(restored->length == Approx(6.0));
+        REQUIRE(restored->audio().source.filePath == "/tmp/flat-legacy.wav");
+        REQUIRE(restored->audio().source.durationSeconds == Approx(6.0));
+        REQUIRE(restored->audio().interpretation.totalBeats == Approx(12.0));
+        REQUIRE(restored->audio().interpretation.bpm == Approx(120.0));
+        REQUIRE(restored->offset == Approx(0.25));
+        REQUIRE(restored->offsetBeats == Approx(0.5));
+        REQUIRE(restored->loopStart == Approx(0.125));
+        REQUIRE(restored->loopLength == Approx(6.0));
+        REQUIRE(restored->loopStartBeats == Approx(0.25));
+        REQUIRE(restored->loopLengthBeats == Approx(12.0));
+        REQUIRE(restored->speedRatio == Approx(1.5));
     }
 }
 
