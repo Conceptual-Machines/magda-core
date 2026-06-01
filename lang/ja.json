@@ -379,7 +379,7 @@
     "toggle.expand_right_panel": "右パネルを展開（インスペクター）",
     "toggle.expand_bottom_panel": "下部パネルを展開(ミキサー)",
     "toggle.headers_on_right": "ヘッダーを右側に",
-    "toggle.autohide_arrangement_scrollbars": "",
+    "toggle.autohide_arrangement_scrollbars": "アレンジメントビューのスクロールバーを自動的に隠す",
     "toggle.confirm_track_delete": "トラックを削除する前に確認する",
     "toggle.auto_monitor": "選択したトラックを自動でモニターする",
     "toggle.open_macros_on_select": "デバイスまたはラック選択時にマクロを開く",
