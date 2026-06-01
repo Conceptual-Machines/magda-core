@@ -137,22 +137,35 @@ constexpr const char* kDisclaimerMarker = "\n\nnote: starting point only";
 // but `"<field>":"<value>"` survives intact. Returns empty if not found or
 // the closing quote is missing.
 juce::String extractStringField(const juce::String& text, const juce::String& field) {
-    auto key = "\"" + field + "\":\"";
-    int start = text.indexOf(key);
-    if (start < 0)
+    // Tolerate whitespace around the colon: the model pretty-prints
+    // `"description": "..."` (space after the colon), so a literal
+    // `"field":"` probe misses it and the raw JSON would survive.
+    auto key = "\"" + field + "\"";
+    int i = text.indexOf(key);
+    if (i < 0)
         return {};
-    start += key.length();
-    int end = start;
+    i += key.length();
     const int len = text.length();
-    while (end < len) {
-        auto c = text[end];
-        if (c == '"' && (end == 0 || text[end - 1] != '\\'))
-            break;
-        ++end;
-    }
-    if (end >= len)
+    while (i < len && juce::CharacterFunctions::isWhitespace(text[i]))
+        ++i;
+    if (i >= len || text[i] != ':')
         return {};
-    return text.substring(start, end);
+    ++i;
+    while (i < len && juce::CharacterFunctions::isWhitespace(text[i]))
+        ++i;
+    if (i >= len || text[i] != '"')
+        return {};
+    ++i;
+    int start = i;
+    while (i < len) {
+        auto c = text[i];
+        if (c == '"' && (i == 0 || text[i - 1] != '\\'))
+            break;
+        ++i;
+    }
+    if (i >= len)
+        return {};
+    return text.substring(start, i);
 }
 }  // namespace
 
@@ -317,6 +330,22 @@ void AIPanelComponent::onGenerationFinished(juce::String status) {
                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
             output_.insertTextAtCaret(description);
         }
+    }
+
+    // For coder (Faust) devices a successful apply means the generated DSP
+    // passed both the MCP compile_faust check and the live interpreter
+    // compile, so confirm it compiled (green) before the apply line.
+    if (succeeded && isCoderSupported(pluginId_)) {
+        output_.moveCaretToEnd();
+        if (auto t = output_.getText(); t.isNotEmpty() && !t.endsWithChar('\n')) {
+            output_.setColour(juce::TextEditor::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            output_.insertTextAtCaret("\n");
+        }
+        output_.setColour(juce::TextEditor::textColourId, juce::Colours::limegreen);
+        output_.insertTextAtCaret(juce::String(juce::CharPointer_UTF8("\xe2\x9c\x93 compiled")));
+        output_.setColour(juce::TextEditor::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     }
 
     output_.moveCaretToEnd();
