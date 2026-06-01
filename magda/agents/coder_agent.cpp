@@ -59,6 +59,15 @@ class FaustCoderAgent : public CoderAgent {
             const auto displayName = name.empty() ? juce::String("AI DSP") : juce::String(name);
             if (!faust->loadDspSource(displayName, juce::String(source), err))
                 return juce::String("compile error: ") + err;
+
+            // Faust's parameter set changes at runtime, so the DeviceInfo the
+            // chain UI rebuilds from has to be nudged to the now-active pool
+            // layout, then the live plugin state captured. Without this the
+            // slot rebuild reads stale (empty) params and the device shows no
+            // controls until the user opens the editor and recompiles. Mirrors
+            // FaustUI::tryLoad's refresh after a manual load.
+            bridge->getPluginManager().refreshDeviceParameters(path);
+            bridge->getPluginManager().capturePluginState(path);
             return juce::String("applied \"") + displayName + "\"";
         };
 
