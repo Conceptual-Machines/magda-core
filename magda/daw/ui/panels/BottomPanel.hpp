@@ -91,6 +91,9 @@ class BottomPanel : public daw::ui::TabbedPanel,
   private:
     void updateContentBasedOnSelection();
 
+    bool shouldShowHeaderFor(daw::ui::PanelContent* content) const;
+    void syncHeaderVisibility(daw::ui::PanelContent* content);
+
     // Editor tab icons for switching between Piano Roll and Drum Grid
     std::unique_ptr<SvgButton> pianoRollTab_;
     std::unique_ptr<SvgButton> drumGridTab_;
@@ -105,6 +108,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
 
     void addMidiControlsToHeader();
     void removeMidiControlsFromHeader();
+    void hideMidiHeaderControls();
     void layoutMidiHeaderControls(juce::Rectangle<int> headerBounds);
 
     bool showEditorTabs_ = false;

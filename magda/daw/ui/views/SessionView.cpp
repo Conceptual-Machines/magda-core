@@ -2107,11 +2107,12 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
         if (pluginDropTrackIndex_ >= 0 &&
             pluginDropTrackIndex_ < static_cast<int>(visibleTrackIds_.size())) {
             // Highlight the specific track column
-            int trackX = getTrackX(pluginDropTrackIndex_) - trackHeaderScrollOffset;
+            auto vpBounds = gridViewport->getBounds();
+            int trackX =
+                vpBounds.getX() + getTrackX(pluginDropTrackIndex_) - trackHeaderScrollOffset;
             int trackW = (pluginDropTrackIndex_ < static_cast<int>(trackColumnWidths_.size()))
                              ? trackColumnWidths_[pluginDropTrackIndex_]
                              : DEFAULT_CLIP_SLOT_WIDTH;
-            auto vpBounds = gridViewport->getBounds();
             auto colBounds = juce::Rectangle<int>(trackX, 0, trackW, vpBounds.getBottom());
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
             g.fillRect(colBounds);
@@ -2120,7 +2121,7 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
         } else {
             // Past last track — show "new track" indicator
             auto vpBounds = gridViewport->getBounds();
-            int lastTrackEnd = getTotalTracksWidth() - trackHeaderScrollOffset;
+            int lastTrackEnd = vpBounds.getX() + getTotalTracksWidth() - trackHeaderScrollOffset;
             int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
             auto indicatorBounds =
                 juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
@@ -2140,7 +2141,7 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
     // File drag "new track" overlay (when dragging audio files past last track)
     if (dragHoverTrackIndex_ == -1 && dragHoverSceneIndex_ >= 0) {
         auto vpBounds = gridViewport->getBounds();
-        int lastTrackEnd = getTotalTracksWidth() - trackHeaderScrollOffset;
+        int lastTrackEnd = vpBounds.getX() + getTotalTracksWidth() - trackHeaderScrollOffset;
         int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
         auto indicatorBounds =
             juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
