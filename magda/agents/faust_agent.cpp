@@ -179,7 +179,17 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
     auto client = createLLMClient(agentConfig, "faust");
 
     constexpr int kMaxAttempts = 3;
-    juce::String userTurn = juce::String::fromUTF8(message.c_str());
+
+    // Snapshot the conversation as it stands. Each attempt runs against THIS
+    // base, so failed attempts never chain off each other or get persisted:
+    // the retry carries the broken code + error inline instead. On success we
+    // commit only the original prompt + the working reply, keeping the history
+    // clean (no wasted context on fix attempts) for both stateless providers
+    // and the Responses API.
+    const auto baseMessages = conversation.messages;
+    const auto basePrevId = conversation.lastResponseId;
+    const juce::String originalPrompt = juce::String::fromUTF8(message.c_str());
+    juce::String userTurn = originalPrompt;
     std::string lastError;
 
     for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
@@ -190,6 +200,10 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
             return result;
         }
 
+        llm::Conversation working;
+        working.messages = baseMessages;
+        working.lastResponseId = basePrevId;
+
         llm::Request request;
         request.systemPrompt = juce::String::fromUTF8(getSystemPrompt());
         request.userMessage = userTurn;
@@ -198,13 +212,13 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
         llm::Response response;
         if (onToken) {
             response = client->continueConversationStreaming(
-                conversation, request, [this, &onToken](const juce::String& token) {
+                working, request, [this, &onToken](const juce::String& token) {
                     if (shouldStop_.load())
                         return false;
                     return onToken ? onToken(token) : true;
                 });
         } else {
-            response = client->continueConversation(conversation, request);
+            response = client->continueConversation(working, request);
         }
 
         if (!response.success) {
@@ -216,27 +230,34 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
 
         result = parseJson(response.text.trim());
         if (result.hasError) {
-            // Not valid JSON — ask for a clean re-emit and try again.
+            // Not valid JSON — retry off the original context.
             lastError = result.error;
-            userTurn = "Your previous reply was not valid JSON. Output ONLY the JSON object "
-                       "with fields name, description and source.";
+            userTurn = originalPrompt +
+                       "\n\n(Your previous reply was not valid JSON. Output ONLY the JSON "
+                       "object with fields name, description and source.)";
             continue;
         }
 
         std::string compileErr;
         if (compileCheck(result.name, result.source, compileErr)) {
+            // Success — commit the clean turns (original prompt + working reply)
+            // to the persistent conversation and chain off the good response.
+            conversation.messages.push_back({"user", originalPrompt});
+            conversation.messages.push_back({"assistant", response.text.trim()});
+            conversation.lastResponseId = working.lastResponseId;
             logFaustAgentResult(result);
-            return result;  // success — conversation already holds the good turn
+            return result;
         }
 
-        // Compile failed. The broken JSON is already the last assistant turn in
-        // `conversation`, so feed the compiler error back as the next user turn
-        // and let the model self-correct.
+        // Compile failed. Retry off the ORIGINAL context with the broken code
+        // and the error inline, so failed attempts neither chain off each other
+        // nor get persisted.
         lastError = compileErr;
         if (onToken)
             onToken(juce::String::fromUTF8("\n[compile failed, fixing...]\n"));
-        userTurn = "That failed to compile:\n" + juce::String(compileErr) +
-                   "\nFix the code and output the corrected JSON object.";
+        userTurn = originalPrompt + "\n\n(Your previous attempt failed to compile:\n```\n" +
+                   juce::String(result.source) + "\n```\nCompiler error:\n" +
+                   juce::String(compileErr) + "\nFix it and output the corrected JSON object.)";
     }
 
     result = Result{};
