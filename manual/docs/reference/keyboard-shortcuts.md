@@ -1,5 +1,7 @@
 # Keyboard Shortcuts
 
+Everything below is the **default** mapping. You can remap any shortcut from **Settings > Preferences > Shortcuts**, on the **Keyboard** tab, and reset to defaults at any time. Mouse and trackpad gestures are remappable on the **Gestures** tab of the same page — see [Mouse & Trackpad Gestures](#mouse-trackpad-gestures). Your changes are saved between sessions.
+
 ## Transport
 
 | Shortcut | Action |
@@ -32,6 +34,20 @@
 |----------|--------|
 | ++cmd++ + click (++ctrl++ + click on Windows/Linux) | Toggle arrangement clip selection |
 | ++shift+ctrl++ + click | Erase arrangement clip under cursor |
+
+## Mouse & Trackpad Gestures
+
+Wheel and trackpad gestures are context-aware and remappable from **Settings > Preferences > Shortcuts > Gestures**. The defaults (use ++ctrl++ for ++cmd++ on Windows/Linux):
+
+| Gesture | Action |
+|---------|--------|
+| Wheel | Scroll vertically |
+| ++shift++ + wheel | Scroll horizontally |
+| ++cmd++ + wheel | Zoom horizontally toward the cursor |
+| ++alt++ + wheel | Adjust track height (arrangement) |
+| Trackpad horizontal swipe | Scroll horizontally |
+
+In the **piano roll**, ++alt++ + wheel changes note-row height. In the **drum grid**, ++alt++ + wheel changes row height and ++cmd++ + wheel zooms the timebase.
 
 ## Tracks
 

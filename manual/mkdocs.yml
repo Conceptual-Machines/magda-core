@@ -80,6 +80,7 @@ nav:
           - Drum Grid: devices/drum-grid.md
           - Sampler: devices/sampler.md
       - Effects: devices/effects.md
+      - Analysis: devices/analysis.md
   - Modulation:
       - Overview: modulation/overview.md
       - Modulators: modulation/modulators.md

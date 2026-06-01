@@ -22,6 +22,10 @@ MAGDA ships with its own native MIDI devices, instruments, and effects. All buil
 
 The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped with every MAGDA installation. See [Effects](effects.md) for the full list, grouped by category.
 
+## Analysis
+
+Real-time visual analyzers — an **Oscilloscope** and a **Spectrum Analyzer** — that tap the signal without changing it, on the FX chain or in the post-FX area. See [Analysis](analysis.md).
+
 ## External Plugins
 
 In addition to built-in devices, MAGDA supports external plugins in the following formats:

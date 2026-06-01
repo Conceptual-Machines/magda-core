@@ -8,6 +8,7 @@ Displayed in the bottom panel when a drum clip is selected or a DrumGrid device 
 - **Columns** represent time steps
 - **Click** cells to toggle hits on/off
 - **Velocity** per hit is adjustable
+- **Live input highlight** — with the track's input monitoring on, pad rows light up as you play them and the played row scrolls into view
 
 !!! note "Header controls"
     - **Grid resolution** — Draggable numerator/denominator for grid subdivision
