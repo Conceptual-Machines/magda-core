@@ -1092,15 +1092,7 @@ bool BottomPanel::shouldShowHeaderFor(daw::ui::PanelContent* content) const {
 }
 
 void BottomPanel::syncHeaderVisibility(daw::ui::PanelContent* content) {
-    const bool show = shouldShowHeaderFor(content);
-    const int contentType = content != nullptr ? static_cast<int>(content->getContentType()) : -1;
-
-    DBG("BottomPanel::syncHeaderVisibility collapsed="
-        << static_cast<int>(isCollapsed()) << " contentType=" << contentType
-        << " wantsHeader=" << static_cast<int>(content != nullptr && content->wantsHeader())
-        << " show=" << static_cast<int>(show));
-
-    headerBar_->setVisible(show);
+    headerBar_->setVisible(shouldShowHeaderFor(content));
 }
 
 void BottomPanel::addMidiControlsToHeader() {
