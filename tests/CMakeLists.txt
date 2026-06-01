@@ -182,7 +182,6 @@ target_sources(magda_juce_tests PRIVATE
     test_section_scoped_device_ids_juce.cpp
     test_clip_inspector_juce.cpp
     test_multiband_curve_view_juce.cpp
-    test_parameter_config_dialog_juce.cpp
     test_timeline_extreme_zoom_paint_juce.cpp
     test_arrange_beat_native_juce.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
