@@ -76,8 +76,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void trackDevicesChanged(TrackId trackId) override;
     void deviceModifiersChanged(TrackId trackId) override;
     void audioSidechainTriggered(TrackId sourceTrackId) override;
-    void devicePropertyChanged(DeviceId deviceId) override;
-    void deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) override;
+    void devicePropertyChanged(const ChainNodePath& devicePath) override;
+    void deviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
+                                float newValue) override;
     void macroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,
                            float value) override;
     void modParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
@@ -305,11 +306,29 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     }
 
     /**
-     * @brief Get the Tracktion Plugin for a MAGDA device
-     * @param deviceId MAGDA device ID
-     * @return The Plugin, or nullptr if not found
+     * @brief Path-based lookup — preferred for new code. Resolves the live TE
+     * plugin behind the device referenced by `devicePath`. Sections are
+     * walked in the same way getDeviceInChainByPath() walks them.
      */
-    te::Plugin::Ptr getPlugin(DeviceId deviceId) const;
+    te::Plugin::Ptr getPlugin(const ChainNodePath& devicePath) const;
+
+    /**
+     * @brief Convenience: resolve both the MAGDA DeviceInfo and the live TE
+     * plugin from a single path. Avoids two independent chain walks for
+     * callers (UI mainly) that need both. Either field may be nullptr if
+     * the device or its plugin isn't currently materialised.
+     */
+    struct ResolvedDevice {
+        DeviceInfo* info = nullptr;
+        te::Plugin::Ptr plugin;
+    };
+    ResolvedDevice resolveDevice(const ChainNodePath& devicePath) const;
+
+    // Path-based variants of the plugin-window methods.
+    void showPluginWindow(const ChainNodePath& devicePath);
+    void hidePluginWindow(const ChainNodePath& devicePath);
+    bool isPluginWindowOpen(const ChainNodePath& devicePath) const;
+    bool togglePluginWindow(const ChainNodePath& devicePath);
 
     /**
      * @brief Resolve any ControlTarget to its writable te::AutomatableParameter.
@@ -322,22 +341,18 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     te::AutomatableParameter* resolveControlTarget(const ControlTarget& target) const;
 
-    /**
-     * @brief Get the DeviceProcessor for a MAGDA device
-     * @param deviceId MAGDA device ID
-     * @return The DeviceProcessor, or nullptr if not found
-     */
-    DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
+    DeviceProcessor* getDeviceProcessor(const ChainNodePath& devicePath) const;
 
     // ------------------------------------------------------------------------
     // VST/AU plugin program (factory preset) access for hosted external plugins.
     // All return zero/empty for non-external (internal/MAGDA) devices.
     // ------------------------------------------------------------------------
-    int getPluginNumPrograms(DeviceId deviceId) const;
-    int getPluginCurrentProgram(DeviceId deviceId) const;
-    juce::String getPluginProgramName(DeviceId deviceId, int programIndex) const;
-    /** Switch the plugin's current program. Returns true on success. */
-    bool setPluginCurrentProgram(DeviceId deviceId, int programIndex);
+    // Path-based overloads — new code uses these so the section is part of
+    // the lookup.
+    int getPluginNumPrograms(const ChainNodePath& devicePath) const;
+    int getPluginCurrentProgram(const ChainNodePath& devicePath) const;
+    juce::String getPluginProgramName(const ChainNodePath& devicePath, int programIndex) const;
+    bool setPluginCurrentProgram(const ChainNodePath& devicePath, int programIndex);
 
     // ------------------------------------------------------------------------
     // Disk-based plugin preset loading / saving (.vstpreset / .aupreset).
@@ -348,8 +363,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     //       parses the .aupreset plist and calls
     //       AudioUnitSetProperty(kAudioUnitProperty_ClassInfo).
     // ------------------------------------------------------------------------
-    bool loadPluginPresetFile(DeviceId deviceId, const juce::File& presetFile);
-    bool savePluginPresetFile(DeviceId deviceId, const juce::File& presetFile);
+    bool loadPluginPresetFile(const ChainNodePath& devicePath, const juce::File& presetFile);
+    bool savePluginPresetFile(const ChainNodePath& devicePath, const juce::File& presetFile);
 
     /**
      * @brief Get (or lazily create) the virtual MIDI input device used by
@@ -410,7 +425,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     /**
      * @brief Push a parameter change to the audio thread
      */
-    bool pushParameterChange(DeviceId deviceId, int paramIndex, float value);
+    bool pushParameterChange(const ChainNodePath& devicePath, int paramIndex, float value);
 
     // =========================================================================
     // Synchronization
@@ -776,38 +791,12 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // =========================================================================
 
     /**
-     * @brief Show the plugin's native editor window
-     * @param deviceId MAGDA device ID of the plugin
-     */
-    void showPluginWindow(DeviceId deviceId);
-
-    /**
-     * @brief Hide/close the plugin's native editor window
-     * @param deviceId MAGDA device ID of the plugin
-     */
-    void hidePluginWindow(DeviceId deviceId);
-
-    /**
-     * @brief Check if a plugin window is currently open
-     * @param deviceId MAGDA device ID of the plugin
-     * @return true if the plugin window is visible
-     */
-    bool isPluginWindowOpen(DeviceId deviceId) const;
-
-    /**
-     * @brief Toggle the plugin's native editor window (open if closed, close if open)
-     * @param deviceId MAGDA device ID of the plugin
-     * @return true if the window is now open, false if now closed
-     */
-    bool togglePluginWindow(DeviceId deviceId);
-
-    /**
      * @brief Load a sample file into a MagdaSamplerPlugin device
-     * @param deviceId MAGDA device ID of the sampler plugin
+     * @param devicePath MAGDA device path of the sampler plugin
      * @param file Audio file to load
      * @return true if sample was loaded successfully
      */
-    bool loadSamplerSample(DeviceId deviceId, const juce::File& file);
+    bool loadSamplerSample(const ChainNodePath& devicePath, const juce::File& file);
 
   private:
     // Timer callback for metering updates (runs on message thread)

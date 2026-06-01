@@ -2,7 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
-#include "../../core/TypeIds.hpp"
+#include "../../core/ChainNodePath.hpp"
 #include "params/ParameterQueue.hpp"
 
 namespace magda {
@@ -27,14 +27,15 @@ class ParameterManager {
 
     /**
      * @brief Push a parameter change to the queue (UI thread)
-     * @param deviceId MAGDA device ID
+     * @param devicePath MAGDA device path
      * @param paramIndex Parameter index
      * @param value New parameter value
      * @return true if successfully queued, false if queue full
      */
-    bool pushChange(DeviceId deviceId, int paramIndex, float value) {
+    bool pushChange(const ChainNodePath& devicePath, int paramIndex, float value) {
         ParameterChange change;
-        change.deviceId = deviceId;
+        if (!change.setDevicePath(devicePath))
+            return false;
         change.paramIndex = paramIndex;
         change.value = value;
         return queue_.push(change);

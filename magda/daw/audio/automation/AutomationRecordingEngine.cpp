@@ -305,20 +305,20 @@ void AutomationRecordingEngine::flushFinalPoints() {
 // Parameter Change Handlers
 // ============================================================================
 
-void AutomationRecordingEngine::onDeviceParameterChanged(DeviceId deviceId, int paramIndex,
-                                                         float rawValue) {
+void AutomationRecordingEngine::onDeviceParameterChanged(const ChainNodePath& devicePath,
+                                                         int paramIndex, float rawValue) {
     if (!shouldRecord())
         return;
 
-    auto& trackMgr = TrackManager::getInstance();
-    auto devicePath = trackMgr.findDevicePath(deviceId);
+    // The caller already knows the full path. Re-deriving it from a bare
+    // DeviceId would be ambiguous under section-local IDs (an FX device and a
+    // post-FX device routinely share the same id), so trust the path verbatim.
     if (!devicePath.isValid())
         return;
 
     // Build target for this device parameter
     AutomationTarget target;
     target.kind = ControlTarget::Kind::PluginParam;
-    target.devicePath.trackId = devicePath.trackId;
     target.devicePath = devicePath;
     target.paramIndex = paramIndex;
 
@@ -334,6 +334,8 @@ void AutomationRecordingEngine::onDeviceParameterChanged(DeviceId deviceId, int 
         return;
 
     auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+    if (laneId == INVALID_AUTOMATION_LANE_ID)
+        return;
 
     // Touch bounce-back baseline. For device params there's no engine-side
     // pre-touch value (unlike volume/pan which use mix state), so we read
@@ -346,9 +348,9 @@ void AutomationRecordingEngine::onDeviceParameterChanged(DeviceId deviceId, int 
     double beatTime = getCurrentBeatTime();
     double normalizedValue = normalizeDeviceParam(target, rawValue);
 
-    DBG("[AutoRec] Device param hit: deviceId=" << deviceId << " param=" << paramIndex << " raw="
-                                                << rawValue << " norm=" << normalizedValue
-                                                << " beat=" << beatTime);
+    DBG("[AutoRec] Device param hit: deviceId="
+        << devicePath.getDeviceId() << " param=" << paramIndex << " raw=" << rawValue
+        << " norm=" << normalizedValue << " beat=" << beatTime);
 
     if (shouldThinPoint(laneId, beatTime, normalizedValue))
         return;

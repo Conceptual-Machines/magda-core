@@ -842,6 +842,12 @@ MediaExplorerContent::MediaExplorerContent() {
                             DarkTheme::getTextColour());
         listComp->setColour(juce::DirectoryContentsDisplayComponent::highlightedTextColourId,
                             DarkTheme::getTextColour());
+        // Issue #1339 — bind LEFT/RIGHT on the file list to preview
+        // stop/replay. UP/DOWN already audition via JUCE's built-in
+        // selection-change path (FileListComponent::selectedRowsChanged
+        // → FileBrowserListener::selectionChanged), provided the list has
+        // keyboard focus.
+        listComp->addKeyListener(this);
     }
 
     // Apply LookAndFeel to ComboBox child and hide the filename editor
@@ -882,10 +888,17 @@ MediaExplorerContent::MediaExplorerContent() {
         loadFileForPreview(f);
         // Match the file-browser's selectionChanged path: respect the Auto
         // toggle so picking a DB row auto-plays when the user wants it.
+        // This fires from both mouse clicks (ResultsTableModel::cellClicked)
+        // and keyboard nav (ResultsTable::keyPressed → onKeyboardRowSelected)
+        // — issue #1339.
         if (autoPlayButton_.getToggleState()) {
             playPreview();
         }
     };
+    // Issue #1339 — LEFT / RIGHT on the DB results table drive the same
+    // preview transport that the filesystem browser uses.
+    dbBrowser_->onPreviewStopRequest = [this]() { stopPreview(); };
+    dbBrowser_->onPreviewReplayRequest = [this]() { restartPreview(); };
     // Surface indexing progress in the preview area so it's visible from
     // both the filesystem browser and the DB browser. Empty string clears.
     dbBrowser_->onIndexingStatus = [this](const juce::String& status) {
@@ -919,6 +932,13 @@ MediaExplorerContent::~MediaExplorerContent() {
         if (auto* comboBox = dynamic_cast<juce::ComboBox*>(fileBrowser_->getChildComponent(i))) {
             comboBox->setLookAndFeel(nullptr);
         }
+    }
+    // Mirror addKeyListener in the ctor (issue #1339). The FileListComponent
+    // is owned by fileBrowser_, which is still alive at the top of this
+    // dtor body — safe to detach now.
+    if (auto* listComp =
+            dynamic_cast<juce::FileListComponent*>(fileBrowser_->getDisplayComponent())) {
+        listComp->removeKeyListener(this);
     }
     fileBrowser_->setLookAndFeel(nullptr);
     autoPlayButton_.setLookAndFeel(nullptr);
@@ -1203,6 +1223,34 @@ void MediaExplorerContent::stopPreview() {
         stopButton_->setEnabled(false);
         thumbnailComponent_->setPlaying(false);
     }
+}
+
+void MediaExplorerContent::restartPreview() {
+    // playPreview() is a no-op while isPlaying_ is true, so stop first.
+    // The stop is a no-op if we aren't already playing, which keeps
+    // "RIGHT arrow on a loaded-but-paused file" working as "play from 0".
+    if (transportSource_ == nullptr || !currentPreviewFile_.existsAsFile()) {
+        return;
+    }
+    if (isPlaying_) {
+        stopPreview();
+    }
+    playPreview();
+}
+
+bool MediaExplorerContent::keyPressed(const juce::KeyPress& key, juce::Component* /*origin*/) {
+    // Issue #1339 — invoked via FileListComponent::addKeyListener above.
+    // Only handle LEFT/RIGHT; UP/DOWN (and PgUp/PgDn/Home/End) are owned
+    // by FileListComponent and already audition via selectionChanged().
+    if (key == juce::KeyPress::leftKey) {
+        stopPreview();
+        return true;
+    }
+    if (key == juce::KeyPress::rightKey) {
+        restartPreview();
+        return true;
+    }
+    return false;
 }
 
 void MediaExplorerContent::setPreviewLockedForIndexing(bool locked) {

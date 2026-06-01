@@ -96,14 +96,39 @@ ParameterInfo ExternalPluginProcessor::getParameterInfo(int index) const {
 
 void ExternalPluginProcessor::populateParameters(DeviceInfo& info) const {
     info.parameters.clear();
+    info.wrapperParameters.clear();
 
     if (auto* ext = getExternalPlugin()) {
         auto params = ext->getAutomatableParameters();
         int maxParams = static_cast<int>(params.size());
 
+        // TE prepends a slot-level Dry/Wet mix pair (PluginWetDryAutomatableParam)
+        // to every ExternalPlugin's automatable list. Those aren't the plugin's
+        // own parameters — split them into `wrapperParameters` so the param
+        // grid sees only the plugin's params and the device-header chrome can
+        // render the wrapper pair as a single Mix crossfader. paramIndex on
+        // both buckets keeps addressing the underlying TE slot, so host writes,
+        // automation, and aliases still work the same.
         for (int i = 0; i < maxParams; ++i) {
-            info.parameters.push_back(getParameterInfo(i));
+            auto* param = params[static_cast<size_t>(i)];
+            if (param == nullptr)
+                continue;
+            auto paramInfo = getParameterInfo(i);
+            if (param == ext->dryGain.get()) {
+                paramInfo.wrapperRole = WrapperRole::DryGain;
+                info.wrapperParameters.push_back(std::move(paramInfo));
+            } else if (param == ext->wetGain.get()) {
+                paramInfo.wrapperRole = WrapperRole::WetGain;
+                info.wrapperParameters.push_back(std::move(paramInfo));
+            } else {
+                info.parameters.push_back(std::move(paramInfo));
+            }
         }
+        DBG("[MixKnob.populate] device='"
+            << ext->getName() << "' params=" << (int)info.parameters.size()
+            << " wrapper=" << (int)info.wrapperParameters.size()
+            << " dryNonNull=" << (int)(ext->dryGain.get() != nullptr)
+            << " wetNonNull=" << (int)(ext->wetGain.get() != nullptr));
     }
 }
 
@@ -115,13 +140,26 @@ void ExternalPluginProcessor::syncFromDeviceInfo(const DeviceInfo& info) {
 
     if (auto* ext = getExternalPlugin()) {
         auto params = ext->getAutomatableParameters();
-        for (size_t i = 0; i < info.parameters.size() && i < static_cast<size_t>(params.size());
-             ++i) {
-            if (params[i]) {
-                params[i]->setParameterFromHost(info.parameters[i].currentValue,
-                                                juce::dontSendNotification);
+        // Address via `paramIndex` (the TE index), not array position, because
+        // `info.parameters` no longer matches `params` 1:1 — the wrapper dry/wet
+        // pair lives in `info.wrapperParameters`. Both buckets carry the
+        // original TE index in `paramIndex`.
+        auto apply = [&](const std::vector<ParameterInfo>& bucket) {
+            for (const auto& p : bucket) {
+                const int idx = p.paramIndex;
+                if (idx >= 0 && idx < params.size() && params[idx]) {
+                    params[idx]->setParameterFromHost(p.currentValue, juce::dontSendNotification);
+                }
             }
-        }
+        };
+        // Apply the saved parameter array as a BASELINE. For an external plugin
+        // with a native state chunk this gets overwritten by the chunk overlay
+        // (see restoreDeviceStateWithChunkOverlay in PluginManagerSync.cpp), but it
+        // is the fallback that survives when the chunk is missing, rejected, or
+        // doesn't cover every host-automatable parameter. For a parameter-only
+        // device (no chunk) it is the sole source of truth.
+        apply(info.parameters);
+        apply(info.wrapperParameters);
     }
 
     settingParameterFromUI_ = false;
@@ -227,7 +265,7 @@ void ExternalPluginProcessor::propagateParameterChange(te::AutomatableParameter&
         auto& tm = TrackManager::getInstance();
 
         for (const auto& track : tm.getTracks()) {
-            for (const auto& element : track.chainElements) {
+            for (const auto& element : track.chain.fxChainElements) {
                 if (std::holds_alternative<DeviceInfo>(element)) {
                     const auto& device = std::get<DeviceInfo>(element);
                     if (device.id == deviceId_) {

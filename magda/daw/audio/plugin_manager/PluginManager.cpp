@@ -1,5 +1,6 @@
 #include "PluginManager.hpp"
 
+#include <algorithm>
 #include <set>
 #include <unordered_set>
 #include <vector>
@@ -79,21 +80,65 @@ ChainNodePath parentContainerForMoveSource(const ChainNodePath& sourceElementPat
     return parent;
 }
 
-void collectDeviceIdsForMove(const RackInfo& rack, std::vector<DeviceId>& out);
+void collectDevicePathsForMove(const RackInfo& rack, const ChainNodePath& rackPath,
+                               std::vector<ChainNodePath>& out);
 
-void collectDeviceIdsForMove(const ChainElement& element, std::vector<DeviceId>& out) {
+void collectDevicePathsForMove(const ChainElement& element, const ChainNodePath& parentChainPath,
+                               std::vector<ChainNodePath>& out) {
     if (isDevice(element)) {
-        out.push_back(getDevice(element).id);
+        out.push_back(parentChainPath.withDevice(getDevice(element).id));
     } else if (isRack(element)) {
-        collectDeviceIdsForMove(getRack(element), out);
+        const auto& rack = getRack(element);
+        collectDevicePathsForMove(rack, parentChainPath.withRack(rack.id), out);
     }
 }
 
-void collectDeviceIdsForMove(const RackInfo& rack, std::vector<DeviceId>& out) {
+void collectDevicePathsForMove(const RackInfo& rack, const ChainNodePath& rackPath,
+                               std::vector<ChainNodePath>& out) {
     for (const auto& chain : rack.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
         for (const auto& child : chain.elements)
-            collectDeviceIdsForMove(child, out);
+            collectDevicePathsForMove(child, chainPath, out);
     }
+}
+
+void collectValidDevicePaths(const std::vector<ChainElement>& elements,
+                             const ChainNodePath& parentPath,
+                             std::set<ChainNodePath>& validDevicePaths,
+                             std::set<RackId>& validRackIds) {
+    for (const auto& element : elements) {
+        if (isDevice(element)) {
+            validDevicePaths.insert(parentPath.withDevice(getDevice(element).id));
+        } else if (isRack(element)) {
+            const auto& rack = getRack(element);
+            validRackIds.insert(rack.id);
+            const auto rackPath = parentPath.withRack(rack.id);
+            for (const auto& chain : rack.chains)
+                collectValidDevicePaths(chain.elements, rackPath.withChain(chain.id),
+                                        validDevicePaths, validRackIds);
+        }
+    }
+}
+
+void collectValidDevicePaths(const TrackInfo& track, std::set<ChainNodePath>& validDevicePaths,
+                             std::set<RackId>& validRackIds) {
+    for (const auto& element : track.chain.fxChainElements) {
+        if (isDevice(element)) {
+            validDevicePaths.insert(ChainNodePath::topLevelDevice(track.id, getDevice(element).id));
+        } else if (isRack(element)) {
+            const auto& rack = getRack(element);
+            validRackIds.insert(rack.id);
+            const auto rackPath = ChainNodePath::rack(track.id, rack.id);
+            for (const auto& chain : rack.chains)
+                collectValidDevicePaths(chain.elements, rackPath.withChain(chain.id),
+                                        validDevicePaths, validRackIds);
+        }
+    }
+
+    for (const auto& elem : track.chain.postFxChainElements)
+        validDevicePaths.insert(ChainNodePath::postFxDevice(track.id, elem.device.id));
+    for (const auto& elem : track.chain.mixerAnalysisElements)
+        validDevicePaths.insert(ChainNodePath::mixerAnalysisDevice(track.id, elem.device.id));
 }
 
 }  // namespace
@@ -109,35 +154,42 @@ PluginManager::PluginManager(te::Engine& engine, te::Edit& edit, TrackController
       instrumentRackManager_(edit),
       rackSyncManager_(edit, *this) {}
 
+PluginManager::SyncedDeviceMap::iterator PluginManager::findSyncedDevice(
+    const ChainNodePath& devicePath) {
+    return syncedDevices_.find(devicePath);
+}
+
+PluginManager::SyncedDeviceMap::const_iterator PluginManager::findSyncedDevice(
+    const ChainNodePath& devicePath) const {
+    return syncedDevices_.find(devicePath);
+}
+
 void PluginManager::prepareForChainElementMove(const ChainNodePath& sourceElementPath,
                                                const ChainNodePath& destinationChainPath) {
     captureAllPluginStates();
 
     const auto sourceContainerPath = parentContainerForMoveSource(sourceElementPath);
     if (sourceContainerPath == destinationChainPath) {
-        DBG("[ChainMove] runtime prepare: same container, keeping live plugin mapping");
         return;
     }
 
     auto& trackManager = TrackManager::getInstance();
-    std::vector<DeviceId> deviceIds;
+    std::vector<ChainNodePath> devicePaths;
 
     if (sourceElementPath.topLevelDeviceId != INVALID_DEVICE_ID) {
-        deviceIds.push_back(sourceElementPath.topLevelDeviceId);
+        devicePaths.push_back(sourceElementPath);
     } else if (!sourceElementPath.steps.empty() &&
                sourceElementPath.steps.back().type == ChainStepType::Device) {
-        deviceIds.push_back(sourceElementPath.steps.back().id);
+        devicePaths.push_back(sourceElementPath);
     } else if (!sourceElementPath.steps.empty() &&
                sourceElementPath.steps.back().type == ChainStepType::Rack) {
         if (auto* rack = trackManager.getRackByPath(sourceElementPath)) {
-            collectDeviceIdsForMove(*rack, deviceIds);
+            collectDevicePathsForMove(*rack, sourceElementPath, devicePaths);
         }
     }
 
-    DBG("[ChainMove] runtime prepare: detaching " << static_cast<int>(deviceIds.size())
-                                                  << " device mapping(s)");
-    for (auto deviceId : deviceIds)
-        detachDeviceRuntimeForChainMove(sourceElementPath.trackId, deviceId);
+    for (const auto& devicePath : devicePaths)
+        detachDeviceRuntimeForChainMove(devicePath);
 
     if (!sourceElementPath.steps.empty() &&
         sourceElementPath.steps.back().type == ChainStepType::Rack)
@@ -148,23 +200,28 @@ void PluginManager::prepareForChainElementMove(const ChainNodePath& sourceElemen
 // Plugin/Device Lookup
 // =============================================================================
 
-te::Plugin::Ptr PluginManager::getPlugin(DeviceId deviceId) const {
+te::Plugin::Ptr PluginManager::getPlugin(const ChainNodePath& devicePath) const {
     juce::ScopedLock lock(pluginLock_);
-    auto it = syncedDevices_.find(deviceId);
+    auto it = findSyncedDevice(devicePath);
     if (it != syncedDevices_.end() && it->second.plugin)
         return it->second.plugin;
 
-    // Fall through to rack sync manager for plugins inside racks
-    auto* innerPlugin = rackSyncManager_.getInnerPlugin(deviceId);
-    if (innerPlugin)
-        return innerPlugin;
+    // RackSyncManager is still the fallback for rack internals that have not
+    // been mirrored into syncedDevices_ yet. Flat track sections are keyed by
+    // full ChainNodePath; falling back by bare DeviceId can alias master,
+    // post-FX, mixer-analysis, or sibling multi-out devices.
+    if (devicePath.topLevelDeviceId == INVALID_DEVICE_ID && !devicePath.isPostFx() &&
+        !devicePath.isMixerAnalysis()) {
+        if (auto* innerPlugin = rackSyncManager_.getInnerPlugin(devicePath.getDeviceId()))
+            return innerPlugin;
+    }
 
     return nullptr;
 }
 
-DeviceProcessor* PluginManager::getDeviceProcessor(DeviceId deviceId) const {
+DeviceProcessor* PluginManager::getDeviceProcessor(const ChainNodePath& devicePath) const {
     juce::ScopedLock lock(pluginLock_);
-    auto it = syncedDevices_.find(deviceId);
+    auto it = findSyncedDevice(devicePath);
     return it != syncedDevices_.end() ? it->second.processor.get() : nullptr;
 }
 
@@ -175,7 +232,7 @@ DeviceId PluginManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
     juce::ScopedLock lock(pluginLock_);
     auto it = pluginToDevice_.find(plugin);
     if (it != pluginToDevice_.end())
-        return it->second;
+        return it->second.getDeviceId();
 
     // Instrument wrapper rack instances deliberately do not resolve here. Their
     // visible MAGDA metering/gain is handled by InstrumentMeterTapPlugin inside
@@ -187,21 +244,34 @@ DeviceId PluginManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
     return INVALID_DEVICE_ID;
 }
 
+ChainNodePath PluginManager::getDevicePathForPlugin(te::Plugin* plugin) const {
+    if (!plugin)
+        return {};
+
+    juce::ScopedLock lock(pluginLock_);
+    auto it = pluginToDevice_.find(plugin);
+    if (it != pluginToDevice_.end())
+        return it->second;
+
+    return {};
+}
+
 // =============================================================================
 // MIDI Receive Plugin Lifecycle
 // =============================================================================
 
-void PluginManager::ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackId sourceTrackId) {
+void PluginManager::ensureMidiReceive(const ChainNodePath& devicePath, TrackId sourceTrackId) {
+    const auto trackId = devicePath.trackId;
     auto* teTrack = trackController_.getAudioTrack(trackId);
     if (!teTrack)
         return;
 
-    auto it = syncedDevices_.find(deviceId);
+    auto it = findSyncedDevice(devicePath);
     if (it == syncedDevices_.end())
         return;
 
     // Find the target device's TE plugin to insert before it
-    auto targetPlugin = getPlugin(deviceId);
+    auto targetPlugin = getPlugin(devicePath);
     int insertPos = -1;
     if (targetPlugin) {
         for (int i = 0; i < teTrack->pluginList.size(); ++i) {
@@ -246,8 +316,6 @@ void PluginManager::ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackI
         it->second.midiReceivePlugin = makeMidiReceivePlugin(sourceTrackId, true);
         if (it->second.midiReceivePlugin)
             teTrack->pluginList.insertPlugin(it->second.midiReceivePlugin, insertPos, nullptr);
-        DBG("PluginManager::ensureMidiReceive - inserted MidiReceivePlugin for device "
-            << deviceId << " source=" << sourceTrackId << " at pos=" << insertPos);
     } else if (auto* rx = dynamic_cast<MidiReceivePlugin*>(it->second.midiReceivePlugin.get())) {
         rx->setSourceTrackId(sourceTrackId);
         rx->setReplaceExistingMidi(true);
@@ -263,8 +331,10 @@ void PluginManager::ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackI
             auto& listState = teTrack->pluginList.state;
             const int receiveChild = listState.indexOf(it->second.midiReceivePlugin->state);
             const int targetChild = listState.indexOf(targetPlugin->state);
-            if (receiveChild >= 0 && targetChild >= 0)
+            if (receiveChild >= 0 && targetChild >= 0) {
                 listState.moveChild(receiveChild, targetChild, nullptr);
+                requestPluginOrderGraphRestart(trackId, "midi-sidechain-receive");
+            }
         }
     }
 
@@ -276,8 +346,6 @@ void PluginManager::ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackI
             teTrack->pluginList.insertPlugin(it->second.midiRestorePlugin,
                                              targetPos >= 0 ? targetPos + 1 : -1, nullptr);
         }
-        DBG("PluginManager::ensureMidiReceive - inserted chain MIDI restore for device "
-            << deviceId << " source=" << trackId);
     } else if (auto* rx = dynamic_cast<MidiReceivePlugin*>(it->second.midiRestorePlugin.get())) {
         rx->setSourceTrackId(trackId);
         rx->setReplaceExistingMidi(true);
@@ -291,20 +359,21 @@ void PluginManager::ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackI
             auto& listState = teTrack->pluginList.state;
             const int restoreChild = listState.indexOf(it->second.midiRestorePlugin->state);
             const int targetChild = listState.indexOf(targetPlugin->state);
-            if (restoreChild >= 0 && targetChild >= 0)
+            if (restoreChild >= 0 && targetChild >= 0) {
                 listState.moveChild(restoreChild, targetChild + 1, nullptr);
+                requestPluginOrderGraphRestart(trackId, "midi-sidechain-restore");
+            }
         }
     }
 
     it->second.trackId = trackId;
 }
 
-void PluginManager::removeMidiReceive(TrackId /*trackId*/, DeviceId deviceId) {
-    auto it = syncedDevices_.find(deviceId);
+void PluginManager::removeMidiReceive(const ChainNodePath& devicePath) {
+    auto it = findSyncedDevice(devicePath);
     if (it == syncedDevices_.end())
         return;
 
-    DBG("PluginManager::removeMidiReceive - removing for device " << deviceId);
     auto* plugin = it->second.midiReceivePlugin.get();
     auto* restorePlugin = it->second.midiRestorePlugin.get();
     it->second.midiReceivePlugin = nullptr;
@@ -316,16 +385,21 @@ void PluginManager::removeMidiReceive(TrackId /*trackId*/, DeviceId deviceId) {
         restorePlugin->deleteFromParent();
 }
 
+void PluginManager::requestPluginOrderGraphRestart(TrackId trackId, const juce::String& reason) {
+    if (onPluginOrderGraphRestartRequested)
+        onPluginOrderGraphRestartRequested(trackId, reason);
+    edit_.restartPlayback();
+}
+
 // =============================================================================
 // Plugin State Capture/Restore
 // =============================================================================
 
 void PluginManager::captureAllPluginStates() {
-    int capturedTopLevel = 0;
     {
         juce::ScopedLock lock(pluginLock_);
 
-        for (const auto& [deviceId, sd] : syncedDevices_) {
+        for (const auto& [devicePath, sd] : syncedDevices_) {
             if (!sd.plugin)
                 continue;
 
@@ -349,39 +423,26 @@ void PluginManager::captureAllPluginStates() {
                     stateStr = xml->toString();
             }
 
-            DeviceInfo liveSnapshot;
-            const bool hasProcessor = sd.processor != nullptr;
-            if (hasProcessor)
-                sd.processor->populateParameters(liveSnapshot);
-
-            // Always overwrite pluginState (even if empty) to avoid stale state
+            // Always overwrite pluginState (even if empty) to avoid stale state.
             auto& trackManager = TrackManager::getInstance();
-            for (auto& track : trackManager.getTracks()) {
-                if (auto* devInfo = trackManager.getDevice(track.id, deviceId)) {
-                    devInfo->pluginState = stateStr;
-                    if (hasProcessor)
-                        devInfo->parameters = liveSnapshot.parameters;
-                    ++capturedTopLevel;
-                    DBG("[ChainMove] captureAll top-level device id="
-                        << deviceId << " name='" << devInfo->name << "' stateLen="
-                        << stateStr.length() << " params=" << devInfo->parameters.size());
-                    break;
-                }
+            auto* devInfo = trackManager.getDeviceInChainByPath(devicePath);
+            if (devInfo) {
+                devInfo->pluginState = stateStr;
+                if (sd.processor != nullptr)
+                    sd.processor->populateParameters(*devInfo);
             }
         }
     }
 
     // Also capture state from plugins inside racks
     rackSyncManager_.captureAllPluginStates();
-    DBG("[ChainMove] captureAll complete topLevel=" << capturedTopLevel);
 }
 
-void PluginManager::capturePluginState(DeviceId deviceId) {
+void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
     juce::ScopedLock lock(pluginLock_);
 
-    auto it = syncedDevices_.find(deviceId);
+    auto it = findSyncedDevice(devicePath);
     if (it == syncedDevices_.end() || !it->second.plugin) {
-        DBG("capturePluginState: device " << deviceId << " not found in syncedDevices");
         return;
     }
 
@@ -391,7 +452,6 @@ void PluginManager::capturePluginState(DeviceId deviceId) {
     if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin)) {
         ext->flushPluginStateToValueTree();
         stateStr = ext->state.getProperty(te::IDs::state).toString();
-        DBG("capturePluginState: external plugin, state length=" << stateStr.length());
     } else {
         plugin->flushPluginStateToValueTree();
         auto stateCopy = plugin->state.createCopy();
@@ -399,40 +459,41 @@ void PluginManager::capturePluginState(DeviceId deviceId) {
         stripModifierAssignmentsRecursive(stateCopy);
         if (auto xml = stateCopy.createXml())
             stateStr = xml->toString();
-        DBG("capturePluginState: internal plugin, state length=" << stateStr.length());
     }
 
-    bool found = false;
     auto& trackManager = TrackManager::getInstance();
-    for (auto& track : trackManager.getTracks()) {
-        if (auto* devInfo = trackManager.getDevice(track.id, deviceId)) {
-            devInfo->pluginState = stateStr;
-            DeviceInfo liveSnapshot;
-            if (it->second.processor) {
-                it->second.processor->populateParameters(liveSnapshot);
-                devInfo->parameters = liveSnapshot.parameters;
-            }
-            DBG("[ChainMove] captureOne device id=" << deviceId << " name='" << devInfo->name
-                                                    << "' stateLen=" << stateStr.length()
-                                                    << " params=" << devInfo->parameters.size());
-            found = true;
-            DBG("capturePluginState: saved to DeviceInfo on track " << track.id);
-            break;
-        }
-    }
-    if (!found) {
-        DBG("capturePluginState: WARNING - device " << deviceId << " not found in any track");
+    if (auto* devInfo = trackManager.getDeviceInChainByPath(devicePath)) {
+        devInfo->pluginState = stateStr;
+        if (it->second.processor)
+            it->second.processor->populateParameters(*devInfo);
     }
 }
 
-void PluginManager::detachDeviceRuntimeForChainMove(TrackId trackId, DeviceId deviceId) {
+void PluginManager::removeDrumGridPadDevicesLocked(const ChainNodePath& drumGridPath) {
+    auto padIt = drumGridPadDevices_.find(drumGridPath);
+    if (padIt == drumGridPadDevices_.end())
+        return;
+
+    for (const auto& padPath : padIt->second) {
+        auto padSdIt = findSyncedDevice(padPath);
+        if (padSdIt != syncedDevices_.end()) {
+            if (padSdIt->second.plugin)
+                pluginToDevice_.erase(padSdIt->second.plugin.get());
+            syncedDevices_.erase(padSdIt);
+        }
+    }
+    drumGridPadDevices_.erase(padIt);
+}
+
+void PluginManager::detachDeviceRuntimeForChainMove(const ChainNodePath& devicePath) {
+    const auto deviceId = devicePath.getDeviceId();
     te::Plugin::Ptr plugin;
     te::Plugin::Ptr midiReceivePlugin;
     bool wasMapped = false;
 
     {
         juce::ScopedLock lock(pluginLock_);
-        auto it = syncedDevices_.find(deviceId);
+        auto it = findSyncedDevice(devicePath);
         if (it == syncedDevices_.end())
             return;
 
@@ -445,18 +506,7 @@ void PluginManager::detachDeviceRuntimeForChainMove(TrackId trackId, DeviceId de
 
         if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get())) {
             dg->removeListener(this);
-            auto padIt = drumGridPadDevices_.find(deviceId);
-            if (padIt != drumGridPadDevices_.end()) {
-                for (auto padDevId : padIt->second) {
-                    auto padSdIt = syncedDevices_.find(padDevId);
-                    if (padSdIt != syncedDevices_.end()) {
-                        if (padSdIt->second.plugin)
-                            pluginToDevice_.erase(padSdIt->second.plugin.get());
-                        syncedDevices_.erase(padSdIt);
-                    }
-                }
-                drumGridPadDevices_.erase(padIt);
-            }
+            removeDrumGridPadDevicesLocked(devicePath);
         }
 
         if (it->second.plugin)
@@ -475,42 +525,33 @@ void PluginManager::detachDeviceRuntimeForChainMove(TrackId trackId, DeviceId de
     if (midiReceivePlugin)
         midiReceivePlugin->deleteFromParent();
 
-    if (instrumentRackManager_.getInnerPlugin(deviceId) != nullptr) {
+    if (devicePath.getType() == ChainNodeType::TopLevelDevice &&
+        instrumentRackManager_.getInnerPlugin(deviceId) != nullptr) {
         instrumentRackManager_.unwrap(deviceId);
     } else if (plugin && plugin->getOwnerTrack() != nullptr) {
         plugin->deleteFromParent();
     }
-
-    DBG("[ChainMove] runtime detached device id=" << deviceId << " from track=" << trackId);
 }
 
 void PluginManager::detachRackRuntimeForChainMove(RackId rackId) {
     rackSyncManager_.removeRackForMove(rackId);
 }
 
-void PluginManager::restorePluginState(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin) {
-    auto* devInfo = TrackManager::getInstance().getDevice(trackId, deviceId);
+void PluginManager::restorePluginState(const ChainNodePath& devicePath, te::Plugin::Ptr plugin) {
+    auto& tm = TrackManager::getInstance();
+    auto* devInfo = tm.getDeviceInChainByPath(devicePath);
     if (!devInfo || devInfo->pluginState.isEmpty()) {
-        DBG("restorePluginState: no state to restore for device "
-            << deviceId << " (devInfo=" << (devInfo ? "found" : "null") << ", state="
-            << (devInfo ? juce::String(devInfo->pluginState.length()) : "n/a") << ")");
         return;
     }
 
-    DBG("restorePluginState: restoring device "
-        << deviceId << " on track " << trackId
-        << ", state length=" << devInfo->pluginState.length());
-
     if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
         ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
-        DBG("restorePluginState: set external plugin state property");
     } else {
         // Internal plugin: restore from saved XML ValueTree
         if (auto xml = juce::parseXML(devInfo->pluginState)) {
             auto savedState = juce::ValueTree::fromXml(*xml);
             if (savedState.isValid()) {
                 plugin->restorePluginStateFromValueTree(savedState);
-                DBG("restorePluginState: restored internal plugin from XML");
             }
         }
     }
@@ -519,29 +560,20 @@ void PluginManager::restorePluginState(TrackId trackId, DeviceId deviceId, te::P
 void PluginManager::purgeStaleEntries() {
     auto& tm = TrackManager::getInstance();
 
-    // Collect all valid DeviceIds from TrackManager (including rack inner devices)
-    std::set<DeviceId> validDeviceIds;
+    // Collect all valid device paths from TrackManager (including rack inner
+    // devices and flat post-fx / mixer-analysis sections).
+    std::set<ChainNodePath> validDevicePaths;
     std::set<TrackId> validTrackIds;
     std::set<RackId> validRackIds;
 
     for (const auto& track : tm.getTracks()) {
         validTrackIds.insert(track.id);
+        collectValidDevicePaths(track, validDevicePaths, validRackIds);
+    }
 
-        std::function<void(const std::vector<ChainElement>&)> collectIds;
-        collectIds = [&](const std::vector<ChainElement>& elements) {
-            for (const auto& element : elements) {
-                if (isDevice(element)) {
-                    validDeviceIds.insert(getDevice(element).id);
-                } else if (isRack(element)) {
-                    const auto& rack = getRack(element);
-                    validRackIds.insert(rack.id);
-                    for (const auto& chain : rack.chains) {
-                        collectIds(chain.elements);
-                    }
-                }
-            }
-        };
-        collectIds(track.chainElements);
+    if (auto* masterTrack = tm.getTrack(MASTER_TRACK_ID)) {
+        validTrackIds.insert(MASTER_TRACK_ID);
+        collectValidDevicePaths(*masterTrack, validDevicePaths, validRackIds);
     }
 
     // Purge stale entries from maps
@@ -555,7 +587,7 @@ void PluginManager::purgeStaleEntries() {
         // syncedDevices_ (consolidates all per-device maps)
         deferredHolders_.clear();  // Drain previous cycle's deferred holders
         for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
-            if (validDeviceIds.find(it->first) == validDeviceIds.end()) {
+            if (validDevicePaths.find(it->first) == validDevicePaths.end()) {
                 // Clear LFO callbacks before destroying CurveSnapshotHolders
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
                 deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
@@ -609,7 +641,6 @@ void PluginManager::purgeStaleEntries() {
     }
 
     if (purged > 0) {
-        DBG("PluginManager::purgeStaleEntries - purged " << purged << " stale entries");
         rebuildSidechainLFOCache();
     }
 }
@@ -619,12 +650,25 @@ void PluginManager::validateMappingConsistency() {
     juce::ScopedLock lock(pluginLock_);
 
     // 1. Every syncedDevices_ entry's plugin owner track should exist in TrackController
-    for (const auto& [deviceId, sd] : syncedDevices_) {
+    for (const auto& [devicePath, sd] : syncedDevices_) {
         if (!sd.plugin) {
             continue;  // Some entries may only have processor (rack inner plugins)
         }
         auto* owner = sd.plugin->getOwnerTrack();
         if (owner) {
+            if (devicePath.trackId == MASTER_TRACK_ID) {
+                const auto& masterList = edit_.getMasterPluginList();
+                bool foundOnMaster = false;
+                for (int i = 0; i < masterList.size(); ++i) {
+                    if (masterList[i] == sd.plugin.get()) {
+                        foundOnMaster = true;
+                        break;
+                    }
+                }
+                if (foundOnMaster)
+                    continue;
+            }
+
             bool found = false;
             for (auto trackId : trackController_.getAllTrackIds()) {
                 if (trackController_.getAudioTrack(trackId) == owner) {
@@ -633,8 +677,6 @@ void PluginManager::validateMappingConsistency() {
                 }
             }
             if (!found) {
-                DBG("validateMappingConsistency WARNING: deviceId="
-                    << deviceId << " has plugin on unknown TE track");
             }
         }
     }
@@ -644,8 +686,6 @@ void PluginManager::validateMappingConsistency() {
     // 3. Every sidechainMonitors_ TrackId should exist in TrackController
     for (const auto& [trackId, plugin] : sidechainMonitors_) {
         if (trackController_.getAudioTrack(trackId) == nullptr) {
-            DBG("validateMappingConsistency WARNING: sidechainMonitors_ has orphan trackId="
-                << trackId);
         }
     }
 
@@ -656,7 +696,7 @@ void PluginManager::validateMappingConsistency() {
         // the rack exists in TrackManager
         bool found = false;
         for (const auto& track : TrackManager::getInstance().getTracks()) {
-            for (const auto& element : track.chainElements) {
+            for (const auto& element : track.chain.fxChainElements) {
                 if (isRack(element) && getRack(element).id == rackId) {
                     found = true;
                     break;
@@ -666,8 +706,6 @@ void PluginManager::validateMappingConsistency() {
                 break;
         }
         if (!found) {
-            DBG("validateMappingConsistency WARNING: synced rackId="
-                << rackId << " not found in TrackManager");
         }
     }
 #endif
@@ -676,13 +714,13 @@ void PluginManager::validateMappingConsistency() {
 void PluginManager::clearAllMappings() {
     juce::ScopedLock lock(pluginLock_);
     // Clear LFO callbacks and defer holder destruction
-    for (auto& [deviceId, sd] : syncedDevices_) {
+    for (auto& [devicePath, sd] : syncedDevices_) {
         clearLFOCustomWaveCallbacks(sd.modifiers);
         deferCurveSnapshots(sd.curveSnapshots, deferredHolders_);
         // Unregister DrumGrid listener to avoid dangling pointer
         if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
             dg->removeListener(this);
-        else if (auto* inner = instrumentRackManager_.getInnerPlugin(deviceId))
+        else if (auto* inner = instrumentRackManager_.getInnerPlugin(devicePath.getDeviceId()))
             if (auto* dg2 = dynamic_cast<daw::audio::DrumGridPlugin*>(inner))
                 dg2->removeListener(this);
     }

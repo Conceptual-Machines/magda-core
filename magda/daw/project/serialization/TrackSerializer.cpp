@@ -1,8 +1,28 @@
+#include <algorithm>
+
+#include "../../core/InternalDeviceKind.hpp"
 #include "../../core/ViewModeState.hpp"
 #include "ProjectSerializer.hpp"
 #include "SerializationHelpers.hpp"
 
 namespace magda {
+
+namespace {
+
+void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
+    auto findAnalysis = [&elements](int order) {
+        return std::find_if(elements.begin(), elements.end(), [order](const auto& element) {
+            return postFxAnalysisDeviceOrder(element.device.pluginId) == order;
+        });
+    };
+
+    auto osc = findAnalysis(0);
+    auto spectrum = findAnalysis(1);
+    if (osc != elements.end() && spectrum != elements.end() && spectrum < osc)
+        std::iter_swap(osc, spectrum);
+}
+
+}  // namespace
 
 // ============================================================================
 // Track serialization helpers
@@ -78,10 +98,29 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
 
     // Chain elements
     juce::Array<juce::var> chainArray;
-    for (const auto& element : track.chainElements) {
+    for (const auto& element : track.chain.fxChainElements) {
         chainArray.add(serializeChainElement(element));
     }
     obj->setProperty("chainElements", juce::var(chainArray));
+
+    // Post-fader FX chain elements
+    juce::Array<juce::var> postFxArray;
+    for (const auto& element : track.chain.postFxChainElements) {
+        postFxArray.add(serializeDeviceInfo(element.device));
+    }
+    obj->setProperty("postFxChainElements", juce::var(postFxArray));
+
+    // Mixer-analysis section: rail-managed mini oscilloscope / spectrum devices.
+    // Persist their per-device pluginState so UI settings (e.g. trace colour)
+    // survive project save/load instead of falling back to global last-used
+    // defaults.
+    if (!track.chain.mixerAnalysisElements.empty()) {
+        juce::Array<juce::var> mixerAnalysisArray;
+        for (const auto& element : track.chain.mixerAnalysisElements) {
+            mixerAnalysisArray.add(serializeDeviceInfo(element.device));
+        }
+        obj->setProperty("mixerAnalysisElements", juce::var(mixerAnalysisArray));
+    }
 
     // Track-level mods and macros
     juce::Array<juce::var> trackModsArray;
@@ -222,7 +261,35 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
             if (!deserializeChainElement(elementVar, element)) {
                 return false;
             }
-            outTrack.chainElements.push_back(std::move(element));
+            outTrack.chain.fxChainElements.push_back(std::move(element));
+        }
+    }
+
+    // Post-fader FX chain elements (backward compatible — absent in older projects)
+    auto postFxVar = obj->getProperty("postFxChainElements");
+    if (postFxVar.isArray()) {
+        auto* arr = postFxVar.getArray();
+        for (const auto& elementVar : *arr) {
+            DeviceInfo device;
+            if (!deserializeDeviceInfo(elementVar, device)) {
+                return false;
+            }
+            outTrack.chain.postFxChainElements.push_back(PostFxChainElement{std::move(device)});
+        }
+        enforcePostFxAnalysisDeviceOrder(outTrack.chain.postFxChainElements);
+    }
+
+    // Mixer-analysis section. Older projects may omit this and let the rail
+    // toggle reconcile the section from scratch on load.
+    auto mixerAnalysisVar = obj->getProperty("mixerAnalysisElements");
+    if (mixerAnalysisVar.isArray()) {
+        auto* arr = mixerAnalysisVar.getArray();
+        for (const auto& elementVar : *arr) {
+            DeviceInfo device;
+            if (!deserializeDeviceInfo(elementVar, device)) {
+                return false;
+            }
+            outTrack.chain.mixerAnalysisElements.push_back(PostFxChainElement{std::move(device)});
         }
     }
 
@@ -343,6 +410,13 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
         visibleParamsArray.add(index);
     }
     obj->setProperty("visibleParameters", juce::var(visibleParamsArray));
+
+    // Mini mixer parameters
+    juce::Array<juce::var> miniMixerParamsArray;
+    for (auto index : device.miniMixerParameters) {
+        miniMixerParamsArray.add(index);
+    }
+    obj->setProperty("miniMixerParameters", juce::var(miniMixerParamsArray));
 
     // Device volume
     obj->setProperty("gainValue", device.gainValue);
@@ -472,6 +546,15 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         auto* arr = visibleParamsVar.getArray();
         for (const auto& indexVar : *arr) {
             outDevice.visibleParameters.push_back(static_cast<int>(indexVar));
+        }
+    }
+
+    // Mini mixer parameters
+    auto miniMixerParamsVar = obj->getProperty("miniMixerParameters");
+    if (miniMixerParamsVar.isArray()) {
+        auto* arr = miniMixerParamsVar.getArray();
+        for (const auto& indexVar : *arr) {
+            outDevice.miniMixerParameters.push_back(static_cast<int>(indexVar));
         }
     }
 

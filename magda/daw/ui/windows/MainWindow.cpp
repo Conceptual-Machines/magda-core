@@ -19,6 +19,7 @@
 #include "../panels/LeftPanel.hpp"
 #include "../panels/RightPanel.hpp"
 #include "../panels/TransportPanel.hpp"
+#include "../state/KeyMappingStore.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
@@ -326,6 +327,11 @@ void MainWindow::applyLayoutFromConfig() {
         mainComponent->mainView->resized();
 }
 
+juce::ApplicationCommandManager& MainWindow::getCommandManager() {
+    jassert(mainComponent != nullptr);
+    return mainComponent->getCommandManager();
+}
+
 void MainWindow::updateWindowTitle() {
     auto& pm = ProjectManager::getInstance();
     juce::String title = "MAGDA";
@@ -368,14 +374,29 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // Register this component as a command target for keyboard shortcuts
     commandManager.registerAllCommandsForTarget(this);
 
-    // Make this the first command target so shortcuts (Cmd+Z, etc.) work
-    // regardless of which child component has keyboard focus.
-    commandManager.setFirstCommandTarget(this);
+    // Context-aware command resolution (#25): leave the first target unset so
+    // ApplicationCommandManager resolves from the focused component up the
+    // ApplicationCommandTarget chain. MainComponent is the top-level target
+    // every child walks up to, so global shortcuts (Cmd+Z, save, play...)
+    // still resolve from anywhere; a focused view that implements
+    // ApplicationCommandTarget (and chains getNextCommandTarget() back here)
+    // can intercept its own context commands first. With MainComponent as the
+    // only target today this is behaviour-neutral.
+    commandManager.setFirstCommandTarget(nullptr);
 
     // Register command manager key mappings on this component so that
     // registered shortcuts (Cmd+Z, Cmd+Shift+Z, etc.) are handled
     // globally when key events bubble up to this top-level component.
     addKeyListener(commandManager.getKeyMappings());
+
+    // Now that the commands (and their default keys) are registered, load any
+    // user shortcut remaps and keep them persisted on change (#20).
+    keyMappingStore_ = std::make_unique<KeyMappingStore>(commandManager);
+    keyMappingStore_->restore();
+
+    // Let the menu bar render its shortcut hints from these (live) mappings
+    // instead of hardcoded per-platform strings (#1352).
+    MenuManager::getInstance().setCommandManager(&commandManager);
 
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
@@ -1017,6 +1038,9 @@ void MainWindow::MainComponent::setupDeviceLoadingCallback() {
 
 MainWindow::MainComponent::~MainComponent() {
     DBG("    [5d] MainComponent::~MainComponent start");
+
+    // Drop the menu bar's reference to our command manager before it dies.
+    MenuManager::getInstance().setCommandManager(nullptr);
 
     // Save panel collapse state and sizes to Config for persistence
     auto& config = Config::getInstance();

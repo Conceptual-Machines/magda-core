@@ -4,16 +4,78 @@
 
 #include <array>
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 
-#include "../../core/TypeIds.hpp"
+#include "../../core/ChainNodePath.hpp"
 
 namespace magda {
+
+/**
+ * Fixed-capacity path payload for the realtime parameter queue.
+ *
+ * ChainNodePath owns a std::vector, so copying it through the ring can allocate
+ * and mutate per-slot heap state. Keep the queued representation inline and
+ * reconstruct a ChainNodePath only after popping, outside the queue storage.
+ */
+struct PackedChainNodePath {
+    static constexpr size_t kMaxSteps = 8;
+
+    TrackId trackId = INVALID_TRACK_ID;
+    DeviceId topLevelDeviceId = INVALID_DEVICE_ID;
+    bool isTrackLevel = false;
+    uint8_t stepCount = 0;
+    std::array<ChainPathStep, kMaxSteps> steps{};
+
+    bool assign(const ChainNodePath& path) {
+        if (path.steps.size() > kMaxSteps)
+            return false;
+
+        trackId = path.trackId;
+        topLevelDeviceId = path.topLevelDeviceId;
+        isTrackLevel = path.isTrackLevel;
+        stepCount = static_cast<uint8_t>(path.steps.size());
+        for (size_t i = 0; i < path.steps.size(); ++i)
+            steps[i] = path.steps[i];
+        return true;
+    }
+
+    PackedChainNodePath& operator=(const ChainNodePath& path) {
+        const bool assigned = assign(path);
+        jassert(assigned);
+        juce::ignoreUnused(assigned);
+        return *this;
+    }
+
+    ChainNodePath toPath() const {
+        ChainNodePath path;
+        path.trackId = trackId;
+        path.topLevelDeviceId = topLevelDeviceId;
+        path.isTrackLevel = isTrackLevel;
+        path.steps.reserve(stepCount);
+        for (uint8_t i = 0; i < stepCount; ++i)
+            path.steps.push_back(steps[i]);
+        return path;
+    }
+
+    operator ChainNodePath() const {
+        return toPath();
+    }
+
+    DeviceId getDeviceId() const {
+        if (topLevelDeviceId != INVALID_DEVICE_ID)
+            return topLevelDeviceId;
+        if (stepCount > 0 && steps[stepCount - 1].type == ChainStepType::Device)
+            return steps[stepCount - 1].id;
+        return INVALID_DEVICE_ID;
+    }
+};
 
 /**
  * @brief A parameter change request from UI to audio thread
  */
 struct ParameterChange {
-    DeviceId deviceId = INVALID_DEVICE_ID;
+    PackedChainNodePath devicePath;
     int paramIndex = -1;
     float value = 0.0f;
 
@@ -25,6 +87,14 @@ struct ParameterChange {
         Automation   // From automation playback
     };
     Source source = Source::User;
+
+    bool setDevicePath(const ChainNodePath& path) {
+        return devicePath.assign(path);
+    }
+
+    ChainNodePath getDevicePath() const {
+        return devicePath.toPath();
+    }
 };
 
 /**
@@ -124,10 +194,12 @@ class BatchedParameterQueue {
     /**
      * @brief Push a batch of changes for a single device
      */
-    bool pushBatch(DeviceId deviceId, const std::vector<std::pair<int, float>>& changes) {
+    bool pushBatch(const ChainNodePath& devicePath,
+                   const std::vector<std::pair<int, float>>& changes) {
         for (const auto& [paramIndex, value] : changes) {
             ParameterChange change;
-            change.deviceId = deviceId;
+            if (!change.setDevicePath(devicePath))
+                return false;
             change.paramIndex = paramIndex;
             change.value = value;
             if (!queue_.push(change)) {

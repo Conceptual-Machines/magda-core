@@ -54,6 +54,33 @@ TEST_CASE("DeviceInfo - Parameter pagination state", "[device][pagination]") {
     }
 }
 
+TEST_CASE("DeviceInfo resolves TE param indices across wrapper and plugin buckets",
+          "[device][parameters][wrapper]") {
+    DeviceInfo device;
+
+    ParameterInfo dry;
+    dry.paramIndex = 0;
+    dry.name = "DryGain";
+    dry.currentValue = 0.25f;
+    device.wrapperParameters.push_back(dry);
+
+    ParameterInfo firstPluginParam;
+    firstPluginParam.paramIndex = 2;
+    firstPluginParam.name = "Band 1 Used";
+    firstPluginParam.currentValue = 1.0f;
+    device.parameters.push_back(firstPluginParam);
+
+    ParameterInfo wet;
+    wet.paramIndex = 2;
+    wet.name = "WetGain";
+    wet.currentValue = 0.75f;
+    device.wrapperParameters.push_back(wet);
+
+    REQUIRE(device.findParameterByIndex(0) == &device.wrapperParameters[0]);
+    REQUIRE(device.findParameterByIndex(2) == &device.parameters[0]);
+    REQUIRE(device.findParameterByIndex(99) == nullptr);
+}
+
 TEST_CASE("Parameter page offset calculation", "[device][pagination]") {
     constexpr int NUM_PARAMS_PER_PAGE = 32;
 

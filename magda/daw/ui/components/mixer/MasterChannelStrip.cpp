@@ -2,12 +2,20 @@
 
 #include <cmath>
 
+#include "../../../audio/AudioBridge.hpp"
+#include "../../../audio/plugins/OscilloscopePlugin.hpp"
+#include "../../../audio/plugins/SpectrumAnalyzerPlugin.hpp"
+#include "../../../engine/AudioEngine.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "BinaryData.h"
+#include "LevelMeterBallistics.hpp"
+#include "core/ChainNodePath.hpp"
+#include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
+#include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 
@@ -130,11 +138,13 @@ class MasterChannelStrip::DbScale : public juce::Component {
         float height = static_cast<float>(bounds.getHeight()) - paddingTop - paddingBottom;
         float totalWidth = static_cast<float>(bounds.getWidth());
 
-        float tickW = metrics.tickWidth();
-        float labelWidth = metrics.labelTextWidth;
-        float centre = totalWidth / 2.0f;
+        const float tickShort = metrics.tickWidth();
+        const float tickLong = tickShort * 1.8f;
+        const float labelLeftPad = tickLong + 2.0f;
+        const float labelWidth = totalWidth - labelLeftPad;
 
-        g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
+        const juce::Font baseFont = FontManager::getInstance().getUIFont(metrics.labelFontSize);
+        const juce::Font boldFont = baseFont.boldened();
 
         float minSpacing = metrics.labelTextHeight + 2.0f;
         float lastDrawnY = -1000.0f;
@@ -147,10 +157,12 @@ class MasterChannelStrip::DbScale : public juce::Component {
                 continue;
             lastDrawnY = y;
 
+            const bool isZero = std::abs(db) < 0.01f;
             float tickHeight = metrics.tickHeight();
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.fillRect(0.0f, y - tickHeight / 2.0f, tickW - 1.0f, tickHeight);
-            g.fillRect(totalWidth - tickW + 1.0f, y - tickHeight / 2.0f, tickW - 1.0f, tickHeight);
+            float tickW = isZero ? tickLong : tickShort;
+
+            g.setColour(DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::BORDER));
+            g.fillRect(0.0f, y - tickHeight / 2.0f, tickW, tickHeight);
 
             juce::String labelText;
             int dbInt = static_cast<int>(db);
@@ -160,14 +172,15 @@ class MasterChannelStrip::DbScale : public juce::Component {
                 labelText = juce::String(std::abs(dbInt));
             }
 
-            float textHeight = metrics.labelTextHeight;
-            float textX = centre - labelWidth / 2.0f;
-            float textY = y - textHeight / 2.0f;
+            g.setFont(isZero ? boldFont : baseFont);
+            g.setColour(
+                DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::TEXT_SECONDARY));
 
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
+            float textHeight = metrics.labelTextHeight;
+            float textY = y - textHeight / 2.0f;
+            g.drawText(labelText, static_cast<int>(labelLeftPad), static_cast<int>(textY),
                        static_cast<int>(labelWidth), static_cast<int>(textHeight),
-                       juce::Justification::centred, false);
+                       juce::Justification::centredLeft, false);
         }
     }
 };
@@ -191,15 +204,17 @@ class MasterChannelStrip::LevelMeter : public juce::Component, private juce::Tim
         float rightDb = gainToDb(targetR_);
         if (leftDb > peakLeftDb_) {
             peakLeftDb_ = leftDb;
-            peakLeftHold_ = PEAK_HOLD_MS;
+            peakLeftHold_ = level_meter_ballistics::peakHoldMs;
         }
         if (rightDb > peakRightDb_) {
             peakRightDb_ = rightDb;
-            peakRightHold_ = PEAK_HOLD_MS;
+            peakRightHold_ = level_meter_ballistics::peakHoldMs;
         }
 
-        if (!isTimerRunning())
+        if (!isTimerRunning()) {
+            lastUpdateMs_ = level_meter_ballistics::restartClock();
             startTimerHz(60);
+        }
     }
 
     float getLevel() const {
@@ -224,46 +239,24 @@ class MasterChannelStrip::LevelMeter : public juce::Component, private juce::Tim
     float displayL_ = 0.0f, displayR_ = 0.0f;
     float peakLeftDb_ = -60.0f, peakRightDb_ = -60.0f;
     float peakLeftHold_ = 0.0f, peakRightHold_ = 0.0f;
-
-    static constexpr float ATTACK_COEFF = 0.9f;
-    static constexpr float RELEASE_COEFF = 0.05f;
-    static constexpr float PEAK_HOLD_MS = 1500.0f;
-    static constexpr float PEAK_DECAY_DB_PER_FRAME = 0.8f;
+    double lastUpdateMs_ = 0.0;
 
     void timerCallback() override {
+        const float elapsedMs = level_meter_ballistics::getElapsedMs(lastUpdateMs_);
         bool changed = false;
-        changed |= updateLevel(displayL_, targetL_);
-        changed |= updateLevel(displayR_, targetR_);
-        changed |= updatePeak(peakLeftDb_, peakLeftHold_, gainToDb(targetL_));
-        changed |= updatePeak(peakRightDb_, peakRightHold_, gainToDb(targetR_));
+        changed |= level_meter_ballistics::updateLevel(displayL_, targetL_, elapsedMs);
+        changed |= level_meter_ballistics::updateLevel(displayR_, targetR_, elapsedMs);
+        changed |= level_meter_ballistics::updatePeak(peakLeftDb_, peakLeftHold_,
+                                                      gainToDb(targetL_), MIN_DB, elapsedMs);
+        changed |= level_meter_ballistics::updatePeak(peakRightDb_, peakRightHold_,
+                                                      gainToDb(targetR_), MIN_DB, elapsedMs);
         if (changed)
             repaint();
-        else if (displayL_ < 0.001f && displayR_ < 0.001f && peakLeftDb_ <= -60.0f &&
-                 peakRightDb_ <= -60.0f)
+        else if (displayL_ < 0.001f && displayR_ < 0.001f && peakLeftDb_ <= MIN_DB &&
+                 peakRightDb_ <= MIN_DB) {
             stopTimer();
-    }
-
-    static bool updateLevel(float& display, float target) {
-        float prev = display;
-        display += (target - display) * (target > display ? ATTACK_COEFF : RELEASE_COEFF);
-        if (display < 0.001f)
-            display = 0.0f;
-        return std::abs(display - prev) > 0.0001f;
-    }
-
-    static bool updatePeak(float& peakDb, float& holdTime, float currentDb) {
-        float prev = peakDb;
-        if (currentDb > peakDb) {
-            peakDb = currentDb;
-            holdTime = PEAK_HOLD_MS;
-        } else if (holdTime > 0.0f) {
-            holdTime -= 1000.0f / 60.0f;
-        } else {
-            peakDb -= PEAK_DECAY_DB_PER_FRAME;
-            if (peakDb < -60.0f)
-                peakDb = -60.0f;
+            lastUpdateMs_ = 0.0;
         }
-        return std::abs(peakDb - prev) > 0.01f;
     }
 
     void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level, float peakDb) {
@@ -324,6 +317,40 @@ MasterChannelStrip::~MasterChannelStrip() {
     TrackManager::getInstance().removeListener(this);
 }
 
+void MasterChannelStrip::refreshMiniAnalyzers() {
+    auto& tm = TrackManager::getInstance();
+    auto* engine = tm.getAudioEngine();
+    auto* bridge = engine ? engine->getAudioBridge() : nullptr;
+
+    if (miniOscilloscopeUI_) {
+        daw::audio::OscilloscopePlugin* osc = nullptr;
+        DeviceId id = INVALID_DEVICE_ID;
+        if (bridge) {
+            id = tm.findMixerAnalysisDevice(MASTER_TRACK_ID, "oscilloscope");
+            if (id != INVALID_DEVICE_ID) {
+                auto pluginPtr =
+                    bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, id));
+                osc = dynamic_cast<daw::audio::OscilloscopePlugin*>(pluginPtr.get());
+            }
+        }
+        miniOscilloscopeUI_->setPlugin(osc);
+    }
+
+    if (miniSpectrumUI_) {
+        daw::audio::SpectrumAnalyzerPlugin* spec = nullptr;
+        DeviceId id = INVALID_DEVICE_ID;
+        if (bridge) {
+            id = tm.findMixerAnalysisDevice(MASTER_TRACK_ID, "spectrumanalyzer");
+            if (id != INVALID_DEVICE_ID) {
+                auto pluginPtr =
+                    bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, id));
+                spec = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(pluginPtr.get());
+            }
+        }
+        miniSpectrumUI_->setPlugin(spec);
+    }
+}
+
 void MasterChannelStrip::setupControls() {
     // Title label
     titleLabel = std::make_unique<juce::Label>("Master", tr("common.master"));
@@ -337,13 +364,14 @@ void MasterChannelStrip::setupControls() {
     peakMeter = std::make_unique<LevelMeter>();
     addAndMakeVisible(*peakMeter);
 
-    // Peak value label
+    // Peak / fader-value readout above the fader. Mono font keeps digits in
+    // a tabular grid so they don't shift sideways as the value changes.
     peakValueLabel = std::make_unique<juce::Label>();
     peakValueLabel->setText("-inf", juce::dontSendNotification);
     peakValueLabel->setJustificationType(juce::Justification::centred);
     peakValueLabel->setColour(juce::Label::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    peakValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
+                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    peakValueLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
     addAndMakeVisible(*peakValueLabel);
 
     // Volume slider - TextSlider with vertical orientation and dB display
@@ -374,6 +402,8 @@ void MasterChannelStrip::setupControls() {
         return static_cast<double>(dbToMeterPos(db));
     });
 
+    volumeSlider->setShowText(false);
+
     volumeSlider->onValueChanged = [](double pos) {
         float db = meterPosToDb(static_cast<float>(pos));
         float gain = dbToGain(db);
@@ -385,23 +415,46 @@ void MasterChannelStrip::setupControls() {
     dbScale_ = std::make_unique<DbScale>();
     addAndMakeVisible(*dbScale_);
 
-    // Send area resize handle
+    // Resize handle — controls faderTopInset to mirror channel strips.
     resizeHandle_ = std::make_unique<ResizeHandle>();
     resizeHandle_->onResize = [this](int deltaY) {
         auto& metrics = MixerMetrics::getInstance();
-        // Clamp max to available space minus fixed elements
         int fixedHeight = 38 + metrics.controlSpacing + 120 + 24 + metrics.buttonSize +
                           metrics.channelPadding * 2;
-        int maxHeight = juce::jmax(0, getHeight() - fixedHeight);
-        int newHeight = juce::jlimit(MixerMetrics::minSendAreaHeight, maxHeight,
-                                     metrics.sendAreaHeight + deltaY);
-        if (metrics.sendAreaHeight != newHeight) {
-            metrics.sendAreaHeight = newHeight;
+        int maxInset = juce::jmax(MixerMetrics::minFaderTopInset, getHeight() - fixedHeight);
+        int newInset = juce::jlimit(MixerMetrics::minFaderTopInset,
+                                    juce::jmin(maxInset, MixerMetrics::maxFaderTopInset),
+                                    metrics.faderTopInset + deltaY);
+        if (metrics.faderTopInset != newInset) {
+            metrics.faderTopInset = newInset;
             if (onSendAreaResized)
                 onSendAreaResized();
         }
     };
     addAndMakeVisible(*resizeHandle_);
+
+    // Mini Oscilloscope / Spectrum bound to the master track's MixerAnalysis
+    // section; rail toggle controls their visibility.
+    // Expanding the compact analyzer controls grows the strip; relayout so the
+    // plot isn't squeezed into the fixed height (mirrors the channel strips).
+    auto relayoutOnExpand = [this]() {
+        if (onSendAreaResized)
+            onSendAreaResized();
+    };
+
+    miniOscilloscopeUI_ = std::make_unique<daw::ui::OscilloscopeUI>();
+    miniOscilloscopeUI_->setCompact(true);
+    miniOscilloscopeUI_->setPersistGlobalDefaults(false);
+    miniOscilloscopeUI_->setVisible(false);
+    miniOscilloscopeUI_->onControlsExpandedChanged = relayoutOnExpand;
+    addAndMakeVisible(*miniOscilloscopeUI_);
+
+    miniSpectrumUI_ = std::make_unique<daw::ui::SpectrumAnalyzerUI>();
+    miniSpectrumUI_->setCompact(true);
+    miniSpectrumUI_->setPersistGlobalDefaults(false);
+    miniSpectrumUI_->setVisible(false);
+    miniSpectrumUI_->onControlsExpandedChanged = relayoutOnExpand;
+    addAndMakeVisible(*miniSpectrumUI_);
 
     // Headphone icon (non-interactive, just a label)
     auto hpIcon = juce::Drawable::createFromImageData(BinaryData::headphones_svg,
@@ -475,25 +528,14 @@ void MasterChannelStrip::paint(juce::Graphics& g) {
     g.drawRect(getLocalBounds(), 1);
 
     auto ownBounds = getLocalBounds();
-    int tintHeight = 34;
+    const int stripHeight = 4;
+    const int labelRowBottom = stripHeight + 26;
     if (selected_) {
-        // Selected: black header with white text
         g.setColour(juce::Colours::black);
-        g.fillRect(1, 1, ownBounds.getWidth() - 2, 4 + tintHeight);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.fillRect(1, 4 + tintHeight, ownBounds.getWidth() - 2, 1);
-    } else {
-        // No colour bar/tint for master — clean look
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.fillRect(1, 4 + tintHeight, ownBounds.getWidth() - 2, 1);
+        g.fillRect(1, 1, ownBounds.getWidth() - 2, labelRowBottom);
     }
-
-    // Draw fader region border (top and bottom lines)
-    if (!faderRegion_.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.fillRect(faderRegion_.getX(), faderRegion_.getY(), faderRegion_.getWidth(), 1);
-        g.fillRect(faderRegion_.getX(), faderRegion_.getBottom() - 1, faderRegion_.getWidth(), 1);
-    }
+    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.fillRect(1, labelRowBottom, ownBounds.getWidth() - 2, 1);
 }
 
 void MasterChannelStrip::setSelected(bool shouldBeSelected) {
@@ -528,12 +570,47 @@ void MasterChannelStrip::resized() {
 
         bounds.removeFromTop(metrics.controlSpacing);
 
-        // Send area space — reserve same height as channel strips for alignment
-        bounds.removeFromTop(2);
-        int sendAreaHeight = juce::jmax(metrics.sendAreaHeight, 0);
-        bounds.removeFromTop(sendAreaHeight);
+        // Mini analyzers, mirrored from ChannelStrip. Rail toggles control
+        // visibility; refreshMiniAnalyzers() resolves the live plugin.
+        constexpr int miniAnalyzerHeight = 64;
+        const auto& cfg = Config::getInstance();
+        if (cfg.getMixerShowOscilloscope() && miniOscilloscopeUI_) {
+            const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
+            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
+            miniOscilloscopeUI_->setVisible(true);
+            bounds.removeFromTop(2);
+        } else if (miniOscilloscopeUI_) {
+            miniOscilloscopeUI_->setVisible(false);
+        }
+        if (cfg.getMixerShowSpectrum() && miniSpectrumUI_) {
+            const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
+            miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
+            miniSpectrumUI_->setVisible(true);
+            bounds.removeFromTop(2);
+        } else if (miniSpectrumUI_) {
+            miniSpectrumUI_->setVisible(false);
+        }
 
-        // Resize handle
+        // Mirror channel-strip layout so the handle and fader line up: 2px
+        // gap, then reserve the same sends region (Add Send row + max sends
+        // across all tracks) when sends are visible, then the fader-top
+        // inset, then the resize handle.
+        bounds.removeFromTop(2);
+
+        if (Config::getInstance().getMixerShowSends()) {
+            const int sendSlotHeight = 18;
+            size_t maxSends = 0;
+            for (const auto& t : TrackManager::getInstance().getTracks())
+                maxSends = std::max(maxSends, t.sends.size());
+            int uniformSendsRegion = sendSlotHeight;
+            if (maxSends > 0)
+                uniformSendsRegion += 1 + static_cast<int>(maxSends) * (sendSlotHeight + 1) - 1;
+            bounds.removeFromTop(uniformSendsRegion);
+            bounds.removeFromTop(6);  // breathing room before handle
+        }
+
+        bounds.removeFromTop(metrics.faderTopInset);
+
         if (resizeHandle_) {
             resizeHandle_->setBounds(bounds.removeFromTop(6));
             resizeHandle_->setAlwaysOnTop(true);
@@ -545,42 +622,38 @@ void MasterChannelStrip::resized() {
         headphoneIcon_->setBounds(cueRow.removeFromLeft(18));
         cueRow.removeFromLeft(2);
         cueVolumeSlider_->setBounds(cueRow);
-        bounds.removeFromBottom(2);  // Gap between cue row and fader region
+        bounds.removeFromBottom(2);  // Gap between cue row and readout
 
-        // Peak value label above fader region
+        // Readout sits just below the fader, with a small breathing strip
+        // beneath it so the number doesn't kiss the cue row.
         const int labelHeight = 12;
-        peakValueLabel->setBounds(bounds.removeFromTop(labelHeight));
+        const int bottomStrip = 4;
+        bounds.removeFromBottom(bottomStrip);
+        peakValueLabel->setBounds(bounds.removeFromBottom(labelHeight));
 
-        // Calculate proportional widths like channel strips
-        int availWidth = bounds.getWidth();
-        int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
-        int meterWidthVal = faderWidth;  // Same width as fader
-        int gap = metrics.tickToFaderGap;
-        int meterGapVal = metrics.tickToMeterGap;
+        // Reserve room above the meter so the top dB label (+6) isn't clipped
+        // by the always-on-top resize handle (matches the track strips).
+        bounds.removeFromTop(static_cast<int>(metrics.labelTextHeight / 2.0f + 2.0f));
 
-        // Store the entire fader region for border drawing
+        // Slider overlays the peak meter; dB scale (tick + label) sits to the
+        // right. The slider paints only the thumb so the meter shows through.
         faderRegion_ = bounds;
-
-        // Add vertical padding inside the border
-        bounds.removeFromTop(6);
-        bounds.removeFromBottom(3);
-
         auto layoutArea = bounds;
 
-        // Fader on left
-        faderArea_ = layoutArea.removeFromLeft(faderWidth);
-        volumeSlider->setBounds(faderArea_);
+        const int scaleWidth = 28;
+        const int scaleGap = metrics.tickToMeterGap;
+        auto scaleColumn = layoutArea.removeFromRight(scaleWidth);
+        layoutArea.removeFromRight(scaleGap);
 
-        // Peak meter on right
-        peakMeterArea_ = layoutArea.removeFromRight(meterWidthVal);
+        peakMeterArea_ = layoutArea;
+        faderArea_ = layoutArea;
         peakMeter->setBounds(peakMeterArea_);
+        volumeSlider->setBounds(faderArea_);
+        volumeSlider->toFront(false);
 
-        // DbScale component — extends above/below for label overflow
         int labelPad = static_cast<int>(metrics.labelTextHeight / 2.0f + 1.0f);
-        int scaleLeft = faderArea_.getRight() + gap;
-        int scaleRight = peakMeterArea_.getX() - meterGapVal;
-        dbScale_->setBounds(scaleLeft, layoutArea.getY() - labelPad, scaleRight - scaleLeft,
-                            layoutArea.getHeight() + labelPad * 2);
+        dbScale_->setBounds(scaleColumn.getX(), peakMeterArea_.getY() - labelPad,
+                            scaleColumn.getWidth(), peakMeterArea_.getHeight() + labelPad * 2);
     } else {
         // Horizontal layout (for Arrange view - at bottom of track content)
         titleLabel->setBounds(bounds.removeFromLeft(60));

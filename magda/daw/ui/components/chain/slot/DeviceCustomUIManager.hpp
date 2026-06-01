@@ -11,6 +11,8 @@
 namespace magda::daw::audio {
 class ArpeggiatorPlugin;
 class MidiChordEnginePlugin;
+class OscilloscopePlugin;
+class SpectrumAnalyzerPlugin;
 class StepSequencerPlugin;
 }  // namespace magda::daw::audio
 
@@ -28,7 +30,9 @@ class FilterUI;
 class FourOscUI;
 class ImpulseResponseUI;
 class LinkableTextSlider;
+class OscilloscopeUI;
 class PhaserUI;
+class SpectrumAnalyzerUI;
 class PitchShiftUI;
 class ReverbUI;
 class SamplerUI;
@@ -99,6 +103,18 @@ class DeviceCustomUIManager {
      * Read the FourOsc mod matrix from the plugin and push it to FourOscUI.
      */
     void readAndPushModMatrix(magda::DeviceId deviceId);
+
+    /**
+     * Set the chain path of the device this custom UI is bound to. Once set,
+     * internal plugin lookups (FourOsc, Sampler, Faust, etc.) go through the
+     * path rather than a bare DeviceId — required for section-scoped ids.
+     * Callable repeatedly; latest value wins.
+     *
+     * Also re-binds the analyzer UIs (oscilloscope / spectrum): create() runs
+     * before the slot knows its path, so those UIs are built while devicePath_
+     * is still invalid and would otherwise never resolve their plugin.
+     */
+    void setDevicePath(const magda::ChainNodePath& path);
 
     // -------------------------------------------------------------------------
     // Queries
@@ -176,6 +192,16 @@ class DeviceCustomUIManager {
     }
 
   private:
+    // (Re-)resolve the live plugin for the oscilloscope / spectrum analyzer UIs
+    // from the current devicePath_ and hand it to them. Safe to call before the
+    // path or plugin exists (it simply binds nothing).
+    void bindAnalyzerPlugins();
+
+    // Path of the device this manager is bound to. Used by every internal
+    // plugin lookup; the bare device.id is no longer sufficient under
+    // section-scoped device ids.
+    magda::ChainNodePath devicePath_;
+
     // Custom UI unique_ptrs
     std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;
     std::unique_ptr<SamplerUI> samplerUI_;
@@ -194,6 +220,8 @@ class DeviceCustomUIManager {
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;
+    std::unique_ptr<OscilloscopeUI> oscilloscopeUI_;
+    std::unique_ptr<SpectrumAnalyzerUI> spectrumAnalyzerUI_;
 
     // Plugin raw pointers for timer polling / setNodePath updates
     daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;

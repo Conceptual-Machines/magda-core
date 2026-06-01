@@ -16,6 +16,7 @@
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/ModulatorEngine.hpp"
+#include "core/PluginPreferences.hpp"
 #include "core/PresetManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UIScale.hpp"
@@ -139,6 +140,7 @@ class MagdaDAWApplication : public JUCEApplication {
         // here forces that. LuaScriptStore::ensureExists() does the same
         // for Scripts/Controllers/.
         magda::PresetManager::getInstance();
+        magda::PluginPreferences::getInstance();
         magda::scripting::LuaScriptStore{}.ensureExists();
 
         // 3. Initialize fonts

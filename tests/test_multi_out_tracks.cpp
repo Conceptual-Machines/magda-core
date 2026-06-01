@@ -103,7 +103,7 @@ TEST_CASE("Multi-out child tracks inherit parent output", "[multi_out][routing]"
 // Group Routing Skips MultiOut Tracks
 // ============================================================================
 
-TEST_CASE("addTrackToGroup skips MultiOut track routing", "[multi_out][group]") {
+TEST_CASE("Multi-out tracks route through groups", "[multi_out][group]") {
     MultiOutTestFixture fixture;
 
     auto [trackId, deviceId] = fixture.createMultiOutTrack();
@@ -115,15 +115,15 @@ TEST_CASE("addTrackToGroup skips MultiOut track routing", "[multi_out][group]") 
     auto* child = fixture.tm().getTrack(childId);
     REQUIRE(child->audioOutputDevice == "master");
 
-    SECTION("adding MultiOut track to group does not change its routing") {
+    SECTION("adding MultiOut track to group routes it to the group") {
         auto groupId = fixture.tm().createGroupTrack("My Group");
         fixture.tm().addTrackToGroup(childId, groupId);
 
         child = fixture.tm().getTrack(childId);
-        REQUIRE(child->audioOutputDevice == "master");
+        REQUIRE(child->audioOutputDevice == "track:" + juce::String(groupId));
     }
 
-    SECTION("adding parent to group does not affect child routing") {
+    SECTION("adding parent to group updates existing child routing") {
         auto groupId = fixture.tm().createGroupTrack("My Group");
         fixture.tm().addTrackToGroup(trackId, groupId);
 
@@ -131,9 +131,32 @@ TEST_CASE("addTrackToGroup skips MultiOut track routing", "[multi_out][group]") 
         auto* parent = fixture.tm().getTrack(trackId);
         REQUIRE(parent->audioOutputDevice == "track:" + juce::String(groupId));
 
-        // Child still routes to master
+        // Ungrouped multi-out child follows the source track output.
+        child = fixture.tm().getTrack(childId);
+        REQUIRE(child->audioOutputDevice == parent->audioOutputDevice);
+    }
+
+    SECTION("removing parent from group returns existing child routing to master") {
+        auto groupId = fixture.tm().createGroupTrack("My Group");
+        fixture.tm().addTrackToGroup(trackId, groupId);
+        fixture.tm().removeTrackFromGroup(trackId);
+
+        auto* parent = fixture.tm().getTrack(trackId);
+        REQUIRE(parent->audioOutputDevice == "master");
+
         child = fixture.tm().getTrack(childId);
         REQUIRE(child->audioOutputDevice == "master");
+    }
+
+    SECTION("explicit child group routing wins over parent group routing") {
+        auto parentGroupId = fixture.tm().createGroupTrack("Parent Group");
+        auto childGroupId = fixture.tm().createGroupTrack("Child Group");
+
+        fixture.tm().addTrackToGroup(childId, childGroupId);
+        fixture.tm().addTrackToGroup(trackId, parentGroupId);
+
+        child = fixture.tm().getTrack(childId);
+        REQUIRE(child->audioOutputDevice == "track:" + juce::String(childGroupId));
     }
 }
 

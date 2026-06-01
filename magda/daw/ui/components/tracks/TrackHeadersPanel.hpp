@@ -74,6 +74,7 @@ class TrackHeadersPanel : public juce::Component,
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void refreshHeaderSideLayout();
     bool keyPressed(const juce::KeyPress& key) override;
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override;

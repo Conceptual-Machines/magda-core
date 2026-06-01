@@ -698,10 +698,6 @@ std::vector<std::pair<magda::DeviceId, juce::String>> RackComponent::getAvailabl
 }
 
 std::map<magda::DeviceId, std::vector<juce::String>> RackComponent::getDeviceParamNames() const {
-    // Walk the rack's chains and emit a paramName vector per device so the
-    // macro "Link to Parameter…" submenu shows real names (Tune, Filter
-    // Freq, …) instead of the "Parameter N" fallback that fires when the
-    // map has no entry for a deviceId.
     std::map<magda::DeviceId, std::vector<juce::String>> result;
     const auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath_);
     if (rack == nullptr)
@@ -712,9 +708,13 @@ std::map<magda::DeviceId, std::vector<juce::String>> RackComponent::getDevicePar
                 continue;
             const auto& device = magda::getDevice(element);
             std::vector<juce::String> names;
-            names.reserve(device.parameters.size());
-            for (const auto& param : device.parameters)
-                names.push_back(param.name);
+            for (const auto& param : device.parameters) {
+                if (param.paramIndex < 0)
+                    continue;
+                if (param.paramIndex >= static_cast<int>(names.size()))
+                    names.resize(static_cast<size_t>(param.paramIndex + 1));
+                names[static_cast<size_t>(param.paramIndex)] = param.name;
+            }
             result[device.id] = std::move(names);
         }
     }

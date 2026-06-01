@@ -20,12 +20,14 @@ set(TEST_SOURCES
     test_control_target.cpp
     test_chain_fingerprint.cpp
     test_chain_routing_model.cpp
+    test_post_fx_chain.cpp
     test_group_tracks_and_macros.cpp
     test_parameter_utils.cpp
     test_update_checker.cpp
     test_plugin_loading.cpp
     test_plugin_format.cpp
     test_plugin_window_manager.cpp
+    test_plugin_preferences.cpp
     test_prune_missing_plugins.cpp
     test_known_plugin_list_duplicates.cpp
     test_device_parameter_pagination.cpp
@@ -85,6 +87,10 @@ set(TEST_SOURCES
     test_binding_registry.cpp
     # Controller router tests (issue #1050 -- Phase C)
     test_controller_router.cpp
+    # Gesture router tests (epic:command-registry -- #21)
+    test_gesture_router.cpp
+    # Key mapping persistence tests (epic:command-registry -- #20)
+    test_key_mapping_store.cpp
     # MIDI device identifier matcher tests (issue #1050)
     test_midi_device_match.cpp
     # MIDI Learn session tests (issue #924)
@@ -172,11 +178,14 @@ target_sources(magda_juce_tests PRIVATE
     test_session_slot_recording_juce.cpp
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
+    test_midi_bridge_note_events_juce.cpp
+    test_section_scoped_device_ids_juce.cpp
     test_clip_inspector_juce.cpp
     test_multiband_curve_view_juce.cpp
     test_timeline_extreme_zoom_paint_juce.cpp
     test_arrange_beat_native_juce.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
+    ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorSections.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorLifecycle.cpp
@@ -189,15 +198,18 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/common/DraggableValueLabel.cpp
     ../magda/daw/ui/components/common/SvgButton.cpp
     ../magda/daw/ui/themes/CursorManager.cpp
+    ../magda/daw/ui/themes/DarkTheme.cpp
     ../magda/daw/ui/themes/FontManager.cpp
     test_automation_modes_juce.cpp
     test_arrangement_transport_loop_juce.cpp
+    test_external_plugin_state_restore_juce.cpp
 )
 
 # Link required libraries for JUCE tests
 target_link_libraries(magda_juce_tests
     PRIVATE
     magda_daw
+    magda_agents
     juce::juce_core
     juce::juce_events
     juce::juce_gui_basics
@@ -225,6 +237,7 @@ target_include_directories(magda_juce_tests
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/components/chain
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/components/common
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/components/common/curve
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/dialogs
 )
 
 add_test(NAME arrangement_transport_loop_juce
@@ -238,3 +251,12 @@ add_test(NAME timeline_extreme_zoom_paint_juce
 
 add_test(NAME arrange_beat_native_juce
          COMMAND magda_juce_tests "Arrange Beat Native Tests")
+
+add_test(NAME midi_bridge_note_events_juce
+         COMMAND magda_juce_tests "MidiBridge Note Events Tests")
+
+add_test(NAME external_plugin_state_restore_juce
+         COMMAND magda_juce_tests "External Plugin State Restore Tests")
+
+add_test(NAME section_scoped_device_ids_juce
+         COMMAND magda_juce_tests "Section-Scoped Device IDs")

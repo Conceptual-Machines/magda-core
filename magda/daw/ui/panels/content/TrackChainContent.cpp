@@ -3,9 +3,12 @@
 #include <BinaryData.h>
 
 #include <cmath>
+#include <thread>
 
+#include "../../../../agents/gain_staging_agent.hpp"
 #include "../../debug/DebugSettings.hpp"
 #include "../../dialogs/ChainTreeDialog.hpp"
+#include "../../dialogs/GainStagingDialog.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
@@ -864,6 +867,100 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(*presetButton_);
 
+    // Gain-staging pass toggle. Steps the GainStagingManager through
+    // start (collect) -> stop (compute + apply) -> clear for the selected
+    // track. Active tint follows the mode: red while collecting, amber once
+    // staged. The icon recolors via SvgButton's black-replacement path
+    // (the SVG uses currentColor).
+    gainStagingButton_ = std::make_unique<magda::SvgButton>(
+        "GainStaging", BinaryData::gainstaging_svg, BinaryData::gainstaging_svgSize);
+    gainStagingButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    gainStagingButton_->setHoverColor(DarkTheme::getTextColour());
+    gainStagingButton_->setActiveColor(juce::Colours::white.darker(0.18f));
+    gainStagingButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    gainStagingButton_->onClick = [this]() {
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID || aiProcessing_)
+            return;
+        auto& gsm = magda::GainStagingManager::getInstance();
+        // Idle -> ask for the target and AI choice, then start. Collecting ->
+        // stop: the AI path hands off to the agent, otherwise the flat cascade.
+        if (gsm.getMode() == magda::GainStagingMode::Idle) {
+            const auto trackId = selectedTrackId_;
+            magda::GainStagingDialog::showDialog(
+                this, gsm.getTargetDb(), gsm.getUseAi(),
+                [trackId](const magda::GainStagingDialog::Settings& settings) {
+                    auto& m = magda::GainStagingManager::getInstance();
+                    m.setTargetDb(settings.targetDb);
+                    m.setUseAi(settings.useAi);
+                    m.startCollection(trackId);
+                });
+        } else if (gsm.getMode() == magda::GainStagingMode::Collecting) {
+            if (gsm.getUseAi())
+                runAiGainStagingPass();
+            else
+                gsm.stopCollection();
+        }
+    };
+    addChildComponent(*gainStagingButton_);
+    refreshGainStagingButton();
+
+    // Analysis-device toggles — one-click add/remove of an Oscilloscope or
+    // Spectrum in this track's post-fx. Lit while the device is present; the
+    // model keeps them unique per kind, so this is a clean on/off.
+    // Active colours are chosen to NOT clash with the mod (orange) and macro
+    // (purple) toggles next door.
+    auto setupAnalysisToggle = [this](std::unique_ptr<magda::SvgButton>& button, const char* name,
+                                      const char* svg, size_t svgSize, const juce::String& tooltip,
+                                      const juce::String& pluginId, const juce::String& displayName,
+                                      juce::Colour activeBg) {
+        button = std::make_unique<magda::SvgButton>(name, svg, svgSize);
+        // Tell SvgButton the icon's native fill so it recolors the glyph (grey
+        // idle, white when engaged). Engaged look = subtle tint + coloured
+        // border rather than a solid candy fill.
+        button->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        button->setNormalColor(DarkTheme::getSecondaryTextColour());
+        button->setHoverColor(DarkTheme::getTextColour());
+        button->setActiveColor(juce::Colours::white.darker(0.18f));
+        button->setActiveBackgroundColor(activeBg.withAlpha(0.20f));
+        button->setActiveBorderColor(activeBg);
+        button->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        button->setTooltip(tooltip);
+        button->onClick = [this, pluginId, displayName]() {
+            togglePostFxAnalysisDevice(pluginId, displayName);
+        };
+        addChildComponent(*button);
+    };
+    // Muted so they sit with the dark chrome rather than reading as candy
+    // (and still clear of the mod orange / macro purple next door).
+    const auto muted = [](juce::uint32 c) {
+        return juce::Colour(c).withMultipliedSaturation(0.55f).withMultipliedBrightness(0.85f);
+    };
+    setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::oscilloscope_svg,
+                        BinaryData::oscilloscope_svgSize, "Oscilloscope (post-FX)", "oscilloscope",
+                        "Oscilloscope", muted(DarkTheme::ACCENT_GREEN));
+    setupAnalysisToggle(specToggleButton_, "Spectrum", BinaryData::spectrum_svg,
+                        BinaryData::spectrum_svgSize, "Spectrum Analyzer (post-FX)",
+                        "spectrumanalyzer", "Spectrum Analyzer", muted(DarkTheme::ACCENT_CYAN));
+
+    // Post-FX panel show/hide toggle. The panel itself lives in BottomPanel,
+    // which wires onPostFxPanelToggled / setPostFxPanelOpen.
+    postFxPanelButton_ = std::make_unique<magda::SvgButton>("PostFx", BinaryData::postfx_svg,
+                                                            BinaryData::postfx_svgSize);
+    postFxPanelButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    postFxPanelButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    postFxPanelButton_->setHoverColor(DarkTheme::getTextColour());
+    postFxPanelButton_->setActiveColor(juce::Colours::white.darker(0.18f));
+    postFxPanelButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.20f));
+    postFxPanelButton_->setActiveBorderColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    postFxPanelButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    postFxPanelButton_->setTooltip("Show/hide the post-FX panel");
+    postFxPanelButton_->onClick = [this]() {
+        if (onPostFxPanelToggled)
+            onPostFxPanelToggled(!postFxPanelOpen_);
+    };
+    addChildComponent(*postFxPanelButton_);
+
     // === HEADER BAR CONTROLS - RIGHT SIDE (track info) ===
 
     // Track name label - clicks pass through for track selection
@@ -996,6 +1093,26 @@ TrackChainContent::TrackChainContent()
     linkModeLabel_.setVisible(false);
     addChildComponent(linkModeLabel_);
 
+    // Gain-staging mode indicator label (centered, big text), parallel to the
+    // link-mode label.
+    gainStagingLabel_.setText("GAIN STAGING", juce::dontSendNotification);
+    gainStagingLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    gainStagingLabel_.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::STATUS_DANGER));
+    gainStagingLabel_.setJustificationType(juce::Justification::centred);
+    gainStagingLabel_.setMinimumHorizontalScale(0.5f);  // let the AI summary shrink to fit
+    // The banner spans the whole header bar; it must NOT eat clicks meant for
+    // the gain-staging button underneath (otherwise you can't stop a pass).
+    gainStagingLabel_.setInterceptsMouseClicks(false, false);
+    gainStagingLabel_.setVisible(false);
+    addChildComponent(gainStagingLabel_);
+
+    // Blink the "GETTING AI RESULTS" banner while the agent is thinking.
+    aiBlinkTimer_.onTick = [this]() {
+        aiBlinkOn_ = !aiBlinkOn_;
+        refreshGainStagingButton();
+    };
+
     // Initialize global mods/macros panels
     initGlobalModsPanel();
     initGlobalMacrosPanel();
@@ -1004,6 +1121,7 @@ TrackChainContent::TrackChainContent()
     magda::TrackManager::getInstance().addListener(this);
     magda::SelectionManager::getInstance().addListener(this);
     magda::LinkModeManager::getInstance().addListener(this);
+    magda::GainStagingManager::getInstance().addListener(this);
 
     // Check if there's already a selected track
     selectedTrackId_ = magda::TrackManager::getInstance().getSelectedTrack();
@@ -1015,6 +1133,7 @@ TrackChainContent::~TrackChainContent() {
     magda::TrackManager::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
     magda::LinkModeManager::getInstance().removeListener(this);
+    magda::GainStagingManager::getInstance().removeListener(this);
 }
 
 // ==============================================================================
@@ -1179,9 +1298,18 @@ void TrackChainContent::initGlobalModsPanel() {
                 for (const auto& element : elements) {
                     if (magda::isDevice(element)) {
                         const auto& device = magda::getDevice(element);
-                        if (device.id == deviceId && paramIndex >= 0 &&
-                            paramIndex < static_cast<int>(device.parameters.size())) {
-                            return device.parameters[static_cast<size_t>(paramIndex)].name;
+                        if (device.id == deviceId && paramIndex >= 0) {
+                            // paramIndex is the TE index — search both buckets
+                            // by ParameterInfo::paramIndex, not by array
+                            // position, since the wrapper dry/wet pair lives
+                            // in wrapperParameters (so the array no longer
+                            // mirrors TE indices 1:1).
+                            for (const auto& p : device.parameters)
+                                if (p.paramIndex == paramIndex)
+                                    return p.name;
+                            for (const auto& p : device.wrapperParameters)
+                                if (p.paramIndex == paramIndex)
+                                    return p.name;
                         }
                     } else {
                         const auto& rack = magda::getRack(element);
@@ -1194,7 +1322,7 @@ void TrackChainContent::initGlobalModsPanel() {
                 }
                 return {};
             };
-            auto name = findParam(track->chainElements);
+            auto name = findParam(track->chain.fxChainElements);
             return name.isNotEmpty() ? name : ("P" + juce::String(paramIndex));
         });
     addChildComponent(*globalModEditorPanel_);
@@ -1300,9 +1428,18 @@ void TrackChainContent::initGlobalMacrosPanel() {
                 for (const auto& element : elements) {
                     if (magda::isDevice(element)) {
                         const auto& device = magda::getDevice(element);
-                        if (device.id == deviceId && paramIndex >= 0 &&
-                            paramIndex < static_cast<int>(device.parameters.size())) {
-                            return device.parameters[static_cast<size_t>(paramIndex)].name;
+                        if (device.id == deviceId && paramIndex >= 0) {
+                            // paramIndex is the TE index — search both buckets
+                            // by ParameterInfo::paramIndex, not by array
+                            // position, since the wrapper dry/wet pair lives
+                            // in wrapperParameters (so the array no longer
+                            // mirrors TE indices 1:1).
+                            for (const auto& p : device.parameters)
+                                if (p.paramIndex == paramIndex)
+                                    return p.name;
+                            for (const auto& p : device.wrapperParameters)
+                                if (p.paramIndex == paramIndex)
+                                    return p.name;
                         }
                     } else {
                         const auto& rack = magda::getRack(element);
@@ -1315,7 +1452,7 @@ void TrackChainContent::initGlobalMacrosPanel() {
                 }
                 return {};
             };
-            auto name = findParam(track->chainElements);
+            auto name = findParam(track->chain.fxChainElements);
             return name.isNotEmpty() ? name : ("P" + juce::String(paramIndex));
         });
     globalMacroEditorPanel_->setModNameResolver(
@@ -1369,7 +1506,7 @@ void TrackChainContent::updateGlobalModsPanel() {
             }
         }
     };
-    collectDevices(track->chainElements);
+    collectDevices(track->chain.fxChainElements);
 
     globalModsPanel_->setAvailableDevices(allDevices);
     globalModsPanel_->setDeviceParamNames(allDeviceParams);
@@ -1433,7 +1570,7 @@ void TrackChainContent::updateGlobalMacrosPanel() {
             }
         }
     };
-    collectDevices(track->chainElements);
+    collectDevices(track->chain.fxChainElements);
 
     auto trackPath = magda::ChainNodePath::trackLevel(selectedTrackId_);
     globalMacrosPanel_->setParentPath(trackPath);
@@ -1590,6 +1727,9 @@ void TrackChainContent::mouseWheelMove(const juce::MouseEvent& e,
 void TrackChainContent::resized() {
     auto bounds = getLocalBounds();
 
+    if (aiReasoningOverlay_ != nullptr)
+        aiReasoningOverlay_->setBounds(getLocalBounds());
+
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
         noSelectionLabel_.setBounds(bounds);
         hideHeaderControls();
@@ -1665,10 +1805,14 @@ void TrackChainContent::layoutChainContent() {
         x += nodeWidth + scaledArrowWidth + scaledSlotSpacing;
     }
 
+    // Append "+" lives in the append zone, which is pinned to the right edge
+    // of the container (see calculateAppendZoneX) rather than trailing the last
+    // node, so it sits all the way to the right.
     const int appendZoneWidth = getScaledWidth(APPEND_ZONE_WIDTH);
+    const int appendX = calculateAppendZoneX();
     constexpr int buttonSize = 20;
     addDeviceButton_.setVisible(selectedTrackId_ != magda::INVALID_TRACK_ID);
-    addDeviceButton_.setBounds(x + juce::jmax(0, (appendZoneWidth - buttonSize) / 2),
+    addDeviceButton_.setBounds(appendX + juce::jmax(0, (appendZoneWidth - buttonSize) / 2),
                                juce::jmax(0, (chainHeight - buttonSize) / 2), buttonSize,
                                buttonSize);
     addDeviceButton_.toFront(false);
@@ -1759,7 +1903,7 @@ void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         const int previousElementCount = static_cast<int>(nodeComponents_.size());
         const int nextElementCount =
-            track ? static_cast<int>(track->chainElements.size()) : previousElementCount;
+            track ? static_cast<int>(track->chain.fxChainElements.size()) : previousElementCount;
         const bool shouldScrollToEnd =
             scrollToEndAfterNextDeviceChange_ ||
             (!suppressNextImplicitScrollToEnd_ && nextElementCount > previousElementCount);
@@ -1769,10 +1913,57 @@ void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
         rebuildNodeComponents();
         updateGlobalModsPanel();
         updateGlobalMacrosPanel();
+        refreshAnalysisToggles();  // post-fx contents may have changed
 
         if (shouldScrollToEnd)
             scrollToEndAsync();
     }
+}
+
+void TrackChainContent::togglePostFxAnalysisDevice(const juce::String& pluginId,
+                                                   const juce::String& displayName) {
+    if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+        return;
+
+    auto& tm = magda::TrackManager::getInstance();
+    const magda::DeviceId existing = tm.findPostFxDevice(selectedTrackId_, pluginId);
+    if (existing != magda::INVALID_DEVICE_ID) {
+        tm.removeDeviceFromChainByPath(
+            magda::ChainNodePath::postFxDevice(selectedTrackId_, existing));
+    } else {
+        magda::DeviceInfo device;
+        device.name = displayName;
+        device.manufacturer = "MAGDA";
+        device.pluginId = pluginId;
+        device.deviceType = magda::DeviceType::Analysis;
+        device.format = magda::PluginFormat::Internal;
+        tm.addDeviceToPostFx(selectedTrackId_, device);
+        // Reveal the panel so the analyzer you just added is visible.
+        if (onPostFxPanelToggled)
+            onPostFxPanelToggled(true);
+    }
+    // trackDevicesChanged() fires from the mutations above and refreshes the
+    // toggles, but refresh here too so the lit state updates even if this panel
+    // is not the listener that drives the rebuild.
+    refreshAnalysisToggles();
+}
+
+void TrackChainContent::setPostFxPanelOpen(bool open) {
+    postFxPanelOpen_ = open;
+    if (postFxPanelButton_)
+        postFxPanelButton_->setActive(open);
+}
+
+void TrackChainContent::refreshAnalysisToggles() {
+    if (!oscToggleButton_ || !specToggleButton_)
+        return;
+    auto& tm = magda::TrackManager::getInstance();
+    const bool hasTrack = selectedTrackId_ != magda::INVALID_TRACK_ID;
+    oscToggleButton_->setActive(hasTrack && tm.findPostFxDevice(selectedTrackId_, "oscilloscope") !=
+                                                magda::INVALID_DEVICE_ID);
+    specToggleButton_->setActive(hasTrack &&
+                                 tm.findPostFxDevice(selectedTrackId_, "spectrumanalyzer") !=
+                                     magda::INVALID_DEVICE_ID);
 }
 
 void TrackChainContent::modulationNamesChanged(magda::TrackId trackId) {
@@ -1859,6 +2050,213 @@ void TrackChainContent::macroLinkModeChanged(bool active,
     resized();
 }
 
+void TrackChainContent::gainStagingModeChanged(magda::GainStagingMode /*mode*/,
+                                               magda::TrackId /*trackId*/) {
+    refreshGainStagingButton();
+    resized();
+}
+
+void TrackChainContent::refreshGainStagingButton() {
+    if (!gainStagingButton_)
+        return;
+
+    auto& gs = magda::GainStagingManager::getInstance();
+    // Only treat the button as engaged when the active pass is on the track
+    // currently shown in this header.
+    const bool onThisTrack = gs.getActiveTrack() == selectedTrackId_;
+    const bool collecting = gs.getMode() == magda::GainStagingMode::Collecting && onThisTrack;
+
+    const auto yellow = DarkTheme::getColour(DarkTheme::STATUS_WARNING);
+
+    if (aiProcessing_) {
+        gainStagingButton_->setActiveBackgroundColor(yellow.withAlpha(0.20f));
+        gainStagingButton_->setActiveBorderColor(yellow);
+        gainStagingButton_->setTooltip("Gain staging: AI is analysing the chain...");
+    } else if (collecting) {
+        const auto red = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
+        gainStagingButton_->setActiveBackgroundColor(red.withAlpha(0.20f));
+        gainStagingButton_->setActiveBorderColor(red);
+        gainStagingButton_->setTooltip("Gain staging: stop and apply");
+    } else {
+        gainStagingButton_->setTooltip("Gain staging: capture levels, then auto-set device gains");
+    }
+
+    gainStagingButton_->setActive(aiProcessing_ || collecting);
+
+    // Centered banner: blinking "GETTING AI RESULTS" while the agent runs (the
+    // reasoning is shown in the overlay afterwards), "GAIN STAGING" while
+    // capturing. Position it to fill the header bar each time it's shown -- the
+    // header only re-lays-out on a BottomPanel resize, which doesn't fire when
+    // the pass starts.
+    const bool bannerVisible = aiProcessing_ || collecting;
+    gainStagingLabel_.setVisible(bannerVisible);
+    if (bannerVisible)
+        if (auto* parent = gainStagingLabel_.getParentComponent())
+            gainStagingLabel_.setBounds(parent->getLocalBounds());
+    if (aiProcessing_) {
+        gainStagingLabel_.setText("GETTING AI RESULTS", juce::dontSendNotification);
+        gainStagingLabel_.setColour(juce::Label::textColourId,
+                                    yellow.withAlpha(aiBlinkOn_ ? 1.0f : 0.25f));
+    } else if (collecting) {
+        gainStagingLabel_.setText("GAIN STAGING", juce::dontSendNotification);
+        gainStagingLabel_.setColour(juce::Label::textColourId,
+                                    DarkTheme::getColour(DarkTheme::STATUS_DANGER));
+    }
+}
+
+void TrackChainContent::runAiGainStagingPass() {
+    auto& gsm = magda::GainStagingManager::getInstance();
+    auto snapshot = gsm.finishCaptureForAi();
+    if (snapshot.empty()) {
+        gsm.reset();
+        return;
+    }
+    const float target = gsm.getTargetDb();
+
+    // Map the manager snapshot onto the agent's input. The agent identifies
+    // devices by list index (DeviceId is section-local and not unique), so keep
+    // a parallel paths_ vector to translate decisions back to a concrete device.
+    std::vector<magda::GainStagingAgent::DeviceLevel> levels;
+    std::vector<magda::ChainNodePath> paths;
+    levels.reserve(snapshot.size());
+    paths.reserve(snapshot.size());
+    for (const auto& s : snapshot) {
+        magda::GainStagingAgent::DeviceLevel lvl;
+        lvl.name = s.name.toStdString();
+        lvl.pluginId = s.pluginId.toStdString();
+        lvl.isInstrument = s.isInstrument;
+        lvl.capturedPeakDb = s.capturedPeakDb;
+        lvl.currentGainDb = s.currentGainDb;
+        lvl.suggestedGainDb = s.suggestedGainDb;
+        for (const auto& p : s.params)
+            lvl.params.push_back({p.name.toStdString(), (double)p.value, p.unit.toStdString()});
+        levels.push_back(std::move(lvl));
+        paths.push_back(s.path);
+    }
+
+    aiProcessing_ = true;
+    aiReasoningOverlay_.reset();  // drop any stale panel
+    aiBlinkOn_ = true;
+    aiBlinkTimer_.startTimerHz(2);  // ~2 Hz blink while thinking
+    refreshGainStagingButton();
+
+    // The LLM call blocks; run it off the message thread and apply on return.
+    juce::Component::SafePointer<TrackChainContent> safe(this);
+    std::thread([safe, levels = std::move(levels), paths = std::move(paths), target]() {
+        magda::GainStagingAgent agent;
+        auto result = agent.generate(target, levels);
+
+        // Build the human-readable reasoning while we still have device names.
+        juce::String reasoning;
+        if (result.hasError) {
+            reasoning = "AI gain staging failed:\n" + juce::String(result.error);
+        } else {
+            if (!result.summary.empty())
+                reasoning << juce::String(result.summary) << "\n\n";
+            for (const auto& d : result.decisions) {
+                juce::String name;
+                if (d.index >= 0 && d.index < (int)levels.size())
+                    name = juce::String(levels[(size_t)d.index].name);
+                reasoning << name << ":  " << (d.newGainDb >= 0.0f ? "+" : "")
+                          << juce::String(d.newGainDb, 1) << " dB";
+                if (!d.reason.empty())
+                    reasoning << "   " << juce::String(d.reason);
+                reasoning << "\n";
+            }
+        }
+
+        juce::MessageManager::callAsync([safe, result, reasoning, paths]() {
+            if (safe == nullptr)
+                return;
+            safe->aiProcessing_ = false;
+            safe->aiBlinkTimer_.stopTimer();
+
+            auto& m = magda::GainStagingManager::getInstance();
+            if (result.hasError) {
+                juce::Logger::writeToLog("[GainStaging] AI error: " + juce::String(result.error));
+                m.reset();  // drop the frozen capture
+            } else {
+                std::vector<std::pair<magda::ChainNodePath, float>> moves;
+                for (const auto& d : result.decisions)
+                    if (d.index >= 0 && d.index < (int)paths.size())
+                        moves.push_back({paths[(size_t)d.index], d.newGainDb});
+                m.applyAiMoves(moves);
+                juce::Logger::writeToLog("[GainStaging] AI: " + juce::String(result.summary));
+            }
+
+            safe->refreshGainStagingButton();
+            safe->showAiReasoning(reasoning);
+        });
+    }).detach();
+}
+
+namespace {
+// Transient panel that prints the agent's reasoning over the chain; any click
+// anywhere on it dismisses it.
+class AiReasoningOverlay : public juce::Component {
+  public:
+    std::function<void()> onDismiss;
+
+    void setText(juce::String text) {
+        text_ = std::move(text);
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(juce::Colours::black.withAlpha(0.55f));
+
+        auto area = getLocalBounds().reduced(24);
+        if (area.getWidth() > 560)
+            area = area.withSizeKeepingCentre(560, area.getHeight());
+
+        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.fillRoundedRectangle(area.toFloat(), 8.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.drawRoundedRectangle(area.toFloat(), 8.0f, 1.5f);
+
+        auto inner = area.reduced(16);
+        auto titleArea = inner.removeFromTop(22);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.setFont(FontManager::getInstance().getUIFontBold(15.0f));
+        g.drawText("AI gain staging", titleArea, juce::Justification::topLeft);
+
+        auto hintArea = inner.removeFromBottom(18);
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(11.0f));
+        g.drawText("click to dismiss", hintArea, juce::Justification::topRight);
+
+        g.setColour(DarkTheme::getTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(13.0f));
+        g.drawFittedText(text_, inner, juce::Justification::topLeft, 40);
+    }
+
+    void mouseDown(const juce::MouseEvent&) override {
+        if (onDismiss)
+            onDismiss();
+    }
+
+  private:
+    juce::String text_;
+};
+}  // namespace
+
+void TrackChainContent::showAiReasoning(const juce::String& text) {
+    if (text.isEmpty())
+        return;
+
+    auto overlay = std::make_unique<AiReasoningOverlay>();
+    overlay->setText(text);
+    juce::Component::SafePointer<TrackChainContent> safe(this);
+    overlay->onDismiss = [safe]() {
+        if (safe != nullptr)
+            safe->aiReasoningOverlay_.reset();
+    };
+    addAndMakeVisible(*overlay);
+    overlay->setBounds(getLocalBounds());
+    overlay->toFront(false);
+    aiReasoningOverlay_ = std::move(overlay);
+}
+
 void TrackChainContent::updateFromSelectedTrack() {
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
         hideHeaderControls();
@@ -1915,6 +2313,12 @@ void TrackChainContent::updateFromSelectedTrack() {
             addRackButton_->setVisible(true);
             treeViewButton_->setVisible(true);
             presetButton_->setVisible(true);
+            gainStagingButton_->setVisible(true);
+            postFxPanelButton_->setVisible(true);
+            oscToggleButton_->setVisible(true);
+            specToggleButton_->setVisible(true);
+            refreshAnalysisToggles();
+            refreshGainStagingButton();
             trackNameLabel_.setVisible(true);
             muteButton_.setVisible(true);
             soloButton_.setVisible(true);
@@ -1977,6 +2381,10 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(addRackButton_.get());
     headerBar.addAndMakeVisible(treeViewButton_.get());
     headerBar.addAndMakeVisible(presetButton_.get());
+    headerBar.addAndMakeVisible(gainStagingButton_.get());
+    headerBar.addAndMakeVisible(postFxPanelButton_.get());
+    headerBar.addAndMakeVisible(oscToggleButton_.get());
+    headerBar.addAndMakeVisible(specToggleButton_.get());
     headerBar.addAndMakeVisible(trackNameLabel_);
     headerBar.addAndMakeVisible(muteButton_);
     headerBar.addChildComponent(masterMuteButton_);
@@ -1985,6 +2393,7 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(panLabel_);
     headerBar.addAndMakeVisible(chainBypassButton_.get());
     headerBar.addChildComponent(linkModeLabel_);
+    headerBar.addChildComponent(gainStagingLabel_);
 
     // If no track selected, hide controls
     if (selectedTrackId_ == magda::INVALID_TRACK_ID)
@@ -1998,6 +2407,10 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(addRackButton_.get());
     addChildComponent(treeViewButton_.get());
     addChildComponent(presetButton_.get());
+    addChildComponent(gainStagingButton_.get());
+    addChildComponent(postFxPanelButton_.get());
+    addChildComponent(oscToggleButton_.get());
+    addChildComponent(specToggleButton_.get());
     addChildComponent(&trackNameLabel_);
     addChildComponent(&muteButton_);
     addChildComponent(&soloButton_);
@@ -2005,6 +2418,7 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(&panLabel_);
     addChildComponent(chainBypassButton_.get());
     addChildComponent(&linkModeLabel_);
+    addChildComponent(&gainStagingLabel_);
 }
 
 void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
@@ -2025,7 +2439,8 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
     // Track-chain presets button — sits on the LEFT of the header (devices
     // and racks have theirs on the right inside their own node header).
     presetButton_->setBounds(headerArea.removeFromLeft(20));
-    headerArea.removeFromLeft(16);
+    headerArea.removeFromLeft(8);
+    gainStagingButton_->setBounds(headerArea.removeFromLeft(20));
 
     // RIGHT SIDE - Track info (from right to left)
     const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
@@ -2057,6 +2472,14 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
         masterMuteButton_.setVisible(false);
     }
     headerArea.removeFromRight(8);
+    // Post-FX panel toggle + analysis-device toggles — grouped with the track's
+    // output controls (solo/mute/volume) rather than the left chain buttons.
+    specToggleButton_->setBounds(headerArea.removeFromRight(20));
+    headerArea.removeFromRight(4);
+    oscToggleButton_->setBounds(headerArea.removeFromRight(20));
+    headerArea.removeFromRight(4);
+    postFxPanelButton_->setBounds(headerArea.removeFromRight(20));
+    headerArea.removeFromRight(8);
     trackNameLabel_.setBounds(headerArea);  // Name takes remaining space
 
     // Hide solo/pan for master
@@ -2069,6 +2492,10 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
     if (linkModeLabel_.isVisible()) {
         linkModeLabel_.setBounds(headerBounds);
     }
+    // Gain-staging banner - centered, same treatment as the link-mode label.
+    if (gainStagingLabel_.isVisible()) {
+        gainStagingLabel_.setBounds(headerBounds);
+    }
 }
 
 void TrackChainContent::hideHeaderControls() {
@@ -2078,6 +2505,11 @@ void TrackChainContent::hideHeaderControls() {
     addRackButton_->setVisible(false);
     treeViewButton_->setVisible(false);
     presetButton_->setVisible(false);
+    gainStagingButton_->setVisible(false);
+    gainStagingLabel_.setVisible(false);
+    postFxPanelButton_->setVisible(false);
+    oscToggleButton_->setVisible(false);
+    specToggleButton_->setVisible(false);
     // Hide panels
     if (globalModsPanel_)
         globalModsPanel_->setVisible(false);
@@ -2512,16 +2944,14 @@ int TrackChainContent::calculateIndicatorX(int index) const {
 }
 
 int TrackChainContent::calculateAppendZoneX() const {
-    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
-    int x = isDraggingOrDropping ? getScaledWidth(DRAG_LEFT_PADDING) : 0;
-    int scaledArrowWidth = getScaledWidth(ARROW_WIDTH);
-    int scaledSlotSpacing = getScaledWidth(SLOT_SPACING);
-
-    for (const auto& node : nodeComponents_) {
-        x += getScaledWidth(node->getPreferredWidth()) + scaledArrowWidth + scaledSlotSpacing;
-    }
-
-    return x;
+    // Pin the append zone to the right edge of the container. The container is
+    // sized to max(content, viewport), so this puts the "+" at the far right of
+    // the visible area when the chain is short, and right after the last node
+    // once the content overflows (container width == content width then).
+    const int scaledAppendWidth = getScaledWidth(APPEND_ZONE_WIDTH);
+    if (chainContainer_ != nullptr)
+        return juce::jmax(0, chainContainer_->getWidth() - scaledAppendWidth);
+    return 0;
 }
 
 void TrackChainContent::saveNodeStates() {

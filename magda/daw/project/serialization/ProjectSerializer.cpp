@@ -239,12 +239,20 @@ void ProjectSerializer::commitStaged(StagedProjectData& data) {
         auto& tm = TrackManager::getInstance();
         auto* masterTrack = tm.getTrack(MASTER_TRACK_ID);
         if (masterTrack) {
-            masterTrack->chainElements = std::move(data.masterTrack->chainElements);
+            masterTrack->chain.fxChainElements = std::move(data.masterTrack->chain.fxChainElements);
+            masterTrack->chain.postFxChainElements =
+                std::move(data.masterTrack->chain.postFxChainElements);
+            masterTrack->chain.mixerAnalysisElements =
+                std::move(data.masterTrack->chain.mixerAnalysisElements);
             // Update device ID counter to include master chain devices
-            for (const auto& element : masterTrack->chainElements) {
+            for (const auto& element : masterTrack->chain.fxChainElements) {
                 if (isDevice(element))
                     tm.ensureDeviceIdAbove(getDevice(element).id);
             }
+            for (const auto& element : masterTrack->chain.postFxChainElements)
+                tm.ensurePostFxDeviceIdAbove(element.device.id);
+            for (const auto& element : masterTrack->chain.mixerAnalysisElements)
+                tm.ensureMixerAnalysisDeviceIdAbove(element.device.id);
             // Notify listeners so audio bridge creates TE plugins for master devices
             tm.notifyTrackDevicesChanged(MASTER_TRACK_ID);
         }
@@ -313,7 +321,9 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
 
     // Serialize master track separately (its chain elements hold master bus plugins)
     auto* masterTrack = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
-    if (masterTrack && !masterTrack->chainElements.empty()) {
+    if (masterTrack && (!masterTrack->chain.fxChainElements.empty() ||
+                        !masterTrack->chain.postFxChainElements.empty() ||
+                        !masterTrack->chain.mixerAnalysisElements.empty())) {
         obj->setProperty("masterTrack", serializeTrackInfo(*masterTrack));
     }
 
@@ -445,11 +455,20 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
             auto& tm = TrackManager::getInstance();
             auto* masterTrack = tm.getTrack(MASTER_TRACK_ID);
             if (masterTrack) {
-                masterTrack->chainElements = std::move(masterTrackData.chainElements);
-                for (const auto& element : masterTrack->chainElements) {
+                masterTrack->chain.fxChainElements =
+                    std::move(masterTrackData.chain.fxChainElements);
+                masterTrack->chain.postFxChainElements =
+                    std::move(masterTrackData.chain.postFxChainElements);
+                masterTrack->chain.mixerAnalysisElements =
+                    std::move(masterTrackData.chain.mixerAnalysisElements);
+                for (const auto& element : masterTrack->chain.fxChainElements) {
                     if (isDevice(element))
                         tm.ensureDeviceIdAbove(getDevice(element).id);
                 }
+                for (const auto& element : masterTrack->chain.postFxChainElements)
+                    tm.ensurePostFxDeviceIdAbove(element.device.id);
+                for (const auto& element : masterTrack->chain.mixerAnalysisElements)
+                    tm.ensureMixerAnalysisDeviceIdAbove(element.device.id);
                 tm.notifyTrackDevicesChanged(MASTER_TRACK_ID);
             }
         }

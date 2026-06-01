@@ -278,6 +278,15 @@
     "dialog.title": "Export MIDI"
   },
 
+  "gain_staging": {
+    "dialog.title": "Gain Staging",
+    "description": "Play a representative section of the song, then stop. Each device's output gain is trimmed so the chain holds the target headroom.",
+    "label.target": "Target peak:",
+    "toggle.use_ai": "Use AI",
+    "hint.use_ai": "Let an AI agent weigh limiters, saturators, and effect order instead of a flat target.",
+    "button.start": "Start"
+  },
+
   "plugin_settings": {
     "section.system_directories": "System Plugin Directories",
     "section.custom_directories": "Custom Plugin Directories",
@@ -405,6 +414,7 @@
     "toggle.expand_right_panel": "Expand Right Panel (Inspector)",
     "toggle.expand_bottom_panel": "Expand Bottom Panel (Mixer)",
     "toggle.headers_on_right": "Headers on the Right",
+    "toggle.autohide_arrangement_scrollbars": "Auto-Hide Arrangement Scrollbars",
     "toggle.confirm_track_delete": "Confirm before deleting tracks",
     "toggle.auto_monitor": "Auto-monitor selected track",
     "toggle.open_macros_on_select": "Open macros when selecting devices or racks",

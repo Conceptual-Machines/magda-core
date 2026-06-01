@@ -1,7 +1,12 @@
 #include "PreferencesDialog.hpp"
 
+#include <juce_gui_extra/juce_gui_extra.h>
+
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
+#include <vector>
 
 #include "../../media_db/MediaDatabase.hpp"
 #include "../../media_db/MediaDbContext.hpp"
@@ -17,6 +22,7 @@
 #include "../windows/MainWindow.hpp"
 #include "core/AppPaths.hpp"
 #include "core/Config.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/StringTable.hpp"
 #include "core/UIScale.hpp"
 
@@ -145,6 +151,8 @@ class GeneralPage : public juce::Component {
 
         setupSectionHeader(*this, layoutHeader, tr("preferences.section.layout"));
         setupToggle(*this, headersOnRightToggle, tr("preferences.toggle.headers_on_right"));
+        setupToggle(*this, autoHideScrollbarsToggle,
+                    tr("preferences.toggle.autohide_arrangement_scrollbars"));
 
         setupSectionHeader(*this, behaviorHeader, tr("preferences.section.behavior"));
         setupToggle(*this, confirmTrackDeleteToggle, tr("preferences.toggle.confirm_track_delete"));
@@ -227,6 +235,8 @@ class GeneralPage : public juce::Component {
                                         juce::dontSendNotification);
         headersOnRightToggle.setToggleState(config.getScrollbarOnLeft(),
                                             juce::dontSendNotification);
+        autoHideScrollbarsToggle.setToggleState(config.getArrangementScrollbarsAutoHide(),
+                                                juce::dontSendNotification);
         confirmTrackDeleteToggle.setToggleState(config.getConfirmTrackDelete(),
                                                 juce::dontSendNotification);
         autoMonitorToggle.setToggleState(config.getAutoMonitorSelectedTrack(),
@@ -273,6 +283,7 @@ class GeneralPage : public juce::Component {
         config.setAutoSaveEnabled(autoSaveToggle.getToggleState());
         config.setAutoSaveIntervalSeconds(static_cast<int>(autoSaveIntervalSlider.getValue()));
         config.setScrollbarOnLeft(headersOnRightToggle.getToggleState());
+        config.setArrangementScrollbarsAutoHide(autoHideScrollbarsToggle.getToggleState());
         config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
         config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
         config.setOpenMacrosOnSelect(openMacrosOnSelectToggle.getToggleState());
@@ -376,6 +387,8 @@ class GeneralPage : public juce::Component {
         layoutHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
         headersOnRightToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        autoHideScrollbarsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(secGap);
 
         // Behaviour
@@ -449,6 +462,8 @@ class GeneralPage : public juce::Component {
         layoutHeader.setBounds(right.removeFromTop(headerH));
         right.removeFromTop(4);
         headersOnRightToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        autoHideScrollbarsToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(secGap);
 
         // Behaviour
@@ -561,6 +576,7 @@ class GeneralPage : public juce::Component {
     juce::Label autoSaveIntervalLabel;
     juce::Label layoutHeader, behaviorHeader, languageHeader, scaleHeader;
     juce::ToggleButton headersOnRightToggle;
+    juce::ToggleButton autoHideScrollbarsToggle;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, openMacrosOnSelectToggle;
     juce::ToggleButton showTooltipsToggle;
     juce::Label languageLabel;
@@ -1739,208 +1755,712 @@ class PathsPage : public juce::Component {
     std::unique_ptr<juce::FileChooser> fileChooser_;
 };
 
-// ---- Shortcuts tab (read-only) --------------------------------------------
+// ---- Shortcuts tab ---------------------------------------------------------
 
 class ShortcutsPage : public juce::Component {
   public:
-    ShortcutsPage() {
-        setupSectionHeader(*this, shortcutsHeader, tr("preferences.section.keyboard_shortcuts"));
-        viewport.setViewedComponent(&content, false);
-        viewport.setScrollBarsShown(true, false);
-        viewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::all);
-        addAndMakeVisible(viewport);
-
-        addSection("File");
-        addShortcut("Save Project", cmd("S"), "Global");
-        addShortcut("Save Project As", shiftCmd("S"), "Global");
-
-        addSection("Edit");
-        addShortcut("Undo", cmd("Z"), "Global");
-        addShortcut("Redo", shiftCmd("Z"), "Global");
-        addShortcut("Cut", cmd("X"), "Clips");
-        addShortcut("Copy", cmd("C"), "Clips");
-        addShortcut("Paste", cmd("V"), "Clips");
-        addShortcut("Duplicate notes, clips, or time selection", cmd("D"), "Context");
-        addShortcut("Delete notes, clips, tracks, or time selection", "Delete / Backspace",
-                    "Context");
-        addShortcut("Select all notes or arrangement clips", cmd("A"), "Context");
-        addShortcut("Split / Trim arrangement clips", cmd("E"), "Arrange");
-        addShortcut("Blade split at edit cursor", "B", "Arrange");
-        addShortcut("Join Clips", cmd("J"), "Clips");
-        addShortcut("Render Clip", cmd("B"), "Clips");
-        addShortcut("Render Time Selection", shiftCmd("B"), "Arrange");
-        addShortcut("Set Loop from Clip", shiftCmd("L"), "Clips");
-        addShortcut("Toggle Clip Loop", cmd("L"), "Clips");
-
-        addSection("Track");
-        addShortcut("New Track", cmd("T"), "Global");
-        addShortcut("New Group Track", shiftCmd("T"), "Global");
-        addShortcut("Duplicate selected track without clips", shiftCmd("D"), "Track selection");
-        addShortcut("Duplicate selected track clips only", altCmd("D"), "Track selection");
-        addShortcut("Toggle Mute", "M", "Track selection");
-        addShortcut("Toggle Solo", shiftPrefix() + "S", "Track selection");
-
-        addSection("Transport and View");
-        addShortcut("Play / Stop", "Space", "Global");
-        addShortcut("Exit link mode / clear selection", "Escape", "Context");
-        addShortcut("Cycle to next main view", "Tab", "Global");
-        addShortcut("Cycle to previous main view", shiftPrefix() + "Tab", "Global");
-        addShortcut("Create loop from selection or clip", "L", "Arrange");
-        addShortcut("Reset Zoom to Fit", cmd("0"), "Arrange");
-        addShortcut("Toggle Arrangement Lock", "F4", "Arrange");
-        addShortcut("Increase UI Scale", cmd("=") + " / " + shiftCmd("+"), "Global");
-        addShortcut("Decrease UI Scale", cmd("-") + " / " + shiftCmd("_"), "Global");
-
-        addSection("Console");
-        addShortcut("Execute DSL", cmd("Return"), "DSL tab");
-        addShortcut("Clear DSL output", cmd("L"), "DSL tab");
-        addShortcut("Send AI message", "Return", "AI tab");
-        addShortcut("New line in AI message", "Shift+Return", "AI tab");
-        addShortcut("Accept autocomplete", "Tab / Return", "AI tab");
+    explicit ShortcutsPage(juce::ApplicationCommandManager* commandManager)
+        : tabbedComponent_(juce::TabbedButtonBar::TabsAtTop) {
+        auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+        keyboardPage_ = std::make_unique<KeyboardShortcutsPage>(commandManager);
+        gesturesPage_ = std::make_unique<GestureBindingsPage>();
+        tabbedComponent_.addTab("Keyboard", tabBg, keyboardPage_.get(), false);
+        tabbedComponent_.addTab("Gestures", tabBg, gesturesPage_.get(), false);
+        tabbedComponent_.setTabBarDepth(32);
+        addAndMakeVisible(tabbedComponent_);
     }
 
     void resized() override {
-        auto bounds = getLocalBounds().reduced(16);
-        const int headerH = 28;
-
-        shortcutsHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-
-        viewport.setBounds(bounds);
-        layoutRows(bounds.getWidth());
+        tabbedComponent_.setBounds(getLocalBounds());
     }
 
-    void loadSettings(Config& /*config*/) {}
-    void applySettings(Config& /*config*/) {}
+    void loadSettings(Config& config) {
+        keyboardPage_->loadSettings(config);
+        gesturesPage_->loadSettings(config);
+    }
+
+    void applySettings(Config& config) {
+        keyboardPage_->applySettings(config);
+        gesturesPage_->applySettings(config);
+    }
 
   private:
-    struct ShortcutRow {
-        bool section = false;
-        juce::Label action;
-        juce::Label shortcut;
-        juce::Label scope;
-    };
+    class KeyboardShortcutsPage : public juce::Component {
+      public:
+        explicit KeyboardShortcutsPage(juce::ApplicationCommandManager* commandManager) {
+            setupSectionHeader(*this, header_, tr("preferences.section.keyboard_shortcuts"));
 
-    static juce::String commandPrefix() {
-#if JUCE_MAC
-        return juce::String::fromUTF8("\u2318");
-#else
-        return "Ctrl+";
-#endif
-    }
-
-    static juce::String shiftPrefix() {
-#if JUCE_MAC
-        return juce::String::fromUTF8("\u21E7");
-#else
-        return "Shift+";
-#endif
-    }
-
-    static juce::String altPrefix() {
-#if JUCE_MAC
-        return juce::String::fromUTF8("\u2325");
-#else
-        return "Alt+";
-#endif
-    }
-
-    static juce::String cmd(const juce::String& key) {
-        return commandPrefix() + key;
-    }
-
-    static juce::String shiftCmd(const juce::String& key) {
-        return shiftPrefix() + commandPrefix() + key;
-    }
-
-    static juce::String altCmd(const juce::String& key) {
-        return altPrefix() + commandPrefix() + key;
-    }
-
-    void addSection(const juce::String& title) {
-        auto row = std::make_unique<ShortcutRow>();
-        row->section = true;
-        row->action.setText(title, juce::dontSendNotification);
-        row->action.setFont(FontManager::getInstance().getUIFontBold(13.0f));
-        row->action.setColour(juce::Label::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        row->action.setJustificationType(juce::Justification::centredLeft);
-        content.addAndMakeVisible(row->action);
-        rows_.push_back(std::move(row));
-    }
-
-    void addShortcut(const juce::String& action, const juce::String& shortcut,
-                     const juce::String& scope) {
-        auto row = std::make_unique<ShortcutRow>();
-
-        auto setupLabel = [](juce::Label& label, const juce::String& text, float size,
-                             juce::Colour colour, juce::Justification justification) {
-            label.setText(text, juce::dontSendNotification);
-            label.setFont(FontManager::getInstance().getUIFont(size));
-            label.setColour(juce::Label::textColourId, colour);
-            label.setJustificationType(justification);
-        };
-
-        setupLabel(row->action, action, 12.0f, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY),
-                   juce::Justification::centredLeft);
-        setupLabel(row->shortcut, shortcut, 12.0f, DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
-                   juce::Justification::centredRight);
-        setupLabel(row->scope, scope, 11.0f, DarkTheme::getColour(DarkTheme::TEXT_DIM),
-                   juce::Justification::centredLeft);
-
-        content.addAndMakeVisible(row->action);
-        content.addAndMakeVisible(row->shortcut);
-        content.addAndMakeVisible(row->scope);
-        rows_.push_back(std::move(row));
-    }
-
-    void layoutRows(int width) {
-        const int rowH = 26;
-        const int sectionH = 30;
-        const int gap = 3;
-        const int shortcutW = 150;
-        const int scopeW = 118;
-        int y = 0;
-
-        for (auto& row : rows_) {
-            if (row->section) {
-                y += y == 0 ? 0 : 8;
-                row->action.setBounds(0, y, width, sectionH);
-                y += sectionH;
-                continue;
+            if (commandManager != nullptr) {
+                keyEditor_ = std::make_unique<juce::KeyMappingEditorComponent>(
+                    *commandManager->getKeyMappings(), true);
+                keyEditor_->setColours(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND),
+                                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                addAndMakeVisible(*keyEditor_);
+            } else {
+                missingLabel_.setText("Keyboard shortcuts are available from the main window.",
+                                      juce::dontSendNotification);
+                missingLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+                missingLabel_.setColour(juce::Label::textColourId,
+                                        DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                missingLabel_.setJustificationType(juce::Justification::centredLeft);
+                addAndMakeVisible(missingLabel_);
             }
-
-            auto bounds = juce::Rectangle<int>(0, y, width, rowH);
-            row->action.setBounds(
-                bounds.removeFromLeft(juce::jmax(120, width - shortcutW - scopeW - (gap * 2))));
-            bounds.removeFromLeft(gap);
-            row->shortcut.setBounds(bounds.removeFromLeft(shortcutW));
-            bounds.removeFromLeft(gap);
-            row->scope.setBounds(bounds);
-            y += rowH;
         }
 
-        content.setSize(width, y + 8);
-    }
+        void resized() override {
+            auto bounds = getLocalBounds().reduced(16);
+            header_.setBounds(bounds.removeFromTop(28));
+            bounds.removeFromTop(6);
 
-    juce::Label shortcutsHeader;
-    juce::Viewport viewport;
-    juce::Component content;
-    std::vector<std::unique_ptr<ShortcutRow>> rows_;
+            if (keyEditor_)
+                keyEditor_->setBounds(bounds);
+            else
+                missingLabel_.setBounds(bounds.removeFromTop(28));
+        }
+
+        void loadSettings(Config&) {}
+        void applySettings(Config&) {}
+
+      private:
+        juce::Label header_;
+        juce::Label missingLabel_;
+        std::unique_ptr<juce::KeyMappingEditorComponent> keyEditor_;
+    };
+
+    class GestureBindingsPage : public juce::Component {
+      public:
+        GestureBindingsPage() {
+            setupSectionHeader(*this, header_, "Mouse gestures");
+
+            resetButton_.setButtonText("Reset");
+            resetButton_.onClick = [this] {
+                auto& router = GestureRouter::getInstance();
+                router.resetToDefaults();
+                router.saveToConfig();
+                capturingRow_ = nullptr;
+                loadFromRouter();
+            };
+            addAndMakeVisible(resetButton_);
+
+            setupHeaderLabel(contextHeader_, "Gesture");
+            setupHeaderLabel(axisHeader_, "Area");
+            setupHeaderLabel(modifierHeader_, "Input");
+            setupHeaderLabel(sensitivityHeader_, "Sensitivity");
+            setupHeaderLabel(invertHeader_, "Invert");
+
+            viewport_.setViewedComponent(&content_, false);
+            viewport_.setScrollBarsShown(true, false);
+            viewport_.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
+            content_.setViewportIgnoreDragFlag(true);
+            addAndMakeVisible(viewport_);
+            setWantsKeyboardFocus(true);
+            addMouseListener(this, true);
+
+            for (auto context : contexts()) {
+                for (auto axis : {GestureAxis::Vertical, GestureAxis::Horizontal}) {
+                    for (auto mods : modifiers())
+                        addGestureRow(context,
+                                      {GestureInputKind::Wheel, GestureArea::Main, axis, mods});
+                }
+
+                for (const auto& row : dragRows()) {
+                    if (row.context == context)
+                        addGestureRow(row.context, row.input);
+                }
+            }
+        }
+
+        void resized() override {
+            auto bounds = getLocalBounds().reduced(16);
+            auto headerRow = bounds.removeFromTop(28);
+            header_.setBounds(headerRow.removeFromLeft(juce::jmax(220, headerRow.getWidth() - 88)));
+            resetButton_.setBounds(headerRow.removeFromRight(72).reduced(0, 2));
+            bounds.removeFromTop(6);
+
+            auto columns = bounds.removeFromTop(20);
+            layoutColumnHeaders(columns);
+            bounds.removeFromTop(4);
+
+            viewport_.setBounds(bounds);
+            layoutRows(viewport_.getMaximumVisibleWidth());
+        }
+
+        void mouseWheelMove(const juce::MouseEvent& e,
+                            const juce::MouseWheelDetails& wheel) override {
+            if (!handleCaptureWheel(e, wheel))
+                juce::Component::mouseWheelMove(e, wheel);
+        }
+
+        bool handleCaptureWheel(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
+            if (capturingRow_ == nullptr)
+                return false;
+
+            const GestureAxis axis = std::abs(wheel.deltaX) > std::abs(wheel.deltaY)
+                                         ? GestureAxis::Horizontal
+                                         : GestureAxis::Vertical;
+            setRowInput(*capturingRow_, {GestureInputKind::Wheel, GestureArea::Main, axis,
+                                         gestureModifierMaskFrom(e.mods)});
+            setCapturingRow(nullptr);
+            return true;
+        }
+
+        void mouseDown(const juce::MouseEvent& e) override {
+            if (capturingRow_ == nullptr)
+                return;
+
+            captureDragStart_ = e.getPosition();
+        }
+
+        void mouseDrag(const juce::MouseEvent& e) override {
+            if (capturingRow_ == nullptr)
+                return;
+
+            const auto delta = e.getPosition() - captureDragStart_;
+            if (std::max(std::abs(delta.x), std::abs(delta.y)) <= 3)
+                return;
+
+            const auto area = learnedDragAreaFor(*capturingRow_);
+            setRowInput(*capturingRow_, {GestureInputKind::Drag, area, GestureAxis::Vertical,
+                                         gestureModifierMaskFrom(e.mods)});
+            setCapturingRow(nullptr);
+        }
+
+        bool keyPressed(const juce::KeyPress& key) override {
+            if (capturingRow_ != nullptr && key == juce::KeyPress::escapeKey) {
+                setCapturingRow(nullptr);
+                return true;
+            }
+
+            return false;
+        }
+
+        void loadSettings(Config&) {
+            loadFromRouter();
+        }
+
+        void applySettings(Config&) {
+            auto& router = GestureRouter::getInstance();
+
+            for (const auto& row : rows_) {
+                if (!row->contextLabel.isVisible())
+                    continue;
+
+                if (sameInput(row->currentInput, row->input))
+                    continue;
+
+                if (row->defaultBinding.action == GestureActionType::None) {
+                    router.clearBinding(row->context, row->input);
+                } else {
+                    router.setBinding(row->context, row->input,
+                                      {GestureActionType::None, row->defaultBinding.sensitivity,
+                                       row->defaultBinding.invert});
+                }
+            }
+
+            for (const auto& row : rows_) {
+                if (!row->contextLabel.isVisible())
+                    continue;
+
+                router.setBinding(row->context, row->currentInput,
+                                  {row->action, static_cast<float>(row->sensitivity.getValue()),
+                                   row->invert.getToggleState()});
+            }
+
+            router.saveToConfig();
+        }
+
+      private:
+        class CaptureViewport : public juce::Viewport {
+          public:
+            explicit CaptureViewport(GestureBindingsPage& owner) : owner_(owner) {}
+
+            void mouseWheelMove(const juce::MouseEvent& e,
+                                const juce::MouseWheelDetails& wheel) override {
+                if (owner_.handleCaptureWheel(e, wheel))
+                    return;
+                juce::Viewport::mouseWheelMove(e, wheel);
+            }
+
+          private:
+            GestureBindingsPage& owner_;
+        };
+
+        struct GestureRow {
+            GestureContext context = GestureContext::Unknown;
+            GestureInput input;
+            GestureInput currentInput;
+            GestureActionType action = GestureActionType::None;
+            GestureBinding defaultBinding;
+            juce::Label contextLabel;
+            juce::Label axisLabel;
+            juce::Label inputLabel;
+            juce::TextButton learnButton;
+            magda::daw::ui::TextSlider sensitivity;
+            juce::ToggleButton invert;
+        };
+
+        struct DragRowSpec {
+            GestureContext context;
+            GestureInput input;
+        };
+
+        static std::array<GestureContext, 4> contexts() {
+            return {GestureContext::Arrangement, GestureContext::PianoRoll,
+                    GestureContext::DrumGrid, GestureContext::Waveform};
+        }
+
+        static std::array<uint8_t, 8> modifiers() {
+            return {GestureMod_None,
+                    GestureMod_Shift,
+                    GestureMod_Command,
+                    GestureMod_Alt,
+                    static_cast<uint8_t>(GestureMod_Shift | GestureMod_Command),
+                    static_cast<uint8_t>(GestureMod_Shift | GestureMod_Alt),
+                    static_cast<uint8_t>(GestureMod_Command | GestureMod_Alt),
+                    static_cast<uint8_t>(GestureMod_Shift | GestureMod_Command | GestureMod_Alt)};
+        }
+
+        static std::array<DragRowSpec, 11> dragRows() {
+            return {
+                DragRowSpec{GestureContext::Arrangement,
+                            {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical,
+                             GestureMod_None}},
+                DragRowSpec{GestureContext::Arrangement,
+                            {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical,
+                             GestureMod_Shift}},
+                DragRowSpec{GestureContext::Arrangement,
+                            {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical,
+                             GestureMod_Alt}},
+                DragRowSpec{GestureContext::PianoRoll,
+                            {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical,
+                             GestureMod_None}},
+                DragRowSpec{GestureContext::PianoRoll,
+                            {GestureInputKind::Drag, GestureArea::ZoomStrip, GestureAxis::Vertical,
+                             GestureMod_None}},
+                DragRowSpec{GestureContext::PianoRoll,
+                            {GestureInputKind::Drag, GestureArea::Keyboard, GestureAxis::Horizontal,
+                             GestureMod_None}},
+                DragRowSpec{GestureContext::DrumGrid,
+                            {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical,
+                             GestureMod_None}},
+                DragRowSpec{GestureContext::DrumGrid,
+                            {GestureInputKind::Drag, GestureArea::ZoomStrip, GestureAxis::Vertical,
+                             GestureMod_None}},
+                DragRowSpec{GestureContext::Waveform,
+                            {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical,
+                             GestureMod_None}},
+                DragRowSpec{GestureContext::Waveform,
+                            {GestureInputKind::Drag, GestureArea::Header, GestureAxis::Vertical,
+                             GestureMod_None}},
+                DragRowSpec{GestureContext::Waveform,
+                            {GestureInputKind::Drag, GestureArea::Body, GestureAxis::Vertical,
+                             GestureMod_None}},
+            };
+        }
+
+        static juce::String contextName(GestureContext context) {
+            switch (context) {
+                case GestureContext::Arrangement:
+                    return "Arrangement";
+                case GestureContext::PianoRoll:
+                    return "Piano roll";
+                case GestureContext::DrumGrid:
+                    return "Drum grid";
+                case GestureContext::Waveform:
+                    return "Waveform";
+                default:
+                    return "Unknown";
+            }
+        }
+
+        static bool sameInput(const GestureInput& a, const GestureInput& b) {
+            return a.kind == b.kind && a.area == b.area && a.axis == b.axis &&
+                   a.modifiers == b.modifiers;
+        }
+
+        static std::vector<GestureInput> candidateInputsForMovedBinding(const GestureRow& row) {
+            std::vector<GestureInput> candidates;
+            auto add = [&candidates](GestureInput input) { candidates.push_back(input); };
+
+            for (auto axis : {GestureAxis::Vertical, GestureAxis::Horizontal}) {
+                for (auto mods : modifiers())
+                    add({GestureInputKind::Wheel, GestureArea::Main, axis, mods});
+            }
+
+            for (auto area : {GestureArea::Ruler, GestureArea::Body, GestureArea::Header,
+                              GestureArea::Keyboard, GestureArea::ZoomStrip}) {
+                for (auto mods : modifiers())
+                    add({GestureInputKind::Drag, area, GestureAxis::Vertical, mods});
+            }
+
+            candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
+                                            [&row](const GestureInput& input) {
+                                                return sameInput(input, row.input);
+                                            }),
+                             candidates.end());
+            return candidates;
+        }
+
+        static bool isOverrideBinding(const GestureRouter& router, GestureContext context,
+                                      const GestureInput& input, const GestureBinding& binding) {
+            const auto* defaultBinding = router.findDefaultBinding(context, input);
+            return defaultBinding == nullptr || *defaultBinding != binding;
+        }
+
+        static juce::String areaName(GestureContext context, GestureArea area) {
+            juce::String suffix;
+            switch (area) {
+                case GestureArea::Main:
+                    suffix = "main";
+                    break;
+                case GestureArea::Ruler:
+                    suffix = "ruler";
+                    break;
+                case GestureArea::Body:
+                    suffix = "body";
+                    break;
+                case GestureArea::Header:
+                    suffix = "header";
+                    break;
+                case GestureArea::Keyboard:
+                    suffix = "keyboard";
+                    break;
+                case GestureArea::ZoomStrip:
+                    suffix = "zoom strip";
+                    break;
+            }
+            return contextName(context) + " " + suffix;
+        }
+
+        static juce::String inputName(const GestureInput& input) {
+            juce::String base;
+            if (input.kind == GestureInputKind::Wheel)
+                base = input.axis == GestureAxis::Vertical ? "wheel" : "horizontal wheel";
+            else
+                base = "drag";
+
+            if (input.modifiers == GestureMod_None)
+                return base;
+            return modifierName(input.modifiers) + "+" + base;
+        }
+
+        static juce::String learnButtonText() {
+            return "Learn";
+        }
+
+        static juce::String capturePromptText(const GestureInput& input) {
+            juce::ignoreUnused(input);
+            return "Learning...";
+        }
+
+        static juce::String inputLabelName(const GestureInput& input) {
+            if (input.kind == GestureInputKind::Wheel)
+                return "wheel: " + inputName(input);
+
+            juce::String dragText;
+            if (input.modifiers == GestureMod_None)
+                dragText = "drag";
+            else
+                dragText = modifierName(input.modifiers) + "+drag";
+            return "drag: " + dragText;
+        }
+
+        static juce::String modifierName(uint8_t modifiers) {
+            if (modifiers == GestureMod_None)
+                return "None";
+
+            juce::StringArray parts;
+            if ((modifiers & GestureMod_Shift) != 0)
+                parts.add("Shift");
+#if JUCE_MAC
+            if ((modifiers & GestureMod_Command) != 0)
+                parts.add("Cmd");
+#else
+            if ((modifiers & GestureMod_Command) != 0)
+                parts.add("Ctrl");
+#endif
+            if ((modifiers & GestureMod_Alt) != 0)
+                parts.add("Alt");
+            return parts.joinIntoString("+");
+        }
+
+        static juce::String gestureName(GestureActionType action) {
+            switch (action) {
+                case GestureActionType::ScrollHorizontal:
+                    return "Horizontal scroll gesture";
+                case GestureActionType::ScrollVertical:
+                    return "Vertical scroll gesture";
+                case GestureActionType::ZoomHorizontal:
+                    return "Horizontal zoom gesture";
+                case GestureActionType::ZoomVertical:
+                    return "Vertical zoom gesture";
+                case GestureActionType::Pan:
+                    return "Pan gesture";
+                case GestureActionType::None:
+                    return "Unassigned gesture";
+            }
+            return "Unassigned gesture";
+        }
+
+        static GestureArea defaultDragAreaFor(GestureContext context, GestureActionType action) {
+            switch (action) {
+                case GestureActionType::ZoomHorizontal:
+                    return context == GestureContext::Waveform ? GestureArea::Body
+                                                               : GestureArea::Ruler;
+                case GestureActionType::ZoomVertical:
+                    return GestureArea::ZoomStrip;
+                default:
+                    return GestureArea::Main;
+            }
+        }
+
+        static GestureBinding tunedBindingForInput(GestureContext context, GestureInput input,
+                                                   GestureActionType action,
+                                                   const GestureBinding& fallback) {
+            auto& router = GestureRouter::getInstance();
+            if (const auto* exact = router.findDefaultBinding(context, input);
+                exact != nullptr && exact->action == action) {
+                return *exact;
+            }
+
+            if (input.kind == GestureInputKind::Drag) {
+                auto alternateAxis = input;
+                alternateAxis.axis = input.axis == GestureAxis::Vertical ? GestureAxis::Horizontal
+                                                                         : GestureAxis::Vertical;
+                if (const auto* alternate = router.findDefaultBinding(context, alternateAxis);
+                    alternate != nullptr && alternate->action == action) {
+                    return *alternate;
+                }
+
+                auto unmodifiedAlternate = alternateAxis;
+                unmodifiedAlternate.modifiers = GestureMod_None;
+                if (const auto* unmodified =
+                        router.findDefaultBinding(context, unmodifiedAlternate);
+                    unmodified != nullptr && unmodified->action == action) {
+                    return *unmodified;
+                }
+            }
+
+            return fallback;
+        }
+
+        static void setupBodyLabel(juce::Label& label, const juce::String& text) {
+            label.setText(text, juce::dontSendNotification);
+            label.setFont(FontManager::getInstance().getUIFont(12.0f));
+            label.setColour(juce::Label::textColourId,
+                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            label.setJustificationType(juce::Justification::centredLeft);
+        }
+
+        void setupHeaderLabel(juce::Label& label, const juce::String& text) {
+            label.setText(text, juce::dontSendNotification);
+            label.setFont(FontManager::getInstance().getUIFontBold(11.0f));
+            label.setColour(juce::Label::textColourId,
+                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            label.setJustificationType(juce::Justification::centredLeft);
+            addAndMakeVisible(label);
+        }
+
+        void addGestureRow(GestureContext context, GestureInput input) {
+            auto row = std::make_unique<GestureRow>();
+            row->context = context;
+            row->input = input;
+            row->currentInput = input;
+            auto* rowPtr = row.get();
+
+            if (const auto* binding =
+                    GestureRouter::getInstance().findDefaultBinding(context, input))
+                row->defaultBinding = *binding;
+
+            row->action = row->defaultBinding.action;
+            setupBodyLabel(row->contextLabel, gestureName(row->action));
+            setupBodyLabel(row->axisLabel, areaName(context, input.area));
+            setupBodyLabel(row->inputLabel, inputLabelName(row->currentInput));
+
+            row->learnButton.setButtonText(learnButtonText());
+            row->learnButton.onClick = [this, rowPtr] { setCapturingRow(rowPtr); };
+
+            row->sensitivity.setRange(0.0, 1200.0, 0.01);
+            row->sensitivity.setOrientation(magda::daw::ui::TextSlider::Orientation::Horizontal);
+            row->sensitivity.setShowFillIndicator(false);
+            row->sensitivity.setValueFormatter(
+                [](double value) { return juce::String(value, value < 10.0 ? 2 : 0); });
+
+            row->invert.setButtonText({});
+            row->invert.setColour(juce::ToggleButton::tickColourId,
+                                  DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            row->invert.setColour(juce::ToggleButton::tickDisabledColourId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_DIM));
+
+            content_.addAndMakeVisible(row->contextLabel);
+            content_.addAndMakeVisible(row->axisLabel);
+            content_.addAndMakeVisible(row->inputLabel);
+            content_.addAndMakeVisible(row->learnButton);
+            content_.addAndMakeVisible(row->sensitivity);
+            content_.addAndMakeVisible(row->invert);
+            rows_.push_back(std::move(row));
+        }
+
+        void loadFromRouter() {
+            auto& router = GestureRouter::getInstance();
+            for (auto& row : rows_) {
+                GestureBinding binding;
+                GestureInput displayedInput = row->input;
+                if (const auto* current = router.findBinding(row->context, row->input)) {
+                    binding = *current;
+                }
+
+                if (binding.action == GestureActionType::None &&
+                    row->defaultBinding.action != GestureActionType::None) {
+                    for (const auto& candidate : candidateInputsForMovedBinding(*row)) {
+                        const auto* moved = router.findBinding(row->context, candidate);
+                        if (moved == nullptr || moved->action != row->defaultBinding.action)
+                            continue;
+                        if (!isOverrideBinding(router, row->context, candidate, *moved))
+                            continue;
+
+                        binding = *moved;
+                        displayedInput = candidate;
+                        break;
+                    }
+                }
+
+                if (displayedInput.kind == GestureInputKind::Drag &&
+                    (binding.action == GestureActionType::ZoomHorizontal ||
+                     binding.action == GestureActionType::ZoomVertical) &&
+                    binding.sensitivity < 2.0f) {
+                    binding =
+                        tunedBindingForInput(row->context, displayedInput, binding.action, binding);
+                }
+
+                row->action = binding.action;
+                row->currentInput = displayedInput;
+                row->axisLabel.setText(areaName(row->context, row->currentInput.area),
+                                       juce::dontSendNotification);
+                row->inputLabel.setText(inputLabelName(row->currentInput),
+                                        juce::dontSendNotification);
+                row->sensitivity.setValue(binding.sensitivity, juce::dontSendNotification);
+                row->invert.setToggleState(binding.invert, juce::dontSendNotification);
+
+                const bool visible = binding.action != GestureActionType::None;
+                row->contextLabel.setText(gestureName(binding.action), juce::dontSendNotification);
+                row->contextLabel.setVisible(visible);
+                row->axisLabel.setVisible(visible);
+                row->inputLabel.setVisible(visible);
+                row->learnButton.setVisible(visible);
+                row->sensitivity.setVisible(visible);
+                row->invert.setVisible(visible);
+            }
+
+            setCapturingRow(nullptr);
+        }
+
+        void setRowInput(GestureRow& row, GestureInput input) {
+            const auto tuned =
+                tunedBindingForInput(row.context, input, row.action,
+                                     {row.action, static_cast<float>(row.sensitivity.getValue()),
+                                      row.invert.getToggleState()});
+            row.currentInput = input;
+            row.axisLabel.setText(areaName(row.context, input.area), juce::dontSendNotification);
+            row.inputLabel.setText(inputLabelName(input), juce::dontSendNotification);
+            row.sensitivity.setValue(tuned.sensitivity, juce::dontSendNotification);
+            row.invert.setToggleState(tuned.invert, juce::dontSendNotification);
+            row.learnButton.setButtonText(learnButtonText());
+        }
+
+        GestureArea learnedDragAreaFor(const GestureRow& row) const {
+            if (row.currentInput.area != GestureArea::Main)
+                return row.currentInput.area;
+            if (row.input.area != GestureArea::Main)
+                return row.input.area;
+            return defaultDragAreaFor(row.context, row.action);
+        }
+
+        void setCapturingRow(GestureRow* row) {
+            if (capturingRow_ != nullptr)
+                capturingRow_->learnButton.setButtonText(learnButtonText());
+
+            capturingRow_ = row;
+
+            if (capturingRow_ != nullptr) {
+                capturingRow_->learnButton.setButtonText(
+                    capturePromptText(capturingRow_->currentInput));
+                captureDragStart_ = {};
+                grabKeyboardFocus();
+            }
+        }
+
+        void layoutColumnHeaders(juce::Rectangle<int> bounds) {
+            auto widths = getColumnWidths(bounds.getWidth());
+            contextHeader_.setBounds(bounds.removeFromLeft(widths[0]));
+            axisHeader_.setBounds(bounds.removeFromLeft(widths[1]));
+            modifierHeader_.setBounds(bounds.removeFromLeft(widths[2]));
+            sensitivityHeader_.setBounds(bounds.removeFromLeft(widths[3]));
+            invertHeader_.setBounds(bounds);
+        }
+
+        void layoutRows(int width) {
+            const int rowH = 28;
+            const int gap = 3;
+            auto widths = getColumnWidths(width);
+            int y = 0;
+
+            for (auto& row : rows_) {
+                if (!row->contextLabel.isVisible())
+                    continue;
+
+                auto bounds = juce::Rectangle<int>(0, y, width, rowH);
+                row->contextLabel.setBounds(bounds.removeFromLeft(widths[0]).reduced(0, 2));
+                row->axisLabel.setBounds(bounds.removeFromLeft(widths[1]).reduced(0, 2));
+                auto inputArea = bounds.removeFromLeft(widths[2]);
+                row->learnButton.setBounds(inputArea.removeFromRight(96).reduced(3, 3));
+                row->inputLabel.setBounds(inputArea.reduced(0, 2));
+                row->sensitivity.setBounds(bounds.removeFromLeft(widths[3] - gap).reduced(0, 4));
+                bounds.removeFromLeft(gap);
+                row->invert.setBounds(bounds.reduced(0, 2));
+                y += rowH;
+            }
+
+            content_.setSize(width, y + 8);
+        }
+
+        static std::array<int, 5> getColumnWidths(int width) {
+            const int invertW = 56;
+            const int sensitivityW = 104;
+            const int inputW = juce::jlimit(300, 400, width / 3);
+            const int areaW = 116;
+            const int gestureW = juce::jmax(160, width - invertW - sensitivityW - inputW - areaW);
+            return {gestureW, areaW, inputW, sensitivityW, invertW};
+        }
+
+        juce::Label header_;
+        juce::TextButton resetButton_;
+        juce::Label contextHeader_, axisHeader_, modifierHeader_;
+        juce::Label sensitivityHeader_, invertHeader_;
+        CaptureViewport viewport_{*this};
+        juce::Component content_;
+        std::vector<std::unique_ptr<GestureRow>> rows_;
+        GestureRow* capturingRow_ = nullptr;
+        juce::Point<int> captureDragStart_;
+    };
+
+    juce::TabbedComponent tabbedComponent_;
+    std::unique_ptr<KeyboardShortcutsPage> keyboardPage_;
+    std::unique_ptr<GestureBindingsPage> gesturesPage_;
 };
 
 // ---------------------------------------------------------------------------
 // PreferencesDialog
 // ---------------------------------------------------------------------------
 
-PreferencesDialog::PreferencesDialog() {
+PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandManager) {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
 
     generalPage = std::make_unique<GeneralPage>();
     coloursPage = std::make_unique<ColoursPage>();
     renderingPage = std::make_unique<RenderingPage>();
     pathsPage = std::make_unique<PathsPage>();
-    shortcutsPage = std::make_unique<ShortcutsPage>();
+    shortcutsPage = std::make_unique<ShortcutsPage>(commandManager);
 
     auto setupPageViewport = [](juce::Viewport& viewport, juce::Component& page) {
         viewport.setViewedComponent(&page, false);
@@ -2198,8 +2718,14 @@ void PreferencesDialog::applySettings() {
 }
 
 void PreferencesDialog::showDialog(juce::Component* parent) {
-    (void)parent;
-    auto* dialog = new PreferencesDialog();
+    juce::ApplicationCommandManager* commandManager = nullptr;
+    if (auto* mainWindow = dynamic_cast<MainWindow*>(parent))
+        commandManager = &mainWindow->getCommandManager();
+    else if (auto* mainWindow =
+                 parent != nullptr ? parent->findParentComponentOfClass<MainWindow>() : nullptr)
+        commandManager = &mainWindow->getCommandManager();
+
+    auto* dialog = new PreferencesDialog(commandManager);
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = tr("dialogs.preferences");

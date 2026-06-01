@@ -17,6 +17,8 @@
 #include "content/DrumGridClipContent.hpp"
 #include "content/MidiEditorContent.hpp"
 #include "content/PianoRollContent.hpp"
+#include "content/PostFxPanelContent.hpp"
+#include "content/TrackChainContent.hpp"
 #include "content/WaveformEditorContent.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/PluginPreferences.hpp"
@@ -44,70 +46,16 @@ class RightClickForwarder : public juce::MouseListener {
     }
 };
 
-// First synth (instrument) plugin on `trackId`, walking into racks. Returns
-// nullptr if the track has none.
-te::Plugin* findPrimaryInstrumentForTrack(TrackId trackId) {
-    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return nullptr;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return nullptr;
-    auto* teTrack = bridge->getAudioTrack(trackId);
-    if (!teTrack)
-        return nullptr;
-
-    for (auto* plugin : teTrack->pluginList) {
-        if (plugin != nullptr && plugin->isSynth())
-            return plugin;
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (innerPlugin != nullptr && innerPlugin->isSynth())
-                        return innerPlugin;
-                }
-            }
-        }
-    }
-    return nullptr;
-}
-
-// True if any instrument plugin on `trackId` has its preferred clip editor set
-// to Drum Grid (via magda::PluginPreferences). Walks the track's plugin list
-// and into any racks. The DrumGrid plugin has an implicit DrumGrid preference
-// in PluginPreferences so existing behaviour is preserved without user setup.
+// True if the track's model-level primary instrument has its preferred clip
+// editor set to Drum Grid. This deliberately uses TrackInfo/DeviceInfo rather
+// than the TE plugin graph, where instruments are hidden behind a shared "rack"
+// wrapper id.
 bool trackPrefersDrumGrid(TrackId trackId) {
-    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
+    const auto* instrument = TrackManager::getInstance().getPrimaryInstrument(trackId);
+    if (instrument == nullptr)
         return false;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return false;
-    auto* teTrack = bridge->getAudioTrack(trackId);
-    if (!teTrack)
-        return false;
-
-    auto& prefs = magda::PluginPreferences::getInstance();
-
-    auto pluginPrefersDrumGrid = [&](te::Plugin* plugin) {
-        if (plugin == nullptr || !plugin->isSynth())
-            return false;
-        return prefs.prefersDrumGrid(plugin->getIdentifierString());
-    };
-
-    for (auto* plugin : teTrack->pluginList) {
-        if (pluginPrefersDrumGrid(plugin))
-            return true;
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (pluginPrefersDrumGrid(innerPlugin))
-                        return true;
-                }
-            }
-        }
-    }
-    return false;
+    return magda::PluginPreferences::getInstance().prefersDrumGrid(
+        magda::PluginPreferences::identifierForDevice(*instrument));
 }
 /** Return the first MidiChordEnginePlugin on a track, or nullptr. */
 daw::audio::MidiChordEnginePlugin* findChordEngine(TrackId trackId) {
@@ -223,7 +171,7 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
         if (!updatingTabs_)
             onEditorTabChanged(0);
     };
-    addChildComponent(pianoRollTab_.get());
+    headerBar_->addChildComponent(pianoRollTab_.get());
 
     drumGridTab_ = std::make_unique<SvgButton>("DrumGridTab", BinaryData::drum_grid_svg,
                                                BinaryData::drum_grid_svgSize);
@@ -241,7 +189,7 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
         drumGridTab_->addMouseListener(forwarder.get(), false);
         drumGridTabRightClick_ = std::move(forwarder);
     }
-    addChildComponent(drumGridTab_.get());
+    headerBar_->addChildComponent(drumGridTab_.get());
 
     // Fullscreen toggle (issue #1282) — applies to piano roll and drum grid.
     fullscreenToggle_ = std::make_unique<SvgButton>("EditorFullscreen", BinaryData::enter_fs_svg,
@@ -252,7 +200,7 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
         if (onFullscreenToggleRequested)
             onFullscreenToggleRequested();
     };
-    addChildComponent(fullscreenToggle_.get());
+    headerBar_->addChildComponent(fullscreenToggle_.get());
 
     // Create audio clip properties side panel (hidden by default)
     audioPropsPanel_ = std::make_unique<daw::ui::AudioClipPropertiesContent>();
@@ -303,6 +251,7 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     // Register as listener for selection changes
     ClipManager::getInstance().addListener(this);
     TrackManager::getInstance().addListener(this);
+    PluginPreferences::getInstance().addListener(this);
 
     // Register as TimelineStateListener for grid sync
     // Note: TimelineController may not exist yet at construction time.
@@ -329,6 +278,7 @@ BottomPanel::~BottomPanel() {
 
     ClipManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
+    PluginPreferences::getInstance().removeListener(this);
     // TimelineController listener removed automatically by timelineListenerGuard_
 
     // Explicitly destroy before base class teardown to avoid repaint during partial destruction
@@ -340,6 +290,8 @@ BottomPanel::~BottomPanel() {
     audioPropsPanel_.reset();
     chordResizer_.reset();
     chordPanel_.reset();
+    postFxResizer_.reset();
+    postFxPanel_.reset();
 }
 
 void BottomPanel::setupHeaderControls() {
@@ -370,7 +322,7 @@ void BottomPanel::setupHeaderControls() {
             << " activeContent=" << static_cast<int>(getActiveContentType()));
         applyTimeModeToContent();
     };
-    addChildComponent(timeModeButton_.get());
+    headerBar_->addChildComponent(timeModeButton_.get());
 
     // Grid numerator
     gridNumeratorLabel_ =
@@ -397,7 +349,7 @@ void BottomPanel::setupHeaderControls() {
             }
         }
     };
-    addChildComponent(gridNumeratorLabel_.get());
+    headerBar_->addChildComponent(gridNumeratorLabel_.get());
 
     // Slash separator
     gridSlashLabel_ = std::make_unique<juce::Label>();
@@ -408,7 +360,7 @@ void BottomPanel::setupHeaderControls() {
     gridSlashLabel_->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     gridSlashLabel_->setJustificationType(juce::Justification::centred);
     gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
-    addChildComponent(gridSlashLabel_.get());
+    headerBar_->addChildComponent(gridSlashLabel_.get());
 
     // Grid denominator
     gridDenominatorLabel_ =
@@ -451,7 +403,7 @@ void BottomPanel::setupHeaderControls() {
             }
         }
     };
-    addChildComponent(gridDenominatorLabel_.get());
+    headerBar_->addChildComponent(gridDenominatorLabel_.get());
 
     // AUTO toggle
     autoGridButton_ = std::make_unique<juce::TextButton>("AUTO");
@@ -485,7 +437,7 @@ void BottomPanel::setupHeaderControls() {
                 SetGridQuantizeEvent{isAutoGrid_, gridNumerator_, gridDenominator_});
         }
     };
-    addChildComponent(autoGridButton_.get());
+    headerBar_->addChildComponent(autoGridButton_.get());
 
     // SNAP toggle
     snapButton_ = std::make_unique<juce::TextButton>("SNAP");
@@ -514,7 +466,7 @@ void BottomPanel::setupHeaderControls() {
             controller->dispatch(SetSnapEnabledEvent{isSnapEnabled_});
         }
     };
-    addChildComponent(snapButton_.get());
+    headerBar_->addChildComponent(snapButton_.get());
 
     // Note slice button (dual icon: off=grey, on=blue when notes selected)
     sliceButton_ = std::make_unique<SvgButton>(
@@ -540,7 +492,7 @@ void BottomPanel::setupHeaderControls() {
         };
         daw::ui::NoteSlicePopup::showAbove(std::move(popup), sliceButton_.get());
     };
-    addChildComponent(sliceButton_.get());
+    headerBar_->addChildComponent(sliceButton_.get());
 
     // Time bend button (dual icon: off=grey, on=blue when notes selected)
     bendButton_ = std::make_unique<SvgButton>(
@@ -567,7 +519,9 @@ void BottomPanel::setupHeaderControls() {
         };
         daw::ui::TimeBendPopup::showAbove(std::move(popup), bendButton_.get());
     };
-    addChildComponent(bendButton_.get());
+    headerBar_->addChildComponent(bendButton_.get());
+
+    hideMidiHeaderControls();
 }
 
 void BottomPanel::setCollapsed(bool collapsed) {
@@ -583,7 +537,7 @@ void BottomPanel::paint(juce::Graphics& g) {
         g.fillRect(getLocalBounds());
     }
 
-    bool hasHeader = headerBar_ && headerBar_->isVisible();
+    const bool hasHeader = shouldShowHeaderFor(getActiveContent());
 
     // Sidebar column divider in header (for MIDI editor tab icons)
     if (hasHeader && showEditorTabs_) {
@@ -612,9 +566,10 @@ void BottomPanel::paint(juce::Graphics& g) {
 }
 
 void BottomPanel::resized() {
+    syncHeaderVisibility(getActiveContent());
+
     // Hide everything when collapsed
     if (isCollapsed()) {
-        headerBar_->setVisible(false);
         audioPropsPanel_->setVisible(false);
         propsResizer_->setVisible(false);
         propsCollapseButton_->setVisible(false);
@@ -624,11 +579,15 @@ void BottomPanel::resized() {
             chordResizer_->setVisible(false);
         if (chordCollapseButton_)
             chordCollapseButton_->setVisible(false);
+        if (postFxPanel_)
+            postFxPanel_->setVisible(false);
+        if (postFxResizer_)
+            postFxResizer_->setVisible(false);
         TabbedPanel::resized();
         return;
     }
 
-    bool hasHeader = headerBar_->isVisible();
+    const bool hasHeader = shouldShowHeaderFor(getActiveContent());
 
     // Position header bar at the top
     if (hasHeader) {
@@ -647,6 +606,11 @@ void BottomPanel::resized() {
         // Let content type layout its own header controls
         if (content)
             content->layoutHeader(headerBar_->getLocalBounds());
+
+        // Collapse can occur while shared header controls are parented into a
+        // hidden HeaderBar. Restore the expected per-content visibility when
+        // the header becomes visible again.
+        applyTimeModeToContent();
     }
 
     // TabbedPanel::resized() uses getContentBounds() which accounts for the header and side panels
@@ -735,6 +699,29 @@ void BottomPanel::resized() {
             chordCollapseButton_->setVisible(false);
         }
     }
+
+    // Position the post-FX side panel. Shown/hidden by the TrackChain header
+    // toggle (no collapse strip); the resizer handles its width when shown.
+    if (postFxPanel_) {
+        if (showPostFxPanel_) {
+            auto fullContent = getLocalBounds();
+            if (hasHeader)
+                fullContent.removeFromTop(HeaderBar::HEIGHT);
+
+            const int postFxWidth = effectivePostFxWidth();
+            int resizerX = fullContent.getRight() - postFxWidth - RESIZE_HANDLE_SIZE;
+            postFxResizer_->setBounds(resizerX, fullContent.getY(), RESIZE_HANDLE_SIZE,
+                                      fullContent.getHeight());
+            postFxResizer_->setVisible(true);
+
+            auto postFxArea = fullContent.removeFromRight(postFxWidth);
+            postFxPanel_->setBounds(postFxArea);
+            postFxPanel_->setVisible(true);
+        } else {
+            postFxPanel_->setVisible(false);
+            postFxResizer_->setVisible(false);
+        }
+    }
 }
 
 void BottomPanel::clipsChanged() {
@@ -765,6 +752,24 @@ void BottomPanel::tracksChanged() {
 }
 
 void BottomPanel::trackSelectionChanged(TrackId /*trackId*/) {
+    updateContentBasedOnSelection();
+}
+
+void BottomPanel::drumGridPreferenceChanged(const juce::String& pluginIdentifier) {
+    auto& clipManager = ClipManager::getInstance();
+    const auto selectedClip = clipManager.getSelectedClip();
+    const auto* clip =
+        (selectedClip != INVALID_CLIP_ID) ? clipManager.getClip(selectedClip) : nullptr;
+    if (clip == nullptr || !clip->isMidi())
+        return;
+
+    const auto* instrument = TrackManager::getInstance().getPrimaryInstrument(clip->trackId);
+    if (instrument == nullptr ||
+        PluginPreferences::identifierForDevice(*instrument) != pluginIdentifier) {
+        return;
+    }
+
+    lastEditorClipId_ = INVALID_CLIP_ID;
     updateContentBasedOnSelection();
 }
 
@@ -844,6 +849,69 @@ void BottomPanel::ensureChordPanelCreated() {
     addChildComponent(chordResizer_.get());
 }
 
+void BottomPanel::ensurePostFxPanelCreated() {
+    if (postFxPanel_)
+        return;
+
+    postFxPanel_ = std::make_unique<daw::ui::PostFxPanelContent>();
+    addChildComponent(postFxPanel_.get());
+
+    // No collapse button/strip: the TrackChain header toggle shows/hides the
+    // panel. The resizer only adjusts width while it is shown.
+    postFxResizer_ = std::make_unique<PropsResizeHandle>();
+    postFxResizer_->onResize = [this](int delta) {
+        const int maxW = getWidth() * 7 / 10;                 // max width (70%)
+        const int minW = juce::jmin(POSTFX_MIN_WIDTH, maxW);  // min width
+        postFxPanelWidth_ = juce::jlimit(minW, maxW, effectivePostFxWidth() - delta);
+        resized();
+    };
+    postFxResizer_->onDoubleClick = [this]() { setPostFxOpen(false); };
+    addChildComponent(postFxResizer_.get());
+}
+
+int BottomPanel::effectivePostFxWidth() const {
+    // Resizable in [POSTFX_MIN_WIDTH, 70% of the panel]; -1 = not yet sized, so
+    // open at ~35% of the panel.
+    const int maxW = getWidth() * 7 / 10;
+    const int minW = juce::jmin(POSTFX_MIN_WIDTH, maxW);
+    if (postFxPanelWidth_ < 0)
+        return juce::jlimit(minW, maxW, getWidth() * 35 / 100);
+    return juce::jlimit(minW, maxW, postFxPanelWidth_);
+}
+
+void BottomPanel::updatePostFxPanel(bool onTrackChain, TrackId selectedTrack,
+                                    bool allowAutoReveal) {
+    // Auto-reveal so a track's existing post-fx devices are never hidden behind
+    // a closed panel (only on selection, not when the user explicitly toggles).
+    if (allowAutoReveal && onTrackChain && selectedTrack != INVALID_TRACK_ID &&
+        !TrackManager::getInstance().getPostFxChainElements(selectedTrack).empty()) {
+        postFxOpen_ = true;
+    }
+
+    showPostFxPanel_ = onTrackChain && postFxOpen_;
+    if (showPostFxPanel_) {
+        ensurePostFxPanelCreated();
+        postFxPanel_->setTrack(selectedTrack);
+    } else if (postFxPanel_) {
+        postFxPanel_->setTrack(INVALID_TRACK_ID);
+    }
+}
+
+void BottomPanel::syncPostFxToggleButton() {
+    if (auto* tc = dynamic_cast<daw::ui::TrackChainContent*>(getActiveContent())) {
+        tc->onPostFxPanelToggled = [this](bool open) { setPostFxOpen(open); };
+        tc->setPostFxPanelOpen(showPostFxPanel_);
+    }
+}
+
+void BottomPanel::setPostFxOpen(bool open) {
+    postFxOpen_ = open;
+    updatePostFxPanel(getActiveContentType() == daw::ui::PanelContentType::TrackChain,
+                      TrackManager::getInstance().getSelectedTrack(), /*allowAutoReveal=*/false);
+    resized();
+    syncPostFxToggleButton();
+}
+
 void BottomPanel::updateContentBasedOnSelection() {
     // Lazy registration: BottomPanel may be constructed before TimelineController
     if (!timelineListenerGuard_.get()) {
@@ -917,6 +985,12 @@ void BottomPanel::updateContentBasedOnSelection() {
         }
     }
 
+    // Post-FX panel: shown only when its TrackChain header toggle is open (or
+    // auto-revealed because the selected track already has post-fx devices).
+    // The toggle button itself is wired after the content switch below.
+    updatePostFxPanel(targetContent == daw::ui::PanelContentType::TrackChain, selectedTrack,
+                      /*allowAutoReveal=*/true);
+
     // Update MIDI tab icon active states
     if (showEditorTabs_) {
         updatingTabs_ = true;
@@ -932,11 +1006,17 @@ void BottomPanel::updateContentBasedOnSelection() {
         audioPropsPanel_->onDeactivated();
     }
 
-    resized();
-
     // Switch to the appropriate content via PanelController
     daw::ui::PanelController::getInstance().setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                                                targetContent);
+
+    // The TrackChain content (and its post-fx toggle button) is now active.
+    syncPostFxToggleButton();
+
+    // Lay out AFTER the content switch so the now-active content's header
+    // controls are positioned (otherwise they keep a stale layout from the
+    // previous content until the next click/resize).
+    resized();
 
     // Apply time mode to new content and sync grid controls.
     // Run regardless of showEditorTabs_ — that flag only tracks MIDI tabs, but the ABS/REL
@@ -995,7 +1075,7 @@ void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
     // waveform). Hidden for track chain and empty content (issue #1282).
     if (fullscreenToggle_) {
         if (isMidiEditor || isWaveformEditor) {
-            headerBar_->addAndMakeVisible(fullscreenToggle_.get());
+            fullscreenToggle_->setVisible(true);
             // Sync icon to the cached fullscreen state.
             setPianoRollFullscreenActive(pianoRollFullscreenActive_);
         } else {
@@ -1003,38 +1083,54 @@ void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
         }
     }
 
-    headerBar_->setVisible(incoming != nullptr && incoming->wantsHeader());
+    // Active content has not been swapped yet, so mirror the incoming state here.
+    syncHeaderVisibility(incoming);
+}
+
+bool BottomPanel::shouldShowHeaderFor(daw::ui::PanelContent* content) const {
+    return !isCollapsed() && content != nullptr && content->wantsHeader();
+}
+
+void BottomPanel::syncHeaderVisibility(daw::ui::PanelContent* content) {
+    headerBar_->setVisible(shouldShowHeaderFor(content));
 }
 
 void BottomPanel::addMidiControlsToHeader() {
-    headerBar_->addAndMakeVisible(timeModeButton_.get());
-    headerBar_->addAndMakeVisible(gridNumeratorLabel_.get());
-    headerBar_->addAndMakeVisible(gridSlashLabel_.get());
-    headerBar_->addAndMakeVisible(gridDenominatorLabel_.get());
-    headerBar_->addAndMakeVisible(autoGridButton_.get());
-    headerBar_->addAndMakeVisible(snapButton_.get());
+    gridNumeratorLabel_->setVisible(true);
+    gridSlashLabel_->setVisible(true);
+    gridDenominatorLabel_->setVisible(true);
+    autoGridButton_->setVisible(true);
+    snapButton_->setVisible(true);
     if (showEditorTabs_) {
-        headerBar_->addAndMakeVisible(pianoRollTab_.get());
-        headerBar_->addAndMakeVisible(drumGridTab_.get());
-        headerBar_->addAndMakeVisible(sliceButton_.get());
-        headerBar_->addAndMakeVisible(bendButton_.get());
+        pianoRollTab_->setVisible(true);
+        drumGridTab_->setVisible(true);
+        sliceButton_->setVisible(true);
+        bendButton_->setVisible(true);
+    } else {
+        pianoRollTab_->setVisible(false);
+        drumGridTab_->setVisible(false);
+        sliceButton_->setVisible(false);
+        bendButton_->setVisible(false);
     }
 }
 
 void BottomPanel::removeMidiControlsFromHeader() {
-    // Reparent back to BottomPanel (hidden)
-    addChildComponent(timeModeButton_.get());
-    addChildComponent(gridNumeratorLabel_.get());
-    addChildComponent(gridSlashLabel_.get());
-    addChildComponent(gridDenominatorLabel_.get());
-    addChildComponent(autoGridButton_.get());
-    addChildComponent(snapButton_.get());
-    addChildComponent(pianoRollTab_.get());
-    addChildComponent(drumGridTab_.get());
-    addChildComponent(sliceButton_.get());
-    addChildComponent(bendButton_.get());
+    hideMidiHeaderControls();
+}
+
+void BottomPanel::hideMidiHeaderControls() {
+    timeModeButton_->setVisible(false);
+    gridNumeratorLabel_->setVisible(false);
+    gridSlashLabel_->setVisible(false);
+    gridDenominatorLabel_->setVisible(false);
+    autoGridButton_->setVisible(false);
+    snapButton_->setVisible(false);
+    pianoRollTab_->setVisible(false);
+    drumGridTab_->setVisible(false);
+    sliceButton_->setVisible(false);
+    bendButton_->setVisible(false);
     if (fullscreenToggle_)
-        addChildComponent(fullscreenToggle_.get());
+        fullscreenToggle_->setVisible(false);
 }
 
 void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
@@ -1105,7 +1201,7 @@ juce::Rectangle<int> BottomPanel::getTabBarBounds() {
 juce::Rectangle<int> BottomPanel::getContentBounds() {
     auto bounds = getLocalBounds();
     // Reserve header space
-    if (headerBar_ && headerBar_->isVisible()) {
+    if (shouldShowHeaderFor(getActiveContent())) {
         bounds.removeFromTop(HeaderBar::HEIGHT);
     }
     // Reserve space for properties side panel + resize handle when expanded,
@@ -1121,6 +1217,10 @@ juce::Rectangle<int> BottomPanel::getContentBounds() {
     } else if (showChordPanel_ && chordPanelCollapsed_) {
         bounds.removeFromRight(28);
     }
+    // Reserve space for the post-FX side panel when it is shown
+    if (showPostFxPanel_) {
+        bounds.removeFromRight(effectivePostFxWidth() + RESIZE_HANDLE_SIZE);
+    }
     return bounds;
 }
 
@@ -1131,19 +1231,22 @@ void BottomPanel::showDrumGridTabContextMenu(juce::Point<int> screenPos) {
         (selectedClip != INVALID_CLIP_ID) ? clipManager.getClip(selectedClip) : nullptr;
 
     juce::PopupMenu menu;
-    auto* plugin = (clip != nullptr) ? findPrimaryInstrumentForTrack(clip->trackId) : nullptr;
+    const auto* instrument = (clip != nullptr)
+                                 ? TrackManager::getInstance().getPrimaryInstrument(clip->trackId)
+                                 : nullptr;
 
-    if (plugin == nullptr) {
+    if (instrument == nullptr) {
         menu.addItem(0, "No instrument plugin on this track", false, false);
     } else {
         auto& prefs = magda::PluginPreferences::getInstance();
-        const auto identifier = plugin->getIdentifierString();
+        const auto identifier = magda::PluginPreferences::identifierForDevice(*instrument);
         const bool prefersGrid = prefs.prefersDrumGrid(identifier);
-        menu.addItem(1, "Use Drum Grid by default for " + plugin->getName(), true, prefersGrid);
+        menu.addItem(1, "Use Drum Grid by default for " + instrument->name, true, prefersGrid);
     }
 
-    const juce::String identifier =
-        (plugin != nullptr) ? plugin->getIdentifierString() : juce::String();
+    const juce::String identifier = (instrument != nullptr)
+                                        ? magda::PluginPreferences::identifierForDevice(*instrument)
+                                        : juce::String();
     auto rect = juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(rect),
                        [identifier](int result) {
@@ -1176,8 +1279,10 @@ void BottomPanel::onEditorTabChanged(int tabIndex) {
 
 void BottomPanel::applyTimeModeToContent() {
     auto* content = getActiveContent();
-    if (!content)
+    if (!content) {
+        timeModeButton_->setVisible(false);
         return;
+    }
 
     // ABS/REL toggle policy:
     //   - Waveform editor is always source-relative and does not expose the toggle.
@@ -1188,6 +1293,12 @@ void BottomPanel::applyTimeModeToContent() {
     //   - Other arrangement clips: button visible and enabled.
     ClipId activeClipId = INVALID_CLIP_ID;
     const bool isWaveformEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content) != nullptr;
+    const bool isMidiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content) != nullptr;
+    if (!isMidiEditor && !isWaveformEditor) {
+        timeModeButton_->setVisible(false);
+        return;
+    }
+
     if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content))
         activeClipId = midiEditor->getEditingClipId();
     else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content))
@@ -1214,7 +1325,7 @@ void BottomPanel::applyTimeModeToContent() {
     timeModeButton_->setButtonText(relativeTimeMode_ ? "REL" : "ABS");
     timeModeButton_->setToggleState(relativeTimeMode_, juce::dontSendNotification);
 
-    timeModeButton_->setVisible(!isWaveformEditor && !isSession);
+    timeModeButton_->setVisible(shouldShowHeaderFor(content) && !isWaveformEditor && !isSession);
     timeModeButton_->setEnabled(!forceRelative);
     timeModeButton_->setAlpha(forceRelative ? 0.4f : 1.0f);
 }

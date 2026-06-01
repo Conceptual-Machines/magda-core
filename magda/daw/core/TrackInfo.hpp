@@ -7,6 +7,7 @@
 
 #include "ClipTypes.hpp"
 #include "RackInfo.hpp"
+#include "TrackChain.hpp"
 #include "TrackTypes.hpp"
 #include "TrackViewSettings.hpp"
 
@@ -84,8 +85,9 @@ struct TrackInfo {
     // Multi-output link (set when type == MultiOut)
     std::optional<MultiOutTrackLink> multiOutLink;
 
-    // Signal chain - ordered list of nodes (devices or racks) on this track
-    std::vector<ChainElement> chainElements;
+    // Signal chain: main (pre-fader) FX tree + post-fader FX list. The track
+    // fader (VolumeAndPan) sits structurally between the two segments.
+    TrackChain chain;
 
     // View settings per view mode
     TrackViewSettingsMap viewSettings;
@@ -133,18 +135,14 @@ struct TrackInfo {
           sends(other.sends),
           auxBusIndex(other.auxBusIndex),
           multiOutLink(other.multiOutLink),
+          chain(other.chain),
           viewSettings(other.viewSettings),
           mods(other.mods),
           macros(other.macros),
           globalModsPanelOpen(other.globalModsPanelOpen),
           globalMacrosPanelOpen(other.globalMacrosPanelOpen),
           selectedGlobalModIndex(other.selectedGlobalModIndex),
-          selectedGlobalMacroIndex(other.selectedGlobalMacroIndex) {
-        chainElements.reserve(other.chainElements.size());
-        for (const auto& element : other.chainElements) {
-            chainElements.push_back(deepCopyElement(element));
-        }
-    }
+          selectedGlobalMacroIndex(other.selectedGlobalMacroIndex) {}
 
     // Copy assignment - deep copies chainElements
     TrackInfo& operator=(const TrackInfo& other) {
@@ -180,18 +178,14 @@ struct TrackInfo {
             globalMacrosPanelOpen = other.globalMacrosPanelOpen;
             selectedGlobalModIndex = other.selectedGlobalModIndex;
             selectedGlobalMacroIndex = other.selectedGlobalMacroIndex;
-            chainElements.clear();
-            chainElements.reserve(other.chainElements.size());
-            for (const auto& element : other.chainElements) {
-                chainElements.push_back(deepCopyElement(element));
-            }
+            chain = other.chain;
         }
         return *this;
     }
 
     // Check if this track has an instrument device in its chain
     bool hasInstrument() const {
-        for (const auto& element : chainElements) {
+        for (const auto& element : chain.fxChainElements) {
             if (isDevice(element) && getDevice(element).isInstrument)
                 return true;
             if (isRack(element)) {

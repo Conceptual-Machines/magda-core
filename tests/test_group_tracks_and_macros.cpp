@@ -114,7 +114,7 @@ TEST_CASE("Group track rejects instrument plugins", "[group_track][instrument]")
         REQUIRE(id == INVALID_DEVICE_ID);
 
         group = fixture.tm().getTrack(groupId);
-        REQUIRE(group->chainElements.empty());
+        REQUIRE(group->chain.fxChainElements.empty());
     }
 
     SECTION("addDeviceToTrack with index rejects instrument") {
@@ -126,7 +126,7 @@ TEST_CASE("Group track rejects instrument plugins", "[group_track][instrument]")
         REQUIRE(id == INVALID_DEVICE_ID);
 
         group = fixture.tm().getTrack(groupId);
-        REQUIRE(group->chainElements.size() == 1);  // Only the effect
+        REQUIRE(group->chain.fxChainElements.size() == 1);  // Only the effect
     }
 
     SECTION("addDeviceToTrack allows effects on group track") {
@@ -134,7 +134,7 @@ TEST_CASE("Group track rejects instrument plugins", "[group_track][instrument]")
         REQUIRE(id != INVALID_DEVICE_ID);
 
         group = fixture.tm().getTrack(groupId);
-        REQUIRE(group->chainElements.size() == 1);
+        REQUIRE(group->chain.fxChainElements.size() == 1);
     }
 }
 
@@ -1089,6 +1089,19 @@ TEST_CASE("Macro and mod custom names serialize", "[macro][mod][serialization]")
                                                      restored));
     REQUIRE(restored.macros[0].name == "Filter Cutoff");
     REQUIRE(restored.mods[0].name == "Slow Sweep");
+}
+
+TEST_CASE("Device mini mixer parameters serialize", "[device][serialization][mixer]") {
+    DeviceInfo device;
+    device.name = "TestDevice";
+    device.visibleParameters = {1, 3, 5};
+    device.miniMixerParameters = {2, 4};
+
+    DeviceInfo restored;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(ProjectSerializer::serializeDeviceInfo(device),
+                                                     restored));
+    REQUIRE(restored.visibleParameters == std::vector<int>{1, 3, 5});
+    REQUIRE(restored.miniMixerParameters == std::vector<int>{2, 4});
 }
 
 TEST_CASE("Automation display names include custom macro and mod names",

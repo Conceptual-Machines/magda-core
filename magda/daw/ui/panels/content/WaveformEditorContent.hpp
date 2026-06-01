@@ -178,6 +178,7 @@ class WaveformEditorContent : public PanelContent,
 
     // Header drag-zoom state
     bool headerDragActive_ = false;
+    int headerDragStartX_ = 0;
     int headerDragStartY_ = 0;
     int headerDragAnchorX_ = 0;
     double headerDragStartZoom_ = 0.0;

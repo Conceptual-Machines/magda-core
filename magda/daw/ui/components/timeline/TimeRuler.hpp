@@ -6,6 +6,7 @@
 
 #include "../../layout/LayoutConfig.hpp"
 #include "LoopMarkerInteraction.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/TempoUtils.hpp"
 
 namespace magda {
@@ -67,6 +68,10 @@ class TimeRuler : public juce::Component, private juce::Timer {
     void setRelativeMode(bool relative);
     bool isRelativeMode() const {
         return relativeMode;
+    }
+
+    void setGestureContext(GestureContext context) {
+        gestureContext_ = context;
     }
 
     // Clip boundary marker (shows where clip content starts/ends)
@@ -146,8 +151,9 @@ class TimeRuler : public juce::Component, private juce::Timer {
     bool snapEnabled = false;
 
     // Offset and relative mode (for piano roll)
-    double timeOffset = 0.0;        // seconds - absolute position of content start
-    bool relativeMode = false;      // true = show relative time (1, 2, 3...), false = show absolute
+    double timeOffset = 0.0;    // seconds - absolute position of content start
+    bool relativeMode = false;  // true = show relative time (1, 2, 3...), false = show absolute
+    GestureContext gestureContext_ = GestureContext::PianoRoll;
     double barOriginSeconds = 0.0;  // time position where bar 1 starts
     double clipLength = 0.0;        // seconds - length of clip (0 = no boundary marker)
     double clipContentOffset =
@@ -207,6 +213,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     // Drag state (zoom or scroll)
     enum class DragMode { None, Zooming, Scrolling, PhaseDrag };
     DragMode dragMode = DragMode::None;
+    GestureAxis dragGestureAxis = GestureAxis::Vertical;
     int mouseDownX = 0;
     int mouseDownY = 0;
     int lastDragX = 0;

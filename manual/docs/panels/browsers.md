@@ -47,6 +47,7 @@ The Media Explorer lets you browse files on your system and preview audio before
 
 - Click an audio file to preview it through your monitor output
 - Preview plays in sync with the transport tempo when applicable
+- With **Auto** on, ++arrowup++ / ++arrowdown++ step through results and audition each one as it is selected; ++arrowleft++ stops the preview and ++arrowright++ replays it from the start
 
 ### Filters
 

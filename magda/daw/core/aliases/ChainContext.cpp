@@ -104,7 +104,7 @@ std::vector<ChainContext::DeviceWithPath> DefaultChainContext::devicesInFocusedC
     // Walk the chain elements in the focused chain.
     // For simplicity: top-level chain elements on the track.
     // A more complete implementation would drill into the selected rack/chain.
-    for (const auto& element : track->chainElements) {
+    for (const auto& element : track->chain.fxChainElements) {
         if (isDevice(element)) {
             const auto& dev = getDevice(element);
             ChainNodePath devPath = ChainNodePath::topLevelDevice(trackId, dev.id);
@@ -124,7 +124,7 @@ std::vector<ChainContext::DeviceWithPath> DefaultChainContext::devicesForTrack(
     if (track == nullptr)
         return result;
 
-    for (const auto& element : track->chainElements) {
+    for (const auto& element : track->chain.fxChainElements) {
         if (isDevice(element)) {
             const auto& dev = getDevice(element);
             ChainNodePath devPath = ChainNodePath::topLevelDevice(trackId, dev.id);

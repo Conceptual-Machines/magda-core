@@ -8,7 +8,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../components/common/SvgButton.hpp"
 #include "audio/MidiBridge.hpp"
 #include "core/ClipManager.hpp"
 #include "core/SelectionManager.hpp"
@@ -149,15 +148,11 @@ class SessionView : public juce::Component,
     // Master header (top-right corner)
     std::unique_ptr<juce::TextButton> masterLabel_;
 
-    // Mixer-row visibility toggles, pinned to the corner above the master fader
-    // (the slot vacated by the old stop-all button). Click toggles, right-click
-    // still opens the full mixer context menu. Reuses the same SvgButton +
-    // io_routing/send/record_circle assets as MainView's arrangement toolbar so
-    // the visual language stays consistent across views.
-    std::unique_ptr<SvgButton> showIOToggle_;
-    std::unique_ptr<SvgButton> showSendsToggle_;
-    std::unique_ptr<SvgButton> showRecordMonitorToggle_;
-    void updateMixerToggleStates();
+    // Session-specific left-edge rail for mixer-row visibility. It intentionally
+    // omits mixer-only analyzer / mini-chain controls.
+    class SessionToggleRail;
+    std::unique_ptr<SessionToggleRail> toggleRail_;
+    void syncMixerVisibilityFromConfig();
     static constexpr int MIXER_TOGGLES_HEIGHT = 26;
 
     // Custom grid content component that draws track separators
@@ -211,7 +206,9 @@ class SessionView : public juce::Component,
     // Quarter = 1/4 (one beat), Eighth = 1/8 (half a beat).
     enum class BeatRate { Whole, Half, Quarter, Eighth };
     class BeatBandContainer;
+    class MasterBeatIndicator;
     std::unique_ptr<BeatBandContainer> beatBandContainer_;
+    std::unique_ptr<MasterBeatIndicator> masterBeatIndicator_;
     std::unordered_map<TrackId, BeatRate> trackBeatRates_;
     std::unordered_set<TrackId> beatHiddenTracks_;
     BeatRate getTrackBeatRate(TrackId trackId) const;

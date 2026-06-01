@@ -82,19 +82,10 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Plugin/Device Lookup
     // =========================================================================
 
-    /**
-     * @brief Get the Tracktion Plugin for a MAGDA device
-     * @param deviceId MAGDA device ID
-     * @return The Plugin, or nullptr if not found
-     */
-    te::Plugin::Ptr getPlugin(DeviceId deviceId) const;
+    // Path-based lookup — the section is part of the key.
+    te::Plugin::Ptr getPlugin(const ChainNodePath& devicePath) const;
 
-    /**
-     * @brief Get the DeviceProcessor for a MAGDA device
-     * @param deviceId MAGDA device ID
-     * @return The DeviceProcessor, or nullptr if not found
-     */
-    DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
+    DeviceProcessor* getDeviceProcessor(const ChainNodePath& devicePath) const;
 
     /**
      * @brief Reverse lookup: get DeviceId for a TE Plugin pointer
@@ -102,6 +93,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @return The DeviceId, or INVALID_DEVICE_ID if not found
      */
     DeviceId getDeviceIdForPlugin(te::Plugin* plugin) const;
+    ChainNodePath getDevicePathForPlugin(te::Plugin* plugin) const;
 
     // =========================================================================
     // Plugin Synchronization
@@ -200,6 +192,13 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      */
     std::function<void(TrackId)> onAsyncPluginLoaded;
 
+    /**
+     * @brief Callback invoked when a plugin-order-only change requires a TE
+     * playback graph restart. Primarily useful for diagnostics/tests because
+     * TE does not restart automatically for ValueTree child-order changes.
+     */
+    std::function<void(TrackId, const juce::String&)> onPluginOrderGraphRestartRequested;
+
     // =========================================================================
     // Rack Plugin Creation
     // =========================================================================
@@ -227,7 +226,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @param deviceId The MAGDA device ID inside the rack
      * @param plugin The TE plugin created for this device
      */
-    void registerRackPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin,
+    void registerRackPluginProcessor(const ChainNodePath& devicePath, te::Plugin::Ptr plugin,
                                      const DeviceInfo& device);
 
     /**
@@ -239,7 +238,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * parameter layout post-construction (FaustPlugin reloading a
      * .dsp). No-op if no processor is registered for the device.
      */
-    void refreshDeviceParameters(DeviceId deviceId);
+    void refreshDeviceParameters(const ChainNodePath& devicePath);
 
     /**
      * @brief Sync a multi-output track's plugin chain
@@ -288,7 +287,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @brief Capture a single device's plugin state into its DeviceInfo.
      * Call before removing a device to preserve its state for undo.
      */
-    void capturePluginState(DeviceId deviceId);
+    void capturePluginState(const ChainNodePath& devicePath);
 
     /**
      * @brief Restore plugin native state from DeviceInfo onto a TE plugin
@@ -296,11 +295,10 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * Reads DeviceInfo::pluginState and, if non-empty, sets it on the TE
      * plugin's ValueTree state property so the plugin reads it during init.
      *
-     * @param trackId The track containing the device
-     * @param deviceId The device whose state to restore
+     * @param devicePath The device whose state to restore
      * @param plugin The TE plugin to apply state to
      */
-    void restorePluginState(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin);
+    void restorePluginState(const ChainNodePath& devicePath, te::Plugin::Ptr plugin);
 
     // =========================================================================
     // Utilities
@@ -505,50 +503,52 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @param deviceId The device that needs MIDI injection
      * @param sourceTrackId The source track providing MIDI
      */
-    void ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackId sourceTrackId);
+    void ensureMidiReceive(const ChainNodePath& devicePath, TrackId sourceTrackId);
 
     /**
      * @brief Remove a MidiReceivePlugin for a device when its MIDI sidechain is cleared.
      * @param trackId The destination track
      * @param deviceId The device that no longer needs MIDI injection
      */
-    void removeMidiReceive(TrackId trackId, DeviceId deviceId);
+    void removeMidiReceive(const ChainNodePath& devicePath);
+    void requestPluginOrderGraphRestart(TrackId trackId, const juce::String& reason);
 
     /**
      * @brief Set a device macro parameter value on the TE MacroParameter
      */
-    void setMacroValue(DeviceId deviceId, int macroIndex, float value);
+    void setMacroValue(const ChainNodePath& devicePath, int macroIndex, float value);
 
     /**
      * @brief Sync multi-out tracks for a DrumGrid device
      * Activates/deactivates multi-out pairs to match current non-empty chains.
      */
-    void syncDrumGridMultiOutTracks(TrackId trackId, DeviceId deviceId,
+    void syncDrumGridMultiOutTracks(const ChainNodePath& drumGridPath,
                                     daw::audio::DrumGridPlugin* drumGrid);
 
     /**
      * @brief Register per-pad chain plugins in syncedDevices_ for macro/mod linking
      */
-    void syncDrumGridPadPlugins(TrackId trackId, DeviceId drumGridDeviceId,
+    void syncDrumGridPadPlugins(const ChainNodePath& drumGridPath,
                                 daw::audio::DrumGridPlugin* drumGrid);
 
     // DrumGridPlugin::Listener
     void drumGridChainsChanged(daw::audio::DrumGridPlugin* plugin) override;
 
-    // Resolve a DeviceId to a te::Plugin* for ModifierSync's TargetPluginLookup.
+    // Resolve a ChainNodePath to a te::Plugin* for ModifierSync's TargetPluginLookup.
     // Track-bound plugin first; falls back to instrument-rack inner plugin.
-    te::Plugin* lookupTargetPluginForModifier(DeviceId id) const;
+    te::Plugin* lookupTargetPluginForModifier(const ChainNodePath& devicePath) const;
 
   private:
     // Internal device → plugin conversion (used by syncTrackPlugins)
-    te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device,
+    te::Plugin::Ptr loadDeviceAsPlugin(const ChainNodePath& devicePath, const DeviceInfo& device,
                                        int insertIndex = -1);
 
-    void detachDeviceRuntimeForChainMove(TrackId trackId, DeviceId deviceId);
+    void detachDeviceRuntimeForChainMove(const ChainNodePath& devicePath);
     void detachRackRuntimeForChainMove(RackId rackId);
+    void removeDrumGridPadDevicesLocked(const ChainNodePath& drumGridPath);
 
     // Poll for async plugin load completion (TE's background thread instantiation)
-    void pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin);
+    void pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plugin::Ptr plugin);
 
     // Create a TE internal plugin, restoring saved ValueTree state if available.
     // Falls back to creating a fresh plugin from xmlTypeName when no saved state exists.
@@ -586,7 +586,8 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     bool trackNeedsAudioSidechainMonitor(TrackId trackId) const;
 
     // Per-device consolidated state. All device-scoped data lives here,
-    // keyed by DeviceId. Cleanup is a single erase().
+    // keyed by ChainNodePath so devices in different chain sections can share
+    // the same DeviceId without colliding.
     //
     // Step 2 of issue #1131: `modifiers` switched from a vector to a map keyed
     // by ModId so it matches RackSyncManager's `innerModifiers` shape. The
@@ -604,10 +605,15 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
         te::Plugin::Ptr midiRestorePlugin;               // Can be null
         bool isPendingLoad = false;                      // In-flight async load
     };
-    std::map<DeviceId, SyncedDevice> syncedDevices_;
+    using SyncedDeviceMap = std::map<ChainNodePath, SyncedDevice>;
 
-    // Reverse index: TE Plugin* → DeviceId (maintained alongside .plugin assignments)
-    std::map<te::Plugin*, DeviceId> pluginToDevice_;
+    SyncedDeviceMap::iterator findSyncedDevice(const ChainNodePath& devicePath);
+    SyncedDeviceMap::const_iterator findSyncedDevice(const ChainNodePath& devicePath) const;
+
+    SyncedDeviceMap syncedDevices_;
+
+    // Reverse index: TE Plugin* → ChainNodePath (maintained alongside .plugin assignments)
+    std::map<te::Plugin*, ChainNodePath> pluginToDevice_;
 
     // Track-level mod state (for track-scope modulators that target any device)
     struct TrackModState {
@@ -623,8 +629,8 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Used to decide if resyncDeviceModifiers needs a full rebuild or just property update.
     std::map<TrackId, std::pair<int, int>> modLinkFingerprints_;
 
-    // DrumGrid DeviceId → set of pad-plugin DeviceIds registered in syncedDevices_
-    std::map<DeviceId, std::set<DeviceId>> drumGridPadDevices_;
+    // DrumGrid ChainNodePath -> pad-plugin ChainNodePaths registered in syncedDevices_
+    std::map<ChainNodePath, std::set<ChainNodePath>> drumGridPadDevices_;
 
     // Sidechain monitor plugins (sourceTrackId → SidechainMonitorPlugin)
     std::map<TrackId, te::Plugin::Ptr> sidechainMonitors_;

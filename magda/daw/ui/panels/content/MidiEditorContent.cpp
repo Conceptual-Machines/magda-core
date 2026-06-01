@@ -2,9 +2,12 @@
 
 #include <cmath>
 
+#include "audio/MidiBridge.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "engine/AudioEngine.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/VelocityLaneComponent.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
@@ -41,6 +44,7 @@ void VerticalZoomStrip::paint(juce::Graphics& g) {
 }
 
 void VerticalZoomStrip::mouseDown(const juce::MouseEvent& event) {
+    mouseDownX_ = event.x;
     mouseDownY_ = event.y;
     startValue_ = juce::jlimit(minValue_, maxValue_, getValue ? getValue() : minValue_);
     lastSentValue_ = startValue_;
@@ -49,17 +53,25 @@ void VerticalZoomStrip::mouseDown(const juce::MouseEvent& event) {
 }
 
 void VerticalZoomStrip::mouseDrag(const juce::MouseEvent& event) {
-    const int yDelta = mouseDownY_ - event.y;
-    if (std::abs(yDelta) > 3)
+    const int deltaX = event.x - mouseDownX_;
+    const int deltaY = mouseDownY_ - event.y;
+    const auto axis = std::abs(deltaX) > std::abs(deltaY) ? magda::GestureAxis::Horizontal
+                                                          : magda::GestureAxis::Vertical;
+    const int dragDelta = axis == magda::GestureAxis::Horizontal ? deltaX : deltaY;
+    if (std::abs(dragDelta) > 3)
         dragging_ = true;
 
     if (!dragging_)
         return;
 
-    const double sensitivity = 30.0;
-    const double exponent = static_cast<double>(yDelta) / sensitivity;
-    const int rawValue =
-        static_cast<int>(std::round(static_cast<double>(startValue_) * std::pow(2.0, exponent)));
+    const auto gesture = magda::GestureRouter::getInstance().resolveDrag(
+        gestureContext_, magda::GestureArea::ZoomStrip, axis, event.mods,
+        static_cast<float>(dragDelta), {mouseDownX_, mouseDownY_});
+    if (gesture.type != magda::GestureActionType::ZoomVertical)
+        return;
+
+    const int rawValue = static_cast<int>(
+        std::round(static_cast<double>(startValue_) * std::pow(2.0, gesture.magnitude)));
     const int newValue = juce::jlimit(minValue_, maxValue_, rawValue);
     if (newValue == lastSentValue_)
         return;
@@ -248,11 +260,83 @@ MidiEditorContent::MidiEditorContent() {
 
 MidiEditorContent::~MidiEditorContent() {
     blinkTimer_.stopTimer();
+    uninstallMidiNoteMonitor();  // safety net; subclasses uninstall in onDeactivated
     magda::ClipManager::getInstance().removeListener(this);
 
     if (auto* controller = magda::TimelineController::getCurrent()) {
         controller->removeListener(this);
     }
+}
+
+// ============================================================================
+// Live MIDI note monitor (shared by PianoRoll keyboard + DrumGrid pad rows)
+// ============================================================================
+
+void MidiEditorContent::installMidiNoteMonitor() {
+    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+    auto* midiBridge = engine != nullptr ? engine->getMidiBridge() : nullptr;
+    if (midiBridge == nullptr)
+        return;
+
+    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ == midiBridge)
+        return;
+
+    uninstallMidiNoteMonitor();
+
+    monitoredMidiBridge_ = midiBridge;
+    previousMidiNoteCallback_ = midiBridge->onNoteEvent;
+    juce::Component::SafePointer<MidiEditorContent> safeThis(this);
+    auto previousCallback = previousMidiNoteCallback_;
+
+    midiBridge->onNoteEvent = [safeThis, previousCallback](magda::TrackId trackId,
+                                                           const magda::MidiNoteEvent& event) {
+        if (previousCallback)
+            previousCallback(trackId, event);
+
+        juce::MessageManager::callAsync([safeThis, trackId, event]() {
+            if (auto* self = safeThis.getComponent())
+                self->handleMidiNoteEvent(trackId, event);
+        });
+    };
+    midiNoteMonitorInstalled_ = true;
+}
+
+void MidiEditorContent::uninstallMidiNoteMonitor() {
+    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ != nullptr)
+        monitoredMidiBridge_->onNoteEvent = previousMidiNoteCallback_;
+
+    midiNoteMonitorInstalled_ = false;
+    monitoredMidiBridge_ = nullptr;
+    previousMidiNoteCallback_ = nullptr;
+}
+
+void MidiEditorContent::handleMidiNoteEvent(magda::TrackId trackId,
+                                            const magda::MidiNoteEvent& event) {
+    if (!midiNoteMonitorInstalled_ || editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (clip == nullptr || clip->trackId != trackId)
+        return;
+
+    const bool noteOn = event.isNoteOn && event.velocity > 0;
+
+    // Only highlight notes the track is actually monitoring — with input
+    // monitoring off the note never reaches the track, so highlighting it would
+    // be misleading. Note-offs always fall through to clear any existing
+    // highlight, so toggling monitor off mid-hold can't strand a pressed key.
+    if (noteOn) {
+        const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        if (track == nullptr || track->inputMonitor == magda::InputMonitorMode::Off)
+            return;
+    }
+
+    highlightMonitoredNote(event.noteNumber, noteOn);
+
+    // Bring the played note into view only when it falls off-screen, so live
+    // input stays visible without yanking the view around on every note.
+    if (noteOn)
+        ensureMonitoredNoteVisible(event.noteNumber);
 }
 
 // ============================================================================

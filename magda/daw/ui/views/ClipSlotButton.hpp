@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cmath>
+
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/ClipManager.hpp"
@@ -428,6 +430,7 @@ class MiniDbScale : public juce::Component {
         static constexpr float dbValues[] = {6.0f, 0.0f, -6.0f, -12.0f, -24.0f, -48.0f};
         static constexpr float DB_MIN = -60.0f;
         static constexpr float DB_MAX = 6.0f;
+        static constexpr float CURVE_EXPONENT = 2.0f;
 
         static constexpr float PADDING = 4.0f;
         float height = static_cast<float>(bounds.getHeight()) - 2.0f * PADDING;
@@ -442,7 +445,7 @@ class MiniDbScale : public juce::Component {
         float lastDrawnY = -1000.0f;
 
         for (float db : dbValues) {
-            float norm = (db - DB_MIN) / (DB_MAX - DB_MIN);
+            float norm = std::pow((db - DB_MIN) / (DB_MAX - DB_MIN), CURVE_EXPONENT);
             float y = PADDING + height * (1.0f - norm);
 
             if (std::abs(y - lastDrawnY) < labelH + 1.0f)

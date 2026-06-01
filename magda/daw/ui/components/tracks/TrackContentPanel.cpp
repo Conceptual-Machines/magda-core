@@ -214,7 +214,13 @@ void TrackContentPanel::tracksChanged() {
     }
 
     resized();
-    updateClipComponentPositions();
+    // The visible-track set just changed (track add/remove/reorder, group
+    // collapse/expand). rebuildClipComponents only creates components for clips
+    // on currently-visible tracks, so a clip on a collapsed group's child has
+    // no component. Rebuild here rather than only repositioning, otherwise a
+    // child clip whose component was dropped while collapsed never reappears on
+    // expand (it keeps playing from the model — the lane just looks empty).
+    rebuildClipComponents();
     repaintVisible();
 }
 
@@ -2039,6 +2045,27 @@ void TrackContentPanel::mouseMove(const juce::MouseEvent& event) {
     updateCursorForPosition(event.x, event.y, event.mods.isShiftDown());
 }
 
+void TrackContentPanel::mouseWheelMove(const juce::MouseEvent& event,
+                                       const juce::MouseWheelDetails& wheel) {
+    // Resolve the wheel into a parametric arrangement action (#21) and hand it
+    // to MainView (#26). event.getPosition() is content-space here (this panel
+    // is the viewed component of the track-content viewport), so it doubles as
+    // the cursor anchor for zoom. Consuming the event keeps the enclosing
+    // Viewport from doing its own (vertical-only) scroll, which is what left a
+    // plain wheel dead over the arrangement on Linux.
+    const auto gesture = GestureRouter::getInstance().resolve(GestureContext::Arrangement, wheel,
+                                                              event.mods, event.getPosition());
+
+    if (gesture.isNone()) {
+        Component::mouseWheelMove(event, wheel);
+        return;
+    }
+
+    if (onArrangementGesture) {
+        onArrangementGesture(gesture);
+    }
+}
+
 bool TrackContentPanel::isInUpperTrackZone(int y) const {
     int trackIndex = getTrackIndexAtY(y);
     if (trackIndex < 0) {
@@ -3084,7 +3111,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
         }
 
         // Block drops on tracks with a DrumGrid plugin
-        for (const auto& element : track->chainElements) {
+        for (const auto& element : track->chain.fxChainElements) {
             if (isDevice(element) && getDevice(element).pluginId.containsIgnoreCase("drumgrid")) {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::WarningIcon, "Drop Failed",

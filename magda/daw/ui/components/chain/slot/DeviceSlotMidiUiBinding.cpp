@@ -13,7 +13,7 @@
 
 namespace magda::daw::ui {
 
-void bindDeviceSlotMidiCustomUIs(DeviceCustomUIManager& customUI, magda::DeviceId deviceId,
+void bindDeviceSlotMidiCustomUIs(DeviceCustomUIManager& customUI,
                                  const magda::ChainNodePath& nodePath) {
     if (nodePath.trackId == magda::INVALID_TRACK_ID)
         return;
@@ -26,7 +26,7 @@ void bindDeviceSlotMidiCustomUIs(DeviceCustomUIManager& customUI, magda::DeviceI
     if (bridge == nullptr)
         return;
 
-    auto plugin = bridge->getPlugin(deviceId);
+    auto plugin = bridge->getPlugin(nodePath);
 
     if (auto* chordEngineUI = customUI.getChordEngineUI()) {
         if (auto* chordPlugin = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get()))

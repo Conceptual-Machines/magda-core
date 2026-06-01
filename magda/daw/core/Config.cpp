@@ -84,12 +84,22 @@ void Config::save() {
 
     // UI / behaviour
     root->setProperty("scrollbarOnLeft", scrollbarOnLeft);
+    root->setProperty("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
     root->setProperty("uiScale", uiScale);
     root->setProperty("uiFontScale", uiFontScale);
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     root->setProperty("openMacrosOnSelect", openMacrosOnSelect);
+
+    // Mixer view-toggle rail
+    root->setProperty("mixerShowSends", mixerShowSends_);
+    root->setProperty("mixerShowRouting", mixerShowRouting_);
+    root->setProperty("mixerShowMonitor", mixerShowMonitor_);
+    root->setProperty("mixerShowOscilloscope", mixerShowOscilloscope_);
+    root->setProperty("mixerShowSpectrum", mixerShowSpectrum_);
+    root->setProperty("mixerShowFxChain", mixerShowFxChain_);
+    root->setProperty("persistMixerAnalysis", persistMixerAnalysis_);
     root->setProperty("previewOutputChannel", previewOutputChannel);
 
     // Auto-save
@@ -248,12 +258,35 @@ void Config::save() {
     if (!globalBindings_.isVoid())
         root->setProperty("globalBindings", globalBindings_);
 
+    // Keyboard-shortcut overrides (#20) and mouse-gesture overrides (#21)
+    if (!keyboardBindings_.isVoid())
+        root->setProperty("keyboardBindings", keyboardBindings_);
+    if (!gestureBindings_.isVoid())
+        root->setProperty("gestureBindings", gestureBindings_);
+
     // MIDI Learn settings
     {
         auto* mlObj = new juce::DynamicObject();
         mlObj->setProperty("defaultScope", midiLearnDefaultScope_ == 0 ? juce::String("global")
                                                                        : juce::String("project"));
         root->setProperty("midiLearn", juce::var(mlObj));
+    }
+
+    // Analysis device defaults (last-used settings for new osc / spectrum)
+    {
+        auto* adObj = new juce::DynamicObject();
+
+        auto* oscObj = new juce::DynamicObject();
+        oscObj->setProperty("timebaseMs", oscilloscopeDefaults_.timebaseMs);
+        adObj->setProperty("oscilloscope", juce::var(oscObj));
+
+        auto* specObj = new juce::DynamicObject();
+        specObj->setProperty("fftOrder", spectrumDefaults_.fftOrder);
+        specObj->setProperty("slopeDbPerOct", spectrumDefaults_.slopeDbPerOct);
+        specObj->setProperty("smoothing", spectrumDefaults_.smoothing);
+        adObj->setProperty("spectrum", juce::var(specObj));
+
+        root->setProperty("analysisDefaults", juce::var(adObj));
     }
 
     // Write to disk
@@ -355,12 +388,22 @@ void Config::load() {
 
     language = getString("language", language);
     scrollbarOnLeft = getBool("scrollbarOnLeft", scrollbarOnLeft);
+    arrangementScrollbarsAutoHide =
+        getBool("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
     uiScale = getDouble("uiScale", uiScale);
     setUIFontScale(getDouble("uiFontScale", uiFontScale));
     confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     openMacrosOnSelect = getBool("openMacrosOnSelect", openMacrosOnSelect);
+
+    mixerShowSends_ = getBool("mixerShowSends", mixerShowSends_);
+    mixerShowRouting_ = getBool("mixerShowRouting", mixerShowRouting_);
+    mixerShowMonitor_ = getBool("mixerShowMonitor", mixerShowMonitor_);
+    mixerShowOscilloscope_ = getBool("mixerShowOscilloscope", mixerShowOscilloscope_);
+    mixerShowSpectrum_ = getBool("mixerShowSpectrum", mixerShowSpectrum_);
+    mixerShowFxChain_ = getBool("mixerShowFxChain", mixerShowFxChain_);
+    persistMixerAnalysis_ = getBool("persistMixerAnalysis", persistMixerAnalysis_);
     previewOutputChannel = getInt("previewOutputChannel", previewOutputChannel);
 
     autoSaveEnabled = getBool("autoSaveEnabled", autoSaveEnabled);
@@ -607,12 +650,41 @@ void Config::load() {
     if (obj->hasProperty("globalBindings"))
         globalBindings_ = obj->getProperty("globalBindings");
 
+    // Keyboard-shortcut overrides (#20) and mouse-gesture overrides (#21)
+    if (obj->hasProperty("keyboardBindings"))
+        keyboardBindings_ = obj->getProperty("keyboardBindings");
+    if (obj->hasProperty("gestureBindings"))
+        gestureBindings_ = obj->getProperty("gestureBindings");
+
     // MIDI Learn settings
     if (obj->hasProperty("midiLearn")) {
         auto mlVar = obj->getProperty("midiLearn");
         if (auto* mlObj = mlVar.getDynamicObject()) {
             auto scopeStr = mlObj->getProperty("defaultScope").toString();
             midiLearnDefaultScope_ = (scopeStr == "global") ? 0 : 1;
+        }
+    }
+
+    if (obj->hasProperty("analysisDefaults")) {
+        auto adVar = obj->getProperty("analysisDefaults");
+        if (auto* adObj = adVar.getDynamicObject()) {
+            auto oscVar = adObj->getProperty("oscilloscope");
+            if (auto* oscObj = oscVar.getDynamicObject()) {
+                if (oscObj->hasProperty("timebaseMs"))
+                    oscilloscopeDefaults_.timebaseMs =
+                        static_cast<float>(static_cast<double>(oscObj->getProperty("timebaseMs")));
+            }
+            auto specVar = adObj->getProperty("spectrum");
+            if (auto* specObj = specVar.getDynamicObject()) {
+                if (specObj->hasProperty("fftOrder"))
+                    spectrumDefaults_.fftOrder = static_cast<int>(specObj->getProperty("fftOrder"));
+                if (specObj->hasProperty("slopeDbPerOct"))
+                    spectrumDefaults_.slopeDbPerOct = static_cast<float>(
+                        static_cast<double>(specObj->getProperty("slopeDbPerOct")));
+                if (specObj->hasProperty("smoothing"))
+                    spectrumDefaults_.smoothing =
+                        static_cast<float>(static_cast<double>(specObj->getProperty("smoothing")));
+            }
         }
     }
 

@@ -12,6 +12,7 @@
 #include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/MidiFileWriter.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/engine/AudioEngine.hpp"
 #include "magda/daw/media_db/MediaDbContext.hpp"
 #include "magda/daw/media_db/MediaDbMetadata.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
@@ -57,14 +58,233 @@ juce::String getEnvVar(const char* name) {
     return {};
 }
 
+class ProjectBoundaryResetEngine : public AudioEngine {
+  public:
+    bool initialize() override {
+        return true;
+    }
+
+    void shutdown() override {}
+
+    void play() override {
+        playing = true;
+    }
+
+    void stop() override {
+        ++stopCalls;
+        playing = false;
+        recording = false;
+    }
+
+    void pause() override {
+        stop();
+    }
+
+    void record() override {
+        recording = true;
+    }
+
+    void locate(double positionSeconds) override {
+        ++locateCalls;
+        position = positionSeconds;
+    }
+
+    double getCurrentPosition() const override {
+        return position;
+    }
+
+    bool isPlaying() const override {
+        return playing;
+    }
+
+    bool isRecording() const override {
+        return recording;
+    }
+
+    double getSessionPlayheadPosition() const override {
+        return -1.0;
+    }
+
+    ClipId getSessionPlayheadClipId() const override {
+        return INVALID_CLIP_ID;
+    }
+
+    std::unordered_map<ClipId, double> getActiveClipPlayheadPositions() const override {
+        return {};
+    }
+
+    SessionClipPlayState getSessionClipPlayState(ClipId) const override {
+        return SessionClipPlayState::Stopped;
+    }
+
+    void stopSessionTrack(TrackId) override {}
+
+    bool isSessionTrackStopPending(TrackId) const override {
+        return false;
+    }
+
+    double getAudioThreadTransportSeconds() const override {
+        return -1.0;
+    }
+
+    void deactivateAllSessionClips() override {
+        ++deactivateCalls;
+    }
+
+    void setTempo(double bpm) override {
+        tempo = bpm;
+    }
+
+    double getTempo() const override {
+        return tempo;
+    }
+
+    void setTimeSignature(int numerator, int denominator) override {
+        timeSigNumerator = numerator;
+        timeSigDenominator = denominator;
+    }
+
+    void setLooping(bool enabled) override {
+        ++setLoopingCalls;
+        looping = enabled;
+    }
+
+    void setLoopRegion(double startSeconds, double endSeconds) override {
+        loopStart = startSeconds;
+        loopEnd = endSeconds;
+    }
+
+    bool isLooping() const override {
+        return looping;
+    }
+
+    void setMetronomeEnabled(bool enabled) override {
+        metronome = enabled;
+    }
+
+    bool isMetronomeEnabled() const override {
+        return metronome;
+    }
+
+    void setCountInMode(int mode) override {
+        countInMode = mode;
+    }
+
+    int getCountInMode() const override {
+        return countInMode;
+    }
+
+    void updateTriggerState() override {}
+    void processSessionStateEvents() override {}
+
+    juce::AudioDeviceManager* getDeviceManager() override {
+        return nullptr;
+    }
+
+    AudioBridge* getAudioBridge() override {
+        return nullptr;
+    }
+
+    const AudioBridge* getAudioBridge() const override {
+        return nullptr;
+    }
+
+    MidiBridge* getMidiBridge() override {
+        return nullptr;
+    }
+
+    const MidiBridge* getMidiBridge() const override {
+        return nullptr;
+    }
+
+    void previewNoteOnTrack(const std::string&, int, int, bool) override {}
+
+    void onTransportPlay(double positionSeconds) override {
+        locate(positionSeconds);
+        play();
+    }
+
+    void onTransportStop(double returnPosition) override {
+        stop();
+        locate(returnPosition);
+    }
+
+    void onTransportPause() override {
+        pause();
+    }
+
+    void onTransportRecord(double positionSeconds) override {
+        locate(positionSeconds);
+        record();
+    }
+
+    void onTransportStopRecording() override {
+        recording = false;
+    }
+
+    void onEditPositionChanged(double positionSeconds) override {
+        locate(positionSeconds);
+    }
+
+    void onTempoChanged(double bpm) override {
+        setTempo(bpm);
+    }
+
+    void onTimeSignatureChanged(int numerator, int denominator) override {
+        setTimeSignature(numerator, denominator);
+    }
+
+    void onLoopRegionChanged(double startTime, double endTime, bool enabled) override {
+        setLoopRegion(startTime, endTime);
+        setLooping(enabled);
+    }
+
+    void onLoopEnabledChanged(bool enabled) override {
+        setLooping(enabled);
+    }
+
+    int stopCalls = 0;
+    int deactivateCalls = 0;
+    int setLoopingCalls = 0;
+    int locateCalls = 0;
+    bool playing = true;
+    bool recording = true;
+    bool looping = true;
+    bool metronome = false;
+    int countInMode = 0;
+    int timeSigNumerator = 4;
+    int timeSigDenominator = 4;
+    double tempo = 120.0;
+    double position = 12.0;
+    double loopStart = 0.0;
+    double loopEnd = 0.0;
+};
+
+class ScopedProjectAudioEngine {
+  public:
+    explicit ScopedProjectAudioEngine(AudioEngine* engine)
+        : previousEngine(TrackManager::getInstance().getAudioEngine()) {
+        TrackManager::getInstance().setAudioEngine(engine);
+    }
+
+    ~ScopedProjectAudioEngine() {
+        TrackManager::getInstance().setAudioEngine(previousEngine);
+    }
+
+  private:
+    AudioEngine* previousEngine = nullptr;
+};
+
 }  // namespace
 
 // Test fixture to ensure clean state and temp file cleanup between tests
 struct ProjectTestFixture {
     std::vector<juce::File> tempFiles;
     std::vector<juce::File> tempDirs;
+    bool previousPersistMixerAnalysis = false;
 
-    ProjectTestFixture() {
+    ProjectTestFixture()
+        : previousPersistMixerAnalysis(Config::getInstance().getPersistMixerAnalysis()) {
         // Clear all singleton state before each test
         TrackManager::getInstance().clearAllTracks();
         ClipManager::getInstance().clearAllClips();
@@ -90,6 +310,7 @@ struct ProjectTestFixture {
         TrackManager::getInstance().clearAllTracks();
         ClipManager::getInstance().clearAllClips();
         AutomationManager::getInstance().clearAll();
+        Config::getInstance().setPersistMixerAnalysis(previousPersistMixerAnalysis);
     }
 
     // Helper to create unique temp file with automatic cleanup
@@ -604,6 +825,10 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
         auto json = ProjectSerializer::serializeProject(info);
         auto* rootObj = json.getDynamicObject();
         REQUIRE(rootObj != nullptr);
+        auto* projectObj = rootObj->getProperty("project").getDynamicObject();
+        REQUIRE(projectObj != nullptr);
+        projectObj->setProperty("tempo", 0.0);
+
         auto* clips = rootObj->getProperty("clips").getArray();
         REQUIRE(clips != nullptr);
         auto* clipObj = clips->getReference(0).getDynamicObject();
@@ -684,6 +909,55 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
         REQUIRE(restored->warpMarkers.size() == 1);
         REQUIRE(restored->warpMarkers.front().sourceTime == Approx(1.0));
         REQUIRE(restored->warpMarkers.front().warpTime == Approx(1.25));
+    }
+
+    SECTION("Legacy flat audio clip payload migrates placement and audio model") {
+        auto json = ProjectSerializer::serializeProject(info);
+        auto* rootObj = json.getDynamicObject();
+        REQUIRE(rootObj != nullptr);
+        auto* clips = rootObj->getProperty("clips").getArray();
+        REQUIRE(clips != nullptr);
+        auto* clipObj = clips->getReference(0).getDynamicObject();
+        REQUIRE(clipObj != nullptr);
+
+        clipObj->removeProperty("placement");
+        clipObj->removeProperty("audio");
+        clipObj->setProperty("startTime", 2.0);
+        clipObj->setProperty("length", 6.0);
+        clipObj->removeProperty("startBeats");
+        clipObj->removeProperty("lengthBeats");
+        clipObj->setProperty("audioFilePath", "/tmp/flat-legacy.wav");
+        clipObj->setProperty("offset", 0.25);
+        clipObj->setProperty("offsetBeats", 0.5);
+        clipObj->setProperty("loopStart", 0.125);
+        clipObj->setProperty("loopLength", 6.0);
+        clipObj->setProperty("loopStartBeats", 0.25);
+        clipObj->setProperty("loopLengthBeats", 12.0);
+        clipObj->setProperty("speedRatio", 1.5);
+        clipObj->setProperty("sourceNumBeats", 12.0);
+        clipObj->setProperty("sourceBPM", 120.0);
+
+        ClipManager::getInstance().clearAllClips();
+
+        ProjectInfo loaded;
+        REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+        auto* restored = ClipManager::getInstance().getClip(clip.id);
+        REQUIRE(restored != nullptr);
+        REQUIRE(restored->isAudio());
+        REQUIRE(restored->placement.startBeat == Approx(4.0));
+        REQUIRE(restored->placement.lengthBeats == Approx(12.0));
+        REQUIRE(restored->length == Approx(6.0));
+        REQUIRE(restored->audio().source.filePath == "/tmp/flat-legacy.wav");
+        REQUIRE(restored->audio().source.durationSeconds == Approx(6.0));
+        REQUIRE(restored->audio().interpretation.totalBeats == Approx(12.0));
+        REQUIRE(restored->audio().interpretation.bpm == Approx(120.0));
+        REQUIRE(restored->offset == Approx(0.25));
+        REQUIRE(restored->offsetBeats == Approx(0.5));
+        REQUIRE(restored->loopStart == Approx(0.125));
+        REQUIRE(restored->loopLength == Approx(6.0));
+        REQUIRE(restored->loopStartBeats == Approx(0.25));
+        REQUIRE(restored->loopLengthBeats == Approx(12.0));
+        REQUIRE(restored->speedRatio == Approx(1.5));
     }
 }
 
@@ -975,6 +1249,30 @@ TEST_CASE("Project Manager State", "[project][manager]") {
 
         // Cleanup
     }
+
+    SECTION("project boundaries reset transport and session state") {
+        auto& projectManager = ProjectManager::getInstance();
+        ProjectBoundaryResetEngine engine;
+        ScopedProjectAudioEngine scopedEngine(&engine);
+
+        REQUIRE(projectManager.newProject() == true);
+
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
+        REQUIRE(projectManager.saveProjectAs(tempFile) == true);
+
+        REQUIRE(projectManager.loadProject(actualFile) == true);
+        REQUIRE(projectManager.closeProject() == true);
+
+        REQUIRE(engine.stopCalls == 3);
+        REQUIRE(engine.deactivateCalls == 3);
+        REQUIRE(engine.setLoopingCalls == 3);
+        REQUIRE(engine.locateCalls == 3);
+        REQUIRE(engine.playing == false);
+        REQUIRE(engine.recording == false);
+        REQUIRE(engine.looping == false);
+        REQUIRE(engine.position == Approx(0.0));
+    }
 }
 
 TEST_CASE("Error Handling", "[project][serialization][errors]") {
@@ -1077,9 +1375,9 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         REQUIRE(tracks[0].type == TrackType::Audio);
 
         // Verify the device was restored
-        REQUIRE(tracks[0].chainElements.size() == 1);
-        REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
-        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chain.fxChainElements[0]) == true);
+        const auto& restoredDevice = getDevice(tracks[0].chain.fxChainElements[0]);
         REQUIRE(restoredDevice.name == "Test Synth");
         REQUIRE(restoredDevice.isInstrument == true);
 
@@ -1124,9 +1422,9 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         REQUIRE(tracks.size() == 1);
 
         // Verify the rack was restored
-        REQUIRE(tracks[0].chainElements.size() == 1);
-        REQUIRE(isRack(tracks[0].chainElements[0]) == true);
-        const auto& restoredRack = getRack(tracks[0].chainElements[0]);
+        REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
+        REQUIRE(isRack(tracks[0].chain.fxChainElements[0]) == true);
+        const auto& restoredRack = getRack(tracks[0].chain.fxChainElements[0]);
         REQUIRE(restoredRack.name == "Test Rack");
 
         // Cleanup
@@ -1215,10 +1513,10 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
 
         const auto& tracks = trackManager.getTracks();
         REQUIRE(tracks.size() == 1);
-        REQUIRE(tracks[0].chainElements.size() == 1);
-        REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
+        REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chain.fxChainElements[0]) == true);
 
-        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        const auto& restoredDevice = getDevice(tracks[0].chain.fxChainElements[0]);
         REQUIRE(restoredDevice.pluginState == juce::String("SGVsbG8gV29ybGQ="));
     }
 
@@ -1245,9 +1543,9 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
 
         const auto& tracks = trackManager.getTracks();
         REQUIRE(tracks.size() == 1);
-        REQUIRE(tracks[0].chainElements.size() == 1);
-        REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
-        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        REQUIRE(tracks[0].chain.fxChainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chain.fxChainElements[0]) == true);
+        const auto& restoredDevice = getDevice(tracks[0].chain.fxChainElements[0]);
         REQUIRE(restoredDevice.pluginState.isEmpty());
     }
 }
@@ -1315,14 +1613,214 @@ TEST_CASE("DeviceInfo panel UI state roundtrip", "[project][serialization][devic
     REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
     auto* loadedTrack = trackManager.getTrack(trackId);
     REQUIRE(loadedTrack != nullptr);
-    REQUIRE(loadedTrack->chainElements.size() == 1);
-    REQUIRE(isDevice(loadedTrack->chainElements[0]));
-    const auto& loaded = getDevice(loadedTrack->chainElements[0]);
+    REQUIRE(loadedTrack->chain.fxChainElements.size() == 1);
+    REQUIRE(isDevice(loadedTrack->chain.fxChainElements[0]));
+    const auto& loaded = getDevice(loadedTrack->chain.fxChainElements[0]);
     REQUIRE(loaded.modPanelOpen);
     REQUIRE(loaded.gainPanelOpen);
     REQUIRE(loaded.paramPanelOpen);
     REQUIRE(loaded.aiPanelOpen);
     REQUIRE(loaded.aiPanelOutput.isEmpty());
+}
+
+TEST_CASE("Section-scoped device ids survive project roundtrip",
+          "[project][serialization][devices]") {
+    ProjectTestFixture fixture;
+
+    auto& trackManager = TrackManager::getInstance();
+    auto trackId = trackManager.createTrack("Section IDs", TrackType::Audio);
+
+    DeviceInfo fx;
+    fx.name = "FX";
+    fx.pluginId = "fx";
+    DeviceInfo post;
+    post.name = "Post";
+    post.pluginId = "post";
+    DeviceInfo analysis;
+    analysis.name = "Analysis";
+    analysis.pluginId = "oscilloscope";
+
+    REQUIRE(trackManager.addDeviceToTrack(trackId, fx) == 1);
+    REQUIRE(trackManager.addDeviceToPostFx(trackId, post) == 1);
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(trackId, analysis) == 1);
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+
+    ProjectInfo loadedInfo;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
+
+    auto* loadedTrack = trackManager.getTrack(trackId);
+    REQUIRE(loadedTrack != nullptr);
+    REQUIRE(loadedTrack->chain.fxChainElements.size() == 1);
+    REQUIRE(loadedTrack->chain.postFxChainElements.size() == 1);
+    REQUIRE(loadedTrack->chain.mixerAnalysisElements.size() == 1);
+    REQUIRE(getDevice(loadedTrack->chain.fxChainElements[0]).id == 1);
+    REQUIRE(loadedTrack->chain.postFxChainElements[0].device.id == 1);
+    REQUIRE(loadedTrack->chain.mixerAnalysisElements[0].device.id == 1);
+
+    fx.name = "FX 2";
+    post.name = "Post 2";
+    analysis.name = "Spectrum";
+    analysis.pluginId = "spectrumanalyzer";
+
+    REQUIRE(trackManager.addDeviceToTrack(trackId, fx) == 2);
+    REQUIRE(trackManager.addDeviceToPostFx(trackId, post) == 2);
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(trackId, analysis) == 2);
+}
+
+TEST_CASE("Post-FX visible and mini mixer parameters survive project roundtrip",
+          "[project][serialization][devices]") {
+    ProjectTestFixture fixture;
+
+    auto& trackManager = TrackManager::getInstance();
+    auto trackId = trackManager.createTrack("Post FX Params", TrackType::Audio);
+
+    DeviceInfo fx;
+    fx.name = "FX";
+    fx.pluginId = "fx";
+    DeviceInfo post;
+    post.name = "Post";
+    post.pluginId = "post";
+
+    const auto fxId = trackManager.addDeviceToTrack(trackId, fx);
+    const auto postId = trackManager.addDeviceToPostFx(trackId, post);
+    REQUIRE(fxId == 1);
+    REQUIRE(postId == 1);
+
+    const auto fxPath = ChainNodePath::topLevelDevice(trackId, fxId);
+    const auto postPath = ChainNodePath::postFxDevice(trackId, postId);
+    trackManager.setDeviceVisibleParameters(fxPath, {1, 2});
+    trackManager.setDeviceMiniMixerParameters(fxPath, {3});
+    trackManager.setDeviceVisibleParameters(postPath, {4, 5});
+    trackManager.setDeviceMiniMixerParameters(postPath, {6, 7});
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+
+    ProjectInfo loadedInfo;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
+
+    auto* loadedFx = trackManager.getDeviceInChainByPath(fxPath);
+    auto* loadedPost = trackManager.getDeviceInChainByPath(postPath);
+    REQUIRE(loadedFx != nullptr);
+    REQUIRE(loadedPost != nullptr);
+    REQUIRE(loadedFx->visibleParameters == std::vector<int>{1, 2});
+    REQUIRE(loadedFx->miniMixerParameters == std::vector<int>{3});
+    REQUIRE(loadedPost->visibleParameters == std::vector<int>{4, 5});
+    REQUIRE(loadedPost->miniMixerParameters == std::vector<int>{6, 7});
+}
+
+TEST_CASE("Mixer analysis plugin state survives project roundtrip",
+          "[project][serialization][devices][pluginState]") {
+    ProjectTestFixture fixture;
+
+    auto& trackManager = TrackManager::getInstance();
+    auto& projectManager = ProjectManager::getInstance();
+    auto firstTrackId = trackManager.createTrack("First", TrackType::Audio);
+    auto secondTrackId = trackManager.createTrack("Second", TrackType::Audio);
+
+    DeviceInfo firstScope;
+    firstScope.name = "Oscilloscope";
+    firstScope.pluginId = "oscilloscope";
+    firstScope.format = PluginFormat::Internal;
+    firstScope.deviceType = DeviceType::Analysis;
+    firstScope.pluginState = "<PLUGIN type=\"oscilloscope\" traceColour=\"1\"/>";
+
+    DeviceInfo secondScope = firstScope;
+    secondScope.pluginState = "<PLUGIN type=\"oscilloscope\" traceColour=\"5\"/>";
+
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(firstTrackId, firstScope) != INVALID_DEVICE_ID);
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(secondTrackId, secondScope) != INVALID_DEVICE_ID);
+
+    auto tempFile = fixture.createTempProjectFile(".mgd");
+    auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
+    REQUIRE(projectManager.saveProjectAs(tempFile));
+
+    trackManager.clearAllTracks();
+    REQUIRE(projectManager.loadProject(actualFile));
+
+    auto* firstTrack = trackManager.getTrack(firstTrackId);
+    auto* secondTrack = trackManager.getTrack(secondTrackId);
+    REQUIRE(firstTrack != nullptr);
+    REQUIRE(secondTrack != nullptr);
+    REQUIRE(firstTrack->chain.mixerAnalysisElements.size() == 1);
+    REQUIRE(secondTrack->chain.mixerAnalysisElements.size() == 1);
+    REQUIRE(firstTrack->chain.mixerAnalysisElements[0].device.pluginState ==
+            juce::String("<PLUGIN type=\"oscilloscope\" traceColour=\"1\"/>"));
+    REQUIRE(secondTrack->chain.mixerAnalysisElements[0].device.pluginState ==
+            juce::String("<PLUGIN type=\"oscilloscope\" traceColour=\"5\"/>"));
+}
+
+TEST_CASE("Master mixer analysis plugin state survives project roundtrip",
+          "[project][serialization][master][pluginState]") {
+    ProjectTestFixture fixture;
+
+    auto& trackManager = TrackManager::getInstance();
+    auto& projectManager = ProjectManager::getInstance();
+
+    DeviceInfo scope;
+    scope.name = "Oscilloscope";
+    scope.pluginId = "oscilloscope";
+    scope.format = PluginFormat::Internal;
+    scope.deviceType = DeviceType::Analysis;
+    scope.pluginState = "<PLUGIN type=\"oscilloscope\" traceColour=\"3\"/>";
+
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(MASTER_TRACK_ID, scope) != INVALID_DEVICE_ID);
+
+    auto tempFile = fixture.createTempProjectFile(".mgd");
+    auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
+    REQUIRE(projectManager.saveProjectAs(tempFile));
+
+    trackManager.clearAllTracks();
+    REQUIRE(projectManager.loadProject(actualFile));
+
+    auto* masterTrack = trackManager.getTrack(MASTER_TRACK_ID);
+    REQUIRE(masterTrack != nullptr);
+    REQUIRE(masterTrack->chain.mixerAnalysisElements.size() == 1);
+    REQUIRE(masterTrack->chain.mixerAnalysisElements[0].device.pluginState ==
+            juce::String("<PLUGIN type=\"oscilloscope\" traceColour=\"3\"/>"));
+
+    auto childTrackId = trackManager.createTrack("Later Track", TrackType::Audio);
+    DeviceInfo siblingScope = scope;
+    siblingScope.pluginState = "<PLUGIN type=\"oscilloscope\" traceColour=\"6\"/>";
+    REQUIRE(trackManager.addDeviceToMixerAnalysis(childTrackId, siblingScope) == 2);
+}
+
+TEST_CASE("Post-fx device params are not automation targets",
+          "[project][serialization][automation]") {
+    ProjectTestFixture fixture;
+
+    auto& trackManager = TrackManager::getInstance();
+    auto& automationManager = AutomationManager::getInstance();
+    auto trackId = trackManager.createTrack("Automation Section IDs", TrackType::Audio);
+
+    DeviceInfo fx;
+    fx.name = "FX";
+    fx.pluginId = "fx";
+    DeviceInfo post;
+    post.name = "Post";
+    post.pluginId = "post";
+
+    auto fxId = trackManager.addDeviceToTrack(trackId, fx);
+    auto postId = trackManager.addDeviceToPostFx(trackId, post);
+    REQUIRE(fxId == 1);
+    REQUIRE(postId == 1);
+
+    juce::ignoreUnused(fxId);
+    const auto postFxPath = ChainNodePath::postFxDevice(trackId, postId);
+    const auto laneId = automationManager.createLane(ControlTarget::pluginParam(postFxPath, 0),
+                                                     AutomationLaneType::Absolute);
+    REQUIRE(laneId == INVALID_AUTOMATION_LANE_ID);
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+
+    ProjectInfo loadedInfo;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
+
+    const auto& lanes = automationManager.getLanes();
+    REQUIRE(lanes.empty());
 }
 
 TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][parameter]") {
@@ -1399,9 +1897,9 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
     auto* loadedTrack = trackManager.getTrack(trackId);
     REQUIRE(loadedTrack != nullptr);
-    REQUIRE(loadedTrack->chainElements.size() == 1);
-    REQUIRE(isDevice(loadedTrack->chainElements[0]));
-    const auto& loadedDevice = getDevice(loadedTrack->chainElements[0]);
+    REQUIRE(loadedTrack->chain.fxChainElements.size() == 1);
+    REQUIRE(isDevice(loadedTrack->chain.fxChainElements[0]));
+    const auto& loadedDevice = getDevice(loadedTrack->chain.fxChainElements[0]);
     REQUIRE(loadedDevice.parameters.size() == 1);
     const auto& loaded = loadedDevice.parameters[0];
     REQUIRE(loaded.paramIndex == 12);

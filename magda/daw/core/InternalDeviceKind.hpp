@@ -49,6 +49,9 @@ enum class InternalDeviceKind {
     AudioSidechainMonitor,
     InstrumentMeterTap,
     SessionMonitor,
+    // --- Analysis (transparent passthrough; DeviceType::Analysis) -------
+    Oscilloscope,
+    SpectrumAnalyzer,
     // --- Faust ---------------------------------------------------------
     Faust,  // interpreter-based, runs arbitrary user .dsp
 };
@@ -72,5 +75,23 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId);
 
 const InternalDeviceMetadata* getInternalDeviceMetadata(InternalDeviceKind kind);
 const InternalDeviceMetadata* getInternalDeviceMetadataForPluginId(const juce::String& pluginId);
+
+/**
+ * @brief True if the pluginId is an analysis device (oscilloscope / spectrum).
+ *
+ * Analysis devices are transparent passthroughs that expose no macros or mods.
+ * The pluginId is the robust source of truth (always set at creation), so the
+ * macro/mod gating keys off this rather than relying on DeviceType being set
+ * at every creation site.
+ */
+bool isAnalysisDevice(const juce::String& pluginId);
+
+/**
+ * @brief Stable display / chain order for known post-FX analysis devices.
+ *
+ * Returns -1 for non-analysis devices. The Track FX post-FX area keeps
+ * Oscilloscope before Spectrum Analyzer whenever both are present.
+ */
+int postFxAnalysisDeviceOrder(const juce::String& pluginId);
 
 }  // namespace magda

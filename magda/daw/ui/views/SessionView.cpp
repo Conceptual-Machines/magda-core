@@ -12,6 +12,7 @@
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
+#include "../components/common/SvgButton.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../components/mixer/LevelMeter.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
@@ -24,6 +25,7 @@
 #include "ClipSlotButton.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
+#include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/SessionLaunchService.hpp"
 #include "core/SessionViewState.hpp"
@@ -38,6 +40,8 @@ namespace magda {
 // dB conversion helpers for faders
 namespace {
 constexpr float MIN_DB = -60.0f;
+constexpr float MAX_DB = 6.0f;
+constexpr float METER_CURVE_EXPONENT = 2.0f;
 
 juce::String formatTrackIds(const std::vector<TrackId>& trackIds) {
     juce::String text("[");
@@ -84,6 +88,26 @@ float dbToGain(float db) {
     return std::pow(10.0f, db / 20.0f);
 }
 
+float dbToMeterPos(float db) {
+    if (db <= MIN_DB)
+        return 0.0f;
+    if (db >= MAX_DB)
+        return 1.0f;
+
+    float normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
+    return std::pow(normalized, METER_CURVE_EXPONENT);
+}
+
+float meterPosToDb(float pos) {
+    if (pos <= 0.0f)
+        return MIN_DB;
+    if (pos >= 1.0f)
+        return MAX_DB;
+
+    float normalized = std::pow(pos, 1.0f / METER_CURVE_EXPONENT);
+    return MIN_DB + normalized * (MAX_DB - MIN_DB);
+}
+
 // Multi-track edit fan-out: when a strip is part of a multi-selection, every
 // selected track receives the same edit. Otherwise only the clicked track is
 // touched.
@@ -96,6 +120,106 @@ std::vector<TrackId> getMultiEditTargets(TrackId clickedId) {
     return {clickedId};
 }
 }  // namespace
+
+class SessionView::SessionToggleRail : public juce::Component {
+  public:
+    SessionToggleRail() {
+        auto& cfg = Config::getInstance();
+
+        setupButton(sendsButton_, "SessionShowSends", BinaryData::send_svg,
+                    BinaryData::send_svgSize, "Show sends", cfg.getMixerShowSends(),
+                    [](bool v) { Config::getInstance().setMixerShowSends(v); });
+
+        setupButton(routingButton_, "SessionShowRouting", BinaryData::inputoutput_svg,
+                    BinaryData::inputoutput_svgSize, "Show I/O routing", cfg.getMixerShowRouting(),
+                    [](bool v) { Config::getInstance().setMixerShowRouting(v); });
+
+        setupButton(monitorButton_, "SessionShowMonitor", BinaryData::recordmonitor_svg,
+                    BinaryData::recordmonitor_svgSize, "Show record/monitor row",
+                    cfg.getMixerShowMonitor(),
+                    [](bool v) { Config::getInstance().setMixerShowMonitor(v); });
+    }
+
+    void paint(juce::Graphics& g) override {
+        auto bounds = getLocalBounds();
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.fillRect(bounds.getRight() - 1, bounds.getY(), 1, bounds.getHeight());
+    }
+
+    void resized() override {
+        constexpr int BTN_SIZE = 28;
+        constexpr int BTN_SPACING = 6;
+        constexpr int EDGE_PADDING = 8;
+
+        auto bounds = getLocalBounds();
+        const int x = (bounds.getWidth() - BTN_SIZE) / 2;
+
+        int yTop = EDGE_PADDING;
+        if (sendsButton_) {
+            sendsButton_->setBounds(x, yTop, BTN_SIZE, BTN_SIZE);
+            yTop += BTN_SIZE + BTN_SPACING;
+        }
+
+        int yBottom = bounds.getHeight() - EDGE_PADDING - BTN_SIZE;
+        if (monitorButton_) {
+            monitorButton_->setBounds(x, yBottom, BTN_SIZE, BTN_SIZE);
+            yBottom -= BTN_SIZE + BTN_SPACING;
+        }
+        if (routingButton_)
+            routingButton_->setBounds(x, yBottom, BTN_SIZE, BTN_SIZE);
+    }
+
+    void refreshFromConfig() {
+        auto& cfg = Config::getInstance();
+        applyToggleState(sendsButton_.get(), cfg.getMixerShowSends());
+        applyToggleState(routingButton_.get(), cfg.getMixerShowRouting());
+        applyToggleState(monitorButton_.get(), cfg.getMixerShowMonitor());
+    }
+
+    static constexpr int RAIL_WIDTH = 36;
+    std::function<void()> onToggleChanged;
+
+  private:
+    std::unique_ptr<SvgButton> sendsButton_;
+    std::unique_ptr<SvgButton> routingButton_;
+    std::unique_ptr<SvgButton> monitorButton_;
+
+    void setupButton(std::unique_ptr<SvgButton>& btn, const juce::String& name, const char* svgData,
+                     size_t svgSize, const juce::String& tooltip, bool initialState,
+                     std::function<void(bool)> setter) {
+        btn = std::make_unique<SvgButton>(name, svgData, svgSize);
+        btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        btn->setBorderThickness(1.0f);
+        btn->setTooltip(tooltip);
+        btn->setWantsKeyboardFocus(false);
+        applyToggleState(btn.get(), initialState);
+
+        btn->onClick = [this, raw = btn.get(), setter = std::move(setter)]() {
+            const bool newState = !raw->isActive();
+            setter(newState);
+            applyToggleState(raw, newState);
+            Config::getInstance().save();
+            if (onToggleChanged)
+                onToggleChanged();
+        };
+
+        addAndMakeVisible(*btn);
+    }
+
+    static void applyToggleState(SvgButton* btn, bool on) {
+        if (btn == nullptr)
+            return;
+        btn->setActive(on);
+        const auto base = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        btn->setNormalColor(on ? base : base.withAlpha(0.3f));
+        btn->repaint();
+    }
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionToggleRail)
+};
 
 // Custom grid content that draws track separators and empty cells
 class SessionView::GridContent : public juce::Component {
@@ -530,6 +654,34 @@ class SessionView::BeatBandContainer : public juce::Component {
     std::vector<double> phases_;
     magda::ManagedDrawable rateIcon_;
     magda::ManagedDrawable hideIcon_;
+};
+
+// Passive beat pulse in the master column. Mixer controls live in the shared
+// left rail; this keeps the master corner as a timing indicator only.
+class SessionView::MasterBeatIndicator : public juce::Component {
+  public:
+    void setBeatPhase(double phase) {
+        if (phase == phase_)
+            return;
+        phase_ = phase;
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.fillRect(0, 0, getWidth(), 1);
+
+        const float alpha = static_cast<float>(juce::jmax(0.0, 0.85 - phase_ * 0.85));
+        constexpr float kDotRadius = 3.0f;
+        const auto centre = getLocalBounds().toFloat().getCentre();
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(alpha));
+        g.fillEllipse(centre.getX() - kDotRadius, centre.getY() - kDotRadius, kDotRadius * 2.0f,
+                      kDotRadius * 2.0f);
+    }
+
+  private:
+    double phase_ = 1.0;
 };
 
 // Container for send section (between stop buttons and IO row)
@@ -970,12 +1122,30 @@ class SessionView::MiniChannelStrip : public juce::Component {
         volumeSlider_ =
             std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
         volumeSlider_->setOrientation(daw::ui::TextSlider::Orientation::Vertical);
-        volumeSlider_->setRange(-60.0, 6.0, 0.1);
+        volumeSlider_->setRange(0.0, 1.0, 0.001);
         volumeSlider_->setFont(FontManager::getInstance().getUIFont(9.0f));
         float db = gainToDb(track.volume);
-        volumeSlider_->setValue(db, juce::dontSendNotification);
+        volumeSlider_->setValue(dbToMeterPos(db), juce::dontSendNotification);
+        volumeSlider_->setValueFormatter([](double pos) -> juce::String {
+            float db = meterPosToDb(static_cast<float>(pos));
+            if (db <= MIN_DB)
+                return "-inf";
+            if (std::abs(db) < 0.05f)
+                db = 0.0f;
+            return juce::String(db, 1);
+        });
+        volumeSlider_->setValueParser([](const juce::String& text) -> double {
+            auto t = text.trim();
+            if (t.endsWithIgnoreCase("db"))
+                t = t.dropLastCharacters(2).trim();
+            if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
+                return 0.0;
+            return static_cast<double>(dbToMeterPos(t.getFloatValue()));
+        });
+        volumeSlider_->setShowText(false);
         volumeSlider_->onValueChanged = [this](double newValue) {
-            const float currentGain = dbToGain(static_cast<float>(newValue));
+            const float currentDb = meterPosToDb(static_cast<float>(newValue));
+            const float currentGain = dbToGain(currentDb);
             auto& sel = SelectionManager::getInstance();
             const bool multi = sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
             if (multi) {
@@ -984,12 +1154,13 @@ class SessionView::MiniChannelStrip : public juce::Component {
                     for (auto tid : sel.getSelectedTracks())
                         if (auto* t = tm.getTrack(tid))
                             multiTrackBaseVolumes_[tid] = t->volume;
-                    multiTrackDragStartDb_ = newValue;
+                    multiTrackDragStartDb_ = currentDb;
                 }
-                const double deltaDb = newValue - multiTrackDragStartDb_;
+                const double deltaDb = currentDb - multiTrackDragStartDb_;
                 for (auto& [tid, baseVol] : multiTrackBaseVolumes_) {
                     float baseDb = gainToDb(baseVol);
-                    float newDb = juce::jlimit(MIN_DB, 6.0f, static_cast<float>(baseDb + deltaDb));
+                    float newDb =
+                        juce::jlimit(MIN_DB, MAX_DB, static_cast<float>(baseDb + deltaDb));
                     float newGain = dbToGain(newDb);
                     UndoManager::getInstance().executeCommand(
                         std::make_unique<SetTrackVolumeCommand>(tid, newGain));
@@ -1208,22 +1379,23 @@ class SessionView::MiniChannelStrip : public juce::Component {
         auto panRow = bounds.removeFromBottom(14);
         panSlider_->setBounds(panRow);
 
-        // Layout: fader | dbScale | meter
-        int meterW = juce::jmax(8, bounds.getWidth() * 30 / 100);
-        auto meterBounds = bounds.removeFromRight(meterW);
-        levelMeter_->setBounds(meterBounds.reduced(1, 2));
-
-        // dB scale labels — narrow column between fader and meter
-        static constexpr int DB_SCALE_WIDTH = 16;
-        if (bounds.getWidth() > DB_SCALE_WIDTH + 20) {
+        // Layout mirrors MixerView: meter and fader share the same bounds, with
+        // the fader thumb drawn above the peak meter and dB labels on the right.
+        static constexpr int DB_SCALE_WIDTH = 18;
+        static constexpr int SCALE_GAP = 2;
+        if (bounds.getWidth() > DB_SCALE_WIDTH + SCALE_GAP + 20) {
             auto scaleBounds = bounds.removeFromRight(DB_SCALE_WIDTH);
+            bounds.removeFromRight(SCALE_GAP);
             dbScale_->setBounds(scaleBounds.withTrimmedTop(2).withTrimmedBottom(2));
             dbScale_->setVisible(true);
         } else {
             dbScale_->setVisible(false);
         }
 
-        volumeSlider_->setBounds(bounds.reduced(1, 0));
+        auto faderBounds = bounds.reduced(1, 2);
+        levelMeter_->setBounds(faderBounds);
+        volumeSlider_->setBounds(faderBounds);
+        volumeSlider_->toFront(false);
     }
 
     void setMeterLevels(float left, float right) {
@@ -1232,7 +1404,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
 
     void updateFromTrack(const TrackInfo& track) {
         float db = gainToDb(track.volume);
-        volumeSlider_->setValue(db, juce::dontSendNotification);
+        volumeSlider_->setValue(dbToMeterPos(db), juce::dontSendNotification);
         panSlider_->setValue(track.pan, juce::dontSendNotification);
         muteButton_->setToggleState(track.muted, juce::dontSendNotification);
         soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
@@ -1289,15 +1461,32 @@ class SessionView::MiniMasterStrip : public juce::Component {
         volumeSlider_ =
             std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
         volumeSlider_->setOrientation(daw::ui::TextSlider::Orientation::Vertical);
-        volumeSlider_->setRange(-60.0, 6.0, 0.1);
+        volumeSlider_->setRange(0.0, 1.0, 0.001);
         volumeSlider_->setFont(FontManager::getInstance().getUIFont(9.0f));
 
         const auto& master = TrackManager::getInstance().getMasterChannel();
         float db = gainToDb(master.volume);
-        volumeSlider_->setValue(db, juce::dontSendNotification);
+        volumeSlider_->setValue(dbToMeterPos(db), juce::dontSendNotification);
+        volumeSlider_->setValueFormatter([](double pos) -> juce::String {
+            float db = meterPosToDb(static_cast<float>(pos));
+            if (db <= MIN_DB)
+                return "-inf";
+            if (std::abs(db) < 0.05f)
+                db = 0.0f;
+            return juce::String(db, 1);
+        });
+        volumeSlider_->setValueParser([](const juce::String& text) -> double {
+            auto t = text.trim();
+            if (t.endsWithIgnoreCase("db"))
+                t = t.dropLastCharacters(2).trim();
+            if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
+                return 0.0;
+            return static_cast<double>(dbToMeterPos(t.getFloatValue()));
+        });
+        volumeSlider_->setShowText(false);
 
         volumeSlider_->onValueChanged = [](double newValue) {
-            float gain = dbToGain(static_cast<float>(newValue));
+            float gain = dbToGain(meterPosToDb(static_cast<float>(newValue)));
             UndoManager::getInstance().executeCommand(
                 std::make_unique<SetMasterVolumeCommand>(gain));
         };
@@ -1335,26 +1524,26 @@ class SessionView::MiniMasterStrip : public juce::Component {
         auto bounds = getLocalBounds();
         bounds.removeFromTop(3);
 
-        int meterW = juce::jmax(8, bounds.getWidth() * 40 / 100);
-        auto meterBounds = bounds.removeFromRight(meterW);
-        levelMeter_->setBounds(meterBounds.reduced(1, 2));
-
-        // dB scale labels — narrow column between fader and meter
-        static constexpr int DB_SCALE_WIDTH = 16;
-        if (bounds.getWidth() > DB_SCALE_WIDTH + 20) {
+        static constexpr int DB_SCALE_WIDTH = 18;
+        static constexpr int SCALE_GAP = 2;
+        if (bounds.getWidth() > DB_SCALE_WIDTH + SCALE_GAP + 20) {
             auto scaleBounds = bounds.removeFromRight(DB_SCALE_WIDTH);
+            bounds.removeFromRight(SCALE_GAP);
             dbScale_->setBounds(scaleBounds.withTrimmedTop(2).withTrimmedBottom(2));
             dbScale_->setVisible(true);
         } else {
             dbScale_->setVisible(false);
         }
 
-        volumeSlider_->setBounds(bounds.reduced(1, 0));
+        auto faderBounds = bounds.reduced(1, 2);
+        levelMeter_->setBounds(faderBounds);
+        volumeSlider_->setBounds(faderBounds);
+        volumeSlider_->toFront(false);
     }
 
     void updateVolume(float volume) {
         float db = gainToDb(volume);
-        volumeSlider_->setValue(db, juce::dontSendNotification);
+        volumeSlider_->setValue(dbToMeterPos(db), juce::dontSendNotification);
     }
 
     void setMeterLevels(float left, float right) {
@@ -1372,6 +1561,14 @@ class SessionView::MiniMasterStrip : public juce::Component {
 SessionView::SessionView() {
     // Get current view mode
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
+    syncMixerVisibilityFromConfig();
+
+    toggleRail_ = std::make_unique<SessionToggleRail>();
+    toggleRail_->onToggleChanged = [this]() {
+        syncMixerVisibilityFromConfig();
+        resized();
+    };
+    addAndMakeVisible(*toggleRail_);
 
     // Create header container for clipping
     headerContainer = std::make_unique<HeaderContainer>();
@@ -1450,6 +1647,9 @@ SessionView::SessionView() {
     };
     addAndMakeVisible(*beatBandContainer_);
 
+    masterBeatIndicator_ = std::make_unique<MasterBeatIndicator>();
+    addAndMakeVisible(*masterBeatIndicator_);
+
     // Create send section container (between stop buttons and IO row, hidden by default)
     sendSectionContainer_ = std::make_unique<SendSectionContainer>();
     sendSectionContainer_->onContextMenu = [this]() { showMixerContextMenu(); };
@@ -1490,9 +1690,7 @@ SessionView::SessionView() {
     masterLabel_->setColour(juce::TextButton::textColourOffId,
                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     masterLabel_->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
-    masterLabel_->onClick = [this]() {
-        SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
-    };
+    masterLabel_->onClick = []() { SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID); };
     addAndMakeVisible(*masterLabel_);
 
     // Create master strip in the fader row (scene column area)
@@ -1909,11 +2107,12 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
         if (pluginDropTrackIndex_ >= 0 &&
             pluginDropTrackIndex_ < static_cast<int>(visibleTrackIds_.size())) {
             // Highlight the specific track column
-            int trackX = getTrackX(pluginDropTrackIndex_) - trackHeaderScrollOffset;
+            auto vpBounds = gridViewport->getBounds();
+            int trackX =
+                vpBounds.getX() + getTrackX(pluginDropTrackIndex_) - trackHeaderScrollOffset;
             int trackW = (pluginDropTrackIndex_ < static_cast<int>(trackColumnWidths_.size()))
                              ? trackColumnWidths_[pluginDropTrackIndex_]
                              : DEFAULT_CLIP_SLOT_WIDTH;
-            auto vpBounds = gridViewport->getBounds();
             auto colBounds = juce::Rectangle<int>(trackX, 0, trackW, vpBounds.getBottom());
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
             g.fillRect(colBounds);
@@ -1922,7 +2121,7 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
         } else {
             // Past last track — show "new track" indicator
             auto vpBounds = gridViewport->getBounds();
-            int lastTrackEnd = getTotalTracksWidth() - trackHeaderScrollOffset;
+            int lastTrackEnd = vpBounds.getX() + getTotalTracksWidth() - trackHeaderScrollOffset;
             int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
             auto indicatorBounds =
                 juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
@@ -1942,7 +2141,7 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
     // File drag "new track" overlay (when dragging audio files past last track)
     if (dragHoverTrackIndex_ == -1 && dragHoverSceneIndex_ >= 0) {
         auto vpBounds = gridViewport->getBounds();
-        int lastTrackEnd = getTotalTracksWidth() - trackHeaderScrollOffset;
+        int lastTrackEnd = vpBounds.getX() + getTotalTracksWidth() - trackHeaderScrollOffset;
         int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
         auto indicatorBounds =
             juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
@@ -2006,19 +2205,17 @@ void SessionView::resized() {
     int numTracks = static_cast<int>(trackHeaders.size());
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
+    if (toggleRail_)
+        toggleRail_->setBounds(bounds.removeFromLeft(SessionToggleRail::RAIL_WIDTH));
+
     // Fader row at the bottom (tracks area + master strip in scene column).
-    // A thin band along the top of the row hosts the I/O / Sends / Record-
-    // Monitor toggle icons (in the master corner) and stays empty above each
-    // track strip — keeping every fader at the same height across the row.
+    // A thin band along the top of the row hosts the beat indicators above
+    // each track strip, keeping every fader at the same height across the row.
     auto faderRow = bounds.removeFromBottom(faderRowHeight_);
     auto togglesBand = faderRow.removeFromTop(MIXER_TOGGLES_HEIGHT);
-    auto masterTogglesArea = togglesBand.removeFromRight(SCENE_BUTTON_WIDTH);
-    if (showIOToggle_ && showSendsToggle_ && showRecordMonitorToggle_) {
-        const int btnW = masterTogglesArea.getWidth() / 3;
-        showIOToggle_->setBounds(masterTogglesArea.removeFromLeft(btnW).reduced(1));
-        showSendsToggle_->setBounds(masterTogglesArea.removeFromLeft(btnW).reduced(1));
-        showRecordMonitorToggle_->setBounds(masterTogglesArea.reduced(1));
-    }
+    auto masterPulseArea = togglesBand.removeFromRight(SCENE_BUTTON_WIDTH);
+    if (masterBeatIndicator_)
+        masterBeatIndicator_->setBounds(masterPulseArea);
     if (beatBandContainer_) {
         beatBandContainer_->setBounds(togglesBand);
         beatBandContainer_->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
@@ -2222,69 +2419,17 @@ void SessionView::setupSceneButtons() {
         sceneButtons.push_back(std::move(btn));
     }
 
-    // Mixer-row toggles in the corner above the master fader. Reuses the same
-    // SvgButton styling as MainView's arrangement toolbar (io_routing.svg etc.)
-    // so the icons read identically across views.
-    auto setupToggle = [this](std::unique_ptr<SvgButton>& btn, const juce::String& name,
-                              const char* svgData, size_t svgSize, std::function<void()> onClick) {
-        btn = std::make_unique<SvgButton>(name, svgData, svgSize);
-        btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-        btn->setBorderThickness(1.0f);
-        btn->setWantsKeyboardFocus(false);
-        btn->onClick = std::move(onClick);
-        addAndMakeVisible(*btn);
-    };
-
-    setupToggle(showIOToggle_, "ShowIO", BinaryData::io_routing_svg, BinaryData::io_routing_svgSize,
-                [this]() {
-                    if (trackColumnWidths_.empty())
-                        return;
-                    ioRowVisible_ = !ioRowVisible_;
-                    updateMixerToggleStates();
-                    resized();
-                });
-    showIOToggle_->setTooltip("Show I/O routing");
-
-    setupToggle(showSendsToggle_, "ShowSends", BinaryData::send_svg, BinaryData::send_svgSize,
-                [this]() {
-                    if (trackColumnWidths_.empty())
-                        return;
-                    sendRowVisible_ = !sendRowVisible_;
-                    updateMixerToggleStates();
-                    resized();
-                });
-    showSendsToggle_->setTooltip("Show sends");
-
-    setupToggle(showRecordMonitorToggle_, "ShowRecordMonitor", BinaryData::record_circle_svg,
-                BinaryData::record_circle_svgSize, [this]() {
-                    if (trackColumnWidths_.empty())
-                        return;
-                    recordMonitorVisible_ = !recordMonitorVisible_;
-                    for (auto& strip : trackMiniStrips_)
-                        strip->setShowRecordMonitor(recordMonitorVisible_);
-                    updateMixerToggleStates();
-                });
-    showRecordMonitorToggle_->setTooltip("Show record/monitor");
-
-    updateMixerToggleStates();
+    syncMixerVisibilityFromConfig();
 }
 
-void SessionView::updateMixerToggleStates() {
-    // Mirror the arrangement IOToggle: dim the icon when its row is hidden.
-    auto applyState = [](SvgButton* btn, bool on) {
-        if (!btn)
-            return;
-        const auto base = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
-        btn->setNormalColor(on ? base : base.withAlpha(0.3f));
-        btn->repaint();
-    };
-    applyState(showIOToggle_.get(), ioRowVisible_);
-    applyState(showSendsToggle_.get(), sendRowVisible_);
-    applyState(showRecordMonitorToggle_.get(), recordMonitorVisible_);
+void SessionView::syncMixerVisibilityFromConfig() {
+    auto& cfg = Config::getInstance();
+    ioRowVisible_ = cfg.getMixerShowRouting();
+    sendRowVisible_ = cfg.getMixerShowSends();
+    recordMonitorVisible_ = cfg.getMixerShowMonitor();
+
+    for (auto& strip : trackMiniStrips_)
+        strip->setShowRecordMonitor(recordMonitorVisible_);
 }
 
 void SessionView::addScene() {
@@ -2958,18 +3103,21 @@ void SessionView::showMixerContextMenu() {
     menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
         if (!safeThis)
             return;
+        auto& cfg = Config::getInstance();
         if (result == 1) {
-            safeThis->ioRowVisible_ = !safeThis->ioRowVisible_;
-            safeThis->resized();
+            cfg.setMixerShowRouting(!cfg.getMixerShowRouting());
         } else if (result == 2) {
-            safeThis->sendRowVisible_ = !safeThis->sendRowVisible_;
-            safeThis->resized();
+            cfg.setMixerShowSends(!cfg.getMixerShowSends());
         } else if (result == 3) {
-            safeThis->recordMonitorVisible_ = !safeThis->recordMonitorVisible_;
-            for (auto& strip : safeThis->trackMiniStrips_)
-                strip->setShowRecordMonitor(safeThis->recordMonitorVisible_);
+            cfg.setMixerShowMonitor(!cfg.getMixerShowMonitor());
+        } else {
+            return;
         }
-        safeThis->updateMixerToggleStates();
+        cfg.save();
+        safeThis->syncMixerVisibilityFromConfig();
+        if (safeThis->toggleRail_)
+            safeThis->toggleRail_->refreshFromConfig();
+        safeThis->resized();
     });
 }
 
@@ -3451,6 +3599,8 @@ void SessionView::timerCallback() {
             }
             beatBandContainer_->setTrackBeatPhases(std::move(phases));
         }
+        if (masterBeatIndicator_)
+            masterBeatIndicator_->setBeatPhase(transportPlaying ? std::fmod(posBeats, 1.0) : 1.0);
         bool anyTrackStopPending = false;
         for (size_t trackIdx = 0; trackIdx < clipSlots.size(); ++trackIdx) {
             // Re-poll stop-pending state per track. The scheduler doesn't

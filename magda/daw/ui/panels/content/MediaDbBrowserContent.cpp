@@ -836,6 +836,45 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
 };
 
 // ===========================================================================
+// ResultsTable — keyboard handling (issue #1339)
+// ===========================================================================
+
+bool MediaDbBrowserContent::ResultsTable::keyPressed(const juce::KeyPress& key) {
+    // Transport keys: consume regardless of base-class outcome — neither
+    // ListBox nor TableListBox does anything useful with LEFT/RIGHT, so
+    // re-binding them for the audio preview is safe.
+    if (key == juce::KeyPress::leftKey) {
+        if (onStopRequest) {
+            onStopRequest();
+        }
+        return true;
+    }
+    if (key == juce::KeyPress::rightKey) {
+        if (onReplayRequest) {
+            onReplayRequest();
+        }
+        return true;
+    }
+
+    // Navigation keys: let ListBox move the selection, then audition the
+    // new row. We compare before/after so arrowing past the list edge
+    // (selection unchanged) doesn't re-trigger playback.
+    const bool isNav = key == juce::KeyPress::upKey || key == juce::KeyPress::downKey ||
+                       key == juce::KeyPress::pageUpKey || key == juce::KeyPress::pageDownKey ||
+                       key == juce::KeyPress::homeKey || key == juce::KeyPress::endKey;
+
+    const int rowBefore = isNav ? getSelectedRow() : -1;
+    const bool handled = juce::TableListBox::keyPressed(key);
+    if (handled && isNav && onKeyboardRowSelected) {
+        const int rowAfter = getSelectedRow();
+        if (rowAfter >= 0 && rowAfter != rowBefore) {
+            onKeyboardRowSelected(rowAfter);
+        }
+    }
+    return handled;
+}
+
+// ===========================================================================
 // MediaDbBrowserContent
 // ===========================================================================
 
@@ -957,6 +996,32 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
                             DarkTheme::getColour(DarkTheme::BACKGROUND));
     resultsTable_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
     resultsTable_.setOutlineThickness(1);
+
+    // Issue #1339: keyboard nav over the results list should audition the
+    // highlighted row (same path as the model's cellClicked) and
+    // LEFT/RIGHT should drive the preview transport. Fire onFileSelected
+    // with the row's file so the parent's autoplay-toggle logic in
+    // MediaExplorerContent::dbBrowser_->onFileSelected takes care of the
+    // rest — keeping a single autoplay decision point.
+    resultsTable_.onKeyboardRowSelected = [this](int row) {
+        if (row < 0 || row >= static_cast<int>(results_.size())) {
+            return;
+        }
+        const auto& r = results_[static_cast<size_t>(row)];
+        if (onFileSelected) {
+            onFileSelected(juce::File(juce::String(r.path.string())));
+        }
+    };
+    resultsTable_.onStopRequest = [this]() {
+        if (onPreviewStopRequest) {
+            onPreviewStopRequest();
+        }
+    };
+    resultsTable_.onReplayRequest = [this]() {
+        if (onPreviewReplayRequest) {
+            onPreviewReplayRequest();
+        }
+    };
 
     auto& header = resultsTable_.getHeader();
     header.setColour(juce::TableHeaderComponent::backgroundColourId,

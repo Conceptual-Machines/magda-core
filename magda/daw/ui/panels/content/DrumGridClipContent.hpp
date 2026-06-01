@@ -90,6 +90,11 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     // Override velocity lane methods
     void updateVelocityLane() override;
 
+    // Live MIDI note monitor hooks (plumbing lives in MidiEditorContent):
+    // highlight the played pad row and scroll it into view.
+    void highlightMonitoredNote(int noteNumber, bool noteOn) override;
+    void ensureMonitoredNoteVisible(int noteNumber) override;
+
     daw::audio::DrumGridPlugin* drumGrid_ = nullptr;
 
     // Layout constants (DrumGrid-specific)

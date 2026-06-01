@@ -13,6 +13,7 @@ Displayed in the bottom panel when a MIDI clip is selected. Provides a grid for 
 - **Drag edges** to resize note length
 - ++cmd++ **+ click** a note to delete it directly. If the note is part of a multi-selection, the whole group is erased. Acts as a rubber tool.
 - **Velocity lane** at the bottom for editing note velocities
+- **Live input highlight** — with the track's input monitoring on, the keyboard lights up notes as you play them (MIDI or computer keyboard) and scrolls a held note into view
 
 !!! note "Header controls"
     - **Grid resolution** — Draggable numerator/denominator for grid subdivision

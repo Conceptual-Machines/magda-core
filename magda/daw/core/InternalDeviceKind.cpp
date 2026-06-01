@@ -12,7 +12,9 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/MidiReceivePlugin.hpp"
+#include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/SidechainMonitorPlugin.hpp"
+#include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "audio/session/SessionMonitorPlugin.hpp"
@@ -86,6 +88,10 @@ const InternalDeviceMetadata kMetadata[] = {
      "Internal meter tap used to observe instrument output levels."},
     {InternalDeviceKind::SessionMonitor, "Session Monitor", "", "Session",
      "Internal monitor used by session playback and launch state."},
+    {InternalDeviceKind::Oscilloscope, "Oscilloscope", "", "Analysis",
+     "Transparent waveform monitor for inspecting signal shape over time."},
+    {InternalDeviceKind::SpectrumAnalyzer, "Spectrum Analyzer", "", "Analysis",
+     "Real-time FFT spectrum display with log-frequency axis and peak hold."},
     {InternalDeviceKind::Faust, "Faust", "", "Experimental",
      "Interpreted Faust device for loading and editing user DSP code."},
 };
@@ -132,6 +138,8 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::InstrumentMeterTapPlugin;
     using daw::audio::MagdaSamplerPlugin;
     using daw::audio::MidiChordEnginePlugin;
+    using daw::audio::OscilloscopePlugin;
+    using daw::audio::SpectrumAnalyzerPlugin;
     using daw::audio::StepSequencerPlugin;
     namespace TE = tracktion::engine;
 
@@ -159,6 +167,8 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::MidiChordEngine, MidiChordEnginePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Arpeggiator, ArpeggiatorPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::StepSequencer, StepSequencerPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::Oscilloscope, OscilloscopePlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::SpectrumAnalyzer, SpectrumAnalyzerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::InstrumentMeterTap, InstrumentMeterTapPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Faust, FaustPlugin::xmlTypeName, nullptr},
         // Plugins still in plain magda:: (older infra layers).
@@ -195,6 +205,22 @@ const InternalDeviceMetadata* getInternalDeviceMetadataForPluginId(const juce::S
         return metadata;
 
     return getInternalDeviceMetadata(classifyInternalDevice(pluginId));
+}
+
+bool isAnalysisDevice(const juce::String& pluginId) {
+    const auto kind = classifyInternalDevice(pluginId);
+    return kind == InternalDeviceKind::Oscilloscope || kind == InternalDeviceKind::SpectrumAnalyzer;
+}
+
+int postFxAnalysisDeviceOrder(const juce::String& pluginId) {
+    switch (classifyInternalDevice(pluginId)) {
+        case InternalDeviceKind::Oscilloscope:
+            return 0;
+        case InternalDeviceKind::SpectrumAnalyzer:
+            return 1;
+        default:
+            return -1;
+    }
 }
 
 }  // namespace magda

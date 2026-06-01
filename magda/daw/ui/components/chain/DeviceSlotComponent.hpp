@@ -6,6 +6,7 @@
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/DeviceInfo.hpp"
+#include "core/GainStagingManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
@@ -21,6 +22,7 @@
 
 namespace magda::daw::ui {
 
+class AnalyzerWindow;
 class FaustCustomView;
 class FaustUI;
 
@@ -45,7 +47,8 @@ class FaustUI;
 class DeviceSlotComponent : public NodeComponent,
                             public juce::Timer,
                             public magda::TrackManagerListener,
-                            public magda::AutomationManagerListener {
+                            public magda::AutomationManagerListener,
+                            public magda::GainStagingListener {
   public:
     static constexpr int BASE_SLOT_WIDTH = 450;  // Maximum width (8 columns)
     static constexpr int NUM_PARAMS_PER_PAGE = 32;
@@ -88,8 +91,10 @@ class DeviceSlotComponent : public NodeComponent,
 
   protected:
     void paint(juce::Graphics& g) override;
-    // No paintOverChildren override — base class handles dim, selection, and
-    // controller-indicator dots uniformly across device + rack nodes.
+    // Base class handles dim, selection, and controller-indicator dots; we
+    // extend it to draw the gain-staging overlay (state border + delta badge)
+    // on top of the slot's children.
+    void paintOverChildren(juce::Graphics& g) override;
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
 
     // Drum Grid clears the standard nameLabel_ and paints its custom
@@ -100,10 +105,10 @@ class DeviceSlotComponent : public NodeComponent,
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
     juce::Component* getHeaderPresetButton() override {
-        return presetButton_.get();
+        return stripsAnalysisChrome() ? nullptr : presetButton_.get();
     }
     juce::Component* getHeaderPowerButton() override {
-        return onButton_.get();
+        return stripsAnalysisChrome() ? nullptr : onButton_.get();
     }
     void mouseDrag(const juce::MouseEvent& e) override;
     void resizedCollapsed(juce::Rectangle<int>& area) override;
@@ -191,13 +196,19 @@ class DeviceSlotComponent : public NodeComponent,
 
     // TrackManagerListener - only implement parameter change notification
     void tracksChanged() override {}
-    void deviceParameterChanged(magda::DeviceId deviceId, int paramIndex, float newValue) override;
+    void deviceParameterChanged(const magda::ChainNodePath& devicePath, int paramIndex,
+                                float newValue) override;
 
     // AutomationManagerListener — pure-callback slider updates from curve edits
     // and playback. We only react to DeviceParameter lanes that target this
     // device; track-level lanes are handled by TrackHeadersPanel.
     void automationLanesChanged() override {}
     void automationValueChanged(magda::AutomationLaneId laneId, double normalizedValue) override;
+
+    // GainStagingListener — repaint our slot's staging overlay when this
+    // device's staging state changes.
+    void deviceGainStageChanged(const magda::ChainNodePath& devicePath,
+                                const magda::DeviceGainStageInfo& info) override;
 
   private:
     magda::DeviceInfo device_;
@@ -231,6 +242,8 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<FaustCustomView> faustCustomView_;
     std::unique_ptr<CompiledDevicePanel> compiledPanel_;
+    std::unique_ptr<AnalyzerWindow> analyzerWindow_;  // popped-out oscilloscope/spectrum
+    void toggleAnalyzerWindow();                      // open / hide the analyzer popout
 
     static constexpr int METER_STRIP_WIDTH = 18;  // wide enough for slider thumb overlay
     magda::LevelMeter levelMeter_;
@@ -245,6 +258,14 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<juce::TextButton> presetsButton_;
     // Vertical gain slider overlaid on the meter
     std::unique_ptr<juce::Slider> gainSlider_;
+    // Small rotary at the top of the meter strip that drives an equal-power
+    // crossfade between TE's slot DryGain/WetGain wrapper params. Only shown
+    // when the device exposes that wrapper pair (external plugins via TE).
+    // The meter and gain slider shrink to leave room above when present.
+    std::unique_ptr<juce::Slider> mixKnob_;
+    bool hasWrapperMixPair() const;
+    double currentMixPosition() const;
+    void syncMixKnobFromDevice();
     int lastMidiNote_ = -1;
     std::array<int, 32> lastChordNotes_{};
     int lastChordCount_ = 0;
@@ -281,6 +302,8 @@ class DeviceSlotComponent : public NodeComponent,
 
     void updateParameterSlots();   // Reload parameter data for current page
     void updateParameterValues();  // Update only parameter values (for polling)
+    bool applySavedParameterConfig();
+    void updateParameterPagination();
     void goToPrevPage();
     void goToNextPage();
     void showSidechainMenu();    // Show popup menu for sidechain source selection
@@ -293,6 +316,12 @@ class DeviceSlotComponent : public NodeComponent,
     bool isInternalDevice() const {
         return device_.format == magda::PluginFormat::Internal;
     }
+
+    // An analysis device sitting in post-FX: the header toggle owns add/remove
+    // and bypass/presets are meaningless, so its slot drops power/preset/delete.
+    bool stripsAnalysisChrome() const;
+    bool exposesDeviceModulation() const;
+    void syncModMacroControlsAvailability();
 
     // Helper to create custom UI for internal devices
     void createCustomUI();

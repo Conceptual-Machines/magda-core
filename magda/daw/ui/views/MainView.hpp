@@ -13,6 +13,7 @@
 #include "../components/tracks/TrackHeadersPanel.hpp"
 #include "../layout/LayoutConfig.hpp"
 #include "../state/TimelineController.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 
@@ -191,6 +192,68 @@ class MainView : public juce::Component,
         return LayoutConfig::getInstance().getTimelineHeight();
     }
     int trackHeaderWidth = LayoutConfig::getInstance().defaultTrackHeaderWidth;
+    static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = 20;
+
+    struct ArrangementLayout {
+        bool swapped = false;
+        juce::Rectangle<int> cornerArea;
+        juce::Rectangle<int> timelineArea;
+        juce::Rectangle<int> trackHeadersArea;
+        juce::Rectangle<int> trackContentArea;
+        juce::Rectangle<int> overlayArea;
+        juce::Rectangle<int> playheadArea;
+        juce::Rectangle<int> horizontalScrollBarArea;
+        juce::Rectangle<int> verticalScrollBarArea;
+        juce::Rectangle<int> horizontalScrollBarRowArea;
+        juce::Rectangle<int> horizontalScrollBarHitArea;
+        juce::Rectangle<int> verticalScrollBarHitArea;
+        juce::Rectangle<int> masterHeaderArea;
+        juce::Rectangle<int> masterContentArea;
+        juce::Rectangle<int> auxHeadersArea;
+        juce::Rectangle<int> auxContentArea;
+    };
+    ArrangementLayout computeArrangementLayout() const;
+
+    float horizontalScrollbarRevealProgress = 0.0f;
+    float verticalScrollbarRevealProgress = 0.0f;
+    int horizontalScrollbarRevealFrames = 0;
+    int verticalScrollbarRevealFrames = 0;
+    int horizontalHoverDwellFrames = 0;
+    int verticalHoverDwellFrames = 0;
+    bool isHorizontalScrollbarHovered = false;
+    bool isVerticalScrollbarHovered = false;
+    bool isUpdatingArrangementScrollbarLayout = false;
+    juce::Rectangle<int> horizontalScrollbarHitArea;
+    juce::Rectangle<int> verticalScrollbarHitArea;
+    // While the window is being resized the content's visible fraction changes,
+    // which fires the scrollbars' onRangeChanged and would pop them open. Track
+    // the last laid-out size so resized() can detect a genuine size change and
+    // arm a short window during which reveals are ignored.
+    int previousArrangementWidth = 0;
+    int previousArrangementHeight = 0;
+    int arrangementScrollbarResizeSuppressFrames = 0;
+    // Fade timings target 60Hz timer (~16ms/frame). Steps chosen so:
+    //   fade-in   ~12 frames (~200ms), fade-out ~30 frames (~500ms).
+    static constexpr float ARRANGEMENT_SCROLLBAR_FADE_IN_STEP = 0.08f;
+    static constexpr float HORIZONTAL_SCROLLBAR_FADE_OUT_STEP = 0.028f;
+    static constexpr float VERTICAL_SCROLLBAR_FADE_OUT_STEP = 0.04f;
+    // Hold frames keep the scrollbar fully visible briefly after the trigger
+    // ends (mouse exit, last scroll/zoom event) so small mouse movements or
+    // pauses between scrolls don't restart the fade cycle. ~300ms at 60Hz.
+    static constexpr int ARRANGEMENT_SCROLLBAR_REVEAL_HOLD_FRAMES = 18;
+    // Reveal hit strip is intentionally narrower than the scrollbar's visible
+    // width — the cursor has to be pushed right against the panel edge to
+    // reveal it. Avoids accidental triggers when editing clips near bar 1.
+    // (.reduced(1, 0) below trims to ~6px effective.)
+    static constexpr int ARRANGEMENT_SCROLLBAR_HIT_EDGE = 8;
+    // Dwell time before edge-hover triggers a reveal — filters out quick
+    // grazes through the hit strip in transit. ~80ms at 60Hz. Bypassed
+    // while the bar is already visible so the user can still re-grab it.
+    static constexpr int ARRANGEMENT_SCROLLBAR_HOVER_DWELL_FRAMES = 5;
+    // Reveals are ignored for this many frames after a window resize so the
+    // bars don't flash while dragging the window edge. Re-armed on every resize
+    // event, so it stays suppressed for the whole drag and ~150ms after. 60Hz.
+    static constexpr int ARRANGEMENT_SCROLLBAR_RESIZE_SUPPRESS_FRAMES = 10;
 
     // Resize handle state (horizontal - track header width)
     bool isResizingHeaders = false;
@@ -212,6 +275,11 @@ class MainView : public juce::Component,
 
     // Helper methods
     void updateContentSizes();
+    // Translate a resolved arrangement mouse-gesture (#21 GestureRouter) into
+    // the corresponding TimelineController / viewport action.
+    void dispatchArrangementGesture(const ResolvedGesture& gesture);
+    // Apply a new vertical track-height zoom multiplier and resync the panels.
+    void applyVerticalZoom(double newVerticalZoom);
     void syncHorizontalScrolling();
     void syncTrackHeights();
     void setupTrackSynchronization();
@@ -238,6 +306,10 @@ class MainView : public juce::Component,
     // Zoom scroll bar synchronization
     void updateHorizontalZoomScrollBar();
     void updateVerticalZoomScrollBar();
+    void revealHorizontalArrangementScrollbar();
+    void revealVerticalArrangementScrollbar();
+    void updateArrangementScrollbarVisibility();
+    void updateArrangementScrollbarHover(const juce::MouseEvent& event);
 
     // Grid division display (shown on horizontal zoom scroll bar)
     void updateGridDivisionDisplay();

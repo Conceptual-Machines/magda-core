@@ -254,6 +254,14 @@
     "button.export": "导出",
     "dialog.title": "导出MIDI"
   },
+  "gain_staging": {
+    "dialog.title": "增益分级",
+    "description": "播放歌曲中有代表性的段落，然后停止。每个设备的输出增益都会被调整，使设备链保持目标余量。",
+    "label.target": "目标峰值：",
+    "toggle.use_ai": "使用 AI",
+    "hint.use_ai": "让 AI 智能体来权衡限制器、饱和器和效果顺序，而不是采用固定的目标值。",
+    "button.start": "开始"
+  },
   "plugin_settings": {
     "section.system_directories": "系统插件目录",
     "section.custom_directories": "自定义插件目录",
@@ -371,6 +379,7 @@
     "toggle.expand_right_panel": "展开右侧面板（检视器）",
     "toggle.expand_bottom_panel": "展开底部面板（混音器）",
     "toggle.headers_on_right": "轨道头右置",
+    "toggle.autohide_arrangement_scrollbars": "自动隐藏编曲区滚动条",
     "toggle.confirm_track_delete": "删除轨道前要求确认",
     "toggle.auto_monitor": "自动监听所选轨道",
     "toggle.open_macros_on_select": "选择设备或机架时打开宏",

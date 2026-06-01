@@ -200,6 +200,10 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         updateLabel();
     }
 
+    void setShowText(bool show) {
+        valueControl_.setShowText(show);
+    }
+
     void setEmptyText(const juce::String& text) {
         emptyText_ = text;
         updateLabel();
@@ -218,6 +222,12 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
     void setValueFormatter(std::function<juce::String(double)> formatter) {
         valueFormatter_ = std::move(formatter);
         hasExplicitFormatter_ = static_cast<bool>(valueFormatter_);
+        updateLabel();
+    }
+
+    void clearValueFormatter() {
+        valueFormatter_ = nullptr;
+        hasExplicitFormatter_ = false;
         updateLabel();
     }
 
@@ -329,30 +339,24 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         auto bounds = getLocalBounds();
 
         if (orientation_ == Orientation::Vertical) {
-            // Vertical fader mode: fill from bottom to current position + handle
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-            g.fillRect(bounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.drawRect(bounds);
-
-            // Fill from bottom up to current value position
+            // Fader-over-meter mode: paint nothing behind so the LevelMeter
+            // sitting underneath shows through, then draw the thumb as a thin
+            // pale horizontal bar at the value position.
             float norm = static_cast<float>(getNormalizedValue());
-            int fillHeight = static_cast<int>(bounds.getHeight() * norm);
-            auto fillRect = bounds.withTop(bounds.getBottom() - fillHeight);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
-            g.fillRect(fillRect);
-
-            // Draw handle at current position
+            int fillHeight = static_cast<int>(std::round(bounds.getHeight() * norm));
             int handleY = bounds.getBottom() - fillHeight;
-            const int handleH = 6;
-            auto handleRect = juce::Rectangle<int>(bounds.getX() + 1, handleY - handleH / 2,
-                                                   bounds.getWidth() - 2, handleH);
-            g.setColour(juce::Colour(0xFF888888));
-            g.fillRect(handleRect);
-            // Center line on handle
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-            g.drawHorizontalLine(handleY, static_cast<float>(handleRect.getX() + 2),
-                                 static_cast<float>(handleRect.getRight() - 2));
+
+            const int handleH = 3;
+            const int handleOverhang = 2;
+            auto thumbRect =
+                juce::Rectangle<int>(bounds.getX() - handleOverhang, handleY - handleH / 2,
+                                     bounds.getWidth() + handleOverhang * 2, handleH);
+
+            g.setColour(juce::Colour(0xFF000000).withAlpha(0.55f));
+            g.fillRect(thumbRect.translated(0, 1));
+
+            g.setColour(juce::Colour(0xFFBCD4E8));
+            g.fillRect(thumbRect);
         } else if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
             g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
             g.fillRoundedRectangle(bounds.toFloat(), 2.0f);
@@ -605,7 +609,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
             if (e.mods.isPopupMenu()) {
                 if (rightClickEditsText_ || e.mods.isShiftDown()) {
                     // Right-click to edit text directly
-                    valueControl_.showEditor(currentDisplayText());
+                    showValueEditor();
                 } else if (onRightClicked) {
                     // Right-click callback (for context menus, etc.)
                     onRightClicked();
@@ -624,7 +628,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         cancelGesture();
 
         if (e.mods.isShiftDown())
-            valueControl_.showEditor(currentDisplayText());
+            showValueEditor();
         else
             resetToDefaultValue();
     }
@@ -650,6 +654,30 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         }
 
         setValueFromUser(text.getDoubleValue());
+    }
+
+    juce::Rectangle<int> compactVerticalEditorBounds() const {
+        auto bounds = valueControl_.getLocalBounds().reduced(1);
+        if (bounds.isEmpty())
+            return bounds;
+
+        const int editorH = juce::jmin(20, juce::jmax(8, bounds.getHeight()));
+        const int handleY = bounds.getBottom() -
+                            static_cast<int>(std::round(bounds.getHeight() * getNormalizedValue()));
+        int editorY = handleY - editorH - 3;
+        if (editorY < bounds.getY())
+            editorY = handleY + 3;
+        editorY = juce::jlimit(bounds.getY(), bounds.getBottom() - editorH, editorY);
+
+        return {bounds.getX(), editorY, bounds.getWidth(), editorH};
+    }
+
+    void showValueEditor() {
+        if (orientation_ == Orientation::Vertical)
+            valueControl_.setEditorBoundsOverride(compactVerticalEditorBounds());
+        else
+            valueControl_.setEditorBoundsOverride(std::nullopt);
+        valueControl_.showEditor(currentDisplayText());
     }
 
     void setValueFromUser(double newValue) {
@@ -758,6 +786,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         valueControl_.setRange(minValue_, maxValue_);
         valueControl_.setValue(value_);
         valueControl_.setDisplayText(currentDisplayText());
+        valueControl_.setVertical(orientation_ == Orientation::Vertical);
         valueControl_.setFillMode(format_ == Format::Pan
                                       ? ValueLabelControl::FillMode::PanCentre
                                       : ValueLabelControl::FillMode::LeftToRight);
@@ -768,6 +797,26 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         valueControl_.setDrawBorder(orientation_ == Orientation::Horizontal && !hasMeter);
         valueControl_.setDragging(isLeftButtonDrag_);
         valueControl_.setTintState(toControlTintState(automationVisualState_));
+        valueControl_.setEditorBoundsProvider(orientation_ == Orientation::Vertical
+                                                  ? [this] { return verticalEditorBounds(); }
+                                                  : std::function<juce::Rectangle<int>()>{});
+    }
+
+    juce::Rectangle<int> verticalEditorBounds() const {
+        auto bounds = valueControl_.getLocalBounds();
+        if (bounds.isEmpty())
+            return {};
+
+        const float norm = static_cast<float>(getNormalizedValue());
+        const int handleY =
+            bounds.getBottom() - static_cast<int>(std::round(bounds.getHeight() * norm));
+        constexpr int editorW = 32;
+        constexpr int editorH = 16;
+        const int x = bounds.getCentreX() - editorW / 2;
+        const int minY = bounds.getY() + 1;
+        const int maxY = bounds.getBottom() - editorH - 1;
+        const int y = juce::jlimit(minY, maxY, handleY - editorH / 2);
+        return juce::Rectangle<int>(x, y, editorW, editorH).getIntersection(bounds.reduced(1));
     }
 
     float meterPeakL_ = 0.f;

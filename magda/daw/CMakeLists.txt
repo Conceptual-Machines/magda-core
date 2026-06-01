@@ -68,6 +68,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/open_in_new.svg
     ../../assets/icons/general/power_on.svg
     ../../assets/icons/general/rack.svg
+    ../../assets/icons/general/fxchain.svg
+    ../../assets/icons/general/input-output.svg
     ../../assets/icons/general/tree.svg
     ../../assets/icons/general/save.svg
     ../../assets/icons/general/folder-open.svg
@@ -82,6 +84,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/speaker_off.svg
     ../../assets/BoldMGlyph.svg
     ../../assets/icons/general/headphones.svg
+    ../../assets/icons/general/record-monitor.svg
     ../../assets/icons/general/metronome.svg
     ../../assets/icons/general/project_home.svg
     ../../assets/icons/general/harddrive.svg
@@ -147,6 +150,12 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/waveform/bezier.svg
     ../../assets/icons/waveform/bend-in-out.svg
     ../../assets/icons/waveform/curve.svg
+    # Analysis device icons
+    ../../assets/icons/analysis/oscilloscope.svg
+    ../../assets/icons/analysis/spectrum.svg
+    ../../assets/icons/analysis/postfx.svg
+    # Track-chain header icons
+    ../../assets/icons/trackchain/gain-staging.svg
     # Toolbar icons
     ../../assets/icons/toolbar/density_small.svg
     ../../assets/icons/toolbar/density_medium.svg
@@ -158,6 +167,10 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/toolbar/vertical.svg
     ../../assets/icons/toolbar/io_routing.svg
     # Footer view mode icons
+    ../../assets/icons/footer/icon-session-boldm.svg
+    ../../assets/icons/footer/icon-arrangement-boldm.svg
+    ../../assets/icons/footer/icon-mix-boldm.svg
+    # Legacy view mode icons (still used by the clip inspector view toggle)
     ../../assets/icons/footer/Session.svg
     ../../assets/icons/footer/Arrangement.svg
     ../../assets/icons/footer/Mix.svg
@@ -235,6 +248,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/cloud_providers/ollama.svg
     # App logo
     ../../assets/magda-lisa.svg
+    ../../assets/conceptual-machines-badge.svg
     # Curated alias dictionaries (JSON path is reserved for third-party
     # plugin packs; MAGDA-internal plugin aliases live in
     # core/aliases/InternalPluginAliases.cpp).

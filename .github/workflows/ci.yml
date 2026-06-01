@@ -2,12 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [ '**' ]
+    # Never run CI on the Crowdin localization branch. The sync action recreates
+    # that branch on top of the latest HEAD and force-pushes, so once the base
+    # branch has advanced, the push diff carries real code and paths-ignore no
+    # longer skips it. Excluding by branch name is the only reliable guard.
+    branches-ignore: [ 'l10n_crowdin_**' ]
     tags-ignore: [ '**' ]
-    # Skip CI when a push only touches translation files. Crowdin sync PRs
-    # only ever modify lang/**, so they no longer burn a full matrix build.
-    # Any push that mixes lang changes with real code still runs CI because
-    # paths-ignore is AND across all modified files.
+    # Belt-and-suspenders: also skip when a push only touches translation files.
     paths-ignore:
       - 'lang/**'
   workflow_dispatch:

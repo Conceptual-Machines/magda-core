@@ -8,6 +8,11 @@
 
 namespace magda {
 
+namespace {
+const juce::URL kConceptualMachinesUrl("https://conceptualmachines.co.uk");
+const juce::String kConceptualMachinesCopyright("(C) 2026 Conceptual Machines");
+}  // namespace
+
 // =============================================================================
 // Content Component
 // =============================================================================
@@ -23,6 +28,17 @@ class AboutDialog::ContentComponent : public juce::Component {
                 // Recolor the SVG to match theme
                 logo_->replaceColour(juce::Colour(0xFF000000),
                                      juce::Colour(DarkTheme::TEXT_SECONDARY));
+            }
+        }
+
+        // Load Conceptual Machines badge
+        if (auto xml = juce::XmlDocument::parse(
+                juce::String::fromUTF8(BinaryData::conceptualmachinesbadge_svg,
+                                       BinaryData::conceptualmachinesbadge_svgSize))) {
+            conceptualMachinesBadge_ = juce::Drawable::createFromSVG(*xml);
+            if (conceptualMachinesBadge_) {
+                conceptualMachinesBadge_->replaceColour(juce::Colour(0xFFE7DFD2),
+                                                        juce::Colour(DarkTheme::TEXT_DIM));
             }
         }
 
@@ -62,6 +78,11 @@ class AboutDialog::ContentComponent : public juce::Component {
         titleLink_->setColour(juce::HyperlinkButton::textColourId,
                               juce::Colour(DarkTheme::TEXT_PRIMARY));
         addAndMakeVisible(*titleLink_);
+
+        conceptualMachinesLink_ =
+            std::make_unique<juce::HyperlinkButton>("", kConceptualMachinesUrl);
+        conceptualMachinesLink_->setTooltip("Conceptual Machines");
+        addAndMakeVisible(*conceptualMachinesLink_);
 
         setSize(500, 440);
     }
@@ -169,6 +190,18 @@ class AboutDialog::ContentComponent : public juce::Component {
         if (faustLogo_)
             faustLogo_->drawWithin(g, centred.removeFromLeft(faustLogoW).toFloat(),
                                    juce::RectanglePlacement::centred, 1.0f);
+
+        // Conceptual Machines badge sits under the attribution row.
+        creditsArea.removeFromTop(6);
+        if (conceptualMachinesBadge_) {
+            auto badgeArea = creditsArea.removeFromTop(42).withSizeKeepingCentre(38, 38);
+            conceptualMachinesBadge_->drawWithin(g, badgeArea.toFloat(),
+                                                 juce::RectanglePlacement::centred, 1.0f);
+        }
+        g.setFont(fm.getUIFont(9.0f));
+        g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
+        g.drawText(kConceptualMachinesCopyright, creditsArea.removeFromTop(16),
+                   juce::Justification::centred);
     }
 
     void resized() override {
@@ -176,6 +209,20 @@ class AboutDialog::ContentComponent : public juce::Component {
             auto bounds = getLocalBounds();
             bounds.removeFromTop(200);  // skip logo area
             titleLink_->setBounds(bounds.removeFromTop(40));
+        }
+        if (conceptualMachinesLink_) {
+            auto bounds = getLocalBounds();
+            bounds.removeFromTop(200);  // logo
+            bounds.removeFromTop(40);   // title
+            bounds.removeFromTop(24);   // subtitle
+            bounds.removeFromTop(20);   // version
+            bounds.removeFromTop(10);   // credits top gap
+            auto creditsArea = bounds.reduced(10, 0);
+            creditsArea.removeFromTop(6);   // divider padding
+            creditsArea.removeFromTop(20);  // attribution row
+            creditsArea.removeFromTop(6);
+            conceptualMachinesLink_->setBounds(
+                creditsArea.removeFromTop(58).withSizeKeepingCentre(170, 58));
         }
     }
 
@@ -195,10 +242,12 @@ class AboutDialog::ContentComponent : public juce::Component {
 
   private:
     std::unique_ptr<juce::Drawable> logo_;
+    std::unique_ptr<juce::Drawable> conceptualMachinesBadge_;
     std::unique_ptr<juce::Drawable> teLogo_;
     std::unique_ptr<juce::Drawable> juceLogo_;
     std::unique_ptr<juce::Drawable> faustLogo_;
     std::unique_ptr<juce::HyperlinkButton> titleLink_;
+    std::unique_ptr<juce::HyperlinkButton> conceptualMachinesLink_;
 };
 
 // =============================================================================

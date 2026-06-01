@@ -8,9 +8,13 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../components/chain/custom_ui/OscilloscopeUI.hpp"
+#include "../components/chain/custom_ui/SpectrumAnalyzerUI.hpp"
 #include "../components/common/MixerDebugPanel.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../components/mixer/MasterChannelStrip.hpp"
+#include "../components/mixer/MiniChainRow.hpp"
+#include "../components/mixer/MixerToggleRail.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
@@ -63,6 +67,7 @@ class MixerView : public juce::Component,
     void midiDeviceListChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
+    void devicePropertyChanged(const ChainNodePath& devicePath) override;
     void masterChannelChanged() override;
     void trackSelectionChanged(TrackId trackId) override;
 
@@ -126,7 +131,7 @@ class MixerView : public juce::Component,
         }
 
         // Update from track info
-        void updateFromTrack(const TrackInfo& track);
+        void updateFromTrack(const TrackInfo& track, bool syncMiniChain = false);
 
         // Callback when channel is clicked
         std::function<void(int trackId, bool isMaster)> onClicked;
@@ -168,6 +173,8 @@ class MixerView : public juce::Component,
         juce::Rectangle<int> faderRegion_;  // Entire fader area (for border)
         juce::Rectangle<int> faderArea_;
         juce::Rectangle<int> meterArea_;
+        int sendsRegionBottomY_ = -1;  // Y at the bottom of the sends region
+                                       // (used to draw a divider). -1 = hidden.
 
         // dB scale component (ticks + labels between fader and meter)
         class DbScale;
@@ -183,6 +190,51 @@ class MixerView : public juce::Component,
         std::vector<std::unique_ptr<SendSlot>> sendSlots_;
         std::unique_ptr<juce::Viewport> sendViewport_;
         std::unique_ptr<juce::Component> sendContainer_;
+
+        // "+ Add Send" button shown below the sends list when the Sends pane
+        // is visible. Click pops the same destination menu as the strip's
+        // right-click "Add Send" submenu.
+        std::unique_ptr<juce::Button> addSendButton_;
+        void showAddSendMenu();
+
+        // Mini Oscilloscope / Spectrum visualizers — shown when the matching
+        // mixer rail toggle is on and the track has the post-FX device.
+        std::unique_ptr<daw::ui::OscilloscopeUI> miniOscilloscopeUI_;
+        std::unique_ptr<daw::ui::SpectrumAnalyzerUI> miniSpectrumUI_;
+        void refreshMiniAnalyzers();
+
+        // Mini FX chain: one MiniChainRow per top-level fx device on this
+        // track. Built from TrackInfo::chain.fxChainElements; nested racks
+        // collapse to a single row labelled with the rack name.
+        struct MiniChainRowSignatureEntry {
+            bool isRack = false;
+            int id = INVALID_DEVICE_ID;
+            juce::String name;
+            std::vector<int> miniMixerParameters;
+
+            bool operator==(const MiniChainRowSignatureEntry& other) const {
+                return isRack == other.isRack && id == other.id && name == other.name &&
+                       miniMixerParameters == other.miniMixerParameters;
+            }
+        };
+
+        std::vector<std::unique_ptr<MiniChainRow>> miniChainRows_;
+        std::vector<MiniChainRowSignatureEntry> miniChainSignature_;
+        std::vector<MiniChainRowSignatureEntry> buildMiniChainSignature(
+            const TrackInfo& track) const;
+        void syncMiniChainRows(const TrackInfo& track);
+        void rebuildMiniChainRows(const TrackInfo& track,
+                                  std::vector<MiniChainRowSignatureEntry> signature);
+
+        // Sync the bypass dot of the row bound to deviceId to its authoritative
+        // state without rebuilding (safe under the synchronous devicePropertyChanged
+        // that a row's own bypass toggle fires). No-op if no row matches.
+        void syncMiniChainRowState(DeviceId deviceId, bool bypassed);
+
+        // Reflect a device's plugin-editor window open state on the matching
+        // row's "open editor" icon (so it un-engages when the window is closed
+        // via its X). No-op if no row matches.
+        void syncMiniChainPluginWindow(DeviceId deviceId, bool isOpen);
 
         // Send area resize handle
         class SendResizeHandle;
@@ -252,11 +304,24 @@ class MixerView : public juce::Component,
         bool hasConfirmedHorizontalDrag_ = false;
         int dragStartX_ = 0;
     };
-    std::unique_ptr<ChannelResizeHandle> channelResizeHandle_;
+    // One resize handle per top-level strip, sitting on each strip's right edge
+    // so a grab point exists between every pair of channel headers (not just at
+    // the far right). All handles drive the same global channel width.
+    std::vector<std::unique_ptr<ChannelResizeHandle>> channelResizeHandles_;
+    void wireChannelResizeHandle(ChannelResizeHandle& handle);
+    void layoutChannelResizeHandles(int containerHeight);
+
+    // Left-edge vertical rail of view-toggle buttons (sends, routing, monitor,
+    // mini oscilloscope, mini spectrum, mini FX chain). State persisted via
+    // Config; the rail's onToggleChanged triggers a relayout of all strips.
+    std::unique_ptr<MixerToggleRail> toggleRail_;
 
     void rebuildChannelStrips();
     void updateStripWidths();
     void relayoutAllStrips();
+    // Ensure every non-master track has (or lacks) the Oscilloscope /
+    // Spectrum Analyzer post-FX device to match the mixer rail toggles.
+    void reconcileAnalysisDevices();
     bool isResizeDragging_ = false;
     bool pendingResizeUpdate_ = false;
     bool pendingSendResizeUpdate_ = false;

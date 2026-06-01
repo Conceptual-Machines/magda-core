@@ -7,6 +7,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "Config.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/TempoUtils.hpp"
 
 namespace magda {
@@ -338,6 +339,7 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
     mouseDownY = event.y;
     zoomStartValue = pixelsPerBeat;
     isZooming = false;
+    zoomDragAxis = GestureAxis::Vertical;
     isPendingPlayheadClick = false;
     isDraggingTimeSelection = false;
 
@@ -528,13 +530,43 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
         return;
     }
 
-    // Check for vertical movement to start zoom mode
-    int deltaY = std::abs(event.y - mouseDownY);
+    const int deltaX = std::abs(event.x - mouseDownX);
+    const int deltaY = std::abs(event.y - mouseDownY);
 
-    if (deltaY > DRAG_THRESHOLD) {
+    if (juce::jmax(deltaX, deltaY) > DRAG_THRESHOLD) {
+        auto dragAxis = isZooming
+                            ? zoomDragAxis
+                            : (deltaX > deltaY ? GestureAxis::Horizontal : GestureAxis::Vertical);
+        auto dragDelta =
+            dragAxis == GestureAxis::Horizontal ? event.x - mouseDownX : mouseDownY - event.y;
+        auto gesture = GestureRouter::getInstance().resolveDrag(
+            GestureContext::Arrangement, GestureArea::Ruler, dragAxis, event.mods,
+            static_cast<float>(dragDelta), {mouseDownX, mouseDownY});
+
+        if (!isZooming && gesture.type != GestureActionType::ZoomHorizontal) {
+            const auto alternateAxis = dragAxis == GestureAxis::Horizontal
+                                           ? GestureAxis::Vertical
+                                           : GestureAxis::Horizontal;
+            const int alternateDelta = alternateAxis == GestureAxis::Horizontal
+                                           ? event.x - mouseDownX
+                                           : mouseDownY - event.y;
+            const auto alternateGesture = GestureRouter::getInstance().resolveDrag(
+                GestureContext::Arrangement, GestureArea::Ruler, alternateAxis, event.mods,
+                static_cast<float>(alternateDelta), {mouseDownX, mouseDownY});
+            if (alternateGesture.type == GestureActionType::ZoomHorizontal) {
+                dragAxis = alternateAxis;
+                dragDelta = alternateDelta;
+                gesture = alternateGesture;
+            }
+        }
+
+        if (gesture.type != GestureActionType::ZoomHorizontal)
+            return;
+
         // Vertical drag detected - this is a zoom operation
         if (!isZooming) {
             isZooming = true;
+            zoomDragAxis = dragAxis;
             isPendingPlayheadClick = false;  // Cancel any pending playhead click
             // Capture the beat position under the mouse at zoom start (using initial zoom level)
             zoomAnchorBeats = pixelToBeats(mouseDownX);
@@ -544,64 +576,13 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
             repaint();
         }
 
-        // Zoom calculation - drag up = zoom in, drag down = zoom out
-        // Use exponential scaling for smooth, fluid zoom
-        int deltaY = mouseDownY - event.y;
-
-        // Check for modifier keys for zoom speed control
-        bool isShiftHeld = event.mods.isShiftDown();
-        bool isAltHeld = event.mods.isAltDown();
-
-        // Zoom-level-dependent sensitivity (Bitwig-like behavior):
-        // - At low zoom (zoomed out): more responsive (less drag needed)
-        // - At high zoom (zoomed in): finer control (more drag needed)
-        // This makes zooming feel natural at all levels
-        auto& config = magda::Config::getInstance();
-        double minZoomLevel = config.getMinZoomLevel();
-        double maxZoomLevel = config.getMaxZoomLevel();
-
-        // Calculate where we are in the zoom range (0 = min, 1 = max)
-        // Use log scale since zoom is exponential
-        double logMin = std::log(minZoomLevel);
-        double logMax = std::log(maxZoomLevel);
-        double logCurrent = std::log(zoomStartValue);
-        double zoomPosition = (logCurrent - logMin) / (logMax - logMin);
-        zoomPosition = juce::jlimit(0.0, 1.0, zoomPosition);
-
-        // Get sensitivity from Config
-        // zoomInSensitivity: pixels to double when zoomed out (lower = faster)
-        // zoomOutSensitivity: pixels to double when zoomed in (higher = finer control)
-        double minZoomSensitivity = config.getZoomInSensitivity();   // 25.0 - fast when zoomed out
-        double maxZoomSensitivity = config.getZoomOutSensitivity();  // 40.0 - finer when zoomed in
-
-        // Scale sensitivity based on zoom position (interpolate between config values)
-        double baseSensitivity =
-            minZoomSensitivity + zoomPosition * (maxZoomSensitivity - minZoomSensitivity);
-
-        double sensitivity = baseSensitivity;
-        if (isShiftHeld) {
-            sensitivity = deltaY >= 0 ? config.getZoomInSensitivityShift()
-                                      : config.getZoomOutSensitivityShift();
-        } else if (isAltHeld) {
-            sensitivity = baseSensitivity * 3.0;  // Alt/Option: fine zoom (slower)
-        }
-
-        // Progressive acceleration: the further you drag, the faster it goes
-        // This helps when you need to zoom very far
-        double absDeltaY = std::abs(static_cast<double>(deltaY));
-        if (absDeltaY > 80.0) {
-            // After 80px of drag, progressively reduce sensitivity (faster zoom)
-            double accelerationFactor = 1.0 + (absDeltaY - 80.0) / 150.0;
-            sensitivity /= accelerationFactor;
-        }
-
-        // Exponential zoom: drag up doubles, drag down halves
-        // This feels natural because zoom is multiplicative
-        double exponent = static_cast<double>(deltaY) / sensitivity;
-        double newZoom = zoomStartValue * std::pow(2.0, exponent);
+        double newZoom = zoomStartValue * std::pow(2.0, gesture.magnitude);
 
         // Calculate minimum zoom based on timeline length and viewport width
         // Allow zooming out to 1/4 of the fit-to-viewport level
+        auto& config = magda::Config::getInstance();
+        const double minZoomLevel = config.getMinZoomLevel();
+        const double maxZoomLevel = config.getMaxZoomLevel();
         double minZoom = minZoomLevel;
         if (timelineLength > 0 && viewportWidth > 0) {
             double availableWidth = viewportWidth - 50.0;
@@ -716,26 +697,22 @@ void TimelineComponent::mouseUp(const juce::MouseEvent& event) {
 
     isPendingPlayheadClick = false;
     isZooming = false;
+    zoomDragAxis = GestureAxis::Vertical;
 
     repaint();
 }
 
 void TimelineComponent::mouseWheelMove(const juce::MouseEvent& event,
                                        const juce::MouseWheelDetails& wheel) {
-    juce::ignoreUnused(event);
+    // Wheel over the ruler resolves through the same GestureRouter path as the
+    // track content (#21/#26). event.getPosition() is content-space (this
+    // component is the viewed component of the timeline viewport), so it
+    // doubles as the zoom anchor.
+    const auto gesture = GestureRouter::getInstance().resolve(GestureContext::Arrangement, wheel,
+                                                              event.mods, event.getPosition());
 
-    // Forward horizontal scroll to parent via callback
-    // This allows scrolling when the mouse is over the timeline ruler
-    if (onScrollRequested) {
-        // Use deltaX for horizontal scroll (trackpad left/right)
-        // Also allow vertical scroll to trigger horizontal scroll when shift is held
-        float deltaX = wheel.deltaX;
-        float deltaY = wheel.deltaY;
-
-        // If there's horizontal movement, scroll horizontally
-        if (std::abs(deltaX) > 0.0f || std::abs(deltaY) > 0.0f) {
-            onScrollRequested(deltaX, deltaY);
-        }
+    if (!gesture.isNone() && onArrangementGesture) {
+        onArrangementGesture(gesture);
     }
 }
 

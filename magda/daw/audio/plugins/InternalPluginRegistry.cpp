@@ -8,7 +8,9 @@
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
+#include "plugins/OscilloscopePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
+#include "plugins/SpectrumAnalyzerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/internal/MidiDeviceProcessors.hpp"
@@ -40,6 +42,8 @@ constexpr const char* kImpulseResponseAliases[] = {"impulseresponse"};
 constexpr const char* kFourOscAliases[] = {"4osc"};
 constexpr const char* kToneAliases[] = {"tone", "tonegenerator"};
 constexpr const char* kMeterAliases[] = {"meter", "levelmeter"};
+constexpr const char* kOscilloscopeAliases[] = {"scope"};
+constexpr const char* kSpectrumAliases[] = {"spectrum", "analyzer"};
 
 const InternalPluginSpec kSpecs[] = {
     {InternalDeviceKind::TeEq, te::EqualiserPlugin::xmlTypeName, "Equaliser", "EQ",
@@ -70,7 +74,7 @@ const InternalPluginSpec kSpecs[] = {
     {InternalDeviceKind::TeLowpass, te::LowPassPlugin::xmlTypeName, "Lowpass", "Filter",
      "Low-pass filter for removing high-frequency content.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, kLowpassAliases,
-     std::size(kLowpassAliases), matches<te::LowPassPlugin>, makeProcessor<FilterProcessor>},
+     std::size(kLowpassAliases), matches<te::LowPassPlugin>, makeProcessor<FilterProcessor>, true},
     {InternalDeviceKind::TePitchShift, te::PitchShiftPlugin::xmlTypeName, "Pitch Shift", "Pitch",
      "Pitch shifting effect for transposition and special effects.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, kPitchShiftAliases,
@@ -80,7 +84,7 @@ const InternalPluginSpec kSpecs[] = {
      "Reverb", "Convolution-style response loader for captured spaces and resonant bodies.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, kImpulseResponseAliases,
      std::size(kImpulseResponseAliases), matches<te::ImpulseResponsePlugin>,
-     makeProcessor<ImpulseResponseProcessor>},
+     makeProcessor<ImpulseResponseProcessor>, true},
     {InternalDeviceKind::TeVolumeAndPan, te::VolumeAndPanPlugin::xmlTypeName, "Legacy Volume/Pan",
      "Legacy", "Legacy Tracktion volume and pan device, kept for old project loads.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
@@ -88,11 +92,12 @@ const InternalPluginSpec kSpecs[] = {
     {InternalDeviceKind::TeFourOsc, te::FourOscPlugin::xmlTypeName, "4OSC Synth", "Synth",
      "Four-oscillator subtractive instrument with modulation and macro-friendly controls.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, kFourOscAliases,
-     std::size(kFourOscAliases), matches<te::FourOscPlugin>, makeProcessor<FourOscProcessor>},
+     std::size(kFourOscAliases), matches<te::FourOscPlugin>, makeProcessor<FourOscProcessor>, true,
+     true},
     {InternalDeviceKind::TeToneGenerator, te::ToneGeneratorPlugin::xmlTypeName, "Test Tone",
      "Utility", "Simple tone generator for calibration, routing checks, and utility signals.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, kToneAliases, std::size(kToneAliases),
-     matches<te::ToneGeneratorPlugin>, makeProcessor<ToneGeneratorProcessor>},
+     matches<te::ToneGeneratorPlugin>, makeProcessor<ToneGeneratorProcessor>, true},
     {InternalDeviceKind::TeLevelMeter, te::LevelMeterPlugin::xmlTypeName, "Level Meter", "Meter",
      "Signal meter for monitoring level inside a chain.",
      InternalPluginCreateMode::LevelMeterValueTree, false, true, kMeterAliases,
@@ -100,27 +105,27 @@ const InternalPluginSpec kSpecs[] = {
     {InternalDeviceKind::MagdaSampler, MagdaSamplerPlugin::xmlTypeName, "Sampler", "Sampler",
      "Sample playback instrument with envelope, pitch, start/end, and looping controls.",
      InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<MagdaSamplerPlugin>,
-     makeProcessor<MagdaSamplerProcessor>},
+     makeProcessor<MagdaSamplerProcessor>, true, true},
     {InternalDeviceKind::DrumGrid, DrumGridPlugin::xmlTypeName, "Drum Grid", "Drums",
      "Pad-based drum instrument with per-pad sample and effect chains.",
      InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<DrumGridPlugin>,
-     makeProcessor<DrumGridProcessor>},
+     makeProcessor<DrumGridProcessor>, true, true},
     {InternalDeviceKind::MidiChordEngine, MidiChordEnginePlugin::xmlTypeName, "Chord Engine",
      "MIDI", "MIDI processor for chord generation, voicing, and harmonic transforms.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
-     matches<MidiChordEnginePlugin>, nullptr},
+     matches<MidiChordEnginePlugin>, nullptr, true},
     {InternalDeviceKind::Arpeggiator, ArpeggiatorPlugin::xmlTypeName, "Arpeggiator", "MIDI",
      "MIDI arpeggiator for rhythmic note patterns and held-note motion.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
-     matches<ArpeggiatorPlugin>, makeProcessor<ArpeggiatorProcessor>},
+     matches<ArpeggiatorPlugin>, makeProcessor<ArpeggiatorProcessor>, true},
     {InternalDeviceKind::StepSequencer, StepSequencerPlugin::xmlTypeName, "Step Sequencer", "MIDI",
      "MIDI step sequencer for pattern-driven notes and rhythmic control.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
-     matches<StepSequencerPlugin>, makeProcessor<StepSequencerProcessor>},
+     matches<StepSequencerPlugin>, makeProcessor<StepSequencerProcessor>, true},
     {InternalDeviceKind::Faust, FaustPlugin::xmlTypeName, "Faust", "Experimental",
      "Interpreted Faust device for loading and editing user DSP code.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0, matches<FaustPlugin>,
-     makeProcessor<FaustProcessor>},
+     makeProcessor<FaustProcessor>, true},
     {InternalDeviceKind::MidiReceive, ::magda::MidiReceivePlugin::xmlTypeName, "MIDI Receive",
      "MIDI", "Internal MIDI routing endpoint used by MAGDA track and device routing.",
      InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
@@ -141,13 +146,21 @@ const InternalPluginSpec kSpecs[] = {
      "Session Monitor", "Session", "Internal monitor used by session playback and launch state.",
      InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
      matches<::magda::SessionMonitorPlugin>, nullptr},
+    {InternalDeviceKind::Oscilloscope, OscilloscopePlugin::xmlTypeName, "Oscilloscope", "Analysis",
+     "Transparent waveform monitor for inspecting signal shape over time.",
+     InternalPluginCreateMode::SavedStateOrFresh, true, true, kOscilloscopeAliases,
+     std::size(kOscilloscopeAliases), matches<OscilloscopePlugin>, nullptr, true},
+    {InternalDeviceKind::SpectrumAnalyzer, SpectrumAnalyzerPlugin::xmlTypeName, "Spectrum Analyzer",
+     "Analysis", "Real-time FFT spectrum display with log-frequency axis and peak hold.",
+     InternalPluginCreateMode::SavedStateOrFresh, true, true, kSpectrumAliases,
+     std::size(kSpectrumAliases), matches<SpectrumAnalyzerPlugin>, nullptr, true},
 };
 
 const InternalPluginSpec* const kSpecPtrs[] = {
-    &kSpecs[0],  &kSpecs[1],  &kSpecs[2],  &kSpecs[3],  &kSpecs[4],  &kSpecs[5],
-    &kSpecs[6],  &kSpecs[7],  &kSpecs[8],  &kSpecs[9],  &kSpecs[10], &kSpecs[11],
-    &kSpecs[12], &kSpecs[13], &kSpecs[14], &kSpecs[15], &kSpecs[16], &kSpecs[17],
-    &kSpecs[18], &kSpecs[19], &kSpecs[20], &kSpecs[21], &kSpecs[22], &kSpecs[23],
+    &kSpecs[0],  &kSpecs[1],  &kSpecs[2],  &kSpecs[3],  &kSpecs[4],  &kSpecs[5],  &kSpecs[6],
+    &kSpecs[7],  &kSpecs[8],  &kSpecs[9],  &kSpecs[10], &kSpecs[11], &kSpecs[12], &kSpecs[13],
+    &kSpecs[14], &kSpecs[15], &kSpecs[16], &kSpecs[17], &kSpecs[18], &kSpecs[19], &kSpecs[20],
+    &kSpecs[21], &kSpecs[22], &kSpecs[23], &kSpecs[24], &kSpecs[25],
 };
 
 bool typeMatchesAlias(const juce::String& type, const InternalPluginSpec& spec) {

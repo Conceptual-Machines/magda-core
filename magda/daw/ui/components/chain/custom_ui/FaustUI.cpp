@@ -124,9 +124,10 @@ bool FaustUI::tryLoad(const juce::String& name, const juce::String& source,
     if (dev) {
         if (auto* engine = tm.getAudioEngine()) {
             if (auto* bridge = engine->getAudioBridge()) {
-                DBG("[FaustUI] tryLoad: calling refreshDeviceParameters for id=" << (int)dev->id);
-                bridge->getPluginManager().refreshDeviceParameters(dev->id);
-                bridge->getPluginManager().capturePluginState(dev->id);
+                DBG("[FaustUI] tryLoad: calling refreshDeviceParameters for path deviceId="
+                    << (int)devicePath_.getDeviceId());
+                bridge->getPluginManager().refreshDeviceParameters(devicePath_);
+                bridge->getPluginManager().capturePluginState(devicePath_);
             } else {
                 DBG("[FaustUI] tryLoad: AudioBridge is NULL");
             }
@@ -223,8 +224,8 @@ void FaustUI::showCodeEditor() {
             if (auto* dev = tm.getDeviceInChainByPath(devicePath_)) {
                 if (auto* engine = tm.getAudioEngine()) {
                     if (auto* bridge = engine->getAudioBridge()) {
-                        bridge->getPluginManager().refreshDeviceParameters(dev->id);
-                        bridge->getPluginManager().capturePluginState(dev->id);
+                        bridge->getPluginManager().refreshDeviceParameters(devicePath_);
+                        bridge->getPluginManager().capturePluginState(devicePath_);
                     }
                 }
             }

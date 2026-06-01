@@ -6,9 +6,11 @@
 #include "../../state/TimelineEvents.hpp"
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "../../windows/CommandIDs.hpp"
 #include "PhaseMarker.hpp"
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/ClipManager.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -804,12 +806,61 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
 
 void PianoRollGridComponent::mouseWheelMove(const juce::MouseEvent& e,
                                             const juce::MouseWheelDetails& wheel) {
-    if (e.mods.isAltDown() && onVerticalZoomRequested) {
+    // Alt+wheel = vertical (lane height) zoom, resolved via GestureRouter so the
+    // binding is configurable (#1350). The view's callback keeps its own zoom
+    // magnitude math, so the gesture only selects the action. A plain wheel
+    // falls through to the enclosing viewport for content scroll.
+    const auto gesture = GestureRouter::getInstance().resolve(GestureContext::PianoRoll, wheel,
+                                                              e.mods, e.getPosition());
+    if (gesture.type == GestureActionType::ZoomVertical && onVerticalZoomRequested) {
         onVerticalZoomRequested(e.y, wheel);
         return;
     }
 
     juce::Component::mouseWheelMove(e, wheel);
+}
+
+juce::ApplicationCommandTarget* PianoRollGridComponent::getNextCommandTarget() {
+    // Fall through to the global target (MainComponent) for everything this
+    // view does not claim.
+    return findParentComponentOfClass<juce::ApplicationCommandTarget>();
+}
+
+void PianoRollGridComponent::getAllCommands(juce::Array<juce::CommandID>& commands) {
+    // Context commands this view claims when focused. selectAll means "select
+    // all notes in the edited clip" here, vs "select all clips" globally (#25).
+    commands.add(CommandIDs::selectAll);
+}
+
+void PianoRollGridComponent::getCommandInfo(juce::CommandID commandID,
+                                            juce::ApplicationCommandInfo& result) {
+    if (commandID == CommandIDs::selectAll) {
+        result.setInfo("Select All Notes", "Select every note in the edited clip", "Piano Roll", 0);
+        result.setActive(clipId_ != INVALID_CLIP_ID);
+    }
+}
+
+bool PianoRollGridComponent::perform(const InvocationInfo& info) {
+    if (info.commandID != CommandIDs::selectAll)
+        return false;
+
+    if (clipId_ == INVALID_CLIP_ID)
+        return false;
+
+    std::vector<size_t> allIndices;
+    for (auto& nc : noteComponents_) {
+        if (nc->getSourceClipId() == clipId_) {
+            nc->setSelected(true);
+            allIndices.push_back(nc->getNoteIndex());
+        }
+    }
+    rebuildSelectedPitchRows();
+
+    if (onNoteSelectionChanged) {
+        onNoteSelectionChanged(clipId_, allIndices);
+    }
+    repaint();
+    return true;
 }
 
 bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
@@ -825,26 +876,8 @@ bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
         }
     }
 
-    // M5: Cmd+A — Select all notes
-    if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'A') {
-        if (clipId_ == INVALID_CLIP_ID)
-            return false;
-
-        std::vector<size_t> allIndices;
-        for (auto& nc : noteComponents_) {
-            if (nc->getSourceClipId() == clipId_) {
-                nc->setSelected(true);
-                allIndices.push_back(nc->getNoteIndex());
-            }
-        }
-        rebuildSelectedPitchRows();
-
-        if (onNoteSelectionChanged) {
-            onNoteSelectionChanged(clipId_, allIndices);
-        }
-        repaint();
-        return true;
-    }
+    // Cmd+A (select all notes) is now the selectAll command, handled in
+    // perform() so it resolves to this view only when focused (#25).
 
     // Cmd+D: Duplicate selected notes (consume key to prevent clip duplication)
     if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'D') {

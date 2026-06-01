@@ -17,6 +17,7 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/DrumkitManager.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -704,7 +705,12 @@ class DrumGridClipGrid : public juce::Component,
     }
 
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
-        if (e.mods.isAltDown() && onVerticalZoomRequested) {
+        // Alt+wheel = vertical zoom (via GestureRouter, #1350); the callback
+        // owns the zoom math, the binding only selects the action. A plain
+        // wheel falls through to the viewport for content scroll.
+        const auto gesture = magda::GestureRouter::getInstance().resolve(
+            magda::GestureContext::DrumGrid, wheel, e.mods, e.getPosition());
+        if (gesture.type == magda::GestureActionType::ZoomVertical && onVerticalZoomRequested) {
             onVerticalZoomRequested(e.y, wheel);
             return;
         }
@@ -1564,6 +1570,21 @@ class DrumGridRowLabels : public juce::Component {
         repaint();
     }
 
+    // Live-input highlight: tints the pad row while a monitored note is held,
+    // mirroring the piano roll keyboard's pressed-key highlight.
+    void setNotePressed(int noteNumber, bool pressed) {
+        const bool changed = pressed ? pressedNotes_.insert(noteNumber).second
+                                     : (pressedNotes_.erase(noteNumber) > 0);
+        if (changed)
+            repaint();
+    }
+    void clearPressedNotes() {
+        if (!pressedNotes_.empty()) {
+            pressedNotes_.clear();
+            repaint();
+        }
+    }
+
     // Callback: noteNumber, isNoteOn
     std::function<void(int, bool)> onNotePreview;
     std::function<void(int, const juce::MouseWheelDetails&)> onVerticalZoomRequested;
@@ -1648,6 +1669,12 @@ class DrumGridRowLabels : public juce::Component {
             g.drawHorizontalLine(y + rowHeight_, 0.0f, static_cast<float>(bounds.getWidth()));
 
             const auto& padRow = (*padRows_)[i];
+
+            // Live-input highlight for monitored notes currently held.
+            if (pressedNotes_.count(padRow.noteNumber) != 0) {
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
+                g.fillRect(0, y, bounds.getWidth(), rowHeight_);
+            }
 
             if (rowHeight_ >= 10) {
                 int textX = 4;
@@ -1767,7 +1794,12 @@ class DrumGridRowLabels : public juce::Component {
     }
 
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
-        if (e.mods.isAltDown() && onVerticalZoomRequested) {
+        // Alt+wheel = vertical zoom (via GestureRouter, #1350); the callback
+        // owns the zoom math, the binding only selects the action. A plain
+        // wheel falls through to the viewport for content scroll.
+        const auto gesture = magda::GestureRouter::getInstance().resolve(
+            magda::GestureContext::DrumGrid, wheel, e.mods, e.getPosition());
+        if (gesture.type == magda::GestureActionType::ZoomVertical && onVerticalZoomRequested) {
             onVerticalZoomRequested(e.y, wheel);
             return;
         }
@@ -1783,6 +1815,7 @@ class DrumGridRowLabels : public juce::Component {
     int scrollOffsetY_ = 0;
     int playingNoteNumber_ = -1;
     int hoverRow_ = -1;
+    std::set<int> pressedNotes_;  // live-monitored notes currently held
     std::unique_ptr<juce::TextEditor> rowEditor_;
     int editingNote_ = -1;
 
@@ -1869,6 +1902,8 @@ class DrumGridLabelDivider : public juce::Component {
 //==============================================================================
 DrumGridClipContent::DrumGridClipContent() {
     setName("DrumGridClipContent");
+    if (timeRuler_)
+        timeRuler_->setGestureContext(magda::GestureContext::DrumGrid);
 
     // Create controls toggle button (bar chart icon)
     controlsToggle_ = std::make_unique<magda::SvgButton>(
@@ -1883,6 +1918,7 @@ DrumGridClipContent::DrumGridClipContent() {
     addAndMakeVisible(controlsToggle_.get());
 
     verticalZoomStrip_ = std::make_unique<VerticalZoomStrip>(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
+    verticalZoomStrip_->setGestureContext(magda::GestureContext::DrumGrid);
     verticalZoomStrip_->getValue = [this]() { return rowHeight_; };
     verticalZoomStrip_->onZoomChanged = [this](int newHeight, int anchorScreenY) {
         const int anchorContentY = anchorScreenY + viewport_->getViewPositionY();
@@ -2118,7 +2154,9 @@ DrumGridClipContent::DrumGridClipContent() {
     }
 }
 
-DrumGridClipContent::~DrumGridClipContent() = default;
+DrumGridClipContent::~DrumGridClipContent() {
+    uninstallMidiNoteMonitor();
+}
 
 int DrumGridClipContent::getMaxVerticalScroll() const {
     if (!viewport_ || !gridComponent_)
@@ -2296,43 +2334,53 @@ void DrumGridClipContent::resized() {
 
 void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
                                          const juce::MouseWheelDetails& wheel) {
-    // Cmd/Ctrl + scroll = horizontal zoom (uses shared base method)
-    if (e.mods.isCommandDown()) {
-        double zoomFactor = 1.0 + (wheel.deltaY * 0.1);
+    // Modifier-driven zoom is resolved through GestureRouter (#1350) so the
+    // bindings are configurable; each branch keeps its own zoom math, and the
+    // positional plain-wheel scrolling below stays in this handler.
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::DrumGrid, wheel, e.mods, e.getPosition());
+
+    // Horizontal (timebase) zoom about the cursor.
+    if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
+        double zoomFactor = std::pow(2.0, static_cast<double>(gesture.magnitude));
         int mouseXInViewport =
             e.x - SIDEBAR_WIDTH - ZOOM_STRIP_WIDTH - labelWidth_ - LABEL_DIVIDER_WIDTH;
         performWheelZoom(zoomFactor, mouseXInViewport);
         return;
     }
 
-    // Alt/Option + scroll = vertical zoom (row height)
-    if (e.mods.isAltDown()) {
+    // Vertical (row height) zoom.
+    if (gesture.type == magda::GestureActionType::ZoomVertical) {
         const int mouseYInContent = e.y - RULER_HEIGHT + viewport_->getViewPositionY();
         const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
                                            mouseYInContent / juce::jmax(1, rowHeight_));
-        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        const int heightDelta = gesture.magnitude > 0.0f ? 2 : -2;
         setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, e.y - RULER_HEIGHT, true);
         return;
     }
 
-    // Forward to time ruler area for horizontal scroll
-    if (e.y < RULER_HEIGHT &&
-        e.x >= SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + labelWidth_ + LABEL_DIVIDER_WIDTH) {
+    const bool overTimeRuler = e.y < RULER_HEIGHT && e.x >= SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH +
+                                                                labelWidth_ + LABEL_DIVIDER_WIDTH;
+    if (gesture.type == magda::GestureActionType::ScrollHorizontal && overTimeRuler) {
         if (timeRuler_->onScrollRequested) {
-            float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
-            int scrollAmount = static_cast<int>(-delta * 100.0f);
+            int scrollAmount = static_cast<int>(-gesture.magnitude);
             if (scrollAmount != 0)
                 timeRuler_->onScrollRequested(scrollAmount);
         }
         return;
     }
 
-    // Regular scroll -- forward to viewport for vertical/horizontal scrolling
-    if (viewport_) {
-        int deltaX = static_cast<int>(-wheel.deltaX * 100.0f);
-        int deltaY = static_cast<int>(-wheel.deltaY * 100.0f);
-        viewport_->setViewPosition(viewport_->getViewPositionX() + deltaX,
-                                   clampVerticalScrollY(viewport_->getViewPositionY() + deltaY));
+    if (gesture.type == magda::GestureActionType::ScrollHorizontal && viewport_) {
+        viewport_->setViewPosition(viewport_->getViewPositionX() -
+                                       static_cast<int>(gesture.magnitude),
+                                   viewport_->getViewPositionY());
+        return;
+    }
+
+    if (gesture.type == magda::GestureActionType::ScrollVertical && viewport_) {
+        viewport_->setViewPosition(viewport_->getViewPositionX(),
+                                   clampVerticalScrollY(viewport_->getViewPositionY() -
+                                                        static_cast<int>(gesture.magnitude)));
     }
 }
 
@@ -2341,6 +2389,8 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
 // ============================================================================
 
 void DrumGridClipContent::onActivated() {
+    installMidiNoteMonitor();
+
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClip);
@@ -2353,7 +2403,47 @@ void DrumGridClipContent::onActivated() {
 }
 
 void DrumGridClipContent::onDeactivated() {
+    uninstallMidiNoteMonitor();
+    if (rowLabels_)
+        rowLabels_->clearPressedNotes();
     stopTimer();
+}
+
+void DrumGridClipContent::highlightMonitoredNote(int noteNumber, bool noteOn) {
+    if (rowLabels_)
+        rowLabels_->setNotePressed(noteNumber, noteOn);
+}
+
+void DrumGridClipContent::ensureMonitoredNoteVisible(int noteNumber) {
+    if (!viewport_ || rowHeight_ <= 0)
+        return;
+
+    int rowIndex = -1;
+    for (int i = 0; i < static_cast<int>(padRows_.size()); ++i) {
+        if (padRows_[static_cast<size_t>(i)].noteNumber == noteNumber) {
+            rowIndex = i;
+            break;
+        }
+    }
+    if (rowIndex < 0)
+        return;
+
+    const int rowTop = rowIndex * rowHeight_;
+    const int rowBottom = rowTop + rowHeight_;
+    const int viewTop = viewport_->getViewPositionY();
+    const int viewHeight = viewport_->getHeight();
+    const int viewBottom = viewTop + viewHeight;
+
+    // Already fully visible — leave the view untouched.
+    if (rowTop >= viewTop && rowBottom <= viewBottom)
+        return;
+
+    const int target = (rowTop < viewTop) ? rowTop : rowBottom - viewHeight;
+    const int newScrollY = clampVerticalScrollY(juce::jmax(0, target));
+    if (newScrollY == viewTop)
+        return;
+
+    viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
 }
 
 // ============================================================================

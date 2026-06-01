@@ -10,6 +10,7 @@
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/DeviceInfo.hpp"
+#include "../../../core/GestureRouter.hpp"
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/PluginPreferences.hpp"
 #include "../../../core/RackInfo.hpp"
@@ -23,6 +24,7 @@
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
+#include "../mixer/LevelMeterBallistics.hpp"
 #include "../mixer/RoutingSyncHelper.hpp"
 #include "BinaryData.h"
 
@@ -30,36 +32,6 @@ namespace magda {
 
 // dB conversion helpers for volume
 namespace {
-
-namespace te = tracktion::engine;
-
-// First synth (instrument) plugin on `trackId`, walking into racks. Returns
-// nullptr if the track has none.
-te::Plugin* findPrimaryInstrumentForTrack(TrackId trackId) {
-    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return nullptr;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return nullptr;
-    auto* teTrack = bridge->getAudioTrack(trackId);
-    if (!teTrack)
-        return nullptr;
-
-    for (auto* plugin : teTrack->pluginList) {
-        if (plugin != nullptr && plugin->isSynth())
-            return plugin;
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (innerPlugin != nullptr && innerPlugin->isSynth())
-                        return innerPlugin;
-                }
-            }
-        }
-    }
-    return nullptr;
-}
 
 bool dragObjectToChainNodePathAt(const juce::DynamicObject& obj, int index, ChainNodePath& path) {
     path = {};
@@ -357,15 +329,17 @@ class TrackMeter : public juce::Component, private juce::Timer {
         float rightDb = gainToDb(targetR_);
         if (leftDb > peakLeftDb_) {
             peakLeftDb_ = leftDb;
-            peakLeftHold_ = PEAK_HOLD_MS;
+            peakLeftHold_ = level_meter_ballistics::peakHoldMs;
         }
         if (rightDb > peakRightDb_) {
             peakRightDb_ = rightDb;
-            peakRightHold_ = PEAK_HOLD_MS;
+            peakRightHold_ = level_meter_ballistics::peakHoldMs;
         }
 
-        if (!isTimerRunning())
+        if (!isTimerRunning()) {
+            lastUpdateMs_ = level_meter_ballistics::restartClock();
             startTimerHz(60);
+        }
     }
 
     void paint(juce::Graphics& g) override {
@@ -411,46 +385,24 @@ class TrackMeter : public juce::Component, private juce::Timer {
     float peakLeftDb_ = -60.0f, peakRightDb_ = -60.0f;
     float peakLeftHold_ = 0.0f, peakRightHold_ = 0.0f;
     int nameRowY_ = -1;
-
-    static constexpr float ATTACK_COEFF = 0.9f;
-    static constexpr float RELEASE_COEFF = 0.05f;
-    static constexpr float PEAK_HOLD_MS = 1500.0f;
-    static constexpr float PEAK_DECAY_DB_PER_FRAME = 0.8f;
+    double lastUpdateMs_ = 0.0;
 
     void timerCallback() override {
+        const float elapsedMs = level_meter_ballistics::getElapsedMs(lastUpdateMs_);
         bool changed = false;
-        changed |= updateLevel(displayL_, targetL_);
-        changed |= updateLevel(displayR_, targetR_);
-        changed |= updatePeak(peakLeftDb_, peakLeftHold_, gainToDb(targetL_));
-        changed |= updatePeak(peakRightDb_, peakRightHold_, gainToDb(targetR_));
+        changed |= level_meter_ballistics::updateLevel(displayL_, targetL_, elapsedMs);
+        changed |= level_meter_ballistics::updateLevel(displayR_, targetR_, elapsedMs);
+        changed |= level_meter_ballistics::updatePeak(peakLeftDb_, peakLeftHold_,
+                                                      gainToDb(targetL_), MIN_DB, elapsedMs);
+        changed |= level_meter_ballistics::updatePeak(peakRightDb_, peakRightHold_,
+                                                      gainToDb(targetR_), MIN_DB, elapsedMs);
         if (changed)
             repaint();
-        else if (displayL_ < 0.001f && displayR_ < 0.001f && peakLeftDb_ <= -60.0f &&
-                 peakRightDb_ <= -60.0f)
+        else if (displayL_ < 0.001f && displayR_ < 0.001f && peakLeftDb_ <= MIN_DB &&
+                 peakRightDb_ <= MIN_DB) {
             stopTimer();
-    }
-
-    static bool updateLevel(float& display, float target) {
-        float prev = display;
-        display += (target - display) * (target > display ? ATTACK_COEFF : RELEASE_COEFF);
-        if (display < 0.001f)
-            display = 0.0f;
-        return std::abs(display - prev) > 0.0001f;
-    }
-
-    static bool updatePeak(float& peakDb, float& holdTime, float currentDb) {
-        float prev = peakDb;
-        if (currentDb > peakDb) {
-            peakDb = currentDb;
-            holdTime = PEAK_HOLD_MS;
-        } else if (holdTime > 0.0f) {
-            holdTime -= 1000.0f / 60.0f;
-        } else {
-            peakDb -= PEAK_DECAY_DB_PER_FRAME;
-            if (peakDb < -60.0f)
-                peakDb = -60.0f;
+            lastUpdateMs_ = 0.0;
         }
-        return std::abs(peakDb - prev) > 0.01f;
     }
 
     void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level, float peakDb) {
@@ -1540,6 +1492,11 @@ void TrackHeadersPanel::resized() {
     updateTrackHeaderLayout();
 }
 
+void TrackHeadersPanel::refreshHeaderSideLayout() {
+    updateTrackHeaderLayout();
+    repaint();
+}
+
 void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels,
                                         const juce::StringArray& detailLabels) {
     if (ghostHeaderLabels_ == labels && ghostHeaderDetailLabels_ == detailLabels)
@@ -2537,8 +2494,8 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
 
 void TrackHeadersPanel::updateTrackHeaderLayout() {
     headersOnRight_ = Config::getInstance().getScrollbarOnLeft();
-    SideColumn outer(headersOnRight_);   // meters: right normally, left when swapped
-    SideColumn inner(!headersOnRight_);  // controls+indent: left normally, right when swapped
+    SideColumn outer(headersOnRight_);  // meters: right normally, left when swapped
+    SideColumn inner(true);             // controls stay left-aligned in the header column
 
     for (size_t i = 0; i < trackHeaders.size(); ++i) {
         auto& header = *trackHeaders[i];
@@ -2577,9 +2534,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 auto nameArea = nameRow.withTrimmedRight(nameRow.getWidth() / 4);
                 header.nameLabel->setBounds(nameArea);
                 header.nameLabel->setVisible(true);
-                header.nameLabel->setJustificationType(headersOnRight_
-                                                           ? juce::Justification::centredRight
-                                                           : juce::Justification::centredLeft);
+                header.nameLabel->setJustificationType(juce::Justification::centredLeft);
             }
 
             // Controls in the bottom area (below 0dB line)
@@ -2777,12 +2732,17 @@ void TrackHeadersPanel::mouseDrag(const juce::MouseEvent& event) {
 
 void TrackHeadersPanel::mouseWheelMove(const juce::MouseEvent& event,
                                        const juce::MouseWheelDetails& wheel) {
-    if (scrollTarget_) {
-        // Match JUCE Viewport's scroll formula: deltaY * 14.0f * singleStepSize (default 16)
+    // Vertical track scroll resolves through GestureRouter (#1350) using the
+    // same Arrangement ScrollVertical binding as the track body, so the headers
+    // and content scroll in lockstep at one shared sensitivity.
+    const auto gesture = GestureRouter::getInstance().resolve(GestureContext::Arrangement, wheel,
+                                                              event.mods, event.getPosition());
+    if (scrollTarget_ && gesture.type == GestureActionType::ScrollVertical) {
         auto pos = scrollTarget_->getViewPosition();
-        float distance = wheel.deltaY * 14.0f * 16.0f;
-        int step = juce::roundToInt(distance < 0.0f ? juce::jmin(distance, -1.0f)
-                                                    : juce::jmax(distance, 1.0f));
+        // Preserve the original min-1px step so small wheel ticks still move.
+        const float distance = gesture.magnitude;
+        const int step = juce::roundToInt(distance < 0.0f ? juce::jmin(distance, -1.0f)
+                                                          : juce::jmax(distance, 1.0f));
         scrollTarget_->setViewPosition(pos.x, pos.y - step);
     } else {
         juce::Component::mouseWheelMove(event, wheel);
@@ -3058,12 +3018,12 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Prefer Drum Grid for the track's primary instrument plugin. The flag
     // lives at the plugin-identifier level (user-global), so all tracks using
     // the same instrument get the same default editor.
-    auto* primaryInstrument = findPrimaryInstrumentForTrack(header.trackId);
+    auto* primaryInstrument = TrackManager::getInstance().getPrimaryInstrument(header.trackId);
     if (primaryInstrument != nullptr) {
-        const auto identifier = primaryInstrument->getIdentifierString();
+        const auto identifier = magda::PluginPreferences::identifierForDevice(*primaryInstrument);
         const bool prefersGrid =
             magda::PluginPreferences::getInstance().prefersDrumGrid(identifier);
-        menu.addItem(PreferDrumGrid, "Prefer Drum Grid for " + primaryInstrument->getName(), true,
+        menu.addItem(PreferDrumGrid, "Prefer Drum Grid for " + primaryInstrument->name, true,
                      prefersGrid);
     }
 
@@ -3115,9 +3075,10 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                     TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
                 }
             } else if (result == PreferDrumGrid) {
-                if (auto* plugin = findPrimaryInstrumentForTrack(trackId)) {
+                if (auto* instrument = TrackManager::getInstance().getPrimaryInstrument(trackId)) {
                     auto& prefs = magda::PluginPreferences::getInstance();
-                    const auto identifier = plugin->getIdentifierString();
+                    const auto identifier =
+                        magda::PluginPreferences::identifierForDevice(*instrument);
                     prefs.setPrefersDrumGrid(identifier, !prefs.prefersDrumGrid(identifier));
                 }
             } else if (result >= RemoveSendBase) {
@@ -3315,12 +3276,40 @@ void TrackHeadersPanel::executeDrop() {
             baseTargetIndex = trackManager.getTrackIndex(targetTrackId);
         }
 
+        // The track just below the drop gap, used to position within a group.
+        TrackId dropBeforeTrackId = INVALID_TRACK_ID;
+        if (dropTargetIndex_ < static_cast<int>(visibleTrackIds_.size()))
+            dropBeforeTrackId = visibleTrackIds_[dropTargetIndex_];
+
         // Move each track in display order, adjusting target index as we go
         int insertAt = baseTargetIndex;
         for (auto trackId : tracksToMove) {
             const auto* track = trackManager.getTrack(trackId);
             if (!track)
                 continue;
+
+            // Reorder within the same group: child display order lives in the
+            // parent's childIds, not the flat track list, so moveTrack alone has
+            // no visible effect. Insert before the sibling under the drop gap
+            // (or append to the group when the gap is past its children).
+            if (targetParentId != INVALID_TRACK_ID && track->parentId == targetParentId) {
+                // If the drop gap sits on a track that is itself part of the
+                // moving selection, the drop lands inside the block being moved.
+                // Reordering relative to a sibling that is also about to move
+                // scrambles the order, so treat it as a no-op.
+                const bool dropInsideSelection = dropBeforeTrackId != INVALID_TRACK_ID &&
+                                                 std::find(tracksToMove.begin(), tracksToMove.end(),
+                                                           dropBeforeTrackId) != tracksToMove.end();
+                if (dropInsideSelection)
+                    continue;
+
+                TrackId beforeChildId = INVALID_TRACK_ID;
+                const auto* beforeTrack = trackManager.getTrack(dropBeforeTrackId);
+                if (beforeTrack != nullptr && beforeTrack->parentId == targetParentId)
+                    beforeChildId = dropBeforeTrackId;
+                trackManager.moveChildWithinGroup(trackId, beforeChildId);
+                continue;
+            }
 
             // Update group membership if needed
             if (track->parentId != targetParentId) {
@@ -3602,21 +3591,21 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                         // Params submenu
                         if (!device.parameters.empty()) {
                             juce::PopupMenu paramsMenu;
-                            for (int i = 0; i < static_cast<int>(device.parameters.size()); ++i) {
+                            for (const auto& p : device.parameters) {
                                 AutomationTarget target;
                                 target.kind = ControlTarget::Kind::PluginParam;
                                 target.devicePath.trackId = trackId;
                                 target.devicePath = devicePath;
-                                target.paramIndex = i;
-                                device.parameters[static_cast<size_t>(i)].name;
+                                // Address by TE index, not array position —
+                                // wrapper params live in a separate bucket so
+                                // the array no longer mirrors TE indices 1:1.
+                                target.paramIndex = p.paramIndex;
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                                 bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                paramsMenu.addItem(itemId,
-                                                   device.parameters[static_cast<size_t>(i)].name,
-                                                   true, ticked);
+                                paramsMenu.addItem(itemId, p.name, true, ticked);
                             }
                             deviceMenu.addSubMenu("Params", paramsMenu);
                         }
@@ -3760,7 +3749,7 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
             };
 
         ChainNodePath rootPath = ChainNodePath::trackLevel(trackId);
-        buildMenu(trackInfo->chainElements, rootPath, addNewMenu);
+        buildMenu(trackInfo->chain.fxChainElements, rootPath, addNewMenu);
     }
 
     menu.addSubMenu("Add New Lane...", addNewMenu);

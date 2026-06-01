@@ -10,6 +10,10 @@
 #include "core/DeviceInfo.hpp"
 #include "core/ParameterDetector.hpp"
 
+namespace magda::daw::audio {
+struct InternalPluginSpec;
+}
+
 namespace magda::daw::ui {
 
 /**
@@ -26,6 +30,7 @@ struct MockParameterInfo {
     magda::ParameterScale scale = magda::ParameterScale::Linear;
     std::vector<juce::String> choices;     // For discrete params
     std::vector<juce::String> valueTable;  // Full getText() lookup table
+    bool inMiniMixer = false;              // Surfaced in the mixer mini-chain row
 };
 
 /**
@@ -34,6 +39,7 @@ struct MockParameterInfo {
  * Shows a table with columns:
  * - Parameter name
  * - Visible toggle
+ * - Mini toggle (surface this param in the mixer mini-chain row)
  * - Custom unit
  * - Custom range (min/max/center)
  */
@@ -66,9 +72,16 @@ class ParameterConfigDialog : public juce::Component,
     // Load saved parameter configuration and apply to DeviceInfo
     static bool applyConfigToDevice(const juce::String& uniqueId, magda::DeviceInfo& device);
 
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+    static void refreshLiveDevicesForParameterConfigForTest(const juce::String& uniqueId);
+#endif
+
   private:
     juce::String pluginName_;
     juce::String pluginUniqueId_;  // For saving/loading parameter configuration
+    // True for MAGDA internal devices: their params are scanned live (not mock)
+    // and the dialog hides the Visible column, exposing only the Mini FX choice.
+    bool isInternalPlugin_ = false;
     std::vector<MockParameterInfo> parameters_;
     std::vector<int> filteredIndices_;  // Indices of filtered parameters
     juce::String currentSearchText_;
@@ -93,7 +106,7 @@ class ParameterConfigDialog : public juce::Component,
     juce::Label searchLabel_;
 
     // Column IDs
-    enum ColumnIds { ParamName = 1, Visible, Unit, Range };
+    enum ColumnIds { ParamName = 1, Visible, Mini, Unit, Range };
 
     // Scan inputs cached from loadParameters for detection
     std::vector<magda::ParameterScanInput> scanInputs_;
@@ -103,6 +116,10 @@ class ParameterConfigDialog : public juce::Component,
     void updateTitle();
     void buildMockParameters();
     void loadParameters(const juce::String& uniqueId);
+    // Scan a MAGDA device's live automatable parameters (internal-registry or
+    // compiled-Faust) into parameters_/scanInputs_. Returns false if the
+    // engine/edit/plugin is unavailable so the caller can fall back to mock.
+    bool scanInternalParameters(const juce::String& pluginId);
     void runHeuristicDetection();
     void runDetection();
     void applyDetectionResults(const std::vector<magda::DetectedParameterInfo>& results);

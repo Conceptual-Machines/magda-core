@@ -121,7 +121,7 @@ juce::String applyFourOscPresetToPath(const FourOscAgent::Preset& preset,
     if (!preset.waves.empty()) {
         auto* engine = tm.getAudioEngine();
         auto* bridge = engine ? engine->getAudioBridge() : nullptr;
-        auto plugin = bridge ? bridge->getPlugin(device->id) : nullptr;
+        auto plugin = bridge ? bridge->getPlugin(path) : nullptr;
         auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get());
         if (fourOsc) {
             for (const auto& [oscNum, waveName] : preset.waves) {
@@ -150,7 +150,7 @@ juce::String applyFourOscPresetToPath(const FourOscAgent::Preset& preset,
     if (!preset.filterType.empty() || !preset.voiceMode.empty() || !preset.fx.empty()) {
         auto* engine = tm.getAudioEngine();
         auto* bridge = engine ? engine->getAudioBridge() : nullptr;
-        auto plugin = bridge ? bridge->getPlugin(device->id) : nullptr;
+        auto plugin = bridge ? bridge->getPlugin(path) : nullptr;
         if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
             if (!preset.filterType.empty()) {
                 const int ft = filterTypeNameToInt(juce::String(preset.filterType));
@@ -197,7 +197,7 @@ juce::String applyFourOscPresetToPath(const FourOscAgent::Preset& preset,
     // fires the notify once the panel has persisted its final text.
     if (auto* engine = tm.getAudioEngine()) {
         if (auto* bridge = engine->getAudioBridge()) {
-            bridge->getPluginManager().capturePluginState(device->id);
+            bridge->getPluginManager().capturePluginState(path);
         }
     }
 

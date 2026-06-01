@@ -180,6 +180,15 @@ class Config {
         scrollbarOnLeft = onLeft;
     }
 
+    // When true, the arrangement scrollbars hide on idle and fade in on hover.
+    // When false, they are always visible (classic behaviour).
+    bool getArrangementScrollbarsAutoHide() const {
+        return arrangementScrollbarsAutoHide;
+    }
+    void setArrangementScrollbarsAutoHide(bool autoHide) {
+        arrangementScrollbarsAutoHide = autoHide;
+    }
+
     // UI scale factor for HiDPI displays.
     // 0 = Auto (pick from primary display DPI at startup); >0 = explicit factor (e.g. 1.5).
     double getUIScale() const {
@@ -696,6 +705,81 @@ class Config {
         openMacrosOnSelect = enabled;
     }
 
+    // Mixer view-toggle rail: per-toggle visibility for the mixer's optional
+    // panes. All default off; the user opts in via the left rail.
+    bool getMixerShowSends() const {
+        return mixerShowSends_;
+    }
+    void setMixerShowSends(bool v) {
+        mixerShowSends_ = v;
+    }
+    bool getMixerShowRouting() const {
+        return mixerShowRouting_;
+    }
+    void setMixerShowRouting(bool v) {
+        mixerShowRouting_ = v;
+    }
+    bool getMixerShowMonitor() const {
+        return mixerShowMonitor_;
+    }
+    void setMixerShowMonitor(bool v) {
+        mixerShowMonitor_ = v;
+    }
+    bool getMixerShowOscilloscope() const {
+        return mixerShowOscilloscope_;
+    }
+    void setMixerShowOscilloscope(bool v) {
+        mixerShowOscilloscope_ = v;
+    }
+    bool getMixerShowSpectrum() const {
+        return mixerShowSpectrum_;
+    }
+    void setMixerShowSpectrum(bool v) {
+        mixerShowSpectrum_ = v;
+    }
+    bool getMixerShowFxChain() const {
+        return mixerShowFxChain_;
+    }
+    void setMixerShowFxChain(bool v) {
+        mixerShowFxChain_ = v;
+    }
+
+    // Legacy config value retained for compatibility with existing config.json
+    // files. Mixer-analysis devices are now serialized whenever they exist so
+    // per-device mini-visualizer settings survive project save/load.
+    bool getPersistMixerAnalysis() const {
+        return persistMixerAnalysis_;
+    }
+    void setPersistMixerAnalysis(bool v) {
+        persistMixerAnalysis_ = v;
+    }
+
+    // Analysis device defaults: the last-used non-colour settings, applied to
+    // every newly created Oscilloscope / Spectrum Analyzer. Trace colour is
+    // intentionally per-device only; a device restored from a project keeps its
+    // own saved colour in pluginState.
+    struct OscilloscopeDefaults {
+        float timebaseMs = 10.0f;
+    };
+    struct SpectrumDefaults {
+        int fftOrder = 11;  // 11 = 2048, 12 = 4096
+        float slopeDbPerOct = 4.5f;
+        float smoothing = 0.5f;
+    };
+
+    OscilloscopeDefaults getOscilloscopeDefaults() const {
+        return oscilloscopeDefaults_;
+    }
+    void setOscilloscopeDefaults(const OscilloscopeDefaults& d) {
+        oscilloscopeDefaults_ = d;
+    }
+    SpectrumDefaults getSpectrumDefaults() const {
+        return spectrumDefaults_;
+    }
+    void setSpectrumDefaults(const SpectrumDefaults& d) {
+        spectrumDefaults_ = d;
+    }
+
     // Preview output channel (stereo pair offset: 0 = outputs 1-2, 2 = outputs 3-4, etc.)
     int getPreviewOutputChannel() const {
         return previewOutputChannel;
@@ -781,6 +865,28 @@ class Config {
         globalBindings_ = b;
     }
 
+    // User keyboard-shortcut overrides (serialized to/from config.json
+    // "keyboardBindings" key). Opaque blob: a string holding the XML produced
+    // by juce::KeyPressMappingSet::createXml(); empty/void means "use the
+    // code-defined defaults". Owned by the command registry (see #20).
+    juce::var getKeyboardBindings() const {
+        return keyboardBindings_;
+    }
+    void setKeyboardBindings(const juce::var& b) {
+        keyboardBindings_ = b;
+    }
+
+    // User mouse-gesture overrides (serialized to/from config.json
+    // "gestureBindings" key). Opaque blob owned by GestureRouter (see #21):
+    // GestureRouter::toVar() produces it, loadFromVar() restores it. Void
+    // means "use the code-defined defaults".
+    juce::var getGestureBindings() const {
+        return gestureBindings_;
+    }
+    void setGestureBindings(const juce::var& b) {
+        gestureBindings_ = b;
+    }
+
     // MIDI Learn default scope ("project" or "global"; default is Project).
     // Stored in config.json under "midiLearn" -> "defaultScope".
     // Returns 0 for Global, 1 for Project (mirrors BindingScope enum order).
@@ -862,6 +968,19 @@ class Config {
     // Device chain behaviour
     bool openMacrosOnSelect = true;  // Open macro panel when selecting a device/rack
 
+    // Mixer view-toggle rail (default all off; users opt in via the rail)
+    bool mixerShowSends_ = false;
+    bool mixerShowRouting_ = false;
+    bool mixerShowMonitor_ = false;
+    bool mixerShowOscilloscope_ = false;
+    bool mixerShowSpectrum_ = false;
+    bool mixerShowFxChain_ = false;
+    bool persistMixerAnalysis_ = false;
+
+    // Analysis device last-used defaults (see getters above).
+    OscilloscopeDefaults oscilloscopeDefaults_;
+    SpectrumDefaults spectrumDefaults_;
+
     // Auto-save settings
     bool autoSaveEnabled = true;       // Auto-save enabled by default
     int autoSaveIntervalSeconds = 60;  // Save every 60 seconds
@@ -876,7 +995,8 @@ class Config {
     std::vector<TrackColourEntry> trackColourPalette;
 
     // Layout settings
-    bool scrollbarOnLeft = false;  // Scrollbar on right by default
+    bool scrollbarOnLeft = false;               // Scrollbar on right by default
+    bool arrangementScrollbarsAutoHide = true;  // Hover-reveal scrollbars by default
 
     // UI scale: 0 = Auto (pick from display DPI), otherwise an explicit factor (1.0, 1.25, …)
     double uiScale = 0.0;
@@ -1004,6 +1124,14 @@ class Config {
 
     // Global bindings (opaque JSON blob, managed by BindingRegistry)
     juce::var globalBindings_;
+
+    // User keyboard-shortcut overrides (opaque KeyPressMappingSet XML string,
+    // managed by the command registry; see #20)
+    juce::var keyboardBindings_;
+
+    // User mouse-gesture overrides (opaque JSON blob, managed by GestureRouter;
+    // see #21)
+    juce::var gestureBindings_;
 };
 
 }  // namespace magda

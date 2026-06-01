@@ -16,31 +16,6 @@ namespace magda {
 
 namespace {
 
-/**
- * @brief Recursively search chain elements for a DeviceInfo with the given ID
- *
- * Searches top-level devices and recurses into RackInfo.chains[].elements[].
- */
-const DeviceInfo* findDeviceRecursive(const std::vector<ChainElement>& elements,
-                                      DeviceId deviceId) {
-    for (const auto& element : elements) {
-        if (isDevice(element)) {
-            const auto& device = getDevice(element);
-            if (device.id == deviceId) {
-                return &device;
-            }
-        } else if (isRack(element)) {
-            const auto& rack = getRack(element);
-            for (const auto& chain : rack.chains) {
-                auto* found = findDeviceRecursive(chain.elements, deviceId);
-                if (found)
-                    return found;
-            }
-        }
-    }
-    return nullptr;
-}
-
 bool inputHasTarget(te::InputDeviceInstance& input, te::EditItemID targetID) {
     for (auto existingTargetID : input.getTargets()) {
         if (existingTargetID == targetID)
@@ -403,61 +378,62 @@ void AudioBridge::masterChannelChanged() {
     }
 }
 
-void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
+void AudioBridge::deviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
+                                         float newValue) {
     // A single device parameter changed - sync only that parameter to processor
-    auto* processor = getDeviceProcessor(deviceId);
+    auto* processor = getDeviceProcessor(devicePath);
     if (!processor) {
         return;
     }
 
     processor->setParameterByIndex(paramIndex, ParameterModelValue{newValue});
 
-    // Forward to automation recording engine
-    automationRecording_.onDeviceParameterChanged(deviceId, paramIndex, newValue);
+    // Forward to automation recording engine. Pass the full path: under
+    // section-local IDs the bare DeviceId is ambiguous (FX and post-FX devices
+    // share ids), so the recorder must record against the exact section.
+    automationRecording_.onDeviceParameterChanged(devicePath, paramIndex, newValue);
 }
 
-void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
+void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
+    const auto deviceId = devicePath.getDeviceId();
     // A device property changed (gain, bypass, etc.) - sync to processor
-    auto* processor = getDeviceProcessor(deviceId);
+    auto* processor = getDeviceProcessor(devicePath);
 
-    // Find the DeviceInfo to get updated values
-    // Search through all tracks, recursing into racks
-    auto& tm = TrackManager::getInstance();
-    for (const auto& track : tm.getTracks()) {
-        auto* device = findDeviceRecursive(track.chainElements, deviceId);
-        if (device) {
-            if (processor) {
-                processor->syncFromDeviceInfo(*device);
-            } else {
-                // For plugins without a processor (e.g. Chord Engine), sync bypass directly
-                auto tePlugin = pluginManager_.getPlugin(deviceId);
-                if (tePlugin)
-                    tePlugin->setEnabled(!device->bypassed);
-            }
+    auto* device = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    if (!device)
+        return;
 
-            // Wrapped instruments consume MIDI while active. When bypassed, disable the
-            // wrapper rack itself so TE skips it and passes MIDI to later devices.
-            if (auto* rackInstance =
-                    pluginManager_.getInstrumentRackManager().getRackInstance(deviceId)) {
-                rackInstance->setEnabled(!device->bypassed);
-            }
+    if (processor) {
+        processor->syncFromDeviceInfo(*device);
+    } else {
+        // For plugins without a processor (e.g. Chord Engine), sync bypass directly.
+        auto tePlugin = pluginManager_.getPlugin(devicePath);
+        if (tePlugin)
+            tePlugin->setEnabled(!device->bypassed);
+    }
 
-            // Push gain to the audio-graph atomic so DeviceGainNode picks it up.
-            // DeviceGainNode sits OUTSIDE the plugin in the TE graph (between the plugin and
-            // the level meter), so it stays active even when the plugin is bypassed. Force
-            // unity while bypassed so the slider stops attenuating signal that isn't going
-            // through the plugin (#1189). The user's gainValue is preserved on DeviceInfo
-            // and gets re-pushed when the device is re-enabled.
-            deviceMetering_.setGain(deviceId, device->bypassed ? 1.0f : device->gainValue);
-
-            // When bypass changes, resync modifiers so they are removed/restored
-            pluginManager_.resyncDeviceModifiers(track.id);
-
-            sidechainRouting_.handleDeviceSidechainChanged(track.id, *device);
-
-            return;
+    // Wrapped instruments consume MIDI while active. Only top-level devices own
+    // instrument wrapper racks; post-fx/mixer-analysis ids are section-local and
+    // can overlap with a top-level instrument id.
+    if (devicePath.getType() == ChainNodeType::TopLevelDevice) {
+        if (auto* rackInstance =
+                pluginManager_.getInstrumentRackManager().getRackInstance(deviceId)) {
+            rackInstance->setEnabled(!device->bypassed);
         }
     }
+
+    // Push gain to the audio-graph atomic so DeviceGainNode picks it up.
+    // DeviceGainNode sits OUTSIDE the plugin in the TE graph (between the plugin and
+    // the level meter), so it stays active even when the plugin is bypassed. Force
+    // unity while bypassed so the slider stops attenuating signal that isn't going
+    // through the plugin (#1189). The user's gainValue is preserved on DeviceInfo
+    // and gets re-pushed when the device is re-enabled.
+    deviceMetering_.setGain(devicePath, device->bypassed ? 1.0f : device->gainValue);
+
+    // When bypass changes, resync modifiers so they are removed/restored
+    pluginManager_.resyncDeviceModifiers(devicePath.trackId);
+
+    sidechainRouting_.handleDeviceSidechainChanged(devicePath.trackId, *device);
 }
 
 // =============================================================================
@@ -588,16 +564,23 @@ TrackId AudioBridge::getTrackIdForTeTrack(te::EditItemID itemId) const {
     return result;
 }
 
-te::Plugin::Ptr AudioBridge::getPlugin(DeviceId deviceId) const {
-    return pluginManager_.getPlugin(deviceId);
+te::Plugin::Ptr AudioBridge::getPlugin(const ChainNodePath& devicePath) const {
+    return pluginManager_.getPlugin(devicePath);
+}
+
+AudioBridge::ResolvedDevice AudioBridge::resolveDevice(const ChainNodePath& devicePath) const {
+    ResolvedDevice out;
+    out.info = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    out.plugin = getPlugin(devicePath);
+    return out;
 }
 
 te::AutomatableParameter* AudioBridge::resolveControlTarget(const ControlTarget& target) const {
     return controlTargetResolver_.resolve(target);
 }
 
-DeviceProcessor* AudioBridge::getDeviceProcessor(DeviceId deviceId) const {
-    return pluginManager_.getDeviceProcessor(deviceId);
+DeviceProcessor* AudioBridge::getDeviceProcessor(const ChainNodePath& devicePath) const {
+    return pluginManager_.getDeviceProcessor(devicePath);
 }
 
 namespace {
@@ -605,44 +588,6 @@ te::ExternalPlugin* asExternalPlugin(te::Plugin::Ptr plugin) {
     return dynamic_cast<te::ExternalPlugin*>(plugin.get());
 }
 }  // namespace
-
-int AudioBridge::getPluginNumPrograms(DeviceId deviceId) const {
-    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
-        if (auto* pi = ext->getAudioPluginInstance())
-            return pi->getNumPrograms();
-    }
-    return 0;
-}
-
-int AudioBridge::getPluginCurrentProgram(DeviceId deviceId) const {
-    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
-        if (auto* pi = ext->getAudioPluginInstance())
-            return pi->getCurrentProgram();
-    }
-    return 0;
-}
-
-juce::String AudioBridge::getPluginProgramName(DeviceId deviceId, int programIndex) const {
-    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
-        if (auto* pi = ext->getAudioPluginInstance()) {
-            if (programIndex >= 0 && programIndex < pi->getNumPrograms())
-                return pi->getProgramName(programIndex);
-        }
-    }
-    return {};
-}
-
-bool AudioBridge::setPluginCurrentProgram(DeviceId deviceId, int programIndex) {
-    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
-        if (auto* pi = ext->getAudioPluginInstance()) {
-            if (programIndex >= 0 && programIndex < pi->getNumPrograms()) {
-                pi->setCurrentProgram(programIndex);
-                return true;
-            }
-        }
-    }
-    return false;
-}
 
 namespace {
 
@@ -667,11 +612,47 @@ struct Vst3PresetVisitor : juce::ExtensionsVisitor {
 
 }  // namespace
 
-bool AudioBridge::loadPluginPresetFile(DeviceId deviceId, const juce::File& presetFile) {
+int AudioBridge::getPluginNumPrograms(const ChainNodePath& devicePath) const {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath))) {
+        if (auto* pi = ext->getAudioPluginInstance())
+            return pi->getNumPrograms();
+    }
+    return 0;
+}
+int AudioBridge::getPluginCurrentProgram(const ChainNodePath& devicePath) const {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath))) {
+        if (auto* pi = ext->getAudioPluginInstance())
+            return pi->getCurrentProgram();
+    }
+    return 0;
+}
+juce::String AudioBridge::getPluginProgramName(const ChainNodePath& devicePath,
+                                               int programIndex) const {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath))) {
+        if (auto* pi = ext->getAudioPluginInstance()) {
+            if (programIndex >= 0 && programIndex < pi->getNumPrograms())
+                return pi->getProgramName(programIndex);
+        }
+    }
+    return {};
+}
+bool AudioBridge::setPluginCurrentProgram(const ChainNodePath& devicePath, int programIndex) {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath))) {
+        if (auto* pi = ext->getAudioPluginInstance()) {
+            if (programIndex >= 0 && programIndex < pi->getNumPrograms()) {
+                pi->setCurrentProgram(programIndex);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+bool AudioBridge::loadPluginPresetFile(const ChainNodePath& devicePath,
+                                       const juce::File& presetFile) {
     if (!presetFile.existsAsFile())
         return false;
 
-    auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId));
+    auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath));
     if (ext == nullptr)
         return false;
     auto* pi = ext->getAudioPluginInstance();
@@ -694,24 +675,17 @@ bool AudioBridge::loadPluginPresetFile(DeviceId deviceId, const juce::File& pres
         juce::MemoryBlock raw;
         if (!presetFile.loadFileAsData(raw))
             return false;
-        // JUCE's AU wrapper reads the plist directly and pushes it to the
-        // unit via kAudioUnitProperty_ClassInfo. Note: setStateInformation
-        // is NOT what we want — that's JUCE's own state envelope, which
-        // wraps the AU class-info plist and would not match a bare .aupreset.
         pi->setCurrentProgramStateInformation(raw.getData(), (int)raw.getSize());
-        applied = true;  // AU API doesn't report success; assume ok.
+        applied = true;
     }
 
-    if (applied) {
-        // Persist the new state into TE's ValueTree so project save / undo
-        // / param refresh sees it. Mirrors PluginManager::capturePluginState.
+    if (applied)
         ext->flushPluginStateToValueTree();
-    }
     return applied;
 }
-
-bool AudioBridge::savePluginPresetFile(DeviceId deviceId, const juce::File& presetFile) {
-    auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId));
+bool AudioBridge::savePluginPresetFile(const ChainNodePath& devicePath,
+                                       const juce::File& presetFile) {
+    auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath));
     if (ext == nullptr)
         return false;
     auto* pi = ext->getAudioPluginInstance();
@@ -758,9 +732,10 @@ void AudioBridge::removeAudioTrack(TrackId trackId) {
 // Parameter Queue
 // =============================================================================
 
-bool AudioBridge::pushParameterChange(DeviceId deviceId, int paramIndex, float value) {
+bool AudioBridge::pushParameterChange(const ChainNodePath& devicePath, int paramIndex,
+                                      float value) {
     // Delegate to ParameterManager
-    return parameterManager_.pushChange(deviceId, paramIndex, value);
+    return parameterManager_.pushChange(devicePath, paramIndex, value);
 }
 
 // =============================================================================
@@ -845,7 +820,7 @@ void AudioBridge::processParameterChanges() {
 
     ParameterChange change;
     while (parameterManager_.popChange(change)) {
-        auto plugin = getPlugin(change.deviceId);
+        auto plugin = getPlugin(change.devicePath);
         if (plugin) {
             // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign) - false positive from
             // profiling macros
@@ -1049,9 +1024,9 @@ void AudioBridge::timerCallback() {
             if (!meteringBuffer_.peekLatest(trackId, trackMeter))
                 continue;
 
-            for (auto devId : info.deviceIds) {
-                deviceMetering_.ensureEntry(devId);
-                deviceMetering_.setDirectLevels(devId, trackMeter.peakL, trackMeter.peakR);
+            for (const auto& devicePath : info.devicePaths) {
+                deviceMetering_.ensureEntry(devicePath);
+                deviceMetering_.setDirectLevels(devicePath, trackMeter.peakL, trackMeter.peakR);
             }
 
             for (auto rackId : info.rackIds) {
@@ -1232,38 +1207,31 @@ bool AudioBridge::setSessionSlotMidiRecordingTarget(TrackId trackId, int sceneIn
 // Plugin Editor Windows (delegates to PluginWindowManager)
 // =============================================================================
 
-void AudioBridge::showPluginWindow(DeviceId deviceId) {
-    auto plugin = getPlugin(deviceId);
-    if (plugin) {
-        pluginWindowBridge_.showPluginWindow(deviceId, plugin);
-    }
+void AudioBridge::showPluginWindow(const ChainNodePath& devicePath) {
+    auto plugin = getPlugin(devicePath);
+    if (plugin)
+        pluginWindowBridge_.showPluginWindow(devicePath.getDeviceId(), plugin);
 }
 
-void AudioBridge::hidePluginWindow(DeviceId deviceId) {
-    auto plugin = getPlugin(deviceId);
-    if (plugin) {
-        pluginWindowBridge_.hidePluginWindow(deviceId, plugin);
-    }
+void AudioBridge::hidePluginWindow(const ChainNodePath& devicePath) {
+    auto plugin = getPlugin(devicePath);
+    if (plugin)
+        pluginWindowBridge_.hidePluginWindow(devicePath.getDeviceId(), plugin);
 }
 
-bool AudioBridge::isPluginWindowOpen(DeviceId deviceId) const {
-    auto plugin = getPlugin(deviceId);
-    if (plugin) {
-        return pluginWindowBridge_.isPluginWindowOpen(plugin);
-    }
-    return false;
+bool AudioBridge::isPluginWindowOpen(const ChainNodePath& devicePath) const {
+    auto plugin = getPlugin(devicePath);
+    return plugin ? pluginWindowBridge_.isPluginWindowOpen(plugin) : false;
 }
 
-bool AudioBridge::togglePluginWindow(DeviceId deviceId) {
-    auto plugin = getPlugin(deviceId);
-    if (plugin) {
-        return pluginWindowBridge_.togglePluginWindow(deviceId, plugin);
-    }
-    return false;
+bool AudioBridge::togglePluginWindow(const ChainNodePath& devicePath) {
+    auto plugin = getPlugin(devicePath);
+    return plugin ? pluginWindowBridge_.togglePluginWindow(devicePath.getDeviceId(), plugin)
+                  : false;
 }
 
-bool AudioBridge::loadSamplerSample(DeviceId deviceId, const juce::File& file) {
-    return samplerFileLoader_.loadSample(deviceId, file);
+bool AudioBridge::loadSamplerSample(const ChainNodePath& devicePath, const juce::File& file) {
+    return samplerFileLoader_.loadSample(devicePath, file);
 }
 
 // =============================================================================

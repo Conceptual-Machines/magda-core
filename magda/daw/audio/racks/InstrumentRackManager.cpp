@@ -291,10 +291,11 @@ void InstrumentRackManager::unwrap(DeviceId deviceId) {
     wrapped_.erase(it);
 }
 
-void InstrumentRackManager::recordWrapping(DeviceId deviceId, te::RackType::Ptr rackType,
-                                           te::Plugin::Ptr innerPlugin,
+void InstrumentRackManager::recordWrapping(const ChainNodePath& devicePath,
+                                           te::RackType::Ptr rackType, te::Plugin::Ptr innerPlugin,
                                            te::Plugin::Ptr rackInstance, bool isMultiOut,
                                            int numOutputChannels) {
+    const auto deviceId = devicePath.getDeviceId();
     te::Plugin::Ptr meterTap;
     if (rackInstance) {
         auto pendingIt = pendingMeterTapsByRack_.find(rackInstance->itemID);
@@ -308,7 +309,7 @@ void InstrumentRackManager::recordWrapping(DeviceId deviceId, te::RackType::Ptr 
         meterTap = findMeterTapPlugin(rackType);
 
     if (auto* tap = dynamic_cast<daw::audio::InstrumentMeterTapPlugin*>(meterTap.get())) {
-        tap->setDeviceId(deviceId);
+        tap->setDevicePath(devicePath);
     } else {
         jassertfalse;
         DBG("InstrumentRackManager: Missing meter tap while recording wrapper for device "

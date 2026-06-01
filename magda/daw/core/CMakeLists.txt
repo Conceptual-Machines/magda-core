@@ -17,9 +17,11 @@ target_sources(magda_daw PRIVATE
     SessionLaunchService.cpp
     MidiFileWriter.cpp
     SelectionManager.cpp
+    GestureRouter.cpp
     AutomationInfo.cpp
     AutomationManager.cpp
     LinkModeManager.cpp
+    GainStagingManager.cpp
     UndoManager.cpp
     ClipCommands.cpp
     ClipPropertyCommands.cpp
@@ -82,6 +84,7 @@ target_sources(magda_daw PRIVATE
     MidiFileWriter.hpp
     SelectionManager.hpp
     LinkModeManager.hpp
+    GainStagingManager.hpp
     UndoManager.hpp
     ClipCommands.hpp
     ClipPropertyCommands.hpp

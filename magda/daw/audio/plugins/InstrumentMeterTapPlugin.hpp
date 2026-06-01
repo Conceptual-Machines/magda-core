@@ -6,7 +6,7 @@
 #include <memory>
 #include <vector>
 
-#include "../../core/TypeIds.hpp"
+#include "../../core/ChainNodePath.hpp"
 #include "../DeviceMeteringManager.hpp"
 
 namespace magda::daw::audio {
@@ -50,6 +50,7 @@ class InstrumentMeterTapPlugin : public te::Plugin {
     void applyToBuffer(const te::PluginRenderContext&) override;
 
     void setDeviceId(DeviceId deviceId);
+    void setDevicePath(const ChainNodePath& devicePath);
     DeviceId getDeviceId() const {
         return deviceId_.load(std::memory_order_relaxed);
     }
@@ -75,6 +76,7 @@ class InstrumentMeterTapPlugin : public te::Plugin {
     void bindRealtimeTap();
 
     std::atomic<DeviceId> deviceId_{INVALID_DEVICE_ID};
+    ChainNodePath devicePath_;
     std::atomic<std::atomic<float>*> peakL_{nullptr};
     std::atomic<std::atomic<float>*> peakR_{nullptr};
     std::atomic<std::atomic<float>*> gainLinear_{nullptr};

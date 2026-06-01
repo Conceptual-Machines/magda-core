@@ -48,15 +48,17 @@ struct PluginPresetMenuActions {
 };
 
 void showPluginPresetMenu(juce::Component* targetComponent, const magda::DeviceInfo& device,
-                          bool isInternalDevice, const juce::File& currentPluginPresetFile,
+                          const magda::ChainNodePath& devicePath, bool isInternalDevice,
+                          const juce::File& currentPluginPresetFile,
                           PluginPresetMenuActions actions);
 
 void loadPluginPresetFile(
-    magda::DeviceId deviceId, const juce::File& file,
+    const magda::ChainNodePath& devicePath, const juce::File& file,
     std::function<void(const juce::File& currentFile, const juce::String& displayName)> onLoaded);
 
 void showSavePluginPresetDialog(
-    const magda::DeviceInfo& device, const juce::String& currentPluginPresetName,
+    const magda::DeviceInfo& device, const magda::ChainNodePath& devicePath,
+    const juce::String& currentPluginPresetName,
     std::function<void(const juce::File& currentFile, const juce::String& displayName)> onSaved);
 
 }  // namespace magda::daw::ui

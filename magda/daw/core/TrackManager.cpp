@@ -10,6 +10,7 @@
 #include "../engine/AudioEngine.hpp"
 #include "ClipManager.hpp"
 #include "Config.hpp"
+#include "InternalDeviceKind.hpp"
 #include "ModulatorEngine.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
@@ -59,6 +60,8 @@ void remapDuplicatedPath(ChainNodePath& path, const DuplicateIdRemap& remap) {
             case ChainStepType::Device:
                 touched = remapDuplicateId(remap.devices, step.id) || touched;
                 break;
+            case ChainStepType::Segment:
+                break;  // Segment steps carry no remappable ID
         }
     }
 
@@ -172,6 +175,48 @@ void remapDuplicatedElements(std::vector<ChainElement>& elements, const ChainNod
                 remapDuplicatedElements(chain.elements, rackPath.withChain(chain.id), remap);
         }
     }
+}
+
+ChainNodePath childDevicePath(const ChainNodePath& parentPath, DeviceId deviceId) {
+    return parentPath.isTrackLevel ? ChainNodePath::topLevelDevice(parentPath.trackId, deviceId)
+                                   : parentPath.withDevice(deviceId);
+}
+
+ChainNodePath childRackPath(const ChainNodePath& parentPath, RackId rackId) {
+    return parentPath.isTrackLevel ? ChainNodePath::rack(parentPath.trackId, rackId)
+                                   : parentPath.withRack(rackId);
+}
+
+void setChainElementsBypassed(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
+                              bool bypassed, std::vector<ChainNodePath>& affectedDevices) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            device.bypassed = bypassed;
+            affectedDevices.push_back(childDevicePath(parentPath, device.id));
+            continue;
+        }
+
+        auto& rack = magda::getRack(element);
+        rack.bypassed = bypassed;
+        const auto rackPath = childRackPath(parentPath, rack.id);
+        for (auto& chain : rack.chains)
+            setChainElementsBypassed(chain.elements, rackPath.withChain(chain.id), bypassed,
+                                     affectedDevices);
+    }
+}
+
+void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
+    auto findAnalysis = [&elements](int order) {
+        return std::find_if(elements.begin(), elements.end(), [order](const auto& element) {
+            return postFxAnalysisDeviceOrder(element.device.pluginId) == order;
+        });
+    };
+
+    auto osc = findAnalysis(0);
+    auto spectrum = findAnalysis(1);
+    if (osc != elements.end() && spectrum != elements.end() && spectrum < osc)
+        std::iter_swap(osc, spectrum);
 }
 
 }  // namespace
@@ -334,7 +379,7 @@ void TrackManager::deleteTrack(TrackId trackId) {
     }
 
     // Clean up multi-out pairs for any instruments on this track
-    for (const auto& element : track->chainElements) {
+    for (const auto& element : track->chain.fxChainElements) {
         if (isDevice(element)) {
             const auto& device = magda::getDevice(element);
             if (device.multiOut.isMultiOut) {
@@ -542,9 +587,14 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
     newTrack.name = it->name + " Copy";
     newTrack.childIds.clear();  // Don't duplicate children references
 
-    // Content-only duplication: strip the FX chain so the duplicate starts clean.
+    // Content-only duplication: strip every device section so the duplicate
+    // starts clean. Post-FX and mixer-analysis are flat DeviceInfo lists that
+    // the copy above brought along, so they must be cleared too - otherwise a
+    // "no plugins / racks / chain elements" duplicate silently keeps them.
     if (!includeDevices) {
-        newTrack.chainElements.clear();
+        newTrack.chain.fxChainElements.clear();
+        newTrack.chain.postFxChainElements.clear();
+        newTrack.chain.mixerAnalysisElements.clear();
     }
 
     // Reassign all device/rack/chain IDs so the duplicate gets its own
@@ -559,7 +609,7 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
             if (magda::isDevice(element)) {
                 auto& device = magda::getDevice(element);
                 const auto oldDeviceId = device.id;
-                device.id = nextDeviceId_++;
+                device.id = nextFxDeviceId_++;
                 remap.devices[oldDeviceId] = device.id;
             } else if (magda::isRack(element)) {
                 auto& rack = magda::getRack(element);
@@ -575,10 +625,20 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
             }
         }
     };
-    reassignIds(newTrack.chainElements);
+    reassignIds(newTrack.chain.fxChainElements);
     remapDuplicatedLinks(newTrack.macros, newTrack.mods, ChainNodePath::trackLevel(newTrack.id),
                          remap);
-    remapDuplicatedElements(newTrack.chainElements, ChainNodePath::trackLevel(newTrack.id), remap);
+    remapDuplicatedElements(newTrack.chain.fxChainElements, ChainNodePath::trackLevel(newTrack.id),
+                            remap);
+
+    // Flat post-FX / mixer-analysis sections each carry their own section-local
+    // DeviceId counter, so the copied devices must be re-stamped with fresh ids
+    // from the right counter (sharing ids = sharing audio-engine plugin slots).
+    // Empty when !includeDevices, so these loops are no-ops in that case.
+    for (auto& element : newTrack.chain.postFxChainElements)
+        element.device.id = nextPostFxDeviceId_++;
+    for (auto& element : newTrack.chain.mixerAnalysisElements)
+        element.device.id = nextMixerAnalysisDeviceId_++;
 
     // Log all device IDs after reassignment
     DBG("duplicateTrack: original trackId=" << trackId << " -> newTrackId=" << newTrack.id);
@@ -603,7 +663,7 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
             }
         }
     };
-    logElements(newTrack.chainElements, 0);
+    logElements(newTrack.chain.fxChainElements, 0);
 
     // Aux tracks need a unique bus index
     if (newTrack.type == TrackType::Aux) {
@@ -629,7 +689,7 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
             }
         }
     };
-    clearMultiOutPairs(newTrack.chainElements);
+    clearMultiOutPairs(newTrack.chain.fxChainElements);
 
     TrackId newId = newTrack.id;
 
@@ -675,6 +735,29 @@ void TrackManager::moveTrack(TrackId trackId, int newIndex) {
 // Hierarchy Operations
 // ============================================================================
 
+void TrackManager::syncMultiOutChildOutputsForSource(TrackId sourceTrackId) {
+    auto* sourceTrack = getTrack(sourceTrackId);
+    if (!sourceTrack)
+        return;
+
+    for (auto& track : tracks_) {
+        if (track.type != TrackType::MultiOut || !track.multiOutLink ||
+            track.multiOutLink->sourceTrackId != sourceTrackId)
+            continue;
+
+        // If the multi-out track is explicitly grouped, its own group routing
+        // wins. Otherwise it follows the source instrument track's output.
+        if (track.hasParent())
+            continue;
+
+        if (track.audioOutputDevice == sourceTrack->audioOutputDevice)
+            continue;
+
+        track.audioOutputDevice = sourceTrack->audioOutputDevice;
+        notifyTrackPropertyChanged(track.id);
+    }
+}
+
 void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
     auto* track = getTrack(trackId);
     auto* group = getTrack(groupId);
@@ -700,14 +783,38 @@ void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
     track->parentId = groupId;
     group->childIds.push_back(trackId);
 
-    // Auto-route child's audio output to the group track
-    // Multi-out tracks keep their routing to the source track's output
-    if (track->type != TrackType::MultiOut)
-        track->audioOutputDevice = "track:" + juce::String(groupId);
+    // Auto-route child's audio output to the group track.
+    track->audioOutputDevice = "track:" + juce::String(groupId);
     notifyTrackPropertyChanged(trackId);
+    syncMultiOutChildOutputsForSource(trackId);
 
     notifyTracksChanged();
     DBG("Added track " << track->name << " to group " << group->name);
+}
+
+void TrackManager::moveChildWithinGroup(TrackId childId, TrackId beforeChildId) {
+    if (childId == beforeChildId)
+        return;
+    auto* track = getTrack(childId);
+    if (!track || !track->hasParent())
+        return;
+    auto* parent = getTrack(track->parentId);
+    if (!parent)
+        return;
+
+    auto& children = parent->childIds;
+    auto cur = std::find(children.begin(), children.end(), childId);
+    if (cur == children.end())
+        return;
+    children.erase(cur);
+
+    // Insert before beforeChildId, or append when it's absent / INVALID.
+    auto insertPos = (beforeChildId == INVALID_TRACK_ID)
+                         ? children.end()
+                         : std::find(children.begin(), children.end(), beforeChildId);
+    children.insert(insertPos, childId);
+
+    notifyTracksChanged();
 }
 
 void TrackManager::removeTrackFromGroup(TrackId trackId) {
@@ -725,6 +832,7 @@ void TrackManager::removeTrackFromGroup(TrackId trackId) {
     // Revert audio output to master when removed from group
     track->audioOutputDevice = "master";
     notifyTrackPropertyChanged(trackId);
+    syncMultiOutChildOutputsForSource(trackId);
 
     notifyTracksChanged();
 }
@@ -1089,6 +1197,7 @@ void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& devic
 
     // Notify listeners
     notifyTrackPropertyChanged(trackId);
+    syncMultiOutChildOutputsForSource(trackId);
 }
 
 void TrackManager::setTrackAudioOutput(TrackId trackId, const juce::String& routing) {
@@ -1194,7 +1303,7 @@ void TrackManager::setSendLevel(TrackId sourceTrackId, int busIndex, float level
 const std::vector<ChainElement>& TrackManager::getChainElements(TrackId trackId) const {
     static const std::vector<ChainElement> empty;
     if (const auto* track = getTrack(trackId)) {
-        return track->chainElements;
+        return track->chain.fxChainElements;
     }
     return empty;
 }
@@ -1202,7 +1311,7 @@ const std::vector<ChainElement>& TrackManager::getChainElements(TrackId trackId)
 void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {
     DBG("TrackManager::moveNode trackId=" << trackId << " from=" << fromIndex << " to=" << toIndex);
     if (auto* track = getTrack(trackId)) {
-        auto& elements = track->chainElements;
+        auto& elements = track->chain.fxChainElements;
         int size = static_cast<int>(elements.size());
         DBG("  elements.size()=" << size);
 
@@ -1226,7 +1335,7 @@ void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {
 void TrackManager::stampDefaultKitIfMissing(DeviceInfo& dev) {
     if (!dev.isInstrument || !dev.kitRows.empty())
         return;
-    const auto identifier = dev.uniqueId.isNotEmpty() ? dev.uniqueId : dev.pluginId;
+    const auto identifier = PluginPreferences::identifierForDevice(dev);
     if (identifier.isEmpty())
         return;
     dev.kitRows = PluginPreferences::getInstance().defaultKitRows(identifier);
@@ -1241,9 +1350,11 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = device;
-        newDevice.id = nextDeviceId_++;
+        newDevice.id = nextFxDeviceId_++;
         stampDefaultKitIfMissing(newDevice);
-        track->chainElements.push_back(makeDeviceElement(newDevice));
+        if (isAnalysisDevice(newDevice.pluginId))
+            newDevice.deviceType = DeviceType::Analysis;
+        track->chain.fxChainElements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
         DBG("Added device: " << newDevice.name << " (id=" << newDevice.id << ") to track "
                              << trackId);
@@ -1262,16 +1373,18 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = device;
-        newDevice.id = nextDeviceId_++;
+        newDevice.id = nextFxDeviceId_++;
         stampDefaultKitIfMissing(newDevice);
+        if (isAnalysisDevice(newDevice.pluginId))
+            newDevice.deviceType = DeviceType::Analysis;
 
         // Clamp insert index to valid range
-        int maxIndex = static_cast<int>(track->chainElements.size());
+        int maxIndex = static_cast<int>(track->chain.fxChainElements.size());
         insertIndex = std::clamp(insertIndex, 0, maxIndex);
 
         // Insert at specified position
-        track->chainElements.insert(track->chainElements.begin() + insertIndex,
-                                    makeDeviceElement(newDevice));
+        track->chain.fxChainElements.insert(track->chain.fxChainElements.begin() + insertIndex,
+                                            makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
         DBG("Added device: " << newDevice.name << " (id=" << newDevice.id << ") to track "
                              << trackId << " at index " << insertIndex);
@@ -1280,9 +1393,134 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
     return INVALID_DEVICE_ID;
 }
 
+// ============================================================================
+// Post-fader FX (flat device list)
+// ============================================================================
+
+const std::vector<PostFxChainElement>& TrackManager::getPostFxChainElements(TrackId trackId) const {
+    static const std::vector<PostFxChainElement> empty;
+    if (const auto* track = getTrack(trackId)) {
+        return track->chain.postFxChainElements;
+    }
+    return empty;
+}
+
+DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& device) {
+    const auto* track = getTrack(trackId);
+    int appendIndex = track ? static_cast<int>(track->chain.postFxChainElements.size()) : 0;
+    return addDeviceToPostFx(trackId, device, appendIndex);
+}
+
+DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& device,
+                                         int insertIndex) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return INVALID_DEVICE_ID;
+
+    // Post-fader FX is effects/analysis only — nothing generates sound after
+    // the fader. Instruments are rejected here; racks/nesting are already
+    // unrepresentable because PostFxChainElement holds a bare DeviceInfo.
+    if (device.isInstrument) {
+        DBG("Cannot add instrument plugin to post-fx chain");
+        return INVALID_DEVICE_ID;
+    }
+
+    // Analysis devices (oscilloscope / spectrum) are unique per kind in post-fx:
+    // the header toggles rely on a 1:1 mapping. Regular FX may repeat freely.
+    if (isAnalysisDevice(device.pluginId) &&
+        findPostFxDevice(trackId, device.pluginId) != INVALID_DEVICE_ID) {
+        DBG("Post-fx already has analysis device " << device.pluginId << "; skipping duplicate");
+        return INVALID_DEVICE_ID;
+    }
+
+    DeviceInfo newDevice = device;
+    newDevice.id = nextPostFxDeviceId_++;
+    if (isAnalysisDevice(newDevice.pluginId))
+        newDevice.deviceType = DeviceType::Analysis;
+
+    auto& elements = track->chain.postFxChainElements;
+    insertIndex = std::clamp(insertIndex, 0, static_cast<int>(elements.size()));
+    elements.insert(elements.begin() + insertIndex, PostFxChainElement{newDevice});
+    enforcePostFxAnalysisDeviceOrder(elements);
+    notifyTrackDevicesChanged(trackId);
+    DBG("Added post-fx device: " << newDevice.name << " (id=" << newDevice.id << ") to track "
+                                 << trackId << " at index " << insertIndex);
+    return newDevice.id;
+}
+
+void TrackManager::movePostFxDevice(TrackId trackId, int fromIndex, int toIndex) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return;
+    auto& elements = track->chain.postFxChainElements;
+    int size = static_cast<int>(elements.size());
+    if (fromIndex >= 0 && fromIndex < size && toIndex >= 0 && toIndex < size &&
+        fromIndex != toIndex) {
+        PostFxChainElement element = std::move(elements[fromIndex]);
+        elements.erase(elements.begin() + fromIndex);
+        elements.insert(elements.begin() + toIndex, std::move(element));
+        enforcePostFxAnalysisDeviceOrder(elements);
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+DeviceId TrackManager::findPostFxDevice(TrackId trackId, const juce::String& pluginId) const {
+    if (const auto* track = getTrack(trackId)) {
+        for (const auto& e : track->chain.postFxChainElements) {
+            if (e.device.pluginId == pluginId)
+                return e.device.id;
+        }
+    }
+    return INVALID_DEVICE_ID;
+}
+
+const std::vector<PostFxChainElement>& TrackManager::getMixerAnalysisElements(
+    TrackId trackId) const {
+    static const std::vector<PostFxChainElement> empty;
+    if (const auto* track = getTrack(trackId))
+        return track->chain.mixerAnalysisElements;
+    return empty;
+}
+
+DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInfo& device) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return INVALID_DEVICE_ID;
+    if (device.isInstrument) {
+        DBG("Cannot add instrument to mixer-analysis section");
+        return INVALID_DEVICE_ID;
+    }
+    // Mixer-analysis is rail-managed and unique per pluginId on each track.
+    if (findMixerAnalysisDevice(trackId, device.pluginId) != INVALID_DEVICE_ID) {
+        DBG("Mixer-analysis already has " << device.pluginId << "; skipping duplicate");
+        return INVALID_DEVICE_ID;
+    }
+
+    DeviceInfo newDevice = device;
+    newDevice.id = nextMixerAnalysisDeviceId_++;
+    if (isAnalysisDevice(newDevice.pluginId))
+        newDevice.deviceType = DeviceType::Analysis;
+    track->chain.mixerAnalysisElements.push_back(PostFxChainElement{newDevice});
+    notifyTrackDevicesChanged(trackId);
+    DBG("Added mixer-analysis device: " << newDevice.name << " (id=" << newDevice.id
+                                        << ") to track " << trackId);
+    return newDevice.id;
+}
+
+DeviceId TrackManager::findMixerAnalysisDevice(TrackId trackId,
+                                               const juce::String& pluginId) const {
+    if (const auto* track = getTrack(trackId)) {
+        for (const auto& e : track->chain.mixerAnalysisElements) {
+            if (e.device.pluginId == pluginId)
+                return e.device.id;
+        }
+    }
+    return INVALID_DEVICE_ID;
+}
+
 void TrackManager::removeDeviceFromTrack(TrackId trackId, DeviceId deviceId) {
     if (auto* track = getTrack(trackId)) {
-        auto& elements = track->chainElements;
+        auto& elements = track->chain.fxChainElements;
         auto it = std::find_if(elements.begin(), elements.end(), [deviceId](const ChainElement& e) {
             return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
         });
@@ -1292,6 +1530,34 @@ void TrackManager::removeDeviceFromTrack(TrackId trackId, DeviceId deviceId) {
             SelectionManager::getInstance().clearSelectionForDeletedChainNode(
                 ChainNodePath::topLevelDevice(trackId, deviceId));
             elements.erase(it);
+            notifyTrackDevicesChanged(trackId);
+            return;
+        }
+        // Post-fader FX list (flat device list).
+        auto& postElements = track->chain.postFxChainElements;
+        auto pit = std::find_if(
+            postElements.begin(), postElements.end(),
+            [deviceId](const PostFxChainElement& e) { return e.device.id == deviceId; });
+        if (pit != postElements.end()) {
+            DBG("Removed post-fx device: " << pit->device.name << " (id=" << deviceId
+                                           << ") from track " << trackId);
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
+                ChainNodePath::postFxDevice(trackId, deviceId));
+            postElements.erase(pit);
+            notifyTrackDevicesChanged(trackId);
+            return;
+        }
+        // Mixer-analysis section (rail-managed mini Oscilloscope / Spectrum).
+        auto& miniElements = track->chain.mixerAnalysisElements;
+        auto mit = std::find_if(
+            miniElements.begin(), miniElements.end(),
+            [deviceId](const PostFxChainElement& e) { return e.device.id == deviceId; });
+        if (mit != miniElements.end()) {
+            DBG("Removed mixer-analysis device: " << mit->device.name << " (id=" << deviceId
+                                                  << ") from track " << trackId);
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
+                ChainNodePath::mixerAnalysisDevice(trackId, deviceId));
+            miniElements.erase(mit);
             notifyTrackDevicesChanged(trackId);
         }
     }
@@ -1304,41 +1570,40 @@ void TrackManager::setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool by
     }
 }
 
+void TrackManager::setDeviceBypassedByPath(const ChainNodePath& devicePath, bool bypassed) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        device->bypassed = bypassed;
+        notifyTrackDevicesChanged(devicePath.trackId);
+    }
+}
+
 void TrackManager::setChainBypassed(TrackId trackId, bool bypassed) {
     if (auto* track = getTrack(trackId)) {
-        std::vector<DeviceId> affectedDevices;
-        for (auto& element : track->chainElements) {
-            if (magda::isDevice(element)) {
-                auto& device = magda::getDevice(element);
-                device.bypassed = bypassed;
-                affectedDevices.push_back(device.id);
-            } else if (magda::isRack(element)) {
-                auto& rack = magda::getRack(element);
-                rack.bypassed = bypassed;
-                for (auto& chain : rack.chains) {
-                    for (auto& chainElement : chain.elements) {
-                        if (magda::isDevice(chainElement)) {
-                            auto& device = magda::getDevice(chainElement);
-                            device.bypassed = bypassed;
-                            affectedDevices.push_back(device.id);
-                        }
-                    }
-                }
-            }
-        }
-        for (auto deviceId : affectedDevices) {
-            notifyDevicePropertyChanged(deviceId);
-        }
+        std::vector<ChainNodePath> affectedDevices;
+        setChainElementsBypassed(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
+                                 bypassed, affectedDevices);
+        for (const auto& devicePath : affectedDevices)
+            notifyDevicePropertyChanged(devicePath);
         notifyTrackDevicesChanged(trackId);
     }
 }
 
 DeviceInfo* TrackManager::getDevice(TrackId trackId, DeviceId deviceId) {
     if (auto* track = getTrack(trackId)) {
-        for (auto& element : track->chainElements) {
+        for (auto& element : track->chain.fxChainElements) {
             if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
                 return &magda::getDevice(element);
             }
+        }
+        // Post-fader FX list (flat device list).
+        for (auto& e : track->chain.postFxChainElements) {
+            if (e.device.id == deviceId)
+                return &e.device;
+        }
+        // Mixer-analysis section.
+        for (auto& e : track->chain.mixerAnalysisElements) {
+            if (e.device.id == deviceId)
+                return &e.device;
         }
     }
     return nullptr;
@@ -1361,7 +1626,7 @@ RackId TrackManager::addRackToTrack(TrackId trackId, const juce::String& name) {
         rack.chains.push_back(std::move(defaultChain));
 
         RackId newRackId = rack.id;
-        track->chainElements.push_back(makeRackElement(std::move(rack)));
+        track->chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
         notifyTrackDevicesChanged(trackId);
         DBG("Added rack: " << name << " (id=" << newRackId << ") to track " << trackId);
         return newRackId;
@@ -1371,7 +1636,7 @@ RackId TrackManager::addRackToTrack(TrackId trackId, const juce::String& name) {
 
 void TrackManager::removeRackFromTrack(TrackId trackId, RackId rackId) {
     if (auto* track = getTrack(trackId)) {
-        auto& elements = track->chainElements;
+        auto& elements = track->chain.fxChainElements;
         auto it = std::find_if(elements.begin(), elements.end(), [rackId](const ChainElement& e) {
             return magda::isRack(e) && magda::getRack(e).id == rackId;
         });
@@ -1386,7 +1651,7 @@ void TrackManager::removeRackFromTrack(TrackId trackId, RackId rackId) {
 
 RackInfo* TrackManager::getRack(TrackId trackId, RackId rackId) {
     if (auto* track = getTrack(trackId)) {
-        for (auto& element : track->chainElements) {
+        for (auto& element : track->chain.fxChainElements) {
             if (magda::isRack(element) && magda::getRack(element).id == rackId) {
                 return &magda::getRack(element);
             }
@@ -1397,7 +1662,7 @@ RackInfo* TrackManager::getRack(TrackId trackId, RackId rackId) {
 
 const RackInfo* TrackManager::getRack(TrackId trackId, RackId rackId) const {
     if (const auto* track = getTrack(trackId)) {
-        for (const auto& element : track->chainElements) {
+        for (const auto& element : track->chain.fxChainElements) {
             if (magda::isRack(element) && magda::getRack(element).id == rackId) {
                 return &magda::getRack(element);
             }
@@ -1438,7 +1703,7 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
             case ChainStepType::Rack: {
                 if (currentChain == nullptr) {
                     // Top-level rack in track's chainElements
-                    for (auto& element : track->chainElements) {
+                    for (auto& element : track->chain.fxChainElements) {
                         if (magda::isRack(element)) {
                             if (magda::getRack(element).id == step.id) {
                                 currentRack = &magda::getRack(element);
@@ -1473,6 +1738,9 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
             }
             case ChainStepType::Device:
                 // Devices don't contain racks, skip
+                break;
+            case ChainStepType::Segment:
+                // Segment steps don't affect rack traversal
                 break;
         }
     }
@@ -1654,7 +1922,7 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
 
     // Handle top-level device (legacy)
     if (path.topLevelDeviceId != INVALID_DEVICE_ID) {
-        for (const auto& element : track->chainElements) {
+        for (const auto& element : track->chain.fxChainElements) {
             if (magda::isDevice(element) && magda::getDevice(element).id == path.topLevelDeviceId) {
                 result.valid = true;
                 result.device = &magda::getDevice(element);
@@ -1677,7 +1945,7 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
             case ChainStepType::Rack: {
                 if (currentChain == nullptr) {
                     // Top-level rack in track's chainElements
-                    for (const auto& element : track->chainElements) {
+                    for (const auto& element : track->chain.fxChainElements) {
                         if (magda::isRack(element) && magda::getRack(element).id == step.id) {
                             currentRack = &magda::getRack(element);
                             pathNames.add(currentRack->name);
@@ -1721,6 +1989,9 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
                 }
                 break;
             }
+            case ChainStepType::Segment:
+                // Segment steps are structural markers; no display name contribution
+                break;
         }
     }
 
@@ -1898,9 +2169,13 @@ void TrackManager::createDefaultTracks(int count) {
 
 void TrackManager::clearAllTracks() {
     tracks_.clear();
-    masterTrack_.chainElements.clear();
+    masterTrack_.chain.fxChainElements.clear();
+    masterTrack_.chain.postFxChainElements.clear();
+    masterTrack_.chain.mixerAnalysisElements.clear();
     nextTrackId_ = 1;
-    nextDeviceId_ = 1;
+    nextFxDeviceId_ = 1;
+    nextPostFxDeviceId_ = 1;
+    nextMixerAnalysisDeviceId_ = 1;
     nextRackId_ = 1;
     nextChainId_ = 1;
     nextAuxBusIndex_ = 0;
@@ -1927,7 +2202,9 @@ void TrackManager::clearAllTracks() {
 
 void TrackManager::refreshIdCountersFromTracks() {
     int maxTrackId = 0;
-    int maxDeviceId = 0;
+    int maxFxDeviceId = 0;
+    int maxPostFxDeviceId = 0;
+    int maxMixerAnalysisDeviceId = 0;
     int maxRackId = 0;
     int maxChainId = 0;
 
@@ -1935,8 +2212,8 @@ void TrackManager::refreshIdCountersFromTracks() {
     auto scanChainElement = [&](const ChainElement& element, auto& self) -> void {
         if (std::holds_alternative<DeviceInfo>(element)) {
             const auto& device = std::get<DeviceInfo>(element);
-            maxDeviceId = std::max(maxDeviceId, device.id);
-            scanEmbeddedDeviceIds(device.pluginState, maxDeviceId);
+            maxFxDeviceId = std::max(maxFxDeviceId, device.id);
+            scanEmbeddedDeviceIds(device.pluginState, maxFxDeviceId);
         } else if (std::holds_alternative<std::unique_ptr<RackInfo>>(element)) {
             const auto& rackPtr = std::get<std::unique_ptr<RackInfo>>(element);
             if (rackPtr) {
@@ -1966,14 +2243,37 @@ void TrackManager::refreshIdCountersFromTracks() {
         }
 
         // Scan the track's chain elements
-        for (const auto& element : track.chainElements) {
+        for (const auto& element : track.chain.fxChainElements) {
             scanChainElement(element, scanChainElement);
         }
+        // Flat sections each have their own section-local DeviceId counter.
+        for (const auto& elem : track.chain.postFxChainElements) {
+            maxPostFxDeviceId = std::max(maxPostFxDeviceId, elem.device.id);
+            scanEmbeddedDeviceIds(elem.device.pluginState, maxPostFxDeviceId);
+        }
+        for (const auto& elem : track.chain.mixerAnalysisElements) {
+            maxMixerAnalysisDeviceId = std::max(maxMixerAnalysisDeviceId, elem.device.id);
+            scanEmbeddedDeviceIds(elem.device.pluginState, maxMixerAnalysisDeviceId);
+        }
+    }
+
+    for (const auto& element : masterTrack_.chain.fxChainElements) {
+        scanChainElement(element, scanChainElement);
+    }
+    for (const auto& elem : masterTrack_.chain.postFxChainElements) {
+        maxPostFxDeviceId = std::max(maxPostFxDeviceId, elem.device.id);
+        scanEmbeddedDeviceIds(elem.device.pluginState, maxPostFxDeviceId);
+    }
+    for (const auto& elem : masterTrack_.chain.mixerAnalysisElements) {
+        maxMixerAnalysisDeviceId = std::max(maxMixerAnalysisDeviceId, elem.device.id);
+        scanEmbeddedDeviceIds(elem.device.pluginState, maxMixerAnalysisDeviceId);
     }
 
     // Update counters to max + 1
     nextTrackId_ = maxTrackId + 1;
-    nextDeviceId_ = maxDeviceId + 1;
+    nextFxDeviceId_ = maxFxDeviceId + 1;
+    nextPostFxDeviceId_ = maxPostFxDeviceId + 1;
+    nextMixerAnalysisDeviceId_ = maxMixerAnalysisDeviceId + 1;
     nextRackId_ = maxRackId + 1;
     nextChainId_ = maxChainId + 1;
     nextAuxBusIndex_ = maxAuxBusIndex + 1;
@@ -2047,19 +2347,20 @@ void TrackManager::notifyAudioSidechainTriggered(TrackId sourceTrackId) {
     }
 }
 
-void TrackManager::notifyDevicePropertyChanged(DeviceId deviceId) {
+void TrackManager::notifyDevicePropertyChanged(const ChainNodePath& devicePath) {
     ScopedNotifyGuard guard(*this);
     for (size_t i = 0; i < listeners_.size(); ++i) {
         if (listeners_[i])
-            listeners_[i]->devicePropertyChanged(deviceId);
+            listeners_[i]->devicePropertyChanged(devicePath);
     }
 }
 
-void TrackManager::notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
+void TrackManager::notifyDeviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
+                                                float newValue) {
     ScopedNotifyGuard guard(*this);
     for (size_t i = 0; i < listeners_.size(); ++i) {
         if (listeners_[i])
-            listeners_[i]->deviceParameterChanged(deviceId, paramIndex, newValue);
+            listeners_[i]->deviceParameterChanged(devicePath, paramIndex, newValue);
     }
 }
 

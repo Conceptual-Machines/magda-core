@@ -30,7 +30,7 @@ endif()
 # version, so strip any pre-release / git-describe suffix from MAGDA_FULL_VERSION
 # (e.g. "0.9.0-rc2-15-g1391223" -> "0.9.0"). Falls back to PROJECT_VERSION when
 # there is no leading numeric component (e.g. a bare commit hash).
-if(MAGDA_FULL_VERSION MATCHES "^([0-9]+(\\.[0-9]+)*)")
+if(MAGDA_FULL_VERSION MATCHES "^([0-9]+(\\.[0-9]+)+)")
     set(MAGDA_BUNDLE_VERSION "${CMAKE_MATCH_1}")
 else()
     set(MAGDA_BUNDLE_VERSION "${PROJECT_VERSION}")

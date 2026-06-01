@@ -62,6 +62,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         testRackSyncMidiSidechainFxDoesNotReceiveChainMidi();
         testTopLevelMidiSidechainFxGetsExclusiveSourceMidiAndRestoresChainMidi();
         testMoveDeviceIntoRackRemovesTrackRuntimePlugin();
+        testPostFxRoutesAfterFxBeforeFader();
     }
 
   private:
@@ -124,10 +125,12 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
                "Meter tap right audio must feed rack output");
 
         constexpr magda::DeviceId deviceId = 4242;
+        const auto devicePath = magda::ChainNodePath::topLevelDevice(1, deviceId);
         magda::DeviceMeteringManager metering;
         magda::DeviceMeteringManager::registerForEdit(*edit, &metering);
 
-        rackManager.recordWrapping(deviceId, rackInstance->type, instrument, rackPlugin, false, 2);
+        rackManager.recordWrapping(devicePath, rackInstance->type, instrument, rackPlugin, false,
+                                   2);
 
         auto* typedTap = dynamic_cast<magda::daw::audio::InstrumentMeterTapPlugin*>(meterTap);
         expect(typedTap != nullptr, "Meter tap must be the MAGDA tap plugin");
@@ -138,7 +141,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         buffer.clear();
         buffer.setSample(0, 0, 0.5f);
         buffer.setSample(1, 0, -0.25f);
-        metering.setGain(deviceId, 0.5f);
+        metering.setGain(devicePath, 0.5f);
 
         te::MidiMessageArray midi;
         te::PluginRenderContext rc(
@@ -150,7 +153,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         magda::DeviceMeteringManager::DeviceMeterData levels;
         metering.updateAllClients();
-        expect(metering.getLatestLevels(deviceId, levels), "Meter levels should exist");
+        expect(metering.getLatestLevels(devicePath, levels), "Meter levels should exist");
         expectWithinAbsoluteError(buffer.getSample(0, 0), 0.25f, 0.0001f,
                                   "Meter tap should apply device gain to left channel");
         expectWithinAbsoluteError(buffer.getSample(1, 0), -0.125f, 0.0001f,
@@ -209,6 +212,20 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         int count = 0;
         for (int i = 0; i < track->pluginList.size(); ++i) {
             if (pluginManager.getDeviceIdForPlugin(track->pluginList[i]) == deviceId)
+                ++count;
+        }
+        return count;
+    }
+
+    static int countTrackPluginPathMappings(te::AudioTrack* track,
+                                            magda::PluginManager& pluginManager,
+                                            const magda::ChainNodePath& devicePath) {
+        if (track == nullptr)
+            return 0;
+
+        int count = 0;
+        for (int i = 0; i < track->pluginList.size(); ++i) {
+            if (pluginManager.getDevicePathForPlugin(track->pluginList[i]) == devicePath)
                 ++count;
         }
         return count;
@@ -619,8 +636,10 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
             return;
         }
 
-        auto targetPlugin = pluginManager.getPlugin(sidechainedFxId);
-        auto downstreamPlugin = pluginManager.getPlugin(downstreamFxId);
+        auto targetPlugin = pluginManager.getPlugin(
+            magda::ChainNodePath::topLevelDevice(destinationTrackId, sidechainedFxId));
+        auto downstreamPlugin = pluginManager.getPlugin(
+            magda::ChainNodePath::topLevelDevice(destinationTrackId, downstreamFxId));
         expect(targetPlugin != nullptr, "Sidechained FX plugin must exist");
         expect(downstreamPlugin != nullptr, "Downstream FX plugin must exist");
         if (!targetPlugin || !downstreamPlugin) {
@@ -733,6 +752,80 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
                      "Moved rack device must not leave a stale top-level TE plugin");
         expect(pluginManager.getRackSyncManager().getInnerPlugin(filterId) != nullptr,
                "Moved device must exist as a rack inner plugin");
+
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(nullptr);
+    }
+
+    void testPostFxRoutesAfterFxBeforeFader() {
+        beginTest("Post-FX devices route after the FX chain and before the fader");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        magda::test::resetTransport(wrapper);
+
+        auto* bridge = wrapper.getAudioBridge();
+        expect(bridge != nullptr, "AudioBridge must exist");
+        if (!bridge)
+            return;
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(&wrapper);
+
+        const auto trackId = trackManager.createTrack("Post-FX Routing");
+        const auto fxId = trackManager.addDeviceToTrack(
+            trackId, makeInternalDevice(magda::INVALID_DEVICE_ID, "FX Filter", "magda_filter"));
+        const auto postFxId = trackManager.addDeviceToPostFx(
+            trackId, makeInternalDevice(magda::INVALID_DEVICE_ID, "Post Delay", "delay"));
+        expect(fxId != magda::INVALID_DEVICE_ID, "FX device must be added");
+        expect(postFxId != magda::INVALID_DEVICE_ID, "Post-FX device must be added");
+        expectEquals(fxId, postFxId, "FX and post-FX devices should use section-local ids");
+
+        const auto fxPath = magda::ChainNodePath::topLevelDevice(trackId, fxId);
+        const auto postFxPath = magda::ChainNodePath::postFxDevice(trackId, postFxId);
+
+        bridge->syncTrackPlugins(trackId);
+
+        auto& pluginManager = bridge->getPluginManager();
+        auto* teTrack = bridge->getAudioTrack(trackId);
+        expect(teTrack != nullptr, "TE track must exist");
+        if (!teTrack) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
+            return;
+        }
+
+        int fxIdx = -1, postFxIdx = -1, faderIdx = -1, meterIdx = -1;
+        for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+            auto* plugin = teTrack->pluginList[i];
+            const auto devPath = pluginManager.getDevicePathForPlugin(plugin);
+            const auto devId = pluginManager.getDeviceIdForPlugin(plugin);
+            if (devPath == fxPath)
+                fxIdx = i;
+            else if (devPath == postFxPath)
+                postFxIdx = i;
+            // The fader is a VolumeAndPanPlugin that is NOT a MAGDA device
+            // (Utility/gain devices are also VolumeAndPanPlugins).
+            if (faderIdx < 0 && dynamic_cast<te::VolumeAndPanPlugin*>(plugin) != nullptr &&
+                devId == magda::INVALID_DEVICE_ID)
+                faderIdx = i;
+            if (dynamic_cast<te::LevelMeterPlugin*>(plugin) != nullptr)
+                meterIdx = i;
+        }
+
+        expect(fxIdx >= 0, "FX plugin must be on the track");
+        expect(postFxIdx >= 0, "Post-FX plugin must be on the track");
+        expect(faderIdx >= 0, "VolumeAndPan fader must be on the track");
+        expect(meterIdx >= 0, "LevelMeter must be on the track");
+        expect(fxIdx < postFxIdx, "FX must come before post-FX");
+        expect(postFxIdx < faderIdx, "Post-FX must come before the fader");
+        expect(faderIdx < meterIdx, "Fader must come before the meter");
+
+        // Removing the post-FX device must drop its TE plugin.
+        trackManager.removeDeviceFromChainByPath(postFxPath);
+        bridge->syncTrackPlugins(trackId);
+        expectEquals(countTrackPluginPathMappings(teTrack, pluginManager, postFxPath), 0,
+                     "Removing the post-FX device must remove its TE plugin");
 
         trackManager.clearAllTracks();
         trackManager.setAudioEngine(nullptr);

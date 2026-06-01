@@ -1,5 +1,6 @@
 #include "MenuManager.hpp"
 
+#include "CommandIDs.hpp"
 #include "Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/UndoManager.hpp"
@@ -9,6 +10,17 @@ namespace magda {
 MenuManager& MenuManager::getInstance() {
     static MenuManager instance;
     return instance;
+}
+
+juce::String MenuManager::keyHint(juce::CommandID commandID) const {
+    if (commandManager_ == nullptr)
+        return {};
+    const auto keys = commandManager_->getKeyMappings()->getKeyPressesAssignedToCommand(commandID);
+    if (keys.isEmpty())
+        return {};
+    // "\t" right-aligns the hint; getTextDescriptionWithIcons() renders the
+    // platform-correct glyphs (Cmd/Shift symbols on macOS, "Ctrl+" elsewhere).
+    return "\t" + keys.getReference(0).getTextDescriptionWithIcons();
 }
 
 MenuManager::MenuManager() {
@@ -125,68 +137,38 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                 }
             }
 
-#if JUCE_MAC
-            menu.addItem(Undo, undoText + juce::String::fromUTF8("\t\u2318Z"), canUndo, false);
-            menu.addItem(Redo, redoText + juce::String::fromUTF8("\t\u21E7\u2318Z"), canRedo,
-                         false);
+            // Shortcut hints come from the command manager (#1352), so they
+            // track user remaps (#20) and render platform-correct on every OS.
+            menu.addItem(Undo, undoText + keyHint(CommandIDs::undo), canUndo, false);
+            menu.addItem(Redo, redoText + keyHint(CommandIDs::redo), canRedo, false);
             menu.addSeparator();
-            menu.addItem(Cut, tr("menu.edit.cut") + juce::String::fromUTF8("\t\u2318X"),
-                         hasSelection_, false);
-            menu.addItem(Copy, tr("menu.edit.copy") + juce::String::fromUTF8("\t\u2318C"),
-                         hasSelection_, false);
-            menu.addItem(Paste, tr("menu.edit.paste") + juce::String::fromUTF8("\t\u2318V"), true,
+            menu.addItem(Cut, tr("menu.edit.cut") + keyHint(CommandIDs::cut), hasSelection_, false);
+            menu.addItem(Copy, tr("menu.edit.copy") + keyHint(CommandIDs::copy), hasSelection_,
                          false);
-            menu.addItem(Duplicate, tr("menu.edit.duplicate") + juce::String::fromUTF8("\t\u2318D"),
+            menu.addItem(Paste, tr("menu.edit.paste") + keyHint(CommandIDs::paste), true, false);
+            menu.addItem(Duplicate, tr("menu.edit.duplicate") + keyHint(CommandIDs::duplicate),
                          hasSelection_, false);
             menu.addItem(DuplicateClipWithAutomation, "Duplicate Clip With Automation",
                          hasSelection_, false);
             menu.addItem(DuplicateClipWithoutAutomation, "Duplicate Clip Without Automation",
                          hasSelection_, false);
-            menu.addItem(Delete, tr("menu.edit.delete") + juce::String::fromUTF8("\t\u232B"),
+            menu.addItem(Delete, tr("menu.edit.delete") + keyHint(CommandIDs::deleteCmd),
                          hasSelection_, false);
             menu.addSeparator();
-            menu.addItem(SplitOrTrim,
-                         tr("menu.edit.split_trim") + juce::String::fromUTF8("\t\u2318E"), true,
-                         false);
-            menu.addItem(JoinClips,
-                         tr("menu.edit.join_clips") + juce::String::fromUTF8("\t\u2318J"),
+            menu.addItem(SplitOrTrim, tr("menu.edit.split_trim") + keyHint(CommandIDs::splitOrTrim),
+                         true, false);
+            menu.addItem(JoinClips, tr("menu.edit.join_clips") + keyHint(CommandIDs::joinClips),
                          hasSelection_, false);
             menu.addSeparator();
-            menu.addItem(RenderClip,
-                         tr("menu.edit.render_clip") + juce::String::fromUTF8("\t\u2318B"),
+            menu.addItem(RenderClip, tr("menu.edit.render_clip") + keyHint(CommandIDs::renderClip),
                          hasSelection_, false);
             menu.addItem(RenderTimeSelection,
                          tr("menu.edit.render_time_selection") +
-                             juce::String::fromUTF8("\t\u21E7\u2318B"),
+                             keyHint(CommandIDs::renderTimeSelection),
                          true, false);
             menu.addSeparator();
-            menu.addItem(SelectAll,
-                         tr("menu.edit.select_all") + juce::String::fromUTF8("\t\u2318A"), true,
-                         false);
-#else
-            menu.addItem(Undo, undoText + "\tCtrl+Z", canUndo, false);
-            menu.addItem(Redo, redoText + "\tCtrl+Shift+Z", canRedo, false);
-            menu.addSeparator();
-            menu.addItem(Cut, tr("menu.edit.cut") + "\tCtrl+X", hasSelection_, false);
-            menu.addItem(Copy, tr("menu.edit.copy") + "\tCtrl+C", hasSelection_, false);
-            menu.addItem(Paste, tr("menu.edit.paste") + "\tCtrl+V", true, false);
-            menu.addItem(Duplicate, tr("menu.edit.duplicate") + "\tCtrl+D", hasSelection_, false);
-            menu.addItem(DuplicateClipWithAutomation, "Duplicate Clip With Automation",
-                         hasSelection_, false);
-            menu.addItem(DuplicateClipWithoutAutomation, "Duplicate Clip Without Automation",
-                         hasSelection_, false);
-            menu.addItem(Delete, tr("menu.edit.delete") + "\tDelete", hasSelection_, false);
-            menu.addSeparator();
-            menu.addItem(SplitOrTrim, tr("menu.edit.split_trim") + "\tCtrl+E", true, false);
-            menu.addItem(JoinClips, tr("menu.edit.join_clips") + "\tCtrl+J", hasSelection_, false);
-            menu.addSeparator();
-            menu.addItem(RenderClip, tr("menu.edit.render_clip") + "\tCtrl+B", hasSelection_,
-                         false);
-            menu.addItem(RenderTimeSelection,
-                         tr("menu.edit.render_time_selection") + "\tCtrl+Shift+B", true, false);
-            menu.addSeparator();
-            menu.addItem(SelectAll, tr("menu.edit.select_all") + "\tCtrl+A", true, false);
-#endif
+            menu.addItem(SelectAll, tr("menu.edit.select_all") + keyHint(CommandIDs::selectAll),
+                         true, false);
 #if !JUCE_MAC
             menu.addSeparator();
             menu.addItem(Preferences, tr("menu.settings.preferences"), true, false);
@@ -228,42 +210,32 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
 
         case 4:  // Track
         {
-#if JUCE_MAC
-            menu.addItem(AddTrack, tr("menu.track.add_track") + juce::String::fromUTF8("\t\u2318T"),
+            menu.addItem(AddTrack, tr("menu.track.add_track") + keyHint(CommandIDs::newAudioTrack),
                          true, false);
             menu.addItem(AddGroupTrack,
-                         tr("menu.track.add_group") + juce::String::fromUTF8("\t\u21E7\u2318T"),
-                         true, false);
+                         tr("menu.track.add_group") + keyHint(CommandIDs::newMidiTrack), true,
+                         false);
             menu.addItem(AddAuxTrack, tr("menu.track.add_aux"), true, false);
             menu.addSeparator();
-            menu.addItem(DeleteTrack, tr("menu.track.delete") + juce::String::fromUTF8("\t\u232B"),
+            menu.addItem(DeleteTrack, tr("menu.track.delete") + keyHint(CommandIDs::deleteCmd),
                          true, false);
             menu.addItem(DuplicateTrack,
-                         tr("menu.track.duplicate") + juce::String::fromUTF8("\t\u2318D"), true,
-                         false);
+                         tr("menu.track.duplicate") + keyHint(CommandIDs::duplicate), true, false);
             menu.addItem(DuplicateTrackNoContent,
                          tr("menu.track.duplicate_no_content") +
-                             juce::String::fromUTF8("\t\u21E7\u2318D"),
+                             keyHint(CommandIDs::duplicateTrackNoContent),
                          true, false);
             menu.addItem(DuplicateTrackContentOnly,
                          tr("menu.track.duplicate_content_only") +
-                             juce::String::fromUTF8("\t\u2325\u2318D"),
+                             keyHint(CommandIDs::duplicateTrackContentOnly),
                          true, false);
-#else
-            menu.addItem(AddTrack, tr("menu.track.add_track") + "\tCtrl+T", true, false);
-            menu.addItem(AddGroupTrack, tr("menu.track.add_group") + "\tCtrl+Shift+T", true, false);
-            menu.addItem(AddAuxTrack, tr("menu.track.add_aux"), true, false);
             menu.addSeparator();
-            menu.addItem(DeleteTrack, tr("menu.track.delete") + "\tDelete", true, false);
-            menu.addItem(DuplicateTrack, tr("menu.track.duplicate") + "\tCtrl+D", true, false);
-            menu.addItem(DuplicateTrackNoContent,
-                         tr("menu.track.duplicate_no_content") + "\tCtrl+Shift+D", true, false);
-            menu.addItem(DuplicateTrackContentOnly,
-                         tr("menu.track.duplicate_content_only") + "\tCtrl+Alt+D", true, false);
-#endif
-            menu.addSeparator();
-            menu.addItem(MuteTrack, tr("menu.track.mute") + "\tM", true, false);
-            menu.addItem(SoloTrack, tr("menu.track.solo") + "\tS", true, false);
+            menu.addItem(MuteTrack,
+                         tr("menu.track.mute") + keyHint(CommandIDs::toggleMuteSelectedTracks),
+                         true, false);
+            menu.addItem(SoloTrack,
+                         tr("menu.track.solo") + keyHint(CommandIDs::toggleSoloSelectedTracks),
+                         true, false);
             break;
         }
 
