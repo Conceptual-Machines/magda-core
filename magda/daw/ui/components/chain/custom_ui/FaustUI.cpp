@@ -59,7 +59,7 @@ FaustUI::FaustUI() {
     saveButton_ = std::make_unique<magda::SvgButton>("Save DSP", BinaryData::save_svg,
                                                      BinaryData::save_svgSize);
     saveButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    saveButton_->setIconPadding(2.0f);
+    saveButton_->setIconPadding(4.0f);  // floppy glyph is denser; pad more to match Load/Edit
     saveButton_->onClick = [this] { saveDspToFile(); };
     addAndMakeVisible(*saveButton_);
 
