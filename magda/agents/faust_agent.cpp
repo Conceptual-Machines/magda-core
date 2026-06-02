@@ -24,10 +24,8 @@ OUTPUT SCHEMA:
 }
 
 SOURCE RULES — VERY IMPORTANT:
-- For an EFFECT, define: process = ... : ... ;  taking 2 inputs and returning
-  2 outputs (stereo in / stereo out). Use _,_ for an unprocessed channel.
-- For an INSTRUMENT/SYNTH, define: process = ... ;  with 0 inputs and 2
-  outputs. Avoid this unless the user clearly asks for a synth.
+- Write process as a single processing chain from input to output, e.g.
+      process = _ : drive : filter;
 - Expose user-facing controls. Pick the right control kind:
   * Continuous values: hslider("Label", init, min, max, step) or vslider(...)
     or nentry(...). Add [scale:log] for cutoffs / time / freqs:
@@ -63,14 +61,14 @@ User: "warm tape saturator with subtle wow"
 {
   "name": "Tape Warmth",
   "description": "Soft tape-style saturator with gentle wow modulation.",
-  "source": "import(\"stdfaust.lib\");\ndrive = hslider(\"Drive [idx:0]\", 3, 0, 10, 0.01);\nwow = hslider(\"Wow [idx:1]\", 0.3, 0, 1, 0.01);\nmix = hslider(\"Mix [idx:2]\", 0.8, 0, 1, 0.01);\nlfo = os.osc(0.6) * 0.002 * wow;\nsat(x) = ef.cubicnl(drive/10, 0) : *(0.7);\nch = _ <: *(1.0 + lfo) : sat : _ * mix + _ * (1.0 - mix);\nprocess = ch, ch;"
+  "source": "import(\"stdfaust.lib\");\ndrive = hslider(\"Drive [idx:0]\", 3, 0, 10, 0.01);\nwow = hslider(\"Wow [idx:1]\", 0.3, 0, 1, 0.01);\nmix = hslider(\"Mix [idx:2]\", 0.8, 0, 1, 0.01);\nlfo = os.osc(0.6) * 0.002 * wow;\nsat(x) = ef.cubicnl(drive/10, 0) : *(0.7);\nprocess = _ <: *(1.0 + lfo) : sat : _ * mix + _ * (1.0 - mix);"
 }
 
 User: "gentle plate reverb with mode switch"
 {
   "name": "Plate Lite",
   "description": "Short, dark plate reverb with a Plate / Hall mode.",
-  "source": "import(\"stdfaust.lib\");\nsize = hslider(\"Size [idx:0]\", 0.5, 0, 1, 0.01);\ndamp = hslider(\"Damp [idx:1]\", 0.6, 0, 1, 0.01);\nmix  = hslider(\"Mix  [idx:2]\", 0.35, 0, 1, 0.01);\nmode = hslider(\"Mode [idx:3][style:menu{'Plate':0;'Hall':1}]\", 0, 0, 1, 1);\nfreeze = checkbox(\"Freeze [idx:4]\");\nwetSize = size * 4 + 0.2 + mode * 1.5;\nwet = re.zita_rev1_stereo(0, 200, 6000, wetSize, damp, 44100);\nprocess = _,_ <: (wet : *(mix), *(mix)), (*(1.0-mix), *(1.0-mix)) :> _,_;"
+  "source": "import(\"stdfaust.lib\");\nsize = hslider(\"Size [idx:0]\", 0.5, 0, 1, 0.01);\ndamp = hslider(\"Damp [idx:1]\", 0.6, 0, 1, 0.01);\nmix = hslider(\"Mix [idx:2]\", 0.35, 0, 1, 0.01);\nmode = hslider(\"Mode [idx:3][style:menu{'Plate':0;'Hall':1}]\", 0, 0, 1, 1);\nfreeze = checkbox(\"Freeze [idx:4]\");\nfb = (0.7 + size * 0.28 + mode * 0.02) * (1.0 - freeze) + freeze * 0.999;\nwet = re.mono_freeverb(fb, fb, damp, 0.5);\nprocess = _ <: (_ : *(1.0 - mix)), (_ : wet : *(mix)) :> _;"
 }
 )PROMPT";
 }
