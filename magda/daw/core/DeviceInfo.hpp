@@ -108,6 +108,12 @@ struct DeviceInfo {
     // owning DeviceSlotComponent on any notifyTrackDevicesChanged).
     juce::String aiPanelOutput;
 
+    // Serialized llm::Conversation (JSON) for the device's AI panel, so multi-
+    // turn refinement ("make it brighter") survives slot rebuilds. Like
+    // aiPanelOutput this is transient runtime state, owned by the agent: read
+    // before a generation and written back after, on the message thread.
+    juce::String aiConversation;
+
     // Device parameters (populated by DeviceProcessor) — the plugin's own
     // automatable parameters. Wrapper-injected slot params (e.g. TE's
     // PluginWetDryAutomatableParam pair) belong in `wrapperParameters` and

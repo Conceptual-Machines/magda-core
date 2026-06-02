@@ -1,8 +1,10 @@
 #include "ai/AIPanelComponent.hpp"
 
 #include <BinaryData.h>
+#include <juce_llm/juce_llm.h>
 
 #include "../../../../agents/llm_presets.hpp"
+#include "../../../../agents/mcp/MCPServerManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/Config.hpp"
@@ -13,17 +15,18 @@ namespace magda::daw::ui {
 class AIPanelComponent::GenerateThread : public juce::Thread {
   public:
     GenerateThread(AIPanelComponent& owner, std::unique_ptr<DeviceAIAgent> agent,
-                   juce::String prompt, ChainNodePath path)
+                   juce::String prompt, ChainNodePath path, llm::Conversation conversation)
         : juce::Thread("MAGDA-DeviceAIAgent"),
           owner_(owner),
           agent_(std::move(agent)),
           prompt_(std::move(prompt)),
-          path_(path) {}
+          path_(path),
+          conversation_(std::move(conversation)) {}
 
     void run() override {
         auto safeOwner = juce::WeakReference<AIPanelComponent>(&owner_);
         if (threadShouldExit() || agent_ == nullptr) {
-            postResult(safeOwner, "no agent");
+            postResult(safeOwner, "no agent", {});
             return;
         }
 
@@ -39,10 +42,13 @@ class AIPanelComponent::GenerateThread : public juce::Thread {
             return true;
         };
 
-        auto status = agent_->generateAndApply(prompt_, path_, std::move(onToken));
+        // conversation_ is this thread's own copy (loaded from the device on
+        // submit). generateAndApply updates it in place; we serialise it back
+        // on the message thread so the next turn continues from here.
+        auto status = agent_->generateAndApply(prompt_, path_, conversation_, std::move(onToken));
         if (threadShouldExit())
             return;
-        postResult(safeOwner, status);
+        postResult(safeOwner, status, juce::JSON::toString(conversation_.toVar()));
     }
 
     void cancel() {
@@ -52,10 +58,11 @@ class AIPanelComponent::GenerateThread : public juce::Thread {
     }
 
   private:
-    static void postResult(juce::WeakReference<AIPanelComponent> safeOwner, juce::String status) {
-        juce::MessageManager::callAsync([safeOwner, status]() {
+    static void postResult(juce::WeakReference<AIPanelComponent> safeOwner, juce::String status,
+                           juce::String conversationJson) {
+        juce::MessageManager::callAsync([safeOwner, status, conversationJson]() {
             if (auto* p = safeOwner.get())
-                p->onGenerationFinished(status);
+                p->onGenerationFinished(status, conversationJson);
         });
     }
 
@@ -63,6 +70,7 @@ class AIPanelComponent::GenerateThread : public juce::Thread {
     std::unique_ptr<DeviceAIAgent> agent_;
     juce::String prompt_;
     ChainNodePath path_;
+    llm::Conversation conversation_;
 };
 
 AIPanelComponent::AIPanelComponent() {
@@ -114,6 +122,16 @@ AIPanelComponent::AIPanelComponent() {
     clearButton_.onClick = [this]() { clearChat(); };
     addAndMakeVisible(clearButton_);
 
+    // Faust MCP status strip (top). Visibility + content are set in
+    // setDevicePluginId / updateMcpStatus once the device type is known; the
+    // dot is painted in paint(). Hidden until then.
+    mcpStatusLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    mcpStatusLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    mcpStatusLabel_.setJustificationType(juce::Justification::centredLeft);
+    mcpStatusLabel_.setInterceptsMouseClicks(false, false);
+    mcpStatusLabel_.setVisible(false);
+    addAndMakeVisible(mcpStatusLabel_);
+
     refreshModelLabel();
 }
 
@@ -137,22 +155,35 @@ constexpr const char* kDisclaimerMarker = "\n\nnote: starting point only";
 // but `"<field>":"<value>"` survives intact. Returns empty if not found or
 // the closing quote is missing.
 juce::String extractStringField(const juce::String& text, const juce::String& field) {
-    auto key = "\"" + field + "\":\"";
-    int start = text.indexOf(key);
-    if (start < 0)
+    // Tolerate whitespace around the colon: the model pretty-prints
+    // `"description": "..."` (space after the colon), so a literal
+    // `"field":"` probe misses it and the raw JSON would survive.
+    auto key = "\"" + field + "\"";
+    int i = text.indexOf(key);
+    if (i < 0)
         return {};
-    start += key.length();
-    int end = start;
+    i += key.length();
     const int len = text.length();
-    while (end < len) {
-        auto c = text[end];
-        if (c == '"' && (end == 0 || text[end - 1] != '\\'))
-            break;
-        ++end;
-    }
-    if (end >= len)
+    while (i < len && juce::CharacterFunctions::isWhitespace(text[i]))
+        ++i;
+    if (i >= len || text[i] != ':')
         return {};
-    return text.substring(start, end);
+    ++i;
+    while (i < len && juce::CharacterFunctions::isWhitespace(text[i]))
+        ++i;
+    if (i >= len || text[i] != '"')
+        return {};
+    ++i;
+    int start = i;
+    while (i < len) {
+        auto c = text[i];
+        if (c == '"' && (i == 0 || text[i - 1] != '\\'))
+            break;
+        ++i;
+    }
+    if (i >= len)
+        return {};
+    return text.substring(start, i);
 }
 }  // namespace
 
@@ -214,10 +245,29 @@ void AIPanelComponent::setDevicePluginId(const juce::String& pluginId) {
             "AI not supported for this device",
             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.4f));
     }
+
+    // The Faust MCP strip is only relevant to coder (Faust) devices — a 4OSC
+    // panel doesn't touch faust-mcp, so it shouldn't advertise it.
+    mcpStripVisible_ = coderSupported;
+    mcpStatusLabel_.setVisible(mcpStripVisible_);
+    updateMcpStatus();
+    resized();
 }
 
 void AIPanelComponent::resized() {
     auto bounds = getLocalBounds().reduced(4);
+
+    // Faust MCP status strip at the very top (coder devices only). Leaves a
+    // gutter on the left for the dot painted in paint().
+    if (mcpStripVisible_) {
+        auto strip = bounds.removeFromTop(14);
+        mcpStripBounds_ = strip;
+        mcpStatusLabel_.setBounds(strip.withTrimmedLeft(14));
+        bounds.removeFromTop(2);
+    } else {
+        mcpStripBounds_ = {};
+    }
+
     // Footer strip at the very bottom: model label + clear-chat button.
     auto footerArea = bounds.removeFromBottom(16);
     constexpr int footerButtonSize = 16;
@@ -241,6 +291,43 @@ void AIPanelComponent::paint(juce::Graphics& g) {
     // here so the panel has a consistent outline on all four sides.
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
+
+    // Faust MCP status light: dot at the left of the top strip. Grey when
+    // disabled, green when enabled (brighter once actually connected).
+    if (mcpStripVisible_ && !mcpStripBounds_.isEmpty()) {
+        const float r = 6.0f;
+        const float cx = static_cast<float>(mcpStripBounds_.getX()) + r * 0.5f + 2.0f;
+        const float cy = static_cast<float>(mcpStripBounds_.getCentreY());
+        const auto dot = !mcpEnabled_
+                             ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.3f)
+                             : (mcpRunning_ ? juce::Colours::limegreen
+                                            : juce::Colours::limegreen.withAlpha(0.7f));
+        g.setColour(dot);
+        g.fillEllipse(cx - r * 0.5f, cy - r * 0.5f, r, r);
+    }
+}
+
+void AIPanelComponent::updateMcpStatus() {
+    auto& mgr = magda::MCPServerManager::getInstance();
+    mcpEnabled_ = mgr.isServerEnabled("faust-mcp");
+    mcpRunning_ = mgr.isServerRunning("faust-mcp");
+
+    juce::String text;
+    juce::Colour colour;
+    if (!mcpEnabled_) {
+        text = "Faust MCP off";
+        colour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.5f);
+    } else if (mcpRunning_) {
+        text = "Faust MCP connected";
+        colour = juce::Colours::limegreen;
+    } else {
+        text = "Faust MCP on";
+        colour = juce::Colours::limegreen.withAlpha(0.85f);
+    }
+
+    mcpStatusLabel_.setText(text, juce::dontSendNotification);
+    mcpStatusLabel_.setColour(juce::Label::textColourId, colour);
+    repaint();
 }
 
 void AIPanelComponent::submitPrompt() {
@@ -283,7 +370,14 @@ void AIPanelComponent::submitPrompt() {
     streamingStart_ = output_.getText().length();
     persistOutput();
 
-    thread_ = std::make_unique<GenerateThread>(*this, std::move(agent), prompt, path_);
+    // Load the running conversation from the device (message thread) so the
+    // worker continues the multi-turn history. Empty / unparseable = fresh start.
+    llm::Conversation conversation;
+    if (auto* dev = TrackManager::getInstance().getDeviceInChainByPath(path_))
+        conversation = llm::Conversation::fromVar(juce::JSON::parse(dev->aiConversation));
+
+    thread_ = std::make_unique<GenerateThread>(*this, std::move(agent), prompt, path_,
+                                               std::move(conversation));
     thread_->startThread();
 }
 
@@ -299,8 +393,14 @@ void AIPanelComponent::appendStreamingToken(const juce::String& token) {
     persistOutput();
 }
 
-void AIPanelComponent::onGenerationFinished(juce::String status) {
+void AIPanelComponent::onGenerationFinished(juce::String status, juce::String conversationJson) {
     const bool succeeded = status.startsWith("applied");
+
+    // Persist the updated conversation onto the device (message thread) so the
+    // next turn continues the history. Survives the slot rebuild below the same
+    // way aiPanelOutput does.
+    if (auto* dev = TrackManager::getInstance().getDeviceInChainByPath(path_))
+        dev->aiConversation = conversationJson;
 
     // On success, replace the streamed JSON dump with just the preset's
     // description — the param/wave/fx blocks are noise once the apply has
@@ -308,8 +408,21 @@ void AIPanelComponent::onGenerationFinished(juce::String status) {
     // see what came back. Falls back to the streamed text untouched if the
     // description field can't be located.
     if (succeeded && streamingStart_ >= 0 && streamingStart_ < output_.getText().length()) {
-        auto streamed = output_.getText().substring(streamingStart_);
-        auto description = extractStringField(streamed, "description");
+        // Prefer the FINAL assistant turn from the conversation: after a retry
+        // the stream holds several JSON blobs, and the first (failed) one's
+        // description would be wrong. Fall back to the streamed text for agents
+        // with no conversation (4OSC sound design).
+        juce::String description;
+        auto conv = llm::Conversation::fromVar(juce::JSON::parse(conversationJson));
+        for (auto it = conv.messages.rbegin(); it != conv.messages.rend(); ++it) {
+            if (it->role == "assistant") {
+                description = extractStringField(it->content, "description");
+                break;
+            }
+        }
+        if (description.isEmpty())
+            description =
+                extractStringField(output_.getText().substring(streamingStart_), "description");
         if (description.isNotEmpty()) {
             output_.setHighlightedRegion(
                 juce::Range<int>(streamingStart_, output_.getText().length()));
@@ -317,6 +430,23 @@ void AIPanelComponent::onGenerationFinished(juce::String status) {
                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
             output_.insertTextAtCaret(description);
         }
+    }
+
+    // For coder (Faust) devices, a successful result means the DSP passed the
+    // MCP compile_faust check before it was applied. Surface that as a green
+    // verification line; the "applied" line below confirms the live load.
+    if (succeeded && isCoderSupported(pluginId_)) {
+        output_.moveCaretToEnd();
+        if (auto t = output_.getText(); t.isNotEmpty() && !t.endsWithChar('\n')) {
+            output_.setColour(juce::TextEditor::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            output_.insertTextAtCaret("\n");
+        }
+        output_.setColour(juce::TextEditor::textColourId, juce::Colours::limegreen);
+        output_.insertTextAtCaret(
+            juce::String(juce::CharPointer_UTF8("\xe2\x9c\x93 compilation verified (MCP)")));
+        output_.setColour(juce::TextEditor::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     }
 
     output_.moveCaretToEnd();
@@ -330,13 +460,14 @@ void AIPanelComponent::onGenerationFinished(juce::String status) {
                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     output_.insertTextAtCaret(juce::String(juce::CharPointer_UTF8("\xe2\x86\x92 ")) + status);
 
-    // Remind the user the preset is a starting point — only on a successful
-    // apply (status messages from cancel / error / timeout shouldn't suggest
-    // tweaking a preset that was never written). The disclaimer is rendered
-    // in yellow so it doesn't drown in the streamed text above; the marker
-    // string matches kDisclaimerMarker so restoreOutput can recolour it
-    // after a slot rebuild.
-    if (succeeded) {
+    // Remind the user the preset is a starting point — only for sound-design
+    // (4OSC) presets, and only on a successful apply (status messages from
+    // cancel / error / timeout shouldn't suggest tweaking something that was
+    // never written). Faust/coder devices get the "compiled" confirmation
+    // above instead, so the disclaimer would be noise there. Rendered in
+    // yellow; the marker matches kDisclaimerMarker so restoreOutput can
+    // recolour it after a slot rebuild.
+    if (succeeded && isSoundDesignSupported(pluginId_)) {
         output_.setColour(juce::TextEditor::textColourId, juce::Colours::yellow);
         // Wrap with CharPointer_UTF8 (matching the convention used for the
         // arrow above) so the em-dash byte sequence isn't decoded as Latin-1
@@ -350,6 +481,10 @@ void AIPanelComponent::onGenerationFinished(juce::String status) {
     streamingStart_ = -1;
     setBusy(false);
     persistOutput();
+
+    // A generation will have spawned faust-mcp via getServer(), so the strip
+    // can now reflect the live "connected" state.
+    updateMcpStatus();
 
     // Now that the final text is in place and persisted, fire the
     // tree-changed notification four_osc_apply intentionally skipped. The
@@ -385,6 +520,9 @@ void AIPanelComponent::persistOutput() {
 void AIPanelComponent::clearChat() {
     output_.setText("", juce::dontSendNotification);
     persistOutput();
+    // Reset the conversation too so the next prompt starts fresh.
+    if (auto* dev = TrackManager::getInstance().getDeviceInChainByPath(path_))
+        dev->aiConversation.clear();
 }
 
 void AIPanelComponent::refreshModelLabel() {

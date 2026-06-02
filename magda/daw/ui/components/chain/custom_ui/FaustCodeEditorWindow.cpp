@@ -1,6 +1,7 @@
 #include "custom_ui/FaustCodeEditorWindow.hpp"
 
 #include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/DialogLookAndFeel.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -19,6 +20,7 @@ class FaustCodeEditorWindow::Content : public juce::Component {
         addAndMakeVisible(editor_);
 
         compileBtn_.setButtonText("Compile");
+        compileBtn_.setLookAndFeel(&lnf_);  // theme font + button styling
         compileBtn_.onClick = [this] { compile(); };
         addAndMakeVisible(compileBtn_);
 
@@ -27,6 +29,10 @@ class FaustCodeEditorWindow::Content : public juce::Component {
         addAndMakeVisible(statusLabel_);
 
         setSize(720, 540);
+    }
+
+    ~Content() override {
+        compileBtn_.setLookAndFeel(nullptr);
     }
 
     void resized() override {
@@ -51,6 +57,7 @@ class FaustCodeEditorWindow::Content : public juce::Component {
         }
     }
 
+    DialogLookAndFeel lnf_;  // declared before compileBtn_ so it outlives it
     juce::CodeDocument document_;
     juce::CodeEditorComponent editor_;
     juce::TextButton compileBtn_;

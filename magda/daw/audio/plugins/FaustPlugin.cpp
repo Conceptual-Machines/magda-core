@@ -451,6 +451,16 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
     return true;
 }
 
+void FaustPlugin::stageSourceForEditing(const juce::String& name, const juce::String& source) {
+    // Editable state only — no compileAndRebind, no active_ swap. The live DSP
+    // and the param pool stay as they are; the editor reads dspSource/dspName
+    // from state, so the user sees the staged code and compiles it when ready.
+    dspName_ = name;
+    dspSource_ = source;
+    state.setProperty("dspName", dspName_, getUndoManager());
+    state.setProperty("dspSource", dspSource_, getUndoManager());
+}
+
 void FaustPlugin::initialise(const te::PluginInitialisationInfo& info) {
     currentSampleRate_ = static_cast<int>(info.sampleRate);
 
