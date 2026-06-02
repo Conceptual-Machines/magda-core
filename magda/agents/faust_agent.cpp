@@ -1,5 +1,9 @@
 #include "faust_agent.hpp"
 
+#include <array>
+#include <regex>
+
+#include "../daw/audio/plugins/FaustMetadataParser.hpp"
 #include "../daw/core/Config.hpp"
 #include "llm_client_factory.hpp"
 #include "llm_presets.hpp"
@@ -72,6 +76,47 @@ User: "gentle plate reverb with mode switch"
 }
 
 namespace {
+
+// MAGDA-side validation of the [idx:N] parameter contract, run BEFORE the Faust
+// compile check. The Faust compiler treats our [...] tags as opaque label text,
+// so a missing / duplicate / out-of-range idx (or >64 controls) compiles fine
+// yet breaks parameter links on the next regeneration. Catch it here and feed
+// failures into the same retry loop the compiler errors use.
+bool validateMetadata(const std::string& source, std::string& errorOut) {
+    static const std::regex controlDecl(
+        R"RX((hslider|vslider|nentry|checkbox)\s*\(\s*"([^"]*)")RX");
+
+    juce::StringArray problems;
+    std::array<bool, 64> used{};
+    int controlCount = 0;
+
+    for (auto it = std::sregex_iterator(source.begin(), source.end(), controlDecl);
+         it != std::sregex_iterator(); ++it) {
+        ++controlCount;
+        const juce::String rawLabel((*it)[2].str());
+        const auto parsed = magda::daw::audio::parseFaustLabel(rawLabel);
+        const int idx = parsed.metadata.slotIndex;
+        const juce::String name =
+            parsed.cleanLabel.trim().isNotEmpty() ? parsed.cleanLabel.trim() : rawLabel;
+        if (idx == -1)
+            problems.add("control \"" + name + "\" is missing [idx:N]");
+        else if (idx < 0 || idx >= 64)
+            problems.add("control \"" + name + "\" has out-of-range [idx:" + juce::String(idx) +
+                         "] (must be 0..63)");
+        else if (used[static_cast<size_t>(idx)])
+            problems.add("[idx:" + juce::String(idx) + "] is used by more than one control");
+        else
+            used[static_cast<size_t>(idx)] = true;
+    }
+
+    if (controlCount > 64)
+        problems.add("too many controls (" + juce::String(controlCount) + "); the limit is 64");
+
+    if (problems.isEmpty())
+        return true;
+    errorOut = problems.joinIntoString("\n").toStdString();
+    return false;
+}
 
 void logFaustAgentConfig(const Config::AgentLLMConfig& agentConfig,
                          const llm::ProviderConfig& providerConfig) {
@@ -234,6 +279,22 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
             userTurn = originalPrompt +
                        "\n\n(Your previous reply was not valid JSON. Output ONLY the JSON "
                        "object with fields name, description and source.)";
+            continue;
+        }
+
+        // Validate our [idx:N] metadata contract before spending a compile.
+        // The Faust compiler can't see these problems (the tags are opaque to
+        // it), so we check them ourselves and retry on failure.
+        std::string metaErr;
+        if (!validateMetadata(result.source, metaErr)) {
+            lastError = metaErr;
+            if (onToken)
+                onToken(juce::String::fromUTF8("\n[metadata invalid, fixing...]\n"));
+            userTurn =
+                originalPrompt + "\n\n(Your previous attempt had invalid control metadata:\n" +
+                metaErr +
+                "\nEvery control needs a unique [idx:N] in the range 0..63, and there can be "
+                "at most 64 controls. Fix it and output the corrected JSON object.)";
             continue;
         }
 
