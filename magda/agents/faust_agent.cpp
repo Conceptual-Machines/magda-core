@@ -20,7 +20,6 @@ OUTPUT SCHEMA:
 }
 
 SOURCE RULES — VERY IMPORTANT:
-- Start with: import("stdfaust.lib");
 - For an EFFECT, define: process = ... : ... ;  taking 2 inputs and returning
   2 outputs (stereo in / stereo out). Use _,_ for an unprocessed channel.
 - For an INSTRUMENT/SYNTH, define: process = ... ;  with 0 inputs and 2

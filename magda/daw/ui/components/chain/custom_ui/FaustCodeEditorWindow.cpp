@@ -16,6 +16,9 @@ class FaustCodeEditorWindow::Content : public juce::Component {
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
         editor_.setColour(juce::CodeEditorComponent::defaultTextColourId,
                           DarkTheme::getTextColour());
+        // Visible text selection on the dark background (was unset -> selection invisible).
+        editor_.setColour(juce::CodeEditorComponent::highlightColourId,
+                          juce::Colour::fromRGBA(0x55, 0x88, 0xAA, 0x99));
         editor_.setFont(FontManager::getInstance().getMonoFont(12.0f));
         addAndMakeVisible(editor_);
 
