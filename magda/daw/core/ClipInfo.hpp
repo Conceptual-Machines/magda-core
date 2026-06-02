@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
 
+#include <cmath>
 #include <map>
 #include <string>
 #include <variant>
@@ -270,6 +271,21 @@ struct ClipInfo {
     bool analogPitch = false;  // Analog pitch: resample instead of time-stretch
     bool isAnalogPitchActive() const {
         return analogPitch && !autoTempo && !warpEnabled;
+    }
+
+    // The time-stretch mode that is actually applied at playback. When the mode
+    // is left at "Off" (0) but the clip is in beat mode, warped, sped up, or
+    // pitch-shifted (without analog pitch), TE silently stretches using its
+    // default SoundTouch HQ engine. UI readouts must show this effective mode,
+    // not the raw field, so the inspector and the audio editor agree — e.g.
+    // after a session drop auto-enables beat mode. (4 = soundtouchBetter.)
+    int getEffectiveTimeStretchMode() const {
+        if (timeStretchMode == 0 && !isAnalogPitchActive() &&
+            (autoTempo || warpEnabled || std::abs(speedRatio - 1.0) > 0.001 ||
+             std::abs(pitchChange) > 0.001f)) {
+            return 4;  // soundtouchBetter (TE's defaultMode)
+        }
+        return timeStretchMode;
     }
 
     int autoPitchMode = 0;     // 0=pitchTrack, 1=chordTrackMono, 2=chordTrackPoly

@@ -60,14 +60,8 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
             updateLoopValueDisplays(*clip, projectBPM, beatsPerBar);
 
             // PitchChange affects effective mode.
-            int effectiveMode = clip->timeStretchMode;
-            bool isAnalog = clip->isAnalogPitchActive();
-            if (!isAnalog && effectiveMode == 0 &&
-                (clip->autoTempo || clip->warpEnabled || std::abs(clip->speedRatio - 1.0) > 0.001 ||
-                 std::abs(clip->pitchChange) > 0.001f)) {
-                effectiveMode = 4;
-            }
-            stretchModeCombo_.setSelectedId(effectiveMode + 1, juce::dontSendNotification);
+            stretchModeCombo_.setSelectedId(clip->getEffectiveTimeStretchMode() + 1,
+                                            juce::dontSendNotification);
         }
         return;
     }
