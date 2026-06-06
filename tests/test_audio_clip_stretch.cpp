@@ -322,6 +322,79 @@ TEST_CASE("Audio Clip - Edge cases", "[audio][clip][edge]") {
     }
 }
 
+TEST_CASE("Audio Clip - Effective time-stretch mode", "[audio][clip][stretch][mode]") {
+    using namespace magda;
+
+    // getEffectiveTimeStretchMode() reports the mode that TE actually applies so
+    // the inspector and the audio editor show the same value. When the raw mode
+    // is "Off" (0) but beat mode / warp / speed / pitch silently engages the
+    // stretcher, it reports SoundTouch HQ (4 = soundtouchBetter).
+
+    auto makeAudioClip = []() {
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.audio().source.filePath = "test.wav";
+        return clip;
+    };
+
+    SECTION("Off mode with nothing active stays Off") {
+        ClipInfo clip = makeAudioClip();
+        REQUIRE(clip.timeStretchMode == 0);
+        REQUIRE(clip.getEffectiveTimeStretchMode() == 0);
+    }
+
+    SECTION("Beat mode upgrades Off to SoundTouch HQ") {
+        ClipInfo clip = makeAudioClip();
+        clip.autoTempo = true;
+        REQUIRE(clip.getEffectiveTimeStretchMode() == 4);
+    }
+
+    SECTION("Warp upgrades Off to SoundTouch HQ") {
+        ClipInfo clip = makeAudioClip();
+        clip.warpEnabled = true;
+        REQUIRE(clip.getEffectiveTimeStretchMode() == 4);
+    }
+
+    SECTION("Non-unity speed ratio upgrades Off to SoundTouch HQ") {
+        ClipInfo clip = makeAudioClip();
+        clip.speedRatio = 1.5;
+        REQUIRE(clip.getEffectiveTimeStretchMode() == 4);
+    }
+
+    SECTION("Pitch change upgrades Off to SoundTouch HQ") {
+        ClipInfo clip = makeAudioClip();
+        clip.pitchChange = -3.0f;
+        REQUIRE(clip.getEffectiveTimeStretchMode() == 4);
+    }
+
+    SECTION("Active analog pitch keeps mode at Off (resamples, no stretch)") {
+        ClipInfo clip = makeAudioClip();
+        clip.analogPitch = true;
+        clip.pitchChange = -12.0f;  // would otherwise trigger the upgrade
+        REQUIRE(clip.isAnalogPitchActive());
+        REQUIRE(clip.getEffectiveTimeStretchMode() == 0);
+    }
+
+    SECTION("Analog pitch with beat mode is not active, so still upgrades") {
+        ClipInfo clip = makeAudioClip();
+        clip.analogPitch = true;
+        clip.autoTempo = true;  // autoTempo disables analog pitch in TE
+        clip.pitchChange = -12.0f;
+        REQUIRE_FALSE(clip.isAnalogPitchActive());
+        REQUIRE(clip.getEffectiveTimeStretchMode() == 4);
+    }
+
+    SECTION("Explicitly chosen mode is preserved, never overridden") {
+        ClipInfo clip = makeAudioClip();
+        clip.timeStretchMode = 3;  // SoundTouch (normal)
+        clip.autoTempo = true;
+        REQUIRE(clip.getEffectiveTimeStretchMode() == 3);
+
+        clip.timeStretchMode = 4;  // SoundTouch HQ
+        REQUIRE(clip.getEffectiveTimeStretchMode() == 4);
+    }
+}
+
 TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
           "[audio][clip][stretch][regression]") {
     using namespace magda;
