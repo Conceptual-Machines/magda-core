@@ -319,6 +319,7 @@ target_sources(magda_daw PRIVATE
     plugin_manager/PluginManagerMacros.cpp
     plugin_manager/PluginManagerModifiers.cpp
     plugin_manager/PluginManagerSidechain.cpp
+    plugin_manager/PluginManagerMeasurement.cpp
     racks/InstrumentRackManager.cpp
     racks/RackSyncManager.cpp
     modifiers/ModifierSync.cpp
@@ -342,6 +343,7 @@ target_sources(magda_daw PRIVATE
     plugins/InstrumentMeterTapPlugin.cpp
     plugins/OscilloscopePlugin.cpp
     plugins/SpectrumAnalyzerPlugin.cpp
+    plugins/TrackMeasurementPlugin.cpp
     plugins/MidiDevicePlugin.cpp
     plugins/FaustPlugin.cpp
     plugins/FaustMetadataParser.cpp

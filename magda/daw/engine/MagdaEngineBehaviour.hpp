@@ -13,6 +13,7 @@
 #include "../audio/plugins/SidechainMonitorPlugin.hpp"
 #include "../audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
+#include "../audio/plugins/TrackMeasurementPlugin.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../project/ProjectManager.hpp"
@@ -125,6 +126,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         }
         if (type == daw::audio::InstrumentMeterTapPlugin::xmlTypeName) {
             return new daw::audio::InstrumentMeterTapPlugin(info);
+        }
+        if (type == daw::audio::TrackMeasurementPlugin::xmlTypeName) {
+            return new daw::audio::TrackMeasurementPlugin(info);
         }
         if (type == tracktion::ImpulseResponsePlugin::xmlTypeName) {
             return new tracktion::ImpulseResponsePlugin(info);

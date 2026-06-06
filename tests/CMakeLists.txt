@@ -109,6 +109,8 @@ set(TEST_SOURCES
     test_selection_manager_listeners.cpp
     # Configurable user data paths
     test_app_paths.cpp
+    # Mixing pt2 (issue #1388) - per-track loudness/level/stereo measurement DSP
+    test_track_measurer.cpp
     # Media database (issue #768) — Phase A: SQLite skeleton
     test_media_database.cpp
     # Media database (issue #768) — Phase B: scanner + path rules

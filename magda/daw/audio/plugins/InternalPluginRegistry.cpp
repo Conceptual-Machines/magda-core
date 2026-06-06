@@ -12,6 +12,7 @@
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/SpectrumAnalyzerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
+#include "plugins/TrackMeasurementPlugin.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/internal/MidiDeviceProcessors.hpp"
 #include "processors/internal/NativeDeviceProcessors.hpp"
@@ -142,6 +143,10 @@ const InternalPluginSpec kSpecs[] = {
      "Internal meter tap used to observe instrument output levels.",
      InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
      matches<InstrumentMeterTapPlugin>, nullptr},
+    {InternalDeviceKind::TrackMeasurement, TrackMeasurementPlugin::xmlTypeName, "Track Measurement",
+     "Meter", "Internal post-fader tap measuring loudness, peak and stereo for the mixing tools.",
+     InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
+     matches<TrackMeasurementPlugin>, nullptr},
     {InternalDeviceKind::SessionMonitor, ::magda::SessionMonitorPlugin::xmlTypeName,
      "Session Monitor", "Session", "Internal monitor used by session playback and launch state.",
      InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
@@ -160,7 +165,7 @@ const InternalPluginSpec* const kSpecPtrs[] = {
     &kSpecs[0],  &kSpecs[1],  &kSpecs[2],  &kSpecs[3],  &kSpecs[4],  &kSpecs[5],  &kSpecs[6],
     &kSpecs[7],  &kSpecs[8],  &kSpecs[9],  &kSpecs[10], &kSpecs[11], &kSpecs[12], &kSpecs[13],
     &kSpecs[14], &kSpecs[15], &kSpecs[16], &kSpecs[17], &kSpecs[18], &kSpecs[19], &kSpecs[20],
-    &kSpecs[21], &kSpecs[22], &kSpecs[23], &kSpecs[24], &kSpecs[25],
+    &kSpecs[21], &kSpecs[22], &kSpecs[23], &kSpecs[24], &kSpecs[25], &kSpecs[26],
 };
 
 bool typeMatchesAlias(const juce::String& type, const InternalPluginSpec& spec) {
