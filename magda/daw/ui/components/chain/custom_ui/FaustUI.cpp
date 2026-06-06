@@ -8,6 +8,7 @@
 #include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "compiled/MagdaDriveCurveView.hpp"
+#include "core/AppPaths.hpp"
 #include "core/TrackManager.hpp"
 #include "custom_ui/FaustCodeEditorWindow.hpp"
 #include "engine/AudioEngine.hpp"
@@ -54,6 +55,13 @@ FaustUI::FaustUI() {
     loadButton_->setIconPadding(2.0f);
     loadButton_->onClick = [this] { showLoadMenu(); };
     addAndMakeVisible(*loadButton_);
+
+    saveButton_ = std::make_unique<magda::SvgButton>("Save DSP", BinaryData::save_svg,
+                                                     BinaryData::save_svgSize);
+    saveButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    saveButton_->setIconPadding(4.0f);  // floppy glyph is denser; pad more to match Load/Edit
+    saveButton_->onClick = [this] { saveDspToFile(); };
+    addAndMakeVisible(*saveButton_);
 
     editButton_ = std::make_unique<magda::SvgButton>("Edit DSP", BinaryData::script_svg,
                                                      BinaryData::script_svgSize);
@@ -159,30 +167,54 @@ void FaustUI::showLoadMenu() {
     int id = 1;
     for (const auto& s : starters)
         menu.addItem(id++, s.name);
+
+    // User-saved effects from the FaustEffects library (written by the save
+    // button). Grouped in a submenu so the bundled starters stay tidy.
+    auto savedFiles = userEffectsDir().findChildFiles(juce::File::findFiles, false, "*.dsp");
+    savedFiles.sort();
+    const int savedBaseId = id;
+    if (!savedFiles.isEmpty()) {
+        juce::PopupMenu savedMenu;
+        for (const auto& f : savedFiles)
+            savedMenu.addItem(id++, f.getFileNameWithoutExtension());
+        menu.addSeparator();
+        menu.addSubMenu("My Effects", savedMenu);
+    }
+
     menu.addSeparator();
     const int fromFileId = id;
     menu.addItem(fromFileId, "From file...");
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(loadButton_.get()),
-                       [this, starters, fromFileId](int result) {
+                       [this, starters, savedFiles, savedBaseId, fromFileId](int result) {
                            if (result <= 0)
                                return;
                            if (result == fromFileId) {
                                loadFromFile();
                                return;
                            }
-                           const int idx = result - 1;
-                           if (idx < 0 || idx >= static_cast<int>(starters.size()))
+                           if (result < savedBaseId) {
+                               const int idx = result - 1;
+                               if (idx >= 0 && idx < static_cast<int>(starters.size())) {
+                                   const auto& s = starters[static_cast<size_t>(idx)];
+                                   tryLoad(s.name, s.source, s.viewKind);
+                               }
                                return;
-                           const auto& s = starters[static_cast<size_t>(idx)];
-                           tryLoad(s.name, s.source, s.viewKind);
+                           }
+                           const int idx = result - savedBaseId;
+                           if (idx >= 0 && idx < savedFiles.size()) {
+                               const auto file = savedFiles[idx];
+                               if (file.existsAsFile())
+                                   tryLoad(file.getFileNameWithoutExtension(),
+                                           file.loadFileAsString(),
+                                           magda::daw::audio::FaustCustomViewKind::None);
+                           }
                        });
 }
 
 void FaustUI::loadFromFile() {
-    fileChooser_ = std::make_unique<juce::FileChooser>(
-        "Choose a .dsp file", juce::File::getSpecialLocation(juce::File::userHomeDirectory),
-        "*.dsp");
+    fileChooser_ = std::make_unique<juce::FileChooser>("Choose a .dsp file",
+                                                       FaustUI::userEffectsDir(), "*.dsp");
     fileChooser_->launchAsync(
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this](const juce::FileChooser& fc) {
@@ -192,6 +224,35 @@ void FaustUI::loadFromFile() {
             tryLoad(file.getFileNameWithoutExtension(), file.loadFileAsString(),
                     magda::daw::audio::FaustCustomViewKind::None);
         });
+}
+
+juce::File FaustUI::userEffectsDir() {
+    auto dir = magda::paths::dataDir().getChildFile("FaustEffects");
+    dir.createDirectory();
+    return dir;
+}
+
+void FaustUI::saveDspToFile() {
+    if (plugin_ == nullptr)
+        return;
+    const auto source = plugin_->state.getProperty("dspSource", juce::String()).toString();
+    if (source.isEmpty())
+        return;
+    const auto name = plugin_->state.getProperty("dspName", juce::String("effect")).toString();
+
+    fileChooser_ = std::make_unique<juce::FileChooser>(
+        "Save Faust DSP", userEffectsDir().getChildFile(name + ".dsp"), "*.dsp");
+    fileChooser_->launchAsync(juce::FileBrowserComponent::saveMode |
+                                  juce::FileBrowserComponent::canSelectFiles |
+                                  juce::FileBrowserComponent::warnAboutOverwriting,
+                              [source](const juce::FileChooser& fc) {
+                                  auto file = fc.getResult();
+                                  if (file == juce::File())
+                                      return;
+                                  if (!file.hasFileExtension("dsp"))
+                                      file = file.withFileExtension("dsp");
+                                  file.replaceWithText(source);
+                              });
 }
 
 void FaustUI::showCodeEditor() {
@@ -268,13 +329,17 @@ void FaustUI::resized() {
     logoBounds_ = area.removeFromLeft(72).toFloat();
     area.removeFromLeft(6);
 
-    // Edit / Load icons on the right (ordered left-to-right Load,
-    // Edit so removeFromRight in reverse order).
+    // Save / Load / Edit icons on the right (ordered left-to-right Save,
+    // Load, Edit so removeFromRight in reverse order). Save sits next to the
+    // Load folder.
     constexpr int iconSize = 22;
     editButton_->setBounds(
         area.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
     area.removeFromRight(4);
     loadButton_->setBounds(
+        area.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+    area.removeFromRight(4);
+    saveButton_->setBounds(
         area.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
     area.removeFromRight(6);
 

@@ -1227,10 +1227,12 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         currentPresetName_.clear();
         pluginPresetName_.clear();
         currentPluginPresetFile_ = juce::File();
-        // AI panel output is plugin-specific too — wipe so we don't show
-        // stale 4OSC results on a slot that now holds a different plugin.
-        if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
+        // AI panel output + conversation are plugin-specific too — wipe so we
+        // don't show stale results or carry history onto a different plugin.
+        if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
             live->aiPanelOutput.clear();
+            live->aiConversation.clear();
+        }
     }
 
     device_ = device;
