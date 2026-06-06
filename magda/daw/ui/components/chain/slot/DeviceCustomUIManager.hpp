@@ -29,6 +29,7 @@ class FaustUI;
 class FilterUI;
 class FourOscUI;
 class ImpulseResponseUI;
+class LevelsUI;
 class LinkableTextSlider;
 class OscilloscopeUI;
 class PhaserUI;
@@ -222,6 +223,7 @@ class DeviceCustomUIManager {
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;
     std::unique_ptr<OscilloscopeUI> oscilloscopeUI_;
     std::unique_ptr<SpectrumAnalyzerUI> spectrumAnalyzerUI_;
+    std::unique_ptr<LevelsUI> levelsUI_;
 
     // Plugin raw pointers for timer polling / setNodePath updates
     daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;

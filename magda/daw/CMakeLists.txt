@@ -153,6 +153,7 @@ juce_add_binary_data(MagdaAssets
     # Analysis device icons
     ../../assets/icons/analysis/oscilloscope.svg
     ../../assets/icons/analysis/spectrum.svg
+    ../../assets/icons/analysis/levels.svg
     ../../assets/icons/analysis/postfx.svg
     # Track-chain header icons
     ../../assets/icons/trackchain/gain-staging.svg

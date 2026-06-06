@@ -6,6 +6,7 @@
 #include "../audio/plugins/DrumGridPlugin.hpp"
 #include "../audio/plugins/FaustPlugin.hpp"
 #include "../audio/plugins/InstrumentMeterTapPlugin.hpp"
+#include "../audio/plugins/LevelsPlugin.hpp"
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
 #include "../audio/plugins/MidiChordEnginePlugin.hpp"
 #include "../audio/plugins/MidiReceivePlugin.hpp"
@@ -123,6 +124,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         }
         if (type == daw::audio::SpectrumAnalyzerPlugin::xmlTypeName) {
             return new daw::audio::SpectrumAnalyzerPlugin(info);
+        }
+        if (type == daw::audio::LevelsPlugin::xmlTypeName) {
+            return new daw::audio::LevelsPlugin(info);
         }
         if (type == daw::audio::InstrumentMeterTapPlugin::xmlTypeName) {
             return new daw::audio::InstrumentMeterTapPlugin(info);

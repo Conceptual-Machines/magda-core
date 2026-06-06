@@ -207,16 +207,16 @@ void setChainElementsBypassed(std::vector<ChainElement>& elements, const ChainNo
 }
 
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
-    auto findAnalysis = [&elements](int order) {
-        return std::find_if(elements.begin(), elements.end(), [order](const auto& element) {
-            return postFxAnalysisDeviceOrder(element.device.pluginId) == order;
-        });
-    };
-
-    auto osc = findAnalysis(0);
-    auto spectrum = findAnalysis(1);
-    if (osc != elements.end() && spectrum != elements.end() && spectrum < osc)
-        std::iter_swap(osc, spectrum);
+    // Keep the analysis devices (oscilloscope, spectrum, levels) in a stable,
+    // canonical order among themselves without disturbing any non-analysis
+    // post-FX devices' relative positions.
+    std::stable_sort(elements.begin(), elements.end(), [](const auto& a, const auto& b) {
+        const int oa = postFxAnalysisDeviceOrder(a.device.pluginId);
+        const int ob = postFxAnalysisDeviceOrder(b.device.pluginId);
+        if (oa < 0 || ob < 0)
+            return false;  // leave non-analysis devices where they are
+        return oa < ob;
+    });
 }
 
 }  // namespace
