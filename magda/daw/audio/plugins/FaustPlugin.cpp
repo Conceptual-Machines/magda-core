@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cmath>
 #include <map>
+#include <regex>
 
 #include "FaustMetadataParser.hpp"
 #include "FaustResources.hpp"
@@ -238,6 +239,33 @@ juce::String poolParamId(int index) {
     return juce::String("param_") + juce::String(index + 1).paddedLeft('0', 2);
 }
 
+// Guarantee the standard library is available without relying on the source (or
+// the LLM prompt) to include it. Prepend the import only if it isn't there, so
+// we never produce a duplicate.
+juce::String ensureStdfaustImport(const juce::String& source) {
+    if (source.contains("stdfaust.lib"))
+        return source;
+    return juce::String("import(\"stdfaust.lib\");\n") + source;
+}
+
+// Wrap a one-output ("mono") DSP so it runs as genuine dual-mono: each channel
+// processed independently (separate state), giving real 2-out behaviour instead
+// of a silent right channel. Renames the user's `process` and re-defines it via
+// `par`. Returns an empty string if there's no top-level `process` to wrap, in
+// which case the caller keeps the original source.
+juce::String wrapDualMono(const juce::String& source) {
+    const std::string s = source.toStdString();
+    // Match the top-level `process =` definition (at the start of a line, after
+    // optional indentation). After ensureStdfaustImport, process is never at the
+    // very start of the string, so requiring a preceding newline is safe.
+    static const std::regex procDef(R"((\n[ \t]*)process([ \t]*=))");
+    const std::string renamed =
+        std::regex_replace(s, procDef, "$1__magda_user$2", std::regex_constants::format_first_only);
+    if (renamed == s)
+        return {};  // no process definition found; don't attempt the wrap
+    return juce::String(renamed) + "\nprocess = par(i, 2, __magda_user);\n";
+}
+
 }  // namespace
 
 FaustPlugin::FaustState::~FaustState() {
@@ -249,36 +277,59 @@ FaustPlugin::FaustState::~FaustState() {
 std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compile(const juce::String& source,
                                                               int sampleRate,
                                                               juce::String& errorOut) {
-    std::string err;
-    const auto src = source.toStdString();
-
     // Pass the bundled faustlibraries dir as `-I` so `import("stdfaust.lib")`
     // and friends resolve at compile time. The path may not exist when running
     // outside the installed bundle (e.g. unit tests) — libfaust falls back to
     // its built-in search paths and a DSP that doesn't import any libs still
     // compiles.
     const auto libsPath = getFaustLibrariesPath().getFullPathName().toStdString();
-    std::vector<const char*> argv;
-    argv.push_back("-I");
-    argv.push_back(libsPath.c_str());
 
-    auto* factory = createInterpreterDSPFactoryFromString(
-        "magda_faust", src, static_cast<int>(argv.size()), argv.data(), err);
-    if (!factory) {
-        errorOut = juce::String(err);
+    // Compile one source string into a fully-initialised FaustState (or null).
+    auto compileSource = [&](const juce::String& s,
+                             juce::String& e) -> std::shared_ptr<FaustState> {
+        std::string err;
+        const auto src = s.toStdString();
+        std::vector<const char*> argv;
+        argv.push_back("-I");
+        argv.push_back(libsPath.c_str());
+
+        auto* factory = createInterpreterDSPFactoryFromString(
+            "magda_faust", src, static_cast<int>(argv.size()), argv.data(), err);
+        if (!factory) {
+            e = juce::String(err);
+            return nullptr;
+        }
+        auto state = std::make_shared<FaustState>();
+        state->factory = factory;
+        state->dsp.reset(factory->createDSPInstance());
+        if (!state->dsp) {
+            e = "createDSPInstance returned null";
+            return nullptr;  // ~FaustState will deleteInterpreterDSPFactory
+        }
+        state->dsp->init(sampleRate);
+        state->dspIn = state->dsp->getNumInputs();
+        state->dspOut = state->dsp->getNumOutputs();
+        return state;
+    };
+
+    const juce::String normalised = ensureStdfaustImport(source);
+
+    auto state = compileSource(normalised, errorOut);
+    if (!state)
         return nullptr;
-    }
 
-    auto state = std::make_shared<FaustState>();
-    state->factory = factory;
-    state->dsp.reset(factory->createDSPInstance());
-    if (!state->dsp) {
-        errorOut = "createDSPInstance returned null";
-        return nullptr;  // ~FaustState will deleteInterpreterDSPFactory
+    // A one-output DSP would only drive the left channel and leave the right
+    // silent. Re-wrap it as dual-mono so both channels are processed. Keep the
+    // original if the wrap can't be built or doesn't compile (never a regression).
+    if (state->dspOut == 1 && state->dspIn <= 1) {
+        const juce::String wrapped = wrapDualMono(normalised);
+        if (wrapped.isNotEmpty()) {
+            juce::String wrapErr;
+            auto wrappedState = compileSource(wrapped, wrapErr);
+            if (wrappedState && wrappedState->dspOut >= 2)
+                return wrappedState;
+        }
     }
-    state->dsp->init(sampleRate);
-    state->dspIn = state->dsp->getNumInputs();
-    state->dspOut = state->dsp->getNumOutputs();
     return state;
 }
 
@@ -449,6 +500,16 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
                                               << " out=" << compiled->dspOut
                                               << " active=" << pool_.activeCount());
     return true;
+}
+
+void FaustPlugin::stageSourceForEditing(const juce::String& name, const juce::String& source) {
+    // Editable state only — no compileAndRebind, no active_ swap. The live DSP
+    // and the param pool stay as they are; the editor reads dspSource/dspName
+    // from state, so the user sees the staged code and compiles it when ready.
+    dspName_ = name;
+    dspSource_ = source;
+    state.setProperty("dspName", dspName_, getUndoManager());
+    state.setProperty("dspSource", dspSource_, getUndoManager());
 }
 
 void FaustPlugin::initialise(const te::PluginInitialisationInfo& info) {

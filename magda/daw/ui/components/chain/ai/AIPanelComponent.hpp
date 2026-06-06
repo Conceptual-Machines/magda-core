@@ -54,7 +54,7 @@ class AIPanelComponent : public juce::Component {
     void submitPrompt();
     void appendOutput(const juce::String& line);
     void appendStreamingToken(const juce::String& token);
-    void onGenerationFinished(juce::String status);
+    void onGenerationFinished(juce::String status, juce::String conversationJson);
     void setBusy(bool busy);
     // Mirror output_'s text onto the bound DeviceInfo so slot rebuilds restore it.
     void persistOutput();
@@ -74,6 +74,16 @@ class AIPanelComponent : public juce::Component {
 
     void clearChat();
     void refreshModelLabel();
+
+    // Faust MCP status strip at the top (shown only for coder / Faust
+    // devices): a dot + "Faust MCP off/on/connected" so it's clear the
+    // compile-check backend is available when generating DSP.
+    juce::Label mcpStatusLabel_;
+    juce::Rectangle<int> mcpStripBounds_;
+    bool mcpStripVisible_ = false;
+    bool mcpEnabled_ = false;
+    bool mcpRunning_ = false;
+    void updateMcpStatus();
 
     // Track where the streaming response started so we can replace the
     // raw JSON the model emits with a clean status line on completion.

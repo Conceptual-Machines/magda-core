@@ -60,6 +60,11 @@ class FaustUI : public juce::Component {
   private:
     void showLoadMenu();
     void loadFromFile();
+    void saveDspToFile();
+    // User Faust effects dir (dataDir()/FaustEffects), created on demand. Save
+    // target + Load default location, so generated effects build a reusable
+    // library separate from MAGDA .mps presets.
+    static juce::File userEffectsDir();
     void showCodeEditor();
     bool tryLoad(const juce::String& name, const juce::String& source,
                  magda::daw::audio::FaustCustomViewKind viewKind);
@@ -73,6 +78,7 @@ class FaustUI : public juce::Component {
     juce::Rectangle<float> nameBorderBounds_;
     juce::Label nameLabel_;
     juce::Label errorLabel_;
+    std::unique_ptr<magda::SvgButton> saveButton_;
     std::unique_ptr<magda::SvgButton> loadButton_;
     std::unique_ptr<magda::SvgButton> editButton_;
     std::unique_ptr<juce::FileChooser> fileChooser_;
