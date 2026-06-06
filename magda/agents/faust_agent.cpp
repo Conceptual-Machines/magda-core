@@ -1,5 +1,9 @@
 #include "faust_agent.hpp"
 
+#include <array>
+#include <regex>
+
+#include "../daw/audio/plugins/FaustMetadataParser.hpp"
 #include "../daw/core/Config.hpp"
 #include "llm_client_factory.hpp"
 #include "llm_presets.hpp"
@@ -20,11 +24,8 @@ OUTPUT SCHEMA:
 }
 
 SOURCE RULES — VERY IMPORTANT:
-- Start with: import("stdfaust.lib");
-- For an EFFECT, define: process = ... : ... ;  taking 2 inputs and returning
-  2 outputs (stereo in / stereo out). Use _,_ for an unprocessed channel.
-- For an INSTRUMENT/SYNTH, define: process = ... ;  with 0 inputs and 2
-  outputs. Avoid this unless the user clearly asks for a synth.
+- Write process as a single processing chain from input to output, e.g.
+      process = _ : drive : filter;
 - Expose user-facing controls. Pick the right control kind:
   * Continuous values: hslider("Label", init, min, max, step) or vslider(...)
     or nentry(...). Add [scale:log] for cutoffs / time / freqs:
@@ -60,19 +61,60 @@ User: "warm tape saturator with subtle wow"
 {
   "name": "Tape Warmth",
   "description": "Soft tape-style saturator with gentle wow modulation.",
-  "source": "import(\"stdfaust.lib\");\ndrive = hslider(\"Drive [idx:0]\", 3, 0, 10, 0.01);\nwow = hslider(\"Wow [idx:1]\", 0.3, 0, 1, 0.01);\nmix = hslider(\"Mix [idx:2]\", 0.8, 0, 1, 0.01);\nlfo = os.osc(0.6) * 0.002 * wow;\nsat(x) = ef.cubicnl(drive/10, 0) : *(0.7);\nch = _ <: *(1.0 + lfo) : sat : _ * mix + _ * (1.0 - mix);\nprocess = ch, ch;"
+  "source": "import(\"stdfaust.lib\");\ndrive = hslider(\"Drive [idx:0]\", 3, 0, 10, 0.01);\nwow = hslider(\"Wow [idx:1]\", 0.3, 0, 1, 0.01);\nmix = hslider(\"Mix [idx:2]\", 0.8, 0, 1, 0.01);\nlfo = os.osc(0.6) * 0.002 * wow;\nsat(x) = ef.cubicnl(drive/10, 0) : *(0.7);\nprocess = _ <: *(1.0 + lfo) : sat : _ * mix + _ * (1.0 - mix);"
 }
 
 User: "gentle plate reverb with mode switch"
 {
   "name": "Plate Lite",
   "description": "Short, dark plate reverb with a Plate / Hall mode.",
-  "source": "import(\"stdfaust.lib\");\nsize = hslider(\"Size [idx:0]\", 0.5, 0, 1, 0.01);\ndamp = hslider(\"Damp [idx:1]\", 0.6, 0, 1, 0.01);\nmix  = hslider(\"Mix  [idx:2]\", 0.35, 0, 1, 0.01);\nmode = hslider(\"Mode [idx:3][style:menu{'Plate':0;'Hall':1}]\", 0, 0, 1, 1);\nfreeze = checkbox(\"Freeze [idx:4]\");\nwetSize = size * 4 + 0.2 + mode * 1.5;\nwet = re.zita_rev1_stereo(0, 200, 6000, wetSize, damp, 44100);\nprocess = _,_ <: (wet : *(mix), *(mix)), (*(1.0-mix), *(1.0-mix)) :> _,_;"
+  "source": "import(\"stdfaust.lib\");\nsize = hslider(\"Size [idx:0]\", 0.5, 0, 1, 0.01);\ndamp = hslider(\"Damp [idx:1]\", 0.6, 0, 1, 0.01);\nmix = hslider(\"Mix [idx:2]\", 0.35, 0, 1, 0.01);\nmode = hslider(\"Mode [idx:3][style:menu{'Plate':0;'Hall':1}]\", 0, 0, 1, 1);\nfreeze = checkbox(\"Freeze [idx:4]\");\nfb = (0.7 + size * 0.28 + mode * 0.02) * (1.0 - freeze) + freeze * 0.999;\nwet = re.mono_freeverb(fb, fb, damp, 0.5);\nprocess = _ <: (_ : *(1.0 - mix)), (_ : wet : *(mix)) :> _;"
 }
 )PROMPT";
 }
 
 namespace {
+
+// MAGDA-side validation of the [idx:N] parameter contract, run BEFORE the Faust
+// compile check. The Faust compiler treats our [...] tags as opaque label text,
+// so a missing / duplicate / out-of-range idx (or >64 controls) compiles fine
+// yet breaks parameter links on the next regeneration. Catch it here and feed
+// failures into the same retry loop the compiler errors use.
+bool validateMetadata(const std::string& source, std::string& errorOut) {
+    static const std::regex controlDecl(
+        R"RX((hslider|vslider|nentry|checkbox)\s*\(\s*"([^"]*)")RX");
+
+    juce::StringArray problems;
+    std::array<bool, 64> used{};
+    int controlCount = 0;
+
+    for (auto it = std::sregex_iterator(source.begin(), source.end(), controlDecl);
+         it != std::sregex_iterator(); ++it) {
+        ++controlCount;
+        const juce::String rawLabel((*it)[2].str());
+        const auto parsed = magda::daw::audio::parseFaustLabel(rawLabel);
+        const int idx = parsed.metadata.slotIndex;
+        const juce::String name =
+            parsed.cleanLabel.trim().isNotEmpty() ? parsed.cleanLabel.trim() : rawLabel;
+        if (idx == -1)
+            problems.add("control \"" + name + "\" is missing [idx:N]");
+        else if (idx < 0 || idx >= 64)
+            problems.add("control \"" + name + "\" has out-of-range [idx:" + juce::String(idx) +
+                         "] (must be 0..63)");
+        else if (used[static_cast<size_t>(idx)])
+            problems.add("[idx:" + juce::String(idx) + "] is used by more than one control");
+        else
+            used[static_cast<size_t>(idx)] = true;
+    }
+
+    if (controlCount > 64)
+        problems.add("too many controls (" + juce::String(controlCount) + "); the limit is 64");
+
+    if (problems.isEmpty())
+        return true;
+    errorOut = problems.joinIntoString("\n").toStdString();
+    return false;
+}
 
 void logFaustAgentConfig(const Config::AgentLLMConfig& agentConfig,
                          const llm::ProviderConfig& providerConfig) {
@@ -235,6 +277,22 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
             userTurn = originalPrompt +
                        "\n\n(Your previous reply was not valid JSON. Output ONLY the JSON "
                        "object with fields name, description and source.)";
+            continue;
+        }
+
+        // Validate our [idx:N] metadata contract before spending a compile.
+        // The Faust compiler can't see these problems (the tags are opaque to
+        // it), so we check them ourselves and retry on failure.
+        std::string metaErr;
+        if (!validateMetadata(result.source, metaErr)) {
+            lastError = metaErr;
+            if (onToken)
+                onToken(juce::String::fromUTF8("\n[metadata invalid, fixing...]\n"));
+            userTurn =
+                originalPrompt + "\n\n(Your previous attempt had invalid control metadata:\n" +
+                metaErr +
+                "\nEvery control needs a unique [idx:N] in the range 0..63, and there can be "
+                "at most 64 controls. Fix it and output the corrected JSON object.)";
             continue;
         }
 
