@@ -22,6 +22,7 @@ target_sources(magda_daw PRIVATE
     AutomationManager.cpp
     LinkModeManager.cpp
     GainStagingManager.cpp
+    TrackMeasurementManager.cpp
     UndoManager.cpp
     ClipCommands.cpp
     ClipPropertyCommands.cpp

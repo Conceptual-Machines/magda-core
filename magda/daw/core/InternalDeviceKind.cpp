@@ -16,6 +16,7 @@
 #include "audio/plugins/SidechainMonitorPlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
+#include "audio/plugins/TrackMeasurementPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "audio/session/SessionMonitorPlugin.hpp"
 
@@ -86,6 +87,8 @@ const InternalDeviceMetadata kMetadata[] = {
      "Internal audio monitor used by sidechain-aware devices."},
     {InternalDeviceKind::InstrumentMeterTap, "Instrument Meter Tap", "", "Meter",
      "Internal meter tap used to observe instrument output levels."},
+    {InternalDeviceKind::TrackMeasurement, "Track Measurement", "", "Meter",
+     "Internal post-fader tap measuring loudness, peak and stereo for the mixing tools."},
     {InternalDeviceKind::SessionMonitor, "Session Monitor", "", "Session",
      "Internal monitor used by session playback and launch state."},
     {InternalDeviceKind::Oscilloscope, "Oscilloscope", "", "Analysis",
@@ -141,6 +144,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::OscilloscopePlugin;
     using daw::audio::SpectrumAnalyzerPlugin;
     using daw::audio::StepSequencerPlugin;
+    using daw::audio::TrackMeasurementPlugin;
     namespace TE = tracktion::engine;
 
     const Mapping kMappings[] = {
@@ -170,6 +174,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::Oscilloscope, OscilloscopePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::SpectrumAnalyzer, SpectrumAnalyzerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::InstrumentMeterTap, InstrumentMeterTapPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::TrackMeasurement, TrackMeasurementPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Faust, FaustPlugin::xmlTypeName, nullptr},
         // Plugins still in plain magda:: (older infra layers).
         {InternalDeviceKind::MidiReceive, MidiReceivePlugin::xmlTypeName, nullptr},

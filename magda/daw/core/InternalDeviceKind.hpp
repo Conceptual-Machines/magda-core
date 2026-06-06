@@ -48,6 +48,7 @@ enum class InternalDeviceKind {
     SidechainMonitor,
     AudioSidechainMonitor,
     InstrumentMeterTap,
+    TrackMeasurement,  // always-on per-track loudness/level/stereo tap (issue #1388)
     SessionMonitor,
     // --- Analysis (transparent passthrough; DeviceType::Analysis) -------
     Oscilloscope,
