@@ -21,10 +21,17 @@ const char* MixAnalysisAgent::getSystemPrompt() {
            "i.e. crest / how dynamic the track is, in LU) | PSR (peak-to-short-term) | corr "
            "(stereo correlation: 1 mono, ~0 wide, negative means out-of-phase) | width (0 mono .. "
            "1 fully wide). A 'tonal:' line may follow with macro-band energy in dB "
-           "(sub/low/low-mid/mid/high-mid/high) describing the spectral balance.\n"
+           "(sub/low/low-mid/mid/high-mid/high) plus spectral descriptors: centroid "
+           "(brightness, energy-weighted mean frequency), flat (spectral flatness 0 tonal .. 1 "
+           "noisy -- high flat means a noisy/percussive source), rolloff (frequency below which "
+           "85% of energy sits).\n"
            "You may also get inter-track masking findings: pairs of tracks whose energy competes "
            "in a frequency band, with a severity 0..1. These are measured, not guesses -- trust "
-           "them over inference.\n\n"
+           "them over inference.\n"
+           "A Timeline may follow: the master mix sliced over time (song sections, or fixed "
+           "windows) with per-slice loudness, brightness, width and coarse tonal. Use it to reason "
+           "about the arrangement -- e.g. whether choruses lift, whether the low end drops out, "
+           "whether sections are consistent.\n\n"
            "Assess the mix, biggest problems first: level balance, whether anything is too loud or "
            "buried, tonal balance, dynamics, stereo image and phase risks (negative correlation), "
            "and the worst masking conflicts.\n"
@@ -57,6 +64,9 @@ juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
             for (size_t i = 0; i < t.tonalDb.size(); ++i)
                 r << " " << (i < labels.size() ? juce::String(labels[i]) : juce::String((int)i))
                   << "=" << juce::String(t.tonalDb[i], 1);
+            r << " | centroid=" << juce::String(juce::roundToInt(t.spectralCentroidHz)) << "Hz"
+              << " flat=" << juce::String(t.spectralFlatness, 2)
+              << " rolloff=" << juce::String(juce::roundToInt(t.spectralRolloffHz)) << "Hz";
         }
         return r;
     };
@@ -79,6 +89,23 @@ juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
             m << "  " << k.a << " vs " << k.b << " @ " << juce::String(juce::roundToInt(k.loHz))
               << "-" << juce::String(juce::roundToInt(k.hiHz)) << " Hz, severity "
               << juce::String(k.severity, 2) << "\n";
+    }
+
+    if (!input.timeline.empty()) {
+        m << "\nTimeline (master over time -- how the arrangement evolves):\n";
+        for (const auto& s : input.timeline) {
+            m << "  " << s.label << " [" << juce::String(s.startSec, 0) << "-"
+              << juce::String(s.endSec, 0) << "s]: " << juce::String(s.integratedLufs, 1)
+              << " LUFS, centroid " << juce::String(juce::roundToInt(s.spectralCentroidHz)) << "Hz"
+              << ", width " << juce::String(s.width, 2);
+            if (!s.tonalDb.empty()) {
+                static const char* k3[] = {"low", "mid", "high"};
+                m << ", tonal";
+                for (size_t i = 0; i < s.tonalDb.size(); ++i)
+                    m << " " << (i < 3 ? k3[i] : "?") << "=" << juce::String(s.tonalDb[i], 1);
+            }
+            m << "\n";
+        }
     }
 
     return m;

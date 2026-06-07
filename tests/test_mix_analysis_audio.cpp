@@ -175,6 +175,128 @@ std::vector<float> collapseToMacro(const BandArray& bandsDb) {
     return out;
 }
 
+// Collapse the 30 bands into 3 coarse bands (low / mid / high) for the timeline.
+std::vector<float> collapseTo3(const BandArray& bandsDb) {
+    const float upper[3] = {250.0f, 2500.0f, 1.0e9f};
+    std::array<double, 3> acc{};
+    for (int b = 0; b < audio::kNumMaskingBands; ++b) {
+        const float center =
+            std::sqrt(audio::maskingBandEdgeHz(b) * audio::maskingBandEdgeHz(b + 1));
+        int mi = 0;
+        while (mi < 2 && center >= upper[mi])
+            ++mi;
+        acc[static_cast<size_t>(mi)] += std::pow(10.0, bandsDb[static_cast<size_t>(b)] / 10.0);
+    }
+    std::vector<float> out(3);
+    for (int i = 0; i < 3; ++i)
+        out[static_cast<size_t>(i)] =
+            acc[static_cast<size_t>(i)] > 0.0
+                ? static_cast<float>(10.0 * std::log10(acc[static_cast<size_t>(i)]))
+                : -120.0f;
+    return out;
+}
+
+struct SpectralFeatures {
+    float centroidHz = 0.0f;
+    float flatness = 0.0f;
+    float rolloffHz = 0.0f;
+};
+
+// Derive brightness / flatness / rolloff from the averaged band spectrum.
+SpectralFeatures spectralFeatures(const BandArray& bandsDb) {
+    std::array<double, audio::kNumMaskingBands> e{};
+    std::array<float, audio::kNumMaskingBands> center{};
+    float peakDb = -1000.0f;
+    for (int b = 0; b < audio::kNumMaskingBands; ++b) {
+        e[static_cast<size_t>(b)] = std::pow(10.0, bandsDb[static_cast<size_t>(b)] / 10.0);
+        center[static_cast<size_t>(b)] =
+            std::sqrt(audio::maskingBandEdgeHz(b) * audio::maskingBandEdgeHz(b + 1));
+        peakDb = juce::jmax(peakDb, bandsDb[static_cast<size_t>(b)]);
+    }
+
+    double sumE = 0.0, sumFE = 0.0;
+    for (int b = 0; b < audio::kNumMaskingBands; ++b) {
+        sumE += e[static_cast<size_t>(b)];
+        sumFE += static_cast<double>(center[static_cast<size_t>(b)]) * e[static_cast<size_t>(b)];
+    }
+
+    SpectralFeatures f;
+    f.centroidHz = sumE > 0.0 ? static_cast<float>(sumFE / sumE) : 0.0f;
+
+    // Flatness over the audible bands (within 60 dB of the peak), so empty
+    // floor bands don't drag the geometric mean to zero.
+    double logSum = 0.0, ariSum = 0.0;
+    int cnt = 0;
+    for (int b = 0; b < audio::kNumMaskingBands; ++b) {
+        if (bandsDb[static_cast<size_t>(b)] < peakDb - 60.0f)
+            continue;
+        logSum += std::log(e[static_cast<size_t>(b)] + 1.0e-20);
+        ariSum += e[static_cast<size_t>(b)];
+        ++cnt;
+    }
+    if (cnt > 0) {
+        const double geo = std::exp(logSum / cnt);
+        const double ari = ariSum / cnt;
+        f.flatness = ari > 0.0 ? static_cast<float>(juce::jlimit(0.0, 1.0, geo / ari)) : 0.0f;
+    }
+
+    // 85%-energy rolloff.
+    const double target = 0.85 * sumE;
+    double cum = 0.0;
+    for (int b = 0; b < audio::kNumMaskingBands; ++b) {
+        cum += e[static_cast<size_t>(b)];
+        if (cum >= target) {
+            f.rolloffHz = center[static_cast<size_t>(b)];
+            break;
+        }
+    }
+    return f;
+}
+
+// Exact whole-song stereo correlation + width from the buffer (the measurer's
+// read() only exposes the smoothed end-of-song value).
+void stereoCorrWidth(const juce::AudioBuffer<float>& buf, float& corr, float& width) {
+    if (buf.getNumChannels() < 2) {
+        corr = 1.0f;
+        width = 0.0f;
+        return;
+    }
+    const float* l = buf.getReadPointer(0);
+    const float* r = buf.getReadPointer(1);
+    const int n = buf.getNumSamples();
+    double sumLR = 0, sumLL = 0, sumRR = 0, sumMid = 0, sumSide = 0;
+    for (int i = 0; i < n; ++i) {
+        const double xl = l[i], xr = r[i];
+        sumLR += xl * xr;
+        sumLL += xl * xl;
+        sumRR += xr * xr;
+        const double mid = 0.5 * (xl + xr), side = 0.5 * (xl - xr);
+        sumMid += mid * mid;
+        sumSide += side * side;
+    }
+    const double denom = std::sqrt(sumLL * sumRR);
+    corr = denom > 1.0e-12 ? static_cast<float>(juce::jlimit(-1.0, 1.0, sumLR / denom)) : 1.0f;
+    const double ms = sumMid + sumSide;
+    width = ms > 1.0e-12 ? static_cast<float>(sumSide / ms) : 0.0f;
+}
+
+// Section boundaries. Auto = N equal fixed windows; this is the seam where
+// real UI song-sections will plug in later (same {label, start, len} shape).
+struct SectionBound {
+    juce::String label;
+    int start = 0;
+    int len = 0;
+};
+std::vector<SectionBound> autoSections(int total, int n) {
+    std::vector<SectionBound> out;
+    for (int i = 0; i < n; ++i) {
+        const int s = static_cast<int>(static_cast<int64_t>(total) * i / n);
+        const int e = static_cast<int>(static_cast<int64_t>(total) * (i + 1) / n);
+        out.push_back({juce::String(i + 1) + "/" + juce::String(n), s, e - s});
+    }
+    return out;
+}
+
 MixAnalysisAgent::TrackMix toTrackMix(const juce::String& name, const std::string& role,
                                       const TrackMeasurementSnapshot& s) {
     MixAnalysisAgent::TrackMix t;
@@ -321,6 +443,11 @@ TEST_CASE("MixAnalysisAgent: analyse a real multitrack session", "[.][mix_analys
         auto snap = measure(t.buf, sr, &bands);
         auto mix = toTrackMix(t.name, t.role, snap);
         mix.tonalDb = collapseToMacro(bands);
+        const auto sf = spectralFeatures(bands);
+        mix.spectralCentroidHz = sf.centroidHz;
+        mix.spectralFlatness = sf.flatness;
+        mix.spectralRolloffHz = sf.rolloffHz;
+        stereoCorrWidth(t.buf, mix.correlation, mix.width);  // whole-song, not end-of-song
 
         audio::TrackBandEnergies be;
         be.trackId = i;
@@ -339,6 +466,13 @@ TEST_CASE("MixAnalysisAgent: analyse a real multitrack session", "[.][mix_analys
     input.master =
         toTrackMix("Master (stem sum, -1 dBFS)", "master", measure(master, sr, &masterBands));
     input.master->tonalDb = collapseToMacro(masterBands);
+    {
+        const auto sf = spectralFeatures(masterBands);
+        input.master->spectralCentroidHz = sf.centroidHz;
+        input.master->spectralFlatness = sf.flatness;
+        input.master->spectralRolloffHz = sf.rolloffHz;
+        stereoCorrWidth(master, input.master->correlation, input.master->width);
+    }
 
     // Real inter-track masking from the measured spectra (#1390).
     auto findings = audio::detectMasking(bandSet);
@@ -347,8 +481,36 @@ TEST_CASE("MixAnalysisAgent: analyse a real multitrack session", "[.][mix_analys
             {f.nameA.toStdString(), f.nameB.toStdString(), f.loHz, f.hiHz, f.severity});
     std::cout << "[audio] masking findings: " << findings.size() << "\n";
 
-    input.question = "Assess this raw multitrack: balance, dynamics, stereo image, and any "
-                     "frequency clashes. What would you address first?";
+    // Timeline: slice the master into sections (auto fixed windows for now; the
+    // UI's song sections will feed the same {label,start,len} list later) and
+    // measure each slice's loudness / brightness / width / coarse tonal.
+    int numSegments = 16;
+    if (const char* env = std::getenv("MIX_ANALYSIS_SEGMENTS"))
+        numSegments = juce::jlimit(2, 64, juce::String(env).getIntValue());
+    for (const auto& sec : autoSections(maxLen, numSegments)) {
+        if (sec.len < 2048)
+            continue;
+        float* chans[2] = {master.getWritePointer(0) + sec.start,
+                           master.getWritePointer(1) + sec.start};
+        juce::AudioBuffer<float> win(chans, 2, sec.len);
+        BandArray segBands{};
+        auto segSnap = measure(win, sr, &segBands);
+
+        MixAnalysisAgent::Segment seg;
+        seg.label = sec.label.toStdString();
+        seg.startSec = static_cast<float>(sec.start / sr);
+        seg.endSec = static_cast<float>((sec.start + sec.len) / sr);
+        seg.integratedLufs = segSnap.integratedLufs;
+        seg.spectralCentroidHz = spectralFeatures(segBands).centroidHz;
+        float segCorr = 1.0f;
+        stereoCorrWidth(win, segCorr, seg.width);  // only width is sent per segment
+        seg.tonalDb = collapseTo3(segBands);
+        input.timeline.push_back(std::move(seg));
+    }
+    std::cout << "[audio] timeline segments: " << input.timeline.size() << "\n";
+
+    input.question = "Assess this raw multitrack: balance, dynamics, stereo image, frequency "
+                     "clashes, and how the arrangement evolves. What would you address first?";
 
     std::cout << "\n==== payload (" << MixAnalysisAgent::buildUserMessage(input).length()
               << " chars) ====\n"
