@@ -3953,15 +3953,97 @@ bool SessionView::isAudioFile(const juce::String& filename) const {
 // DragAndDropTarget implementation (internal JUCE drags: plugins, clip slots)
 // ============================================================================
 
-bool SessionView::isInterestedInDragSource(const SourceDetails& details) {
-    if (auto* obj = details.description.getDynamicObject()) {
-        auto type = obj->getProperty("type").toString();
-        return type == "plugin" || type == "sessionClip";
-    }
+#if JUCE_LINUX
+namespace {
+bool isInternalFilesDrag(const juce::DragAndDropTarget::SourceDetails& details) {
+    if (auto* obj = details.description.getDynamicObject())
+        return obj->getProperty("type").toString() == "files";
     return false;
 }
 
+juce::StringArray extractFilePathsFromDescription(const juce::var& description) {
+    juce::StringArray paths;
+    if (auto* obj = description.getDynamicObject()) {
+        if (auto* arr = obj->getProperty("paths").getArray()) {
+            for (const auto& v : *arr)
+                paths.add(v.toString());
+        }
+    }
+    return paths;
+}
+}  // namespace
+#endif
+
+// See SessionView.hpp for why this bridge exists and why it is Linux-only.
+bool SessionView::acceptsInternalFilesDrag(const SourceDetails& details) {
+#if JUCE_LINUX
+    if (isInternalFilesDrag(details))
+        return isInterestedInFileDrag(extractFilePathsFromDescription(details.description));
+#endif
+    juce::ignoreUnused(details);
+    return false;
+}
+
+bool SessionView::handleInternalFilesDragEnter(const SourceDetails& details) {
+#if JUCE_LINUX
+    if (isInternalFilesDrag(details)) {
+        fileDragEnter(extractFilePathsFromDescription(details.description),
+                      details.localPosition.getX(), details.localPosition.getY());
+        return true;
+    }
+#endif
+    juce::ignoreUnused(details);
+    return false;
+}
+
+bool SessionView::handleInternalFilesDragMove(const SourceDetails& details) {
+#if JUCE_LINUX
+    if (isInternalFilesDrag(details)) {
+        fileDragMove(extractFilePathsFromDescription(details.description),
+                     details.localPosition.getX(), details.localPosition.getY());
+        return true;
+    }
+#endif
+    juce::ignoreUnused(details);
+    return false;
+}
+
+bool SessionView::handleInternalFilesDragExit(const SourceDetails& details) {
+#if JUCE_LINUX
+    if (isInternalFilesDrag(details)) {
+        fileDragExit({});
+        return true;
+    }
+#endif
+    juce::ignoreUnused(details);
+    return false;
+}
+
+bool SessionView::handleInternalFilesDrop(const SourceDetails& details) {
+#if JUCE_LINUX
+    if (isInternalFilesDrag(details)) {
+        filesDropped(extractFilePathsFromDescription(details.description),
+                     details.localPosition.getX(), details.localPosition.getY());
+        return true;
+    }
+#endif
+    juce::ignoreUnused(details);
+    return false;
+}
+
+bool SessionView::isInterestedInDragSource(const SourceDetails& details) {
+    if (auto* obj = details.description.getDynamicObject()) {
+        auto type = obj->getProperty("type").toString();
+        if (type == "plugin" || type == "sessionClip")
+            return true;
+    }
+    return acceptsInternalFilesDrag(details);
+}
+
 void SessionView::itemDragEnter(const SourceDetails& details) {
+    if (handleInternalFilesDragEnter(details))
+        return;
+
     auto* obj = details.description.getDynamicObject();
     if (!obj)
         return;
@@ -3981,6 +4063,9 @@ void SessionView::itemDragEnter(const SourceDetails& details) {
 }
 
 void SessionView::itemDragMove(const SourceDetails& details) {
+    if (handleInternalFilesDragMove(details))
+        return;
+
     auto* obj = details.description.getDynamicObject();
     if (!obj)
         return;
@@ -3998,7 +4083,10 @@ void SessionView::itemDragMove(const SourceDetails& details) {
     }
 }
 
-void SessionView::itemDragExit(const SourceDetails& /*details*/) {
+void SessionView::itemDragExit(const SourceDetails& details) {
+    if (handleInternalFilesDragExit(details))
+        return;
+
     showPluginDropOverlay_ = false;
     pluginDropTrackIndex_ = -1;
     clearDragHighlight();
@@ -4006,6 +4094,9 @@ void SessionView::itemDragExit(const SourceDetails& /*details*/) {
 }
 
 void SessionView::itemDropped(const SourceDetails& details) {
+    if (handleInternalFilesDrop(details))
+        return;
+
     showPluginDropOverlay_ = false;
     pluginDropTrackIndex_ = -1;
     clearDragHighlight();

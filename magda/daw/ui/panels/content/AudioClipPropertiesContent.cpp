@@ -638,7 +638,8 @@ void AudioClipPropertiesContent::updateFromClip() {
 
     if (hasClip) {
         stretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
-        stretchModeCombo_->setSelectedId(clip->timeStretchMode + 1, juce::dontSendNotification);
+        stretchModeCombo_->setSelectedId(clip->getEffectiveTimeStretchMode() + 1,
+                                         juce::dontSendNotification);
         const auto sourceDisplay = getSourceDisplayValues(*clip, clipId_);
         bpmValue_->setValue(sourceDisplay.bpm > 0.0 ? sourceDisplay.bpm : magda::DEFAULT_BPM,
                             juce::dontSendNotification);

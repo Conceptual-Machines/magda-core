@@ -443,16 +443,11 @@ void ClipInspector::updateFromSelectedClip() {
         stretchModeCombo_.setVisible(showAudioProps);
         if (isAudioClip) {
             clipStretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
-            // Show effective stretch mode (auto-upgraded when autoTempo/warp is active,
-            // or when pitchChange != 0 without analog pitch — TE uses SoundTouch)
-            int effectiveMode = clip->timeStretchMode;
-            bool isAnalog = clip->isAnalogPitchActive();
-            if (!isAnalog && effectiveMode == 0 &&
-                (clip->autoTempo || clip->warpEnabled || std::abs(clip->speedRatio - 1.0) > 0.001 ||
-                 std::abs(clip->pitchChange) > 0.001f)) {
-                effectiveMode = 4;  // soundtouchBetter (defaultMode)
-            }
-            stretchModeCombo_.setSelectedId(effectiveMode + 1, juce::dontSendNotification);
+            // Show the effective stretch mode (auto-upgraded when beat mode / warp
+            // / speed / pitch silently engages TE's SoundTouch) so this matches
+            // the audio editor's readout.
+            stretchModeCombo_.setSelectedId(clip->getEffectiveTimeStretchMode() + 1,
+                                            juce::dontSendNotification);
 
             // Enable/disable stretch controls based on auto-tempo mode
             if (!clip->autoTempo && clipStretchValue_) {
