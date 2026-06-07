@@ -509,6 +509,16 @@ TEST_CASE("MixAnalysisAgent: analyse a real multitrack session", "[.][mix_analys
     }
     std::cout << "[audio] timeline segments: " << input.timeline.size() << "\n";
 
+    // Song context (BPM, genre) comes from the project/transport in the real
+    // app, not from detection. This stems-only harness has no transport, so it
+    // only sets them when supplied via env; otherwise they're omitted entirely.
+    if (const char* b = std::getenv("MIX_ANALYSIS_BPM"))
+        input.bpm = juce::String(b).getFloatValue();
+    if (const char* g = std::getenv("MIX_ANALYSIS_GENRE"))
+        input.genre = g;
+    std::cout << "[audio] context: genre=" << (input.genre.empty() ? "(none)" : input.genre)
+              << " bpm=" << input.bpm << "\n";
+
     input.question = "Assess this raw multitrack: balance, dynamics, stereo image, frequency "
                      "clashes, and how the arrangement evolves. What would you address first?";
 

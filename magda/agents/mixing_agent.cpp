@@ -16,6 +16,9 @@ const std::vector<std::string>& MixAnalysisAgent::tonalBandLabels() {
 const char* MixAnalysisAgent::getSystemPrompt() {
     return "You are a senior mixing engineer assessing a song. You cannot hear the audio; "
            "instead you are given objective measurements for every track and for the master bus.\n"
+           "A 'Song context' line may give the genre, tempo (BPM) and key. Use them to judge what "
+           "is appropriate -- genre-typical loudness/dynamics and tonal balance, tempo-appropriate "
+           "low-end decay, etc. -- rather than applying one generic target.\n"
            "Each row is: name [role] | LUFS-I (integrated loudness) | peak dBFS (sample) | TP "
            "(true peak dBTP, inter-sample; >0 means real clipping) | PLR (peak-to-loudness ratio, "
            "i.e. crest / how dynamic the track is, in LU) | PSR (peak-to-short-term) | corr "
@@ -74,6 +77,15 @@ juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
     juce::String m;
     if (!input.question.empty())
         m << "Question: " << juce::String(input.question) << "\n\n";
+
+    if (input.bpm > 0.0f || !input.genre.empty()) {
+        m << "Song context:";
+        if (!input.genre.empty())
+            m << " genre=" << juce::String(input.genre);
+        if (input.bpm > 0.0f)
+            m << " | BPM=" << juce::String(input.bpm, 1);
+        m << "\n\n";
+    }
 
     m << "Mix measurements (" << static_cast<int>(input.tracks.size()) << " tracks).\n";
     m << "Columns: name [role] | LUFS-I | peak dB | TP | PLR | PSR | corr | width\n";

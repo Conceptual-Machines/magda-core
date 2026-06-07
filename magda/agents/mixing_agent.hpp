@@ -77,7 +77,10 @@ class MixAnalysisAgent {
         std::optional<TrackMix> master;  // the final mix bus, if measured
         std::vector<MaskingPair> masking;
         std::vector<Segment> timeline;  // the master mix over time (sections / windows)
-        std::string question;           // optional user question; empty = general assessment
+        // Song-level context (fed from the project/transport, not detected).
+        float bpm = 0.0f;      // tempo from the transport (0 = unknown, omitted)
+        std::string genre;     // e.g. "Funk/Soul" (empty = unknown, omitted)
+        std::string question;  // optional user question; empty = general assessment
     };
 
     struct Result {
