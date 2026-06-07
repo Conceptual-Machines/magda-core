@@ -77,6 +77,10 @@ class MixAnalysisAgent {
         std::optional<TrackMix> master;  // the final mix bus, if measured
         std::vector<MaskingPair> masking;
         std::vector<Segment> timeline;  // the master mix over time (sections / windows)
+        // Reference masters (well-regarded mixes in the target genre). The model
+        // judges the subject relative to these -- an empirical genre target that
+        // beats a generic "balanced" assumption. Each is a master fingerprint.
+        std::vector<TrackMix> references;
         // Song-level context (fed from the project/transport, not detected).
         float bpm = 0.0f;      // tempo from the transport (0 = unknown, omitted)
         std::string genre;     // e.g. "Funk/Soul" (empty = unknown, omitted)

@@ -16,9 +16,13 @@ const std::vector<std::string>& MixAnalysisAgent::tonalBandLabels() {
 const char* MixAnalysisAgent::getSystemPrompt() {
     return "You are a senior mixing engineer assessing a song. You cannot hear the audio; "
            "instead you are given objective measurements for every track and for the master bus.\n"
-           "A 'Song context' line may give the genre, tempo (BPM) and key. Use them to judge what "
-           "is appropriate -- genre-typical loudness/dynamics and tonal balance, tempo-appropriate "
-           "low-end decay, etc. -- rather than applying one generic target.\n"
+           "A 'Song context' line may give the genre, tempo (BPM) and key. Judge everything "
+           "against the genre's conventions, not a single generic 'flat/balanced' target. Tonal "
+           "balance especially is genre-relative: many genres are intentionally far from flat -- "
+           "e.g. deep/lo-fi house is warm and low-end-forward with deliberately gentle, "
+           "non-aggressive highs; trap leans on heavy sub; etc. Do NOT flag a genre-appropriate "
+           "balance, brightness or loudness as a fault. Only call out tonal/dynamic traits that "
+           "are problems even within that genre's norms.\n"
            "Each row is: name [role] | LUFS-I (integrated loudness) | peak dBFS (sample) | TP "
            "(true peak dBTP, inter-sample; >0 means real clipping) | PLR (peak-to-loudness ratio, "
            "i.e. crest / how dynamic the track is, in LU) | PSR (peak-to-short-term) | corr "
@@ -31,6 +35,11 @@ const char* MixAnalysisAgent::getSystemPrompt() {
            "You may also get inter-track masking findings: pairs of tracks whose energy competes "
            "in a frequency band, with a severity 0..1. These are measured, not guesses -- trust "
            "them over inference.\n"
+           "Reference tracks may be given ([REF] rows): well-regarded mixes in the target genre. "
+           "When present they are the ground truth for what is appropriate -- compare the subject "
+           "master's loudness, tonal balance, dynamics (PLR) and width against them and flag where "
+           "the subject deviates, rather than against any generic target. If the subject matches "
+           "the references, say so; do not invent problems.\n"
            "A Timeline may follow: the master mix sliced over time (song sections, or fixed "
            "windows) with per-slice loudness, brightness, width and coarse tonal. Use it to reason "
            "about the arrangement -- e.g. whether choruses lift, whether the low end drops out, "
@@ -94,6 +103,13 @@ juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
 
     if (input.master)
         m << "\n[MASTER] " << row(*input.master) << "\n";
+
+    if (!input.references.empty()) {
+        m << "\nReference tracks (well-mixed examples in the target genre -- compare the master "
+             "against these; they define what 'right' looks like here):\n";
+        for (const auto& r : input.references)
+            m << "[REF] " << row(r) << "\n";
+    }
 
     if (!input.masking.empty()) {
         m << "\nMasking conflicts (measured; competing tracks per band):\n";

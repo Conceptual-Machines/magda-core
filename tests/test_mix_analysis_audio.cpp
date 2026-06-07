@@ -342,11 +342,61 @@ std::string providerForModel(const juce::String& model) {
     return "openai_responses";
 }
 
+// Measure a finished stereo buffer into a master-style fingerprint (true-peak +
+// tonal + spectral + whole-song corr/width). Used for the subject master and
+// for reference tracks.
+MixAnalysisAgent::TrackMix fingerprint(const juce::AudioBuffer<float>& buf, double sr,
+                                       const juce::String& name, const std::string& role) {
+    BandArray bands{};
+    auto mix = toTrackMix(name, role, measure(buf, sr, &bands, /*enableTruePeak*/ true));
+    mix.tonalDb = collapseToMacro(bands);
+    const auto sf = spectralFeatures(bands);
+    mix.spectralCentroidHz = sf.centroidHz;
+    mix.spectralFlatness = sf.flatness;
+    mix.spectralRolloffHz = sf.rolloffHz;
+    stereoCorrWidth(buf, mix.correlation, mix.width);
+    return mix;
+}
+
+// Load reference masters once, from MIX_ANALYSIS_REFERENCES (a directory of wavs
+// or a comma-separated list of files). Each is fingerprinted as a genre target.
+std::vector<MixAnalysisAgent::TrackMix> loadReferences(juce::AudioFormatManager& fm) {
+    std::vector<MixAnalysisAgent::TrackMix> refs;
+    const char* env = std::getenv("MIX_ANALYSIS_REFERENCES");
+    if (env == nullptr)
+        return refs;
+
+    juce::Array<juce::File> files;
+    juce::File path(juce::String::fromUTF8(env));
+    if (path.isDirectory()) {
+        path.findChildFiles(files, juce::File::findFiles, false, "*.wav");
+    } else {
+        for (const auto& tok : juce::StringArray::fromTokens(juce::String::fromUTF8(env), ",", ""))
+            if (tok.trim().isNotEmpty())
+                files.add(juce::File(tok.trim()));
+    }
+
+    for (const auto& f : files) {
+        juce::AudioBuffer<float> buf;
+        double rsr = 0.0;
+        if (!readWav(fm, f, buf, rsr))
+            continue;
+        const int n = buf.getNumSamples();
+        juce::AudioBuffer<float> st(2, n);
+        st.clear();
+        st.copyFrom(0, 0, buf, 0, 0, n);
+        st.copyFrom(1, 0, buf, buf.getNumChannels() > 1 ? 1 : 0, 0, n);
+        refs.push_back(fingerprint(st, rsr, f.getFileNameWithoutExtension(), "reference"));
+    }
+    return refs;
+}
+
 }  // namespace
 
 // Run the whole pipeline on one song folder: measure stems, sum the master,
 // build the timeline + masking + context, then run each model and print.
-void analyzeSong(const juce::File& dir, const juce::StringArray& models) {
+void analyzeSong(const juce::File& dir, const juce::StringArray& models,
+                 const std::vector<MixAnalysisAgent::TrackMix>& references) {
     juce::Array<juce::File> wavs;
     dir.findChildFiles(wavs, juce::File::findFiles, false, "*.wav");
     if (wavs.isEmpty()) {
@@ -549,6 +599,8 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models) {
     std::cout << "[audio] context: genre=" << (input.genre.empty() ? "(none)" : input.genre)
               << " bpm=" << input.bpm << "\n";
 
+    input.references = references;
+
     input.question = "Assess this multitrack: balance, dynamics, stereo image, frequency "
                      "clashes, and how the arrangement evolves. What would you address first?";
 
@@ -634,6 +686,12 @@ TEST_CASE("MixAnalysisAgent: analyse real multitrack sessions", "[.][mix_analysi
     }
     std::cout << "[audio] " << songs.size() << " song(s) under " << root.getFullPathName() << "\n";
 
+    // Reference masters (measured once, shared across all songs).
+    juce::AudioFormatManager refFm;
+    refFm.registerBasicFormats();
+    auto references = loadReferences(refFm);
+    std::cout << "[audio] " << references.size() << " reference track(s)\n";
+
     for (const auto& song : songs)
-        analyzeSong(song, models);
+        analyzeSong(song, models, references);
 }
