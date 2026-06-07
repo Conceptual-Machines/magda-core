@@ -119,9 +119,12 @@ using BandArray = std::array<float, audio::kNumMaskingBands>;
 // Measure a buffer; also produces the song-averaged 1/3-octave band spectrum
 // (energy mean over all frames) when bandsOut is given.
 TrackMeasurementSnapshot measure(const juce::AudioBuffer<float>& buf, double sr,
-                                 BandArray* bandsOut = nullptr) {
+                                 BandArray* bandsOut = nullptr, bool enableTruePeak = false) {
+    // True-peak (4x oversampler) is ~60 ops/sample and dominates the cost across
+    // 20+ stems, so it's off for per-track / per-segment (sample peak there,
+    // matching production policy) and only on for the master.
     TrackMeasurer m;
-    m.prepare(sr, kBlock, /*enableTruePeak*/ true);
+    m.prepare(sr, kBlock, enableTruePeak);
     if (bandsOut != nullptr)
         m.setSpectrumCaptureEnabled(true);
 
@@ -131,13 +134,20 @@ TrackMeasurementSnapshot measure(const juce::AudioBuffer<float>& buf, double sr,
     long frames = 0;
     BandArray frameBands{};
 
-    for (int pos = 0; pos < len; pos += kBlock) {
+    // computeMaskingBandsDb rebuilds an FFT + window per call (cheap once-a-poll
+    // in production, ruinous every block here). A song-average spectrum only
+    // needs ~128 frames, so only analyse every `hop`-th block.
+    const int totalBlocks = (len + kBlock - 1) / kBlock;
+    const int hop = juce::jmax(1, totalBlocks / 128);
+    int blockIdx = 0;
+
+    for (int pos = 0; pos < len; pos += kBlock, ++blockIdx) {
         const int n = juce::jmin(kBlock, len - pos);
         const float* chans[2];
         chans[0] = buf.getReadPointer(0) + pos;
         chans[1] = nch > 1 ? buf.getReadPointer(1) + pos : chans[0];
         m.process(chans, nch, n);
-        if (bandsOut != nullptr && n >= 2048) {
+        if (bandsOut != nullptr && n >= 2048 && (blockIdx % hop) == 0) {
             audio::computeMaskingBandsDb(m.getSpectrumRing(), sr, frameBands);
             for (int b = 0; b < audio::kNumMaskingBands; ++b)
                 acc[static_cast<size_t>(b)] +=
@@ -451,8 +461,8 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models) {
     }
 
     BandArray masterBands{};
-    input.master =
-        toTrackMix("Master (stem sum, -1 dBFS)", "master", measure(master, sr, &masterBands));
+    input.master = toTrackMix("Master (stem sum, -1 dBFS)", "master",
+                              measure(master, sr, &masterBands, /*enableTruePeak*/ true));
     input.master->tonalDb = collapseToMacro(masterBands);
     {
         const auto sf = spectralFeatures(masterBands);
@@ -541,6 +551,7 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models) {
 }
 
 TEST_CASE("MixAnalysisAgent: analyse real multitrack sessions", "[.][mix_analysis][audio]") {
+    std::cout << std::unitbuf;  // flush each <<, so progress shows when redirected
     loadDotEnv(juce::File(juce::String(MAGDA_REPO_ROOT) + "/.env"));
 
     // Models to compare. Comma-separated MIX_ANALYSIS_MODELS (provider inferred
