@@ -152,13 +152,14 @@ class AIChatConsoleContent : public PanelContent,
     bool selectedClipContextAvailable_ = false;
     bool selectedClipContextEnabled_ = true;
 
-    // Mixer-view capture cockpit (#1403). In ViewMode::Mix the console drives a
-    // relational mixing pass: the selected track is the subject, the user ticks
-    // reference tracks, captures a measurement window, then sends an optional
-    // prompt. These two footer controls are visible only in mixer view.
-    std::unique_ptr<magda::SvgButton> refSelectButton_;  // opens the reference-track menu
-    std::unique_ptr<magda::SvgButton> captureButton_;    // start/stop the measurement pass
-    std::set<magda::TrackId> referenceTrackIds_;         // ticked reference tracks
+    // Reference + capture cockpit (#1403). The console drives a relational
+    // mixing pass: the selected track is the subject, the user ticks reference
+    // tracks, captures a measurement window, then sends an optional prompt.
+    // These footer controls show in any view whenever a subject is selected.
+    std::unique_ptr<magda::SvgButton> refSelectButton_;       // opens the reference-track menu
+    std::unique_ptr<magda::SvgButton> captureButton_;         // start/stop the measurement pass
+    std::unique_ptr<juce::LookAndFeel_V4> referenceMenuLnf_;  // theme font for the reference menu
+    std::set<magda::TrackId> referenceTrackIds_;              // ticked reference tracks
     bool capturing_ = false;
     // Measurement enablement we switched on for the capture, remembered so stop
     // restores the prior state without trampling other consumers (Levels meter).
@@ -180,7 +181,7 @@ class AIChatConsoleContent : public PanelContent,
     void toggleCapture();
     void startCapture();
     void stopCapture();
-    void updateMixerCaptureControls();             // show/hide footer controls per view + selection
+    void updateMixerCaptureControls();             // show/hide footer controls on selection
     juce::String formatMixCaptureContext() const;  // attached-capture summary for the agent
 
     void mouseUp(const juce::MouseEvent& event) override;

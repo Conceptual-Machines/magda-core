@@ -78,6 +78,16 @@ class BreadcrumbToggleLookAndFeel : public DialogLookAndFeel {
     }
 };
 
+// Popup-menu LookAndFeel that swaps in the theme UI font while keeping the base
+// tick / layout rendering (the reference menu is multi-select, so the ticks
+// must stay).
+class ReferenceMenuLookAndFeel : public juce::LookAndFeel_V4 {
+  public:
+    juce::Font getPopupMenuFont() override {
+        return FontManager::getInstance().getUIFont(13.0f);
+    }
+};
+
 // Forward declaration so RequestThread::run can call the formatter — the
 // definition lives further down in the file's other anon-namespace block,
 // next to isDrummerTrack().
@@ -879,6 +889,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     refSelectButton_->setTooltip("Pick reference tracks to compare the subject against");
     refSelectButton_->onClick = [this]() { showReferenceMenu(); };
     addChildComponent(*refSelectButton_);
+    referenceMenuLnf_ = std::make_unique<ReferenceMenuLookAndFeel>();
 
     captureButton_ = std::make_unique<magda::SvgButton>("MixCapture", BinaryData::record_circle_svg,
                                                         BinaryData::record_circle_svgSize);
@@ -1698,6 +1709,7 @@ void AIChatConsoleContent::showReferenceMenu() {
     auto& tm = magda::TrackManager::getInstance();
 
     juce::PopupMenu menu;
+    menu.setLookAndFeel(referenceMenuLnf_.get());
     bool anyOther = false;
     for (const auto& track : tm.getTracks()) {
         if (track.id == subject || track.id == magda::INVALID_TRACK_ID)
