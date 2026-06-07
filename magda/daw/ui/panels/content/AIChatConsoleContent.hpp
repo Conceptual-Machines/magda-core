@@ -176,7 +176,6 @@ class AIChatConsoleContent : public PanelContent,
     };
     MixCapture mixCapture_;
 
-    bool isMixerView() const;
     void showReferenceMenu();
     void toggleCapture();
     void startCapture();

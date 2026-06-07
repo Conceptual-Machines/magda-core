@@ -324,10 +324,11 @@ void AIChatConsoleContent::RequestThread::run() {
     double routerMs = 0.0, agentMs = 0.0;
 
     // Step 1: Classify intent via router. Skipped entirely when context makes
-    // the target unambiguous: mixer view hard-scopes to the mixing agent
-    // (#1402), and a drum-targetable track routes to the drummer. Either way an
-    // explicit @alias or a slash-rewritten command ("[COMMAND: ...]") opts back
-    // out, so those escape hatches keep working in every view.
+    // the target unambiguous: mixer view (or an attached capture from the
+    // reference cockpit, which works in any view) hard-scopes to the mixing
+    // agent (#1402/#1403), and a drum-targetable track routes to the drummer.
+    // Either way an explicit @alias or a slash-rewritten command
+    // ("[COMMAND: ...]") opts back out, so those escape hatches keep working.
     const auto trimmedMessage = juce::String(message).trimStart();
     const bool hasExplicitAlias = trimmedMessage.startsWithChar('@');
     const bool hasExplicitCommand = trimmedMessage.startsWith("[COMMAND:");
@@ -335,9 +336,9 @@ void AIChatConsoleContent::RequestThread::run() {
     const bool mixerView = (owner_.currentViewMode_ == magda::ViewMode::Mix ||
                             owner_.currentViewMode_ == magda::ViewMode::Master);
     std::string intent = "COMMAND";  // default fallback
-    if (mixerView && contextOverridable) {
+    if ((mixerView || owner_.mixCapture_.valid) && contextOverridable) {
         intent = "MIXING";
-        DBG("MAGDA Router: bypassed (mixer view, hard-scoped to mixing agent)");
+        DBG("MAGDA Router: bypassed (mixing context: mixer view or attached capture)");
     } else if (owner_.drummerModeActive_ && !hasExplicitAlias) {
         intent = "DRUM";
         DBG("MAGDA Router: bypassed (drummer mode, context-driven)");
@@ -875,8 +876,6 @@ AIChatConsoleContent::AIChatConsoleContent() {
     refSelectButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     refSelectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     refSelectButton_->setIconPadding(4.0f);
-    refSelectButton_->setBorderColor(DarkTheme::getBorderColour());
-    refSelectButton_->setBorderThickness(1.0f);
     refSelectButton_->setTooltip("Pick reference tracks to compare the subject against");
     refSelectButton_->onClick = [this]() { showReferenceMenu(); };
     addChildComponent(*refSelectButton_);
@@ -887,9 +886,6 @@ AIChatConsoleContent::AIChatConsoleContent() {
     captureButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     captureButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_RED));
     captureButton_->setIconPadding(4.0f);
-    captureButton_->setBorderColor(DarkTheme::getBorderColour());
-    captureButton_->setActiveBorderColor(DarkTheme::getColour(DarkTheme::ACCENT_RED));
-    captureButton_->setBorderThickness(1.0f);
     captureButton_->setTooltip("Capture levels for the subject + reference tracks");
     captureButton_->onClick = [this]() { toggleCapture(); };
     addChildComponent(*captureButton_);
@@ -1412,6 +1408,19 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
                 iconCopy->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
             }
         }
+
+        // Thin vertical dividers between the footer's right-edge controls
+        // (#1403) — separators rather than a box border around each button.
+        if (captureButton_ && captureButton_->isVisible()) {
+            g.setColour(DarkTheme::getBorderColour());
+            const auto bar = bottomBarBounds_.toFloat();
+            const float top = bar.getY() + 5.0f;
+            const float bot = bar.getBottom() - 5.0f;
+            auto sep = [&](int x) { g.drawLine((float)x, top, (float)x, bot, 1.0f); };
+            sep(refSelectButton_->getX() - 2);
+            sep(captureButton_->getX() - 1);
+            sep(sendButton_.getX() - 2);
+        }
     } else {
         // Draw DSL output area as rounded panel
         auto outputBounds = dslOutput_.getBounds().toFloat();
@@ -1437,17 +1446,17 @@ void AIChatConsoleContent::resized() {
         auto bottomBar = bounds.removeFromBottom(26);
         bottomBarBounds_ = bottomBar;
 
-        // Send button stays on the footer's right edge. Left of it: in mixer
-        // view the capture controls [refs][capture] (#1403); otherwise the
-        // clip-context toggle uses that space (it is hidden in mixer view, so
-        // the two never compete for room).
+        // Footer right edge, from the right: send, then the capture controls
+        // [refs][capture] (#1403, shown whenever a subject is selected), then
+        // the clip-context toggle when a drum clip is in context.
         sendButton_.setBounds(bottomBar.removeFromRight(22));
-        if (isMixerView() && captureButton_ && captureButton_->isVisible()) {
+        if (captureButton_ && captureButton_->isVisible()) {
             bottomBar.removeFromRight(4);
             captureButton_->setBounds(bottomBar.removeFromRight(24));
             bottomBar.removeFromRight(2);
             refSelectButton_->setBounds(bottomBar.removeFromRight(24));
-        } else if (selectedClipContextToggle_.isVisible()) {
+        }
+        if (selectedClipContextToggle_.isVisible()) {
             bottomBar.removeFromRight(6);
             selectedClipContextToggle_.setBounds(bottomBar.removeFromRight(86));
         }
@@ -1660,29 +1669,22 @@ void AIChatConsoleContent::viewModeChanged(magda::ViewMode mode, const magda::Au
         return;
     currentViewMode_ = mode;
     // Reflect the view in the context glyph. The active view also scopes agent
-    // routing in RequestThread::run (mixer view -> mixing agent, #1402).
-    // Leaving mixer view abandons any in-flight capture so we don't leave the
-    // measurement layer armed behind the user's back.
-    if (!isMixerView() && capturing_)
-        stopCapture();
-    updateMixerCaptureControls();
+    // routing in RequestThread::run (mixer view -> mixing agent, #1402). The
+    // capture cockpit itself is view-independent, so it stays armed across view
+    // switches.
     updateContextBar();
 }
 
 // ============================================================================
-// Mixer-view capture cockpit (#1403)
+// Reference + capture cockpit (#1403)
 // ============================================================================
 
-bool AIChatConsoleContent::isMixerView() const {
-    return currentViewMode_ == magda::ViewMode::Mix || currentViewMode_ == magda::ViewMode::Master;
-}
-
 void AIChatConsoleContent::updateMixerCaptureControls() {
-    // The reference picker + capture button only make sense in mixer view, and
-    // only once a subject track is selected (the subject is the selection).
-    const bool subjectSelected =
+    // The reference picker + capture button are available in every view (the
+    // mixing capture isn't mixer-view-only infrastructure), gated only on a
+    // subject track being selected (the subject is the current selection).
+    const bool show =
         magda::SelectionManager::getInstance().getSelectedTrack() != magda::INVALID_TRACK_ID;
-    const bool show = isMixerView() && subjectSelected;
     if (refSelectButton_)
         refSelectButton_->setVisible(show);
     if (captureButton_) {
@@ -2093,9 +2095,9 @@ void AIChatConsoleContent::chainNodeSelectionChanged(const magda::ChainNodePath&
 
 void AIChatConsoleContent::updateContextBar() {
     juce::String label = contextText_;
-    // In mixer view, surface how many reference tracks are ticked so the user
-    // has feedback on their picks without reopening the dropdown.
-    if (isMixerView() && !referenceTrackIds_.empty())
+    // Surface how many reference tracks are ticked so the user has feedback on
+    // their picks without reopening the dropdown.
+    if (!referenceTrackIds_.empty())
         label << juce::String::fromUTF8("  \xc2\xb7 +")
               << juce::String(static_cast<int>(referenceTrackIds_.size())) << " ref"
               << (referenceTrackIds_.size() == 1 ? "" : "s");
