@@ -4,6 +4,7 @@
 
 #include <atomic>
 
+#include "analysis/BandSpectrum.hpp"
 #include "analysis/TrackMeasurer.hpp"
 
 namespace magda::daw::audio {
@@ -76,6 +77,17 @@ class TrackMeasurementPlugin : public te::Plugin {
     /// Message thread. Latest measurements (lock-free).
     TrackMeasurementSnapshot getSnapshot() const noexcept {
         return measurer_.read();
+    }
+
+    /// Enable/disable mono signal capture for masking band analysis (heavier; on
+    /// only during a masking pass). Message thread.
+    void setSpectrumCaptureEnabled(bool shouldCapture) noexcept {
+        measurer_.setSpectrumCaptureEnabled(shouldCapture);
+    }
+
+    /// Message thread. Compute the current per-band energy (dB) for masking.
+    void getMaskingBandsDb(std::array<float, kNumMaskingBands>& out) const {
+        computeMaskingBandsDb(measurer_.getSpectrumRing(), measurer_.sampleRate(), out);
     }
 
     void initialise(const te::PluginInitialisationInfo& info) override {
