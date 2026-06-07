@@ -323,12 +323,22 @@ void AIChatConsoleContent::RequestThread::run() {
     auto totalStart = std::chrono::steady_clock::now();
     double routerMs = 0.0, agentMs = 0.0;
 
-    // Step 1: Classify intent via router. Skipped entirely when the user is
-    // on a drum-targetable track and didn't lead with an explicit @alias —
-    // context is unambiguous, no need to spend a model call on classification.
-    const bool hasExplicitAlias = juce::String(message).trimStart().startsWithChar('@');
+    // Step 1: Classify intent via router. Skipped entirely when context makes
+    // the target unambiguous: mixer view hard-scopes to the mixing agent
+    // (#1402), and a drum-targetable track routes to the drummer. Either way an
+    // explicit @alias or a slash-rewritten command ("[COMMAND: ...]") opts back
+    // out, so those escape hatches keep working in every view.
+    const auto trimmedMessage = juce::String(message).trimStart();
+    const bool hasExplicitAlias = trimmedMessage.startsWithChar('@');
+    const bool hasExplicitCommand = trimmedMessage.startsWith("[COMMAND:");
+    const bool contextOverridable = !hasExplicitAlias && !hasExplicitCommand;
+    const bool mixerView = (owner_.currentViewMode_ == magda::ViewMode::Mix ||
+                            owner_.currentViewMode_ == magda::ViewMode::Master);
     std::string intent = "COMMAND";  // default fallback
-    if (owner_.drummerModeActive_ && !hasExplicitAlias) {
+    if (mixerView && contextOverridable) {
+        intent = "MIXING";
+        DBG("MAGDA Router: bypassed (mixer view, hard-scoped to mixing agent)");
+    } else if (owner_.drummerModeActive_ && !hasExplicitAlias) {
         intent = "DRUM";
         DBG("MAGDA Router: bypassed (drummer mode, context-driven)");
     } else if (owner_.routerAgent_) {
@@ -598,6 +608,11 @@ void AIChatConsoleContent::RequestThread::run() {
                 musicDescription = std::move(result.description);
             }
         }
+    } else if (intent == "MIXING") {
+        // Mixer view hard-scopes here (#1402). The mixing agent (#886) lands on
+        // a follow-up branch; until then surface a placeholder so the routing is
+        // observable without dispatching to a non-existent agent.
+        error = "Mixing agent is not wired up yet (coming soon).";
     }
 
     agentMs =
@@ -1350,6 +1365,11 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
                 auto iconCopy = icon->createCopy();
                 iconCopy->replaceColour(svgGrey, colour);
                 iconCopy->replaceColour(svgWhite, colour);
+                // The footer view glyphs use fill="currentColor", which JUCE
+                // resolves to black. Recolour that too (matches SvgButton) or
+                // the icon renders dark regardless of the grey/white swaps.
+                iconCopy->replaceColour(juce::Colours::black, colour);
+                iconCopy->replaceColour(juce::Colour(0xFF000000), colour);
                 iconCopy->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
             }
         }
@@ -1589,8 +1609,8 @@ void AIChatConsoleContent::viewModeChanged(magda::ViewMode mode, const magda::Au
     if (currentViewMode_ == mode)
         return;
     currentViewMode_ = mode;
-    // Slice 1: reflect the view in the context glyph. View-scoped agent routing
-    // (mixer view -> mixing agent) is wired in the routing slice (#1402).
+    // Reflect the view in the context glyph. The active view also scopes agent
+    // routing in RequestThread::run (mixer view -> mixing agent, #1402).
     repaint();
 }
 
