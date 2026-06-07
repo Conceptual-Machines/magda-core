@@ -343,6 +343,7 @@ target_sources(magda_daw PRIVATE
     plugins/InstrumentMeterTapPlugin.cpp
     plugins/OscilloscopePlugin.cpp
     plugins/SpectrumAnalyzerPlugin.cpp
+    plugins/LevelsPlugin.cpp
     plugins/TrackMeasurementPlugin.cpp
     plugins/MidiDevicePlugin.cpp
     plugins/FaustPlugin.cpp

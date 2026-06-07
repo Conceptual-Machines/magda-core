@@ -53,6 +53,7 @@ enum class InternalDeviceKind {
     // --- Analysis (transparent passthrough; DeviceType::Analysis) -------
     Oscilloscope,
     SpectrumAnalyzer,
+    Levels,  // loudness/level/stereo meter (issue #1389)
     // --- Faust ---------------------------------------------------------
     Faust,  // interpreter-based, runs arbitrary user .dsp
 };

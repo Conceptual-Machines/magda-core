@@ -5,6 +5,7 @@
 #include "plugins/DrumGridPlugin.hpp"
 #include "plugins/FaustPlugin.hpp"
 #include "plugins/InstrumentMeterTapPlugin.hpp"
+#include "plugins/LevelsPlugin.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
@@ -45,6 +46,7 @@ constexpr const char* kToneAliases[] = {"tone", "tonegenerator"};
 constexpr const char* kMeterAliases[] = {"meter", "levelmeter"};
 constexpr const char* kOscilloscopeAliases[] = {"scope"};
 constexpr const char* kSpectrumAliases[] = {"spectrum", "analyzer"};
+constexpr const char* kLevelsAliases[] = {"loudness", "lufs"};
 
 const InternalPluginSpec kSpecs[] = {
     {InternalDeviceKind::TeEq, te::EqualiserPlugin::xmlTypeName, "Equaliser", "EQ",
@@ -159,13 +161,17 @@ const InternalPluginSpec kSpecs[] = {
      "Analysis", "Real-time FFT spectrum display with log-frequency axis and peak hold.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, kSpectrumAliases,
      std::size(kSpectrumAliases), matches<SpectrumAnalyzerPlugin>, nullptr, true},
+    {InternalDeviceKind::Levels, LevelsPlugin::xmlTypeName, "Levels", "Analysis",
+     "Loudness, true-peak and stereo meter (LUFS, dBTP, correlation, dynamics).",
+     InternalPluginCreateMode::SavedStateOrFresh, true, true, kLevelsAliases,
+     std::size(kLevelsAliases), matches<LevelsPlugin>, nullptr, true},
 };
 
 const InternalPluginSpec* const kSpecPtrs[] = {
     &kSpecs[0],  &kSpecs[1],  &kSpecs[2],  &kSpecs[3],  &kSpecs[4],  &kSpecs[5],  &kSpecs[6],
     &kSpecs[7],  &kSpecs[8],  &kSpecs[9],  &kSpecs[10], &kSpecs[11], &kSpecs[12], &kSpecs[13],
     &kSpecs[14], &kSpecs[15], &kSpecs[16], &kSpecs[17], &kSpecs[18], &kSpecs[19], &kSpecs[20],
-    &kSpecs[21], &kSpecs[22], &kSpecs[23], &kSpecs[24], &kSpecs[25], &kSpecs[26],
+    &kSpecs[21], &kSpecs[22], &kSpecs[23], &kSpecs[24], &kSpecs[25], &kSpecs[26], &kSpecs[27],
 };
 
 bool typeMatchesAlias(const juce::String& type, const InternalPluginSpec& spec) {

@@ -9,6 +9,7 @@
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/InstrumentMeterTapPlugin.hpp"
+#include "audio/plugins/LevelsPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/MidiReceivePlugin.hpp"
@@ -95,6 +96,8 @@ const InternalDeviceMetadata kMetadata[] = {
      "Transparent waveform monitor for inspecting signal shape over time."},
     {InternalDeviceKind::SpectrumAnalyzer, "Spectrum Analyzer", "", "Analysis",
      "Real-time FFT spectrum display with log-frequency axis and peak hold."},
+    {InternalDeviceKind::Levels, "Levels", "", "Analysis",
+     "Loudness, true-peak and stereo meter (LUFS, dBTP, correlation, dynamics)."},
     {InternalDeviceKind::Faust, "Faust", "", "Experimental",
      "Interpreted Faust device for loading and editing user DSP code."},
 };
@@ -139,6 +142,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::DrumGridPlugin;
     using daw::audio::FaustPlugin;
     using daw::audio::InstrumentMeterTapPlugin;
+    using daw::audio::LevelsPlugin;
     using daw::audio::MagdaSamplerPlugin;
     using daw::audio::MidiChordEnginePlugin;
     using daw::audio::OscilloscopePlugin;
@@ -173,6 +177,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::StepSequencer, StepSequencerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Oscilloscope, OscilloscopePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::SpectrumAnalyzer, SpectrumAnalyzerPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::Levels, LevelsPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::InstrumentMeterTap, InstrumentMeterTapPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::TrackMeasurement, TrackMeasurementPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Faust, FaustPlugin::xmlTypeName, nullptr},
@@ -214,7 +219,8 @@ const InternalDeviceMetadata* getInternalDeviceMetadataForPluginId(const juce::S
 
 bool isAnalysisDevice(const juce::String& pluginId) {
     const auto kind = classifyInternalDevice(pluginId);
-    return kind == InternalDeviceKind::Oscilloscope || kind == InternalDeviceKind::SpectrumAnalyzer;
+    return kind == InternalDeviceKind::Oscilloscope ||
+           kind == InternalDeviceKind::SpectrumAnalyzer || kind == InternalDeviceKind::Levels;
 }
 
 int postFxAnalysisDeviceOrder(const juce::String& pluginId) {
@@ -223,6 +229,8 @@ int postFxAnalysisDeviceOrder(const juce::String& pluginId) {
             return 0;
         case InternalDeviceKind::SpectrumAnalyzer:
             return 1;
+        case InternalDeviceKind::Levels:
+            return 2;
         default:
             return -1;
     }
