@@ -323,12 +323,22 @@ void AIChatConsoleContent::RequestThread::run() {
     auto totalStart = std::chrono::steady_clock::now();
     double routerMs = 0.0, agentMs = 0.0;
 
-    // Step 1: Classify intent via router. Skipped entirely when the user is
-    // on a drum-targetable track and didn't lead with an explicit @alias —
-    // context is unambiguous, no need to spend a model call on classification.
-    const bool hasExplicitAlias = juce::String(message).trimStart().startsWithChar('@');
+    // Step 1: Classify intent via router. Skipped entirely when context makes
+    // the target unambiguous: mixer view hard-scopes to the mixing agent
+    // (#1402), and a drum-targetable track routes to the drummer. Either way an
+    // explicit @alias or a slash-rewritten command ("[COMMAND: ...]") opts back
+    // out, so those escape hatches keep working in every view.
+    const auto trimmedMessage = juce::String(message).trimStart();
+    const bool hasExplicitAlias = trimmedMessage.startsWithChar('@');
+    const bool hasExplicitCommand = trimmedMessage.startsWith("[COMMAND:");
+    const bool contextOverridable = !hasExplicitAlias && !hasExplicitCommand;
+    const bool mixerView = (owner_.currentViewMode_ == magda::ViewMode::Mix ||
+                            owner_.currentViewMode_ == magda::ViewMode::Master);
     std::string intent = "COMMAND";  // default fallback
-    if (owner_.drummerModeActive_ && !hasExplicitAlias) {
+    if (mixerView && contextOverridable) {
+        intent = "MIXING";
+        DBG("MAGDA Router: bypassed (mixer view, hard-scoped to mixing agent)");
+    } else if (owner_.drummerModeActive_ && !hasExplicitAlias) {
         intent = "DRUM";
         DBG("MAGDA Router: bypassed (drummer mode, context-driven)");
     } else if (owner_.routerAgent_) {
@@ -598,6 +608,11 @@ void AIChatConsoleContent::RequestThread::run() {
                 musicDescription = std::move(result.description);
             }
         }
+    } else if (intent == "MIXING") {
+        // Mixer view hard-scopes here (#1402). The mixing agent (#886) lands on
+        // a follow-up branch; until then surface a placeholder so the routing is
+        // observable without dispatching to a non-existent agent.
+        error = "Mixing agent is not wired up yet (coming soon).";
     }
 
     agentMs =
@@ -810,6 +825,15 @@ AIChatConsoleContent::AIChatConsoleContent() {
         juce::Drawable::createFromImageData(BinaryData::clip_svg, BinaryData::clip_svgSize);
     drumIconDrawable_ = juce::Drawable::createFromImageData(BinaryData::drum_grid_svg,
                                                             BinaryData::drum_grid_svgSize);
+    // View-context glyphs (#1402), matching the footer view switcher.
+    sessionIconDrawable_ = juce::Drawable::createFromImageData(
+        BinaryData::iconsessionboldm_svg, BinaryData::iconsessionboldm_svgSize);
+    arrangeIconDrawable_ = juce::Drawable::createFromImageData(
+        BinaryData::iconarrangementboldm_svg, BinaryData::iconarrangementboldm_svgSize);
+    mixIconDrawable_ = juce::Drawable::createFromImageData(BinaryData::iconmixboldm_svg,
+                                                           BinaryData::iconmixboldm_svgSize);
+    currentViewMode_ = magda::ViewModeController::getInstance().getViewMode();
+    magda::ViewModeController::getInstance().addListener(this);
 
     // Context label (always visible, inside bottom bar)
     contextLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
@@ -1027,6 +1051,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
+    magda::ViewModeController::getInstance().removeListener(this);
     selectedClipContextToggle_.setLookAndFeel(nullptr);
     if (dslEditor_)
         dslEditor_->removeKeyListener(this);
@@ -1315,14 +1340,21 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
                              combined.getRight() - 1.0f);
 
         // Draw context icon
-        if (contextIcon_ != ContextIcon::None) {
+        {
+            // #1402: the context glyph reflects the active view, not selection.
             juce::Drawable* icon = nullptr;
-            if (contextIcon_ == ContextIcon::Drummer)
-                icon = drumIconDrawable_.get();
-            else if (contextIcon_ == ContextIcon::Track || contextIcon_ == ContextIcon::Device)
-                icon = trackIconDrawable_.get();
-            else if (contextIcon_ == ContextIcon::Clip)
-                icon = clipIconDrawable_.get();
+            switch (currentViewMode_) {
+                case magda::ViewMode::Live:
+                    icon = sessionIconDrawable_.get();
+                    break;
+                case magda::ViewMode::Arrange:
+                    icon = arrangeIconDrawable_.get();
+                    break;
+                case magda::ViewMode::Mix:
+                case magda::ViewMode::Master:
+                    icon = mixIconDrawable_.get();
+                    break;
+            }
 
             if (icon) {
                 auto iconBounds = contextIconBounds_.toFloat().reduced(6.0f);
@@ -1333,6 +1365,11 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
                 auto iconCopy = icon->createCopy();
                 iconCopy->replaceColour(svgGrey, colour);
                 iconCopy->replaceColour(svgWhite, colour);
+                // The footer view glyphs use fill="currentColor", which JUCE
+                // resolves to black. Recolour that too (matches SvgButton) or
+                // the icon renders dark regardless of the grey/white swaps.
+                iconCopy->replaceColour(juce::Colours::black, colour);
+                iconCopy->replaceColour(juce::Colour(0xFF000000), colour);
                 iconCopy->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
             }
         }
@@ -1566,6 +1603,15 @@ void AIChatConsoleContent::projectOpened(const magda::ProjectInfo& /*info*/) {
 
 void AIChatConsoleContent::configChanged() {
     updateConfigStatus();
+}
+
+void AIChatConsoleContent::viewModeChanged(magda::ViewMode mode, const magda::AudioEngineProfile&) {
+    if (currentViewMode_ == mode)
+        return;
+    currentViewMode_ = mode;
+    // Reflect the view in the context glyph. The active view also scopes agent
+    // routing in RequestThread::run (mixer view -> mixing agent, #1402).
+    repaint();
 }
 
 // ============================================================================
