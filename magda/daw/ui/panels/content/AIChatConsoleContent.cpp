@@ -610,9 +610,18 @@ void AIChatConsoleContent::RequestThread::run() {
         }
     } else if (intent == "MIXING") {
         // Mixer view hard-scopes here (#1402). The mixing agent (#886) lands on
-        // a follow-up branch; until then surface a placeholder so the routing is
-        // observable without dispatching to a non-existent agent.
-        error = "Mixing agent is not wired up yet (coming soon).";
+        // a follow-up branch; until then echo the attached capture (#1403) plus
+        // the prompt so the cockpit is observable end-to-end without dispatching
+        // to a non-existent agent.
+        juce::String summary;
+        if (owner_.mixCapture_.valid)
+            summary << owner_.formatMixCaptureContext();
+        else
+            summary << "No mix levels attached. Capture the subject + references first.";
+        if (!message.empty())
+            summary << "\nPrompt: " << juce::String(message);
+        summary << "\n(Mixing agent #886 not wired up yet.)";
+        error = summary.toStdString();
     }
 
     agentMs =
@@ -858,6 +867,28 @@ AIChatConsoleContent::AIChatConsoleContent() {
     selectedClipContextToggle_.setVisible(false);
     addAndMakeVisible(selectedClipContextToggle_);
 
+    // Mixer-view capture controls (#1403). Hidden child components — shown only
+    // in mixer view by updateMixerCaptureControls(). The chevron opens the
+    // reference-track menu; the record dot arms/stops a measurement capture.
+    refSelectButton_ = std::make_unique<magda::SvgButton>("MixRefs", BinaryData::chevron_down_svg,
+                                                          BinaryData::chevron_down_svgSize);
+    refSelectButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    refSelectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    refSelectButton_->setIconPadding(4.0f);
+    refSelectButton_->setTooltip("Pick reference tracks to compare the subject against");
+    refSelectButton_->onClick = [this]() { showReferenceMenu(); };
+    addChildComponent(*refSelectButton_);
+
+    captureButton_ = std::make_unique<magda::SvgButton>("MixCapture", BinaryData::record_circle_svg,
+                                                        BinaryData::record_circle_svgSize);
+    captureButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    captureButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    captureButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+    captureButton_->setIconPadding(4.0f);
+    captureButton_->setTooltip("Capture levels for the subject + reference tracks");
+    captureButton_->onClick = [this]() { toggleCapture(); };
+    addChildComponent(*captureButton_);
+
     // Send button (embedded in bottom bar) — SVG icon
     auto enterSvg =
         juce::Drawable::createFromImageData(BinaryData::enter_svg, BinaryData::enter_svgSize);
@@ -1051,6 +1082,9 @@ AIChatConsoleContent::AIChatConsoleContent() {
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
+    // Don't leave the measurement layer armed if we're torn down mid-capture.
+    if (capturing_)
+        stopCapture();
     magda::ViewModeController::getInstance().removeListener(this);
     selectedClipContextToggle_.setLookAndFeel(nullptr);
     if (dslEditor_)
@@ -1397,8 +1431,16 @@ void AIChatConsoleContent::resized() {
         // Context bar above tabs
         auto bottomBar = bounds.removeFromBottom(26);
         bottomBarBounds_ = bottomBar;
-        sendButton_.setBounds(bottomBar.removeFromRight(22));
-        if (selectedClipContextToggle_.isVisible()) {
+
+        // Right edge of the footer: in mixer view the capture controls
+        // [refs][capture] live here (#1403); otherwise the clip-context toggle
+        // uses the same space. The send button moved up to the input box so
+        // there's room for both.
+        if (isMixerView() && captureButton_ && captureButton_->isVisible()) {
+            captureButton_->setBounds(bottomBar.removeFromRight(24));
+            bottomBar.removeFromRight(2);
+            refSelectButton_->setBounds(bottomBar.removeFromRight(24));
+        } else if (selectedClipContextToggle_.isVisible()) {
             bottomBar.removeFromRight(6);
             selectedClipContextToggle_.setBounds(bottomBar.removeFromRight(86));
         }
@@ -1408,6 +1450,16 @@ void AIChatConsoleContent::resized() {
         // Input box directly above context bar (no gap — unified shape)
         auto inputArea = bounds.removeFromBottom(80);
         inputBox_->setBounds(inputArea);
+
+        // Send button sits in the input box's top-right corner (mirrors the
+        // chat panel's clear/copy buttons), freeing the footer's right edge.
+        {
+            constexpr int sendSize = 22;
+            constexpr int sendMargin = 4;
+            sendButton_.setBounds(inputArea.getRight() - sendSize - sendMargin,
+                                  inputArea.getY() + sendMargin, sendSize, sendSize);
+            sendButton_.toFront(false);
+        }
 
         bounds.removeFromBottom(8);  // Spacing
 
@@ -1453,6 +1505,7 @@ void AIChatConsoleContent::resized() {
 void AIChatConsoleContent::onActivated() {
     buildAliasList();
     updateConfigStatus();
+    updateMixerCaptureControls();
     if (isShowing()) {
         if (activeTab_ == ConsoleTab::AI)
             inputBox_->grabKeyboardFocus();
@@ -1611,7 +1664,176 @@ void AIChatConsoleContent::viewModeChanged(magda::ViewMode mode, const magda::Au
     currentViewMode_ = mode;
     // Reflect the view in the context glyph. The active view also scopes agent
     // routing in RequestThread::run (mixer view -> mixing agent, #1402).
-    repaint();
+    // Leaving mixer view abandons any in-flight capture so we don't leave the
+    // measurement layer armed behind the user's back.
+    if (!isMixerView() && capturing_)
+        stopCapture();
+    updateMixerCaptureControls();
+    updateContextBar();
+}
+
+// ============================================================================
+// Mixer-view capture cockpit (#1403)
+// ============================================================================
+
+bool AIChatConsoleContent::isMixerView() const {
+    return currentViewMode_ == magda::ViewMode::Mix || currentViewMode_ == magda::ViewMode::Master;
+}
+
+void AIChatConsoleContent::updateMixerCaptureControls() {
+    // The reference picker + capture button only make sense in mixer view, and
+    // only once a subject track is selected (the subject is the selection).
+    const bool subjectSelected =
+        magda::SelectionManager::getInstance().getSelectedTrack() != magda::INVALID_TRACK_ID;
+    const bool show = isMixerView() && subjectSelected;
+    if (refSelectButton_)
+        refSelectButton_->setVisible(show);
+    if (captureButton_) {
+        captureButton_->setVisible(show);
+        captureButton_->setActive(capturing_);
+    }
+}
+
+void AIChatConsoleContent::showReferenceMenu() {
+    const auto subject = magda::SelectionManager::getInstance().getSelectedTrack();
+    auto& tm = magda::TrackManager::getInstance();
+
+    juce::PopupMenu menu;
+    bool anyOther = false;
+    for (const auto& track : tm.getTracks()) {
+        if (track.id == subject || track.id == magda::INVALID_TRACK_ID)
+            continue;
+        anyOther = true;
+        const bool ticked = referenceTrackIds_.count(track.id) > 0;
+        // Toggle the track's membership in the reference set, then reopen so the
+        // user can tick several without the menu closing between each.
+        menu.addItem(track.name.isNotEmpty() ? track.name : juce::String(track.id),
+                     /*enabled*/ true, ticked, [this, id = track.id]() {
+                         if (referenceTrackIds_.count(id) > 0)
+                             referenceTrackIds_.erase(id);
+                         else
+                             referenceTrackIds_.insert(id);
+                         updateContextBar();
+                     });
+    }
+    if (!anyOther)
+        menu.addItem("(no other tracks)", false, false, nullptr);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(refSelectButton_.get()));
+}
+
+void AIChatConsoleContent::toggleCapture() {
+    if (capturing_)
+        stopCapture();
+    else
+        startCapture();
+}
+
+void AIChatConsoleContent::startCapture() {
+    const auto subject = magda::SelectionManager::getInstance().getSelectedTrack();
+    if (subject == magda::INVALID_TRACK_ID) {
+        appendToChat(juce::String::charToString(0x25C6) +
+                     " Select a subject track in the mixer before capturing.");
+        return;
+    }
+
+    auto& tmm = magda::TrackMeasurementManager::getInstance();
+
+    // Remember what we switch on so stopCapture() restores the prior state and
+    // doesn't disable taps another consumer (the Levels meter) still wants.
+    captureAddedTracks_.clear();
+    captureAddedGlobal_ = !tmm.isGlobalEnabled();
+    captureAddedMasking_ = !tmm.isMaskingAnalysisEnabled();
+
+    if (captureAddedGlobal_)
+        tmm.setGlobalEnabled(true);
+
+    auto arm = [&](magda::TrackId id) {
+        if (id != magda::INVALID_TRACK_ID && !tmm.isTrackEnabled(id)) {
+            tmm.setTrackEnabled(id, true);
+            captureAddedTracks_.insert(id);
+        }
+    };
+    arm(subject);
+    for (auto ref : referenceTrackIds_)
+        arm(ref);
+
+    if (captureAddedMasking_)
+        tmm.setMaskingAnalysisEnabled(true);
+
+    capturing_ = true;
+    captureButton_->setActive(true);
+    captureButton_->setTooltip("Stop capture and attach the measured levels");
+    appendToChat(juce::String::charToString(0x25C6) +
+                 " Capturing levels... play the section, then stop to attach.");
+}
+
+void AIChatConsoleContent::stopCapture() {
+    auto& tmm = magda::TrackMeasurementManager::getInstance();
+    const auto subject = magda::SelectionManager::getInstance().getSelectedTrack();
+
+    // Gather everything the enabled taps measured during the window. getAllSnapshots
+    // returns only enabled tracks, which is exactly the subject + references set.
+    mixCapture_.subject = subject;
+    mixCapture_.refs.assign(referenceTrackIds_.begin(), referenceTrackIds_.end());
+    mixCapture_.snapshots = tmm.getAllSnapshots();
+    mixCapture_.masking = tmm.getMaskingFindings();
+    mixCapture_.valid = !mixCapture_.snapshots.empty();
+
+    // Restore the prior measurement state (only undo what we added).
+    for (auto id : captureAddedTracks_)
+        tmm.setTrackEnabled(id, false);
+    captureAddedTracks_.clear();
+    if (captureAddedMasking_)
+        tmm.setMaskingAnalysisEnabled(false);
+    if (captureAddedGlobal_)
+        tmm.setGlobalEnabled(false);
+    captureAddedMasking_ = false;
+    captureAddedGlobal_ = false;
+
+    capturing_ = false;
+    if (captureButton_) {
+        captureButton_->setActive(false);
+        captureButton_->setTooltip("Capture levels for the subject + reference tracks");
+    }
+
+    if (mixCapture_.valid)
+        appendToChat(juce::String::charToString(0x25C6) + " " + formatMixCaptureContext());
+    else
+        appendToChat(juce::String::charToString(0x25C6) +
+                     " No levels captured (was the section playing?).");
+    updateContextBar();
+}
+
+juce::String AIChatConsoleContent::formatMixCaptureContext() const {
+    auto& tm = magda::TrackManager::getInstance();
+    auto trackName = [&tm](magda::TrackId id) -> juce::String {
+        const auto* t = tm.getTrack(id);
+        return (t != nullptr && t->name.isNotEmpty()) ? t->name : juce::String(id);
+    };
+
+    juce::String out;
+    out << "Captured mix levels\n";
+    out << "Subject: " << trackName(mixCapture_.subject) << "\n";
+
+    for (const auto& [id, snap] : mixCapture_.snapshots) {
+        const bool isSubject = (id == mixCapture_.subject);
+        out << "  " << (isSubject ? "* " : "- ") << trackName(id) << ": "
+            << juce::String(snap.integratedLufs, 1) << " LUFS, peak "
+            << juce::String(snap.samplePeakDb, 1) << " dB, PLR " << juce::String(snap.plr, 1)
+            << "\n";
+    }
+
+    if (!mixCapture_.masking.empty()) {
+        out << "Masking:\n";
+        for (const auto& f : mixCapture_.masking) {
+            out << "  " << f.nameA << " vs " << f.nameB << " @ "
+                << juce::String(juce::roundToInt(f.loHz)) << "-"
+                << juce::String(juce::roundToInt(f.hiHz)) << " Hz (severity "
+                << juce::String(f.severity, 2) << ")\n";
+        }
+    }
+    return out;
 }
 
 // ============================================================================
@@ -1625,6 +1847,7 @@ void AIChatConsoleContent::selectionTypeChanged(magda::SelectionType newType) {
         selectedClipContextAvailable_ = false;
         updateContextBar();
     }
+    updateMixerCaptureControls();
 }
 
 namespace {
@@ -1793,6 +2016,12 @@ void AIChatConsoleContent::trackSelectionChanged(magda::TrackId trackId) {
         contextText_ = trackName;
         contextIcon_ = ContextIcon::Track;
     }
+    // The newly selected track is the mixing subject; it can't also be one of
+    // its own references. A previously captured set no longer matches the new
+    // subject, so drop it.
+    referenceTrackIds_.erase(trackId);
+    mixCapture_ = {};
+    updateMixerCaptureControls();
     updateContextBar();
 }
 
@@ -1866,7 +2095,14 @@ void AIChatConsoleContent::chainNodeSelectionChanged(const magda::ChainNodePath&
 }
 
 void AIChatConsoleContent::updateContextBar() {
-    contextLabel_.setText(contextText_, juce::dontSendNotification);
+    juce::String label = contextText_;
+    // In mixer view, surface how many reference tracks are ticked so the user
+    // has feedback on their picks without reopening the dropdown.
+    if (isMixerView() && !referenceTrackIds_.empty())
+        label << juce::String::fromUTF8("  \xc2\xb7 +")
+              << juce::String(static_cast<int>(referenceTrackIds_.size())) << " ref"
+              << (referenceTrackIds_.size() == 1 ? "" : "s");
+    contextLabel_.setText(label, juce::dontSendNotification);
     contextLabel_.setColour(juce::Label::textColourId,
                             contextEnabled_ ? DarkTheme::getAccentColour()
                                             : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));

@@ -15,6 +15,7 @@
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/SelectionManager.hpp"
+#include "../../../core/TrackMeasurementManager.hpp"
 #include "../../../core/ViewModeController.hpp"
 #include "../../../project/ProjectManager.hpp"
 #include "ChatPromptTokeniser.hpp"
@@ -150,6 +151,38 @@ class AIChatConsoleContent : public PanelContent,
     bool contextEnabled_ = true;
     bool selectedClipContextAvailable_ = false;
     bool selectedClipContextEnabled_ = true;
+
+    // Mixer-view capture cockpit (#1403). In ViewMode::Mix the console drives a
+    // relational mixing pass: the selected track is the subject, the user ticks
+    // reference tracks, captures a measurement window, then sends an optional
+    // prompt. These two footer controls are visible only in mixer view.
+    std::unique_ptr<magda::SvgButton> refSelectButton_;  // opens the reference-track menu
+    std::unique_ptr<magda::SvgButton> captureButton_;    // start/stop the measurement pass
+    std::set<magda::TrackId> referenceTrackIds_;         // ticked reference tracks
+    bool capturing_ = false;
+    // Measurement enablement we switched on for the capture, remembered so stop
+    // restores the prior state without trampling other consumers (Levels meter).
+    std::set<magda::TrackId> captureAddedTracks_;
+    bool captureAddedGlobal_ = false;
+    bool captureAddedMasking_ = false;
+    // The most recent capture, attached to the next message until consumed.
+    struct MixCapture {
+        bool valid = false;
+        magda::TrackId subject = magda::INVALID_TRACK_ID;
+        std::vector<magda::TrackId> refs;
+        std::vector<std::pair<magda::TrackId, magda::daw::audio::TrackMeasurementSnapshot>>
+            snapshots;
+        std::vector<magda::daw::audio::MaskingFinding> masking;
+    };
+    MixCapture mixCapture_;
+
+    bool isMixerView() const;
+    void showReferenceMenu();
+    void toggleCapture();
+    void startCapture();
+    void stopCapture();
+    void updateMixerCaptureControls();             // show/hide footer controls per view + selection
+    juce::String formatMixCaptureContext() const;  // attached-capture summary for the agent
 
     void mouseUp(const juce::MouseEvent& event) override;
 
