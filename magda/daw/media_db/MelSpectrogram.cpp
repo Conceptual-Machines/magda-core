@@ -40,6 +40,8 @@ struct MelConfigKey {
     int targetSamples = 0;
 };
 
+// Float config values are bit-cast so cache lookups preserve exact caller
+// configuration, including edge cases such as signed zero.
 MelConfigKey keyFor(const MelConfig& cfg) {
     return {cfg.sampleRate,
             cfg.nFft,
@@ -61,6 +63,8 @@ struct CachedFilterbank {
     std::shared_ptr<const std::vector<float>> filterbank;
 };
 
+// Mel filters are configuration-only data and are reused for every frame/chunk.
+// Keeping them immutable lets callers share cached rows without copying.
 std::shared_ptr<const std::vector<float>> cachedMelFilterbank(const MelConfig& cfg) {
     static std::mutex cacheMutex;
     static std::vector<CachedFilterbank> cache;
@@ -78,6 +82,9 @@ std::shared_ptr<const std::vector<float>> cachedMelFilterbank(const MelConfig& c
     return filterbank;
 }
 
+// JUCE's real-only FFT stores bins as interleaved real/imaginary floats, so
+// this produces |bin|^2 from strides of two. Accelerate handles the hot path on
+// Apple; the scalar path keeps the implementation portable.
 void magnitudeSquared(const float* fftBuf, float* magSq, int nFftBins) {
 #if defined(__APPLE__)
     vDSP_vsq(fftBuf, 2, magSq, 1, static_cast<vDSP_Length>(nFftBins));
@@ -91,6 +98,9 @@ void magnitudeSquared(const float* fftBuf, float* magSq, int nFftBins) {
 #endif
 }
 
+// Applies one mel filter row to the frame power spectrum. This wrapper keeps
+// the algorithm readable while dispatching to vDSP for the inner product on
+// Apple platforms.
 float dotProduct(const float* a, const float* b, int count) {
 #if defined(__APPLE__)
     float result = 0.0F;
