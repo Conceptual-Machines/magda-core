@@ -1,40 +1,31 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <algorithm>
-#include <array>
 #include <catch2/catch_test_macros.hpp>
-#include <cmath>
 #include <cstdlib>
 #include <iostream>
 
 #include "magda/agents/mixing_agent.hpp"
-#include "magda/daw/audio/analysis/BandSpectrum.hpp"
-#include "magda/daw/audio/analysis/MaskingDetector.hpp"
-#include "magda/daw/audio/analysis/TrackMeasurer.hpp"
+#include "magda/daw/audio/analysis/MixAnalysisInput.hpp"
 #include "magda/daw/core/Config.hpp"
 
 using namespace magda;
 namespace audio = magda::daw::audio;
-using audio::TrackMeasurementSnapshot;
-using audio::TrackMeasurer;
 
 // ============================================================================
 // Real-audio mix-analysis harness (#886, exploratory).
 //
-// Measures every stem in the (gitignored) fixtures dir offline with the exact
-// production DSP (TrackMeasurer), sums a normalised master mixdown, and runs the
-// MixAnalysisAgent against the configured LLM. Hidden [.] test -- needs the
-// stems + an API key, so it never runs in CI. Run it with:
+// Loads every stem in a song folder, builds the agent input via the shared
+// MixAnalysisInput pipeline (the same code the app uses on offline-rendered
+// stems), and runs MixAnalysisAgent against the configured LLM(s). Hidden [.]
+// test -- needs the stems + an API key, so it never runs in CI. Run it with:
 //   ./cmake-build-debug/tests/magda_tests "[mix_analysis][audio]"
-// API keys are read from <repo>/.env (OPENAI_API_KEY / ANTHROPIC_API_KEY / ...).
-// Optionally override the model: MIX_ANALYSIS_PROVIDER + MIX_ANALYSIS_MODEL.
+// Env: MIX_ANALYSIS_AUDIO_DIR (root of song folders), MIX_ANALYSIS_MODELS,
+//      MIX_ANALYSIS_GENRE, MIX_ANALYSIS_BPM, MIX_ANALYSIS_REFERENCES,
+//      MIX_ANALYSIS_SEGMENTS. API keys come from <repo>/.env.
 // ============================================================================
 
 namespace {
-
-// 2048 so each processed block is exactly one masking-FFT frame: after each
-// block we pull the band spectrum from the measurer's ring, tiling the song.
-constexpr int kBlock = 2048;
 
 // Load <repo>/.env into the process environment (without clobbering anything
 // already set), so the agent's env-var key fallback picks the keys up.
@@ -114,219 +105,7 @@ bool readWav(juce::AudioFormatManager& fm, const juce::File& f, juce::AudioBuffe
     return true;
 }
 
-using BandArray = std::array<float, audio::kNumMaskingBands>;
-
-// Measure a buffer; also produces the song-averaged 1/3-octave band spectrum
-// (energy mean over all frames) when bandsOut is given.
-TrackMeasurementSnapshot measure(const juce::AudioBuffer<float>& buf, double sr,
-                                 BandArray* bandsOut = nullptr, bool enableTruePeak = false) {
-    // True-peak (4x oversampler) is ~60 ops/sample and dominates the cost across
-    // 20+ stems, so it's off for per-track / per-segment (sample peak there,
-    // matching production policy) and only on for the master.
-    TrackMeasurer m;
-    m.prepare(sr, kBlock, enableTruePeak);
-    if (bandsOut != nullptr)
-        m.setSpectrumCaptureEnabled(true);
-
-    const int len = buf.getNumSamples();
-    const int nch = juce::jmin(2, buf.getNumChannels());
-    std::array<double, audio::kNumMaskingBands> acc{};
-    long frames = 0;
-    BandArray frameBands{};
-
-    // computeMaskingBandsDb rebuilds an FFT + window per call (cheap once-a-poll
-    // in production, ruinous every block here). A song-average spectrum only
-    // needs ~128 frames, so only analyse every `hop`-th block.
-    const int totalBlocks = (len + kBlock - 1) / kBlock;
-    const int hop = juce::jmax(1, totalBlocks / 128);
-    int blockIdx = 0;
-
-    for (int pos = 0; pos < len; pos += kBlock, ++blockIdx) {
-        const int n = juce::jmin(kBlock, len - pos);
-        const float* chans[2];
-        chans[0] = buf.getReadPointer(0) + pos;
-        chans[1] = nch > 1 ? buf.getReadPointer(1) + pos : chans[0];
-        m.process(chans, nch, n);
-        if (bandsOut != nullptr && n >= 2048 && (blockIdx % hop) == 0) {
-            audio::computeMaskingBandsDb(m.getSpectrumRing(), sr, frameBands);
-            for (int b = 0; b < audio::kNumMaskingBands; ++b)
-                acc[static_cast<size_t>(b)] +=
-                    std::pow(10.0, frameBands[static_cast<size_t>(b)] / 10.0);
-            ++frames;
-        }
-    }
-    if (bandsOut != nullptr)
-        for (int b = 0; b < audio::kNumMaskingBands; ++b)
-            (*bandsOut)[static_cast<size_t>(b)] =
-                frames > 0
-                    ? static_cast<float>(10.0 * std::log10(acc[static_cast<size_t>(b)] / frames))
-                    : -120.0f;
-    return m.read();
-}
-
-// Collapse the 30 1/3-octave bands into 6 macro bands (summed energy, dB),
-// ordered to match MixAnalysisAgent::tonalBandLabels().
-std::vector<float> collapseToMacro(const BandArray& bandsDb) {
-    const float upper[6] = {60.0f, 250.0f, 800.0f, 2500.0f, 6000.0f, 1.0e9f};
-    std::array<double, 6> acc{};
-    for (int b = 0; b < audio::kNumMaskingBands; ++b) {
-        const float center =
-            std::sqrt(audio::maskingBandEdgeHz(b) * audio::maskingBandEdgeHz(b + 1));
-        int mi = 0;
-        while (mi < 5 && center >= upper[mi])
-            ++mi;
-        acc[static_cast<size_t>(mi)] += std::pow(10.0, bandsDb[static_cast<size_t>(b)] / 10.0);
-    }
-    std::vector<float> out(6);
-    for (int i = 0; i < 6; ++i)
-        out[static_cast<size_t>(i)] =
-            acc[static_cast<size_t>(i)] > 0.0
-                ? static_cast<float>(10.0 * std::log10(acc[static_cast<size_t>(i)]))
-                : -120.0f;
-    return out;
-}
-
-// Collapse the 30 bands into 3 coarse bands (low / mid / high) for the timeline.
-std::vector<float> collapseTo3(const BandArray& bandsDb) {
-    const float upper[3] = {250.0f, 2500.0f, 1.0e9f};
-    std::array<double, 3> acc{};
-    for (int b = 0; b < audio::kNumMaskingBands; ++b) {
-        const float center =
-            std::sqrt(audio::maskingBandEdgeHz(b) * audio::maskingBandEdgeHz(b + 1));
-        int mi = 0;
-        while (mi < 2 && center >= upper[mi])
-            ++mi;
-        acc[static_cast<size_t>(mi)] += std::pow(10.0, bandsDb[static_cast<size_t>(b)] / 10.0);
-    }
-    std::vector<float> out(3);
-    for (int i = 0; i < 3; ++i)
-        out[static_cast<size_t>(i)] =
-            acc[static_cast<size_t>(i)] > 0.0
-                ? static_cast<float>(10.0 * std::log10(acc[static_cast<size_t>(i)]))
-                : -120.0f;
-    return out;
-}
-
-struct SpectralFeatures {
-    float centroidHz = 0.0f;
-    float flatness = 0.0f;
-    float rolloffHz = 0.0f;
-};
-
-// Derive brightness / flatness / rolloff from the averaged band spectrum.
-SpectralFeatures spectralFeatures(const BandArray& bandsDb) {
-    std::array<double, audio::kNumMaskingBands> e{};
-    std::array<float, audio::kNumMaskingBands> center{};
-    float peakDb = -1000.0f;
-    for (int b = 0; b < audio::kNumMaskingBands; ++b) {
-        e[static_cast<size_t>(b)] = std::pow(10.0, bandsDb[static_cast<size_t>(b)] / 10.0);
-        center[static_cast<size_t>(b)] =
-            std::sqrt(audio::maskingBandEdgeHz(b) * audio::maskingBandEdgeHz(b + 1));
-        peakDb = juce::jmax(peakDb, bandsDb[static_cast<size_t>(b)]);
-    }
-
-    double sumE = 0.0, sumFE = 0.0;
-    for (int b = 0; b < audio::kNumMaskingBands; ++b) {
-        sumE += e[static_cast<size_t>(b)];
-        sumFE += static_cast<double>(center[static_cast<size_t>(b)]) * e[static_cast<size_t>(b)];
-    }
-
-    SpectralFeatures f;
-    f.centroidHz = sumE > 0.0 ? static_cast<float>(sumFE / sumE) : 0.0f;
-
-    // Flatness over the audible bands (within 60 dB of the peak), so empty
-    // floor bands don't drag the geometric mean to zero.
-    double logSum = 0.0, ariSum = 0.0;
-    int cnt = 0;
-    for (int b = 0; b < audio::kNumMaskingBands; ++b) {
-        if (bandsDb[static_cast<size_t>(b)] < peakDb - 60.0f)
-            continue;
-        logSum += std::log(e[static_cast<size_t>(b)] + 1.0e-20);
-        ariSum += e[static_cast<size_t>(b)];
-        ++cnt;
-    }
-    if (cnt > 0) {
-        const double geo = std::exp(logSum / cnt);
-        const double ari = ariSum / cnt;
-        f.flatness = ari > 0.0 ? static_cast<float>(juce::jlimit(0.0, 1.0, geo / ari)) : 0.0f;
-    }
-
-    // 85%-energy rolloff.
-    const double target = 0.85 * sumE;
-    double cum = 0.0;
-    for (int b = 0; b < audio::kNumMaskingBands; ++b) {
-        cum += e[static_cast<size_t>(b)];
-        if (cum >= target) {
-            f.rolloffHz = center[static_cast<size_t>(b)];
-            break;
-        }
-    }
-    return f;
-}
-
-// Exact whole-song stereo correlation + width from the buffer (the measurer's
-// read() only exposes the smoothed end-of-song value).
-void stereoCorrWidth(const juce::AudioBuffer<float>& buf, float& corr, float& width) {
-    if (buf.getNumChannels() < 2) {
-        corr = 1.0f;
-        width = 0.0f;
-        return;
-    }
-    const float* l = buf.getReadPointer(0);
-    const float* r = buf.getReadPointer(1);
-    const int n = buf.getNumSamples();
-    double sumLR = 0, sumLL = 0, sumRR = 0, sumMid = 0, sumSide = 0;
-    for (int i = 0; i < n; ++i) {
-        const double xl = l[i], xr = r[i];
-        sumLR += xl * xr;
-        sumLL += xl * xl;
-        sumRR += xr * xr;
-        const double mid = 0.5 * (xl + xr), side = 0.5 * (xl - xr);
-        sumMid += mid * mid;
-        sumSide += side * side;
-    }
-    const double denom = std::sqrt(sumLL * sumRR);
-    corr = denom > 1.0e-12 ? static_cast<float>(juce::jlimit(-1.0, 1.0, sumLR / denom)) : 1.0f;
-    const double ms = sumMid + sumSide;
-    width = ms > 1.0e-12 ? static_cast<float>(sumSide / ms) : 0.0f;
-}
-
-// Section boundaries. Auto = N equal fixed windows; this is the seam where
-// real UI song-sections will plug in later (same {label, start, len} shape).
-struct SectionBound {
-    juce::String label;
-    int start = 0;
-    int len = 0;
-};
-std::vector<SectionBound> autoSections(int total, int n) {
-    std::vector<SectionBound> out;
-    for (int i = 0; i < n; ++i) {
-        const int s = static_cast<int>(static_cast<int64_t>(total) * i / n);
-        const int e = static_cast<int>(static_cast<int64_t>(total) * (i + 1) / n);
-        out.push_back({juce::String(i + 1) + "/" + juce::String(n), s, e - s});
-    }
-    return out;
-}
-
-MixAnalysisAgent::TrackMix toTrackMix(const juce::String& name, const std::string& role,
-                                      const TrackMeasurementSnapshot& s) {
-    MixAnalysisAgent::TrackMix t;
-    t.name = name.toStdString();
-    t.role = role;
-    t.integratedLufs = s.integratedLufs;
-    t.shortTermLufs = s.shortTermLufs;
-    t.samplePeakDb = s.samplePeakDb;
-    t.truePeakDb = s.truePeakDb;
-    t.truePeakValid = s.truePeakValid;
-    t.plr = s.plr;
-    t.psr = s.psr;
-    t.correlation = s.correlation;
-    t.width = s.width;
-    return t;
-}
-
-// Map a model name to its provider wire id (so a comparison list can be just
-// model names). GPT-5 family needs the Responses API.
+// Map a model name to its provider wire id. GPT-5 family needs the Responses API.
 std::string providerForModel(const juce::String& model) {
     auto m = model.toLowerCase();
     if (m.startsWith("gpt-5") || m.startsWith("o1") || m.startsWith("o3"))
@@ -340,22 +119,6 @@ std::string providerForModel(const juce::String& model) {
     if (m.startsWith("deepseek"))
         return "deepseek";
     return "openai_responses";
-}
-
-// Measure a finished stereo buffer into a master-style fingerprint (true-peak +
-// tonal + spectral + whole-song corr/width). Used for the subject master and
-// for reference tracks.
-MixAnalysisAgent::TrackMix fingerprint(const juce::AudioBuffer<float>& buf, double sr,
-                                       const juce::String& name, const std::string& role) {
-    BandArray bands{};
-    auto mix = toTrackMix(name, role, measure(buf, sr, &bands, /*enableTruePeak*/ true));
-    mix.tonalDb = collapseToMacro(bands);
-    const auto sf = spectralFeatures(bands);
-    mix.spectralCentroidHz = sf.centroidHz;
-    mix.spectralFlatness = sf.flatness;
-    mix.spectralRolloffHz = sf.rolloffHz;
-    stereoCorrWidth(buf, mix.correlation, mix.width);
-    return mix;
 }
 
 // Load reference masters once, from MIX_ANALYSIS_REFERENCES (a directory of wavs
@@ -381,20 +144,16 @@ std::vector<MixAnalysisAgent::TrackMix> loadReferences(juce::AudioFormatManager&
         double rsr = 0.0;
         if (!readWav(fm, f, buf, rsr))
             continue;
-        const int n = buf.getNumSamples();
-        juce::AudioBuffer<float> st(2, n);
-        st.clear();
-        st.copyFrom(0, 0, buf, 0, 0, n);
-        st.copyFrom(1, 0, buf, buf.getNumChannels() > 1 ? 1 : 0, 0, n);
-        refs.push_back(fingerprint(st, rsr, f.getFileNameWithoutExtension(), "reference"));
+        refs.push_back(audio::MixAnalysisInput::fingerprint(
+            buf, rsr, f.getFileNameWithoutExtension(), "reference"));
     }
     return refs;
 }
 
 }  // namespace
 
-// Run the whole pipeline on one song folder: measure stems, sum the master,
-// build the timeline + masking + context, then run each model and print.
+// Run the whole pipeline on one song folder: load stems, build the agent input
+// via the shared module, then run each model and print.
 void analyzeSong(const juce::File& dir, const juce::StringArray& models,
                  const std::vector<MixAnalysisAgent::TrackMix>& references) {
     juce::Array<juce::File> wavs;
@@ -411,14 +170,9 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models,
     juce::AudioFormatManager fm;
     fm.registerBasicFormats();
 
-    // Pair ".L"/".R" stems into one stereo source; everything else is mono.
-    juce::StringArray consumed;
-    std::vector<LoadedTrack> tracks;
-    double sr = 0.0;
-    int maxLen = 0;
-
     // A "Full Mix" stem (stem packs often ship one) is the finished master:
     // use it as the master and keep it out of the component tracks.
+    juce::StringArray consumed;
     juce::File fullMixFile;
     for (const auto& f : wavs) {
         const auto u = f.getFileName().toUpperCase();
@@ -429,6 +183,9 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models,
         }
     }
 
+    // Pair ".L"/".R" stems into one stereo source; everything else is mono.
+    std::vector<LoadedTrack> tracks;
+    double sr = 0.0;
     auto stemOf = [](const juce::File& f) { return f.getFileNameWithoutExtension(); };
 
     for (const auto& f : wavs) {
@@ -438,7 +195,6 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models,
 
         LoadedTrack lt;
         if (stem.endsWithIgnoreCase(".L")) {
-            // find the matching .R
             auto base = stem.dropLastCharacters(2);  // strip ".L"
             juce::File rFile = f.getSiblingFile(base + ".R.wav");
             juce::AudioBuffer<float> l, r;
@@ -468,7 +224,6 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models,
         }
 
         lt.role = inferRole(lt.name);
-        maxLen = juce::jmax(maxLen, lt.buf.getNumSamples());
         consumed.add(f.getFullPathName());
         tracks.push_back(std::move(lt));
     }
@@ -476,10 +231,10 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models,
     REQUIRE(!tracks.empty());
     REQUIRE(sr > 0.0);
 
-    // Master: the finished Full Mix when present (measured exactly as-is, so
-    // its true loudness / dynamics show), else a normalised raw sum of stems.
+    // Master: the finished Full Mix when present (measured as-is), else let the
+    // pipeline build a normalised stem sum (master == nullptr).
     juce::AudioBuffer<float> master;
-    juce::String masterName;
+    juce::String masterName = "Master (stem sum, -1 dBFS)";
     if (fullMixFile.existsAsFile()) {
         double msr = sr;
         juce::AudioBuffer<float> fmix;
@@ -492,114 +247,39 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models,
         }
         masterName = "Master (full mix)";
         std::cout << "[audio] master = Full Mix stem (as-is)\n";
-    }
-    if (master.getNumSamples() == 0) {
-        master.setSize(2, maxLen, false, true, false);
-        master.clear();
-        for (const auto& t : tracks) {
-            const int n = t.buf.getNumSamples();
-            const int nch = t.buf.getNumChannels();
-            master.addFrom(0, 0, t.buf, 0, 0, n);
-            master.addFrom(1, 0, t.buf, nch > 1 ? 1 : 0, 0, n);
-        }
-        const float peak = master.getMagnitude(0, master.getNumSamples());
-        if (peak > 0.0f)
-            master.applyGain(juce::Decibels::decibelsToGain(-1.0f) / peak);
-        masterName = "Master (stem sum, -1 dBFS)";
+    } else {
         std::cout << "[audio] master = normalised stem sum\n";
     }
-    const int masterLen = master.getNumSamples();
 
-    // Build the agent input from the measured stems + master. Each stem also
-    // gets its averaged 1/3-octave spectrum, collapsed to a macro-band tonal
-    // profile, and contributed to inter-track masking detection.
-    MixAnalysisAgent::Input input;
-    std::vector<audio::TrackBandEnergies> bandSet;
-    std::cout << "\n[audio] measured " << tracks.size() << " stems @ " << sr << " Hz\n";
-    std::cout << "name | LUFS-I | peak | TP | PLR | corr | width\n";
-    for (int i = 0; i < static_cast<int>(tracks.size()); ++i) {
-        const auto& t = tracks[static_cast<size_t>(i)];
-        BandArray bands{};
-        auto snap = measure(t.buf, sr, &bands);
-        auto mix = toTrackMix(t.name, t.role, snap);
-        mix.tonalDb = collapseToMacro(bands);
-        const auto sf = spectralFeatures(bands);
-        mix.spectralCentroidHz = sf.centroidHz;
-        mix.spectralFlatness = sf.flatness;
-        mix.spectralRolloffHz = sf.rolloffHz;
-        stereoCorrWidth(t.buf, mix.correlation, mix.width);  // whole-song, not end-of-song
-
-        audio::TrackBandEnergies be;
-        be.trackId = i;
-        be.name = t.name;
-        be.bandDb = bands;
-        bandSet.push_back(std::move(be));
-
-        std::cout << mix.name << " | " << juce::String(mix.integratedLufs, 1) << " | "
-                  << juce::String(mix.samplePeakDb, 1) << " | " << juce::String(mix.truePeakDb, 1)
-                  << " | " << juce::String(mix.plr, 1) << " | " << juce::String(mix.correlation, 2)
-                  << " | " << juce::String(mix.width, 2) << "\n";
-        input.tracks.push_back(std::move(mix));
-    }
-
-    BandArray masterBands{};
-    input.master = toTrackMix(masterName, "master",
-                              measure(master, sr, &masterBands, /*enableTruePeak*/ true));
-    input.master->tonalDb = collapseToMacro(masterBands);
-    {
-        const auto sf = spectralFeatures(masterBands);
-        input.master->spectralCentroidHz = sf.centroidHz;
-        input.master->spectralFlatness = sf.flatness;
-        input.master->spectralRolloffHz = sf.rolloffHz;
-        stereoCorrWidth(master, input.master->correlation, input.master->width);
-    }
-
-    // Real inter-track masking from the measured spectra (#1390).
-    auto findings = audio::detectMasking(bandSet);
-    for (const auto& f : findings)
-        input.masking.push_back(
-            {f.nameA.toStdString(), f.nameB.toStdString(), f.loHz, f.hiHz, f.severity});
-    std::cout << "[audio] masking findings: " << findings.size() << "\n";
-
-    // Timeline: slice the master into sections (auto fixed windows for now; the
-    // UI's song sections will feed the same {label,start,len} list later) and
-    // measure each slice's loudness / brightness / width / coarse tonal.
     int numSegments = 16;
     if (const char* env = std::getenv("MIX_ANALYSIS_SEGMENTS"))
         numSegments = juce::jlimit(2, 64, juce::String(env).getIntValue());
-    for (const auto& sec : autoSections(masterLen, numSegments)) {
-        if (sec.len < 2048)
-            continue;
-        float* chans[2] = {master.getWritePointer(0) + sec.start,
-                           master.getWritePointer(1) + sec.start};
-        juce::AudioBuffer<float> win(chans, 2, sec.len);
-        BandArray segBands{};
-        auto segSnap = measure(win, sr, &segBands);
 
-        MixAnalysisAgent::Segment seg;
-        seg.label = sec.label.toStdString();
-        seg.startSec = static_cast<float>(sec.start / sr);
-        seg.endSec = static_cast<float>((sec.start + sec.len) / sr);
-        seg.integratedLufs = segSnap.integratedLufs;
-        seg.spectralCentroidHz = spectralFeatures(segBands).centroidHz;
-        float segCorr = 1.0f;
-        stereoCorrWidth(win, segCorr, seg.width);  // only width is sent per segment
-        seg.tonalDb = collapseTo3(segBands);
-        input.timeline.push_back(std::move(seg));
-    }
-    std::cout << "[audio] timeline segments: " << input.timeline.size() << "\n";
+    // Build the agent input via the shared production pipeline.
+    std::vector<audio::MixAnalysisInput::Source> sources;
+    sources.reserve(tracks.size());
+    for (const auto& t : tracks)
+        sources.push_back({t.name, t.role, &t.buf});
 
-    // Song context (BPM, genre) comes from the project/transport in the real
-    // app, not from detection. This stems-only harness has no transport, so it
-    // only sets them when supplied via env; otherwise they're omitted entirely.
+    audio::MixAnalysisInput::Options opts;
+    opts.numSegments = numSegments;
+    auto input = audio::MixAnalysisInput::build(
+        sr, sources, master.getNumSamples() > 0 ? &master : nullptr, {}, opts);
+    if (input.master)
+        input.master->name = masterName.toStdString();
+    input.references = references;
+
+    std::cout << "[audio] " << input.tracks.size() << " stems @ " << sr << " Hz, "
+              << input.masking.size() << " masking, " << input.timeline.size() << " segments\n";
+
+    // Song context (BPM, genre) is project/transport-supplied in the app, not
+    // detected. This harness only sets them from env; otherwise omitted.
     if (const char* b = std::getenv("MIX_ANALYSIS_BPM"))
         input.bpm = juce::String(b).getFloatValue();
     if (const char* g = std::getenv("MIX_ANALYSIS_GENRE"))
         input.genre = g;
     std::cout << "[audio] context: genre=" << (input.genre.empty() ? "(none)" : input.genre)
               << " bpm=" << input.bpm << "\n";
-
-    input.references = references;
 
     input.question = "Assess this multitrack: balance, dynamics, stereo image, frequency "
                      "clashes, and how the arrangement evolves. What would you address first?";
