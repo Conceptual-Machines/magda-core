@@ -20,6 +20,9 @@ target_sources(magda_daw PRIVATE
 )
 
 target_link_libraries(magda_daw PUBLIC sqlite3)
+if(APPLE)
+    target_link_libraries(magda_daw PUBLIC "-framework Accelerate")
+endif()
 if(MAGDA_HAVE_CLAP)
     target_link_libraries(magda_daw PUBLIC onnxruntime)
     target_compile_definitions(magda_daw PUBLIC MAGDA_HAVE_CLAP=1)
