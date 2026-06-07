@@ -875,6 +875,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
     refSelectButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     refSelectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     refSelectButton_->setIconPadding(4.0f);
+    refSelectButton_->setBorderColor(DarkTheme::getBorderColour());
+    refSelectButton_->setBorderThickness(1.0f);
     refSelectButton_->setTooltip("Pick reference tracks to compare the subject against");
     refSelectButton_->onClick = [this]() { showReferenceMenu(); };
     addChildComponent(*refSelectButton_);
@@ -885,6 +887,9 @@ AIChatConsoleContent::AIChatConsoleContent() {
     captureButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     captureButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_RED));
     captureButton_->setIconPadding(4.0f);
+    captureButton_->setBorderColor(DarkTheme::getBorderColour());
+    captureButton_->setActiveBorderColor(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+    captureButton_->setBorderThickness(1.0f);
     captureButton_->setTooltip("Capture levels for the subject + reference tracks");
     captureButton_->onClick = [this]() { toggleCapture(); };
     addChildComponent(*captureButton_);
@@ -1432,11 +1437,13 @@ void AIChatConsoleContent::resized() {
         auto bottomBar = bounds.removeFromBottom(26);
         bottomBarBounds_ = bottomBar;
 
-        // Right edge of the footer: in mixer view the capture controls
-        // [refs][capture] live here (#1403); otherwise the clip-context toggle
-        // uses the same space. The send button moved up to the input box so
-        // there's room for both.
+        // Send button stays on the footer's right edge. Left of it: in mixer
+        // view the capture controls [refs][capture] (#1403); otherwise the
+        // clip-context toggle uses that space (it is hidden in mixer view, so
+        // the two never compete for room).
+        sendButton_.setBounds(bottomBar.removeFromRight(22));
         if (isMixerView() && captureButton_ && captureButton_->isVisible()) {
+            bottomBar.removeFromRight(4);
             captureButton_->setBounds(bottomBar.removeFromRight(24));
             bottomBar.removeFromRight(2);
             refSelectButton_->setBounds(bottomBar.removeFromRight(24));
@@ -1450,16 +1457,6 @@ void AIChatConsoleContent::resized() {
         // Input box directly above context bar (no gap — unified shape)
         auto inputArea = bounds.removeFromBottom(80);
         inputBox_->setBounds(inputArea);
-
-        // Send button sits in the input box's top-right corner (mirrors the
-        // chat panel's clear/copy buttons), freeing the footer's right edge.
-        {
-            constexpr int sendSize = 22;
-            constexpr int sendMargin = 4;
-            sendButton_.setBounds(inputArea.getRight() - sendSize - sendMargin,
-                                  inputArea.getY() + sendMargin, sendSize, sendSize);
-            sendButton_.toFront(false);
-        }
 
         bounds.removeFromBottom(8);  // Spacing
 
