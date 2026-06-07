@@ -1,5 +1,6 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <algorithm>
 #include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
@@ -333,14 +334,9 @@ std::string providerForModel(const juce::String& model) {
 
 }  // namespace
 
-TEST_CASE("MixAnalysisAgent: analyse a real multitrack session", "[.][mix_analysis][audio]") {
-    juce::File dir(juce::String(MAGDA_AUDIO_FIXTURES_DIR) + "/turkuaz");
-    if (!dir.isDirectory()) {
-        WARN("Audio fixtures not found at " << dir.getFullPathName()
-                                            << " -- copy stems there to run this.");
-        return;
-    }
-
+// Run the whole pipeline on one song folder: measure stems, sum the master,
+// build the timeline + masking + context, then run each model and print.
+void analyzeSong(const juce::File& dir, const juce::StringArray& models) {
     juce::Array<juce::File> wavs;
     dir.findChildFiles(wavs, juce::File::findFiles, false, "*.wav");
     if (wavs.isEmpty()) {
@@ -348,17 +344,9 @@ TEST_CASE("MixAnalysisAgent: analyse a real multitrack session", "[.][mix_analys
         return;
     }
 
-    loadDotEnv(juce::File(juce::String(MAGDA_REPO_ROOT) + "/.env"));
-
-    // Models to compare. Comma-separated list in MIX_ANALYSIS_MODELS (provider
-    // is inferred from each name); defaults to a single gpt-5.
-    juce::StringArray models;
-    if (const char* env = std::getenv("MIX_ANALYSIS_MODELS"))
-        models.addTokens(juce::String(env), ",", "");
-    else
-        models.add("gpt-5");
-    models.trim();
-    models.removeEmptyStrings();
+    std::cout << "\n################################################################\n"
+              << "# SONG: " << dir.getFileName() << "  (" << wavs.size() << " files)\n"
+              << "################################################################\n";
 
     juce::AudioFormatManager fm;
     fm.registerBasicFormats();
@@ -550,4 +538,59 @@ TEST_CASE("MixAnalysisAgent: analyse a real multitrack session", "[.][mix_analys
                   << result.analysis << "\n";
         CHECK_FALSE(result.analysis.empty());
     }
+}
+
+TEST_CASE("MixAnalysisAgent: analyse real multitrack sessions", "[.][mix_analysis][audio]") {
+    loadDotEnv(juce::File(juce::String(MAGDA_REPO_ROOT) + "/.env"));
+
+    // Models to compare. Comma-separated MIX_ANALYSIS_MODELS (provider inferred
+    // per name); defaults to a single gpt-5.
+    juce::StringArray models;
+    if (const char* env = std::getenv("MIX_ANALYSIS_MODELS"))
+        models.addTokens(juce::String(env), ",", "");
+    else
+        models.add("gpt-5");
+    models.trim();
+    models.removeEmptyStrings();
+
+    // Root dir: MIX_ANALYSIS_AUDIO_DIR (a folder of per-song subfolders, or a
+    // single song's stems), else the bundled turkuaz fixture.
+    const char* rootEnv = std::getenv("MIX_ANALYSIS_AUDIO_DIR");
+    juce::File root = rootEnv != nullptr
+                          ? juce::File(juce::String::fromUTF8(rootEnv))
+                          : juce::File(juce::String(MAGDA_AUDIO_FIXTURES_DIR) + "/turkuaz");
+    if (!root.isDirectory()) {
+        WARN("Audio dir not found: " << root.getFullPathName());
+        return;
+    }
+
+    // Each immediate subfolder holding stems is a song; if the root itself has
+    // stems, treat it as a single song.
+    std::vector<juce::File> songs;
+    juce::Array<juce::File> rootWavs;
+    root.findChildFiles(rootWavs, juce::File::findFiles, false, "*.wav");
+    if (!rootWavs.isEmpty()) {
+        songs.push_back(root);
+    } else {
+        juce::Array<juce::File> subs;
+        root.findChildFiles(subs, juce::File::findDirectories, false);
+        for (const auto& s : subs) {
+            juce::Array<juce::File> w;
+            s.findChildFiles(w, juce::File::findFiles, false, "*.wav");
+            if (!w.isEmpty())
+                songs.push_back(s);
+        }
+    }
+    std::sort(songs.begin(), songs.end(), [](const juce::File& a, const juce::File& b) {
+        return a.getFullPathName() < b.getFullPathName();
+    });
+
+    if (songs.empty()) {
+        WARN("No songs (stem folders) under " << root.getFullPathName());
+        return;
+    }
+    std::cout << "[audio] " << songs.size() << " song(s) under " << root.getFullPathName() << "\n";
+
+    for (const auto& song : songs)
+        analyzeSong(song, models);
 }
