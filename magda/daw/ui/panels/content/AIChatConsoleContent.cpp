@@ -810,6 +810,15 @@ AIChatConsoleContent::AIChatConsoleContent() {
         juce::Drawable::createFromImageData(BinaryData::clip_svg, BinaryData::clip_svgSize);
     drumIconDrawable_ = juce::Drawable::createFromImageData(BinaryData::drum_grid_svg,
                                                             BinaryData::drum_grid_svgSize);
+    // View-context glyphs (#1402), matching the footer view switcher.
+    sessionIconDrawable_ = juce::Drawable::createFromImageData(
+        BinaryData::iconsessionboldm_svg, BinaryData::iconsessionboldm_svgSize);
+    arrangeIconDrawable_ = juce::Drawable::createFromImageData(
+        BinaryData::iconarrangementboldm_svg, BinaryData::iconarrangementboldm_svgSize);
+    mixIconDrawable_ = juce::Drawable::createFromImageData(BinaryData::iconmixboldm_svg,
+                                                           BinaryData::iconmixboldm_svgSize);
+    currentViewMode_ = magda::ViewModeController::getInstance().getViewMode();
+    magda::ViewModeController::getInstance().addListener(this);
 
     // Context label (always visible, inside bottom bar)
     contextLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
@@ -1027,6 +1036,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
+    magda::ViewModeController::getInstance().removeListener(this);
     selectedClipContextToggle_.setLookAndFeel(nullptr);
     if (dslEditor_)
         dslEditor_->removeKeyListener(this);
@@ -1315,14 +1325,21 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
                              combined.getRight() - 1.0f);
 
         // Draw context icon
-        if (contextIcon_ != ContextIcon::None) {
+        {
+            // #1402: the context glyph reflects the active view, not selection.
             juce::Drawable* icon = nullptr;
-            if (contextIcon_ == ContextIcon::Drummer)
-                icon = drumIconDrawable_.get();
-            else if (contextIcon_ == ContextIcon::Track || contextIcon_ == ContextIcon::Device)
-                icon = trackIconDrawable_.get();
-            else if (contextIcon_ == ContextIcon::Clip)
-                icon = clipIconDrawable_.get();
+            switch (currentViewMode_) {
+                case magda::ViewMode::Live:
+                    icon = sessionIconDrawable_.get();
+                    break;
+                case magda::ViewMode::Arrange:
+                    icon = arrangeIconDrawable_.get();
+                    break;
+                case magda::ViewMode::Mix:
+                case magda::ViewMode::Master:
+                    icon = mixIconDrawable_.get();
+                    break;
+            }
 
             if (icon) {
                 auto iconBounds = contextIconBounds_.toFloat().reduced(6.0f);
@@ -1566,6 +1583,15 @@ void AIChatConsoleContent::projectOpened(const magda::ProjectInfo& /*info*/) {
 
 void AIChatConsoleContent::configChanged() {
     updateConfigStatus();
+}
+
+void AIChatConsoleContent::viewModeChanged(magda::ViewMode mode, const magda::AudioEngineProfile&) {
+    if (currentViewMode_ == mode)
+        return;
+    currentViewMode_ = mode;
+    // Slice 1: reflect the view in the context glyph. View-scoped agent routing
+    // (mixer view -> mixing agent) is wired in the routing slice (#1402).
+    repaint();
 }
 
 // ============================================================================
