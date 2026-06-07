@@ -9,12 +9,17 @@
 #include <cstring>
 #include <limits>
 #include <regex>
+#include <span>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#if defined(__APPLE__)
+    #include <Accelerate/Accelerate.h>
+#endif
 
 #include "ClapTextEncoder.hpp"
 #include "MediaDatabase.hpp"
@@ -132,6 +137,39 @@ std::string buildFtsQuery(const std::string& text) {
 // load all of them into the map before the cosine stage trims down.
 constexpr int kCandidateCap = 5000;
 
+float dotProduct(std::span<const float> a, std::span<const float> b) {
+    if (a.size() != b.size() || a.empty()) {
+        return 0.0F;
+    }
+
+#if defined(__APPLE__)
+    float result = 0.0F;
+    vDSP_dotpr(a.data(), 1, b.data(), 1, &result, static_cast<vDSP_Length>(a.size()));
+    return result;
+#else
+    float result = 0.0F;
+    for (size_t i = 0; i < a.size(); ++i) {
+        result += a[i] * b[i];
+    }
+    return result;
+#endif
+}
+
+std::span<const float> embeddingBlob(sqlite3_stmt* stmt, int blobColumn, int dim) {
+    if (dim <= 0) {
+        return {};
+    }
+
+    const auto* blob = static_cast<const float*>(sqlite3_column_blob(stmt, blobColumn));
+    const int bytes = sqlite3_column_bytes(stmt, blobColumn);
+    const auto expectedBytes = static_cast<size_t>(dim) * sizeof(float);
+    if (blob == nullptr || bytes < 0 || static_cast<size_t>(bytes) != expectedBytes) {
+        return {};
+    }
+
+    return {blob, static_cast<size_t>(dim)};
+}
+
 std::unordered_map<std::int64_t, float> ftsScores(sqlite3* db, const std::string& text,
                                                   const BuiltWhere& w) {
     const std::string fts = buildFtsQuery(text);
@@ -194,18 +232,11 @@ std::unordered_map<std::int64_t, float> audioScoresOnCandidates(
         if (dim != static_cast<int>(queryVec.size())) {
             continue;  // dim mismatch -> incompatible model_id; skip silently
         }
-        const auto* blob = static_cast<const std::uint8_t*>(sqlite3_column_blob(stmt, 2));
-        const int bytes = sqlite3_column_bytes(stmt, 2);
-        if (bytes != dim * static_cast<int>(sizeof(float))) {
+        const auto vec = embeddingBlob(stmt, 2, dim);
+        if (vec.empty()) {
             continue;
         }
-        std::vector<float> v(static_cast<size_t>(dim));
-        std::memcpy(v.data(), blob, static_cast<size_t>(bytes));
-        float dot = 0.0F;
-        for (int i = 0; i < dim; ++i) {
-            dot += queryVec[static_cast<size_t>(i)] * v[static_cast<size_t>(i)];
-        }
-        scores[sqlite3_column_int64(stmt, 0)] = dot;
+        scores[sqlite3_column_int64(stmt, 0)] = dotProduct(queryVec, vec);
     }
     sqlite3_finalize(stmt);
     return scores;
