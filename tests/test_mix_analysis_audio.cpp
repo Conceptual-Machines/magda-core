@@ -367,6 +367,18 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models) {
     double sr = 0.0;
     int maxLen = 0;
 
+    // A "Full Mix" stem (stem packs often ship one) is the finished master:
+    // use it as the master and keep it out of the component tracks.
+    juce::File fullMixFile;
+    for (const auto& f : wavs) {
+        const auto u = f.getFileName().toUpperCase();
+        if (u.contains("FULL") && u.contains("MIX")) {
+            fullMixFile = f;
+            consumed.add(f.getFullPathName());
+            break;
+        }
+    }
+
     auto stemOf = [](const juce::File& f) { return f.getFileNameWithoutExtension(); };
 
     for (const auto& f : wavs) {
@@ -414,19 +426,39 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models) {
     REQUIRE(!tracks.empty());
     REQUIRE(sr > 0.0);
 
-    // Sum a master mixdown (raw stem sum), then normalise to -1 dBFS peak so the
-    // master loudness/dynamics are sensible (gain is PLR-invariant).
-    juce::AudioBuffer<float> master(2, maxLen);
-    master.clear();
-    for (const auto& t : tracks) {
-        const int n = t.buf.getNumSamples();
-        const int nch = t.buf.getNumChannels();
-        master.addFrom(0, 0, t.buf, 0, 0, n);
-        master.addFrom(1, 0, t.buf, nch > 1 ? 1 : 0, 0, n);
+    // Master: the finished Full Mix when present (measured exactly as-is, so
+    // its true loudness / dynamics show), else a normalised raw sum of stems.
+    juce::AudioBuffer<float> master;
+    juce::String masterName;
+    if (fullMixFile.existsAsFile()) {
+        double msr = sr;
+        juce::AudioBuffer<float> fmix;
+        if (readWav(fm, fullMixFile, fmix, msr)) {
+            const int n = fmix.getNumSamples();
+            master.setSize(2, n, false, true, false);
+            master.clear();
+            master.copyFrom(0, 0, fmix, 0, 0, n);
+            master.copyFrom(1, 0, fmix, fmix.getNumChannels() > 1 ? 1 : 0, 0, n);
+        }
+        masterName = "Master (full mix)";
+        std::cout << "[audio] master = Full Mix stem (as-is)\n";
     }
-    const float peak = master.getMagnitude(0, maxLen);
-    if (peak > 0.0f)
-        master.applyGain(juce::Decibels::decibelsToGain(-1.0f) / peak);
+    if (master.getNumSamples() == 0) {
+        master.setSize(2, maxLen, false, true, false);
+        master.clear();
+        for (const auto& t : tracks) {
+            const int n = t.buf.getNumSamples();
+            const int nch = t.buf.getNumChannels();
+            master.addFrom(0, 0, t.buf, 0, 0, n);
+            master.addFrom(1, 0, t.buf, nch > 1 ? 1 : 0, 0, n);
+        }
+        const float peak = master.getMagnitude(0, master.getNumSamples());
+        if (peak > 0.0f)
+            master.applyGain(juce::Decibels::decibelsToGain(-1.0f) / peak);
+        masterName = "Master (stem sum, -1 dBFS)";
+        std::cout << "[audio] master = normalised stem sum\n";
+    }
+    const int masterLen = master.getNumSamples();
 
     // Build the agent input from the measured stems + master. Each stem also
     // gets its averaged 1/3-octave spectrum, collapsed to a macro-band tonal
@@ -461,7 +493,7 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models) {
     }
 
     BandArray masterBands{};
-    input.master = toTrackMix("Master (stem sum, -1 dBFS)", "master",
+    input.master = toTrackMix(masterName, "master",
                               measure(master, sr, &masterBands, /*enableTruePeak*/ true));
     input.master->tonalDb = collapseToMacro(masterBands);
     {
@@ -485,7 +517,7 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models) {
     int numSegments = 16;
     if (const char* env = std::getenv("MIX_ANALYSIS_SEGMENTS"))
         numSegments = juce::jlimit(2, 64, juce::String(env).getIntValue());
-    for (const auto& sec : autoSections(maxLen, numSegments)) {
+    for (const auto& sec : autoSections(masterLen, numSegments)) {
         if (sec.len < 2048)
             continue;
         float* chans[2] = {master.getWritePointer(0) + sec.start,
@@ -517,7 +549,7 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models) {
     std::cout << "[audio] context: genre=" << (input.genre.empty() ? "(none)" : input.genre)
               << " bpm=" << input.bpm << "\n";
 
-    input.question = "Assess this raw multitrack: balance, dynamics, stereo image, frequency "
+    input.question = "Assess this multitrack: balance, dynamics, stereo image, frequency "
                      "clashes, and how the arrangement evolves. What would you address first?";
 
     std::cout << "\n==== payload (" << MixAnalysisAgent::buildUserMessage(input).length()
