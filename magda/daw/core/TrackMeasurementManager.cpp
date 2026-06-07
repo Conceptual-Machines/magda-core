@@ -123,6 +123,18 @@ std::vector<daw::audio::MaskingFinding> TrackMeasurementManager::getMaskingFindi
     return daw::audio::detectMasking(tracks, opts);
 }
 
+bool TrackMeasurementManager::getTrackBandSpectrumDb(
+    TrackId trackId, std::array<float, daw::audio::kNumMaskingBands>& out) const {
+    auto* pm = pluginManager();
+    if (pm == nullptr)
+        return false;
+    auto* tap = pm->getTrackMeasurementTap(trackId);
+    if (tap == nullptr)
+        return false;
+    tap->getMaskingBandsDb(out);
+    return true;
+}
+
 daw::audio::TrackMeasurementSnapshot TrackMeasurementManager::getSnapshot(TrackId trackId) const {
     auto it = latest_.find(trackId);
     if (it == latest_.end())
