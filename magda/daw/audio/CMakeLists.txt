@@ -270,6 +270,7 @@ target_sources(magda_daw PRIVATE
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
+    analysis/BandSpectrum.cpp
     FaustResources.cpp
     processors/base/DeviceProcessor.cpp
     processors/base/DeviceProcessor.hpp

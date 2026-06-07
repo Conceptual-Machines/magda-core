@@ -6,6 +6,7 @@
 #include <set>
 #include <vector>
 
+#include "../audio/analysis/MaskingDetector.hpp"
 #include "../audio/analysis/TrackMeasurer.hpp"
 #include "TypeIds.hpp"
 
@@ -61,6 +62,18 @@ class TrackMeasurementManager : private juce::Timer {
     /// All currently-held snapshots (enabled tracks with data), for the agent.
     std::vector<std::pair<TrackId, daw::audio::TrackMeasurementSnapshot>> getAllSnapshots() const;
 
+    // --- Masking analysis (#1390) -------------------------------------------
+    /// Arm/disarm masking band capture on the enabled taps. Heavier than the
+    /// scalar metering, so it is off unless a masking pass wants it.
+    void setMaskingAnalysisEnabled(bool shouldEnable);
+    bool isMaskingAnalysisEnabled() const {
+        return maskingEnabled_;
+    }
+    /// Gather the enabled tracks' current band spectra and detect inter-track
+    /// masking. Returns {} until capture has been armed and audio has flowed.
+    std::vector<daw::audio::MaskingFinding> getMaskingFindings(
+        const daw::audio::MaskingOptions& opts = {}) const;
+
     void addListener(TrackMeasurementListener* l) {
         listeners_.add(l);
     }
@@ -82,6 +95,7 @@ class TrackMeasurementManager : private juce::Timer {
     void updateTimer();
 
     bool globalEnabled_ = false;
+    bool maskingEnabled_ = false;      // masking band capture armed
     std::set<TrackId> enabledTracks_;  // desired per-track state
     std::map<TrackId, daw::audio::TrackMeasurementSnapshot> latest_;
     juce::ListenerList<TrackMeasurementListener> listeners_;

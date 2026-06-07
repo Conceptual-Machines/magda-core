@@ -7,6 +7,8 @@
 #include <cmath>
 #include <vector>
 
+#include "AudioTapBuffer.hpp"
+
 namespace magda::daw::audio {
 
 /**
@@ -111,6 +113,7 @@ class TrackMeasurer {
 
         double sumMidSq = 0.0, sumSideSq = 0.0, sumLR = 0.0, sumLL = 0.0, sumRR = 0.0;
         float samplePeak = 0.0f;
+        const bool capture = captureSpectrum_.load(std::memory_order_acquire);
 
         for (int i = 0; i < numSamples; ++i) {
             const float xl = l[i];
@@ -134,7 +137,12 @@ class TrackMeasurer {
             sumLR += static_cast<double>(xl) * xr;
             sumLL += static_cast<double>(xl) * xl;
             sumRR += static_cast<double>(xr) * xr;
+
+            if (capture)
+                scratchL_[static_cast<size_t>(i)] = static_cast<float>(mid);  // mono for band FFT
         }
+        if (capture)
+            spectrumRing_.write(scratchL_.data(), numSamples);
 
         // Sample peak -> dBFS.
         if (samplePeak > 0.0f)
@@ -166,6 +174,23 @@ class TrackMeasurer {
         momentary_.store(windowLufs(4), std::memory_order_relaxed);
         shortTerm_.store(windowLufs(30), std::memory_order_relaxed);
         valid_.store(true, std::memory_order_relaxed);
+    }
+
+    /// Enable capturing a mono signal ring for masking band analysis. Off by
+    /// default; the manager turns it on only during a masking pass. Cheap when
+    /// off (a single branch); when on, just copies a mono downmix to the ring.
+    void setSpectrumCaptureEnabled(bool shouldCapture) noexcept {
+        captureSpectrum_.store(shouldCapture, std::memory_order_release);
+    }
+    bool spectrumCaptureEnabled() const noexcept {
+        return captureSpectrum_.load(std::memory_order_acquire);
+    }
+    /// Message thread. Lock-free access to the captured signal for band analysis.
+    const AudioTapBuffer& getSpectrumRing() const noexcept {
+        return spectrumRing_;
+    }
+    double sampleRate() const noexcept {
+        return sampleRate_;
     }
 
     /// Message thread. Lock-free snapshot of current measurements.
@@ -422,6 +447,11 @@ class TrackMeasurer {
     std::atomic<float> correlation_{1.0f};
     std::atomic<float> width_{0.0f};
     std::atomic<bool> valid_{false};
+
+    // Masking band analysis: a mono signal ring filled only while capture is on.
+    // The FFT/band grouping runs on the message thread (see band_spectrum).
+    std::atomic<bool> captureSpectrum_{false};
+    AudioTapBuffer spectrumRing_{4096};  // >= one 2048-pt FFT frame
 };
 
 }  // namespace magda::daw::audio
