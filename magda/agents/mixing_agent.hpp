@@ -33,11 +33,20 @@ class MixAnalysisAgent {
         float integratedLufs = -100.0f;
         float shortTermLufs = -100.0f;
         float samplePeakDb = -200.0f;
-        float plr = 0.0f;          // peak - integrated (crest / dynamics, LU)
-        float psr = 0.0f;          // peak - short-term (LU)
-        float correlation = 1.0f;  // -1..1 (1 mono, 0 wide, <0 out of phase)
-        float width = 0.0f;        // 0..1 side/(mid+side) energy
+        float truePeakDb = -200.0f;  // oversampled dBTP; > 0 = real inter-sample clipping
+        bool truePeakValid = false;  // false when true-peak wasn't measured
+        float plr = 0.0f;            // peak - integrated (crest / dynamics, LU)
+        float psr = 0.0f;            // peak - short-term (LU)
+        float correlation = 1.0f;    // -1..1 (1 mono, 0 wide, <0 out of phase)
+        float width = 0.0f;          // 0..1 side/(mid+side) energy
+        // Compact tonal balance: macro-band energy in dB, ordered sub / low /
+        // low-mid / mid / high-mid / high (see kTonalBandLabels). Empty when the
+        // spectral layer wasn't run.
+        std::vector<float> tonalDb;
     };
+
+    // Labels for the macro bands in TrackMix::tonalDb, in order.
+    static const std::vector<std::string>& tonalBandLabels();
 
     /** An inter-track masking finding (#1390): two tracks competing in a band. */
     struct MaskingPair {

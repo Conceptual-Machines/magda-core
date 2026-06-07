@@ -1,16 +1,21 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <array>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 
 #include "magda/agents/mixing_agent.hpp"
+#include "magda/daw/audio/analysis/BandSpectrum.hpp"
+#include "magda/daw/audio/analysis/MaskingDetector.hpp"
 #include "magda/daw/audio/analysis/TrackMeasurer.hpp"
 #include "magda/daw/core/Config.hpp"
 
 using namespace magda;
-using daw::audio::TrackMeasurementSnapshot;
-using daw::audio::TrackMeasurer;
+namespace audio = magda::daw::audio;
+using audio::TrackMeasurementSnapshot;
+using audio::TrackMeasurer;
 
 // ============================================================================
 // Real-audio mix-analysis harness (#886, exploratory).
@@ -26,7 +31,9 @@ using daw::audio::TrackMeasurer;
 
 namespace {
 
-constexpr int kBlock = 8192;
+// 2048 so each processed block is exactly one masking-FFT frame: after each
+// block we pull the band spectrum from the measurer's ring, tiling the song.
+constexpr int kBlock = 2048;
 
 // Load <repo>/.env into the process environment (without clobbering anything
 // already set), so the agent's env-var key fallback picks the keys up.
@@ -106,19 +113,66 @@ bool readWav(juce::AudioFormatManager& fm, const juce::File& f, juce::AudioBuffe
     return true;
 }
 
-TrackMeasurementSnapshot measure(const juce::AudioBuffer<float>& buf, double sr) {
+using BandArray = std::array<float, audio::kNumMaskingBands>;
+
+// Measure a buffer; also produces the song-averaged 1/3-octave band spectrum
+// (energy mean over all frames) when bandsOut is given.
+TrackMeasurementSnapshot measure(const juce::AudioBuffer<float>& buf, double sr,
+                                 BandArray* bandsOut = nullptr) {
     TrackMeasurer m;
     m.prepare(sr, kBlock, /*enableTruePeak*/ true);
+    if (bandsOut != nullptr)
+        m.setSpectrumCaptureEnabled(true);
+
     const int len = buf.getNumSamples();
     const int nch = juce::jmin(2, buf.getNumChannels());
+    std::array<double, audio::kNumMaskingBands> acc{};
+    long frames = 0;
+    BandArray frameBands{};
+
     for (int pos = 0; pos < len; pos += kBlock) {
         const int n = juce::jmin(kBlock, len - pos);
         const float* chans[2];
         chans[0] = buf.getReadPointer(0) + pos;
         chans[1] = nch > 1 ? buf.getReadPointer(1) + pos : chans[0];
         m.process(chans, nch, n);
+        if (bandsOut != nullptr && n >= 2048) {
+            audio::computeMaskingBandsDb(m.getSpectrumRing(), sr, frameBands);
+            for (int b = 0; b < audio::kNumMaskingBands; ++b)
+                acc[static_cast<size_t>(b)] +=
+                    std::pow(10.0, frameBands[static_cast<size_t>(b)] / 10.0);
+            ++frames;
+        }
     }
+    if (bandsOut != nullptr)
+        for (int b = 0; b < audio::kNumMaskingBands; ++b)
+            (*bandsOut)[static_cast<size_t>(b)] =
+                frames > 0
+                    ? static_cast<float>(10.0 * std::log10(acc[static_cast<size_t>(b)] / frames))
+                    : -120.0f;
     return m.read();
+}
+
+// Collapse the 30 1/3-octave bands into 6 macro bands (summed energy, dB),
+// ordered to match MixAnalysisAgent::tonalBandLabels().
+std::vector<float> collapseToMacro(const BandArray& bandsDb) {
+    const float upper[6] = {60.0f, 250.0f, 800.0f, 2500.0f, 6000.0f, 1.0e9f};
+    std::array<double, 6> acc{};
+    for (int b = 0; b < audio::kNumMaskingBands; ++b) {
+        const float center =
+            std::sqrt(audio::maskingBandEdgeHz(b) * audio::maskingBandEdgeHz(b + 1));
+        int mi = 0;
+        while (mi < 5 && center >= upper[mi])
+            ++mi;
+        acc[static_cast<size_t>(mi)] += std::pow(10.0, bandsDb[static_cast<size_t>(b)] / 10.0);
+    }
+    std::vector<float> out(6);
+    for (int i = 0; i < 6; ++i)
+        out[static_cast<size_t>(i)] =
+            acc[static_cast<size_t>(i)] > 0.0
+                ? static_cast<float>(10.0 * std::log10(acc[static_cast<size_t>(i)]))
+                : -120.0f;
+    return out;
 }
 
 MixAnalysisAgent::TrackMix toTrackMix(const juce::String& name, const std::string& role,
@@ -128,7 +182,9 @@ MixAnalysisAgent::TrackMix toTrackMix(const juce::String& name, const std::strin
     t.role = role;
     t.integratedLufs = s.integratedLufs;
     t.shortTermLufs = s.shortTermLufs;
-    t.samplePeakDb = s.truePeakValid && s.truePeakDb > -200.0f ? s.truePeakDb : s.samplePeakDb;
+    t.samplePeakDb = s.samplePeakDb;
+    t.truePeakDb = s.truePeakDb;
+    t.truePeakValid = s.truePeakValid;
     t.plr = s.plr;
     t.psr = s.psr;
     t.correlation = s.correlation;
@@ -252,20 +308,45 @@ TEST_CASE("MixAnalysisAgent: analyse a real multitrack session", "[.][mix_analys
     if (peak > 0.0f)
         master.applyGain(juce::Decibels::decibelsToGain(-1.0f) / peak);
 
-    // Build the agent input from the measured stems + master.
+    // Build the agent input from the measured stems + master. Each stem also
+    // gets its averaged 1/3-octave spectrum, collapsed to a macro-band tonal
+    // profile, and contributed to inter-track masking detection.
     MixAnalysisAgent::Input input;
+    std::vector<audio::TrackBandEnergies> bandSet;
     std::cout << "\n[audio] measured " << tracks.size() << " stems @ " << sr << " Hz\n";
-    std::cout << "name | LUFS-I | peak dB | PLR | corr | width\n";
-    for (const auto& t : tracks) {
-        auto snap = measure(t.buf, sr);
+    std::cout << "name | LUFS-I | peak | TP | PLR | corr | width\n";
+    for (int i = 0; i < static_cast<int>(tracks.size()); ++i) {
+        const auto& t = tracks[static_cast<size_t>(i)];
+        BandArray bands{};
+        auto snap = measure(t.buf, sr, &bands);
         auto mix = toTrackMix(t.name, t.role, snap);
+        mix.tonalDb = collapseToMacro(bands);
+
+        audio::TrackBandEnergies be;
+        be.trackId = i;
+        be.name = t.name;
+        be.bandDb = bands;
+        bandSet.push_back(std::move(be));
+
         std::cout << mix.name << " | " << juce::String(mix.integratedLufs, 1) << " | "
-                  << juce::String(mix.samplePeakDb, 1) << " | " << juce::String(mix.plr, 1) << " | "
-                  << juce::String(mix.correlation, 2) << " | " << juce::String(mix.width, 2)
-                  << "\n";
+                  << juce::String(mix.samplePeakDb, 1) << " | " << juce::String(mix.truePeakDb, 1)
+                  << " | " << juce::String(mix.plr, 1) << " | " << juce::String(mix.correlation, 2)
+                  << " | " << juce::String(mix.width, 2) << "\n";
         input.tracks.push_back(std::move(mix));
     }
-    input.master = toTrackMix("Master (stem sum, -1 dBFS)", "master", measure(master, sr));
+
+    BandArray masterBands{};
+    input.master =
+        toTrackMix("Master (stem sum, -1 dBFS)", "master", measure(master, sr, &masterBands));
+    input.master->tonalDb = collapseToMacro(masterBands);
+
+    // Real inter-track masking from the measured spectra (#1390).
+    auto findings = audio::detectMasking(bandSet);
+    for (const auto& f : findings)
+        input.masking.push_back(
+            {f.nameA.toStdString(), f.nameB.toStdString(), f.loHz, f.hiHz, f.severity});
+    std::cout << "[audio] masking findings: " << findings.size() << "\n";
+
     input.question = "Assess this raw multitrack: balance, dynamics, stereo image, and any "
                      "frequency clashes. What would you address first?";
 

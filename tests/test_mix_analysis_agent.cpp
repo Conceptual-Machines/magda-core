@@ -27,7 +27,19 @@ MixAnalysisAgent::Input buildHeavyMix() {
 
     auto add = [&in](const char* name, const char* role, float lufs, float peak, float plr,
                      float psr, float corr, float width) {
-        in.tracks.push_back({name, role, lufs, lufs + 3.0f, peak, plr, psr, corr, width});
+        MixAnalysisAgent::TrackMix t;
+        t.name = name;
+        t.role = role;
+        t.integratedLufs = lufs;
+        t.shortTermLufs = lufs + 3.0f;
+        t.samplePeakDb = peak;
+        t.truePeakDb = peak;
+        t.truePeakValid = true;
+        t.plr = plr;
+        t.psr = psr;
+        t.correlation = corr;
+        t.width = width;
+        in.tracks.push_back(t);
     };
 
     // name, role, LUFS-I, peak dB, PLR, PSR, corr, width
@@ -72,8 +84,19 @@ MixAnalysisAgent::Input buildHeavyMix() {
     add("Vocal Bus", "bus", -8.0f, -3.0f, 11.0f, 8.0f, 0.90f, 0.20f);
 
     // The final mix bus -- "possibly also the final mix".
-    in.master = MixAnalysisAgent::TrackMix{"Master", "master", -8.0f, -5.0f, -0.3f,
-                                           7.5f,     5.5f,     0.65f, 0.35f};
+    MixAnalysisAgent::TrackMix master;
+    master.name = "Master";
+    master.role = "master";
+    master.integratedLufs = -8.0f;
+    master.shortTermLufs = -5.0f;
+    master.samplePeakDb = -0.3f;
+    master.truePeakDb = -0.1f;
+    master.truePeakValid = true;
+    master.plr = 7.5f;
+    master.psr = 5.5f;
+    master.correlation = 0.65f;
+    master.width = 0.35f;
+    in.master = master;
 
     in.masking.push_back({"Kick In", "Bass DI", 40.0f, 90.0f, 0.72f});
     in.masking.push_back({"Bass DI", "Synth Bass", 60.0f, 160.0f, 0.81f});
