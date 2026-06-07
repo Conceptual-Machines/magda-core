@@ -111,6 +111,10 @@ set(TEST_SOURCES
     test_app_paths.cpp
     # Mixing pt2 (issue #1388) - per-track loudness/level/stereo measurement DSP
     test_track_measurer.cpp
+    # Mixing pt2 (issue #1390) - inter-track frequency masking detector
+    test_masking_detector.cpp
+    # Mixing pt2 (issue #1390) - per-track band spectrum (FFT bin -> band mapping)
+    test_band_spectrum.cpp
     # Media database (issue #768) — Phase A: SQLite skeleton
     test_media_database.cpp
     # Media database (issue #768) — Phase B: scanner + path rules

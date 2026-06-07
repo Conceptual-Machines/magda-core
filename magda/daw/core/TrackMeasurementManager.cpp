@@ -60,8 +60,10 @@ void TrackMeasurementManager::applyTrack(TrackId trackId) {
         return;
     const bool active = globalEnabled_ && enabledTracks_.count(trackId) > 0;
     if (active) {
-        if (auto* tap = pm->ensureTrackMeasurementTap(trackId))
+        if (auto* tap = pm->ensureTrackMeasurementTap(trackId)) {
             tap->setMeasurementEnabled(true);
+            tap->setSpectrumCaptureEnabled(maskingEnabled_);
+        }
     } else {
         pm->removeTrackMeasurementTap(trackId);
         latest_.erase(trackId);
@@ -85,6 +87,40 @@ void TrackMeasurementManager::timerCallback() {
             latest_[trackId] = tap->getSnapshot();
     }
     listeners_.call([](TrackMeasurementListener& l) { l.trackMeasurementsUpdated(); });
+}
+
+void TrackMeasurementManager::setMaskingAnalysisEnabled(bool shouldEnable) {
+    if (maskingEnabled_ == shouldEnable)
+        return;
+    maskingEnabled_ = shouldEnable;
+    auto* pm = pluginManager();
+    if (pm == nullptr)
+        return;
+    for (TrackId trackId : enabledTracks_)
+        if (auto* tap = pm->getTrackMeasurementTap(trackId))
+            tap->setSpectrumCaptureEnabled(maskingEnabled_);
+}
+
+std::vector<daw::audio::MaskingFinding> TrackMeasurementManager::getMaskingFindings(
+    const daw::audio::MaskingOptions& opts) const {
+    auto* pm = pluginManager();
+    if (pm == nullptr)
+        return {};
+    auto& tm = TrackManager::getInstance();
+    std::vector<daw::audio::TrackBandEnergies> tracks;
+    tracks.reserve(enabledTracks_.size());
+    for (TrackId trackId : enabledTracks_) {
+        auto* tap = pm->getTrackMeasurementTap(trackId);
+        if (tap == nullptr)
+            continue;
+        daw::audio::TrackBandEnergies tbe;
+        tbe.trackId = trackId;
+        if (const auto* info = tm.getTrack(trackId))
+            tbe.name = info->name;
+        tap->getMaskingBandsDb(tbe.bandDb);
+        tracks.push_back(std::move(tbe));
+    }
+    return daw::audio::detectMasking(tracks, opts);
 }
 
 daw::audio::TrackMeasurementSnapshot TrackMeasurementManager::getSnapshot(TrackId trackId) const {
