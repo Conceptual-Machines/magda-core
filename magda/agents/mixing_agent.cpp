@@ -95,6 +95,9 @@ MixAnalysisAgent::Result MixAnalysisAgent::generate(const Input& input) {
 
     auto response = client->sendRequest(request);
     result.wallSeconds = response.wallSeconds;
+    result.inputTokens = response.inputTokens;
+    result.outputTokens = response.outputTokens;
+    result.totalTokens = response.totalTokens;
     result.rawOutput = response.text.toStdString();
     if (!response.success) {
         result.hasError = true;

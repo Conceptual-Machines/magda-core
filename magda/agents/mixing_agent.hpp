@@ -61,6 +61,9 @@ class MixAnalysisAgent {
         // Diagnostics for the heavy-payload / optimisation work:
         std::string payload;       // the user message we sent
         double wallSeconds = 0.0;  // round-trip time of the LLM call
+        int inputTokens = -1;      // provider-reported prompt tokens (-1 = unknown)
+        int outputTokens = -1;     // provider-reported completion tokens
+        int totalTokens = -1;      // provider-reported total tokens
     };
 
     /** Blocking LLM call. Run off the message thread. */

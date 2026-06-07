@@ -136,6 +136,23 @@ MixAnalysisAgent::TrackMix toTrackMix(const juce::String& name, const std::strin
     return t;
 }
 
+// Map a model name to its provider wire id (so a comparison list can be just
+// model names). GPT-5 family needs the Responses API.
+std::string providerForModel(const juce::String& model) {
+    auto m = model.toLowerCase();
+    if (m.startsWith("gpt-5") || m.startsWith("o1") || m.startsWith("o3"))
+        return "openai_responses";
+    if (m.startsWith("gpt-"))
+        return "openai_chat";
+    if (m.startsWith("claude"))
+        return "anthropic";
+    if (m.startsWith("gemini"))
+        return "gemini";
+    if (m.startsWith("deepseek"))
+        return "deepseek";
+    return "openai_responses";
+}
+
 }  // namespace
 
 TEST_CASE("MixAnalysisAgent: analyse a real multitrack session", "[.][mix_analysis][audio]") {
@@ -155,27 +172,15 @@ TEST_CASE("MixAnalysisAgent: analyse a real multitrack session", "[.][mix_analys
 
     loadDotEnv(juce::File(juce::String(MAGDA_REPO_ROOT) + "/.env"));
 
-    // Pick the provider/model for the COMMAND role the agent uses. Start from
-    // whatever the app config resolved, let env override it, and fall back to a
-    // sane default so the call always has a model. Set MIX_ANALYSIS_PROVIDER /
-    // MIX_ANALYSIS_MODEL in .env to target a specific (e.g. stronger) model.
-    {
-        auto cfg = Config::getInstance().getAgentLLMConfig("command");
-        if (const char* prov = std::getenv("MIX_ANALYSIS_PROVIDER"))
-            cfg.provider = prov;
-        if (const char* model = std::getenv("MIX_ANALYSIS_MODEL"))
-            cfg.model = model;
-        if (cfg.model.empty()) {
-            cfg.provider = "openai_responses";
-            cfg.model = "gpt-5";
-        }
-        // GPT-5 only runs on the Responses API; force it if a gpt-5* model was
-        // selected without the matching provider.
-        if (juce::String(cfg.model).startsWithIgnoreCase("gpt-5"))
-            cfg.provider = "openai_responses";
-        Config::getInstance().setAgentLLMConfig("command", cfg);
-        std::cout << "[audio] LLM provider=" << cfg.provider << " model=" << cfg.model << "\n";
-    }
+    // Models to compare. Comma-separated list in MIX_ANALYSIS_MODELS (provider
+    // is inferred from each name); defaults to a single gpt-5.
+    juce::StringArray models;
+    if (const char* env = std::getenv("MIX_ANALYSIS_MODELS"))
+        models.addTokens(juce::String(env), ",", "");
+    else
+        models.add("gpt-5");
+    models.trim();
+    models.removeEmptyStrings();
 
     juce::AudioFormatManager fm;
     fm.registerBasicFormats();
@@ -264,18 +269,32 @@ TEST_CASE("MixAnalysisAgent: analyse a real multitrack session", "[.][mix_analys
     input.question = "Assess this raw multitrack: balance, dynamics, stereo image, and any "
                      "frequency clashes. What would you address first?";
 
-    MixAnalysisAgent agent;
-    auto result = agent.generate(input);
+    std::cout << "\n==== payload (" << MixAnalysisAgent::buildUserMessage(input).length()
+              << " chars) ====\n"
+              << MixAnalysisAgent::buildUserMessage(input) << "\n";
 
-    std::cout << "\n==== payload (" << result.payload.size() << " chars) ====\n"
-              << result.payload << "\n";
+    // Run each model against the identical input and print them back to back.
+    for (const auto& model : models) {
+        Config::AgentLLMConfig cfg;
+        cfg.provider = providerForModel(model);
+        cfg.model = model.toStdString();
+        Config::getInstance().setAgentLLMConfig("command", cfg);
 
-    if (result.hasError) {
-        WARN("LLM call failed (key/model configured?): " << result.error);
-        return;
+        std::cout << "\n################################################################\n"
+                  << "# MODEL: " << model << "  (provider " << cfg.provider << ")\n"
+                  << "################################################################\n";
+
+        MixAnalysisAgent agent;
+        auto result = agent.generate(input);
+        if (result.hasError) {
+            std::cout << "[ERROR] " << result.error << "\n";
+            WARN("Model " << model << " failed: " << result.error);
+            continue;
+        }
+        std::cout << "---- " << model << ": " << result.wallSeconds
+                  << "s | tokens in/out/total = " << result.inputTokens << "/"
+                  << result.outputTokens << "/" << result.totalTokens << " ----\n"
+                  << result.analysis << "\n";
+        CHECK_FALSE(result.analysis.empty());
     }
-
-    std::cout << "==== analysis (" << result.wallSeconds << "s) ====\n"
-              << result.analysis << "\n========\n";
-    CHECK_FALSE(result.analysis.empty());
 }
