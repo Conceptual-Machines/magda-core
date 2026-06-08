@@ -8,6 +8,7 @@
 #include "../chain/custom_ui/OscilloscopeUI.hpp"
 #include "../chain/custom_ui/SpectrumAnalyzerUI.hpp"
 #include "../common/TextSlider.hpp"
+#include "ClickableLabel.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda {
@@ -37,6 +38,9 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     // Set meter levels (for audio engine integration)
     void setPeakLevels(float leftPeak, float rightPeak);
 
+    // Clear the held peak value (resets the readout to -inf).
+    void resetPeak();
+
     void setSelected(bool shouldBeSelected);
 
     // Called when the send area resize handle is dragged
@@ -58,7 +62,7 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     // Meter component
     class LevelMeter;
     std::unique_ptr<LevelMeter> peakMeter;
-    std::unique_ptr<juce::Label> peakValueLabel;
+    std::unique_ptr<ClickableLabel> peakValueLabel;
     float peakValue_ = 0.0f;
 
     // dB scale component

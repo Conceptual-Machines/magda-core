@@ -366,12 +366,14 @@ void MasterChannelStrip::setupControls() {
 
     // Peak / fader-value readout above the fader. Mono font keeps digits in
     // a tabular grid so they don't shift sideways as the value changes.
-    peakValueLabel = std::make_unique<juce::Label>();
+    peakValueLabel = std::make_unique<ClickableLabel>();
     peakValueLabel->setText("-inf", juce::dontSendNotification);
     peakValueLabel->setJustificationType(juce::Justification::centred);
     peakValueLabel->setColour(juce::Label::textColourId,
                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     peakValueLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
+    peakValueLabel->setTooltip("Click to reset peak");
+    peakValueLabel->onClick = [this]() { resetPeak(); };
     addAndMakeVisible(*peakValueLabel);
 
     // Volume slider - TextSlider with vertical orientation and dB display
@@ -725,6 +727,12 @@ void MasterChannelStrip::setPeakLevels(float leftPeak, float rightPeak) {
             peakValueLabel->setText(peakText, juce::dontSendNotification);
         }
     }
+}
+
+void MasterChannelStrip::resetPeak() {
+    peakValue_ = 0.0f;
+    if (peakValueLabel)
+        peakValueLabel->setText("-inf", juce::dontSendNotification);
 }
 
 }  // namespace magda
