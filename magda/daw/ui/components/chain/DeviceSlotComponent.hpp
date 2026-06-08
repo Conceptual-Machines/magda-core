@@ -326,6 +326,7 @@ class DeviceSlotComponent : public NodeComponent,
     // Helper to create custom UI for internal devices
     void createCustomUI();
     void updateCustomUI();
+    void refreshInlinePluginBindings();
     // Lightweight per-frame refresh: push current device_.parameters values
     // into any active custom UI's sliders/knobs, without the heavy plugin-state
     // reads (waveforms, drum pad info, etc) that updateCustomUI does. Safe to

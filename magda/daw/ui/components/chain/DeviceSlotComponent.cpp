@@ -816,6 +816,9 @@ void DeviceSlotComponent::timerCallback() {
     if (!bridge)
         return;
 
+    if (compiledPanel_ != nullptr || traits_.isAnalysis)
+        refreshInlinePluginBindings();
+
     // Update UI button state to match the actual window state.
     if (uiButton_) {
         // Analysis devices use the popout AnalyzerWindow, not a native plugin window.
@@ -1051,6 +1054,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
 
     // Update MIDI custom UIs with the now-valid trackId (createCustomUI runs before setNodePath).
     bindDeviceSlotMidiCustomUIs(customUI_, nodePath_);
+    refreshInlinePluginBindings();
 }
 
 int DeviceSlotComponent::getCustomUITabIndex() const {
@@ -2365,6 +2369,22 @@ void DeviceSlotComponent::updateCustomUI() {
         compiledPanel_->updateFromDevice(device_);
 
     customUI_.update(device_);
+}
+
+void DeviceSlotComponent::refreshInlinePluginBindings() {
+    if (!nodePath_.isValid())
+        return;
+
+    if (compiledPanel_ != nullptr) {
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(nodePath_);
+                compiledPanel_->bindPlugin(plugin.get());
+            }
+        }
+    }
+
+    customUI_.refreshLivePluginBindings();
 }
 
 void DeviceSlotComponent::wirePadChainLinkCallbacks() {

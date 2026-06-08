@@ -1,3 +1,4 @@
+#include <limits>
 #include <map>
 #include <set>
 #include <unordered_set>
@@ -1816,6 +1817,56 @@ void PluginManager::syncMasterPlugins() {
             }
         }
     }
+
+    bool pluginOrderChanged = false;
+    {
+        std::vector<te::Plugin*> desiredOrder;
+        auto appendDevice = [&](const ChainNodePath& devicePath) {
+            juce::ScopedLock lock(pluginLock_);
+            auto it = findSyncedDevice(devicePath);
+            if (it != syncedDevices_.end() && it->second.plugin &&
+                masterList.indexOf(it->second.plugin.get()) >= 0)
+                desiredOrder.push_back(it->second.plugin.get());
+        };
+
+        for (const auto& element : trackInfo->chain.fxChainElements) {
+            if (isDevice(element))
+                appendDevice(ChainNodePath::topLevelDevice(MASTER_TRACK_ID, getDevice(element).id));
+        }
+        for (const auto& postElem : trackInfo->chain.postFxChainElements)
+            appendDevice(ChainNodePath::postFxDevice(MASTER_TRACK_ID, postElem.device.id));
+        for (const auto& miniElem : trackInfo->chain.mixerAnalysisElements)
+            appendDevice(ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, miniElem.device.id));
+
+        auto& listState = masterList.state;
+        int targetBaseVtIdx = 0;
+        if (!desiredOrder.empty()) {
+            targetBaseVtIdx = std::numeric_limits<int>::max();
+            for (auto* plugin : desiredOrder) {
+                const int idx = listState.indexOf(plugin->state);
+                if (idx >= 0)
+                    targetBaseVtIdx = std::min(targetBaseVtIdx, idx);
+            }
+            if (targetBaseVtIdx == std::numeric_limits<int>::max())
+                targetBaseVtIdx = 0;
+        }
+
+        for (size_t i = 0; i < desiredOrder.size(); ++i) {
+            int currentIdx = masterList.indexOf(desiredOrder[i]);
+            int vtChildIdx = listState.indexOf(desiredOrder[i]->state);
+            if (currentIdx < 0 || vtChildIdx < 0)
+                continue;
+
+            const int targetVtIdx = targetBaseVtIdx + static_cast<int>(i);
+            if (vtChildIdx != targetVtIdx) {
+                listState.moveChild(vtChildIdx, targetVtIdx, nullptr);
+                pluginOrderChanged = true;
+            }
+        }
+    }
+
+    if (pluginOrderChanged)
+        requestPluginOrderGraphRestart(MASTER_TRACK_ID, "master-plugin-order");
 }
 
 // =============================================================================
