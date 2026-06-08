@@ -574,8 +574,26 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             beatLabelInterval *= 2;
     }
 
+    // Coarsen the ticks when they would be denser than this. With a fixed grid
+    // resolution set (grid on), intervalBeats does not adapt to zoom, so a long
+    // clip zoomed fully out draws a tick per beat and the header fills with a
+    // solid wall of ticks. Drawing every Nth tick (the stride rounded up to a
+    // whole number of intervals per bar) keeps them on bar boundaries.
+    const double pixelsPerInterval = intervalBeats * zoom;
+    constexpr double kMinPixelsPerTick = 12.0;
+    long long tickStride = 1;
+    if (pixelsPerInterval > 0.0 && pixelsPerInterval < kMinPixelsPerTick) {
+        tickStride = static_cast<long long>(std::ceil(kMinPixelsPerTick / pixelsPerInterval));
+        if (intervalBeats > 0.0) {
+            const long long perBar =
+                std::max<long long>(1, std::llround(barLengthBeats / intervalBeats));
+            tickStride = ((tickStride + perBar - 1) / perBar) * perBar;
+        }
+    }
+    startStep -= startStep % tickStride;  // keep the drawn subset aligned to the origin
+
     // Pass 1: Draw grid ticks only (no labels)
-    for (long long step = startStep;; ++step) {
+    for (long long step = startStep;; step += tickStride) {
         double beat = barOriginBeats + step * intervalBeats;
         if (beat > barOriginBeats + totalTimelineBeats)
             break;

@@ -808,6 +808,17 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
     auto waveformRect =
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 
+    // Transient markers are a per-onset slicing aid. Zoomed far out on a long
+    // file there are thousands of them across a few hundred pixels, collapsing
+    // into a meaningless wall, so hide them once they would be closer together
+    // than this on average.
+    const int markerCount = transientTimes_.size();
+    if (markerCount > 1) {
+        const double avgSpacingPx = static_cast<double>(widthPixels) / markerCount;
+        if (avgSpacingPx < 6.0)
+            return;
+    }
+
     g.setColour(juce::Colours::white.withAlpha(0.25f));
 
     // Visible pixel range for culling
