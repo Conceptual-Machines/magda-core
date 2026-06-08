@@ -383,11 +383,58 @@ TrackId TrackManager::groupTracks(const std::vector<TrackId>& trackIds, const ju
     if (firstSelectedIndex < 0)
         return INVALID_TRACK_ID;
 
+    TrackId parentGroupId = INVALID_TRACK_ID;
+    bool hasSharedParent = true;
+    if (const auto* firstTrack = getTrack(tracksToGroup.front())) {
+        parentGroupId = firstTrack->parentId;
+        for (auto trackId : tracksToGroup) {
+            const auto* track = getTrack(trackId);
+            if (!track || track->parentId != parentGroupId) {
+                hasSharedParent = false;
+                break;
+            }
+        }
+    } else {
+        hasSharedParent = false;
+    }
+
+    int parentInsertIndex = -1;
+    if (hasSharedParent && parentGroupId != INVALID_TRACK_ID) {
+        if (const auto* parent = getTrack(parentGroupId)) {
+            for (auto trackId : tracksToGroup) {
+                auto it = std::find(parent->childIds.begin(), parent->childIds.end(), trackId);
+                if (it == parent->childIds.end())
+                    continue;
+
+                const int childIndex =
+                    static_cast<int>(std::distance(parent->childIds.begin(), it));
+                parentInsertIndex =
+                    parentInsertIndex < 0 ? childIndex : std::min(parentInsertIndex, childIndex);
+            }
+        }
+    }
+
     TrackId groupId = createGroupTrack(name);
     if (groupId == INVALID_TRACK_ID)
         return INVALID_TRACK_ID;
 
     moveTrack(groupId, firstSelectedIndex);
+
+    if (hasSharedParent && parentGroupId != INVALID_TRACK_ID) {
+        addTrackToGroup(groupId, parentGroupId);
+
+        if (auto* parent = getTrack(parentGroupId)) {
+            auto& siblings = parent->childIds;
+            siblings.erase(std::remove(siblings.begin(), siblings.end(), groupId), siblings.end());
+
+            auto insertIt = siblings.end();
+            if (parentInsertIndex >= 0) {
+                insertIt = siblings.begin() +
+                           juce::jlimit(0, static_cast<int>(siblings.size()), parentInsertIndex);
+            }
+            siblings.insert(insertIt, groupId);
+        }
+    }
 
     for (auto trackId : tracksToGroup)
         addTrackToGroup(trackId, groupId);

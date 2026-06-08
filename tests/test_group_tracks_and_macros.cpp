@@ -225,6 +225,34 @@ TEST_CASE("Ungroup track restores children and deletes empty group", "[group_tra
     REQUIRE(fixture.tm().getTrackIndex(secondId) == 1);
 }
 
+TEST_CASE("Group selected child tracks creates nested group inside parent",
+          "[group_track][selection]") {
+    GroupMacroTestFixture fixture;
+
+    auto parentId = fixture.tm().createGroupTrack("Parent");
+    auto firstId = fixture.tm().createTrackInGroup(parentId, "Drums", TrackType::Audio);
+    auto secondId = fixture.tm().createTrackInGroup(parentId, "Bass", TrackType::Audio);
+    auto thirdId = fixture.tm().createTrackInGroup(parentId, "Lead", TrackType::Audio);
+
+    auto nestedGroupId = fixture.tm().groupTracks({secondId, firstId}, "Nested Group");
+
+    REQUIRE(nestedGroupId != INVALID_TRACK_ID);
+
+    const auto* parent = fixture.tm().getTrack(parentId);
+    REQUIRE(parent != nullptr);
+    REQUIRE(parent->childIds == std::vector<TrackId>{nestedGroupId, thirdId});
+
+    const auto* nestedGroup = fixture.tm().getTrack(nestedGroupId);
+    REQUIRE(nestedGroup != nullptr);
+    REQUIRE(nestedGroup->isGroup());
+    REQUIRE(nestedGroup->parentId == parentId);
+    REQUIRE(nestedGroup->childIds == std::vector<TrackId>{firstId, secondId});
+
+    REQUIRE(fixture.tm().getTrack(firstId)->parentId == nestedGroupId);
+    REQUIRE(fixture.tm().getTrack(secondId)->parentId == nestedGroupId);
+    REQUIRE(fixture.tm().getTrack(thirdId)->parentId == parentId);
+}
+
 TEST_CASE("Audio and Instrument tracks accept instruments", "[group_track][instrument]") {
     GroupMacroTestFixture fixture;
 
