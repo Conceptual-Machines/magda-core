@@ -2087,6 +2087,7 @@ void DeviceSlotComponent::toggleAnalyzerWindow() {
     } else if (auto* spec = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
         auto ui = std::make_unique<SpectrumAnalyzerUI>();
         ui->setPlugin(spec);
+        ui->setTrackId(nodePath_.trackId);  // enables the masking overlay in the external window
         content = std::move(ui);
     }
     if (content == nullptr)
