@@ -279,6 +279,12 @@ class TrackManager {
     const std::vector<ChainElement>& getChainElements(TrackId trackId) const;
     void moveNode(TrackId trackId, int fromIndex, int toIndex);
 
+    /// Effect inserts on a track, in order, as display strings (e.g. "Pro-Q 3",
+    /// "1176 (bypassed)"), recursing racks and skipping instrument / MIDI /
+    /// analysis devices. Empty = no processing yet. Used as the mixing agent's
+    /// raw-vs-worked signal (#886).
+    std::vector<std::string> getChainSummary(TrackId trackId) const;
+
     // Post-fader FX chain (flat device list; never racks or instruments).
     // Getting/removing a post-fx device goes through the path-based APIs
     // (getDeviceInChainByPath / removeDeviceFromChainByPath with a

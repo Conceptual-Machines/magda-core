@@ -68,6 +68,11 @@ class AnalysisTapPlugin : public te::Plugin {
         // Transparent passthrough: read the buffer, never write it.
         if (!fc.destBuffer || fc.bufferNumSamples <= 0)
             return;
+        // Don't feed the visualisation during an offline render (export / mix
+        // analysis): audio still passes through untouched, but tapping it would
+        // make the live scope/spectrum displays twitch to the render's audio.
+        if (fc.isRendering)
+            return;
         const int n = fc.bufferNumSamples;
         if (static_cast<int>(monoScratch_.size()) < n)
             return;  // block exceeds initialised size; skip tap (audio still passes through)
