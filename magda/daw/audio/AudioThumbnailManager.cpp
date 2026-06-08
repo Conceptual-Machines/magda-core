@@ -89,24 +89,32 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
         return;
 
     auto* thumbnail = getThumbnail(audioFilePath);
-    if (thumbnail == nullptr || !thumbnail->isFullyLoaded()) {
-        // Draw placeholder if thumbnail not ready
+    if (thumbnail == nullptr) {
+        // No thumbnail at all yet (reader not created): nothing to draw.
         g.setColour(colour.withAlpha(0.3f));
         g.drawText("Loading...", bounds, juce::Justification::centred);
         return;
     }
 
-    // Clamp times to valid range
+    // Clamp times to valid range. getTotalLength() is known as soon as the reader
+    // is set, even before the sample data has finished streaming in.
     double totalLength = thumbnail->getTotalLength();
     startTime = juce::jlimit(0.0, totalLength, startTime);
     endTime = juce::jlimit(startTime, totalLength, endTime);
+
+    // While the thumbnail is still streaming in, draw whatever has loaded so far
+    // (drawChannels renders up to getNumSamplesFinished()) so a long file fills
+    // in progressively instead of snapping in all at once at the end. The smooth
+    // high-res renderer reads the file/peak-cache directly, so it is held back
+    // until loading has settled to avoid expensive per-paint disk reads mid-load.
+    const bool fullyLoaded = thumbnail->isFullyLoaded();
 
     // useHighRes opts into the path-based smooth renderer (drawWaveformFromSamples).
     // Below the samples-per-pixel threshold the smooth envelope is visibly
     // better; above it (zoomed far out) the cheap JUCE thumbnail is used, since
     // the smooth path's disk read would be a waste when the result is the same
     // pixel soup.
-    if (useHighRes) {
+    if (useHighRes && fullyLoaded) {
         auto* reader = getOrCreateReader(audioFilePath);
         if (reader != nullptr && reader->sampleRate > 0.0) {
             double timeRange = endTime - startTime;

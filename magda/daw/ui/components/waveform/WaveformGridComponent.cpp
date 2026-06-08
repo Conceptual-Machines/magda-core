@@ -26,6 +26,33 @@ WaveformGridComponent::WaveformGridComponent() {
     setName("WaveformGrid");
 }
 
+WaveformGridComponent::~WaveformGridComponent() {
+    if (waveformListenerPath_.isNotEmpty())
+        magda::AudioThumbnailManager::getInstance().removeThumbnailChangeListener(
+            waveformListenerPath_, this);
+}
+
+void WaveformGridComponent::updateWaveformLoadListener(const juce::String& audioFilePath) {
+    auto& mgr = magda::AudioThumbnailManager::getInstance();
+    auto* thumb = audioFilePath.isNotEmpty() ? mgr.getThumbnail(audioFilePath) : nullptr;
+    const juce::String wanted =
+        (thumb != nullptr && !thumb->isFullyLoaded()) ? audioFilePath : juce::String();
+    if (wanted == waveformListenerPath_)
+        return;
+    if (waveformListenerPath_.isNotEmpty())
+        mgr.removeThumbnailChangeListener(waveformListenerPath_, this);
+    waveformListenerPath_ = wanted;
+    if (waveformListenerPath_.isNotEmpty())
+        if (auto* t = mgr.getThumbnail(waveformListenerPath_))
+            t->addChangeListener(this);
+}
+
+void WaveformGridComponent::changeListenerCallback(juce::ChangeBroadcaster*) {
+    const auto* clip = getClip();
+    updateWaveformLoadListener(clip != nullptr ? clip->audio().source.filePath : juce::String());
+    repaint();
+}
+
 void WaveformGridComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
     if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0)
@@ -157,6 +184,8 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
         return;
 
     auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
+    // Repaint as the thumbnail streams in (progressive fill while loading).
+    updateWaveformLoadListener(clip.audio().source.filePath);
     auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
     double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
     // The waveform editor only ever shows the focused clip, so the waveform is
