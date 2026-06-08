@@ -47,6 +47,10 @@ class MixAnalysisAgent {
         // low-mid / mid / high-mid / high (see tonalBandLabels). Empty when the
         // spectral layer wasn't run.
         std::vector<float> tonalDb;
+        // Effect inserts on this track, in order (e.g. "Pro-Q 3", "1176 (bypassed)").
+        // Empty = no processing yet -> a raw/early-stage track. The instrument and
+        // analysis devices are excluded; this is the mixing chain only.
+        std::vector<std::string> chain;
     };
 
     // Labels for the macro bands in TrackMix::tonalDb, in order.
@@ -85,6 +89,10 @@ class MixAnalysisAgent {
         float bpm = 0.0f;      // tempo from the transport (0 = unknown, omitted)
         std::string genre;     // e.g. "Funk/Soul" (empty = unknown, omitted)
         std::string question;  // optional user question; empty = general assessment
+        // Continuity across analyses of the same mix (#886 memory): a compact
+        // block with the previous verdict + measured changes since, so the model
+        // builds on prior advice instead of repeating it. Empty on a first run.
+        std::string priorContext;
     };
 
     struct Result {

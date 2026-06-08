@@ -8,6 +8,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 // clang-format on
 
+#include "../../core/TrackManager.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
 #include "../AudioBridge.hpp"
 #include "MixAnalysisInput.hpp"
@@ -253,8 +254,12 @@ class AnalysisJob : public juce::Thread {
             // pointers stable as the vector grows.
             std::vector<std::unique_ptr<juce::AudioBuffer<float>>> stemBufs;
             std::vector<MixAnalysisInput::Source> sources;
+            std::vector<magda::TrackId> sourceTrackIds;  // aligned with sources for post-build tags
             stemBufs.reserve(teTracks.size());
             sources.reserve(teTracks.size());
+            sourceTrackIds.reserve(teTracks.size());
+
+            auto* bridge = engine_.getAudioBridge();
 
             const int total = static_cast<int>(teTracks.size());
             int skipped = 0;
@@ -304,6 +309,8 @@ class AnalysisJob : public juce::Thread {
                 src.audio = buf.get();
                 stemBufs.push_back(std::move(buf));
                 sources.push_back(std::move(src));
+                sourceTrackIds.push_back(bridge ? bridge->getTrackIdForTeTrack(track->itemID)
+                                                : magda::INVALID_TRACK_ID);
             }
 
             if (sources.empty()) {
@@ -316,6 +323,17 @@ class AnalysisJob : public juce::Thread {
             MixAnalysisInput::Options opts;
             opts.numSegments = request_.numSegments;
             input = MixAnalysisInput::build(masterSr, sources, &masterBuf, {}, opts);
+
+            // Annotate each track with its type (audio/MIDI) + effect chain. build()
+            // preserves source order, so input.tracks[i] matches sourceTrackIds[i].
+            auto& tmgr = magda::TrackManager::getInstance();
+            for (size_t i = 0; i < input.tracks.size() && i < sourceTrackIds.size(); ++i) {
+                const auto tid = sourceTrackIds[i];
+                if (tid == magda::INVALID_TRACK_ID)
+                    continue;
+                input.tracks[i].role = tmgr.getPrimaryInstrument(tid) ? "MIDI" : "audio";
+                input.tracks[i].chain = tmgr.getChainSummary(tid);
+            }
 
             if (skipped > 0)
                 postProgress(juce::String(skipped) + " track(s) skipped (render/read failed).");

@@ -56,6 +56,13 @@ const char* MixAnalysisAgent::getSystemPrompt() {
            "over on a percussive source usually needs no action.\n"
            "- Very low PLR on sustained material suggests over-compression/limiting; that is the "
            "dynamics problem to flag.\n"
+           "- A track may list its insert chain (the effects already on it, in order). An empty "
+           "chain means no processing yet -- an early/raw-stage track; existing processing (EQ, "
+           "compression, etc.) is work already done. Give contextual advice: refine what is there, "
+           "and do not suggest adding processing a track already has.\n"
+           "- If context that would materially change your assessment is missing (genre, the "
+           "user's goal for the mix, or whether a source is a live take or programmed), ask one "
+           "brief clarifying question instead of guessing.\n"
            "Reference tracks by name with concrete, actionable suggestions. Be concise. If a "
            "question is provided, answer it directly; otherwise give an overall assessment.";
 }
@@ -80,12 +87,20 @@ juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
               << " flat=" << juce::String(t.spectralFlatness, 2)
               << " rolloff=" << juce::String(juce::roundToInt(t.spectralRolloffHz)) << "Hz";
         }
+        if (!t.chain.empty()) {
+            r << "\n    chain:";
+            for (const auto& d : t.chain)
+                r << " [" << juce::String(d) << "]";
+        }
         return r;
     };
 
     juce::String m;
     if (!input.question.empty())
         m << "Question: " << juce::String(input.question) << "\n\n";
+
+    if (!input.priorContext.empty())
+        m << juce::String(input.priorContext) << "\n\n";
 
     if (input.bpm > 0.0f || !input.genre.empty()) {
         m << "Song context:";

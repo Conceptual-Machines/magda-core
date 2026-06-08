@@ -1987,6 +1987,11 @@ void AIChatConsoleContent::analyzeCapturedMix() {
     for (const auto& [id, snap] : mixCapture_.snapshots) {
         MixAnalysisAgent::TrackMix tm;
         tm.name = trackName(id).toStdString();
+        // Type (audio/MIDI) + effect chain so the agent knows the instrument and
+        // how worked the track is (empty chain = raw). Name already carries the
+        // instrument for descriptively-named tracks.
+        tm.role = tmgr.getPrimaryInstrument(id) ? "MIDI" : "audio";
+        tm.chain = tmgr.getChainSummary(id);
         tm.integratedLufs = snap.integratedLufs;
         tm.shortTermLufs = snap.shortTermLufs;
         tm.samplePeakDb = snap.samplePeakDb;
