@@ -424,6 +424,12 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      */
     void restoreAfterRendering();
 
+    /// True between prepareForRendering() and restoreAfterRendering() -- i.e.
+    /// while an offline render (export / mix analysis) is in progress.
+    bool isRenderingActive() const {
+        return renderingActive_.load(std::memory_order_acquire);
+    }
+
     /**
      * @brief Reset sidechain monitor held-note counts and re-gate triggered LFOs.
      *

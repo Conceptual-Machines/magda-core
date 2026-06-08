@@ -60,6 +60,8 @@ set(TEST_SOURCES
     test_sends_and_track_deletion.cpp
     test_master_track_serialization.cpp
     test_automation_agent.cpp
+    test_mix_analysis_agent.cpp
+    test_mix_analysis_audio.cpp
     test_automation_modes.cpp
     test_automation_singleton.cpp
     test_instruction_executor_context.cpp
@@ -154,6 +156,14 @@ target_link_libraries(magda_tests
 target_include_directories(magda_tests
     PRIVATE
     ${CMAKE_SOURCE_DIR}
+)
+
+# Paths for the exploratory mix-analysis harness (hidden [.] tests): the repo
+# root (to load .env) and the gitignored audio fixtures dir.
+target_compile_definitions(magda_tests
+    PRIVATE
+    MAGDA_REPO_ROOT="${CMAKE_SOURCE_DIR}"
+    MAGDA_AUDIO_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/audio"
 )
 
 # Add the test to CTest

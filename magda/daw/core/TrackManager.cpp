@@ -1308,6 +1308,40 @@ const std::vector<ChainElement>& TrackManager::getChainElements(TrackId trackId)
     return empty;
 }
 
+std::vector<std::string> TrackManager::getChainSummary(TrackId trackId) const {
+    std::vector<std::string> out;
+    const auto* track = getTrack(trackId);
+    if (track == nullptr)
+        return out;
+
+    auto add = [&out](const DeviceInfo& d) {
+        // Only effect inserts -- the mixing chain. Skip instruments, MIDI
+        // processors and analysis (transparent) devices.
+        if (d.deviceType != DeviceType::Effect)
+            return;
+        juce::String s = d.name;
+        if (d.bypassed)
+            s += " (bypassed)";
+        out.push_back(s.toStdString());
+    };
+
+    std::function<void(const std::vector<ChainElement>&)> walk =
+        [&](const std::vector<ChainElement>& elements) {
+            for (const auto& e : elements) {
+                if (magda::isDevice(e))
+                    add(magda::getDevice(e));
+                else
+                    for (const auto& chain : magda::getRack(e).chains)
+                        walk(chain.elements);
+            }
+        };
+    walk(track->chain.fxChainElements);
+    for (const auto& pf : track->chain.postFxChainElements)
+        add(pf.device);
+
+    return out;
+}
+
 void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {
     DBG("TrackManager::moveNode trackId=" << trackId << " from=" << fromIndex << " to=" << toIndex);
     if (auto* track = getTrack(trackId)) {
