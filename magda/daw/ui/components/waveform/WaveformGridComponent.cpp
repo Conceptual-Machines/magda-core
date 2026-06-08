@@ -407,14 +407,40 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     visibleStartDisplay = juce::jmax(visibleStartDisplay, waveformStartDisplay);
     visibleEndDisplay = juce::jmin(visibleEndDisplay, waveformEndDisplay);
 
-    // Find the first grid line at or before the visible start
-    double startK = std::floor((visibleStartDisplay - originDisplay) / secondsPerGrid);
-    double iterStart = originDisplay + startK * secondsPerGrid;
+    // Coarsen the grid when lines would be denser than this. A long clip zoomed
+    // fully out has thousands of beats across a few hundred pixels, which without
+    // this collapses into a solid wall of vertical bars. Drawing every Nth grid
+    // line (snapped to the origin so the subset is stable while scrolling) keeps
+    // the grid legible. The stride is a whole multiple of the grid unit, so when
+    // the grid divides the bar it lands on bar/beat boundaries.
+    const double pixelsPerGrid = secondsPerGrid * horizontalZoom_;
+    constexpr double kMinPixelsPerGridLine = 6.0;
+    long long stride = 1;
+    if (pixelsPerGrid > 0.0 && pixelsPerGrid < kMinPixelsPerGridLine) {
+        stride = static_cast<long long>(std::ceil(kMinPixelsPerGridLine / pixelsPerGrid));
+        // Round the stride up to a whole number of grid lines per bar so the
+        // coarsened lines land on bar boundaries (keeping their numbers) rather
+        // than arbitrary off-bar beats.
+        if (beatsPerBar > 0.0) {
+            const long long linesPerBar =
+                std::max<long long>(1, std::llround(beatsPerBar / gridBeats));
+            stride = ((stride + linesPerBar - 1) / linesPerBar) * linesPerBar;
+        }
+    }
+
+    // First grid line at or before the visible start, snapped down to a stride
+    // boundary relative to the origin so the drawn lines don't shift on scroll.
+    long long startK =
+        static_cast<long long>(std::floor((visibleStartDisplay - originDisplay) / secondsPerGrid));
+    startK -= ((startK % stride) + stride) % stride;
     double iterEnd = visibleEndDisplay + secondsPerGrid;
 
     auto& fontMgr = FontManager::getInstance();
 
-    for (double displayTime = iterStart; displayTime < iterEnd; displayTime += secondsPerGrid) {
+    for (long long k = startK;; k += stride) {
+        double displayTime = originDisplay + static_cast<double>(k) * secondsPerGrid;
+        if (displayTime >= iterEnd)
+            break;
         int px = timeToPixel(displayTime);
 
         if (px < waveformRect.getX() || px > waveformRect.getRight())
