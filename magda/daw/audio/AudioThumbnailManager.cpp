@@ -90,9 +90,16 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
 
     auto* thumbnail = getThumbnail(audioFilePath);
     if (thumbnail == nullptr) {
-        // No thumbnail at all yet (reader not created): nothing to draw.
-        g.setColour(colour.withAlpha(0.3f));
-        g.drawText("Loading...", bounds, juce::Justification::centred);
+        // A null thumbnail is terminal, not transient: getThumbnail() creates the
+        // reader synchronously, so the only way to get here is a file that cannot
+        // be opened - moved, deleted, or unreadable. Show a clear broken state
+        // instead of a perpetual "Loading..." (#1415).
+        g.setColour(juce::Colours::red.withAlpha(0.16f));
+        g.fillRect(bounds);
+        if (bounds.getWidth() >= 54) {
+            g.setColour(juce::Colours::red.brighter(0.2f).withAlpha(0.9f));
+            g.drawText("Missing file", bounds, juce::Justification::centred);
+        }
         return;
     }
 
