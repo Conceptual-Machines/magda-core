@@ -20,6 +20,7 @@
 #include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/llm_presets.hpp"
+#include "../../../../agents/mixing_agent.hpp"
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/router_agent.hpp"
 #include "../../../api/magda_api_live.hpp"
@@ -35,6 +36,7 @@
 #include "../../../core/controllers/BindingRegistry.hpp"
 #include "../../../core/controllers/ControllerProfileRegistry.hpp"
 #include "../../../core/controllers/ControllerRegistry.hpp"
+#include "../../../project/ProjectManager.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -454,6 +456,7 @@ void AIChatConsoleContent::RequestThread::run() {
     std::vector<magda::Instruction> musicInstructions;     // IR from music agent
     std::string musicDescription;                          // description from DSL music agent
     std::vector<magda::AutoInstruction> autoInstructions;  // IR from automation agent
+    std::string mixAnalysis;                               // prose from the mix-analysis agent
     std::string error;
 
     auto agentStart = std::chrono::steady_clock::now();
@@ -620,19 +623,75 @@ void AIChatConsoleContent::RequestThread::run() {
             }
         }
     } else if (intent == "MIXING") {
-        // Mixer view hard-scopes here (#1402). The mixing agent (#886) lands on
-        // a follow-up branch; until then echo the attached capture (#1403) plus
-        // the prompt so the cockpit is observable end-to-end without dispatching
-        // to a non-existent agent.
-        juce::String summary;
-        if (owner_.mixCapture_.valid)
-            summary << owner_.formatMixCaptureContext();
-        else
-            summary << "No mix levels attached. Capture the subject + references first.";
-        if (!message.empty())
-            summary << "\nPrompt: " << juce::String(message);
-        summary << "\n(Mixing agent #886 not wired up yet.)";
-        error = summary.toStdString();
+        // Mixer view / an attached capture hard-scopes here (#1402/#1403). Map the
+        // captured relational measurements (per-track levels + #1390 masking) into
+        // the mix-analysis agent (#886) and let it assess the subject against its
+        // sibling reference tracks. Whole-mix "analyse all tracks" via offline
+        // render is the richer follow-up path; this is the relational section pass.
+        // We're already off the message thread here, so the blocking generate() is
+        // safe to call directly.
+        if (!owner_.mixCapture_.valid || owner_.mixCapture_.snapshots.empty()) {
+            error = "No mix levels attached. Capture the subject + references first.";
+        } else {
+            auto& tmgr = magda::TrackManager::getInstance();
+            auto trackName = [&tmgr](magda::TrackId id) -> juce::String {
+                const auto* t = tmgr.getTrack(id);
+                return (t != nullptr && t->name.isNotEmpty()) ? t->name : juce::String(id);
+            };
+
+            magda::MixAnalysisAgent::Input input;
+            for (const auto& [id, snap] : owner_.mixCapture_.snapshots) {
+                magda::MixAnalysisAgent::TrackMix tm;
+                tm.name = trackName(id).toStdString();
+                tm.integratedLufs = snap.integratedLufs;
+                tm.shortTermLufs = snap.shortTermLufs;
+                tm.samplePeakDb = snap.samplePeakDb;
+                tm.truePeakDb = snap.truePeakDb;
+                tm.truePeakValid = snap.truePeakValid;
+                tm.plr = snap.plr;
+                tm.psr = snap.psr;
+                tm.correlation = snap.correlation;
+                tm.width = snap.width;
+                // Spectral / tonal balance and the master timeline are left unset:
+                // the realtime capture doesn't compute them (only the offline-render
+                // path runs the full MixAnalysisInput pipeline). The prompt treats
+                // 0/unset fields as "not measured".
+                input.tracks.push_back(std::move(tm));
+            }
+            for (const auto& f : owner_.mixCapture_.masking) {
+                magda::MixAnalysisAgent::MaskingPair mp;
+                mp.a = f.nameA.toStdString();
+                mp.b = f.nameB.toStdString();
+                mp.loHz = f.loHz;
+                mp.hiHz = f.hiHz;
+                mp.severity = f.severity;
+                input.masking.push_back(std::move(mp));
+            }
+
+            const auto projectTempo =
+                magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+            if (projectTempo > 0.0)
+                input.bpm = static_cast<float>(projectTempo);
+
+            // The Input has no dedicated subject field; the relational subject
+            // lives in the question so the model knows which track to focus on and
+            // that the rest are sibling references in the same mix (not external
+            // genre-target masters, which is what Input.references is reserved for).
+            juce::String q;
+            q << "Focus on the track \"" << trackName(owner_.mixCapture_.subject)
+              << "\". The other tracks are sibling references in the same mix to "
+                 "compare it against.";
+            if (!message.empty())
+                q << " " << juce::String(message);
+            input.question = q.toStdString();
+
+            magda::MixAnalysisAgent mixAgent;
+            auto r = mixAgent.generate(input);
+            if (r.hasError)
+                error = r.error.empty() ? "Mix analysis failed." : r.error;
+            else
+                mixAnalysis = std::move(r.analysis);
+        }
     }
 
     agentMs =
@@ -654,12 +713,14 @@ void AIChatConsoleContent::RequestThread::run() {
     juce::MessageManager::callAsync(
         [safeThis, dsl = std::move(dslCode), musicIR = std::move(musicInstructions),
          musicDesc = std::move(musicDescription), autoIR = std::move(autoInstructions),
-         error = std::move(error), anchor, routerMs, agentMs, totalMs]() {
+         mixAnalysis = std::move(mixAnalysis), error = std::move(error), anchor, routerMs, agentMs,
+         totalMs]() {
             if (!safeThis)
                 return;
 
             std::string response;
-            bool hasContent = !dsl.empty() || !musicIR.empty() || !autoIR.empty();
+            bool hasContent =
+                !dsl.empty() || !musicIR.empty() || !autoIR.empty() || !mixAnalysis.empty();
 
             if (!error.empty() && !hasContent) {
                 response = error;
@@ -742,6 +803,13 @@ void AIChatConsoleContent::RequestThread::run() {
                             response += "\n";
                         response += "Error: " + autoExec.getError().toStdString();
                     }
+                }
+
+                // Mix-analysis agent (#886): plain prose, no DSL/IR to execute.
+                if (!mixAnalysis.empty()) {
+                    if (!response.empty())
+                        response += "\n";
+                    response += mixAnalysis;
                 }
 
                 if (!error.empty())

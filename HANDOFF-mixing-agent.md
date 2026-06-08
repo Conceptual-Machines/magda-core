@@ -12,7 +12,7 @@
 - In any view (when a track is selected): a footer **reference-track dropdown** (chevron) + **capture** (record dot) button, with thin vertical separators (not box borders). Reference menu uses the theme font.
 - Capture arms `TrackMeasurementManager` (subject + refs + masking), accumulates during playback, gathers on stop; restores prior measurement enablement.
 - Mixer view (or an attached capture, any view) hard-scopes the console's `MIXING` route, bypassing the RouterAgent; `@alias` / `[COMMAND:]` still opt out.
-- The `MIXING` dispatch currently echoes the attached capture + prompt (placeholder) — it does NOT yet call the agent. Wiring it to `MixAnalysisAgent` / offline-render is the UI step (see Open threads).
+- The `MIXING` dispatch now CALLS the agent for the **capture path**: an attached capture's per-track snapshots + masking findings are mapped into `MixAnalysisAgent::Input` (subject identity + user prompt -> `question`, project tempo -> `bpm`), `generate()` runs on the existing worker thread, and the prose lands in the console via a new `mixAnalysis` output channel. Spectral/tonal/timeline are left unset on this path (realtime capture doesn't compute them). The **offline-render "analyse all tracks"** path (full input) is still open (see thread A).
 - Slice-1 (active-view glyph) + slice-2 (routing + glyph dark-fill fix) were merged separately as PR #1405 into dev/0.11.0.
 
 ### 2. #886 MixAnalysisAgent — whole-mix "listening" via measurements
