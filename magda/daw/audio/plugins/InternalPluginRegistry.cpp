@@ -192,6 +192,26 @@ te::Plugin::Ptr createFreshValueTreePlugin(te::Edit& edit, const char* xmlTypeNa
     return edit.getPluginCache().createNewPlugin(pluginState);
 }
 
+bool shouldUseTracktionStringFactory(InternalDeviceKind kind) {
+    switch (kind) {
+        case InternalDeviceKind::TeEq:
+        case InternalDeviceKind::TeCompressor:
+        case InternalDeviceKind::TeReverb:
+        case InternalDeviceKind::TeDelay:
+        case InternalDeviceKind::TeChorus:
+        case InternalDeviceKind::TePhaser:
+        case InternalDeviceKind::TeLowpass:
+        case InternalDeviceKind::TePitchShift:
+        case InternalDeviceKind::TeImpulseResponse:
+        case InternalDeviceKind::TeVolumeAndPan:
+        case InternalDeviceKind::TeFourOsc:
+        case InternalDeviceKind::TeToneGenerator:
+            return true;
+        default:
+            return false;
+    }
+}
+
 }  // namespace
 
 std::span<const InternalPluginSpec* const> getAllInternalPluginSpecs() {
@@ -245,7 +265,10 @@ te::Plugin::Ptr createInternalPluginFromSpec(const InternalPluginSpec& spec, te:
     if (spec.createMode == InternalPluginCreateMode::FreshValueTree)
         return createFreshValueTreePlugin(edit, spec.pluginId);
 
-    auto plugin = edit.getPluginCache().createNewPlugin(spec.pluginId, {});
+    te::Plugin::Ptr plugin;
+    if (shouldUseTracktionStringFactory(spec.kind))
+        plugin = edit.getPluginCache().createNewPlugin(spec.pluginId, {});
+
     if (!plugin)
         plugin = createFreshValueTreePlugin(edit, spec.pluginId);
 

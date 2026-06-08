@@ -1692,6 +1692,8 @@ void PluginManager::syncMasterPlugins() {
             continue;
 
         masterList.insertPlugin(plugin, -1, nullptr);
+        if (masterList.indexOf(plugin.get()) < 0)
+            continue;
         {
             juce::ScopedLock lock(pluginLock_);
             auto& sd = syncedDevices_[devicePath];
@@ -1742,6 +1744,8 @@ void PluginManager::syncMasterPlugins() {
             continue;
 
         masterList.insertPlugin(plugin, -1, nullptr);
+        if (masterList.indexOf(plugin.get()) < 0)
+            continue;
         {
             juce::ScopedLock lock(pluginLock_);
             auto& sd = syncedDevices_[postPath];
@@ -1788,6 +1792,8 @@ void PluginManager::syncMasterPlugins() {
             continue;
 
         masterList.insertPlugin(plugin, -1, nullptr);
+        if (masterList.indexOf(plugin.get()) < 0)
+            continue;
         {
             juce::ScopedLock lock(pluginLock_);
             auto& sd = syncedDevices_[miniPath];
@@ -2345,6 +2351,9 @@ te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeN
     };
 
     auto shouldUseTracktionStringFactory = [&]() {
+        if (daw::audio::compiled::findCompiledPluginSpec(xmlTypeName) != nullptr)
+            return false;
+
         const auto* spec = daw::audio::findInternalPluginSpecForLoadType(xmlTypeName);
         if (spec == nullptr)
             return true;

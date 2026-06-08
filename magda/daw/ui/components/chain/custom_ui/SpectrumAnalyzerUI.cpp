@@ -184,6 +184,9 @@ void SpectrumAnalyzerUI::rebuildFft(int order) {
 }
 
 void SpectrumAnalyzerUI::setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin) {
+    if (plugin_ == plugin)
+        return;
+
     plugin_ = plugin;
     lastTapWritePosition_ = 0;
     if (popoutUI_ != nullptr)

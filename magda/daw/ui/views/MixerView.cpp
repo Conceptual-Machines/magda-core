@@ -934,8 +934,6 @@ void MixerView::ChannelStrip::syncMiniChainPluginWindow(DeviceId deviceId, bool 
 }
 
 void MixerView::ChannelStrip::refreshMiniAnalyzers() {
-    if (isMaster_)
-        return;
     auto& tm = TrackManager::getInstance();
     auto* bridge = audioEngine_ ? audioEngine_->getAudioBridge() : nullptr;
 
@@ -1218,23 +1216,21 @@ void MixerView::ChannelStrip::resized() {
     constexpr int miniAnalyzerHeight = 64;
     const bool showOsc = cfg.getMixerShowOscilloscope();
     const bool showSpec = cfg.getMixerShowSpectrum();
-    if (!isMaster_) {
-        if (showOsc && miniOscilloscopeUI_) {
-            const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
-            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
-            miniOscilloscopeUI_->setVisible(true);
-            bounds.removeFromTop(2);
-        } else if (miniOscilloscopeUI_) {
-            miniOscilloscopeUI_->setVisible(false);
-        }
-        if (showSpec && miniSpectrumUI_) {
-            const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
-            miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
-            miniSpectrumUI_->setVisible(true);
-            bounds.removeFromTop(2);
-        } else if (miniSpectrumUI_) {
-            miniSpectrumUI_->setVisible(false);
-        }
+    if (showOsc && miniOscilloscopeUI_) {
+        const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
+        miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
+        miniOscilloscopeUI_->setVisible(true);
+        bounds.removeFromTop(2);
+    } else if (miniOscilloscopeUI_) {
+        miniOscilloscopeUI_->setVisible(false);
+    }
+    if (showSpec && miniSpectrumUI_) {
+        const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
+        miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
+        miniSpectrumUI_->setVisible(true);
+        bounds.removeFromTop(2);
+    } else if (miniSpectrumUI_) {
+        miniSpectrumUI_->setVisible(false);
     }
 
     // Sends auto-size to their slot count (no user resize). The horizontal
@@ -1392,8 +1388,7 @@ void MixerView::ChannelStrip::resized() {
         bounds.removeFromBottom(2);
 
         if (isMaster_) {
-            auto row = bounds.removeFromBottom(metrics.buttonSize);
-            muteButton->setBounds(row);
+            muteButton->setVisible(false);
             soloButton->setVisible(false);
             if (recordButton)
                 recordButton->setVisible(false);
