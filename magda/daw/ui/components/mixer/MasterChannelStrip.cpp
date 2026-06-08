@@ -453,6 +453,7 @@ void MasterChannelStrip::setupControls() {
 
     miniSpectrumUI_ = std::make_unique<daw::ui::SpectrumAnalyzerUI>();
     miniSpectrumUI_->setCompact(true);
+    miniSpectrumUI_->setTrackId(MASTER_TRACK_ID);  // masking overlay (shown when popped out)
     miniSpectrumUI_->setPersistGlobalDefaults(false);
     miniSpectrumUI_->setVisible(false);
     miniSpectrumUI_->onControlsExpandedChanged = relayoutOnExpand;
