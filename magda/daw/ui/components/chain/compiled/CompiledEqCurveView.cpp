@@ -239,7 +239,14 @@ CompiledEqCurveView::CompiledEqCurveView(juce::String /*pluginId*/) {
 
 void CompiledEqCurveView::setCompiledPlugin(
     magda::daw::audio::compiled::MagdaEqCompiledPlugin* plugin) {
+    if (compiledPlugin_ == plugin)
+        return;
+
     compiledPlugin_ = plugin;
+    lastPreSpectrumWritePosition_ = 0;
+    lastPostSpectrumWritePosition_ = 0;
+    std::fill(preSpectrumDb_.begin(), preSpectrumDb_.end(), kSpectrumMinDb);
+    std::fill(postSpectrumDb_.begin(), postSpectrumDb_.end(), kSpectrumMinDb);
 }
 
 void CompiledEqCurveView::bindPlugin(te::Plugin* plugin) {

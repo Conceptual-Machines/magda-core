@@ -106,6 +106,9 @@ OscilloscopeUI::~OscilloscopeUI() {
 }
 
 void OscilloscopeUI::setPlugin(daw::audio::OscilloscopePlugin* plugin) {
+    if (plugin_ == plugin)
+        return;
+
     plugin_ = plugin;
     lastTapWritePosition_ = 0;
     if (popoutUI_ != nullptr)
