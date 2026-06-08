@@ -2326,14 +2326,17 @@ void TrackChainContent::updateFromSelectedTrack() {
             refreshAnalysisToggles();
             refreshGainStagingButton();
             trackNameLabel_.setVisible(true);
-            muteButton_.setVisible(true);
             soloButton_.setVisible(true);
             volumeLabel_.setVisible(true);
             panLabel_.setVisible(true);
             chainBypassButton_->setVisible(true);
 
-            // Hide solo, pan, and chain bypass for master track
-            if (track->type == magda::TrackType::Master) {
+            const bool isMaster = track->type == magda::TrackType::Master;
+            muteButton_.setVisible(!isMaster);
+            masterMuteButton_.setVisible(isMaster);
+
+            // Hide solo, pan, and chain bypass for master track.
+            if (isMaster) {
                 soloButton_.setVisible(false);
                 panLabel_.setVisible(false);
                 chainBypassButton_->setVisible(false);
@@ -2393,8 +2396,15 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(specToggleButton_.get());
     headerBar.addAndMakeVisible(levelsToggleButton_.get());
     headerBar.addAndMakeVisible(trackNameLabel_);
-    headerBar.addAndMakeVisible(muteButton_);
-    headerBar.addChildComponent(masterMuteButton_);
+    const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    const bool isMaster = selTrack && selTrack->type == magda::TrackType::Master;
+    if (isMaster) {
+        headerBar.addChildComponent(muteButton_);
+        headerBar.addAndMakeVisible(masterMuteButton_);
+    } else {
+        headerBar.addAndMakeVisible(muteButton_);
+        headerBar.addChildComponent(masterMuteButton_);
+    }
     headerBar.addAndMakeVisible(soloButton_);
     headerBar.addAndMakeVisible(volumeLabel_);
     headerBar.addAndMakeVisible(panLabel_);
@@ -2421,6 +2431,7 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(levelsToggleButton_.get());
     addChildComponent(&trackNameLabel_);
     addChildComponent(&muteButton_);
+    addChildComponent(&masterMuteButton_);
     addChildComponent(&soloButton_);
     addChildComponent(&volumeLabel_);
     addChildComponent(&panLabel_);
@@ -2477,6 +2488,7 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
         muteButton_.setVisible(false);
     } else {
         muteButton_.setBounds(headerArea.removeFromRight(18));
+        muteButton_.setVisible(true);
         masterMuteButton_.setVisible(false);
     }
     headerArea.removeFromRight(8);

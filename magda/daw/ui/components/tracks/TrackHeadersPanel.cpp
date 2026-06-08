@@ -1095,6 +1095,7 @@ void TrackHeadersPanel::tracksChanged() {
     for (auto& header : trackHeaders) {
         removeChildComponent(header->nameLabel.get());
         removeChildComponent(header->muteButton.get());
+        removeChildComponent(header->masterMuteButton.get());
         removeChildComponent(header->soloButton.get());
         removeChildComponent(header->volumeLabel.get());
         removeChildComponent(header->panLabel.get());
@@ -1150,9 +1151,13 @@ void TrackHeadersPanel::tracksChanged() {
 
         // Add components
         addAndMakeVisible(*header->nameLabel);
-        addAndMakeVisible(*header->muteButton);
-        if (header->isMaster)
-            addChildComponent(*header->masterMuteButton);  // shown by layout for master
+        if (header->isMaster) {
+            addChildComponent(*header->muteButton);
+            addAndMakeVisible(*header->masterMuteButton);
+        } else {
+            addAndMakeVisible(*header->muteButton);
+            addChildComponent(*header->masterMuteButton);
+        }
         addAndMakeVisible(*header->soloButton);
         addAndMakeVisible(*header->recordButton);
         addAndMakeVisible(*header->monitorButton);

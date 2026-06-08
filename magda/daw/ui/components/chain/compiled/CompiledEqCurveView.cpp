@@ -18,6 +18,7 @@ constexpr int kPathSamples = 200;
 constexpr float kFreqMinHz = 20.0f;
 constexpr float kFreqMaxHz = 20000.0f;
 constexpr float kGainAxisDb = 24.0f;  // ±24 dB display range
+constexpr float kSpectrumSmoothing = 0.45f;
 
 constexpr float kTwoPi = 6.28318530717958647692f;
 
@@ -172,6 +173,22 @@ const char* bandTypeShortName(magda::daw::audio::compiled::MagdaEqCompiledPlugin
     return "?";
 }
 
+juce::String noteNameForFrequency(float freqHz) {
+    if (freqHz <= 0.0f || !std::isfinite(freqHz))
+        return {};
+
+    static constexpr const char* kNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                             "F#", "G",  "G#", "A",  "A#", "B"};
+    const int midi = juce::jlimit(
+        0, 127, static_cast<int>(std::round(69.0f + 12.0f * std::log2(freqHz / 440.0f))));
+    const int octave = midi / 12 - 1;
+    return juce::String(kNames[midi % 12]) + juce::String(octave);
+}
+
+juce::String frequencyReadout(float freqHz) {
+    return juce::String(freqHz, freqHz >= 1000.0f ? 0 : 1) + " Hz " + noteNameForFrequency(freqHz);
+}
+
 float logFreqToX(float freq, juce::Rectangle<float> area) {
     const float logMin = std::log10(kFreqMinHz);
     const float logMax = std::log10(kFreqMaxHz);
@@ -216,12 +233,20 @@ bool bandGainAffectsCurve(magda::daw::audio::compiled::MagdaEqCompiledPlugin::Ba
 
 CompiledEqCurveView::CompiledEqCurveView(juce::String /*pluginId*/) {
     setInterceptsMouseClicks(true, false);
+    rebuildSpectrumFft();
     startTimer(kPollMs);
 }
 
 void CompiledEqCurveView::setCompiledPlugin(
     magda::daw::audio::compiled::MagdaEqCompiledPlugin* plugin) {
+    if (compiledPlugin_ == plugin)
+        return;
+
     compiledPlugin_ = plugin;
+    lastPreSpectrumWritePosition_ = 0;
+    lastPostSpectrumWritePosition_ = 0;
+    std::fill(preSpectrumDb_.begin(), preSpectrumDb_.end(), kSpectrumMinDb);
+    std::fill(postSpectrumDb_.begin(), postSpectrumDb_.end(), kSpectrumMinDb);
 }
 
 void CompiledEqCurveView::bindPlugin(te::Plugin* plugin) {
@@ -239,10 +264,13 @@ void CompiledEqCurveView::resampleFromDevice() {
 
     for (int band = 0; band < Eq::kBandCount; ++band) {
         BandSnapshot snap;
+        snap.enabled =
+            valueForSlot(deviceSnapshot_, Eq::bandSlot(band, Eq::kBandEnabledOffset), 0.0f) >= 0.5f;
         const int typeIndex =
             juce::jlimit(0, Eq::kBandTypeCount - 1,
-                         static_cast<int>(std::round(valueForSlot(
-                             deviceSnapshot_, Eq::bandSlot(band, Eq::kBandTypeOffset), 0.0f))));
+                         static_cast<int>(std::round(
+                             valueForSlot(deviceSnapshot_, Eq::bandSlot(band, Eq::kBandTypeOffset),
+                                          static_cast<float>(BandType::Bell)))));
         snap.type = static_cast<BandType>(typeIndex);
         snap.freq = valueForSlot(deviceSnapshot_, Eq::bandSlot(band, Eq::kBandFreqOffset),
                                  bands_[band].freq);
@@ -260,6 +288,7 @@ void CompiledEqCurveView::timerCallback() {
         for (int band = 0; band < Plugin::kBandCount; ++band)
             bands_[band] = compiledPlugin_->getBandSnapshot(band);
         outputDb_ = compiledPlugin_->getOutputDb();
+        updateSpectrumOverlay();
     }
     repaint();
 }
@@ -298,6 +327,8 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
         g.drawLine(x, plotArea_.getY(), x, plotArea_.getBottom(), 1.0f);
     }
 
+    drawSpectrumOverlay(g, plotArea_);
+
     // Build the combined-response path by summing per-band log-magnitudes
     // (i.e. multiplying linear magnitudes) at each x sample.
     juce::Path curve;
@@ -311,6 +342,8 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
 
         float totalDb = outputDb_;
         for (const auto& band : bands_) {
+            if (!band.enabled)
+                continue;
             const auto coeffs =
                 makeBiquad(band.type, band.freq, band.gainDb, band.q, kVisualSampleRate);
             const float mag2 = magnitudeSquaredAt(coeffs, freq, kVisualSampleRate);
@@ -358,6 +391,7 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
         const float dotX = logFreqToX(band.freq, plotArea_);
         const float dotY = dbToY(dotDb, plotArea_);
         const bool isActive = (b == draggedBand_) || (b == hoveredBand_);
+        const bool bandEnabled = band.enabled;
         // Halo on the active band so the user has a clear "I'm grabbing
         // this one" cue while dragging.
         if (isActive) {
@@ -365,8 +399,15 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
             g.fillEllipse(dotX - 9.0f, dotY - 9.0f, 18.0f, 18.0f);
         }
         const float dotRadius = isActive ? 4.5f : 3.5f;
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.95f));
-        g.fillEllipse(dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
+        const auto dotColour = DarkTheme::getColour(DarkTheme::ACCENT_CYAN);
+        if (bandEnabled) {
+            g.setColour(dotColour.withAlpha(0.95f));
+            g.fillEllipse(dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
+        } else {
+            g.setColour(dotColour.withAlpha(isActive ? 0.65f : 0.35f));
+            g.drawEllipse(dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f,
+                          isActive ? 1.4f : 1.0f);
+        }
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
         g.drawFittedText(
             juce::String(b + 1),
@@ -378,10 +419,9 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
         if (isActive) {
             const juce::String label =
                 bandGainAffectsCurve(band.type)
-                    ? (juce::String(band.freq, band.freq >= 1000.0f ? 0 : 1) + " Hz / " +
-                       juce::String(band.gainDb, 1) + " dB")
+                    ? (frequencyReadout(band.freq) + " / " + juce::String(band.gainDb, 1) + " dB")
                     : (juce::String(bandTypeShortName(band.type)) + "  " +
-                       juce::String(band.freq, band.freq >= 1000.0f ? 0 : 1) + " Hz");
+                       frequencyReadout(band.freq));
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.9f));
             g.drawFittedText(label,
                              juce::Rectangle<int>(static_cast<int>(dotX) - 60,
@@ -450,6 +490,22 @@ void CompiledEqCurveView::writeBandParam(int band, int slotOffset, float display
     if (!onParameterChanged || band < 0 || band >= Plugin::kBandCount)
         return;
     onParameterChanged(Plugin::bandSlot(band, slotOffset), displayValue);
+}
+
+void CompiledEqCurveView::setBandType(int band, BandType type) {
+    if (band < 0 || band >= Plugin::kBandCount)
+        return;
+
+    bands_[band].type = type;
+    writeBandParam(band, Plugin::kBandTypeOffset, static_cast<float>(type));
+}
+
+void CompiledEqCurveView::setBandEnabled(int band, bool enabled) {
+    if (band < 0 || band >= Plugin::kBandCount)
+        return;
+
+    bands_[band].enabled = enabled;
+    writeBandParam(band, Plugin::kBandEnabledOffset, enabled ? 1.0f : 0.0f);
 }
 
 void CompiledEqCurveView::mouseMove(const juce::MouseEvent& e) {
@@ -525,6 +581,16 @@ void CompiledEqCurveView::mouseDown(const juce::MouseEvent& e) {
     repaint();
 }
 
+void CompiledEqCurveView::mouseDoubleClick(const juce::MouseEvent& e) {
+    const int picked = findBandAt(e.position);
+    if (picked == -1)
+        return;
+
+    setBandEnabled(picked, !bands_[picked].enabled);
+    hoveredBand_ = picked;
+    repaint();
+}
+
 void CompiledEqCurveView::mouseDrag(const juce::MouseEvent& e) {
     if (draggedBand_ == -1)
         return;
@@ -593,12 +659,100 @@ void CompiledEqCurveView::mouseWheelMove(const juce::MouseEvent& e,
     repaint();
 }
 
+void CompiledEqCurveView::rebuildSpectrumFft() {
+    spectrumFft_ = std::make_unique<juce::dsp::FFT>(kSpectrumFftOrder);
+    spectrumWindow_ = std::make_unique<juce::dsp::WindowingFunction<float>>(
+        static_cast<size_t>(kSpectrumFftSize), juce::dsp::WindowingFunction<float>::hann);
+    spectrumReadBuf_.assign(static_cast<size_t>(kSpectrumFftSize), 0.0f);
+    spectrumFftData_.assign(static_cast<size_t>(kSpectrumFftSize) * 2, 0.0f);
+    preSpectrumDb_.assign(static_cast<size_t>(kSpectrumNumBins), kSpectrumMinDb);
+    postSpectrumDb_.assign(static_cast<size_t>(kSpectrumNumBins), kSpectrumMinDb);
+}
+
+void CompiledEqCurveView::updateSpectrumOverlay() {
+    if (compiledPlugin_ == nullptr || spectrumFft_ == nullptr || spectrumWindow_ == nullptr)
+        return;
+
+    auto updateTrace = [this](const magda::daw::audio::AudioTapBuffer& tap,
+                              size_t& lastWritePosition, std::vector<float>& traceDb) {
+        const auto writePosition = tap.writePosition();
+        if (writePosition == lastWritePosition)
+            return;
+
+        lastWritePosition = tap.readLatest(spectrumReadBuf_.data(), kSpectrumFftSize);
+        if (lastWritePosition == 0)
+            return;
+
+        std::copy(spectrumReadBuf_.begin(), spectrumReadBuf_.end(), spectrumFftData_.begin());
+        std::fill(spectrumFftData_.begin() + kSpectrumFftSize, spectrumFftData_.end(), 0.0f);
+        spectrumWindow_->multiplyWithWindowingTable(spectrumFftData_.data(),
+                                                    static_cast<size_t>(kSpectrumFftSize));
+        spectrumFft_->performFrequencyOnlyForwardTransform(spectrumFftData_.data());
+
+        const float norm = 2.0f / static_cast<float>(kSpectrumFftSize);
+        for (int i = 0; i < kSpectrumNumBins; ++i) {
+            const float mag = spectrumFftData_[static_cast<size_t>(i)] * norm;
+            const float db = juce::jlimit(kSpectrumMinDb, kSpectrumMaxDb,
+                                          20.0f * std::log10(std::max(mag, 1.0e-6f)));
+            float& smoothed = traceDb[static_cast<size_t>(i)];
+            smoothed += kSpectrumSmoothing * (db - smoothed);
+        }
+    };
+
+    updateTrace(compiledPlugin_->getPreSpectrumTapBuffer(), lastPreSpectrumWritePosition_,
+                preSpectrumDb_);
+    updateTrace(compiledPlugin_->getPostSpectrumTapBuffer(), lastPostSpectrumWritePosition_,
+                postSpectrumDb_);
+}
+
+void CompiledEqCurveView::drawSpectrumOverlay(juce::Graphics& g, juce::Rectangle<float> area) {
+    if (compiledPlugin_ == nullptr || preSpectrumDb_.empty() || postSpectrumDb_.empty())
+        return;
+
+    const double sampleRate = compiledPlugin_->getSampleRate();
+    if (sampleRate <= 0.0)
+        return;
+
+    const float binHz = static_cast<float>(sampleRate / static_cast<double>(kSpectrumFftSize));
+    auto dbToSpectrumY = [area](float db) {
+        const float t = (db - kSpectrumMinDb) / (kSpectrumMaxDb - kSpectrumMinDb);
+        return area.getBottom() - juce::jlimit(0.0f, 1.0f, t) * area.getHeight();
+    };
+
+    auto buildPath = [&](const std::vector<float>& traceDb) {
+        juce::Path path;
+        bool started = false;
+        for (int i = 1; i < kSpectrumNumBins; ++i) {
+            const float freq = static_cast<float>(i) * binHz;
+            if (freq < kFreqMinHz || freq > kFreqMaxHz)
+                continue;
+            const float x = logFreqToX(freq, area);
+            const float y = dbToSpectrumY(traceDb[static_cast<size_t>(i)]);
+            if (!started) {
+                path.startNewSubPath(x, y);
+                started = true;
+            } else {
+                path.lineTo(x, y);
+            }
+        }
+        return path;
+    };
+
+    const auto prePath = buildPath(preSpectrumDb_);
+    const auto postPath = buildPath(postSpectrumDb_);
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.16f));
+    g.strokePath(prePath, juce::PathStrokeType(1.0f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.32f));
+    g.strokePath(postPath, juce::PathStrokeType(1.1f));
+}
+
 void CompiledEqCurveView::showBandTypeMenu(int band) {
     if (band < 0 || band >= Plugin::kBandCount)
         return;
 
     juce::PopupMenu menu;
-    const std::array<std::pair<BandType, juce::String>, Plugin::kBandTypeCount> kEntries{{
+    static constexpr int kMenuBandTypeCount = Plugin::kBandTypeCount;
+    const std::array<std::pair<BandType, juce::String>, kMenuBandTypeCount> kEntries{{
         {BandType::Highpass, "Highpass"},
         {BandType::LowShelf, "Low Shelf"},
         {BandType::Bell, "Bell"},
@@ -617,9 +771,7 @@ void CompiledEqCurveView::showBandTypeMenu(int band) {
                        [self, band](int chosen) {
                            if (self == nullptr || chosen <= 0)
                                return;
-                           const float typeValue = static_cast<float>(chosen - 1);
-                           self->bands_[band].type = static_cast<BandType>(chosen - 1);
-                           self->writeBandParam(band, Plugin::kBandTypeOffset, typeValue);
+                           self->setBandType(band, static_cast<BandType>(chosen - 1));
                            self->repaint();
                        });
 }
@@ -628,9 +780,9 @@ const CompiledPresentationSpec& getMagdaEqPresentation() {
     static const LegacyUiKind kSuppress[] = {LegacyUiKind::Equaliser};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaEqCompiledPlugin::xmlTypeName,
-        // Show the 32 band slots (8 bands × {Type, Freq, Gain, Q}) only —
-        // Output is host slot 32 but excluded from the grid so the rows fit
-        // cleanly into 4 × 8 with no sparse trailing row. The Output param
+        // Show the 40 band slots (8 bands × {Enabled, Type, Freq, Gain, Q})
+        // only. Output is host slot 40 but excluded from the grid so rows fit
+        // cleanly into 5 × 8 with no sparse trailing row. The Output param
         // remains fully addressable via automation, macros and AI aliases.
         .layoutCellCount = magda::daw::audio::compiled::MagdaEqCompiledPlugin::kBandCount *
                            magda::daw::audio::compiled::MagdaEqCompiledPlugin::kSlotsPerBand,
@@ -647,9 +799,10 @@ const CompiledPresentationSpec& getMagdaEqPresentation() {
         // the default 432 px slot. Gives each cell enough horizontal room
         // for "100.0 Hz" / "0.0 dB" / "HighShelf" without truncation.
         .preferredSlotWidth = 576,
-        // Lay out each band as a vertical strip (Type → Freq → Gain → Q
-        // top to bottom). With layoutCellCount = 32 and cellsPerRow = 8,
-        // column-major gives 4 rows × 8 columns = one column per band.
+        // Lay out each band as a vertical strip (Enabled → Type → Freq →
+        // Gain → Q top to bottom). With layoutCellCount = 40 and
+        // cellsPerRow = 8, column-major gives 5 rows × 8 columns = one
+        // column per band.
         .columnMajorGrid = true,
     };
     return kSpec;

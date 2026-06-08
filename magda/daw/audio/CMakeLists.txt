@@ -134,11 +134,6 @@ magda_compile_faust_dsp(
     MAGDA_REVERB_ROOM_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_eq.dsp"
-    MagdaEqDsp
-    MAGDA_EQ_GENERATED_CPP
-)
-magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_dimension_dim.dsp"
     MagdaDimensionDimDsp
     MAGDA_DIMENSION_DIM_GENERATED_CPP
@@ -203,7 +198,6 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_REVERB_PLATE_GENERATED_CPP}"
         "${MAGDA_REVERB_HALL_GENERATED_CPP}"
         "${MAGDA_REVERB_ROOM_GENERATED_CPP}"
-        "${MAGDA_EQ_GENERATED_CPP}"
         "${MAGDA_DIMENSION_DIM_GENERATED_CPP}"
         "${MAGDA_DIMENSION_HAAS_GENERATED_CPP}"
         "${MAGDA_DIMENSION_MS_GENERATED_CPP}"

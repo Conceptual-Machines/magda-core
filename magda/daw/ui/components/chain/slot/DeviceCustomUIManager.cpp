@@ -1348,6 +1348,10 @@ void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
     devicePath_ = path;
     // create() bound the analyzer UIs while the path was still invalid; now that
     // it is set, resolve their plugin for real.
+    refreshLivePluginBindings();
+}
+
+void DeviceCustomUIManager::refreshLivePluginBindings() {
     bindAnalyzerPlugins();
 }
 

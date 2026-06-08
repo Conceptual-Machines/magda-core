@@ -26,7 +26,7 @@ namespace magda::daw::ui {
  */
 class ParamHostComponent : public juce::Component {
   public:
-    static constexpr int kMaxCells = 32;
+    static constexpr int kMaxCells = 64;
     static constexpr int PAGINATION_HEIGHT = 18;
 
     explicit ParamHostComponent(std::unique_ptr<DeviceParamLayout> layout);

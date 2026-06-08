@@ -3,12 +3,23 @@
 
 # Build directories
 BUILD_DIR = cmake-build-debug
+BUILD_DIR_DEBUG_CPU = cmake-build-debug-cpu
+BUILD_DIR_DEBUG_WEBGPU = cmake-build-debug-webgpu
 BUILD_DIR_RELEASE = cmake-build-release
 BUILD_DIR_ASAN = cmake-build-asan
 BUILD_DIR_TSAN = cmake-build-tsan
+DAWN_PREFIX ?= /private/tmp/dawn-webgpu-poc/install-macos11
+FETCHCONTENT_SOURCE_ARGS = -DFETCHCONTENT_SOURCE_DIR_LUA=$(CURDIR)/cmake-build-debug/_deps/lua-src \
+	-DFETCHCONTENT_SOURCE_DIR_SQLITE3=$(CURDIR)/cmake-build-debug/_deps/sqlite3-src \
+	-DFETCHCONTENT_SOURCE_DIR_ONNXRUNTIME=$(CURDIR)/cmake-build-debug/_deps/onnxruntime-src \
+	-DFETCHCONTENT_SOURCE_DIR_CATCH2=$(CURDIR)/cmake-build-debug/_deps/catch2-src
 CACHE_ROOT = $(CURDIR)/.cache
 BUILD_ENV = CCACHE_DIR=$(CACHE_ROOT)/ccache TMPDIR=$(CACHE_ROOT)/tmp XDG_CACHE_HOME=$(CACHE_ROOT)/xdg
 TEST_ENV = $(BUILD_ENV) HOME=$(CACHE_ROOT)/home CFFIXED_USER_HOME=$(CACHE_ROOT)/home
+LOG_DIR = logs
+CPU_RUN_LOG = $(LOG_DIR)/run-console-cpu.log
+WEBGPU_RUN_LOG = $(LOG_DIR)/run-console-webgpu.log
+WEBGPU_SURFACE_RUN_LOG = $(LOG_DIR)/run-console-webgpu-surface.log
 
 # Platform-specific binary layout.
 # macOS: JUCE wraps the exe in a .app bundle (MAGDA.app/Contents/MacOS/MAGDA)
@@ -17,6 +28,8 @@ TEST_ENV = $(BUILD_ENV) HOME=$(CACHE_ROOT)/home CFFIXED_USER_HOME=$(CACHE_ROOT)/
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
     APP_BINARY_DEBUG   := $(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA
+    APP_BINARY_DEBUG_CPU := $(BUILD_DIR_DEBUG_CPU)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA
+    APP_BINARY_DEBUG_WEBGPU := $(BUILD_DIR_DEBUG_WEBGPU)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA
     APP_BINARY_ASAN    := $(BUILD_DIR_ASAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA
     APP_BINARY_TSAN    := $(BUILD_DIR_TSAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA
     APP_BUNDLE_DEBUG   := $(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app
@@ -24,6 +37,8 @@ ifeq ($(UNAME_S),Darwin)
     LAUNCH             := open
 else
     APP_BINARY_DEBUG   := $(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA
+    APP_BINARY_DEBUG_CPU := $(BUILD_DIR_DEBUG_CPU)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA
+    APP_BINARY_DEBUG_WEBGPU := $(BUILD_DIR_DEBUG_WEBGPU)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA
     APP_BINARY_ASAN    := $(BUILD_DIR_ASAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA
     APP_BINARY_TSAN    := $(BUILD_DIR_TSAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA
     APP_BUNDLE_DEBUG   := $(APP_BINARY_DEBUG)
@@ -57,6 +72,28 @@ debug:
 		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
 	fi
 	cd $(BUILD_DIR) && $(BUILD_ENV) ninja
+
+.PHONY: debug-cpu
+debug-cpu:
+	@echo "🔨 Building MAGDA DAW (Debug, analyzer CPU baseline)..."
+	@mkdir -p $(BUILD_DIR_DEBUG_CPU) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR_DEBUG_CPU) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=OFF \
+		$(FETCHCONTENT_SOURCE_ARGS) \
+		-DMAGDA_ENABLE_DAWN_ANALYZER_POC=OFF ..
+	cd $(BUILD_DIR_DEBUG_CPU) && $(BUILD_ENV) ninja magda_daw_app
+
+.PHONY: debug-webgpu
+debug-webgpu:
+	@echo "🔨 Building MAGDA DAW (Debug, Dawn/WebGPU analyzer POC)..."
+	@mkdir -p $(BUILD_DIR_DEBUG_WEBGPU) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR_DEBUG_WEBGPU) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=OFF \
+		$(FETCHCONTENT_SOURCE_ARGS) \
+		-DMAGDA_ENABLE_DAWN_ANALYZER_POC=ON \
+		-DCMAKE_PREFIX_PATH=$(DAWN_PREFIX) \
+		-DDawn_DIR=$(DAWN_PREFIX)/lib/cmake/Dawn ..
+	cd $(BUILD_DIR_DEBUG_WEBGPU) && $(BUILD_ENV) ninja magda_daw_app
 
 # Reconfigure build (force CMake to run)
 .PHONY: configure
@@ -134,6 +171,42 @@ run: debug
 run-console: debug
 	@echo "🎵 Running MAGDA DAW (console mode)..."
 	"$(APP_BINARY_DEBUG)"
+
+.PHONY: run-console-cpu
+run-console-cpu: debug-cpu
+	@echo "🎵 Running MAGDA DAW (Debug console, analyzer CPU baseline)..."
+	"$(APP_BINARY_DEBUG_CPU)"
+
+.PHONY: run-console-webgpu
+run-console-webgpu: debug-webgpu
+	@echo "🎵 Running MAGDA DAW (Debug console, Dawn/WebGPU analyzer POC)..."
+	"$(APP_BINARY_DEBUG_WEBGPU)"
+
+.PHONY: run-console-webgpu-surface
+run-console-webgpu-surface: debug-webgpu
+	@echo "🎵 Running MAGDA DAW (Debug console, Dawn/WebGPU native surface POC)..."
+	MAGDA_WEBGPU_NATIVE_SURFACE=1 "$(APP_BINARY_DEBUG_WEBGPU)"
+
+.PHONY: run-console-cpu-log
+run-console-cpu-log: debug-cpu
+	@mkdir -p $(LOG_DIR)
+	@echo "🎵 Running MAGDA DAW (Debug console, analyzer CPU baseline)..."
+	@echo "📝 Writing app output to $(CPU_RUN_LOG)"
+	"$(APP_BINARY_DEBUG_CPU)" 2>&1 | tee "$(CPU_RUN_LOG)"
+
+.PHONY: run-console-webgpu-log
+run-console-webgpu-log: debug-webgpu
+	@mkdir -p $(LOG_DIR)
+	@echo "🎵 Running MAGDA DAW (Debug console, Dawn/WebGPU analyzer POC)..."
+	@echo "📝 Writing app output to $(WEBGPU_RUN_LOG)"
+	"$(APP_BINARY_DEBUG_WEBGPU)" 2>&1 | tee "$(WEBGPU_RUN_LOG)"
+
+.PHONY: run-console-webgpu-surface-log
+run-console-webgpu-surface-log: debug-webgpu
+	@mkdir -p $(LOG_DIR)
+	@echo "🎵 Running MAGDA DAW (Debug console, Dawn/WebGPU native surface POC)..."
+	@echo "📝 Writing app output to $(WEBGPU_SURFACE_RUN_LOG)"
+	MAGDA_WEBGPU_NATIVE_SURFACE=1 "$(APP_BINARY_DEBUG_WEBGPU)" 2>&1 | tee "$(WEBGPU_SURFACE_RUN_LOG)"
 
 # Run with profiling enabled
 .PHONY: run-profile
@@ -341,6 +414,8 @@ help:
 	@echo ""
 	@echo "Build targets:"
 	@echo "  all, debug     - Build debug version (default)"
+	@echo "  debug-cpu      - Build debug analyzer CPU baseline"
+	@echo "  debug-webgpu   - Build debug Dawn/WebGPU analyzer POC"
 	@echo "  release        - Build release version"
 	@echo "  configure      - Reconfigure CMake"
 	@echo "  clean          - Remove build artifacts"
@@ -349,6 +424,10 @@ help:
 	@echo "Run targets:"
 	@echo "  run            - Build and run the application"
 	@echo "  run-console    - Run with console output visible"
+	@echo "  run-console-cpu - Run debug analyzer CPU baseline with console output"
+	@echo "  run-console-webgpu - Run debug Dawn/WebGPU analyzer POC with console output"
+	@echo "  run-console-cpu-log - Run CPU baseline and write app output to $(CPU_RUN_LOG)"
+	@echo "  run-console-webgpu-log - Run WebGPU POC and write app output to $(WEBGPU_RUN_LOG)"
 	@echo "  run-profile    - Run with performance profiling enabled"
 	@echo "  asan           - Build with AddressSanitizer"
 	@echo "  run-asan       - Build and run with AddressSanitizer"
@@ -380,5 +459,7 @@ help:
 	@echo ""
 	@echo "Build directories:"
 	@echo "  Debug:   $(BUILD_DIR)"
+	@echo "  Debug CPU analyzer baseline: $(BUILD_DIR_DEBUG_CPU)"
+	@echo "  Debug WebGPU analyzer POC:  $(BUILD_DIR_DEBUG_WEBGPU)"
 	@echo "  Release: $(BUILD_DIR_RELEASE)"
 	@echo "  ASAN:    $(BUILD_DIR_ASAN)"

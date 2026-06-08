@@ -2,15 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
-#include <map>
 
 #include "core/ParameterUtils.hpp"
-#include "faust/dsp/dsp.h"
-#include "faust/gui/UI.h"
-#include "faust/gui/meta.h"
-#include "magda_eq.generated.cpp"
-#include "plugins/FaustMetadataParser.hpp"
-#include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
@@ -18,87 +11,6 @@ namespace magda::daw::audio::compiled {
 const char* MagdaEqCompiledPlugin::xmlTypeName = "magda_eq";
 
 namespace {
-
-// idx-based harvest, identical shape to the other single-engine compiled
-// plugins (multiband / clipper / etc).
-struct EqHarvest {
-    struct Control {
-        int idx = -1;
-        FaustParamSlot::Kind kind = FaustParamSlot::Kind::Continuous;
-        FAUSTFLOAT* zone = nullptr;
-        std::vector<std::pair<float, juce::String>> choices;
-    };
-    std::vector<Control> controls;
-};
-
-class EqHarvester : public ::UI {
-  public:
-    EqHarvest harvest;
-
-    void openTabBox(const char*) override {}
-    void openHorizontalBox(const char*) override {}
-    void openVerticalBox(const char*) override {}
-    void closeBox() override {}
-
-    void addButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Boolean, label, zone);
-    }
-    void addCheckButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Boolean, label, zone);
-    }
-    void addVerticalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT,
-                           FAUSTFLOAT) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone);
-    }
-    void addHorizontalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT, FAUSTFLOAT,
-                             FAUSTFLOAT, FAUSTFLOAT) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone);
-    }
-    void addNumEntry(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT,
-                     FAUSTFLOAT) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone);
-    }
-    void addHorizontalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
-    void addVerticalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
-    void addSoundfile(const char*, const char*, Soundfile**) override {}
-
-    void declare(FAUSTFLOAT* zone, const char* key, const char* value) override {
-        if (zone == nullptr)
-            return;
-        const auto k = juce::String::fromUTF8(key != nullptr ? key : "").toLowerCase();
-        const auto v = juce::String::fromUTF8(value != nullptr ? value : "");
-        applyFaustAnnotation(k, v, pendingByZone_[zone]);
-    }
-
-  private:
-    void emitControl(FaustParamSlot::Kind kind, const char* rawLabel, FAUSTFLOAT* zone) {
-        const auto parsed =
-            parseFaustLabel(juce::String::fromUTF8(rawLabel != nullptr ? rawLabel : ""));
-        ControlMetadata merged = parsed.metadata;
-        if (zone != nullptr) {
-            if (auto it = pendingByZone_.find(zone); it != pendingByZone_.end()) {
-                mergeFaustMetadata(merged, it->second);
-                pendingByZone_.erase(it);
-            }
-        }
-
-        EqHarvest::Control c;
-        c.idx = merged.slotIndex;
-        c.kind = merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind;
-        c.zone = zone;
-        c.choices = merged.menuChoices;
-        harvest.controls.push_back(std::move(c));
-    }
-
-    std::map<FAUSTFLOAT*, ControlMetadata> pendingByZone_;
-};
-
-const EqHarvest::Control* findByIdx(const EqHarvest& h, int idx) {
-    for (const auto& c : h.controls)
-        if (c.idx == idx)
-            return &c;
-    return nullptr;
-}
 
 magda::ParameterInfo parameterInfoForSlot(const CompiledHostSlotInfo& s) {
     magda::ParameterInfo info;
@@ -113,25 +25,104 @@ magda::ParameterInfo parameterInfoForSlot(const CompiledHostSlotInfo& s) {
     return info;
 }
 
-// Per-band defaults — keep the audio thread and the curve view aligned by
-// reading these in both places.
+// Bands default to disabled Bell filters. That keeps the inserted EQ neutral
+// and avoids spending per-sample CPU on inactive biquads.
 struct BandDefaults {
+    float enabled;
     float type;
     float freq;
     float q;
 };
 constexpr BandDefaults kBandDefaults[MagdaEqCompiledPlugin::kBandCount] = {
-    {0.0f, 30.0f, 0.707f},     // HP
-    {1.0f, 100.0f, 0.707f},    // LowShelf
-    {2.0f, 250.0f, 1.0f},      // Bell
-    {2.0f, 800.0f, 1.0f},      // Bell
-    {2.0f, 2000.0f, 1.0f},     // Bell
-    {2.0f, 5000.0f, 1.0f},     // Bell
-    {3.0f, 10000.0f, 0.707f},  // HighShelf
-    {4.0f, 18000.0f, 0.707f},  // LP
+    {0.0f, 2.0f, 30.0f, 1.0f},    {0.0f, 2.0f, 100.0f, 1.0f},   {0.0f, 2.0f, 250.0f, 1.0f},
+    {0.0f, 2.0f, 800.0f, 1.0f},   {0.0f, 2.0f, 2000.0f, 1.0f},  {0.0f, 2.0f, 5000.0f, 1.0f},
+    {0.0f, 2.0f, 10000.0f, 1.0f}, {0.0f, 2.0f, 18000.0f, 1.0f},
 };
 
-// Identifier-safe band name used in TE state ids ("magda_eq_band1_type").
+constexpr float kTwoPi = 6.28318530717958647692f;
+
+struct RbjCoeffs {
+    float b0 = 1.0f;
+    float b1 = 0.0f;
+    float b2 = 0.0f;
+    float a1 = 0.0f;
+    float a2 = 0.0f;
+};
+
+RbjCoeffs makeRbj(MagdaEqCompiledPlugin::BandType type, float f0, float gainDb, float q,
+                  float sampleRate) {
+    RbjCoeffs out;
+    const float safeQ = std::max(0.05f, q);
+    const float fc = juce::jlimit(1.0f, sampleRate * 0.45f, f0);
+    const float w0 = kTwoPi * fc / sampleRate;
+    const float cw = std::cos(w0);
+    const float sw = std::sin(w0);
+    const float alpha = sw / (2.0f * safeQ);
+
+    auto normalise = [&out](float b0, float b1, float b2, float a0, float a1, float a2) {
+        const float inv = 1.0f / a0;
+        out.b0 = b0 * inv;
+        out.b1 = b1 * inv;
+        out.b2 = b2 * inv;
+        out.a1 = a1 * inv;
+        out.a2 = a2 * inv;
+    };
+
+    using BandType = MagdaEqCompiledPlugin::BandType;
+    switch (type) {
+        case BandType::Highpass:
+            normalise((1.0f + cw) * 0.5f, -(1.0f + cw), (1.0f + cw) * 0.5f, 1.0f + alpha,
+                      -2.0f * cw, 1.0f - alpha);
+            break;
+        case BandType::Lowpass:
+            normalise((1.0f - cw) * 0.5f, 1.0f - cw, (1.0f - cw) * 0.5f, 1.0f + alpha, -2.0f * cw,
+                      1.0f - alpha);
+            break;
+        case BandType::Bell: {
+            const float A = std::pow(10.0f, gainDb / 40.0f);
+            normalise(1.0f + alpha * A, -2.0f * cw, 1.0f - alpha * A, 1.0f + alpha / A, -2.0f * cw,
+                      1.0f - alpha / A);
+            break;
+        }
+        case BandType::LowShelf: {
+            const float A = std::pow(10.0f, gainDb / 40.0f);
+            const float shelfAlpha = sw / 1.41421356f;
+            const float sqA2 = 2.0f * std::sqrt(A) * shelfAlpha;
+            normalise(A * ((A + 1.0f) - (A - 1.0f) * cw + sqA2),
+                      2.0f * A * ((A - 1.0f) - (A + 1.0f) * cw),
+                      A * ((A + 1.0f) - (A - 1.0f) * cw - sqA2),
+                      (A + 1.0f) + (A - 1.0f) * cw + sqA2, -2.0f * ((A - 1.0f) + (A + 1.0f) * cw),
+                      (A + 1.0f) + (A - 1.0f) * cw - sqA2);
+            break;
+        }
+        case BandType::HighShelf: {
+            const float A = std::pow(10.0f, gainDb / 40.0f);
+            const float shelfAlpha = sw / 1.41421356f;
+            const float sqA2 = 2.0f * std::sqrt(A) * shelfAlpha;
+            normalise(A * ((A + 1.0f) + (A - 1.0f) * cw + sqA2),
+                      -2.0f * A * ((A - 1.0f) + (A + 1.0f) * cw),
+                      A * ((A + 1.0f) + (A - 1.0f) * cw - sqA2),
+                      (A + 1.0f) - (A - 1.0f) * cw + sqA2, 2.0f * ((A - 1.0f) - (A + 1.0f) * cw),
+                      (A + 1.0f) - (A - 1.0f) * cw - sqA2);
+            break;
+        }
+        case BandType::Notch:
+            normalise(1.0f, -2.0f * cw, 1.0f, 1.0f + alpha, -2.0f * cw, 1.0f - alpha);
+            break;
+    }
+    return out;
+}
+
+float processRbj(float x, const RbjCoeffs& c, MagdaEqCompiledPlugin::BiquadState& s) {
+    const float y = c.b0 * x + c.b1 * s.x1 + c.b2 * s.x2 - c.a1 * s.y1 - c.a2 * s.y2;
+    s.x2 = s.x1;
+    s.x1 = x;
+    s.y2 = s.y1;
+    s.y1 = y;
+    return y;
+}
+
+// Identifier-safe band name used in TE state ids.
 juce::String bandIdPrefix(int band) {
     return "band" + juce::String(band + 1);
 }
@@ -144,9 +135,6 @@ juce::String bandDisplayPrefix(int band) {
 
 MagdaEqCompiledPlugin::MagdaEqCompiledPlugin(const te::PluginCreationInfo& info)
     : te::Plugin(info) {
-    dsp_ = std::make_unique<MagdaEqDsp>();
-    constexpr int kProvisionalSampleRate = 44100;
-    rebuildEngineState(kProvisionalSampleRate);
     buildHostParameters();
 
     // Persist the "collapse knobs" toggle on the plugin's state ValueTree
@@ -176,20 +164,7 @@ juce::String MagdaEqCompiledPlugin::getSelectableDescription() {
 }
 
 void MagdaEqCompiledPlugin::rebuildEngineState(int sampleRate) {
-    if (!dsp_)
-        return;
-    dsp_->init(sampleRate);
-    numInputs_ = dsp_->getNumInputs();
-    numOutputs_ = dsp_->getNumOutputs();
-
-    EqHarvester harvester;
-    dsp_->buildUserInterface(&harvester);
-
-    zones_.fill(nullptr);
-    for (int i = 0; i < kHostSlotCount; ++i) {
-        if (auto* c = findByIdx(harvester.harvest, i))
-            zones_[static_cast<size_t>(i)] = c->zone;
-    }
+    sampleRate_.store(static_cast<double>(sampleRate), std::memory_order_relaxed);
 }
 
 void MagdaEqCompiledPlugin::buildHostParameters() {
@@ -197,6 +172,13 @@ void MagdaEqCompiledPlugin::buildHostParameters() {
     for (int band = 0; band < kBandCount; ++band) {
         const auto& defaults = kBandDefaults[band];
         const juce::String prefix = bandDisplayPrefix(band);
+
+        const int enabledSlot = bandSlot(band, kBandEnabledOffset);
+        hostSlotInfo_[enabledSlot] = {.name = prefix + " Enabled",
+                                      .scale = magda::ParameterScale::Boolean,
+                                      .minValue = 0.0f,
+                                      .maxValue = 1.0f,
+                                      .defaultValue = defaults.enabled};
 
         const int typeSlot = bandSlot(band, kBandTypeOffset);
         hostSlotInfo_[typeSlot] = {
@@ -249,7 +231,8 @@ void MagdaEqCompiledPlugin::buildHostParameters() {
         if (i < kOutputSlot) {
             const int band = i / kSlotsPerBand;
             const int role = i % kSlotsPerBand;
-            static const char* kRoleSuffix[kSlotsPerBand] = {"type", "freq", "gain", "q"};
+            static const char* kRoleSuffix[kSlotsPerBand] = {"enabled", "filter_type", "freq",
+                                                             "gain", "q"};
             id = "magda_eq_" + bandIdPrefix(band) + "_" + kRoleSuffix[role];
         } else {
             id = "magda_eq_output";
@@ -279,80 +262,122 @@ void MagdaEqCompiledPlugin::buildHostParameters() {
 
 void MagdaEqCompiledPlugin::initialise(const te::PluginInitialisationInfo& info) {
     rebuildEngineState(static_cast<int>(info.sampleRate));
-    scratchIn_.setSize(numInputs_, info.blockSizeSamples, false, true, true);
-    scratchOut_.setSize(numOutputs_, info.blockSizeSamples, false, true, true);
-    inPtrs_.assign(static_cast<size_t>(numInputs_), nullptr);
-    outPtrs_.assign(static_cast<size_t>(numOutputs_), nullptr);
+    preTapScratch_.assign(static_cast<size_t>(juce::jmax(0, info.blockSizeSamples)), 0.0f);
+    postTapScratch_.assign(static_cast<size_t>(juce::jmax(0, info.blockSizeSamples)), 0.0f);
+    for (auto& bandStates : biquadStates_)
+        bandStates.clear();
 }
 
 void MagdaEqCompiledPlugin::deinitialise() {
-    scratchIn_.setSize(0, 0);
-    scratchOut_.setSize(0, 0);
-    inPtrs_.clear();
-    outPtrs_.clear();
+    preTapScratch_.clear();
+    postTapScratch_.clear();
+    for (auto& bandStates : biquadStates_)
+        bandStates.clear();
 }
 
 void MagdaEqCompiledPlugin::reset() {
-    if (dsp_)
-        dsp_->instanceClear();
+    for (auto& bandStates : biquadStates_)
+        for (auto& state : bandStates)
+            state = {};
+}
+
+float MagdaEqCompiledPlugin::readSlotDisplayValue(int slotIndex) const {
+    if (slotIndex < 0 || slotIndex >= kHostSlotCount)
+        return 0.0f;
+
+    const auto info = parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slotIndex)]);
+    if (const auto* param = hostParams_[static_cast<size_t>(slotIndex)].get())
+        return magda::ParameterUtils::normalizedToReal(param->getCurrentValue(), info);
+
+    return hostSlotInfo_[static_cast<size_t>(slotIndex)].defaultValue;
+}
+
+MagdaEqCompiledPlugin::BandSnapshot MagdaEqCompiledPlugin::readBandSnapshot(int band) const {
+    BandSnapshot snap;
+    if (band < 0 || band >= kBandCount)
+        return snap;
+
+    snap.enabled = readSlotDisplayValue(bandSlot(band, kBandEnabledOffset)) >= 0.5f;
+    const int typeIndex = juce::jlimit(
+        0, kBandTypeCount - 1,
+        static_cast<int>(std::round(readSlotDisplayValue(bandSlot(band, kBandTypeOffset)))));
+    snap.type = static_cast<BandType>(typeIndex);
+    snap.freq = readSlotDisplayValue(bandSlot(band, kBandFreqOffset));
+    snap.gainDb = readSlotDisplayValue(bandSlot(band, kBandGainOffset));
+    snap.q = readSlotDisplayValue(bandSlot(band, kBandQOffset));
+    return snap;
 }
 
 void MagdaEqCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!fc.destBuffer || fc.bufferNumSamples <= 0 || !dsp_)
+    if (!fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
-
-    for (int i = 0; i < kHostSlotCount; ++i) {
-        if (auto* zone = zones_[static_cast<size_t>(i)]) {
-            const auto& s = hostSlotInfo_[static_cast<size_t>(i)];
-            const auto info = parameterInfoForSlot(s);
-            const float norm = hostParams_[static_cast<size_t>(i)]->getCurrentValue();
-            *zone = static_cast<FAUSTFLOAT>(magda::ParameterUtils::normalizedToReal(norm, info));
-        }
-    }
 
     const int numSamples = fc.bufferNumSamples;
     const int startSample = fc.bufferStartSample;
     const int hostChannels = fc.destBuffer->getNumChannels();
-    if (hostChannels <= 0 || numInputs_ <= 0 || numOutputs_ <= 0)
+    if (hostChannels <= 0)
         return;
 
-    if (scratchIn_.getNumChannels() < numInputs_ || scratchIn_.getNumSamples() < numSamples)
-        scratchIn_.setSize(numInputs_, numSamples, false, true, true);
-    if (scratchOut_.getNumChannels() < numOutputs_ || scratchOut_.getNumSamples() < numSamples)
-        scratchOut_.setSize(numOutputs_, numSamples, false, true, true);
-    if (static_cast<int>(inPtrs_.size()) < numInputs_)
-        inPtrs_.resize(static_cast<size_t>(numInputs_), nullptr);
-    if (static_cast<int>(outPtrs_.size()) < numOutputs_)
-        outPtrs_.resize(static_cast<size_t>(numOutputs_), nullptr);
+    if (static_cast<int>(preTapScratch_.size()) < numSamples)
+        preTapScratch_.resize(static_cast<size_t>(numSamples));
+    if (static_cast<int>(postTapScratch_.size()) < numSamples)
+        postTapScratch_.resize(static_cast<size_t>(numSamples));
 
-    for (int ch = 0; ch < numInputs_; ++ch) {
-        float* dst = scratchIn_.getWritePointer(ch);
-        if (ch < hostChannels) {
-            const float* src = fc.destBuffer->getReadPointer(ch, startSample);
-            std::copy(src, src + numSamples, dst);
-        } else {
-            std::fill(dst, dst + numSamples, 0.0f);
+    for (auto& bandStates : biquadStates_)
+        if (static_cast<int>(bandStates.size()) < hostChannels)
+            bandStates.resize(static_cast<size_t>(hostChannels));
+
+    const float sr = static_cast<float>(sampleRate_.load(std::memory_order_relaxed));
+    std::array<bool, kBandCount> bandEnabled{};
+    std::array<RbjCoeffs, kBandCount> coeffs{};
+    for (int band = 0; band < kBandCount; ++band) {
+        const auto snap = readBandSnapshot(band);
+        bandEnabled[static_cast<size_t>(band)] = snap.enabled;
+        if (!snap.enabled) {
+            auto& states = biquadStates_[static_cast<size_t>(band)];
+            std::fill(states.begin(), states.end(), BiquadState{});
+            continue;
         }
-        inPtrs_[static_cast<size_t>(ch)] = dst;
+        coeffs[static_cast<size_t>(band)] = makeRbj(snap.type, snap.freq, snap.gainDb, snap.q, sr);
     }
-    for (int ch = 0; ch < numOutputs_; ++ch) {
-        outPtrs_[static_cast<size_t>(ch)] = (ch < hostChannels)
-                                                ? fc.destBuffer->getWritePointer(ch, startSample)
-                                                : scratchOut_.getWritePointer(ch);
-    }
+    const float outputGain = std::pow(10.0f, readSlotDisplayValue(kOutputSlot) / 20.0f);
 
-    dsp_->compute(numSamples, inPtrs_.data(), outPtrs_.data());
+    std::fill_n(preTapScratch_.data(), numSamples, 0.0f);
+    for (int ch = 0; ch < hostChannels; ++ch) {
+        const float* src = fc.destBuffer->getReadPointer(ch, startSample);
+        for (int i = 0; i < numSamples; ++i)
+            preTapScratch_[static_cast<size_t>(i)] += src[i];
+    }
+    const float preInv = 1.0f / static_cast<float>(hostChannels);
+    for (int i = 0; i < numSamples; ++i)
+        preTapScratch_[static_cast<size_t>(i)] *= preInv;
+    preSpectrumTap_.write(preTapScratch_.data(), numSamples);
 
     // Heavy boosts at high Q can rarely produce non-finite samples during a
     // quick freq/Q sweep. Clamp+sanitise mirrors the other compiled plugins.
-    const int channelsToSanitise = std::min(hostChannels, numOutputs_);
-    for (int ch = 0; ch < channelsToSanitise; ++ch) {
+    std::fill_n(postTapScratch_.data(), numSamples, 0.0f);
+    for (int ch = 0; ch < hostChannels; ++ch) {
         float* out = fc.destBuffer->getWritePointer(ch, startSample);
         for (int i = 0; i < numSamples; ++i) {
-            const float sample = out[i];
-            out[i] = std::isfinite(sample) ? juce::jlimit(-16.0f, 16.0f, sample) : 0.0f;
+            float sample = out[i];
+            for (int band = 0; band < kBandCount; ++band) {
+                if (!bandEnabled[static_cast<size_t>(band)])
+                    continue;
+                sample =
+                    processRbj(sample, coeffs[static_cast<size_t>(band)],
+                               biquadStates_[static_cast<size_t>(band)][static_cast<size_t>(ch)]);
+            }
+            sample *= outputGain;
+            const float sanitized =
+                std::isfinite(sample) ? juce::jlimit(-16.0f, 16.0f, sample) : 0.0f;
+            out[i] = sanitized;
+            postTapScratch_[static_cast<size_t>(i)] += sanitized;
         }
     }
+    const float postInv = 1.0f / static_cast<float>(hostChannels);
+    for (int i = 0; i < numSamples; ++i)
+        postTapScratch_[static_cast<size_t>(i)] *= postInv;
+    postSpectrumTap_.write(postTapScratch_.data(), numSamples);
 }
 
 te::AutomatableParameter* MagdaEqCompiledPlugin::getSlotParameter(int slotIndex) const {
@@ -383,34 +408,11 @@ float MagdaEqCompiledPlugin::nativeValueToDisplayValue(int slotIndex, float nati
 }
 
 MagdaEqCompiledPlugin::BandSnapshot MagdaEqCompiledPlugin::getBandSnapshot(int band) const {
-    BandSnapshot snap;
-    if (band < 0 || band >= kBandCount)
-        return snap;
-
-    auto realFor = [this](int slot) {
-        const auto info = parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slot)]);
-        const float norm = hostParams_[static_cast<size_t>(slot)]
-                               ? hostParams_[static_cast<size_t>(slot)]->getCurrentValue()
-                               : 0.0f;
-        return magda::ParameterUtils::normalizedToReal(norm, info);
-    };
-
-    const int typeIndex =
-        juce::jlimit(0, kBandTypeCount - 1,
-                     static_cast<int>(std::round(realFor(bandSlot(band, kBandTypeOffset)))));
-    snap.type = static_cast<BandType>(typeIndex);
-    snap.freq = realFor(bandSlot(band, kBandFreqOffset));
-    snap.gainDb = realFor(bandSlot(band, kBandGainOffset));
-    snap.q = realFor(bandSlot(band, kBandQOffset));
-    return snap;
+    return readBandSnapshot(band);
 }
 
 float MagdaEqCompiledPlugin::getOutputDb() const {
-    if (!hostParams_[kOutputSlot])
-        return 0.0f;
-    const auto info = parameterInfoForSlot(hostSlotInfo_[kOutputSlot]);
-    return magda::ParameterUtils::normalizedToReal(hostParams_[kOutputSlot]->getCurrentValue(),
-                                                   info);
+    return readSlotDisplayValue(kOutputSlot);
 }
 
 namespace {
@@ -418,23 +420,47 @@ namespace {
 // AI-chat aliases — one per slot. The slot index is what gets passed to
 // setSlotValue, so the alias just needs to point at the right host slot.
 constexpr AliasSpec kAliases[] = {
-    {"band1_type", 0, "Band 1 Type"},  {"band1_freq", 1, "Band 1 Freq"},
-    {"band1_gain", 2, "Band 1 Gain"},  {"band1_q", 3, "Band 1 Q"},
-    {"band2_type", 4, "Band 2 Type"},  {"band2_freq", 5, "Band 2 Freq"},
-    {"band2_gain", 6, "Band 2 Gain"},  {"band2_q", 7, "Band 2 Q"},
-    {"band3_type", 8, "Band 3 Type"},  {"band3_freq", 9, "Band 3 Freq"},
-    {"band3_gain", 10, "Band 3 Gain"}, {"band3_q", 11, "Band 3 Q"},
-    {"band4_type", 12, "Band 4 Type"}, {"band4_freq", 13, "Band 4 Freq"},
-    {"band4_gain", 14, "Band 4 Gain"}, {"band4_q", 15, "Band 4 Q"},
-    {"band5_type", 16, "Band 5 Type"}, {"band5_freq", 17, "Band 5 Freq"},
-    {"band5_gain", 18, "Band 5 Gain"}, {"band5_q", 19, "Band 5 Q"},
-    {"band6_type", 20, "Band 6 Type"}, {"band6_freq", 21, "Band 6 Freq"},
-    {"band6_gain", 22, "Band 6 Gain"}, {"band6_q", 23, "Band 6 Q"},
-    {"band7_type", 24, "Band 7 Type"}, {"band7_freq", 25, "Band 7 Freq"},
-    {"band7_gain", 26, "Band 7 Gain"}, {"band7_q", 27, "Band 7 Q"},
-    {"band8_type", 28, "Band 8 Type"}, {"band8_freq", 29, "Band 8 Freq"},
-    {"band8_gain", 30, "Band 8 Gain"}, {"band8_q", 31, "Band 8 Q"},
-    {"output", 32, "Output"},
+    {"band1_enabled", 0, "Band 1 Enabled"},
+    {"band1_type", 1, "Band 1 Type"},
+    {"band1_freq", 2, "Band 1 Freq"},
+    {"band1_gain", 3, "Band 1 Gain"},
+    {"band1_q", 4, "Band 1 Q"},
+    {"band2_enabled", 5, "Band 2 Enabled"},
+    {"band2_type", 6, "Band 2 Type"},
+    {"band2_freq", 7, "Band 2 Freq"},
+    {"band2_gain", 8, "Band 2 Gain"},
+    {"band2_q", 9, "Band 2 Q"},
+    {"band3_enabled", 10, "Band 3 Enabled"},
+    {"band3_type", 11, "Band 3 Type"},
+    {"band3_freq", 12, "Band 3 Freq"},
+    {"band3_gain", 13, "Band 3 Gain"},
+    {"band3_q", 14, "Band 3 Q"},
+    {"band4_enabled", 15, "Band 4 Enabled"},
+    {"band4_type", 16, "Band 4 Type"},
+    {"band4_freq", 17, "Band 4 Freq"},
+    {"band4_gain", 18, "Band 4 Gain"},
+    {"band4_q", 19, "Band 4 Q"},
+    {"band5_enabled", 20, "Band 5 Enabled"},
+    {"band5_type", 21, "Band 5 Type"},
+    {"band5_freq", 22, "Band 5 Freq"},
+    {"band5_gain", 23, "Band 5 Gain"},
+    {"band5_q", 24, "Band 5 Q"},
+    {"band6_enabled", 25, "Band 6 Enabled"},
+    {"band6_type", 26, "Band 6 Type"},
+    {"band6_freq", 27, "Band 6 Freq"},
+    {"band6_gain", 28, "Band 6 Gain"},
+    {"band6_q", 29, "Band 6 Q"},
+    {"band7_enabled", 30, "Band 7 Enabled"},
+    {"band7_type", 31, "Band 7 Type"},
+    {"band7_freq", 32, "Band 7 Freq"},
+    {"band7_gain", 33, "Band 7 Gain"},
+    {"band7_q", 34, "Band 7 Q"},
+    {"band8_enabled", 35, "Band 8 Enabled"},
+    {"band8_type", 36, "Band 8 Type"},
+    {"band8_freq", 37, "Band 8 Freq"},
+    {"band8_gain", 38, "Band 8 Gain"},
+    {"band8_q", 39, "Band 8 Q"},
+    {"output", 40, "Output"},
 };
 
 }  // namespace
@@ -444,11 +470,12 @@ const CompiledPluginSpec& getMagdaEqSpec() {
         .pluginId = MagdaEqCompiledPlugin::xmlTypeName,
         .displayName = "EQ",
         .browserCategory = "EQ",
-        .description = "Compiled Faust 8-band parametric equaliser. Per-band Type selects "
+        .description = "Built-in 8-band parametric equaliser. Per-band Enabled skips inactive "
+                       "biquads; Type selects "
                        "<b>HP</b>, <b>LowShelf</b>, <b>Bell</b>, <b>HighShelf</b>, "
                        "<b>LP</b>, or <b>Notch</b>. "
-                       "All six filter shapes are instantiated in parallel per band, so Type "
-                       "switching is glitch-free at audio rate. "
+                       "MAGDA-owned RBJ biquads drive audio and share coefficient math with "
+                       "the curve view. "
                        "Each band exposes Freq, Gain, Q; Output trims the final sum.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaEqCompiledPlugin(info);

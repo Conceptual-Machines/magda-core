@@ -1,9 +1,12 @@
 #pragma once
 
+#include <juce_dsp/juce_dsp.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
 #include <functional>
+#include <memory>
+#include <vector>
 
 #include "audio/plugins/compiled/MagdaEqCompiledPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
@@ -14,11 +17,11 @@ namespace magda::daw::ui {
 /**
  * @brief Magnitude-response visualisation for the 8-band compiled EQ.
  *
- * Polls the live plugin (via te::Plugin) for each band's {Type, Freq, Gain,
- * Q}, sums the biquad magnitude responses across log-spaced frequency bins,
- * and renders the resulting curve plus per-band dots. Bands set to HP / LP
- * / Notch ignore Gain and draw a dot anchored to 0 dB; LowShelf / HighShelf
- * ignore Q.
+ * Polls the live plugin (via te::Plugin) for each band's {Enabled, Type,
+ * Freq, Gain, Q}, sums enabled biquad magnitude responses across log-spaced
+ * frequency bins, and renders the resulting curve plus per-band dots. Bands
+ * set to HP / LP / Notch ignore Gain and draw a dot anchored to 0 dB;
+ * LowShelf / HighShelf ignore Q.
  */
 class CompiledEqCurveView final : public juce::Component,
                                   public CompiledDevicePanel,
@@ -55,6 +58,7 @@ class CompiledEqCurveView final : public juce::Component,
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDoubleClick(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseMove(const juce::MouseEvent& e) override;
@@ -68,6 +72,9 @@ class CompiledEqCurveView final : public juce::Component,
 
     void timerCallback() override;
     void resampleFromDevice();
+    void rebuildSpectrumFft();
+    void updateSpectrumOverlay();
+    void drawSpectrumOverlay(juce::Graphics& g, juce::Rectangle<float> area);
 
     // -1 if the cursor isn't near any band. Used by hit-testing and the
     // hover highlight in paint().
@@ -75,6 +82,8 @@ class CompiledEqCurveView final : public juce::Component,
     float xToFreq(float x) const;
     float yToDb(float y) const;
     void writeBandParam(int band, int slotOffset, float displayValue);
+    void setBandType(int band, BandType type);
+    void setBandEnabled(int band, bool enabled);
     void showBandTypeMenu(int band);
 
     // Cached per-band state used by paint(). Updated on the message thread
@@ -99,6 +108,21 @@ class CompiledEqCurveView final : public juce::Component,
     magda::DeviceInfo deviceSnapshot_;
 
     juce::Rectangle<float> plotArea_;
+
+    static constexpr int kSpectrumFftOrder = 11;
+    static constexpr int kSpectrumFftSize = 1 << kSpectrumFftOrder;
+    static constexpr int kSpectrumNumBins = kSpectrumFftSize / 2;
+    static constexpr float kSpectrumMinDb = -90.0f;
+    static constexpr float kSpectrumMaxDb = 0.0f;
+
+    std::unique_ptr<juce::dsp::FFT> spectrumFft_;
+    std::unique_ptr<juce::dsp::WindowingFunction<float>> spectrumWindow_;
+    std::vector<float> spectrumReadBuf_;
+    std::vector<float> spectrumFftData_;
+    std::vector<float> preSpectrumDb_;
+    std::vector<float> postSpectrumDb_;
+    size_t lastPreSpectrumWritePosition_ = 0;
+    size_t lastPostSpectrumWritePosition_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompiledEqCurveView)
 };

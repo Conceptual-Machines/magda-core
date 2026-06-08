@@ -44,6 +44,12 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         return true;
     }
 
+    tracktion::EditLimits getEditLimits() override {
+        auto limits = tracktion::EngineBehaviour::getEditLimits();
+        limits.maxNumMasterPlugins = 64;
+        return limits;
+    }
+
     juce::File getDefaultFolderForAudioRecordings(tracktion::Edit&) override {
         auto recDir = ProjectManager::getInstance().getRecordingsDirectory();
         if (recDir != juce::File()) {
