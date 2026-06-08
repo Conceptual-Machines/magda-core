@@ -2351,6 +2351,9 @@ te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeN
     };
 
     auto shouldUseTracktionStringFactory = [&]() {
+        if (daw::audio::compiled::findCompiledPluginSpec(xmlTypeName) != nullptr)
+            return false;
+
         const auto* spec = daw::audio::findInternalPluginSpecForLoadType(xmlTypeName);
         if (spec == nullptr)
             return true;
