@@ -803,16 +803,15 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
     auto waveformRect =
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 
-    // Transient markers are a per-onset slicing aid. Zoomed far out on a long
-    // file there are thousands of them across a few hundred pixels, collapsing
-    // into a meaningless wall, so hide them once they would be closer together
-    // than this on average.
-    const int markerCount = transientTimes_.size();
-    if (markerCount > 1) {
-        const double avgSpacingPx = static_cast<double>(widthPixels) / markerCount;
-        if (avgSpacingPx < 6.0)
-            return;
-    }
+    // Transient markers are a per-onset slicing aid that only makes sense when
+    // zoomed in far enough to place individual hits. Hide them when zoomed out
+    // (beats closer together than this on screen), where they are just noise
+    // scattered over the waveform rather than something you can act on.
+    const double bpm = currentTimelineBpm();
+    const double pixelsPerBeat = bpm > 0.0 ? (60.0 / bpm) * horizontalZoom_ : 0.0;
+    constexpr double kMinPixelsPerBeatForTransients = 16.0;
+    if (pixelsPerBeat < kMinPixelsPerBeatForTransients)
+        return;
 
     g.setColour(juce::Colours::white.withAlpha(0.25f));
 
