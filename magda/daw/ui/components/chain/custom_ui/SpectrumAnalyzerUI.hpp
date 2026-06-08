@@ -132,10 +132,13 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     bool armedMasking_ = false;
     std::vector<magda::TrackId> armedTracks_;
 
-    // Latest overlay data, refreshed on the timer (message thread).
+    // Latest overlay data, refreshed on the timer (message thread). The overlay
+    // trace runs the same FFT pipeline as this track's trace on the overlaid
+    // track's captured samples, so the two match in resolution and smoothing.
     bool overlayValid_ = false;
-    std::array<float, magda::daw::audio::kNumMaskingBands> overlayBandDb_{};
-    std::vector<magda::daw::audio::MaskingFinding> maskingFindings_;
+    std::vector<float> overlayScratch_;     // FFT scratch for the overlaid track
+    std::vector<float> overlaySmoothedDb_;  // temporally smoothed overlay spectrum
+    std::vector<magda::daw::audio::MaskingFinding> maskingFindings_;  // clash zones (band-based)
 
     // Hit areas in the dedicated strip below the plot (compact mode only).
     juce::Rectangle<int> chevronRect_;  // expand/collapse the controls

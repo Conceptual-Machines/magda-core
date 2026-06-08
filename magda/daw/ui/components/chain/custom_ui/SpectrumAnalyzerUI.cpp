@@ -181,6 +181,8 @@ void SpectrumAnalyzerUI::rebuildFft(int order) {
     fftData_.assign(static_cast<size_t>(fftSize_) * 2, 0.0f);
     smoothedDb_.assign(static_cast<size_t>(numBins_), kMinDb);
     peakDb_.assign(static_cast<size_t>(numBins_), kMinDb);
+    overlayScratch_.assign(static_cast<size_t>(fftSize_) * 2, 0.0f);
+    overlaySmoothedDb_.assign(static_cast<size_t>(numBins_), kMinDb);
 }
 
 void SpectrumAnalyzerUI::setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin) {
@@ -287,17 +289,47 @@ void SpectrumAnalyzerUI::releaseMeasurementArming() {
 }
 
 void SpectrumAnalyzerUI::pollOverlayData() {
-    if (overlayTrackId_ == magda::INVALID_TRACK_ID || trackId_ == magda::INVALID_TRACK_ID) {
+    if (overlayTrackId_ == magda::INVALID_TRACK_ID || trackId_ == magda::INVALID_TRACK_ID ||
+        fft_ == nullptr) {
         overlayValid_ = false;
+        maskingFindings_.clear();
         return;
     }
     auto& tmm = magda::TrackMeasurementManager::getInstance();
-    overlayValid_ = tmm.getTrackBandSpectrumDb(overlayTrackId_, overlayBandDb_);
+
+    // Clash zones come from the band-based masking detector, filtered to this pair.
     maskingFindings_.clear();
     for (const auto& f : tmm.getMaskingFindings())
         if ((f.trackA == trackId_ && f.trackB == overlayTrackId_) ||
             (f.trackA == overlayTrackId_ && f.trackB == trackId_))
             maskingFindings_.push_back(f);
+
+    // The overlay trace runs the exact same Hann + FFT + slope + temporal-
+    // smoothing pipeline as this track's trace, on the overlaid track's captured
+    // samples, so the two are visually comparable (not the coarse band spectrum).
+    double sr = 44100.0;
+    const size_t writePos =
+        tmm.readTrackSpectrumSamples(overlayTrackId_, overlayScratch_.data(), fftSize_, sr);
+    if (writePos == 0) {
+        overlayValid_ = false;  // no live tap / no audio captured yet
+        return;
+    }
+    std::fill(overlayScratch_.begin() + fftSize_, overlayScratch_.end(), 0.0f);
+    window_->multiplyWithWindowingTable(overlayScratch_.data(), static_cast<size_t>(fftSize_));
+    fft_->performFrequencyOnlyForwardTransform(overlayScratch_.data());
+
+    const float norm = 2.0f / static_cast<float>(fftSize_);
+    const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
+    for (int i = 0; i < numBins_; ++i) {
+        const float mag = overlayScratch_[static_cast<size_t>(i)] * norm;
+        float db = 20.0f * std::log10(std::max(mag, 1.0e-6f));
+        if (i > 0)
+            db += slopeDbPerOct_ * std::log2(static_cast<float>(i) * binHz / 1000.0f);
+        db = juce::jlimit(kMinDb, kMaxDb, db);
+        float& sm = overlaySmoothedDb_[static_cast<size_t>(i)];
+        sm += smoothing_ * (db - sm);
+    }
+    overlayValid_ = true;
 }
 
 void SpectrumAnalyzerUI::visibilityChanged() {
@@ -655,36 +687,27 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
                                               plot.getHeight()));
         }
 
-        // The overlaid track's spectrum from its 30-band measurement tap. Apply
-        // the same display slope as the main trace so the two are comparable.
-        // The 30 bands are coarse, so smooth them into a Catmull-Rom curve rather
-        // than drawing the raw zig-zag polyline.
-        if (overlayValid_) {
-            std::vector<juce::Point<float>> pts;
-            pts.reserve(static_cast<size_t>(audio::kNumMaskingBands));
-            for (int b = 0; b < audio::kNumMaskingBands; ++b) {
-                const float fc =
-                    std::sqrt(audio::maskingBandEdgeHz(b) * audio::maskingBandEdgeHz(b + 1));
-                float db = overlayBandDb_[static_cast<size_t>(b)] +
-                           slopeDbPerOct_ * std::log2(fc / 1000.0f);
-                db = juce::jlimit(kMinDb, kMaxDb, db);
-                pts.push_back({freqToX(fc, plot), dbToY(db, plot)});
-            }
+        // The overlaid track's spectrum, computed by the same FFT pipeline as
+        // this track's trace (see pollOverlayData), so it matches in resolution
+        // and smoothing. Drawn in a neutral colour, secondary to this track.
+        if (overlayValid_ && !overlaySmoothedDb_.empty()) {
+            const double sr = (plugin_ != nullptr) ? plugin_->getSampleRate() : 44100.0;
+            const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
             juce::Path op;
-            const int n = static_cast<int>(pts.size());
-            if (n > 0) {
-                op.startNewSubPath(pts[0]);
-                for (int i = 0; i < n - 1; ++i) {
-                    const auto p0 = pts[static_cast<size_t>(juce::jmax(0, i - 1))];
-                    const auto p1 = pts[static_cast<size_t>(i)];
-                    const auto p2 = pts[static_cast<size_t>(i + 1)];
-                    const auto p3 = pts[static_cast<size_t>(juce::jmin(n - 1, i + 2))];
-                    op.cubicTo(p1 + (p2 - p0) * (1.0f / 6.0f), p2 - (p3 - p1) * (1.0f / 6.0f), p2);
+            bool started = false;
+            for (int i = 1; i < numBins_; ++i) {  // skip DC
+                const float x = freqToX(static_cast<float>(i) * binHz, plot);
+                const float y = dbToY(overlaySmoothedDb_[static_cast<size_t>(i)], plot);
+                if (!started) {
+                    op.startNewSubPath(x, y);
+                    started = true;
+                } else {
+                    op.lineTo(x, y);
                 }
             }
             g.setColour(
-                juce::Colour(0xffc8c8c8).withAlpha(0.65f));  // neutral, secondary to the trace
-            g.strokePath(op, juce::PathStrokeType(1.25f));
+                juce::Colour(0xffc8c8c8).withAlpha(0.7f));  // neutral, secondary to the trace
+            g.strokePath(op, juce::PathStrokeType(1.5f));
         }
     }
 

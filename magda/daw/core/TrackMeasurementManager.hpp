@@ -73,10 +73,12 @@ class TrackMeasurementManager : private juce::Timer {
     /// masking. Returns {} until capture has been armed and audio has flowed.
     std::vector<daw::audio::MaskingFinding> getMaskingFindings(
         const daw::audio::MaskingOptions& opts = {}) const;
-    /// Latest 30-band spectrum (dBFS-ish) for a single track, for the spectrum
-    /// overlay (#1400). Returns false if the track has no live measurement tap.
-    bool getTrackBandSpectrumDb(TrackId trackId,
-                                std::array<float, daw::audio::kNumMaskingBands>& out) const;
+    /// Copy the latest numSamples of a track's captured mono signal (the masking
+    /// spectrum ring) into dest, for a full-resolution overlay FFT (#1400). The
+    /// overlay runs the same pipeline as the device's own trace on these samples.
+    /// Returns the ring's running sample count (0 if no live tap / no audio yet).
+    size_t readTrackSpectrumSamples(TrackId trackId, float* dest, int numSamples,
+                                    double& sampleRateOut) const;
 
     void addListener(TrackMeasurementListener* l) {
         listeners_.add(l);
