@@ -643,48 +643,48 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
     // is silent (smoothedDb_ empty), since the overlay updates independently.
     if (overlayTrackId_ != magda::INVALID_TRACK_ID) {
         // Clash zones first, so the spectrum traces sit on top of the shading.
-        const juce::Colour clash(0xffff6b35);  // warm warning hue, opacity = severity
-        const auto* overlayInfo = magda::TrackManager::getInstance().getTrack(overlayTrackId_);
-        const juce::String overlayName =
-            overlayInfo != nullptr ? overlayInfo->name : juce::String();
+        // Kept faint (a tint, not a block) so it marks the region without burying
+        // the traces; severity nudges the opacity within a narrow range.
+        const juce::Colour clash(0xffff6b35);  // warm warning hue
         for (const auto& f : maskingFindings_) {
             const float x0 = freqToX(f.loHz, plot);
             const float x1 = freqToX(f.hiHz, plot);
-            const float alpha = juce::jlimit(0.10f, 0.45f, 0.10f + f.severity * 0.40f);
+            const float alpha = juce::jlimit(0.05f, 0.16f, 0.05f + f.severity * 0.12f);
             g.setColour(clash.withAlpha(alpha));
             g.fillRect(juce::Rectangle<float>(x0, plot.getY(), juce::jmax(1.0f, x1 - x0),
                                               plot.getHeight()));
-            if (!compact_ && overlayName.isNotEmpty() && (x1 - x0) >= 28.0f) {
-                g.setColour(clash.brighter(0.4f));
-                g.setFont(FontManager::getInstance().getUIFont(9.0f));
-                g.drawText(overlayName,
-                           juce::Rectangle<float>(x0, plot.getY() + 1.0f, x1 - x0, 11.0f),
-                           juce::Justification::centredTop, false);
-            }
         }
 
         // The overlaid track's spectrum from its 30-band measurement tap. Apply
         // the same display slope as the main trace so the two are comparable.
+        // The 30 bands are coarse, so smooth them into a Catmull-Rom curve rather
+        // than drawing the raw zig-zag polyline.
         if (overlayValid_) {
-            juce::Path op;
-            bool started = false;
+            std::vector<juce::Point<float>> pts;
+            pts.reserve(static_cast<size_t>(audio::kNumMaskingBands));
             for (int b = 0; b < audio::kNumMaskingBands; ++b) {
                 const float fc =
                     std::sqrt(audio::maskingBandEdgeHz(b) * audio::maskingBandEdgeHz(b + 1));
                 float db = overlayBandDb_[static_cast<size_t>(b)] +
                            slopeDbPerOct_ * std::log2(fc / 1000.0f);
                 db = juce::jlimit(kMinDb, kMaxDb, db);
-                const float x = freqToX(fc, plot);
-                const float y = dbToY(db, plot);
-                if (!started) {
-                    op.startNewSubPath(x, y);
-                    started = true;
-                } else {
-                    op.lineTo(x, y);
+                pts.push_back({freqToX(fc, plot), dbToY(db, plot)});
+            }
+            juce::Path op;
+            const int n = static_cast<int>(pts.size());
+            if (n > 0) {
+                op.startNewSubPath(pts[0]);
+                for (int i = 0; i < n - 1; ++i) {
+                    const auto p0 = pts[static_cast<size_t>(juce::jmax(0, i - 1))];
+                    const auto p1 = pts[static_cast<size_t>(i)];
+                    const auto p2 = pts[static_cast<size_t>(i + 1)];
+                    const auto p3 = pts[static_cast<size_t>(juce::jmin(n - 1, i + 2))];
+                    op.cubicTo(p1 + (p2 - p0) * (1.0f / 6.0f), p2 - (p3 - p1) * (1.0f / 6.0f), p2);
                 }
             }
-            g.setColour(juce::Colour(0xffc8c8c8).withAlpha(0.8f));  // neutral, distinct from trace
-            g.strokePath(op, juce::PathStrokeType(1.5f));
+            g.setColour(
+                juce::Colour(0xffc8c8c8).withAlpha(0.65f));  // neutral, secondary to the trace
+            g.strokePath(op, juce::PathStrokeType(1.25f));
         }
     }
 
