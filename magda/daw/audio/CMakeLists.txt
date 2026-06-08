@@ -272,6 +272,7 @@ target_sources(magda_daw PRIVATE
     DeviceMeteringManager.cpp
     analysis/BandSpectrum.cpp
     analysis/MixAnalysisInput.cpp
+    analysis/OfflineMixAnalysis.cpp
     FaustResources.cpp
     processors/base/DeviceProcessor.cpp
     processors/base/DeviceProcessor.hpp

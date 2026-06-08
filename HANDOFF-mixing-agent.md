@@ -78,12 +78,68 @@ Env vars:
 
 ## Open threads / next steps
 
-### A. UI integration — "analyse all tracks" via OFFLINE RENDER (the chosen path)
-Decision: render, do NOT make the user play through.
-- TE `Renderer` + `Renderer::Parameters::tracksToDo` (a track bitset) renders isolated tracks offline; MAGDA already drives `Renderer::RenderTask` for export (`magda/daw/ui/windows/MainWindowExport.cpp`).
-- Plan: render master (all tracks) + each track isolated to temp WAVs offline -> load buffers -> `MixAnalysisInput::build(...)` -> `MixAnalysisAgent::generate()` on a bg thread -> show in console (the mixer-view MIXING route, currently a placeholder).
-- Honest tradeoff: per-track isolation = N render passes (one per track). Fast for audio-stem sessions (renders >> realtime); could lag on plugin-heavy projects. Later optimization: arm the measurement taps and do a SINGLE offline render of the full edit, sampling taps as it goes (one pass + offline speed).
-- Realtime capture (#1403 taps) stays for the relational subject/reference SECTION capture, where playing a chosen part is intentional.
+### A. Offline mix analysis (the LOCKED design)
+
+Design settled 2026-06-08. Everything is OFFLINE RENDER. There is no live capture
+and no "whole-mix vs relational" mode split -- the whole mix IS the maximally
+relational case (every track judged against every other; masking is already
+pairwise across the full set). It is ONE analysis with two optional knobs and two
+depths.
+
+**One action, triggered from the CONSOLE** (results land in the console, so the
+trigger belongs there). Reuse the #1403 footer record-button SLOT, repurposed to
+"Analyze" with a processing state ("Rendering... / Analysing..."), NOT an
+armed/playback affordance. Swap the glyph to an analyze/spark icon + "Analyze mix"
+tooltip.
+
+**Two knobs:**
+- *Track set* -- default is ALL tracks (the whole mix). Narrowing to a few is just
+  a smaller `tracksToDo` bitset (driven by selection + what's ticked in the
+  references dropdown). The agent reasons over whatever set it's given, always
+  relationally. The `Input` struct has NO subject field -- correct; focus is a
+  prompt line, not a structural mode.
+- *Range* -- if a loop region or time selection is set, render only that; else the
+  full edit. Export already does this (`ExportRange::LoopRegion` reads
+  `transport.getLoopRange()`; time-selection has a TODO to pull from
+  `SelectionManager`).
+
+**Two depths** (the fast-vs-thorough tradeoff; both offline, both range-bounded):
+- *Shallow ("Quick / master")* -- ONE render pass of the full mix (empty
+  `tracksToDo` = all tracks summed) -> `MixAnalysisInput::fingerprint(masterBuf)`
+  -> agent. Top-level mix/master feedback. Cheap even on plugin-heavy projects.
+- *Deep ("Per-track")* -- master pass (all tracks) + each track isolated (N+1
+  passes, one `tracksToDo` bit each) -> `MixAnalysisInput::build(...)` (cross-track
+  masking + per-track tonal balance + timeline) -> agent. Relational per-track
+  feedback. Scales with track count; shallow is the sensible default when N is large.
+- No new DSP: `fingerprint()` (shallow) and `build()` (deep) already exist; two callers.
+
+**Render primitive:** `te::Renderer::renderToFile(desc, outFile, edit, range,
+tracksToDo, usePlugins=true, useACID, clips={}, useThread)` -- `tracksToDo` is a
+`juce::BigInteger` bitset over the edit's tracks (empty = all). Map MAGDA `TrackId`
+-> TE track -> index in `te::getAllTracks(edit)` order to set bits. Render each pass
+to a temp WAV, then load the buffer with the format manager (the harness already
+loads WAVs into buffers) and hand to `MixAnalysisInput`.
+
+**Threading:** the edit-mutating setup (stop transport, `freePlaybackContextIfNotRecording`,
+`ReallocationInhibitor`, enable plugins, `prepareForRendering()`) must run on the
+message thread -- see `MainWindowExport.cpp:290-383`. The render passes themselves
+run off the message thread (`useThread`/a bg job). Sequence: message-thread setup
+-> bg: N renders + load buffers + `build`/`fingerprint` + `generate()` ->
+`MessageManager::callAsync` to post prose into the `MIXING` channel. Show the
+processing state in the console throughout. Add `endAllowance` (a tail) so
+reverbs/delays don't get cut at the range end.
+
+**Cost note to surface (no silent caps):** deep = N+1 passes; `log`/note the pass
+count and that shallow avoids it. Later optimization (deferred): a SINGLE offline
+render of the full edit with the measurement taps armed, sampling per-track as it
+renders (one pass at offline speed) -- replaces N passes; not now.
+
+References = future EXTERNAL reference masters (genre targets), separate from the
+in-project track-set selector. See thread B (CLAP auto-retrieval).
+
+The realtime-capture path already committed (`mixCapture_` snapshots -> agent) is now
+LEGACY/dormant; offline render supersedes it. The #1403 live-capture UI can be
+removed once offline lands (ask before ripping out).
 
 ### B. Local ML — already in the build (CLAP), it's WIRING not model selection
 MAGDA already ships the full CLAP zero-shot stack (issues #768/#1319), in `magda/daw/media_db/`:
@@ -97,8 +153,11 @@ Reuse for mix analysis:
 
 ### C. Smaller follow-ups
 - Anthropic cache-token parsing (see findings).
-- Empty-prompt send in the cockpit ("just balance these" one-click) — currently send requires non-empty text; allow empty when a capture is attached (for #886 wiring).
-- `#1403` cockpit + `#886` agent become their own PRs off `dev/0.11.0` when ready; the branch currently stacks everything.
+- The "Analyze" button is a no-prompt trigger by construction (it runs the offline
+  analysis with no question), so the old "allow empty send" item is absorbed -- the
+  prompt box stays optional-question only.
+- `#886` work becomes its own PR(s) off the active dev branch when ready; the branch
+  currently stacks everything.
 
 ## Gotchas
 - Pre-commit hook runs clang-format and aborts if it reformats; just `git add` the reformatted files and commit again (no `--amend`, no `--no-verify`).

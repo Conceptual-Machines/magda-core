@@ -24,6 +24,7 @@
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/router_agent.hpp"
 #include "../../../api/magda_api_live.hpp"
+#include "../../../audio/analysis/OfflineMixAnalysis.hpp"
 #include "../../../core/AppPaths.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/Config.hpp"
@@ -959,15 +960,15 @@ AIChatConsoleContent::AIChatConsoleContent() {
     addChildComponent(*refSelectButton_);
     referenceMenuLnf_ = std::make_unique<ReferenceMenuLookAndFeel>();
 
-    captureButton_ = std::make_unique<magda::SvgButton>("MixCapture", BinaryData::record_circle_svg,
-                                                        BinaryData::record_circle_svgSize);
-    captureButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    captureButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    captureButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_RED));
-    captureButton_->setIconPadding(4.0f);
-    captureButton_->setTooltip("Capture levels for the subject + reference tracks");
-    captureButton_->onClick = [this]() { toggleCapture(); };
-    addChildComponent(*captureButton_);
+    analyzeButton_ = std::make_unique<magda::SvgButton>("AnalyzeMix", BinaryData::analysis_svg,
+                                                        BinaryData::analysis_svgSize);
+    analyzeButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    analyzeButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    analyzeButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    analyzeButton_->setIconPadding(4.0f);
+    analyzeButton_->setTooltip("Analyze the mix (offline)");
+    analyzeButton_->onClick = [this]() { showAnalyzeMenu(); };
+    addChildComponent(*analyzeButton_);
 
     // Send button (embedded in bottom bar) — SVG icon
     auto enterSvg =
@@ -1490,14 +1491,14 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
 
         // Thin vertical dividers between the footer's right-edge controls
         // (#1403) — separators rather than a box border around each button.
-        if (captureButton_ && captureButton_->isVisible()) {
+        if (analyzeButton_ && analyzeButton_->isVisible()) {
             g.setColour(DarkTheme::getBorderColour());
             const auto bar = bottomBarBounds_.toFloat();
             const float top = bar.getY() + 5.0f;
             const float bot = bar.getBottom() - 5.0f;
             auto sep = [&](int x) { g.drawLine((float)x, top, (float)x, bot, 1.0f); };
             sep(refSelectButton_->getX() - 2);
-            sep(captureButton_->getX() - 1);
+            sep(analyzeButton_->getX() - 1);
             sep(sendButton_.getX() - 2);
         }
     } else {
@@ -1525,13 +1526,13 @@ void AIChatConsoleContent::resized() {
         auto bottomBar = bounds.removeFromBottom(26);
         bottomBarBounds_ = bottomBar;
 
-        // Footer right edge, from the right: send, then the capture controls
-        // [refs][capture] (#1403, shown whenever a subject is selected), then
+        // Footer right edge, from the right: send, then the mixing controls
+        // [refs][analyze] (#1403/#886, shown whenever a subject is selected), then
         // the clip-context toggle when a drum clip is in context.
         sendButton_.setBounds(bottomBar.removeFromRight(22));
-        if (captureButton_ && captureButton_->isVisible()) {
+        if (analyzeButton_ && analyzeButton_->isVisible()) {
             bottomBar.removeFromRight(4);
-            captureButton_->setBounds(bottomBar.removeFromRight(24));
+            analyzeButton_->setBounds(bottomBar.removeFromRight(24));
             bottomBar.removeFromRight(2);
             refSelectButton_->setBounds(bottomBar.removeFromRight(24));
         }
@@ -1748,10 +1749,11 @@ void AIChatConsoleContent::viewModeChanged(magda::ViewMode mode, const magda::Au
         return;
     currentViewMode_ = mode;
     // Reflect the view in the context glyph. The active view also scopes agent
-    // routing in RequestThread::run (mixer view -> mixing agent, #1402). The
-    // capture cockpit itself is view-independent, so it stays armed across view
-    // switches.
+    // routing in RequestThread::run (mixer view -> mixing agent, #1402).
     updateContextBar();
+    // The master-context analysis trigger depends on the view (Master view), so
+    // refresh its visibility when the view changes.
+    updateMixerCaptureControls();
 }
 
 // ============================================================================
@@ -1759,17 +1761,17 @@ void AIChatConsoleContent::viewModeChanged(magda::ViewMode mode, const magda::Au
 // ============================================================================
 
 void AIChatConsoleContent::updateMixerCaptureControls() {
-    // The reference picker + capture button are available in every view (the
-    // mixing capture isn't mixer-view-only infrastructure), gated only on a
-    // subject track being selected (the subject is the current selection).
-    const bool show =
-        magda::SelectionManager::getInstance().getSelectedTrack() != magda::INVALID_TRACK_ID;
+    // Offline mix analysis is whole-mix (no subject track), so the trigger is
+    // available in every view rather than scoped to a selection/context. The
+    // reference picker rides alongside it, reserved for future external masters.
+    const bool show = true;
     if (refSelectButton_)
         refSelectButton_->setVisible(show);
-    if (captureButton_) {
-        captureButton_->setVisible(show);
-        captureButton_->setActive(capturing_);
+    if (analyzeButton_) {
+        analyzeButton_->setVisible(show);
+        analyzeButton_->setActive(analyzing_);
     }
+    resized();  // reflow the footer now that visibility changed
 }
 
 void AIChatConsoleContent::showReferenceMenu() {
@@ -1799,6 +1801,84 @@ void AIChatConsoleContent::showReferenceMenu() {
         menu.addItem("(no other tracks)", false, false, nullptr);
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(refSelectButton_.get()));
+}
+
+void AIChatConsoleContent::showAnalyzeMenu() {
+    if (analyzing_ || processing_)
+        return;
+
+    // One button, two depths (#886): Quick = the summed mix, Deep = every track.
+    juce::PopupMenu menu;
+    menu.setLookAndFeel(referenceMenuLnf_.get());
+    menu.addItem("Quick  (master only)", true, false, [this]() { runOfflineAnalysis(false); });
+    menu.addItem("Deep  (per-track)", true, false, [this]() { runOfflineAnalysis(true); });
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(analyzeButton_.get()));
+}
+
+void AIChatConsoleContent::runOfflineAnalysis(bool deep) {
+    if (analyzing_ || processing_)
+        return;
+
+    auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
+        magda::TrackManager::getInstance().getAudioEngine());
+    if (engine == nullptr || engine->getEdit() == nullptr) {
+        appendToChat(juce::String::charToString(0x25C6) + " No active edit to analyse.");
+        return;
+    }
+
+    namespace mix = magda::daw::audio;
+    mix::OfflineMixAnalysis::Request req;
+    req.depth =
+        deep ? mix::OfflineMixAnalysis::Depth::Deep : mix::OfflineMixAnalysis::Depth::Shallow;
+    // Render only the loop range when the transport is looping; else the whole edit.
+    req.range = engine->getEdit()->getTransport().looping.get()
+                    ? mix::OfflineMixAnalysis::RangeMode::LoopRange
+                    : mix::OfflineMixAnalysis::RangeMode::WholeEdit;
+    // Empty track set => the whole mix. The references dropdown is reserved for
+    // future external reference masters and does not narrow the set yet.
+    const double tempo = magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    if (tempo > 0.0)
+        req.bpm = static_cast<float>(tempo);
+    req.question = inputDocument_.getAllContent().trim().toStdString();
+
+    analyzing_ = true;
+    if (analyzeButton_)
+        analyzeButton_->setActive(true);
+    inputBox_->setEnabled(false);
+
+    // A single status line we overwrite in place as the job reports progress,
+    // then replace with the final analysis (or error).
+    analyzeStatusAnchor_ = chatHistory_.getText().length();
+
+    juce::Component::SafePointer<AIChatConsoleContent> safeThis(this);
+    auto setStatus = [safeThis](const juce::String& line) {
+        if (safeThis == nullptr)
+            return;
+        auto text = safeThis->chatHistory_.getText();
+        int anchor = safeThis->analyzeStatusAnchor_;
+        if (anchor < 0 || anchor > text.length())
+            anchor = text.length();
+        safeThis->chatHistory_.setText(text.substring(0, anchor) +
+                                       juce::String::charToString(0x25C6) + " " + line + "\n\n");
+        safeThis->chatHistory_.moveCaretToEnd();
+    };
+
+    setStatus(deep ? "Analyzing mix (deep)..." : "Analyzing mix (quick)...");
+
+    mix::OfflineMixAnalysis::start(
+        *engine, std::move(req), [setStatus](const juce::String& msg) { setStatus(msg); },
+        [safeThis, setStatus](magda::MixAnalysisAgent::Result result) {
+            if (result.hasError)
+                setStatus("Mix analysis failed: " + juce::String(result.error));
+            else
+                setStatus(juce::String(result.analysis));
+            if (safeThis != nullptr) {
+                safeThis->analyzing_ = false;
+                if (safeThis->analyzeButton_)
+                    safeThis->analyzeButton_->setActive(false);
+                safeThis->inputBox_->setEnabled(true);
+            }
+        });
 }
 
 void AIChatConsoleContent::toggleCapture() {
@@ -1841,8 +1921,9 @@ void AIChatConsoleContent::startCapture() {
         tmm.setMaskingAnalysisEnabled(true);
 
     capturing_ = true;
-    captureButton_->setActive(true);
-    captureButton_->setTooltip("Stop capture and attach the measured levels");
+    // NOTE: live capture is dormant -- the footer button is now the offline
+    // analysis trigger (#886). These helpers stay for the future continuous-capture
+    // workflow but are no longer wired to a button.
     appendToChat(juce::String::charToString(0x25C6) +
                  " Capturing levels... play the section, then stop to attach.");
 }
@@ -1871,10 +1952,6 @@ void AIChatConsoleContent::stopCapture() {
     captureAddedGlobal_ = false;
 
     capturing_ = false;
-    if (captureButton_) {
-        captureButton_->setActive(false);
-        captureButton_->setTooltip("Capture levels for the subject + reference tracks");
-    }
 
     if (mixCapture_.valid)
         appendToChat(juce::String::charToString(0x25C6) + " " + formatMixCaptureContext());

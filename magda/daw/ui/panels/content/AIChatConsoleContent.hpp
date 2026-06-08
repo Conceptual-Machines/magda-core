@@ -156,11 +156,14 @@ class AIChatConsoleContent : public PanelContent,
     // mixing pass: the selected track is the subject, the user ticks reference
     // tracks, captures a measurement window, then sends an optional prompt.
     // These footer controls show in any view whenever a subject is selected.
-    std::unique_ptr<magda::SvgButton> refSelectButton_;       // opens the reference-track menu
-    std::unique_ptr<magda::SvgButton> captureButton_;         // start/stop the measurement pass
+    std::unique_ptr<magda::SvgButton> refSelectButton_;  // opens the reference-track menu
+    std::unique_ptr<magda::SvgButton>
+        analyzeButton_;  // offline mix-analysis trigger (record slot, repurposed)
     std::unique_ptr<juce::LookAndFeel_V4> referenceMenuLnf_;  // theme font for the reference menu
     std::set<magda::TrackId> referenceTrackIds_;              // ticked reference tracks
     bool capturing_ = false;
+    bool analyzing_ = false;        // an offline mix analysis is in flight
+    int analyzeStatusAnchor_ = -1;  // chat offset of the live analysis status line
     // Measurement enablement we switched on for the capture, remembered so stop
     // restores the prior state without trampling other consumers (Levels meter).
     std::set<magda::TrackId> captureAddedTracks_;
@@ -178,6 +181,8 @@ class AIChatConsoleContent : public PanelContent,
     MixCapture mixCapture_;
 
     void showReferenceMenu();
+    void showAnalyzeMenu();              // popup: Quick (master) / Deep (per-track)
+    void runOfflineAnalysis(bool deep);  // kick off an offline mix analysis
     void toggleCapture();
     void startCapture();
     void stopCapture();
