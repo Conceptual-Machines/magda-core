@@ -28,6 +28,8 @@ dsl_grammar.hpp
     drummer_agent.cpp
     gain_staging_agent.hpp
     gain_staging_agent.cpp
+    mixing_agent.hpp
+    mixing_agent.cpp
     automation_parser.hpp
     automation_parser.cpp
     automation_executor.hpp

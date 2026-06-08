@@ -128,3 +128,9 @@ LUCATHINKPAD.log
 
 # winbuild.ps1 / winbuild.sh tee log
 build.log
+
+# Local audio fixtures for exploratory mix-analysis tests (large, not tracked)
+tests/fixtures/audio/
+
+# Exploratory mix-analysis run output (regenerated, not tracked)
+mix-analysis-*.txt
