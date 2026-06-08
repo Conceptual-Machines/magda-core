@@ -43,8 +43,14 @@ void loadDotEnv(const juce::File& envFile) {
         auto val = line.substring(eq + 1).trim();
         if (val.startsWithChar('"') && val.endsWithChar('"'))
             val = val.substring(1, val.length() - 1);
-        if (val.isNotEmpty())
+        if (val.isNotEmpty()) {
+#if defined(_WIN32)
+            if (std::getenv(key.toRawUTF8()) == nullptr)
+                _putenv_s(key.toRawUTF8(), val.toRawUTF8());
+#else
             ::setenv(key.toRawUTF8(), val.toRawUTF8(), /*overwrite*/ 0);
+#endif
+        }
     }
 }
 
