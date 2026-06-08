@@ -1560,12 +1560,42 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
         if (isMaster_)
             return;  // master strip has nothing to offer here
 
+        const int ungroupTracksId = -103;
+        const int groupSelectedTracksId = -102;
         const int deleteTrackId = -101;
         juce::PopupMenu menu;
+        const auto* track = TrackManager::getInstance().getTrack(trackId_);
+        const bool canUngroupTracks =
+            track != nullptr && track->isGroup() && !track->childIds.empty();
+        if (canUngroupTracks) {
+            menu.addItem(ungroupTracksId, "Ungroup tracks");
+            menu.addSeparator();
+        }
+
+        auto& sel = SelectionManager::getInstance();
+        const bool canGroupSelectedTracks =
+            sel.getSelectedTrackCount() >= 2 && sel.isTrackSelected(trackId_);
+        if (canGroupSelectedTracks) {
+            menu.addItem(groupSelectedTracksId, "Group tracks");
+            menu.addSeparator();
+        }
         menu.addItem(deleteTrackId, "Delete Track");
 
         menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
-            if (result == -101) {
+            if (result == -103) {
+                auto childIds = TrackManager::getInstance().ungroupTrack(trackId_);
+                if (!childIds.empty()) {
+                    std::unordered_set<TrackId> selectedChildren(childIds.begin(), childIds.end());
+                    SelectionManager::getInstance().selectTracks(selectedChildren);
+                }
+            } else if (result == -102) {
+                auto& selection = SelectionManager::getInstance();
+                std::vector<TrackId> selectedTracks(selection.getSelectedTracks().begin(),
+                                                    selection.getSelectedTracks().end());
+                TrackId groupId = TrackManager::getInstance().groupTracks(selectedTracks);
+                if (groupId != INVALID_TRACK_ID)
+                    selection.selectTrack(groupId);
+            } else if (result == -101) {
                 UndoManager::getInstance().executeCommand(
                     std::make_unique<DeleteTrackCommand>(trackId_));
             }

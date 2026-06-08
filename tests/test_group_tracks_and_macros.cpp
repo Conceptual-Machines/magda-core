@@ -184,6 +184,47 @@ TEST_CASE("Group track rejects instruments inside rack chains", "[group_track][i
     }
 }
 
+TEST_CASE("Group selected tracks creates group before selected tracks",
+          "[group_track][selection]") {
+    GroupMacroTestFixture fixture;
+
+    auto firstId = fixture.tm().createTrack("Drums", TrackType::Audio);
+    auto secondId = fixture.tm().createTrack("Bass", TrackType::Audio);
+    auto thirdId = fixture.tm().createTrack("Lead", TrackType::Audio);
+
+    auto groupId = fixture.tm().groupTracks({thirdId, firstId, secondId}, "Selected Group");
+
+    REQUIRE(groupId != INVALID_TRACK_ID);
+
+    const auto* group = fixture.tm().getTrack(groupId);
+    REQUIRE(group != nullptr);
+    REQUIRE(group->isGroup());
+    REQUIRE(group->name == "Selected Group");
+    REQUIRE(group->childIds == std::vector<TrackId>{firstId, secondId, thirdId});
+
+    REQUIRE(fixture.tm().getTrackIndex(groupId) == 0);
+    REQUIRE(fixture.tm().getTrack(firstId)->parentId == groupId);
+    REQUIRE(fixture.tm().getTrack(secondId)->parentId == groupId);
+    REQUIRE(fixture.tm().getTrack(thirdId)->parentId == groupId);
+}
+
+TEST_CASE("Ungroup track restores children and deletes empty group", "[group_track][selection]") {
+    GroupMacroTestFixture fixture;
+
+    auto firstId = fixture.tm().createTrack("Drums", TrackType::Audio);
+    auto secondId = fixture.tm().createTrack("Bass", TrackType::Audio);
+    auto groupId = fixture.tm().groupTracks({firstId, secondId}, "Selected Group");
+
+    auto childIds = fixture.tm().ungroupTrack(groupId);
+
+    REQUIRE(childIds == std::vector<TrackId>{firstId, secondId});
+    REQUIRE(fixture.tm().getTrack(groupId) == nullptr);
+    REQUIRE(fixture.tm().getTrack(firstId)->parentId == INVALID_TRACK_ID);
+    REQUIRE(fixture.tm().getTrack(secondId)->parentId == INVALID_TRACK_ID);
+    REQUIRE(fixture.tm().getTrackIndex(firstId) == 0);
+    REQUIRE(fixture.tm().getTrackIndex(secondId) == 1);
+}
+
 TEST_CASE("Audio and Instrument tracks accept instruments", "[group_track][instrument]") {
     GroupMacroTestFixture fixture;
 
