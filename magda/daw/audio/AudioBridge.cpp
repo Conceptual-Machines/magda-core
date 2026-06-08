@@ -926,6 +926,14 @@ void AudioBridge::timerCallback() {
         return;
     }
 
+    // Pause all live-engine tick work while an offline render is active (export /
+    // mix analysis). The render needs the play context to stay inactive (TE
+    // asserts on it); letting the MIDI/context tick, reverse-proxy polling or
+    // metering run here can re-touch the context mid-render. restoreAfterRendering()
+    // reallocates and resumes once the render completes.
+    if (pluginManager_.isRenderingActive())
+        return;
+
     midiInputRouter_.handlePlaybackContextTick();
 
     // Poll for reversed proxy file completion (delegated to ClipSynchronizer)
@@ -966,7 +974,9 @@ void AudioBridge::timerCallback() {
     // Automation recording — detect transport transitions, manage recording lifecycle
     automationRecording_.process();
 
-    // Update metering from level measurers (runs at 30 FPS on message thread)
+    // Update metering from level measurers (runs at 30 FPS on message thread).
+    // (Skipped entirely during an offline render by the early return above, so
+    // the live meters don't twitch to the render's audio either.)
     trackController_.withTrackMapping(
         [this](const std::map<TrackId, te::AudioTrack*>& trackMapping) {
             refreshInputMeterClients(trackMapping);

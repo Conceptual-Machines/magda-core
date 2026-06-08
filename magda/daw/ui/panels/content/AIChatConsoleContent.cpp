@@ -7,6 +7,7 @@
 #include <mutex>
 #include <set>
 #include <string>
+#include <thread>
 
 #include "../../../../agents/automation_agent.hpp"
 #include "../../../../agents/command_agent.hpp"
@@ -966,8 +967,15 @@ AIChatConsoleContent::AIChatConsoleContent() {
     analyzeButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     analyzeButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
     analyzeButton_->setIconPadding(4.0f);
-    analyzeButton_->setTooltip("Analyze the mix (offline)");
-    analyzeButton_->onClick = [this]() { showAnalyzeMenu(); };
+    analyzeButton_->setTooltip("Analyze the mix");
+    // While a live capture is running the button is a stop-and-analyze control;
+    // otherwise it opens the Live / Quick / Deep menu.
+    analyzeButton_->onClick = [this]() {
+        if (capturing_)
+            stopCapture();
+        else
+            showAnalyzeMenu();
+    };
     addChildComponent(*analyzeButton_);
 
     // Send button (embedded in bottom bar) — SVG icon
@@ -1769,7 +1777,7 @@ void AIChatConsoleContent::updateMixerCaptureControls() {
         refSelectButton_->setVisible(show);
     if (analyzeButton_) {
         analyzeButton_->setVisible(show);
-        analyzeButton_->setActive(analyzing_);
+        analyzeButton_->setActive(analyzing_ || capturing_);
     }
     resized();  // reflow the footer now that visibility changed
 }
@@ -1807,12 +1815,26 @@ void AIChatConsoleContent::showAnalyzeMenu() {
     if (analyzing_ || processing_)
         return;
 
-    // One button, two depths (#886): Quick = the summed mix, Deep = every track.
+    // One button, three modes (#886). Live captures the mix as you play it (one
+    // real-time pass, you listen meanwhile); Quick/Deep render offline.
     juce::PopupMenu menu;
     menu.setLookAndFeel(referenceMenuLnf_.get());
-    menu.addItem("Quick  (master only)", true, false, [this]() { runOfflineAnalysis(false); });
-    menu.addItem("Deep  (per-track)", true, false, [this]() { runOfflineAnalysis(true); });
+    menu.addItem("Listen & analyze (live)", true, false, [this]() { startCapture(); });
+    menu.addSeparator();
+    menu.addItem("Quick  (offline, master only)", true, false,
+                 [this]() { runOfflineAnalysis(false); });
+    menu.addItem("Deep  (offline, per-track)", true, false, [this]() { runOfflineAnalysis(true); });
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(analyzeButton_.get()));
+}
+
+void AIChatConsoleContent::setAnalyzeStatus(const juce::String& line) {
+    auto text = chatHistory_.getText();
+    int anchor = analyzeStatusAnchor_;
+    if (anchor < 0 || anchor > text.length())
+        anchor = text.length();
+    chatHistory_.setText(text.substring(0, anchor) + juce::String::charToString(0x25C6) + " " +
+                         line + "\n\n");
+    chatHistory_.moveCaretToEnd();
 }
 
 void AIChatConsoleContent::runOfflineAnalysis(bool deep) {
@@ -1852,15 +1874,8 @@ void AIChatConsoleContent::runOfflineAnalysis(bool deep) {
 
     juce::Component::SafePointer<AIChatConsoleContent> safeThis(this);
     auto setStatus = [safeThis](const juce::String& line) {
-        if (safeThis == nullptr)
-            return;
-        auto text = safeThis->chatHistory_.getText();
-        int anchor = safeThis->analyzeStatusAnchor_;
-        if (anchor < 0 || anchor > text.length())
-            anchor = text.length();
-        safeThis->chatHistory_.setText(text.substring(0, anchor) +
-                                       juce::String::charToString(0x25C6) + " " + line + "\n\n");
-        safeThis->chatHistory_.moveCaretToEnd();
+        if (safeThis != nullptr)
+            safeThis->setAnalyzeStatus(line);
     };
 
     setStatus(deep ? "Analyzing mix (deep)..." : "Analyzing mix (quick)...");
@@ -1889,15 +1904,13 @@ void AIChatConsoleContent::toggleCapture() {
 }
 
 void AIChatConsoleContent::startCapture() {
-    const auto subject = magda::SelectionManager::getInstance().getSelectedTrack();
-    if (subject == magda::INVALID_TRACK_ID) {
-        appendToChat(juce::String::charToString(0x25C6) +
-                     " Select a subject track in the mixer before capturing.");
+    if (analyzing_ || capturing_)
         return;
-    }
 
     auto& tmm = magda::TrackMeasurementManager::getInstance();
 
+    // Whole-mix live capture (#886): arm EVERY track + masking, then the user
+    // plays the mix and we measure all tracks at once in a single real-time pass.
     // Remember what we switch on so stopCapture() restores the prior state and
     // doesn't disable taps another consumer (the Levels meter) still wants.
     captureAddedTracks_.clear();
@@ -1907,35 +1920,31 @@ void AIChatConsoleContent::startCapture() {
     if (captureAddedGlobal_)
         tmm.setGlobalEnabled(true);
 
-    auto arm = [&](magda::TrackId id) {
-        if (id != magda::INVALID_TRACK_ID && !tmm.isTrackEnabled(id)) {
-            tmm.setTrackEnabled(id, true);
-            captureAddedTracks_.insert(id);
+    for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
+        if (track.id != magda::INVALID_TRACK_ID && !tmm.isTrackEnabled(track.id)) {
+            tmm.setTrackEnabled(track.id, true);
+            captureAddedTracks_.insert(track.id);
         }
-    };
-    arm(subject);
-    for (auto ref : referenceTrackIds_)
-        arm(ref);
+    }
 
     if (captureAddedMasking_)
         tmm.setMaskingAnalysisEnabled(true);
 
     capturing_ = true;
-    // NOTE: live capture is dormant -- the footer button is now the offline
-    // analysis trigger (#886). These helpers stay for the future continuous-capture
-    // workflow but are no longer wired to a button.
+    if (analyzeButton_) {
+        analyzeButton_->setActive(true);
+        analyzeButton_->setTooltip("Stop and analyze the captured mix");
+    }
     appendToChat(juce::String::charToString(0x25C6) +
-                 " Capturing levels... play the section, then stop to attach.");
+                 " Listening... play the mix, then click the analyze button to stop and analyze.");
 }
 
 void AIChatConsoleContent::stopCapture() {
     auto& tmm = magda::TrackMeasurementManager::getInstance();
-    const auto subject = magda::SelectionManager::getInstance().getSelectedTrack();
 
-    // Gather everything the enabled taps measured during the window. getAllSnapshots
-    // returns only enabled tracks, which is exactly the subject + references set.
-    mixCapture_.subject = subject;
-    mixCapture_.refs.assign(referenceTrackIds_.begin(), referenceTrackIds_.end());
+    // Gather everything the enabled taps measured during the playback window.
+    mixCapture_.subject = magda::INVALID_TRACK_ID;  // whole-mix: no single subject
+    mixCapture_.refs.clear();
     mixCapture_.snapshots = tmm.getAllSnapshots();
     mixCapture_.masking = tmm.getMaskingFindings();
     mixCapture_.valid = !mixCapture_.snapshots.empty();
@@ -1952,13 +1961,93 @@ void AIChatConsoleContent::stopCapture() {
     captureAddedGlobal_ = false;
 
     capturing_ = false;
+    if (analyzeButton_) {
+        analyzeButton_->setActive(false);
+        analyzeButton_->setTooltip("Analyze the mix");
+    }
 
     if (mixCapture_.valid)
-        appendToChat(juce::String::charToString(0x25C6) + " " + formatMixCaptureContext());
+        analyzeCapturedMix();
     else
         appendToChat(juce::String::charToString(0x25C6) +
-                     " No levels captured (was the section playing?).");
-    updateContextBar();
+                     " No levels captured (was the mix playing?).");
+}
+
+void AIChatConsoleContent::analyzeCapturedMix() {
+    // Map the captured per-track snapshots + masking into the agent input. Tonal
+    // balance / spectral detail aren't captured live (only the offline pipeline
+    // computes them); the prompt treats unset fields as "not measured".
+    auto& tmgr = magda::TrackManager::getInstance();
+    auto trackName = [&tmgr](magda::TrackId id) -> juce::String {
+        const auto* t = tmgr.getTrack(id);
+        return (t != nullptr && t->name.isNotEmpty()) ? t->name : juce::String(id);
+    };
+
+    MixAnalysisAgent::Input input;
+    for (const auto& [id, snap] : mixCapture_.snapshots) {
+        MixAnalysisAgent::TrackMix tm;
+        tm.name = trackName(id).toStdString();
+        tm.integratedLufs = snap.integratedLufs;
+        tm.shortTermLufs = snap.shortTermLufs;
+        tm.samplePeakDb = snap.samplePeakDb;
+        tm.truePeakDb = snap.truePeakDb;
+        tm.truePeakValid = snap.truePeakValid;
+        tm.plr = snap.plr;
+        tm.psr = snap.psr;
+        tm.correlation = snap.correlation;
+        tm.width = snap.width;
+        input.tracks.push_back(std::move(tm));
+    }
+    for (const auto& f : mixCapture_.masking) {
+        MixAnalysisAgent::MaskingPair mp;
+        mp.a = f.nameA.toStdString();
+        mp.b = f.nameB.toStdString();
+        mp.loHz = f.loHz;
+        mp.hiHz = f.hiHz;
+        mp.severity = f.severity;
+        input.masking.push_back(std::move(mp));
+    }
+    if (input.tracks.empty()) {
+        appendToChat(juce::String::charToString(0x25C6) + " No levels captured.");
+        return;
+    }
+
+    const double tempo = magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    if (tempo > 0.0)
+        input.bpm = static_cast<float>(tempo);
+    input.question = inputDocument_.getAllContent().trim().toStdString();
+
+    runMixAgent(std::move(input));
+}
+
+void AIChatConsoleContent::runMixAgent(MixAnalysisAgent::Input input) {
+    analyzing_ = true;
+    if (analyzeButton_)
+        analyzeButton_->setActive(true);
+    inputBox_->setEnabled(false);
+
+    analyzeStatusAnchor_ = chatHistory_.getText().length();
+    setAnalyzeStatus("Analyzing captured mix...");
+
+    // generate() blocks on the network; run it off the message thread and post
+    // the result back. SafePointer guards a teardown mid-call.
+    juce::Component::SafePointer<AIChatConsoleContent> safeThis(this);
+    std::thread([safeThis, input = std::move(input)]() mutable {
+        MixAnalysisAgent agent;
+        auto result = agent.generate(input);
+        juce::MessageManager::callAsync([safeThis, result = std::move(result)]() mutable {
+            if (safeThis == nullptr)
+                return;
+            if (result.hasError)
+                safeThis->setAnalyzeStatus("Mix analysis failed: " + juce::String(result.error));
+            else
+                safeThis->setAnalyzeStatus(juce::String(result.analysis));
+            safeThis->analyzing_ = false;
+            if (safeThis->analyzeButton_)
+                safeThis->analyzeButton_->setActive(false);
+            safeThis->inputBox_->setEnabled(true);
+        });
+    }).detach();
 }
 
 juce::String AIChatConsoleContent::formatMixCaptureContext() const {

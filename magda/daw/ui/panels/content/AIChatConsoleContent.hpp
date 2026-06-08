@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "../../../../agents/llama_model_manager.hpp"
+#include "../../../../agents/mixing_agent.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackMeasurementManager.hpp"
@@ -181,8 +182,11 @@ class AIChatConsoleContent : public PanelContent,
     MixCapture mixCapture_;
 
     void showReferenceMenu();
-    void showAnalyzeMenu();              // popup: Quick (master) / Deep (per-track)
-    void runOfflineAnalysis(bool deep);  // kick off an offline mix analysis
+    void showAnalyzeMenu();                           // popup: Live / Quick / Deep
+    void runOfflineAnalysis(bool deep);               // kick off an offline mix analysis
+    void setAnalyzeStatus(const juce::String& line);  // overwrite the live status/result line
+    void analyzeCapturedMix();  // build input from a live capture + run the agent
+    void runMixAgent(MixAnalysisAgent::Input input);  // blocking agent call on a bg thread
     void toggleCapture();
     void startCapture();
     void stopCapture();
