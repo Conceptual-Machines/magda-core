@@ -977,17 +977,19 @@ AIChatConsoleContent::AIChatConsoleContent() {
     analyzeButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     analyzeButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     analyzeButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
-    // Engaged look while a capture/analysis is in flight: setAnalyzeEngaged()
-    // swaps in the filled analysis2 icon recoloured cyan, over a translucent cyan
-    // fill (matches the active-button convention used elsewhere).
+    // Engaged look while a capture/analysis is in flight: updateAnalyzeButtonMode()
+    // swaps in the filled analysis2 / stop icon recoloured cyan, over a translucent
+    // cyan fill (matches the active-button convention used elsewhere).
     analyzeButton_->setActiveBackgroundColor(
         DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.25f));
     analyzeButton_->setIconPadding(4.0f);
     analyzeButton_->setTooltip("Analyze the mix");
-    // While a live capture is running the button is a stop-and-analyze control;
-    // otherwise it opens the Live / Quick / Deep menu.
+    // Three roles: while analyzing it stops/cancels the run; while a live capture
+    // is running it stops and analyzes; otherwise it opens the Live/Quick/Deep menu.
     analyzeButton_->onClick = [this]() {
-        if (capturing_)
+        if (analyzing_)
+            cancelAnalysis();
+        else if (capturing_)
             stopCapture();
         else
             showAnalyzeMenu();
@@ -1804,21 +1806,55 @@ void AIChatConsoleContent::updateMixerCaptureControls() {
     if (analyzeButton_) {
         analyzeButton_->setVisible(
             magda::consoleSurfaceForView(currentViewMode_).showsAnalyzeTrigger);
-        setAnalyzeEngaged(analyzing_ || capturing_);
+        updateAnalyzeButtonMode();
     }
     resized();  // reflow the footer now that visibility changed
 }
 
-void AIChatConsoleContent::setAnalyzeEngaged(bool engaged) {
+void AIChatConsoleContent::updateAnalyzeButtonMode() {
     if (!analyzeButton_)
         return;
-    // Swap the icon: the filled analysis2 design while engaged, the outline while
-    // idle. Both fill #B3B3B3, so setOriginalColor still recolours them (cyan when
-    // active via setActiveColor). updateSvgData repaints.
-    analyzeButton_->updateSvgData(engaged ? BinaryData::analysis2_svg : BinaryData::analysis_svg,
-                                  engaged ? BinaryData::analysis2_svgSize
-                                          : BinaryData::analysis_svgSize);
-    analyzeButton_->setActive(engaged);
+    const AnalyzeButtonMode mode = analyzing_   ? AnalyzeButtonMode::Analyzing
+                                   : capturing_ ? AnalyzeButtonMode::Capturing
+                                                : AnalyzeButtonMode::Idle;
+    if (mode == analyzeButtonMode_)
+        return;  // no icon reload unless the state actually changed
+    analyzeButtonMode_ = mode;
+
+    // All three icons fill #B3B3B3, so setOriginalColor recolours them (cyan when
+    // active). updateSvgData repaints.
+    switch (mode) {
+        case AnalyzeButtonMode::Analyzing:
+            // A stop glyph: clicking the button cancels the run.
+            analyzeButton_->updateSvgData(BinaryData::server_stop_svg,
+                                          BinaryData::server_stop_svgSize);
+            analyzeButton_->setActive(true);
+            analyzeButton_->setTooltip("Stop analysis");
+            break;
+        case AnalyzeButtonMode::Capturing:
+            // Listening: filled analysis2 icon; clicking stops and analyzes.
+            analyzeButton_->updateSvgData(BinaryData::analysis2_svg, BinaryData::analysis2_svgSize);
+            analyzeButton_->setActive(true);
+            analyzeButton_->setTooltip("Stop and analyze the captured mix");
+            break;
+        case AnalyzeButtonMode::Idle:
+            analyzeButton_->updateSvgData(BinaryData::analysis_svg, BinaryData::analysis_svgSize);
+            analyzeButton_->setActive(false);
+            analyzeButton_->setTooltip("Analyze the mix");
+            break;
+    }
+}
+
+void AIChatConsoleContent::cancelAnalysis() {
+    if (!analyzing_)
+        return;
+    // The offline render / agent thread can't be interrupted, so invalidate this
+    // run (its late result is dropped by the run-id guard) and reset the UI now.
+    ++analyzeRunId_;
+    analyzing_ = false;
+    updateAnalyzeButtonMode();
+    inputBox_->setEnabled(true);
+    setAnalyzeStatus("Analysis stopped.");
 }
 
 void AIChatConsoleContent::showReferenceMenu() {
@@ -1903,7 +1939,8 @@ void AIChatConsoleContent::runOfflineAnalysis(bool deep) {
     req.question = inputDocument_.getAllContent().trim().toStdString();
 
     analyzing_ = true;
-    setAnalyzeEngaged(true);
+    const int runId = ++analyzeRunId_;
+    updateAnalyzeButtonMode();
     inputBox_->setEnabled(false);
 
     // A single status line we overwrite in place as the job reports progress,
@@ -1911,8 +1948,10 @@ void AIChatConsoleContent::runOfflineAnalysis(bool deep) {
     analyzeStatusAnchor_ = chatHistory_.getText().length();
 
     juce::Component::SafePointer<AIChatConsoleContent> safeThis(this);
-    auto setStatus = [safeThis](const juce::String& line) {
-        if (safeThis != nullptr)
+    // setStatus / the completion no-op if the run was stopped or superseded
+    // (cancelAnalysis bumps analyzeRunId_), so a late result can't clobber the UI.
+    auto setStatus = [safeThis, runId](const juce::String& line) {
+        if (safeThis != nullptr && safeThis->analyzeRunId_ == runId)
             safeThis->setAnalyzeStatus(line);
     };
 
@@ -1920,14 +1959,16 @@ void AIChatConsoleContent::runOfflineAnalysis(bool deep) {
 
     mix::OfflineMixAnalysis::start(
         *engine, std::move(req), [setStatus](const juce::String& msg) { setStatus(msg); },
-        [safeThis, setStatus](magda::MixAnalysisAgent::Result result) {
+        [safeThis, setStatus, runId](magda::MixAnalysisAgent::Result result) {
+            if (safeThis != nullptr && safeThis->analyzeRunId_ != runId)
+                return;  // stopped/superseded
             if (result.hasError)
                 setStatus("Mix analysis failed: " + juce::String(result.error));
             else
                 setStatus(juce::String(result.analysis));
             if (safeThis != nullptr) {
                 safeThis->analyzing_ = false;
-                safeThis->setAnalyzeEngaged(false);
+                safeThis->updateAnalyzeButtonMode();
                 safeThis->inputBox_->setEnabled(true);
             }
         });
@@ -1968,9 +2009,7 @@ void AIChatConsoleContent::startCapture() {
         tmm.setMaskingAnalysisEnabled(true);
 
     capturing_ = true;
-    setAnalyzeEngaged(true);
-    if (analyzeButton_)
-        analyzeButton_->setTooltip("Stop and analyze the captured mix");
+    updateAnalyzeButtonMode();
     appendToChat(juce::String::charToString(0x25C6) +
                  " Listening... play the mix, then click the analyze button to stop and analyze.");
 }
@@ -1997,9 +2036,7 @@ void AIChatConsoleContent::stopCapture() {
     captureAddedGlobal_ = false;
 
     capturing_ = false;
-    setAnalyzeEngaged(false);
-    if (analyzeButton_)
-        analyzeButton_->setTooltip("Analyze the mix");
+    updateAnalyzeButtonMode();
 
     if (mixCapture_.valid)
         analyzeCapturedMix();
@@ -2062,27 +2099,29 @@ void AIChatConsoleContent::analyzeCapturedMix() {
 
 void AIChatConsoleContent::runMixAgent(MixAnalysisAgent::Input input) {
     analyzing_ = true;
-    setAnalyzeEngaged(true);
+    const int runId = ++analyzeRunId_;
+    updateAnalyzeButtonMode();
     inputBox_->setEnabled(false);
 
     analyzeStatusAnchor_ = chatHistory_.getText().length();
     setAnalyzeStatus("Analyzing captured mix...");
 
     // generate() blocks on the network; run it off the message thread and post
-    // the result back. SafePointer guards a teardown mid-call.
+    // the result back. SafePointer guards a teardown mid-call; the run-id guard
+    // drops the result if the user stopped the run (the thread can't be cancelled).
     juce::Component::SafePointer<AIChatConsoleContent> safeThis(this);
-    std::thread([safeThis, input = std::move(input)]() mutable {
+    std::thread([safeThis, runId, input = std::move(input)]() mutable {
         MixAnalysisAgent agent;
         auto result = agent.generate(input);
-        juce::MessageManager::callAsync([safeThis, result = std::move(result)]() mutable {
-            if (safeThis == nullptr)
+        juce::MessageManager::callAsync([safeThis, runId, result = std::move(result)]() mutable {
+            if (safeThis == nullptr || safeThis->analyzeRunId_ != runId)
                 return;
             if (result.hasError)
                 safeThis->setAnalyzeStatus("Mix analysis failed: " + juce::String(result.error));
             else
                 safeThis->setAnalyzeStatus(juce::String(result.analysis));
             safeThis->analyzing_ = false;
-            safeThis->setAnalyzeEngaged(false);
+            safeThis->updateAnalyzeButtonMode();
             safeThis->inputBox_->setEnabled(true);
         });
     }).detach();

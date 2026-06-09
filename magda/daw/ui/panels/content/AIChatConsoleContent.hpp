@@ -163,7 +163,17 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<juce::LookAndFeel_V4> referenceMenuLnf_;  // theme font for the reference menu
     std::set<magda::TrackId> referenceTrackIds_;              // ticked reference tracks
     bool capturing_ = false;
-    bool analyzing_ = false;        // an offline mix analysis is in flight
+    bool analyzing_ = false;  // an offline mix analysis is in flight
+    // The analyze button is a 3-state control: Idle opens the Live/Quick/Deep
+    // menu; Capturing (listening) shows the filled analysis2 icon and stops+
+    // analyzes on click; Analyzing shows a stop glyph and cancels the run on click.
+    enum class AnalyzeButtonMode { Idle, Capturing, Analyzing };
+    AnalyzeButtonMode analyzeButtonMode_ = AnalyzeButtonMode::Idle;  // current button visual state
+    // Bumped each time an analysis starts (and on cancel). A completion callback
+    // captures the id at launch and no-ops if it no longer matches, so a stopped
+    // run's late result (the offline render / agent thread can't be cancelled) is
+    // discarded instead of overwriting the UI.
+    int analyzeRunId_ = 0;
     int analyzeStatusAnchor_ = -1;  // chat offset of the live analysis status line
     // Measurement enablement we switched on for the capture, remembered so stop
     // restores the prior state without trampling other consumers (Levels meter).
@@ -182,11 +192,13 @@ class AIChatConsoleContent : public PanelContent,
     MixCapture mixCapture_;
 
     void showReferenceMenu();
-    // Toggle the analyze button's engaged state: active highlight + swap to the
-    // filled analysis2 icon (recoloured cyan) while a capture/analysis runs.
-    void setAnalyzeEngaged(bool engaged);
-    void showAnalyzeMenu();                           // popup: Live / Quick / Deep
-    void runOfflineAnalysis(bool deep);               // kick off an offline mix analysis
+    // updateAnalyzeButtonMode() derives the AnalyzeButtonMode (declared above the
+    // member) from capturing_/analyzing_ and swaps the icon / tooltip / active
+    // highlight to match.
+    void updateAnalyzeButtonMode();
+    void cancelAnalysis();               // abandon an in-flight analysis and reset the button
+    void showAnalyzeMenu();              // popup: Live / Quick / Deep
+    void runOfflineAnalysis(bool deep);  // kick off an offline mix analysis
     void setAnalyzeStatus(const juce::String& line);  // overwrite the live status/result line
     void analyzeCapturedMix();  // build input from a live capture + run the agent
     void runMixAgent(MixAnalysisAgent::Input input);  // blocking agent call on a bg thread
