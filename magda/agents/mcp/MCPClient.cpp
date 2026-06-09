@@ -1,14 +1,14 @@
 #include "MCPClient.hpp"
 
 #if JUCE_WINDOWS
-    #include <windows.h>
+#include <windows.h>
 #else
-    #include <fcntl.h>
-    #include <signal.h>
-    #include <sys/wait.h>
-    #include <unistd.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
-    #include <cerrno>
+#include <cerrno>
 #endif
 
 namespace magda {
@@ -154,7 +154,8 @@ bool MCPClient::writeToStdin(const juce::String& data) {
 }
 
 juce::String MCPClient::readLine(int timeoutMs) {
-    auto deadline = juce::Time::getMillisecondCounter() + static_cast<juce::uint32>(timeoutMs);
+    auto deadline =
+        juce::Time::getMillisecondCounter() + static_cast<juce::uint32>(timeoutMs);
 
     while (juce::Time::getMillisecondCounter() < deadline) {
         auto newlineIdx = readBuffer_.indexOf("\n");

@@ -179,9 +179,9 @@ bool MediaDbContext::wipeAll() {
         return false;
     }
 
-    juce::Logger::writeToLog(
-        "[wipeAll] committed (after: media_file=" + juce::String(countRows("media_file")) +
-        ", media_fts=" + juce::String(countRows("media_fts")) + ")");
+    juce::Logger::writeToLog("[wipeAll] committed (after: media_file=" +
+                             juce::String(countRows("media_file")) +
+                             ", media_fts=" + juce::String(countRows("media_fts")) + ")");
 
     // Signal listeners (MediaDbBrowserContent polls this on a timer) that
     // their cached result sets are stale, otherwise the browser keeps
