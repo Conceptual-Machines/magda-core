@@ -536,6 +536,27 @@ class Config {
         localLlamaUrl = url;
     }
 
+    // Generic local / OpenAI-compatible HTTP server (LM Studio, Ollama,
+    // GPUStack, ...). One server, one model, shared by all agent roles.
+    std::string getLocalServerUrl() const {
+        return localServerUrl;
+    }
+    void setLocalServerUrl(const std::string& url) {
+        localServerUrl = url;
+    }
+    std::string getLocalServerApiKey() const {
+        return localServerApiKey;
+    }
+    void setLocalServerApiKey(const std::string& key) {
+        localServerApiKey = key;
+    }
+    std::string getLocalServerModel() const {
+        return localServerModel;
+    }
+    void setLocalServerModel(const std::string& model) {
+        localServerModel = model;
+    }
+
     // Local llama-server managed process settings
     std::string getLocalModelPath() const {
         return localModelPath;
@@ -1077,6 +1098,10 @@ class Config {
     };
     std::map<std::string, std::string> aiCredentials;  // provider → API key
     std::string localLlamaUrl = "http://127.0.0.1:8080/v1";
+    // Generic local / OpenAI-compatible HTTP server settings.
+    std::string localServerUrl = "http://localhost:11434/v1";
+    std::string localServerApiKey;  // optional bearer token (GPUStack etc.)
+    std::string localServerModel;   // opaque model id from /v1/models
     std::string localModelPath;
     std::string localLlamaBinary;  // empty = search PATH
     int localLlamaPort = 8080;
