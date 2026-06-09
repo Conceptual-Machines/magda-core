@@ -14,6 +14,10 @@ class MainLookAndFeel : public juce::LookAndFeel_V4 {
     MainLookAndFeel() = default;
     ~MainLookAndFeel() override = default;
 
+    juce::Font getPopupMenuFont() override {
+        return FontManager::getInstance().getUIFont(13.0f);
+    }
+
     void drawDocumentWindowTitleBar(juce::DocumentWindow& window, juce::Graphics& g, int w, int h,
                                     int titleSpaceX, int titleSpaceW, const juce::Image* icon,
                                     bool drawTitleTextOnLeft) override {

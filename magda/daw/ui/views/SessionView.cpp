@@ -1987,6 +1987,29 @@ void SessionView::rebuildTracks() {
             UndoManager::getInstance().executeCommand(
                 std::make_unique<DeleteTrackCommand>(trackId));
         };
+        header->canGroupSelectedTracks = [trackId]() {
+            auto& sel = SelectionManager::getInstance();
+            return sel.getSelectedTrackCount() >= 2 && sel.isTrackSelected(trackId);
+        };
+        header->onGroupSelectedTracks = []() {
+            auto& sel = SelectionManager::getInstance();
+            std::vector<TrackId> selectedTracks(sel.getSelectedTracks().begin(),
+                                                sel.getSelectedTracks().end());
+            TrackId groupId = TrackManager::getInstance().groupTracks(selectedTracks);
+            if (groupId != INVALID_TRACK_ID)
+                sel.selectTrack(groupId);
+        };
+        header->canUngroupTracks = [trackId]() {
+            const auto* track = TrackManager::getInstance().getTrack(trackId);
+            return track != nullptr && track->isGroup() && !track->childIds.empty();
+        };
+        header->onUngroupTracks = [trackId]() {
+            auto childIds = TrackManager::getInstance().ungroupTrack(trackId);
+            if (!childIds.empty()) {
+                std::unordered_set<TrackId> selectedChildren(childIds.begin(), childIds.end());
+                SelectionManager::getInstance().selectTracks(selectedChildren);
+            }
+        };
 
         int headerIdx = i;
         header->onHeaderMouseDown = [this, headerIdx](const juce::MouseEvent& e) {
