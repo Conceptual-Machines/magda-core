@@ -24,6 +24,7 @@ class MixAnalysisModal : public juce::Component, public MixAnalysisService::List
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void parentHierarchyChanged() override;  // block input once shown + rendering
 
     // MixAnalysisService::Listener
     void mixAnalysisChanged() override;
@@ -34,6 +35,10 @@ class MixAnalysisModal : public juce::Component, public MixAnalysisService::List
     void refresh();        // recompute State from the service and relayout
     void renderResults();  // fill the text view from the cached Input
     State deriveState() const;
+    // While an offline render runs it commandeers the live edit, so block ALL
+    // input (transport, mixer) until it finishes or is stopped -- mirrors how
+    // export renders behind a modal window. Enter/exit modal state to match.
+    void updateBlocking();
 
     MixAnalysisService::Mode mode_;
     State state_ = State::Loading;

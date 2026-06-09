@@ -148,8 +148,26 @@ MixAnalysisModal::MixAnalysisModal(MixAnalysisService::Mode mode) : mode_(mode) 
 }
 
 MixAnalysisModal::~MixAnalysisModal() {
+    if (isCurrentlyModal())
+        exitModalState(0);
     setLookAndFeel(nullptr);  // detach before lookAndFeel_ is destroyed
     MixAnalysisService::getInstance().removeListener(this);
+}
+
+void MixAnalysisModal::updateBlocking() {
+    // Block the app (transport, mixer, everything) while an offline render runs;
+    // an offline render commandeers the live edit, so any interaction -- above all
+    // pressing play -- corrupts the node graph (NodeRenderContext asserts). Only
+    // the modal's own Stop button stays live.
+    const bool block = isShowing() && state_ == State::Loading;
+    if (block && !isCurrentlyModal())
+        enterModalState(false);
+    else if (!block && isCurrentlyModal())
+        exitModalState(0);
+}
+
+void MixAnalysisModal::parentHierarchyChanged() {
+    updateBlocking();  // the CallOutBox parents/shows us after construction
 }
 
 MixAnalysisModal::State MixAnalysisModal::deriveState() const {
@@ -210,6 +228,7 @@ void MixAnalysisModal::refresh() {
             primaryButton_.setButtonText("Retry");
             break;
     }
+    updateBlocking();
     resized();
     repaint();
 }
