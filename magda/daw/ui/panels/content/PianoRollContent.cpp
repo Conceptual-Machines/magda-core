@@ -71,6 +71,19 @@ PianoRollContent::PianoRollContent() {
     };
     addAndMakeVisible(velocityToggle_.get());
 
+    // Create pitch glide toggle button (MPE pitch expression overlay)
+    pitchGlideToggle_ = std::make_unique<magda::SvgButton>(
+        "PitchGlideToggle", BinaryData::pitch_glide_svg, BinaryData::pitch_glide_svgSize);
+    pitchGlideToggle_->setTooltip("Toggle pitch glide editing (MPE)");
+    pitchGlideToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    pitchGlideToggle_->setActive(false);
+    pitchGlideToggle_->onClick = [this]() {
+        const bool enabled = !gridComponent_->isPitchExpressionMode();
+        gridComponent_->setPitchExpressionMode(enabled);
+        pitchGlideToggle_->setActive(enabled);
+    };
+    addAndMakeVisible(pitchGlideToggle_.get());
+
     verticalZoomStrip_ = std::make_unique<VerticalZoomStrip>(MIN_NOTE_HEIGHT, MAX_NOTE_HEIGHT);
     verticalZoomStrip_->setGestureContext(magda::GestureContext::PianoRoll);
     verticalZoomStrip_->getValue = [this]() { return noteHeight_; };
@@ -245,6 +258,15 @@ void PianoRollContent::setupGridCallbacks() {
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
         // Note: UI refresh handled via ClipManagerListener::clipPropertyChanged()
     };
+
+    // Handle pitch glide edits (MPE pitch expression overlay)
+    gridComponent_->onPitchExpressionChanged =
+        [](magda::ClipId clipId, size_t noteIndex,
+           std::vector<magda::MidiPitchExpressionPoint> points) {
+            auto cmd = std::make_unique<magda::SetNotePitchExpressionCommand>(clipId, noteIndex,
+                                                                              std::move(points));
+            magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+        };
 
     // Handle note movement
     gridComponent_->onNoteMoved = [](magda::ClipId clipId, size_t noteIndex, double newBeat,
@@ -661,8 +683,10 @@ void PianoRollContent::resized() {
     // Chord toggle at top of sidebar — vertically centered in chord row height
     int chordToggleY = showChordRow_ ? (CHORD_ROW_HEIGHT - iconSize) / 2 : padding;
     chordToggle_->setBounds(padding, chordToggleY, iconSize, iconSize);
-    // Velocity toggle at bottom
+    // Velocity toggle at bottom, pitch glide toggle stacked above it
     velocityToggle_->setBounds(padding, getHeight() - iconSize - padding, iconSize, iconSize);
+    pitchGlideToggle_->setBounds(padding, getHeight() - 2 * (iconSize + padding), iconSize,
+                                 iconSize);
 
     // Skip chord row space if visible (drawn in paint)
     if (showChordRow_) {

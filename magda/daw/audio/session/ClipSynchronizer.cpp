@@ -1301,6 +1301,73 @@ static void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventT
     }
 }
 
+// Add per-note pitch glide (MPE pitch expression) children to a TE note.
+//
+// MAGDA stores sparse editable points (linear segments); TE emits one raw
+// pitchbend message per expression child with no interpolation, so segments
+// are densified here at the same 1/16-beat granularity as interpolateCCEvents.
+//
+// clipShift accounts for the note having been clipped at the visible-range
+// left edge: expression beats are relative to the original note start, the
+// TE note starts at the clipped position.
+static void addPitchExpressionToTeNote(te::MidiNote& teNote, const MidiNote& note, double clipShift,
+                                       double visibleLengthBeats) {
+    constexpr double kStepSize = 1.0 / 16.0;
+    constexpr float kMaxSemitones = 48.0f;  // TE's fixed MPE pitchbend conversion range
+
+    auto sorted = note.pitchExpression;
+    std::sort(sorted.begin(), sorted.end(),
+              [](const auto& a, const auto& b) { return a.beat < b.beat; });
+
+    // Evaluate the curve at a beat position (relative to original note start):
+    // hold first value before the first point, linear between points, hold last.
+    auto valueAt = [&sorted](double beat) {
+        if (beat <= sorted.front().beat)
+            return sorted.front().semitones;
+        if (beat >= sorted.back().beat)
+            return sorted.back().semitones;
+        for (size_t i = 0; i + 1 < sorted.size(); ++i) {
+            const auto& a = sorted[i];
+            const auto& b = sorted[i + 1];
+            if (beat >= a.beat && beat <= b.beat) {
+                const double span = b.beat - a.beat;
+                if (span <= 0.0)
+                    return b.semitones;
+                const double t = (beat - a.beat) / span;
+                return a.semitones + t * (b.semitones - a.semitones);
+            }
+        }
+        return sorted.back().semitones;
+    };
+
+    auto addExpressionEvent = [&teNote](double relBeat, double semitones) {
+        auto value = juce::jlimit(-kMaxSemitones, kMaxSemitones, static_cast<float>(semitones));
+        te::MidiExpression::createAndAddExpressionToNote(
+            teNote.state, te::IDs::PITCHBEND, te::BeatPosition::fromBeats(relBeat), value, nullptr);
+    };
+
+    // Initial value at note-on so playback starts on the curve
+    addExpressionEvent(0.0, valueAt(clipShift));
+
+    for (size_t i = 0; i < sorted.size(); ++i) {
+        const double pointBeat = sorted[i].beat - clipShift;
+        if (pointBeat <= 0.0 || pointBeat > visibleLengthBeats)
+            continue;
+
+        // Densify the segment leading into this point when the value changes
+        const double prevBeat = std::max(0.0, (i > 0 ? sorted[i - 1].beat : 0.0) - clipShift);
+        const double v1 = valueAt(prevBeat + clipShift);
+        const double v2 = sorted[i].semitones;
+
+        if (std::abs(v2 - v1) > 0.001) {
+            for (double b = prevBeat + kStepSize; b < pointBeat; b += kStepSize)
+                addExpressionEvent(b, valueAt(b + clipShift));
+        }
+
+        addExpressionEvent(pointBeat, v2);
+    }
+}
+
 // =============================================================================
 // Private Sync Helpers
 // =============================================================================
@@ -1413,6 +1480,7 @@ bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
 
     // Add notes to TE sequence — notes stay at original positions,
     // TE offset + looping handles phase wrapping natively
+    bool anyPitchExpression = false;
     for (const auto& note : clip->midiNotes) {
         auto visibleNote = note;
         if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, visibleNote))
@@ -1420,11 +1488,21 @@ bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
 
         const double adjustedStart = visibleNote.startBeat - effectiveOffset;
         if (visibleNote.lengthBeats > 0.0 && adjustedStart < contentLengthBeats) {
-            sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(adjustedStart),
-                             te::BeatDuration::fromBeats(visibleNote.lengthBeats), note.velocity, 0,
-                             nullptr);
+            auto* teNote = sequence.addNote(
+                note.noteNumber, te::BeatPosition::fromBeats(adjustedStart),
+                te::BeatDuration::fromBeats(visibleNote.lengthBeats), note.velocity, 0, nullptr);
+
+            if (teNote != nullptr && note.hasPitchExpression()) {
+                anyPitchExpression = true;
+                addPitchExpressionToTeNote(*teNote, note, visibleNote.startBeat - note.startBeat,
+                                           visibleNote.lengthBeats);
+            }
         }
     }
+
+    // Per-note pitch glides require MPE playback (each note on its own channel)
+    if (midiClipPtr->getMPEMode() != anyPitchExpression)
+        midiClipPtr->setMPEMode(anyPitchExpression);
 
     // Add CC events with interpolation (grouped by controller number)
     {

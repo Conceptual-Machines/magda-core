@@ -441,6 +441,9 @@ class ClipManager {
     bool addMidiNote(ClipId clipId, const MidiNote& note);
     void removeMidiNote(ClipId clipId, int noteIndex);
     void clearMidiNotes(ClipId clipId);
+    // Replace a note's pitch glide points (sorted by beat, clamped by caller)
+    void setMidiNotePitchExpression(ClipId clipId, size_t noteIndex,
+                                    std::vector<MidiPitchExpressionPoint> points);
 
     // Chord annotations
     void addChordAnnotation(ClipId clipId, const ClipInfo::ChordAnnotation& annotation);

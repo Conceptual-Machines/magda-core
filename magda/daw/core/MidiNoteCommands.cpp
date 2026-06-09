@@ -355,6 +355,34 @@ void SetMidiNoteVelocityCommand::mergeWith(const UndoableCommand* other) {
 }
 
 // ============================================================================
+// SetNotePitchExpressionCommand
+// ============================================================================
+
+SetNotePitchExpressionCommand::SetNotePitchExpressionCommand(
+    ClipId clipId, size_t noteIndex, std::vector<MidiPitchExpressionPoint> newPoints)
+    : clipId_(clipId), noteIndex_(noteIndex), newPoints_(std::move(newPoints)) {}
+
+void SetNotePitchExpressionCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || !clip->isMidi() || noteIndex_ >= clip->midiNotes.size())
+        return;
+
+    if (!executed_)
+        oldPoints_ = clip->midiNotes[noteIndex_].pitchExpression;
+
+    clipManager.setMidiNotePitchExpression(clipId_, noteIndex_, newPoints_);
+    executed_ = true;
+}
+
+void SetNotePitchExpressionCommand::undo() {
+    if (!executed_)
+        return;
+
+    ClipManager::getInstance().setMidiNotePitchExpression(clipId_, noteIndex_, oldPoints_);
+}
+
+// ============================================================================
 // SetMultipleNoteVelocitiesCommand
 // ============================================================================
 

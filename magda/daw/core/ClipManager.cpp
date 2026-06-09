@@ -1910,6 +1910,16 @@ bool ClipManager::addMidiNote(ClipId clipId, const MidiNote& note) {
     return false;
 }
 
+void ClipManager::setMidiNotePitchExpression(ClipId clipId, size_t noteIndex,
+                                             std::vector<MidiPitchExpressionPoint> points) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->isMidi() && noteIndex < clip->midiNotes.size()) {
+            clip->midiNotes[noteIndex].pitchExpression = std::move(points);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
 void ClipManager::removeMidiNote(ClipId clipId, int noteIndex) {
     if (auto* clip = getClip(clipId)) {
         if (clip->isMidi() && noteIndex >= 0 &&
