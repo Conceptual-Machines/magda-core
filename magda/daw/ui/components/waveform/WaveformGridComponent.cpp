@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <cmath>
+#include <limits>
 
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineState.hpp"  // GridConstants (shared adaptive grid interval)
@@ -314,11 +315,15 @@ void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda
     // Beat grid overlay (after waveform, before markers)
     paintBeatGrid(g, clip);
 
-    // Transient or warp markers
+    // Draw transient markers whenever detection data is present. Warp markers
+    // are an editing overlay, but they must not hide transient sensitivity
+    // feedback from the waveform editor.
+    if (!transientTimes_.isEmpty()) {
+        paintTransientMarkers(g, clip);
+    }
+
     if (warpMode_ && !warpMarkers_.empty()) {
         paintWarpMarkers(g, clip);
-    } else if (!warpMode_ && !transientTimes_.isEmpty()) {
-        paintTransientMarkers(g, clip);
     }
 
     // Center line — clipped to visible rect
@@ -803,16 +808,6 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
     auto waveformRect =
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 
-    // Transient markers are a per-onset slicing aid that only makes sense when
-    // zoomed in far enough to place individual hits. Hide them when zoomed out
-    // (beats closer together than this on screen), where they are just noise
-    // scattered over the waveform rather than something you can act on.
-    const double bpm = currentTimelineBpm();
-    const double pixelsPerBeat = bpm > 0.0 ? (60.0 / bpm) * horizontalZoom_ : 0.0;
-    constexpr double kMinPixelsPerBeatForTransients = 16.0;
-    if (pixelsPerBeat < kMinPixelsPerBeatForTransients)
-        return;
-
     // Faint line for the body, with a solid handle triangle at the top so a
     // transient reads as a marker and is never mistaken for a grid line.
     const juce::Colour lineColour = juce::Colours::white.withAlpha(0.25f);
@@ -823,6 +818,10 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
     // Visible pixel range for culling
     int visibleLeft = 0;
     int visibleRight = getWidth();
+    int inSourceCount = 0;
+    int drawnCount = 0;
+    int firstDrawnPx = std::numeric_limits<int>::max();
+    double firstDrawnTime = 0.0;
 
     auto drawMarkersForCycle = [&](double cycleOffset, double sourceStart, double sourceEnd) {
         const float top = static_cast<float>(waveformRect.getY());
@@ -830,6 +829,7 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
         for (double t : transientTimes_) {
             if (t < sourceStart || t >= sourceEnd)
                 continue;
+            ++inSourceCount;
 
             // Convert source time to timeline display time via ClipDisplayInfo
             double displayTime = displayInfo_.sourceToTimeline(t - sourceStart) + cycleOffset;
@@ -853,6 +853,11 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
             handle.addTriangle(fx - kHandleHalfW, top, fx + kHandleHalfW, top, fx, top + kHandleH);
             g.setColour(handleColour);
             g.fillPath(handle);
+            ++drawnCount;
+            if (px < firstDrawnPx) {
+                firstDrawnPx = px;
+                firstDrawnTime = t;
+            }
         }
     };
 
@@ -860,6 +865,8 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
     double sourceStart = displayInfo_.sourceFileStart;
     double sourceEnd = displayInfo_.sourceFileEnd;
     drawMarkersForCycle(0.0, sourceStart, sourceEnd);
+
+    juce::ignoreUnused(drawnCount, inSourceCount, firstDrawnPx, firstDrawnTime);
 }
 
 void WaveformGridComponent::paintNoClipMessage(juce::Graphics& g) {

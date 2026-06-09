@@ -1,10 +1,10 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
-#include <juce_events/juce_events.h>
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -38,7 +38,7 @@ struct WarpMarkerInfo {
  * - All operations run on message thread (UI thread)
  * - Delegates to Tracktion Engine's WarpTimeManager
  */
-class WarpMarkerManager {
+class WarpMarkerManager : private te::WarpTimeManager::Listener {
   public:
     WarpMarkerManager() = default;
     ~WarpMarkerManager();
@@ -47,7 +47,7 @@ class WarpMarkerManager {
      * @brief Detect transient times for an audio clip's source file
      *
      * On first call, kicks off async transient detection via TE's WarpTimeManager.
-     * Subsequent calls poll for completion. Results are cached per file path.
+     * Completion is delivered by WarpTimeManager callback and cached per file path.
      *
      * @param edit Tracktion Engine edit
      * @param clipIdToEngineId Mapping from MAGDA clip ID to TE clip ID
@@ -131,26 +131,12 @@ class WarpMarkerManager {
                           ClipId clipId, int index);
 
   private:
-    // Tracks which clips have had detection kicked off (to avoid restarting on every poll)
-    std::set<ClipId> detectionStarted_;
-
-    // -------- Coalescing + in-flight guard for setTransientSensitivity --------
+    // -------- In-flight guard for transient detection --------
     //
     // The UI can spam sensitivity changes (slider drag = many calls/sec).
-    // Each call previously triggered a TE detection job, and overlapping
-    // jobs share `te::WarpTimeManager` state — a worker can dereference
-    // data that a newer job replaced and crash inside the TE thread pool
-    // (KERN_INVALID_ADDRESS at offset 0x10).
-    //
-    // The fix lives here, not in the UI, so any future caller benefits:
-    //   1. setTransientSensitivity records the latest value per clip and
-    //      starts/restarts a short coalescing timer (kCoalesceMs).
-    //   2. When the timer fires, only the most recent sensitivity per
-    //      clip is applied, and a TE job is submitted at most once per
-    //      clip per coalescing window.
-    //   3. If a detection is already in flight for a clip, the new value
-    //      is parked in dirtyAfterCompletion_; getTransientTimes() picks
-    //      it up when it observes completion and schedules the rerun.
+    // Restart detection immediately for the latest value; WarpTimeManager
+    // detaches/cancels the previous job and reports the surviving job by
+    // callback, so stale jobs can't overwrite the cache.
     struct PendingDetection {
         float sensitivity = 0.0f;
         // Resolved at queue time so the slider hot-path doesn't snapshot the
@@ -160,26 +146,21 @@ class WarpMarkerManager {
         te::Edit* edit = nullptr;
     };
 
-    static constexpr int kCoalesceMs = 75;
-
-    class CoalescingTimer : public juce::Timer {
-      public:
-        std::function<void()> callback;
-        void timerCallback() override {
-            stopTimer();
-            if (callback)
-                callback();
-        }
+    struct ActiveDetection {
+        juce::String filePath;
+        te::WarpTimeManager::Ptr warpManager;
     };
 
-    void applyPendingSensitivities();
+    bool startDetection(te::Edit& edit, const std::string& engineId, ClipId clipId,
+                        std::optional<float> sensitivity);
     void applySensitivityNow(te::Edit& edit, const std::string& engineId, ClipId clipId,
                              float sensitivity);
+    void finishDetection(ClipId clipId, te::WarpTimeManager& warpManager, bool completedOk);
+    void transientDetectionFinished(te::WarpTimeManager&, bool completedOk) override;
 
-    std::map<ClipId, PendingDetection> pendingByClip_;
     std::set<ClipId> detectionInFlight_;
-    std::map<ClipId, PendingDetection> dirtyAfterCompletion_;
-    CoalescingTimer coalescingTimer_;
+    std::map<ClipId, ActiveDetection> activeDetections_;
+    std::map<te::WarpTimeManager*, ClipId> clipByWarpManager_;
 };
 
 }  // namespace magda

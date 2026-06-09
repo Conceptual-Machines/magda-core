@@ -70,12 +70,12 @@ class AudioThumbnailManager {
                       bool useHighRes = false, bool thick = false);
 
     /**
-     * @brief Detect BPM of an audio file using Tracktion's TempoDetect.
+     * @brief Detect BPM of an audio file.
      *
-     * BLOCKING — walks the entire file on the calling thread. External callers
-     * should prefer requestBPMDetection() to avoid hanging the UI.
+     * DSP detection is currently disabled because Tracktion/SoundTouch BPMDetect
+     * can crash inside its worker thread on some files.
      * @param filePath Absolute path to the audio file
-     * @return Detected BPM, or 0.0 if detection fails or result is not sensible
+     * @return Cached/external BPM, or 0.0 when unknown.
      */
     double detectBPM(const juce::String& filePath);
 
@@ -94,13 +94,11 @@ class AudioThumbnailManager {
     void cacheBPM(const juce::String& filePath, double bpm);
 
     /**
-     * @brief Request asynchronous BPM detection.
+     * @brief Request BPM detection.
      *
      * If the result is already cached, @p onComplete fires synchronously on the
-     * calling (message) thread. Otherwise the scan is enqueued on a background
-     * thread and @p onComplete fires on the message thread when complete.
-     * Multiple concurrent requests for the same file are deduped — only one
-     * background scan runs and all callbacks fire when it finishes.
+     * calling (message) thread. Otherwise this currently returns 0.0
+     * synchronously because DSP BPM fallback is disabled.
      *
      * Must be called from the message thread.
      */
@@ -170,16 +168,11 @@ class AudioThumbnailManager {
     // Message-thread only — never touched from background detection threads.
     std::map<juce::String, double> bpmCache_;
 
-    // Background thread pool shared by BPM detection and peak-cache compute
-    // jobs. Lazy-initialized on first use. Single thread — disk I/O serializes
+    // Background thread pool for peak-cache compute jobs. Lazy-initialized on first use.
+    // Single thread — disk I/O serializes
     // and the work is bursty, so a pool of 1 keeps things predictable.
     std::unique_ptr<juce::ThreadPool> backgroundThreadPool_;
     juce::ThreadPool& getOrCreateBackgroundPool();
-
-    // In-flight BPM detection requests. Keyed by file path; value is the list of
-    // callbacks to fire when detection completes. Used to dedupe concurrent
-    // requests for the same file. Message-thread only.
-    std::map<juce::String, std::vector<std::function<void(double)>>> pendingBpmCallbacks_;
 
     // Transient detection cache (file path -> transient times in source-file seconds)
     std::map<juce::String, juce::Array<double>> transientCache_;

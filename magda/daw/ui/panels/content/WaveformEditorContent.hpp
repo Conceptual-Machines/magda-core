@@ -28,11 +28,11 @@ namespace magda::daw::ui {
  * Architecture based on PianoRollContent pattern.
  */
 class WaveformEditorContent : public PanelContent,
+                              private juce::Timer,
                               public magda::ClipManagerListener,
                               public magda::UndoManagerListener,
                               public TimelineStateListener,
-                              public magda::TransientCacheListener,
-                              public juce::Timer {
+                              public magda::TransientCacheListener {
   public:
     WaveformEditorContent();
     ~WaveformEditorContent() override;
@@ -46,6 +46,7 @@ class WaveformEditorContent : public PanelContent,
     }
 
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
     void onActivated() override;
@@ -176,10 +177,12 @@ class WaveformEditorContent : public PanelContent,
     // Warp state tracking
     bool wasWarpEnabled_ = false;
 
-    // Transient detection polling
+    // Transient detection
     bool transientsCached_ = false;
-    int transientPollCount_ = 0;
-    static constexpr int MAX_TRANSIENT_POLL_ATTEMPTS = 40;  // ~10s at 250ms interval
+    bool transientsUpdating_ = false;
+    float transientSpinnerPhase_ = 0.0f;
+    void requestTransientDetection();
+    void setTransientsUpdating(bool updating);
     void timerCallback() override;
 
     // Header drag-zoom state

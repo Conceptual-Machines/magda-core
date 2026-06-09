@@ -4,7 +4,6 @@
 
 // clang-format off
 #include <tracktion_engine/tracktion_engine.h>
-#include <tracktion_engine/timestretch/tracktion_TempoDetect.h>
 // clang-format on
 
 namespace magda {
@@ -160,33 +159,11 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
 }
 
 namespace {
-// Pure detection routine — no cache, no threading. Safe to call from any thread
-// as long as the format manager is local. Returns 0.0 on failure.
+// BPM DSP fallback is disabled. Tracktion/SoundTouch BPMDetect is crashing on
+// some files inside its worker thread; return unknown BPM instead of risking the app.
 double runBpmDetection(const juce::String& filePath) {
-    juce::File audioFile(filePath);
-    if (!audioFile.existsAsFile())
-        return 0.0;
-
-    // Local format manager — juce::AudioFormatManager is not thread-safe to share.
-    juce::AudioFormatManager fm;
-    fm.registerBasicFormats();
-
-    std::unique_ptr<juce::AudioFormatReader> reader(fm.createReaderFor(audioFile));
-    if (!reader)
-        return 0.0;
-
-    tracktion::engine::TempoDetect detector(static_cast<int>(reader->numChannels),
-                                            reader->sampleRate);
-    float bpm = detector.processReader(*reader);
-
-    if (!detector.isBpmSensible())
-        return 0.0;
-
-    double result = static_cast<double>(bpm);
-    // Snap to nearest integer BPM if within 0.5 — most music uses whole-number tempos
-    double rounded = std::round(result);
-    if (std::abs(result - rounded) < 0.5)
-        result = rounded;
+    juce::ignoreUnused(filePath);
+    constexpr double result = 0.0;
     return result;
 }
 }  // namespace
@@ -215,7 +192,7 @@ void AudioThumbnailManager::cacheBPM(const juce::String& filePath, double bpm) {
 
 void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
                                                 std::function<void(double)> onComplete) {
-    // Caches and pending-callback map are message-thread only (no locks).
+    // Caches are message-thread only (no locks).
     JUCE_ASSERT_MESSAGE_THREAD;
 
     // Cache hit — fire callback synchronously and return.
@@ -226,42 +203,10 @@ void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
         return;
     }
 
-    // Already in flight for this file — append callback and dedupe.
-    auto pendingIt = pendingBpmCallbacks_.find(filePath);
-    if (pendingIt != pendingBpmCallbacks_.end()) {
-        if (onComplete)
-            pendingIt->second.push_back(std::move(onComplete));
-        return;
-    }
-
-    // First request for this file — register pending entry, lazy-create the
-    // thread pool, and enqueue the background scan.
-    auto& callbacks = pendingBpmCallbacks_[filePath];
+    const double result = runBpmDetection(filePath);
+    bpmCache_[filePath] = result;
     if (onComplete)
-        callbacks.push_back(std::move(onComplete));
-
-    getOrCreateBackgroundPool().addJob([filePath]() {
-        const double result = runBpmDetection(filePath);
-
-        juce::MessageManager::callAsync([filePath, result]() {
-            auto& self = AudioThumbnailManager::getInstance();
-            self.bpmCache_[filePath] = result;
-
-            auto it = self.pendingBpmCallbacks_.find(filePath);
-            if (it == self.pendingBpmCallbacks_.end())
-                return;
-
-            // Move callbacks out before invoking — the entry is erased
-            // immediately so re-entrant requests during callback iteration
-            // see a clean state and hit the cache.
-            auto callbacks = std::move(it->second);
-            self.pendingBpmCallbacks_.erase(it);
-
-            for (auto& cb : callbacks) {
-                cb(result);
-            }
-        });
-    });
+        onComplete(result);
 }
 
 const juce::Array<double>* AudioThumbnailManager::getCachedTransients(
@@ -275,11 +220,24 @@ const juce::Array<double>* AudioThumbnailManager::getCachedTransients(
 
 void AudioThumbnailManager::cacheTransients(const juce::String& filePath,
                                             const juce::Array<double>& times) {
+    if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
+        juce::MessageManager::callAsync([filePath, times]() {
+            AudioThumbnailManager::getInstance().cacheTransients(filePath, times);
+        });
+        return;
+    }
+
     transientCache_[filePath] = times;
     transientListeners_.call([&](TransientCacheListener& l) { l.transientsChanged(filePath); });
 }
 
 void AudioThumbnailManager::clearCachedTransients(const juce::String& filePath) {
+    if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
+        juce::MessageManager::callAsync(
+            [filePath]() { AudioThumbnailManager::getInstance().clearCachedTransients(filePath); });
+        return;
+    }
+
     transientCache_.erase(filePath);
     transientListeners_.call([&](TransientCacheListener& l) { l.transientsChanged(filePath); });
 }
@@ -517,7 +475,6 @@ void AudioThumbnailManager::clearCache() {
     thumbnails_.clear();
     thumbnailCache_->clear();
     bpmCache_.clear();
-    pendingBpmCallbacks_.clear();
     transientCache_.clear();
     readerIndex_.clear();
     readerLru_.clear();
@@ -529,7 +486,6 @@ void AudioThumbnailManager::invalidateFile(const juce::String& audioFilePath) {
     thumbnails_.erase(audioFilePath);
     thumbnailCache_->clear();
     bpmCache_.erase(audioFilePath);
-    pendingBpmCallbacks_.erase(audioFilePath);
     transientCache_.erase(audioFilePath);
 
     auto readerIt = readerIndex_.find(audioFilePath);
@@ -585,15 +541,11 @@ void AudioThumbnailManager::requestPeakCacheLoad(const juce::String& audioFilePa
 }
 
 void AudioThumbnailManager::shutdown() {
-    // Stop any in-flight background jobs (BPM detection or peak compute)
-    // before tearing down state. The 5000ms timeout caps the wait —
-    // TempoDetect doesn't honour interruption mid-scan, but a single scan
-    // should fit comfortably under that bound.
+    // Stop any in-flight peak-compute jobs before tearing down state.
     if (backgroundThreadPool_) {
         backgroundThreadPool_->removeAllJobs(true, 5000);
         backgroundThreadPool_.reset();
     }
-    pendingBpmCallbacks_.clear();
     pendingPeakComputes_.clear();
     peakCaches_.clear();
 
