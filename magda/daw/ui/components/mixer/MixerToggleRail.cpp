@@ -58,9 +58,9 @@ void MixerToggleRail::resized() {
     // Rail mirrors the channel-strip layout: things that live near the top of
     // the strip (analyzers / sends / FX chain) anchor to the top of the rail;
     // things that live near the bottom of the strip (routing / monitor)
-    // anchor to the bottom.
-    SvgButton* topGroup[] = {analyzeButton_.get(), oscilloscopeButton_.get(), spectrumButton_.get(),
-                             sendsButton_.get(), fxChainButton_.get()};
+    // anchor to the bottom. The whole-mix Analyze action sits on its own, centred.
+    SvgButton* topGroup[] = {oscilloscopeButton_.get(), spectrumButton_.get(), sendsButton_.get(),
+                             fxChainButton_.get()};
     SvgButton* bottomGroup[] = {routingButton_.get(), monitorButton_.get()};
 
     int yTop = EDGE_PADDING;
@@ -70,6 +70,10 @@ void MixerToggleRail::resized() {
             yTop += BTN_SIZE + BTN_SPACING;
         }
     }
+
+    // Analyze: centred vertically in the rail, distinct from the toggle groups.
+    if (analyzeButton_ != nullptr)
+        analyzeButton_->setBounds(x, (bounds.getHeight() - BTN_SIZE) / 2, BTN_SIZE, BTN_SIZE);
 
     int yBottom = bounds.getHeight() - EDGE_PADDING - BTN_SIZE;
     for (auto* btn : bottomGroup) {
