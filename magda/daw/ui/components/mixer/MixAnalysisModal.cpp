@@ -82,9 +82,12 @@ MixAnalysisModal::MixAnalysisModal(MixAnalysisService::Mode mode) : mode_(mode) 
     lookAndFeel_ = std::make_unique<daw::ui::DialogLookAndFeel>();
     setLookAndFeel(lookAndFeel_.get());
 
-    // Title shows the scope (the channels being analysed) -- the selection drives
-    // it, so this is what the user most needs to confirm before/while it runs.
-    titleLabel_.setText("Mix analysis  -  " + MixAnalysisService::getInstance().scopeDescription(),
+    // Title shows what's being analysed: the scope (which channels) + the time
+    // range (loop region vs whole song) -- the things the selection/transport
+    // drive, so the user can confirm them before/while it runs.
+    auto& service = MixAnalysisService::getInstance();
+    titleLabel_.setText("Mix analysis  -  " + service.scopeDescription() + "  (" +
+                            service.rangeDescription() + ")",
                         juce::dontSendNotification);
     titleLabel_.setFont(FontManager::getInstance().getUIFont(15.0f).boldened());
     titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));

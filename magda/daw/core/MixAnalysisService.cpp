@@ -95,9 +95,10 @@ void MixAnalysisService::runOffline() {
     // full mix). The master is the summed output, not a stem, so it filters out of
     // the set, and an empty set means "all audio tracks" to OfflineMixAnalysis.
     req.depth = mix::OfflineMixAnalysis::Depth::Deep;
-    // Whole-edit for now; loop-range analysis is a follow-up (keeps this layer
-    // free of the transport/TE include).
-    req.range = mix::OfflineMixAnalysis::RangeMode::WholeEdit;
+    // Honour a loop region: when the transport is looping, render only that part
+    // (also makes the render far faster than the whole song).
+    req.range = engine->isLooping() ? mix::OfflineMixAnalysis::RangeMode::LoopRange
+                                    : mix::OfflineMixAnalysis::RangeMode::WholeEdit;
     req.trackSet = selectedTrackSet();  // empty (master selected) => all audio tracks
     const double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
     if (tempo > 0.0)
@@ -243,6 +244,12 @@ juce::String MixAnalysisService::scopeDescription() const {
         return "the full mix";
     return juce::String(static_cast<int>(n)) +
            (n == 1 ? " selected channel" : " selected channels");
+}
+
+juce::String MixAnalysisService::rangeDescription() const {
+    auto* engine =
+        dynamic_cast<TracktionEngineWrapper*>(TrackManager::getInstance().getAudioEngine());
+    return (engine != nullptr && engine->isLooping()) ? "loop region" : "whole song";
 }
 
 void MixAnalysisService::cancel() {

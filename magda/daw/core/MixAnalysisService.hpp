@@ -66,6 +66,9 @@ class MixAnalysisService {
     /// Human-readable scope from the current mixer selection: "the full mix"
     /// (nothing or the master selected) or "N selected channels". For menus.
     juce::String scopeDescription() const;
+    /// Human-readable time range an offline run will cover: "loop region" when the
+    /// transport is looping (only that part is rendered), else "whole song".
+    juce::String rangeDescription() const;
 
     bool isBusy() const {
         return busy_;
