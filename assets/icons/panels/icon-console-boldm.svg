@@ -1,7 +1,6 @@
 <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
 
-  <rect x="9" y="12" width="8" height="8" fill="currentColor"></rect>
-  <rect x="17" y="20" width="8" height="8" fill="currentColor"></rect>
-  <rect x="9" y="28" width="8" height="8" fill="currentColor"></rect>
-  <rect x="27" y="30" width="14" height="6" fill="currentColor"></rect>
+  <rect x="5" y="9" width="38" height="30" rx="6" stroke="currentColor" stroke-width="3"></rect>
+  <path d="M14 19 L20 24 L14 29" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M24 29 H32" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
 </svg>
