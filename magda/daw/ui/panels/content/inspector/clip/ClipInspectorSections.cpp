@@ -738,22 +738,18 @@ void ClipInspector::initClipPropertiesSection() {
         return clipIds;
     };
 
-    auto seedSourceInterpretation = [](magda::ClipId cid, auto& clip, double bpm) {
+    auto seedSourceInterpretation = [](auto& clip, double bpm) {
         // When enabling, seed source interpretation BPM/source interpretation total beats from
-        // detected BPM (AudioThumbnailManager) since the clip model may have stale metadata from
-        // TE's default loopInfo. Cached value is applied immediately (pre-setAutoTempo, before the
-        // canonical path is open); cache miss kicks off background detection and the callback
-        // funnels through applyAudioClipBeats once autoTempo is on.
+        // cached metadata since the clip model may have stale metadata from TE's default loopInfo.
         const bool sourceInterpretationBpmLooksDefaulted =
             clip.audio().interpretation.bpm <= 0.0 ||
             (magda::isValidBpm(bpm) && std::abs(clip.audio().interpretation.bpm - bpm) < 0.1);
         if (!sourceInterpretationBpmLooksDefaulted)
             return;
 
-        // Issue #1157: only seed from AudioThumbnailManager when the file
-        // didn't carry tempo metadata. setSourceMetadata (from TE's
-        // loopInfo) is authoritative when present; TempoDetect can be
-        // wrong by ~1.3x on syncopated loops.
+        // Issue #1157: only seed from cached metadata when the file didn't
+        // carry tempo metadata. setSourceMetadata (from TE's loopInfo) is
+        // authoritative when present.
         auto& thumbs = magda::AudioThumbnailManager::getInstance();
         double cached = thumbs.getCachedBPM(clip.audio().source.filePath);
         if (cached > 0.0) {
@@ -766,34 +762,6 @@ void ClipInspector::initClipPropertiesSection() {
                     clip.audio().interpretation.totalBeats = fileDuration * cached / 60.0;
                 }
             }
-        } else {
-            thumbs.requestBPMDetection(clip.audio().source.filePath, [cid](double detectedBPM) {
-                if (detectedBPM <= 0.0)
-                    return;
-                auto& mgr = magda::ClipManager::getInstance();
-                auto* c = mgr.getClip(cid);
-                if (!c)
-                    return;
-                // Issue #1157: file metadata wins over audio analysis.
-                // TempoDetect can be wrong by ~1.3x on syncopated loops.
-                double live = magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-                bool existingLooksDefaulted = c->audio().interpretation.bpm > 0.0 &&
-                                              magda::isValidBpm(live) &&
-                                              std::abs(c->audio().interpretation.bpm - live) < 0.1;
-                if (c->audio().interpretation.bpm > 0.0 && !existingLooksDefaulted)
-                    return;
-                magda::ClipManager::AudioClipBeatsUpdate u;
-                u.interpretationBpm = detectedBPM;
-                if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                        c->audio().source.filePath)) {
-                    double fileDuration = thumb->getTotalLength();
-                    if (fileDuration > 0.0) {
-                        u.sourceDurationSeconds = fileDuration;
-                        u.interpretationTotalBeats = fileDuration * detectedBPM / 60.0;
-                    }
-                }
-                mgr.applyAudioClipBeats(cid, u, live);
-            });
         }
     };
 
@@ -817,7 +785,7 @@ void ClipInspector::initClipPropertiesSection() {
                         if (!targetClip || !targetClip->isAudio())
                             return;
                         if (enable)
-                            seedSourceInterpretation(id, *targetClip, bpm);
+                            seedSourceInterpretation(*targetClip, bpm);
                         manager.setAutoTempo(id, enable, bpm);
                     }));
             }
@@ -1829,7 +1797,7 @@ void ClipInspector::initPlaybackSection() {
         if (bridge) {
             bridge->setTransientSensitivity(
                 primaryClipId(), static_cast<float>(transientSensitivityValue_->getValue()));
-            // Notify listeners so WaveformEditorContent restarts transient polling
+            // Notify listeners so WaveformEditorContent requests fresh callback-driven transients.
             magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(primaryClipId());
         }
     };

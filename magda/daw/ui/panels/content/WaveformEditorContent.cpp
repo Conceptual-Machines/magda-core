@@ -236,6 +236,9 @@ WaveformEditorContent::WaveformEditorContent() {
     // Register as UndoManager listener (for warp marker refresh on undo/redo)
     magda::UndoManager::getInstance().addListener(this);
 
+    // Refresh transients on a callback when the detector recomputes them.
+    magda::AudioThumbnailManager::getInstance().addTransientCacheListener(this);
+
     // Create time ruler
     timeRuler_ = std::make_unique<magda::TimeRuler>();
     timeRuler_->setDisplayMode(magda::TimeRuler::DisplayMode::BarsBeats);
@@ -616,6 +619,7 @@ WaveformEditorContent::~WaveformEditorContent() {
 
     magda::ClipManager::getInstance().removeListener(this);
     magda::UndoManager::getInstance().removeListener(this);
+    magda::AudioThumbnailManager::getInstance().removeTransientCacheListener(this);
 
     // Clear look and feel before destruction
     if (timeModeButton_)
@@ -634,6 +638,45 @@ void WaveformEditorContent::paint(juce::Graphics& g) {
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
     g.fillAll(DarkTheme::getPanelBackgroundColour());
+}
+
+void WaveformEditorContent::paintOverChildren(juce::Graphics& g) {
+    if (!transientsUpdating_)
+        return;
+
+    auto bounds = getLocalBounds();
+    if (bounds.isEmpty())
+        return;
+
+    constexpr int overlayW = 172;
+    constexpr int overlayH = 30;
+    auto area = juce::Rectangle<int>(overlayW, overlayH)
+                    .withRightX(bounds.getRight() - 12)
+                    .withY(TIME_RULER_HEIGHT + 10)
+                    .getIntersection(bounds);
+    if (area.isEmpty())
+        return;
+
+    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.88f));
+    g.fillRoundedRectangle(area.toFloat(), 6.0f);
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.9f));
+    g.drawRoundedRectangle(area.toFloat().reduced(0.5f), 6.0f, 1.0f);
+
+    auto spinnerArea = area.removeFromLeft(32).reduced(8).toFloat();
+    const auto centre = spinnerArea.getCentre();
+    const float radius = juce::jmin(spinnerArea.getWidth(), spinnerArea.getHeight()) * 0.45f;
+    for (int i = 0; i < 12; ++i) {
+        const float t = static_cast<float>(i) / 12.0f;
+        const float angle = transientSpinnerPhase_ + t * juce::MathConstants<float>::twoPi;
+        const float alpha = 0.18f + 0.72f * t;
+        const auto p = centre + juce::Point<float>(std::cos(angle), std::sin(angle)) * radius;
+        g.setColour(DarkTheme::getAccentColour().withAlpha(alpha));
+        g.fillEllipse(p.x - 1.6f, p.y - 1.6f, 3.2f, 3.2f);
+    }
+
+    g.setColour(DarkTheme::getTextColour());
+    g.setFont(FontManager::getInstance().getUIFont(12.0f));
+    g.drawText("Updating transients", area.reduced(0, 1), juce::Justification::centredLeft, false);
 }
 
 void WaveformEditorContent::resized() {
@@ -859,20 +902,60 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
         }
 
         // Check if cached transients were invalidated (e.g. sensitivity changed)
-        if (transientsCached_ && clip->isAudio() && !clip->audio().source.filePath.isEmpty()) {
+        if (clip->isAudio() && !clip->audio().source.filePath.isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
                 clip->audio().source.filePath);
-            if (!cached) {
-                // Cache was cleared — restart polling for new transients
+            if (cached) {
+                gridComponent_->setTransientTimes(*cached);
+                transientsCached_ = true;
+                setTransientsUpdating(false);
+            } else {
                 transientsCached_ = false;
-                transientPollCount_ = 0;
-                startTimer(250);
+                requestTransientDetection();
             }
         }
 
         updateGridSize();
         repaint();
     }
+}
+
+void WaveformEditorContent::transientsChanged(const juce::String& filePath) {
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (clip == nullptr)
+        return;
+    if (!clip->isAudio())
+        return;
+    if (clip->audio().source.filePath != filePath)
+        return;
+    auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(filePath);
+    if (cached) {
+        double bpm = 120.0;
+        if (auto* controller = magda::TimelineController::getCurrent())
+            bpm = controller->getState().tempo.bpm;
+
+        const double clipStart = clip->getTimelineStart(bpm);
+        const double clipLength = clip->getTimelineLength(bpm);
+        gridComponent_->setClip(editingClipId_);
+        gridComponent_->updateClipPosition(clipStart, clipLength);
+        timeRuler_->setClipLength(clipLength);
+        updateDisplayInfo(*clip);
+        updateGridSize();
+
+        gridComponent_->setTransientTimes(*cached);
+        gridComponent_->repaint();
+        if (viewport_)
+            viewport_->repaint();
+        repaint();
+        transientsCached_ = true;
+        setTransientsUpdating(false);
+        return;
+    }
+
+    transientsCached_ = false;
+    setTransientsUpdating(true);
 }
 
 void WaveformEditorContent::clipSelectionChanged(magda::ClipId clipId) {
@@ -961,8 +1044,6 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
     if (editingClipId_ != clipId) {
         editingClipId_ = clipId;
         transientsCached_ = false;
-        transientPollCount_ = 0;
-        stopTimer();
         gridComponent_->setClip(clipId);
 
         // Update time ruler with clip info
@@ -1016,15 +1097,16 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             }
         }
 
-        // Check for cached transients or start polling
+        // Check for cached transients or request async detection.
         if (clip && clip->isAudio() && !clip->audio().source.filePath.isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
                 clip->audio().source.filePath);
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
                 transientsCached_ = true;
+                setTransientsUpdating(false);
             } else {
-                startTimer(250);
+                requestTransientDetection();
             }
         }
 
@@ -1287,22 +1369,11 @@ magda::AudioBridge* WaveformEditorContent::getBridge() {
     return audioEngine->getAudioBridge();
 }
 
-// ============================================================================
-// Timer (Transient Detection Polling)
-// ============================================================================
-
-void WaveformEditorContent::timerCallback() {
-    if (transientsCached_ || editingClipId_ == magda::INVALID_CLIP_ID) {
-        stopTimer();
+void WaveformEditorContent::requestTransientDetection() {
+    if (transientsCached_)
         return;
-    }
-
-    if (++transientPollCount_ >= MAX_TRANSIENT_POLL_ATTEMPTS) {
-        DBG("WaveformEditorContent: transient detection timed out after "
-            << MAX_TRANSIENT_POLL_ATTEMPTS << " attempts");
-        stopTimer();
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
         return;
-    }
 
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
     if (!audioEngine)
@@ -1312,6 +1383,7 @@ void WaveformEditorContent::timerCallback() {
     if (!bridge)
         return;
 
+    setTransientsUpdating(true);
     if (bridge->getTransientTimes(editingClipId_)) {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip && !clip->audio().source.filePath.isEmpty()) {
@@ -1319,11 +1391,37 @@ void WaveformEditorContent::timerCallback() {
                 clip->audio().source.filePath);
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
+                setTransientsUpdating(false);
             }
         }
         transientsCached_ = true;
+    }
+}
+
+void WaveformEditorContent::setTransientsUpdating(bool updating) {
+    if (transientsUpdating_ == updating)
+        return;
+
+    transientsUpdating_ = updating;
+    transientSpinnerPhase_ = 0.0f;
+    if (transientsUpdating_) {
+        startTimerHz(30);
+    } else {
         stopTimer();
     }
+    repaint();
+}
+
+void WaveformEditorContent::timerCallback() {
+    if (!transientsUpdating_) {
+        stopTimer();
+        return;
+    }
+
+    transientSpinnerPhase_ += 0.22f;
+    if (transientSpinnerPhase_ > juce::MathConstants<float>::twoPi)
+        transientSpinnerPhase_ -= juce::MathConstants<float>::twoPi;
+    repaint();
 }
 
 // ============================================================================

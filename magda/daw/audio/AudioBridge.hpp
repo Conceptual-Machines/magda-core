@@ -203,7 +203,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Detect transient times for an audio clip's source file
      *
      * On first call, kicks off async transient detection via TE's WarpTimeManager.
-     * Subsequent calls poll for completion. Results are cached per file path.
+     * Completion is delivered by callback and results are cached per file path.
      *
      * @param clipId The MAGDA clip ID (must be an audio clip)
      * @return true if transients are ready (cached), false if still detecting

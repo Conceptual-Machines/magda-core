@@ -56,7 +56,7 @@ struct SourceDisplayValues {
     double totalBeats = 0.0;
 };
 
-SourceDisplayValues getSourceDisplayValues(const magda::ClipInfo& clip, magda::ClipId clipId) {
+SourceDisplayValues getSourceDisplayValues(const magda::ClipInfo& clip) {
     SourceDisplayValues values;
     if (!clip.isAudio())
         return values;
@@ -72,11 +72,6 @@ SourceDisplayValues getSourceDisplayValues(const magda::ClipInfo& clip, magda::C
         const double cachedBpm = thumbs.getCachedBPM(clip.audio().source.filePath);
         if (cachedBpm > 0.0) {
             values.bpm = cachedBpm;
-        } else if (clip.audio().source.filePath.isNotEmpty()) {
-            thumbs.requestBPMDetection(clip.audio().source.filePath, [clipId](double bpm) {
-                if (bpm > 0.0)
-                    magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId);
-            });
         }
     }
 
@@ -232,36 +227,6 @@ void AudioClipPropertiesContent::createControls() {
                         clip->audio().interpretation.totalBeats = fileDuration * cached / 60.0;
                     }
                 }
-            } else {
-                auto cid = clipId_;
-                thumbs.requestBPMDetection(
-                    clip->audio().source.filePath, [cid](double detectedBPM) {
-                        if (detectedBPM <= 0.0)
-                            return;
-                        auto& mgr = magda::ClipManager::getInstance();
-                        auto* c = mgr.getClip(cid);
-                        if (!c)
-                            return;
-                        // Issue #1157: file metadata wins over audio analysis.
-                        double live =
-                            magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-                        bool existingLooksDefaulted =
-                            c->audio().interpretation.bpm > 0.0 && magda::isValidBpm(live) &&
-                            std::abs(c->audio().interpretation.bpm - live) < 0.1;
-                        if (c->audio().interpretation.bpm > 0.0 && !existingLooksDefaulted)
-                            return;
-                        magda::ClipManager::AudioClipBeatsUpdate u;
-                        u.interpretationBpm = detectedBPM;
-                        if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                                c->audio().source.filePath)) {
-                            double fileDuration = thumb->getTotalLength();
-                            if (fileDuration > 0.0) {
-                                u.sourceDurationSeconds = fileDuration;
-                                u.interpretationTotalBeats = fileDuration * detectedBPM / 60.0;
-                            }
-                        }
-                        mgr.applyAudioClipBeats(cid, u, live);
-                    });
             }
         }
 
@@ -640,7 +605,7 @@ void AudioClipPropertiesContent::updateFromClip() {
         stretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
         stretchModeCombo_->setSelectedId(clip->getEffectiveTimeStretchMode() + 1,
                                          juce::dontSendNotification);
-        const auto sourceDisplay = getSourceDisplayValues(*clip, clipId_);
+        const auto sourceDisplay = getSourceDisplayValues(*clip);
         bpmValue_->setValue(sourceDisplay.bpm > 0.0 ? sourceDisplay.bpm : magda::DEFAULT_BPM,
                             juce::dontSendNotification);
         beatsValue_->setValue(sourceDisplay.totalBeats > 0.0 ? sourceDisplay.totalBeats : 4.0,

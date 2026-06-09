@@ -160,7 +160,35 @@ ClipComponent::ClipComponent(ClipId clipId, TrackContentPanel* parent)
 
 ClipComponent::~ClipComponent() {
     stopTimer();
+    if (waveformListenerPath_.isNotEmpty())
+        AudioThumbnailManager::getInstance().removeThumbnailChangeListener(waveformListenerPath_,
+                                                                           this);
     ClipManager::getInstance().removeListener(this);
+}
+
+void ClipComponent::updateWaveformLoadListener(const juce::String& audioFilePath) {
+    auto& mgr = AudioThumbnailManager::getInstance();
+    auto* thumb = audioFilePath.isNotEmpty() ? mgr.getThumbnail(audioFilePath) : nullptr;
+    // Listen only while the thumbnail exists and is still streaming in; once it
+    // is fully loaded (or the clip has no audio) we want no listener.
+    const juce::String wanted =
+        (thumb != nullptr && !thumb->isFullyLoaded()) ? audioFilePath : juce::String();
+    if (wanted == waveformListenerPath_)
+        return;
+    if (waveformListenerPath_.isNotEmpty())
+        mgr.removeThumbnailChangeListener(waveformListenerPath_, this);
+    waveformListenerPath_ = wanted;
+    if (waveformListenerPath_.isNotEmpty())
+        if (auto* t = mgr.getThumbnail(waveformListenerPath_))
+            t->addChangeListener(this);
+}
+
+void ClipComponent::changeListenerCallback(juce::ChangeBroadcaster*) {
+    // The thumbnail streamed in more samples. Repaint to fill the waveform
+    // progressively, and drop the listener once it has finished loading.
+    const auto* clip = getClipInfo();
+    updateWaveformLoadListener(clip != nullptr ? clip->audio().source.filePath : juce::String());
+    repaint();
 }
 
 void ClipComponent::paint(juce::Graphics& g) {
@@ -605,15 +633,11 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
             clipDisplayLength = previewLength_;
     }
 
-    // Poll until thumbnail is loaded
-    if (clip.audio().source.filePath.isNotEmpty()) {
-        auto* thumb =
-            AudioThumbnailManager::getInstance().getThumbnail(clip.audio().source.filePath);
-        if (thumb == nullptr || !thumb->isFullyLoaded()) {
-            if (!isTimerRunning())
-                startTimer(100);
-        }
-    }
+    // Repaint as the thumbnail streams in (progressive fill). Registering a
+    // change listener is reliable regardless of mouse hover, unlike the old
+    // poll timer which only repainted while hovered, so long loads no longer
+    // look frozen until they finish.
+    updateWaveformLoadListener(clip.audio().source.filePath);
 
     // Draw directly — no offscreen cache.  AudioThumbnail is already a
     // pre-computed waveform cache (512 samples/point) so drawing from it is fast.

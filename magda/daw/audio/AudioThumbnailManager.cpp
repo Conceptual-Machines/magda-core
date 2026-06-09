@@ -4,7 +4,6 @@
 
 // clang-format off
 #include <tracktion_engine/tracktion_engine.h>
-#include <tracktion_engine/timestretch/tracktion_TempoDetect.h>
 // clang-format on
 
 namespace magda {
@@ -89,24 +88,39 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
         return;
 
     auto* thumbnail = getThumbnail(audioFilePath);
-    if (thumbnail == nullptr || !thumbnail->isFullyLoaded()) {
-        // Draw placeholder if thumbnail not ready
-        g.setColour(colour.withAlpha(0.3f));
-        g.drawText("Loading...", bounds, juce::Justification::centred);
+    if (thumbnail == nullptr) {
+        // A null thumbnail is terminal, not transient: getThumbnail() creates the
+        // reader synchronously, so the only way to get here is a file that cannot
+        // be opened - moved, deleted, or unreadable. Show a clear broken state
+        // instead of a perpetual "Loading..." (#1415).
+        g.setColour(juce::Colours::red.withAlpha(0.16f));
+        g.fillRect(bounds);
+        if (bounds.getWidth() >= 54) {
+            g.setColour(juce::Colours::red.brighter(0.2f).withAlpha(0.9f));
+            g.drawText("Missing file", bounds, juce::Justification::centred);
+        }
         return;
     }
 
-    // Clamp times to valid range
+    // Clamp times to valid range. getTotalLength() is known as soon as the reader
+    // is set, even before the sample data has finished streaming in.
     double totalLength = thumbnail->getTotalLength();
     startTime = juce::jlimit(0.0, totalLength, startTime);
     endTime = juce::jlimit(startTime, totalLength, endTime);
+
+    // While the thumbnail is still streaming in, draw whatever has loaded so far
+    // (drawChannels renders up to getNumSamplesFinished()) so a long file fills
+    // in progressively instead of snapping in all at once at the end. The smooth
+    // high-res renderer reads the file/peak-cache directly, so it is held back
+    // until loading has settled to avoid expensive per-paint disk reads mid-load.
+    const bool fullyLoaded = thumbnail->isFullyLoaded();
 
     // useHighRes opts into the path-based smooth renderer (drawWaveformFromSamples).
     // Below the samples-per-pixel threshold the smooth envelope is visibly
     // better; above it (zoomed far out) the cheap JUCE thumbnail is used, since
     // the smooth path's disk read would be a waste when the result is the same
     // pixel soup.
-    if (useHighRes) {
+    if (useHighRes && fullyLoaded) {
         auto* reader = getOrCreateReader(audioFilePath);
         if (reader != nullptr && reader->sampleRate > 0.0) {
             double timeRange = endTime - startTime;
@@ -145,33 +159,11 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
 }
 
 namespace {
-// Pure detection routine — no cache, no threading. Safe to call from any thread
-// as long as the format manager is local. Returns 0.0 on failure.
+// BPM DSP fallback is disabled. Tracktion/SoundTouch BPMDetect is crashing on
+// some files inside its worker thread; return unknown BPM instead of risking the app.
 double runBpmDetection(const juce::String& filePath) {
-    juce::File audioFile(filePath);
-    if (!audioFile.existsAsFile())
-        return 0.0;
-
-    // Local format manager — juce::AudioFormatManager is not thread-safe to share.
-    juce::AudioFormatManager fm;
-    fm.registerBasicFormats();
-
-    std::unique_ptr<juce::AudioFormatReader> reader(fm.createReaderFor(audioFile));
-    if (!reader)
-        return 0.0;
-
-    tracktion::engine::TempoDetect detector(static_cast<int>(reader->numChannels),
-                                            reader->sampleRate);
-    float bpm = detector.processReader(*reader);
-
-    if (!detector.isBpmSensible())
-        return 0.0;
-
-    double result = static_cast<double>(bpm);
-    // Snap to nearest integer BPM if within 0.5 — most music uses whole-number tempos
-    double rounded = std::round(result);
-    if (std::abs(result - rounded) < 0.5)
-        result = rounded;
+    juce::ignoreUnused(filePath);
+    constexpr double result = 0.0;
     return result;
 }
 }  // namespace
@@ -200,7 +192,7 @@ void AudioThumbnailManager::cacheBPM(const juce::String& filePath, double bpm) {
 
 void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
                                                 std::function<void(double)> onComplete) {
-    // Caches and pending-callback map are message-thread only (no locks).
+    // Caches are message-thread only (no locks).
     JUCE_ASSERT_MESSAGE_THREAD;
 
     // Cache hit — fire callback synchronously and return.
@@ -211,42 +203,10 @@ void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
         return;
     }
 
-    // Already in flight for this file — append callback and dedupe.
-    auto pendingIt = pendingBpmCallbacks_.find(filePath);
-    if (pendingIt != pendingBpmCallbacks_.end()) {
-        if (onComplete)
-            pendingIt->second.push_back(std::move(onComplete));
-        return;
-    }
-
-    // First request for this file — register pending entry, lazy-create the
-    // thread pool, and enqueue the background scan.
-    auto& callbacks = pendingBpmCallbacks_[filePath];
+    const double result = runBpmDetection(filePath);
+    bpmCache_[filePath] = result;
     if (onComplete)
-        callbacks.push_back(std::move(onComplete));
-
-    getOrCreateBackgroundPool().addJob([filePath]() {
-        const double result = runBpmDetection(filePath);
-
-        juce::MessageManager::callAsync([filePath, result]() {
-            auto& self = AudioThumbnailManager::getInstance();
-            self.bpmCache_[filePath] = result;
-
-            auto it = self.pendingBpmCallbacks_.find(filePath);
-            if (it == self.pendingBpmCallbacks_.end())
-                return;
-
-            // Move callbacks out before invoking — the entry is erased
-            // immediately so re-entrant requests during callback iteration
-            // see a clean state and hit the cache.
-            auto callbacks = std::move(it->second);
-            self.pendingBpmCallbacks_.erase(it);
-
-            for (auto& cb : callbacks) {
-                cb(result);
-            }
-        });
-    });
+        onComplete(result);
 }
 
 const juce::Array<double>* AudioThumbnailManager::getCachedTransients(
@@ -260,11 +220,26 @@ const juce::Array<double>* AudioThumbnailManager::getCachedTransients(
 
 void AudioThumbnailManager::cacheTransients(const juce::String& filePath,
                                             const juce::Array<double>& times) {
+    if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
+        juce::MessageManager::callAsync([filePath, times]() {
+            AudioThumbnailManager::getInstance().cacheTransients(filePath, times);
+        });
+        return;
+    }
+
     transientCache_[filePath] = times;
+    transientListeners_.call([&](TransientCacheListener& l) { l.transientsChanged(filePath); });
 }
 
 void AudioThumbnailManager::clearCachedTransients(const juce::String& filePath) {
+    if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
+        juce::MessageManager::callAsync(
+            [filePath]() { AudioThumbnailManager::getInstance().clearCachedTransients(filePath); });
+        return;
+    }
+
     transientCache_.erase(filePath);
+    transientListeners_.call([&](TransientCacheListener& l) { l.transientsChanged(filePath); });
 }
 
 juce::AudioFormatReader* AudioThumbnailManager::getOrCreateReader(
@@ -500,7 +475,6 @@ void AudioThumbnailManager::clearCache() {
     thumbnails_.clear();
     thumbnailCache_->clear();
     bpmCache_.clear();
-    pendingBpmCallbacks_.clear();
     transientCache_.clear();
     readerIndex_.clear();
     readerLru_.clear();
@@ -512,7 +486,6 @@ void AudioThumbnailManager::invalidateFile(const juce::String& audioFilePath) {
     thumbnails_.erase(audioFilePath);
     thumbnailCache_->clear();
     bpmCache_.erase(audioFilePath);
-    pendingBpmCallbacks_.erase(audioFilePath);
     transientCache_.erase(audioFilePath);
 
     auto readerIt = readerIndex_.find(audioFilePath);
@@ -568,15 +541,11 @@ void AudioThumbnailManager::requestPeakCacheLoad(const juce::String& audioFilePa
 }
 
 void AudioThumbnailManager::shutdown() {
-    // Stop any in-flight background jobs (BPM detection or peak compute)
-    // before tearing down state. The 5000ms timeout caps the wait —
-    // TempoDetect doesn't honour interruption mid-scan, but a single scan
-    // should fit comfortably under that bound.
+    // Stop any in-flight peak-compute jobs before tearing down state.
     if (backgroundThreadPool_) {
         backgroundThreadPool_->removeAllJobs(true, 5000);
         backgroundThreadPool_.reset();
     }
-    pendingBpmCallbacks_.clear();
     pendingPeakComputes_.clear();
     peakCaches_.clear();
 

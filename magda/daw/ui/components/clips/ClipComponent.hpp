@@ -23,7 +23,10 @@ class TrackContentPanel;
  * - Resize handles (left/right edges)
  * - Selection
  */
-class ClipComponent : public juce::Component, public ClipManagerListener, private juce::Timer {
+class ClipComponent : public juce::Component,
+                      public ClipManagerListener,
+                      public juce::ChangeListener,
+                      private juce::Timer {
   public:
     explicit ClipComponent(ClipId clipId, TrackContentPanel* parent);
     ~ClipComponent() override;
@@ -53,6 +56,10 @@ class ClipComponent : public juce::Component, public ClipManagerListener, privat
     void clipsChanged() override;
     void clipPropertyChanged(ClipId clipId) override;
     void clipSelectionChanged(ClipId clipId) override;
+
+    // ChangeListener - the audio thumbnail broadcasts as its samples stream in,
+    // so we repaint to fill the waveform progressively while a long file loads.
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
     // Selection state
     bool isSelected() const {
@@ -217,6 +224,12 @@ class ClipComponent : public juce::Component, public ClipManagerListener, privat
                               juce::Rectangle<int> waveformArea, double clipDisplayLength,
                               juce::Colour waveColourOverride = {});
     void timerCallback() override;
+
+    // Register/unregister as a change listener on the clip's audio thumbnail
+    // while it is still loading, so the waveform repaints as data streams in and
+    // the listener is dropped once the thumbnail is fully loaded. Idempotent.
+    void updateWaveformLoadListener(const juce::String& audioFilePath);
+    juce::String waveformListenerPath_;  // thumbnail path we are currently listening to (or empty)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipComponent)
 };

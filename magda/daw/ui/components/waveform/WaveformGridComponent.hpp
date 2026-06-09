@@ -25,14 +25,18 @@ enum class GridResolution { Off, Bar, Beat, Eighth, Sixteenth, ThirtySecond };
  * Designed to be placed inside a Viewport for scrolling.
  * Similar to PianoRollGridComponent architecture.
  */
-class WaveformGridComponent : public juce::Component {
+class WaveformGridComponent : public juce::Component, public juce::ChangeListener {
   public:
     WaveformGridComponent();
-    ~WaveformGridComponent() override = default;
+    ~WaveformGridComponent() override;
 
     // Component overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
+
+    // ChangeListener - repaint as the thumbnail streams in so a long file fills
+    // in progressively instead of appearing all at once when loading finishes.
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
     // Mouse interaction
     void mouseDown(const juce::MouseEvent& event) override;
@@ -323,6 +327,11 @@ class WaveformGridComponent : public juce::Component {
 
     // Get current clip
     const magda::ClipInfo* getClip() const;
+
+    // Listen on the clip's audio thumbnail while it is still loading so the
+    // waveform repaints as data streams in; drop the listener once fully loaded.
+    void updateWaveformLoadListener(const juce::String& audioFilePath);
+    juce::String waveformListenerPath_;  // thumbnail path we are listening to (or empty)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformGridComponent)
 };
