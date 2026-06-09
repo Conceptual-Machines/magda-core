@@ -62,25 +62,42 @@ class RecordingNoteQueue {
     std::atomic<int> readIndex_{0};
 };
 
-/**
- * @brief Transient preview data for a track that is currently recording.
- * Lives entirely outside ClipManager — no MAGDA clip is created until recording finishes.
- * Painted as an overlay by TrackContentPanel.
- */
 struct AudioPeakSample {
     float peakL = 0.0f;  // Left channel peak (0.0 - 1.0+)
     float peakR = 0.0f;  // Right channel peak (0.0 - 1.0+)
 };
 
+/** Which recording context a preview belongs to. */
+enum class RecordingTargetKind {
+    Arrangement,  // Recording onto the arrangement timeline at startBeat.
+    SessionSlot   // Recording into a session clip slot (trackId, sceneIndex).
+};
+
+/**
+ * @brief Transient preview state for one active recording pass.
+ *
+ * This is the durable "active recording pass" model: a single growing,
+ * beat-domain description of what is being captured right now, independent of
+ * the final clip. Lives entirely outside ClipManager — no MAGDA clip is created
+ * until recording finishes — and is consumed/replaced cleanly on stop.
+ *
+ * Arrangement passes are painted as an overlay by TrackContentPanel (using
+ * startBeat as the timeline placement). Session-slot passes carry the same data
+ * keyed by (trackId, sceneIndex); future takes/overdub work builds on this model.
+ */
 struct RecordingPreview {
     TrackId trackId = INVALID_TRACK_ID;
-    double startTime = 0.0;      // Transport position when recording started (seconds)
-    double currentLength = 0.0;  // Grows as playhead advances (seconds)
-    std::vector<MidiNote> notes;
+    RecordingTargetKind target = RecordingTargetKind::Arrangement;
+    int sceneIndex = -1;  // Valid when target == SessionSlot.
 
-    // Audio waveform preview (one peak sample per update tick, ~30fps)
+    double startBeat = 0.0;           // Absolute timeline beat when the pass started.
+    double currentLengthBeats = 0.0;  // Grows as the playhead advances (beats).
+    std::vector<MidiNote> notes;      // Beats, relative to startBeat.
+
+    // Audio waveform preview (one peak sample per update tick, ~30fps).
+    // Presentation data only — never drives clip placement/timing.
     std::vector<AudioPeakSample> audioPeaks;
-    bool isAudioRecording = false;  // True if this track records audio (not MIDI)
+    bool isAudioRecording = false;  // True if this track records audio (not MIDI).
 };
 
 }  // namespace magda
