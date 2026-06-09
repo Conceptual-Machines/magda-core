@@ -16,6 +16,7 @@
     "file.close_project": "プロジェクトを閉じる",
     "file.save_project": "プロジェクトを保存",
     "file.save_project_as": "名前を付けてプロジェクトを保存…",
+    "file.collect_files": "",
     "file.export_audio": "オーディオをエクスポート…",
     "file.export_midi": "MIDIをエクスポート…",
     "file.quit": "終了",
@@ -327,6 +328,13 @@
     "error.no_midi_notes": "エクスポートするMIDIクリップにはノートがありません。",
     "error.midi_write_failed": "MIDI ファイルの書き込みに失敗しました。",
     "error.cannot_create_file": "ファイルを作成できませんでした："
+  },
+  "collect": {
+    "title": "",
+    "progress.title": "",
+    "progress.copying": "",
+    "alert.cancelled": "",
+    "alert.no_edit": ""
   },
   "common": {
     "on": "On",

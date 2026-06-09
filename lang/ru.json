@@ -16,6 +16,7 @@
     "file.close_project": "Закрыть проект",
     "file.save_project": "Сохранить",
     "file.save_project_as": "Сохранить как...",
+    "file.collect_files": "",
     "file.export_audio": "Экспорт аудио...",
     "file.export_midi": "Экспорт MIDI...",
     "file.quit": "Выход",
@@ -34,7 +35,7 @@
     "settings.preferences": "Настройки...",
     "settings.ai": "Настройки ИИ...",
     "settings.audio_midi": "Настройки аудио/MIDI...",
-    "settings.plugins": "Настройки плагина...",
+    "settings.plugins": "Настройки плагинов...",
     "settings.controllers": "",
     "view.track_manager": "Менеджер дорожек...",
     "view.headers_right": "Показывать дорожки справа",
@@ -328,6 +329,13 @@
     "error.midi_write_failed": "",
     "error.cannot_create_file": ""
   },
+  "collect": {
+    "title": "",
+    "progress.title": "",
+    "progress.copying": "",
+    "alert.cancelled": "",
+    "alert.no_edit": ""
+  },
   "common": {
     "on": "Вкл.",
     "off": "Выкл.",
@@ -378,7 +386,7 @@
     "toggle.expand_left_panel": "Развернуть левую панель (Браузер)",
     "toggle.expand_right_panel": "Развернуть правую панель (Инспектор)",
     "toggle.expand_bottom_panel": "Развернуть нижнюю панель (Микшер)",
-    "toggle.headers_on_right": "Дорожки справа",
+    "toggle.headers_on_right": "Показывать панель дорожек справа",
     "toggle.autohide_arrangement_scrollbars": "",
     "toggle.confirm_track_delete": "Подтверждение перед удалением дорожки",
     "toggle.auto_monitor": "",
