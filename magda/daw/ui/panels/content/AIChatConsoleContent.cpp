@@ -29,6 +29,7 @@
 #include "../../../core/AppPaths.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/Config.hpp"
+#include "../../../core/ConsoleRouting.hpp"
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/PresetManager.hpp"
 #include "../../../core/SelectionManager.hpp"
@@ -337,40 +338,41 @@ void AIChatConsoleContent::RequestThread::run() {
     auto totalStart = std::chrono::steady_clock::now();
     double routerMs = 0.0, agentMs = 0.0;
 
-    // Step 1: Classify intent via router. Skipped entirely when context makes
-    // the target unambiguous: mixer view (or an attached capture from the
-    // reference cockpit, which works in any view) hard-scopes to the mixing
-    // agent (#1402/#1403), and a drum-targetable track routes to the drummer.
-    // Either way an explicit @alias or a slash-rewritten command
-    // ("[COMMAND: ...]") opts back out, so those escape hatches keep working.
+    // Step 1: Resolve which agent this turn routes to from the view-context data
+    // model (#1402). consoleSurfaceForView() declares each view's agent surface;
+    // resolveConsoleIntent() applies the escape-hatch / capture / drummer / router
+    // precedence. The router is only consulted for Classified views (Arrange) and
+    // is wrapped in a callback so the routing model stays UI/agent-free.
     const auto trimmedMessage = juce::String(message).trimStart();
-    const bool hasExplicitAlias = trimmedMessage.startsWithChar('@');
-    const bool hasExplicitCommand = trimmedMessage.startsWith("[COMMAND:");
-    const bool contextOverridable = !hasExplicitAlias && !hasExplicitCommand;
-    const bool mixerView = (owner_.currentViewMode_ == magda::ViewMode::Mix ||
-                            owner_.currentViewMode_ == magda::ViewMode::Master);
-    std::string intent = "COMMAND";  // default fallback
-    if ((mixerView || owner_.mixCapture_.valid) && contextOverridable) {
-        intent = "MIXING";
-        DBG("MAGDA Router: bypassed (mixing context: mixer view or attached capture)");
-    } else if (owner_.drummerModeActive_ && !hasExplicitAlias) {
-        intent = "DRUM";
-        DBG("MAGDA Router: bypassed (drummer mode, context-driven)");
-    } else if (owner_.routerAgent_) {
+    magda::RoutingContext routingCtx;
+    routingCtx.hasExplicitAlias = trimmedMessage.startsWithChar('@');
+    routingCtx.hasExplicitCommand = trimmedMessage.startsWith("[COMMAND:");
+    routingCtx.drummerModeActive = owner_.drummerModeActive_;
+    routingCtx.mixCaptureAttached = owner_.mixCapture_.valid;
+
+    auto classify = [&]() -> std::string {
+        if (!owner_.routerAgent_)
+            return {};
         auto routerStart = std::chrono::steady_clock::now();
         auto classification = owner_.routerAgent_->classify(message);
         routerMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
                                                              routerStart)
                        .count();
-        if (!classification.hasError) {
-            intent = classification.intent;
-            DBG("MAGDA Router: intent=" + juce::String(intent) + " (" + juce::String(routerMs, 0) +
-                "ms)");
-        } else {
+        if (classification.hasError) {
             DBG("MAGDA Router: error: " + juce::String(classification.error) +
                 ", defaulting to COMMAND");
+            return {};
         }
-    }
+        DBG("MAGDA Router: intent=" + juce::String(classification.intent) + " (" +
+            juce::String(routerMs, 0) + "ms)");
+        return classification.intent;
+    };
+
+    const auto decision =
+        magda::resolveConsoleIntent(owner_.currentViewMode_, routingCtx, classify);
+    const magda::ConsoleIntent intent = decision.intent;
+    DBG("MAGDA Router: routed to " + juce::String(magda::toIntentString(intent)) + " (" +
+        juce::String(decision.source) + ")");
 
     if (threadShouldExit())
         return;
@@ -463,7 +465,7 @@ void AIChatConsoleContent::RequestThread::run() {
 
     auto agentStart = std::chrono::steady_clock::now();
 
-    if (intent == "BOTH") {
+    if (intent == magda::ConsoleIntent::Both) {
         // Run both agents in parallel, each streaming into its own labeled section.
         // A shared render callback rebuilds the streaming region from both buffers so
         // tokens from one agent never interleave into the other's text.
@@ -564,7 +566,7 @@ void AIChatConsoleContent::RequestThread::run() {
         }
         if (threadShouldExit())
             return;
-    } else if (intent == "COMMAND") {
+    } else if (intent == magda::ConsoleIntent::Command) {
         if (owner_.commandAgent_) {
             auto result = owner_.commandAgent_->generateStreaming(message, onToken);
             if (threadShouldExit())
@@ -574,7 +576,7 @@ void AIChatConsoleContent::RequestThread::run() {
             else
                 dslCode = result.dslOutput;
         }
-    } else if (intent == "MUSIC") {
+    } else if (intent == magda::ConsoleIntent::Music) {
         if (owner_.musicAgent_) {
             auto result = owner_.musicAgent_->generateStreaming(message, onToken);
             if (threadShouldExit())
@@ -586,7 +588,7 @@ void AIChatConsoleContent::RequestThread::run() {
                 musicDescription = std::move(result.description);
             }
         }
-    } else if (intent == "AUTOMATION") {
+    } else if (intent == magda::ConsoleIntent::Automation) {
         if (owner_.automationAgent_) {
             auto result = owner_.automationAgent_->generateStreaming(message, onToken);
             if (threadShouldExit())
@@ -596,7 +598,7 @@ void AIChatConsoleContent::RequestThread::run() {
             else
                 autoInstructions = std::move(result.instructions);
         }
-    } else if (intent == "DRUM") {
+    } else if (intent == magda::ConsoleIntent::Drum) {
         // Drummer agent: emits compact role-grid output. Reuses the music IR
         // path because Hit ops land in musicInstructions and execute through
         // InstructionExecutor like any other note/chord.
@@ -624,7 +626,12 @@ void AIChatConsoleContent::RequestThread::run() {
                 musicDescription = std::move(result.description);
             }
         }
-    } else if (intent == "MIXING") {
+    } else if (intent == magda::ConsoleIntent::Session) {
+        // Session (Live) view hard-scopes here (#1402). The session agent isn't
+        // built yet (stub); the real clip-launch/scene/performance agent is a
+        // later issue. Surface a clear notice rather than silently doing nothing.
+        error = "The session agent isn't available yet.";
+    } else if (intent == magda::ConsoleIntent::Mixing) {
         // Mixer view / an attached capture hard-scopes here (#1402/#1403). Map the
         // captured relational measurements (per-track levels + #1390 masking) into
         // the mix-analysis agent (#886) and let it assess the subject against its
@@ -1498,15 +1505,21 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
         }
 
         // Thin vertical dividers between the footer's right-edge controls
-        // (#1403) — separators rather than a box border around each button.
-        if (analyzeButton_ && analyzeButton_->isVisible()) {
+        // (#1403) — separators rather than a box border around each button. The
+        // reference picker shows in every view; the analyze trigger is mixer-only,
+        // so draw each divider only for the control that is actually present.
+        const bool refVisible = refSelectButton_ && refSelectButton_->isVisible();
+        const bool analyzeVisible = analyzeButton_ && analyzeButton_->isVisible();
+        if (refVisible || analyzeVisible) {
             g.setColour(DarkTheme::getBorderColour());
             const auto bar = bottomBarBounds_.toFloat();
             const float top = bar.getY() + 5.0f;
             const float bot = bar.getBottom() - 5.0f;
             auto sep = [&](int x) { g.drawLine((float)x, top, (float)x, bot, 1.0f); };
-            sep(refSelectButton_->getX() - 2);
-            sep(analyzeButton_->getX() - 1);
+            if (refVisible)
+                sep(refSelectButton_->getX() - 2);
+            if (analyzeVisible)
+                sep(analyzeButton_->getX() - 1);
             sep(sendButton_.getX() - 2);
         }
     } else {
@@ -1534,14 +1547,17 @@ void AIChatConsoleContent::resized() {
         auto bottomBar = bounds.removeFromBottom(26);
         bottomBarBounds_ = bottomBar;
 
-        // Footer right edge, from the right: send, then the mixing controls
-        // [refs][analyze] (#1403/#886, shown whenever a subject is selected), then
-        // the clip-context toggle when a drum clip is in context.
+        // Footer right edge, from the right: send, then the analyze trigger
+        // (#886, mixer view only), then the reference picker (#1403, every view).
+        // Each control is positioned independently so the picker still lays out
+        // when the analyze trigger is hidden.
         sendButton_.setBounds(bottomBar.removeFromRight(22));
+        bottomBar.removeFromRight(4);  // gap from send
         if (analyzeButton_ && analyzeButton_->isVisible()) {
-            bottomBar.removeFromRight(4);
             analyzeButton_->setBounds(bottomBar.removeFromRight(24));
             bottomBar.removeFromRight(2);
+        }
+        if (refSelectButton_ && refSelectButton_->isVisible()) {
             refSelectButton_->setBounds(bottomBar.removeFromRight(24));
         }
         if (selectedClipContextToggle_.isVisible()) {
@@ -1769,14 +1785,16 @@ void AIChatConsoleContent::viewModeChanged(magda::ViewMode mode, const magda::Au
 // ============================================================================
 
 void AIChatConsoleContent::updateMixerCaptureControls() {
-    // Offline mix analysis is whole-mix (no subject track), so the trigger is
-    // available in every view rather than scoped to a selection/context. The
-    // reference picker rides alongside it, reserved for future external masters.
-    const bool show = true;
+    // The reference-track picker (#1403) shows in every view so a relational
+    // subject/reference capture can be started anywhere (an attached capture
+    // routes to the mixing agent regardless of view). Only the offline
+    // mix-analysis trigger is mixer-scoped (#1402): the data model flags
+    // showsAnalyzeTrigger for Mix/Master, so it stays hidden in session/arrange.
     if (refSelectButton_)
-        refSelectButton_->setVisible(show);
+        refSelectButton_->setVisible(true);
     if (analyzeButton_) {
-        analyzeButton_->setVisible(show);
+        analyzeButton_->setVisible(
+            magda::consoleSurfaceForView(currentViewMode_).showsAnalyzeTrigger);
         analyzeButton_->setActive(analyzing_ || capturing_);
     }
     resized();  // reflow the footer now that visibility changed

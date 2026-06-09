@@ -8,6 +8,7 @@ target_sources(magda_daw PRIVATE
     UIScale.cpp
     UpdateChecker.cpp
     ViewModeController.cpp
+    ConsoleRouting.cpp
     SessionViewState.cpp
     TrackManager.cpp
     TrackManagerModulation.cpp
