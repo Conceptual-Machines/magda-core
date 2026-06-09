@@ -90,6 +90,16 @@ class TrackMeasurementPlugin : public te::Plugin {
         computeMaskingBandsDb(measurer_.getSpectrumRing(), measurer_.sampleRate(), out);
     }
 
+    /// Message thread. Copy the latest numSamples of captured mono signal (the
+    /// masking spectrum ring) into dest, for a full-resolution overlay FFT
+    /// (#1400). Returns the ring's running sample count (0 while still empty).
+    size_t readLatestSpectrumSamples(float* dest, int numSamples) const noexcept {
+        return measurer_.getSpectrumRing().readLatest(dest, numSamples);
+    }
+    double getSampleRate() const noexcept {
+        return measurer_.sampleRate();
+    }
+
     void initialise(const te::PluginInitialisationInfo& info) override {
         measurer_.prepare(info.sampleRate, juce::jmax(1, info.blockSizeSamples),
                           measureTruePeakValue_.get());

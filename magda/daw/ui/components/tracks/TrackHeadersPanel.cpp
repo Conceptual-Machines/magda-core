@@ -2150,7 +2150,7 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
 
     // Group indicator color strip on outer edge
     if (header.isGroup) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.7f));
+        g.setColour(header.trackColour.withAlpha(0.95f));
         int stripX = headersOnRight_ ? bgArea.getRight() - 3 : bgArea.getX();
         g.fillRect(stripX, bgArea.getY(), 3, bgArea.getHeight());
     }
@@ -2633,11 +2633,22 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
                 // child's own onClick still fires (e.g. cmd-clicking the mute
                 // button still toggles mute); accepted trade-off.
                 const bool fromChild = event.originalComponent != this;
-                if (event.mods.isCommandDown() && !event.mods.isPopupMenu()) {
+
+                // Right-click is an action target, not a selection gesture. If
+                // the clicked track is already part of a multi-selection, keep
+                // that selection intact so context-menu actions can operate on
+                // the full selected track set.
+                if (event.mods.isPopupMenu()) {
+                    if (!fromChild)
+                        showContextMenu(i, pos);
+                    break;
+                }
+
+                if (event.mods.isCommandDown()) {
                     // Cmd+click: toggle track in multi-selection
                     SelectionManager::getInstance().toggleTrackSelection(trackId);
                     grabKeyboardFocus();
-                } else if (event.mods.isShiftDown() && !event.mods.isPopupMenu()) {
+                } else if (event.mods.isShiftDown()) {
                     // Shift+click: range select from anchor to clicked track
                     auto anchorTrack = SelectionManager::getInstance().getAnchorTrack();
                     int anchorIndex = -1;
@@ -2670,11 +2681,8 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
                     }
                 }
 
-                // Right-click shows context menu (only for direct clicks, not child forwards)
-                if (event.mods.isPopupMenu() && event.originalComponent == this) {
-                    showContextMenu(i, pos);
-                } else if (event.originalComponent == this && !event.mods.isCommandDown() &&
-                           !event.mods.isShiftDown()) {
+                if (event.originalComponent == this && !event.mods.isCommandDown() &&
+                    !event.mods.isShiftDown()) {
                     // Record potential drag start (plain clicks or clicks on multi-selected track)
                     draggedTrackIndex_ = i;
                     dragStartX_ = localEvent.x;
@@ -2892,6 +2900,8 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         DuplicateContentOnly = 7,
         ToggleFreeze = 8,
         PreferDrumGrid = 9,
+        GroupSelectedTracks = 10,
+        UngroupTracks = 11,
 
         MoveToGroupBase = 100,
         AddSendBase = 500,
@@ -2910,6 +2920,8 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         menu.addItem(CollapseToggle, track->isCollapsedIn(currentViewMode_)
                                          ? tr("tracks.expand_group")
                                          : tr("tracks.collapse_group"));
+        if (!track->childIds.empty())
+            menu.addItem(UngroupTracks, "Ungroup tracks");
         menu.addSeparator();
     }
 
@@ -2939,6 +2951,12 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     if (!track->isTopLevel()) {
         menu.addItem(RemoveFromGroup, tr("tracks.remove_from_group"));
     }
+
+    auto& selection = SelectionManager::getInstance();
+    const bool canGroupSelectedTracks =
+        selection.getSelectedTrackCount() >= 2 && selection.isTrackSelected(header.trackId);
+    if (canGroupSelectedTracks)
+        menu.addItem(GroupSelectedTracks, "Group tracks");
 
     menu.addSeparator();
 
@@ -3053,6 +3071,19 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                 handleCollapseToggle(trackId);
             } else if (result == RemoveFromGroup) {
                 TrackManager::getInstance().removeTrackFromGroup(trackId);
+            } else if (result == GroupSelectedTracks) {
+                auto& sel = SelectionManager::getInstance();
+                std::vector<TrackId> selectedTracks(sel.getSelectedTracks().begin(),
+                                                    sel.getSelectedTracks().end());
+                TrackId groupId = TrackManager::getInstance().groupTracks(selectedTracks);
+                if (groupId != INVALID_TRACK_ID)
+                    sel.selectTrack(groupId);
+            } else if (result == UngroupTracks) {
+                auto childIds = TrackManager::getInstance().ungroupTrack(trackId);
+                if (!childIds.empty()) {
+                    std::unordered_set<TrackId> selectedChildren(childIds.begin(), childIds.end());
+                    SelectionManager::getInstance().selectTracks(selectedChildren);
+                }
             } else if (result == DeleteTrack) {
                 auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
                 UndoManager::getInstance().executeCommand(std::move(cmd));

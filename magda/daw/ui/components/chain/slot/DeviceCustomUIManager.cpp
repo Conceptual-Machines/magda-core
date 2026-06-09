@@ -1369,8 +1369,10 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
         if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get()))
             oscilloscopeUI_->setPlugin(scope);
     if (spectrumAnalyzerUI_ != nullptr)
-        if (auto* sa = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get()))
+        if (auto* sa = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
             spectrumAnalyzerUI_->setPlugin(sa);
+            spectrumAnalyzerUI_->setTrackId(devicePath_.trackId);  // enables masking overlay
+        }
     if (levelsUI_ != nullptr)
         if (auto* lv = dynamic_cast<daw::audio::LevelsPlugin*>(plugin.get()))
             levelsUI_->setPlugin(lv);
