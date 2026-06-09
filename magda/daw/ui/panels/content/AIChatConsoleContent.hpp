@@ -15,6 +15,7 @@
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/mixing_agent.hpp"
 #include "../../../core/Config.hpp"
+#include "../../../core/MixAnalysisService.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackMeasurementManager.hpp"
 #include "../../../core/ViewModeController.hpp"
@@ -53,7 +54,8 @@ class AIChatConsoleContent : public PanelContent,
                              public magda::SelectionManagerListener,
                              public magda::ProjectManagerListener,
                              public magda::ConfigListener,
-                             public magda::ViewModeListener {
+                             public magda::ViewModeListener,
+                             public magda::MixAnalysisService::Listener {
   public:
     AIChatConsoleContent();
     ~AIChatConsoleContent() override;
@@ -80,6 +82,9 @@ class AIChatConsoleContent : public PanelContent,
 
     // ViewModeListener (#1402): swap the console's context glyph + scope routing.
     void viewModeChanged(magda::ViewMode mode, const magda::AudioEngineProfile& profile) override;
+
+    // MixAnalysisService::Listener (#886): refresh the "mix analysis ready" chip.
+    void mixAnalysisChanged() override;
 
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;
@@ -153,60 +158,12 @@ class AIChatConsoleContent : public PanelContent,
     bool selectedClipContextAvailable_ = false;
     bool selectedClipContextEnabled_ = true;
 
-    // Reference + capture cockpit (#1403). The console drives a relational
-    // mixing pass: the selected track is the subject, the user ticks reference
-    // tracks, captures a measurement window, then sends an optional prompt.
-    // These footer controls show in any view whenever a subject is selected.
-    std::unique_ptr<magda::SvgButton> refSelectButton_;  // opens the reference-track menu
-    std::unique_ptr<magda::SvgButton>
-        analyzeButton_;  // offline mix-analysis trigger (record slot, repurposed)
-    std::unique_ptr<juce::LookAndFeel_V4> referenceMenuLnf_;  // theme font for the reference menu
-    std::set<magda::TrackId> referenceTrackIds_;              // ticked reference tracks
-    bool capturing_ = false;
-    bool analyzing_ = false;  // an offline mix analysis is in flight
-    // The analyze button is a 3-state control: Idle opens the Live/Quick/Deep
-    // menu; Capturing (listening) shows the filled analysis2 icon and stops+
-    // analyzes on click; Analyzing shows a stop glyph and cancels the run on click.
-    enum class AnalyzeButtonMode { Idle, Capturing, Analyzing };
-    AnalyzeButtonMode analyzeButtonMode_ = AnalyzeButtonMode::Idle;  // current button visual state
-    // Bumped each time an analysis starts (and on cancel). A completion callback
-    // captures the id at launch and no-ops if it no longer matches, so a stopped
-    // run's late result (the offline render / agent thread can't be cancelled) is
-    // discarded instead of overwriting the UI.
-    int analyzeRunId_ = 0;
-    int analyzeStatusAnchor_ = -1;  // chat offset of the live analysis status line
-    // Measurement enablement we switched on for the capture, remembered so stop
-    // restores the prior state without trampling other consumers (Levels meter).
-    std::set<magda::TrackId> captureAddedTracks_;
-    bool captureAddedGlobal_ = false;
-    bool captureAddedMasking_ = false;
-    // The most recent capture, attached to the next message until consumed.
-    struct MixCapture {
-        bool valid = false;
-        magda::TrackId subject = magda::INVALID_TRACK_ID;
-        std::vector<magda::TrackId> refs;
-        std::vector<std::pair<magda::TrackId, magda::daw::audio::TrackMeasurementSnapshot>>
-            snapshots;
-        std::vector<magda::daw::audio::MaskingFinding> masking;
-    };
-    MixCapture mixCapture_;
-
-    void showReferenceMenu();
-    // updateAnalyzeButtonMode() derives the AnalyzeButtonMode (declared above the
-    // member) from capturing_/analyzing_ and swaps the icon / tooltip / active
-    // highlight to match.
-    void updateAnalyzeButtonMode();
-    void cancelAnalysis();               // abandon an in-flight analysis and reset the button
-    void showAnalyzeMenu();              // popup: Live / Quick / Deep
-    void runOfflineAnalysis(bool deep);  // kick off an offline mix analysis
-    void setAnalyzeStatus(const juce::String& line);  // overwrite the live status/result line
-    void analyzeCapturedMix();  // build input from a live capture + run the agent
-    void runMixAgent(MixAnalysisAgent::Input input);  // blocking agent call on a bg thread
-    void toggleCapture();
-    void startCapture();
-    void stopCapture();
-    void updateMixerCaptureControls();             // show/hide footer controls on selection
-    juce::String formatMixCaptureContext() const;  // attached-capture summary for the agent
+    // Mix analysis is gathered by the mixer's Analyze button and held by
+    // MixAnalysisService (#886). The console only surfaces a small "mix analysis
+    // ready" chip in mixer view; sending a message in mixer view feeds the latest
+    // measurement to the mixing agent as context (see RequestThread::run).
+    juce::Label analysisChip_;
+    void updateAnalysisChip();  // show/hide + label the chip from the service state
 
     void mouseUp(const juce::MouseEvent& event) override;
 

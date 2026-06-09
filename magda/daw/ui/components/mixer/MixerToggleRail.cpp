@@ -3,12 +3,16 @@
 #include <BinaryData.h>
 
 #include "../../themes/DarkTheme.hpp"
+#include "MixAnalysisModal.hpp"
 #include "core/Config.hpp"
 
 namespace magda {
 
 MixerToggleRail::MixerToggleRail() {
     auto& cfg = Config::getInstance();
+
+    setupAnalyzeButton();
+    MixAnalysisService::getInstance().addListener(this);
 
     setupButton(sendsButton_, "MixerShowSends", BinaryData::send_svg, BinaryData::send_svgSize,
                 "Show sends", cfg.getMixerShowSends(),
@@ -55,8 +59,8 @@ void MixerToggleRail::resized() {
     // the strip (analyzers / sends / FX chain) anchor to the top of the rail;
     // things that live near the bottom of the strip (routing / monitor)
     // anchor to the bottom.
-    SvgButton* topGroup[] = {oscilloscopeButton_.get(), spectrumButton_.get(), sendsButton_.get(),
-                             fxChainButton_.get()};
+    SvgButton* topGroup[] = {analyzeButton_.get(), oscilloscopeButton_.get(), spectrumButton_.get(),
+                             sendsButton_.get(), fxChainButton_.get()};
     SvgButton* bottomGroup[] = {routingButton_.get(), monitorButton_.get()};
 
     int yTop = EDGE_PADDING;
@@ -108,6 +112,84 @@ void MixerToggleRail::applyToggleState(SvgButton* btn, bool on) {
     const auto base = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
     btn->setNormalColor(on ? base : base.withAlpha(0.3f));
     btn->repaint();
+}
+
+// ---------------------------------------------------------------------------
+// Analyze action button (whole-mix measured analysis -> modal)
+// ---------------------------------------------------------------------------
+
+MixerToggleRail::~MixerToggleRail() {
+    MixAnalysisService::getInstance().removeListener(this);
+}
+
+void MixerToggleRail::setupAnalyzeButton() {
+    analyzeButton_ = std::make_unique<SvgButton>("MixAnalyze", BinaryData::analysis_svg,
+                                                 BinaryData::analysis_svgSize);
+    analyzeButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    analyzeButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    analyzeButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    analyzeButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    analyzeButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.25f));
+    analyzeButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    analyzeButton_->setBorderThickness(1.0f);
+    analyzeButton_->setTooltip("Analyze the mix");
+    analyzeButton_->setWantsKeyboardFocus(false);
+    analyzeButton_->onClick = [this]() {
+        auto& svc = MixAnalysisService::getInstance();
+        // Already running: reopen the modal for the in-flight mode so the user
+        // can watch progress / stop there. Otherwise pick a mode.
+        if (svc.isCapturing())
+            openModal(MixAnalysisService::Mode::Live);
+        else if (svc.isBusy())
+            openModal(svc.busyMode());
+        else
+            showAnalyzeMenu();
+    };
+    addAndMakeVisible(*analyzeButton_);
+    updateAnalyzeButtonMode();
+}
+
+void MixerToggleRail::showAnalyzeMenu() {
+    juce::PopupMenu menu;
+    menu.addItem("Live capture (play the mix)", true, false,
+                 [this]() { openModal(MixAnalysisService::Mode::Live); });
+    menu.addSeparator();
+    menu.addItem("Quick  (master only)", true, false,
+                 [this]() { openModal(MixAnalysisService::Mode::Quick); });
+    menu.addItem("Deep  (per-track)", true, false,
+                 [this]() { openModal(MixAnalysisService::Mode::Deep); });
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(analyzeButton_.get()));
+}
+
+void MixerToggleRail::openModal(MixAnalysisService::Mode mode) {
+    auto content = std::make_unique<MixAnalysisModal>(mode);
+    juce::CallOutBox::launchAsynchronously(std::move(content), analyzeButton_->getScreenBounds(),
+                                           nullptr);
+}
+
+void MixerToggleRail::updateAnalyzeButtonMode() {
+    if (!analyzeButton_)
+        return;
+    auto& svc = MixAnalysisService::getInstance();
+    if (svc.isBusy()) {
+        // Analyzing: a stop glyph (clicking reopens the modal to stop there).
+        analyzeButton_->updateSvgData(BinaryData::server_stop_svg, BinaryData::server_stop_svgSize);
+        analyzeButton_->setActive(true);
+        analyzeButton_->setTooltip("Analyzing... (click to view / stop)");
+    } else if (svc.isCapturing()) {
+        analyzeButton_->updateSvgData(BinaryData::analysis2_svg, BinaryData::analysis2_svgSize);
+        analyzeButton_->setActive(true);
+        analyzeButton_->setTooltip("Listening... (click to view / stop)");
+    } else {
+        analyzeButton_->updateSvgData(BinaryData::analysis_svg, BinaryData::analysis_svgSize);
+        analyzeButton_->setActive(false);
+        analyzeButton_->setTooltip("Analyze the mix");
+    }
+}
+
+void MixerToggleRail::mixAnalysisChanged() {
+    updateAnalyzeButtonMode();
 }
 
 }  // namespace magda
