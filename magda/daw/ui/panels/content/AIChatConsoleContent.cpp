@@ -970,13 +970,18 @@ AIChatConsoleContent::AIChatConsoleContent() {
 
     analyzeButton_ = std::make_unique<magda::SvgButton>("AnalyzeMix", BinaryData::analysis_svg,
                                                         BinaryData::analysis_svgSize);
+    // The SVG fills with #B3B3B3, so the recolor needs the original colour to
+    // swap against (without this, setNormalColor/Active/Hover are no-ops and the
+    // icon stays grey in every state). Matches aiTabButton_/dslTabButton_.
+    analyzeButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     analyzeButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     analyzeButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     analyzeButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
-    // Engaged look while a capture/analysis is in flight: a translucent cyan fill
-    // behind the cyan icon (matches the active-button convention used elsewhere).
+    // Engaged look while a capture/analysis is in flight: setAnalyzeEngaged()
+    // swaps in the filled analysis2 icon recoloured cyan, over a translucent cyan
+    // fill (matches the active-button convention used elsewhere).
     analyzeButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.2f));
+        DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.25f));
     analyzeButton_->setIconPadding(4.0f);
     analyzeButton_->setTooltip("Analyze the mix");
     // While a live capture is running the button is a stop-and-analyze control;
@@ -1799,9 +1804,21 @@ void AIChatConsoleContent::updateMixerCaptureControls() {
     if (analyzeButton_) {
         analyzeButton_->setVisible(
             magda::consoleSurfaceForView(currentViewMode_).showsAnalyzeTrigger);
-        analyzeButton_->setActive(analyzing_ || capturing_);
+        setAnalyzeEngaged(analyzing_ || capturing_);
     }
     resized();  // reflow the footer now that visibility changed
+}
+
+void AIChatConsoleContent::setAnalyzeEngaged(bool engaged) {
+    if (!analyzeButton_)
+        return;
+    // Swap the icon: the filled analysis2 design while engaged, the outline while
+    // idle. Both fill #B3B3B3, so setOriginalColor still recolours them (cyan when
+    // active via setActiveColor). updateSvgData repaints.
+    analyzeButton_->updateSvgData(engaged ? BinaryData::analysis2_svg : BinaryData::analysis_svg,
+                                  engaged ? BinaryData::analysis2_svgSize
+                                          : BinaryData::analysis_svgSize);
+    analyzeButton_->setActive(engaged);
 }
 
 void AIChatConsoleContent::showReferenceMenu() {
@@ -1886,8 +1903,7 @@ void AIChatConsoleContent::runOfflineAnalysis(bool deep) {
     req.question = inputDocument_.getAllContent().trim().toStdString();
 
     analyzing_ = true;
-    if (analyzeButton_)
-        analyzeButton_->setActive(true);
+    setAnalyzeEngaged(true);
     inputBox_->setEnabled(false);
 
     // A single status line we overwrite in place as the job reports progress,
@@ -1911,8 +1927,7 @@ void AIChatConsoleContent::runOfflineAnalysis(bool deep) {
                 setStatus(juce::String(result.analysis));
             if (safeThis != nullptr) {
                 safeThis->analyzing_ = false;
-                if (safeThis->analyzeButton_)
-                    safeThis->analyzeButton_->setActive(false);
+                safeThis->setAnalyzeEngaged(false);
                 safeThis->inputBox_->setEnabled(true);
             }
         });
@@ -1953,10 +1968,9 @@ void AIChatConsoleContent::startCapture() {
         tmm.setMaskingAnalysisEnabled(true);
 
     capturing_ = true;
-    if (analyzeButton_) {
-        analyzeButton_->setActive(true);
+    setAnalyzeEngaged(true);
+    if (analyzeButton_)
         analyzeButton_->setTooltip("Stop and analyze the captured mix");
-    }
     appendToChat(juce::String::charToString(0x25C6) +
                  " Listening... play the mix, then click the analyze button to stop and analyze.");
 }
@@ -1983,10 +1997,9 @@ void AIChatConsoleContent::stopCapture() {
     captureAddedGlobal_ = false;
 
     capturing_ = false;
-    if (analyzeButton_) {
-        analyzeButton_->setActive(false);
+    setAnalyzeEngaged(false);
+    if (analyzeButton_)
         analyzeButton_->setTooltip("Analyze the mix");
-    }
 
     if (mixCapture_.valid)
         analyzeCapturedMix();
@@ -2049,8 +2062,7 @@ void AIChatConsoleContent::analyzeCapturedMix() {
 
 void AIChatConsoleContent::runMixAgent(MixAnalysisAgent::Input input) {
     analyzing_ = true;
-    if (analyzeButton_)
-        analyzeButton_->setActive(true);
+    setAnalyzeEngaged(true);
     inputBox_->setEnabled(false);
 
     analyzeStatusAnchor_ = chatHistory_.getText().length();
@@ -2070,8 +2082,7 @@ void AIChatConsoleContent::runMixAgent(MixAnalysisAgent::Input input) {
             else
                 safeThis->setAnalyzeStatus(juce::String(result.analysis));
             safeThis->analyzing_ = false;
-            if (safeThis->analyzeButton_)
-                safeThis->analyzeButton_->setActive(false);
+            safeThis->setAnalyzeEngaged(false);
             safeThis->inputBox_->setEnabled(true);
         });
     }).detach();

@@ -182,6 +182,9 @@ class AIChatConsoleContent : public PanelContent,
     MixCapture mixCapture_;
 
     void showReferenceMenu();
+    // Toggle the analyze button's engaged state: active highlight + swap to the
+    // filled analysis2 icon (recoloured cyan) while a capture/analysis runs.
+    void setAnalyzeEngaged(bool engaged);
     void showAnalyzeMenu();                           // popup: Live / Quick / Deep
     void runOfflineAnalysis(bool deep);               // kick off an offline mix analysis
     void setAnalyzeStatus(const juce::String& line);  // overwrite the live status/result line

@@ -156,6 +156,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/analysis/levels.svg
     ../../assets/icons/analysis/postfx.svg
     ../../assets/icons/analysis/analysis.svg
+    ../../assets/icons/analysis/analysis2.svg
     # Track-chain header icons
     ../../assets/icons/trackchain/gain-staging.svg
     # Toolbar icons
