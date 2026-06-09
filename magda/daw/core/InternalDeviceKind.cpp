@@ -9,6 +9,7 @@
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/InstrumentMeterTapPlugin.hpp"
+#include "audio/plugins/LevelsPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/MidiReceivePlugin.hpp"
@@ -16,6 +17,7 @@
 #include "audio/plugins/SidechainMonitorPlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
+#include "audio/plugins/TrackMeasurementPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "audio/session/SessionMonitorPlugin.hpp"
 
@@ -86,12 +88,16 @@ const InternalDeviceMetadata kMetadata[] = {
      "Internal audio monitor used by sidechain-aware devices."},
     {InternalDeviceKind::InstrumentMeterTap, "Instrument Meter Tap", "", "Meter",
      "Internal meter tap used to observe instrument output levels."},
+    {InternalDeviceKind::TrackMeasurement, "Track Measurement", "", "Meter",
+     "Internal post-fader tap measuring loudness, peak and stereo for the mixing tools."},
     {InternalDeviceKind::SessionMonitor, "Session Monitor", "", "Session",
      "Internal monitor used by session playback and launch state."},
     {InternalDeviceKind::Oscilloscope, "Oscilloscope", "", "Analysis",
      "Transparent waveform monitor for inspecting signal shape over time."},
     {InternalDeviceKind::SpectrumAnalyzer, "Spectrum Analyzer", "", "Analysis",
      "Real-time FFT spectrum display with log-frequency axis and peak hold."},
+    {InternalDeviceKind::Levels, "Levels", "", "Analysis",
+     "Loudness, true-peak and stereo meter (LUFS, dBTP, correlation, dynamics)."},
     {InternalDeviceKind::Faust, "Faust", "", "Experimental",
      "Interpreted Faust device for loading and editing user DSP code."},
 };
@@ -136,11 +142,13 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::DrumGridPlugin;
     using daw::audio::FaustPlugin;
     using daw::audio::InstrumentMeterTapPlugin;
+    using daw::audio::LevelsPlugin;
     using daw::audio::MagdaSamplerPlugin;
     using daw::audio::MidiChordEnginePlugin;
     using daw::audio::OscilloscopePlugin;
     using daw::audio::SpectrumAnalyzerPlugin;
     using daw::audio::StepSequencerPlugin;
+    using daw::audio::TrackMeasurementPlugin;
     namespace TE = tracktion::engine;
 
     const Mapping kMappings[] = {
@@ -169,7 +177,9 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::StepSequencer, StepSequencerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Oscilloscope, OscilloscopePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::SpectrumAnalyzer, SpectrumAnalyzerPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::Levels, LevelsPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::InstrumentMeterTap, InstrumentMeterTapPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::TrackMeasurement, TrackMeasurementPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Faust, FaustPlugin::xmlTypeName, nullptr},
         // Plugins still in plain magda:: (older infra layers).
         {InternalDeviceKind::MidiReceive, MidiReceivePlugin::xmlTypeName, nullptr},
@@ -209,7 +219,8 @@ const InternalDeviceMetadata* getInternalDeviceMetadataForPluginId(const juce::S
 
 bool isAnalysisDevice(const juce::String& pluginId) {
     const auto kind = classifyInternalDevice(pluginId);
-    return kind == InternalDeviceKind::Oscilloscope || kind == InternalDeviceKind::SpectrumAnalyzer;
+    return kind == InternalDeviceKind::Oscilloscope ||
+           kind == InternalDeviceKind::SpectrumAnalyzer || kind == InternalDeviceKind::Levels;
 }
 
 int postFxAnalysisDeviceOrder(const juce::String& pluginId) {
@@ -218,6 +229,8 @@ int postFxAnalysisDeviceOrder(const juce::String& pluginId) {
             return 0;
         case InternalDeviceKind::SpectrumAnalyzer:
             return 1;
+        case InternalDeviceKind::Levels:
+            return 2;
         default:
             return -1;
     }

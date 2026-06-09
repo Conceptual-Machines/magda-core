@@ -7,7 +7,9 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <sqlite3.h>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <filesystem>
@@ -15,6 +17,7 @@
 #include <numbers>
 #include <random>
 #include <string>
+#include <vector>
 
 #include "../magda/daw/media_db/MediaDatabase.hpp"
 #include "../magda/daw/media_db/MediaDbIndexer.hpp"
@@ -87,6 +90,41 @@ void populateCorpus(const fs::path& root, MediaDatabase& db) {
     MediaDbIndexer indexer(db, nullptr);
     auto stats = indexer.indexDirectory(root);
     REQUIRE(stats.inserted == 5);
+}
+
+std::int64_t insertAudioRow(MediaDatabase& db, const std::string& path, std::int64_t indexedAt) {
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(),
+                               "INSERT INTO media_file "
+                               "(path, kind, format, size_bytes, mtime_ns, indexed_at) "
+                               "VALUES (?, 'audio', 'wav', 0, 0, ?) RETURNING id",
+                               -1, &stmt, nullptr) == SQLITE_OK);
+    sqlite3_bind_text(stmt, 1, path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, indexedAt);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    const auto id = sqlite3_column_int64(stmt, 0);
+    sqlite3_finalize(stmt);
+    return id;
+}
+
+void insertEmbedding(MediaDatabase& db, std::int64_t fileId, int dim, const void* data,
+                     int byteCount) {
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(),
+                               "INSERT INTO media_embedding "
+                               "(file_id, model_id, model_version, vector_dim, vector_blob) "
+                               "VALUES (?, 'test-model', '1', ?, ?)",
+                               -1, &stmt, nullptr) == SQLITE_OK);
+    sqlite3_bind_int64(stmt, 1, fileId);
+    sqlite3_bind_int(stmt, 2, dim);
+    sqlite3_bind_blob(stmt, 3, data, byteCount, SQLITE_TRANSIENT);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+}
+
+void insertEmbedding(MediaDatabase& db, std::int64_t fileId, const std::vector<float>& vec) {
+    insertEmbedding(db, fileId, static_cast<int>(vec.size()), vec.data(),
+                    static_cast<int>(vec.size() * sizeof(float)));
 }
 
 }  // namespace
@@ -203,4 +241,32 @@ TEST_CASE("query: limit respected with text", "[media_db][query]") {
     // Add a query that potentially matches multiple rows
     auto results = q.search("snare", {}, /*limit=*/1);
     REQUIRE(results.size() <= 1);
+}
+
+TEST_CASE("query: similarTo scores embedding blobs without requiring encoder",
+          "[media_db][query][embedding]") {
+    MediaDatabase db(":memory:");
+
+    const auto seed = insertAudioRow(db, "seed.wav", 10);
+    const auto closest = insertAudioRow(db, "closest.wav", 9);
+    const auto farther = insertAudioRow(db, "farther.wav", 8);
+    const auto wrongDim = insertAudioRow(db, "wrong_dim.wav", 7);
+    const auto badBytes = insertAudioRow(db, "bad_bytes.wav", 6);
+
+    insertEmbedding(db, seed, std::vector<float>{1.0F, 0.0F, 0.0F, 0.0F});
+    insertEmbedding(db, closest, std::vector<float>{0.75F, 0.25F, 0.0F, 0.0F});
+    insertEmbedding(db, farther, std::vector<float>{0.5F, 0.5F, 0.0F, 0.0F});
+    insertEmbedding(db, wrongDim, std::vector<float>{1.0F, 0.0F});
+
+    const float truncated[] = {1.0F, 0.0F, 0.0F};
+    insertEmbedding(db, badBytes, 4, truncated, static_cast<int>(sizeof(truncated)));
+
+    MediaDbQuery q(db, nullptr, nullptr);
+    const auto results = q.similarTo(seed, {}, 10);
+
+    REQUIRE(results.size() == 2);
+    REQUIRE(results[0].fileId == closest);
+    REQUIRE(results[0].score == Catch::Approx(0.75F).epsilon(0.0001F));
+    REQUIRE(results[1].fileId == farther);
+    REQUIRE(results[1].score == Catch::Approx(0.5F).epsilon(0.0001F));
 }

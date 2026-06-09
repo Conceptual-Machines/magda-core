@@ -48,10 +48,12 @@ enum class InternalDeviceKind {
     SidechainMonitor,
     AudioSidechainMonitor,
     InstrumentMeterTap,
+    TrackMeasurement,  // always-on per-track loudness/level/stereo tap (issue #1388)
     SessionMonitor,
     // --- Analysis (transparent passthrough; DeviceType::Analysis) -------
     Oscilloscope,
     SpectrumAnalyzer,
+    Levels,  // loudness/level/stereo meter (issue #1389)
     // --- Faust ---------------------------------------------------------
     Faust,  // interpreter-based, runs arbitrary user .dsp
 };

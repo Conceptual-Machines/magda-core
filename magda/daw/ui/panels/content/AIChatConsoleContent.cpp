@@ -7,6 +7,7 @@
 #include <mutex>
 #include <set>
 #include <string>
+#include <thread>
 
 #include "../../../../agents/automation_agent.hpp"
 #include "../../../../agents/command_agent.hpp"
@@ -20,9 +21,11 @@
 #include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/llm_presets.hpp"
+#include "../../../../agents/mixing_agent.hpp"
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/router_agent.hpp"
 #include "../../../api/magda_api_live.hpp"
+#include "../../../audio/analysis/OfflineMixAnalysis.hpp"
 #include "../../../core/AppPaths.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/Config.hpp"
@@ -35,6 +38,7 @@
 #include "../../../core/controllers/BindingRegistry.hpp"
 #include "../../../core/controllers/ControllerProfileRegistry.hpp"
 #include "../../../core/controllers/ControllerRegistry.hpp"
+#include "../../../project/ProjectManager.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -75,6 +79,16 @@ class BreadcrumbToggleLookAndFeel : public DialogLookAndFeel {
                              .withTrimmedLeft(juce::roundToInt(tickWidth) + 10)
                              .withTrimmedRight(2),
                          juce::Justification::centredLeft, 1);
+    }
+};
+
+// Popup-menu LookAndFeel that swaps in the theme UI font while keeping the base
+// tick / layout rendering (the reference menu is multi-select, so the ticks
+// must stay).
+class ReferenceMenuLookAndFeel : public juce::LookAndFeel_V4 {
+  public:
+    juce::Font getPopupMenuFont() override {
+        return FontManager::getInstance().getUIFont(13.0f);
     }
 };
 
@@ -323,12 +337,23 @@ void AIChatConsoleContent::RequestThread::run() {
     auto totalStart = std::chrono::steady_clock::now();
     double routerMs = 0.0, agentMs = 0.0;
 
-    // Step 1: Classify intent via router. Skipped entirely when the user is
-    // on a drum-targetable track and didn't lead with an explicit @alias —
-    // context is unambiguous, no need to spend a model call on classification.
-    const bool hasExplicitAlias = juce::String(message).trimStart().startsWithChar('@');
+    // Step 1: Classify intent via router. Skipped entirely when context makes
+    // the target unambiguous: mixer view (or an attached capture from the
+    // reference cockpit, which works in any view) hard-scopes to the mixing
+    // agent (#1402/#1403), and a drum-targetable track routes to the drummer.
+    // Either way an explicit @alias or a slash-rewritten command
+    // ("[COMMAND: ...]") opts back out, so those escape hatches keep working.
+    const auto trimmedMessage = juce::String(message).trimStart();
+    const bool hasExplicitAlias = trimmedMessage.startsWithChar('@');
+    const bool hasExplicitCommand = trimmedMessage.startsWith("[COMMAND:");
+    const bool contextOverridable = !hasExplicitAlias && !hasExplicitCommand;
+    const bool mixerView = (owner_.currentViewMode_ == magda::ViewMode::Mix ||
+                            owner_.currentViewMode_ == magda::ViewMode::Master);
     std::string intent = "COMMAND";  // default fallback
-    if (owner_.drummerModeActive_ && !hasExplicitAlias) {
+    if ((mixerView || owner_.mixCapture_.valid) && contextOverridable) {
+        intent = "MIXING";
+        DBG("MAGDA Router: bypassed (mixing context: mixer view or attached capture)");
+    } else if (owner_.drummerModeActive_ && !hasExplicitAlias) {
         intent = "DRUM";
         DBG("MAGDA Router: bypassed (drummer mode, context-driven)");
     } else if (owner_.routerAgent_) {
@@ -433,6 +458,7 @@ void AIChatConsoleContent::RequestThread::run() {
     std::vector<magda::Instruction> musicInstructions;     // IR from music agent
     std::string musicDescription;                          // description from DSL music agent
     std::vector<magda::AutoInstruction> autoInstructions;  // IR from automation agent
+    std::string mixAnalysis;                               // prose from the mix-analysis agent
     std::string error;
 
     auto agentStart = std::chrono::steady_clock::now();
@@ -598,6 +624,76 @@ void AIChatConsoleContent::RequestThread::run() {
                 musicDescription = std::move(result.description);
             }
         }
+    } else if (intent == "MIXING") {
+        // Mixer view / an attached capture hard-scopes here (#1402/#1403). Map the
+        // captured relational measurements (per-track levels + #1390 masking) into
+        // the mix-analysis agent (#886) and let it assess the subject against its
+        // sibling reference tracks. Whole-mix "analyse all tracks" via offline
+        // render is the richer follow-up path; this is the relational section pass.
+        // We're already off the message thread here, so the blocking generate() is
+        // safe to call directly.
+        if (!owner_.mixCapture_.valid || owner_.mixCapture_.snapshots.empty()) {
+            error = "No mix levels attached. Capture the subject + references first.";
+        } else {
+            auto& tmgr = magda::TrackManager::getInstance();
+            auto trackName = [&tmgr](magda::TrackId id) -> juce::String {
+                const auto* t = tmgr.getTrack(id);
+                return (t != nullptr && t->name.isNotEmpty()) ? t->name : juce::String(id);
+            };
+
+            magda::MixAnalysisAgent::Input input;
+            for (const auto& [id, snap] : owner_.mixCapture_.snapshots) {
+                magda::MixAnalysisAgent::TrackMix tm;
+                tm.name = trackName(id).toStdString();
+                tm.integratedLufs = snap.integratedLufs;
+                tm.shortTermLufs = snap.shortTermLufs;
+                tm.samplePeakDb = snap.samplePeakDb;
+                tm.truePeakDb = snap.truePeakDb;
+                tm.truePeakValid = snap.truePeakValid;
+                tm.plr = snap.plr;
+                tm.psr = snap.psr;
+                tm.correlation = snap.correlation;
+                tm.width = snap.width;
+                // Spectral / tonal balance and the master timeline are left unset:
+                // the realtime capture doesn't compute them (only the offline-render
+                // path runs the full MixAnalysisInput pipeline). The prompt treats
+                // 0/unset fields as "not measured".
+                input.tracks.push_back(std::move(tm));
+            }
+            for (const auto& f : owner_.mixCapture_.masking) {
+                magda::MixAnalysisAgent::MaskingPair mp;
+                mp.a = f.nameA.toStdString();
+                mp.b = f.nameB.toStdString();
+                mp.loHz = f.loHz;
+                mp.hiHz = f.hiHz;
+                mp.severity = f.severity;
+                input.masking.push_back(std::move(mp));
+            }
+
+            const auto projectTempo =
+                magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+            if (projectTempo > 0.0)
+                input.bpm = static_cast<float>(projectTempo);
+
+            // The Input has no dedicated subject field; the relational subject
+            // lives in the question so the model knows which track to focus on and
+            // that the rest are sibling references in the same mix (not external
+            // genre-target masters, which is what Input.references is reserved for).
+            juce::String q;
+            q << "Focus on the track \"" << trackName(owner_.mixCapture_.subject)
+              << "\". The other tracks are sibling references in the same mix to "
+                 "compare it against.";
+            if (!message.empty())
+                q << " " << juce::String(message);
+            input.question = q.toStdString();
+
+            magda::MixAnalysisAgent mixAgent;
+            auto r = mixAgent.generate(input);
+            if (r.hasError)
+                error = r.error.empty() ? "Mix analysis failed." : r.error;
+            else
+                mixAnalysis = std::move(r.analysis);
+        }
     }
 
     agentMs =
@@ -619,12 +715,14 @@ void AIChatConsoleContent::RequestThread::run() {
     juce::MessageManager::callAsync(
         [safeThis, dsl = std::move(dslCode), musicIR = std::move(musicInstructions),
          musicDesc = std::move(musicDescription), autoIR = std::move(autoInstructions),
-         error = std::move(error), anchor, routerMs, agentMs, totalMs]() {
+         mixAnalysis = std::move(mixAnalysis), error = std::move(error), anchor, routerMs, agentMs,
+         totalMs]() {
             if (!safeThis)
                 return;
 
             std::string response;
-            bool hasContent = !dsl.empty() || !musicIR.empty() || !autoIR.empty();
+            bool hasContent =
+                !dsl.empty() || !musicIR.empty() || !autoIR.empty() || !mixAnalysis.empty();
 
             if (!error.empty() && !hasContent) {
                 response = error;
@@ -707,6 +805,13 @@ void AIChatConsoleContent::RequestThread::run() {
                             response += "\n";
                         response += "Error: " + autoExec.getError().toStdString();
                     }
+                }
+
+                // Mix-analysis agent (#886): plain prose, no DSL/IR to execute.
+                if (!mixAnalysis.empty()) {
+                    if (!response.empty())
+                        response += "\n";
+                    response += mixAnalysis;
                 }
 
                 if (!error.empty())
@@ -810,6 +915,15 @@ AIChatConsoleContent::AIChatConsoleContent() {
         juce::Drawable::createFromImageData(BinaryData::clip_svg, BinaryData::clip_svgSize);
     drumIconDrawable_ = juce::Drawable::createFromImageData(BinaryData::drum_grid_svg,
                                                             BinaryData::drum_grid_svgSize);
+    // View-context glyphs (#1402), matching the footer view switcher.
+    sessionIconDrawable_ = juce::Drawable::createFromImageData(
+        BinaryData::iconsessionboldm_svg, BinaryData::iconsessionboldm_svgSize);
+    arrangeIconDrawable_ = juce::Drawable::createFromImageData(
+        BinaryData::iconarrangementboldm_svg, BinaryData::iconarrangementboldm_svgSize);
+    mixIconDrawable_ = juce::Drawable::createFromImageData(BinaryData::iconmixboldm_svg,
+                                                           BinaryData::iconmixboldm_svgSize);
+    currentViewMode_ = magda::ViewModeController::getInstance().getViewMode();
+    magda::ViewModeController::getInstance().addListener(this);
 
     // Context label (always visible, inside bottom bar)
     contextLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
@@ -833,6 +947,36 @@ AIChatConsoleContent::AIChatConsoleContent() {
     };
     selectedClipContextToggle_.setVisible(false);
     addAndMakeVisible(selectedClipContextToggle_);
+
+    // Mixer-view capture controls (#1403). Hidden child components — shown only
+    // in mixer view by updateMixerCaptureControls(). The chevron opens the
+    // reference-track menu; the record dot arms/stops a measurement capture.
+    refSelectButton_ = std::make_unique<magda::SvgButton>("MixRefs", BinaryData::chevron_down_svg,
+                                                          BinaryData::chevron_down_svgSize);
+    refSelectButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    refSelectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    refSelectButton_->setIconPadding(4.0f);
+    refSelectButton_->setTooltip("Pick reference tracks to compare the subject against");
+    refSelectButton_->onClick = [this]() { showReferenceMenu(); };
+    addChildComponent(*refSelectButton_);
+    referenceMenuLnf_ = std::make_unique<ReferenceMenuLookAndFeel>();
+
+    analyzeButton_ = std::make_unique<magda::SvgButton>("AnalyzeMix", BinaryData::analysis_svg,
+                                                        BinaryData::analysis_svgSize);
+    analyzeButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    analyzeButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    analyzeButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    analyzeButton_->setIconPadding(4.0f);
+    analyzeButton_->setTooltip("Analyze the mix");
+    // While a live capture is running the button is a stop-and-analyze control;
+    // otherwise it opens the Live / Quick / Deep menu.
+    analyzeButton_->onClick = [this]() {
+        if (capturing_)
+            stopCapture();
+        else
+            showAnalyzeMenu();
+    };
+    addChildComponent(*analyzeButton_);
 
     // Send button (embedded in bottom bar) — SVG icon
     auto enterSvg =
@@ -1027,6 +1171,10 @@ AIChatConsoleContent::AIChatConsoleContent() {
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
+    // Don't leave the measurement layer armed if we're torn down mid-capture.
+    if (capturing_)
+        stopCapture();
+    magda::ViewModeController::getInstance().removeListener(this);
     selectedClipContextToggle_.setLookAndFeel(nullptr);
     if (dslEditor_)
         dslEditor_->removeKeyListener(this);
@@ -1315,14 +1463,21 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
                              combined.getRight() - 1.0f);
 
         // Draw context icon
-        if (contextIcon_ != ContextIcon::None) {
+        {
+            // #1402: the context glyph reflects the active view, not selection.
             juce::Drawable* icon = nullptr;
-            if (contextIcon_ == ContextIcon::Drummer)
-                icon = drumIconDrawable_.get();
-            else if (contextIcon_ == ContextIcon::Track || contextIcon_ == ContextIcon::Device)
-                icon = trackIconDrawable_.get();
-            else if (contextIcon_ == ContextIcon::Clip)
-                icon = clipIconDrawable_.get();
+            switch (currentViewMode_) {
+                case magda::ViewMode::Live:
+                    icon = sessionIconDrawable_.get();
+                    break;
+                case magda::ViewMode::Arrange:
+                    icon = arrangeIconDrawable_.get();
+                    break;
+                case magda::ViewMode::Mix:
+                case magda::ViewMode::Master:
+                    icon = mixIconDrawable_.get();
+                    break;
+            }
 
             if (icon) {
                 auto iconBounds = contextIconBounds_.toFloat().reduced(6.0f);
@@ -1333,8 +1488,26 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
                 auto iconCopy = icon->createCopy();
                 iconCopy->replaceColour(svgGrey, colour);
                 iconCopy->replaceColour(svgWhite, colour);
+                // The footer view glyphs use fill="currentColor", which JUCE
+                // resolves to black. Recolour that too (matches SvgButton) or
+                // the icon renders dark regardless of the grey/white swaps.
+                iconCopy->replaceColour(juce::Colours::black, colour);
+                iconCopy->replaceColour(juce::Colour(0xFF000000), colour);
                 iconCopy->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
             }
+        }
+
+        // Thin vertical dividers between the footer's right-edge controls
+        // (#1403) — separators rather than a box border around each button.
+        if (analyzeButton_ && analyzeButton_->isVisible()) {
+            g.setColour(DarkTheme::getBorderColour());
+            const auto bar = bottomBarBounds_.toFloat();
+            const float top = bar.getY() + 5.0f;
+            const float bot = bar.getBottom() - 5.0f;
+            auto sep = [&](int x) { g.drawLine((float)x, top, (float)x, bot, 1.0f); };
+            sep(refSelectButton_->getX() - 2);
+            sep(analyzeButton_->getX() - 1);
+            sep(sendButton_.getX() - 2);
         }
     } else {
         // Draw DSL output area as rounded panel
@@ -1360,7 +1533,17 @@ void AIChatConsoleContent::resized() {
         // Context bar above tabs
         auto bottomBar = bounds.removeFromBottom(26);
         bottomBarBounds_ = bottomBar;
+
+        // Footer right edge, from the right: send, then the mixing controls
+        // [refs][analyze] (#1403/#886, shown whenever a subject is selected), then
+        // the clip-context toggle when a drum clip is in context.
         sendButton_.setBounds(bottomBar.removeFromRight(22));
+        if (analyzeButton_ && analyzeButton_->isVisible()) {
+            bottomBar.removeFromRight(4);
+            analyzeButton_->setBounds(bottomBar.removeFromRight(24));
+            bottomBar.removeFromRight(2);
+            refSelectButton_->setBounds(bottomBar.removeFromRight(24));
+        }
         if (selectedClipContextToggle_.isVisible()) {
             bottomBar.removeFromRight(6);
             selectedClipContextToggle_.setBounds(bottomBar.removeFromRight(86));
@@ -1416,6 +1599,7 @@ void AIChatConsoleContent::resized() {
 void AIChatConsoleContent::onActivated() {
     buildAliasList();
     updateConfigStatus();
+    updateMixerCaptureControls();
     if (isShowing()) {
         if (activeTab_ == ConsoleTab::AI)
             inputBox_->grabKeyboardFocus();
@@ -1568,6 +1752,340 @@ void AIChatConsoleContent::configChanged() {
     updateConfigStatus();
 }
 
+void AIChatConsoleContent::viewModeChanged(magda::ViewMode mode, const magda::AudioEngineProfile&) {
+    if (currentViewMode_ == mode)
+        return;
+    currentViewMode_ = mode;
+    // Reflect the view in the context glyph. The active view also scopes agent
+    // routing in RequestThread::run (mixer view -> mixing agent, #1402).
+    updateContextBar();
+    // The master-context analysis trigger depends on the view (Master view), so
+    // refresh its visibility when the view changes.
+    updateMixerCaptureControls();
+}
+
+// ============================================================================
+// Reference + capture cockpit (#1403)
+// ============================================================================
+
+void AIChatConsoleContent::updateMixerCaptureControls() {
+    // Offline mix analysis is whole-mix (no subject track), so the trigger is
+    // available in every view rather than scoped to a selection/context. The
+    // reference picker rides alongside it, reserved for future external masters.
+    const bool show = true;
+    if (refSelectButton_)
+        refSelectButton_->setVisible(show);
+    if (analyzeButton_) {
+        analyzeButton_->setVisible(show);
+        analyzeButton_->setActive(analyzing_ || capturing_);
+    }
+    resized();  // reflow the footer now that visibility changed
+}
+
+void AIChatConsoleContent::showReferenceMenu() {
+    const auto subject = magda::SelectionManager::getInstance().getSelectedTrack();
+    auto& tm = magda::TrackManager::getInstance();
+
+    juce::PopupMenu menu;
+    menu.setLookAndFeel(referenceMenuLnf_.get());
+    bool anyOther = false;
+    for (const auto& track : tm.getTracks()) {
+        if (track.id == subject || track.id == magda::INVALID_TRACK_ID)
+            continue;
+        anyOther = true;
+        const bool ticked = referenceTrackIds_.count(track.id) > 0;
+        // Toggle the track's membership in the reference set, then reopen so the
+        // user can tick several without the menu closing between each.
+        menu.addItem(track.name.isNotEmpty() ? track.name : juce::String(track.id),
+                     /*enabled*/ true, ticked, [this, id = track.id]() {
+                         if (referenceTrackIds_.count(id) > 0)
+                             referenceTrackIds_.erase(id);
+                         else
+                             referenceTrackIds_.insert(id);
+                         updateContextBar();
+                     });
+    }
+    if (!anyOther)
+        menu.addItem("(no other tracks)", false, false, nullptr);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(refSelectButton_.get()));
+}
+
+void AIChatConsoleContent::showAnalyzeMenu() {
+    if (analyzing_ || processing_)
+        return;
+
+    // One button, three modes (#886). Live captures the mix as you play it (one
+    // real-time pass, you listen meanwhile); Quick/Deep render offline.
+    juce::PopupMenu menu;
+    menu.setLookAndFeel(referenceMenuLnf_.get());
+    menu.addItem("Listen & analyze (live)", true, false, [this]() { startCapture(); });
+    menu.addSeparator();
+    menu.addItem("Quick  (offline, master only)", true, false,
+                 [this]() { runOfflineAnalysis(false); });
+    menu.addItem("Deep  (offline, per-track)", true, false, [this]() { runOfflineAnalysis(true); });
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(analyzeButton_.get()));
+}
+
+void AIChatConsoleContent::setAnalyzeStatus(const juce::String& line) {
+    auto text = chatHistory_.getText();
+    int anchor = analyzeStatusAnchor_;
+    if (anchor < 0 || anchor > text.length())
+        anchor = text.length();
+    chatHistory_.setText(text.substring(0, anchor) + juce::String::charToString(0x25C6) + " " +
+                         line + "\n\n");
+    chatHistory_.moveCaretToEnd();
+}
+
+void AIChatConsoleContent::runOfflineAnalysis(bool deep) {
+    if (analyzing_ || processing_)
+        return;
+
+    auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
+        magda::TrackManager::getInstance().getAudioEngine());
+    if (engine == nullptr || engine->getEdit() == nullptr) {
+        appendToChat(juce::String::charToString(0x25C6) + " No active edit to analyse.");
+        return;
+    }
+
+    namespace mix = magda::daw::audio;
+    mix::OfflineMixAnalysis::Request req;
+    req.depth =
+        deep ? mix::OfflineMixAnalysis::Depth::Deep : mix::OfflineMixAnalysis::Depth::Shallow;
+    // Render only the loop range when the transport is looping; else the whole edit.
+    req.range = engine->getEdit()->getTransport().looping.get()
+                    ? mix::OfflineMixAnalysis::RangeMode::LoopRange
+                    : mix::OfflineMixAnalysis::RangeMode::WholeEdit;
+    // Empty track set => the whole mix. The references dropdown is reserved for
+    // future external reference masters and does not narrow the set yet.
+    const double tempo = magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    if (tempo > 0.0)
+        req.bpm = static_cast<float>(tempo);
+    req.question = inputDocument_.getAllContent().trim().toStdString();
+
+    analyzing_ = true;
+    if (analyzeButton_)
+        analyzeButton_->setActive(true);
+    inputBox_->setEnabled(false);
+
+    // A single status line we overwrite in place as the job reports progress,
+    // then replace with the final analysis (or error).
+    analyzeStatusAnchor_ = chatHistory_.getText().length();
+
+    juce::Component::SafePointer<AIChatConsoleContent> safeThis(this);
+    auto setStatus = [safeThis](const juce::String& line) {
+        if (safeThis != nullptr)
+            safeThis->setAnalyzeStatus(line);
+    };
+
+    setStatus(deep ? "Analyzing mix (deep)..." : "Analyzing mix (quick)...");
+
+    mix::OfflineMixAnalysis::start(
+        *engine, std::move(req), [setStatus](const juce::String& msg) { setStatus(msg); },
+        [safeThis, setStatus](magda::MixAnalysisAgent::Result result) {
+            if (result.hasError)
+                setStatus("Mix analysis failed: " + juce::String(result.error));
+            else
+                setStatus(juce::String(result.analysis));
+            if (safeThis != nullptr) {
+                safeThis->analyzing_ = false;
+                if (safeThis->analyzeButton_)
+                    safeThis->analyzeButton_->setActive(false);
+                safeThis->inputBox_->setEnabled(true);
+            }
+        });
+}
+
+void AIChatConsoleContent::toggleCapture() {
+    if (capturing_)
+        stopCapture();
+    else
+        startCapture();
+}
+
+void AIChatConsoleContent::startCapture() {
+    if (analyzing_ || capturing_)
+        return;
+
+    auto& tmm = magda::TrackMeasurementManager::getInstance();
+
+    // Whole-mix live capture (#886): arm EVERY track + masking, then the user
+    // plays the mix and we measure all tracks at once in a single real-time pass.
+    // Remember what we switch on so stopCapture() restores the prior state and
+    // doesn't disable taps another consumer (the Levels meter) still wants.
+    captureAddedTracks_.clear();
+    captureAddedGlobal_ = !tmm.isGlobalEnabled();
+    captureAddedMasking_ = !tmm.isMaskingAnalysisEnabled();
+
+    if (captureAddedGlobal_)
+        tmm.setGlobalEnabled(true);
+
+    for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
+        if (track.id != magda::INVALID_TRACK_ID && !tmm.isTrackEnabled(track.id)) {
+            tmm.setTrackEnabled(track.id, true);
+            captureAddedTracks_.insert(track.id);
+        }
+    }
+
+    if (captureAddedMasking_)
+        tmm.setMaskingAnalysisEnabled(true);
+
+    capturing_ = true;
+    if (analyzeButton_) {
+        analyzeButton_->setActive(true);
+        analyzeButton_->setTooltip("Stop and analyze the captured mix");
+    }
+    appendToChat(juce::String::charToString(0x25C6) +
+                 " Listening... play the mix, then click the analyze button to stop and analyze.");
+}
+
+void AIChatConsoleContent::stopCapture() {
+    auto& tmm = magda::TrackMeasurementManager::getInstance();
+
+    // Gather everything the enabled taps measured during the playback window.
+    mixCapture_.subject = magda::INVALID_TRACK_ID;  // whole-mix: no single subject
+    mixCapture_.refs.clear();
+    mixCapture_.snapshots = tmm.getAllSnapshots();
+    mixCapture_.masking = tmm.getMaskingFindings();
+    mixCapture_.valid = !mixCapture_.snapshots.empty();
+
+    // Restore the prior measurement state (only undo what we added).
+    for (auto id : captureAddedTracks_)
+        tmm.setTrackEnabled(id, false);
+    captureAddedTracks_.clear();
+    if (captureAddedMasking_)
+        tmm.setMaskingAnalysisEnabled(false);
+    if (captureAddedGlobal_)
+        tmm.setGlobalEnabled(false);
+    captureAddedMasking_ = false;
+    captureAddedGlobal_ = false;
+
+    capturing_ = false;
+    if (analyzeButton_) {
+        analyzeButton_->setActive(false);
+        analyzeButton_->setTooltip("Analyze the mix");
+    }
+
+    if (mixCapture_.valid)
+        analyzeCapturedMix();
+    else
+        appendToChat(juce::String::charToString(0x25C6) +
+                     " No levels captured (was the mix playing?).");
+}
+
+void AIChatConsoleContent::analyzeCapturedMix() {
+    // Map the captured per-track snapshots + masking into the agent input. Tonal
+    // balance / spectral detail aren't captured live (only the offline pipeline
+    // computes them); the prompt treats unset fields as "not measured".
+    auto& tmgr = magda::TrackManager::getInstance();
+    auto trackName = [&tmgr](magda::TrackId id) -> juce::String {
+        const auto* t = tmgr.getTrack(id);
+        return (t != nullptr && t->name.isNotEmpty()) ? t->name : juce::String(id);
+    };
+
+    MixAnalysisAgent::Input input;
+    for (const auto& [id, snap] : mixCapture_.snapshots) {
+        MixAnalysisAgent::TrackMix tm;
+        tm.name = trackName(id).toStdString();
+        // Type (audio/MIDI) + effect chain so the agent knows the instrument and
+        // how worked the track is (empty chain = raw). Name already carries the
+        // instrument for descriptively-named tracks.
+        tm.role = tmgr.getPrimaryInstrument(id) ? "MIDI" : "audio";
+        tm.chain = tmgr.getChainSummary(id);
+        tm.integratedLufs = snap.integratedLufs;
+        tm.shortTermLufs = snap.shortTermLufs;
+        tm.samplePeakDb = snap.samplePeakDb;
+        tm.truePeakDb = snap.truePeakDb;
+        tm.truePeakValid = snap.truePeakValid;
+        tm.plr = snap.plr;
+        tm.psr = snap.psr;
+        tm.correlation = snap.correlation;
+        tm.width = snap.width;
+        input.tracks.push_back(std::move(tm));
+    }
+    for (const auto& f : mixCapture_.masking) {
+        MixAnalysisAgent::MaskingPair mp;
+        mp.a = f.nameA.toStdString();
+        mp.b = f.nameB.toStdString();
+        mp.loHz = f.loHz;
+        mp.hiHz = f.hiHz;
+        mp.severity = f.severity;
+        input.masking.push_back(std::move(mp));
+    }
+    if (input.tracks.empty()) {
+        appendToChat(juce::String::charToString(0x25C6) + " No levels captured.");
+        return;
+    }
+
+    const double tempo = magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    if (tempo > 0.0)
+        input.bpm = static_cast<float>(tempo);
+    input.question = inputDocument_.getAllContent().trim().toStdString();
+
+    runMixAgent(std::move(input));
+}
+
+void AIChatConsoleContent::runMixAgent(MixAnalysisAgent::Input input) {
+    analyzing_ = true;
+    if (analyzeButton_)
+        analyzeButton_->setActive(true);
+    inputBox_->setEnabled(false);
+
+    analyzeStatusAnchor_ = chatHistory_.getText().length();
+    setAnalyzeStatus("Analyzing captured mix...");
+
+    // generate() blocks on the network; run it off the message thread and post
+    // the result back. SafePointer guards a teardown mid-call.
+    juce::Component::SafePointer<AIChatConsoleContent> safeThis(this);
+    std::thread([safeThis, input = std::move(input)]() mutable {
+        MixAnalysisAgent agent;
+        auto result = agent.generate(input);
+        juce::MessageManager::callAsync([safeThis, result = std::move(result)]() mutable {
+            if (safeThis == nullptr)
+                return;
+            if (result.hasError)
+                safeThis->setAnalyzeStatus("Mix analysis failed: " + juce::String(result.error));
+            else
+                safeThis->setAnalyzeStatus(juce::String(result.analysis));
+            safeThis->analyzing_ = false;
+            if (safeThis->analyzeButton_)
+                safeThis->analyzeButton_->setActive(false);
+            safeThis->inputBox_->setEnabled(true);
+        });
+    }).detach();
+}
+
+juce::String AIChatConsoleContent::formatMixCaptureContext() const {
+    auto& tm = magda::TrackManager::getInstance();
+    auto trackName = [&tm](magda::TrackId id) -> juce::String {
+        const auto* t = tm.getTrack(id);
+        return (t != nullptr && t->name.isNotEmpty()) ? t->name : juce::String(id);
+    };
+
+    juce::String out;
+    out << "Captured mix levels\n";
+    out << "Subject: " << trackName(mixCapture_.subject) << "\n";
+
+    for (const auto& [id, snap] : mixCapture_.snapshots) {
+        const bool isSubject = (id == mixCapture_.subject);
+        out << "  " << (isSubject ? "* " : "- ") << trackName(id) << ": "
+            << juce::String(snap.integratedLufs, 1) << " LUFS, peak "
+            << juce::String(snap.samplePeakDb, 1) << " dB, PLR " << juce::String(snap.plr, 1)
+            << "\n";
+    }
+
+    if (!mixCapture_.masking.empty()) {
+        out << "Masking:\n";
+        for (const auto& f : mixCapture_.masking) {
+            out << "  " << f.nameA << " vs " << f.nameB << " @ "
+                << juce::String(juce::roundToInt(f.loHz)) << "-"
+                << juce::String(juce::roundToInt(f.hiHz)) << " Hz (severity "
+                << juce::String(f.severity, 2) << ")\n";
+        }
+    }
+    return out;
+}
+
 // ============================================================================
 // SelectionManagerListener
 // ============================================================================
@@ -1579,6 +2097,7 @@ void AIChatConsoleContent::selectionTypeChanged(magda::SelectionType newType) {
         selectedClipContextAvailable_ = false;
         updateContextBar();
     }
+    updateMixerCaptureControls();
 }
 
 namespace {
@@ -1747,6 +2266,12 @@ void AIChatConsoleContent::trackSelectionChanged(magda::TrackId trackId) {
         contextText_ = trackName;
         contextIcon_ = ContextIcon::Track;
     }
+    // The newly selected track is the mixing subject; it can't also be one of
+    // its own references. A previously captured set no longer matches the new
+    // subject, so drop it.
+    referenceTrackIds_.erase(trackId);
+    mixCapture_ = {};
+    updateMixerCaptureControls();
     updateContextBar();
 }
 
@@ -1820,7 +2345,14 @@ void AIChatConsoleContent::chainNodeSelectionChanged(const magda::ChainNodePath&
 }
 
 void AIChatConsoleContent::updateContextBar() {
-    contextLabel_.setText(contextText_, juce::dontSendNotification);
+    juce::String label = contextText_;
+    // Surface how many reference tracks are ticked so the user has feedback on
+    // their picks without reopening the dropdown.
+    if (!referenceTrackIds_.empty())
+        label << juce::String::fromUTF8("  \xc2\xb7 +")
+              << juce::String(static_cast<int>(referenceTrackIds_.size())) << " ref"
+              << (referenceTrackIds_.size() == 1 ? "" : "s");
+    contextLabel_.setText(label, juce::dontSendNotification);
     contextLabel_.setColour(juce::Label::textColourId,
                             contextEnabled_ ? DarkTheme::getAccentColour()
                                             : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));

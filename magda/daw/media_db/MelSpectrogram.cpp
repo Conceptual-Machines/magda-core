@@ -3,8 +3,17 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <memory>
+#include <mutex>
+#include <vector>
+
+#if defined(__APPLE__)
+    #include <Accelerate/Accelerate.h>
+#endif
 
 namespace magda::media {
 
@@ -19,6 +28,91 @@ float hzToMel(float hz) {
 
 float melToHz(float mel) {
     return 700.0F * (std::pow(10.0F, mel / 2595.0F) - 1.0F);
+}
+
+struct MelConfigKey {
+    int sampleRate = 0;
+    int nFft = 0;
+    int hopLength = 0;
+    int nMels = 0;
+    std::uint32_t fMin = 0;
+    std::uint32_t fMax = 0;
+    int targetSamples = 0;
+};
+
+// Float config values are bit-cast so cache lookups preserve exact caller
+// configuration, including edge cases such as signed zero.
+MelConfigKey keyFor(const MelConfig& cfg) {
+    return {cfg.sampleRate,
+            cfg.nFft,
+            cfg.hopLength,
+            cfg.nMels,
+            std::bit_cast<std::uint32_t>(cfg.fMin),
+            std::bit_cast<std::uint32_t>(cfg.fMax),
+            cfg.targetSamples};
+}
+
+bool operator==(const MelConfigKey& a, const MelConfigKey& b) {
+    return a.sampleRate == b.sampleRate && a.nFft == b.nFft && a.hopLength == b.hopLength &&
+           a.nMels == b.nMels && a.fMin == b.fMin && a.fMax == b.fMax &&
+           a.targetSamples == b.targetSamples;
+}
+
+struct CachedFilterbank {
+    MelConfigKey key;
+    std::shared_ptr<const std::vector<float>> filterbank;
+};
+
+// Mel filters are configuration-only data and are reused for every frame/chunk.
+// Keeping them immutable lets callers share cached rows without copying.
+std::shared_ptr<const std::vector<float>> cachedMelFilterbank(const MelConfig& cfg) {
+    static std::mutex cacheMutex;
+    static std::vector<CachedFilterbank> cache;
+
+    const auto key = keyFor(cfg);
+    std::lock_guard lock(cacheMutex);
+    for (const auto& entry : cache) {
+        if (entry.key == key) {
+            return entry.filterbank;
+        }
+    }
+
+    auto filterbank = std::make_shared<const std::vector<float>>(buildMelFilterbank(cfg));
+    cache.push_back({key, filterbank});
+    return filterbank;
+}
+
+// JUCE's real-only FFT stores bins as interleaved real/imaginary floats, so
+// this produces |bin|^2 from strides of two. Accelerate handles the hot path on
+// Apple; the scalar path keeps the implementation portable.
+void magnitudeSquared(const float* fftBuf, float* magSq, int nFftBins) {
+#if defined(__APPLE__)
+    vDSP_vsq(fftBuf, 2, magSq, 1, static_cast<vDSP_Length>(nFftBins));
+    vDSP_vma(fftBuf + 1, 2, fftBuf + 1, 2, magSq, 1, magSq, 1, static_cast<vDSP_Length>(nFftBins));
+#else
+    for (int k = 0; k < nFftBins; ++k) {
+        const float re = fftBuf[2 * k];
+        const float im = fftBuf[2 * k + 1];
+        magSq[k] = re * re + im * im;
+    }
+#endif
+}
+
+// Applies one mel filter row to the frame power spectrum. This wrapper keeps
+// the algorithm readable while dispatching to vDSP for the inner product on
+// Apple platforms.
+float dotProduct(const float* a, const float* b, int count) {
+#if defined(__APPLE__)
+    float result = 0.0F;
+    vDSP_dotpr(a, 1, b, 1, &result, static_cast<vDSP_Length>(count));
+    return result;
+#else
+    float result = 0.0F;
+    for (int i = 0; i < count; ++i) {
+        result += a[i] * b[i];
+    }
+    return result;
+#endif
 }
 
 }  // namespace
@@ -69,7 +163,7 @@ std::vector<float> computeLogMel(const float* mono, int numSamples, const MelCon
     const int numFrames = cfg.targetSamples / cfg.hopLength + 1;
     const int nFftBins = cfg.nFft / 2 + 1;
 
-    const auto filterbank = buildMelFilterbank(cfg);
+    const auto filterbank = cachedMelFilterbank(cfg);
 
     // Stage buffers
     std::vector<float> fftBuf(static_cast<size_t>(cfg.nFft) * 2, 0.0F);
@@ -100,19 +194,12 @@ std::vector<float> computeLogMel(const float* mono, int numSamples, const MelCon
         std::memset(fftBuf.data() + cfg.nFft, 0, static_cast<size_t>(cfg.nFft) * sizeof(float));
         fft.performRealOnlyForwardTransform(fftBuf.data());
 
-        for (int k = 0; k < nFftBins; ++k) {
-            const float re = fftBuf[2 * k];
-            const float im = fftBuf[2 * k + 1];
-            magSq[k] = re * re + im * im;
-        }
+        magnitudeSquared(fftBuf.data(), magSq.data(), nFftBins);
 
         // mel[m, frame] = log(filterbank[m] · magSq + eps)
         for (int m = 0; m < cfg.nMels; ++m) {
-            const float* row = &filterbank[static_cast<size_t>(m) * nFftBins];
-            float acc = 0.0F;
-            for (int k = 0; k < nFftBins; ++k) {
-                acc += row[k] * magSq[k];
-            }
+            const float* row = &(*filterbank)[static_cast<size_t>(m) * nFftBins];
+            const float acc = dotProduct(row, magSq.data(), nFftBins);
             out[static_cast<size_t>(m) * numFrames + frame] = std::log(acc + kEpsLogMel);
         }
     }

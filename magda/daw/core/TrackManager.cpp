@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <unordered_set>
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
@@ -207,16 +208,16 @@ void setChainElementsBypassed(std::vector<ChainElement>& elements, const ChainNo
 }
 
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
-    auto findAnalysis = [&elements](int order) {
-        return std::find_if(elements.begin(), elements.end(), [order](const auto& element) {
-            return postFxAnalysisDeviceOrder(element.device.pluginId) == order;
-        });
-    };
-
-    auto osc = findAnalysis(0);
-    auto spectrum = findAnalysis(1);
-    if (osc != elements.end() && spectrum != elements.end() && spectrum < osc)
-        std::iter_swap(osc, spectrum);
+    // Keep the analysis devices (oscilloscope, spectrum, levels) in a stable,
+    // canonical order among themselves without disturbing any non-analysis
+    // post-FX devices' relative positions.
+    std::stable_sort(elements.begin(), elements.end(), [](const auto& a, const auto& b) {
+        const int oa = postFxAnalysisDeviceOrder(a.device.pluginId);
+        const int ob = postFxAnalysisDeviceOrder(b.device.pluginId);
+        if (oa < 0 || ob < 0)
+            return false;  // leave non-analysis devices where they are
+        return oa < ob;
+    });
 }
 
 }  // namespace
@@ -342,6 +343,169 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
 TrackId TrackManager::createGroupTrack(const juce::String& name) {
     juce::String groupName = name.isEmpty() ? "Group" : name;
     return createTrack(groupName, TrackType::Group);
+}
+
+TrackId TrackManager::groupTracks(const std::vector<TrackId>& trackIds, const juce::String& name) {
+    if (trackIds.size() < 2)
+        return INVALID_TRACK_ID;
+
+    std::unordered_set<TrackId> requested(trackIds.begin(), trackIds.end());
+    requested.erase(INVALID_TRACK_ID);
+    requested.erase(MASTER_TRACK_ID);
+
+    std::vector<TrackId> tracksToGroup;
+    tracksToGroup.reserve(requested.size());
+
+    for (const auto& track : tracks_) {
+        if (requested.count(track.id) == 0)
+            continue;
+
+        bool hasSelectedAncestor = false;
+        TrackId parentId = track.parentId;
+        while (parentId != INVALID_TRACK_ID) {
+            if (requested.count(parentId) != 0) {
+                hasSelectedAncestor = true;
+                break;
+            }
+
+            const auto* parent = getTrack(parentId);
+            parentId = parent != nullptr ? parent->parentId : INVALID_TRACK_ID;
+        }
+
+        if (!hasSelectedAncestor)
+            tracksToGroup.push_back(track.id);
+    }
+
+    if (tracksToGroup.size() < 2)
+        return INVALID_TRACK_ID;
+
+    int firstSelectedIndex = getTrackIndex(tracksToGroup.front());
+    if (firstSelectedIndex < 0)
+        return INVALID_TRACK_ID;
+
+    TrackId parentGroupId = INVALID_TRACK_ID;
+    bool hasSharedParent = true;
+    if (const auto* firstTrack = getTrack(tracksToGroup.front())) {
+        parentGroupId = firstTrack->parentId;
+        for (auto trackId : tracksToGroup) {
+            const auto* track = getTrack(trackId);
+            if (!track || track->parentId != parentGroupId) {
+                hasSharedParent = false;
+                break;
+            }
+        }
+    } else {
+        hasSharedParent = false;
+    }
+
+    int parentInsertIndex = -1;
+    if (hasSharedParent && parentGroupId != INVALID_TRACK_ID) {
+        if (const auto* parent = getTrack(parentGroupId)) {
+            for (auto trackId : tracksToGroup) {
+                auto it = std::find(parent->childIds.begin(), parent->childIds.end(), trackId);
+                if (it == parent->childIds.end())
+                    continue;
+
+                const int childIndex =
+                    static_cast<int>(std::distance(parent->childIds.begin(), it));
+                parentInsertIndex =
+                    parentInsertIndex < 0 ? childIndex : std::min(parentInsertIndex, childIndex);
+            }
+        }
+    }
+
+    TrackId groupId = createGroupTrack(name);
+    if (groupId == INVALID_TRACK_ID)
+        return INVALID_TRACK_ID;
+
+    moveTrack(groupId, firstSelectedIndex);
+
+    if (hasSharedParent && parentGroupId != INVALID_TRACK_ID) {
+        addTrackToGroup(groupId, parentGroupId);
+
+        if (auto* parent = getTrack(parentGroupId)) {
+            auto& siblings = parent->childIds;
+            siblings.erase(std::remove(siblings.begin(), siblings.end(), groupId), siblings.end());
+
+            auto insertIt = siblings.end();
+            if (parentInsertIndex >= 0) {
+                insertIt = siblings.begin() +
+                           juce::jlimit(0, static_cast<int>(siblings.size()), parentInsertIndex);
+            }
+            siblings.insert(insertIt, groupId);
+        }
+    }
+
+    for (auto trackId : tracksToGroup)
+        addTrackToGroup(trackId, groupId);
+
+    return groupId;
+}
+
+std::vector<TrackId> TrackManager::ungroupTrack(TrackId groupId) {
+    auto* group = getTrack(groupId);
+    if (!group || !group->isGroup() || group->childIds.empty())
+        return {};
+
+    const auto children = group->childIds;
+    const TrackId parentGroupId = group->parentId;
+    const int groupIndex = getTrackIndex(groupId);
+    if (groupIndex < 0)
+        return {};
+
+    int groupSiblingIndex = -1;
+    if (auto* parent = getTrack(parentGroupId)) {
+        auto it = std::find(parent->childIds.begin(), parent->childIds.end(), groupId);
+        if (it != parent->childIds.end())
+            groupSiblingIndex = static_cast<int>(std::distance(parent->childIds.begin(), it));
+    }
+
+    for (auto childId : children) {
+        auto* child = getTrack(childId);
+        if (!child)
+            continue;
+
+        child->parentId = parentGroupId;
+        child->audioOutputDevice =
+            parentGroupId != INVALID_TRACK_ID ? "track:" + juce::String(parentGroupId) : "master";
+        notifyTrackPropertyChanged(childId);
+        syncMultiOutChildOutputsForSource(childId);
+    }
+
+    group = getTrack(groupId);
+    if (!group)
+        return {};
+    group->childIds.clear();
+
+    if (auto* parent = getTrack(parentGroupId)) {
+        auto& siblings = parent->childIds;
+        siblings.erase(std::remove(siblings.begin(), siblings.end(), groupId), siblings.end());
+
+        auto insertIt = siblings.end();
+        if (groupSiblingIndex >= 0) {
+            insertIt = siblings.begin() +
+                       juce::jlimit(0, static_cast<int>(siblings.size()), groupSiblingIndex);
+        }
+        siblings.insert(insertIt, children.begin(), children.end());
+    }
+
+    int insertAt = groupIndex + 1;
+    for (auto childId : children) {
+        int currentIndex = getTrackIndex(childId);
+        if (currentIndex < 0)
+            continue;
+
+        int adjustedTarget = insertAt;
+        if (currentIndex < adjustedTarget)
+            adjustedTarget--;
+
+        moveTrack(childId, adjustedTarget);
+        insertAt = getTrackIndex(childId) + 1;
+    }
+
+    deleteTrack(groupId);
+    notifyTracksChanged();
+    return children;
 }
 
 void TrackManager::deleteTrack(TrackId trackId) {
@@ -1306,6 +1470,40 @@ const std::vector<ChainElement>& TrackManager::getChainElements(TrackId trackId)
         return track->chain.fxChainElements;
     }
     return empty;
+}
+
+std::vector<std::string> TrackManager::getChainSummary(TrackId trackId) const {
+    std::vector<std::string> out;
+    const auto* track = getTrack(trackId);
+    if (track == nullptr)
+        return out;
+
+    auto add = [&out](const DeviceInfo& d) {
+        // Only effect inserts -- the mixing chain. Skip instruments, MIDI
+        // processors and analysis (transparent) devices.
+        if (d.deviceType != DeviceType::Effect)
+            return;
+        juce::String s = d.name;
+        if (d.bypassed)
+            s += " (bypassed)";
+        out.push_back(s.toStdString());
+    };
+
+    std::function<void(const std::vector<ChainElement>&)> walk =
+        [&](const std::vector<ChainElement>& elements) {
+            for (const auto& e : elements) {
+                if (magda::isDevice(e))
+                    add(magda::getDevice(e));
+                else
+                    for (const auto& chain : magda::getRack(e).chains)
+                        walk(chain.elements);
+            }
+        };
+    walk(track->chain.fxChainElements);
+    for (const auto& pf : track->chain.postFxChainElements)
+        add(pf.device);
+
+    return out;
 }
 
 void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {

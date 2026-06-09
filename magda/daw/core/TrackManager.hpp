@@ -193,6 +193,8 @@ class TrackManager {
     // Track operations
     TrackId createTrack(const juce::String& name = "", TrackType type = TrackType::Audio);
     TrackId createGroupTrack(const juce::String& name = "");
+    TrackId groupTracks(const std::vector<TrackId>& trackIds, const juce::String& name = "Group");
+    std::vector<TrackId> ungroupTrack(TrackId groupId);
     void deleteTrack(TrackId trackId);
     /**
      * Duplicate a track. When `includeDevices` is false, the new track is
@@ -278,6 +280,12 @@ class TrackManager {
     // Signal chain management (unified list of devices and racks)
     const std::vector<ChainElement>& getChainElements(TrackId trackId) const;
     void moveNode(TrackId trackId, int fromIndex, int toIndex);
+
+    /// Effect inserts on a track, in order, as display strings (e.g. "Pro-Q 3",
+    /// "1176 (bypassed)"), recursing racks and skipping instrument / MIDI /
+    /// analysis devices. Empty = no processing yet. Used as the mixing agent's
+    /// raw-vs-worked signal (#886).
+    std::vector<std::string> getChainSummary(TrackId trackId) const;
 
     // Post-fader FX chain (flat device list; never racks or instruments).
     // Getting/removing a post-fx device goes through the path-based APIs

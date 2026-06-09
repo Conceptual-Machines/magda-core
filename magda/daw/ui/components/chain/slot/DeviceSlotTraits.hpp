@@ -12,7 +12,8 @@ struct DeviceSlotTraits {
     bool isArpeggiator = false;
     bool isStepSequencer = false;
     bool isFaust = false;
-    bool isAnalysis = false;  // oscilloscope / spectrum: passthrough, no gain/macros/mods
+    bool isAnalysis = false;  // oscilloscope / spectrum / levels: passthrough, no gain/macros/mods
+    bool hasAnalyzerPopout = false;  // scope/spectrum pop into a floating window; levels does not
     bool isAISupported = false;
     bool isSoundDesignSupported = false;
     bool isTracktionDevice = false;

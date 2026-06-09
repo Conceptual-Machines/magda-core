@@ -380,6 +380,10 @@ class SceneButton : public juce::TextButton {
 class TrackHeaderButton : public juce::TextButton {
   public:
     std::function<void()> onDeleteTrack;
+    std::function<void()> onGroupSelectedTracks;
+    std::function<void()> onUngroupTracks;
+    std::function<bool()> canGroupSelectedTracks;
+    std::function<bool()> canUngroupTracks;
     std::function<void(const juce::MouseEvent&)> onHeaderMouseDown;
     std::function<void(const juce::MouseEvent&)> onHeaderMouseDrag;
     std::function<void(const juce::MouseEvent&)> onHeaderMouseUp;
@@ -387,13 +391,27 @@ class TrackHeaderButton : public juce::TextButton {
     void mouseDown(const juce::MouseEvent& event) override {
         if (event.mods.isPopupMenu()) {
             juce::PopupMenu menu;
-            menu.addItem(1, "Delete Track");
+            const bool canGroup = canGroupSelectedTracks && canGroupSelectedTracks();
+            const bool canUngroup = canUngroupTracks && canUngroupTracks();
+            if (canUngroup) {
+                menu.addItem(3, "Ungroup tracks");
+                menu.addSeparator();
+            }
+            if (canGroup) {
+                menu.addItem(1, "Group tracks");
+                menu.addSeparator();
+            }
+            menu.addItem(2, "Delete Track");
             auto safeThis = juce::Component::SafePointer<TrackHeaderButton>(this);
             menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
                 if (!safeThis)
                     return;
-                if (result == 1 && safeThis->onDeleteTrack)
+                if (result == 1 && safeThis->onGroupSelectedTracks)
+                    safeThis->onGroupSelectedTracks();
+                else if (result == 2 && safeThis->onDeleteTrack)
                     safeThis->onDeleteTrack();
+                else if (result == 3 && safeThis->onUngroupTracks)
+                    safeThis->onUngroupTracks();
             });
             return;
         }

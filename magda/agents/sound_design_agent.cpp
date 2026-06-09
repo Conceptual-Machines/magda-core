@@ -16,7 +16,9 @@ namespace {
 class FourOscSoundDesignAgent : public SoundDesignAgent {
   public:
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
+                                  llm::Conversation& conversation,
                                   TokenCallback onToken = {}) override {
+        juce::ignoreUnused(conversation);  // 4OSC preset design is single-shot
         agent_.resetCancel();
         if (shouldStop_.load())
             return "cancelled";

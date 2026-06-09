@@ -261,19 +261,10 @@ void ClipInspector::updateFromSelectedClip() {
                 timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
             if (displayBPM <= 0.0 ||
                 (!clip->autoTempo && std::abs(displayBPM - projectBPM) < 0.1)) {
-                // source interpretation BPM is unset or matches project BPM (defaulted) — use
-                // detected. Read cached value only; if missing, kick off async detection and
-                // refresh the inspector via the existing clipPropertyChanged listener path.
+                // Source interpretation BPM is unset/defaulted. Read cached metadata only;
+                // do not launch DSP BPM analysis from display code.
                 auto& thumbs = magda::AudioThumbnailManager::getInstance();
                 displayBPM = thumbs.getCachedBPM(clip->audio().source.filePath);
-                if (displayBPM <= 0.0) {
-                    auto cid = pid;
-                    thumbs.requestBPMDetection(clip->audio().source.filePath, [cid](double bpm) {
-                        if (bpm <= 0.0)
-                            return;
-                        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(cid);
-                    });
-                }
             }
             clipBpmValue_.setVisible(true);
             clipBpmUnitLabel_.setVisible(true);

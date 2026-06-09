@@ -13,8 +13,11 @@
 #include <vector>
 
 #include "../../../../agents/llama_model_manager.hpp"
+#include "../../../../agents/mixing_agent.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/SelectionManager.hpp"
+#include "../../../core/TrackMeasurementManager.hpp"
+#include "../../../core/ViewModeController.hpp"
 #include "../../../project/ProjectManager.hpp"
 #include "ChatPromptTokeniser.hpp"
 #include "DSLTokeniser.hpp"
@@ -49,7 +52,8 @@ class AIChatConsoleContent : public PanelContent,
                              private juce::CodeDocument::Listener,
                              public magda::SelectionManagerListener,
                              public magda::ProjectManagerListener,
-                             public magda::ConfigListener {
+                             public magda::ConfigListener,
+                             public magda::ViewModeListener {
   public:
     AIChatConsoleContent();
     ~AIChatConsoleContent() override;
@@ -73,6 +77,9 @@ class AIChatConsoleContent : public PanelContent,
 
     // ConfigListener
     void configChanged() override;
+
+    // ViewModeListener (#1402): swap the console's context glyph + scope routing.
+    void viewModeChanged(magda::ViewMode mode, const magda::AudioEngineProfile& profile) override;
 
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;
@@ -123,6 +130,12 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<juce::Drawable> trackIconDrawable_;
     std::unique_ptr<juce::Drawable> clipIconDrawable_;
     std::unique_ptr<juce::Drawable> drumIconDrawable_;
+    // View-context routing (#1402): the bottom-left glyph reflects the active
+    // view (session / arrangement / mixer), which scopes the console's agent.
+    std::unique_ptr<juce::Drawable> sessionIconDrawable_;
+    std::unique_ptr<juce::Drawable> arrangeIconDrawable_;
+    std::unique_ptr<juce::Drawable> mixIconDrawable_;
+    magda::ViewMode currentViewMode_ = magda::ViewMode::Arrange;
     // True when the selected track's primary instrument carries a kit with at
     // least one role-tagged row. Drives the drummer auto-route in
     // RequestThread::run and the drum context icon below the chat.
@@ -139,6 +152,46 @@ class AIChatConsoleContent : public PanelContent,
     bool contextEnabled_ = true;
     bool selectedClipContextAvailable_ = false;
     bool selectedClipContextEnabled_ = true;
+
+    // Reference + capture cockpit (#1403). The console drives a relational
+    // mixing pass: the selected track is the subject, the user ticks reference
+    // tracks, captures a measurement window, then sends an optional prompt.
+    // These footer controls show in any view whenever a subject is selected.
+    std::unique_ptr<magda::SvgButton> refSelectButton_;  // opens the reference-track menu
+    std::unique_ptr<magda::SvgButton>
+        analyzeButton_;  // offline mix-analysis trigger (record slot, repurposed)
+    std::unique_ptr<juce::LookAndFeel_V4> referenceMenuLnf_;  // theme font for the reference menu
+    std::set<magda::TrackId> referenceTrackIds_;              // ticked reference tracks
+    bool capturing_ = false;
+    bool analyzing_ = false;        // an offline mix analysis is in flight
+    int analyzeStatusAnchor_ = -1;  // chat offset of the live analysis status line
+    // Measurement enablement we switched on for the capture, remembered so stop
+    // restores the prior state without trampling other consumers (Levels meter).
+    std::set<magda::TrackId> captureAddedTracks_;
+    bool captureAddedGlobal_ = false;
+    bool captureAddedMasking_ = false;
+    // The most recent capture, attached to the next message until consumed.
+    struct MixCapture {
+        bool valid = false;
+        magda::TrackId subject = magda::INVALID_TRACK_ID;
+        std::vector<magda::TrackId> refs;
+        std::vector<std::pair<magda::TrackId, magda::daw::audio::TrackMeasurementSnapshot>>
+            snapshots;
+        std::vector<magda::daw::audio::MaskingFinding> masking;
+    };
+    MixCapture mixCapture_;
+
+    void showReferenceMenu();
+    void showAnalyzeMenu();                           // popup: Live / Quick / Deep
+    void runOfflineAnalysis(bool deep);               // kick off an offline mix analysis
+    void setAnalyzeStatus(const juce::String& line);  // overwrite the live status/result line
+    void analyzeCapturedMix();  // build input from a live capture + run the agent
+    void runMixAgent(MixAnalysisAgent::Input input);  // blocking agent call on a bg thread
+    void toggleCapture();
+    void startCapture();
+    void stopCapture();
+    void updateMixerCaptureControls();             // show/hide footer controls on selection
+    juce::String formatMixCaptureContext() const;  // attached-capture summary for the agent
 
     void mouseUp(const juce::MouseEvent& event) override;
 

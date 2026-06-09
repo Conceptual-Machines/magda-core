@@ -7,6 +7,10 @@
 
 #include "core/ChainNodePath.hpp"
 
+namespace llm {
+struct Conversation;
+}
+
 namespace magda {
 
 /**
@@ -34,8 +38,11 @@ class DeviceAIAgent {
 
     /// Run the agent on `prompt` and apply its output to the device at
     /// `path`. Returns a one-line status. Failure strings start with
-    /// "(" or "error:".
+    /// "(" or "error:". `conversation` carries the running multi-turn history
+    /// (owned/persisted by the caller) and is updated in place; agents that
+    /// don't support multi-turn may ignore it.
     virtual juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
+                                          llm::Conversation& conversation,
                                           TokenCallback onToken = {}) = 0;
 
     /// Best-effort cancel; safe to call from any thread.

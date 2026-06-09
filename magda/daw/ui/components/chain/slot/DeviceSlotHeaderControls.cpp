@@ -90,9 +90,10 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
     setVisibleIfPresent(controls.multiOutButton, device.multiOut.isMultiOut);
     setVisibleIfPresent(controls.learnButton, !isInternalDevice);
     setVisibleIfPresent(controls.powerButton, true);
-    // Analysis devices have no native editor, but the UI button pops their
-    // oscilloscope/spectrum into a floating window.
-    setVisibleIfPresent(controls.uiButton, !isInternalDevice || traits.isAnalysis);
+    // Analysis devices have no native editor, but the UI button pops the
+    // oscilloscope/spectrum into a floating window. Levels has no popout, so it
+    // is gated on hasAnalyzerPopout rather than isAnalysis.
+    setVisibleIfPresent(controls.uiButton, !isInternalDevice || traits.hasAnalyzerPopout);
     setVisibleIfPresent(controls.presetButton, true);
 
     placeRight(headerArea, controls.sidechainButton, buttonSize);
@@ -123,7 +124,7 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
 
     const bool showUI =
         drum_grid_slot::shouldShowCollapsedUiButton(traits.isDrumGrid, isInternalDevice) ||
-        traits.isAnalysis;
+        traits.hasAnalyzerPopout;
     if (showUI) {
         placeCollapsedButton(area, controls.uiButton, buttonSize);
         setVisibleIfPresent(controls.uiButton, true);

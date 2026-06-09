@@ -157,7 +157,12 @@ jobs:
 
     - name: Install clang-format
       run: |
-        sudo apt-get update
+        # Hosted runners occasionally ship a stale Chrome apt source that can
+        # fail unrelated package installs with a hash mismatch.
+        sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google.list
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
+        sudo apt-get update -o Acquire::Retries=3
         sudo apt-get install -y clang-format
 
     - name: Check code formatting

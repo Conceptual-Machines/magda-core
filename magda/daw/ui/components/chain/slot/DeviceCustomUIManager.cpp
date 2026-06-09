@@ -35,6 +35,7 @@
 #include "custom_ui/FilterUI.hpp"
 #include "custom_ui/FourOscUI.hpp"
 #include "custom_ui/ImpulseResponseUI.hpp"
+#include "custom_ui/LevelsUI.hpp"
 #include "custom_ui/OscilloscopeUI.hpp"
 #include "custom_ui/PhaserUI.hpp"
 #include "custom_ui/PitchShiftUI.hpp"
@@ -289,6 +290,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return oscilloscopeUI_.get();
     if (spectrumAnalyzerUI_)
         return spectrumAnalyzerUI_.get();
+    if (levelsUI_)
+        return levelsUI_.get();
     return nullptr;
 }
 
@@ -328,7 +331,7 @@ bool DeviceCustomUIManager::hasAnyUI() const {
     return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
            reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
            impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ ||
-           oscilloscopeUI_ || spectrumAnalyzerUI_;
+           oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -358,6 +361,8 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 500;
     if (spectrumAnalyzerUI_)
         return 500;
+    if (levelsUI_)
+        return 460;
     if (chordEngineUI_)
         return 800;  // 400 (BASE_SLOT_WIDTH) * 2
     if (samplerUI_)
@@ -1332,6 +1337,10 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         spectrumAnalyzerUI_ = std::make_unique<SpectrumAnalyzerUI>();
         parent->addAndMakeVisible(*spectrumAnalyzerUI_);
         bindAnalyzerPlugins();
+    } else if (device.pluginId.containsIgnoreCase(daw::audio::LevelsPlugin::xmlTypeName)) {
+        levelsUI_ = std::make_unique<LevelsUI>();
+        parent->addAndMakeVisible(*levelsUI_);
+        bindAnalyzerPlugins();
     }
 }
 
@@ -1339,11 +1348,15 @@ void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
     devicePath_ = path;
     // create() bound the analyzer UIs while the path was still invalid; now that
     // it is set, resolve their plugin for real.
+    refreshLivePluginBindings();
+}
+
+void DeviceCustomUIManager::refreshLivePluginBindings() {
     bindAnalyzerPlugins();
 }
 
 void DeviceCustomUIManager::bindAnalyzerPlugins() {
-    if (oscilloscopeUI_ == nullptr && spectrumAnalyzerUI_ == nullptr)
+    if (oscilloscopeUI_ == nullptr && spectrumAnalyzerUI_ == nullptr && levelsUI_ == nullptr)
         return;
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
     if (audioEngine == nullptr)
@@ -1356,8 +1369,13 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
         if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get()))
             oscilloscopeUI_->setPlugin(scope);
     if (spectrumAnalyzerUI_ != nullptr)
-        if (auto* sa = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get()))
+        if (auto* sa = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
             spectrumAnalyzerUI_->setPlugin(sa);
+            spectrumAnalyzerUI_->setTrackId(devicePath_.trackId);  // enables masking overlay
+        }
+    if (levelsUI_ != nullptr)
+        if (auto* lv = dynamic_cast<daw::audio::LevelsPlugin*>(plugin.get()))
+            levelsUI_->setPlugin(lv);
 }
 
 // =============================================================================
