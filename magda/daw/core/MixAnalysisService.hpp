@@ -20,17 +20,18 @@ namespace magda {
  * the console (which attaches the latest measurement as agent context) read this
  * one source.
  *
- * Three gather modes:
- *   - Live:  instant, no render. Arms the TrackMeasurementManager taps; the user
- *            plays the mix; stopLiveCapture() gathers snapshots + masking.
- *   - Quick: offline render of the summed master only (OfflineMixAnalysis Shallow).
- *   - Deep:  offline render per track + master (OfflineMixAnalysis Deep).
+ * Which channels are analysed is driven by the mixer's selection (empty = the
+ * whole mix); the only mode axis is how they're measured:
+ *   - Live:    instant, no render. Arms the TrackMeasurementManager taps; the
+ *              user plays the mix; stopLiveCapture() gathers snapshots + masking.
+ *   - Offline: render the selected stems + master and measure them
+ *              (OfflineMixAnalysis Deep over the selection).
  *
  * Message-thread only. No LLM call here.
  */
 class MixAnalysisService {
   public:
-    enum class Mode { Live, Quick, Deep };
+    enum class Mode { Live, Offline };
 
     class Listener {
       public:
@@ -44,10 +45,10 @@ class MixAnalysisService {
     MixAnalysisService(const MixAnalysisService&) = delete;
     MixAnalysisService& operator=(const MixAnalysisService&) = delete;
 
-    // --- Offline (Quick = master only, Deep = per-track) --------------------
+    // --- Offline (render the selected stems + master) -----------------------
     /// Render + measure off the message thread, no agent. Caches + broadcasts on
     /// completion. No-op if a run/capture is already in flight.
-    void runOffline(bool deep);
+    void runOffline();
 
     // --- Live capture (instant, no render) ----------------------------------
     void startLiveCapture();  // arm the taps; the user then plays the mix
@@ -59,6 +60,10 @@ class MixAnalysisService {
     /// Abandon an in-flight offline run / live capture and reset. The render
     /// can't be interrupted, so a late result is dropped by the run-id guard.
     void cancel();
+
+    /// Human-readable scope from the current mixer selection: "the full mix"
+    /// (nothing or the master selected) or "N selected channels". For menus.
+    juce::String scopeDescription() const;
 
     bool isBusy() const {
         return busy_;
@@ -94,7 +99,7 @@ class MixAnalysisService {
     MixAnalysisAgent::Input buildLiveInput() const;
 
     bool busy_ = false;
-    Mode busyMode_ = Mode::Quick;
+    Mode busyMode_ = Mode::Offline;
     bool capturing_ = false;
     int runId_ = 0;  // offline cancel guard
     juce::String progressText_;
@@ -107,8 +112,8 @@ class MixAnalysisService {
     bool captureAddedGlobal_ = false;
     bool captureAddedMasking_ = false;
 
-    std::optional<MixAnalysisAgent::Input> cacheLive_, cacheQuick_, cacheDeep_;
-    Mode latestMode_ = Mode::Quick;
+    std::optional<MixAnalysisAgent::Input> cacheLive_, cacheOffline_;
+    Mode latestMode_ = Mode::Offline;
     bool haveLatest_ = false;
 
     juce::ListenerList<Listener> listeners_;

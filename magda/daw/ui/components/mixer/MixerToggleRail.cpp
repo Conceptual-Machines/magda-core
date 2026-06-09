@@ -151,14 +151,15 @@ void MixerToggleRail::setupAnalyzeButton() {
 }
 
 void MixerToggleRail::showAnalyzeMenu() {
+    // The channels analysed are driven by the mixer selection (the menu only
+    // picks how they're measured). Surface the current scope so it's clear
+    // whether this is the whole mix or the selected channels.
     juce::PopupMenu menu;
+    menu.addSectionHeader(MixAnalysisService::getInstance().scopeDescription());
     menu.addItem("Live capture (play the mix)", true, false,
                  [this]() { openModal(MixAnalysisService::Mode::Live); });
-    menu.addSeparator();
-    menu.addItem("Quick  (master only)", true, false,
-                 [this]() { openModal(MixAnalysisService::Mode::Quick); });
-    menu.addItem("Deep  (per-track)", true, false,
-                 [this]() { openModal(MixAnalysisService::Mode::Deep); });
+    menu.addItem("Offline render", true, false,
+                 [this]() { openModal(MixAnalysisService::Mode::Offline); });
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(analyzeButton_.get()));
 }
 

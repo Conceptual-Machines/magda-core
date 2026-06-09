@@ -76,9 +76,8 @@ void MixAnalysisModal::Spinner::paint(juce::Graphics& g) {
 MixAnalysisModal::MixAnalysisModal(MixAnalysisService::Mode mode) : mode_(mode) {
     setSize(480, 380);
 
-    const char* modeName = mode == MixAnalysisService::Mode::Live    ? "Live capture"
-                           : mode == MixAnalysisService::Mode::Quick ? "Quick"
-                                                                     : "Deep";
+    const char* modeName =
+        mode == MixAnalysisService::Mode::Live ? "Live capture" : "Offline render";
     titleLabel_.setText(juce::String("Mix analysis  -  ") + modeName, juce::dontSendNotification);
     titleLabel_.setFont(juce::Font(15.0f, juce::Font::bold));
     titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
@@ -119,7 +118,7 @@ MixAnalysisModal::MixAnalysisModal(MixAnalysisService::Mode mode) : mode_(mode) 
                 if (mode_ == MixAnalysisService::Mode::Live)
                     svc.startLiveCapture();
                 else
-                    svc.runOffline(mode_ == MixAnalysisService::Mode::Deep);
+                    svc.runOffline();
                 break;
         }
     };
@@ -135,7 +134,7 @@ MixAnalysisModal::MixAnalysisModal(MixAnalysisService::Mode mode) : mode_(mode) 
         if (mode_ == MixAnalysisService::Mode::Live)
             svc.startLiveCapture();
         else
-            svc.runOffline(mode_ == MixAnalysisService::Mode::Deep);
+            svc.runOffline();
     }
     refresh();
 }

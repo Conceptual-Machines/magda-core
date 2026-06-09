@@ -10,12 +10,18 @@
 namespace magda {
 
 namespace {
-// The channels the analysis is scoped to: the current multi-track selection in
-// the mixer. Empty => the whole mix (every track). This is the "select the
-// channels you care about, analyse them against each other" model.
+// The channels the analysis is scoped to: the current mixer selection, minus the
+// master. The mixer always has a selection, and master vs tracks are mutually
+// exclusive: selecting the master is the "analyse the whole mix" gesture (the
+// master is the summed output, not a renderable stem), so it filters to an empty
+// set here, which routes to the master-sum measurement. Selecting real tracks
+// analyses just those against each other.
 std::vector<TrackId> selectedTrackSet() {
-    const auto& sel = SelectionManager::getInstance().getSelectedTracks();
-    return std::vector<TrackId>(sel.begin(), sel.end());
+    std::vector<TrackId> out;
+    for (auto id : SelectionManager::getInstance().getSelectedTracks())
+        if (id != MASTER_TRACK_ID && id != INVALID_TRACK_ID)
+            out.push_back(id);
+    return out;
 }
 }  // namespace
 
@@ -28,10 +34,8 @@ std::optional<MixAnalysisAgent::Input> MixAnalysisService::cached(Mode mode) con
     switch (mode) {
         case Mode::Live:
             return cacheLive_;
-        case Mode::Quick:
-            return cacheQuick_;
-        case Mode::Deep:
-            return cacheDeep_;
+        case Mode::Offline:
+            return cacheOffline_;
     }
     return std::nullopt;
 }
@@ -47,11 +51,8 @@ void MixAnalysisService::store(Mode mode, MixAnalysisAgent::Input input) {
         case Mode::Live:
             cacheLive_ = std::move(input);
             break;
-        case Mode::Quick:
-            cacheQuick_ = std::move(input);
-            break;
-        case Mode::Deep:
-            cacheDeep_ = std::move(input);
+        case Mode::Offline:
+            cacheOffline_ = std::move(input);
             break;
     }
     latestMode_ = mode;
@@ -68,7 +69,7 @@ void MixAnalysisService::setBusy(bool busy, Mode mode) {
 // Offline (Quick / Deep)
 // ---------------------------------------------------------------------------
 
-void MixAnalysisService::runOffline(bool deep) {
+void MixAnalysisService::runOffline() {
     if (busy_ || capturing_)
         return;
 
@@ -82,21 +83,21 @@ void MixAnalysisService::runOffline(bool deep) {
 
     lastError_.clear();
     progressText_.clear();
-    const Mode mode = deep ? Mode::Deep : Mode::Quick;
     const int runId = ++runId_;
-    setBusy(true, mode);
+    setBusy(true, Mode::Offline);
 
     namespace mix = magda::daw::audio;
     mix::OfflineMixAnalysis::Request req;
-    req.depth =
-        deep ? mix::OfflineMixAnalysis::Depth::Deep : mix::OfflineMixAnalysis::Depth::Shallow;
+    // Depth is derived from the selection: specific channels -> per-track (Deep)
+    // over just those, so they're compared against each other; the master selected
+    // -> the summed master only (Shallow), the whole-mix glance.
+    const auto trackSet = selectedTrackSet();
+    req.depth = trackSet.empty() ? mix::OfflineMixAnalysis::Depth::Shallow
+                                 : mix::OfflineMixAnalysis::Depth::Deep;
     // Whole-edit for now; loop-range analysis is a follow-up (keeps this layer
     // free of the transport/TE include).
     req.range = mix::OfflineMixAnalysis::RangeMode::WholeEdit;
-    // Deep scopes to the selected channels (empty => all). Quick renders the
-    // summed master, so the track set doesn't apply there.
-    if (deep)
-        req.trackSet = selectedTrackSet();
+    req.trackSet = trackSet;
     const double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
     if (tempo > 0.0)
         req.bpm = static_cast<float>(tempo);
@@ -118,10 +119,10 @@ void MixAnalysisService::runOffline(bool deep) {
                                                   : juce::String(result.error);
             setBusy(false, busyMode_);
         },
-        [this, runId, mode](MixAnalysisAgent::Input input) {
+        [this, runId](MixAnalysisAgent::Input input) {
             if (runId != runId_)
                 return;
-            store(mode, std::move(input));  // ready; setBusy(false) follows in onComplete
+            store(Mode::Offline, std::move(input));  // ready; setBusy(false) in onComplete
             listeners_.call(&Listener::mixAnalysisChanged);
         });
 }
@@ -141,11 +142,12 @@ void MixAnalysisService::startLiveCapture() {
 
     if (captureAddedGlobal_)
         tmm.setGlobalEnabled(true);
-    // Arm the selected channels (empty selection => the whole mix), so a live
-    // capture measures exactly the channels chosen for comparison.
-    const auto selected = SelectionManager::getInstance().getSelectedTracks();
+    // Arm the selected channels; selecting the master (which filters to an empty
+    // real-track set) arms every track for a whole-mix capture.
+    const auto sel = selectedTrackSet();
+    const std::set<TrackId> scope(sel.begin(), sel.end());
     for (const auto& track : TrackManager::getInstance().getTracks()) {
-        const bool inScope = selected.empty() || selected.count(track.id) > 0;
+        const bool inScope = scope.empty() || scope.count(track.id) > 0;
         if (track.id != INVALID_TRACK_ID && inScope && !tmm.isTrackEnabled(track.id)) {
             tmm.setTrackEnabled(track.id, true);
             captureAddedTracks_.insert(track.id);
@@ -231,6 +233,14 @@ void MixAnalysisService::stopLiveCapture() {
     lastError_.clear();
     store(Mode::Live, std::move(input));
     listeners_.call(&Listener::mixAnalysisChanged);
+}
+
+juce::String MixAnalysisService::scopeDescription() const {
+    const auto n = selectedTrackSet().size();
+    if (n == 0)
+        return "Scope: the full mix";
+    return "Scope: " + juce::String(static_cast<int>(n)) +
+           (n == 1 ? " selected channel" : " selected channels");
 }
 
 void MixAnalysisService::cancel() {
