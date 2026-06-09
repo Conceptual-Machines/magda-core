@@ -129,10 +129,11 @@ AudioBridge::~AudioBridge() {
         deviceMetering_.clear();
 
         // Unregister master meter client from playback context
-        if (masterMeterRegistered_) {
+        if (masterMeterContext_ != nullptr) {
             if (auto* ctx = edit_.getCurrentPlaybackContext()) {
                 ctx->masterLevels.removeClient(masterMeterClient_);
             }
+            masterMeterContext_ = nullptr;
         }
 
         // Unregister all track meter clients (via trackController)
@@ -1046,16 +1047,19 @@ void AudioBridge::timerCallback() {
         }
     }
 
-    // Register master meter client with playback context if not done yet
-    if (!masterMeterRegistered_) {
-        if (auto* ctx = edit_.getCurrentPlaybackContext()) {
-            ctx->masterLevels.addClient(masterMeterClient_);
-            masterMeterRegistered_ = true;
-        }
+    // Keep the master meter client registered on the CURRENT playback context.
+    // The context is destroyed + rebuilt after an offline render frees it, so
+    // re-register whenever the pointer changes -- otherwise the master VU stays
+    // dead after a render (the client was on the old, freed context).
+    auto* meterCtx = edit_.getCurrentPlaybackContext();
+    if (meterCtx != masterMeterContext_) {
+        if (meterCtx != nullptr)
+            meterCtx->masterLevels.addClient(masterMeterClient_);
+        masterMeterContext_ = meterCtx;
     }
 
     // Update master metering from playback context's masterLevels
-    if (masterMeterRegistered_) {
+    if (masterMeterContext_ != nullptr) {
         auto levelL = masterMeterClient_.getAndClearAudioLevel(0);
         auto levelR = masterMeterClient_.getAndClearAudioLevel(1);
 

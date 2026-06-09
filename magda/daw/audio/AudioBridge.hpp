@@ -856,7 +856,11 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     std::atomic<float> masterPeakL_{0.0f};
     std::atomic<float> masterPeakR_{0.0f};
     te::LevelMeasurer::Client masterMeterClient_;
-    bool masterMeterRegistered_{false};  // Whether master meter client is registered
+    // The playback context the master meter client is registered on (nullptr =
+    // not registered). Tracked as a pointer (not a bool) so we re-register when
+    // the context is rebuilt -- e.g. after an offline render frees it -- instead
+    // of leaving the master VU dead. Only ever compared, never dereferenced.
+    te::EditPlaybackContext* masterMeterContext_{nullptr};
 
     struct InputMeterClientEntry {
         te::LevelMeasurer::Client client;
