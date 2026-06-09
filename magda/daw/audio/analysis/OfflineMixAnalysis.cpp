@@ -104,6 +104,11 @@ class AnalysisJob : public juce::Thread {
         if (auto* bridge = engine_.getAudioBridge())
             bridge->getPluginManager().prepareForRendering();
 
+        // Block the transport for the render's lifetime: starting playback while
+        // the render owns the edit corrupts the node graph (NodeRenderContext
+        // asserts). Cleared in run()'s completion.
+        engine_.setOfflineRenderActive(true);
+
         startThread();
     }
 
@@ -120,6 +125,7 @@ class AnalysisJob : public juce::Thread {
         juce::MessageManager::callAsync([this, result = std::move(result)]() mutable {
             if (auto* bridge = engine_.getAudioBridge())
                 bridge->getPluginManager().restoreAfterRendering();
+            engine_.setOfflineRenderActive(false);  // re-allow playback
             if (onComplete_)
                 onComplete_(std::move(result));
             delete this;
