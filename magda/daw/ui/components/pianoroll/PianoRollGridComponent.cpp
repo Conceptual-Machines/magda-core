@@ -2,6 +2,8 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <limits>
+
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
 #include "../../themes/CursorManager.hpp"
@@ -450,11 +452,19 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     }
 }
 
+void PianoRollGridComponent::paintOverChildren(juce::Graphics& g) {
+    paintPitchExpression(g);
+}
+
 void PianoRollGridComponent::resized() {
     updateNoteComponentBounds();
 }
 
 void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
+    // Pitch glide overlay editing takes priority when active
+    if (pitchExpressionMode_ && handleExpressionMouseDown(e))
+        return;
+
     // If pending chord is active, click confirms the length
     if (pendingChord_.active) {
         if (e.mods.isPopupMenu()) {
@@ -612,6 +622,11 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
 }
 
 void PianoRollGridComponent::mouseDrag(const juce::MouseEvent& e) {
+    if (isExpressionDragging_) {
+        handleExpressionMouseDrag(e);
+        return;
+    }
+
     if (isEditCursorClick_)
         return;
 
@@ -628,6 +643,11 @@ void PianoRollGridComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
+    if (isExpressionDragging_) {
+        handleExpressionMouseUp(e);
+        return;
+    }
+
     if (isDrawingNote_) {
         const ClipId clipId = drawingNoteClipId_;
         MidiNote note;
@@ -732,6 +752,18 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
 }
 
 void PianoRollGridComponent::mouseMove(const juce::MouseEvent& e) {
+    // Track the glide point under the mouse for the pitch value label
+    if (pitchExpressionMode_) {
+        auto hit = hitTestExpressionPoint(e.getPosition());
+        if (hit != hoveredExpressionPoint_) {
+            hoveredExpressionPoint_ = hit;
+            repaint();
+        }
+    } else if (hoveredExpressionPoint_) {
+        hoveredExpressionPoint_.reset();
+        repaint();
+    }
+
     // Update pending chord preview end position
     if (pendingChord_.active) {
         auto localPos = e.getEventRelativeTo(this).getPosition();
@@ -773,9 +805,18 @@ void PianoRollGridComponent::mouseExit(const juce::MouseEvent& /*e*/) {
         nearPhaseMarker_ = false;
         repaint();
     }
+    if (hoveredExpressionPoint_) {
+        hoveredExpressionPoint_.reset();
+        repaint();
+    }
 }
 
 void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
+    if (pitchExpressionMode_) {
+        handleExpressionDoubleClick(e);
+        return;  // never create notes while editing glides
+    }
+
     // Block note creation on frozen tracks
     if (clipId_ != INVALID_CLIP_ID) {
         auto* clip = ClipManager::getInstance().getClip(clipId_);
@@ -2058,6 +2099,7 @@ void PianoRollGridComponent::createNoteComponents() {
 
             noteComp->setGhost(!isClipSelected(clipId));
             noteComp->updateFromNote(visibleNote, noteColour);
+            noteComp->setInterceptsMouseClicks(!pitchExpressionMode_, !pitchExpressionMode_);
             addAndMakeVisible(noteComp.get());
             noteComponents_.push_back(std::move(noteComp));
         }
@@ -2493,6 +2535,415 @@ void PianoRollGridComponent::cancelPendingChord() {
     pendingChord_.notes.clear();
     stopTimer();
     repaint();
+}
+
+// ============================================================================
+// Pitch glide (MPE pitch expression) overlay
+// ============================================================================
+
+void PianoRollGridComponent::setPitchExpressionMode(bool enabled) {
+    if (pitchExpressionMode_ == enabled)
+        return;
+
+    pitchExpressionMode_ = enabled;
+
+    // In expression mode the grid handles all mouse interaction; note
+    // components must not swallow clicks.
+    for (auto& nc : noteComponents_)
+        nc->setInterceptsMouseClicks(!enabled, !enabled);
+
+    if (!enabled && isExpressionDragging_) {
+        isExpressionDragging_ = false;
+        expressionDragPointIndex_ = -1;
+        expressionClipId_ = INVALID_CLIP_ID;
+        expressionWorkingPoints_.clear();
+    }
+
+    repaint();
+}
+
+double PianoRollGridComponent::evaluatePitchExpression(
+    const std::vector<MidiPitchExpressionPoint>& points, double relBeat) {
+    if (points.empty())
+        return 0.0;
+    if (relBeat <= points.front().beat)
+        return points.front().semitones;
+    if (relBeat >= points.back().beat)
+        return points.back().semitones;
+
+    for (size_t i = 0; i + 1 < points.size(); ++i) {
+        const auto& a = points[i];
+        const auto& b = points[i + 1];
+        if (relBeat >= a.beat && relBeat <= b.beat) {
+            const double span = b.beat - a.beat;
+            if (span <= 0.0)
+                return b.semitones;
+            const double t = (relBeat - a.beat) / span;
+            return a.semitones + t * (b.semitones - a.semitones);
+        }
+    }
+    return points.back().semitones;
+}
+
+double PianoRollGridComponent::expressionRelBeatForX(ClipId clipId, const MidiNote& note,
+                                                     int x) const {
+    const double noteStartDisplayBeat = displayBeatForClipBeat(clipId, note.startBeat);
+    const double relBeat = pixelToBeat(x) - noteStartDisplayBeat;
+    return juce::jlimit(0.0, note.lengthBeats, relBeat);
+}
+
+juce::Point<float> PianoRollGridComponent::expressionPointToScreen(
+    ClipId clipId, const MidiNote& note, const MidiPitchExpressionPoint& point) const {
+    const double noteStartDisplayBeat = displayBeatForClipBeat(clipId, note.startBeat);
+    const float x = static_cast<float>(beatToPixel(noteStartDisplayBeat + point.beat));
+    const float centerY =
+        static_cast<float>(noteNumberToY(note.noteNumber)) + static_cast<float>(noteHeight_) * 0.5f;
+    const float y = centerY - static_cast<float>(point.semitones * noteHeight_);
+    return {x, y};
+}
+
+std::optional<PianoRollGridComponent::ExpressionHit> PianoRollGridComponent::hitTestExpressionPoint(
+    juce::Point<int> pos) const {
+    auto& clipManager = ClipManager::getInstance();
+
+    for (ClipId clipId : selectedClipIds_) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip || !clip->isMidi())
+            continue;
+
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
+            const auto& note = clip->midiNotes[i];
+            if (!note.hasPitchExpression())
+                continue;
+
+            for (size_t p = 0; p < note.pitchExpression.size(); ++p) {
+                auto screen = expressionPointToScreen(clipId, note, note.pitchExpression[p]);
+                if (screen.getDistanceFrom(pos.toFloat()) <=
+                    static_cast<float>(EXPRESSION_POINT_HIT_RADIUS)) {
+                    return ExpressionHit{clipId, i, static_cast<int>(p)};
+                }
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<PianoRollGridComponent::ExpressionHit> PianoRollGridComponent::hitTestExpressionNote(
+    juce::Point<int> pos) const {
+    auto& clipManager = ClipManager::getInstance();
+
+    std::optional<ExpressionHit> best;
+    double bestDistance = std::numeric_limits<double>::max();
+
+    for (ClipId clipId : selectedClipIds_) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip || !clip->isMidi())
+            continue;
+
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
+            auto visibleNote = clip->midiNotes[i];
+            if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, visibleNote))
+                continue;
+
+            const auto& note = clip->midiNotes[i];
+            const double noteStartDisplayBeat = displayBeatForClipBeat(clipId, note.startBeat);
+            const int startX = beatToPixel(noteStartDisplayBeat);
+            const int endX = beatToPixel(noteStartDisplayBeat + note.lengthBeats);
+            if (pos.x < startX || pos.x >= endX)
+                continue;
+
+            // Vertical proximity to the curve at this x (flat center line when
+            // the note has no expression yet). Generous capture range so a
+            // glide can be grabbed away from the note row, but bounded so
+            // clicks far above/below fall through to other notes.
+            const double relBeat = expressionRelBeatForX(clipId, note, pos.x);
+            const double curveSemitones = evaluatePitchExpression(note.pitchExpression, relBeat);
+            const double centerY = noteNumberToY(note.noteNumber) + noteHeight_ * 0.5;
+            const double curveY = centerY - curveSemitones * noteHeight_;
+            const double distance = std::abs(pos.y - curveY);
+
+            if (distance <= noteHeight_ * 2.0 && distance < bestDistance) {
+                bestDistance = distance;
+                best = ExpressionHit{clipId, i, -1};
+            }
+        }
+    }
+    return best;
+}
+
+bool PianoRollGridComponent::handleExpressionMouseDown(const juce::MouseEvent& e) {
+    auto& clipManager = ClipManager::getInstance();
+
+    // Right-click: clear glide on the note under the mouse
+    if (e.mods.isPopupMenu()) {
+        auto hit = hitTestExpressionPoint(e.getPosition());
+        if (!hit)
+            hit = hitTestExpressionNote(e.getPosition());
+        if (!hit)
+            return false;
+
+        const auto* clip = clipManager.getClip(hit->clipId);
+        if (!clip || hit->noteIndex >= clip->midiNotes.size() ||
+            !clip->midiNotes[hit->noteIndex].hasPitchExpression())
+            return false;
+
+        juce::PopupMenu menu;
+        menu.addItem(1, "Clear Pitch Glide");
+        menu.showMenuAsync(juce::PopupMenu::Options(),
+                           [this, clipId = hit->clipId, noteIndex = hit->noteIndex](int result) {
+                               if (result == 1 && onPitchExpressionChanged)
+                                   onPitchExpressionChanged(clipId, noteIndex, {});
+                           });
+        return true;
+    }
+
+    // Block edits on frozen tracks
+    {
+        const auto* clip = clipManager.getClip(clipId_);
+        if (clip) {
+            auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
+            if (trackInfo && trackInfo->frozen)
+                return true;
+        }
+    }
+
+    // Grab an existing point
+    if (auto hit = hitTestExpressionPoint(e.getPosition())) {
+        const auto* clip = clipManager.getClip(hit->clipId);
+        if (!clip || hit->noteIndex >= clip->midiNotes.size())
+            return true;
+
+        expressionClipId_ = hit->clipId;
+        expressionNoteIndex_ = hit->noteIndex;
+        expressionWorkingPoints_ = clip->midiNotes[hit->noteIndex].pitchExpression;
+        expressionDragPointIndex_ = hit->pointIndex;
+        isExpressionDragging_ = true;
+        repaint();
+        return true;
+    }
+
+    // Add a new point on the note under the mouse
+    if (auto hit = hitTestExpressionNote(e.getPosition())) {
+        const auto* clip = clipManager.getClip(hit->clipId);
+        if (!clip || hit->noteIndex >= clip->midiNotes.size())
+            return true;
+
+        const auto& note = clip->midiNotes[hit->noteIndex];
+
+        MidiPitchExpressionPoint newPoint;
+        newPoint.beat = expressionRelBeatForX(hit->clipId, note, e.x);
+        const double centerY = noteNumberToY(note.noteNumber) + noteHeight_ * 0.5;
+        double semitones = (centerY - e.y) / noteHeight_;
+        if (!e.mods.isShiftDown())
+            semitones = std::round(semitones);
+        newPoint.semitones = juce::jlimit(-MAX_PITCH_EXPRESSION_SEMITONES,
+                                          MAX_PITCH_EXPRESSION_SEMITONES, semitones);
+
+        expressionClipId_ = hit->clipId;
+        expressionNoteIndex_ = hit->noteIndex;
+        expressionWorkingPoints_ = note.pitchExpression;
+
+        auto insertIt = std::upper_bound(
+            expressionWorkingPoints_.begin(), expressionWorkingPoints_.end(), newPoint,
+            [](const auto& a, const auto& b) { return a.beat < b.beat; });
+        expressionDragPointIndex_ =
+            static_cast<int>(std::distance(expressionWorkingPoints_.begin(), insertIt));
+        expressionWorkingPoints_.insert(insertIt, newPoint);
+        isExpressionDragging_ = true;
+        repaint();
+        return true;
+    }
+
+    return false;
+}
+
+void PianoRollGridComponent::handleExpressionMouseDrag(const juce::MouseEvent& e) {
+    if (!isExpressionDragging_ || expressionDragPointIndex_ < 0 ||
+        expressionDragPointIndex_ >= static_cast<int>(expressionWorkingPoints_.size()))
+        return;
+
+    const auto* clip = ClipManager::getInstance().getClip(expressionClipId_);
+    if (!clip || expressionNoteIndex_ >= clip->midiNotes.size())
+        return;
+
+    const auto& note = clip->midiNotes[expressionNoteIndex_];
+    auto& point = expressionWorkingPoints_[static_cast<size_t>(expressionDragPointIndex_)];
+
+    // Horizontal: clamp between neighbouring points so ordering is stable
+    double minBeat = 0.0;
+    double maxBeat = note.lengthBeats;
+    if (expressionDragPointIndex_ > 0)
+        minBeat = expressionWorkingPoints_[static_cast<size_t>(expressionDragPointIndex_ - 1)].beat;
+    if (expressionDragPointIndex_ + 1 < static_cast<int>(expressionWorkingPoints_.size()))
+        maxBeat = expressionWorkingPoints_[static_cast<size_t>(expressionDragPointIndex_ + 1)].beat;
+
+    const double noteStartDisplayBeat = displayBeatForClipBeat(expressionClipId_, note.startBeat);
+    point.beat = juce::jlimit(minBeat, maxBeat, pixelToBeat(e.x) - noteStartDisplayBeat);
+
+    // Vertical: semitone offset from the note row, snapped unless Shift
+    const double centerY = noteNumberToY(note.noteNumber) + noteHeight_ * 0.5;
+    double semitones = (centerY - e.y) / noteHeight_;
+    if (!e.mods.isShiftDown())
+        semitones = std::round(semitones);
+    point.semitones =
+        juce::jlimit(-MAX_PITCH_EXPRESSION_SEMITONES, MAX_PITCH_EXPRESSION_SEMITONES, semitones);
+
+    repaint();
+}
+
+void PianoRollGridComponent::handleExpressionMouseUp(const juce::MouseEvent& /*e*/) {
+    if (!isExpressionDragging_)
+        return;
+
+    commitExpressionEdit();
+
+    isExpressionDragging_ = false;
+    expressionDragPointIndex_ = -1;
+    expressionClipId_ = INVALID_CLIP_ID;
+    expressionWorkingPoints_.clear();
+    repaint();
+}
+
+bool PianoRollGridComponent::handleExpressionDoubleClick(const juce::MouseEvent& e) {
+    auto hit = hitTestExpressionPoint(e.getPosition());
+    if (!hit)
+        return false;
+
+    const auto* clip = ClipManager::getInstance().getClip(hit->clipId);
+    if (!clip || hit->noteIndex >= clip->midiNotes.size())
+        return true;
+
+    auto points = clip->midiNotes[hit->noteIndex].pitchExpression;
+    if (hit->pointIndex >= 0 && hit->pointIndex < static_cast<int>(points.size())) {
+        points.erase(points.begin() + hit->pointIndex);
+        if (onPitchExpressionChanged)
+            onPitchExpressionChanged(hit->clipId, hit->noteIndex, std::move(points));
+    }
+    return true;
+}
+
+void PianoRollGridComponent::commitExpressionEdit() {
+    if (expressionClipId_ == INVALID_CLIP_ID || !onPitchExpressionChanged)
+        return;
+
+    auto points = expressionWorkingPoints_;
+    std::sort(points.begin(), points.end(),
+              [](const auto& a, const auto& b) { return a.beat < b.beat; });
+
+    onPitchExpressionChanged(expressionClipId_, expressionNoteIndex_, std::move(points));
+}
+
+void PianoRollGridComponent::paintExpressionPointLabel(juce::Graphics& g, const MidiNote& note,
+                                                       const MidiPitchExpressionPoint& point,
+                                                       juce::Point<float> screen) {
+    // Resulting pitch at this point: base note + glide offset
+    const double totalPitch = note.noteNumber + point.semitones;
+    const int nearestNote = juce::jlimit(0, 127, static_cast<int>(std::round(totalPitch)));
+    const int cents = static_cast<int>(std::round((totalPitch - nearestNote) * 100.0));
+
+    juce::String text = juce::MidiMessage::getMidiNoteName(nearestNote, true, true, 4);
+    if (cents != 0)
+        text << (cents > 0 ? " +" : " ") << cents << "c";
+
+    const juce::Font font(juce::FontOptions(11.0f));
+    const float textWidth = juce::GlyphArrangement::getStringWidth(font, text);
+    const float w = textWidth + 10.0f;
+    const float h = 16.0f;
+
+    // Above the point, clamped to the visible component bounds
+    float x = screen.x - w * 0.5f;
+    float y = screen.y - h - 8.0f;
+    x = juce::jlimit(0.0f, static_cast<float>(getWidth()) - w, x);
+    if (y < 0.0f)
+        y = screen.y + 8.0f;
+
+    juce::Rectangle<float> bubble(x, y, w, h);
+    g.setColour(juce::Colour(0xEE202020));
+    g.fillRoundedRectangle(bubble, 3.0f);
+    g.setColour(juce::Colour(0xFF505050));
+    g.drawRoundedRectangle(bubble, 3.0f, 1.0f);
+    g.setColour(juce::Colours::white);
+    g.setFont(font);
+    g.drawText(text, bubble, juce::Justification::centred, false);
+}
+
+void PianoRollGridComponent::paintPitchExpression(juce::Graphics& g) {
+    auto& clipManager = ClipManager::getInstance();
+
+    for (ClipId clipId : clipIds_) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip || !clip->isMidi())
+            continue;
+
+        const bool editable = pitchExpressionMode_ && isClipSelected(clipId);
+        const juce::Colour curveColour = getColourForClip(clipId).brighter(0.6f);
+
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
+            auto visibleNote = clip->midiNotes[i];
+            if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, visibleNote))
+                continue;
+
+            const auto& note = clip->midiNotes[i];
+
+            // Use the in-progress working copy for the note being edited
+            const bool isEditing =
+                isExpressionDragging_ && clipId == expressionClipId_ && i == expressionNoteIndex_;
+            const auto& points = isEditing ? expressionWorkingPoints_ : note.pitchExpression;
+
+            if (points.empty() && !editable)
+                continue;
+
+            const double noteStartDisplayBeat = displayBeatForClipBeat(clipId, note.startBeat);
+            const float startX = static_cast<float>(beatToPixel(noteStartDisplayBeat));
+            const float endX =
+                static_cast<float>(beatToPixel(noteStartDisplayBeat + note.lengthBeats));
+            const float centerY = static_cast<float>(noteNumberToY(note.noteNumber)) +
+                                  static_cast<float>(noteHeight_) * 0.5f;
+
+            auto yForSemitones = [&](double semitones) {
+                return centerY - static_cast<float>(semitones * noteHeight_);
+            };
+
+            juce::Path path;
+            path.startNewSubPath(startX, yForSemitones(evaluatePitchExpression(points, 0.0)));
+            for (const auto& p : points) {
+                const float px = static_cast<float>(beatToPixel(noteStartDisplayBeat + p.beat));
+                path.lineTo(juce::jlimit(startX, endX, px), yForSemitones(p.semitones));
+            }
+            path.lineTo(endX, yForSemitones(evaluatePitchExpression(points, note.lengthBeats)));
+
+            if (pitchExpressionMode_) {
+                const bool flat = points.empty();
+                g.setColour(curveColour.withAlpha(flat ? 0.25f : 0.9f));
+                g.strokePath(path, juce::PathStrokeType(flat ? 1.0f : 2.0f));
+
+                if (editable) {
+                    for (size_t p = 0; p < points.size(); ++p) {
+                        auto screen = expressionPointToScreen(clipId, note, points[p]);
+                        const float r = 3.5f;
+                        g.setColour(juce::Colours::white);
+                        g.fillEllipse(screen.x - r, screen.y - r, r * 2.0f, r * 2.0f);
+                        g.setColour(curveColour.darker(0.6f));
+                        g.drawEllipse(screen.x - r, screen.y - r, r * 2.0f, r * 2.0f, 1.0f);
+
+                        // Pitch value label on the dragged or hovered point
+                        const bool isDraggedPoint =
+                            isEditing && static_cast<int>(p) == expressionDragPointIndex_;
+                        const bool isHoveredPoint =
+                            !isExpressionDragging_ && hoveredExpressionPoint_ &&
+                            *hoveredExpressionPoint_ ==
+                                ExpressionHit{clipId, i, static_cast<int>(p)};
+                        if (isDraggedPoint || isHoveredPoint)
+                            paintExpressionPointLabel(g, note, points[p], screen);
+                    }
+                }
+            } else if (!points.empty()) {
+                // Subtle reminder that this note carries a glide
+                g.setColour(curveColour.withAlpha(0.35f));
+                g.strokePath(path, juce::PathStrokeType(1.5f));
+            }
+        }
+    }
 }
 
 }  // namespace magda

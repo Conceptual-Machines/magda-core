@@ -140,6 +140,28 @@ class SetMidiNoteVelocityCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for replacing a note's pitch glide (MPE pitch expression) points
+ */
+class SetNotePitchExpressionCommand : public UndoableCommand {
+  public:
+    SetNotePitchExpressionCommand(ClipId clipId, size_t noteIndex,
+                                  std::vector<MidiPitchExpressionPoint> newPoints);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Edit Pitch Glide";
+    }
+
+  private:
+    ClipId clipId_;
+    size_t noteIndex_;
+    std::vector<MidiPitchExpressionPoint> newPoints_;
+    std::vector<MidiPitchExpressionPoint> oldPoints_;  // captured on first execute
+    bool executed_ = false;
+};
+
+/**
  * @brief Command for setting velocities of multiple MIDI notes at once
  */
 class SetMultipleNoteVelocitiesCommand : public UndoableCommand {

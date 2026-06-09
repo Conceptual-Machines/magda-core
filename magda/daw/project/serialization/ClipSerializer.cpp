@@ -540,6 +540,16 @@ juce::var ProjectSerializer::serializeMidiNote(const MidiNote& data) {
     SER(lengthBeats);
     if (data.chordGroup != 0)
         SER(chordGroup);
+    if (!data.pitchExpression.empty()) {
+        juce::Array<juce::var> points;
+        for (const auto& p : data.pitchExpression) {
+            auto* pObj = new juce::DynamicObject();
+            pObj->setProperty("beat", p.beat);
+            pObj->setProperty("semitones", p.semitones);
+            points.add(juce::var(pObj));
+        }
+        obj->setProperty("pitchExpression", juce::var(points));
+    }
     return juce::var(obj);
 }
 
@@ -555,6 +565,17 @@ bool ProjectSerializer::deserializeMidiNote(const juce::var& json, MidiNote& dat
     DESER(lengthBeats);
     if (obj->hasProperty("chordGroup"))
         data.chordGroup = static_cast<int>(obj->getProperty("chordGroup"));
+    auto pitchExpVar = obj->getProperty("pitchExpression");
+    if (pitchExpVar.isArray()) {
+        for (const auto& pVar : *pitchExpVar.getArray()) {
+            if (auto* pObj = pVar.getDynamicObject()) {
+                MidiPitchExpressionPoint p;
+                p.beat = pObj->getProperty("beat");
+                p.semitones = pObj->getProperty("semitones");
+                data.pitchExpression.push_back(p);
+            }
+        }
+    }
     return true;
 }
 
