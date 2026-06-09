@@ -64,6 +64,14 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
     void runTest() override {
         testTeSlotRecordingFinalizesToMagdaSessionClip();
         testTeSlotAudioRecordingFinalizesToMagdaSessionClip();
+        testSessionSlotPreviewClearedOnStopWithoutFinalize();
+    }
+
+    // Looks up the transient recording preview for a track, or nullptr.
+    static const RecordingPreview* findPreview(TracktionEngineWrapper& wrapper, TrackId trackId) {
+        const auto& previews = wrapper.getRecordingPreviews();
+        auto it = previews.find(trackId);
+        return it == previews.end() ? nullptr : &it->second;
     }
 
   private:
@@ -144,6 +152,17 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
         expect(fixture.wrapper.isSessionSlotRecording(fixture.trackId, fixture.sceneIndex),
                "Wrapper should mark the slot as actively recording");
 
+        // A transient session-slot recording preview should now exist for the track.
+        const auto* preview = findPreview(fixture.wrapper, fixture.trackId);
+        expect(preview != nullptr, "Active session-slot recording should create a preview");
+        if (preview != nullptr) {
+            expect(preview->target == RecordingTargetKind::SessionSlot,
+                   "Preview must be tagged as a session-slot target");
+            expectEquals(preview->sceneIndex, fixture.sceneIndex,
+                         "Preview must carry the target scene index");
+            expect(!preview->isAudioRecording, "MIDI-input slot preview is not an audio recording");
+        }
+
         auto* slot = fixture.getSlot();
         expect(slot != nullptr, "TE ClipSlot must exist");
         if (slot == nullptr)
@@ -169,6 +188,8 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
                "Recorded TE slot clip should be mirrored into ClipManager");
         expect(!fixture.wrapper.isSessionSlotRecording(fixture.trackId, fixture.sceneIndex),
                "Slot recording state should clear after finalization");
+        expect(findPreview(fixture.wrapper, fixture.trackId) == nullptr,
+               "Recording preview must be cleared once the slot recording finalizes");
         expectEquals(ClipManager::getInstance().getArrangementClips().size(),
                      static_cast<size_t>(0),
                      "Session slot recording must not create an arrangement clip");
@@ -232,6 +253,15 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
         expect(fixture.wrapper.isSessionSlotRecording(fixture.trackId, fixture.sceneIndex),
                "Wrapper should mark the audio slot as actively recording");
 
+        const auto* preview = findPreview(fixture.wrapper, fixture.trackId);
+        expect(preview != nullptr, "Active audio session-slot recording should create a preview");
+        if (preview != nullptr) {
+            expect(preview->target == RecordingTargetKind::SessionSlot,
+                   "Preview must be tagged as a session-slot target");
+            expect(preview->isAudioRecording,
+                   "Audio-input slot preview must be an audio recording");
+        }
+
         auto* slot = fixture.getSlot();
         expect(slot != nullptr, "TE ClipSlot must exist");
         if (slot == nullptr)
@@ -259,6 +289,8 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
                "Recorded TE audio slot clip should be mirrored into ClipManager");
         expect(!fixture.wrapper.isSessionSlotRecording(fixture.trackId, fixture.sceneIndex),
                "Slot recording state should clear after finalization");
+        expect(findPreview(fixture.wrapper, fixture.trackId) == nullptr,
+               "Recording preview must be cleared once the audio slot recording finalizes");
         expectEquals(ClipManager::getInstance().getArrangementClips().size(),
                      static_cast<size_t>(0),
                      "Session slot recording must not create an arrangement clip");
@@ -296,6 +328,29 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
         } else {
             expect(false, "TE slot clip should still be a WaveAudioClip");
         }
+    }
+
+    void testSessionSlotPreviewClearedOnStopWithoutFinalize() {
+        beginTest("Session-slot recording preview is cleared when recording stops uncommitted");
+
+        Fixture fixture;
+        expect(fixture.bridge != nullptr, "AudioBridge must exist");
+        if (fixture.bridge == nullptr)
+            return;
+
+        fixture.wrapper.armSessionSlotRecording(fixture.trackId, fixture.sceneIndex);
+        fixture.wrapper.testSetSessionSlotRecordingActive(fixture.trackId, fixture.sceneIndex);
+        expect(findPreview(fixture.wrapper, fixture.trackId) != nullptr,
+               "Active session-slot recording should create a preview");
+
+        // Stopping without a TE clip to finalize (e.g. no input captured) must
+        // still tear the transient preview down rather than leak it.
+        fixture.wrapper.testFinishSessionSlotRecordings();
+
+        expect(findPreview(fixture.wrapper, fixture.trackId) == nullptr,
+               "Recording preview must be cleared when the slot recording stops uncommitted");
+        expect(!fixture.wrapper.isSessionSlotRecording(fixture.trackId, fixture.sceneIndex),
+               "Slot recording state should clear when stopped uncommitted");
     }
 };
 

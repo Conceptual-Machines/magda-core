@@ -40,6 +40,17 @@ void TracktionEngineWrapper::deleteTrack(const std::string& track_id) {
     if (it != trackMap_.end() && currentEdit_) {
         currentEdit_->deleteTrack(it->second.get());
         trackMap_.erase(it);
+
+        // Drop any in-flight recording pass for this track so a deletion
+        // mid-record cannot leave a stale preview/target behind.
+        try {
+            TrackId magdaTrackId = static_cast<TrackId>(std::stoi(track_id));
+            recordingPreviews_.erase(magdaTrackId);
+            sessionSlotRecordingTargets_.erase(magdaTrackId);
+        } catch (const std::exception&) {
+            // Non-numeric id: no MAGDA-keyed state to clean up.
+        }
+
         DBG("Deleted track ID: " << track_id);
     }
 }

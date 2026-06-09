@@ -31,6 +31,15 @@ double snapLengthToBars(TracktionEngineWrapper& engine, double lengthBeats) {
     return juce::jmax(beatsPerBar, std::ceil(lengthBeats / beatsPerBar) * beatsPerBar);
 }
 
+// Convert a transport position (seconds) to timeline beats via the edit's tempo
+// sequence, so recording-preview placement stays correct across tempo changes
+// (a constant tempo/60 factor would drift). Returns 0 if no edit is loaded.
+double transportSecondsToBeats(tracktion::Edit* edit, double seconds) {
+    if (!edit)
+        return 0.0;
+    return edit->tempoSequence.toBeats(tracktion::TimePosition::fromSeconds(seconds)).inBeats();
+}
+
 }  // namespace
 
 void TracktionEngineWrapper::recordingAboutToStart(tracktion::InputDeviceInstance& instance,
@@ -57,8 +66,10 @@ void TracktionEngineWrapper::recordingAboutToStart(tracktion::InputDeviceInstanc
             if (recordingPreviews_.count(trackId) == 0) {
                 RecordingPreview preview;
                 preview.trackId = trackId;
-                preview.startTime = recordingStartTimes_[trackId];
-                preview.currentLength = 0.0;
+                preview.target = RecordingTargetKind::Arrangement;
+                preview.startBeat =
+                    transportSecondsToBeats(currentEdit_.get(), recordingStartTimes_[trackId]);
+                preview.currentLengthBeats = 0.0;
 
                 const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
                 preview.isAudioRecording = trackInfo && !trackInfo->audioInputDevice.isEmpty();
@@ -237,8 +248,7 @@ void TracktionEngineWrapper::recordingFinished(
 }
 
 void TracktionEngineWrapper::drainRecordingNoteQueue() {
-    double tempo = getTempo();
-    double beatsPerSecond = tempo / 60.0;
+    tracktion::Edit* edit = currentEdit_.get();
 
     int eventsPopped = 0;
     RecordingNoteEvent evt;
@@ -250,12 +260,14 @@ void TracktionEngineWrapper::drainRecordingNoteQueue() {
             continue;
 
         auto& preview = it->second;
+        // Note position relative to the pass start, in beats (tempo-correct).
+        double eventBeat = transportSecondsToBeats(edit, evt.transportSeconds) - preview.startBeat;
 
         if (evt.isNoteOn) {
             MidiNote mn;
             mn.noteNumber = evt.noteNumber;
             mn.velocity = evt.velocity;
-            mn.startBeat = (evt.transportSeconds - preview.startTime) * beatsPerSecond;
+            mn.startBeat = eventBeat;
             mn.lengthBeats = -1.0;  // Sentinel: note still held
             preview.notes.push_back(mn);
         } else {
@@ -263,8 +275,7 @@ void TracktionEngineWrapper::drainRecordingNoteQueue() {
             for (int i = static_cast<int>(preview.notes.size()) - 1; i >= 0; --i) {
                 auto& n = preview.notes[static_cast<size_t>(i)];
                 if (n.noteNumber == evt.noteNumber && n.lengthBeats < 0.0) {
-                    double endBeat = (evt.transportSeconds - preview.startTime) * beatsPerSecond;
-                    n.lengthBeats = endBeat - n.startBeat;
+                    n.lengthBeats = eventBeat - n.startBeat;
                     if (n.lengthBeats < 0.01)
                         n.lengthBeats = 0.01;
                     break;
@@ -277,12 +288,13 @@ void TracktionEngineWrapper::drainRecordingNoteQueue() {
         DBG("RecPreview::drain: popped=" << eventsPopped);
     }
 
-    // Grow each preview's currentLength to match playhead
-    double currentPos = getCurrentPosition();
+    // Grow each preview's length to match the playhead, in beats.
+    double currentBeat = transportSecondsToBeats(edit, getCurrentPosition());
     for (auto& [trackId, preview] : recordingPreviews_) {
-        double newLength = currentPos - preview.startTime;
-        if (newLength > preview.currentLength)
-            preview.currentLength = newLength;
+        juce::ignoreUnused(trackId);
+        double newLength = currentBeat - preview.startBeat;
+        if (newLength > preview.currentLengthBeats)
+            preview.currentLengthBeats = newLength;
     }
 
     // Sample metering data for audio-recording tracks
@@ -389,11 +401,32 @@ void TracktionEngineWrapper::beginArmedSessionSlotRecordings() {
 
         target.active = true;
         startedAny = true;
+
+        // Create the transient active-recording-pass preview for this slot so the
+        // session path shares the same beat-domain model as arrangement recording.
+        createSessionSlotPreview(trackId, target.sceneIndex);
+
         ++it;
     }
 
     if (startedAny)
         recordingNoteQueue_.clear();
+}
+
+void TracktionEngineWrapper::createSessionSlotPreview(TrackId trackId, int sceneIndex) {
+    // MIDI notes populate via drainRecordingNoteQueue (keyed by trackId) and audio
+    // peaks via the recording metering buffer; both are already keyed by trackId,
+    // so no extra wiring is needed beyond creating the preview entry.
+    const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+
+    RecordingPreview preview;
+    preview.trackId = trackId;
+    preview.target = RecordingTargetKind::SessionSlot;
+    preview.sceneIndex = sceneIndex;
+    preview.startBeat = transportSecondsToBeats(currentEdit_.get(), getCurrentPosition());
+    preview.currentLengthBeats = 0.0;
+    preview.isAudioRecording = trackInfo && !trackInfo->audioInputDevice.isEmpty();
+    recordingPreviews_[trackId] = std::move(preview);
 }
 
 void TracktionEngineWrapper::finishSessionSlotRecordings() {
@@ -428,6 +461,10 @@ void TracktionEngineWrapper::finishSessionSlotRecordings() {
             if (hasAudioInput || !trackInfo)
                 audioBridge_->setSessionSlotAudioRecordingTarget(trackId, target.sceneIndex, false);
         }
+        // Tear down the transient preview pass alongside the recording target so
+        // session-slot teardown is self-contained (does not rely on the
+        // transport-stop clear() that usually follows).
+        recordingPreviews_.erase(trackId);
         it = sessionSlotRecordingTargets_.erase(it);
     }
 }

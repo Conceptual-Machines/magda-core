@@ -117,6 +117,44 @@ TEST_CASE("applyAudioClipBeats - BPM correction preserves source region seconds"
     }
 }
 
+TEST_CASE("getTimelineLoopLength tracks the loop wrap after a BPM reinterpretation",
+          "[clip][bpm][issue-1259]") {
+    // Regression: the session slot playhead wraps at the loop length, but the
+    // progress-bar denominator used getTimelineLength() (placement-based). After
+    // a source-BPM reinterpretation, loopLengthBeats changes while
+    // placement.lengthBeats does not, so the bar drifted out of sync with the
+    // playhead (visual only — audio loops correctly). getTimelineLoopLength()
+    // must follow the loop, matching SessionClipScheduler's playhead basis.
+    ClipManager::getInstance().shutdown();
+
+    auto seed = makeSessionAutoTempoClip();
+    ClipManager::getInstance().restoreClip(seed);
+
+    // Before any edit, placement and loop coincide: both report the same length.
+    {
+        const auto* c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c->getTimelineLength(PROJECT_BPM) == Approx(2.0));
+        REQUIRE(c->getTimelineLoopLength(PROJECT_BPM) == Approx(2.0));
+    }
+
+    // Reinterpret the 2s source at 240 BPM: loopLengthBeats -> 8, placement stays 4.
+    ClipManager::AudioClipBeatsUpdate u;
+    u.interpretationBpm = 240.0;
+    u.interpretationTotalBeats = FILE_DURATION * 240.0 / 60.0;
+    ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
+
+    const auto* c = ClipManager::getInstance().getClip(seed.id);
+    REQUIRE(c != nullptr);
+    REQUIRE(c->loopLengthBeats == Approx(8.0));
+    REQUIRE(c->lengthBeats == Approx(4.0));
+
+    // Placement-based length is unchanged (the old, buggy denominator)...
+    REQUIRE(c->getTimelineLength(PROJECT_BPM) == Approx(2.0));
+    // ...but the loop span (and thus the playhead wrap) is now 8 beats = 4.0 s,
+    // matching fmod(elapsed, loopLengthBeats) * 60 / projectBPM in the scheduler.
+    REQUIRE(c->getTimelineLoopLength(PROJECT_BPM) == Approx(4.0));
+}
+
 TEST_CASE("applyAudioClipBeats - beat-length edit preserves detected BPM",
           "[clip][bpm][issue-1157]") {
     ClipManager::getInstance().shutdown();
