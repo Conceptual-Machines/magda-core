@@ -448,15 +448,12 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
         bool isBar = (std::fmod(std::abs(beatPosRounded), beatsPerBar) < 0.001);
         bool isBeat = (std::fmod(std::abs(beatPosRounded), 1.0) < 0.001);
 
-        // Bar/beat/subdivision grid lines are white (matching the timeline),
-        // with the hierarchy carried by opacity. Transients are grey (below), so
-        // the two never look alike.
         if (isBar) {
-            g.setColour(juce::Colours::white.withAlpha(0.7f));
+            g.setColour(juce::Colour(0xFF707070));
         } else if (isBeat) {
-            g.setColour(juce::Colours::white.withAlpha(0.45f));
+            g.setColour(juce::Colour(0xFF585858));
         } else {
-            g.setColour(juce::Colours::white.withAlpha(0.28f));
+            g.setColour(juce::Colour(0xFF454545));
         }
 
         g.drawVerticalLine(px, static_cast<float>(waveformRect.getY()),
@@ -816,13 +813,20 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
     if (pixelsPerBeat < kMinPixelsPerBeatForTransients)
         return;
 
-    g.setColour(juce::Colours::white.withAlpha(0.25f));  // faint (reads grey), dimmer than the bars
+    // Faint line for the body, with a solid handle triangle at the top so a
+    // transient reads as a marker and is never mistaken for a grid line.
+    const juce::Colour lineColour = juce::Colours::white.withAlpha(0.25f);
+    const juce::Colour handleColour = juce::Colours::white.withAlpha(0.85f);
+    constexpr float kHandleHalfW = 4.0f;
+    constexpr float kHandleH = 6.0f;
 
     // Visible pixel range for culling
     int visibleLeft = 0;
     int visibleRight = getWidth();
 
     auto drawMarkersForCycle = [&](double cycleOffset, double sourceStart, double sourceEnd) {
+        const float top = static_cast<float>(waveformRect.getY());
+        const float bottom = static_cast<float>(waveformRect.getBottom());
         for (double t : transientTimes_) {
             if (t < sourceStart || t >= sourceEnd)
                 continue;
@@ -840,8 +844,15 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
             if (px < waveformRect.getX() || px > waveformRect.getRight())
                 continue;
 
-            g.drawVerticalLine(px, static_cast<float>(waveformRect.getY()),
-                               static_cast<float>(waveformRect.getBottom()));
+            g.setColour(lineColour);
+            g.drawVerticalLine(px, top, bottom);
+
+            // Downward-pointing handle triangle flush with the top edge.
+            const float fx = static_cast<float>(px);
+            juce::Path handle;
+            handle.addTriangle(fx - kHandleHalfW, top, fx + kHandleHalfW, top, fx, top + kHandleH);
+            g.setColour(handleColour);
+            g.fillPath(handle);
         }
     };
 
