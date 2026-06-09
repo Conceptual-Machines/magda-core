@@ -8,16 +8,22 @@
 #include "../components/common/BarsBeatsTicksLabel.hpp"
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/SvgButton.hpp"
+#include "core/MixAnalysisService.hpp"
 #include "core/TempoUtils.hpp"
 
 namespace magda {
 
 class QwertyMidiKeyboard;
 
-class TransportPanel : public juce::Component {
+// Greys out / re-enables the transport when an offline mix-analysis render owns
+// the edit (#886) -- playback is blocked then, so the controls shouldn't look live.
+class TransportPanel : public juce::Component, public MixAnalysisService::Listener {
   public:
     TransportPanel();
     ~TransportPanel() override;
+
+    // MixAnalysisService::Listener
+    void mixAnalysisChanged() override;
 
     void paint(juce::Graphics& g) override;
     // Draws the W/T/L mode glyph on top of the (now letterless) automation

@@ -12,6 +12,7 @@
 namespace magda {
 
 TransportPanel::TransportPanel() {
+    MixAnalysisService::getInstance().addListener(this);
     setupTransportButtons();
     setupTimeDisplayBoxes();
     setupTempoAndQuantize();
@@ -53,8 +54,20 @@ TransportPanel::TransportPanel() {
 }
 
 TransportPanel::~TransportPanel() {
+    MixAnalysisService::getInstance().removeListener(this);
     autoGridButton->setLookAndFeel(nullptr);
     snapButton->setLookAndFeel(nullptr);
+}
+
+void TransportPanel::mixAnalysisChanged() {
+    // Grey out + disable the transport while an offline render owns the edit:
+    // playback is blocked then (TracktionEngineWrapper::play() refuses), so the
+    // controls shouldn't look live. setEnabled cascades to the child buttons.
+    const bool rendering = MixAnalysisService::getInstance().isBusy();
+    if (isEnabled() == !rendering)
+        return;
+    setEnabled(!rendering);
+    repaint();
 }
 
 void TransportPanel::paintOverChildren(juce::Graphics& g) {
