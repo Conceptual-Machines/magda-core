@@ -448,12 +448,15 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
         bool isBar = (std::fmod(std::abs(beatPosRounded), beatsPerBar) < 0.001);
         bool isBeat = (std::fmod(std::abs(beatPosRounded), 1.0) < 0.001);
 
+        // Bar/beat/subdivision grid lines are white (matching the timeline),
+        // with the hierarchy carried by opacity. Transients are grey (below), so
+        // the two never look alike.
         if (isBar) {
-            g.setColour(juce::Colour(0xFF707070));
+            g.setColour(juce::Colours::white.withAlpha(0.7f));
         } else if (isBeat) {
-            g.setColour(juce::Colour(0xFF585858));
+            g.setColour(juce::Colours::white.withAlpha(0.45f));
         } else {
-            g.setColour(juce::Colour(0xFF454545));
+            g.setColour(juce::Colours::white.withAlpha(0.28f));
         }
 
         g.drawVerticalLine(px, static_cast<float>(waveformRect.getY()),
@@ -813,7 +816,7 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
     if (pixelsPerBeat < kMinPixelsPerBeatForTransients)
         return;
 
-    g.setColour(juce::Colours::white.withAlpha(0.25f));
+    g.setColour(juce::Colours::white.withAlpha(0.25f));  // faint (reads grey), dimmer than the bars
 
     // Visible pixel range for culling
     int visibleLeft = 0;
