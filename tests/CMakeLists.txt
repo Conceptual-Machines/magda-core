@@ -23,6 +23,7 @@ set(TEST_SOURCES
     test_post_fx_chain.cpp
     test_group_tracks_and_macros.cpp
     test_parameter_utils.cpp
+    test_openai_url.cpp
     test_update_checker.cpp
     test_plugin_loading.cpp
     test_plugin_format.cpp

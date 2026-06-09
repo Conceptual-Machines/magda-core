@@ -1983,10 +1983,15 @@ void AIChatConsoleContent::updateConfigStatus() {
             status = status.substring(0, 1).toUpperCase() + status.substring(1);
     }
 
-    if (musicCfg.model.empty())
+    if (preset == magda::preset::LOCAL_SERVER) {
+        auto serverModel = config.getLocalServerModel();
+        status +=
+            " | " + (serverModel.empty() ? juce::String("No model") : juce::String(serverModel));
+    } else if (musicCfg.model.empty()) {
         status += " | Embedded";
-    else
+    } else {
         status += " | " + juce::String(musicCfg.model);
+    }
 
     // If embedded local provider, show model status + toggle button
     if (isLocalPreset() && serverToggleButton_) {

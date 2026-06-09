@@ -76,7 +76,8 @@ class ControllerProfileRegistry {
     ControllerProfileRegistry() = default;
 
     /** Locate the bundled "controllers/profiles" directory.
-     *  Mirror of StringTable::findLangDirectory() substituting "controllers/profiles" for "lang". */
+     *  Mirror of StringTable::findLangDirectory() substituting "controllers/profiles" for "lang".
+     */
     static juce::File findBundledControllersDirectory();
 
     /** Load all .json files from dir into profiles_; later entries override

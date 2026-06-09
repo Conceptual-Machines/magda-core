@@ -17,6 +17,19 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             },
         },
         {
+            preset::LOCAL_SERVER,
+            "Local Server (OpenAI-compatible)",
+            {
+                // Base URL / model / key are resolved from Config at request
+                // time (one server, one model for all roles), so the preset
+                // leaves them blank — same pattern as LOCAL_EMBEDDED.
+                {role::ROUTER, {provider::LOCAL_SERVER, "", "", ""}},
+                {role::COMMAND, {provider::LOCAL_SERVER, "", "", ""}},
+                {role::MUSIC, {provider::LOCAL_SERVER, "", "", ""}},
+                {role::CONTROLLER, {provider::LOCAL_SERVER, "", "", ""}},
+            },
+        },
+        {
             preset::CLOUD_OPENAI,
             "Cloud (OpenAI)",
             {
