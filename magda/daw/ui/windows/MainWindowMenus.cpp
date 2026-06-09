@@ -23,9 +23,71 @@
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
+#include "project/MediaCollector.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda {
+
+namespace {
+
+// Copies the collected files off the message thread (cancellable), then applies
+// the repointing + summary on completion (message thread). The scan has already
+// run on the message thread; this owns the resulting plan.
+class CollectFilesProgressWindow : public juce::ThreadWithProgressWindow {
+  public:
+    explicit CollectFilesProgressWindow(MediaCollector::Plan plan)
+        : ThreadWithProgressWindow(tr("collect.progress.title"), true, true),
+          plan_(std::move(plan)),
+          strCopying_(tr("collect.progress.copying")) {
+        setStatusMessage(strCopying_);
+    }
+
+    void run() override {
+        // copy() checks cancel_ before each file and calls back after each; mirror
+        // the progress window's Cancel button into cancel_ so the next file is
+        // skipped and the copy returns early.
+        MediaCollector::copy(
+            plan_,
+            [this](float p) {
+                setProgress(static_cast<double>(p));
+                if (threadShouldExit())
+                    cancel_.store(true);
+            },
+            cancel_);
+        if (threadShouldExit())
+            cancelled_ = true;
+    }
+
+    void threadComplete(bool userPressedCancel) override {
+        auto plan = std::move(plan_);
+        const bool cancelled = userPressedCancel || cancelled_;
+
+        // JUCE guarantees no further callbacks after threadComplete(); delete
+        // self first, then apply + report on a fresh message-loop iteration
+        // (creating an AlertWindow inside this timer-driven callback can crash).
+        delete this;
+
+        juce::MessageManager::callAsync([plan = std::move(plan), cancelled]() mutable {
+            if (cancelled) {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                                                       tr("collect.title"),
+                                                       tr("collect.alert.cancelled"));
+                return;
+            }
+            const auto summary = MediaCollector::apply(plan);
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, tr("collect.title"),
+                                                   summary.toMessage());
+        });
+    }
+
+  private:
+    MediaCollector::Plan plan_;
+    juce::String strCopying_;
+    std::atomic<bool> cancel_{false};
+    bool cancelled_ = false;
+};
+
+}  // namespace
 
 void MainWindow::openProjectFile(const juce::File& file) {
     if (!file.existsAsFile())
@@ -359,6 +421,27 @@ void MainWindow::setupMenuCallbacks() {
 
             fileChooser_.reset();
         });
+    };
+
+    callbacks.onCollectFiles = [this]() {
+        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
+        if (!engine || !engine->getEdit()) {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, tr("collect.title"), tr("collect.alert.no_edit"));
+            return;
+        }
+
+        // Scan on the message thread (touches clips + plugins); if nothing is
+        // external there's no work, so report and stop without a progress window.
+        auto plan = MediaCollector::scan();
+        if (!plan.hasWork()) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, tr("collect.title"),
+                                                   MediaCollector::apply(plan).toMessage());
+            return;
+        }
+
+        // Owns itself; deletes in threadComplete().
+        (new CollectFilesProgressWindow(std::move(plan)))->launchThread();
     };
 
     callbacks.onExportAudio = [this]() {

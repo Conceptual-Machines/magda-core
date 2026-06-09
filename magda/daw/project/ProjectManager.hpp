@@ -276,6 +276,14 @@ class ProjectManager : private juce::Timer {
     juce::File getExternalEditsDirectory() const;
 
     /**
+     * @brief Get the collected/imported media subdirectory.
+     *
+     * Where "Collect files" copies externally-referenced audio (clip sources,
+     * sampler and drum-pad samples) so the project is self-contained (#1407).
+     */
+    juce::File getImportedDirectory() const;
+
+    /**
      * @brief Delete temp media directories older than 7 days.
      * Call once at app launch.
      */

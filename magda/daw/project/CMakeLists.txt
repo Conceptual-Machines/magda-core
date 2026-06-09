@@ -2,6 +2,7 @@
 
 target_sources(magda_daw PRIVATE
     ProjectManager.cpp
+    MediaCollector.cpp
     serialization/ProjectSerializer.cpp
     serialization/TrackSerializer.cpp
     serialization/ClipSerializer.cpp
@@ -9,5 +10,6 @@ target_sources(magda_daw PRIVATE
     # Headers (listed for IDE visibility)
     ProjectInfo.hpp
     ProjectManager.hpp
+    MediaCollector.hpp
     serialization/ProjectSerializer.hpp
 )
