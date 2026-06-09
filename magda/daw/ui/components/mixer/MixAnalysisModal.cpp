@@ -76,9 +76,10 @@ void MixAnalysisModal::Spinner::paint(juce::Graphics& g) {
 MixAnalysisModal::MixAnalysisModal(MixAnalysisService::Mode mode) : mode_(mode) {
     setSize(480, 380);
 
-    const char* modeName =
-        mode == MixAnalysisService::Mode::Live ? "Live capture" : "Offline render";
-    titleLabel_.setText(juce::String("Mix analysis  -  ") + modeName, juce::dontSendNotification);
+    // Title shows the scope (the channels being analysed) -- the selection drives
+    // it, so this is what the user most needs to confirm before/while it runs.
+    titleLabel_.setText("Mix analysis  -  " + MixAnalysisService::getInstance().scopeDescription(),
+                        juce::dontSendNotification);
     titleLabel_.setFont(juce::Font(15.0f, juce::Font::bold));
     titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     addAndMakeVisible(titleLabel_);

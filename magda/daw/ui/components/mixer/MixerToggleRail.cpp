@@ -139,32 +139,13 @@ void MixerToggleRail::setupAnalyzeButton() {
     analyzeButton_->setBorderThickness(1.0f);
     analyzeButton_->setTooltip("Analyze the mix");
     analyzeButton_->setWantsKeyboardFocus(false);
-    analyzeButton_->onClick = [this]() {
-        auto& svc = MixAnalysisService::getInstance();
-        // Already running: reopen the modal for the in-flight mode so the user
-        // can watch progress / stop there. Otherwise pick a mode.
-        if (svc.isCapturing())
-            openModal(MixAnalysisService::Mode::Live);
-        else if (svc.isBusy())
-            openModal(svc.busyMode());
-        else
-            showAnalyzeMenu();
-    };
+    // One action: analyse the selection via an offline render. (Live capture is
+    // implemented in MixAnalysisService/MixAnalysisModal but deliberately not
+    // exposed yet -- postponed to keep the first ship's test surface small;
+    // re-enable by offering a Live/Offline menu here.)
+    analyzeButton_->onClick = [this]() { openModal(MixAnalysisService::Mode::Offline); };
     addAndMakeVisible(*analyzeButton_);
     updateAnalyzeButtonMode();
-}
-
-void MixerToggleRail::showAnalyzeMenu() {
-    // The channels analysed are driven by the mixer selection (the menu only
-    // picks how they're measured). Surface the current scope so it's clear
-    // whether this is the whole mix or the selected channels.
-    juce::PopupMenu menu;
-    menu.addSectionHeader(MixAnalysisService::getInstance().scopeDescription());
-    menu.addItem("Live capture (play the mix)", true, false,
-                 [this]() { openModal(MixAnalysisService::Mode::Live); });
-    menu.addItem("Offline render", true, false,
-                 [this]() { openModal(MixAnalysisService::Mode::Offline); });
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(analyzeButton_.get()));
 }
 
 void MixerToggleRail::openModal(MixAnalysisService::Mode mode) {

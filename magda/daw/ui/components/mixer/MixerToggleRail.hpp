@@ -48,10 +48,9 @@ class MixerToggleRail : public juce::Component, public MixAnalysisService::Liste
                      std::function<void(bool)> setter);
     static void applyToggleState(SvgButton* btn, bool on);
 
-    // Analyze action: opens the Live/Quick/Deep menu, then a measured-findings
-    // modal; the button reflects the service's busy/capturing state.
+    // Analyze action: opens the measured-findings modal (offline render); the
+    // button reflects the service's busy state.
     void setupAnalyzeButton();
-    void showAnalyzeMenu();
     void openModal(MixAnalysisService::Mode mode);
     void updateAnalyzeButtonMode();
 

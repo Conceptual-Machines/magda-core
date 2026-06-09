@@ -240,8 +240,8 @@ void MixAnalysisService::stopLiveCapture() {
 juce::String MixAnalysisService::scopeDescription() const {
     const auto n = selectedTrackSet().size();
     if (n == 0)
-        return "Scope: the full mix";
-    return "Scope: " + juce::String(static_cast<int>(n)) +
+        return "the full mix";
+    return juce::String(static_cast<int>(n)) +
            (n == 1 ? " selected channel" : " selected channels");
 }
 
