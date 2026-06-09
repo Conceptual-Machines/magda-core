@@ -48,8 +48,11 @@ void SessionRecorder::setArmed(bool armed) {
                 if (recordingPreviews_) {
                     RecordingPreview preview;
                     preview.trackId = clip.trackId;
-                    preview.startTime = launchTime;
-                    preview.currentLength = 0.0;
+                    preview.target = RecordingTargetKind::Arrangement;
+                    preview.startBeat =
+                        edit_.tempoSequence.toBeats(te::TimePosition::fromSeconds(launchTime))
+                            .inBeats();
+                    preview.currentLengthBeats = 0.0;
                     preview.isAudioRecording = (clip.isAudio());
                     (*recordingPreviews_)[clip.trackId] = preview;
                 }
@@ -72,7 +75,14 @@ void SessionRecorder::updatePreviews() {
             continue;
 
         auto& preview = it->second;
-        preview.currentLength = currentTime - rec.arrangementStartTime;
+
+        auto startBeatPos =
+            tempoSeq.toBeats(te::TimePosition::fromSeconds(rec.arrangementStartTime));
+        auto endBeatPos = tempoSeq.toBeats(te::TimePosition::fromSeconds(currentTime));
+        double totalBeats = endBeatPos.inBeats() - startBeatPos.inBeats();
+
+        preview.startBeat = startBeatPos.inBeats();
+        preview.currentLengthBeats = juce::jmax(0.0, totalBeats);
 
         // Populate preview notes from the session clip's MIDI data
         const auto* sessionClip = clipManager.getClip(rec.sessionClipId);
@@ -86,10 +96,6 @@ void SessionRecorder::updatePreviews() {
         if (clipLengthBeats <= 0.0)
             clipLengthBeats = 4.0;
 
-        auto startBeatPos =
-            tempoSeq.toBeats(te::TimePosition::fromSeconds(rec.arrangementStartTime));
-        auto endBeatPos = tempoSeq.toBeats(te::TimePosition::fromSeconds(currentTime));
-        double totalBeats = endBeatPos.inBeats() - startBeatPos.inBeats();
         if (totalBeats <= 0.0)
             continue;
 
@@ -176,8 +182,10 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
         if (recordingPreviews_) {
             RecordingPreview preview;
             preview.trackId = clip->trackId;
-            preview.startTime = launchTime;
-            preview.currentLength = 0.0;
+            preview.target = RecordingTargetKind::Arrangement;
+            preview.startBeat =
+                edit_.tempoSequence.toBeats(te::TimePosition::fromSeconds(launchTime)).inBeats();
+            preview.currentLengthBeats = 0.0;
             preview.isAudioRecording = (clip->isAudio());
             (*recordingPreviews_)[clip->trackId] = preview;
         }

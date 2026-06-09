@@ -3,11 +3,14 @@
 #include <juce_dsp/juce_dsp.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <vector>
 
+#include "audio/analysis/MaskingDetector.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
+#include "core/TypeIds.hpp"
 
 namespace magda {
 class SvgButton;
@@ -31,6 +34,11 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     ~SpectrumAnalyzerUI() override;
 
     void setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin);
+
+    // The track this Spectrum device lives on. Enables the inter-track masking
+    // overlay (#1400): a dropdown picks another track, whose spectrum is drawn
+    // over this one with the clashing frequency zones shaded.
+    void setTrackId(magda::TrackId trackId);
 
     // Compact mode hides the control row (FFT/slope/speed/colour) and uses the
     // full bounds for the plot — used by the mini visualizer on the mixer.
@@ -60,6 +68,10 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
   private:
     void timerCallback() override;
     void updateTimerState();
+    void refreshOverlayList();                        // rebuild combo items from the track list
+    void selectOverlayTrack(magda::TrackId trackId);  // change selection + arm/disarm analysis
+    void releaseMeasurementArming();                  // undo only what this UI armed
+    void pollOverlayData();      // fetch overlay band spectrum + pair-filtered findings
     void rebuildFft(int order);  // (re)allocate FFT + buffers for a 2^order transform
     float freqToX(float hz, juce::Rectangle<float> area) const;
     float dbToY(float db, juce::Rectangle<float> area) const;
@@ -105,6 +117,28 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
 
     juce::ComboBox fftCombo_, slopeCombo_, speedCombo_, colourCombo_;
     juce::Label fftLabel_, slopeLabel_, speedLabel_, colourLabel_;
+
+    // --- Inter-track masking overlay (#1400) --------------------------------
+    magda::TrackId trackId_ = magda::INVALID_TRACK_ID;         // this device's track
+    magda::TrackId overlayTrackId_ = magda::INVALID_TRACK_ID;  // track being overlaid (or none)
+    juce::ComboBox overlayCombo_;                              // "Off" + other tracks
+    juce::Label overlayLabel_;
+    std::vector<magda::TrackId> overlayItems_;  // combo entries (item id = index + 2)
+    juce::String overlayListSig_;               // cached track-list signature for change detection
+
+    // What this instance armed on the measurement manager, so releasing only
+    // undoes our own additions (mirrors the AI mix-capture pattern).
+    bool armedGlobal_ = false;
+    bool armedMasking_ = false;
+    std::vector<magda::TrackId> armedTracks_;
+
+    // Latest overlay data, refreshed on the timer (message thread). The overlay
+    // trace runs the same FFT pipeline as this track's trace on the overlaid
+    // track's captured samples, so the two match in resolution and smoothing.
+    bool overlayValid_ = false;
+    std::vector<float> overlayScratch_;     // FFT scratch for the overlaid track
+    std::vector<float> overlaySmoothedDb_;  // temporally smoothed overlay spectrum
+    std::vector<magda::daw::audio::MaskingFinding> maskingFindings_;  // clash zones (band-based)
 
     // Hit areas in the dedicated strip below the plot (compact mode only).
     juce::Rectangle<int> chevronRect_;  // expand/collapse the controls

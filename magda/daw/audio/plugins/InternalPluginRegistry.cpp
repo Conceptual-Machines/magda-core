@@ -5,6 +5,7 @@
 #include "plugins/DrumGridPlugin.hpp"
 #include "plugins/FaustPlugin.hpp"
 #include "plugins/InstrumentMeterTapPlugin.hpp"
+#include "plugins/LevelsPlugin.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
@@ -12,6 +13,7 @@
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/SpectrumAnalyzerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
+#include "plugins/TrackMeasurementPlugin.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/internal/MidiDeviceProcessors.hpp"
 #include "processors/internal/NativeDeviceProcessors.hpp"
@@ -44,6 +46,7 @@ constexpr const char* kToneAliases[] = {"tone", "tonegenerator"};
 constexpr const char* kMeterAliases[] = {"meter", "levelmeter"};
 constexpr const char* kOscilloscopeAliases[] = {"scope"};
 constexpr const char* kSpectrumAliases[] = {"spectrum", "analyzer"};
+constexpr const char* kLevelsAliases[] = {"loudness", "lufs"};
 
 const InternalPluginSpec kSpecs[] = {
     {InternalDeviceKind::TeEq, te::EqualiserPlugin::xmlTypeName, "Equaliser", "EQ",
@@ -142,6 +145,10 @@ const InternalPluginSpec kSpecs[] = {
      "Internal meter tap used to observe instrument output levels.",
      InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
      matches<InstrumentMeterTapPlugin>, nullptr},
+    {InternalDeviceKind::TrackMeasurement, TrackMeasurementPlugin::xmlTypeName, "Track Measurement",
+     "Meter", "Internal post-fader tap measuring loudness, peak and stereo for the mixing tools.",
+     InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
+     matches<TrackMeasurementPlugin>, nullptr},
     {InternalDeviceKind::SessionMonitor, ::magda::SessionMonitorPlugin::xmlTypeName,
      "Session Monitor", "Session", "Internal monitor used by session playback and launch state.",
      InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
@@ -154,13 +161,17 @@ const InternalPluginSpec kSpecs[] = {
      "Analysis", "Real-time FFT spectrum display with log-frequency axis and peak hold.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, kSpectrumAliases,
      std::size(kSpectrumAliases), matches<SpectrumAnalyzerPlugin>, nullptr, true},
+    {InternalDeviceKind::Levels, LevelsPlugin::xmlTypeName, "Levels", "Analysis",
+     "Loudness, true-peak and stereo meter (LUFS, dBTP, correlation, dynamics).",
+     InternalPluginCreateMode::SavedStateOrFresh, true, true, kLevelsAliases,
+     std::size(kLevelsAliases), matches<LevelsPlugin>, nullptr, true},
 };
 
 const InternalPluginSpec* const kSpecPtrs[] = {
     &kSpecs[0],  &kSpecs[1],  &kSpecs[2],  &kSpecs[3],  &kSpecs[4],  &kSpecs[5],  &kSpecs[6],
     &kSpecs[7],  &kSpecs[8],  &kSpecs[9],  &kSpecs[10], &kSpecs[11], &kSpecs[12], &kSpecs[13],
     &kSpecs[14], &kSpecs[15], &kSpecs[16], &kSpecs[17], &kSpecs[18], &kSpecs[19], &kSpecs[20],
-    &kSpecs[21], &kSpecs[22], &kSpecs[23], &kSpecs[24], &kSpecs[25],
+    &kSpecs[21], &kSpecs[22], &kSpecs[23], &kSpecs[24], &kSpecs[25], &kSpecs[26], &kSpecs[27],
 };
 
 bool typeMatchesAlias(const juce::String& type, const InternalPluginSpec& spec) {
@@ -179,6 +190,26 @@ te::Plugin::Ptr createFreshValueTreePlugin(te::Edit& edit, const char* xmlTypeNa
     juce::ValueTree pluginState(te::IDs::PLUGIN);
     pluginState.setProperty(te::IDs::type, xmlTypeName, nullptr);
     return edit.getPluginCache().createNewPlugin(pluginState);
+}
+
+bool shouldUseTracktionStringFactory(InternalDeviceKind kind) {
+    switch (kind) {
+        case InternalDeviceKind::TeEq:
+        case InternalDeviceKind::TeCompressor:
+        case InternalDeviceKind::TeReverb:
+        case InternalDeviceKind::TeDelay:
+        case InternalDeviceKind::TeChorus:
+        case InternalDeviceKind::TePhaser:
+        case InternalDeviceKind::TeLowpass:
+        case InternalDeviceKind::TePitchShift:
+        case InternalDeviceKind::TeImpulseResponse:
+        case InternalDeviceKind::TeVolumeAndPan:
+        case InternalDeviceKind::TeFourOsc:
+        case InternalDeviceKind::TeToneGenerator:
+            return true;
+        default:
+            return false;
+    }
 }
 
 }  // namespace
@@ -234,7 +265,10 @@ te::Plugin::Ptr createInternalPluginFromSpec(const InternalPluginSpec& spec, te:
     if (spec.createMode == InternalPluginCreateMode::FreshValueTree)
         return createFreshValueTreePlugin(edit, spec.pluginId);
 
-    auto plugin = edit.getPluginCache().createNewPlugin(spec.pluginId, {});
+    te::Plugin::Ptr plugin;
+    if (shouldUseTracktionStringFactory(spec.kind))
+        plugin = edit.getPluginCache().createNewPlugin(spec.pluginId, {});
+
     if (!plugin)
         plugin = createFreshValueTreePlugin(edit, spec.pluginId);
 

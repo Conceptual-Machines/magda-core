@@ -78,6 +78,25 @@ TEST_CASE("computeLogMel produces signal-shaped output on a sine", "[media_db][c
     REQUIRE(maxVal > 0.0F);
 }
 
+TEST_CASE("computeLogMel is stable when reusing cached mel filterbank", "[media_db][clap][mel]") {
+    MelConfig cfg;
+    std::vector<float> sine(cfg.targetSamples);
+    constexpr double kTwoPi = 2.0 * std::numbers::pi_v<double>;
+    for (int i = 0; i < cfg.targetSamples; ++i) {
+        const double a = 0.35 * std::sin(kTwoPi * 440.0 * i / cfg.sampleRate);
+        const double b = 0.20 * std::sin(kTwoPi * 1760.0 * i / cfg.sampleRate);
+        sine[i] = static_cast<float>(a + b);
+    }
+
+    const auto first = magda::media::computeLogMel(sine.data(), cfg.targetSamples, cfg);
+    const auto second = magda::media::computeLogMel(sine.data(), cfg.targetSamples, cfg);
+
+    REQUIRE(second.size() == first.size());
+    for (size_t i = 0; i < first.size(); ++i) {
+        REQUIRE(second[i] == Catch::Approx(first[i]).epsilon(0.0001F).margin(0.0001F));
+    }
+}
+
 TEST_CASE("ClapAudioEncoder throws on missing model", "[media_db][clap]") {
     REQUIRE_THROWS_AS(ClapAudioEncoder("/no/such/clap_audio.onnx"), ClapEncoderError);
 }

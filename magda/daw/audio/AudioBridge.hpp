@@ -203,7 +203,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Detect transient times for an audio clip's source file
      *
      * On first call, kicks off async transient detection via TE's WarpTimeManager.
-     * Subsequent calls poll for completion. Results are cached per file path.
+     * Completion is delivered by callback and results are cached per file path.
      *
      * @param clipId The MAGDA clip ID (must be an audio clip)
      * @return true if transients are ready (cached), false if still detecting
@@ -856,7 +856,11 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     std::atomic<float> masterPeakL_{0.0f};
     std::atomic<float> masterPeakR_{0.0f};
     te::LevelMeasurer::Client masterMeterClient_;
-    bool masterMeterRegistered_{false};  // Whether master meter client is registered
+    // The playback context the master meter client is registered on (nullptr =
+    // not registered). Tracked as a pointer (not a bool) so we re-register when
+    // the context is rebuilt -- e.g. after an offline render frees it -- instead
+    // of leaving the master VU dead. Only ever compared, never dereferenced.
+    te::EditPlaybackContext* masterMeterContext_{nullptr};
 
     struct InputMeterClientEntry {
         te::LevelMeasurer::Client client;

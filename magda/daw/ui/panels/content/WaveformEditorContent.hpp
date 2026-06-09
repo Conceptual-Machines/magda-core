@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "PanelContent.hpp"
+#include "audio/AudioThumbnailManager.hpp"  // TransientCacheListener
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/UndoManager.hpp"
@@ -27,10 +28,11 @@ namespace magda::daw::ui {
  * Architecture based on PianoRollContent pattern.
  */
 class WaveformEditorContent : public PanelContent,
+                              private juce::Timer,
                               public magda::ClipManagerListener,
                               public magda::UndoManagerListener,
                               public TimelineStateListener,
-                              public juce::Timer {
+                              public magda::TransientCacheListener {
   public:
     WaveformEditorContent();
     ~WaveformEditorContent() override;
@@ -44,6 +46,7 @@ class WaveformEditorContent : public PanelContent,
     }
 
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
     void onActivated() override;
@@ -72,6 +75,10 @@ class WaveformEditorContent : public PanelContent,
 
     // TimelineStateListener
     void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
+
+    // TransientCacheListener - the detector recomputed/cleared transients for a
+    // file (e.g. sensitivity changed); refresh on the callback instead of polling.
+    void transientsChanged(const juce::String& filePath) override;
 
     // Set the clip to edit
     void setClip(magda::ClipId clipId);
@@ -170,10 +177,12 @@ class WaveformEditorContent : public PanelContent,
     // Warp state tracking
     bool wasWarpEnabled_ = false;
 
-    // Transient detection polling
+    // Transient detection
     bool transientsCached_ = false;
-    int transientPollCount_ = 0;
-    static constexpr int MAX_TRANSIENT_POLL_ATTEMPTS = 40;  // ~10s at 250ms interval
+    bool transientsUpdating_ = false;
+    float transientSpinnerPhase_ = 0.0f;
+    void requestTransientDetection();
+    void setTransientsUpdating(bool updating);
     void timerCallback() override;
 
     // Header drag-zoom state

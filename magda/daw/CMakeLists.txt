@@ -154,7 +154,10 @@ juce_add_binary_data(MagdaAssets
     # Analysis device icons
     ../../assets/icons/analysis/oscilloscope.svg
     ../../assets/icons/analysis/spectrum.svg
+    ../../assets/icons/analysis/levels.svg
     ../../assets/icons/analysis/postfx.svg
+    ../../assets/icons/analysis/analysis.svg
+    ../../assets/icons/analysis/analysis2.svg
     # Track-chain header icons
     ../../assets/icons/trackchain/gain-staging.svg
     # Toolbar icons
@@ -217,6 +220,11 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/panels/bottom_close.svg
     ../../assets/icons/panels/enter_fs.svg
     ../../assets/icons/panels/exit_fs.svg
+    # Panel tab icons (BoldM)
+    ../../assets/icons/panels/icon-browser-boldm.svg
+    ../../assets/icons/panels/icon-console-boldm.svg
+    ../../assets/icons/panels/icon-inspector-boldm.svg
+    ../../assets/icons/panels/icon-plugins-boldm.svg
 
     # Fontaudio waveform icons
     ../../assets/icons/fontaudio/fad-modsine.svg

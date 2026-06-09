@@ -941,6 +941,9 @@ TrackChainContent::TrackChainContent()
     setupAnalysisToggle(specToggleButton_, "Spectrum", BinaryData::spectrum_svg,
                         BinaryData::spectrum_svgSize, "Spectrum Analyzer (post-FX)",
                         "spectrumanalyzer", "Spectrum Analyzer", muted(DarkTheme::ACCENT_CYAN));
+    setupAnalysisToggle(levelsToggleButton_, "Levels", BinaryData::levels_svg,
+                        BinaryData::levels_svgSize, "Levels meter (post-FX)", "levels", "Levels",
+                        muted(DarkTheme::ACCENT_BLUE));
 
     // Post-FX panel show/hide toggle. The panel itself lives in BottomPanel,
     // which wires onPostFxPanelToggled / setPostFxPanelOpen.
@@ -1955,7 +1958,7 @@ void TrackChainContent::setPostFxPanelOpen(bool open) {
 }
 
 void TrackChainContent::refreshAnalysisToggles() {
-    if (!oscToggleButton_ || !specToggleButton_)
+    if (!oscToggleButton_ || !specToggleButton_ || !levelsToggleButton_)
         return;
     auto& tm = magda::TrackManager::getInstance();
     const bool hasTrack = selectedTrackId_ != magda::INVALID_TRACK_ID;
@@ -1964,6 +1967,8 @@ void TrackChainContent::refreshAnalysisToggles() {
     specToggleButton_->setActive(hasTrack &&
                                  tm.findPostFxDevice(selectedTrackId_, "spectrumanalyzer") !=
                                      magda::INVALID_DEVICE_ID);
+    levelsToggleButton_->setActive(hasTrack && tm.findPostFxDevice(selectedTrackId_, "levels") !=
+                                                   magda::INVALID_DEVICE_ID);
 }
 
 void TrackChainContent::modulationNamesChanged(magda::TrackId trackId) {
@@ -2317,17 +2322,21 @@ void TrackChainContent::updateFromSelectedTrack() {
             postFxPanelButton_->setVisible(true);
             oscToggleButton_->setVisible(true);
             specToggleButton_->setVisible(true);
+            levelsToggleButton_->setVisible(true);
             refreshAnalysisToggles();
             refreshGainStagingButton();
             trackNameLabel_.setVisible(true);
-            muteButton_.setVisible(true);
             soloButton_.setVisible(true);
             volumeLabel_.setVisible(true);
             panLabel_.setVisible(true);
             chainBypassButton_->setVisible(true);
 
-            // Hide solo, pan, and chain bypass for master track
-            if (track->type == magda::TrackType::Master) {
+            const bool isMaster = track->type == magda::TrackType::Master;
+            muteButton_.setVisible(!isMaster);
+            masterMuteButton_.setVisible(isMaster);
+
+            // Hide solo, pan, and chain bypass for master track.
+            if (isMaster) {
                 soloButton_.setVisible(false);
                 panLabel_.setVisible(false);
                 chainBypassButton_->setVisible(false);
@@ -2385,9 +2394,17 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(postFxPanelButton_.get());
     headerBar.addAndMakeVisible(oscToggleButton_.get());
     headerBar.addAndMakeVisible(specToggleButton_.get());
+    headerBar.addAndMakeVisible(levelsToggleButton_.get());
     headerBar.addAndMakeVisible(trackNameLabel_);
-    headerBar.addAndMakeVisible(muteButton_);
-    headerBar.addChildComponent(masterMuteButton_);
+    const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    const bool isMaster = selTrack && selTrack->type == magda::TrackType::Master;
+    if (isMaster) {
+        headerBar.addChildComponent(muteButton_);
+        headerBar.addAndMakeVisible(masterMuteButton_);
+    } else {
+        headerBar.addAndMakeVisible(muteButton_);
+        headerBar.addChildComponent(masterMuteButton_);
+    }
     headerBar.addAndMakeVisible(soloButton_);
     headerBar.addAndMakeVisible(volumeLabel_);
     headerBar.addAndMakeVisible(panLabel_);
@@ -2411,8 +2428,10 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(postFxPanelButton_.get());
     addChildComponent(oscToggleButton_.get());
     addChildComponent(specToggleButton_.get());
+    addChildComponent(levelsToggleButton_.get());
     addChildComponent(&trackNameLabel_);
     addChildComponent(&muteButton_);
+    addChildComponent(&masterMuteButton_);
     addChildComponent(&soloButton_);
     addChildComponent(&volumeLabel_);
     addChildComponent(&panLabel_);
@@ -2469,11 +2488,14 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
         muteButton_.setVisible(false);
     } else {
         muteButton_.setBounds(headerArea.removeFromRight(18));
+        muteButton_.setVisible(true);
         masterMuteButton_.setVisible(false);
     }
     headerArea.removeFromRight(8);
     // Post-FX panel toggle + analysis-device toggles — grouped with the track's
     // output controls (solo/mute/volume) rather than the left chain buttons.
+    levelsToggleButton_->setBounds(headerArea.removeFromRight(20));
+    headerArea.removeFromRight(4);
     specToggleButton_->setBounds(headerArea.removeFromRight(20));
     headerArea.removeFromRight(4);
     oscToggleButton_->setBounds(headerArea.removeFromRight(20));
@@ -2510,6 +2532,7 @@ void TrackChainContent::hideHeaderControls() {
     postFxPanelButton_->setVisible(false);
     oscToggleButton_->setVisible(false);
     specToggleButton_->setVisible(false);
+    levelsToggleButton_->setVisible(false);
     // Hide panels
     if (globalModsPanel_)
         globalModsPanel_->setVisible(false);

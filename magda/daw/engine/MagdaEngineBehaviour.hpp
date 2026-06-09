@@ -6,6 +6,7 @@
 #include "../audio/plugins/DrumGridPlugin.hpp"
 #include "../audio/plugins/FaustPlugin.hpp"
 #include "../audio/plugins/InstrumentMeterTapPlugin.hpp"
+#include "../audio/plugins/LevelsPlugin.hpp"
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
 #include "../audio/plugins/MidiChordEnginePlugin.hpp"
 #include "../audio/plugins/MidiReceivePlugin.hpp"
@@ -13,6 +14,7 @@
 #include "../audio/plugins/SidechainMonitorPlugin.hpp"
 #include "../audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
+#include "../audio/plugins/TrackMeasurementPlugin.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../project/ProjectManager.hpp"
@@ -40,6 +42,12 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
     // stay active. Track output is still silenced by TrackMutingNode.
     bool shouldProcessMutedTracks() override {
         return true;
+    }
+
+    tracktion::EditLimits getEditLimits() override {
+        auto limits = tracktion::EngineBehaviour::getEditLimits();
+        limits.maxNumMasterPlugins = 64;
+        return limits;
     }
 
     juce::File getDefaultFolderForAudioRecordings(tracktion::Edit&) override {
@@ -123,8 +131,14 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == daw::audio::SpectrumAnalyzerPlugin::xmlTypeName) {
             return new daw::audio::SpectrumAnalyzerPlugin(info);
         }
+        if (type == daw::audio::LevelsPlugin::xmlTypeName) {
+            return new daw::audio::LevelsPlugin(info);
+        }
         if (type == daw::audio::InstrumentMeterTapPlugin::xmlTypeName) {
             return new daw::audio::InstrumentMeterTapPlugin(info);
+        }
+        if (type == daw::audio::TrackMeasurementPlugin::xmlTypeName) {
+            return new daw::audio::TrackMeasurementPlugin(info);
         }
         if (type == tracktion::ImpulseResponsePlugin::xmlTypeName) {
             return new tracktion::ImpulseResponsePlugin(info);

@@ -42,7 +42,9 @@ inline constexpr const char* GPT_5_NANO = "gpt-5-nano";
 inline constexpr const char* GPT_5_4 = "gpt-5.4";
 inline constexpr const char* GPT_5_5 = "gpt-5.5";
 // Anthropic
-inline constexpr const char* CLAUDE_OPUS = "claude-opus-4-6";
+inline constexpr const char* CLAUDE_OPUS_4_7 = "claude-opus-4-7";
+inline constexpr const char* CLAUDE_OPUS_4_8 = "claude-opus-4-8";
+inline constexpr const char* CLAUDE_OPUS = CLAUDE_OPUS_4_8;  // latest Opus
 inline constexpr const char* CLAUDE_SONNET = "claude-sonnet-4-6";
 inline constexpr const char* CLAUDE_HAIKU = "claude-haiku-4-5-20251001";
 // Gemini

@@ -134,11 +134,6 @@ magda_compile_faust_dsp(
     MAGDA_REVERB_ROOM_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_eq.dsp"
-    MagdaEqDsp
-    MAGDA_EQ_GENERATED_CPP
-)
-magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_dimension_dim.dsp"
     MagdaDimensionDimDsp
     MAGDA_DIMENSION_DIM_GENERATED_CPP
@@ -203,7 +198,6 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_REVERB_PLATE_GENERATED_CPP}"
         "${MAGDA_REVERB_HALL_GENERATED_CPP}"
         "${MAGDA_REVERB_ROOM_GENERATED_CPP}"
-        "${MAGDA_EQ_GENERATED_CPP}"
         "${MAGDA_DIMENSION_DIM_GENERATED_CPP}"
         "${MAGDA_DIMENSION_HAAS_GENERATED_CPP}"
         "${MAGDA_DIMENSION_MS_GENERATED_CPP}"
@@ -270,6 +264,9 @@ target_sources(magda_daw PRIVATE
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
+    analysis/BandSpectrum.cpp
+    analysis/MixAnalysisInput.cpp
+    analysis/OfflineMixAnalysis.cpp
     FaustResources.cpp
     processors/base/DeviceProcessor.cpp
     processors/base/DeviceProcessor.hpp
@@ -319,6 +316,7 @@ target_sources(magda_daw PRIVATE
     plugin_manager/PluginManagerMacros.cpp
     plugin_manager/PluginManagerModifiers.cpp
     plugin_manager/PluginManagerSidechain.cpp
+    plugin_manager/PluginManagerMeasurement.cpp
     racks/InstrumentRackManager.cpp
     racks/RackSyncManager.cpp
     modifiers/ModifierSync.cpp
@@ -342,6 +340,8 @@ target_sources(magda_daw PRIVATE
     plugins/InstrumentMeterTapPlugin.cpp
     plugins/OscilloscopePlugin.cpp
     plugins/SpectrumAnalyzerPlugin.cpp
+    plugins/LevelsPlugin.cpp
+    plugins/TrackMeasurementPlugin.cpp
     plugins/MidiDevicePlugin.cpp
     plugins/FaustPlugin.cpp
     plugins/FaustMetadataParser.cpp

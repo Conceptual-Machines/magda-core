@@ -385,12 +385,6 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         const double cachedBPM = thumbs.getCachedBPM(audioFilePath);
         if (cachedBPM > 0.0) {
             applyDetectedBPM(cachedBPM);
-        } else {
-            thumbs.requestBPMDetection(audioFilePath, [applyDetectedBPM](double detectedBPM) {
-                if (detectedBPM <= 0.0)
-                    return;
-                applyDetectedBPM(detectedBPM);
-            });
         }
     }
 

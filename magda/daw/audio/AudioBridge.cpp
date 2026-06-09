@@ -129,10 +129,11 @@ AudioBridge::~AudioBridge() {
         deviceMetering_.clear();
 
         // Unregister master meter client from playback context
-        if (masterMeterRegistered_) {
+        if (masterMeterContext_ != nullptr) {
             if (auto* ctx = edit_.getCurrentPlaybackContext()) {
                 ctx->masterLevels.removeClient(masterMeterClient_);
             }
+            masterMeterContext_ = nullptr;
         }
 
         // Unregister all track meter clients (via trackController)
@@ -926,6 +927,14 @@ void AudioBridge::timerCallback() {
         return;
     }
 
+    // Pause all live-engine tick work while an offline render is active (export /
+    // mix analysis). The render needs the play context to stay inactive (TE
+    // asserts on it); letting the MIDI/context tick, reverse-proxy polling or
+    // metering run here can re-touch the context mid-render. restoreAfterRendering()
+    // reallocates and resumes once the render completes.
+    if (pluginManager_.isRenderingActive())
+        return;
+
     midiInputRouter_.handlePlaybackContextTick();
 
     // Poll for reversed proxy file completion (delegated to ClipSynchronizer)
@@ -966,7 +975,9 @@ void AudioBridge::timerCallback() {
     // Automation recording — detect transport transitions, manage recording lifecycle
     automationRecording_.process();
 
-    // Update metering from level measurers (runs at 30 FPS on message thread)
+    // Update metering from level measurers (runs at 30 FPS on message thread).
+    // (Skipped entirely during an offline render by the early return above, so
+    // the live meters don't twitch to the render's audio either.)
     trackController_.withTrackMapping(
         [this](const std::map<TrackId, te::AudioTrack*>& trackMapping) {
             refreshInputMeterClients(trackMapping);
@@ -1036,16 +1047,19 @@ void AudioBridge::timerCallback() {
         }
     }
 
-    // Register master meter client with playback context if not done yet
-    if (!masterMeterRegistered_) {
-        if (auto* ctx = edit_.getCurrentPlaybackContext()) {
-            ctx->masterLevels.addClient(masterMeterClient_);
-            masterMeterRegistered_ = true;
-        }
+    // Keep the master meter client registered on the CURRENT playback context.
+    // The context is destroyed + rebuilt after an offline render frees it, so
+    // re-register whenever the pointer changes -- otherwise the master VU stays
+    // dead after a render (the client was on the old, freed context).
+    auto* meterCtx = edit_.getCurrentPlaybackContext();
+    if (meterCtx != masterMeterContext_) {
+        if (meterCtx != nullptr)
+            meterCtx->masterLevels.addClient(masterMeterClient_);
+        masterMeterContext_ = meterCtx;
     }
 
     // Update master metering from playback context's masterLevels
-    if (masterMeterRegistered_) {
+    if (masterMeterContext_ != nullptr) {
         auto levelL = masterMeterClient_.getAndClearAudioLevel(0);
         auto levelR = masterMeterClient_.getAndClearAudioLevel(1);
 

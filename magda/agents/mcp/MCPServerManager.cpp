@@ -44,6 +44,16 @@ MCPClient* MCPServerManager::getServer(const juce::String& name) {
     return client.get();
 }
 
+bool MCPServerManager::isServerEnabled(const juce::String& name) const {
+    auto it = configs_.find(name);
+    return it != configs_.end() && it->second.enabled;
+}
+
+bool MCPServerManager::isServerRunning(const juce::String& name) const {
+    auto it = clients_.find(name);
+    return it != clients_.end() && it->second != nullptr && it->second->isRunning();
+}
+
 void MCPServerManager::stopAll() {
     clients_.clear();
 }
@@ -65,9 +75,8 @@ void MCPServerManager::reloadFromConfig() {
             it = clients_.erase(it);
         } else {
             auto oldIt = configs_.find(it->first);
-            if (oldIt != configs_.end() &&
-                (oldIt->second.command != newIt->second.command ||
-                 oldIt->second.args != newIt->second.args)) {
+            if (oldIt != configs_.end() && (oldIt->second.command != newIt->second.command ||
+                                            oldIt->second.args != newIt->second.args)) {
                 it = clients_.erase(it);
             } else {
                 ++it;

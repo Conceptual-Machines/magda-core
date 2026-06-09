@@ -93,6 +93,7 @@ class TracktionEngineWrapper : public AudioEngine,
         target.sceneIndex = sceneIndex;
         target.active = true;
         sessionSlotRecordingTargets_[trackId] = target;
+        createSessionSlotPreview(trackId, sceneIndex);
     }
 
     bool testFinalizeSessionSlotAudioRecording(TrackId trackId,
@@ -102,6 +103,10 @@ class TracktionEngineWrapper : public AudioEngine,
 
     bool testFinalizeSessionSlotMidiRecording(TrackId trackId, tracktion::MidiClip& midiClip) {
         return finalizeSessionSlotMidiRecording(trackId, midiClip);
+    }
+
+    void testFinishSessionSlotRecordings() {
+        finishSessionSlotRecordings();
     }
 #endif
     void setTempo(double bpm) override;
@@ -284,6 +289,21 @@ class TracktionEngineWrapper : public AudioEngine,
      */
     bool isDevicesLoading() const {
         return devicesLoading_;
+    }
+
+    /**
+     * @brief Gate playback during an offline render.
+     *
+     * An offline analysis/export render commandeers the live edit (it frees the
+     * playback context); starting playback then corrupts the node graph
+     * (NodeRenderContext asserts). OfflineMixAnalysis sets this for the render's
+     * lifetime so play() refuses while a render is in flight.
+     */
+    void setOfflineRenderActive(bool active) {
+        offlineRenderActive_ = active;
+    }
+    bool isOfflineRenderActive() const {
+        return offlineRenderActive_;
     }
 
     /**
@@ -573,9 +593,12 @@ class TracktionEngineWrapper : public AudioEngine,
     bool finalizeSessionSlotAudioRecording(TrackId trackId, tracktion::WaveAudioClip& audioClip);
     bool finalizeSessionSlotMidiRecording(TrackId trackId, tracktion::MidiClip& midiClip);
     ClipId createEmptySessionSlotRecordingClip(TrackId trackId, int sceneIndex);
+    // Creates the transient active-recording-pass preview for a session slot.
+    void createSessionSlotPreview(TrackId trackId, int sceneIndex);
 
     // Device loading state
-    bool devicesLoading_ = true;  // Start as loading until first scan completes
+    bool devicesLoading_ = true;                    // Start as loading until first scan completes
+    std::atomic<bool> offlineRenderActive_{false};  // an offline render owns the edit
     bool wasPlayingBeforeDeviceChange_ = false;
 
     // Plugin scanning state

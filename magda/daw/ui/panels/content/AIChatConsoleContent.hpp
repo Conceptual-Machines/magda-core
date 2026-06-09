@@ -13,8 +13,12 @@
 #include <vector>
 
 #include "../../../../agents/llama_model_manager.hpp"
+#include "../../../../agents/mixing_agent.hpp"
 #include "../../../core/Config.hpp"
+#include "../../../core/MixAnalysisService.hpp"
 #include "../../../core/SelectionManager.hpp"
+#include "../../../core/TrackMeasurementManager.hpp"
+#include "../../../core/ViewModeController.hpp"
 #include "../../../project/ProjectManager.hpp"
 #include "ChatPromptTokeniser.hpp"
 #include "DSLTokeniser.hpp"
@@ -49,7 +53,9 @@ class AIChatConsoleContent : public PanelContent,
                              private juce::CodeDocument::Listener,
                              public magda::SelectionManagerListener,
                              public magda::ProjectManagerListener,
-                             public magda::ConfigListener {
+                             public magda::ConfigListener,
+                             public magda::ViewModeListener,
+                             public magda::MixAnalysisService::Listener {
   public:
     AIChatConsoleContent();
     ~AIChatConsoleContent() override;
@@ -73,6 +79,12 @@ class AIChatConsoleContent : public PanelContent,
 
     // ConfigListener
     void configChanged() override;
+
+    // ViewModeListener (#1402): swap the console's context glyph + scope routing.
+    void viewModeChanged(magda::ViewMode mode, const magda::AudioEngineProfile& profile) override;
+
+    // MixAnalysisService::Listener (#886): refresh the "mix analysis ready" chip.
+    void mixAnalysisChanged() override;
 
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;
@@ -123,6 +135,12 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<juce::Drawable> trackIconDrawable_;
     std::unique_ptr<juce::Drawable> clipIconDrawable_;
     std::unique_ptr<juce::Drawable> drumIconDrawable_;
+    // View-context routing (#1402): the bottom-left glyph reflects the active
+    // view (session / arrangement / mixer), which scopes the console's agent.
+    std::unique_ptr<juce::Drawable> sessionIconDrawable_;
+    std::unique_ptr<juce::Drawable> arrangeIconDrawable_;
+    std::unique_ptr<juce::Drawable> mixIconDrawable_;
+    magda::ViewMode currentViewMode_ = magda::ViewMode::Arrange;
     // True when the selected track's primary instrument carries a kit with at
     // least one role-tagged row. Drives the drummer auto-route in
     // RequestThread::run and the drum context icon below the chat.
@@ -139,6 +157,13 @@ class AIChatConsoleContent : public PanelContent,
     bool contextEnabled_ = true;
     bool selectedClipContextAvailable_ = false;
     bool selectedClipContextEnabled_ = true;
+
+    // Mix analysis is gathered by the mixer's Analyze button and held by
+    // MixAnalysisService (#886). The console only surfaces a small "mix analysis
+    // ready" chip in mixer view; sending a message in mixer view feeds the latest
+    // measurement to the mixing agent as context (see RequestThread::run).
+    juce::Label analysisChip_;
+    void updateAnalysisChip();  // show/hide + label the chip from the service state
 
     void mouseUp(const juce::MouseEvent& event) override;
 

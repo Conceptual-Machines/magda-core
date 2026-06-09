@@ -29,6 +29,7 @@ class FaustUI;
 class FilterUI;
 class FourOscUI;
 class ImpulseResponseUI;
+class LevelsUI;
 class LinkableTextSlider;
 class OscilloscopeUI;
 class PhaserUI;
@@ -170,6 +171,10 @@ class DeviceCustomUIManager {
     int getCustomUITabIndex() const;
     void setCustomUITabIndex(int index);
 
+    // Re-resolve path-bound plugin pointers for UIs that depend on a live
+    // Tracktion plugin. Safe to call before the plugin exists.
+    void refreshLivePluginBindings();
+
     // Pending tab index (set before fourOscUI_ is created, consumed in create())
     static constexpr int NO_PENDING_TAB = -1;
     int pendingCustomUITabIndex_ = NO_PENDING_TAB;
@@ -222,6 +227,7 @@ class DeviceCustomUIManager {
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;
     std::unique_ptr<OscilloscopeUI> oscilloscopeUI_;
     std::unique_ptr<SpectrumAnalyzerUI> spectrumAnalyzerUI_;
+    std::unique_ptr<LevelsUI> levelsUI_;
 
     // Plugin raw pointers for timer polling / setNodePath updates
     daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;

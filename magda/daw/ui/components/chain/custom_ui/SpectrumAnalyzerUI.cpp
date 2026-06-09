@@ -11,6 +11,8 @@
 #include "AnalyzerColours.hpp"
 #include "AnalyzerWindow.hpp"
 #include "core/Config.hpp"
+#include "core/TrackManager.hpp"
+#include "core/TrackMeasurementManager.hpp"
 #include "ui/components/chain/layout/NodeHeaderStyles.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -21,6 +23,7 @@ namespace magda::daw::ui {
 
 namespace {
 constexpr int kControlRowH = 22;    // full-editor horizontal control row
+constexpr int kOverlayRowH = 22;    // full-editor top row: masking overlay picker
 constexpr int kStackRowH = 18;      // one row of the compact vertical control stack
 constexpr int kStackLabelW = 34;    // label column width in the stacked layout
 constexpr int kChevronStripH = 16;  // dedicated strip below the plot for the chevron
@@ -126,6 +129,25 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     };
     styleCombo(colourCombo_);
 
+    // Inter-track masking overlay (#1400): pick another track to overlay and
+    // shade the clashing frequency zones. Top row, full-editor / pop-out only.
+    overlayLabel_.setText("Overlay", juce::dontSendNotification);
+    overlayLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    overlayLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    overlayLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(overlayLabel_);
+    overlayCombo_.addItem("Off", 1);
+    overlayCombo_.setSelectedId(1, juce::dontSendNotification);
+    overlayCombo_.onChange = [this] {
+        const int id = overlayCombo_.getSelectedId();
+        magda::TrackId target = magda::INVALID_TRACK_ID;
+        const int idx = id - 2;  // item ids: 1 = Off, track entries start at 2
+        if (idx >= 0 && idx < static_cast<int>(overlayItems_.size()))
+            target = overlayItems_[static_cast<size_t>(idx)];
+        selectOverlayTrack(target);
+    };
+    styleCombo(overlayCombo_);
+
     popoutButton_ = std::make_unique<magda::SvgButton>("Pop out", BinaryData::open_in_new_svg,
                                                        BinaryData::open_in_new_svgSize);
     daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
@@ -139,11 +161,13 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
 
 SpectrumAnalyzerUI::~SpectrumAnalyzerUI() {
     stopTimer();
+    releaseMeasurementArming();  // undo any Mix Analysis we switched on for the overlay
     // Clear the shared LookAndFeel before the combos are destroyed.
     fftCombo_.setLookAndFeel(nullptr);
     slopeCombo_.setLookAndFeel(nullptr);
     speedCombo_.setLookAndFeel(nullptr);
     colourCombo_.setLookAndFeel(nullptr);
+    overlayCombo_.setLookAndFeel(nullptr);
 }
 
 void SpectrumAnalyzerUI::rebuildFft(int order) {
@@ -157,9 +181,14 @@ void SpectrumAnalyzerUI::rebuildFft(int order) {
     fftData_.assign(static_cast<size_t>(fftSize_) * 2, 0.0f);
     smoothedDb_.assign(static_cast<size_t>(numBins_), kMinDb);
     peakDb_.assign(static_cast<size_t>(numBins_), kMinDb);
+    overlayScratch_.assign(static_cast<size_t>(fftSize_) * 2, 0.0f);
+    overlaySmoothedDb_.assign(static_cast<size_t>(numBins_), kMinDb);
 }
 
 void SpectrumAnalyzerUI::setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin) {
+    if (plugin_ == plugin)
+        return;
+
     plugin_ = plugin;
     lastTapWritePosition_ = 0;
     if (popoutUI_ != nullptr)
@@ -174,6 +203,133 @@ void SpectrumAnalyzerUI::setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin) {
     speedCombo_.setSelectedId(nearestId(kSpeedOptions, smoothing_), juce::dontSendNotification);
     colourCombo_.setSelectedId(plugin_->getTraceColourIndex() + 1, juce::dontSendNotification);
     rebuildFft(plugin_->getFftOrder());
+}
+
+void SpectrumAnalyzerUI::setTrackId(magda::TrackId trackId) {
+    trackId_ = trackId;
+    if (popoutUI_ != nullptr)
+        popoutUI_->setTrackId(trackId);
+    refreshOverlayList();
+}
+
+void SpectrumAnalyzerUI::refreshOverlayList() {
+    auto& tm = magda::TrackManager::getInstance();
+    std::vector<magda::TrackId> items;
+    juce::String sig;
+    for (const auto& t : tm.getTracks()) {
+        if (t.id == magda::INVALID_TRACK_ID || t.id == trackId_)
+            continue;
+        items.push_back(t.id);
+        sig << t.id << ":" << t.name << ";";
+    }
+    if (sig == overlayListSig_)
+        return;  // nothing changed; leave the (possibly open) combo untouched
+    overlayListSig_ = sig;
+    overlayItems_ = items;
+
+    overlayCombo_.clear(juce::dontSendNotification);
+    overlayCombo_.addItem("Off", 1);
+    int selId = 1;
+    for (int i = 0; i < static_cast<int>(items.size()); ++i) {
+        const auto* info = tm.getTrack(items[static_cast<size_t>(i)]);
+        overlayCombo_.addItem(info != nullptr ? info->name : juce::String("Track"), i + 2);
+        if (items[static_cast<size_t>(i)] == overlayTrackId_)
+            selId = i + 2;
+    }
+    overlayCombo_.setSelectedId(selId, juce::dontSendNotification);
+    // The overlaid track was deleted: drop the overlay and release its arming.
+    if (selId == 1 && overlayTrackId_ != magda::INVALID_TRACK_ID)
+        selectOverlayTrack(magda::INVALID_TRACK_ID);
+}
+
+void SpectrumAnalyzerUI::selectOverlayTrack(magda::TrackId target) {
+    if (target == overlayTrackId_)
+        return;
+    releaseMeasurementArming();
+    overlayTrackId_ = target;
+    overlayValid_ = false;
+    maskingFindings_.clear();
+
+    if (overlayTrackId_ != magda::INVALID_TRACK_ID && trackId_ != magda::INVALID_TRACK_ID) {
+        // Auto-arm Mix Analysis the moment a track is overlaid. Remember what we
+        // switch on so releasing only undoes our own additions, not state another
+        // consumer (the Levels meter, the mixing-agent capture) still wants.
+        auto& tmm = magda::TrackMeasurementManager::getInstance();
+        if (!tmm.isGlobalEnabled()) {
+            tmm.setGlobalEnabled(true);  // must precede setTrackEnabled so taps get inserted
+            armedGlobal_ = true;
+        }
+        for (magda::TrackId id : {trackId_, overlayTrackId_}) {
+            if (!tmm.isTrackEnabled(id)) {
+                tmm.setTrackEnabled(id, true);
+                armedTracks_.push_back(id);
+            }
+        }
+        if (!tmm.isMaskingAnalysisEnabled()) {
+            tmm.setMaskingAnalysisEnabled(true);
+            armedMasking_ = true;
+        }
+    }
+    repaint();
+}
+
+void SpectrumAnalyzerUI::releaseMeasurementArming() {
+    auto& tmm = magda::TrackMeasurementManager::getInstance();
+    for (magda::TrackId id : armedTracks_)
+        tmm.setTrackEnabled(id, false);
+    armedTracks_.clear();
+    if (armedMasking_) {
+        tmm.setMaskingAnalysisEnabled(false);
+        armedMasking_ = false;
+    }
+    if (armedGlobal_) {
+        tmm.setGlobalEnabled(false);
+        armedGlobal_ = false;
+    }
+}
+
+void SpectrumAnalyzerUI::pollOverlayData() {
+    if (overlayTrackId_ == magda::INVALID_TRACK_ID || trackId_ == magda::INVALID_TRACK_ID ||
+        fft_ == nullptr) {
+        overlayValid_ = false;
+        maskingFindings_.clear();
+        return;
+    }
+    auto& tmm = magda::TrackMeasurementManager::getInstance();
+
+    // Clash zones come from the band-based masking detector, filtered to this pair.
+    maskingFindings_.clear();
+    for (const auto& f : tmm.getMaskingFindings())
+        if ((f.trackA == trackId_ && f.trackB == overlayTrackId_) ||
+            (f.trackA == overlayTrackId_ && f.trackB == trackId_))
+            maskingFindings_.push_back(f);
+
+    // The overlay trace runs the exact same Hann + FFT + slope + temporal-
+    // smoothing pipeline as this track's trace, on the overlaid track's captured
+    // samples, so the two are visually comparable (not the coarse band spectrum).
+    double sr = 44100.0;
+    const size_t writePos =
+        tmm.readTrackSpectrumSamples(overlayTrackId_, overlayScratch_.data(), fftSize_, sr);
+    if (writePos == 0) {
+        overlayValid_ = false;  // no live tap / no audio captured yet
+        return;
+    }
+    std::fill(overlayScratch_.begin() + fftSize_, overlayScratch_.end(), 0.0f);
+    window_->multiplyWithWindowingTable(overlayScratch_.data(), static_cast<size_t>(fftSize_));
+    fft_->performFrequencyOnlyForwardTransform(overlayScratch_.data());
+
+    const float norm = 2.0f / static_cast<float>(fftSize_);
+    const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
+    for (int i = 0; i < numBins_; ++i) {
+        const float mag = overlayScratch_[static_cast<size_t>(i)] * norm;
+        float db = 20.0f * std::log10(std::max(mag, 1.0e-6f));
+        if (i > 0)
+            db += slopeDbPerOct_ * std::log2(static_cast<float>(i) * binHz / 1000.0f);
+        db = juce::jlimit(kMinDb, kMaxDb, db);
+        float& sm = overlaySmoothedDb_[static_cast<size_t>(i)];
+        sm += smoothing_ * (db - sm);
+    }
+    overlayValid_ = true;
 }
 
 void SpectrumAnalyzerUI::visibilityChanged() {
@@ -241,6 +397,10 @@ void SpectrumAnalyzerUI::updateControlVisibility() {
     colourCombo_.setVisible(show);
     if (popoutButton_)
         popoutButton_->setVisible(compact_);  // lives in the strip, compact only
+    // The masking overlay picker is a full-editor / pop-out feature only; the
+    // compact mixer visualizer has no room for it.
+    overlayLabel_.setVisible(!compact_);
+    overlayCombo_.setVisible(!compact_);
     applyControlsAlpha();
 }
 
@@ -323,6 +483,13 @@ void SpectrumAnalyzerUI::resized() {
 
     chevronRect_ = juce::Rectangle<int>();
     popoutRect_ = juce::Rectangle<int>();
+
+    // Top row: masking overlay picker.
+    auto overlayRow = getLocalBounds().removeFromTop(kOverlayRowH);
+    overlayRow.removeFromLeft(4);
+    overlayLabel_.setBounds(overlayRow.removeFromLeft(48));
+    overlayCombo_.setBounds(overlayRow.removeFromLeft(150).reduced(2, 1));
+
     auto controls = getLocalBounds().removeFromBottom(kControlRowH);
     auto cell = [&controls](int labelW, int comboW) {
         controls.removeFromLeft(4);
@@ -361,6 +528,7 @@ void SpectrumAnalyzerUI::openPopout() {
         popoutUI_ = content.get();
         popoutUI_->setPersistGlobalDefaults(persistGlobalDefaults_);
         popoutUI_->setPlugin(plugin_);
+        popoutUI_->setTrackId(trackId_);
         popoutWindow_ = std::make_unique<AnalyzerWindow>("Spectrum Analyzer", std::move(content));
         popoutWindow_->onClose = [this]() {
             if (popoutButton_)
@@ -380,6 +548,15 @@ void SpectrumAnalyzerUI::timerCallback() {
 
     if (!isShowing())
         return;
+
+    // Keep the overlay picker current with track adds/renames, and refresh the
+    // overlaid track's spectrum + clash findings independently of this track's
+    // own audio (the overlay can change while this track is silent).
+    refreshOverlayList();
+    if (overlayTrackId_ != magda::INVALID_TRACK_ID) {
+        pollOverlayData();
+        needsRepaint = true;
+    }
 
     if (plugin_ == nullptr || fft_ == nullptr) {
         if (needsRepaint)
@@ -444,6 +621,7 @@ float SpectrumAnalyzerUI::dbToY(float db, juce::Rectangle<float> area) const {
 juce::Rectangle<float> SpectrumAnalyzerUI::plotArea() const {
     auto a = getLocalBounds();
     if (!compact_) {
+        a.removeFromTop(kOverlayRowH);  // overlay picker row
         a.removeFromBottom(kControlRowH);
     } else {
         a.removeFromBottom(expandedControlsHeight());
@@ -489,6 +667,48 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         freqLabel(100.0f, "100");
         freqLabel(1000.0f, "1k");
         freqLabel(10000.0f, "10k");
+    }
+
+    // Inter-track masking overlay (#1400): the picked track's spectrum drawn
+    // over this one, with the clashing frequency zones shaded. Behind this
+    // track's own trace so the subject stays primary. Drawn even when this track
+    // is silent (smoothedDb_ empty), since the overlay updates independently.
+    if (overlayTrackId_ != magda::INVALID_TRACK_ID) {
+        // Clash zones first, so the spectrum traces sit on top of the shading.
+        // Kept faint (a tint, not a block) so it marks the region without burying
+        // the traces; severity nudges the opacity within a narrow range.
+        const juce::Colour clash(0xffff6b35);  // warm warning hue
+        for (const auto& f : maskingFindings_) {
+            const float x0 = freqToX(f.loHz, plot);
+            const float x1 = freqToX(f.hiHz, plot);
+            const float alpha = juce::jlimit(0.05f, 0.16f, 0.05f + f.severity * 0.12f);
+            g.setColour(clash.withAlpha(alpha));
+            g.fillRect(juce::Rectangle<float>(x0, plot.getY(), juce::jmax(1.0f, x1 - x0),
+                                              plot.getHeight()));
+        }
+
+        // The overlaid track's spectrum, computed by the same FFT pipeline as
+        // this track's trace (see pollOverlayData), so it matches in resolution
+        // and smoothing. Drawn in a neutral colour, secondary to this track.
+        if (overlayValid_ && !overlaySmoothedDb_.empty()) {
+            const double sr = (plugin_ != nullptr) ? plugin_->getSampleRate() : 44100.0;
+            const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
+            juce::Path op;
+            bool started = false;
+            for (int i = 1; i < numBins_; ++i) {  // skip DC
+                const float x = freqToX(static_cast<float>(i) * binHz, plot);
+                const float y = dbToY(overlaySmoothedDb_[static_cast<size_t>(i)], plot);
+                if (!started) {
+                    op.startNewSubPath(x, y);
+                    started = true;
+                } else {
+                    op.lineTo(x, y);
+                }
+            }
+            g.setColour(
+                juce::Colour(0xffc8c8c8).withAlpha(0.7f));  // neutral, secondary to the trace
+            g.strokePath(op, juce::PathStrokeType(1.5f));
+        }
     }
 
     auto drawChevron = [&] {

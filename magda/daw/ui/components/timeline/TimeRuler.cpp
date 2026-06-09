@@ -474,36 +474,18 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     const int height = getHeight();
     const int width = getWidth();
 
-    // Use grid resolution if provided, otherwise compute from zoom level
-    double intervalBeats = 1.0;
-
-    if (gridResolutionBeats > 0.0) {
+    // Display interval in beats. Match the arrangement exactly
+    // (GridConstants::computeGridInterval): adapt to zoom so lines stay at least
+    // ~50px apart, growing to multi-bar steps when zoomed out. A finer snap grid
+    // still snaps but never forces the display denser than the adaptive interval.
+    constexpr int minPixelSpacing = 50;  // matches LayoutConfig::minGridPixelSpacing
+    const double frac = GridConstants::findBeatSubdivision(zoom, minPixelSpacing);
+    double intervalBeats =
+        (frac > 0.0) ? frac
+                     : static_cast<double>(timeSigNumerator) *
+                           GridConstants::findBarMultiple(zoom, timeSigNumerator, minPixelSpacing);
+    if (gridResolutionBeats > intervalBeats)
         intervalBeats = gridResolutionBeats;
-    } else {
-        // Auto-compute from zoom (same logic as TimelineComponent)
-        const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625,
-                                        0.125,     0.25,     0.5,     1.0};
-        const int barMultiples[] = {1, 2, 4, 8, 16, 32};
-        const int minPixelSpacing = 12;
-        bool foundInterval = false;
-
-        for (double fraction : beatFractions) {
-            if (fraction * zoom >= minPixelSpacing) {
-                intervalBeats = fraction;
-                foundInterval = true;
-                break;
-            }
-        }
-
-        if (!foundInterval) {
-            for (int mult : barMultiples) {
-                if (static_cast<double>(timeSigNumerator * mult) * zoom >= minPixelSpacing) {
-                    intervalBeats = timeSigNumerator * mult;
-                    break;
-                }
-            }
-        }
-    }
 
     double pixelsPerBeat = zoom;
     double pixelsPerBar = zoom * timeSigNumerator;
@@ -522,14 +504,22 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     int labelHeight = labelBottom - labelY;
     int mediumTickHeight = tickHeightMajor() * 2 / 3;
 
-    // Determine bar label interval (show every Nth bar when zoomed out)
-    int barLabelInterval = 1;
-    if (pixelsPerBar < 40)
-        barLabelInterval = 8;
-    else if (pixelsPerBar < 60)
-        barLabelInterval = 4;
-    else if (pixelsPerBar < 90)
-        barLabelInterval = 2;
+    // Determine bar label interval. When the display interval already spans
+    // multiple bars (zoomed out), label every grid line so labels match the
+    // lines, exactly as the arrangement does. Only thin by pixel width when the
+    // grid is still at single-bar (or finer) resolution.
+    int gridBarMultiple = 1;
+    if (intervalBeats >= barLengthBeats)
+        gridBarMultiple = static_cast<int>(std::round(intervalBeats / barLengthBeats));
+    int barLabelInterval = gridBarMultiple;
+    if (gridBarMultiple <= 1) {
+        if (pixelsPerBar < 40)
+            barLabelInterval = 8;
+        else if (pixelsPerBar < 60)
+            barLabelInterval = 4;
+        else if (pixelsPerBar < 90)
+            barLabelInterval = 2;
+    }
 
     int currentScrollOffset = linkedViewport ? linkedViewport->getViewPositionX() : scrollOffset;
     double barOriginBeats = barOriginSeconds * tempo / 60.0;

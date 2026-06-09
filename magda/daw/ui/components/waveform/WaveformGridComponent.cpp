@@ -3,8 +3,10 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <cmath>
+#include <limits>
 
 #include "../../state/TimelineController.hpp"
+#include "../../state/TimelineState.hpp"  // GridConstants (shared adaptive grid interval)
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -24,6 +26,33 @@ double currentTimelineBpm() {
 
 WaveformGridComponent::WaveformGridComponent() {
     setName("WaveformGrid");
+}
+
+WaveformGridComponent::~WaveformGridComponent() {
+    if (waveformListenerPath_.isNotEmpty())
+        magda::AudioThumbnailManager::getInstance().removeThumbnailChangeListener(
+            waveformListenerPath_, this);
+}
+
+void WaveformGridComponent::updateWaveformLoadListener(const juce::String& audioFilePath) {
+    auto& mgr = magda::AudioThumbnailManager::getInstance();
+    auto* thumb = audioFilePath.isNotEmpty() ? mgr.getThumbnail(audioFilePath) : nullptr;
+    const juce::String wanted =
+        (thumb != nullptr && !thumb->isFullyLoaded()) ? audioFilePath : juce::String();
+    if (wanted == waveformListenerPath_)
+        return;
+    if (waveformListenerPath_.isNotEmpty())
+        mgr.removeThumbnailChangeListener(waveformListenerPath_, this);
+    waveformListenerPath_ = wanted;
+    if (waveformListenerPath_.isNotEmpty())
+        if (auto* t = mgr.getThumbnail(waveformListenerPath_))
+            t->addChangeListener(this);
+}
+
+void WaveformGridComponent::changeListenerCallback(juce::ChangeBroadcaster*) {
+    const auto* clip = getClip();
+    updateWaveformLoadListener(clip != nullptr ? clip->audio().source.filePath : juce::String());
+    repaint();
 }
 
 void WaveformGridComponent::paint(juce::Graphics& g) {
@@ -157,6 +186,8 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
         return;
 
     auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
+    // Repaint as the thumbnail streams in (progressive fill while loading).
+    updateWaveformLoadListener(clip.audio().source.filePath);
     auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
     double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
     // The waveform editor only ever shows the focused clip, so the waveform is
@@ -284,11 +315,15 @@ void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda
     // Beat grid overlay (after waveform, before markers)
     paintBeatGrid(g, clip);
 
-    // Transient or warp markers
+    // Draw transient markers whenever detection data is present. Warp markers
+    // are an editing overlay, but they must not hide transient sensitivity
+    // feedback from the waveform editor.
+    if (!transientTimes_.isEmpty()) {
+        paintTransientMarkers(g, clip);
+    }
+
     if (warpMode_ && !warpMarkers_.empty()) {
         paintWarpMarkers(g, clip);
-    } else if (!warpMode_ && !transientTimes_.isEmpty()) {
-        paintTransientMarkers(g, clip);
     }
 
     // Center line — clipped to visible rect
@@ -357,8 +392,28 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     if (bpm <= 0.0)
         return;
     double secondsPerBeat = 60.0 / bpm;
-    double secondsPerGrid = gridBeats * secondsPerBeat;
     double beatsPerBar = static_cast<double>(timeRuler_->getTimeSigNumerator());
+
+    // Match the arrangement (GridConstants::computeGridInterval): never draw grid
+    // lines or bar numbers denser than ~50px. The display interval grows to
+    // multi-bar steps when zoomed out, so a long clip shows e.g. one line every
+    // 16 bars instead of a wall. A finer snap resolution still snaps but does not
+    // force the display denser.
+    const double pixelsPerBeat = secondsPerBeat * horizontalZoom_;
+    constexpr int kMinGridLinePx = 50;  // matches LayoutConfig::minGridPixelSpacing
+    {
+        const int timeSigNum = juce::jmax(1, static_cast<int>(beatsPerBar));
+        const double frac =
+            magda::GridConstants::findBeatSubdivision(pixelsPerBeat, kMinGridLinePx);
+        const double adaptiveBeats =
+            (frac > 0.0)
+                ? frac
+                : static_cast<double>(timeSigNum) * magda::GridConstants::findBarMultiple(
+                                                        pixelsPerBeat, timeSigNum, kMinGridLinePx);
+        if (adaptiveBeats > gridBeats)
+            gridBeats = adaptiveBeats;
+    }
+    double secondsPerGrid = gridBeats * secondsPerBeat;
 
     // Grid origin in display seconds. In REL display time is clip-local, so
     // active clip start is 0. In ABS display time is project timeline seconds.
@@ -378,7 +433,7 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     visibleStartDisplay = juce::jmax(visibleStartDisplay, waveformStartDisplay);
     visibleEndDisplay = juce::jmin(visibleEndDisplay, waveformEndDisplay);
 
-    // Find the first grid line at or before the visible start
+    // First grid line at or before the visible start.
     double startK = std::floor((visibleStartDisplay - originDisplay) / secondsPerGrid);
     double iterStart = originDisplay + startK * secondsPerGrid;
     double iterEnd = visibleEndDisplay + secondsPerGrid;
@@ -753,16 +808,28 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
     auto waveformRect =
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 
-    g.setColour(juce::Colours::white.withAlpha(0.25f));
+    // Faint line for the body, with a solid handle triangle at the top so a
+    // transient reads as a marker and is never mistaken for a grid line.
+    const juce::Colour lineColour = juce::Colours::white.withAlpha(0.25f);
+    const juce::Colour handleColour = juce::Colours::white.withAlpha(0.85f);
+    constexpr float kHandleHalfW = 4.0f;
+    constexpr float kHandleH = 6.0f;
 
     // Visible pixel range for culling
     int visibleLeft = 0;
     int visibleRight = getWidth();
+    int inSourceCount = 0;
+    int drawnCount = 0;
+    int firstDrawnPx = std::numeric_limits<int>::max();
+    double firstDrawnTime = 0.0;
 
     auto drawMarkersForCycle = [&](double cycleOffset, double sourceStart, double sourceEnd) {
+        const float top = static_cast<float>(waveformRect.getY());
+        const float bottom = static_cast<float>(waveformRect.getBottom());
         for (double t : transientTimes_) {
             if (t < sourceStart || t >= sourceEnd)
                 continue;
+            ++inSourceCount;
 
             // Convert source time to timeline display time via ClipDisplayInfo
             double displayTime = displayInfo_.sourceToTimeline(t - sourceStart) + cycleOffset;
@@ -777,8 +844,20 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
             if (px < waveformRect.getX() || px > waveformRect.getRight())
                 continue;
 
-            g.drawVerticalLine(px, static_cast<float>(waveformRect.getY()),
-                               static_cast<float>(waveformRect.getBottom()));
+            g.setColour(lineColour);
+            g.drawVerticalLine(px, top, bottom);
+
+            // Downward-pointing handle triangle flush with the top edge.
+            const float fx = static_cast<float>(px);
+            juce::Path handle;
+            handle.addTriangle(fx - kHandleHalfW, top, fx + kHandleHalfW, top, fx, top + kHandleH);
+            g.setColour(handleColour);
+            g.fillPath(handle);
+            ++drawnCount;
+            if (px < firstDrawnPx) {
+                firstDrawnPx = px;
+                firstDrawnTime = t;
+            }
         }
     };
 
@@ -786,6 +865,8 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
     double sourceStart = displayInfo_.sourceFileStart;
     double sourceEnd = displayInfo_.sourceFileEnd;
     drawMarkersForCycle(0.0, sourceStart, sourceEnd);
+
+    juce::ignoreUnused(drawnCount, inSourceCount, firstDrawnPx, firstDrawnTime);
 }
 
 void WaveformGridComponent::paintNoClipMessage(juce::Graphics& g) {

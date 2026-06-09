@@ -1987,6 +1987,29 @@ void SessionView::rebuildTracks() {
             UndoManager::getInstance().executeCommand(
                 std::make_unique<DeleteTrackCommand>(trackId));
         };
+        header->canGroupSelectedTracks = [trackId]() {
+            auto& sel = SelectionManager::getInstance();
+            return sel.getSelectedTrackCount() >= 2 && sel.isTrackSelected(trackId);
+        };
+        header->onGroupSelectedTracks = []() {
+            auto& sel = SelectionManager::getInstance();
+            std::vector<TrackId> selectedTracks(sel.getSelectedTracks().begin(),
+                                                sel.getSelectedTracks().end());
+            TrackId groupId = TrackManager::getInstance().groupTracks(selectedTracks);
+            if (groupId != INVALID_TRACK_ID)
+                sel.selectTrack(groupId);
+        };
+        header->canUngroupTracks = [trackId]() {
+            const auto* track = TrackManager::getInstance().getTrack(trackId);
+            return track != nullptr && track->isGroup() && !track->childIds.empty();
+        };
+        header->onUngroupTracks = [trackId]() {
+            auto childIds = TrackManager::getInstance().ungroupTrack(trackId);
+            if (!childIds.empty()) {
+                std::unordered_set<TrackId> selectedChildren(childIds.begin(), childIds.end());
+                SelectionManager::getInstance().selectTracks(selectedChildren);
+            }
+        };
 
         int headerIdx = i;
         header->onHeaderMouseDown = [this, headerIdx](const juce::MouseEvent& e) {
@@ -3307,13 +3330,17 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             slot->slotIsRecording = false;
             slot->isSelected = SelectionManager::getInstance().isClipSelected(clipId);
             // Issue #1157: read through the accessor — for autoTempo clips
-            // this computes lengthBeats × 60 / projectBPM live, so the slot
-            // progress overlay stays correct after a project-tempo change
-            // even before the seconds cache is refreshed.
+            // this computes beats × 60 / projectBPM live, so the slot progress
+            // overlay stays correct after a project-tempo change even before the
+            // seconds cache is refreshed. Use the LOOP length (what the playhead
+            // wraps at), not the clip placement length: reinterpreting a clip's
+            // source BPM changes loopLengthBeats without touching
+            // placement.lengthBeats, so getTimelineLength() would leave the bar
+            // out of sync with the playhead position.
             {
                 double sessionBPM =
                     timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-                slot->clipLength = clip->getTimelineLength(sessionBPM);
+                slot->clipLength = clip->getTimelineLoopLength(sessionBPM);
             }
             {
                 auto posIt = clipPlayheadPositions_.find(clipId);

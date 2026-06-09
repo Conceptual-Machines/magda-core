@@ -435,11 +435,13 @@ void MixerView::ChannelStrip::setupControls() {
     // Peak / fader-value readout above the fader (replaces the old "-inf"
     // slot). Mono font keeps the digits in a tabular grid so they don't
     // shift sideways as the value changes.
-    peakLabel = std::make_unique<juce::Label>();
+    peakLabel = std::make_unique<ClickableLabel>();
     peakLabel->setText("-inf", juce::dontSendNotification);
     peakLabel->setJustificationType(juce::Justification::centred);
     peakLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     peakLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
+    peakLabel->setTooltip("Click to reset peak");
+    peakLabel->onClick = [this]() { resetPeak(); };
     addAndMakeVisible(*peakLabel);
 
     // Volume slider (vertical TextSlider, 0-1 range with power curve mapping)
@@ -639,6 +641,7 @@ void MixerView::ChannelStrip::setupControls() {
 
         miniSpectrumUI_ = std::make_unique<daw::ui::SpectrumAnalyzerUI>();
         miniSpectrumUI_->setCompact(true);
+        miniSpectrumUI_->setTrackId(trackId_);  // masking overlay (shown when popped out)
         miniSpectrumUI_->setPersistGlobalDefaults(false);
         miniSpectrumUI_->setVisible(false);
         miniSpectrumUI_->onControlsExpandedChanged = relayoutOnExpand;
@@ -932,8 +935,6 @@ void MixerView::ChannelStrip::syncMiniChainPluginWindow(DeviceId deviceId, bool 
 }
 
 void MixerView::ChannelStrip::refreshMiniAnalyzers() {
-    if (isMaster_)
-        return;
     auto& tm = TrackManager::getInstance();
     auto* bridge = audioEngine_ ? audioEngine_->getAudioBridge() : nullptr;
 
@@ -1216,23 +1217,21 @@ void MixerView::ChannelStrip::resized() {
     constexpr int miniAnalyzerHeight = 64;
     const bool showOsc = cfg.getMixerShowOscilloscope();
     const bool showSpec = cfg.getMixerShowSpectrum();
-    if (!isMaster_) {
-        if (showOsc && miniOscilloscopeUI_) {
-            const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
-            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
-            miniOscilloscopeUI_->setVisible(true);
-            bounds.removeFromTop(2);
-        } else if (miniOscilloscopeUI_) {
-            miniOscilloscopeUI_->setVisible(false);
-        }
-        if (showSpec && miniSpectrumUI_) {
-            const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
-            miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
-            miniSpectrumUI_->setVisible(true);
-            bounds.removeFromTop(2);
-        } else if (miniSpectrumUI_) {
-            miniSpectrumUI_->setVisible(false);
-        }
+    if (showOsc && miniOscilloscopeUI_) {
+        const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
+        miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
+        miniOscilloscopeUI_->setVisible(true);
+        bounds.removeFromTop(2);
+    } else if (miniOscilloscopeUI_) {
+        miniOscilloscopeUI_->setVisible(false);
+    }
+    if (showSpec && miniSpectrumUI_) {
+        const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
+        miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
+        miniSpectrumUI_->setVisible(true);
+        bounds.removeFromTop(2);
+    } else if (miniSpectrumUI_) {
+        miniSpectrumUI_->setVisible(false);
     }
 
     // Sends auto-size to their slot count (no user resize). The horizontal
@@ -1390,8 +1389,7 @@ void MixerView::ChannelStrip::resized() {
         bounds.removeFromBottom(2);
 
         if (isMaster_) {
-            auto row = bounds.removeFromBottom(metrics.buttonSize);
-            muteButton->setBounds(row);
+            muteButton->setVisible(false);
             soloButton->setVisible(false);
             if (recordButton)
                 recordButton->setVisible(false);
@@ -1523,6 +1521,12 @@ void MixerView::ChannelStrip::setMeterLevels(float leftLevel, float rightLevel) 
     }
 }
 
+void MixerView::ChannelStrip::resetPeak() {
+    peakValue_ = 0.0f;
+    if (peakLabel)
+        peakLabel->setText("-inf", juce::dontSendNotification);
+}
+
 void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
     if (selected != shouldBeSelected) {
         selected = shouldBeSelected;
@@ -1557,12 +1561,42 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
         if (isMaster_)
             return;  // master strip has nothing to offer here
 
+        const int ungroupTracksId = -103;
+        const int groupSelectedTracksId = -102;
         const int deleteTrackId = -101;
         juce::PopupMenu menu;
+        const auto* track = TrackManager::getInstance().getTrack(trackId_);
+        const bool canUngroupTracks =
+            track != nullptr && track->isGroup() && !track->childIds.empty();
+        if (canUngroupTracks) {
+            menu.addItem(ungroupTracksId, "Ungroup tracks");
+            menu.addSeparator();
+        }
+
+        auto& sel = SelectionManager::getInstance();
+        const bool canGroupSelectedTracks =
+            sel.getSelectedTrackCount() >= 2 && sel.isTrackSelected(trackId_);
+        if (canGroupSelectedTracks) {
+            menu.addItem(groupSelectedTracksId, "Group tracks");
+            menu.addSeparator();
+        }
         menu.addItem(deleteTrackId, "Delete Track");
 
         menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
-            if (result == -101) {
+            if (result == -103) {
+                auto childIds = TrackManager::getInstance().ungroupTrack(trackId_);
+                if (!childIds.empty()) {
+                    std::unordered_set<TrackId> selectedChildren(childIds.begin(), childIds.end());
+                    SelectionManager::getInstance().selectTracks(selectedChildren);
+                }
+            } else if (result == -102) {
+                auto& selection = SelectionManager::getInstance();
+                std::vector<TrackId> selectedTracks(selection.getSelectedTracks().begin(),
+                                                    selection.getSelectedTracks().end());
+                TrackId groupId = TrackManager::getInstance().groupTracks(selectedTracks);
+                if (groupId != INVALID_TRACK_ID)
+                    selection.selectTrack(groupId);
+            } else if (result == -101) {
                 UndoManager::getInstance().executeCommand(
                     std::make_unique<DeleteTrackCommand>(trackId_));
             }
@@ -2290,6 +2324,20 @@ void MixerView::timerCallback() {
         return;
 
     auto& meteringBuffer = bridge->getMeteringBuffer();
+
+    // Auto-clear held peaks on the rising edge of playback so the readouts
+    // reflect the current take rather than the loudest-ever value. Clicking a
+    // peak label resets it manually at any time (see ClickableLabel wiring).
+    const bool isPlaying = bridge->isTransportPlaying();
+    if (isPlaying && !wasPlaying_) {
+        for (auto& strip : channelStrips)
+            strip->resetPeak();
+        for (auto& strip : auxChannelStrips)
+            strip->resetPeak();
+        if (masterStrip)
+            masterStrip->resetPeak();
+    }
+    wasPlaying_ = isPlaying;
 
     // Update channel strip meters
     for (auto& strip : channelStrips) {

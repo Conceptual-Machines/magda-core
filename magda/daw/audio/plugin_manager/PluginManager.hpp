@@ -27,6 +27,9 @@ struct TrackInfo;
 class TrackController;
 class PluginWindowBridge;
 class TransportStateManager;
+namespace daw::audio {
+class TrackMeasurementPlugin;
+}
 
 /**
  * @brief Result of attempting to load a plugin
@@ -421,6 +424,12 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      */
     void restoreAfterRendering();
 
+    /// True between prepareForRendering() and restoreAfterRendering() -- i.e.
+    /// while an offline render (export / mix analysis) is in progress.
+    bool isRenderingActive() const {
+        return renderingActive_.load(std::memory_order_acquire);
+    }
+
     /**
      * @brief Reset sidechain monitor held-note counts and re-gate triggered LFOs.
      *
@@ -496,6 +505,20 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     void checkAudioSidechainMonitor(TrackId trackId);
     void ensureAudioSidechainMonitor(TrackId sourceTrackId);
     void removeAudioSidechainMonitor(TrackId sourceTrackId);
+
+    /**
+     * @brief Ensure the always-on per-track measurement tap exists (issue #1388).
+     *
+     * Inserts a TrackMeasurementPlugin post-fader (appended at the end of the
+     * chain, after volume/pan) on the given track, or on the master when
+     * trackId == MASTER_TRACK_ID. The master tap is created with true-peak
+     * enabled; per-track taps use sample peak only. Idempotent: returns the
+     * existing tap if already present. Returns nullptr if the track has no TE
+     * audio track. The tap is dormant until a consumer enables it.
+     */
+    daw::audio::TrackMeasurementPlugin* ensureTrackMeasurementTap(TrackId trackId);
+    void removeTrackMeasurementTap(TrackId trackId);
+    daw::audio::TrackMeasurementPlugin* getTrackMeasurementTap(TrackId trackId) const;
 
     /**
      * @brief Ensure a MidiReceivePlugin exists before a target device for MIDI sidechain.
@@ -637,6 +660,10 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
 
     // Audio sidechain monitor plugins (sourceTrackId → AudioSidechainMonitorPlugin)
     std::map<TrackId, te::Plugin::Ptr> audioSidechainMonitors_;
+
+    // Per-track measurement taps (trackId → TrackMeasurementPlugin), issue #1388.
+    // MASTER_TRACK_ID keys the master tap. Lazily inserted on first enable.
+    std::map<TrackId, te::Plugin::Ptr> trackMeasurementTaps_;
 
     // Pre-computed sidechain LFO cache: indexed by source TrackId.
     // Double-buffered: message thread writes to inactive buffer then atomically

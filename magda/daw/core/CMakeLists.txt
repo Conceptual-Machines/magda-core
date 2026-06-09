@@ -8,6 +8,8 @@ target_sources(magda_daw PRIVATE
     UIScale.cpp
     UpdateChecker.cpp
     ViewModeController.cpp
+    ConsoleRouting.cpp
+    MixAnalysisService.cpp
     SessionViewState.cpp
     TrackManager.cpp
     TrackManagerModulation.cpp
@@ -22,6 +24,7 @@ target_sources(magda_daw PRIVATE
     AutomationManager.cpp
     LinkModeManager.cpp
     GainStagingManager.cpp
+    TrackMeasurementManager.cpp
     UndoManager.cpp
     ClipCommands.cpp
     ClipPropertyCommands.cpp

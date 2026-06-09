@@ -4,14 +4,6 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_dsp/juce_dsp.h>
 
-// clang-format off
-// tracktion_engine.h MUST come before tracktion_TempoDetect.h: the
-// TempoDetect header uses unqualified SampleCount / AudioScratchBuffer
-// names that are only in scope after the umbrella header is processed.
-#include <tracktion_engine/tracktion_engine.h>
-#include <tracktion_engine/timestretch/tracktion_TempoDetect.h>
-// clang-format on
-
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -121,25 +113,8 @@ std::optional<double> metadataBpm(const juce::StringPairArray& meta) {
 }
 
 std::optional<double> dspBpm(const std::filesystem::path& path) {
-    juce::AudioFormatManager fm;
-    fm.registerBasicFormats();
-    juce::File jpath(juce::String(path.string()));
-    std::unique_ptr<juce::AudioFormatReader> reader(fm.createReaderFor(jpath));
-    if (!reader) {
-        return std::nullopt;
-    }
-    tracktion::engine::TempoDetect detector(static_cast<int>(reader->numChannels),
-                                            reader->sampleRate);
-    const float bpm = detector.processReader(*reader);
-    if (!detector.isBpmSensible()) {
-        return std::nullopt;
-    }
-    double d = static_cast<double>(bpm);
-    const double rounded = std::round(d);
-    if (std::abs(d - rounded) < 0.5) {
-        d = rounded;
-    }
-    return d;
+    (void)path;
+    return std::nullopt;
 }
 
 // ---- Spectral stats ----------------------------------------------------
@@ -357,7 +332,7 @@ std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path) 
     f.channels = decoded->channels;
     f.durationS = static_cast<double>(decoded->lengthSamples) / decoded->sampleRate;
 
-    // --- BPM: filename > metadata > DSP ---
+    // --- BPM: filename > metadata ---
     if (auto p = parseBpmFromPath(path)) {
         f.bpm = *p;
     } else if (auto m = metadataBpm(decoded->metadata)) {

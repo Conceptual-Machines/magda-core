@@ -1,15 +1,15 @@
 // Deterministic per-file audio features (issue #768).
 //
 // Mirrors prototypes/media_db/.../features/audio_features.py — same fields,
-// same output ranges, same null semantics. Implementation differs: BPM uses
-// Tracktion's TempoDetect; spectral / chroma analysis uses juce::dsp::FFT
+// same output ranges, same null semantics. Implementation differs: BPM currently
+// uses filename/metadata only; spectral / chroma analysis uses juce::dsp::FFT
 // instead of librosa.
 //
 // Source-of-truth precedence for BPM and key, in order:
 //   1. Filename token (parseBpmFromPath / parseKeyFromPath in PathRules)
 //   2. Audio metadata chunks (ACID tempo, ACID root note via JUCE reader
 //      metadataValues)
-//   3. DSP fallback (TempoDetect for BPM, chroma + Krumhansl for key)
+//   3. DSP fallback for key (chroma + Krumhansl); BPM DSP fallback is disabled.
 //
 // The cheap tiers run first so a well-named sample never pays the DSP cost.
 
@@ -26,7 +26,8 @@ struct AudioFeatures {
     int sampleRate = 0;
     int channels = 0;
 
-    // Source tier: filename > metadata > DSP. nullopt if no source produced a
+    // Source tier: filename > metadata > DSP. BPM DSP fallback is disabled.
+    // nullopt if no source produced a
     // sensible value (silence, no key marker on atonal content, etc.).
     std::optional<double> bpm;
     std::optional<std::string> keyRoot;   // "C", "C#", "D", ...

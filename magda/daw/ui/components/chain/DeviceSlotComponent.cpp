@@ -816,6 +816,9 @@ void DeviceSlotComponent::timerCallback() {
     if (!bridge)
         return;
 
+    if (compiledPanel_ != nullptr || traits_.isAnalysis)
+        refreshInlinePluginBindings();
+
     // Update UI button state to match the actual window state.
     if (uiButton_) {
         // Analysis devices use the popout AnalyzerWindow, not a native plugin window.
@@ -1051,6 +1054,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
 
     // Update MIDI custom UIs with the now-valid trackId (createCustomUI runs before setNodePath).
     bindDeviceSlotMidiCustomUIs(customUI_, nodePath_);
+    refreshInlinePluginBindings();
 }
 
 int DeviceSlotComponent::getCustomUITabIndex() const {
@@ -1227,10 +1231,12 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         currentPresetName_.clear();
         pluginPresetName_.clear();
         currentPluginPresetFile_ = juce::File();
-        // AI panel output is plugin-specific too — wipe so we don't show
-        // stale 4OSC results on a slot that now holds a different plugin.
-        if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
+        // AI panel output + conversation are plugin-specific too — wipe so we
+        // don't show stale results or carry history onto a different plugin.
+        if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
             live->aiPanelOutput.clear();
+            live->aiConversation.clear();
+        }
     }
 
     device_ = device;
@@ -2081,6 +2087,7 @@ void DeviceSlotComponent::toggleAnalyzerWindow() {
     } else if (auto* spec = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
         auto ui = std::make_unique<SpectrumAnalyzerUI>();
         ui->setPlugin(spec);
+        ui->setTrackId(nodePath_.trackId);  // enables the masking overlay in the external window
         content = std::move(ui);
     }
     if (content == nullptr)
@@ -2363,6 +2370,22 @@ void DeviceSlotComponent::updateCustomUI() {
         compiledPanel_->updateFromDevice(device_);
 
     customUI_.update(device_);
+}
+
+void DeviceSlotComponent::refreshInlinePluginBindings() {
+    if (!nodePath_.isValid())
+        return;
+
+    if (compiledPanel_ != nullptr) {
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(nodePath_);
+                compiledPanel_->bindPlugin(plugin.get());
+            }
+        }
+    }
+
+    customUI_.refreshLivePluginBindings();
 }
 
 void DeviceSlotComponent::wirePadChainLinkCallbacks() {
