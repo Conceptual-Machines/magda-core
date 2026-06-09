@@ -15,15 +15,15 @@ struct SvgIconData {
 SvgIconData getSvgForContentType(PanelContentType type) {
     switch (type) {
         case PanelContentType::PluginBrowser:
-            return {BinaryData::plug_svg, BinaryData::plug_svgSize};
+            return {BinaryData::iconpluginsboldm_svg, BinaryData::iconpluginsboldm_svgSize};
         case PanelContentType::MediaExplorer:
-            return {BinaryData::browser_svg, BinaryData::browser_svgSize};
+            return {BinaryData::iconbrowserboldm_svg, BinaryData::iconbrowserboldm_svgSize};
         case PanelContentType::PresetBrowser:
             return {BinaryData::preset_svg, BinaryData::preset_svgSize};
         case PanelContentType::Inspector:
-            return {BinaryData::info_svg, BinaryData::info_svgSize};
+            return {BinaryData::iconinspectorboldm_svg, BinaryData::iconinspectorboldm_svgSize};
         case PanelContentType::AIChatConsole:
-            return {BinaryData::console_svg, BinaryData::console_svgSize};
+            return {BinaryData::iconconsoleboldm_svg, BinaryData::iconconsoleboldm_svgSize};
         case PanelContentType::ScriptingConsole:
             return {BinaryData::script_svg, BinaryData::script_svgSize};
         case PanelContentType::TrackChain:

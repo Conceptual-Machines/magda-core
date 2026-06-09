@@ -17,6 +17,7 @@
     "file.close_project": "Close Project",
     "file.save_project": "Save Project",
     "file.save_project_as": "Save Project As...",
+    "file.collect_files": "Collect Files...",
     "file.export_audio": "Export Audio...",
     "file.export_midi": "Export MIDI...",
     "file.quit": "Quit",
@@ -355,6 +356,14 @@
     "error.no_midi_notes": "No MIDI clips with notes to export.",
     "error.midi_write_failed": "Failed to write MIDI file.",
     "error.cannot_create_file": "Could not create output file:"
+  },
+
+  "collect": {
+    "title": "Collect Files",
+    "progress.title": "Collecting Files...",
+    "progress.copying": "Copying referenced audio into the project...",
+    "alert.cancelled": "Collect was cancelled. Some files may not have been copied.",
+    "alert.no_edit": "Open or create a project first."
   },
 
   "common": {
