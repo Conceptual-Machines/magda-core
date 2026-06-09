@@ -78,13 +78,15 @@ class AnalysisJob : public juce::Thread {
   public:
     AnalysisJob(TracktionEngineWrapper& engine, OfflineMixAnalysis::Request request,
                 OfflineMixAnalysis::ProgressFn onProgress,
-                OfflineMixAnalysis::CompletionFn onComplete)
+                OfflineMixAnalysis::CompletionFn onComplete,
+                OfflineMixAnalysis::MeasuredFn onMeasured)
         : juce::Thread("OfflineMixAnalysis"),
           engine_(engine),
           edit_(*engine.getEdit()),
           request_(std::move(request)),
           onProgress_(std::move(onProgress)),
           onComplete_(std::move(onComplete)),
+          onMeasured_(std::move(onMeasured)),
           inhibitor_(edit_.getTransport()) {
         // Message-thread setup, mirroring the export path: TE asserts the play
         // context is not active during an offline render.
@@ -345,6 +347,17 @@ class AnalysisJob : public juce::Thread {
         input.genre = request_.genre;
         input.question = request_.question;
 
+        // Deliver the measured data before the agent step. Measure-only callers
+        // (the mix-analysis modal) stop here; the LLM is opt-in.
+        if (onMeasured_) {
+            auto cb = onMeasured_;
+            auto snapshot = input;  // copy: input is still needed for the agent below
+            juce::MessageManager::callAsync(
+                [cb, snapshot = std::move(snapshot)]() mutable { cb(std::move(snapshot)); });
+        }
+        if (request_.skipAgent)
+            return {};  // clean, no-error Result; the measured Input went via onMeasured_
+
         postProgress("Asking the mix analyst...");
         MixAnalysisAgent agent;
         return agent.generate(input);
@@ -355,6 +368,7 @@ class AnalysisJob : public juce::Thread {
     OfflineMixAnalysis::Request request_;
     OfflineMixAnalysis::ProgressFn onProgress_;
     OfflineMixAnalysis::CompletionFn onComplete_;
+    OfflineMixAnalysis::MeasuredFn onMeasured_;
     tk::TransportControl::ReallocationInhibitor inhibitor_;  // held for the render's lifetime
     std::atomic<bool> cancel_{false};
 };
@@ -362,7 +376,8 @@ class AnalysisJob : public juce::Thread {
 }  // namespace
 
 void OfflineMixAnalysis::start(TracktionEngineWrapper& engine, Request request,
-                               ProgressFn onProgress, CompletionFn onComplete) {
+                               ProgressFn onProgress, CompletionFn onComplete,
+                               MeasuredFn onMeasured) {
     if (engine.getEdit() == nullptr) {
         MixAnalysisAgent::Result r;
         r.hasError = true;
@@ -373,8 +388,8 @@ void OfflineMixAnalysis::start(TracktionEngineWrapper& engine, Request request,
     }
 
     // Self-owning: deletes itself on the message thread when the work completes.
-    [[maybe_unused]] auto* job =
-        new AnalysisJob(engine, std::move(request), std::move(onProgress), std::move(onComplete));
+    [[maybe_unused]] auto* job = new AnalysisJob(engine, std::move(request), std::move(onProgress),
+                                                 std::move(onComplete), std::move(onMeasured));
 }
 
 }  // namespace daw::audio

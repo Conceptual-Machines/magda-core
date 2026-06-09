@@ -1,0 +1,117 @@
+#pragma once
+
+#include <juce_events/juce_events.h>
+
+#include <optional>
+#include <set>
+
+#include "../../agents/mixing_agent.hpp"  // MixAnalysisAgent::Input (measured data)
+#include "TypeIds.hpp"
+
+namespace magda {
+
+/**
+ * @brief Owns mix-analysis *measurement* gathering, decoupled from the agent.
+ *
+ * Splits the old console flow in two: this service produces the measured
+ * MixAnalysisAgent::Input (per-track levels + masking + tonal/timeline) and
+ * caches it; the LLM step stays in the console and is opt-in. Both the mixer
+ * toggle-rail Analyze button (which shows a modal of the measured findings) and
+ * the console (which attaches the latest measurement as agent context) read this
+ * one source.
+ *
+ * Three gather modes:
+ *   - Live:  instant, no render. Arms the TrackMeasurementManager taps; the user
+ *            plays the mix; stopLiveCapture() gathers snapshots + masking.
+ *   - Quick: offline render of the summed master only (OfflineMixAnalysis Shallow).
+ *   - Deep:  offline render per track + master (OfflineMixAnalysis Deep).
+ *
+ * Message-thread only. No LLM call here.
+ */
+class MixAnalysisService {
+  public:
+    enum class Mode { Live, Quick, Deep };
+
+    class Listener {
+      public:
+        virtual ~Listener() = default;
+        /// Fired on any state change: run started / ready / failed / capturing.
+        virtual void mixAnalysisChanged() {}
+    };
+
+    static MixAnalysisService& getInstance();
+
+    MixAnalysisService(const MixAnalysisService&) = delete;
+    MixAnalysisService& operator=(const MixAnalysisService&) = delete;
+
+    // --- Offline (Quick = master only, Deep = per-track) --------------------
+    /// Render + measure off the message thread, no agent. Caches + broadcasts on
+    /// completion. No-op if a run/capture is already in flight.
+    void runOffline(bool deep);
+
+    // --- Live capture (instant, no render) ----------------------------------
+    void startLiveCapture();  // arm the taps; the user then plays the mix
+    void stopLiveCapture();   // gather snapshots + masking into a cached Input
+    bool isCapturing() const {
+        return capturing_;
+    }
+
+    /// Abandon an in-flight offline run / live capture and reset. The render
+    /// can't be interrupted, so a late result is dropped by the run-id guard.
+    void cancel();
+
+    bool isBusy() const {
+        return busy_;
+    }
+    Mode busyMode() const {
+        return busyMode_;
+    }
+    juce::String progressText() const {
+        return progressText_;
+    }
+    juce::String lastError() const {
+        return lastError_;
+    }
+
+    /// The cached measured data for a mode (nullopt if never run / cleared).
+    std::optional<MixAnalysisAgent::Input> cached(Mode mode) const;
+    /// The most recently produced measurement of any mode.
+    std::optional<MixAnalysisAgent::Input> latest() const;
+
+    void addListener(Listener* l) {
+        listeners_.add(l);
+    }
+    void removeListener(Listener* l) {
+        listeners_.remove(l);
+    }
+
+  private:
+    MixAnalysisService() = default;
+
+    void store(Mode mode, MixAnalysisAgent::Input input);
+    void setBusy(bool busy, Mode mode);
+    void restoreCaptureState();  // undo what startLiveCapture armed
+    MixAnalysisAgent::Input buildLiveInput() const;
+
+    bool busy_ = false;
+    Mode busyMode_ = Mode::Quick;
+    bool capturing_ = false;
+    int runId_ = 0;  // offline cancel guard
+    juce::String progressText_;
+    juce::String lastError_;
+
+    // Live-capture restore bookkeeping (mirrors the console's): only undo the
+    // tap enablement we added, so another consumer (the Levels meter) is left
+    // alone.
+    std::set<TrackId> captureAddedTracks_;
+    bool captureAddedGlobal_ = false;
+    bool captureAddedMasking_ = false;
+
+    std::optional<MixAnalysisAgent::Input> cacheLive_, cacheQuick_, cacheDeep_;
+    Mode latestMode_ = Mode::Quick;
+    bool haveLatest_ = false;
+
+    juce::ListenerList<Listener> listeners_;
+};
+
+}  // namespace magda

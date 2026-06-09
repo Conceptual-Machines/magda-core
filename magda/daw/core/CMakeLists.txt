@@ -9,6 +9,7 @@ target_sources(magda_daw PRIVATE
     UpdateChecker.cpp
     ViewModeController.cpp
     ConsoleRouting.cpp
+    MixAnalysisService.cpp
     SessionViewState.cpp
     TrackManager.cpp
     TrackManagerModulation.cpp

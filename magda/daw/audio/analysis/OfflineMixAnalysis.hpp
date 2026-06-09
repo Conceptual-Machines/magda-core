@@ -63,20 +63,29 @@ class OfflineMixAnalysis {
         std::string genre;     ///< project genre (empty = omit)
         std::string question;  ///< optional user question (empty = general assessment)
         int numSegments = 16;  ///< master timeline slices (Deep)
+        /// Measure-only: render + build the measured Input, deliver it via
+        /// onMeasured, and skip the LLM agent entirely (onComplete still fires
+        /// with a clean/empty Result, or an error Result on render failure).
+        bool skipAgent = false;
     };
 
     /// Human-readable progress line, delivered on the message thread.
     using ProgressFn = std::function<void(const juce::String&)>;
     /// Final agent result, delivered on the message thread.
     using CompletionFn = std::function<void(MixAnalysisAgent::Result)>;
+    /// The measured data (per-track levels + masking + tonal/timeline), delivered
+    /// on the message thread just before the agent step. Fired on success only.
+    using MeasuredFn = std::function<void(MixAnalysisAgent::Input)>;
 
     /**
      * Kick off an offline analysis. Call on the MESSAGE thread. Returns
-     * immediately; onProgress / onComplete fire on the message thread. If the
-     * engine has no edit, onComplete is called synchronously with an error.
+     * immediately; onProgress / onMeasured / onComplete fire on the message
+     * thread. If the engine has no edit, onComplete is called synchronously with
+     * an error. onMeasured (optional) delivers the measured Input before the
+     * agent runs; pair it with Request::skipAgent to stop after measuring.
      */
     static void start(TracktionEngineWrapper& engine, Request request, ProgressFn onProgress,
-                      CompletionFn onComplete);
+                      CompletionFn onComplete, MeasuredFn onMeasured = {});
 };
 
 }  // namespace daw::audio
