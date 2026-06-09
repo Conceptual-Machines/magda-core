@@ -17,11 +17,18 @@ inline constexpr const char* GEMINI = "gemini";
 inline constexpr const char* DEEPSEEK = "deepseek";
 inline constexpr const char* OPENROUTER = "openrouter";
 inline constexpr const char* LLAMA_LOCAL = "llama_local";
+// Generic local / OpenAI-compatible HTTP server (LM Studio, Ollama, GPUStack,
+// llama.cpp server, ...). Configured by base URL; routed through OpenAI-Chat.
+inline constexpr const char* LOCAL_SERVER = "local_server";
 }  // namespace provider
+
+// Default base URL for the generic local server (Ollama's default port).
+inline constexpr const char* DEFAULT_LOCAL_SERVER_URL = "http://localhost:11434/v1";
 
 // --- Preset IDs ---
 namespace preset {
 inline constexpr const char* LOCAL_EMBEDDED = "local_embedded";
+inline constexpr const char* LOCAL_SERVER = "local_server";
 inline constexpr const char* CLOUD_OPENAI = "cloud_openai";
 inline constexpr const char* CLOUD_ANTHROPIC = "cloud_anthropic";
 inline constexpr const char* CLOUD_GEMINI = "cloud_gemini";

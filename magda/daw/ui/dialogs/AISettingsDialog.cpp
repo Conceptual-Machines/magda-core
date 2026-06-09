@@ -6,6 +6,7 @@
 #include "../../../agents/llm_config_utils.hpp"
 #include "../../../agents/llm_presets.hpp"
 #include "../../../agents/model_downloader.hpp"
+#include "../../../agents/openai_url.hpp"
 #include "../../core/Config.hpp"
 #include "../../media_db/MediaDbContext.hpp"
 #include "../../media_db/SampleTaggerDownloader.hpp"
@@ -80,6 +81,64 @@ const ProviderInfo* findProviderInfo(const std::string& id) {
         if (p.id == id)
             return &p;
     return nullptr;
+}
+
+// Result of probing an OpenAI-compatible server's GET /v1/models endpoint.
+struct ModelProbeResult {
+    bool ok = false;
+    int statusCode = 0;
+    std::vector<juce::String> models;  // opaque ids, in server order
+    juce::String error;
+};
+
+// Blocking GET {normalized base}/models with an optional bearer token. Safe to
+// call off the message thread. Model ids are treated as opaque.
+ModelProbeResult probeLocalServerModels(const juce::String& rawBaseUrl,
+                                        const juce::String& apiKey) {
+    ModelProbeResult result;
+    auto base = juce::String(magda::normalizeOpenAIBaseUrl(rawBaseUrl.toStdString()));
+    if (base.isEmpty()) {
+        result.error = "Enter a base URL";
+        return result;
+    }
+
+    juce::URL url(base + "/models");
+    int statusCode = 0;
+    // InputStreamOptions holds references and has no copy-assignment, so the
+    // bearer header must be folded into the single construction chain. An empty
+    // extra-headers string is a harmless no-op.
+    const juce::String headers =
+        apiKey.isNotEmpty() ? ("Authorization: Bearer " + apiKey) : juce::String();
+    auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                       .withConnectionTimeoutMs(5000)
+                       .withStatusCode(&statusCode)
+                       .withExtraHeaders(headers);
+
+    auto stream = url.createInputStream(options);
+    result.statusCode = statusCode;
+    if (stream == nullptr) {
+        result.error = "Connection failed";
+        return result;
+    }
+    if (statusCode < 200 || statusCode >= 300) {
+        result.error = "HTTP " + juce::String(statusCode);
+        return result;
+    }
+
+    auto parsed = juce::JSON::parse(stream->readEntireStreamAsString());
+    if (auto* obj = parsed.getDynamicObject()) {
+        if (auto* arr = obj->getProperty("data").getArray()) {
+            for (auto& item : *arr) {
+                if (auto* io = item.getDynamicObject()) {
+                    auto id = io->getProperty("id").toString();
+                    if (id.isNotEmpty())
+                        result.models.push_back(id);
+                }
+            }
+        }
+    }
+    result.ok = true;
+    return result;
 }
 
 }  // namespace
@@ -817,12 +876,43 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         styleCombo(optimizeCombo_);
         addAndMakeVisible(optimizeCombo_);
 
-        // Local model name label
+        // Local source selector: embedded GGUF vs OpenAI-compatible server.
+        localSourceLabel_.setText("Source", juce::dontSendNotification);
+        styleLabel(localSourceLabel_);
+        addAndMakeVisible(localSourceLabel_);
+
+        localSourceCombo_.addItem("Embedded", 1);
+        localSourceCombo_.addItem("Local server", 2);
+        localSourceCombo_.setSelectedId(1, juce::dontSendNotification);
+        styleCombo(localSourceCombo_);
+        localSourceCombo_.onChange = [this]() { updateModeUI(); };
+        addAndMakeVisible(localSourceCombo_);
+
+        // Local model name label (embedded GGUF source)
         modelNameLabel_.setText("No model loaded", juce::dontSendNotification);
         styleLabel(modelNameLabel_);
         modelNameLabel_.setColour(juce::Label::textColourId,
                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
         addAndMakeVisible(modelNameLabel_);
+
+        // Local-server model picker (shown when Source = Local server). Lives
+        // here so the model is chosen right where the source is selected.
+        serverModelLabel_.setText("Model", juce::dontSendNotification);
+        styleLabel(serverModelLabel_);
+        addAndMakeVisible(serverModelLabel_);
+
+        serverModelCombo_.setEditableText(true);  // allow manual id entry
+        styleCombo(serverModelCombo_);
+        addAndMakeVisible(serverModelCombo_);
+
+        serverRefreshBtn_.setButtonText("Refresh");
+        serverRefreshBtn_.onClick = [this]() { refreshServerModels(); };
+        addAndMakeVisible(serverRefreshBtn_);
+
+        styleLabel(serverStatusLabel_, 11.0f);
+        serverStatusLabel_.setColour(juce::Label::textColourId,
+                                     DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        addAndMakeVisible(serverStatusLabel_);
 
         modeCombo_.setSelectedId(1, juce::dontSendNotification);
         updateModeUI();
@@ -863,8 +953,25 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         int mode = modeCombo_.getSelectedId();
 
         if (mode == 1) {
-            // Local: show model name
-            modelNameLabel_.setBounds(bounds.removeFromTop(rowH).withTrimmedLeft(labelW));
+            // Local: source selector, then either the embedded GGUF summary or
+            // the local-server model picker.
+            row = bounds.removeFromTop(rowH);
+            localSourceLabel_.setBounds(row.removeFromLeft(labelW));
+            localSourceCombo_.setBounds(row.reduced(0, 2));
+            bounds.removeFromTop(4);
+
+            if (localSourceCombo_.getSelectedId() == 2) {
+                // Model + Refresh row
+                row = bounds.removeFromTop(rowH);
+                serverModelLabel_.setBounds(row.removeFromLeft(labelW));
+                serverRefreshBtn_.setBounds(row.removeFromRight(70).reduced(2, 2));
+                row.removeFromRight(4);
+                serverModelCombo_.setBounds(row.reduced(0, 2));
+                bounds.removeFromTop(2);
+                serverStatusLabel_.setBounds(bounds.removeFromTop(18).withTrimmedLeft(labelW));
+            } else {
+                modelNameLabel_.setBounds(bounds.removeFromTop(rowH).withTrimmedLeft(labelW));
+            }
         } else {
             // Cloud/Hybrid: provider + optimize
             row = bounds.removeFromTop(rowH);
@@ -909,6 +1016,15 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             providerCombo_.setSelectedId(providerCombo_.getItemId(0), juce::dontSendNotification);
     }
 
+    // Called when the Config tab becomes visible: re-pull provider combos from
+    // the Cloud page and refresh the local-server summary from the Local page's
+    // live selection.
+    void refreshOnShow() {
+        refreshProviderCombos();
+        if (modeCombo_.getSelectedId() == 1)
+            updateLocalModelLabel();
+    }
+
     void load(Config& config) {
         auto presetId = config.getAIPreset();
 
@@ -924,6 +1040,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         // Determine mode from preset
         if (presetId.starts_with("local") || presetId == magda::preset::LOCAL_EMBEDDED) {
             modeCombo_.setSelectedId(1, juce::dontSendNotification);
+            localSourceCombo_.setSelectedId(presetId == magda::preset::LOCAL_SERVER ? 2 : 1,
+                                            juce::dontSendNotification);
         } else if (presetId.starts_with("hybrid")) {
             modeCombo_.setSelectedId(3, juce::dontSendNotification);
             if (presetId == magda::preset::HYBRID_SPEED)
@@ -955,16 +1073,69 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                  musicCfg.provider == magda::provider::OPENAI_RESPONSES)
             savedProviderDisplay_ = "OpenAI";
 
-        // Update local model label
-        auto modelPath = config.getLocalModelPath();
-        if (!modelPath.empty()) {
-            auto filename = juce::File(juce::String(modelPath)).getFileName();
-            modelNameLabel_.setText(filename, juce::dontSendNotification);
-        } else {
-            modelNameLabel_.setText("No model configured", juce::dontSendNotification);
-        }
+        // Seed the local-server model combo from saved config.
+        serverModelCombo_.clear(juce::dontSendNotification);
+        serverModelCombo_.setText(juce::String(config.getLocalServerModel()),
+                                  juce::dontSendNotification);
 
+        updateLocalModelLabel();
         updateModeUI();
+    }
+
+    // Embedded-GGUF summary (the local-server source uses the model combo, not
+    // this label).
+    void updateLocalModelLabel() {
+        auto modelPath = Config::getInstance().getLocalModelPath();
+        if (!modelPath.empty())
+            modelNameLabel_.setText(juce::File(juce::String(modelPath)).getFileName(),
+                                    juce::dontSendNotification);
+        else
+            modelNameLabel_.setText("No model configured", juce::dontSendNotification);
+    }
+
+    // Probe GET /v1/models for the configured local server and fill the model
+    // combo. Uses the Local tab's live URL/key if present, else saved config.
+    void refreshServerModels() {
+        auto& config = Config::getInstance();
+        juce::String url = juce::String(config.getLocalServerUrl());
+        juce::String key = juce::String(config.getLocalServerApiKey());
+        auto current = serverModelCombo_.getText();
+
+        serverRefreshBtn_.setEnabled(false);
+        serverStatusLabel_.setText("Loading models...", juce::dontSendNotification);
+        serverStatusLabel_.setColour(juce::Label::textColourId,
+                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+
+        auto safeThis = juce::Component::SafePointer<ConfigPage>(this);
+        juce::Thread::launch([safeThis, url, key, current]() {
+            auto probe = probeLocalServerModels(url, key);
+            juce::MessageManager::callAsync([safeThis, probe, current]() {
+                if (!safeThis)
+                    return;
+                safeThis->serverRefreshBtn_.setEnabled(true);
+                if (!probe.ok) {
+                    safeThis->serverStatusLabel_.setText(probe.error, juce::dontSendNotification);
+                    safeThis->serverStatusLabel_.setColour(juce::Label::textColourId,
+                                                           juce::Colours::orange);
+                    return;
+                }
+                safeThis->serverModelCombo_.clear(juce::dontSendNotification);
+                int id = 1;
+                for (const auto& m : probe.models)
+                    safeThis->serverModelCombo_.addItem(m, id++);
+                // Keep a prior pick; else auto-select the first so a single
+                // Refresh fully configures a one-model server.
+                if (current.isNotEmpty())
+                    safeThis->serverModelCombo_.setText(current, juce::dontSendNotification);
+                else if (!probe.models.empty())
+                    safeThis->serverModelCombo_.setSelectedId(1, juce::dontSendNotification);
+                safeThis->serverStatusLabel_.setText(
+                    juce::String(static_cast<int>(probe.models.size())) + " models available",
+                    juce::dontSendNotification);
+                safeThis->serverStatusLabel_.setColour(juce::Label::textColourId,
+                                                       juce::Colours::limegreen);
+            });
+        });
     }
 
     void apply(Config& config) {
@@ -996,12 +1167,18 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         auto optimize = optimizeCombo_.getText();
 
         if (mode == 1) {
-            // Local
-            config.setAIPreset(magda::preset::LOCAL_EMBEDDED);
-            auto* preset = magda::findPreset(magda::preset::LOCAL_EMBEDDED);
+            // Local: embedded GGUF or OpenAI-compatible server.
+            const std::string localPresetId = (localSourceCombo_.getSelectedId() == 2)
+                                                  ? magda::preset::LOCAL_SERVER
+                                                  : magda::preset::LOCAL_EMBEDDED;
+            config.setAIPreset(localPresetId);
+            auto* preset = magda::findPreset(localPresetId);
             if (preset)
                 for (const auto& [role, cfg] : preset->agents)
                     config.setAgentLLMConfig(role, cfg);
+            // Persist the chosen local-server model (this tab owns it).
+            if (localSourceCombo_.getSelectedId() == 2)
+                config.setLocalServerModel(serverModelCombo_.getText().trim().toStdString());
         } else if (mode == 2) {
             // Cloud
             config.setAIPreset(presetId);
@@ -1056,7 +1233,19 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         bool isCloud = (mode == 2);
         bool isHybrid = (mode == 3);
 
-        modelNameLabel_.setVisible(isLocal);
+        const bool isServer = isLocal && localSourceCombo_.getSelectedId() == 2;
+        localSourceLabel_.setVisible(isLocal);
+        localSourceCombo_.setVisible(isLocal);
+        // Embedded source → GGUF summary label; server source → model picker.
+        modelNameLabel_.setVisible(isLocal && !isServer);
+        serverModelLabel_.setVisible(isServer);
+        serverModelCombo_.setVisible(isServer);
+        serverRefreshBtn_.setVisible(isServer);
+        serverStatusLabel_.setVisible(isServer);
+        if (isLocal && !isServer)
+            updateLocalModelLabel();
+        if (isServer && serverModelCombo_.getNumItems() == 0)
+            refreshServerModels();  // auto-discover on entering server source
         providerLabel_.setVisible(!isLocal);
         providerCombo_.setVisible(!isLocal);
         optimizeLabel_.setVisible(!isLocal);
@@ -1135,7 +1324,13 @@ class AISettingsDialog::ConfigPage : public juce::Component {
     juce::ComboBox providerCombo_;
     juce::Label optimizeLabel_;
     juce::ComboBox optimizeCombo_;
+    juce::Label localSourceLabel_;
+    juce::ComboBox localSourceCombo_;
     juce::Label modelNameLabel_;
+    // Local-server model picker (Source = Local server)
+    juce::Label serverModelLabel_, serverStatusLabel_;
+    juce::ComboBox serverModelCombo_;
+    juce::TextButton serverRefreshBtn_;
     juce::String savedProviderDisplay_;
     juce::String savedOptimize_ = "Quality";
 
@@ -1452,7 +1647,7 @@ AISettingsDialog::AISettingsDialog() {
     // Refresh config combos when switching to Config tab
     tabbedComponent_.onTabChanged = [this](int tabIndex) {
         if (tabIndex == 2)
-            configPage_->refreshProviderCombos();
+            configPage_->refreshOnShow();
     };
 
     addAndMakeVisible(tabbedComponent_);

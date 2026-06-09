@@ -152,6 +152,9 @@ void Config::save() {
         }
         aiObj->setProperty("credentials", juce::var(credsObj));
         aiObj->setProperty("localLlamaUrl", toJuceString(localLlamaUrl));
+        aiObj->setProperty("localServerUrl", toJuceString(localServerUrl));
+        aiObj->setProperty("localServerApiKey", toJuceString(localServerApiKey));
+        aiObj->setProperty("localServerModel", toJuceString(localServerModel));
         aiObj->setProperty("localModelPath", toJuceString(localModelPath));
         aiObj->setProperty("localLlamaBinary", toJuceString(localLlamaBinary));
         aiObj->setProperty("localLlamaPort", localLlamaPort);
@@ -472,6 +475,13 @@ void Config::load() {
             // Local llama settings
             if (aiObj->hasProperty("localLlamaUrl"))
                 localLlamaUrl = aiObj->getProperty("localLlamaUrl").toString().toStdString();
+            if (aiObj->hasProperty("localServerUrl"))
+                localServerUrl = aiObj->getProperty("localServerUrl").toString().toStdString();
+            if (aiObj->hasProperty("localServerApiKey"))
+                localServerApiKey =
+                    aiObj->getProperty("localServerApiKey").toString().toStdString();
+            if (aiObj->hasProperty("localServerModel"))
+                localServerModel = aiObj->getProperty("localServerModel").toString().toStdString();
             if (aiObj->hasProperty("localModelPath"))
                 localModelPath = aiObj->getProperty("localModelPath").toString().toStdString();
             if (aiObj->hasProperty("localLlamaBinary"))
