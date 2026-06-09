@@ -567,6 +567,14 @@ void AudioClipPropertiesContent::createControls() {
             return;
         bridge->setTransientSensitivity(clipId_,
                                         static_cast<float>(transientSensValue_->getValue()));
+        // setTransientSensitivity re-detects and clears the transient cache, but
+        // only after a coalescing delay. Clear it synchronously now so the
+        // property-change notification below sees the cache gone and the waveform
+        // editor restarts its transient poll, giving a live update as you drag.
+        if (const auto* clip = magda::ClipManager::getInstance().getClip(clipId_))
+            if (clip->isAudio() && !clip->audio().source.filePath.isEmpty())
+                magda::AudioThumbnailManager::getInstance().clearCachedTransients(
+                    clip->audio().source.filePath);
         magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
     };
     addAndMakeVisible(*transientSensValue_);
