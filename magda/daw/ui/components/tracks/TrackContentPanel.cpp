@@ -690,15 +690,17 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
     static int paintCount = 0;
     paintCount++;
 
-    double tempo = tempoBPM;
-    double beatsPerSecond = tempo / 60.0;
-
     constexpr int HEADER_HEIGHT = 16;
     constexpr float CORNER_RADIUS = 4.0f;
     constexpr int MIDI_MAX = 127;
     constexpr int MIDI_RANGE = 127;
 
     for (const auto& [trackId, preview] : previews) {
+        // Only arrangement passes are painted onto the timeline; session-slot
+        // passes carry the same model but are surfaced in the session view.
+        if (preview.target != RecordingTargetKind::Arrangement)
+            continue;
+
         // Find the track index for this trackId
         int trackIndex = -1;
         for (int i = 0; i < static_cast<int>(visibleTrackIds_.size()); ++i) {
@@ -712,9 +714,9 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
             continue;
         }
 
-        // Compute clip bounds in pixels
-        int clipX = timeToPixel(preview.startTime);
-        int clipEndX = timeToPixel(preview.startTime + preview.currentLength);
+        // Compute clip bounds in pixels (beat-domain placement)
+        int clipX = beatsToPixel(preview.startBeat);
+        int clipEndX = beatsToPixel(preview.startBeat + preview.currentLengthBeats);
         int clipW = juce::jmax(2, clipEndX - clipX);
         int trackY = getTrackYPosition(trackIndex);
         int trackH = getTrackHeight(trackIndex);
@@ -728,7 +730,7 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         if (paintCount % 60 == 1) {
             DBG("RecPreview::paint: track=" << trackId << " bounds=" << bounds.toString()
                                             << " notes=" << preview.notes.size()
-                                            << " len=" << preview.currentLength);
+                                            << " lenBeats=" << preview.currentLengthBeats);
         }
 
         // Background fill
@@ -764,7 +766,7 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         } else if (!preview.notes.empty() && noteArea.getHeight() > 5) {
             g.setColour(baseColour.brighter(0.3f));
 
-            double clipLengthInBeats = preview.currentLength * beatsPerSecond;
+            double clipLengthInBeats = preview.currentLengthBeats;
             double beatRange = juce::jmax(1.0, clipLengthInBeats);
 
             for (const auto& note : preview.notes) {
@@ -821,8 +823,10 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
     // At high zoom the full component can be 65000+ px wide — avoid invalidating all of it.
     juce::Rectangle<int> previewUnion;
     for (const auto& [tId, prev] : previews) {
-        int px = timeToPixel(prev.startTime);
-        int pxEnd = timeToPixel(prev.startTime + prev.currentLength);
+        if (prev.target != RecordingTargetKind::Arrangement)
+            continue;
+        int px = beatsToPixel(prev.startBeat);
+        int pxEnd = beatsToPixel(prev.startBeat + prev.currentLengthBeats);
         int tIdx = -1;
         for (int i = 0; i < static_cast<int>(visibleTrackIds_.size()); ++i) {
             if (visibleTrackIds_[static_cast<size_t>(i)] == tId) {

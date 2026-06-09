@@ -93,6 +93,7 @@ class TracktionEngineWrapper : public AudioEngine,
         target.sceneIndex = sceneIndex;
         target.active = true;
         sessionSlotRecordingTargets_[trackId] = target;
+        createSessionSlotPreview(trackId, sceneIndex);
     }
 
     bool testFinalizeSessionSlotAudioRecording(TrackId trackId,
@@ -102,6 +103,10 @@ class TracktionEngineWrapper : public AudioEngine,
 
     bool testFinalizeSessionSlotMidiRecording(TrackId trackId, tracktion::MidiClip& midiClip) {
         return finalizeSessionSlotMidiRecording(trackId, midiClip);
+    }
+
+    void testFinishSessionSlotRecordings() {
+        finishSessionSlotRecordings();
     }
 #endif
     void setTempo(double bpm) override;
@@ -588,6 +593,8 @@ class TracktionEngineWrapper : public AudioEngine,
     bool finalizeSessionSlotAudioRecording(TrackId trackId, tracktion::WaveAudioClip& audioClip);
     bool finalizeSessionSlotMidiRecording(TrackId trackId, tracktion::MidiClip& midiClip);
     ClipId createEmptySessionSlotRecordingClip(TrackId trackId, int sceneIndex);
+    // Creates the transient active-recording-pass preview for a session slot.
+    void createSessionSlotPreview(TrackId trackId, int sceneIndex);
 
     // Device loading state
     bool devicesLoading_ = true;                    // Start as loading until first scan completes
