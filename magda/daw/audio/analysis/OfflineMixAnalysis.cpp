@@ -125,6 +125,10 @@ class AnalysisJob : public juce::Thread {
         juce::MessageManager::callAsync([this, result = std::move(result)]() mutable {
             if (auto* bridge = engine_.getAudioBridge())
                 bridge->getPluginManager().restoreAfterRendering();
+            // The ctor freed the live playback context for the render
+            // (freePlaybackContextIfNotRecording); rebuild it so live monitoring
+            // and metering (the master VU etc.) resume instead of staying dead.
+            edit_.getTransport().ensureContextAllocated();
             engine_.setOfflineRenderActive(false);  // re-allow playback
             if (onComplete_)
                 onComplete_(std::move(result));
