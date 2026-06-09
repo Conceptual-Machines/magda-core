@@ -14,8 +14,9 @@ namespace {
 // master. The mixer always has a selection, and master vs tracks are mutually
 // exclusive: selecting the master is the "analyse the whole mix" gesture (the
 // master is the summed output, not a renderable stem), so it filters to an empty
-// set here, which routes to the master-sum measurement. Selecting real tracks
-// analyses just those against each other.
+// set here -- which OfflineMixAnalysis treats as "all audio tracks". Selecting
+// real tracks analyses just those against each other. (The master is always
+// measured for context regardless.)
 std::vector<TrackId> selectedTrackSet() {
     std::vector<TrackId> out;
     for (auto id : SelectionManager::getInstance().getSelectedTracks())
@@ -88,16 +89,16 @@ void MixAnalysisService::runOffline() {
 
     namespace mix = magda::daw::audio;
     mix::OfflineMixAnalysis::Request req;
-    // Depth is derived from the selection: specific channels -> per-track (Deep)
-    // over just those, so they're compared against each other; the master selected
-    // -> the summed master only (Shallow), the whole-mix glance.
-    const auto trackSet = selectedTrackSet();
-    req.depth = trackSet.empty() ? mix::OfflineMixAnalysis::Depth::Shallow
-                                 : mix::OfflineMixAnalysis::Depth::Deep;
+    // Always a per-track (Deep) render; the master is always measured too, for
+    // context. The selection only scopes WHICH tracks: specific channels -> just
+    // those (compared against each other); the master selected -> every track (the
+    // full mix). The master is the summed output, not a stem, so it filters out of
+    // the set, and an empty set means "all audio tracks" to OfflineMixAnalysis.
+    req.depth = mix::OfflineMixAnalysis::Depth::Deep;
     // Whole-edit for now; loop-range analysis is a follow-up (keeps this layer
     // free of the transport/TE include).
     req.range = mix::OfflineMixAnalysis::RangeMode::WholeEdit;
-    req.trackSet = trackSet;
+    req.trackSet = selectedTrackSet();  // empty (master selected) => all audio tracks
     const double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
     if (tempo > 0.0)
         req.bpm = static_cast<float>(tempo);
