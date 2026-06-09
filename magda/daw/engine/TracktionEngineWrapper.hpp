@@ -287,6 +287,21 @@ class TracktionEngineWrapper : public AudioEngine,
     }
 
     /**
+     * @brief Gate playback during an offline render.
+     *
+     * An offline analysis/export render commandeers the live edit (it frees the
+     * playback context); starting playback then corrupts the node graph
+     * (NodeRenderContext asserts). OfflineMixAnalysis sets this for the render's
+     * lifetime so play() refuses while a render is in flight.
+     */
+    void setOfflineRenderActive(bool active) {
+        offlineRenderActive_ = active;
+    }
+    bool isOfflineRenderActive() const {
+        return offlineRenderActive_;
+    }
+
+    /**
      * @brief Callback when device loading state changes
      * Called with (isLoading, message) - message describes what's happening
      */
@@ -575,7 +590,8 @@ class TracktionEngineWrapper : public AudioEngine,
     ClipId createEmptySessionSlotRecordingClip(TrackId trackId, int sceneIndex);
 
     // Device loading state
-    bool devicesLoading_ = true;  // Start as loading until first scan completes
+    bool devicesLoading_ = true;                    // Start as loading until first scan completes
+    std::atomic<bool> offlineRenderActive_{false};  // an offline render owns the edit
     bool wasPlayingBeforeDeviceChange_ = false;
 
     // Plugin scanning state

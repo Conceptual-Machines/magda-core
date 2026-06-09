@@ -46,6 +46,13 @@ void TracktionEngineWrapper::play() {
         return;
     }
 
+    // Block playback while an offline render owns the edit -- playing now would
+    // rebuild the playback context against the in-flight render and corrupt the
+    // node graph (NodeRenderContext asserts).
+    if (offlineRenderActive_) {
+        return;
+    }
+
     if (currentEdit_) {
         auto& transport = currentEdit_->getTransport();
 
