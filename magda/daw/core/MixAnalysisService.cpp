@@ -104,7 +104,7 @@ void MixAnalysisService::runOffline() {
         req.bpm = static_cast<float>(tempo);
     req.skipAgent = true;  // measure only -- the LLM lives in the console
 
-    mix::OfflineMixAnalysis::start(
+    offlineCancel_ = mix::OfflineMixAnalysis::start(
         *engine, std::move(req),
         [this, runId](const juce::String& msg) {
             if (runId != runId_)
@@ -118,6 +118,7 @@ void MixAnalysisService::runOffline() {
             if (result.hasError)
                 lastError_ = result.error.empty() ? juce::String("Mix analysis failed.")
                                                   : juce::String(result.error);
+            offlineCancel_.reset();
             setBusy(false, busyMode_);
         },
         [this, runId](MixAnalysisAgent::Input input) {
@@ -251,6 +252,9 @@ void MixAnalysisService::cancel() {
     }
     if (busy_) {
         ++runId_;  // drop the in-flight offline run's late result
+        if (offlineCancel_)
+            offlineCancel_->store(true);  // actually abort the render at the next chunk
+        offlineCancel_.reset();
         busy_ = false;
     }
     progressText_.clear();

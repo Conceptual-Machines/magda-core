@@ -112,9 +112,10 @@ MixAnalysisModal::MixAnalysisModal(MixAnalysisService::Mode mode) : mode_(mode) 
             case State::Listening:
                 svc.stopLiveCapture();
                 break;
+            case State::Idle:
             case State::Results:
             case State::Error:
-                // Re-run this mode.
+                // (Re-)run this mode.
                 if (mode_ == MixAnalysisService::Mode::Live)
                     svc.startLiveCapture();
                 else
@@ -153,7 +154,7 @@ MixAnalysisModal::State MixAnalysisModal::deriveState() const {
         return State::Results;
     if (svc.lastError().isNotEmpty())
         return State::Error;
-    return State::Loading;
+    return State::Idle;  // nothing running / cached -> stopped or not started
 }
 
 void MixAnalysisModal::mixAnalysisChanged() {
@@ -175,6 +176,11 @@ void MixAnalysisModal::refresh() {
     spinner_.setVisible(loading);
 
     switch (state_) {
+        case State::Idle:
+            statusLabel_.setText("Analysis stopped.", juce::dontSendNotification);
+            primaryButton_.setButtonText(mode_ == MixAnalysisService::Mode::Live ? "Capture"
+                                                                                 : "Analyze");
+            break;
         case State::Loading:
             statusLabel_.setText(svc.progressText().isNotEmpty() ? svc.progressText()
                                                                  : juce::String("Analyzing mix..."),

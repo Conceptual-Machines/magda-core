@@ -29,7 +29,7 @@ class MixAnalysisModal : public juce::Component, public MixAnalysisService::List
     void mixAnalysisChanged() override;
 
   private:
-    enum class State { Loading, Listening, Results, Error };
+    enum class State { Idle, Loading, Listening, Results, Error };
 
     void refresh();        // recompute State from the service and relayout
     void renderResults();  // fill the text view from the cached Input

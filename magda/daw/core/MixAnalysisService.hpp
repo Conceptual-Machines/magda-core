@@ -2,6 +2,8 @@
 
 #include <juce_events/juce_events.h>
 
+#include <atomic>
+#include <memory>
 #include <optional>
 #include <set>
 
@@ -101,7 +103,11 @@ class MixAnalysisService {
     bool busy_ = false;
     Mode busyMode_ = Mode::Offline;
     bool capturing_ = false;
-    int runId_ = 0;  // offline cancel guard
+    int runId_ = 0;  // offline cancel guard (drops a stale run's late result)
+    // Cancel handle for the in-flight offline render; set true to actually abort
+    // it (so it stops rendering, not just hides). std::shared_ptr<std::atomic<bool>>
+    // is OfflineMixAnalysis::CancelToken (kept as the raw type to avoid the include).
+    std::shared_ptr<std::atomic<bool>> offlineCancel_;
     juce::String progressText_;
     juce::String lastError_;
 
