@@ -1,6 +1,8 @@
 #include "MixAnalysisModal.hpp"
 
 #include "../../themes/DarkTheme.hpp"
+#include "../../themes/DialogLookAndFeel.hpp"
+#include "../../themes/FontManager.hpp"
 
 namespace magda {
 
@@ -76,15 +78,20 @@ void MixAnalysisModal::Spinner::paint(juce::Graphics& g) {
 MixAnalysisModal::MixAnalysisModal(MixAnalysisService::Mode mode) : mode_(mode) {
     setSize(480, 380);
 
+    // Theme fonts throughout (button + labels) via the shared dialog L&F.
+    lookAndFeel_ = std::make_unique<daw::ui::DialogLookAndFeel>();
+    setLookAndFeel(lookAndFeel_.get());
+
     // Title shows the scope (the channels being analysed) -- the selection drives
     // it, so this is what the user most needs to confirm before/while it runs.
     titleLabel_.setText("Mix analysis  -  " + MixAnalysisService::getInstance().scopeDescription(),
                         juce::dontSendNotification);
-    titleLabel_.setFont(juce::Font(15.0f, juce::Font::bold));
+    titleLabel_.setFont(FontManager::getInstance().getUIFont(15.0f).boldened());
     titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     addAndMakeVisible(titleLabel_);
 
     statusLabel_.setJustificationType(juce::Justification::centred);
+    statusLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
     statusLabel_.setColour(juce::Label::textColourId,
                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     addAndMakeVisible(statusLabel_);
@@ -93,8 +100,7 @@ MixAnalysisModal::MixAnalysisModal(MixAnalysisService::Mode mode) : mode_(mode) 
     findings_.setReadOnly(true);
     findings_.setScrollbarsShown(true);
     findings_.setCaretVisible(false);
-    findings_.setFont(
-        juce::Font(juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
+    findings_.setFont(FontManager::getInstance().getMonoFont(12.0f));
     findings_.setColour(juce::TextEditor::backgroundColourId,
                         DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
     findings_.setColour(juce::TextEditor::textColourId,
@@ -142,6 +148,7 @@ MixAnalysisModal::MixAnalysisModal(MixAnalysisService::Mode mode) : mode_(mode) 
 }
 
 MixAnalysisModal::~MixAnalysisModal() {
+    setLookAndFeel(nullptr);  // detach before lookAndFeel_ is destroyed
     MixAnalysisService::getInstance().removeListener(this);
 }
 

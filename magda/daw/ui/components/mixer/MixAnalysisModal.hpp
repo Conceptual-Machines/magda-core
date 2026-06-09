@@ -38,6 +38,10 @@ class MixAnalysisModal : public juce::Component, public MixAnalysisService::List
     MixAnalysisService::Mode mode_;
     State state_ = State::Loading;
 
+    // Theme look-and-feel (theme fonts for the button/labels). Declared first so
+    // it outlives the child components that reference it.
+    std::unique_ptr<juce::LookAndFeel> lookAndFeel_;
+
     juce::Label titleLabel_;
     juce::Label statusLabel_;         // progress / "play the mix" / error line
     juce::TextEditor findings_;       // read-only measured-findings table
