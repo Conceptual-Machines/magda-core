@@ -579,6 +579,20 @@ struct ClipInfo {
         return getTimelineStart(projectBPM) + getTimelineLength(projectBPM);
     }
 
+    /// Timeline-domain seconds for the looping playback span — the length the
+    /// session playhead sweeps before it wraps. A looping clip wraps at its loop
+    /// length, which is the basis SessionClipScheduler uses for the playhead
+    /// position. This diverges from getTimelineLength() after a source-BPM
+    /// reinterpretation changes loopLengthBeats without touching
+    /// placement.lengthBeats; use this (not getTimelineLength) for the slot
+    /// progress overlay so the bar and the playhead stay consistent.
+    double getTimelineLoopLength(double projectBPM) const {
+        if (loopEnabled && loopLengthBeats > 0.0 && isValidBpm(projectBPM)) {
+            return loopLengthBeats * 60.0 / projectBPM;
+        }
+        return getTimelineLength(projectBPM);
+    }
+
     /// Source-domain seconds for the loop start. For autoTempo clips, computed
     /// live from loopStartBeats × 60 / source interpretation BPM. For non-autoTempo clips,
     /// returns the stored field.
