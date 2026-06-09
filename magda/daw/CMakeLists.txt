@@ -219,6 +219,11 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/panels/bottom_close.svg
     ../../assets/icons/panels/enter_fs.svg
     ../../assets/icons/panels/exit_fs.svg
+    # Panel tab icons (BoldM)
+    ../../assets/icons/panels/icon-browser-boldm.svg
+    ../../assets/icons/panels/icon-console-boldm.svg
+    ../../assets/icons/panels/icon-inspector-boldm.svg
+    ../../assets/icons/panels/icon-plugins-boldm.svg
 
     # Fontaudio waveform icons
     ../../assets/icons/fontaudio/fad-modsine.svg
