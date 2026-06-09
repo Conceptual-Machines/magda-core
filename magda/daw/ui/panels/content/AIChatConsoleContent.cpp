@@ -973,6 +973,10 @@ AIChatConsoleContent::AIChatConsoleContent() {
     analyzeButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     analyzeButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     analyzeButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    // Engaged look while a capture/analysis is in flight: a translucent cyan fill
+    // behind the cyan icon (matches the active-button convention used elsewhere).
+    analyzeButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.2f));
     analyzeButton_->setIconPadding(4.0f);
     analyzeButton_->setTooltip("Analyze the mix");
     // While a live capture is running the button is a stop-and-analyze control;
