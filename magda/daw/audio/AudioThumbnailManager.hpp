@@ -16,6 +16,19 @@ namespace magda {
 class WaveformPeakCache;
 
 /**
+ * @brief Notified when a file's cached transient set changes.
+ *
+ * Fired when transients are recomputed/cached or cleared (e.g. the user changes
+ * the detection sensitivity). Lets the waveform editor refresh on a callback
+ * instead of polling. Message thread only.
+ */
+class TransientCacheListener {
+  public:
+    virtual ~TransientCacheListener() = default;
+    virtual void transientsChanged(const juce::String& filePath) = 0;
+};
+
+/**
  * @brief Manages audio waveform thumbnails for visualization
  *
  * Provides caching and rendering of audio waveforms using JUCE's AudioThumbnail.
@@ -113,6 +126,14 @@ class AudioThumbnailManager {
      */
     void clearCachedTransients(const juce::String& filePath);
 
+    /// Subscribe to transient-cache changes (recompute/clear). Message thread.
+    void addTransientCacheListener(TransientCacheListener* l) {
+        transientListeners_.add(l);
+    }
+    void removeTransientCacheListener(TransientCacheListener* l) {
+        transientListeners_.remove(l);
+    }
+
     /**
      * @brief Clear the thumbnail cache (useful for freeing memory)
      */
@@ -162,6 +183,8 @@ class AudioThumbnailManager {
 
     // Transient detection cache (file path -> transient times in source-file seconds)
     std::map<juce::String, juce::Array<double>> transientCache_;
+    // Notified when transientCache_ changes for a file (recompute or clear).
+    juce::ListenerList<TransientCacheListener> transientListeners_;
 
     // LRU cache for AudioFormatReaders (raw-sample waveform rendering)
     static constexpr size_t MAX_CACHED_READERS = 16;

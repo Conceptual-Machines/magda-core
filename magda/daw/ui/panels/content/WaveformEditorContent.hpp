@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "PanelContent.hpp"
+#include "audio/AudioThumbnailManager.hpp"  // TransientCacheListener
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/UndoManager.hpp"
@@ -30,6 +31,7 @@ class WaveformEditorContent : public PanelContent,
                               public magda::ClipManagerListener,
                               public magda::UndoManagerListener,
                               public TimelineStateListener,
+                              public magda::TransientCacheListener,
                               public juce::Timer {
   public:
     WaveformEditorContent();
@@ -72,6 +74,10 @@ class WaveformEditorContent : public PanelContent,
 
     // TimelineStateListener
     void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
+
+    // TransientCacheListener - the detector recomputed/cleared transients for a
+    // file (e.g. sensitivity changed); refresh on the callback instead of polling.
+    void transientsChanged(const juce::String& filePath) override;
 
     // Set the clip to edit
     void setClip(magda::ClipId clipId);

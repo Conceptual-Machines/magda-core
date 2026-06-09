@@ -236,6 +236,9 @@ WaveformEditorContent::WaveformEditorContent() {
     // Register as UndoManager listener (for warp marker refresh on undo/redo)
     magda::UndoManager::getInstance().addListener(this);
 
+    // Refresh transients on a callback when the detector recomputes them.
+    magda::AudioThumbnailManager::getInstance().addTransientCacheListener(this);
+
     // Create time ruler
     timeRuler_ = std::make_unique<magda::TimeRuler>();
     timeRuler_->setDisplayMode(magda::TimeRuler::DisplayMode::BarsBeats);
@@ -616,6 +619,7 @@ WaveformEditorContent::~WaveformEditorContent() {
 
     magda::ClipManager::getInstance().removeListener(this);
     magda::UndoManager::getInstance().removeListener(this);
+    magda::AudioThumbnailManager::getInstance().removeTransientCacheListener(this);
 
     // Clear look and feel before destruction
     if (timeModeButton_)
@@ -873,6 +877,22 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
         updateGridSize();
         repaint();
     }
+}
+
+void WaveformEditorContent::transientsChanged(const juce::String& filePath) {
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (clip == nullptr || !clip->isAudio() || clip->audio().source.filePath != filePath)
+        return;
+    // The detector recomputed (or cleared) this clip's transients, e.g. the user
+    // dragged the sensitivity slider. Re-arm the poll: getTransientTimes() yields
+    // the fresh set once detection finishes, and timerCallback() pushes it to the
+    // grid. The currently-shown markers stay until the new ones are ready, so the
+    // update is live without a flash.
+    transientsCached_ = false;
+    transientPollCount_ = 0;
+    startTimer(250);
 }
 
 void WaveformEditorContent::clipSelectionChanged(magda::ClipId clipId) {

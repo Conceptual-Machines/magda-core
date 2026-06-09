@@ -276,10 +276,12 @@ const juce::Array<double>* AudioThumbnailManager::getCachedTransients(
 void AudioThumbnailManager::cacheTransients(const juce::String& filePath,
                                             const juce::Array<double>& times) {
     transientCache_[filePath] = times;
+    transientListeners_.call([&](TransientCacheListener& l) { l.transientsChanged(filePath); });
 }
 
 void AudioThumbnailManager::clearCachedTransients(const juce::String& filePath) {
     transientCache_.erase(filePath);
+    transientListeners_.call([&](TransientCacheListener& l) { l.transientsChanged(filePath); });
 }
 
 juce::AudioFormatReader* AudioThumbnailManager::getOrCreateReader(
