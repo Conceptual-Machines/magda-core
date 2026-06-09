@@ -171,7 +171,13 @@ void MixerToggleRail::updateAnalyzeButtonMode() {
         analyzeButton_->updateSvgData(BinaryData::analysis_svg, BinaryData::analysis_svgSize);
         analyzeButton_->setActive(false);
         analyzeButton_->setTooltip("Analyze the mix");
+        // Dim to the disengaged-toggle look until there's an analysis to show;
+        // brighten once data exists (matches the other rail buttons' on/off weight).
+        const auto base = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        const bool hasData = svc.latest().has_value();
+        analyzeButton_->setNormalColor(hasData ? base : base.withAlpha(0.3f));
     }
+    analyzeButton_->repaint();
 }
 
 void MixerToggleRail::mixAnalysisChanged() {
