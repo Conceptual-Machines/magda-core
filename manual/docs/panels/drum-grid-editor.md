@@ -16,6 +16,7 @@ Displayed in the bottom panel when a drum clip is selected or a DrumGrid device 
     - **SNAP** — Toggle snap-to-grid
     - **Slice** — Split each selected note into equal pieces (see [Slicing Notes](piano-roll.md#slicing-notes))
     - **Time Bend** — Redistribute selected note timing along a curve (see [Time Bend](../time-bend.md#drum-grid-editor))
+    - **Overlay tracks** — Show other tracks' notes as a ghost overlay, same as in the [Piano Roll](piano-roll.md#overlay-tracks-ghost-notes). Ghost hits land on the row matching their pitch; notes that do not map to a pad row are skipped.
     - **Fullscreen** — Pinned to the far right, this toggle expands the editor to fill the window. Click again to restore. Shared with the Piano Roll.
 
 !!! note "Footer controls"

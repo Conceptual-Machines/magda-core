@@ -12,7 +12,7 @@ Displayed in the bottom panel when a MIDI clip is selected. Provides a grid for 
 - **Drag** a note to move it in time or pitch
 - **Drag edges** to resize note length
 - ++cmd++ **+ click** a note to delete it directly. If the note is part of a multi-selection, the whole group is erased. Acts as a rubber tool.
-- **Velocity lane** at the bottom for editing note velocities
+- **Control lanes** at the bottom for velocity, CC and pitchbend (see [Control Lanes](#control-lanes))
 - **Live input highlight** — with the track's input monitoring on, the keyboard lights up notes as you play them (MIDI or computer keyboard) and scrolls a held note into view
 
 !!! note "Header controls"
@@ -21,10 +21,34 @@ Displayed in the bottom panel when a MIDI clip is selected. Provides a grid for 
     - **SNAP** — Toggle snap-to-grid
     - **Slice** — Split each selected note into equal pieces (see [Slicing Notes](#slicing-notes))
     - **Time Bend** — Redistribute selected note timing along a curve (see [Time Bend](../time-bend.md#piano-roll))
+    - **Overlay tracks** — Show other tracks' notes as a ghost overlay (see [Overlay Tracks](#overlay-tracks-ghost-notes))
     - **Fullscreen** — Pinned to the far right, this toggle expands the MIDI editor to fill the window. Click again to restore. Available for the Piano Roll and Drum Grid Editor.
 
-!!! note "Footer controls"
-    - ![bar chart](../assets/images/icons/bar_chart.svg){ width="16" } **Velocity** — Toggle the velocity/MIDI lane at the bottom of the editor
+!!! note "Sidebar controls"
+    Stacked at the bottom of the left sidebar:
+
+    - **MPE** — Toggle pitch glide editing (see [Pitch Glides](#pitch-glides-mpe))
+    - **CC** — Add a CC or pitchbend lane to the drawer
+    - **Velocity** — Toggle the control-lane drawer at the bottom of the editor
+
+## Control Lanes
+
+The drawer at the bottom of the editor holds the clip's control lanes, stacked vertically so they are all visible at once:
+
+- The **velocity** lane is always present at the top. Drag the bars to set note velocities; selected notes edit together.
+- Add **CC** and **pitchbend** lanes with the **+** button at the bottom of the lane header column (or the **CC** sidebar button). The menu offers **Pitchbend**, common controllers (**CC 1 (Mod Wheel)**, **CC 7 (Volume)**, **CC 11 (Expression)**, **CC 64 (Sustain)**) and **Custom CC...** for any controller number.
+- Each added lane shows its name in the header column with a close button; the pitchbend lane also has a **Range** field for the bend range in semitones.
+- Drag the drawer's top edge to resize it. The drawer grows automatically as lanes are added.
+
+## Pitch Glides (MPE)
+
+Toggle the **MPE** sidebar button to enter pitch glide editing. In this mode you draw per-note pitch expression directly on a note: the glide curve bends the note's pitch over its length, independently of other notes. Playback uses MPE, so each gliding note gets its own MIDI channel — point the track at an MPE-capable instrument to hear it.
+
+## Overlay Tracks (Ghost Notes)
+
+Click the **Overlay tracks** button in the header (next to the Piano Roll / Drum Grid tabs) to overlay MIDI from other tracks as ghost notes. The menu lists every other track that has MIDI clips; tick as many as you like — the menu stays open while you toggle, and **Clear All** removes them all at once.
+
+Ghost notes render dimmed in the source clip's colour, aligned on the shared timeline, and are never interactive: they are reference material for harmony and counterpoint while you edit the active clip. The overlay selection persists while you switch clips or move between the Piano Roll and Drum Grid Editor.
 
 ## Slicing Notes
 

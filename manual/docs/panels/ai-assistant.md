@@ -60,6 +60,26 @@ The agent works in terms of drum **roles** (kick, snare, closed hat, and so on),
 
 Drummer mode is automatic and context-driven; there is no slash command to type. Select a non-drum track to return to the general assistant.
 
+## View Context
+
+The console follows the view you are working in. The context label above the input box shows where your requests are routed:
+
+- **Arrangement view** — requests go through the general assistant, which picks the right specialised agent for the task.
+- **Session view** — requests are scoped to session workflows (scenes, clip slots, launching).
+- **Mixer and master views** — requests are routed to the **mixing agent**.
+
+## Mixing Agent
+
+In the mixer view, the console talks to a specialised mixing agent. It can read the per-track measurement layer — loudness, peaks, stereo width and correlation, and detected frequency collisions between tracks — and ground its feedback in those numbers.
+
+Run an analysis from the mixer's [Analyze button](../mixer-view.md#mix-analysis) first; a **mix analysis ready** chip appears next to the console input once results exist. Then ask things like:
+
+- "what is fighting with the bass?"
+- "is the master loud enough for streaming?"
+- "which tracks are mono-incompatible?"
+
+The agent reads the measured findings rather than guessing from track names, and can suggest concrete moves (level trims, EQ areas to look at) based on them.
+
 ## DSL Tab
 
 ![DSL Console](../assets/images/panels/dsl-repl.png){ width="300" }

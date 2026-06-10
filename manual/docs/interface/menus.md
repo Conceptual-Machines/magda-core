@@ -12,6 +12,7 @@ MAGDA has eight top-level menus.
 | Close Project | Close the current project |
 | Save Project | Save the current project |
 | Save Project As | Save the current project to a new file |
+| Collect Files... | Copy every externally-referenced audio file (clips, sampler and drum-pad samples) into the project's media folder and repoint the project at the copies, so it travels self-contained. Shows progress and can be cancelled. |
 | Export Audio | Export/render the project to an audio file |
 | Quit | Exit MAGDA (Windows/Linux only — use Cmd+Q on macOS) |
 

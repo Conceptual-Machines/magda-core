@@ -1,8 +1,8 @@
-# Analysis (Oscilloscope & Spectrum)
+# Analysis (Oscilloscope, Spectrum & Levels)
 
-MAGDA ships two real-time analysis devices, an **Oscilloscope** and a **Spectrum Analyzer**. They tap the signal passing through them and draw it; they do not change the audio. Drag either from the Plugin Browser onto any track's FX chain, or add it to the [post-FX area](../fx-chain.md#post-fx-section) of a track or the master.
+MAGDA ships three real-time analysis devices: an **Oscilloscope**, a **Spectrum Analyzer**, and a **Levels** meter. They tap the signal passing through them and draw it; they do not change the audio. Drag any of them from the Plugin Browser onto any track's FX chain, or add them to the [post-FX area](../fx-chain.md#post-fx-section) of a track or the master.
 
-Both devices also appear as compact [mini analyzers](../mixer-view.md#mini-analyzers) on the mixer strips, and either can be popped out into its own always-on-top window from the **open-in-window** button in the device header.
+The Oscilloscope and Spectrum Analyzer also appear as compact [mini analyzers](../mixer-view.md#mini-analyzers) on the mixer strips, and can be popped out into their own always-on-top windows from the **open-in-window** button in the device header.
 
 ## Oscilloscope
 
@@ -28,5 +28,26 @@ The Spectrum Analyzer draws the frequency content of the signal. It runs a windo
 
 A **peak-hold** line sits on top of the live curve, marking the highest level reached in each band. The frequency axis runs across the audible range with a dB magnitude scale down the side.
 
+### Track Overlay & Masking
+
+In the full editor or pop-out window, the **Overlay** selector overlays another track's spectrum on the display as a neutral grey trace, so you can see how two tracks share the frequency range. When an overlay is active, MAGDA also runs its **masking detector** between the two tracks: frequency ranges where they fight for the same space are shaded in a warm tint behind the curves, with the shading intensity following the severity of the clash. Pick **Off** to remove the overlay.
+
+The same collision data appears in the mixer's [mix analysis](../mixer-view.md#mix-analysis) findings.
+
+## Levels
+
+The Levels meter gives broadcast-grade numbers for the signal at its insert point — drop it on the master for the mix, or on any track:
+
+| Reading | What it tells you |
+|---------|--------------------|
+| **LUFS** | Integrated loudness (BS.1770) — the perceived level streaming services normalise to. |
+| **True peak** | Inter-sample peak in dBTP, caught by oversampling — what a converter actually hits. |
+| **PLR** | Peak-to-loudness ratio — how dynamic the signal is. |
+| **PSR** | Peak-to-short-term ratio — how squashed the loudest moments are. |
+| **Correlation** | Stereo phase relationship — negative values warn of mono-compatibility problems. |
+| **Width** | Stereo width, from mono to fully wide. |
+
+The device is a transparent pass-through, and only spends CPU on measurement while its meter is actually visible. Reopening it resets the integrated readings.
+
 !!! note
-    Both analyzers refresh continuously and add no latency or gain to the signal, so you can leave them inserted anywhere in a chain. In the post-FX area, only one Oscilloscope and one Spectrum Analyzer can exist per track.
+    The analyzers refresh continuously and add no latency or gain to the signal, so you can leave them inserted anywhere in a chain. In the post-FX area, only one of each analysis device can exist per track.
