@@ -8,6 +8,7 @@
 #include <unordered_set>
 
 #include "../../panels/state/PanelController.hpp"
+#include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -353,7 +354,7 @@ size_t ClipComponent::computeWaveformHash(const ClipInfo& clip) {
 void ClipComponent::timerCallback() {
     if (mouseIsOver_) {
         const auto mods = juce::ModifierKeys::currentModifiers;
-        updateCursor(mods.isAltDown(), mods.isShiftDown(), mods.isShiftDown() && mods.isCtrlDown());
+        updateCursor(mods);
         startTimer(50);
     } else {
         stopTimer();
@@ -1132,8 +1133,8 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         }
     };
 
-    const bool isSelectionModifierDown = e.mods.isCommandDown();
-    const bool isModifiedSelectionClick = isSelectionModifierDown && !e.mods.isShiftDown();
+    const bool isModifiedSelectionClick = magda::isToggleSelectClick(e.mods) && !e.mods.isAltDown();
+    const bool isBladeClick = e.mods.isAltDown() && e.mods.isCommandDown() && !e.mods.isShiftDown();
     const bool isEraseClick = e.mods.isShiftDown() && e.mods.isCtrlDown();
 
     // Frozen tracks: allow selection (so piano roll shows content) but block editing
@@ -1193,20 +1194,28 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Handle Shift+click on edges for stretch; Shift+body defers: a click
-    // (no drag) range-selects from the anchor on mouseUp, a drag keeps the
-    // duplicate gesture
-    pendingRangeSelect_ = false;
+    // Shift+edge = stretch (falls through to drag setup); Shift+body = range
+    // select from the anchor, applied immediately. Dragging afterwards moves
+    // the selected range via the multi-drag path.
+    pendingAltAction_ = false;
     if (e.mods.isShiftDown()) {
         if (isOnLeftEdge(e.x) || isOnRightEdge(e.x)) {
             // Shift+edge = stretch mode — fall through to drag setup below
         } else if (magda::isRangeSelectClick(e.mods)) {
-            pendingRangeSelect_ = true;
+            selectionManager.extendSelectionTo(clipId_);
+            isSelected_ = selectionManager.isClipSelected(clipId_);
+            if (isSelected_ && onClipSelected) {
+                onClipSelected(clipId_);
+            }
         }
+    } else if (e.mods.isAltDown() && !e.mods.isCommandDown()) {
+        // Alt+body: copy on drag, edit cursor on click — both resolve later,
+        // so the selection stays untouched for now
+        pendingAltAction_ = true;
     }
 
-    // Handle Alt+click for blade/split
-    if (e.mods.isAltDown() && !e.mods.isCommandDown() && !e.mods.isShiftDown()) {
+    // Handle Cmd+Alt+click for blade/split (click-only gesture, no drag)
+    if (isBladeClick) {
         // Calculate split time from click position
         if (parentPanel_) {
             auto parentPos = e.getEventRelativeTo(parentPanel_).getPosition();
@@ -1235,8 +1244,8 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // keep the selection and prepare for potential multi-drag
     size_t selectedCount = selectionManager.getSelectedClipCount();
 
-    if (pendingRangeSelect_) {
-        // Selection deferred to mouseUp (range select) or drag start (duplicate)
+    if (pendingAltAction_) {
+        // Selection deferred: drag start copies, plain release places the edit cursor
     } else if (isAlreadySelected && selectedCount > 1) {
         isSelected_ = true;
         shouldDeselectOnMouseUp_ = true;
@@ -1444,19 +1453,24 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
         return;
     }
 
-    // A pending shift+click range select cancels once a real drag starts; the
-    // classic shift-drag selection is applied so duplicate behaves as before
-    if (pendingRangeSelect_) {
+    // A pending Alt action resolves to copy-drag once a real drag starts
+    // (a plain Alt release places the edit cursor in mouseUp instead)
+    if (pendingAltAction_) {
         if (e.getDistanceFromDragStart() < 4)
-            return;  // still a click — selection resolves on mouseUp
-        pendingRangeSelect_ = false;
+            return;  // still a click
+        pendingAltAction_ = false;
         auto& sm = SelectionManager::getInstance();
-        if (!sm.isClipSelected(clipId_)) {
-            sm.selectClip(clipId_);
-            isSelected_ = true;
-            if (onClipSelected) {
-                onClipSelected(clipId_);
+        const bool partOfMultiSelection =
+            sm.getSelectedClipCount() > 1 && sm.isClipSelected(clipId_);
+        if (dragMode_ == DragMode::Move && !partOfMultiSelection) {
+            if (!sm.isClipSelected(clipId_)) {
+                sm.selectClip(clipId_);
+                isSelected_ = true;
+                if (onClipSelected) {
+                    onClipSelected(clipId_);
+                }
             }
+            isDuplicating_ = true;
         }
     }
 
@@ -1481,11 +1495,6 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
     // Single clip drag logic
     isDragging_ = true;
-
-    // Shift+drag to duplicate: mark for duplication (created in mouseUp to avoid re-entrancy)
-    if (dragMode_ == DragMode::Move && e.mods.isShiftDown() && !isDuplicating_) {
-        isDuplicating_ = true;
-    }
 
     // Convert pixel delta to time delta
     // getZoom() returns pixels per beat (ppb)
@@ -1914,18 +1923,22 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
         return;
     }
 
-    // Shift+click released without a drag: range select from the anchor clip
-    if (pendingRangeSelect_) {
-        pendingRangeSelect_ = false;
+    // Alt+click released without a drag: place the edit cursor at the click
+    // position (the documented gesture; Cmd+Alt is the blade, Alt+drag copies)
+    if (pendingAltAction_) {
+        pendingAltAction_ = false;
         if (!isDragging_) {
-            auto& sm = SelectionManager::getInstance();
-            sm.extendSelectionTo(clipId_);
-            isSelected_ = sm.isClipSelected(clipId_);
-            if (isSelected_ && onClipSelected) {
-                onClipSelected(clipId_);
+            if (parentPanel_) {
+                auto parentPos = e.getEventRelativeTo(parentPanel_).getPosition();
+                double cursorSeconds = parentPanel_->pixelToTime(parentPos.x);
+                if (snapTimeToGrid)
+                    cursorSeconds = snapTimeToGrid(cursorSeconds);
+                if (auto* controller = TimelineController::getCurrent()) {
+                    const double bpm = controller->getState().tempo.bpm;
+                    controller->dispatch(SetEditCursorEvent{cursorSeconds * bpm / 60.0});
+                }
             }
             dragMode_ = DragMode::None;
-            repaint();
             return;
         }
     }
@@ -2378,8 +2391,7 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
     }
 
     // Always update cursor to check modifier-driven tools.
-    updateCursor(e.mods.isAltDown(), e.mods.isShiftDown(),
-                 e.mods.isShiftDown() && e.mods.isCtrlDown());
+    updateCursor(e.mods);
 
     if (hoverLeftEdge_ != wasHoverLeft || hoverRightEdge_ != wasHoverRight ||
         hoverFadeIn_ != wasHoverFadeIn || hoverFadeOut_ != wasHoverFadeOut ||
@@ -2391,8 +2403,7 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
 void ClipComponent::mouseEnter(const juce::MouseEvent& e) {
     mouseIsOver_ = true;
     startTimer(50);
-    updateCursor(e.mods.isAltDown(), e.mods.isShiftDown(),
-                 e.mods.isShiftDown() && e.mods.isCtrlDown());
+    updateCursor(e.mods);
 }
 
 void ClipComponent::mouseExit(const juce::MouseEvent& /*e*/) {
@@ -2402,7 +2413,7 @@ void ClipComponent::mouseExit(const juce::MouseEvent& /*e*/) {
     hoverFadeIn_ = false;
     hoverFadeOut_ = false;
     hoverVolumeHandle_ = false;
-    updateCursor(false, false, false);
+    updateCursor();
     repaint();
 }
 
@@ -2559,15 +2570,21 @@ bool ClipComponent::isOnVolumeHandle(int x, int y) const {
     return std::abs(static_cast<float>(y) - lineY) <= 6.0f;
 }
 
-void ClipComponent::updateCursor(bool isAltDown, bool isShiftDown, bool isEraseDown) {
-    if (isEraseDown) {
+void ClipComponent::updateCursor(const juce::ModifierKeys& mods) {
+    const bool isShiftDown = mods.isShiftDown();
+
+    if (isShiftDown && mods.isCtrlDown()) {
         setMouseCursor(CursorManager::getInstance().getEraseCursor());
         return;
     }
 
-    // Alt key = blade/scissors mode
-    if (isAltDown) {
-        setMouseCursor(juce::MouseCursor::CrosshairCursor);
+    // Cmd+Alt = blade (scissors), Alt alone = copy-drag
+    if (mods.isAltDown() && !isShiftDown) {
+        if (mods.isCommandDown()) {
+            setMouseCursor(CursorManager::getInstance().getBladeCursor());
+        } else {
+            setMouseCursor(juce::MouseCursor::CopyingCursor);
+        }
         return;
     }
 

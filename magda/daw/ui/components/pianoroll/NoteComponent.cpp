@@ -164,8 +164,8 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         dragMode_ = DragMode::ResizeRight;
     } else {
         dragMode_ = DragMode::Move;
-        // Shift+drag starts a copy operation
-        isCopyDrag_ = e.mods.isShiftDown();
+        // Alt+drag starts a copy operation (matches clip copy-drag)
+        isCopyDrag_ = e.mods.isAltDown() && !e.mods.isCommandDown();
     }
 
     repaint();
