@@ -14,6 +14,23 @@ namespace magda::daw::ui {
 
 class RackComponent;
 
+// Chain name label: double-click renames (editOnDoubleClick), but a plain
+// single click must still select the owning chain. An editable juce::Label
+// intercepts its own mouse clicks, so without this the row's click handler
+// would never see clicks that land on the name.
+class ChainNameLabel : public juce::Label {
+  public:
+    using juce::Label::Label;
+    std::function<void()> onSelect;
+
+  protected:
+    void mouseUp(const juce::MouseEvent& e) override {
+        juce::Label::mouseUp(e);
+        if (!isBeingEdited() && onSelect)
+            onSelect();
+    }
+};
+
 /**
  * @brief A single chain row within a rack - simple strip layout
  *
@@ -79,7 +96,7 @@ class ChainRowComponent : public juce::Component, public magda::SelectionManager
     magda::ChainNodePath nodePath_;  // For centralized selection
 
     // Single row controls: Name | Gain | Pan | M | S | On | X
-    juce::Label nameLabel_;
+    ChainNameLabel nameLabel_;
     magda::DraggableValueLabel gainLabel_;
     magda::DraggableValueLabel panLabel_;
     juce::TextButton muteButton_;

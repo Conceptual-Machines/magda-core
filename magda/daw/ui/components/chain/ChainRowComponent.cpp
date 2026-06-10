@@ -18,12 +18,28 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
 
     // Register as SelectionManager listener
     magda::SelectionManager::getInstance().addListener(this);
-    // Name label - clicks pass through to parent for selection
+    // Name label - double-click to rename; a plain single click selects the
+    // chain (see ChainNameLabel). editOnSingleClick=false so a single click
+    // never opens the editor.
     nameLabel_.setText(chain.name, juce::dontSendNotification);
     nameLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::backgroundWhenEditingColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+    nameLabel_.setColour(juce::Label::textWhenEditingColourId, DarkTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
-    nameLabel_.setInterceptsMouseClicks(false, false);
+    nameLabel_.setEditable(false, true, false);  // editOnDoubleClick only
+    nameLabel_.onSelect = [this]() {
+        magda::SelectionManager::getInstance().selectChainNode(nodePath_);
+    };
+    nameLabel_.onTextChange = [this]() {
+        auto& tm = magda::TrackManager::getInstance();
+        tm.setChainName(trackId_, rackId_, chainId_, nameLabel_.getText());
+        // Re-sync from the model in case the edit was rejected (empty/unchanged),
+        // so the label never shows a name the model didn't accept.
+        if (const auto* chain = tm.getChain(trackId_, rackId_, chainId_))
+            nameLabel_.setText(chain->name, juce::dontSendNotification);
+    };
     addAndMakeVisible(nameLabel_);
 
     // Gain label (dB format, draggable)

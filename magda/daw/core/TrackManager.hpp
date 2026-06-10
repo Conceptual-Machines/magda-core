@@ -376,6 +376,7 @@ class TrackManager {
     void setChainSolo(TrackId trackId, RackId rackId, ChainId chainId, bool solo);
     void setChainVolume(TrackId trackId, RackId rackId, ChainId chainId, float volume);
     void setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan);
+    void setChainName(TrackId trackId, RackId rackId, ChainId chainId, const juce::String& name);
     void setChainExpanded(TrackId trackId, RackId rackId, ChainId chainId, bool expanded);
     void setRackVolume(TrackId trackId, RackId rackId, float volume);
     void setRackVolume(const ChainNodePath& rackPath, float volume);

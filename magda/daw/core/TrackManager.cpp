@@ -2084,6 +2084,17 @@ void TrackManager::setChainPan(TrackId trackId, RackId rackId, ChainId chainId, 
     }
 }
 
+void TrackManager::setChainName(TrackId trackId, RackId rackId, ChainId chainId,
+                                const juce::String& name) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        auto trimmed = name.trim();
+        if (trimmed.isEmpty() || trimmed == chain->name)
+            return;
+        chain->name = trimmed;
+        notifyTrackPropertyChanged(trackId);
+    }
+}
+
 void TrackManager::setRackVolume(TrackId trackId, RackId rackId, float volume) {
     if (auto* rack = getRack(trackId, rackId)) {
         rack->volume = juce::jlimit(-60.0f, 6.0f, volume);
