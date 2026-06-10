@@ -229,7 +229,7 @@ TEST_CASE("AutomationExecutor: target=volume is a singleton (two runs = one lane
     REQUIRE(lanes.size() == 1);  // never two volume lanes
 }
 
-TEST_CASE("AutomationExecutor: target=selected falls back to TrackVolume with no lane selected",
+TEST_CASE("AutomationExecutor: target=selected with no lane selected fails without writing",
           "[automation][executor]") {
     resetState();
     auto trackId = makeTrack("Synth");
@@ -238,13 +238,14 @@ TEST_CASE("AutomationExecutor: target=selected falls back to TrackVolume with no
     AutomationParser parser;
     MagdaApiLive api;
     AutomationExecutor exec(api);
-    REQUIRE(
+    // No automation lane selected: must error out rather than silently
+    // writing volume automation (#1017)
+    REQUIRE_FALSE(
         exec.execute(parseOrFail(parser, "AUTO line start=0 end=4 from=0 to=1 target=selected")));
+    REQUIRE(exec.getError().isNotEmpty());
 
     auto lanes = AutomationManager::getInstance().getLanesForTrack(trackId);
-    REQUIRE(lanes.size() == 1);
-    auto* lane = AutomationManager::getInstance().getLane(lanes[0]);
-    REQUIRE(lane->target.kind == ControlTarget::Kind::TrackVolume);
+    REQUIRE(lanes.empty());
 }
 
 TEST_CASE("AutomationExecutor: target=volume with no track selected fails",
