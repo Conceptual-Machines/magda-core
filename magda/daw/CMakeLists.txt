@@ -69,7 +69,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/midi_editor/stacks.svg
     # Track chain icons
     ../../assets/icons/trackchain/icon-mods-boldm.svg
-    ../../assets/icons/trackchain/icon-macros-boldm.svg
     ../../assets/icons/trackchain/icon-racks-boldm.svg
     ../../assets/icons/trackchain/icon-treeview-boldm.svg
     ../../assets/icons/trackchain/icon-presets-round-boldm.svg

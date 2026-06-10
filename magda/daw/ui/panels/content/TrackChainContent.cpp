@@ -803,8 +803,8 @@ TrackChainContent::TrackChainContent()
     addChildComponent(*globalModsButton_);
 
     // Macro button (global macros toggle)
-    macroButton_ = std::make_unique<magda::SvgButton>("Macro", BinaryData::iconmacrosboldm_svg,
-                                                      BinaryData::iconmacrosboldm_svgSize);
+    macroButton_ =
+        std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
     macroButton_->setClickingTogglesState(true);
     macroButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
