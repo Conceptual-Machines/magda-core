@@ -690,6 +690,34 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 return true;
             }
 
+            // Duplicate selected chain nodes (devices / racks) in place: copy
+            // the selection and paste right after it in the same container.
+            if (selectionManager.hasChainNodeSelection()) {
+                auto paths = selectionManager.getSelectedChainNodes();
+                if (!paths.empty()) {
+                    auto& tm = TrackManager::getInstance();
+                    // Container = parent of the first selected element.
+                    ChainNodePath container;
+                    container.trackId = paths.front().trackId;
+                    if (paths.front().topLevelDeviceId == INVALID_DEVICE_ID) {
+                        container.steps = paths.front().steps;
+                        if (!container.steps.empty())
+                            container.steps.pop_back();
+                    }
+                    int insertIndex = 0;
+                    for (const auto& p : paths)
+                        insertIndex = std::max(insertIndex, tm.getChainElementIndex(p) + 1);
+
+                    auto elements = tm.copyChainElements(paths);
+                    if (!elements.empty()) {
+                        UndoManager::getInstance().executeCommand(
+                            std::make_unique<PasteChainElementsCommand>(
+                                container, std::move(elements), insertIndex));
+                    }
+                    return true;
+                }
+            }
+
             if (mainView &&
                 mainView->getTimelineController().getState().selection.isVisuallyActive()) {
                 return false;

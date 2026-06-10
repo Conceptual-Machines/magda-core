@@ -1227,9 +1227,19 @@ void NodeComponent::mouseDown(const juce::MouseEvent& e) {
     }
 }
 
+void NodeComponent::mouseMove(const juce::MouseEvent& e) {
+    // Alt = copy-on-drag affordance (mirrors clips): show the copying cursor
+    // when hovering a device with Alt held.
+    setMouseCursor(e.mods.isAltDown() ? juce::MouseCursor::CopyingCursor
+                                      : juce::MouseCursor::NormalCursor);
+}
+
 void NodeComponent::mouseDrag(const juce::MouseEvent& e) {
     if (!mouseDownForSelection_ || !draggable_)
         return;
+
+    setMouseCursor(e.mods.isAltDown() ? juce::MouseCursor::CopyingCursor
+                                      : juce::MouseCursor::NormalCursor);
 
     auto* parent = getParentComponent();
     if (!parent)
