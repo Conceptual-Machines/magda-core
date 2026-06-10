@@ -70,15 +70,11 @@ AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::St
             auto laneId = sel.getSelectedAutomationLaneId();
             if (laneId != INVALID_AUTOMATION_LANE_ID)
                 return laneId;
-            // Fall back to trackVolume on the selected track — the most
-            // common default for "automate this track".
-            auto trackId = getSelectedTrack(api, err);
-            if (trackId == INVALID_TRACK_ID)
-                return INVALID_AUTOMATION_LANE_ID;
-            AutomationTarget t;
-            t.kind = ControlTarget::Kind::TrackVolume;
-            t.devicePath = ChainNodePath::trackLevel(trackId);
-            return ensureLaneForTarget(api, t);
+            // No fallback: writing volume automation when the user asked for
+            // a specific parameter would silently mis-target (#1017).
+            err = "No automation lane is selected. Select the parameter's lane first, "
+                  "or say which parameter to automate (volume and pan work directly).";
+            return INVALID_AUTOMATION_LANE_ID;
         }
         case AutoTarget::Kind::TrackVolume: {
             auto trackId = getSelectedTrack(api, err);
