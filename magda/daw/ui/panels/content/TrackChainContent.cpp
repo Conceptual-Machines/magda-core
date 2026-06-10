@@ -940,9 +940,9 @@ TrackChainContent::TrackChainContent()
     const auto muted = [](juce::uint32 c) {
         return juce::Colour(c).withMultipliedSaturation(0.55f).withMultipliedBrightness(0.85f);
     };
-    setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::iconoscilloscopeboldm_svg,
-                        BinaryData::iconoscilloscopeboldm_svgSize, "Oscilloscope (post-FX)",
-                        "oscilloscope", "Oscilloscope", muted(DarkTheme::ACCENT_GREEN));
+    setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::oscilloscope3_svg,
+                        BinaryData::oscilloscope3_svgSize, "Oscilloscope (post-FX)", "oscilloscope",
+                        "Oscilloscope", muted(DarkTheme::ACCENT_GREEN));
     setupAnalysisToggle(specToggleButton_, "Spectrum", BinaryData::iconspectrumboldm_svg,
                         BinaryData::iconspectrumboldm_svgSize, "Spectrum Analyzer (post-FX)",
                         "spectrumanalyzer", "Spectrum Analyzer", muted(DarkTheme::ACCENT_CYAN));
