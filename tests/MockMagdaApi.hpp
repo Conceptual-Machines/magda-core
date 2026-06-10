@@ -88,9 +88,16 @@ class StubAliasApi : public AliasApi {
 class StubUndoApi : public UndoApi {
   public:
     int executeCalls = 0;
+    int compoundDepth = 0;
 
     void executeCommand(std::unique_ptr<UndoableCommand>) override {
         ++executeCalls;
+    }
+    void beginCompound(const juce::String&) override {
+        ++compoundDepth;
+    }
+    void endCompound() override {
+        --compoundDepth;
     }
 };
 

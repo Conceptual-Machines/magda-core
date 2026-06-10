@@ -14,6 +14,8 @@
 #include "../daw/core/DeviceInfo.hpp"
 #include "../daw/core/MidiNoteCommands.hpp"
 #include "../daw/core/PluginAlias.hpp"
+#include "../daw/core/TrackCommands.hpp"
+#include "../daw/core/TrackPropertyCommands.hpp"
 #include "../daw/core/TrackTypes.hpp"
 #include "../daw/engine/AudioEngine.hpp"
 #include "../daw/engine/TracktionEngineWrapper.hpp"
@@ -21,6 +23,22 @@
 #include "music_helpers.hpp"
 
 namespace magda {
+
+namespace {
+/// RAII: groups every command enqueued during one execute() into a single undo
+/// step, so an agent turn (incl. a master-selected fan-out) is one undo.
+struct CompoundScope {
+    UndoApi& undo;
+    explicit CompoundScope(UndoApi& u, const juce::String& desc) : undo(u) {
+        undo.beginCompound(desc);
+    }
+    ~CompoundScope() {
+        undo.endCompound();
+    }
+    CompoundScope(const CompoundScope&) = delete;
+    CompoundScope& operator=(const CompoundScope&) = delete;
+};
+}  // namespace
 
 // ============================================================================
 // Helpers
@@ -201,8 +219,15 @@ bool InstructionExecutor::execute(const std::vector<Instruction>& instructions) 
     auto selectedTrack = sm.getSelectedTrack();
 
     // Ignore master track as implicit target — it's not a user track
-    if (selectedTrack != INVALID_TRACK_ID && selectedTrack != MASTER_TRACK_ID)
+    if (selectedTrack != INVALID_TRACK_ID && selectedTrack != MASTER_TRACK_ID) {
         currentTrackId_ = selectedTrack;
+    } else if (selectedTrack == MASTER_TRACK_ID) {
+        // Master selected = fan implicit-target ops out across every track as a
+        // single action. Reuses the SELECT machinery: MUTE/SOLO/SET/FX with no
+        // ref apply to each selected track. (getTracks() excludes the master.)
+        for (const auto& track : api_.tracks().getTracks())
+            selectedTracks_.insert(track.id);
+    }
 
     // Seeded clip from the command agent (BOTH-intent handoff).
     // Validate before adopting: a stale/deleted ID would otherwise suppress
@@ -243,6 +268,10 @@ bool InstructionExecutor::execute(const std::vector<Instruction>& instructions) 
 
     int succeeded = 0;
     int failed = 0;
+
+    // One undo step for the whole turn. Property/track commands enqueued below
+    // are collected by the UndoManager and wrapped into a single CompoundCommand.
+    CompoundScope compound(api_.undo(), "AI Assistant");
 
     for (const auto& inst : instructions) {
         bool ok = false;
@@ -373,8 +402,11 @@ bool InstructionExecutor::executeTrack(const TrackOp& op) {
             }
         }
 
-        auto trackId = tm.createTrack(op.name.isEmpty() ? trackName : op.name, TrackType::Audio);
-        currentTrackId_ = trackId;
+        auto createCmd = std::make_unique<CreateTrackCommand>(
+            TrackType::Audio, op.name.isEmpty() ? trackName : op.name);
+        auto* createPtr = createCmd.get();
+        api_.undo().executeCommand(std::move(createCmd));
+        currentTrackId_ = createPtr->getCreatedTrackId();
         results_.add("Created track '" + trackName + "'");
 
         fxOp.target.implicit = true;
@@ -386,8 +418,10 @@ bool InstructionExecutor::executeTrack(const TrackOp& op) {
         return true;
     }
 
-    auto trackId = tm.createTrack(op.name, TrackType::Audio);
-    currentTrackId_ = trackId;
+    auto createCmd = std::make_unique<CreateTrackCommand>(TrackType::Audio, op.name);
+    auto* createPtr = createCmd.get();
+    api_.undo().executeCommand(std::move(createCmd));
+    currentTrackId_ = createPtr->getCreatedTrackId();
     results_.add("Created track '" + op.name + "'");
 
     return true;
@@ -396,7 +430,6 @@ bool InstructionExecutor::executeTrack(const TrackOp& op) {
 bool InstructionExecutor::executeDel(const DelOp& op) {
     // If active selection from SELECT, delete all selected items
     if (op.target.isImplicit() && hasActiveSelection()) {
-        auto& tm = api_.tracks();
         auto& cm = api_.clips();
         int count = 0;
 
@@ -408,10 +441,8 @@ bool InstructionExecutor::executeDel(const DelOp& op) {
             results_.add("Deleted " + juce::String(count) + " clip(s)");
         }
         if (!selectedTracks_.empty()) {
-            for (auto trackId : selectedTracks_) {
-                tm.deleteTrack(trackId);
-                count++;
-            }
+            for (auto trackId : selectedTracks_)
+                api_.undo().executeCommand(std::make_unique<DeleteTrackCommand>(trackId));
             results_.add("Deleted " + juce::String(static_cast<int>(selectedTracks_.size())) +
                          " track(s)");
         }
@@ -422,7 +453,7 @@ bool InstructionExecutor::executeDel(const DelOp& op) {
     int trackId = resolveTrackRef(op.target);
     if (trackId < 0)
         return false;
-    api_.tracks().deleteTrack(trackId);
+    api_.undo().executeCommand(std::make_unique<DeleteTrackCommand>(trackId));
     results_.add("Deleted track");
     return true;
 }
@@ -434,7 +465,7 @@ bool InstructionExecutor::executeMute(const MuteOp& op) {
     // (unless the caller gave an explicit target, in which case honour that).
     if (!selectedTracks_.empty() && op.target.isImplicit()) {
         for (auto trackId : selectedTracks_)
-            tm.setTrackMuted(trackId, true);
+            api_.undo().executeCommand(std::make_unique<SetTrackMuteCommand>(trackId, true));
         results_.add("Muted " + juce::String(static_cast<int>(selectedTracks_.size())) +
                      " track(s)");
         return true;
@@ -447,7 +478,7 @@ bool InstructionExecutor::executeMute(const MuteOp& op) {
         int count = 0;
         for (const auto& track : tm.getTracks()) {
             if (track.name.equalsIgnoreCase(op.target.name)) {
-                tm.setTrackMuted(track.id, true);
+                api_.undo().executeCommand(std::make_unique<SetTrackMuteCommand>(track.id, true));
                 ++count;
             }
         }
@@ -459,7 +490,7 @@ bool InstructionExecutor::executeMute(const MuteOp& op) {
     int trackId = resolveTrackRef(op.target);
     if (trackId < 0)
         return false;
-    tm.setTrackMuted(trackId, true);
+    api_.undo().executeCommand(std::make_unique<SetTrackMuteCommand>(trackId, true));
     results_.add("Muted 1 track");
     return true;
 }
@@ -469,7 +500,7 @@ bool InstructionExecutor::executeSolo(const SoloOp& op) {
 
     if (!selectedTracks_.empty() && op.target.isImplicit()) {
         for (auto trackId : selectedTracks_)
-            tm.setTrackSoloed(trackId, true);
+            api_.undo().executeCommand(std::make_unique<SetTrackSoloCommand>(trackId, true));
         results_.add("Soloed " + juce::String(static_cast<int>(selectedTracks_.size())) +
                      " track(s)");
         return true;
@@ -479,7 +510,7 @@ bool InstructionExecutor::executeSolo(const SoloOp& op) {
         int count = 0;
         for (const auto& track : tm.getTracks()) {
             if (track.name.equalsIgnoreCase(op.target.name)) {
-                tm.setTrackSoloed(track.id, true);
+                api_.undo().executeCommand(std::make_unique<SetTrackSoloCommand>(track.id, true));
                 ++count;
             }
         }
@@ -490,27 +521,29 @@ bool InstructionExecutor::executeSolo(const SoloOp& op) {
     int trackId = resolveTrackRef(op.target);
     if (trackId < 0)
         return false;
-    tm.setTrackSoloed(trackId, true);
+    api_.undo().executeCommand(std::make_unique<SetTrackSoloCommand>(trackId, true));
     results_.add("Soloed 1 track");
     return true;
 }
 
 void InstructionExecutor::applySetProps(int trackId, const juce::StringPairArray& props) {
-    auto& tm = api_.tracks();
+    auto& undo = api_.undo();
     for (const auto& key : props.getAllKeys()) {
         auto val = props.getValue(key, "");
         if (key == "vol" || key == "volume_db") {
             double db = val.getDoubleValue();
             float vol = static_cast<float>(std::pow(10.0, db / 20.0));
-            tm.setTrackVolume(trackId, vol);
+            undo.executeCommand(std::make_unique<SetTrackVolumeCommand>(trackId, vol));
         } else if (key == "pan") {
-            tm.setTrackPan(trackId, val.getFloatValue());
+            undo.executeCommand(std::make_unique<SetTrackPanCommand>(trackId, val.getFloatValue()));
         } else if (key == "mute") {
-            tm.setTrackMuted(trackId, val == "true" || val == "1");
+            undo.executeCommand(
+                std::make_unique<SetTrackMuteCommand>(trackId, val == "true" || val == "1"));
         } else if (key == "solo") {
-            tm.setTrackSoloed(trackId, val == "true" || val == "1");
+            undo.executeCommand(
+                std::make_unique<SetTrackSoloCommand>(trackId, val == "true" || val == "1"));
         } else if (key == "name") {
-            tm.setTrackName(trackId, val);
+            undo.executeCommand(std::make_unique<SetTrackNameCommand>(trackId, val));
         }
     }
 }
@@ -592,13 +625,29 @@ bool InstructionExecutor::executeClip(const ClipOp& op) {
 }
 
 bool InstructionExecutor::executeFx(const FxOp& op) {
+    // Fan out across an active track selection (e.g. master-selected = all
+    // tracks) when the op has no explicit ref. Mirrors MUTE/SOLO/SET.
+    if (op.target.isImplicit() && !selectedTracks_.empty()) {
+        int count = 0;
+        for (auto trackId : selectedTracks_) {
+            if (!addFxToTrack(trackId, op.fxName))
+                return false;
+            count++;
+        }
+        results_.add("Added '" + op.fxName + "' to " + juce::String(count) + " track(s)");
+        return true;
+    }
+
     int trackId = resolveTrackRef(op.target);
     if (trackId < 0)
         return false;
+    return addFxToTrack(trackId, op.fxName);
+}
 
+bool InstructionExecutor::addFxToTrack(int trackId, const juce::String& fxName) {
     // Internal plugin lookup — shares internal_plugins.hpp with the DSL
     // interpreter so a single canonical alias per plugin is accepted by both.
-    if (const auto* match = lookupInternalPluginByAlias(op.fxName)) {
+    if (const auto* match = lookupInternalPluginByAlias(fxName)) {
         DeviceInfo device;
         device.name = match->displayName;
         device.pluginId = match->pluginId;
@@ -606,9 +655,11 @@ bool InstructionExecutor::executeFx(const FxOp& op) {
         device.deviceType = match->deviceType;
         device.isInstrument = (match->deviceType == DeviceType::Instrument);
 
-        auto deviceId = api_.tracks().addDeviceToTrack(trackId, device);
-        if (deviceId == INVALID_DEVICE_ID) {
-            error_ = "Failed to add FX '" + op.fxName + "'";
+        auto cmd = std::make_unique<AddDeviceToTrackCommand>(trackId, device);
+        auto* cmdPtr = cmd.get();
+        api_.undo().executeCommand(std::move(cmd));
+        if (cmdPtr->getCreatedDeviceId() == INVALID_DEVICE_ID) {
+            error_ = "Failed to add FX '" + fxName + "'";
             return false;
         }
         results_.add("Added FX '" + match->displayName + "'");
@@ -633,14 +684,14 @@ bool InstructionExecutor::executeFx(const FxOp& op) {
 
     for (const auto& desc : knownPlugins.getTypes()) {
         auto alias = pluginNameToAlias(desc.name);
-        if (desc.name.equalsIgnoreCase(op.fxName) || alias.equalsIgnoreCase(op.fxName)) {
+        if (desc.name.equalsIgnoreCase(fxName) || alias.equalsIgnoreCase(fxName)) {
             bestMatch = &desc;
             break;
         }
     }
 
     if (!bestMatch) {
-        error_ = "Plugin '" + op.fxName + "' not found";
+        error_ = "Plugin '" + fxName + "' not found";
         return false;
     }
 
@@ -665,9 +716,11 @@ bool InstructionExecutor::executeFx(const FxOp& op) {
     else
         device.format = PluginFormat::VST3;
 
-    auto deviceId = api_.tracks().addDeviceToTrack(trackId, device);
-    if (deviceId == INVALID_DEVICE_ID) {
-        error_ = "Failed to add plugin '" + op.fxName + "'";
+    auto cmd = std::make_unique<AddDeviceToTrackCommand>(trackId, device);
+    auto* cmdPtr = cmd.get();
+    api_.undo().executeCommand(std::move(cmd));
+    if (cmdPtr->getCreatedDeviceId() == INVALID_DEVICE_ID) {
+        error_ = "Failed to add plugin '" + fxName + "'";
         return false;
     }
 

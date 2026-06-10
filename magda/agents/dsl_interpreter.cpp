@@ -1552,15 +1552,26 @@ juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
 
     auto& sm = api.selection();
     auto selTrack = sm.getSelectedTrack();
-    if (selTrack != INVALID_TRACK_ID) {
+    if (selTrack == MASTER_TRACK_ID) {
+        // Master selected = operate on every track. Emit a scope marker so the
+        // LLM emits implicit-target ops (MUTE/SET/FX with no ref) that the
+        // executor fans out across all tracks, instead of a per-track id.
+        // (The master is not in getTracks(), so the index loop below would
+        // otherwise fall through and write a bogus selected_track_id.)
+        root->setProperty("scope", "all_tracks");
+    } else if (selTrack != INVALID_TRACK_ID) {
         // Find 1-based index for the selected track
         int selIndex = 1;
+        bool found = false;
         for (const auto& track : tm.getTracks()) {
-            if (track.id == selTrack)
+            if (track.id == selTrack) {
+                found = true;
                 break;
+            }
             selIndex++;
         }
-        root->setProperty("selected_track_id", selIndex);
+        if (found)
+            root->setProperty("selected_track_id", selIndex);
     }
 
     // Selected clip context

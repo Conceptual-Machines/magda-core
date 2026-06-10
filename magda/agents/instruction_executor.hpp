@@ -67,6 +67,9 @@ class InstructionExecutor {
     bool executeSet(const SetOp& op);
     bool executeClip(const ClipOp& op);
     bool executeFx(const FxOp& op);
+
+    /** Add one effect/instrument (by alias) to a single track. Sets error_ on failure. */
+    bool addFxToTrack(int trackId, const juce::String& fxName);
     bool executeSelect(const SelectOp& op);
     bool executeArp(const ArpOp& op);
     bool executeChord(const ChordOp& op);

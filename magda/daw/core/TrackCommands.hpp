@@ -96,6 +96,10 @@ class AddDeviceToTrackCommand : public UndoableCommand {
         return "Add Device to Track";
     }
 
+    DeviceId getCreatedDeviceId() const {
+        return createdDeviceId_;
+    }
+
   private:
     TrackId trackId_;
     DeviceInfo device_;

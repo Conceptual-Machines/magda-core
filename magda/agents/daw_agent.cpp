@@ -57,6 +57,11 @@ After TRACK, FX/CLIP/SET apply to that track automatically.
 After CLIP, ARP/CHORD/NOTE apply to that clip automatically.
 Use a numeric id to target a different track: CLIP 2 1 4, SET 3 vol=-6
 
+When the DAW state has "scope":"all_tracks" (the master is selected), the user
+is addressing every track at once. Emit ops WITHOUT a track ref (e.g. FX reverb,
+SET vol=-6, MUTE) and they apply to all tracks as one action. Do NOT enumerate
+tracks one by one.
+
 EXAMPLES:
 "create a bass track" ->
 TRACK Bass

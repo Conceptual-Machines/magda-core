@@ -8,6 +8,8 @@ namespace magda {
 class UndoApiLive : public UndoApi {
   public:
     void executeCommand(std::unique_ptr<UndoableCommand> command) override;
+    void beginCompound(const juce::String& description) override;
+    void endCompound() override;
 };
 
 }  // namespace magda
