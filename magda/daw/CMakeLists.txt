@@ -100,6 +100,9 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/trackchain/icon-spectrum-boldm.svg
     ../../assets/icons/trackchain/icon-levels-boldm.svg
     ../../assets/icons/trackchain/icon-checkmix-boldm.svg
+    ../../assets/icons/trackchain/devices/audio-device.svg
+    ../../assets/icons/trackchain/devices/midi-device.svg
+    ../../assets/icons/trackchain/devices/instrument-device.svg
     ../../assets/icons/trackchain/gain-staging.svg
     # Transport icons
     ../../assets/icons/transport/play_off.svg
@@ -181,10 +184,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/browser/browser.svg
     ../../assets/midi.svg
     ../../assets/icons/browser/icon-audio-boldm.svg
-    ../../assets/icons/browser/icon-audiofx-boldm.svg
-    ../../assets/icons/browser/icon-instrument-boldm.svg
     ../../assets/icons/browser/icon-midi-boldm.svg
-    ../../assets/icons/browser/icon-midifx-boldm.svg
     ../../assets/icons/browser/icon-preset-boldm.svg
     # Mixer fader icons
     ../../assets/icons/fader/fader_thumb.svg

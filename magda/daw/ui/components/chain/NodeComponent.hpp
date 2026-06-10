@@ -135,6 +135,7 @@ class NodeComponent : public juce::Component,
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
     // Get total width of left side panels (mods + params + any extras)
@@ -443,6 +444,11 @@ class NodeComponent : public juce::Component,
     void updateMacroValueDisplay(int macroIndex, float value);
 
   private:
+    // Shift+click range selection: select every sibling node between the
+    // selection anchor and this node (siblings = NodeComponents sharing this
+    // node's parent, in child order)
+    void rangeSelectFromAnchor();
+
     // Editor panel management
     void showModulatorEditor(int modIndex);
     void hideModulatorEditor();

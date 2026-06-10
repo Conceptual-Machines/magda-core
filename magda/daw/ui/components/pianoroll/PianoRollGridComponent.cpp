@@ -9,6 +9,7 @@
 #include "../../state/TimelineEvents.hpp"
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "../../utils/SelectionPolicy.hpp"
 #include "../../windows/CommandIDs.hpp"
 #include "PhaseMarker.hpp"
 #include "core/ChordAnnotationCommands.hpp"
@@ -770,7 +771,7 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
         // Build normalized selection rectangle
         auto selectionRect = juce::Rectangle<int>(dragSelectStart_, dragSelectEnd_);
 
-        bool isAdditive = e.mods.isCommandDown();
+        bool isAdditive = magda::isAdditiveMarqueeDrag(e.mods);
 
         // If not additive, deselect all first
         if (!isAdditive) {
@@ -1871,6 +1872,13 @@ void PianoRollGridComponent::createNoteComponents() {
                 if (onNoteSelected) {
                     onNoteSelected(clipId, index, isAdditive);
                 }
+            };
+
+            noteComp->onNoteRangeSelected = [this, clipId](size_t index) {
+                if (onNoteRangeSelected) {
+                    onNoteRangeSelected(clipId, index);
+                }
+                syncSelectionFromManager();
             };
 
             noteComp->onNoteDeselected = [this, clipId](size_t /*index*/) {

@@ -2,6 +2,9 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
+
+#include "../../utils/SelectionPolicy.hpp"
 #include "RackComponent.hpp"
 #include "core/SelectionManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -16,14 +19,30 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     // Set up node path for centralized selection
     nodePath_ = magda::ChainNodePath::chain(trackId, rackId, chain.id);
 
-    // Register as SelectionManager listener
+    // Register as SelectionManager listener (highlight) and TrackManager
+    // listener (live refresh when a sibling's multi-edit changes this chain).
     magda::SelectionManager::getInstance().addListener(this);
-    // Name label - clicks pass through to parent for selection
+    magda::TrackManager::getInstance().addListener(this);
+    // Name label - double-click to rename; a plain single click selects the
+    // chain (see ChainNameLabel). editOnSingleClick=false so a single click
+    // never opens the editor.
     nameLabel_.setText(chain.name, juce::dontSendNotification);
     nameLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::backgroundWhenEditingColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+    nameLabel_.setColour(juce::Label::textWhenEditingColourId, DarkTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
-    nameLabel_.setInterceptsMouseClicks(false, false);
+    nameLabel_.setEditable(false, true, false);  // editOnDoubleClick only
+    nameLabel_.onSelect = [this](const juce::MouseEvent& e) { applySelectionForClick(e.mods); };
+    nameLabel_.onTextChange = [this]() {
+        auto& tm = magda::TrackManager::getInstance();
+        tm.setChainName(trackId_, rackId_, chainId_, nameLabel_.getText());
+        // Re-sync from the model in case the edit was rejected (empty/unchanged),
+        // so the label never shows a name the model didn't accept.
+        if (const auto* chain = tm.getChain(trackId_, rackId_, chainId_))
+            nameLabel_.setText(chain->name, juce::dontSendNotification);
+    };
     addAndMakeVisible(nameLabel_);
 
     // Gain label (dB format, draggable)
@@ -32,10 +51,28 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     gainLabel_.setValue(chain.volume, juce::dontSendNotification);
     gainLabel_.setFontSize(9.0f);
     gainLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
-    gainLabel_.onValueChange = [this]() {
-        magda::TrackManager::getInstance().setChainVolume(
-            trackId_, rackId_, chainId_, static_cast<float>(gainLabel_.getValue()));
+    // Capture each target chain's base gain at drag start so a multi-chain drag
+    // shifts every selected chain by the same dB delta from its own value.
+    gainLabel_.onDragStart = [this]() {
+        dragStartGainDb_ = gainLabel_.getValue();
+        dragBaseGains_.clear();
+        auto& tm = magda::TrackManager::getInstance();
+        for (const auto& path : editTargets())
+            if (const auto* c = tm.getChainByPath(path))
+                dragBaseGains_.emplace_back(path, c->volume);
     };
+    gainLabel_.onValueChange = [this]() {
+        auto& tm = magda::TrackManager::getInstance();
+        if (dragBaseGains_.empty()) {
+            // Non-drag change (or single target): set this chain directly.
+            tm.setChainVolume(nodePath_, static_cast<float>(gainLabel_.getValue()));
+            return;
+        }
+        const double delta = gainLabel_.getValue() - dragStartGainDb_;
+        for (const auto& [path, base] : dragBaseGains_)
+            tm.setChainVolume(path, static_cast<float>(base + delta));
+    };
+    gainLabel_.onDragEnd = [this](double) { dragBaseGains_.clear(); };
     addAndMakeVisible(gainLabel_);
 
     // Pan label (L/C/R format, draggable)
@@ -44,10 +81,25 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     panLabel_.setValue(chain.pan, juce::dontSendNotification);
     panLabel_.setFontSize(9.0f);
     panLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
-    panLabel_.onValueChange = [this]() {
-        magda::TrackManager::getInstance().setChainPan(trackId_, rackId_, chainId_,
-                                                       static_cast<float>(panLabel_.getValue()));
+    panLabel_.onDragStart = [this]() {
+        dragStartPan_ = panLabel_.getValue();
+        dragBasePans_.clear();
+        auto& tm = magda::TrackManager::getInstance();
+        for (const auto& path : editTargets())
+            if (const auto* c = tm.getChainByPath(path))
+                dragBasePans_.emplace_back(path, c->pan);
     };
+    panLabel_.onValueChange = [this]() {
+        auto& tm = magda::TrackManager::getInstance();
+        if (dragBasePans_.empty()) {
+            tm.setChainPan(nodePath_, static_cast<float>(panLabel_.getValue()));
+            return;
+        }
+        const double delta = panLabel_.getValue() - dragStartPan_;
+        for (const auto& [path, base] : dragBasePans_)
+            tm.setChainPan(path, static_cast<float>(base + delta));
+    };
+    panLabel_.onDragEnd = [this](double) { dragBasePans_.clear(); };
     addAndMakeVisible(panLabel_);
 
     // Mute button
@@ -120,6 +172,7 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
 
 ChainRowComponent::~ChainRowComponent() {
     magda::SelectionManager::getInstance().removeListener(this);
+    magda::TrackManager::getInstance().removeListener(this);
 }
 
 void ChainRowComponent::paint(juce::Graphics& g) {
@@ -152,11 +205,7 @@ void ChainRowComponent::mouseUp(const juce::MouseEvent& event) {
     if (!contains(event.getPosition())) {
         return;
     }
-
-    DBG("ChainRowComponent::mouseUp - chainId=" << chainId_ << " rackId=" << rackId_);
-
-    // Use centralized selection - RackComponent will respond via chainNodeSelectionChanged
-    magda::SelectionManager::getInstance().selectChainNode(nodePath_);
+    applySelectionForClick(event.mods);
 }
 
 void ChainRowComponent::mouseDoubleClick(const juce::MouseEvent& /*event*/) {
@@ -166,17 +215,82 @@ void ChainRowComponent::mouseDoubleClick(const juce::MouseEvent& /*event*/) {
     }
 }
 
-void ChainRowComponent::selectionTypeChanged(magda::SelectionType /*newType*/) {
-    // Selection type changed - chainNodeSelectionChanged will handle visual update
+void ChainRowComponent::selectionTypeChanged(magda::SelectionType newType) {
+    // Drop the highlight when selection moves to a non-chain context (e.g. a
+    // clip): chainNodeSelectionChanged only fires for chain-node changes.
+    if (newType != magda::SelectionType::ChainNode &&
+        newType != magda::SelectionType::MultiChainNode) {
+        setSelected(false);
+    }
 }
 
-void ChainRowComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
-    // Update our selection state based on whether we match the selected path
-    bool shouldBeSelected = nodePath_.isValid() && nodePath_ == path;
-    DBG("ChainRowComponent::chainNodeSelectionChanged - chainId="
-        << chainId_ << " shouldBeSelected=" << (shouldBeSelected ? "yes" : "no")
-        << " currentSelected=" << (selected_ ? "yes" : "no"));
-    setSelected(shouldBeSelected);
+void ChainRowComponent::applySelectionForClick(const juce::ModifierKeys& mods) {
+    auto& sel = magda::SelectionManager::getInstance();
+    if (magda::isRangeSelectClick(mods))
+        rangeSelectFromAnchor();
+    else if (magda::isToggleSelectClick(mods))
+        sel.toggleChainNodeSelection(nodePath_);
+    else
+        sel.selectChainNode(nodePath_);
+}
+
+void ChainRowComponent::rangeSelectFromAnchor() {
+    auto& sel = magda::SelectionManager::getInstance();
+    const auto& anchor = sel.getAnchorChainNode();
+    const auto rackPath = nodePath_.parent();
+    const auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath);
+    if (!anchor.isValid() || rack == nullptr) {
+        sel.selectChainNode(nodePath_);
+        return;
+    }
+
+    // Sibling chains in model order, so Shift+click selects the contiguous run
+    // between the anchor chain and this one.
+    std::vector<magda::ChainNodePath> paths;
+    int anchorIdx = -1, clickedIdx = -1;
+    for (const auto& chain : rack->chains) {
+        auto p = rackPath.withChain(chain.id);
+        if (p == anchor)
+            anchorIdx = static_cast<int>(paths.size());
+        if (p == nodePath_)
+            clickedIdx = static_cast<int>(paths.size());
+        paths.push_back(p);
+    }
+    if (anchorIdx < 0 || clickedIdx < 0) {
+        sel.selectChainNode(nodePath_);
+        return;
+    }
+    const int lo = std::min(anchorIdx, clickedIdx);
+    const int hi = std::max(anchorIdx, clickedIdx);
+    sel.selectChainNodes({paths.begin() + lo, paths.begin() + hi + 1});
+}
+
+std::vector<magda::ChainNodePath> ChainRowComponent::editTargets() const {
+    auto& sel = magda::SelectionManager::getInstance();
+    if (sel.isChainNodeSelected(nodePath_) && sel.getSelectedChainNodes().size() > 1)
+        return sel.getSelectedChainNodes();
+    return {nodePath_};
+}
+
+void ChainRowComponent::chainNodeSelectionChanged(const magda::ChainNodePath& /*path*/) {
+    // Highlight whenever this chain is part of the (possibly multi-) selection.
+    // This fires for every chain-node selection change, so all rows recompute.
+    setSelected(magda::SelectionManager::getInstance().isChainNodeSelected(nodePath_));
+}
+
+void ChainRowComponent::trackPropertyChanged(int trackId) {
+    if (trackId == trackId_)
+        refreshFromModel();
+}
+
+void ChainRowComponent::trackDevicesChanged(int trackId) {
+    if (trackId == trackId_)
+        refreshFromModel();
+}
+
+void ChainRowComponent::refreshFromModel() {
+    if (const auto* chain = magda::TrackManager::getInstance().getChainByPath(nodePath_))
+        updateFromChain(*chain);
 }
 
 void ChainRowComponent::setSelected(bool selected) {
@@ -189,12 +303,9 @@ void ChainRowComponent::setSelected(bool selected) {
 void ChainRowComponent::setNodePath(const magda::ChainNodePath& path) {
     nodePath_ = path;
 
-    // Check if this chain is currently selected in SelectionManager
-    // This handles the case where selection happened before the row was created
-    const auto& currentSelection = magda::SelectionManager::getInstance().getSelectedChainNode();
-    if (currentSelection.isValid() && currentSelection == nodePath_) {
-        setSelected(true);
-    }
+    // Reflect current selection state (handles selection made before the row
+    // existed, and multi-selection where this chain is one of several).
+    setSelected(magda::SelectionManager::getInstance().isChainNodeSelected(nodePath_));
 }
 
 void ChainRowComponent::resized() {
@@ -236,7 +347,9 @@ int ChainRowComponent::getPreferredHeight() const {
 }
 
 void ChainRowComponent::updateFromChain(const magda::ChainInfo& chain) {
-    nameLabel_.setText(chain.name, juce::dontSendNotification);
+    // Don't clobber an in-progress rename if a property change arrives mid-edit.
+    if (!nameLabel_.isBeingEdited())
+        nameLabel_.setText(chain.name, juce::dontSendNotification);
     muteButton_.setToggleState(chain.muted, juce::dontSendNotification);
     soloButton_.setToggleState(chain.solo, juce::dontSendNotification);
     gainLabel_.setValue(chain.volume, juce::dontSendNotification);
@@ -254,18 +367,24 @@ void ChainRowComponent::updateFromChain(const magda::ChainInfo& chain) {
 }
 
 void ChainRowComponent::onMuteClicked() {
-    magda::TrackManager::getInstance().setChainMuted(trackId_, rackId_, chainId_,
-                                                     muteButton_.getToggleState());
+    auto& tm = magda::TrackManager::getInstance();
+    const bool muted = muteButton_.getToggleState();
+    for (const auto& path : editTargets())
+        tm.setChainMuted(path, muted);
 }
 
 void ChainRowComponent::onSoloClicked() {
-    magda::TrackManager::getInstance().setChainSolo(trackId_, rackId_, chainId_,
-                                                    soloButton_.getToggleState());
+    auto& tm = magda::TrackManager::getInstance();
+    const bool solo = soloButton_.getToggleState();
+    for (const auto& path : editTargets())
+        tm.setChainSolo(path, solo);
 }
 
 void ChainRowComponent::onBypassClicked() {
-    bool active = onButton_->getToggleState();
-    magda::TrackManager::getInstance().setChainBypassed(trackId_, rackId_, chainId_, !active);
+    auto& tm = magda::TrackManager::getInstance();
+    const bool bypassed = !onButton_->getToggleState();
+    for (const auto& path : editTargets())
+        tm.setChainBypassed(path, bypassed);
 }
 
 void ChainRowComponent::onDeleteClicked() {

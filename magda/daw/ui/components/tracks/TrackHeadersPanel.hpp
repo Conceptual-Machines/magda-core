@@ -251,6 +251,10 @@ class TrackHeadersPanel : public juce::Component,
     int resizeStartY = 0;
     int resizeStartHeight = 0;
 
+    // Dedup for double-delivered mouse events (self mouse listener); see
+    // TrackHeadersPanel::mouseDown
+    juce::Time lastMouseDownEventTime_;
+
     // Drag-to-resize an automation lane's height from the headers panel,
     // mirroring the lane's own resize handle in TrackContentPanel.
     bool isResizingLane_ = false;

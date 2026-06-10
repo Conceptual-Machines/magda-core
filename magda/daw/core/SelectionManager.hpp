@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <limits>
 #include <unordered_set>
 #include <vector>
 
@@ -563,6 +564,11 @@ class SelectionManager {
     void selectNotes(ClipId clipId, const std::vector<size_t>& noteIndices);
 
     /**
+     * @brief Extend note selection from the note anchor to the target note
+     */
+    void extendNoteSelectionTo(ClipId clipId, size_t noteIndex);
+
+    /**
      * @brief Add a note to the current selection
      */
     void addNoteToSelection(ClipId clipId, size_t noteIndex);
@@ -651,6 +657,14 @@ class SelectionManager {
      * @brief Toggle a chain node in the current multi-selection.
      */
     void toggleChainNodeSelection(const ChainNodePath& path);
+
+    /**
+     * @brief Get the anchor chain node (last single-clicked node, used for
+     * Shift+click range selection along a chain)
+     */
+    const ChainNodePath& getAnchorChainNode() const {
+        return anchorChainNodePath_;
+    }
 
     /**
      * @brief Replace the current chain-node selection with ordered paths.
@@ -1029,8 +1043,11 @@ class SelectionManager {
     std::unordered_set<ClipId> selectedClipIds_;  // For multi-clip selection
     TimeRangeSelection timeRangeSelection_;
     NoteSelection noteSelection_;
+    ClipId anchorNoteClipId_ = INVALID_CLIP_ID;
+    size_t anchorNoteIndex_ = std::numeric_limits<size_t>::max();
     DeviceSelection deviceSelection_;
-    ChainNodePath selectedChainNode_;  // For exclusive chain node selection
+    ChainNodePath selectedChainNode_;    // For exclusive chain node selection
+    ChainNodePath anchorChainNodePath_;  // Anchor for Shift+click range selection
     std::vector<ChainNodePath> selectedChainNodes_;
     juce::String chainNodeDisplayName_;  // Optional display override (e.g., pad chain plugin name)
     juce::String chainNodeDisplayType_;  // Optional display override (e.g., pad chain plugin type)

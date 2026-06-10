@@ -3,6 +3,7 @@
 #include "../../themes/StyledText.hpp"
 #include "BaseInspector.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -14,13 +15,19 @@ namespace magda::daw::ui {
  * - Node name
  * - Plugin latency
  */
-class DeviceInspector : public BaseInspector {
+class DeviceInspector : public BaseInspector, public magda::TrackManagerListener {
   public:
     DeviceInspector();
     ~DeviceInspector() override;
 
     void onActivated() override;
     void onDeactivated() override;
+
+    // TrackManagerListener: live-refresh the displayed name/props when the
+    // selected chain node's owning track changes (e.g. a chain rename).
+    void tracksChanged() override {}
+    void trackPropertyChanged(int trackId) override;
+    void trackDevicesChanged(int trackId) override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;

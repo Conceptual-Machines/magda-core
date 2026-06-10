@@ -8,6 +8,7 @@
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../utils/SelectionPolicy.hpp"
 #include "AudioBridge.hpp"
 #include "AudioEngine.hpp"
 #include "BinaryData.h"
@@ -925,7 +926,7 @@ class DrumGridClipGrid : public juce::Component,
         if (isDragSelecting_) {
             // Rubber band selection
             auto selectionRect = juce::Rectangle<int>(dragSelectStart_, dragSelectEnd_);
-            bool isAdditive = e.mods.isCommandDown();
+            bool isAdditive = magda::isAdditiveMarqueeDrag(e.mods);
 
             if (!isAdditive) {
                 for (auto& nc : noteComponents_)
@@ -1390,6 +1391,12 @@ class DrumGridClipGrid : public juce::Component,
                 }
                 if (onNoteSelected)
                     onNoteSelected(clipId_, index, isAdditive);
+                fireSelectionChanged();
+            };
+
+            noteComp->onNoteRangeSelected = [this](size_t index) {
+                magda::SelectionManager::getInstance().extendNoteSelectionTo(clipId_, index);
+                syncSelectionFromManager();
                 fireSelectionChanged();
             };
 

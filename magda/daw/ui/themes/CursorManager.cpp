@@ -14,6 +14,51 @@ CursorManager::CursorManager() {
     noteDrawCursor = createNoteDrawCursor();
     eraseCursor = createEraseCursor();
     noteRepeatCursor = createNoteRepeatCursor();
+    bladeCursor = createBladeCursor();
+}
+
+juce::MouseCursor CursorManager::createBladeCursor() {
+    // Scissors glyph: two crossed blades pivoting at the centre, finger rings
+    // at the top. Hotspot sits at the blade tips (bottom centre) so the cut
+    // lands where the user points.
+    const int size = 28;
+    juce::Image img(juce::Image::ARGB, size, size, true);
+    juce::Graphics g(img);
+
+    juce::Path blades;
+    // Left ring -> right blade tip
+    blades.startNewSubPath(9.5f, 7.0f);
+    blades.lineTo(18.5f, 23.0f);
+    // Right ring -> left blade tip
+    blades.startNewSubPath(18.5f, 7.0f);
+    blades.lineTo(9.5f, 23.0f);
+
+    juce::Path rings;
+    rings.addEllipse(5.5f, 2.0f, 6.0f, 6.0f);
+    rings.addEllipse(16.5f, 2.0f, 6.0f, 6.0f);
+
+    const auto outlineStroke =
+        juce::PathStrokeType(4.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    const auto bodyStroke =
+        juce::PathStrokeType(2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+
+    // White outline pass for contrast on both dark and light regions
+    g.setColour(juce::Colours::white);
+    g.strokePath(blades, outlineStroke);
+    g.strokePath(rings, outlineStroke);
+
+    g.setColour(juce::Colours::black);
+    g.strokePath(blades, bodyStroke);
+    g.strokePath(rings, bodyStroke);
+
+    // Pivot screw
+    g.setColour(juce::Colours::white);
+    g.fillEllipse(12.5f, 13.5f, 3.0f, 3.0f);
+    g.setColour(juce::Colours::black);
+    g.fillEllipse(13.25f, 14.25f, 1.5f, 1.5f);
+
+    // Hotspot at the blade tips (bottom centre)
+    return juce::MouseCursor(img, 14, 23);
 }
 
 juce::MouseCursor CursorManager::createZoomCursor(ZoomGlyph glyph) {

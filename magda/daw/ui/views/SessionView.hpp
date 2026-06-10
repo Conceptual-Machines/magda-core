@@ -235,6 +235,9 @@ class SessionView : public juce::Component,
 
     void wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, int sceneIndex);
     void onClipSlotClicked(int trackIndex, int sceneIndex, juce::ModifierKeys mods);
+    // Shift+click range select: rectangle of slots between the anchor clip's
+    // cell and the clicked cell
+    void rangeSelectSlots(int trackIndex, int sceneIndex, ClipId clickedClipId);
     void onPlayButtonClicked(int trackIndex, int sceneIndex);
     void onSceneLaunched(int sceneIndex);
     void triggerGroupScene(TrackId groupId, int sceneIndex);

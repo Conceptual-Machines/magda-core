@@ -2016,6 +2016,66 @@ void TrackManager::removeChainByPath(const ChainNodePath& chainPath) {
     }
 }
 
+ChainInfo* TrackManager::getChainByPath(const ChainNodePath& chainPath) {
+    if (chainPath.steps.empty() || chainPath.steps.back().type != ChainStepType::Chain)
+        return nullptr;
+
+    const ChainId chainId = chainPath.steps.back().id;
+
+    // Parent rack is the path with the trailing Chain step removed.
+    ChainNodePath rackPath;
+    rackPath.trackId = chainPath.trackId;
+    for (size_t i = 0; i + 1 < chainPath.steps.size(); ++i)
+        rackPath.steps.push_back(chainPath.steps[i]);
+
+    if (auto* rack = getRackByPath(rackPath)) {
+        for (auto& chain : rack->chains) {
+            if (chain.id == chainId)
+                return &chain;
+        }
+    }
+    return nullptr;
+}
+
+const ChainInfo* TrackManager::getChainByPath(const ChainNodePath& chainPath) const {
+    return const_cast<TrackManager*>(this)->getChainByPath(chainPath);
+}
+
+void TrackManager::setChainMuted(const ChainNodePath& chainPath, bool muted) {
+    if (auto* chain = getChainByPath(chainPath)) {
+        chain->muted = muted;
+        notifyTrackDevicesChanged(chainPath.trackId);
+    }
+}
+
+void TrackManager::setChainBypassed(const ChainNodePath& chainPath, bool bypassed) {
+    if (auto* chain = getChainByPath(chainPath)) {
+        chain->bypassed = bypassed;
+        notifyTrackDevicesChanged(chainPath.trackId);
+    }
+}
+
+void TrackManager::setChainSolo(const ChainNodePath& chainPath, bool solo) {
+    if (auto* chain = getChainByPath(chainPath)) {
+        chain->solo = solo;
+        notifyTrackDevicesChanged(chainPath.trackId);
+    }
+}
+
+void TrackManager::setChainVolume(const ChainNodePath& chainPath, float volume) {
+    if (auto* chain = getChainByPath(chainPath)) {
+        chain->volume = juce::jlimit(-60.0f, 6.0f, volume);
+        notifyTrackPropertyChanged(chainPath.trackId);
+    }
+}
+
+void TrackManager::setChainPan(const ChainNodePath& chainPath, float pan) {
+    if (auto* chain = getChainByPath(chainPath)) {
+        chain->pan = juce::jlimit(-1.0f, 1.0f, pan);
+        notifyTrackPropertyChanged(chainPath.trackId);
+    }
+}
+
 ChainInfo* TrackManager::getChain(TrackId trackId, RackId rackId, ChainId chainId) {
     if (auto* rack = getRack(trackId, rackId)) {
         auto& chains = rack->chains;
@@ -2080,6 +2140,17 @@ void TrackManager::setChainVolume(TrackId trackId, RackId rackId, ChainId chainI
 void TrackManager::setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan) {
     if (auto* chain = getChain(trackId, rackId, chainId)) {
         chain->pan = juce::jlimit(-1.0f, 1.0f, pan);
+        notifyTrackPropertyChanged(trackId);
+    }
+}
+
+void TrackManager::setChainName(TrackId trackId, RackId rackId, ChainId chainId,
+                                const juce::String& name) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        auto trimmed = name.trim();
+        if (trimmed.isEmpty() || trimmed == chain->name)
+            return;
+        chain->name = trimmed;
         notifyTrackPropertyChanged(trackId);
     }
 }
