@@ -8,6 +8,7 @@
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "core/controllers/ControllerActivation.hpp"
 #include "modulation/MacroEditorPanel.hpp"
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
@@ -1168,13 +1169,15 @@ void NodeComponent::refreshControllerIndicators() {
         return;
     }
 
-    auto& reg = magda::BindingRegistry::getInstance();
     // pinned (orange): any user-mapped binding (Static or Alias) — covers
     // Learn'd plugin params AND Learn'd macros / mod-rates on this node.
-    // automap (green): only resolver bindings — i.e. profile-level defaults
+    // automap (green): resolver bindings — i.e. profile-level defaults
     // currently resolving to this node (focus-dependent for focused.macro).
-    bool pinned = reg.hasUserMappingForDevice(nodePath_);
-    bool automap = reg.hasResolverBindingForDevice(nodePath_);
+    // Both are gated on the owning controller being the active surface AND
+    // connected, so the dots reflect live control state rather than mere
+    // config presence (see magda::controllers::ControllerActivation).
+    bool pinned = magda::controllers::isDeviceUserMapLive(nodePath_);
+    bool automap = magda::controllers::isDeviceAutomapLive(nodePath_);
     if (pinned != hasPinnedBindings_ || automap != hasAutomapBindings_) {
         hasPinnedBindings_ = pinned;
         hasAutomapBindings_ = automap;

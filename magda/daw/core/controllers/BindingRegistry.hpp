@@ -153,11 +153,30 @@ class BindingRegistry {
     bool hasResolverBindingForDevice(const ChainNodePath& devicePath) const;
 
     /**
+     * @brief Return the owning controller of the first resolver (automap)
+     * binding that resolves to this device, or nullopt if none.
+     *
+     * Lets the caller gate the automap indicator on that controller's live
+     * connection / activation state instead of merely whether a profile
+     * mapping exists in config. See magda::controllers::isDeviceAutomapLive.
+     */
+    std::optional<ControllerId> resolverControllerForDevice(const ChainNodePath& devicePath) const;
+
+    /**
      * @brief Return true if any active explicit user mapping (ControlTarget or
      * AliasRef) targets a parameter / macro / mod on this device. Excludes
      * resolver-based automap-profile bindings.
      */
     bool hasUserMappingForDevice(const ChainNodePath& devicePath) const;
+
+    /**
+     * @brief Return the owning controller of the first explicit user mapping
+     * (ControlTarget / AliasRef, excluding resolver automap) that targets this
+     * device, or nullopt if none. Counterpart to resolverControllerForDevice
+     * for the pinned (user-mapped) indicator.
+     */
+    std::optional<ControllerId> userMappingControllerForDevice(
+        const ChainNodePath& devicePath) const;
 
     /**
      * @brief Return true if any active binding (Global + Project) resolves to the

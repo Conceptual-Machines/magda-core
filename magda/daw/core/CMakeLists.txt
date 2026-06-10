@@ -60,6 +60,7 @@ target_sources(magda_daw PRIVATE
     controllers/BindingTransform.cpp
     controllers/ControllerRegistry.cpp
     controllers/BindingRegistry.cpp
+    controllers/ControllerActivation.cpp
     controllers/ControllerProfile.cpp
     controllers/ControllerProfileRegistry.cpp
     controllers/MidiLearnCoordinator.cpp

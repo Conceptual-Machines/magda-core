@@ -9,6 +9,7 @@
 #include "audio/midi/MidiDeviceMatch.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/controllers/ControllerActivation.hpp"
 #include "media_db/MediaDbContext.hpp"
 #include "media_db/SampleTaggerDownloader.hpp"
 
@@ -95,17 +96,9 @@ void FooterBar::refreshControllerBadges() {
 
             ControllerBadge b;
             b.label = c.name;
-            b.connected = false;
-            // Use the shared port matcher rather than strict equality: stored
-            // inputPort can be either a JUCE identifier or a display name,
-            // with varying case, depending on platform — magda::midi::matches
-            // handles all of those consistently.
-            for (const auto& dev : liveInputs_) {
-                if (magda::midi::matches(c.inputPort, dev.identifier, dev.name)) {
-                    b.connected = true;
-                    break;
-                }
-            }
+            // Shared connectivity predicate (robust identifier-or-name match);
+            // one definition for the footer, controllers dialog, and device dots.
+            b.connected = magda::controllers::isControllerConnected(c, liveInputs_);
             controllerBadges_.push_back(std::move(b));
         }
     }
