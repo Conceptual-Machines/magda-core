@@ -43,11 +43,21 @@ The Config tab decides which providers the AI agents actually use.
 
 | Setting | Description |
 |---------|-------------|
-| **Mode** | **Local** (every agent uses the embedded llama model), **Cloud** (every agent uses a cloud provider), or **Hybrid** (a mix) |
+| **Mode** | **Local** (every agent uses a local model), **Cloud** (every agent uses a cloud provider), or **Hybrid** (a mix) |
+| **Source** | In Local mode: **Embedded** (the built-in llama.cpp engine, configured on the Local tab) or **Local server** (an OpenAI-compatible server you run yourself) |
 | **Provider** | Which registered cloud provider to use, shown for Cloud and Hybrid modes |
 | **Optimize** | Bias agent selection toward **Quality**, **Speed**, or **Cost** |
 
-In **Local** mode the provider and optimize options are hidden, since everything runs on the embedded model.
+In **Local** mode the provider and optimize options are hidden, since everything runs locally.
+
+### Local Server (OpenAI-compatible)
+
+With **Source** set to **Local server**, MAGDA talks to any server that speaks the OpenAI API — **LM Studio**, **Ollama**, **GPUStack**, or a plain `llama.cpp` server. The default address is Ollama's (`http://localhost:11434/v1`); MAGDA normalises whatever form you give it, with or without the `/v1` suffix.
+
+- **Model** — pick the model the server should use. **Refresh** queries the server's model list; you can also type a model id directly.
+- An API key/token is only needed for servers that require one (for example GPUStack); the others run without it.
+
+One server and one model serve all agent roles, the same way the embedded model does.
 
 ## Sample Analyzer
 

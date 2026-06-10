@@ -41,7 +41,7 @@ A vertical rail of toggles runs down the left edge of the mixer. Each button sho
 - **Spectrum** — a mini spectrum analyzer per strip
 - **FX Chain** — the strip's mini FX chain
 
-The rail's on/off state is remembered between sessions.
+The rail's on/off state is remembered between sessions. Below the toggles sits the **Analyze** button — see [Mix Analysis](#mix-analysis).
 
 ## Channel Strip Controls
 
@@ -53,7 +53,7 @@ Drag the fader to adjust the track's output level. The fader sits over the track
 
 ### Level Meters
 
-The peak meter sits directly behind the fader and shows the real-time signal level. A peak value displays the highest level reached — watch for clipping.
+The peak meter sits directly behind the fader and shows the real-time signal level. A peak value displays the highest level reached — watch for clipping. Click the peak readout to reset it.
 
 ### Pan
 
@@ -82,6 +82,16 @@ With the **Oscilloscope** or **Spectrum** toggle on, a mini [analyzer](devices/a
 
 The master strip controls the final output level of the mix. It has its own volume fader, meters, and pan control but no mute/solo/record buttons.
 
+## Mix Analysis
+
+The **Analyze** button at the bottom of the toggle rail runs a measured analysis of the mix and shows the findings in a small panel anchored to the button.
+
+- **Scope** — with no channels selected, the whole mix is analysed; select channel strips first to scope the measurement to just those tracks. The panel title shows the scope and the range (the loop region if one is active, otherwise the whole song).
+- **Findings** — a per-track table of measured values (integrated loudness, peak, peak-to-loudness ratio, stereo correlation and width, with a row for the master) followed by any detected **collisions**: frequency ranges where two tracks mask each other, with a severity rating.
+- **Re-run** the analysis after changes, or **Stop** a run in progress.
+
+The same measurements feed the [mixing agent](panels/ai-assistant.md#mixing-agent): once an analysis exists, the AI console in the mixer view picks it up as context, so you can ask for mix feedback grounded in real numbers rather than guesswork.
+
 ## I/O Routing
 
 Each channel strip has routing selectors for:
@@ -104,6 +114,8 @@ The send section sizes itself to the number of sends across your tracks, so ever
 ## Multi-Output Plugins
 
 When an instrument has multiple output pairs activated, each output appears as its own channel strip in the mixer — just like any other track. You can route these strips to groups or aux sends independently. See [Multi-Output Plugins](tracks.md#multi-output-plugins) for setup details.
+
+The device's multi-out menu lets you toggle several pairs in one go: the menu stays open as you tick pairs, and **Activate All** / **Deactivate All** bring every output in or out with one click.
 
 ## DrumGrid Sub-Channels
 

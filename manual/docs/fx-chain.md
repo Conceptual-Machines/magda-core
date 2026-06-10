@@ -20,8 +20,9 @@ The chain can contain:
 ## Working with Devices
 
 - **Drag** plugins from the [Plugin Browser](panels/browsers.md) onto the chain to add them
-- **Drag** devices to reorder them in the chain
-- **Click** a device to select it and show its parameters
+- **Drag** devices to reorder them in the chain; hold ++alt++ while dragging to **copy** instead of move (the cursor shows a copy badge)
+- **Click** a device to select it and show its parameters; ++cmd++-click adds or removes a device from a multi-selection, ++shift++-click selects a range
+- **++cmd+d++** duplicates the selected device(s) in place
 - **Right-click** a device for options: bypass, remove, replace, move to rack
 - Each device has **Mod** and **Macro** buttons to toggle the modulation and macro panels
 - Plugin devices have a **Learn** button that maps a control in the plugin's own UI back to the matching parameter slot — see [Plugin Parameters](plugin-parameters.md#learn-mode)
@@ -72,7 +73,9 @@ Each rack contains one or more chains displayed as rows. Each chain has:
 - **Mute** (M) / **Solo** (S) — Mute or solo individual chains
 - **Devices** — Each chain has its own ordered list of devices
 
-Click the **+** button next to "Chains" to add a new parallel chain.
+Click the **+** button next to "Chains" to add a new parallel chain. Double-click a chain's name to rename it.
+
+Select multiple chains with ++cmd++-click (toggle) or ++shift++-click (range). When more than one chain is selected, editing volume, pan, mute, solo, or bypass on any selected chain applies to the whole selection — volume and pan shift each chain by the same amount from its own value, so their relative balance is preserved.
 
 ### Use Cases
 

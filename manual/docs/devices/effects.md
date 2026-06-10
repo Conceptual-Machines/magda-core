@@ -16,7 +16,7 @@ The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped
 
 | Device | Description |
 |--------|-------------|
-| **EQ** | 8-band parametric EQ. Each band selectable between HP, Low Shelf, Bell, High Shelf, LP, and Notch. |
+| **EQ** | 8-band parametric EQ. Each band selectable between HP, Low Shelf, Bell, High Shelf, LP, and Notch. The curve view draws the live signal spectrum behind the response curve — a dim trace for the input and a brighter one for the output — so you can see what each band is doing to the actual material. |
 | **Filter** | Six-model multimode filter. **SVF**: clean 2-pole LP/BP/HP/Notch. **Ladder**: 4-pole low-pass with driven resonance. **Korg 35**: MS-style LP/HP with analog bite. **Oberheim**: SEM-style LP/BP/HP/Notch. **Sallen-Key**: smooth 2nd-order LP/BP/HP. **Diode**: resonant 4-pole diode ladder with input drive. |
 
 ## Reverb & Space

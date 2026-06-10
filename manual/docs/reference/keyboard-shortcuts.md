@@ -19,7 +19,7 @@ Everything below is the **default** mapping. You can remap any shortcut from **S
 | ++ctrl+x++ / ++cmd+x++ | Cut |
 | ++ctrl+c++ / ++cmd+c++ | Copy |
 | ++ctrl+v++ / ++cmd+v++ | Paste |
-| ++ctrl+d++ / ++cmd+d++ | Duplicate clips or track |
+| ++ctrl+d++ / ++cmd+d++ | Duplicate selected clips, track, or chain devices |
 | ++ctrl+shift+d++ / ++cmd+shift+d++ | Duplicate track (without content) |
 | ++ctrl+a++ / ++cmd+a++ | Select all |
 | ++delete++ / ++backspace++ | Delete selected clips or track |
@@ -32,8 +32,10 @@ Everything below is the **default** mapping. You can remap any shortcut from **S
 
 | Shortcut | Action |
 |----------|--------|
-| ++cmd++ + click (++ctrl++ + click on Windows/Linux) | Toggle arrangement clip selection |
+| ++cmd++ + click (++ctrl++ + click on Windows/Linux) | Toggle clip, track, chain, or device selection |
+| ++shift++ + click | Range-select clips, tracks, chains, or devices |
 | ++shift+ctrl++ + click | Erase arrangement clip under cursor |
+| ++alt++ + drag a device | Copy the device instead of moving it |
 
 ## Mouse & Trackpad Gestures
 

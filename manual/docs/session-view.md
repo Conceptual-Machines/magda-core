@@ -38,6 +38,7 @@ Each cell in the grid is a clip slot. A slot can be empty or contain a clip.
 - **Click** a playing slot to stop it
 - Only one clip per track plays at a time — triggering a new clip in the same column stops the previous one
 - A clip slot has an explicit **play** ▶ and **stop** ■ control on hover for unambiguous launch / stop separate from the clip body click
+- While recording into a slot, the clip previews in real time — incoming MIDI notes and captured audio peaks draw in the slot as the take happens
 
 ### Selecting Clips
 

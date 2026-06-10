@@ -50,6 +50,8 @@ The corner toolbar provides quick access to:
 
 Drag audio files from the [Media Explorer](panels/browsers.md) directly onto a track to import them as clips.
 
+While recording, the growing clip previews in real time: MIDI notes appear in the lane as you play them, and audio shows its waveform as it is captured, so you can see the take taking shape before it is committed.
+
 ### Multi-Sample Drag and Drop
 
 You can drag several samples out of the [Media Explorer](panels/browsers.md) at once — ++shift++-click to extend the selection, ++cmd++-click (++ctrl++-click on Windows/Linux) to toggle individual files, then drag any item in the selection.
