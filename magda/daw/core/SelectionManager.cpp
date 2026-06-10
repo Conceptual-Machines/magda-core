@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "../project/ProjectManager.hpp"
+#include "AppPaths.hpp"
 #include "ClipManager.hpp"
 #include "Config.hpp"
 #include "TempoUtils.hpp"
@@ -10,6 +11,63 @@
 #include "TrackManager.hpp"
 
 namespace magda {
+
+namespace {
+
+void logArrangeRangeSelect(const juce::String& message) {
+    const auto line = juce::Time::getCurrentTime().toString(true, true, true, true) +
+                      " [ArrangeRangeSelect] " + message;
+    DBG(line);
+    juce::Logger::writeToLog(line);
+
+    auto logFile = paths::logsDir().getChildFile("arrange-range-select.log");
+    logFile.getParentDirectory().createDirectory();
+    if (!logFile.appendText(line + "\n", false, false, "\n")) {
+        const auto failureLine = "[ArrangeRangeSelect] failed to append dedicated log file: " +
+                                 logFile.getFullPathName();
+        DBG(failureLine);
+        juce::Logger::writeToLog(failureLine);
+    }
+}
+
+juce::String formatClipIdSet(const std::unordered_set<ClipId>& clipIds) {
+    juce::StringArray parts;
+    for (auto id : clipIds)
+        parts.add(juce::String(static_cast<int>(id)));
+    return "[" + parts.joinIntoString(",") + "]";
+}
+
+juce::String formatTrackIdVector(const std::vector<TrackId>& trackIds) {
+    juce::StringArray parts;
+    for (auto id : trackIds)
+        parts.add(juce::String(static_cast<int>(id)));
+    return "[" + parts.joinIntoString(",") + "]";
+}
+
+juce::String formatTrackIdSet(const std::unordered_set<TrackId>& trackIds) {
+    juce::StringArray parts;
+    for (auto id : trackIds)
+        parts.add(juce::String(static_cast<int>(id)));
+    return "[" + parts.joinIntoString(",") + "]";
+}
+
+void logMixerSelect(const juce::String& message) {
+    const auto line =
+        juce::Time::getCurrentTime().toString(true, true, true, true) + " [MixerSelect] " + message;
+    DBG(line);
+    juce::Logger::writeToLog(line);
+
+    auto logFile = paths::logsDir().getChildFile("mixer-select.log");
+    logFile.getParentDirectory().createDirectory();
+    if (!logFile.appendText(line + "\n", false, false, "\n")) {
+        const auto failureLine =
+            "[MixerSelect] failed to append dedicated log file: " + logFile.getFullPathName();
+        DBG(failureLine);
+        juce::Logger::writeToLog(failureLine);
+    }
+}
+
+}  // namespace
 
 SelectionManager& SelectionManager::getInstance() {
     static SelectionManager instance;
@@ -146,10 +204,14 @@ void SelectionManager::addTrackToSelection(TrackId trackId) {
     if (trackId == INVALID_TRACK_ID)
         return;
 
-    // If currently in single-track mode, convert to multi
+    // If currently in single-track mode, convert to multi. If selection focus
+    // came from another domain (clips, notes, devices), discard stale track set
+    // contents before starting a new track selection.
     if (selectionType_ == SelectionType::Track && selectedTrackId_ != INVALID_TRACK_ID) {
         selectedTrackIds_.clear();
         selectedTrackIds_.insert(selectedTrackId_);
+    } else if (selectionType_ != SelectionType::MultiTrack) {
+        selectedTrackIds_.clear();
     }
 
     selectedTrackIds_.insert(trackId);
@@ -176,6 +238,9 @@ void SelectionManager::addTrackToSelection(TrackId trackId) {
 }
 
 void SelectionManager::removeTrackFromSelection(TrackId trackId) {
+    if (!isTrackSelected(trackId))
+        return;
+
     selectedTrackIds_.erase(trackId);
 
     if (selectedTrackIds_.empty()) {
@@ -201,11 +266,23 @@ void SelectionManager::removeTrackFromSelection(TrackId trackId) {
 }
 
 void SelectionManager::toggleTrackSelection(TrackId trackId) {
-    if (selectedTrackIds_.count(trackId) > 0) {
+    logMixerSelect("SelectionManager::toggleTrackSelection begin track=" + juce::String(trackId) +
+                   " type=" + juce::String(static_cast<int>(selectionType_)) + " selectedTrack=" +
+                   juce::String(selectedTrackId_) + " anchor=" + juce::String(anchorTrackId_) +
+                   " selected=" + formatTrackIdSet(selectedTrackIds_) +
+                   " isTrackSelected=" + juce::String(isTrackSelected(trackId) ? 1 : 0));
+
+    if (isTrackSelected(trackId)) {
         removeTrackFromSelection(trackId);
     } else {
         addTrackToSelection(trackId);
     }
+
+    logMixerSelect("SelectionManager::toggleTrackSelection end track=" + juce::String(trackId) +
+                   " type=" + juce::String(static_cast<int>(selectionType_)) + " selectedTrack=" +
+                   juce::String(selectedTrackId_) + " anchor=" + juce::String(anchorTrackId_) +
+                   " selected=" + formatTrackIdSet(selectedTrackIds_) +
+                   " isTrackSelected=" + juce::String(isTrackSelected(trackId) ? 1 : 0));
 }
 
 bool SelectionManager::isTrackSelected(TrackId trackId) const {
@@ -352,12 +429,20 @@ void SelectionManager::toggleClipSelection(ClipId clipId) {
 }
 
 void SelectionManager::extendSelectionTo(ClipId targetClipId) {
+    logArrangeRangeSelect("SelectionManager::extendSelectionTo target=" +
+                          juce::String(static_cast<int>(targetClipId)) +
+                          " anchorBefore=" + juce::String(static_cast<int>(anchorClipId_)) +
+                          " selectedBefore=" + formatClipIdSet(selectedClipIds_));
+
     if (targetClipId == INVALID_CLIP_ID) {
+        logArrangeRangeSelect("SelectionManager::extendSelectionTo abort: invalid target");
         return;
     }
 
     // If no anchor, just select the target
     if (anchorClipId_ == INVALID_CLIP_ID) {
+        logArrangeRangeSelect(
+            "SelectionManager::extendSelectionTo no anchor: selecting target only");
         selectClip(targetClipId);
         return;
     }
@@ -367,6 +452,10 @@ void SelectionManager::extendSelectionTo(ClipId targetClipId) {
     const auto* targetClip = ClipManager::getInstance().getClip(targetClipId);
 
     if (!anchorClip || !targetClip) {
+        logArrangeRangeSelect("SelectionManager::extendSelectionTo missing clip: anchorFound=" +
+                              juce::String(anchorClip != nullptr ? 1 : 0) +
+                              " targetFound=" + juce::String(targetClip != nullptr ? 1 : 0) +
+                              "; selecting target only");
         selectClip(targetClipId);
         return;
     }
@@ -378,16 +467,57 @@ void SelectionManager::extendSelectionTo(ClipId targetClipId) {
     double minTime = std::min(anchorClip->getTimelineStart(bpm), targetClip->getTimelineStart(bpm));
     double maxTime = std::max(anchorClip->getTimelineEnd(bpm), targetClip->getTimelineEnd(bpm));
 
-    TrackId minTrackId = std::min(anchorClip->trackId, targetClip->trackId);
-    TrackId maxTrackId = std::max(anchorClip->trackId, targetClip->trackId);
+    const auto& trackManager = TrackManager::getInstance();
+    auto trackOrder = trackManager.getVisibleTracks(ViewMode::Arrange);
+    bool usedFallbackTrackOrder = false;
+    if (std::find(trackOrder.begin(), trackOrder.end(), anchorClip->trackId) == trackOrder.end() ||
+        std::find(trackOrder.begin(), trackOrder.end(), targetClip->trackId) == trackOrder.end()) {
+        usedFallbackTrackOrder = true;
+        trackOrder.clear();
+        for (const auto& track : trackManager.getTracks())
+            trackOrder.push_back(track.id);
+    }
+
+    auto anchorTrackIt = std::find(trackOrder.begin(), trackOrder.end(), anchorClip->trackId);
+    auto targetTrackIt = std::find(trackOrder.begin(), trackOrder.end(), targetClip->trackId);
+    if (anchorTrackIt == trackOrder.end() || targetTrackIt == trackOrder.end()) {
+        logArrangeRangeSelect(
+            "SelectionManager::extendSelectionTo missing track in order: "
+            "anchorTrack=" +
+            juce::String(static_cast<int>(anchorClip->trackId)) +
+            " targetTrack=" + juce::String(static_cast<int>(targetClip->trackId)) +
+            " trackOrder=" + formatTrackIdVector(trackOrder) + "; selecting target only");
+        selectClip(targetClipId);
+        return;
+    }
+
+    auto loTrackIt = anchorTrackIt <= targetTrackIt ? anchorTrackIt : targetTrackIt;
+    auto hiTrackIt = anchorTrackIt <= targetTrackIt ? targetTrackIt : anchorTrackIt;
+    std::unordered_set<TrackId> tracksInRange;
+    for (auto it = loTrackIt; it != std::next(hiTrackIt); ++it)
+        tracksInRange.insert(*it);
+
+    logArrangeRangeSelect("SelectionManager::extendSelectionTo computed range anchor=" +
+                          juce::String(static_cast<int>(anchorClipId_)) +
+                          " target=" + juce::String(static_cast<int>(targetClipId)) +
+                          " anchorTrack=" + juce::String(static_cast<int>(anchorClip->trackId)) +
+                          " targetTrack=" + juce::String(static_cast<int>(targetClip->trackId)) +
+                          " minTime=" + juce::String(minTime, 3) +
+                          " maxTime=" + juce::String(maxTime, 3) +
+                          " trackOrder=" + formatTrackIdVector(trackOrder) +
+                          " fallbackOrder=" + juce::String(usedFallbackTrackOrder ? 1 : 0));
 
     // Find all clips in this region
     std::unordered_set<ClipId> clipsInRange;
     const auto& allClips = ClipManager::getInstance().getClips();
 
     for (const auto& clip : allClips) {
+        if (clip.view != ClipView::Arrangement) {
+            continue;
+        }
+
         // Check if clip's track is in range
-        if (clip.trackId < minTrackId || clip.trackId > maxTrackId) {
+        if (tracksInRange.find(clip.trackId) == tracksInRange.end()) {
             continue;
         }
 
@@ -399,10 +529,18 @@ void SelectionManager::extendSelectionTo(ClipId targetClipId) {
         }
     }
 
+    logArrangeRangeSelect(
+        "SelectionManager::extendSelectionTo clipsInRange=" + formatClipIdSet(clipsInRange) +
+        " count=" + juce::String(static_cast<int>(clipsInRange.size())));
+
     // Select all clips in range (preserve anchor)
     ClipId savedAnchor = anchorClipId_;
     selectClips(clipsInRange);
     anchorClipId_ = savedAnchor;
+    logArrangeRangeSelect(
+        "SelectionManager::extendSelectionTo selectedAfter=" + formatClipIdSet(selectedClipIds_) +
+        " anchorAfter=" + juce::String(static_cast<int>(anchorClipId_)) +
+        " selectionType=" + juce::String(static_cast<int>(selectionType_)));
 }
 
 bool SelectionManager::isClipSelected(ClipId clipId) const {
@@ -465,6 +603,8 @@ void SelectionManager::selectNote(ClipId clipId, size_t noteIndex) {
     noteSelection_.clipId = clipId;
     noteSelection_.noteIndices.clear();
     noteSelection_.noteIndices.push_back(noteIndex);
+    anchorNoteClipId_ = clipId;
+    anchorNoteIndex_ = noteIndex;
 
     // Clear track selection but DON'T clear clip selection
     // (the note is still within that clip, and we want the piano roll to stay visible)
@@ -498,6 +638,11 @@ void SelectionManager::selectNotes(ClipId clipId, const std::vector<size_t>& not
     selectionType_ = SelectionType::Note;
     noteSelection_.clipId = clipId;
     noteSelection_.noteIndices = noteIndices;
+    if (anchorNoteClipId_ != clipId ||
+        std::find(noteIndices.begin(), noteIndices.end(), anchorNoteIndex_) == noteIndices.end()) {
+        anchorNoteClipId_ = clipId;
+        anchorNoteIndex_ = noteIndices.front();
+    }
 
     // Clear track selection but DON'T clear clip selection
     TrackManager::getInstance().setSelectedTrack(INVALID_TRACK_ID);
@@ -506,6 +651,50 @@ void SelectionManager::selectNotes(ClipId clipId, const std::vector<size_t>& not
         notifySelectionTypeChanged(SelectionType::Note);
     }
     notifyNoteSelectionChanged(noteSelection_);
+}
+
+void SelectionManager::extendNoteSelectionTo(ClipId clipId, size_t noteIndex) {
+    if (clipId == INVALID_CLIP_ID) {
+        return;
+    }
+
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr || noteIndex >= clip->midiNotes.size()) {
+        return;
+    }
+
+    if (selectionType_ != SelectionType::Note || anchorNoteClipId_ != clipId ||
+        anchorNoteIndex_ >= clip->midiNotes.size()) {
+        selectNote(clipId, noteIndex);
+        return;
+    }
+
+    const auto& anchor = clip->midiNotes[anchorNoteIndex_];
+    const auto& target = clip->midiNotes[noteIndex];
+    const double minStart = std::min(anchor.startBeat, target.startBeat);
+    const double maxEnd =
+        std::max(anchor.startBeat + anchor.lengthBeats, target.startBeat + target.lengthBeats);
+    const int minNote = std::min(anchor.noteNumber, target.noteNumber);
+    const int maxNote = std::max(anchor.noteNumber, target.noteNumber);
+
+    std::vector<size_t> noteIndices;
+    for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
+        const auto& note = clip->midiNotes[i];
+        const double noteStart = note.startBeat;
+        const double noteEnd = note.startBeat + note.lengthBeats;
+        if (note.noteNumber < minNote || note.noteNumber > maxNote) {
+            continue;
+        }
+        if (noteEnd >= minStart && noteStart <= maxEnd) {
+            noteIndices.push_back(i);
+        }
+    }
+
+    const auto savedAnchorClip = anchorNoteClipId_;
+    const auto savedAnchorIndex = anchorNoteIndex_;
+    selectNotes(clipId, noteIndices);
+    anchorNoteClipId_ = savedAnchorClip;
+    anchorNoteIndex_ = savedAnchorIndex;
 }
 
 void SelectionManager::addNoteToSelection(ClipId clipId, size_t noteIndex) {
@@ -539,8 +728,14 @@ void SelectionManager::removeNoteFromSelection(size_t noteIndex) {
         noteSelection_.noteIndices.erase(it);
 
         if (noteSelection_.noteIndices.empty()) {
+            anchorNoteClipId_ = INVALID_CLIP_ID;
+            anchorNoteIndex_ = std::numeric_limits<size_t>::max();
             clearSelection();
         } else {
+            if (anchorNoteIndex_ == noteIndex) {
+                anchorNoteClipId_ = noteSelection_.clipId;
+                anchorNoteIndex_ = noteSelection_.noteIndices.front();
+            }
             notifyNoteSelectionChanged(noteSelection_);
         }
     }
@@ -868,6 +1063,7 @@ void SelectionManager::selectChainNode(const ChainNodePath& path, const juce::St
 
     selectionType_ = SelectionType::ChainNode;
     selectedChainNode_ = path;
+    anchorChainNodePath_ = path;  // Anchor for Shift+click range selection
     selectedChainNodes_.clear();
     if (path.isValid())
         selectedChainNodes_.push_back(path);

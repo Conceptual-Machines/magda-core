@@ -275,6 +275,48 @@ bool BindingRegistry::hasResolverBindingForDevice(const ChainNodePath& devicePat
     return check(globalBindings_) || check(projectBindings_);
 }
 
+std::optional<ControllerId> BindingRegistry::resolverControllerForDevice(
+    const ChainNodePath& devicePath) const {
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+    auto check = [&](const std::vector<Binding>& vec) -> std::optional<ControllerId> {
+        for (const auto& b : vec) {
+            if (!std::holds_alternative<ResolverRef>(b.target))
+                continue;
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.target.devicePath == devicePath)
+                return b.source.controllerId;
+        }
+        return std::nullopt;
+    };
+    if (auto g = check(globalBindings_))
+        return g;
+    return check(projectBindings_);
+}
+
+std::optional<ControllerId> BindingRegistry::userMappingControllerForDevice(
+    const ChainNodePath& devicePath) const {
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+    auto check = [&](const std::vector<Binding>& vec) -> std::optional<ControllerId> {
+        for (const auto& b : vec) {
+            if (std::holds_alternative<ResolverRef>(b.target))
+                continue;  // resolver bindings are profile defaults, not user mappings
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.target.devicePath == devicePath)
+                return b.source.controllerId;
+        }
+        return std::nullopt;
+    };
+    if (auto g = check(globalBindings_))
+        return g;
+    return check(projectBindings_);
+}
+
 bool BindingRegistry::hasUserMappingForDevice(const ChainNodePath& devicePath) const {
     DefaultChainContext ctx;
     TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};

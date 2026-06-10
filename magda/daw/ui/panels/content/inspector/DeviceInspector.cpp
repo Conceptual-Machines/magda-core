@@ -60,14 +60,29 @@ DeviceInspector::DeviceInspector() {
     addChildComponent(descriptionValue_);
 }
 
-DeviceInspector::~DeviceInspector() = default;
+DeviceInspector::~DeviceInspector() {
+    magda::TrackManager::getInstance().removeListener(this);
+}
 
 void DeviceInspector::onActivated() {
-    // No listeners needed - updates come from parent InspectorContainer
+    // Selection updates come from the parent InspectorContainer, but property
+    // edits (e.g. a chain rename) only fire on TrackManager, so listen here to
+    // keep the displayed name/props live.
+    magda::TrackManager::getInstance().addListener(this);
 }
 
 void DeviceInspector::onDeactivated() {
-    // No cleanup needed
+    magda::TrackManager::getInstance().removeListener(this);
+}
+
+void DeviceInspector::trackPropertyChanged(int trackId) {
+    if (selectedChainNode_.isValid() && selectedChainNode_.trackId == trackId)
+        updateFromSelectedChainNode();
+}
+
+void DeviceInspector::trackDevicesChanged(int trackId) {
+    if (selectedChainNode_.isValid() && selectedChainNode_.trackId == trackId)
+        updateFromSelectedChainNode();
 }
 
 void DeviceInspector::paint(juce::Graphics& g) {
@@ -182,7 +197,8 @@ void DeviceInspector::updateFromSelectedChainNode() {
             }
             case magda::ChainNodeType::Chain: {
                 typeStr = "Chain";
-                nameStr = "Chain";
+                if (const auto* chain = tm.getChainByPath(selectedChainNode_))
+                    nameStr = chain->name;
                 break;
             }
             default:

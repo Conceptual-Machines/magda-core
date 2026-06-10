@@ -492,6 +492,10 @@ class TrackChainContent::ChainContainer : public juce::Component,
                     destinationPath.trackId = owner_.selectedTrackId_;
                     auto safeOwner = juce::Component::SafePointer<TrackChainContent>(&owner_);
 
+                    // Alt+drag copies the devices instead of moving them, matching
+                    // the track-header and clip copy gestures.
+                    const bool copy = juce::ModifierKeys::getCurrentModifiersRealtime().isAltDown();
+
                     owner_.scrollToEndAfterNextDeviceChange_ = shouldScrollToEnd;
                     owner_.suppressNextImplicitScrollToEnd_ = !shouldScrollToEnd;
                     owner_.dropInsertIndex_ = -1;
@@ -499,8 +503,24 @@ class TrackChainContent::ChainContainer : public juce::Component,
                     owner_.resized();
                     repaint();
 
-                    juce::MessageManager::callAsync(
-                        [safeOwner, sourcePaths, destinationPath, insertIndex]() {
+                    if (copy) {
+                        auto elements =
+                            magda::TrackManager::getInstance().copyChainElements(sourcePaths);
+                        juce::MessageManager::callAsync([safeOwner, destinationPath,
+                                                         elements = std::move(elements),
+                                                         insertIndex]() mutable {
+                            auto command = std::make_unique<magda::PasteChainElementsCommand>(
+                                destinationPath, std::move(elements), insertIndex);
+                            auto* pasteCommand = command.get();
+                            magda::UndoManager::getInstance().executeCommand(std::move(command));
+                            if (!pasteCommand->didPaste() && safeOwner != nullptr) {
+                                safeOwner->scrollToEndAfterNextDeviceChange_ = false;
+                                safeOwner->suppressNextImplicitScrollToEnd_ = false;
+                            }
+                        });
+                    } else {
+                        juce::MessageManager::callAsync([safeOwner, sourcePaths, destinationPath,
+                                                         insertIndex]() {
                             auto command = std::make_unique<magda::MoveChainElementsCommand>(
                                 sourcePaths, destinationPath, insertIndex);
                             auto* moveCommand = command.get();
@@ -510,6 +530,7 @@ class TrackChainContent::ChainContainer : public juce::Component,
                                 safeOwner->suppressNextImplicitScrollToEnd_ = false;
                             }
                         });
+                    }
                     return;
                 }
             }

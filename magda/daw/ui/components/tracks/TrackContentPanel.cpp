@@ -10,10 +10,12 @@
 #include "../../state/TimelineEvents.hpp"
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "../../utils/SelectionPolicy.hpp"
 #include "../../utils/TimelineUtils.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../clips/ClipComponent.hpp"
 #include "Config.hpp"
+#include "core/AppPaths.hpp"
 #include "core/AutomationCommands.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/SelectionManager.hpp"
@@ -34,6 +36,22 @@ bool isDraggedAudioFile(const juce::String& path) {
 
 bool isDraggedMidiFile(const juce::String& path) {
     return path.endsWithIgnoreCase(".mid") || path.endsWithIgnoreCase(".midi");
+}
+
+void logArrangeRangeSelect(const juce::String& message) {
+    const auto line = juce::Time::getCurrentTime().toString(true, true, true, true) +
+                      " [ArrangeRangeSelect] " + message;
+    DBG(line);
+    juce::Logger::writeToLog(line);
+
+    auto logFile = paths::logsDir().getChildFile("arrange-range-select.log");
+    logFile.getParentDirectory().createDirectory();
+    if (!logFile.appendText(line + "\n", false, false, "\n")) {
+        const auto failureLine = "[ArrangeRangeSelect] failed to append dedicated log file: " +
+                                 logFile.getFullPathName();
+        DBG(failureLine);
+        juce::Logger::writeToLog(failureLine);
+    }
 }
 
 std::vector<FileDropGhost> makeMidiDropGhosts(const juce::File& midiFile, double tempoBPM) {
@@ -1123,7 +1141,46 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
     // Upper half of track = clip operations
     // Lower half of track = time selection operations
     bool inUpperZone = isInUpperTrackZone(event.y);
-    bool onClip = getClipComponentAt(event.x, event.y) != nullptr;
+    auto* clipAtMouse = getClipComponentAt(event.x, event.y);
+    bool onClip = clipAtMouse != nullptr;
+
+    if (event.mods.isShiftDown()) {
+        const int trackIndex = getTrackIndexAtY(event.y);
+        const TrackId trackId =
+            (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size()))
+                ? visibleTrackIds_[static_cast<size_t>(trackIndex)]
+                : INVALID_TRACK_ID;
+        logArrangeRangeSelect(
+            "TrackContentPanel::mouseDown x=" + juce::String(event.x) +
+            " y=" + juce::String(event.y) + " original=" +
+            (event.originalComponent != nullptr ? event.originalComponent->getName()
+                                                : juce::String("<null>")) +
+            " inUpperZone=" + juce::String(inUpperZone ? 1 : 0) +
+            " onClip=" + juce::String(onClip ? 1 : 0) + " clipAtMouse=" +
+            juce::String(onClip ? static_cast<int>(clipAtMouse->getClipId()) : -1) +
+            " trackIndex=" + juce::String(trackIndex) +
+            " trackId=" + juce::String(static_cast<int>(trackId)) +
+            " selectable=" + juce::String(isInSelectableArea(event.x, event.y) ? 1 : 0) +
+            " command=" + juce::String(event.mods.isCommandDown() ? 1 : 0) +
+            " ctrl=" + juce::String(event.mods.isCtrlDown() ? 1 : 0) +
+            " alt=" + juce::String(event.mods.isAltDown() ? 1 : 0));
+    }
+
+    if (onClip && magda::isRangeSelectClick(event.mods)) {
+        isCreatingSelection = false;
+        isMovingSelection = false;
+        isDrawingClip_ = false;
+
+        const auto clipId = clipAtMouse->getClipId();
+        auto& selectionManager = SelectionManager::getInstance();
+        logArrangeRangeSelect("TrackContentPanel range branch: extending to clip=" +
+                              juce::String(static_cast<int>(clipId)) + " anchorBefore=" +
+                              juce::String(static_cast<int>(selectionManager.getAnchorClip())));
+        selectionManager.extendSelectionTo(clipId);
+        clipAtMouse->setSelected(selectionManager.isClipSelected(clipId));
+        repaintVisible();
+        return;
+    }
 
     bool onSelectionEdge = false;
     bool selectionEdgeIsLeft = false;
@@ -1585,7 +1642,7 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 
     // Handle marquee selection completion
     if (isMarqueeActive_) {
-        finishMarqueeSelection(event.mods.isShiftDown());
+        finishMarqueeSelection(magda::isAdditiveMarqueeDrag(event.mods));
         currentDragType_ = DragType::None;
         return;
     }
@@ -2083,16 +2140,16 @@ bool TrackContentPanel::isInUpperTrackZone(int y) const {
 }
 
 void TrackContentPanel::updateCursorForPosition(int x, int y, bool shiftHeld) {
+    if (getClipComponentAt(x, y) != nullptr) {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        return;
+    }
+
     // Check track zone first
     bool inUpperZone = isInUpperTrackZone(y);
 
     if (inUpperZone) {
         // UPPER ZONE: Clip operations
-        // Check if over a clip - clip handles its own cursor
-        if (getClipComponentAt(x, y) != nullptr) {
-            setMouseCursor(juce::MouseCursor::NormalCursor);
-            return;
-        }
         // Empty space in upper zone - crosshair for marquee selection
         if (isInSelectableArea(x, y)) {
             if (shiftHeld) {
@@ -2430,7 +2487,7 @@ void TrackContentPanel::finishMarqueeSelection(bool addToSelection) {
     // This prevents accidental selection clearing from tiny marquee drags
     if (!clipsInRect.empty() || marqueeRect_.getWidth() > 10 || marqueeRect_.getHeight() > 10) {
         if (addToSelection) {
-            // Add to existing selection (Shift key held)
+            // Add to existing selection (Cmd/Ctrl held)
             for (ClipId clipId : clipsInRect) {
                 SelectionManager::getInstance().addClipToSelection(clipId);
             }

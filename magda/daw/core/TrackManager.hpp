@@ -370,12 +370,22 @@ class TrackManager {
     void removeChainByPath(const ChainNodePath& chainPath);  // Path-based removal for nested chains
     ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId);
     const ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId) const;
+    ChainInfo* getChainByPath(const ChainNodePath& chainPath);  // Nested-chain lookup
+    const ChainInfo* getChainByPath(const ChainNodePath& chainPath) const;
     void setChainOutput(TrackId trackId, RackId rackId, ChainId chainId, int outputIndex);
     void setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted);
     void setChainBypassed(TrackId trackId, RackId rackId, ChainId chainId, bool bypassed);
     void setChainSolo(TrackId trackId, RackId rackId, ChainId chainId, bool solo);
     void setChainVolume(TrackId trackId, RackId rackId, ChainId chainId, float volume);
     void setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan);
+    void setChainName(TrackId trackId, RackId rackId, ChainId chainId, const juce::String& name);
+
+    // Path-based chain setters (nesting-aware; used by multi-chain edit fan-out).
+    void setChainMuted(const ChainNodePath& chainPath, bool muted);
+    void setChainBypassed(const ChainNodePath& chainPath, bool bypassed);
+    void setChainSolo(const ChainNodePath& chainPath, bool solo);
+    void setChainVolume(const ChainNodePath& chainPath, float volume);
+    void setChainPan(const ChainNodePath& chainPath, float pan);
     void setChainExpanded(TrackId trackId, RackId rackId, ChainId chainId, bool expanded);
     void setRackVolume(TrackId trackId, RackId rackId, float volume);
     void setRackVolume(const ChainNodePath& rackPath, float volume);

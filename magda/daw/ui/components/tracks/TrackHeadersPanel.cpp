@@ -23,6 +23,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
+#include "../../utils/SelectionPolicy.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../mixer/LevelMeterBallistics.hpp"
 #include "../mixer/RoutingSyncHelper.hpp"
@@ -532,9 +533,26 @@ class SessionModeButton : public juce::Component {
 };
 }  // namespace
 
+namespace {
+// Track name label that yields to selection-modifier clicks: Cmd/Shift+click
+// must toggle / range-select the track (handled by the panel's child mouse
+// listener), not open the rename editor.
+class TrackNameLabel : public juce::Label {
+  public:
+    using juce::Label::Label;
+
+  protected:
+    void mouseUp(const juce::MouseEvent& e) override {
+        if (magda::isToggleSelectClick(e.mods) || magda::isRangeSelectClick(e.mods))
+            return;
+        juce::Label::mouseUp(e);
+    }
+};
+}  // namespace
+
 TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : name(trackName) {
     // Create UI components
-    nameLabel = std::make_unique<juce::Label>("trackName", trackName);
+    nameLabel = std::make_unique<TrackNameLabel>("trackName", trackName);
     nameLabel->setEditable(true);
     nameLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     nameLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
@@ -2586,6 +2604,15 @@ AutomationLaneId TrackHeadersPanel::findLaneResizeHandleAt(juce::Point<int> pos)
 }
 
 void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
+    // addMouseListener(this, true) makes clicks that land directly on the
+    // panel arrive twice: once via the normal virtual and once via the
+    // self-listener. Toggle selection is self-inverting, so the duplicate
+    // delivery used to undo it instantly. Drop the second delivery of the
+    // same physical event (identical event time).
+    if (event.eventTime == lastMouseDownEventTime_)
+        return;
+    lastMouseDownEventTime_ = event.eventTime;
+
     // Convert to panel coordinates (handles clicks forwarded from children)
     auto localEvent = event.getEventRelativeTo(this);
     auto pos = localEvent.getPosition();
@@ -2644,11 +2671,11 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
                     break;
                 }
 
-                if (event.mods.isCommandDown()) {
+                if (magda::isToggleSelectClick(event.mods)) {
                     // Cmd+click: toggle track in multi-selection
                     SelectionManager::getInstance().toggleTrackSelection(trackId);
                     grabKeyboardFocus();
-                } else if (event.mods.isShiftDown()) {
+                } else if (magda::isRangeSelectClick(event.mods)) {
                     // Shift+click: range select from anchor to clicked track
                     auto anchorTrack = SelectionManager::getInstance().getAnchorTrack();
                     int anchorIndex = -1;

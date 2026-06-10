@@ -2,11 +2,13 @@
 
 #include <BinaryData.h>
 
+#include "../../utils/SelectionPolicy.hpp"
 #include "ai/AIPanelComponent.hpp"
 #include "core/AutomationInfo.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "core/controllers/ControllerActivation.hpp"
 #include "modulation/MacroEditorPanel.hpp"
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
@@ -1167,13 +1169,15 @@ void NodeComponent::refreshControllerIndicators() {
         return;
     }
 
-    auto& reg = magda::BindingRegistry::getInstance();
     // pinned (orange): any user-mapped binding (Static or Alias) — covers
     // Learn'd plugin params AND Learn'd macros / mod-rates on this node.
-    // automap (green): only resolver bindings — i.e. profile-level defaults
+    // automap (green): resolver bindings — i.e. profile-level defaults
     // currently resolving to this node (focus-dependent for focused.macro).
-    bool pinned = reg.hasUserMappingForDevice(nodePath_);
-    bool automap = reg.hasResolverBindingForDevice(nodePath_);
+    // Both are gated on the owning controller being the active surface AND
+    // connected, so the dots reflect live control state rather than mere
+    // config presence (see magda::controllers::ControllerActivation).
+    bool pinned = magda::controllers::isDeviceUserMapLive(nodePath_);
+    bool automap = magda::controllers::isDeviceAutomapLive(nodePath_);
     if (pinned != hasPinnedBindings_ || automap != hasAutomapBindings_) {
         hasPinnedBindings_ = pinned;
         hasAutomapBindings_ = automap;
@@ -1223,9 +1227,19 @@ void NodeComponent::mouseDown(const juce::MouseEvent& e) {
     }
 }
 
+void NodeComponent::mouseMove(const juce::MouseEvent& e) {
+    // Alt = copy-on-drag affordance (mirrors clips): show the copying cursor
+    // when hovering a device with Alt held.
+    setMouseCursor(e.mods.isAltDown() ? juce::MouseCursor::CopyingCursor
+                                      : juce::MouseCursor::NormalCursor);
+}
+
 void NodeComponent::mouseDrag(const juce::MouseEvent& e) {
     if (!mouseDownForSelection_ || !draggable_)
         return;
+
+    setMouseCursor(e.mods.isAltDown() ? juce::MouseCursor::CopyingCursor
+                                      : juce::MouseCursor::NormalCursor);
 
     auto* parent = getParentComponent();
     if (!parent)
@@ -1270,6 +1284,44 @@ void NodeComponent::mouseDrag(const juce::MouseEvent& e) {
     }
 }
 
+void NodeComponent::rangeSelectFromAnchor() {
+    auto& selection = magda::SelectionManager::getInstance();
+    const auto& anchor = selection.getAnchorChainNode();
+
+    auto* parent = getParentComponent();
+    if (!anchor.isValid() || parent == nullptr) {
+        selection.selectChainNode(nodePath_);
+        return;
+    }
+
+    // Siblings of a chain level are the NodeComponents under the same parent,
+    // in child (= chain) order
+    std::vector<magda::ChainNodePath> siblingPaths;
+    int anchorIdx = -1, clickedIdx = -1;
+    for (int i = 0; i < parent->getNumChildComponents(); ++i) {
+        auto* sibling = dynamic_cast<NodeComponent*>(parent->getChildComponent(i));
+        if (sibling == nullptr || !sibling->nodePath_.isValid())
+            continue;
+        if (sibling->nodePath_ == anchor)
+            anchorIdx = static_cast<int>(siblingPaths.size());
+        if (sibling == this)
+            clickedIdx = static_cast<int>(siblingPaths.size());
+        siblingPaths.push_back(sibling->nodePath_);
+    }
+
+    if (anchorIdx < 0 || clickedIdx < 0) {
+        // Anchor lives in another chain (or is gone): fall back to replace
+        selection.selectChainNode(nodePath_);
+        return;
+    }
+
+    const int lo = std::min(anchorIdx, clickedIdx);
+    const int hi = std::max(anchorIdx, clickedIdx);
+    std::vector<magda::ChainNodePath> range(siblingPaths.begin() + lo,
+                                            siblingPaths.begin() + hi + 1);
+    selection.selectChainNodes(range);
+}
+
 void NodeComponent::mouseUp(const juce::MouseEvent& e) {
     // If we were dragging, commit the drag and skip selection
     if (isDragging_) {
@@ -1311,9 +1363,12 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
                 // with a SafePointer and bail if we got destroyed mid-dispatch.
                 juce::Component::SafePointer<NodeComponent> safeThis(this);
                 auto& selection = magda::SelectionManager::getInstance();
-                const bool additive =
-                    e.mods.isCommandDown() || e.mods.isCtrlDown() || e.mods.isShiftDown();
-                if (additive)
+                const bool toggle = magda::isToggleSelectClick(e.mods) ||
+                                    (e.mods.isCtrlDown() && !e.mods.isShiftDown());
+                const bool range = magda::isRangeSelectClick(e.mods);
+                if (range)
+                    rangeSelectFromAnchor();
+                else if (toggle)
                     selection.toggleChainNodeSelection(nodePath_);
                 else
                     selection.selectChainNode(nodePath_);
@@ -1322,7 +1377,7 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
 
                 // If was already selected, toggle collapse — but only when collapsed
                 // (to expand) or when the click is on the header bar (to collapse)
-                if (!additive && wasAlreadySelected &&
+                if (!toggle && !range && wasAlreadySelected &&
                     (wasCollapsed || e.getPosition().y < getHeaderHeight())) {
                     setCollapsed(!wasCollapsed);
                 }

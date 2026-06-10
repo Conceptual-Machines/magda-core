@@ -9,6 +9,7 @@
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/controllers/BindingRegistry.hpp"
+#include "core/controllers/ControllerActivation.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
 #include "scripting_app.hpp"
@@ -184,10 +185,9 @@ class ControllerProfilesPage : public juce::Component,
     }
 
     bool isControllerConnected(const Controller& c) const {
-        for (const auto& dev : liveInputs_)
-            if (dev.identifier == c.inputPort)
-                return true;
-        return false;
+        // Shared predicate: robust identifier-or-name match, one definition
+        // across the footer, this dialog, and the device indicator dots.
+        return magda::controllers::isControllerConnected(c, liveInputs_);
     }
 
     void onAddClicked();

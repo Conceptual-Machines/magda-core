@@ -4,6 +4,7 @@
 
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../utils/SelectionPolicy.hpp"
 #include "NoteGridHost.hpp"
 #include "core/ClipManager.hpp"
 #include "core/TrackManager.hpp"
@@ -118,10 +119,17 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    const bool isAdditiveSelectionClick = e.mods.isCommandDown();
+    const bool isAdditiveSelectionClick = magda::isToggleSelectClick(e.mods);
+    const bool isRangeSelectionClick = magda::isRangeSelectClick(e.mods);
 
     // Single click - select this note
-    if (!isSelected_) {
+    if (isRangeSelectionClick) {
+        setSelected(true);
+        if (onNoteRangeSelected) {
+            onNoteRangeSelected(noteIndex_);
+        }
+        deferredDeselect_ = false;
+    } else if (!isSelected_) {
         setSelected(true);
         if (onNoteSelected) {
             onNoteSelected(noteIndex_, isAdditiveSelectionClick);
@@ -164,8 +172,8 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         dragMode_ = DragMode::ResizeRight;
     } else {
         dragMode_ = DragMode::Move;
-        // Shift+drag starts a copy operation
-        isCopyDrag_ = e.mods.isShiftDown();
+        // Alt+drag starts a copy operation (matches clip copy-drag)
+        isCopyDrag_ = e.mods.isAltDown() && !e.mods.isCommandDown();
     }
 
     repaint();
@@ -427,13 +435,17 @@ bool NoteComponent::isOnRightEdge(int x) const {
 }
 
 void NoteComponent::updateCursor() {
-    if (juce::ModifierKeys::currentModifiers.isShiftDown() &&
-        juce::ModifierKeys::currentModifiers.isCtrlDown()) {
+    const auto mods = juce::ModifierKeys::currentModifiers;
+    if (mods.isShiftDown() && mods.isCtrlDown()) {
         setMouseCursor(CursorManager::getInstance().getEraseCursor());
+    } else if (mods.isAltDown() && !mods.isCommandDown() && !mods.isShiftDown()) {
+        setMouseCursor(juce::MouseCursor::CopyingCursor);
     } else if (hoverLeftEdge_ || hoverRightEdge_) {
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-    } else if (isSelected_ && juce::ModifierKeys::currentModifiers.isShiftDown()) {
-        setMouseCursor(juce::MouseCursor::CopyingCursor);
+    } else if (magda::isRangeSelectClick(mods)) {
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    } else if (isSelected_) {
+        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
     }

@@ -4,6 +4,8 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <algorithm>
+#include <cstdlib>
+#include <exception>
 #include <memory>
 #include <string>
 
@@ -21,6 +23,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UIScale.hpp"
 #include "core/UpdateChecker.hpp"
+#include "core/controllers/ControllerActivation.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "magda/scripting/LuaController.hpp"
@@ -36,6 +39,42 @@
 #include "version.hpp"
 
 using namespace juce;
+
+namespace {
+// Previous std::terminate handler, so we still abort (or chain) after logging.
+std::terminate_handler g_previousTerminateHandler = nullptr;
+
+// Logs the active exception's type/message and a stack backtrace before the
+// process aborts. Unhandled C++ exceptions thrown inside an event callback
+// propagate out through AppKit and call std::terminate, which the crash
+// reporter records only as a bare SIGABRT in the message loop with no throw
+// site. This handler captures the throw site to magda.log so intermittent
+// crashes are self-diagnosing. Must be noexcept and captureless (it is passed
+// to std::set_terminate as a plain function pointer).
+void magdaTerminateHandler() noexcept {
+    juce::String msg;
+    msg << "\n=== UNHANDLED EXCEPTION (std::terminate) ===\n";
+    if (auto ex = std::current_exception()) {
+        try {
+            std::rethrow_exception(ex);
+        } catch (const std::exception& e) {
+            msg << "Type: std::exception\nwhat(): " << e.what() << "\n";
+        } catch (...) {
+            msg << "Type: non-std::exception (unknown)\n";
+        }
+    } else {
+        msg << "(no active exception - direct std::terminate call)\n";
+    }
+    msg << "Backtrace:\n" << juce::SystemStats::getStackBacktrace() << "\n";
+
+    // FileLogger flushes on each write, so the message is on disk before abort.
+    juce::Logger::writeToLog(msg);
+
+    if (g_previousTerminateHandler != nullptr)
+        g_previousTerminateHandler();
+    std::abort();
+}
+}  // namespace
 
 class MagdaDAWApplication : public JUCEApplication {
   private:
@@ -132,6 +171,19 @@ class MagdaDAWApplication : public JUCEApplication {
         juce::Logger::writeToLog(
             "Data dir: " + magda::paths::dataDir().getFullPathName() +
             (magda::paths::dataDirOverriddenByEnv() ? " (MAGDA_DATA_DIR override)" : ""));
+
+        // Install the terminate handler now that the file logger exists, so any
+        // unhandled C++ exception logs its throw site + backtrace to magda.log
+        // before aborting (otherwise the crash reporter shows only a bare
+        // SIGABRT in the message loop with no throw site).
+        g_previousTerminateHandler = std::set_terminate(magdaTerminateHandler);
+
+        // Teach the controllers layer how to tell whether the profile system is
+        // the active input surface. A loaded Lua script owns the surface and
+        // suppresses profile automap/pinned indicators; this provider keeps that
+        // knowledge in the app layer so core/controllers needs no scripting dep.
+        magda::controllers::setProfileSurfaceActiveProvider(
+            [] { return magda::scripting_app::activeLuaScriptName().isEmpty(); });
 
         // Eagerly create the configured per-user folders so they exist on
         // disk immediately after launch — users expect to find them when

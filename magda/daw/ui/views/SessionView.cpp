@@ -22,6 +22,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
+#include "../utils/SelectionPolicy.hpp"
 #include "ClipSlotButton.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
@@ -2788,14 +2789,56 @@ void SessionView::onClipSlotClicked(int trackIndex, int sceneIndex, juce::Modifi
 
     if (clipId != INVALID_CLIP_ID) {
         // Select the clip (update inspector) - no playback change
-        if (mods.isCommandDown())
+        if (magda::isToggleSelectClick(mods))
             SelectionManager::getInstance().toggleClipSelection(clipId);
+        else if (magda::isRangeSelectClick(mods))
+            rangeSelectSlots(trackIndex, sceneIndex, clipId);
         else
             SelectionManager::getInstance().selectClip(clipId);
     } else {
         // Empty slot - select the track
         selectTrack(trackId);
     }
+}
+
+void SessionView::rangeSelectSlots(int trackIndex, int sceneIndex, ClipId clickedClipId) {
+    auto& sel = SelectionManager::getInstance();
+    auto& clipManager = ClipManager::getInstance();
+
+    // Anchor = last single-clicked clip; the range is the rectangle of slots
+    // between the anchor's (track, scene) cell and the clicked cell
+    const auto* anchorClip = clipManager.getClip(sel.getAnchorClip());
+    int anchorTrackIndex = -1;
+    if (anchorClip != nullptr && anchorClip->sceneIndex >= 0) {
+        for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+            if (visibleTrackIds_[i] == anchorClip->trackId) {
+                anchorTrackIndex = static_cast<int>(i);
+                break;
+            }
+        }
+    }
+
+    if (anchorTrackIndex < 0) {
+        sel.selectClip(clickedClipId);
+        return;
+    }
+
+    const int loTrack = std::min(anchorTrackIndex, trackIndex);
+    const int hiTrack = std::max(anchorTrackIndex, trackIndex);
+    const int loScene = std::min(anchorClip->sceneIndex, sceneIndex);
+    const int hiScene = std::max(anchorClip->sceneIndex, sceneIndex);
+
+    std::unordered_set<ClipId> clipsInRange;
+    for (int t = loTrack; t <= hiTrack; ++t) {
+        for (int s = loScene; s <= hiScene; ++s) {
+            ClipId id = clipManager.getClipInSlot(visibleTrackIds_[static_cast<size_t>(t)], s);
+            if (id != INVALID_CLIP_ID)
+                clipsInRange.insert(id);
+        }
+    }
+
+    if (!clipsInRange.empty())
+        sel.selectClips(clipsInRange);
 }
 
 void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {

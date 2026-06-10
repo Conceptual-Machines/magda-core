@@ -219,6 +219,7 @@ class PianoRollGridComponent : public juce::Component,
     std::function<void(ClipId, size_t, double)> onNoteResized;  // clipId, index, newLength
     std::function<void(ClipId, size_t)> onNoteDeleted;          // clipId, index
     std::function<void(ClipId, size_t, bool)> onNoteSelected;   // clipId, index, isAdditive
+    std::function<void(ClipId, size_t)> onNoteRangeSelected;    // clipId, index
 
     // Callback when note selection changes (e.g. after lasso, deselect-all)
     // Provides the full set of currently selected note indices for the primary clip
