@@ -16,6 +16,7 @@
 #include "../components/mixer/RoutingSyncHelper.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "../utils/SelectionPolicy.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
@@ -1601,10 +1602,10 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
                     std::make_unique<DeleteTrackCommand>(trackId_));
             }
         });
-    } else if (!isMaster_ && event.mods.isCommandDown()) {
+    } else if (!isMaster_ && magda::isToggleSelectClick(event.mods)) {
         // Cmd+click: toggle this strip in the multi-selection
         SelectionManager::getInstance().toggleTrackSelection(trackId_);
-    } else if (!isMaster_ && event.mods.isShiftDown()) {
+    } else if (!isMaster_ && magda::isRangeSelectClick(event.mods)) {
         // Shift+click: range-select from the anchor track to this one (using
         // the visible track order from TrackManager).
         auto& sel = SelectionManager::getInstance();

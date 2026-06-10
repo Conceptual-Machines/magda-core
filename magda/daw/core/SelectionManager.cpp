@@ -868,6 +868,7 @@ void SelectionManager::selectChainNode(const ChainNodePath& path, const juce::St
 
     selectionType_ = SelectionType::ChainNode;
     selectedChainNode_ = path;
+    anchorChainNodePath_ = path;  // Anchor for Shift+click range selection
     selectedChainNodes_.clear();
     if (path.isValid())
         selectedChainNodes_.push_back(path);

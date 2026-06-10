@@ -12,6 +12,7 @@
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../utils/SelectionPolicy.hpp"
 #include "../tracks/TrackContentPanel.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
@@ -1192,12 +1193,16 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Handle Shift+click on edges for stretch; Shift+body falls through to drag for duplicate
+    // Handle Shift+click on edges for stretch; Shift+body defers: a click
+    // (no drag) range-selects from the anchor on mouseUp, a drag keeps the
+    // duplicate gesture
+    pendingRangeSelect_ = false;
     if (e.mods.isShiftDown()) {
         if (isOnLeftEdge(e.x) || isOnRightEdge(e.x)) {
             // Shift+edge = stretch mode — fall through to drag setup below
+        } else if (magda::isRangeSelectClick(e.mods)) {
+            pendingRangeSelect_ = true;
         }
-        // Shift+body = fall through to normal selection + drag setup (duplicate on drag)
     }
 
     // Handle Alt+click for blade/split
@@ -1230,7 +1235,9 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // keep the selection and prepare for potential multi-drag
     size_t selectedCount = selectionManager.getSelectedClipCount();
 
-    if (isAlreadySelected && selectedCount > 1) {
+    if (pendingRangeSelect_) {
+        // Selection deferred to mouseUp (range select) or drag start (duplicate)
+    } else if (isAlreadySelected && selectedCount > 1) {
         isSelected_ = true;
         shouldDeselectOnMouseUp_ = true;
     } else {
@@ -1435,6 +1442,22 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
     auto* trackInfoDrag = TrackManager::getInstance().getTrack(clip->trackId);
     if (trackInfoDrag && trackInfoDrag->frozen) {
         return;
+    }
+
+    // A pending shift+click range select cancels once a real drag starts; the
+    // classic shift-drag selection is applied so duplicate behaves as before
+    if (pendingRangeSelect_) {
+        if (e.getDistanceFromDragStart() < 4)
+            return;  // still a click — selection resolves on mouseUp
+        pendingRangeSelect_ = false;
+        auto& sm = SelectionManager::getInstance();
+        if (!sm.isClipSelected(clipId_)) {
+            sm.selectClip(clipId_);
+            isSelected_ = true;
+            if (onClipSelected) {
+                onClipSelected(clipId_);
+            }
+        }
     }
 
     // Check if this is a multi-clip drag
@@ -1889,6 +1912,22 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
     if (e.mods.isPopupMenu() && !(e.mods.isShiftDown() && e.mods.isCtrlDown())) {
         showContextMenu();
         return;
+    }
+
+    // Shift+click released without a drag: range select from the anchor clip
+    if (pendingRangeSelect_) {
+        pendingRangeSelect_ = false;
+        if (!isDragging_) {
+            auto& sm = SelectionManager::getInstance();
+            sm.extendSelectionTo(clipId_);
+            isSelected_ = sm.isClipSelected(clipId_);
+            if (isSelected_ && onClipSelected) {
+                onClipSelected(clipId_);
+            }
+            dragMode_ = DragMode::None;
+            repaint();
+            return;
+        }
     }
 
     // Check if we were doing a multi-clip drag

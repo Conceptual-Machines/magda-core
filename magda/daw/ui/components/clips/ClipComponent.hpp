@@ -135,6 +135,7 @@ class ClipComponent : public juce::Component,
     bool isDragging_ = false;
     bool isCommitting_ = false;             // True during mouseUp commit phase
     bool shouldDeselectOnMouseUp_ = false;  // Delayed deselection for multi-selection
+    bool pendingRangeSelect_ = false;       // Shift+click range select, resolved on mouseUp
 
     // Audio clip drag state
     double dragStartSpeedRatio_ = 1.0;

@@ -443,6 +443,11 @@ class NodeComponent : public juce::Component,
     void updateMacroValueDisplay(int macroIndex, float value);
 
   private:
+    // Shift+click range selection: select every sibling node between the
+    // selection anchor and this node (siblings = NodeComponents sharing this
+    // node's parent, in child order)
+    void rangeSelectFromAnchor();
+
     // Editor panel management
     void showModulatorEditor(int modIndex);
     void hideModulatorEditor();

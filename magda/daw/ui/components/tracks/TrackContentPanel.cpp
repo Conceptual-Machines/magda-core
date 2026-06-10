@@ -10,6 +10,7 @@
 #include "../../state/TimelineEvents.hpp"
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "../../utils/SelectionPolicy.hpp"
 #include "../../utils/TimelineUtils.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../clips/ClipComponent.hpp"
@@ -1585,7 +1586,7 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 
     // Handle marquee selection completion
     if (isMarqueeActive_) {
-        finishMarqueeSelection(event.mods.isShiftDown());
+        finishMarqueeSelection(magda::isAdditiveMarqueeDrag(event.mods));
         currentDragType_ = DragType::None;
         return;
     }
@@ -2430,7 +2431,7 @@ void TrackContentPanel::finishMarqueeSelection(bool addToSelection) {
     // This prevents accidental selection clearing from tiny marquee drags
     if (!clipsInRect.empty() || marqueeRect_.getWidth() > 10 || marqueeRect_.getHeight() > 10) {
         if (addToSelection) {
-            // Add to existing selection (Shift key held)
+            // Add to existing selection (Cmd/Ctrl held)
             for (ClipId clipId : clipsInRect) {
                 SelectionManager::getInstance().addClipToSelection(clipId);
             }

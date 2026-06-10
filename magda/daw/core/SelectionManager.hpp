@@ -653,6 +653,14 @@ class SelectionManager {
     void toggleChainNodeSelection(const ChainNodePath& path);
 
     /**
+     * @brief Get the anchor chain node (last single-clicked node, used for
+     * Shift+click range selection along a chain)
+     */
+    const ChainNodePath& getAnchorChainNode() const {
+        return anchorChainNodePath_;
+    }
+
+    /**
      * @brief Replace the current chain-node selection with ordered paths.
      */
     void selectChainNodes(const std::vector<ChainNodePath>& paths);
@@ -1030,7 +1038,8 @@ class SelectionManager {
     TimeRangeSelection timeRangeSelection_;
     NoteSelection noteSelection_;
     DeviceSelection deviceSelection_;
-    ChainNodePath selectedChainNode_;  // For exclusive chain node selection
+    ChainNodePath selectedChainNode_;    // For exclusive chain node selection
+    ChainNodePath anchorChainNodePath_;  // Anchor for Shift+click range selection
     std::vector<ChainNodePath> selectedChainNodes_;
     juce::String chainNodeDisplayName_;  // Optional display override (e.g., pad chain plugin name)
     juce::String chainNodeDisplayType_;  // Optional display override (e.g., pad chain plugin type)
