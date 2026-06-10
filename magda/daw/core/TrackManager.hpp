@@ -370,6 +370,7 @@ class TrackManager {
     void removeChainByPath(const ChainNodePath& chainPath);  // Path-based removal for nested chains
     ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId);
     const ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId) const;
+    const ChainInfo* getChainByPath(const ChainNodePath& chainPath) const;  // Nested-chain lookup
     void setChainOutput(TrackId trackId, RackId rackId, ChainId chainId, int outputIndex);
     void setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted);
     void setChainBypassed(TrackId trackId, RackId rackId, ChainId chainId, bool bypassed);

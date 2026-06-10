@@ -2016,6 +2016,27 @@ void TrackManager::removeChainByPath(const ChainNodePath& chainPath) {
     }
 }
 
+const ChainInfo* TrackManager::getChainByPath(const ChainNodePath& chainPath) const {
+    if (chainPath.steps.empty() || chainPath.steps.back().type != ChainStepType::Chain)
+        return nullptr;
+
+    const ChainId chainId = chainPath.steps.back().id;
+
+    // Parent rack is the path with the trailing Chain step removed.
+    ChainNodePath rackPath;
+    rackPath.trackId = chainPath.trackId;
+    for (size_t i = 0; i + 1 < chainPath.steps.size(); ++i)
+        rackPath.steps.push_back(chainPath.steps[i]);
+
+    if (const auto* rack = getRackByPath(rackPath)) {
+        for (const auto& chain : rack->chains) {
+            if (chain.id == chainId)
+                return &chain;
+        }
+    }
+    return nullptr;
+}
+
 ChainInfo* TrackManager::getChain(TrackId trackId, RackId rackId, ChainId chainId) {
     if (auto* rack = getRack(trackId, rackId)) {
         auto& chains = rack->chains;
