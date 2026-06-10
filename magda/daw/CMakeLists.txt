@@ -52,7 +52,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/add.svg
     ../../assets/icons/general/settings_nobg.svg
     ../../assets/icons/general/menu.svg
-    ../../assets/icons/general/chord.svg
     ../../assets/icons/general/funnel.svg
     ../../assets/icons/general/learn.svg
     ../../assets/icons/general/refresh.svg
@@ -61,6 +60,29 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/chevron_right.svg
     ../../assets/icons/general/chevron_down.svg
     ../../assets/icons/general/bar_chart.svg
+    ../../assets/icons/general/link_flat.svg
+    ../../assets/icons/general/play_bare.svg
+    ../../assets/icons/general/server_play.svg
+    ../../assets/icons/general/server_stop.svg
+    ../../assets/icons/general/open_in_new.svg
+    ../../assets/icons/general/power_on.svg
+    ../../assets/icons/general/input-output.svg
+    ../../assets/icons/general/save.svg
+    ../../assets/icons/general/folder-open.svg
+    ../../assets/icons/general/piano_roll.svg
+    ../../assets/icons/general/drum_grid.svg
+    ../../assets/icons/general/faust-text-logo.svg
+    ../../assets/icons/general/script.svg
+    ../../assets/icons/general/speaker_on.svg
+    ../../assets/icons/general/speaker_off.svg
+    ../../assets/BoldMGlyph.svg
+    ../../assets/icons/general/headphones.svg
+    ../../assets/icons/general/record-monitor.svg
+    ../../assets/icons/general/metronome.svg
+    ../../assets/icons/general/project_home.svg
+    ../../assets/icons/general/harddrive.svg
+    ../../assets/icons/general/database.svg
+    ../../assets/icons/general/favorite.svg
     # MIDI editor icons
     ../../assets/icons/midi_editor/icon-velocity-boldm.svg
     ../../assets/icons/midi_editor/icon-cc-boldm.svg
@@ -74,38 +96,11 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/trackchain/icon-presets-round-boldm.svg
     ../../assets/icons/trackchain/icon-sends-boldm.svg
     ../../assets/icons/trackchain/icon-inserts-boldm.svg
-    ../../assets/icons/trackchain/icon-oscilloscope-boldm.svg
+    ../../assets/icons/trackchain/oscilloscope3.svg
     ../../assets/icons/trackchain/icon-spectrum-boldm.svg
     ../../assets/icons/trackchain/icon-levels-boldm.svg
     ../../assets/icons/trackchain/icon-checkmix-boldm.svg
-    ../../assets/icons/general/link_flat.svg
-    ../../assets/icons/general/play_bare.svg
-    ../../assets/icons/general/server_play.svg
-    ../../assets/icons/general/server_stop.svg
-    ../../assets/icons/general/open_in_new.svg
-    ../../assets/icons/general/power_on.svg
-    ../../assets/icons/general/rack.svg
-    ../../assets/icons/general/input-output.svg
-    ../../assets/icons/general/tree.svg
-    ../../assets/icons/general/save.svg
-    ../../assets/icons/general/folder-open.svg
-    ../../assets/icons/general/piano_roll.svg
-    ../../assets/icons/general/drum_grid.svg
-    ../../assets/icons/general/faust-logo.svg
-    ../../assets/icons/general/faust-text-logo.svg
-    ../../assets/icons/general/script.svg
-    ../../assets/icons/general/volume_up.svg
-    ../../assets/icons/general/volume_off.svg
-    ../../assets/icons/general/speaker_on.svg
-    ../../assets/icons/general/speaker_off.svg
-    ../../assets/BoldMGlyph.svg
-    ../../assets/icons/general/headphones.svg
-    ../../assets/icons/general/record-monitor.svg
-    ../../assets/icons/general/metronome.svg
-    ../../assets/icons/general/project_home.svg
-    ../../assets/icons/general/harddrive.svg
-    ../../assets/icons/general/database.svg
-    ../../assets/icons/general/favorite.svg
+    ../../assets/icons/trackchain/gain-staging.svg
     # Transport icons
     ../../assets/icons/transport/play_off.svg
     ../../assets/icons/transport/play_on.svg
@@ -146,7 +141,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/inspector/fade_scurve.svg
     ../../assets/icons/inspector/fade_gain.svg
     ../../assets/icons/inspector/fade_speedramp.svg
-    ../../assets/icons/inspector/phase_invert.svg
     # Resume/arrangement icons
     ../../assets/icons/resume/resume.svg
     ../../assets/icons/resume/resume_on.svg
@@ -156,21 +150,14 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/automation/automation.svg
     # Waveform icons
     ../../assets/icons/waveform/sine-wave.svg
-    ../../assets/icons/waveform/bare_sine.svg
-    ../../assets/icons/waveform/time_bend.svg
     ../../assets/icons/waveform/time_bend_off.svg
     ../../assets/icons/waveform/time_bend_on.svg
-    ../../assets/icons/waveform/note_slice.svg
     ../../assets/icons/waveform/note_slice_off.svg
     ../../assets/icons/waveform/note_slice_on.svg
-    ../../assets/icons/waveform/bezier.svg
-    ../../assets/icons/waveform/bend-in-out.svg
     ../../assets/icons/waveform/curve.svg
     # Analysis device icons
     ../../assets/icons/analysis/postfx.svg
     ../../assets/icons/analysis/analysis2.svg
-    # Track-chain header icons
-    ../../assets/icons/trackchain/gain-staging.svg
     # Toolbar icons
     ../../assets/icons/toolbar/density_small.svg
     ../../assets/icons/toolbar/density_medium.svg
@@ -188,14 +175,8 @@ juce_add_binary_data(MagdaAssets
     # Legacy view mode icons (still used by the clip inspector view toggle)
     ../../assets/icons/footer/Session.svg
     ../../assets/icons/footer/Arrangement.svg
-    ../../assets/icons/footer/Mix.svg
-    ../../assets/icons/footer/Master.svg
     # Sidebar icons
     ../../assets/icons/sidebar/plug.svg
-    ../../assets/icons/sidebar/sample.svg
-    ../../assets/icons/sidebar/preset.svg
-    ../../assets/icons/sidebar/info.svg
-    ../../assets/icons/sidebar/console.svg
     # Browser icons
     ../../assets/icons/browser/browser.svg
     ../../assets/midi.svg
@@ -248,7 +229,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/fontaudio/fad-logo-juce.svg
     # AI icons
     ../../assets/icons/ai/psychology.svg
-    ../../assets/icons/ai/robot.svg
     ../../assets/icons/ai/ai.svg
     # Session view icons
     ../../assets/icons/session/hide.svg
