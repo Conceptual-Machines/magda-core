@@ -191,6 +191,9 @@ PianoRollContent::PianoRollContent() {
 
     setupGridCallbacks();
 
+    // Apply any overlay tracks chosen in another editor session
+    applyOverlayTracks();
+
     // Setup MIDI drawer (stacked lanes: velocity + CC + pitchbend)
     setupMidiDrawer();
 
@@ -207,6 +210,11 @@ PianoRollContent::PianoRollContent() {
         gridComponent_->setClip(editingClipId_);
         updateTimeRuler();
     }
+}
+
+void PianoRollContent::applyOverlayTracks() {
+    if (gridComponent_)
+        gridComponent_->setOverlayTracks(overlayTrackIds_);
 }
 
 void PianoRollContent::updateCcLanesButtonState() {

@@ -167,6 +167,10 @@ class DrumGridClipGrid : public juce::Component,
     void setSnapEnabled(bool enabled) {
         snapEnabled_ = enabled;
     }
+    void setOverlayTracks(std::vector<magda::TrackId> trackIds) {
+        overlayTrackIds_ = std::move(trackIds);
+        repaint();
+    }
     void setTimeSignatureNumerator(int n) {
         if (timeSigNumerator_ != n) {
             timeSigNumerator_ = n;
@@ -474,6 +478,17 @@ class DrumGridClipGrid : public juce::Component,
                     self->refreshNotes();
                 }
             });
+            return;
+        }
+
+        // Ghost overlay is paint-only, so a repaint is enough when an
+        // overlay track's clip changes
+        if (!overlayTrackIds_.empty()) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+            if (clip && std::find(overlayTrackIds_.begin(), overlayTrackIds_.end(),
+                                  clip->trackId) != overlayTrackIds_.end()) {
+                repaint();
+            }
         }
     }
     void clipSelectionChanged(magda::ClipId) override {}
@@ -546,6 +561,10 @@ class DrumGridClipGrid : public juce::Component,
                 g.drawVerticalLine(x, 0.0f, gridBottom);
             }
         }
+
+        // Ghost notes from overlay tracks (#1281) — painted before the
+        // out-of-clip dimming so they recede outside the edited clip
+        paintOverlayNotes(g);
 
         // Draw clip boundaries
         if (clipLengthBeats_ > 0.0) {
@@ -1119,6 +1138,9 @@ class DrumGridClipGrid : public juce::Component,
     // Note components
     std::vector<std::unique_ptr<magda::NoteComponent>> noteComponents_;
 
+    // Tracks whose MIDI renders as a ghost overlay (paint-only, never interactive)
+    std::vector<magda::TrackId> overlayTrackIds_;
+
     // Pending selection for copy operations (matched by position after refresh)
     struct PendingSelectPos {
         double beat;
@@ -1134,6 +1156,71 @@ class DrumGridClipGrid : public juce::Component,
                 return r;
         }
         return -1;
+    }
+
+    void paintOverlayNotes(juce::Graphics& g) {
+        if (overlayTrackIds_.empty() || !padRows_ || padRows_->empty())
+            return;
+
+        auto& clipManager = magda::ClipManager::getInstance();
+
+        double tempo = 120.0;
+        if (auto* controller = magda::TimelineController::getCurrent())
+            tempo = controller->getState().tempo.bpm;
+
+        // The edited clip's track renders as full note components already
+        magda::TrackId activeTrackId = magda::INVALID_TRACK_ID;
+        if (const auto* editedClip = clipManager.getClip(clipId_))
+            activeTrackId = editedClip->trackId;
+
+        const auto visibleArea = g.getClipBounds();
+
+        for (magda::TrackId overlayTrackId : overlayTrackIds_) {
+            if (overlayTrackId == activeTrackId)
+                continue;
+
+            for (magda::ClipId overlayClipId : clipManager.getClipsOnTrack(overlayTrackId)) {
+                const auto* clip = clipManager.getClip(overlayClipId);
+                if (!clip || !clip->isMidi())
+                    continue;
+
+                // Ghost notes take the source clip's colour
+                const auto colour = clip->colour;
+
+                // Position notes on the shared timeline, shifted by the
+                // edited clip's start in relative mode
+                const double visibleStart =
+                    magda::ClipOperations::getMidiVisibleRange(*clip).startBeat;
+                double clipOffsetBeats = clip->getStartBeats(tempo);
+                if (relativeMode_)
+                    clipOffsetBeats -= clipStartBeats_;
+
+                for (auto note : clip->midiNotes) {
+                    if (!magda::ClipOperations::clipMidiNoteToVisibleRange(*clip, note))
+                        continue;
+
+                    int rowIndex = findRowForNote(note.noteNumber);
+                    if (rowIndex < 0)
+                        continue;
+
+                    const double displayBeat = clipOffsetBeats + note.startBeat - visibleStart;
+                    const int x = beatToPixel(displayBeat);
+                    const int w =
+                        juce::jmax(4, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
+                    if (x + w < visibleArea.getX() || x > visibleArea.getRight())
+                        continue;
+
+                    const int y = rowIndex * rowHeight_;
+                    const auto rect = juce::Rectangle<float>(
+                        static_cast<float>(x), static_cast<float>(y + 1), static_cast<float>(w),
+                        static_cast<float>(rowHeight_ - 2));
+                    g.setColour(colour.withAlpha(0.22f));
+                    g.fillRoundedRectangle(rect, 2.0f);
+                    g.setColour(colour.withAlpha(0.45f));
+                    g.drawRoundedRectangle(rect, 2.0f, 1.0f);
+                }
+            }
+        }
     }
 
     void fireSelectionChanged() {
@@ -1980,6 +2067,8 @@ DrumGridClipContent::DrumGridClipContent() {
     gridComponent_->setRowHeight(rowHeight_);
     gridComponent_->setGridResolutionBeats(gridResolutionBeats_);
     gridComponent_->setSnapEnabled(snapEnabled_);
+    // Apply any overlay tracks chosen in another editor session
+    applyOverlayTracks();
     gridComponent_->onVerticalZoomRequested = [this](int gridY,
                                                      const juce::MouseWheelDetails& wheel) {
         const int anchorScreenY = gridY - viewport_->getViewPositionY();
@@ -2614,6 +2703,11 @@ void DrumGridClipContent::updateGridLoopRegion() {
 
 void DrumGridClipContent::setGridPhasePreview(double beats, bool active) {
     gridComponent_->setPhasePreview(beats, active);
+}
+
+void DrumGridClipContent::applyOverlayTracks() {
+    if (gridComponent_)
+        gridComponent_->setOverlayTracks(overlayTrackIds_);
 }
 
 // ============================================================================

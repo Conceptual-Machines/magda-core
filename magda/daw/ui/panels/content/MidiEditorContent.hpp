@@ -134,6 +134,16 @@ class MidiEditorContent : public PanelContent,
     void timelineStateChanged(const magda::TimelineState& state,
                               magda::ChangeFlags changes) override;
 
+    // --- Multi-track overlay (ghost notes from other tracks, #1281) ---
+    // Shared between piano roll and drum grid; each editor renders the
+    // overlay in its own grid via applyOverlayTracks().
+    bool hasOverlayTracks() const {
+        return !overlayTrackIds_.empty();
+    }
+    // Sticky multi-select menu of other MIDI tracks (anchored at `anchor`);
+    // onChanged fires after every overlay change (for button lit-state sync)
+    void showOverlayTracksMenu(juce::Component* anchor, std::function<void()> onChanged);
+
   protected:
     // --- Shared state ---
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
@@ -168,6 +178,12 @@ class MidiEditorContent : public PanelContent,
     std::unique_ptr<magda::TimeRuler> timeRuler_;
     std::unique_ptr<magda::VelocityLaneComponent> velocityLane_;
     std::unique_ptr<magda::MidiDrawerComponent> midiDrawer_;
+
+    // --- Overlay track state (static so it persists across editor switches;
+    //     transient per app run) ---
+    static std::vector<magda::TrackId> overlayTrackIds_;
+    // Push overlayTrackIds_ into the editor's grid renderer
+    virtual void applyOverlayTracks() {}
 
     // --- Velocity lane state (static so it persists across editor switches) ---
     static bool velocityDrawerOpen_;

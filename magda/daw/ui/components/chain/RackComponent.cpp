@@ -92,8 +92,8 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     addAndMakeVisible(*modButton_);
 
     // MACRO button (macros toggle) - knob icon
-    macroButton_ = std::make_unique<magda::SvgButton>("Macro", BinaryData::iconmacrosboldm_svg,
-                                                      BinaryData::iconmacrosboldm_svgSize);
+    macroButton_ =
+        std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
     node_header::applyHeaderIconStyle(*macroButton_,
                                       DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));

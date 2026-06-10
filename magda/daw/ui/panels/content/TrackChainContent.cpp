@@ -803,8 +803,8 @@ TrackChainContent::TrackChainContent()
     addChildComponent(*globalModsButton_);
 
     // Macro button (global macros toggle)
-    macroButton_ = std::make_unique<magda::SvgButton>("Macro", BinaryData::iconmacrosboldm_svg,
-                                                      BinaryData::iconmacrosboldm_svgSize);
+    macroButton_ =
+        std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
     macroButton_->setClickingTogglesState(true);
     macroButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
@@ -940,9 +940,9 @@ TrackChainContent::TrackChainContent()
     const auto muted = [](juce::uint32 c) {
         return juce::Colour(c).withMultipliedSaturation(0.55f).withMultipliedBrightness(0.85f);
     };
-    setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::iconoscilloscopeboldm_svg,
-                        BinaryData::iconoscilloscopeboldm_svgSize, "Oscilloscope (post-FX)",
-                        "oscilloscope", "Oscilloscope", muted(DarkTheme::ACCENT_GREEN));
+    setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::oscilloscope3_svg,
+                        BinaryData::oscilloscope3_svgSize, "Oscilloscope (post-FX)", "oscilloscope",
+                        "Oscilloscope", muted(DarkTheme::ACCENT_GREEN));
     setupAnalysisToggle(specToggleButton_, "Spectrum", BinaryData::iconspectrumboldm_svg,
                         BinaryData::iconspectrumboldm_svgSize, "Spectrum Analyzer (post-FX)",
                         "spectrumanalyzer", "Spectrum Analyzer", muted(DarkTheme::ACCENT_CYAN));

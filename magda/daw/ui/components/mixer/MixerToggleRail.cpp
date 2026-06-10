@@ -27,8 +27,8 @@ MixerToggleRail::MixerToggleRail() {
                 cfg.getMixerShowMonitor(),
                 [](bool v) { Config::getInstance().setMixerShowMonitor(v); });
 
-    setupButton(oscilloscopeButton_, "MixerShowOscilloscope", BinaryData::iconoscilloscopeboldm_svg,
-                BinaryData::iconoscilloscopeboldm_svgSize, "Show mini oscilloscope",
+    setupButton(oscilloscopeButton_, "MixerShowOscilloscope", BinaryData::oscilloscope3_svg,
+                BinaryData::oscilloscope3_svgSize, "Show mini oscilloscope",
                 cfg.getMixerShowOscilloscope(),
                 [](bool v) { Config::getInstance().setMixerShowOscilloscope(v); });
 

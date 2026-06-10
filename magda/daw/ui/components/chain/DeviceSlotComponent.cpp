@@ -225,8 +225,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addAndMakeVisible(*modButton_);
 
     // Macro button (toggle macro panel) - knob icon
-    macroButton_ = std::make_unique<magda::SvgButton>("Macro", BinaryData::iconmacrosboldm_svg,
-                                                      BinaryData::iconmacrosboldm_svgSize);
+    macroButton_ =
+        std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
     applyHeaderIconStyle(*macroButton_, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
     macroButton_->setActive(paramPanelVisible_);
