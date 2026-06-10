@@ -38,8 +38,8 @@ PianoRollContent::PianoRollContent() {
         timeRuler_->setGestureContext(magda::GestureContext::PianoRoll);
 
     // Create chord toggle button
-    chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::chord_svg,
-                                                      BinaryData::chord_svgSize);
+    chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::iconchordboldm_svg,
+                                                      BinaryData::iconchordboldm_svgSize);
     chordToggle_->setTooltip("Toggle chord row");
     chordToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     chordToggle_->setActive(showChordRow_);
@@ -59,21 +59,22 @@ PianoRollContent::PianoRollContent() {
     chordDetectBtn_->setVisible(showChordRow_);
     addAndMakeVisible(chordDetectBtn_.get());
 
-    // Create velocity toggle button (bar chart icon for controls drawer)
+    // Create velocity toggle button (opens the lanes drawer)
     velocityToggle_ = std::make_unique<magda::SvgButton>(
-        "VelocityToggle", BinaryData::bar_chart_svg, BinaryData::bar_chart_svgSize);
+        "VelocityToggle", BinaryData::iconvelocityboldm_svg, BinaryData::iconvelocityboldm_svgSize);
     velocityToggle_->setTooltip("Toggle velocity lane");
     velocityToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     velocityToggle_->setActive(velocityDrawerOpen_);
     velocityToggle_->onClick = [this]() {
         setVelocityDrawerVisible(!velocityDrawerOpen_);
         velocityToggle_->setActive(velocityDrawerOpen_);
+        updateCcLanesButtonState();
     };
     addAndMakeVisible(velocityToggle_.get());
 
     // Create pitch glide toggle button (MPE pitch expression overlay)
     pitchGlideToggle_ = std::make_unique<magda::SvgButton>(
-        "PitchGlideToggle", BinaryData::pitch_glide_svg, BinaryData::pitch_glide_svgSize);
+        "PitchGlideToggle", BinaryData::iconmpeboldm_svg, BinaryData::iconmpeboldm_svgSize);
     pitchGlideToggle_->setTooltip("Toggle pitch glide editing (MPE)");
     pitchGlideToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     pitchGlideToggle_->setActive(false);
@@ -83,6 +84,22 @@ PianoRollContent::PianoRollContent() {
         pitchGlideToggle_->setActive(enabled);
     };
     addAndMakeVisible(pitchGlideToggle_.get());
+
+    // Create CC lanes button (opens the drawer and the add-lane menu)
+    ccLanesBtn_ = std::make_unique<magda::SvgButton>("CCLanes", BinaryData::iconccboldm_svg,
+                                                     BinaryData::iconccboldm_svgSize);
+    ccLanesBtn_->setTooltip("Add CC / pitchbend lane");
+    ccLanesBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    ccLanesBtn_->onClick = [this]() {
+        if (!velocityDrawerOpen_) {
+            setVelocityDrawerVisible(true);
+            velocityToggle_->setActive(true);
+            updateCcLanesButtonState();
+        }
+        if (midiDrawer_)
+            midiDrawer_->showAddLaneMenu();
+    };
+    addAndMakeVisible(ccLanesBtn_.get());
 
     verticalZoomStrip_ = std::make_unique<VerticalZoomStrip>(MIN_NOTE_HEIGHT, MAX_NOTE_HEIGHT);
     verticalZoomStrip_->setGestureContext(magda::GestureContext::PianoRoll);
@@ -174,8 +191,12 @@ PianoRollContent::PianoRollContent() {
 
     setupGridCallbacks();
 
-    // Setup MIDI drawer (tabbed: velocity + CC + pitchbend)
+    // Setup MIDI drawer (stacked lanes: velocity + CC + pitchbend)
     setupMidiDrawer();
+
+    // Keep the CC strip button lit while CC/pitchbend lanes are open
+    if (midiDrawer_)
+        midiDrawer_->onLanesChanged = [this]() { updateCcLanesButtonState(); };
 
     // Register as SelectionManager listener (PianoRoll-specific)
     magda::SelectionManager::getInstance().addListener(this);
@@ -186,6 +207,11 @@ PianoRollContent::PianoRollContent() {
         gridComponent_->setClip(editingClipId_);
         updateTimeRuler();
     }
+}
+
+void PianoRollContent::updateCcLanesButtonState() {
+    if (ccLanesBtn_ && midiDrawer_)
+        ccLanesBtn_->setActive(velocityDrawerOpen_ && midiDrawer_->hasExtraLanes());
 }
 
 PianoRollContent::~PianoRollContent() {
@@ -683,9 +709,10 @@ void PianoRollContent::resized() {
     // Chord toggle at top of sidebar — vertically centered in chord row height
     int chordToggleY = showChordRow_ ? (CHORD_ROW_HEIGHT - iconSize) / 2 : padding;
     chordToggle_->setBounds(padding, chordToggleY, iconSize, iconSize);
-    // Velocity toggle at bottom, pitch glide toggle stacked above it
+    // Lane buttons stacked at the bottom, top to bottom: MPE, CC, velocity
     velocityToggle_->setBounds(padding, getHeight() - iconSize - padding, iconSize, iconSize);
-    pitchGlideToggle_->setBounds(padding, getHeight() - 2 * (iconSize + padding), iconSize,
+    ccLanesBtn_->setBounds(padding, getHeight() - 2 * (iconSize + padding), iconSize, iconSize);
+    pitchGlideToggle_->setBounds(padding, getHeight() - 3 * (iconSize + padding), iconSize,
                                  iconSize);
 
     // Skip chord row space if visible (drawn in paint)
@@ -1579,12 +1606,11 @@ void PianoRollContent::drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int
     g.drawHorizontalLine(area.getY(), static_cast<float>(area.getX()),
                          static_cast<float>(area.getRight()));
 
-    // Draw active lane label in keyboard area
+    // Draw lane label in keyboard area (legacy path only, without MidiDrawer)
     auto labelArea = area.removeFromLeft(KEYBOARD_WIDTH);
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     g.setFont(magda::FontManager::getInstance().getUIFont(11.0f));
-    juce::String label = midiDrawer_ ? midiDrawer_->getActiveTabName() : "Velocity";
-    g.drawText(label, labelArea.reduced(4, 0), juce::Justification::centredLeft, true);
+    g.drawText("Velocity", labelArea.reduced(4, 0), juce::Justification::centredLeft, true);
 }
 
 void PianoRollContent::updateVelocityLane() {

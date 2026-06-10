@@ -14,8 +14,8 @@ MixerToggleRail::MixerToggleRail() {
     setupAnalyzeButton();
     MixAnalysisService::getInstance().addListener(this);
 
-    setupButton(sendsButton_, "MixerShowSends", BinaryData::send_svg, BinaryData::send_svgSize,
-                "Show sends", cfg.getMixerShowSends(),
+    setupButton(sendsButton_, "MixerShowSends", BinaryData::iconsendsboldm_svg,
+                BinaryData::iconsendsboldm_svgSize, "Show sends", cfg.getMixerShowSends(),
                 [](bool v) { Config::getInstance().setMixerShowSends(v); });
 
     setupButton(routingButton_, "MixerShowRouting", BinaryData::inputoutput_svg,
@@ -27,17 +27,19 @@ MixerToggleRail::MixerToggleRail() {
                 cfg.getMixerShowMonitor(),
                 [](bool v) { Config::getInstance().setMixerShowMonitor(v); });
 
-    setupButton(oscilloscopeButton_, "MixerShowOscilloscope", BinaryData::oscilloscope_svg,
-                BinaryData::oscilloscope_svgSize, "Show mini oscilloscope",
+    setupButton(oscilloscopeButton_, "MixerShowOscilloscope", BinaryData::iconoscilloscopeboldm_svg,
+                BinaryData::iconoscilloscopeboldm_svgSize, "Show mini oscilloscope",
                 cfg.getMixerShowOscilloscope(),
                 [](bool v) { Config::getInstance().setMixerShowOscilloscope(v); });
 
-    setupButton(spectrumButton_, "MixerShowSpectrum", BinaryData::spectrum_svg,
-                BinaryData::spectrum_svgSize, "Show mini spectrum", cfg.getMixerShowSpectrum(),
+    setupButton(spectrumButton_, "MixerShowSpectrum", BinaryData::iconspectrumboldm_svg,
+                BinaryData::iconspectrumboldm_svgSize, "Show mini spectrum",
+                cfg.getMixerShowSpectrum(),
                 [](bool v) { Config::getInstance().setMixerShowSpectrum(v); });
 
-    setupButton(fxChainButton_, "MixerShowFxChain", BinaryData::fxchain_svg,
-                BinaryData::fxchain_svgSize, "Show mini FX chain", cfg.getMixerShowFxChain(),
+    setupButton(fxChainButton_, "MixerShowFxChain", BinaryData::iconinsertsboldm_svg,
+                BinaryData::iconinsertsboldm_svgSize, "Show mini FX chain",
+                cfg.getMixerShowFxChain(),
                 [](bool v) { Config::getInstance().setMixerShowFxChain(v); });
 }
 
@@ -127,8 +129,8 @@ MixerToggleRail::~MixerToggleRail() {
 }
 
 void MixerToggleRail::setupAnalyzeButton() {
-    analyzeButton_ = std::make_unique<SvgButton>("MixAnalyze", BinaryData::analysis_svg,
-                                                 BinaryData::analysis_svgSize);
+    analyzeButton_ = std::make_unique<SvgButton>("MixAnalyze", BinaryData::iconcheckmixboldm_svg,
+                                                 BinaryData::iconcheckmixboldm_svgSize);
     analyzeButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     analyzeButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     analyzeButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
@@ -168,7 +170,8 @@ void MixerToggleRail::updateAnalyzeButtonMode() {
         analyzeButton_->setActive(true);
         analyzeButton_->setTooltip("Listening... (click to view / stop)");
     } else {
-        analyzeButton_->updateSvgData(BinaryData::analysis_svg, BinaryData::analysis_svgSize);
+        analyzeButton_->updateSvgData(BinaryData::iconcheckmixboldm_svg,
+                                      BinaryData::iconcheckmixboldm_svgSize);
         analyzeButton_->setActive(false);
         analyzeButton_->setTooltip("Analyze the mix");
         // Dim to the disengaged-toggle look until there's an analysis to show;
