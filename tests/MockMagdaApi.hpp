@@ -178,10 +178,21 @@ class MockTrackApi : public TrackApi {
         TrackId id;
         juce::String value;
     };
+    struct ColourWrite {
+        TrackId id;
+        juce::Colour value;
+    };
+    struct GroupWrite {
+        std::vector<TrackId> ids;
+        juce::String name;
+        TrackId groupId;
+    };
 
     std::vector<TrackInfo> created;
     std::vector<TrackId> deleted;
     std::vector<NameWrite> nameWrites;
+    std::vector<ColourWrite> colourWrites;
+    std::vector<GroupWrite> groupWrites;
     std::vector<VolumeWrite> volumeWrites;
     std::vector<PanWrite> panWrites;
     std::vector<MuteWrite> muteWrites;
@@ -197,6 +208,16 @@ class MockTrackApi : public TrackApi {
         tracks.push_back(t);
         created.push_back(t);
         return t.id;
+    }
+    TrackId groupTracks(const std::vector<TrackId>& ids, const juce::String& name) override {
+        TrackInfo group;
+        group.id = nextId++;
+        group.name = name;
+        group.type = TrackType::Group;
+        group.childIds = ids;
+        tracks.push_back(group);
+        groupWrites.push_back({ids, name, group.id});
+        return group.id;
     }
     void deleteTrack(TrackId id) override {
         deleted.push_back(id);
@@ -221,6 +242,9 @@ class MockTrackApi : public TrackApi {
     }
     void setTrackName(TrackId id, const juce::String& name) override {
         nameWrites.push_back({id, name});
+    }
+    void setTrackColour(TrackId id, juce::Colour colour) override {
+        colourWrites.push_back({id, colour});
     }
     void setTrackVolume(TrackId id, float v, bool /*fromAuto*/) override {
         volumeWrites.push_back({id, v});

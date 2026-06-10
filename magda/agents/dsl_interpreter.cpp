@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <random>
+#include <sstream>
 
 #include "../daw/api/clip_api.hpp"
 #include "../daw/api/magda_api.hpp"
@@ -29,6 +30,25 @@
 #include "music_helpers.hpp"
 
 namespace magda::dsl {
+
+namespace {
+
+juce::String normaliseColourString(juce::String raw) {
+    raw = raw.trim().unquoted();
+    if (raw.startsWithChar('#'))
+        raw = raw.substring(1);
+    if (raw.startsWithIgnoreCase("0x"))
+        raw = raw.substring(2);
+    if (raw.length() == 6)
+        raw = "ff" + raw;
+    return raw;
+}
+
+juce::Colour parseDslColour(const std::string& value) {
+    return juce::Colour::fromString(normaliseColourString(juce::String(value)));
+}
+
+}  // namespace
 
 // ============================================================================
 // Tokenizer Implementation
@@ -360,6 +380,9 @@ bool Interpreter::execute(const char* dslCode) {
     if (selectedClip != INVALID_CLIP_ID)
         ctx_.currentClipId = selectedClip;
 
+    for (const auto& track : api_.tracks().getTracks())
+        ctx_.trackIndexSnapshotIds.push_back(track.id);
+
     DBG("MAGDA DSL: Executing: " + juce::String(dslCode).substring(0, 200));
 
     Tokenizer tok(dslCode);
@@ -447,12 +470,12 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
     if (params.has("id")) {
         // Reference existing track by 1-based index
         int id = params.getInt("id");
-        int index = id - 1;
-        if (index < 0 || index >= tm.getNumTracks()) {
+        const int trackId = trackIndexToId(id);
+        if (trackId < 0) {
             ctx_.setError("Track " + juce::String(id) + " not found");
             return false;
         }
-        ctx_.currentTrackId = tm.getTracks()[static_cast<size_t>(index)].id;
+        ctx_.currentTrackId = trackId;
     } else if (params.has("name")) {
         juce::String name(params.get("name"));
         bool forceNew = params.getBool("new", false);
@@ -618,6 +641,8 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
             success = executeNewClip(params);
         else if (methodKey == "track.set")
             success = executeSetTrack(params);
+        else if (methodKey == "track.group")
+            success = executeGroupTracks(params);
         else if (methodKey == "delete")
             success = executeDelete();
         else if (methodKey == "clip.delete")
@@ -859,6 +884,11 @@ bool Interpreter::executeSetTrack(const Params& params) {
         if (params.has("name"))
             tm.setTrackName(trackId, juce::String(params.get("name")));
 
+        if (params.has("colour"))
+            tm.setTrackColour(trackId, parseDslColour(params.get("colour")));
+        else if (params.has("color"))
+            tm.setTrackColour(trackId, parseDslColour(params.get("color")));
+
         if (params.has("volume_db")) {
             double db = params.getFloat("volume_db");
             float vol = static_cast<float>(std::pow(10.0, db / 20.0));
@@ -887,6 +917,10 @@ bool Interpreter::executeSetTrack(const Params& params) {
         juce::StringArray changes;
         if (params.has("name"))
             changes.add("name='" + juce::String(params.get("name")) + "'");
+        if (params.has("colour"))
+            changes.add("colour=" + juce::String(params.get("colour")));
+        else if (params.has("color"))
+            changes.add("color=" + juce::String(params.get("color")));
         if (params.has("volume_db"))
             changes.add("volume=" + juce::String(params.get("volume_db")) + "dB");
         if (params.has("pan"))
@@ -901,6 +935,51 @@ bool Interpreter::executeSetTrack(const Params& params) {
         return false;
     }
 
+    return true;
+}
+
+bool Interpreter::executeGroupTracks(const Params& params) {
+    auto& tm = api_.tracks();
+
+    std::vector<int> trackIds;
+    if (params.has("tracks")) {
+        std::stringstream ss(params.get("tracks"));
+        std::string item;
+        while (std::getline(ss, item, ',')) {
+            juce::String token(item);
+            const int oneBasedIndex = token.trim().getIntValue();
+            const int trackId = trackIndexToId(oneBasedIndex);
+            if (trackId < 0) {
+                ctx_.setError("Track " + juce::String(oneBasedIndex) + " not found");
+                return false;
+            }
+            if (std::find(trackIds.begin(), trackIds.end(), trackId) == trackIds.end())
+                trackIds.push_back(trackId);
+        }
+    } else if (ctx_.inFilterContext) {
+        trackIds = ctx_.filteredTrackIds;
+    } else if (ctx_.currentTrackId >= 0) {
+        trackIds.push_back(ctx_.currentTrackId);
+    }
+
+    if (trackIds.size() < 2) {
+        ctx_.setError("track.group requires at least two tracks");
+        return false;
+    }
+
+    const auto name = juce::String(params.get("name", "Group"));
+    const auto groupId = tm.groupTracks(trackIds, name);
+    if (groupId == INVALID_TRACK_ID) {
+        ctx_.setError("Failed to group tracks");
+        return false;
+    }
+
+    ctx_.currentTrackId = groupId;
+    ctx_.inFilterContext = false;
+    ctx_.filteredTrackIds.clear();
+    api_.selection().selectTrack(groupId);
+    ctx_.addResult("Grouped " + juce::String(static_cast<int>(trackIds.size())) + " track(s) as '" +
+                   name + "'");
     return true;
 }
 
@@ -1394,6 +1473,20 @@ int Interpreter::findTrackByName(const juce::String& name) const {
             return track.id;
     }
     return -1;
+}
+
+int Interpreter::trackIndexToId(int oneBasedIndex) const {
+    const int index = oneBasedIndex - 1;
+    if (index < 0)
+        return -1;
+
+    if (index < static_cast<int>(ctx_.trackIndexSnapshotIds.size()))
+        return ctx_.trackIndexSnapshotIds[static_cast<size_t>(index)];
+
+    auto& tm = api_.tracks();
+    if (index >= tm.getNumTracks())
+        return -1;
+    return tm.getTracks()[static_cast<size_t>(index)].id;
 }
 
 double Interpreter::barsToTime(double bar) const {

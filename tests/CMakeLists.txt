@@ -54,6 +54,7 @@ set(TEST_SOURCES
     test_freeze_track.cpp
     test_dsl_add_chord.cpp
     test_dsl_add_arpeggio.cpp
+    test_dsl_track_workflow.cpp
     test_scale_detection.cpp
     test_step_clock.cpp
     test_string_table.cpp

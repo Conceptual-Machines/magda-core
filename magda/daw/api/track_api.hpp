@@ -25,6 +25,7 @@ class TrackApi {
     virtual ~TrackApi() = default;
 
     virtual TrackId createTrack(const juce::String& name, TrackType type) = 0;
+    virtual TrackId groupTracks(const std::vector<TrackId>& trackIds, const juce::String& name) = 0;
     virtual void deleteTrack(TrackId trackId) = 0;
 
     virtual int getNumTracks() const = 0;
@@ -33,6 +34,7 @@ class TrackApi {
     virtual const TrackInfo* getTrack(TrackId trackId) const = 0;
 
     virtual void setTrackName(TrackId trackId, const juce::String& name) = 0;
+    virtual void setTrackColour(TrackId trackId, juce::Colour colour) = 0;
     virtual void setTrackVolume(TrackId trackId, float volume, bool fromAutomation = false) = 0;
     virtual void setTrackPan(TrackId trackId, float pan, bool fromAutomation = false) = 0;
     virtual void setTrackMuted(TrackId trackId, bool muted) = 0;

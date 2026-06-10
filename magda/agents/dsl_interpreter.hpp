@@ -133,6 +133,11 @@ struct InterpreterContext {
     // Results log (human-readable)
     juce::StringArray results;
 
+    // Stable 1-based track-id mapping captured at execution start. The LLM
+    // sees these IDs in the state snapshot; commands in one script may reorder
+    // tracks, so explicit IDs must continue to mean the original snapshot rows.
+    std::vector<int> trackIndexSnapshotIds;
+
     void setError(const juce::String& msg) {
         error = msg;
         hasError = true;
@@ -195,6 +200,7 @@ class Interpreter {
     bool parseMethodChain(Tokenizer& tok);
     bool executeNewClip(const Params& params);
     bool executeSetTrack(const Params& params);
+    bool executeGroupTracks(const Params& params);
     bool executeDelete();
     bool executeDeleteClip(const Params& params);
     bool executeAddFx(const Params& params);
@@ -232,6 +238,7 @@ class Interpreter {
     // Helpers
     static TrackType parseTrackType(const Params& params);
     int findTrackByName(const juce::String& name) const;
+    int trackIndexToId(int oneBasedIndex) const;
 
     // Time conversion
     double barsToTime(double bar) const;

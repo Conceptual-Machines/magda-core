@@ -14,8 +14,8 @@ ROUTER_SYSTEM = "Classify the user's request as COMMAND, MUSIC, or BOTH. Respond
 COMMAND_SYSTEM = (
     "You are MAGDA, a DAW AI assistant. Respond ONLY with DSL code. No prose.\n"
     "Syntax: track(name=\"X\", new=true), track(id=N), filter(tracks, track.name == \"X\")\n"
-    "Chains: .clip.new(bar=1, length_bars=4), .track.set(volume_db=-6, pan=0.5, mute=true, solo=true),\n"
-    ".fx.add(name=\"reverb\"), .delete(), .select(), .clip.rename(index=0, name=\"X\"),\n"
+    "Chains: .clip.new(bar=1, length_bars=4), .track.set(name=\"X\", colour=\"#ff5a36\", volume_db=-6, pan=0.5, mute=true, solo=true),\n"
+    ".track.group(name=\"Group\", tracks=\"1,2,3\"), .fx.add(name=\"reverb\"), .delete(), .select(), .clip.rename(index=0, name=\"X\"),\n"
     ".clip.delete(index=0), .for_each(...), .clips.select(clip.length_bars > 2)\n"
     "Notes: .notes.add(pitch=C4, beat=0, length=1, velocity=100),\n"
     ".notes.add_chord(root=C4, quality=major, beat=0, length=1),\n"
@@ -53,6 +53,8 @@ router_examples = [
     ("set volume to -6 dB", "COMMAND"),
     ("add a 4 bar clip on track 1", "COMMAND"),
     ("rename track 3 to Strings", "COMMAND"),
+    ("group the drum tracks and color code them", "COMMAND"),
+    ("organize tracks into groups and rename them consistently", "COMMAND"),
     ("solo the piano", "COMMAND"),
     ("add EQ and compressor to track 1", "COMMAND"),
     ("create 5 tracks named after planets", "COMMAND"),
@@ -222,11 +224,24 @@ command_examples = [
     ("unmute track 3", "track(id=3).track.set(mute=false)"),
     ("unsolo the bass", 'track(name="Bass").track.set(solo=false)'),
     ("rename track 3 to Strings", 'track(id=3).track.set(name="Strings")'),
+    ("color track 1 red", 'track(id=1).track.set(colour="#ff5a36")'),
+    ("set the bass track color to blue", 'track(name="Bass").track.set(colour="#44c7ff")'),
     ("set volume to -9 and pan right on track 2", "track(id=2).track.set(volume_db=-9, pan=0.8)"),
     ("create a strings track, pan it slightly right, volume at -9",
      'track(name="Strings", new=true).track.set(pan=0.3, volume_db=-9)'),
     ("create a Sub Bass track, set volume to -3 and pan center",
      'track(name="Sub Bass", new=true).track.set(volume_db=-3, pan=0)'),
+
+    # --- Track organisation ---
+    ("group tracks 1, 2, and 3 as Drums",
+     'track(id=1).track.group(name="Drums", tracks="1,2,3")'),
+    ("group tracks 4 and 5 as Vocals and color them blue",
+     'track(id=4).track.group(name="Vocals", tracks="4,5").track.set(colour="#44c7ff")'),
+    ("rename tracks 1 and 2 consistently as drum tracks",
+     'track(id=1).track.set(name="Drums - Kick")\ntrack(id=2).track.set(name="Drums - Snare")'),
+    ("organize the session into rhythm and vocals groups",
+     'track(id=1).track.group(name="Rhythm", tracks="1,2,3").track.set(colour="#ff5a36")\n'
+     'track(id=4).track.group(name="Vocals", tracks="4,5").track.set(colour="#44c7ff")'),
 
     # --- Track + FX + properties ---
     ("create a bass track, add a 4 bar clip, and set volume to -3",
