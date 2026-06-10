@@ -149,6 +149,9 @@ class MixerView : public juce::Component,
         bool isMaster_;
         bool isChildTrack_ = false;
         bool selected = false;
+        // Dedup for double-delivered mouse events (self mouse listener); see
+        // ChannelStrip::mouseDown
+        juce::Time lastMouseDownEventTime_;
         float meterLevel = 0.0f;
         juce::Colour trackColour_;
         juce::String trackName_;

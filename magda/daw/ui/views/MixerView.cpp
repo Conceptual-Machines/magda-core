@@ -1563,6 +1563,15 @@ void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
 }
 
 void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
+    // addMouseListener(this, true) makes clicks that land directly on the strip
+    // arrive twice: once via the normal virtual and once via the self-listener.
+    // Toggle selection is self-inverting, so the duplicate delivery used to undo
+    // it instantly (Cmd+click multi-select never stuck). Drop the second
+    // delivery of the same physical event (identical event time).
+    if (event.eventTime == lastMouseDownEventTime_)
+        return;
+    lastMouseDownEventTime_ = event.eventTime;
+
     auto& selection = SelectionManager::getInstance();
     const bool fromChild = event.originalComponent != this;
     juce::String originalName = "<null>";
