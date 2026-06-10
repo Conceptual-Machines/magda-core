@@ -9,6 +9,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
+#include "../../utils/SelectionPolicy.hpp"
 #include "BinaryData.h"
 #include "LevelMeterBallistics.hpp"
 #include "core/ChainNodePath.hpp"
@@ -553,7 +554,11 @@ void MasterChannelStrip::setSelected(bool shouldBeSelected) {
 
 void MasterChannelStrip::mouseDown(const juce::MouseEvent& event) {
     if (!event.mods.isPopupMenu()) {
-        SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
+        if (magda::isToggleSelectClick(event.mods)) {
+            SelectionManager::getInstance().toggleTrackSelection(MASTER_TRACK_ID);
+        } else {
+            SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
+        }
     }
 }
 

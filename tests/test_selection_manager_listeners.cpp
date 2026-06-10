@@ -109,6 +109,34 @@ TEST_CASE("SelectionManager - note range selection uses anchored time and pitch 
     tm.clearAllTracks();
 }
 
+TEST_CASE("SelectionManager - track toggle ignores stale track set from other selection types",
+          "[selection][tracks][toggle]") {
+    auto& cm = ClipManager::getInstance();
+    auto& tm = TrackManager::getInstance();
+    auto& sm = SelectionManager::getInstance();
+
+    cm.clearAllClips();
+    tm.clearAllTracks();
+    sm.clearSelection();
+
+    TrackId first = tm.createTrack("First", TrackType::Audio);
+    TrackId second = tm.createTrack("Second", TrackType::Audio);
+    ClipId clipId = cm.createMidiClip(first, 0.0, 2.0, ClipView::Arrangement);
+
+    sm.selectTrack(first);
+    sm.selectClip(clipId);
+    sm.toggleTrackSelection(second);
+
+    REQUIRE(sm.isTrackSelected(first) == false);
+    REQUIRE(sm.isTrackSelected(second) == true);
+    REQUIRE(sm.getSelectedTrackCount() == 1);
+    REQUIRE(sm.getSelectedTrack() == second);
+
+    sm.clearSelection();
+    cm.clearAllClips();
+    tm.clearAllTracks();
+}
+
 TEST_CASE("SelectionManager - listener added during notify does not crash",
           "[selection][listeners]") {
     auto& sm = SelectionManager::getInstance();

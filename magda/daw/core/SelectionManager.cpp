@@ -44,6 +44,29 @@ juce::String formatTrackIdVector(const std::vector<TrackId>& trackIds) {
     return "[" + parts.joinIntoString(",") + "]";
 }
 
+juce::String formatTrackIdSet(const std::unordered_set<TrackId>& trackIds) {
+    juce::StringArray parts;
+    for (auto id : trackIds)
+        parts.add(juce::String(static_cast<int>(id)));
+    return "[" + parts.joinIntoString(",") + "]";
+}
+
+void logMixerSelect(const juce::String& message) {
+    const auto line =
+        juce::Time::getCurrentTime().toString(true, true, true, true) + " [MixerSelect] " + message;
+    DBG(line);
+    juce::Logger::writeToLog(line);
+
+    auto logFile = paths::logsDir().getChildFile("mixer-select.log");
+    logFile.getParentDirectory().createDirectory();
+    if (!logFile.appendText(line + "\n", false, false, "\n")) {
+        const auto failureLine =
+            "[MixerSelect] failed to append dedicated log file: " + logFile.getFullPathName();
+        DBG(failureLine);
+        juce::Logger::writeToLog(failureLine);
+    }
+}
+
 }  // namespace
 
 SelectionManager& SelectionManager::getInstance() {
@@ -181,10 +204,14 @@ void SelectionManager::addTrackToSelection(TrackId trackId) {
     if (trackId == INVALID_TRACK_ID)
         return;
 
-    // If currently in single-track mode, convert to multi
+    // If currently in single-track mode, convert to multi. If selection focus
+    // came from another domain (clips, notes, devices), discard stale track set
+    // contents before starting a new track selection.
     if (selectionType_ == SelectionType::Track && selectedTrackId_ != INVALID_TRACK_ID) {
         selectedTrackIds_.clear();
         selectedTrackIds_.insert(selectedTrackId_);
+    } else if (selectionType_ != SelectionType::MultiTrack) {
+        selectedTrackIds_.clear();
     }
 
     selectedTrackIds_.insert(trackId);
@@ -211,6 +238,9 @@ void SelectionManager::addTrackToSelection(TrackId trackId) {
 }
 
 void SelectionManager::removeTrackFromSelection(TrackId trackId) {
+    if (!isTrackSelected(trackId))
+        return;
+
     selectedTrackIds_.erase(trackId);
 
     if (selectedTrackIds_.empty()) {
@@ -236,11 +266,23 @@ void SelectionManager::removeTrackFromSelection(TrackId trackId) {
 }
 
 void SelectionManager::toggleTrackSelection(TrackId trackId) {
-    if (selectedTrackIds_.count(trackId) > 0) {
+    logMixerSelect("SelectionManager::toggleTrackSelection begin track=" + juce::String(trackId) +
+                   " type=" + juce::String(static_cast<int>(selectionType_)) + " selectedTrack=" +
+                   juce::String(selectedTrackId_) + " anchor=" + juce::String(anchorTrackId_) +
+                   " selected=" + formatTrackIdSet(selectedTrackIds_) +
+                   " isTrackSelected=" + juce::String(isTrackSelected(trackId) ? 1 : 0));
+
+    if (isTrackSelected(trackId)) {
         removeTrackFromSelection(trackId);
     } else {
         addTrackToSelection(trackId);
     }
+
+    logMixerSelect("SelectionManager::toggleTrackSelection end track=" + juce::String(trackId) +
+                   " type=" + juce::String(static_cast<int>(selectionType_)) + " selectedTrack=" +
+                   juce::String(selectedTrackId_) + " anchor=" + juce::String(anchorTrackId_) +
+                   " selected=" + formatTrackIdSet(selectedTrackIds_) +
+                   " isTrackSelected=" + juce::String(isTrackSelected(trackId) ? 1 : 0));
 }
 
 bool SelectionManager::isTrackSelected(TrackId trackId) const {
