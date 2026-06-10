@@ -2129,6 +2129,10 @@ void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
 }
 
 void DeviceSlotComponent::showMultiOutMenu() {
+    // Item IDs: 1..N = per-pair toggles (vector index + 1), then the bulk actions.
+    constexpr int ACTIVATE_ALL_ID = 9001;
+    constexpr int DEACTIVATE_ALL_ID = 9002;
+
     juce::PopupMenu menu;
     menu.addSectionHeader("Multi-Output Routing");
 
@@ -2140,6 +2144,8 @@ void DeviceSlotComponent::showMultiOutMenu() {
     if (!freshDevice || !freshDevice->multiOut.isMultiOut)
         return;
 
+    bool anyInactive = false;
+    bool anyActive = false;
     for (size_t i = 0; i < freshDevice->multiOut.outputPairs.size(); ++i) {
         const auto& pair = freshDevice->multiOut.outputPairs[i];
 
@@ -2148,16 +2154,24 @@ void DeviceSlotComponent::showMultiOutMenu() {
             continue;
 
         menu.addItem(static_cast<int>(i + 1), pair.name, true, pair.active);
+        (pair.active ? anyActive : anyInactive) = true;
     }
+
+    menu.addSeparator();
+    menu.addItem(ACTIVATE_ALL_ID, "Activate All", anyInactive);
+    menu.addItem(DEACTIVATE_ALL_ID, "Deactivate All", anyActive);
 
     auto safeThis = juce::Component::SafePointer<DeviceSlotComponent>(this);
     auto deviceId = device_.id;
 
-    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, trackId, deviceId](int result) {
+    // Anchor at the multi-out button so the menu stays put when it reopens
+    // after a per-pair toggle (multi-toggle in one session).
+    auto options = juce::PopupMenu::Options().withTargetComponent(multiOutButton_.get());
+
+    menu.showMenuAsync(options, [safeThis, trackId, deviceId](int result) {
         if (!safeThis || result == 0)
             return;
 
-        int pairIndex = result - 1;
         auto& tm = magda::TrackManager::getInstance();
 
         // Get fresh device info
@@ -2165,6 +2179,27 @@ void DeviceSlotComponent::showMultiOutMenu() {
         if (!device || !device->multiOut.isMultiOut)
             return;
 
+        if (result == ACTIVATE_ALL_ID) {
+            // Re-fetch the device each pass: activating a pair inserts a track,
+            // which can reallocate and invalidate the DeviceInfo pointer.
+            for (size_t i = 0;; ++i) {
+                auto* dev = tm.getDevice(trackId, deviceId);
+                if (!dev || i >= dev->multiOut.outputPairs.size())
+                    break;
+                const auto& pair = dev->multiOut.outputPairs[i];
+                if (pair.outputIndex == 0 || pair.active)
+                    continue;
+                tm.activateMultiOutPair(trackId, deviceId, static_cast<int>(i));
+            }
+            return;
+        }
+
+        if (result == DEACTIVATE_ALL_ID) {
+            tm.deactivateAllMultiOutPairs(trackId, deviceId);
+            return;
+        }
+
+        int pairIndex = result - 1;
         if (pairIndex < 0 || pairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
             return;
 
@@ -2174,6 +2209,10 @@ void DeviceSlotComponent::showMultiOutMenu() {
         } else {
             tm.activateMultiOutPair(trackId, deviceId, pairIndex);
         }
+
+        // Reopen so several pairs can be toggled in one menu session;
+        // clicking outside (result == 0) ends it.
+        safeThis->showMultiOutMenu();
     });
 }
 
