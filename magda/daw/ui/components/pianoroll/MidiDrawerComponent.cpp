@@ -34,11 +34,10 @@ MidiDrawerComponent::MidiDrawerComponent() {
         range = juce::jlimit(1, 96, range);
         pbRangeLabel_->setText(juce::String(range), juce::dontSendNotification);
 
-        // Apply to active pitch bend lane
-        int ccIdx = activeTabIndex_ - 1;
-        if (ccIdx >= 0 && ccIdx < static_cast<int>(ccTabs_.size())) {
-            if (ccTabs_[ccIdx].isPitchBend && ccTabs_[ccIdx].ccLane)
-                ccTabs_[ccIdx].ccLane->setPitchBendRange(range);
+        // Apply to the pitch bend lane
+        for (auto& tab : ccTabs_) {
+            if (tab.isPitchBend && tab.ccLane)
+                tab.ccLane->setPitchBendRange(range);
         }
     };
     addChildComponent(pbRangeLabel_.get());
@@ -137,40 +136,32 @@ void MidiDrawerComponent::refreshAll() {
     }
 }
 
-juce::String MidiDrawerComponent::getActiveTabName() const {
-    if (activeTabIndex_ == 0)
-        return "Velocity";
-
-    int ccIdx = activeTabIndex_ - 1;
-    if (ccIdx >= 0 && ccIdx < static_cast<int>(ccTabs_.size())) {
-        if (ccTabs_[ccIdx].ccLane)
-            return ccTabs_[ccIdx].ccLane->getLaneName();
-    }
-    return "Velocity";
-}
-
 // ============================================================================
 // Layout
 // ============================================================================
 
+juce::Rectangle<int> MidiDrawerComponent::getLaneRowBounds(int laneIndex) const {
+    const int top = RESIZE_HANDLE_HEIGHT;
+    const int totalHeight = getHeight() - top;
+    const int count = getLaneCount();
+    if (count <= 0 || totalHeight <= 0 || laneIndex < 0 || laneIndex >= count)
+        return {};
+
+    const int laneHeight = totalHeight / count;
+    const int y = top + laneIndex * laneHeight;
+    // Last lane absorbs the integer-division remainder
+    const int h = (laneIndex == count - 1) ? (getHeight() - y) : laneHeight;
+    return {0, y, getWidth(), h};
+}
+
 void MidiDrawerComponent::resized() {
-    auto bounds = getLocalBounds();
-
-    // Left margin (keyboard column area)
-    bounds.removeFromLeft(leftMargin_);
-
-    // Resize handle + Tab bar at top (painted in paint())
-    bounds.removeFromTop(RESIZE_HANDLE_HEIGHT + TAB_BAR_HEIGHT);
-
-    // Active lane fills the rest
-    velocityLane_->setBounds(bounds);
-    velocityLane_->setVisible(activeTabIndex_ == 0);
+    // Lanes are stacked vertically (all visible), right of the left margin column
+    velocityLane_->setBounds(getLaneRowBounds(0).withTrimmedLeft(leftMargin_));
 
     for (size_t i = 0; i < ccTabs_.size(); ++i) {
-        if (ccTabs_[i].ccLane) {
-            ccTabs_[i].ccLane->setBounds(bounds);
-            ccTabs_[i].ccLane->setVisible(static_cast<int>(i) == activeTabIndex_ - 1);
-        }
+        if (ccTabs_[i].ccLane)
+            ccTabs_[i].ccLane->setBounds(
+                getLaneRowBounds(static_cast<int>(i) + 1).withTrimmedLeft(leftMargin_));
     }
 
     updatePbRangeVisibility();
@@ -199,8 +190,9 @@ void MidiDrawerComponent::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.fillRect(handleArea.removeFromTop(1));
 
-    auto tabBarArea = fullBounds.removeFromTop(TAB_BAR_HEIGHT);
-    paintTabBar(g, tabBarArea);
+    // Lane headers in the left margin column
+    if (leftMargin_ > 4)
+        paintLaneHeaders(g);
 
     // "Range" title above the PB range input
     if (pbRangeLabel_->isVisible() && leftMargin_ > 4) {
@@ -212,79 +204,53 @@ void MidiDrawerComponent::paint(juce::Graphics& g) {
     }
 }
 
-void MidiDrawerComponent::paintTabBar(juce::Graphics& g, juce::Rectangle<int> area) {
-    // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
-    g.fillRect(area);
+void MidiDrawerComponent::paintOverChildren(juce::Graphics& g) {
+    // Separator lines between stacked lanes
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    for (int i = 1; i < getLaneCount(); ++i) {
+        auto row = getLaneRowBounds(i);
+        if (!row.isEmpty())
+            g.drawHorizontalLine(row.getY(), 0.0f, static_cast<float>(getWidth()));
+    }
+}
 
-    // Top border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawHorizontalLine(area.getY(), static_cast<float>(area.getX()),
-                         static_cast<float>(area.getRight()));
+void MidiDrawerComponent::paintLaneHeaders(juce::Graphics& g) {
+    const auto textColour = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
 
-    auto font = FontManager::getInstance().getUIFont(11.0f);
-    g.setFont(font);
+    // Control name at the top of each lane's row, close button on removable lanes
+    for (int lane = 0; lane < getLaneCount(); ++lane) {
+        auto row = getLaneRowBounds(lane);
+        if (row.isEmpty())
+            continue;
 
-    int x = area.getX() + 6;
-    int tabHeight = area.getHeight() - 4;
-    int tabY = area.getY() + 2;
+        const bool removable = lane > 0;
+        juce::String name =
+            (lane == 0) ? juce::String("Velocity") : ccTabs_[static_cast<size_t>(lane - 1)].name;
 
-    // "Vel" tab (always present)
-    {
-        int tabWidth = static_cast<int>(font.getStringWidthFloat("Vel")) + 18;
-        bool isActive = (activeTabIndex_ == 0);
+        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.setColour(textColour);
+        g.drawText(name, 4, row.getY() + 4, leftMargin_ - (removable ? 20 : 8), 14,
+                   juce::Justification::centredLeft, true);
 
-        if (isActive) {
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).withAlpha(0.8f));
-            g.fillRoundedRectangle(static_cast<float>(x), static_cast<float>(tabY),
-                                   static_cast<float>(tabWidth), static_cast<float>(tabHeight),
-                                   3.0f);
+        if (removable) {
+            // Close button "x" in the top-right corner of the lane's header column
+            g.setColour(textColour.withAlpha(0.6f));
+            float closeX = static_cast<float>(leftMargin_ - 11);
+            float closeY = static_cast<float>(row.getY() + 11);
+            g.drawLine(closeX - 2.5f, closeY - 2.5f, closeX + 2.5f, closeY + 2.5f, 1.0f);
+            g.drawLine(closeX + 2.5f, closeY - 2.5f, closeX - 2.5f, closeY + 2.5f, 1.0f);
         }
-
-        g.setColour(isActive ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
-                             : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        g.drawText("Vel", x, tabY, tabWidth, tabHeight, juce::Justification::centred, true);
-        x += tabWidth + 4;
     }
 
-    // CC/PB tabs
-    for (size_t i = 0; i < ccTabs_.size(); ++i) {
-        juce::String tabName = ccTabs_[i].name;
-        int tabWidth =
-            static_cast<int>(font.getStringWidthFloat(tabName)) + 28;  // extra for close btn
-        bool isActive = (static_cast<int>(i) + 1 == activeTabIndex_);
-
-        if (isActive) {
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).withAlpha(0.8f));
-            g.fillRoundedRectangle(static_cast<float>(x), static_cast<float>(tabY),
-                                   static_cast<float>(tabWidth), static_cast<float>(tabHeight),
-                                   3.0f);
-        }
-
-        g.setColour(isActive ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
-                             : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        g.drawText(tabName, x, tabY, tabWidth - 14, tabHeight, juce::Justification::centred, true);
-
-        // Close button "x"
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f));
-        int closeX = x + tabWidth - 14;
-        int closeY = tabY + tabHeight / 2;
-        g.drawLine(static_cast<float>(closeX - 3), static_cast<float>(closeY - 3),
-                   static_cast<float>(closeX + 3), static_cast<float>(closeY + 3), 1.0f);
-        g.drawLine(static_cast<float>(closeX + 3), static_cast<float>(closeY - 3),
-                   static_cast<float>(closeX - 3), static_cast<float>(closeY + 3), 1.0f);
-
-        x += tabWidth + 4;
-    }
-
-    // "+" button
-    int plusSize = tabHeight;
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    g.drawText("+", x, tabY, plusSize, tabHeight, juce::Justification::centred, true);
+    // "+" button at the bottom of the header column
+    g.setFont(FontManager::getInstance().getUIFont(14.0f));
+    g.setColour(textColour);
+    g.drawText("+", 0, getHeight() - ADD_BUTTON_HEIGHT, leftMargin_, ADD_BUTTON_HEIGHT,
+               juce::Justification::centred, false);
 }
 
 // ============================================================================
-// Mouse handling for tab bar
+// Mouse handling
 // ============================================================================
 
 void MidiDrawerComponent::mouseMove(const juce::MouseEvent& e) {
@@ -313,54 +279,29 @@ void MidiDrawerComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Only handle clicks in the tab bar area (right of left margin)
-    if (e.x < leftMargin_ || e.y < RESIZE_HANDLE_HEIGHT ||
-        e.y >= RESIZE_HANDLE_HEIGHT + TAB_BAR_HEIGHT)
+    // Only handle clicks in the lane header column
+    if (e.x >= leftMargin_ || e.y < RESIZE_HANDLE_HEIGHT)
         return;
 
-    auto font = FontManager::getInstance().getUIFont(11.0f);
-    int x = leftMargin_ + 6;
-    int tabHeight = TAB_BAR_HEIGHT - 4;
-
-    // Check "Vel" tab
-    {
-        int tabWidth = static_cast<int>(font.getStringWidthFloat("Vel")) + 18;
-        if (e.x >= x && e.x < x + tabWidth) {
-            setActiveTab(0);
-            return;
-        }
-        x += tabWidth + 4;
+    // "+" button at the bottom of the header column
+    if (e.y >= getHeight() - ADD_BUTTON_HEIGHT) {
+        showAddLaneMenu();
+        return;
     }
 
-    // Check CC/PB tabs
+    // Close button (top-right corner of a removable lane's header)
     for (size_t i = 0; i < ccTabs_.size(); ++i) {
-        juce::String tabName = ccTabs_[i].name;
-        int tabWidth = static_cast<int>(font.getStringWidthFloat(tabName)) + 28;
-
-        if (e.x >= x && e.x < x + tabWidth) {
-            // Check if close button was clicked
-            int closeX = x + tabWidth - 14;
-            if (e.x >= closeX - 6 && e.x <= closeX + 6) {
+        auto row = getLaneRowBounds(static_cast<int>(i) + 1);
+        if (row.contains(e.getPosition())) {
+            if (e.x >= leftMargin_ - 18 && e.y <= row.getY() + 18)
                 removeTab(static_cast<int>(i) + 1);
-                return;
-            }
-
-            setActiveTab(static_cast<int>(i) + 1);
             return;
         }
-        x += tabWidth + 4;
-    }
-
-    // Check "+" button
-    int plusSize = tabHeight;
-    if (e.x >= x && e.x < x + plusSize) {
-        showAddTabMenu();
-        return;
     }
 }
 
 // ============================================================================
-// Tab management
+// Lane management
 // ============================================================================
 
 void MidiDrawerComponent::syncSettingsToCCLane(CCLaneComponent* lane) {
@@ -375,8 +316,16 @@ void MidiDrawerComponent::syncSettingsToCCLane(CCLaneComponent* lane) {
     // Undo commands are handled internally by CCLaneComponent (CurveEditorBase subclass)
 }
 
+void MidiDrawerComponent::growDrawerForLanes() {
+    // Ask the parent to grow the drawer so each lane keeps a usable height
+    // (the parent clamps to its own max)
+    int preferred = RESIZE_HANDLE_HEIGHT + getLaneCount() * PREFERRED_LANE_HEIGHT;
+    if (onResizeDrag && getHeight() < preferred)
+        onResizeDrag(preferred);
+}
+
 void MidiDrawerComponent::addCCTab(int ccNumber) {
-    // Check if tab already exists
+    // Check if the lane already exists
     for (const auto& tab : ccTabs_) {
         if (!tab.isPitchBend && tab.ccNumber == ccNumber)
             return;
@@ -391,16 +340,18 @@ void MidiDrawerComponent::addCCTab(int ccNumber) {
     tab.name = tab.ccLane->getLaneName();
 
     syncSettingsToCCLane(tab.ccLane.get());
-    addChildComponent(tab.ccLane.get());
+    addAndMakeVisible(tab.ccLane.get());
 
     ccTabs_.push_back(std::move(tab));
-    setActiveTab(static_cast<int>(ccTabs_.size()));  // Switch to new tab
+    growDrawerForLanes();
     resized();
     repaint();
+    if (onLanesChanged)
+        onLanesChanged();
 }
 
 void MidiDrawerComponent::addPitchBendTab() {
-    // Check if tab already exists
+    // Check if the lane already exists
     for (const auto& tab : ccTabs_) {
         if (tab.isPitchBend)
             return;
@@ -414,78 +365,59 @@ void MidiDrawerComponent::addPitchBendTab() {
     tab.name = "Pitch";
 
     syncSettingsToCCLane(tab.ccLane.get());
-    addChildComponent(tab.ccLane.get());
+    addAndMakeVisible(tab.ccLane.get());
 
     ccTabs_.push_back(std::move(tab));
-    setActiveTab(static_cast<int>(ccTabs_.size()));
+    growDrawerForLanes();
     resized();
     repaint();
+    if (onLanesChanged)
+        onLanesChanged();
 }
 
 void MidiDrawerComponent::removeTab(int tabIndex) {
     if (tabIndex <= 0 || tabIndex > static_cast<int>(ccTabs_.size()))
-        return;  // Can't remove velocity tab
+        return;  // Can't remove the velocity lane
 
     int ccIdx = tabIndex - 1;
     removeChildComponent(ccTabs_[ccIdx].ccLane.get());
     ccTabs_.erase(ccTabs_.begin() + ccIdx);
 
-    // Adjust active tab
-    if (activeTabIndex_ >= tabIndex) {
-        activeTabIndex_ = juce::jmax(0, activeTabIndex_ - 1);
-    }
-    updateLaneVisibility();
     resized();
     repaint();
-}
-
-void MidiDrawerComponent::setActiveTab(int tabIndex) {
-    if (tabIndex == activeTabIndex_)
-        return;
-
-    activeTabIndex_ = tabIndex;
-    updateLaneVisibility();
-    updatePbRangeVisibility();
-    repaint();
-}
-
-void MidiDrawerComponent::updateLaneVisibility() {
-    velocityLane_->setVisible(activeTabIndex_ == 0);
-    for (size_t i = 0; i < ccTabs_.size(); ++i) {
-        if (ccTabs_[i].ccLane) {
-            ccTabs_[i].ccLane->setVisible(static_cast<int>(i) == activeTabIndex_ - 1);
-        }
-    }
+    if (onLanesChanged)
+        onLanesChanged();
 }
 
 void MidiDrawerComponent::updatePbRangeVisibility() {
-    bool showPbRange = false;
-    int ccIdx = activeTabIndex_ - 1;
-    if (ccIdx >= 0 && ccIdx < static_cast<int>(ccTabs_.size())) {
-        showPbRange = ccTabs_[ccIdx].isPitchBend;
-        // Sync label text from the lane's current range
-        if (showPbRange && ccTabs_[ccIdx].ccLane) {
-            pbRangeLabel_->setText(juce::String(ccTabs_[ccIdx].ccLane->getPitchBendRange()),
-                                   juce::dontSendNotification);
+    // The PB range editor sits left of the icon column, in the pitchbend lane's row
+    int pbLaneIndex = -1;
+    for (size_t i = 0; i < ccTabs_.size(); ++i) {
+        if (ccTabs_[i].isPitchBend) {
+            pbLaneIndex = static_cast<int>(i) + 1;
+            if (ccTabs_[i].ccLane) {
+                pbRangeLabel_->setText(juce::String(ccTabs_[i].ccLane->getPitchBendRange()),
+                                       juce::dontSendNotification);
+            }
+            break;
         }
     }
 
+    bool showPbRange = pbLaneIndex >= 0 && leftMargin_ > 4;
     pbRangeLabel_->setVisible(showPbRange);
-    if (showPbRange && leftMargin_ > 0) {
-        // Position in the left column, vertically centered (with space for "Range" label above)
+    if (showPbRange) {
+        auto row = getLaneRowBounds(pbLaneIndex);
         int labelW = leftMargin_ - 4;
         int labelH = 18;
         int titleH = 12;
         int totalH = titleH + 2 + labelH;
-        int topOffset = RESIZE_HANDLE_HEIGHT + TAB_BAR_HEIGHT;
-        int laneHeight = getHeight() - topOffset;
-        int groupY = topOffset + (laneHeight - totalH) / 2;
+        int groupY = row.getY() + (row.getHeight() - totalH) / 2;
         pbRangeLabel_->setBounds(2, groupY + titleH + 2, labelW, labelH);
         pbRangeLabel_->toFront(false);
     }
 }
 
-void MidiDrawerComponent::showAddTabMenu() {
+void MidiDrawerComponent::showAddLaneMenu() {
     juce::PopupMenu menu;
     menu.addItem(1, "Pitchbend");
     menu.addSeparator();

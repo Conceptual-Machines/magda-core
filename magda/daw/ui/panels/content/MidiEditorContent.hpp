@@ -235,7 +235,7 @@ class MidiEditorContent : public PanelContent,
     virtual void onVelocityEdited();
     void setVelocityLaneSelectedNotes(const std::vector<size_t>& indices);
 
-    // --- MIDI drawer methods (tabbed: velocity + CC + pitchbend) ---
+    // --- MIDI drawer methods (stacked lanes: velocity + CC + pitchbend) ---
     void setupMidiDrawer();
     virtual void updateMidiDrawer();
 

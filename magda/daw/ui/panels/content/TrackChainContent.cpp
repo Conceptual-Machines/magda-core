@@ -778,10 +778,11 @@ TrackChainContent::TrackChainContent()
 
     // === HEADER BAR CONTROLS - LEFT SIDE (action buttons) ===
 
-    // Global mods toggle button (sine wave icon - same as rack/device mod buttons)
-    globalModsButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::bare_sine_svg,
-                                                           BinaryData::bare_sine_svgSize);
+    // Global mods toggle button (same icon as rack/device mod buttons)
+    globalModsButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::iconmodsboldm_svg,
+                                                           BinaryData::iconmodsboldm_svgSize);
     globalModsButton_->setClickingTogglesState(true);
+    globalModsButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     globalModsButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     globalModsButton_->setActiveColor(juce::Colours::white);
     globalModsButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
@@ -802,9 +803,10 @@ TrackChainContent::TrackChainContent()
     addChildComponent(*globalModsButton_);
 
     // Macro button (global macros toggle)
-    macroButton_ =
-        std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
+    macroButton_ = std::make_unique<magda::SvgButton>("Macro", BinaryData::iconmacrosboldm_svg,
+                                                      BinaryData::iconmacrosboldm_svgSize);
     macroButton_->setClickingTogglesState(true);
+    macroButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     macroButton_->setActiveColor(juce::Colours::white);
     macroButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
@@ -825,8 +827,8 @@ TrackChainContent::TrackChainContent()
     addChildComponent(*macroButton_);
 
     // Add rack button (rack icon with blue fill, grey border)
-    addRackButton_ =
-        std::make_unique<magda::SvgButton>("Rack", BinaryData::rack_svg, BinaryData::rack_svgSize);
+    addRackButton_ = std::make_unique<magda::SvgButton>("Rack", BinaryData::iconracksboldm_svg,
+                                                        BinaryData::iconracksboldm_svgSize);
     addRackButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // Match SVG fill color
     addRackButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     addRackButton_->setHoverColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).brighter(0.2f));
@@ -839,8 +841,9 @@ TrackChainContent::TrackChainContent()
     addChildComponent(*addRackButton_);
 
     // Tree view button (show chain tree dialog)
-    treeViewButton_ =
-        std::make_unique<magda::SvgButton>("Tree", BinaryData::tree_svg, BinaryData::tree_svgSize);
+    treeViewButton_ = std::make_unique<magda::SvgButton>("Tree", BinaryData::icontreeviewboldm_svg,
+                                                         BinaryData::icontreeviewboldm_svgSize);
+    treeViewButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     treeViewButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     treeViewButton_->setHoverColor(DarkTheme::getTextColour());
     treeViewButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
@@ -854,9 +857,11 @@ TrackChainContent::TrackChainContent()
     // Preset button (MAGDA track-chain presets menu) — same indigo cue as
     // device / rack preset buttons so it reads as the same feature, just
     // sitting on the LEFT of the track header instead of inside a node.
-    presetButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::preset_svg,
-                                                       BinaryData::preset_svgSize);
+    presetButton_ =
+        std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
+                                           BinaryData::iconpresetsroundboldm_svgSize);
     constexpr juce::uint32 PRESET_INDIGO = 0xFF5577CC;
+    presetButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     presetButton_->setNormalColor(juce::Colour(PRESET_INDIGO));
     presetButton_->setHoverColor(juce::Colour(PRESET_INDIGO).brighter(0.2f));
     presetButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
@@ -935,15 +940,15 @@ TrackChainContent::TrackChainContent()
     const auto muted = [](juce::uint32 c) {
         return juce::Colour(c).withMultipliedSaturation(0.55f).withMultipliedBrightness(0.85f);
     };
-    setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::oscilloscope_svg,
-                        BinaryData::oscilloscope_svgSize, "Oscilloscope (post-FX)", "oscilloscope",
-                        "Oscilloscope", muted(DarkTheme::ACCENT_GREEN));
-    setupAnalysisToggle(specToggleButton_, "Spectrum", BinaryData::spectrum_svg,
-                        BinaryData::spectrum_svgSize, "Spectrum Analyzer (post-FX)",
+    setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::iconoscilloscopeboldm_svg,
+                        BinaryData::iconoscilloscopeboldm_svgSize, "Oscilloscope (post-FX)",
+                        "oscilloscope", "Oscilloscope", muted(DarkTheme::ACCENT_GREEN));
+    setupAnalysisToggle(specToggleButton_, "Spectrum", BinaryData::iconspectrumboldm_svg,
+                        BinaryData::iconspectrumboldm_svgSize, "Spectrum Analyzer (post-FX)",
                         "spectrumanalyzer", "Spectrum Analyzer", muted(DarkTheme::ACCENT_CYAN));
-    setupAnalysisToggle(levelsToggleButton_, "Levels", BinaryData::levels_svg,
-                        BinaryData::levels_svgSize, "Levels meter (post-FX)", "levels", "Levels",
-                        muted(DarkTheme::ACCENT_BLUE));
+    setupAnalysisToggle(levelsToggleButton_, "Levels", BinaryData::iconlevelsboldm_svg,
+                        BinaryData::iconlevelsboldm_svgSize, "Levels meter (post-FX)", "levels",
+                        "Levels", muted(DarkTheme::ACCENT_BLUE));
 
     // Post-FX panel show/hide toggle. The panel itself lives in BottomPanel,
     // which wires onPostFxPanelToggled / setPostFxPanelOpen.

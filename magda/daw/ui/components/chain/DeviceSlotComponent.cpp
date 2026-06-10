@@ -211,8 +211,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     };
 
     // Mod button (toggle mod panel) - bare sine icon
-    modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::bare_sine_svg,
-                                                    BinaryData::bare_sine_svgSize);
+    modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::iconmodsboldm_svg,
+                                                    BinaryData::iconmodsboldm_svgSize);
     applyHeaderIconStyle(*modButton_, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
     modButton_->setActive(modPanelVisible_);
@@ -225,8 +225,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addAndMakeVisible(*modButton_);
 
     // Macro button (toggle macro panel) - knob icon
-    macroButton_ =
-        std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
+    macroButton_ = std::make_unique<magda::SvgButton>("Macro", BinaryData::iconmacrosboldm_svg,
+                                                      BinaryData::iconmacrosboldm_svgSize);
     applyHeaderIconStyle(*macroButton_, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
     macroButton_->setActive(paramPanelVisible_);
@@ -279,8 +279,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addAndMakeVisible(gainLabel_);
 
     // ----- MOCK UI (no wiring): MAGDA preset menu button (top header) -----
-    presetButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::preset_svg,
-                                                       BinaryData::preset_svgSize);
+    presetButton_ =
+        std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
+                                           BinaryData::iconpresetsroundboldm_svgSize);
     // Indigo sits between ACCENT_BLUE and ACCENT_PURPLE — distinct from both
     // utility blue (ui/multiOut) and macro purple, signals "MAGDA presets".
     constexpr juce::uint32 PRESET_INDIGO = 0xFF5577CC;

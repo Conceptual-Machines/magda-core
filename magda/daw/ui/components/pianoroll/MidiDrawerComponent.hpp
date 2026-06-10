@@ -14,13 +14,15 @@ class VelocityLaneComponent;
 class CCLaneComponent;
 
 /**
- * @brief Tabbed drawer container for MIDI editor lanes (velocity, CC, pitchbend)
+ * @brief Drawer container for MIDI editor lanes (velocity, CC, pitchbend)
  *
- * Provides a tab bar with:
- * - Permanent "Vel" tab (VelocityLaneComponent)
- * - "+" button to add CC or Pitchbend tabs
- * - Close button on added tabs
- * - Forwards clip/zoom/scroll to the active lane
+ * Lanes are stacked vertically (like automation lanes), all visible at once:
+ * - Permanent velocity lane at the top (VelocityLaneComponent)
+ * - Added CC/Pitchbend lanes below it
+ * Each lane is identified by its control name in the left margin (keyboard
+ * column), with a close button on removable lanes and a "+" button at the
+ * bottom to add CC or Pitchbend lanes.
+ * Forwards clip/zoom/scroll to all lanes.
  */
 class MidiDrawerComponent : public juce::Component {
   public:
@@ -55,16 +57,25 @@ class MidiDrawerComponent : public juce::Component {
         return velocityLane_.get();
     }
 
-    // Get the active lane name for header display
-    juce::String getActiveTabName() const;
-
     // Left margin (for keyboard/sidebar column that's part of our bounds)
     void setLeftMargin(int margin) {
         leftMargin_ = margin;
     }
 
     // Layout
-    static constexpr int TAB_BAR_HEIGHT = 26;
+    static constexpr int ADD_BUTTON_HEIGHT = 20;
+    static constexpr int PREFERRED_LANE_HEIGHT = 80;
+
+    // Show the add-lane menu (also reachable from the editor sidebar's CC button)
+    void showAddLaneMenu();
+
+    // True when any CC/pitchbend lane is open (beyond the permanent velocity lane)
+    bool hasExtraLanes() const {
+        return !ccTabs_.empty();
+    }
+
+    // Notified whenever CC/pitchbend lanes are added or removed
+    std::function<void()> onLanesChanged;
 
     void resized() override;
     void paint(juce::Graphics& g) override;
@@ -105,29 +116,33 @@ class MidiDrawerComponent : public juce::Component {
 
     // Components
     std::unique_ptr<VelocityLaneComponent> velocityLane_;
-    std::vector<TabInfo> ccTabs_;  // Additional CC/PB tabs
-    int activeTabIndex_ = 0;       // 0 = velocity, 1+ = ccTabs_[index-1]
+    std::vector<TabInfo> ccTabs_;  // Additional CC/PB lanes
 
-    // Tab bar
-    void paintTabBar(juce::Graphics& g, juce::Rectangle<int> area);
+    // Lane header column (left margin: control name, close button, "+" button)
+    void paintLaneHeaders(juce::Graphics& g);
     void mouseDown(const juce::MouseEvent& e) override;
 
-    // Tab management
+    // Stacked lane rows (full component coords)
+    int getLaneCount() const {
+        return 1 + static_cast<int>(ccTabs_.size());
+    }
+    juce::Rectangle<int> getLaneRowBounds(int laneIndex) const;
+
+    // Lane management
     void addCCTab(int ccNumber);
     void addPitchBendTab();
     void removeTab(int tabIndex);
-    void setActiveTab(int tabIndex);
-    void showAddTabMenu();
+    void growDrawerForLanes();
 
     // Resize handle
     static constexpr int RESIZE_HANDLE_HEIGHT = 4;
     bool isResizing_ = false;
     int resizeStartHeight_ = 0;
 
-    // Update visibility of lanes based on active tab
-    void updateLaneVisibility();
     // Forward settings to a CC lane
     void syncSettingsToCCLane(CCLaneComponent* lane);
+
+    void paintOverChildren(juce::Graphics& g) override;
 
     // Pitch bend range editor
     std::unique_ptr<juce::Label> pbRangeLabel_;

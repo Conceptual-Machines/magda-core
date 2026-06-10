@@ -126,8 +126,8 @@ class SessionView::SessionToggleRail : public juce::Component {
     SessionToggleRail() {
         auto& cfg = Config::getInstance();
 
-        setupButton(sendsButton_, "SessionShowSends", BinaryData::send_svg,
-                    BinaryData::send_svgSize, "Show sends", cfg.getMixerShowSends(),
+        setupButton(sendsButton_, "SessionShowSends", BinaryData::iconsendsboldm_svg,
+                    BinaryData::iconsendsboldm_svgSize, "Show sends", cfg.getMixerShowSends(),
                     [](bool v) { Config::getInstance().setMixerShowSends(v); });
 
         setupButton(routingButton_, "SessionShowRouting", BinaryData::inputoutput_svg,

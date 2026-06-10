@@ -818,7 +818,7 @@ void MidiEditorContent::setVelocityLaneSelectedNotes(const std::vector<size_t>& 
 }
 
 // ============================================================================
-// MIDI Drawer (tabbed: velocity + CC + pitchbend)
+// MIDI Drawer (stacked lanes: velocity + CC + pitchbend)
 // ============================================================================
 
 void MidiEditorContent::setupMidiDrawer() {
