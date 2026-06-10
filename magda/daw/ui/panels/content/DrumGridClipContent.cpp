@@ -1394,6 +1394,12 @@ class DrumGridClipGrid : public juce::Component,
                 fireSelectionChanged();
             };
 
+            noteComp->onNoteRangeSelected = [this](size_t index) {
+                magda::SelectionManager::getInstance().extendNoteSelectionTo(clipId_, index);
+                syncSelectionFromManager();
+                fireSelectionChanged();
+            };
+
             noteComp->onNoteDeselected = [this](size_t /*index*/) { fireSelectionChanged(); };
 
             noteComp->onNoteMoved = [this](size_t index, double newBeat, int newNoteNumber) {

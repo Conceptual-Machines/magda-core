@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <limits>
 #include <unordered_set>
 #include <vector>
 
@@ -563,6 +564,11 @@ class SelectionManager {
     void selectNotes(ClipId clipId, const std::vector<size_t>& noteIndices);
 
     /**
+     * @brief Extend note selection from the note anchor to the target note
+     */
+    void extendNoteSelectionTo(ClipId clipId, size_t noteIndex);
+
+    /**
      * @brief Add a note to the current selection
      */
     void addNoteToSelection(ClipId clipId, size_t noteIndex);
@@ -1037,6 +1043,8 @@ class SelectionManager {
     std::unordered_set<ClipId> selectedClipIds_;  // For multi-clip selection
     TimeRangeSelection timeRangeSelection_;
     NoteSelection noteSelection_;
+    ClipId anchorNoteClipId_ = INVALID_CLIP_ID;
+    size_t anchorNoteIndex_ = std::numeric_limits<size_t>::max();
     DeviceSelection deviceSelection_;
     ChainNodePath selectedChainNode_;    // For exclusive chain node selection
     ChainNodePath anchorChainNodePath_;  // Anchor for Shift+click range selection

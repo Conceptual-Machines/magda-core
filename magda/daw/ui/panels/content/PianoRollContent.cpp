@@ -447,6 +447,10 @@ void PianoRollContent::setupGridCallbacks() {
         }
     };
 
+    gridComponent_->onNoteRangeSelected = [](magda::ClipId clipId, size_t noteIndex) {
+        magda::SelectionManager::getInstance().extendNoteSelectionTo(clipId, noteIndex);
+    };
+
     // Handle batch note selection changes (lasso, deselect-all, Cmd+click toggle)
     gridComponent_->onNoteSelectionChanged = [this](magda::ClipId clipId,
                                                     std::vector<size_t> noteIndices) {

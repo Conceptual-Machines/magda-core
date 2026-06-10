@@ -1874,6 +1874,13 @@ void PianoRollGridComponent::createNoteComponents() {
                 }
             };
 
+            noteComp->onNoteRangeSelected = [this, clipId](size_t index) {
+                if (onNoteRangeSelected) {
+                    onNoteRangeSelected(clipId, index);
+                }
+                syncSelectionFromManager();
+            };
+
             noteComp->onNoteDeselected = [this, clipId](size_t /*index*/) {
                 // Cmd+click toggled this note OFF — remove from SelectionManager
                 std::vector<size_t> selectedIndices;

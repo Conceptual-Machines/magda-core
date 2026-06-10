@@ -17,6 +17,7 @@
 #include "../tracks/TrackContentPanel.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "core/AppPaths.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipOperations.hpp"
@@ -127,6 +128,22 @@ void strokeClippedRoundedRect(juce::Graphics& g, juce::Rectangle<int> bounds,
     g.setColour(colour);
     g.strokePath(makeClippedRoundedRectPath(bounds, visibleBounds, radius),
                  juce::PathStrokeType(strokeWidth));
+}
+
+void logArrangeRangeSelect(const juce::String& message) {
+    const auto line = juce::Time::getCurrentTime().toString(true, true, true, true) +
+                      " [ArrangeRangeSelect] " + message;
+    DBG(line);
+    juce::Logger::writeToLog(line);
+
+    auto logFile = paths::logsDir().getChildFile("arrange-range-select.log");
+    logFile.getParentDirectory().createDirectory();
+    if (!logFile.appendText(line + "\n", false, false, "\n")) {
+        const auto failureLine = "[ArrangeRangeSelect] failed to append dedicated log file: " +
+                                 logFile.getFullPathName();
+        DBG(failureLine);
+        juce::Logger::writeToLog(failureLine);
+    }
 }
 
 }  // namespace
@@ -1061,39 +1078,7 @@ void ClipComponent::resized() {
 }
 
 bool ClipComponent::hitTest(int x, int y) {
-    // Determine if click is in upper vs lower zone based on TRACK height, not clip height
-    // This ensures zone detection is consistent with TrackContentPanel::isInUpperTrackZone
-
-    if (!parentPanel_) {
-        // Fallback to clip-based detection
-        int midY = getHeight() / 2;
-        return y < midY && x >= 0 && x < getWidth();
-    }
-
-    // Convert local y to parent coordinates
-    int parentY = getY() + y;
-
-    // Check if click is in lower half of the track
-    // Using the same logic as TrackContentPanel::isInUpperTrackZone
-    int trackIndex = parentPanel_->getTrackIndexAtY(parentY);
-    if (trackIndex < 0) {
-        // Can't determine track, use clip-based fallback
-        int midY = getHeight() / 2;
-        return y < midY && x >= 0 && x < getWidth();
-    }
-
-    // Calculate track midpoint (same as isInUpperTrackZone)
-    int trackY = parentPanel_->getTrackYPosition(trackIndex);
-    int trackHeight = parentPanel_->getTrackHeight(trackIndex);
-    int trackMidY = trackY + trackHeight / 2;
-
-    // If click is in lower half of the track, let parent handle it
-    if (parentY >= trackMidY) {
-        return false;
-    }
-
-    // Click is in upper zone - check x bounds
-    return x >= 0 && x < getWidth() && y >= 0;
+    return x >= 0 && x < getWidth() && y >= 0 && y < getHeight();
 }
 
 // ============================================================================
@@ -1137,12 +1122,42 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     const bool isBladeClick = e.mods.isAltDown() && e.mods.isCommandDown() && !e.mods.isShiftDown();
     const bool isEraseClick = e.mods.isShiftDown() && e.mods.isCtrlDown();
 
+    if (e.mods.isShiftDown()) {
+        logArrangeRangeSelect(
+            "ClipComponent::mouseDown clip=" + juce::String(static_cast<int>(clipId_)) +
+            " track=" + juce::String(static_cast<int>(clip->trackId)) + " x=" + juce::String(e.x) +
+            " y=" + juce::String(e.y) + " shift=" + juce::String(e.mods.isShiftDown() ? 1 : 0) +
+            " cmd=" + juce::String(e.mods.isCommandDown() ? 1 : 0) +
+            " ctrl=" + juce::String(e.mods.isCtrlDown() ? 1 : 0) +
+            " alt=" + juce::String(e.mods.isAltDown() ? 1 : 0) +
+            " popup=" + juce::String(e.mods.isPopupMenu() ? 1 : 0) + " alreadySelected=" +
+            juce::String(isAlreadySelected ? 1 : 0) + " selectedCountBefore=" +
+            juce::String(static_cast<int>(selectionManager.getSelectedClipCount())) +
+            " anchorBefore=" + juce::String(static_cast<int>(selectionManager.getAnchorClip())) +
+            " frozen=" + juce::String(isFrozen ? 1 : 0) +
+            " rangePolicy=" + juce::String(magda::isRangeSelectClick(e.mods) ? 1 : 0) +
+            " erasePolicy=" + juce::String(isEraseClick ? 1 : 0) +
+            " leftEdge=" + juce::String(isOnLeftEdge(e.x) ? 1 : 0) +
+            " rightEdge=" + juce::String(isOnRightEdge(e.x) ? 1 : 0) +
+            " fadeIn=" + juce::String(isOnFadeInHandle(e.x, e.y) ? 1 : 0) +
+            " fadeOut=" + juce::String(isOnFadeOutHandle(e.x, e.y) ? 1 : 0) +
+            " volume=" + juce::String(isOnVolumeHandle(e.x, e.y) ? 1 : 0));
+    }
+
     // Frozen tracks: allow selection (so piano roll shows content) but block editing
     if (isFrozen && (!e.mods.isPopupMenu() || isModifiedSelectionClick)) {
         // Still allow click-to-select and modifier-click toggle
         if (isModifiedSelectionClick) {
+            if (e.mods.isShiftDown())
+                logArrangeRangeSelect("ClipComponent frozen branch: toggle selection");
             selectionManager.toggleClipSelection(clipId_);
+        } else if (magda::isRangeSelectClick(e.mods)) {
+            logArrangeRangeSelect("ClipComponent frozen branch: extending range to clip=" +
+                                  juce::String(static_cast<int>(clipId_)));
+            selectionManager.extendSelectionTo(clipId_);
         } else {
+            if (e.mods.isShiftDown())
+                logArrangeRangeSelect("ClipComponent frozen branch: plain select fallback");
             selectionManager.selectClip(clipId_);
         }
         isSelected_ = selectionManager.isClipSelected(clipId_);
@@ -1155,6 +1170,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // Shift+Ctrl-click acts as an eraser for the clip under the cursor. If the
     // clicked clip is part of a multi-selection, erase the selected group.
     if (isEraseClick) {
+        logArrangeRangeSelect("ClipComponent erase branch: Shift+Ctrl consumed for delete");
         std::vector<ClipId> clipIds;
         const auto& selected = selectionManager.getSelectedClips();
         if (selected.count(clipId_) && selected.size() > 1) {
@@ -1182,6 +1198,8 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
 
     // Cmd-click toggles clip selection without starting a drag.
     if (isModifiedSelectionClick) {
+        if (e.mods.isShiftDown())
+            logArrangeRangeSelect("ClipComponent modified-selection branch: toggle selection");
         selectionManager.toggleClipSelection(clipId_);
         isSelected_ = selectionManager.isClipSelected(clipId_);
 
@@ -1197,16 +1215,28 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // Shift+edge = stretch (falls through to drag setup); Shift+body = range
     // select from the anchor, applied immediately. Dragging afterwards moves
     // the selected range via the multi-drag path.
+    bool didRangeSelect = false;
     pendingAltAction_ = false;
     if (e.mods.isShiftDown()) {
-        if (isOnLeftEdge(e.x) || isOnRightEdge(e.x)) {
-            // Shift+edge = stretch mode — fall through to drag setup below
-        } else if (magda::isRangeSelectClick(e.mods)) {
+        if (magda::isRangeSelectClick(e.mods)) {
+            logArrangeRangeSelect("ClipComponent range branch: extending to clip=" +
+                                  juce::String(static_cast<int>(clipId_)) + " edgeHit=" +
+                                  juce::String((isOnLeftEdge(e.x) || isOnRightEdge(e.x)) ? 1 : 0));
             selectionManager.extendSelectionTo(clipId_);
+            didRangeSelect = true;
             isSelected_ = selectionManager.isClipSelected(clipId_);
-            if (isSelected_ && onClipSelected) {
-                onClipSelected(clipId_);
+            logArrangeRangeSelect(
+                "ClipComponent range branch complete: selectedNow=" +
+                juce::String(isSelected_ ? 1 : 0) + " selectedCountAfter=" +
+                juce::String(static_cast<int>(selectionManager.getSelectedClipCount())) +
+                " anchorAfter=" + juce::String(static_cast<int>(selectionManager.getAnchorClip())));
+            if (isSelected_) {
+                ensureEditorOpen(clipId_);
             }
+            logArrangeRangeSelect(
+                "ClipComponent range branch after editor-open: selectedCount=" +
+                juce::String(static_cast<int>(selectionManager.getSelectedClipCount())) +
+                " anchor=" + juce::String(static_cast<int>(selectionManager.getAnchorClip())));
         }
     } else if (e.mods.isAltDown() && !e.mods.isCommandDown()) {
         // Alt+body: copy on drag, edit cursor on click — both resolve later,
@@ -1246,10 +1276,18 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
 
     if (pendingAltAction_) {
         // Selection deferred: drag start copies, plain release places the edit cursor
+    } else if (didRangeSelect) {
+        logArrangeRangeSelect("ClipComponent preserving range selection through normal click path");
+        isSelected_ = selectionManager.isClipSelected(clipId_);
     } else if (isAlreadySelected && selectedCount > 1) {
         isSelected_ = true;
         shouldDeselectOnMouseUp_ = true;
     } else {
+        if (e.mods.isShiftDown()) {
+            logArrangeRangeSelect(
+                "ClipComponent normal select fallback after Shift; this should only "
+                "happen for non-range Shift gestures");
+        }
         selectionManager.selectClip(clipId_);
         isSelected_ = true;
 
@@ -2352,6 +2390,10 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
         // reduce to single selection (standard DAW behavior)
         if (shouldDeselectOnMouseUp_) {
             auto& sm = SelectionManager::getInstance();
+            logArrangeRangeSelect("ClipComponent::mouseUp collapsing multi-selection to clip=" +
+                                  juce::String(static_cast<int>(clipId_)) +
+                                  " dragMode=None noDrag selectedCountBefore=" +
+                                  juce::String(static_cast<int>(sm.getSelectedClipCount())));
             sm.selectClip(clipId_);
             isSelected_ = true;
 
@@ -2609,12 +2651,9 @@ void ClipComponent::updateCursor(const juce::ModifierKeys& mods) {
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
         }
     } else if (isClipSelected) {
-        // Shift = copy cursor, otherwise grab cursor
-        if (isShiftDown) {
-            setMouseCursor(juce::MouseCursor::CopyingCursor);
-        } else {
-            setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-        }
+        // Shift over the body is a selection gesture now (range select);
+        // the copy cursor lives on Alt, handled above
+        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
     } else {
         // Normal cursor when not selected (need to click to select first)
         setMouseCursor(juce::MouseCursor::NormalCursor);
