@@ -102,6 +102,11 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // Visible whenever the active content is PianoRoll or DrumGridClipView.
     std::unique_ptr<SvgButton> fullscreenToggle_;
 
+    // Multi-track overlay selector (ghost notes from other tracks, #1281).
+    // Visible alongside the editor tabs; lit while any overlay track is on.
+    std::unique_ptr<SvgButton> overlayTracksButton_;
+    void updateOverlayTracksButtonState();
+
     // Centralised header bar — content types populate it via populateHeader()
     class HeaderBar;
     std::unique_ptr<HeaderBar> headerBar_;

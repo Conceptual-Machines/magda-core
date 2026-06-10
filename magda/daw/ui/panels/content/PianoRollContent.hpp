@@ -153,6 +153,9 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     void setNoteHeightAnchored(int height, int anchorNote, int anchorScreenY, bool persist);
     void loadNoteHeightFromClip(magda::ClipId clipId);
 
+    // Multi-track overlay: push the shared overlay set into the grid
+    void applyOverlayTracks() override;
+
     // Helper to get current header height based on chord row visibility
     int getHeaderHeight() const {
         return showChordRow_ ? HEADER_HEIGHT : RULER_HEIGHT;

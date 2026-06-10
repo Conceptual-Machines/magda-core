@@ -86,6 +86,7 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     void onGridResolutionChanged() override;
     void updateGridLoopRegion() override;
     void setGridPhasePreview(double beats, bool active) override;
+    void applyOverlayTracks() override;
 
     // Override velocity lane methods
     void updateVelocityLane() override;

@@ -84,6 +84,13 @@ class PianoRollGridComponent : public juce::Component,
         return trackId_;
     }
 
+    // Multi-track overlay (ghost notes from other tracks, #1281). Overlay
+    // tracks render as dimmed, non-interactive notes in their track colour.
+    void setOverlayTracks(std::vector<TrackId> trackIds);
+    const std::vector<TrackId>& getOverlayTracks() const {
+        return overlayTrackIds_;
+    }
+
     // Zoom settings
     void setPixelsPerBeat(double ppb);
     double getPixelsPerBeat() const override {
@@ -266,6 +273,10 @@ class PianoRollGridComponent : public juce::Component,
     std::vector<ClipId> selectedClipIds_;  // All selected clips (editable)
     std::vector<ClipId> clipIds_;          // All clips being displayed
     TrackId trackId_ = INVALID_TRACK_ID;
+
+    // Tracks whose MIDI renders as a ghost overlay (paint-only, never interactive)
+    std::vector<TrackId> overlayTrackIds_;
+    void paintOverlayNotes(juce::Graphics& g);
 
     // Note range
     static constexpr int MIN_NOTE = 0;    // C-2

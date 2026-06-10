@@ -2,6 +2,7 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <algorithm>
 #include <limits>
 
 #include "../../state/TimelineController.hpp"
@@ -49,6 +50,9 @@ PianoRollGridComponent::~PianoRollGridComponent() {
 void PianoRollGridComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
     paintGrid(g, bounds);
+
+    // Ghost notes from overlay tracks, under everything else (#1281)
+    paintOverlayNotes(g);
 
     // Draw clip boundaries for multi-clip view
     if (clipIds_.size() > 1) {
@@ -341,6 +345,70 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         g.fillRect(selectionRect);
         g.setColour(juce::Colour(0xAA6688CC));
         g.drawRect(selectionRect, 1.0f);
+    }
+}
+
+void PianoRollGridComponent::setOverlayTracks(std::vector<TrackId> trackIds) {
+    overlayTrackIds_ = std::move(trackIds);
+    repaint();
+}
+
+void PianoRollGridComponent::paintOverlayNotes(juce::Graphics& g) {
+    if (overlayTrackIds_.empty())
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+
+    double tempo = 120.0;
+    if (auto* controller = TimelineController::getCurrent())
+        tempo = controller->getState().tempo.bpm;
+
+    const auto visibleArea = g.getClipBounds();
+
+    for (TrackId overlayTrackId : overlayTrackIds_) {
+        // The edited track's own clips are already rendered as note components
+        if (overlayTrackId == trackId_)
+            continue;
+
+        for (ClipId overlayClipId : clipManager.getClipsOnTrack(overlayTrackId)) {
+            const auto* clip = clipManager.getClip(overlayClipId);
+            if (!clip || !clip->isMidi())
+                continue;
+
+            // Ghost notes take the source clip's colour
+            const auto colour = clip->colour;
+
+            // Same display math as updateNoteComponentBounds()' multi-clip
+            // path: position notes on the shared timeline, shifted by the
+            // edited clip's start in relative mode.
+            const double visibleStart = ClipOperations::getMidiVisibleRange(*clip).startBeat;
+            double clipOffsetBeats = timelineStartBeats(*clip, tempo);
+            if (relativeMode_)
+                clipOffsetBeats -= clipStartBeats_;
+
+            for (auto note : clip->midiNotes) {
+                if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, note))
+                    continue;
+
+                const double displayBeat = clipOffsetBeats + note.startBeat - visibleStart;
+                const int x = beatToPixel(displayBeat);
+                const int w = juce::jmax(4, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
+                if (x + w < visibleArea.getX() || x > visibleArea.getRight())
+                    continue;
+
+                const int y = noteNumberToY(note.noteNumber);
+                if (y + noteHeight_ < visibleArea.getY() || y > visibleArea.getBottom())
+                    continue;
+
+                const auto rect = juce::Rectangle<float>(
+                    static_cast<float>(x), static_cast<float>(y + 1), static_cast<float>(w),
+                    static_cast<float>(noteHeight_ - 2));
+                g.setColour(colour.withAlpha(0.22f));
+                g.fillRoundedRectangle(rect, 2.0f);
+                g.setColour(colour.withAlpha(0.45f));
+                g.drawRoundedRectangle(rect, 2.0f, 1.0f);
+            }
+        }
     }
 }
 
@@ -1587,6 +1655,17 @@ void PianoRollGridComponent::clipPropertyChanged(ClipId clipId) {
                 self->refreshNotes();
             }
         });
+        return;
+    }
+
+    // Ghost overlay is paint-only, so a repaint is enough when an overlay
+    // track's clip changes
+    if (!overlayTrackIds_.empty()) {
+        const auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip && std::find(overlayTrackIds_.begin(), overlayTrackIds_.end(), clip->trackId) !=
+                        overlayTrackIds_.end()) {
+            repaint();
+        }
     }
 }
 

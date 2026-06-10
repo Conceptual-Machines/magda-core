@@ -1,5 +1,6 @@
 #include "MidiEditorContent.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "audio/MidiBridge.hpp"
@@ -19,8 +20,9 @@
 
 namespace magda::daw::ui {
 
-// Static member — persists drawer open/closed state across editor switches
+// Static members — persist across editor switches
 bool MidiEditorContent::velocityDrawerOpen_ = false;
+std::vector<magda::TrackId> MidiEditorContent::overlayTrackIds_;
 
 VerticalZoomStrip::VerticalZoomStrip(int minValue, int maxValue)
     : minValue_(minValue), maxValue_(maxValue) {
@@ -587,6 +589,97 @@ void MidiEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             }
         });
     }
+}
+
+// ============================================================================
+// Multi-track overlay (ghost notes from other tracks, #1281)
+// ============================================================================
+
+void MidiEditorContent::showOverlayTracksMenu(juce::Component* anchor,
+                                              std::function<void()> onChanged) {
+    constexpr int CLEAR_ALL_ID = 9001;
+
+    auto& trackManager = magda::TrackManager::getInstance();
+    auto& clipManager = magda::ClipManager::getInstance();
+
+    // The edited clip's track renders at full strength already
+    magda::TrackId activeTrackId = magda::INVALID_TRACK_ID;
+    if (const auto* clip = clipManager.getClip(editingClipId_))
+        activeTrackId = clip->trackId;
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("Overlay Tracks");
+
+    // One entry per other track that has MIDI clips, in its track colour
+    std::vector<magda::TrackId> menuTracks;
+    for (const auto& track : trackManager.getTracks()) {
+        if (track.id == activeTrackId)
+            continue;
+
+        bool hasMidi = false;
+        for (magda::ClipId cid : clipManager.getClipsOnTrack(track.id)) {
+            const auto* clip = clipManager.getClip(cid);
+            if (clip && clip->isMidi()) {
+                hasMidi = true;
+                break;
+            }
+        }
+        if (!hasMidi)
+            continue;
+
+        juce::PopupMenu::Item item(track.name);
+        item.itemID = static_cast<int>(menuTracks.size()) + 1;
+        item.isTicked = std::find(overlayTrackIds_.begin(), overlayTrackIds_.end(), track.id) !=
+                        overlayTrackIds_.end();
+        item.colour = track.colour;
+        menu.addItem(item);
+        menuTracks.push_back(track.id);
+    }
+
+    if (menuTracks.empty()) {
+        juce::PopupMenu::Item placeholder("No other MIDI tracks");
+        placeholder.itemID = -2;
+        placeholder.isEnabled = false;
+        menu.addItem(placeholder);
+    }
+
+    menu.addSeparator();
+    menu.addItem(CLEAR_ALL_ID, "Clear All", !overlayTrackIds_.empty());
+
+    auto safeThis = juce::Component::SafePointer<MidiEditorContent>(this);
+    auto safeAnchor = juce::Component::SafePointer<juce::Component>(anchor);
+
+    auto options = juce::PopupMenu::Options();
+    if (anchor)
+        options = options.withTargetComponent(anchor);
+
+    menu.showMenuAsync(
+        options, [safeThis, safeAnchor, menuTracks, onChanged = std::move(onChanged)](int result) {
+            if (!safeThis || result == 0 || result == -2)
+                return;
+
+            if (result == CLEAR_ALL_ID) {
+                overlayTrackIds_.clear();
+            } else if (result >= 1 && result <= static_cast<int>(menuTracks.size())) {
+                const auto trackId = menuTracks[static_cast<size_t>(result - 1)];
+                auto it = std::find(overlayTrackIds_.begin(), overlayTrackIds_.end(), trackId);
+                if (it != overlayTrackIds_.end())
+                    overlayTrackIds_.erase(it);
+                else
+                    overlayTrackIds_.push_back(trackId);
+            } else {
+                return;
+            }
+
+            safeThis->applyOverlayTracks();
+            if (onChanged)
+                onChanged();
+
+            // Per-track toggles keep the menu session going (multi-select);
+            // Clear All is a one-shot action
+            if (result != CLEAR_ALL_ID)
+                safeThis->showOverlayTracksMenu(safeAnchor.getComponent(), onChanged);
+        });
 }
 
 // ============================================================================

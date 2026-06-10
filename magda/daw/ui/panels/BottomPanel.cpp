@@ -191,6 +191,20 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     }
     headerBar_->addChildComponent(drumGridTab_.get());
 
+    // Multi-track overlay selector (ghost notes, #1281) — applies to piano
+    // roll and drum grid; opens the sticky multi-select track menu.
+    overlayTracksButton_ = std::make_unique<SvgButton>("OverlayTracks", BinaryData::stacks_svg,
+                                                       BinaryData::stacks_svgSize);
+    overlayTracksButton_->setTooltip("Overlay tracks (ghost notes)");
+    overlayTracksButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    overlayTracksButton_->onClick = [this]() {
+        if (auto* editor = dynamic_cast<daw::ui::MidiEditorContent*>(getActiveContent())) {
+            editor->showOverlayTracksMenu(overlayTracksButton_.get(),
+                                          [this]() { updateOverlayTracksButtonState(); });
+        }
+    };
+    headerBar_->addChildComponent(overlayTracksButton_.get());
+
     // Fullscreen toggle (issue #1282) — applies to piano roll and drum grid.
     fullscreenToggle_ = std::make_unique<SvgButton>("EditorFullscreen", BinaryData::enter_fs_svg,
                                                     BinaryData::enter_fs_svgSize);
@@ -285,6 +299,7 @@ BottomPanel::~BottomPanel() {
     headerBar_.reset();
     pianoRollTab_.reset();
     drumGridTab_.reset();
+    overlayTracksButton_.reset();
     fullscreenToggle_.reset();
     propsResizer_.reset();
     audioPropsPanel_.reset();
@@ -1112,6 +1127,8 @@ void BottomPanel::addMidiControlsToHeader() {
         sliceButton_->setVisible(false);
         bendButton_->setVisible(false);
     }
+    overlayTracksButton_->setVisible(showEditorTabs_);
+    updateOverlayTracksButtonState();
 }
 
 void BottomPanel::removeMidiControlsFromHeader() {
@@ -1129,8 +1146,17 @@ void BottomPanel::hideMidiHeaderControls() {
     drumGridTab_->setVisible(false);
     sliceButton_->setVisible(false);
     bendButton_->setVisible(false);
+    if (overlayTracksButton_)
+        overlayTracksButton_->setVisible(false);
     if (fullscreenToggle_)
         fullscreenToggle_->setVisible(false);
+}
+
+void BottomPanel::updateOverlayTracksButtonState() {
+    if (!overlayTracksButton_)
+        return;
+    auto* editor = dynamic_cast<daw::ui::MidiEditorContent*>(getActiveContent());
+    overlayTracksButton_->setActive(editor != nullptr && editor->hasOverlayTracks());
 }
 
 void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
@@ -1177,6 +1203,8 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
         pianoRollTab_->setBounds(tabX, tabY, iconSize, iconSize);
         tabX += iconSize + 4;
         drumGridTab_->setBounds(tabX, tabY, iconSize, iconSize);
+        tabX += iconSize + 12;
+        overlayTracksButton_->setBounds(tabX, tabY, iconSize, iconSize);
 
         // Note tools centered horizontally in header
         const int toolGap = 4;
