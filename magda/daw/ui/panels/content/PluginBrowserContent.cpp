@@ -251,20 +251,20 @@ class PluginBrowserContent::CategoryTreeItem : public juce::TreeViewItem {
 PluginBrowserContent::PluginBrowserContent() {
     setName("Plugin Browser");
 
-    instrumentIcon_ = juce::Drawable::createFromImageData(BinaryData::INSTRUMENT_DEVICE_svg,
-                                                          BinaryData::INSTRUMENT_DEVICE_svgSize);
+    instrumentIcon_ = juce::Drawable::createFromImageData(BinaryData::iconinstrumentboldm_svg,
+                                                          BinaryData::iconinstrumentboldm_svgSize);
     if (instrumentIcon_)
         instrumentIcon_->replaceColour(juce::Colour(0xFFB3B3B3),
                                        DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
 
-    effectIcon_ = juce::Drawable::createFromImageData(BinaryData::AUDIODEVICE_svg,
-                                                      BinaryData::AUDIODEVICE_svgSize);
+    effectIcon_ = juce::Drawable::createFromImageData(BinaryData::iconaudiofxboldm_svg,
+                                                      BinaryData::iconaudiofxboldm_svgSize);
     if (effectIcon_)
         effectIcon_->replaceColour(juce::Colour(0xFFB3B3B3),
                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
 
-    midiIcon_ = juce::Drawable::createFromImageData(BinaryData::MIDIDEVICE_svg,
-                                                    BinaryData::MIDIDEVICE_svgSize);
+    midiIcon_ = juce::Drawable::createFromImageData(BinaryData::iconmidifxboldm_svg,
+                                                    BinaryData::iconmidifxboldm_svgSize);
     if (midiIcon_)
         midiIcon_->replaceColour(juce::Colour(0xFFB3B3B3),
                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));

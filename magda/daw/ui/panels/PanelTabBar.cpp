@@ -19,7 +19,7 @@ SvgIconData getSvgForContentType(PanelContentType type) {
         case PanelContentType::MediaExplorer:
             return {BinaryData::iconbrowserboldm_svg, BinaryData::iconbrowserboldm_svgSize};
         case PanelContentType::PresetBrowser:
-            return {BinaryData::preset_svg, BinaryData::preset_svgSize};
+            return {BinaryData::iconpresetboldm_svg, BinaryData::iconpresetboldm_svgSize};
         case PanelContentType::Inspector:
             return {BinaryData::iconinspectorboldm_svg, BinaryData::iconinspectorboldm_svgSize};
         case PanelContentType::AIChatConsole:

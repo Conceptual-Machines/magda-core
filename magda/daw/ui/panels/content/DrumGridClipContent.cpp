@@ -2145,7 +2145,7 @@ DrumGridClipContent::DrumGridClipContent() {
 
     viewport_->setViewedComponent(gridComponent_.get(), false);
 
-    // Setup MIDI drawer (tabbed: velocity + CC + pitchbend)
+    // Setup MIDI drawer (stacked lanes: velocity + CC + pitchbend)
     setupMidiDrawer();
 
     // If base found a selected clip, set it up

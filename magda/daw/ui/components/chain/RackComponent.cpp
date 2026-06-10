@@ -80,8 +80,8 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     // === HEADER EXTRA CONTROLS ===
 
     // MOD button (modulators toggle) - bare sine icon
-    modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::bare_sine_svg,
-                                                    BinaryData::bare_sine_svgSize);
+    modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::iconmodsboldm_svg,
+                                                    BinaryData::iconmodsboldm_svgSize);
     modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
     node_header::applyHeaderIconStyle(*modButton_, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     modButton_->setActive(modPanelVisible_);
@@ -92,8 +92,8 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     addAndMakeVisible(*modButton_);
 
     // MACRO button (macros toggle) - knob icon
-    macroButton_ =
-        std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
+    macroButton_ = std::make_unique<magda::SvgButton>("Macro", BinaryData::iconmacrosboldm_svg,
+                                                      BinaryData::iconmacrosboldm_svgSize);
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
     node_header::applyHeaderIconStyle(*macroButton_,
                                       DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
@@ -107,8 +107,9 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     // PRESET button (MAGDA rack presets menu) — same indigo pill recipe as
     // DeviceSlotComponent's preset button so device and rack presets read
     // as the same feature visually.
-    presetButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::preset_svg,
-                                                       BinaryData::preset_svgSize);
+    presetButton_ =
+        std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
+                                           BinaryData::iconpresetsroundboldm_svgSize);
     constexpr juce::uint32 PRESET_INDIGO = 0xFF5577CC;
     node_header::applyHeaderIconStyle(*presetButton_, juce::Colour(PRESET_INDIGO),
                                       /*toggling*/ false);

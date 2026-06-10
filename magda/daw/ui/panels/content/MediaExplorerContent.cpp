@@ -627,10 +627,8 @@ MediaExplorerContent::MediaExplorerContent() {
     addAndMakeVisible(searchBox_);
 
     // Setup type filter buttons with icons (issue #768).
-    // Each filter type gets a distinct active-state backdrop so a user can
-    // tell at a glance which combinations are on. The SVGs themselves are
-    // single-colour outlines; differentiation lives entirely in the
-    // activeBackgroundColor + activeColor pair.
+    // Each filter type gets a distinct active-state tint so a user can
+    // tell at a glance which combinations are on.
     audioFilterActive_ = magda::Config::getInstance().getBrowserFilterAudio();
     midiFilterActive_ = magda::Config::getInstance().getBrowserFilterMidi();
     presetFilterActive_ = magda::Config::getInstance().getBrowserFilterPreset();
@@ -639,39 +637,33 @@ MediaExplorerContent::MediaExplorerContent() {
     const auto midiActiveTint = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
     const auto presetActiveTint = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
 
-    // Dual-icon mode: the SVG files themselves carry the active-state
-    // styling (background fill baked in), so the button only has to swap
-    // between the two assets per state. activeTint kept around in case we
-    // want a complementary border later — currently unused.
-    (void)audioActiveTint;
-    (void)midiActiveTint;
-    (void)presetActiveTint;
-
     auto setupFilter = [&](std::unique_ptr<magda::SvgButton>& btn, const juce::String& name,
-                           const char* offSvg, int offSize, const char* onSvg, int onSize,
-                           bool initialState, const juce::String& tooltip) {
-        btn = std::make_unique<magda::SvgButton>(name, offSvg, offSize, onSvg, onSize);
+                           const char* svg, int svgSize, juce::Colour activeTint, bool initialState,
+                           const juce::String& tooltip) {
+        btn = std::make_unique<magda::SvgButton>(name, svg, static_cast<size_t>(svgSize));
+        btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        btn->setActiveColor(activeTint);
         btn->setToggleable(true);
         btn->setClickingTogglesState(true);
         btn->setToggleState(initialState, juce::dontSendNotification);
         btn->setTooltip(tooltip);
     };
 
-    setupFilter(audioFilterButton_, "Audio", BinaryData::audio_db_off_svg,
-                BinaryData::audio_db_off_svgSize, BinaryData::audio_db_on_svg,
-                BinaryData::audio_db_on_svgSize, audioFilterActive_, "Show audio files");
+    setupFilter(audioFilterButton_, "Audio", BinaryData::iconaudioboldm_svg,
+                BinaryData::iconaudioboldm_svgSize, audioActiveTint, audioFilterActive_,
+                "Show audio files");
     audioFilterButton_->onClick = [this]() { onTypeIconClicked(audioFilterButton_.get()); };
     addAndMakeVisible(*audioFilterButton_);
 
-    setupFilter(midiFilterButton_, "MIDI", BinaryData::midi_db_off_svg,
-                BinaryData::midi_db_off_svgSize, BinaryData::midi_db_on_svg,
-                BinaryData::midi_db_on_svgSize, midiFilterActive_, "Show MIDI files");
+    setupFilter(midiFilterButton_, "MIDI", BinaryData::iconmidiboldm_svg,
+                BinaryData::iconmidiboldm_svgSize, midiActiveTint, midiFilterActive_,
+                "Show MIDI files");
     midiFilterButton_->onClick = [this]() { onTypeIconClicked(midiFilterButton_.get()); };
     addAndMakeVisible(*midiFilterButton_);
 
-    setupFilter(presetFilterButton_, "Presets", BinaryData::presets_db_off_svg,
-                BinaryData::presets_db_off_svgSize, BinaryData::presets_db_on_svg,
-                BinaryData::presets_db_on_svgSize, presetFilterActive_, "Show MAGDA presets");
+    setupFilter(presetFilterButton_, "Presets", BinaryData::iconpresetboldm_svg,
+                BinaryData::iconpresetboldm_svgSize, presetActiveTint, presetFilterActive_,
+                "Show MAGDA presets");
     presetFilterButton_->onClick = [this]() { onTypeIconClicked(presetFilterButton_.get()); };
     addAndMakeVisible(*presetFilterButton_);
 
