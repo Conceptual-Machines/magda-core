@@ -13,7 +13,7 @@ ROUTER_SYSTEM = "Classify the user's request as COMMAND, MUSIC, or BOTH. Respond
 
 COMMAND_SYSTEM = (
     "You are MAGDA, a DAW AI assistant. Respond ONLY with DSL code. No prose.\n"
-    "Syntax: track(name=\"X\", new=true), track(id=N), filter(tracks, track.name == \"X\")\n"
+    "Syntax: track(name=\"X\", new=true), track(id=N), filter(tracks, track.name == \"X\"), filter(tracks) for EVERY track\n"
     "Chains: .clip.new(bar=1, length_bars=4), .track.set(name=\"X\", colour=\"#ff5a36\", volume_db=-6, pan=0.5, mute=true, solo=true),\n"
     ".track.group(name=\"Group\", tracks=\"1,2,3\"), .fx.add(name=\"reverb\"), .delete(), .select(), .clip.rename(index=0, name=\"X\"),\n"
     ".clip.delete(index=0), .for_each(...), .clips.select(clip.length_bars > 2)\n"
@@ -21,7 +21,8 @@ COMMAND_SYSTEM = (
     ".notes.add_chord(root=C4, quality=major, beat=0, length=1),\n"
     ".notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5, pattern=up, fill=true)\n"
     "Functions: random(min, max)\n"
-    "When user says 'create a track', use new=true. One statement per line."
+    "When user says 'create a track', use new=true. One statement per line.\n"
+    "When state has scope:all_tracks (master selected), the user means every track: use filter(tracks) with no condition."
 )
 
 COMMAND_SYSTEM_WITH_STATE = (
@@ -55,6 +56,9 @@ router_examples = [
     ("rename track 3 to Strings", "COMMAND"),
     ("group the drum tracks and color code them", "COMMAND"),
     ("organize tracks into groups and rename them consistently", "COMMAND"),
+    ("group all tracks", "COMMAND"),
+    ("mute all tracks", "COMMAND"),
+    ("mute everything", "COMMAND"),
     ("solo the piano", "COMMAND"),
     ("add EQ and compressor to track 1", "COMMAND"),
     ("create 5 tracks named after planets", "COMMAND"),
@@ -315,12 +319,31 @@ command_examples = [
      'filter(tracks, track.name == "Unused").delete()'),
     ("unmute everything",
      'filter(tracks, track.mute == true).track.set(mute=false)'),
-    ("set all tracks to -12 dB",
-     'filter(tracks, track.name == "").track.set(volume_db=-12)'),
     ("add reverb to all tracks named Vocals",
      'filter(tracks, track.name == "Vocals").for_each(.fx.add(name="reverb"))'),
     ("add a 4 bar clip to all tracks named Synth",
      'filter(tracks, track.name == "Synth").for_each(.clip.new(bar=1, length_bars=4))'),
+
+    # --- All-tracks fan-out (filter(tracks) with no condition) ---
+    ("group all tracks", 'filter(tracks).track.group(name="All Tracks")'),
+    ("group all the tracks together", 'filter(tracks).track.group(name="All Tracks")'),
+    ("put every track in a group called Mix",
+     'filter(tracks).track.group(name="Mix")'),
+    ("mute all tracks", "filter(tracks).track.set(mute=true)"),
+    ("mute every track", "filter(tracks).track.set(mute=true)"),
+    ("unmute all tracks", "filter(tracks).track.set(mute=false)"),
+    ("solo all tracks", "filter(tracks).track.set(solo=true)"),
+    ("set all tracks to -12 dB", "filter(tracks).track.set(volume_db=-12)"),
+    ("set every track volume to -6", "filter(tracks).track.set(volume_db=-6)"),
+    ("pan all tracks to center", "filter(tracks).track.set(pan=0)"),
+    ("delete all tracks", "filter(tracks).delete()"),
+    ("select all tracks", "filter(tracks).select()"),
+    ("add reverb to every track",
+     'filter(tracks).for_each(.fx.add(name="reverb"))'),
+    ("add an EQ to all tracks",
+     'filter(tracks).for_each(.fx.add(name="eq"))'),
+    ("add a 4 bar clip to every track",
+     'filter(tracks).for_each(.clip.new(bar=1, length_bars=4))'),
 
     # --- With DAW state context ---
 ]
@@ -403,6 +426,33 @@ state_examples = [
         '{"tracks":[{"id":1,"name":"Drums","type":"Audio"},{"id":2,"name":"Bass","type":"Audio"},{"id":3,"name":"Guitar","type":"Audio"},{"id":4,"name":"Keys","type":"Audio"}],"track_count":4,"selected_track_id":2}',
         "set volume to -6 and add a 4 bar clip",
         "track(id=2).track.set(volume_db=-6)\ntrack(id=2).clip.new(length_bars=4)",
+    ),
+    # Master selected (scope:all_tracks) — the request targets every track, so
+    # use filter(tracks) with no condition rather than enumerating ids.
+    (
+        '{"tracks":[{"id":1,"name":"Drums","type":"Audio"},{"id":2,"name":"Bass","type":"Audio"},{"id":3,"name":"Keys","type":"Audio"}],"track_count":3,"scope":"all_tracks"}',
+        "group these",
+        'filter(tracks).track.group(name="All Tracks")',
+    ),
+    (
+        '{"tracks":[{"id":1,"name":"Drums","type":"Audio"},{"id":2,"name":"Bass","type":"Audio"},{"id":3,"name":"Keys","type":"Audio"}],"track_count":3,"scope":"all_tracks"}',
+        "group all tracks",
+        'filter(tracks).track.group(name="All Tracks")',
+    ),
+    (
+        '{"tracks":[{"id":1,"name":"Drums","type":"Audio"},{"id":2,"name":"Bass","type":"Audio"}],"track_count":2,"scope":"all_tracks"}',
+        "mute them",
+        "filter(tracks).track.set(mute=true)",
+    ),
+    (
+        '{"tracks":[{"id":1,"name":"Drums","type":"Audio"},{"id":2,"name":"Bass","type":"Audio"},{"id":3,"name":"Keys","type":"Audio"}],"track_count":3,"scope":"all_tracks"}',
+        "set volume to -6",
+        "filter(tracks).track.set(volume_db=-6)",
+    ),
+    (
+        '{"tracks":[{"id":1,"name":"Drums","type":"Audio"},{"id":2,"name":"Bass","type":"Audio"}],"track_count":2,"scope":"all_tracks"}',
+        "add an EQ",
+        'filter(tracks).for_each(.fx.add(name="eq"))',
     ),
 ]
 
