@@ -19,6 +19,38 @@ void addTrack(test::MockMagdaApi& api, TrackId id, const juce::String& name) {
 
 }  // namespace
 
+TEST_CASE("DSL filter(tracks) with no condition groups every track", "[dsl][tracks][group]") {
+    test::MockMagdaApi api;
+    addTrack(api, 10, "Kick");
+    addTrack(api, 20, "Snare");
+    addTrack(api, 30, "Bass");
+
+    dsl::Interpreter interp(api);
+
+    // master-selected "group all tracks"
+    REQUIRE(interp.execute("filter(tracks).track.group(name=\"All Tracks\")"));
+
+    REQUIRE(api.tracks_.groupWrites.size() == 1);
+    CHECK(api.tracks_.groupWrites[0].ids == std::vector<TrackId>{10, 20, 30});
+    CHECK(api.tracks_.groupWrites[0].name == "All Tracks");
+}
+
+TEST_CASE("DSL filter(tracks) with no condition fans a set across every track", "[dsl][tracks]") {
+    test::MockMagdaApi api;
+    addTrack(api, 10, "Kick");
+    addTrack(api, 20, "Snare");
+
+    dsl::Interpreter interp(api);
+
+    REQUIRE(interp.execute("filter(tracks).track.set(mute=true)"));
+
+    REQUIRE(api.tracks_.muteWrites.size() == 2);
+    CHECK(api.tracks_.muteWrites[0].id == 10);
+    CHECK(api.tracks_.muteWrites[1].id == 20);
+    CHECK(api.tracks_.muteWrites[0].value);
+    CHECK(api.tracks_.muteWrites[1].value);
+}
+
 TEST_CASE("DSL groups explicit track ids and chains colour onto group", "[dsl][tracks][group]") {
     test::MockMagdaApi api;
     addTrack(api, 10, "Kick");

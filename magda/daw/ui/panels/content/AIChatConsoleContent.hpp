@@ -31,7 +31,6 @@ class AutomationAgent;
 class CommandAgent;
 class ControllerProfileAgent;
 class FourOscAgent;
-class DAWAgent;
 class DrummerAgent;
 class MagdaApi;
 class MagdaApiLive;
@@ -46,7 +45,7 @@ namespace magda::daw::ui {
  * @brief AI Chat console panel content
  *
  * Chat interface for interacting with AI assistant.
- * Sends user messages to DAWAgent on a background thread.
+ * Routes user messages to the per-view agents on a background thread.
  */
 class AIChatConsoleContent : public PanelContent,
                              private juce::Timer,
@@ -186,7 +185,6 @@ class AIChatConsoleContent : public PanelContent,
     magda::ConversationStore conversation_;
     static magda::ConversationStore::Channel conversationChannel(magda::ViewMode mode);
 
-    std::unique_ptr<magda::DAWAgent> agent_;  // kept for legacy DSL REPL
     std::unique_ptr<magda::RouterAgent> routerAgent_;
     std::unique_ptr<magda::CommandAgent> commandAgent_;
     std::unique_ptr<magda::MusicAgent> musicAgent_;

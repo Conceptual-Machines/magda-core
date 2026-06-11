@@ -25,8 +25,9 @@ statement: track_statement
 // Track statements
 track_statement: "track" "(" params? ")" chain?
 
-// Filter statements (for bulk operations)
-filter_statement: "filter" "(" "tracks" "," condition ")" chain?
+// Filter statements (for bulk operations). Omitting the condition targets
+// every track - used for the master-selected "all tracks" fan-out.
+filter_statement: "filter" "(" "tracks" ("," condition)? ")" chain?
 
 // Groove statements (swing/shuffle templates)
 groove_statement: "groove" "." groove_method
@@ -138,6 +139,10 @@ FILTER OPERATIONS (bulk):
 - filter(tracks, track.name == "X").select() - Select all matching tracks
 - filter(tracks, track.name == "X").for_each(.clip.new(bar=1, length_bars=4)) - Apply operations to each matched track
 - filter(tracks, track.name == "X").for_each(.fx.add(name="reverb").track.set(mute=true)) - Chain multiple operations per track
+- filter(tracks) - No condition targets EVERY track. Use this for "all tracks": filter(tracks).track.group(name="All"), filter(tracks).track.set(mute=true), etc.
+
+ALL-TRACKS SCOPE:
+- When the state snapshot contains "scope":"all_tracks" (the master track is selected), the user is addressing every track at once. Use filter(tracks) with no condition rather than enumerating ids.
 
 EXAMPLES:
 - "create a bass track" -> track(name="Bass")
@@ -155,6 +160,8 @@ EXAMPLES:
   track(name="Vocals").fx.add(name="delay")
 - "rename the first clip on track 1 to Intro" -> track(id=1).clip.rename(index=0, name="Intro")
 - "group tracks 1, 2, and 3 as Drums" -> track(id=1).track.group(name="Drums", tracks="1,2,3")
+- "group all tracks" (master selected) -> filter(tracks).track.group(name="All Tracks")
+- "mute all tracks" (master selected) -> filter(tracks).track.set(mute=true)
 - "color code drums red" -> track(name="Drums").track.set(colour="#ff5a36")
 - "organize the session into rhythm and vocals groups" ->
   track(id=1).track.group(name="Rhythm", tracks="1,2,3").track.set(colour="#ff5a36")

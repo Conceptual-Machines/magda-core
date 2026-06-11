@@ -12,7 +12,6 @@
 #include "../../../../agents/automation_agent.hpp"
 #include "../../../../agents/command_agent.hpp"
 #include "../../../../agents/controller_profile_agent.hpp"
-#include "../../../../agents/daw_agent.hpp"
 #include "../../../../agents/drummer_agent.hpp"
 #include "../../../../agents/dsl_interpreter.hpp"
 #include "../../../../agents/four_osc_agent.hpp"
@@ -1122,8 +1121,6 @@ AIChatConsoleContent::AIChatConsoleContent() {
     }
 
     // Create agents
-    agent_ = std::make_unique<magda::DAWAgent>(*magdaApi_);  // legacy DSL REPL
-    agent_->start();
     routerAgent_ = std::make_unique<magda::RouterAgent>();
     commandAgent_ = std::make_unique<magda::CommandAgent>(*magdaApi_);
     musicAgent_ = std::make_unique<magda::MusicAgent>();
@@ -1151,8 +1148,6 @@ AIChatConsoleContent::~AIChatConsoleContent() {
 
     // Signal cancellation
     shouldStop_ = true;
-    if (agent_)
-        agent_->requestCancel();
     if (routerAgent_)
         routerAgent_->requestCancel();
     if (commandAgent_)
@@ -1178,9 +1173,6 @@ AIChatConsoleContent::~AIChatConsoleContent() {
             DBG("AIChatConsole: Warning - controller thread did not stop within timeout");
         controllerThread_.reset();
     }
-
-    if (agent_)
-        agent_->stop();
 }
 
 juce::String AIChatConsoleContent::resolveAliases(const juce::String& text) {
@@ -1259,8 +1251,6 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
 
     // If a previous request thread is still around, stop it before starting a new one
     if (requestThread_ && requestThread_->isThreadRunning()) {
-        if (agent_)
-            agent_->requestCancel();
         if (routerAgent_)
             routerAgent_->requestCancel();
         if (commandAgent_)
@@ -1298,8 +1288,6 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
 
     // Reset cancel state and start new request
     shouldStop_ = false;
-    if (agent_)
-        agent_->resetCancel();
     if (routerAgent_)
         routerAgent_->resetCancel();
     if (commandAgent_)
@@ -1325,8 +1313,6 @@ void AIChatConsoleContent::cancelRequest() {
         return;
 
     shouldStop_ = true;
-    if (agent_)
-        agent_->requestCancel();
     if (routerAgent_)
         routerAgent_->requestCancel();
     if (commandAgent_)

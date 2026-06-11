@@ -49,8 +49,6 @@ dsl_grammar.hpp
     llm_client_factory.hpp
     model_downloader.hpp
     model_downloader.cpp
-    daw_agent.hpp
-    daw_agent.cpp
     four_osc_agent.hpp
     four_osc_agent.cpp
     four_osc_apply.hpp

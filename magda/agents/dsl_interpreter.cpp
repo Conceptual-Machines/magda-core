@@ -518,54 +518,64 @@ bool Interpreter::parseFilterStatement(Tokenizer& tok) {
         return false;
     }
 
-    if (!tok.expect(TokenType::COMMA)) {
-        ctx_.setError("Expected ',' after 'tracks'");
-        return false;
-    }
-
-    // Parse condition: track.field == "value"
-    Token trackToken = tok.next();
-    if (!trackToken.is("track")) {
-        ctx_.setError("Expected 'track' in filter condition");
-        return false;
-    }
-
-    if (!tok.expect(TokenType::DOT)) {
-        ctx_.setError("Expected '.' after 'track'");
-        return false;
-    }
-
-    Token field = tok.next();
-    if (field.type != TokenType::IDENTIFIER) {
-        ctx_.setError("Expected field name after 'track.'");
-        return false;
-    }
-
-    Token op = tok.next();
-    if (op.type != TokenType::EQUALS_EQUALS) {
-        ctx_.setError("Expected '==' in filter condition");
-        return false;
-    }
-
-    Token value = tok.next();
-    if (value.type != TokenType::STRING) {
-        ctx_.setError("Expected string value in filter condition");
-        return false;
-    }
-
-    if (!tok.expect(TokenType::RPAREN)) {
-        ctx_.setError("Expected ')' after filter condition");
-        return false;
-    }
-
     // Execute filter: find matching tracks
     auto& tm = api_.tracks();
     ctx_.filteredTrackIds.clear();
 
-    if (field.value == "name") {
-        for (const auto& track : tm.getTracks()) {
-            if (track.name == juce::String(value.value))
-                ctx_.filteredTrackIds.push_back(track.id);
+    if (tok.peek().is(TokenType::RPAREN)) {
+        // filter(tracks) with no condition targets every track. This is the
+        // master-selected fan-out: when the state snapshot carries
+        // "scope":"all_tracks", the agent addresses all tracks at once
+        // (e.g. filter(tracks).track.group(...) or .track.set(mute=true)).
+        tok.next();  // consume ')'
+        for (const auto& track : tm.getTracks())
+            ctx_.filteredTrackIds.push_back(track.id);
+    } else {
+        if (!tok.expect(TokenType::COMMA)) {
+            ctx_.setError("Expected ',' after 'tracks'");
+            return false;
+        }
+
+        // Parse condition: track.field == "value"
+        Token trackToken = tok.next();
+        if (!trackToken.is("track")) {
+            ctx_.setError("Expected 'track' in filter condition");
+            return false;
+        }
+
+        if (!tok.expect(TokenType::DOT)) {
+            ctx_.setError("Expected '.' after 'track'");
+            return false;
+        }
+
+        Token field = tok.next();
+        if (field.type != TokenType::IDENTIFIER) {
+            ctx_.setError("Expected field name after 'track.'");
+            return false;
+        }
+
+        Token op = tok.next();
+        if (op.type != TokenType::EQUALS_EQUALS) {
+            ctx_.setError("Expected '==' in filter condition");
+            return false;
+        }
+
+        Token value = tok.next();
+        if (value.type != TokenType::STRING) {
+            ctx_.setError("Expected string value in filter condition");
+            return false;
+        }
+
+        if (!tok.expect(TokenType::RPAREN)) {
+            ctx_.setError("Expected ')' after filter condition");
+            return false;
+        }
+
+        if (field.value == "name") {
+            for (const auto& track : tm.getTracks()) {
+                if (track.name == juce::String(value.value))
+                    ctx_.filteredTrackIds.push_back(track.id);
+            }
         }
     }
 
