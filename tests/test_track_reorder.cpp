@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/core/TrackPropertyCommands.hpp"
+#include "magda/daw/core/UndoManager.hpp"
 
 using namespace magda;
 
@@ -63,6 +65,25 @@ TEST_CASE("moveTrackToPosition reorders within a group, not across", "[tracks][r
 
     // The grouped child stays inside the group (parent unchanged).
     REQUIRE(fx.tm().getTrack(h)->parentId == group);
+}
+
+TEST_CASE("MoveTrackCommand reorders and undo restores the original position",
+          "[tracks][reorder][undo]") {
+    ReorderFixture fx;
+    UndoManager::getInstance().clearHistory();
+    auto a = fx.tm().createTrack("A", TrackType::Audio);
+    auto b = fx.tm().createTrack("B", TrackType::Audio);
+    auto c = fx.tm().createTrack("C", TrackType::Audio);
+
+    UndoManager::getInstance().executeCommand(std::make_unique<MoveTrackCommand>(c, 1));
+    REQUIRE(fx.tm().getTopLevelTracks() == std::vector<TrackId>{c, a, b});
+
+    REQUIRE(UndoManager::getInstance().undo());
+    REQUIRE(fx.tm().getTopLevelTracks() == std::vector<TrackId>{a, b, c});
+
+    REQUIRE(UndoManager::getInstance().redo());
+    REQUIRE(fx.tm().getTopLevelTracks() == std::vector<TrackId>{c, a, b});
+    UndoManager::getInstance().clearHistory();
 }
 
 TEST_CASE("getTrackSiblingPosition is 1-based among siblings", "[tracks][reorder]") {

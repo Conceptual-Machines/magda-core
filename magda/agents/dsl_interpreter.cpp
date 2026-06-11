@@ -22,6 +22,7 @@
 #include "../daw/core/PluginAlias.hpp"
 #include "../daw/core/SelectionManager.hpp"
 #include "../daw/core/TrackManager.hpp"
+#include "../daw/core/TrackPropertyCommands.hpp"
 #include "../daw/core/UndoManager.hpp"
 #include "../daw/engine/AudioEngine.hpp"
 #include "../daw/engine/TracktionEngineWrapper.hpp"
@@ -1007,7 +1008,7 @@ bool Interpreter::executeMoveTrack(const Params& params) {
     // the final order is deterministic.
     if (ctx_.inFilterContext) {
         for (int trackId : ctx_.filteredTrackIds)
-            api_.tracks().moveTrackToPosition(trackId, position);
+            api_.undo().executeCommand(std::make_unique<MoveTrackCommand>(trackId, position));
         ctx_.addResult("Moved " + juce::String(static_cast<int>(ctx_.filteredTrackIds.size())) +
                        " track(s) to position " + juce::String(position));
         return true;
@@ -1018,7 +1019,7 @@ bool Interpreter::executeMoveTrack(const Params& params) {
         return false;
     }
 
-    api_.tracks().moveTrackToPosition(ctx_.currentTrackId, position);
+    api_.undo().executeCommand(std::make_unique<MoveTrackCommand>(ctx_.currentTrackId, position));
     ctx_.addResult("Moved track to position " + juce::String(position));
     return true;
 }

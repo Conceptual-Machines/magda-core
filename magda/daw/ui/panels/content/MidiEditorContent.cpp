@@ -225,7 +225,8 @@ MidiEditorContent::MidiEditorContent() {
                 phaseBeats += loopLengthBeats;
         }
 
-        magda::ClipManager::getInstance().setClipMidiOffset(editingClipId_, phaseBeats);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetClipOffsetCommand>(editingClipId_, phaseBeats));
     };
 
     // Edit cursor blink timer (uses local cursor, not global)

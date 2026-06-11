@@ -159,6 +159,36 @@ class SetTrackInputMonitorCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for moving a track to a 1-based position among its siblings.
+ *
+ * Undo restores the track's original sibling position (captured at construction),
+ * which round-trips a stable reorder.
+ */
+class MoveTrackCommand : public UndoableCommand {
+  public:
+    MoveTrackCommand(TrackId trackId, int newPosition)
+        : trackId_(trackId), newPosition_(newPosition) {
+        oldPosition_ = TrackManager::getInstance().getTrackSiblingPosition(trackId);
+    }
+
+    void execute() override {
+        TrackManager::getInstance().moveTrackToPosition(trackId_, newPosition_);
+    }
+    void undo() override {
+        if (oldPosition_ > 0)
+            TrackManager::getInstance().moveTrackToPosition(trackId_, oldPosition_);
+    }
+    juce::String getDescription() const override {
+        return "Move Track";
+    }
+
+  private:
+    TrackId trackId_;
+    int newPosition_;
+    int oldPosition_ = 0;
+};
+
+/**
  * @brief Command for setting track name
  */
 class SetTrackNameCommand : public UndoableCommand {
