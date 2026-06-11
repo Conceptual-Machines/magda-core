@@ -319,6 +319,19 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
 // RequestThread
 // ============================================================================
 
+magda::ConversationStore::Channel AIChatConsoleContent::conversationChannel(magda::ViewMode mode) {
+    switch (mode) {
+        case magda::ViewMode::Live:
+            return magda::ConversationStore::Channel::Session;
+        case magda::ViewMode::Mix:
+        case magda::ViewMode::Master:
+            return magda::ConversationStore::Channel::Mixing;
+        case magda::ViewMode::Arrange:
+            break;
+    }
+    return magda::ConversationStore::Channel::Arrangement;
+}
+
 AIChatConsoleContent::RequestThread::RequestThread(AIChatConsoleContent& owner)
     : juce::Thread("AI Chat Request"), owner_(owner) {}
 
@@ -448,6 +461,14 @@ void AIChatConsoleContent::RequestThread::run() {
         return true;
     };
 
+    // Centralised conversation memory (#1402): render the active view's thread
+    // and prepend it so the agent builds on earlier turns. The original message
+    // is recorded verbatim once the turn completes (see the callAsync below).
+    const auto convoChannel = conversationChannel(owner_.currentViewMode_);
+    const std::string priorContext = owner_.conversation_.render(convoChannel);
+    const std::string contextualMessage =
+        priorContext.empty() ? message : priorContext + "\nUser request: " + message;
+
     // Step 2: Dispatch to agents based on classification
     std::string dslCode;                                   // DSL from command agent
     std::vector<magda::Instruction> musicInstructions;     // IR from music agent
@@ -527,14 +548,16 @@ void AIChatConsoleContent::RequestThread::run() {
         std::future<magda::MusicAgent::GenerateResult> musicFuture;
 
         if (owner_.commandAgent_) {
-            commandFuture = std::async(std::launch::async, [this, &message, cmdOnToken]() {
-                return owner_.commandAgent_->generateStreaming(message, cmdOnToken);
-            });
+            commandFuture =
+                std::async(std::launch::async, [this, &contextualMessage, cmdOnToken]() {
+                    return owner_.commandAgent_->generateStreaming(contextualMessage, cmdOnToken);
+                });
         }
         if (owner_.musicAgent_) {
-            musicFuture = std::async(std::launch::async, [this, &message, musicOnToken]() {
-                return owner_.musicAgent_->generateStreaming(message, musicOnToken);
-            });
+            musicFuture =
+                std::async(std::launch::async, [this, &contextualMessage, musicOnToken]() {
+                    return owner_.musicAgent_->generateStreaming(contextualMessage, musicOnToken);
+                });
         }
 
         if (commandFuture.valid()) {
@@ -561,7 +584,7 @@ void AIChatConsoleContent::RequestThread::run() {
             return;
     } else if (intent == magda::ConsoleIntent::Command) {
         if (owner_.commandAgent_) {
-            auto result = owner_.commandAgent_->generateStreaming(message, onToken);
+            auto result = owner_.commandAgent_->generateStreaming(contextualMessage, onToken);
             if (threadShouldExit())
                 return;
             if (result.hasError)
@@ -571,7 +594,7 @@ void AIChatConsoleContent::RequestThread::run() {
         }
     } else if (intent == magda::ConsoleIntent::Music) {
         if (owner_.musicAgent_) {
-            auto result = owner_.musicAgent_->generateStreaming(message, onToken);
+            auto result = owner_.musicAgent_->generateStreaming(contextualMessage, onToken);
             if (threadShouldExit())
                 return;
             if (result.hasError) {
@@ -583,7 +606,7 @@ void AIChatConsoleContent::RequestThread::run() {
         }
     } else if (intent == magda::ConsoleIntent::Automation) {
         if (owner_.automationAgent_) {
-            auto result = owner_.automationAgent_->generateStreaming(message, onToken);
+            auto result = owner_.automationAgent_->generateStreaming(contextualMessage, onToken);
             if (threadShouldExit())
                 return;
             if (result.hasError)
@@ -602,11 +625,11 @@ void AIChatConsoleContent::RequestThread::run() {
         // of generating from scratch. Output still lands in a new clip (the
         // executor never inherits the selected clip).
         if (owner_.drummerAgent_) {
-            std::string drummerMessage = message;
+            std::string drummerMessage = contextualMessage;
             if (owner_.selectedClipContextAvailable_ && owner_.selectedClipContextEnabled_) {
                 auto contextPreamble = formatSelectedClipsAsDrummerContext();
                 if (contextPreamble.isNotEmpty()) {
-                    drummerMessage = contextPreamble.toStdString() + "\nUser request: " + message;
+                    drummerMessage = contextPreamble.toStdString() + "\n" + contextualMessage;
                 }
             }
             auto result = owner_.drummerAgent_->generateStreaming(drummerMessage, onToken);
@@ -635,7 +658,8 @@ void AIChatConsoleContent::RequestThread::run() {
             error = "No mix analysis yet. Run one from the mixer's Analyze button first.";
         } else {
             magda::MixAnalysisAgent::Input input = std::move(*cached);
-            input.question = message;  // empty => a general assessment
+            input.question = message;           // empty => a general assessment
+            input.priorContext = priorContext;  // continuity across analyses (#886)
 
             magda::MixAnalysisAgent mixAgent;
             auto r = mixAgent.generate(input);
@@ -665,8 +689,8 @@ void AIChatConsoleContent::RequestThread::run() {
     juce::MessageManager::callAsync(
         [safeThis, dsl = std::move(dslCode), musicIR = std::move(musicInstructions),
          musicDesc = std::move(musicDescription), autoIR = std::move(autoInstructions),
-         mixAnalysis = std::move(mixAnalysis), error = std::move(error), anchor, routerMs, agentMs,
-         totalMs]() {
+         mixAnalysis = std::move(mixAnalysis), error = std::move(error), userMsg = message,
+         channel = convoChannel, anchor, routerMs, agentMs, totalMs]() {
             if (!safeThis)
                 return;
 
@@ -767,6 +791,11 @@ void AIChatConsoleContent::RequestThread::run() {
                 if (!error.empty())
                     response += "\n[Warning] " + error;
             }
+
+            // Record the exchange into the view's conversation thread before the
+            // timing footer is added, so the stored reply is clean prose the next
+            // turn can build on.
+            safeThis->conversation_.record(channel, userMsg, response);
 
             // Append timing info
             auto formatMs = [](double ms) -> std::string {
@@ -945,6 +974,9 @@ AIChatConsoleContent::AIChatConsoleContent() {
     clearButton_.setAlpha(0.35f);
     clearButton_.onClick = [this]() {
         chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
+        // The visible chat is one shared buffer across views, so clearing it
+        // wipes every view's conversation memory too.
+        conversation_.clearAll();
     };
     addAndMakeVisible(clearButton_);
 
@@ -1654,6 +1686,9 @@ void AIChatConsoleContent::appendDSLOutput(const juce::String& text, juce::Colou
 void AIChatConsoleContent::projectOpened(const magda::ProjectInfo& /*info*/) {
     // Reset chat history
     chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
+
+    // A different project means a fresh conversation; drop all view memory.
+    conversation_.clearAll();
 
     // Cancel any in-flight request
     cancelRequest();

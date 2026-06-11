@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "../../../../agents/conversation_store.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/mixing_agent.hpp"
 #include "../../../core/Config.hpp"
@@ -178,6 +179,12 @@ class AIChatConsoleContent : public PanelContent,
     // null and downstream agents / executors can dereference unconditionally.
     std::unique_ptr<magda::MagdaApiLive> ownedApi_;
     magda::MagdaApi* magdaApi_ = nullptr;
+
+    // Centralised rolling conversation memory, one thread per view (#1402).
+    // RequestThread renders the active view's thread into each agent prompt and
+    // records the exchange when the turn completes. See conversationChannel().
+    magda::ConversationStore conversation_;
+    static magda::ConversationStore::Channel conversationChannel(magda::ViewMode mode);
 
     std::unique_ptr<magda::DAWAgent> agent_;  // kept for legacy DSL REPL
     std::unique_ptr<magda::RouterAgent> routerAgent_;
