@@ -134,3 +134,6 @@ tests/fixtures/audio/
 
 # Exploratory mix-analysis run output (regenerated, not tracked)
 mix-analysis-*.txt
+
+# Local fine-tuned model weights (multi-GB, never commit)
+*.gguf
