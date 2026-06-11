@@ -1013,7 +1013,8 @@ void MixerView::ChannelStrip::showAddSendMenu() {
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetComponent(addSendButton_.get()), [this](int result) {
             if (result > 0)
-                TrackManager::getInstance().addSend(trackId_, static_cast<TrackId>(result));
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<AddSendCommand>(trackId_, static_cast<TrackId>(result)));
         });
 }
 
@@ -1070,7 +1071,8 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
         slot->removeButton->setColour(juce::TextButton::textColourOffId,
                                       DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         slot->removeButton->onClick = [this, busIdx]() {
-            TrackManager::getInstance().removeSend(trackId_, busIdx);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<RemoveSendCommand>(trackId_, busIdx));
         };
         sendContainer_->addAndMakeVisible(*slot->removeButton);
 

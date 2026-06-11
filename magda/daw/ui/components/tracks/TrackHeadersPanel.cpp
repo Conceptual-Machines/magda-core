@@ -2122,7 +2122,8 @@ void TrackHeadersPanel::rebuildSendLabels(TrackHeader& header, TrackId trackId) 
             menu.addItem(1, tr("tracks.remove_send_label"));
             menu.showMenuAsync(juce::PopupMenu::Options(), [trackId, busIndex](int result) {
                 if (result == 1) {
-                    TrackManager::getInstance().removeSend(trackId, busIndex);
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<RemoveSendCommand>(trackId, busIndex));
                 }
             });
         };
@@ -3146,12 +3147,14 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                 }
             } else if (result >= RemoveSendBase) {
                 int busIndex = result - RemoveSendBase;
-                TrackManager::getInstance().removeSend(trackId, busIndex);
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<RemoveSendCommand>(trackId, busIndex));
             } else if (result >= AddSendBase) {
                 // Checked after RemoveSendBase to avoid collision when trackId
                 // pushes the value past 600.
                 TrackId auxId = result - AddSendBase;
-                TrackManager::getInstance().addSend(trackId, auxId);
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<AddSendCommand>(trackId, auxId));
             } else if (result >= MoveToGroupBase) {
                 TrackId groupId = result - MoveToGroupBase;
                 TrackManager::getInstance().addTrackToGroup(trackId, groupId);

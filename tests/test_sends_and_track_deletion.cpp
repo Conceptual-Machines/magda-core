@@ -1,6 +1,9 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/core/TrackPropertyCommands.hpp"
+#include "magda/daw/core/UndoManager.hpp"
 
 using namespace magda;
 
@@ -118,4 +121,43 @@ TEST_CASE("Sends from multiple tracks to deleted track are all removed", "[sends
 
     REQUIRE(fixture.tm().getTrack(trackA)->sends.empty());
     REQUIRE(fixture.tm().getTrack(trackB)->sends.empty());
+}
+
+// ============================================================================
+// Send undo commands (#6)
+// ============================================================================
+
+TEST_CASE("AddSendCommand adds a send; undo removes it", "[sends][undo]") {
+    SendsTestFixture fixture;
+    auto src = fixture.createTrack("Src");
+    auto dst = fixture.createTrack("Dst");
+    UndoManager::getInstance().clearHistory();
+
+    UndoManager::getInstance().executeCommand(std::make_unique<AddSendCommand>(src, dst));
+    REQUIRE(fixture.tm().getTrack(src)->sends.size() == 1);
+
+    REQUIRE(UndoManager::getInstance().undo());
+    REQUIRE(fixture.tm().getTrack(src)->sends.empty());
+
+    REQUIRE(UndoManager::getInstance().redo());
+    REQUIRE(fixture.tm().getTrack(src)->sends.size() == 1);
+    UndoManager::getInstance().clearHistory();
+}
+
+TEST_CASE("RemoveSendCommand removes a send; undo restores it with level", "[sends][undo]") {
+    SendsTestFixture fixture;
+    auto src = fixture.createTrack("Src");
+    auto dst = fixture.createTrack("Dst");
+    fixture.tm().addSend(src, dst);
+    const int busIndex = fixture.tm().getTrack(src)->sends[0].busIndex;
+    fixture.tm().setSendLevel(src, busIndex, 0.5f);
+    UndoManager::getInstance().clearHistory();
+
+    UndoManager::getInstance().executeCommand(std::make_unique<RemoveSendCommand>(src, busIndex));
+    REQUIRE(fixture.tm().getTrack(src)->sends.empty());
+
+    REQUIRE(UndoManager::getInstance().undo());
+    REQUIRE(fixture.tm().getTrack(src)->sends.size() == 1);
+    CHECK(fixture.tm().getTrack(src)->sends[0].level == Catch::Approx(0.5f));
+    UndoManager::getInstance().clearHistory();
 }

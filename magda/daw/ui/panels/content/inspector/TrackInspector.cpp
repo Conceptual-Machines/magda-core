@@ -1390,7 +1390,8 @@ void TrackInspector::rebuildSendsUI() {
         deleteBtn->setColour(juce::TextButton::textColourOffId,
                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         deleteBtn->onClick = [srcId, busIndex]() {
-            magda::TrackManager::getInstance().removeSend(srcId, busIndex);
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::RemoveSendCommand>(srcId, busIndex));
         };
         addAndMakeVisible(*deleteBtn);
         sendDeleteButtons_.push_back(std::move(deleteBtn));
@@ -1472,8 +1473,9 @@ void TrackInspector::showAddSendMenu() {
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addSendButton_),
                        [sourceTrackId, destTrackIds](int result) {
                            if (result > 0 && result <= static_cast<int>(destTrackIds.size())) {
-                               magda::TrackManager::getInstance().addSend(sourceTrackId,
-                                                                          destTrackIds[result - 1]);
+                               magda::UndoManager::getInstance().executeCommand(
+                                   std::make_unique<magda::AddSendCommand>(
+                                       sourceTrackId, destTrackIds[result - 1]));
                            }
                        });
 }

@@ -259,6 +259,82 @@ class SetSendLevelCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for adding a send from one track to another (aux bus).
+ */
+class AddSendCommand : public UndoableCommand {
+  public:
+    AddSendCommand(TrackId sourceTrackId, TrackId destTrackId)
+        : sourceTrackId_(sourceTrackId), destTrackId_(destTrackId) {}
+
+    void execute() override {
+        auto& tm = TrackManager::getInstance();
+        tm.addSend(sourceTrackId_, destTrackId_);
+        // Capture the bus index that addSend assigned so undo can remove exactly
+        // this send (addSend auto-allocates the dest's aux bus index).
+        busIndex_ = -1;
+        if (const auto* source = tm.getTrack(sourceTrackId_)) {
+            for (const auto& send : source->sends) {
+                if (send.destTrackId == destTrackId_) {
+                    busIndex_ = send.busIndex;
+                    break;
+                }
+            }
+        }
+    }
+    void undo() override {
+        if (busIndex_ >= 0)
+            TrackManager::getInstance().removeSend(sourceTrackId_, busIndex_);
+    }
+    juce::String getDescription() const override {
+        return "Add Send";
+    }
+
+  private:
+    TrackId sourceTrackId_;
+    TrackId destTrackId_;
+    int busIndex_ = -1;
+};
+
+/**
+ * @brief Command for removing a send. Restores level on undo.
+ */
+class RemoveSendCommand : public UndoableCommand {
+  public:
+    RemoveSendCommand(TrackId sourceTrackId, int busIndex)
+        : sourceTrackId_(sourceTrackId), busIndex_(busIndex) {
+        if (const auto* source = TrackManager::getInstance().getTrack(sourceTrackId)) {
+            for (const auto& send : source->sends) {
+                if (send.busIndex == busIndex) {
+                    saved_ = send;
+                    hasSaved_ = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    void execute() override {
+        TrackManager::getInstance().removeSend(sourceTrackId_, busIndex_);
+    }
+    void undo() override {
+        if (!hasSaved_)
+            return;
+        auto& tm = TrackManager::getInstance();
+        tm.addSend(sourceTrackId_, saved_.destTrackId);
+        tm.setSendLevel(sourceTrackId_, saved_.busIndex, saved_.level);
+    }
+    juce::String getDescription() const override {
+        return "Remove Send";
+    }
+
+  private:
+    TrackId sourceTrackId_;
+    int busIndex_;
+    SendInfo saved_;
+    bool hasSaved_ = false;
+};
+
+/**
  * @brief Command for setting master volume (supports merging for slider drags)
  */
 class SetMasterVolumeCommand : public UndoableCommand {

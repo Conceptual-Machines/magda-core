@@ -836,7 +836,8 @@ class SessionView::MiniSendStrip : public juce::Component {
             slot.removeButton->setColour(juce::TextButton::textColourOffId,
                                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
             slot.removeButton->onClick = [this, busIdx]() {
-                TrackManager::getInstance().removeSend(trackId_, busIdx);
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<RemoveSendCommand>(trackId_, busIdx));
             };
             addAndMakeVisible(*slot.removeButton);
 
@@ -887,8 +888,8 @@ class SessionView::MiniSendStrip : public juce::Component {
         auto safeThis = juce::Component::SafePointer<MiniSendStrip>(this);
         menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
             if (safeThis && result >= 1000) {
-                TrackManager::getInstance().addSend(safeThis->trackId_,
-                                                    static_cast<TrackId>(result - 1000));
+                UndoManager::getInstance().executeCommand(std::make_unique<AddSendCommand>(
+                    safeThis->trackId_, static_cast<TrackId>(result - 1000)));
             }
         });
     }
