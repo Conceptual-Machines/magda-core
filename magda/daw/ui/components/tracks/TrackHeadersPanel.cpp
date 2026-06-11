@@ -3098,7 +3098,8 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
             if (result == CollapseToggle) {
                 handleCollapseToggle(trackId);
             } else if (result == RemoveFromGroup) {
-                TrackManager::getInstance().removeTrackFromGroup(trackId);
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<RemoveTrackFromGroupCommand>(trackId));
             } else if (result == GroupSelectedTracks) {
                 auto& sel = SelectionManager::getInstance();
                 std::vector<TrackId> selectedTracks(sel.getSelectedTracks().begin(),
@@ -3162,7 +3163,8 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                     std::make_unique<AddSendCommand>(trackId, auxId));
             } else if (result >= MoveToGroupBase) {
                 TrackId groupId = result - MoveToGroupBase;
-                TrackManager::getInstance().addTrackToGroup(trackId, groupId);
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<AddTrackToGroupCommand>(trackId, groupId));
             }
         });
 }
@@ -3317,8 +3319,10 @@ void TrackHeadersPanel::executeDrop() {
             return;
     }
 
-    if (isMultiDrag)
-        UndoManager::getInstance().beginCompoundOperation("Move Tracks");
+    // A single drag can fan out into several primitives (reparent + reorder),
+    // so always wrap the whole gesture in one compound undo step.
+    auto& undo = UndoManager::getInstance();
+    undo.beginCompoundOperation("Move Tracks");
 
     if (dropTargetType_ == DropTargetType::BetweenTracks && dropTargetIndex_ >= 0) {
         // Determine the target parent based on drop position
@@ -3378,16 +3382,19 @@ void TrackHeadersPanel::executeDrop() {
                 const auto* beforeTrack = trackManager.getTrack(dropBeforeTrackId);
                 if (beforeTrack != nullptr && beforeTrack->parentId == targetParentId)
                     beforeChildId = dropBeforeTrackId;
-                trackManager.moveChildWithinGroup(trackId, beforeChildId);
+                undo.executeCommand(
+                    std::make_unique<MoveChildWithinGroupCommand>(trackId, beforeChildId));
                 continue;
             }
 
-            // Update group membership if needed
+            // Update group membership if needed. addTrackToGroup detaches from the
+            // current parent first, so a single command covers the reparent.
             if (track->parentId != targetParentId) {
-                trackManager.removeTrackFromGroup(trackId);
-                if (targetParentId != INVALID_TRACK_ID) {
-                    trackManager.addTrackToGroup(trackId, targetParentId);
-                }
+                if (targetParentId != INVALID_TRACK_ID)
+                    undo.executeCommand(
+                        std::make_unique<AddTrackToGroupCommand>(trackId, targetParentId));
+                else
+                    undo.executeCommand(std::make_unique<RemoveTrackFromGroupCommand>(trackId));
             }
 
             // Adjust insertion index: if track is currently above insertAt, removing it
@@ -3398,7 +3405,7 @@ void TrackHeadersPanel::executeDrop() {
                 adjustedTarget--;
             }
 
-            trackManager.moveTrack(trackId, adjustedTarget);
+            undo.executeCommand(std::make_unique<MoveTrackToIndexCommand>(trackId, adjustedTarget));
 
             // Next track goes after this one
             insertAt = trackManager.getTrackIndex(trackId) + 1;
@@ -3406,12 +3413,11 @@ void TrackHeadersPanel::executeDrop() {
     } else if (dropTargetType_ == DropTargetType::OntoGroup && dropTargetIndex_ >= 0) {
         TrackId groupId = trackHeaders[dropTargetIndex_]->trackId;
         for (auto trackId : tracksToMove) {
-            trackManager.addTrackToGroup(trackId, groupId);
+            undo.executeCommand(std::make_unique<AddTrackToGroupCommand>(trackId, groupId));
         }
     }
 
-    if (isMultiDrag)
-        UndoManager::getInstance().endCompoundOperation();
+    undo.endCompoundOperation();
 
     // TrackManager will notify listeners which triggers tracksChanged()
 }
