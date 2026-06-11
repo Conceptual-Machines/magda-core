@@ -87,17 +87,32 @@ merges and exports a `q4_k_m` GGUF to Google Drive
 > notebook already copies the GGUF to Google Drive (`MyDrive/magda-training/`) -
 > always grab it from **drive.google.com** instead, which is far faster.
 
-Download the `.gguf` from Drive to the Mac, then either:
+Download the `.gguf` from Drive to the Mac, then use it locally: MAGDA -> AI
+Settings -> set the local model path to the `.gguf` and select the local
+provider (`Config::getLocalModelPath()` / `AISettingsDialog`).
 
-- **Local use:** MAGDA -> AI Settings -> set the local model path to the `.gguf`
-  and select the local provider. (`Config::getLocalModelPath()` /
-  `AISettingsDialog`.)
-- **Distribute:** upload to the HuggingFace repo `ConceptualMachines/magda-gguf`
-  as `magda-vX.Y.Z-q4_k_m.gguf`, then bump the pinned URL in
-  `ModelDownloader::getDefaultModelUrl()`
-  (`magda/agents/model_downloader.cpp`) so the in-app downloader pulls the new
-  version. The download URL is pinned to a single versioned filename, so a new
-  model is invisible to users until that string changes.
+## Step 5 - publish to HuggingFace (REQUIRED to ship it)
+
+A local GGUF only works on your machine. Users get the model through the in-app
+downloader, which pulls **one pinned file** from HuggingFace. Shipping a new
+model is two parts and it is NOT done until both are:
+
+1. **Upload the GGUF** to `ConceptualMachines/magda-gguf` with a bumped version
+   in the filename (`magda-vX.Y.Z-q4_k_m.gguf` - bump from the current
+   `magda-v0.3.0-...`):
+
+   ```bash
+   pip install -U huggingface_hub
+   huggingface-cli login                       # once, needs a write token
+   huggingface-cli upload ConceptualMachines/magda-gguf \
+       "/path/to/local.gguf" magda-vX.Y.Z-q4_k_m.gguf
+   ```
+
+2. **Bump the pinned URL** in `ModelDownloader::getDefaultModelUrl()`
+   (`magda/agents/model_downloader.cpp`) to the new filename, then commit. The
+   downloader is pinned to a single versioned filename, so **until this string
+   changes the new model is invisible to every user** - this is the step that is
+   easy to forget and the whole reason a retrain ships nothing on its own.
 
 ## Validating
 
