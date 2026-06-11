@@ -56,6 +56,7 @@ method_call: "clip" "." "new" "(" params? ")"
            | "clips" "." "select" "(" clip_condition ")"
            | "track" "." "set" "(" params? ")"
            | "track" "." "group" "(" params? ")"
+           | "track" "." "move" "(" params? ")"
            | "fx" "." "add" "(" params? ")"
            | "notes" "." "select" "(" note_condition ")"
            | "notes" "." "delete" "(" ")"
@@ -120,6 +121,7 @@ METHOD CHAINING:
 - .clip.new(length_bars=4) - Create MIDI clip after the last clip on the track (omit bar to auto-place)
 - .track.set(name="X", colour="#ff5a36", volume_db=-3, pan=0.5, mute=true, solo=true)
 - .track.group(name="Drums", tracks="1,2,3") - Group existing tracks by 1-based IDs from the state snapshot; context switches to the new group
+- .track.move(index=N) - Move the track (or group) to 1-based position N among its siblings (top-level tracks, or its parent group's children)
 - .fx.add(name="eq") - Add internal FX (eq, compressor, reverb, delay, chorus, phaser, filter, utility, pitch shift, ir reverb)
 - .fx.add(name="<plugin_alias>") - Add third-party plugin using alias token (e.g. <serum_2>, <pro_q_3>, <surge_xt>)
 - .fx.add(name="Pro-Q 3") - Add plugin by exact display name (prefer alias tokens when available)
@@ -159,6 +161,8 @@ EXAMPLES:
   track(name="Vocals").fx.add(name="reverb")
   track(name="Vocals").fx.add(name="delay")
 - "rename the first clip on track 1 to Intro" -> track(id=1).clip.rename(index=0, name="Intro")
+- "move track 4 to the top" -> track(id=4).track.move(index=1)
+- "move the bass track down to position 3" -> track(name="Bass").track.move(index=3)
 - "group tracks 1, 2, and 3 as Drums" -> track(id=1).track.group(name="Drums", tracks="1,2,3")
 - "group all tracks" (master selected) -> filter(tracks).track.group(name="All Tracks")
 - "mute all tracks" (master selected) -> filter(tracks).track.set(mute=true)

@@ -15,7 +15,7 @@ COMMAND_SYSTEM = (
     "You are MAGDA, a DAW AI assistant. Respond ONLY with DSL code. No prose.\n"
     "Syntax: track(name=\"X\", new=true), track(id=N), filter(tracks, track.name == \"X\"), filter(tracks) for EVERY track\n"
     "Chains: .clip.new(bar=1, length_bars=4), .track.set(name=\"X\", colour=\"#ff5a36\", volume_db=-6, pan=0.5, mute=true, solo=true),\n"
-    ".track.group(name=\"Group\", tracks=\"1,2,3\"), .fx.add(name=\"reverb\"), .delete(), .select(), .clip.rename(index=0, name=\"X\"),\n"
+    ".track.group(name=\"Group\", tracks=\"1,2,3\"), .track.move(index=N), .fx.add(name=\"reverb\"), .delete(), .select(), .clip.rename(index=0, name=\"X\"),\n"
     ".clip.delete(index=0), .for_each(...), .clips.select(clip.length_bars > 2)\n"
     "Notes: .notes.add(pitch=C4, beat=0, length=1, velocity=100),\n"
     ".notes.add_chord(root=C4, quality=major, beat=0, length=1),\n"
@@ -59,6 +59,9 @@ router_examples = [
     ("group all tracks", "COMMAND"),
     ("mute all tracks", "COMMAND"),
     ("mute everything", "COMMAND"),
+    ("move the bass track to the top", "COMMAND"),
+    ("move track 4 up to position 2", "COMMAND"),
+    ("reorder the drums to the bottom", "COMMAND"),
     ("solo the piano", "COMMAND"),
     ("add EQ and compressor to track 1", "COMMAND"),
     ("create 5 tracks named after planets", "COMMAND"),
@@ -237,6 +240,11 @@ command_examples = [
      'track(name="Sub Bass", new=true).track.set(volume_db=-3, pan=0)'),
 
     # --- Track organisation ---
+    ("move track 4 to the top", "track(id=4).track.move(index=1)"),
+    ("move track 2 to position 5", "track(id=2).track.move(index=5)"),
+    ("move the bass track to the top", 'track(name="Bass").track.move(index=1)'),
+    ("move the drums down to position 3", 'track(name="Drums").track.move(index=3)'),
+    ("move the vocals track up to the second slot", 'track(name="Vocals").track.move(index=2)'),
     ("group tracks 1, 2, and 3 as Drums",
      'track(id=1).track.group(name="Drums", tracks="1,2,3")'),
     ("group tracks 4 and 5 as Vocals and color them blue",

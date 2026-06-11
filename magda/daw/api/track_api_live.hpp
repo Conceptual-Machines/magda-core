@@ -10,6 +10,7 @@ class TrackApiLive : public TrackApi {
     TrackId createTrack(const juce::String& name, TrackType type) override;
     TrackId groupTracks(const std::vector<TrackId>& trackIds, const juce::String& name) override;
     void deleteTrack(TrackId trackId) override;
+    void moveTrackToPosition(TrackId trackId, int oneBasedPosition) override;
 
     int getNumTracks() const override;
     const std::vector<TrackInfo>& getTracks() const override;

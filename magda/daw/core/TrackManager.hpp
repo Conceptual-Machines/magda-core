@@ -213,6 +213,14 @@ class TrackManager {
     // is what moves a child up/down inside a group). Inserts childId just before
     // beforeChildId; pass INVALID_TRACK_ID to move it to the end of the group.
     void moveChildWithinGroup(TrackId childId, TrackId beforeChildId);
+    // Move a track to a 1-based position among its siblings (its parent group's
+    // children, or the top-level tracks). Hierarchy-aware: a grouped track
+    // reorders within its group; a top-level track (incl. a group header)
+    // reorders among top-level tracks, its own children following via the tree.
+    // Position is clamped to the sibling range.
+    void moveTrackToPosition(TrackId trackId, int oneBasedPosition);
+    // 1-based position of a track among its siblings (0 if not found).
+    int getTrackSiblingPosition(TrackId trackId) const;
     TrackId createTrackInGroup(TrackId groupId, const juce::String& name = "",
                                TrackType type = TrackType::Audio);
     std::vector<TrackId> getChildTracks(TrackId groupId) const;

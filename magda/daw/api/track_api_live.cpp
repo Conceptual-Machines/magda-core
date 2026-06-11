@@ -16,6 +16,10 @@ void TrackApiLive::deleteTrack(TrackId trackId) {
     TrackManager::getInstance().deleteTrack(trackId);
 }
 
+void TrackApiLive::moveTrackToPosition(TrackId trackId, int oneBasedPosition) {
+    TrackManager::getInstance().moveTrackToPosition(trackId, oneBasedPosition);
+}
+
 int TrackApiLive::getNumTracks() const {
     return TrackManager::getInstance().getNumTracks();
 }

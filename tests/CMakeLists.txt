@@ -66,6 +66,7 @@ set(TEST_SOURCES
     test_mix_analysis_audio.cpp
     test_console_routing.cpp
     test_conversation_store.cpp
+    test_track_reorder.cpp
     test_automation_modes.cpp
     test_automation_singleton.cpp
     test_instruction_executor_context.cpp

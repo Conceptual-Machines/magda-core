@@ -985,6 +985,89 @@ void TrackManager::moveChildWithinGroup(TrackId childId, TrackId beforeChildId) 
     notifyTracksChanged();
 }
 
+int TrackManager::getTrackSiblingPosition(TrackId trackId) const {
+    const auto* track = getTrack(trackId);
+    if (!track)
+        return 0;
+
+    const std::vector<TrackId>* siblings = nullptr;
+    std::vector<TrackId> topLevel;
+    if (track->hasParent()) {
+        const auto* parent = getTrack(track->parentId);
+        if (!parent)
+            return 0;
+        siblings = &parent->childIds;
+    } else {
+        topLevel = getTopLevelTracks();
+        siblings = &topLevel;
+    }
+
+    for (size_t i = 0; i < siblings->size(); ++i)
+        if ((*siblings)[i] == trackId)
+            return static_cast<int>(i) + 1;
+    return 0;
+}
+
+void TrackManager::moveTrackToPosition(TrackId trackId, int oneBasedPosition) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return;
+
+    // Grouped track: reorder within the parent's childIds (the display order for
+    // group children). Compute the sibling that should follow it at the target
+    // position and insert before it.
+    if (track->hasParent()) {
+        const auto* parent = getTrack(track->parentId);
+        if (!parent)
+            return;
+        std::vector<TrackId> order = parent->childIds;
+        const int count = static_cast<int>(order.size());
+        if (count <= 1)
+            return;
+        const int pos = juce::jlimit(1, count, oneBasedPosition);
+        order.erase(std::remove(order.begin(), order.end(), trackId), order.end());
+        const TrackId before = (pos - 1 < static_cast<int>(order.size()))
+                                   ? order[static_cast<size_t>(pos - 1)]
+                                   : INVALID_TRACK_ID;
+        moveChildWithinGroup(trackId, before);  // fires notifyTracksChanged()
+        return;
+    }
+
+    // Top-level track (incl. a group header): reorder among top-level tracks.
+    // Display is tree-derived, so only the header's position relative to other
+    // top-level tracks in tracks_ matters; its children follow via childIds.
+    auto topLevel = getTopLevelTracks();
+    const int count = static_cast<int>(topLevel.size());
+    if (count <= 1)
+        return;
+    const int pos = juce::jlimit(1, count, oneBasedPosition);
+
+    std::vector<TrackId> desired;
+    desired.reserve(topLevel.size());
+    for (auto id : topLevel)
+        if (id != trackId)
+            desired.push_back(id);
+    const TrackId anchor = (pos - 1 < static_cast<int>(desired.size()))
+                               ? desired[static_cast<size_t>(pos - 1)]
+                               : INVALID_TRACK_ID;
+
+    auto self = std::find_if(tracks_.begin(), tracks_.end(),
+                             [&](const TrackInfo& t) { return t.id == trackId; });
+    if (self == tracks_.end())
+        return;
+    const TrackInfo info = *self;
+    tracks_.erase(self);
+
+    if (anchor == INVALID_TRACK_ID) {
+        tracks_.push_back(info);
+    } else {
+        auto at = std::find_if(tracks_.begin(), tracks_.end(),
+                               [&](const TrackInfo& t) { return t.id == anchor; });
+        tracks_.insert(at, info);
+    }
+    notifyTracksChanged();
+}
+
 void TrackManager::removeTrackFromGroup(TrackId trackId) {
     auto* track = getTrack(trackId);
     if (!track || !track->hasParent())

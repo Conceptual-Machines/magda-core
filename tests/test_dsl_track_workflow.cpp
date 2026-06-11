@@ -51,6 +51,29 @@ TEST_CASE("DSL filter(tracks) with no condition fans a set across every track", 
     CHECK(api.tracks_.muteWrites[1].value);
 }
 
+TEST_CASE("DSL track.move forwards a 1-based position to the facade", "[dsl][tracks][reorder]") {
+    test::MockMagdaApi api;
+    addTrack(api, 10, "Kick");
+    addTrack(api, 20, "Snare");
+    addTrack(api, 30, "Bass");
+
+    dsl::Interpreter interp(api);
+
+    REQUIRE(interp.execute("track(id=3).track.move(index=1)"));
+
+    REQUIRE(api.tracks_.moveWrites.size() == 1);
+    CHECK(api.tracks_.moveWrites[0].id == 30);
+    CHECK(api.tracks_.moveWrites[0].position == 1);
+}
+
+TEST_CASE("DSL track.move without index errors", "[dsl][tracks][reorder]") {
+    test::MockMagdaApi api;
+    addTrack(api, 10, "Kick");
+
+    dsl::Interpreter interp(api);
+    REQUIRE_FALSE(interp.execute("track(id=1).track.move()"));
+}
+
 TEST_CASE("DSL groups explicit track ids and chains colour onto group", "[dsl][tracks][group]") {
     test::MockMagdaApi api;
     addTrack(api, 10, "Kick");

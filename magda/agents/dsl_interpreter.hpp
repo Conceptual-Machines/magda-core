@@ -201,6 +201,7 @@ class Interpreter {
     bool executeNewClip(const Params& params);
     bool executeSetTrack(const Params& params);
     bool executeGroupTracks(const Params& params);
+    bool executeMoveTrack(const Params& params);
     bool executeDelete();
     bool executeDeleteClip(const Params& params);
     bool executeAddFx(const Params& params);

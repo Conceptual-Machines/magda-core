@@ -194,12 +194,17 @@ class MockTrackApi : public TrackApi {
         juce::String name;
         TrackId groupId;
     };
+    struct MoveWrite {
+        TrackId id;
+        int position;
+    };
 
     std::vector<TrackInfo> created;
     std::vector<TrackId> deleted;
     std::vector<NameWrite> nameWrites;
     std::vector<ColourWrite> colourWrites;
     std::vector<GroupWrite> groupWrites;
+    std::vector<MoveWrite> moveWrites;
     std::vector<VolumeWrite> volumeWrites;
     std::vector<PanWrite> panWrites;
     std::vector<MuteWrite> muteWrites;
@@ -228,6 +233,9 @@ class MockTrackApi : public TrackApi {
     }
     void deleteTrack(TrackId id) override {
         deleted.push_back(id);
+    }
+    void moveTrackToPosition(TrackId id, int oneBasedPosition) override {
+        moveWrites.push_back({id, oneBasedPosition});
     }
     int getNumTracks() const override {
         return static_cast<int>(tracks.size());

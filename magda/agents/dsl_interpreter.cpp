@@ -653,6 +653,8 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
             success = executeSetTrack(params);
         else if (methodKey == "track.group")
             success = executeGroupTracks(params);
+        else if (methodKey == "track.move")
+            success = executeMoveTrack(params);
         else if (methodKey == "delete")
             success = executeDelete();
         else if (methodKey == "clip.delete")
@@ -990,6 +992,34 @@ bool Interpreter::executeGroupTracks(const Params& params) {
     api_.selection().selectTrack(groupId);
     ctx_.addResult("Grouped " + juce::String(static_cast<int>(trackIds.size())) + " track(s) as '" +
                    name + "'");
+    return true;
+}
+
+bool Interpreter::executeMoveTrack(const Params& params) {
+    if (!params.has("index")) {
+        ctx_.setError("track.move requires index=N (1-based position)");
+        return false;
+    }
+    const int position = params.getInt("index");
+
+    // Apply to the filtered set or the current track. Moving every filtered
+    // track to the same slot is rarely meaningful, but we honour it in order so
+    // the final order is deterministic.
+    if (ctx_.inFilterContext) {
+        for (int trackId : ctx_.filteredTrackIds)
+            api_.tracks().moveTrackToPosition(trackId, position);
+        ctx_.addResult("Moved " + juce::String(static_cast<int>(ctx_.filteredTrackIds.size())) +
+                       " track(s) to position " + juce::String(position));
+        return true;
+    }
+
+    if (ctx_.currentTrackId < 0) {
+        ctx_.setError("No track context for track.move (use track(id=N) first)");
+        return false;
+    }
+
+    api_.tracks().moveTrackToPosition(ctx_.currentTrackId, position);
+    ctx_.addResult("Moved track to position " + juce::String(position));
     return true;
 }
 
