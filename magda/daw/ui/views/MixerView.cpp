@@ -1646,7 +1646,9 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
 
         menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
             if (result == -103) {
-                auto childIds = TrackManager::getInstance().ungroupTrack(trackId_);
+                auto cmd = std::make_unique<UngroupTrackCommand>(trackId_);
+                auto childIds = cmd->getChildren();
+                UndoManager::getInstance().executeCommand(std::move(cmd));
                 if (!childIds.empty()) {
                     std::unordered_set<TrackId> selectedChildren(childIds.begin(), childIds.end());
                     SelectionManager::getInstance().selectTracks(selectedChildren);
@@ -1655,7 +1657,10 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
                 auto& selection = SelectionManager::getInstance();
                 std::vector<TrackId> selectedTracks(selection.getSelectedTracks().begin(),
                                                     selection.getSelectedTracks().end());
-                TrackId groupId = TrackManager::getInstance().groupTracks(selectedTracks);
+                auto cmd = std::make_unique<GroupTracksCommand>(selectedTracks, "Group");
+                auto* cmdPtr = cmd.get();
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+                TrackId groupId = cmdPtr->getCreatedGroupId();
                 if (groupId != INVALID_TRACK_ID)
                     selection.selectTrack(groupId);
             } else if (result == -101) {

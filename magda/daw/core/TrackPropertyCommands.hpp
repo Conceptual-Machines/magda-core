@@ -189,6 +189,74 @@ class MoveTrackCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for grouping tracks. Undo dissolves the created group.
+ *
+ * Faithful for the common case of grouping contiguous tracks; ungroup returns
+ * the children to the parent level at the group's position. Redo re-groups the
+ * same (still-existing) tracks.
+ */
+class GroupTracksCommand : public UndoableCommand {
+  public:
+    GroupTracksCommand(std::vector<TrackId> trackIds, juce::String name)
+        : trackIds_(std::move(trackIds)), name_(std::move(name)) {}
+
+    void execute() override {
+        groupId_ = TrackManager::getInstance().groupTracks(trackIds_, name_);
+    }
+    void undo() override {
+        if (groupId_ != INVALID_TRACK_ID)
+            TrackManager::getInstance().ungroupTrack(groupId_);
+    }
+    juce::String getDescription() const override {
+        return "Group Tracks";
+    }
+    TrackId getCreatedGroupId() const {
+        return groupId_;
+    }
+
+  private:
+    std::vector<TrackId> trackIds_;
+    juce::String name_;
+    TrackId groupId_ = INVALID_TRACK_ID;
+};
+
+/**
+ * @brief Command for ungrouping a group track. Undo re-groups the children.
+ */
+class UngroupTrackCommand : public UndoableCommand {
+  public:
+    explicit UngroupTrackCommand(TrackId groupId) : ungroupTarget_(groupId) {
+        if (const auto* group = TrackManager::getInstance().getTrack(groupId)) {
+            name_ = group->name;
+            children_ = group->childIds;
+        }
+    }
+
+    void execute() override {
+        TrackManager::getInstance().ungroupTrack(ungroupTarget_);
+    }
+    void undo() override {
+        if (children_.size() >= 2) {
+            // Re-group the children; track the new group so redo ungroups it.
+            ungroupTarget_ = TrackManager::getInstance().groupTracks(children_, name_);
+        }
+    }
+    juce::String getDescription() const override {
+        return "Ungroup Track";
+    }
+
+    /// The children captured before ungrouping (for callers that select them).
+    const std::vector<TrackId>& getChildren() const {
+        return children_;
+    }
+
+  private:
+    TrackId ungroupTarget_;
+    juce::String name_;
+    std::vector<TrackId> children_;
+};
+
+/**
  * @brief Command for setting track name
  */
 class SetTrackNameCommand : public UndoableCommand {

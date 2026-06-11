@@ -952,8 +952,6 @@ bool Interpreter::executeSetTrack(const Params& params) {
 }
 
 bool Interpreter::executeGroupTracks(const Params& params) {
-    auto& tm = api_.tracks();
-
     std::vector<int> trackIds;
     if (params.has("tracks")) {
         std::stringstream ss(params.get("tracks"));
@@ -981,7 +979,10 @@ bool Interpreter::executeGroupTracks(const Params& params) {
     }
 
     const auto name = juce::String(params.get("name", "Group"));
-    const auto groupId = tm.groupTracks(trackIds, name);
+    auto groupCmd = std::make_unique<GroupTracksCommand>(trackIds, name);
+    auto* groupCmdPtr = groupCmd.get();
+    api_.undo().executeCommand(std::move(groupCmd));
+    const auto groupId = groupCmdPtr->getCreatedGroupId();
     if (groupId == INVALID_TRACK_ID) {
         ctx_.setError("Failed to group tracks");
         return false;

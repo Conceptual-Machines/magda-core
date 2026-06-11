@@ -1997,7 +1997,10 @@ void SessionView::rebuildTracks() {
             auto& sel = SelectionManager::getInstance();
             std::vector<TrackId> selectedTracks(sel.getSelectedTracks().begin(),
                                                 sel.getSelectedTracks().end());
-            TrackId groupId = TrackManager::getInstance().groupTracks(selectedTracks);
+            auto cmd = std::make_unique<GroupTracksCommand>(selectedTracks, "Group");
+            auto* cmdPtr = cmd.get();
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            TrackId groupId = cmdPtr->getCreatedGroupId();
             if (groupId != INVALID_TRACK_ID)
                 sel.selectTrack(groupId);
         };
@@ -2006,7 +2009,9 @@ void SessionView::rebuildTracks() {
             return track != nullptr && track->isGroup() && !track->childIds.empty();
         };
         header->onUngroupTracks = [trackId]() {
-            auto childIds = TrackManager::getInstance().ungroupTrack(trackId);
+            auto cmd = std::make_unique<UngroupTrackCommand>(trackId);
+            auto childIds = cmd->getChildren();
+            UndoManager::getInstance().executeCommand(std::move(cmd));
             if (!childIds.empty()) {
                 std::unordered_set<TrackId> selectedChildren(childIds.begin(), childIds.end());
                 SelectionManager::getInstance().selectTracks(selectedChildren);

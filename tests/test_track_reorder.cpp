@@ -86,6 +86,40 @@ TEST_CASE("MoveTrackCommand reorders and undo restores the original position",
     UndoManager::getInstance().clearHistory();
 }
 
+TEST_CASE("GroupTracksCommand / UngroupTrackCommand round-trip", "[tracks][group][undo]") {
+    ReorderFixture fx;
+    UndoManager::getInstance().clearHistory();
+    auto a = fx.tm().createTrack("A", TrackType::Audio);
+    auto b = fx.tm().createTrack("B", TrackType::Audio);
+    auto c = fx.tm().createTrack("C", TrackType::Audio);
+
+    SECTION("group, undo dissolves, redo regroups") {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<GroupTracksCommand>(std::vector<TrackId>{a, b, c}, "G"));
+        REQUIRE(fx.tm().getTopLevelTracks().size() == 1);
+
+        REQUIRE(UndoManager::getInstance().undo());
+        REQUIRE(fx.tm().getTopLevelTracks() == std::vector<TrackId>{a, b, c});
+
+        REQUIRE(UndoManager::getInstance().redo());
+        REQUIRE(fx.tm().getTopLevelTracks().size() == 1);
+    }
+
+    SECTION("ungroup, undo re-groups") {
+        auto group = fx.tm().groupTracks({a, b, c}, "G");
+        UndoManager::getInstance().clearHistory();
+
+        UndoManager::getInstance().executeCommand(std::make_unique<UngroupTrackCommand>(group));
+        REQUIRE(fx.tm().getTopLevelTracks() == std::vector<TrackId>{a, b, c});
+
+        REQUIRE(UndoManager::getInstance().undo());
+        REQUIRE(fx.tm().getTopLevelTracks().size() == 1);
+        REQUIRE(fx.tm().getTrack(fx.tm().getTopLevelTracks()[0])->childIds ==
+                std::vector<TrackId>{a, b, c});
+    }
+    UndoManager::getInstance().clearHistory();
+}
+
 TEST_CASE("getTrackSiblingPosition is 1-based among siblings", "[tracks][reorder]") {
     ReorderFixture fx;
     auto a = fx.tm().createTrack("A", TrackType::Audio);
