@@ -982,6 +982,33 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#control-lanes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Control Lanes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pitch-glides-mpe" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pitch Glides (MPE)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overlay-tracks-ghost-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overlay Tracks (Ghost Notes)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#slicing-notes" class="md-nav__link">
     <span class="md-ellipsis">
       Slicing Notes
@@ -1855,6 +1882,33 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#control-lanes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Control Lanes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pitch-glides-mpe" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pitch Glides (MPE)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overlay-tracks-ghost-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overlay Tracks (Ghost Notes)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#slicing-notes" class="md-nav__link">
     <span class="md-ellipsis">
       Slicing Notes
@@ -1903,7 +1957,7 @@
 <li><strong>Drag</strong> a note to move it in time or pitch</li>
 <li><strong>Drag edges</strong> to resize note length</li>
 <li><span class="keys"><kbd class="key-command">Cmd</kbd></span> <strong>+ click</strong> a note to delete it directly. If the note is part of a multi-selection, the whole group is erased. Acts as a rubber tool.</li>
-<li><strong>Velocity lane</strong> at the bottom for editing note velocities</li>
+<li><strong>Control lanes</strong> at the bottom for velocity, CC and pitchbend (see <a href="#control-lanes">Control Lanes</a>)</li>
 <li><strong>Live input highlight</strong> — with the track's input monitoring on, the keyboard lights up notes as you play them (MIDI or computer keyboard) and scrolls a held note into view</li>
 </ul>
 <div class="admonition note">
@@ -1914,15 +1968,32 @@
 <li><strong>SNAP</strong> — Toggle snap-to-grid</li>
 <li><strong>Slice</strong> — Split each selected note into equal pieces (see <a href="#slicing-notes">Slicing Notes</a>)</li>
 <li><strong>Time Bend</strong> — Redistribute selected note timing along a curve (see <a href="../../time-bend/#piano-roll">Time Bend</a>)</li>
+<li><strong>Overlay tracks</strong> — Show other tracks' notes as a ghost overlay (see <a href="#overlay-tracks-ghost-notes">Overlay Tracks</a>)</li>
 <li><strong>Fullscreen</strong> — Pinned to the far right, this toggle expands the MIDI editor to fill the window. Click again to restore. Available for the Piano Roll and Drum Grid Editor.</li>
 </ul>
 </div>
 <div class="admonition note">
-<p class="admonition-title">Footer controls</p>
+<p class="admonition-title">Sidebar controls</p>
+<p>Stacked at the bottom of the left sidebar:</p>
 <ul>
-<li><img alt="bar chart" src="../../assets/images/icons/bar_chart.svg" width="16" /> <strong>Velocity</strong> — Toggle the velocity/MIDI lane at the bottom of the editor</li>
+<li><strong>MPE</strong> — Toggle pitch glide editing (see <a href="#pitch-glides-mpe">Pitch Glides</a>)</li>
+<li><strong>CC</strong> — Add a CC or pitchbend lane to the drawer</li>
+<li><strong>Velocity</strong> — Toggle the control-lane drawer at the bottom of the editor</li>
 </ul>
 </div>
+<h2 id="control-lanes">Control Lanes<a class="headerlink" href="#control-lanes" title="Permanent link">&para;</a></h2>
+<p>The drawer at the bottom of the editor holds the clip's control lanes, stacked vertically so they are all visible at once:</p>
+<ul>
+<li>The <strong>velocity</strong> lane is always present at the top. Drag the bars to set note velocities; selected notes edit together.</li>
+<li>Add <strong>CC</strong> and <strong>pitchbend</strong> lanes with the <strong>+</strong> button at the bottom of the lane header column (or the <strong>CC</strong> sidebar button). The menu offers <strong>Pitchbend</strong>, common controllers (<strong>CC 1 (Mod Wheel)</strong>, <strong>CC 7 (Volume)</strong>, <strong>CC 11 (Expression)</strong>, <strong>CC 64 (Sustain)</strong>) and <strong>Custom CC...</strong> for any controller number.</li>
+<li>Each added lane shows its name in the header column with a close button; the pitchbend lane also has a <strong>Range</strong> field for the bend range in semitones.</li>
+<li>Drag the drawer's top edge to resize it. The drawer grows automatically as lanes are added.</li>
+</ul>
+<h2 id="pitch-glides-mpe">Pitch Glides (MPE)<a class="headerlink" href="#pitch-glides-mpe" title="Permanent link">&para;</a></h2>
+<p>Toggle the <strong>MPE</strong> sidebar button to enter pitch glide editing. In this mode you draw per-note pitch expression directly on a note: the glide curve bends the note's pitch over its length, independently of other notes. Playback uses MPE, so each gliding note gets its own MIDI channel — point the track at an MPE-capable instrument to hear it.</p>
+<h2 id="overlay-tracks-ghost-notes">Overlay Tracks (Ghost Notes)<a class="headerlink" href="#overlay-tracks-ghost-notes" title="Permanent link">&para;</a></h2>
+<p>Click the <strong>Overlay tracks</strong> button in the header (next to the Piano Roll / Drum Grid tabs) to overlay MIDI from other tracks as ghost notes. The menu lists every other track that has MIDI clips; tick as many as you like — the menu stays open while you toggle, and <strong>Clear All</strong> removes them all at once.</p>
+<p>Ghost notes render dimmed in the source clip's colour, aligned on the shared timeline, and are never interactive: they are reference material for harmony and counterpoint while you edit the active clip. The overlay selection persists while you switch clips or move between the Piano Roll and Drum Grid Editor.</p>
 <h2 id="slicing-notes">Slicing Notes<a class="headerlink" href="#slicing-notes" title="Permanent link">&para;</a></h2>
 <p>Select one or more notes and click the <strong>Slice</strong> button in the editor header bar. A popup shows how many notes are selected and a <strong>SLICES</strong> control. Set how many equal pieces to divide each selected note into (2 to 32, default 4), then click <strong>Apply</strong> or press <span class="keys"><kbd class="key-enter">Enter</kbd></span>.</p>
 <p>Each selected note is split into that many equal-length pieces end to end, keeping the original pitch and velocity. The slices land on the same track in place of the original notes, and they become the new selection so you can immediately edit or slice them again. The action is undoable (<span class="keys"><kbd class="key-control">Ctrl</kbd><span>+</span><kbd class="key-z">Z</kbd></span> to revert). Click <strong>Cancel</strong> or press <span class="keys"><kbd class="key-escape">Esc</kbd></span> to dismiss without changing the clip.</p>

@@ -2145,8 +2145,9 @@
 <h2 id="working-with-devices">Working with Devices<a class="headerlink" href="#working-with-devices" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Drag</strong> plugins from the <a href="../panels/browsers/">Plugin Browser</a> onto the chain to add them</li>
-<li><strong>Drag</strong> devices to reorder them in the chain</li>
-<li><strong>Click</strong> a device to select it and show its parameters</li>
+<li><strong>Drag</strong> devices to reorder them in the chain; hold <span class="keys"><kbd class="key-alt">Alt</kbd></span> while dragging to <strong>copy</strong> instead of move (the cursor shows a copy badge)</li>
+<li><strong>Click</strong> a device to select it and show its parameters; <span class="keys"><kbd class="key-command">Cmd</kbd></span>-click adds or removes a device from a multi-selection, <span class="keys"><kbd class="key-shift">Shift</kbd></span>-click selects a range</li>
+<li><strong><span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-d">D</kbd></span></strong> duplicates the selected device(s) in place</li>
 <li><strong>Right-click</strong> a device for options: bypass, remove, replace, move to rack</li>
 <li>Each device has <strong>Mod</strong> and <strong>Macro</strong> buttons to toggle the modulation and macro panels</li>
 <li>Plugin devices have a <strong>Learn</strong> button that maps a control in the plugin's own UI back to the matching parameter slot — see <a href="../plugin-parameters/#learn-mode">Plugin Parameters</a></li>
@@ -2183,7 +2184,8 @@
 <li><strong>Mute</strong> (M) / <strong>Solo</strong> (S) — Mute or solo individual chains</li>
 <li><strong>Devices</strong> — Each chain has its own ordered list of devices</li>
 </ul>
-<p>Click the <strong>+</strong> button next to "Chains" to add a new parallel chain.</p>
+<p>Click the <strong>+</strong> button next to "Chains" to add a new parallel chain. Double-click a chain's name to rename it.</p>
+<p>Select multiple chains with <span class="keys"><kbd class="key-command">Cmd</kbd></span>-click (toggle) or <span class="keys"><kbd class="key-shift">Shift</kbd></span>-click (range). When more than one chain is selected, editing volume, pan, mute, solo, or bypass on any selected chain applies to the whole selection — volume and pan shift each chain by the same amount from its own value, so their relative balance is preserved.</p>
 <h3 id="use-cases">Use Cases<a class="headerlink" href="#use-cases" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Parallel processing</strong> — Blend dry and wet signals (e.g., parallel compression)</li>

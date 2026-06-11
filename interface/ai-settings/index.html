@@ -617,6 +617,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Config">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#local-server-openai-compatible" class="md-nav__link">
+    <span class="md-ellipsis">
+      Local Server (OpenAI-compatible)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1895,6 +1910,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Config">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#local-server-openai-compatible" class="md-nav__link">
+    <span class="md-ellipsis">
+      Local Server (OpenAI-compatible)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1989,7 +2019,11 @@
 <tbody>
 <tr>
 <td><strong>Mode</strong></td>
-<td><strong>Local</strong> (every agent uses the embedded llama model), <strong>Cloud</strong> (every agent uses a cloud provider), or <strong>Hybrid</strong> (a mix)</td>
+<td><strong>Local</strong> (every agent uses a local model), <strong>Cloud</strong> (every agent uses a cloud provider), or <strong>Hybrid</strong> (a mix)</td>
+</tr>
+<tr>
+<td><strong>Source</strong></td>
+<td>In Local mode: <strong>Embedded</strong> (the built-in llama.cpp engine, configured on the Local tab) or <strong>Local server</strong> (an OpenAI-compatible server you run yourself)</td>
 </tr>
 <tr>
 <td><strong>Provider</strong></td>
@@ -2001,7 +2035,14 @@
 </tr>
 </tbody>
 </table>
-<p>In <strong>Local</strong> mode the provider and optimize options are hidden, since everything runs on the embedded model.</p>
+<p>In <strong>Local</strong> mode the provider and optimize options are hidden, since everything runs locally.</p>
+<h3 id="local-server-openai-compatible">Local Server (OpenAI-compatible)<a class="headerlink" href="#local-server-openai-compatible" title="Permanent link">&para;</a></h3>
+<p>With <strong>Source</strong> set to <strong>Local server</strong>, MAGDA talks to any server that speaks the OpenAI API — <strong>LM Studio</strong>, <strong>Ollama</strong>, <strong>GPUStack</strong>, or a plain <code>llama.cpp</code> server. The default address is Ollama's (<code>http://localhost:11434/v1</code>); MAGDA normalises whatever form you give it, with or without the <code>/v1</code> suffix.</p>
+<ul>
+<li><strong>Model</strong> — pick the model the server should use. <strong>Refresh</strong> queries the server's model list; you can also type a model id directly.</li>
+<li>An API key/token is only needed for servers that require one (for example GPUStack); the others run without it.</li>
+</ul>
+<p>One server and one model serve all agent roles, the same way the embedded model does.</p>
 <h2 id="sample-analyzer">Sample Analyzer<a class="headerlink" href="#sample-analyzer" title="Permanent link">&para;</a></h2>
 <p>The Sample Analyzer is the audio-tagging model behind the <a href="../../panels/media-library/">Media Library</a>'s semantic search and "find similar sounds". It is an optional download, separate from the LLM models on the other tabs.</p>
 <ul>

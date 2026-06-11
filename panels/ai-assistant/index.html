@@ -967,6 +967,24 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#view-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      View Context
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mixing-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mixing Agent
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#dsl-tab" class="md-nav__link">
     <span class="md-ellipsis">
       DSL Tab
@@ -2063,6 +2081,24 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#view-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      View Context
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mixing-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mixing Agent
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#dsl-tab" class="md-nav__link">
     <span class="md-ellipsis">
       DSL Tab
@@ -2218,6 +2254,22 @@
 </ul>
 <p>The agent works in terms of drum <strong>roles</strong> (kick, snare, closed hat, and so on), so it places hits on the pads you have labelled with matching <a href="../drum-grid-editor/#row-labels-and-roles">roles</a>. If a Drum Grid clip is selected, its current pattern is sent along as context, so follow-up requests like "add a crash on the downbeat" build on what is already there. The generated pattern is written straight into the selected clip.</p>
 <p>Drummer mode is automatic and context-driven; there is no slash command to type. Select a non-drum track to return to the general assistant.</p>
+<h2 id="view-context">View Context<a class="headerlink" href="#view-context" title="Permanent link">&para;</a></h2>
+<p>The console follows the view you are working in. The context label above the input box shows where your requests are routed:</p>
+<ul>
+<li><strong>Arrangement view</strong> — requests go through the general assistant, which picks the right specialised agent for the task.</li>
+<li><strong>Session view</strong> — requests are scoped to session workflows (scenes, clip slots, launching).</li>
+<li><strong>Mixer and master views</strong> — requests are routed to the <strong>mixing agent</strong>.</li>
+</ul>
+<h2 id="mixing-agent">Mixing Agent<a class="headerlink" href="#mixing-agent" title="Permanent link">&para;</a></h2>
+<p>In the mixer view, the console talks to a specialised mixing agent. It can read the per-track measurement layer — loudness, peaks, stereo width and correlation, and detected frequency collisions between tracks — and ground its feedback in those numbers.</p>
+<p>Run an analysis from the mixer's <a href="../../mixer-view/#mix-analysis">Analyze button</a> first; a <strong>mix analysis ready</strong> chip appears next to the console input once results exist. Then ask things like:</p>
+<ul>
+<li>"what is fighting with the bass?"</li>
+<li>"is the master loud enough for streaming?"</li>
+<li>"which tracks are mono-incompatible?"</li>
+</ul>
+<p>The agent reads the measured findings rather than guessing from track names, and can suggest concrete moves (level trims, EQ areas to look at) based on them.</p>
 <h2 id="dsl-tab">DSL Tab<a class="headerlink" href="#dsl-tab" title="Permanent link">&para;</a></h2>
 <p><img alt="DSL Console" src="../../assets/images/panels/dsl-repl.png" width="300" /></p>
 <p>The DSL tab provides a code editor with <strong>syntax highlighting</strong> for the MAGDA DSL. It's designed for users who want to script DAW operations directly without going through the AI.</p>

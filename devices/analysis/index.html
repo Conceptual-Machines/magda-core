@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#analysis-oscilloscope-spectrum" class="md-skip">
+        <a href="#analysis-oscilloscope-spectrum-levels" class="md-skip">
           Skip to content
         </a>
       
@@ -1429,6 +1429,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Spectrum Analyzer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#track-overlay-masking" class="md-nav__link">
+    <span class="md-ellipsis">
+      Track Overlay &amp; Masking
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#levels" class="md-nav__link">
+    <span class="md-ellipsis">
+      Levels
+    </span>
+  </a>
+  
 </li>
       
     </ul>
@@ -1868,6 +1892,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Spectrum Analyzer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#track-overlay-masking" class="md-nav__link">
+    <span class="md-ellipsis">
+      Track Overlay &amp; Masking
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#levels" class="md-nav__link">
+    <span class="md-ellipsis">
+      Levels
+    </span>
+  </a>
+  
 </li>
       
     </ul>
@@ -1889,9 +1937,9 @@
   
 
 
-<h1 id="analysis-oscilloscope-spectrum">Analysis (Oscilloscope &amp; Spectrum)<a class="headerlink" href="#analysis-oscilloscope-spectrum" title="Permanent link">&para;</a></h1>
-<p>MAGDA ships two real-time analysis devices, an <strong>Oscilloscope</strong> and a <strong>Spectrum Analyzer</strong>. They tap the signal passing through them and draw it; they do not change the audio. Drag either from the Plugin Browser onto any track's FX chain, or add it to the <a href="../../fx-chain/#post-fx-section">post-FX area</a> of a track or the master.</p>
-<p>Both devices also appear as compact <a href="../../mixer-view/#mini-analyzers">mini analyzers</a> on the mixer strips, and either can be popped out into its own always-on-top window from the <strong>open-in-window</strong> button in the device header.</p>
+<h1 id="analysis-oscilloscope-spectrum-levels">Analysis (Oscilloscope, Spectrum &amp; Levels)<a class="headerlink" href="#analysis-oscilloscope-spectrum-levels" title="Permanent link">&para;</a></h1>
+<p>MAGDA ships three real-time analysis devices: an <strong>Oscilloscope</strong>, a <strong>Spectrum Analyzer</strong>, and a <strong>Levels</strong> meter. They tap the signal passing through them and draw it; they do not change the audio. Drag any of them from the Plugin Browser onto any track's FX chain, or add them to the <a href="../../fx-chain/#post-fx-section">post-FX area</a> of a track or the master.</p>
+<p>The Oscilloscope and Spectrum Analyzer also appear as compact <a href="../../mixer-view/#mini-analyzers">mini analyzers</a> on the mixer strips, and can be popped out into their own always-on-top windows from the <strong>open-in-window</strong> button in the device header.</p>
 <h2 id="oscilloscope">Oscilloscope<a class="headerlink" href="#oscilloscope" title="Permanent link">&para;</a></h2>
 <p>The Oscilloscope draws the waveform in the time domain. It triggers on a zero crossing so the trace holds still instead of scrolling, and renders a stable min/max envelope of the signal.</p>
 <table>
@@ -1942,9 +1990,49 @@
 </tbody>
 </table>
 <p>A <strong>peak-hold</strong> line sits on top of the live curve, marking the highest level reached in each band. The frequency axis runs across the audible range with a dB magnitude scale down the side.</p>
+<h3 id="track-overlay-masking">Track Overlay &amp; Masking<a class="headerlink" href="#track-overlay-masking" title="Permanent link">&para;</a></h3>
+<p>In the full editor or pop-out window, the <strong>Overlay</strong> selector overlays another track's spectrum on the display as a neutral grey trace, so you can see how two tracks share the frequency range. When an overlay is active, MAGDA also runs its <strong>masking detector</strong> between the two tracks: frequency ranges where they fight for the same space are shaded in a warm tint behind the curves, with the shading intensity following the severity of the clash. Pick <strong>Off</strong> to remove the overlay.</p>
+<p>The same collision data appears in the mixer's <a href="../../mixer-view/#mix-analysis">mix analysis</a> findings.</p>
+<h2 id="levels">Levels<a class="headerlink" href="#levels" title="Permanent link">&para;</a></h2>
+<p>The Levels meter gives broadcast-grade numbers for the signal at its insert point — drop it on the master for the mix, or on any track:</p>
+<table>
+<thead>
+<tr>
+<th>Reading</th>
+<th>What it tells you</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>LUFS</strong></td>
+<td>Integrated loudness (BS.1770) — the perceived level streaming services normalise to.</td>
+</tr>
+<tr>
+<td><strong>True peak</strong></td>
+<td>Inter-sample peak in dBTP, caught by oversampling — what a converter actually hits.</td>
+</tr>
+<tr>
+<td><strong>PLR</strong></td>
+<td>Peak-to-loudness ratio — how dynamic the signal is.</td>
+</tr>
+<tr>
+<td><strong>PSR</strong></td>
+<td>Peak-to-short-term ratio — how squashed the loudest moments are.</td>
+</tr>
+<tr>
+<td><strong>Correlation</strong></td>
+<td>Stereo phase relationship — negative values warn of mono-compatibility problems.</td>
+</tr>
+<tr>
+<td><strong>Width</strong></td>
+<td>Stereo width, from mono to fully wide.</td>
+</tr>
+</tbody>
+</table>
+<p>The device is a transparent pass-through, and only spends CPU on measurement while its meter is actually visible. Reopening it resets the integrated readings.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Both analyzers refresh continuously and add no latency or gain to the signal, so you can leave them inserted anywhere in a chain. In the post-FX area, only one Oscilloscope and one Spectrum Analyzer can exist per track.</p>
+<p>The analyzers refresh continuously and add no latency or gain to the signal, so you can leave them inserted anywhere in a chain. In the post-FX area, only one of each analysis device can exist per track.</p>
 </div>
 
 
