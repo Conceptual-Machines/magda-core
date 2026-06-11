@@ -651,7 +651,7 @@ void AIChatConsoleContent::RequestThread::run() {
         // by the mixer's Analyze button (#886) and held by MixAnalysisService; we
         // hand that measured data to the agent as context and let the user discuss
         // it. The typed message is the question. We're off the message thread, so
-        // the blocking generate() is safe to call directly.
+        // streaming the prose token-by-token (like the other intents) is safe.
         auto cached = magda::MixAnalysisService::getInstance().latest();
         if (!cached.has_value() || cached->tracks.empty()) {
             error = "No mix analysis yet. Run one from the mixer's Analyze button first.";
@@ -661,7 +661,9 @@ void AIChatConsoleContent::RequestThread::run() {
             input.priorContext = priorContext;  // continuity across analyses (#886)
 
             magda::MixAnalysisAgent mixAgent;
-            auto r = mixAgent.generate(input);
+            auto r = mixAgent.generateStreaming(input, onToken);
+            if (threadShouldExit())
+                return;
             if (r.hasError)
                 error = r.error.empty() ? "Mix analysis failed." : r.error;
             else

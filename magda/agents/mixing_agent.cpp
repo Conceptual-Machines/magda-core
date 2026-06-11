@@ -155,6 +155,11 @@ juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
 }
 
 MixAnalysisAgent::Result MixAnalysisAgent::generate(const Input& input) {
+    return generateStreaming(input, {});
+}
+
+MixAnalysisAgent::Result MixAnalysisAgent::generateStreaming(const Input& input,
+                                                             TokenCallback onToken) {
     Result result;
     result.payload = buildUserMessage(input).toStdString();
 
@@ -185,7 +190,13 @@ MixAnalysisAgent::Result MixAnalysisAgent::generate(const Input& input) {
     request.userMessage = juce::String(result.payload);
     request.temperature = 0.3f;
 
-    auto response = client->sendRequest(request);
+    llm::Response response;
+    if (onToken) {
+        response = client->sendStreamingRequest(
+            request, [&](const juce::String& token) { return onToken(token); });
+    } else {
+        response = client->sendRequest(request);
+    }
     result.wallSeconds = response.wallSeconds;
     result.inputTokens = response.inputTokens;
     result.outputTokens = response.outputTokens;

@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -108,8 +109,15 @@ class MixAnalysisAgent {
         int totalTokens = -1;      // provider-reported total tokens
     };
 
+    /** Per-token streaming callback. Return false to abort the request. */
+    using TokenCallback = std::function<bool(const juce::String&)>;
+
     /** Blocking LLM call. Run off the message thread. */
     Result generate(const Input& input);
+
+    /** Streaming variant of generate(): calls onToken for each token as it
+     *  arrives, otherwise identical. Run off the message thread. */
+    Result generateStreaming(const Input& input, TokenCallback onToken);
 
     /** Exposed so a harness can measure payload size without an LLM call. */
     static juce::String buildUserMessage(const Input& input);
