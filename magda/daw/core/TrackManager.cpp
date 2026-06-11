@@ -349,6 +349,10 @@ TrackId TrackManager::groupTracks(const std::vector<TrackId>& trackIds, const ju
     if (trackIds.size() < 2)
         return INVALID_TRACK_ID;
 
+    // createGroupTrack/moveTrack/addTrackToGroup each fire notifyTracksChanged();
+    // coalesce them so the UI rebuilds once instead of once per grouped track.
+    BatchScope batch;
+
     std::unordered_set<TrackId> requested(trackIds.begin(), trackIds.end());
     requested.erase(INVALID_TRACK_ID);
     requested.erase(MASTER_TRACK_ID);
@@ -2553,10 +2557,30 @@ void TrackManager::refreshIdCountersFromTracks() {
 // ============================================================================
 
 void TrackManager::notifyTracksChanged() {
+    // While a batch is open, coalesce: record the change and fire once when the
+    // outermost scope closes. A multi-track fan-out (group/mute/fx across N
+    // tracks) would otherwise rebuild every track/mixer panel N times.
+    if (batchDepth_ > 0) {
+        tracksChangedPending_ = true;
+        return;
+    }
     ScopedNotifyGuard guard(*this);
     for (size_t i = 0; i < listeners_.size(); ++i) {
         if (listeners_[i])
             listeners_[i]->tracksChanged();
+    }
+}
+
+void TrackManager::beginBatch() {
+    ++batchDepth_;
+}
+
+void TrackManager::endBatch() {
+    if (batchDepth_ == 0)
+        return;
+    if (--batchDepth_ == 0 && tracksChangedPending_) {
+        tracksChangedPending_ = false;
+        notifyTracksChanged();
     }
 }
 

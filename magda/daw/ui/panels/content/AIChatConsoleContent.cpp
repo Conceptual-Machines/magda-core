@@ -693,6 +693,11 @@ void AIChatConsoleContent::RequestThread::run() {
             if (!safeThis)
                 return;
 
+            // Execution runs synchronously on the message thread; a multi-track
+            // fan-out can take a beat. Show the busy cursor so there's feedback
+            // even while the thread is occupied (a spinner couldn't animate).
+            juce::MouseCursor::showWaitCursor();
+
             std::string response;
             bool hasContent =
                 !dsl.empty() || !musicIR.empty() || !autoIR.empty() || !mixAnalysis.empty();
@@ -706,6 +711,10 @@ void AIChatConsoleContent::RequestThread::run() {
                 // the piano-roll, producing O(n^2) work and a visible stall
                 // between stream-end and notes appearing on screen.
                 magda::ClipManager::BatchScope batchScope;
+                // Same idea for structural track changes: an "all tracks"
+                // fan-out (group/mute/fx across N tracks) fires tracksChanged()
+                // per track, rebuilding every track/mixer panel N times.
+                magda::TrackManager::BatchScope trackBatch;
 
                 // Execute DSL from command agent
                 int commandClipId = -1;
@@ -838,6 +847,7 @@ void AIChatConsoleContent::RequestThread::run() {
             safeThis->processing_ = false;
             safeThis->restoreSendIcon();
             safeThis->inputBox_->grabKeyboardFocus();
+            juce::MouseCursor::hideWaitCursor();
         });
 }
 

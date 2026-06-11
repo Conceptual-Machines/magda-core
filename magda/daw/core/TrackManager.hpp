@@ -735,6 +735,33 @@ class TrackManager {
     // UI to rebuild once the final state is in place.
     void notifyTracksChanged();
 
+    /**
+     * @brief Suspend and coalesce structural tracksChanged() notifications.
+     *
+     * Nestable. While any suspension is active, notifyTracksChanged() records
+     * that a change happened instead of firing; when the outermost suspension
+     * ends a single tracksChanged() fires. Intended for bulk multi-track
+     * mutations (AI fan-out, grouping N tracks) where firing per track causes
+     * O(n) full rebuilds of every track/mixer panel and hangs the UI.
+     *
+     * Must be used on the message thread. Mirrors ClipManager::BatchScope.
+     */
+    void beginBatch();
+    void endBatch();
+
+    /// RAII helper for beginBatch/endBatch.
+    class BatchScope {
+      public:
+        BatchScope() {
+            TrackManager::getInstance().beginBatch();
+        }
+        ~BatchScope() {
+            TrackManager::getInstance().endBatch();
+        }
+        BatchScope(const BatchScope&) = delete;
+        BatchScope& operator=(const BatchScope&) = delete;
+    };
+
   private:
     TrackManager();
     ~TrackManager() = default;
@@ -748,6 +775,12 @@ class TrackManager {
     std::vector<TrackInfo> tracks_;
     std::vector<TrackManagerListener*> listeners_;
     int notifyDepth_ = 0;
+
+    // Batch coalescing for structural notifications (see beginBatch()). While
+    // batchDepth_ > 0, notifyTracksChanged() sets the pending flag instead of
+    // firing; endBatch() fires once when the outermost scope closes.
+    int batchDepth_ = 0;
+    bool tracksChangedPending_ = false;
 
     // RAII guard for safe listener iteration. While active, removeListener()
     // nullifies entries instead of erasing. On destruction, compacts the list.
