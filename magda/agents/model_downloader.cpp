@@ -8,7 +8,7 @@ ModelDownloader::~ModelDownloader() {
 
 juce::String ModelDownloader::getDefaultModelUrl() {
     return "https://huggingface.co/ConceptualMachines/magda-gguf/resolve/main/"
-           "magda-v0.3.0-q4_k_m.gguf";
+           "magda-v0.4.0-q4_k_m.gguf";
 }
 
 void ModelDownloader::startDownload(const juce::String& url, const juce::File& targetFile,
