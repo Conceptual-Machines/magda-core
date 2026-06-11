@@ -82,6 +82,11 @@ merges and exports a `q4_k_m` GGUF to Google Drive
 
 ## Step 4 - deploy the GGUF
 
+> **Never download the GGUF directly out of Colab** (the file-browser download
+> or `files.download()`). It crawls and takes forever for a multi-GB file. The
+> notebook already copies the GGUF to Google Drive (`MyDrive/magda-training/`) -
+> always grab it from **drive.google.com** instead, which is far faster.
+
 Download the `.gguf` from Drive to the Mac, then either:
 
 - **Local use:** MAGDA -> AI Settings -> set the local model path to the `.gguf`
