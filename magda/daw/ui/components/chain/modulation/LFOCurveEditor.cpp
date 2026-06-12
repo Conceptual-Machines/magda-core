@@ -59,6 +59,10 @@ void LFOCurveEditor::syncFromModInfo() {
         points_[i].y = static_cast<double>(modInfo_->curvePoints[i].value);
         points_[i].tension = static_cast<double>(modInfo_->curvePoints[i].tension);
         points_[i].curveType = intToCurveType(modInfo_->curvePoints[i].curveType);
+        points_[i].inHandle.x = static_cast<double>(modInfo_->curvePoints[i].inHandleX);
+        points_[i].inHandle.y = static_cast<double>(modInfo_->curvePoints[i].inHandleY);
+        points_[i].outHandle.x = static_cast<double>(modInfo_->curvePoints[i].outHandleX);
+        points_[i].outHandle.y = static_cast<double>(modInfo_->curvePoints[i].outHandleY);
     }
 
     // Update point component positions
@@ -87,6 +91,10 @@ void LFOCurveEditor::setModInfo(ModInfo* mod) {
             points_[i].y = static_cast<double>(mod->curvePoints[i].value);
             points_[i].tension = static_cast<double>(mod->curvePoints[i].tension);
             points_[i].curveType = intToCurveType(mod->curvePoints[i].curveType);
+            points_[i].inHandle.x = static_cast<double>(mod->curvePoints[i].inHandleX);
+            points_[i].inHandle.y = static_cast<double>(mod->curvePoints[i].inHandleY);
+            points_[i].outHandle.x = static_cast<double>(mod->curvePoints[i].outHandleX);
+            points_[i].outHandle.y = static_cast<double>(mod->curvePoints[i].outHandleY);
         }
         points_.front().x = 0.0;
         points_.back().x = 1.0;
@@ -112,6 +120,10 @@ void LFOCurveEditor::setModInfo(ModInfo* mod) {
             point.y = static_cast<double>(cp.value);
             point.tension = static_cast<double>(cp.tension);
             point.curveType = intToCurveType(cp.curveType);
+            point.inHandle.x = static_cast<double>(cp.inHandleX);
+            point.inHandle.y = static_cast<double>(cp.inHandleY);
+            point.outHandle.x = static_cast<double>(cp.outHandleX);
+            point.outHandle.y = static_cast<double>(cp.outHandleY);
             points_.push_back(point);
         }
         // Sort by x position
@@ -375,6 +387,10 @@ void LFOCurveEditor::onPointDragPreview(uint32_t pointId, double newX, double ne
         if (points_[i].id == pointId) {
             modInfo_->curvePoints[i].phase = static_cast<float>(newX);
             modInfo_->curvePoints[i].value = static_cast<float>(newY);
+            modInfo_->curvePoints[i].inHandleX = static_cast<float>(points_[i].inHandle.x);
+            modInfo_->curvePoints[i].inHandleY = static_cast<float>(points_[i].inHandle.y);
+            modInfo_->curvePoints[i].outHandleX = static_cast<float>(points_[i].outHandle.x);
+            modInfo_->curvePoints[i].outHandleY = static_cast<float>(points_[i].outHandle.y);
             found = true;
             break;
         }
@@ -601,6 +617,10 @@ void LFOCurveEditor::notifyWaveformChanged() {
             cpd.value = static_cast<float>(p.y);
             cpd.tension = static_cast<float>(p.tension);
             cpd.curveType = curveTypeToInt(p.curveType);
+            cpd.inHandleX = static_cast<float>(p.inHandle.x);
+            cpd.inHandleY = static_cast<float>(p.inHandle.y);
+            cpd.outHandleX = static_cast<float>(p.outHandle.x);
+            cpd.outHandleY = static_cast<float>(p.outHandle.y);
             modInfo_->curvePoints.push_back(cpd);
         }
         DBG("[HardCorner] LFOCurveEditor::notifyWaveformChanged modId="

@@ -8,10 +8,10 @@
 namespace magda {
 
 /**
- * @brief Draggable handle for adjusting curve tension between points
+ * @brief Draggable segment shaper handle between points
  *
- * Appears at the midpoint of a curve segment. Dragging up/down adjusts
- * the tension from concave (-3) through linear (0) to convex (+3).
+ * Appears on a curve segment. Dragging moves the actual Retrospect-style
+ * shaper point in X/Y; right-click toggles the segment shape.
  */
 class CurveTensionHandle : public juce::Component {
   public:
@@ -38,26 +38,26 @@ class CurveTensionHandle : public juce::Component {
         return tension_;
     }
 
-    // Set whether the curve segment goes downward (y2 < y1)
-    // When true, drag direction is inverted so "up" always bends outward
     void setSlopeGoesDown(bool goesDown) {
-        slopeGoesDown_ = goesDown;
+        juce::ignoreUnused(goesDown);
     }
 
     // Callbacks
     std::function<void(uint32_t, double)> onTensionChanged;
     std::function<void(uint32_t, double)> onTensionDragPreview;
+    std::function<void(uint32_t, double, double)> onShaperChanged;
+    std::function<void(uint32_t, double, double)> onShaperDragPreview;
     std::function<void(uint32_t)> onRightClick;
 
-    static constexpr int HANDLE_SIZE = 10;
+    static constexpr int HANDLE_SIZE = 9;
 
   private:
     uint32_t pointId_;
     double tension_ = 0.0;
     bool isDragging_ = false;
     bool isHovered_ = false;
-    bool slopeGoesDown_ = false;  // True if curve segment goes downward
-    int dragStartY_ = 0;          // Parent-relative Y at drag start
+    double dragOffsetX_ = 0.0;
+    double dragOffsetY_ = 0.0;
     double dragStartTension_ = 0.0;
 };
 

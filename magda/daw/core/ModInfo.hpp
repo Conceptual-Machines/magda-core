@@ -192,6 +192,10 @@ struct CurvePointData {
     float value = 0.5f;    // 0.0 to 1.0, output value
     float tension = 0.0f;  // -3 to +3, curve tension
     int curveType = 0;     // 0=Linear, 1=Bezier, 2=Step, 3=HardCorner
+    float inHandleX = 0.0f;
+    float inHandleY = 0.0f;
+    float outHandleX = 0.0f;
+    float outHandleY = 0.0f;
 };
 
 /**

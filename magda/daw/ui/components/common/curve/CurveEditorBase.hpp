@@ -173,6 +173,9 @@ class CurveEditorBase : public juce::Component {
     // Tension preview state
     uint32_t tensionPreviewPointId_ = INVALID_CURVE_POINT_ID;
     double tensionPreviewValue_ = 0.0;
+    uint32_t shaperPreviewPointId_ = INVALID_CURVE_POINT_ID;
+    double shaperPreviewX_ = 0.0;
+    double shaperPreviewY_ = 0.0;
 
     // Cursor — keep in sync with real modifier state from both keyboard
     // events and mouse moves (modifierKeysChanged alone is unreliable once
@@ -190,6 +193,10 @@ class CurveEditorBase : public juce::Component {
     void paintDrawingPreview(juce::Graphics& g);
     uint32_t findSegmentOwnerAt(double x) const;
     void toggleSegmentHardCorner(uint32_t pointId);
+    std::pair<double, double> getSegmentShaperPosition(const CurvePoint& p1, const CurvePoint& p2,
+                                                       double effectiveTension) const;
+    void updateSegmentShaperFromPixel(uint32_t pointId, double pixelX, double pixelY,
+                                      bool isPreview);
 
     // Data mutation callbacks - must be implemented by subclasses
     virtual void onPointAdded(double x, double y, CurveType curveType) = 0;

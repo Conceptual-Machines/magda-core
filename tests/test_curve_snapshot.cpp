@@ -217,6 +217,20 @@ TEST_CASE("CurveSnapshot::evaluate - hard corner uses two straight segments thro
     REQUIRE(firstQuarter > std::pow(0.25f, 5.0f));
 }
 
+TEST_CASE("CurveSnapshot::evaluate - hard corner uses Retrospect-style shaper handle",
+          "[curve][evaluate]") {
+    CurveSnapshot snap;
+    snap.count = 2;
+    snap.points[0] = {0.0f, 0.0f, 0.0f, 3, 0.0f, 0.0f, 0.25f, 0.9f};
+    snap.points[1] = {1.0f, 1.0f, 0.0f, 0, -0.75f, -0.1f, 0.0f, 0.0f};
+
+    REQUIRE(snap.evaluate(0.0f) == Approx(0.0f));
+    REQUIRE(snap.evaluate(0.125f) == Approx(0.45f));
+    REQUIRE(snap.evaluate(0.25f) == Approx(0.9f));
+    REQUIRE(snap.evaluate(0.625f) == Approx(0.95f));
+    REQUIRE(snap.evaluate(1.0f) == Approx(1.0f));
+}
+
 // ============================================================================
 // CurveSnapshotHolder - double buffered update
 // ============================================================================

@@ -20,6 +20,7 @@ void CurvePointComponent::paint(juce::Graphics& g) {
 
     int pointSize = isSelected_ ? POINT_SIZE_SELECTED : POINT_SIZE;
     float radius = pointSize / 2.0f;
+    const auto accent = juce::Colour(0xFFFF8A2A);
 
     // Draw connection lines to handles if visible
     if (handlesVisible_ && isSelected_) {
@@ -40,30 +41,25 @@ void CurvePointComponent::paint(juce::Graphics& g) {
         }
     }
 
-    // Point fill color based on state
-    juce::Colour fillColour;
+    const bool isHardPoint = point_.curveType == CurveType::HardCorner;
+    const auto pointRect =
+        juce::Rectangle<float>(centerX - radius, centerY - radius, static_cast<float>(pointSize),
+                               static_cast<float>(pointSize));
+
+    g.setColour(isHovered_ ? accent.brighter(0.25f) : accent);
+    if (isHardPoint)
+        g.fillRect(pointRect);
+    else
+        g.fillEllipse(pointRect);
+
     if (isSelected_) {
-        fillColour = juce::Colour(0xFFFFFFFF);
-    } else if (isHovered_) {
-        fillColour = juce::Colour(0xFFCCCCCC);
-    } else {
-        fillColour = juce::Colour(0xFFAAAAAA);
-    }
-
-    // Draw point
-    g.setColour(fillColour);
-    g.fillEllipse(centerX - radius, centerY - radius, static_cast<float>(pointSize),
-                  static_cast<float>(pointSize));
-
-    // Outline
-    g.setColour(juce::Colour(0xFF333333));
-    g.drawEllipse(centerX - radius, centerY - radius, static_cast<float>(pointSize),
-                  static_cast<float>(pointSize), 1.5f);
-
-    // Curve type indicator for bezier
-    if (point_.curveType == CurveType::Bezier && isSelected_) {
-        g.setColour(juce::Colour(0xFF6688CC));
-        g.fillEllipse(centerX - 2, centerY - 2, 4, 4);
+        const auto rr = radius + 2.0f;
+        const auto ring = juce::Rectangle<float>(centerX - rr, centerY - rr, rr * 2.0f, rr * 2.0f);
+        g.setColour(juce::Colours::white.withAlpha(0.9f));
+        if (isHardPoint)
+            g.drawRect(ring, 1.5f);
+        else
+            g.drawEllipse(ring, 1.5f);
     }
 }
 
