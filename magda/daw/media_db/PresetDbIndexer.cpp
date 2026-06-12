@@ -20,7 +20,7 @@ constexpr const char* kPresetExtension = ".mps";
 
 // Derive preset_kind from the first folder segment under presetsRoot.
 // Returns empty string when the path doesn't sit under a recognized
-// Chains/Racks/Devices subtree, which the caller treats as "skip".
+// preset subtree, which the caller treats as "skip".
 std::string presetKindFromPath(const std::filesystem::path& presetsRoot,
                                const std::filesystem::path& file) {
     std::error_code ec;
@@ -41,6 +41,9 @@ std::string presetKindFromPath(const std::filesystem::path& presetsRoot,
     }
     if (seg == "Devices") {
         return "device";
+    }
+    if (seg == "Curves") {
+        return "curve";
     }
     return {};
 }

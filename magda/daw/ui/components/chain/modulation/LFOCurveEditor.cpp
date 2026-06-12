@@ -716,4 +716,42 @@ void LFOCurveEditor::loadPreset(CurvePreset preset) {
     notifyWaveformChanged();
 }
 
+void LFOCurveEditor::loadCurvePoints(const std::vector<CurvePointData>& points) {
+    points_.clear();
+    nextPointId_ = 1;
+
+    for (const auto& cp : points) {
+        CurvePoint point;
+        point.id = nextPointId_++;
+        point.x = juce::jlimit(0.0, 1.0, static_cast<double>(cp.phase));
+        point.y = juce::jlimit(0.0, 1.0, static_cast<double>(cp.value));
+        point.tension = static_cast<double>(cp.tension);
+        point.curveType = intToCurveType(cp.curveType);
+        point.inHandle.x = static_cast<double>(cp.inHandleX);
+        point.inHandle.y = static_cast<double>(cp.inHandleY);
+        point.outHandle.x = static_cast<double>(cp.outHandleX);
+        point.outHandle.y = static_cast<double>(cp.outHandleY);
+        points_.push_back(point);
+    }
+
+    std::sort(points_.begin(), points_.end(),
+              [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
+
+    if (points_.size() < 2) {
+        loadPreset(CurvePreset::Triangle);
+        return;
+    }
+
+    points_.front().x = 0.0;
+    points_.back().x = 1.0;
+
+    if (modInfo_) {
+        modInfo_->curvePreset = CurvePreset::Custom;
+    }
+
+    rebuildPointComponents();
+    repaint();
+    notifyWaveformChanged();
+}
+
 }  // namespace magda

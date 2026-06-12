@@ -112,6 +112,9 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     // Load a preset curve shape
     void loadPreset(CurvePreset preset);
 
+    // Load an arbitrary saved curve point set
+    void loadCurvePoints(const std::vector<CurvePointData>& points);
+
   protected:
     // CurveEditorBase data mutation callbacks
     void onPointAdded(double x, double y, CurveType curveType) override;
