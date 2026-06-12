@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 
 #include "../magda/daw/audio/modifiers/CurveSnapshot.hpp"
 
@@ -200,6 +201,22 @@ TEST_CASE("CurveSnapshot::evaluate - tension curves interpolation", "[curve][eva
     }
 }
 
+TEST_CASE("CurveSnapshot::evaluate - hard corner uses two straight segments through tension handle",
+          "[curve][evaluate]") {
+    CurveSnapshot snap;
+    snap.count = 2;
+    snap.points[0] = {0.0f, 0.0f, 2.0f, 3};
+    snap.points[1] = {1.0f, 1.0f, 0.0f, 0};
+
+    REQUIRE(snap.evaluate(0.0f) == Approx(0.0f));
+    REQUIRE(snap.evaluate(0.5f) == Approx(0.03125f));
+    REQUIRE(snap.evaluate(1.0f) == Approx(1.0f));
+
+    const float firstQuarter = snap.evaluate(0.25f);
+    REQUIRE(firstQuarter == Approx(0.015625f));
+    REQUIRE(firstQuarter > std::pow(0.25f, 5.0f));
+}
+
 // ============================================================================
 // CurveSnapshotHolder - double buffered update
 // ============================================================================
@@ -223,6 +240,7 @@ TEST_CASE("CurveSnapshotHolder - update from ModInfo", "[curve][holder]") {
     REQUIRE(snap->points[1].phase == Approx(0.5f));
     REQUIRE(snap->points[1].value == Approx(1.0f));
     REQUIRE(snap->points[1].tension == Approx(0.5f));
+    REQUIRE(snap->points[1].curveType == 0);
 }
 
 TEST_CASE("CurveSnapshotHolder - double buffer swaps", "[curve][holder]") {

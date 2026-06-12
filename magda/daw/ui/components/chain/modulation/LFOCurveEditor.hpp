@@ -38,8 +38,13 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
 
     // CurveEditorBase coordinate interface
     double getPixelsPerX() const override;
+    double getPixelsPerY() const override;
     double pixelToX(int px) const override;
     int xToPixel(double x) const override;
+    double xToPixelF(double x) const override;
+    double pixelToY(int py) const override;
+    int yToPixel(double y) const override;
+    double yToPixelF(double y) const override;
 
     // LFO loops seamlessly
     bool shouldLoop() const override {
@@ -116,6 +121,7 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     void onTensionChanged(uint32_t pointId, double tension) override;
     void onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                           const CurveHandleData& outHandle) override;
+    void onPointCurveTypeChanged(uint32_t pointId, CurveType newType) override;
 
     // Constrain edge points to x=0 and x=1
     void constrainPointPosition(uint32_t pointId, double& x, double& y) override;

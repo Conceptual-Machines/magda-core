@@ -279,18 +279,30 @@ class ModulatorEngine {
 
         // Apply tension-based interpolation (same formula as CurveEditorBase)
         float tension = p1->tension;
+        auto applyTension = [tension](float input) {
+            if (std::abs(tension) < 0.001f)
+                return input;
+            if (tension > 0)
+                return std::pow(input, 1.0f + tension * 2.0f);
+            return 1.0f - std::pow(1.0f - input, 1.0f - tension * 2.0f);
+        };
+
+        constexpr int kHardCornerCurveType = 3;
+        if (p1->curveType == kHardCornerCurveType) {
+            constexpr float cornerT = 0.5f;
+            const float cornerValue = p1->value + applyTension(cornerT) * (p2->value - p1->value);
+            if (t <= cornerT) {
+                const float u = t / cornerT;
+                return p1->value + u * (cornerValue - p1->value);
+            }
+            const float u = (t - cornerT) / (1.0f - cornerT);
+            return cornerValue + u * (p2->value - cornerValue);
+        }
+
         if (std::abs(tension) < 0.001f) {
-            // Linear interpolation
             return p1->value + t * (p2->value - p1->value);
         } else {
-            float curvedT;
-            if (tension > 0) {
-                // Ease in - slow start, fast end
-                curvedT = std::pow(t, 1.0f + tension * 2.0f);
-            } else {
-                // Ease out - fast start, slow end
-                curvedT = 1.0f - std::pow(1.0f - t, 1.0f - tension * 2.0f);
-            }
+            float curvedT = applyTension(t);
             return p1->value + curvedT * (p2->value - p1->value);
         }
     }

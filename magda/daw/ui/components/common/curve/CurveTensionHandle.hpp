@@ -11,8 +11,7 @@ namespace magda {
  * @brief Draggable handle for adjusting curve tension between points
  *
  * Appears at the midpoint of a curve segment. Dragging up/down adjusts
- * the tension from concave (-1) through linear (0) to convex (+1).
- * With Shift held, extends to extreme range (-3 to +3).
+ * the tension from concave (-3) through linear (0) to convex (+3).
  */
 class CurveTensionHandle : public juce::Component {
   public:
@@ -48,6 +47,7 @@ class CurveTensionHandle : public juce::Component {
     // Callbacks
     std::function<void(uint32_t, double)> onTensionChanged;
     std::function<void(uint32_t, double)> onTensionDragPreview;
+    std::function<void(uint32_t)> onRightClick;
 
     static constexpr int HANDLE_SIZE = 10;
 

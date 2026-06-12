@@ -16,6 +16,7 @@ LFOCurveEditorContent::LFOCurveEditorContent(magda::ModInfo* modInfo,
                                              std::function<void()> onDragPreview)
     : modInfo_(modInfo) {
     // Configure the curve editor
+    curveEditor_.setName("popupLFO");
     curveEditor_.setModInfo(modInfo);
     curveEditor_.setCurveColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     curveEditor_.onWaveformChanged = std::move(onWaveformChanged);

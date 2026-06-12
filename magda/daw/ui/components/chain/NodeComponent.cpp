@@ -1536,6 +1536,7 @@ void NodeComponent::initializeModsMacrosPanels() {
         }
     };
     modulatorEditorPanel_->onCurveChanged = [this]() {
+        DBG("[HardCorner] NodeComponent onCurveChanged selectedModIndex=" << selectedModIndex_);
         // Force repaint of waveform displays for immediate curve editor sync
         if (modsPanel_) {
             modsPanel_->repaintWaveforms();

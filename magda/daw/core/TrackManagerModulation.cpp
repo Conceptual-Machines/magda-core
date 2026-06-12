@@ -523,6 +523,7 @@ void TrackManager::setModCurvePreset(const ChainNodePath& path, int modIndex, Cu
 }
 
 void TrackManager::notifyModCurveChanged(const ChainNodePath& path) {
+    DBG("[HardCorner] TrackManager::notifyModCurveChanged path=" << path.toString());
     notifyDeviceModifiersChanged(path.trackId);
 }
 

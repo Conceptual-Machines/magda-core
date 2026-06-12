@@ -83,9 +83,8 @@ void CurvePointComponent::mouseDown(const juce::MouseEvent& e) {
     if (parentEditor_)
         parentEditor_->grabKeyboardFocus();
 
-    // Right-click on a point must not be swallowed — forward to the parent
-    // curve editor so its context menu (e.g. Simplify Curve) appears whether
-    // the user clicked on empty space or directly on a point.
+    // Right-click is a segment action handled by the editor. Forward it so the
+    // parent can resolve the segment under the cursor.
     if (e.mods.isPopupMenu()) {
         isRightClickPending_ = true;
         if (parentEditor_) {

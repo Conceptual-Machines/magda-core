@@ -254,9 +254,11 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     addAndMakeVisible(waveformDisplay_);
 
     // Curve editor (for curve mode - bezier editing with integrated phase indicator)
+    curveEditor_.setName("miniLFO");
     curveEditor_.setVisible(false);
     curveEditor_.setCurveColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     curveEditor_.onWaveformChanged = [this]() {
+        DBG("[HardCorner] ModulatorEditorPanel embedded curve onWaveformChanged");
         // Curve points are stored directly in ModInfo by LFOCurveEditor
         // Sync external editor window if open
         if (curveEditorWindow_ && curveEditorWindow_->isVisible()) {
@@ -294,6 +296,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
             curveEditorWindow_ = std::make_unique<LFOCurveEditorWindow>(
                 modInfo,
                 [this]() {
+                    DBG("[HardCorner] ModulatorEditorPanel external curve onWaveformChanged");
                     // Sync embedded editor when external editor changes
                     curveEditor_.setModInfo(curveEditor_.getModInfo());
                     if (onCurveChanged) {

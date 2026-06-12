@@ -84,9 +84,9 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
     // Clip graphics to curve bounds so the curve never draws outside
     g.reduceClipRegion(bounds.toNearestInt());
 
-    // Draw the curve
+    // Draw the curve -- use width-scaled sample count for smoothness at any size
     juce::Path curvePath;
-    constexpr int NUM_POINTS = 48;
+    int NUM_POINTS = juce::jlimit(96, 256, static_cast<int>(w));
     for (int i = 0; i <= NUM_POINTS; ++i) {
         double t = static_cast<double>(i) / static_cast<double>(NUM_POINTS);
         double curved = daw::audio::StepClock::applyRampCurve(t, depth_, skew_, hardAngle_);

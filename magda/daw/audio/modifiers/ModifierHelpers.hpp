@@ -74,6 +74,30 @@ inline float mapSyncDivision(SyncDivision div) {
     return static_cast<float>(it != mapping.end() ? it->second : RT::quarter);
 }
 
+inline juce::String formatModCurveTypesForLog(const ModInfo& modInfo) {
+    juce::String result;
+    for (size_t i = 0; i < modInfo.curvePoints.size(); ++i) {
+        if (i > 0)
+            result += ",";
+        result += juce::String(static_cast<int>(i));
+        result += ":";
+        result += juce::String(modInfo.curvePoints[i].curveType);
+    }
+    return result;
+}
+
+inline juce::String formatSnapshotCurveTypesForLog(const CurveSnapshot& snapshot) {
+    juce::String result;
+    for (int i = 0; i < snapshot.count; ++i) {
+        if (i > 0)
+            result += ",";
+        result += juce::String(i);
+        result += ":";
+        result += juce::String(snapshot.points[static_cast<size_t>(i)].curveType);
+    }
+    return result;
+}
+
 /**
  * @brief Map MAGDA trigger/sync settings to TE syncType
  *
@@ -107,6 +131,13 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
     if (modInfo.waveform == LFOWaveform::Custom && holder) {
         // Custom waveform: update double-buffered curve data, wire callback
         holder->update(modInfo);
+        const auto* activeSnapshot = holder->active.load(std::memory_order_acquire);
+        DBG("[HardCorner] applyLFOProperties custom modId="
+            << static_cast<int>(modInfo.id) << " name=" << modInfo.name
+            << " points=" << static_cast<int>(modInfo.curvePoints.size()) << " modTypes=["
+            << formatModCurveTypesForLog(modInfo) << "] snapshotTypes=["
+            << (activeSnapshot ? formatSnapshotCurveTypesForLog(*activeSnapshot) : juce::String())
+            << "]");
         lfo->waveParam->setParameterFromHost(
             static_cast<float>(te::LFOModifier::waveCustomCallback), juce::dontSendNotification);
         lfo->customWaveFunction.store(&CurveSnapshotHolder::evaluateCallback,
@@ -114,6 +145,13 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
         lfo->customWaveUserData.store(holder, std::memory_order_release);
         lfo->depthParam->setParameterFromHost(1.0f, juce::dontSendNotification);
     } else {
+        if (!modInfo.curvePoints.empty()) {
+            DBG("[HardCorner] applyLFOProperties not using custom curve modId="
+                << static_cast<int>(modInfo.id) << " name=" << modInfo.name
+                << " waveform=" << static_cast<int>(modInfo.waveform)
+                << " holder=" << (holder != nullptr ? "yes" : "no") << " modTypes=["
+                << formatModCurveTypesForLog(modInfo) << "]");
+        }
         lfo->waveParam->setParameterFromHost(mapWaveform(modInfo.waveform),
                                              juce::dontSendNotification);
         lfo->customWaveFunction.store(nullptr, std::memory_order_release);

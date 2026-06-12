@@ -5,6 +5,34 @@
 
 namespace magda {
 
+namespace {
+
+juce::String formatCurvePointTypes(const std::vector<CurvePoint>& points) {
+    juce::String result;
+    for (size_t i = 0; i < points.size(); ++i) {
+        if (i > 0)
+            result += ",";
+        result += juce::String(static_cast<int>(points[i].id));
+        result += ":";
+        result += juce::String(curveTypeToInt(points[i].curveType));
+    }
+    return result;
+}
+
+juce::String formatModCurvePointTypes(const std::vector<CurvePointData>& points) {
+    juce::String result;
+    for (size_t i = 0; i < points.size(); ++i) {
+        if (i > 0)
+            result += ",";
+        result += juce::String(static_cast<int>(i));
+        result += ":";
+        result += juce::String(points[i].curveType);
+    }
+    return result;
+}
+
+}  // namespace
+
 LFOCurveEditor::LFOCurveEditor() {
     setName("LFOCurveEditor");
 
@@ -30,6 +58,7 @@ void LFOCurveEditor::syncFromModInfo() {
         points_[i].x = static_cast<double>(modInfo_->curvePoints[i].phase);
         points_[i].y = static_cast<double>(modInfo_->curvePoints[i].value);
         points_[i].tension = static_cast<double>(modInfo_->curvePoints[i].tension);
+        points_[i].curveType = intToCurveType(modInfo_->curvePoints[i].curveType);
     }
 
     // Update point component positions
@@ -45,6 +74,27 @@ void LFOCurveEditor::syncFromModInfo() {
 }
 
 void LFOCurveEditor::setModInfo(ModInfo* mod) {
+    // Value-only refresh when the structure is unchanged. setModInfo is called
+    // in a feedback loop after every edit (edit -> notifyWaveformChanged ->
+    // panel refresh -> setModInfo with our own ModInfo). A full reload renumbers
+    // point IDs and destroys/recreates the point components, which kills an
+    // in-progress drag (the symptom: a point can be added but not moved). When
+    // the point count is unchanged, update values in place and keep the live
+    // components and IDs instead of rebuilding.
+    if (mod && mod == modInfo_ && !points_.empty() && mod->curvePoints.size() == points_.size()) {
+        for (size_t i = 0; i < points_.size(); ++i) {
+            points_[i].x = static_cast<double>(mod->curvePoints[i].phase);
+            points_[i].y = static_cast<double>(mod->curvePoints[i].value);
+            points_[i].tension = static_cast<double>(mod->curvePoints[i].tension);
+            points_[i].curveType = intToCurveType(mod->curvePoints[i].curveType);
+        }
+        points_.front().x = 0.0;
+        points_.back().x = 1.0;
+        updatePointPositions();
+        repaint();
+        return;
+    }
+
     modInfo_ = mod;
 
     // Load curve points from ModInfo
@@ -61,7 +111,7 @@ void LFOCurveEditor::setModInfo(ModInfo* mod) {
             point.x = static_cast<double>(cp.phase);
             point.y = static_cast<double>(cp.value);
             point.tension = static_cast<double>(cp.tension);
-            point.curveType = CurveType::Linear;
+            point.curveType = intToCurveType(cp.curveType);
             points_.push_back(point);
         }
         // Sort by x position
@@ -104,21 +154,59 @@ void LFOCurveEditor::setModInfo(ModInfo* mod) {
 }
 
 double LFOCurveEditor::getPixelsPerX() const {
-    // X is phase 0-1, so pixels per X = content width
+    // X is phase 0-1. Usable width is inset by kEdgePadding on each side so
+    // extreme points are not flush against the content border.
     auto content = getContentBounds();
-    return content.getWidth() > 0 ? static_cast<double>(content.getWidth()) : 100.0;
+    double usable = content.getWidth() - 2.0 * kEdgePadding;
+    return usable > 0.0 ? usable : 100.0;
 }
 
 double LFOCurveEditor::pixelToX(int px) const {
     auto content = getContentBounds();
-    if (content.getWidth() <= 0)
+    double usable = content.getWidth() - 2.0 * kEdgePadding;
+    if (usable <= 0.0)
         return 0.0;
-    return static_cast<double>(px - content.getX()) / content.getWidth();
+    return static_cast<double>(px - content.getX() - kEdgePadding) / usable;
 }
 
 int LFOCurveEditor::xToPixel(double x) const {
     auto content = getContentBounds();
-    return content.getX() + static_cast<int>(x * content.getWidth());
+    double usable = content.getWidth() - 2.0 * kEdgePadding;
+    return content.getX() + kEdgePadding + static_cast<int>(x * usable);
+}
+
+double LFOCurveEditor::xToPixelF(double x) const {
+    auto content = getContentBounds();
+    double usable = content.getWidth() - 2.0 * kEdgePadding;
+    return static_cast<double>(content.getX() + kEdgePadding) + x * usable;
+}
+
+double LFOCurveEditor::getPixelsPerY() const {
+    // Y is value 0-1. Usable height is inset by kEdgePadding on each side so
+    // extreme points (top/bottom) are not flush against the content border.
+    auto content = getContentBounds();
+    double usable = content.getHeight() - 2.0 * kEdgePadding;
+    return usable > 0.0 ? usable : 100.0;
+}
+
+double LFOCurveEditor::pixelToY(int py) const {
+    auto content = getContentBounds();
+    double usable = content.getHeight() - 2.0 * kEdgePadding;
+    if (usable <= 0.0)
+        return 0.5;
+    return 1.0 - static_cast<double>(py - content.getY() - kEdgePadding) / usable;
+}
+
+int LFOCurveEditor::yToPixel(double y) const {
+    auto content = getContentBounds();
+    double usable = content.getHeight() - 2.0 * kEdgePadding;
+    return content.getY() + kEdgePadding + static_cast<int>((1.0 - y) * usable);
+}
+
+double LFOCurveEditor::yToPixelF(double y) const {
+    auto content = getContentBounds();
+    double usable = content.getHeight() - 2.0 * kEdgePadding;
+    return static_cast<double>(content.getY() + kEdgePadding) + (1.0 - y) * usable;
 }
 
 const std::vector<CurvePoint>& LFOCurveEditor::getPoints() const {
@@ -246,6 +334,21 @@ void LFOCurveEditor::onTensionChanged(uint32_t pointId, double tension) {
     notifyWaveformChanged();
 }
 
+void LFOCurveEditor::onPointCurveTypeChanged(uint32_t pointId, CurveType newType) {
+    for (auto& point : points_) {
+        if (point.id == pointId) {
+            DBG("[HardCorner] LFOCurveEditor::onPointCurveTypeChanged pointId="
+                << static_cast<int>(pointId) << " oldType=" << getCurveTypeName(point.curveType)
+                << " newType=" << getCurveTypeName(newType));
+            point.curveType = newType;
+            break;
+        }
+    }
+    // notifyWaveformChanged persists to ModInfo; rebuildPointComponents is
+    // called by the base class showCurveTypeMenuForPoint after this returns.
+    notifyWaveformChanged();
+}
+
 void LFOCurveEditor::onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                                       const CurveHandleData& outHandle) {
     for (auto& point : points_) {
@@ -347,9 +450,9 @@ void LFOCurveEditor::timerCallback() {
 }
 
 juce::Rectangle<int> LFOCurveEditor::getIndicatorBounds() const {
-    auto content = getContentBounds();
-    int x = content.getX() + static_cast<int>(lastPhase_ * content.getWidth());
-    int y = content.getY() + static_cast<int>((1.0f - lastValue_) * content.getHeight());
+    // Use the padded x/y mapping so the indicator tracks the curve position correctly.
+    int x = static_cast<int>(xToPixelF(static_cast<double>(lastPhase_)));
+    int y = static_cast<int>(yToPixelF(static_cast<double>(lastValue_)));
 
     // Return a small region around the indicator dot
     constexpr int margin = 8;
@@ -372,8 +475,9 @@ void LFOCurveEditor::paintPhaseIndicator(juce::Graphics& g) {
     float phase = modInfo_->phase;
     float value = modInfo_->value;
 
-    int x = content.getX() + static_cast<int>(phase * content.getWidth());
-    int y = content.getY() + static_cast<int>((1.0f - value) * content.getHeight());
+    // Use padded x/y mapping so the indicator follows the curve correctly.
+    int x = static_cast<int>(xToPixelF(static_cast<double>(phase)));
+    int y = static_cast<int>(yToPixelF(static_cast<double>(value)));
 
     // Draw crosshair lines (toggle with 'C' key)
     if (showCrosshair_) {
@@ -416,19 +520,23 @@ void LFOCurveEditor::paintGrid(juce::Graphics& g) {
     float width = static_cast<float>(bounds.getWidth());
     float height = static_cast<float>(bounds.getHeight());
 
-    // Horizontal grid lines (value divisions)
+    // Horizontal grid lines (value divisions) - placed using the padded y mapping
+    // so they align with the curve and point positions.
     for (int i = 1; i < gridDivisionsY_; ++i) {
-        int y = bounds.getHeight() * i / gridDivisionsY_;
+        // Map grid fraction to data value: i/gridDivisionsY_ from top is value (1 - i/grid)
+        double value = 1.0 - static_cast<double>(i) / gridDivisionsY_;
+        int y = static_cast<int>(yToPixelF(value));
         // Center line is brighter
         bool isCenter = (i * 2 == gridDivisionsY_);
         g.setColour(juce::Colour(isCenter ? 0x20FFFFFF : 0x10FFFFFF));
         g.drawHorizontalLine(y, 0.0f, width);
     }
 
-    // Vertical grid lines (phase divisions)
+    // Vertical grid lines (phase divisions) — placed using the padded x mapping
+    // so they align with the curve and point positions.
     for (int i = 1; i < gridDivisionsX_; ++i) {
-        int x = bounds.getWidth() * i / gridDivisionsX_;
-        // Center line is brighter
+        double phase = static_cast<double>(i) / gridDivisionsX_;
+        int x = static_cast<int>(xToPixelF(phase));
         bool isCenter = (i * 2 == gridDivisionsX_);
         g.setColour(juce::Colour(isCenter ? 0x20FFFFFF : 0x10FFFFFF));
         g.drawVerticalLine(x, 0.0f, height);
@@ -445,8 +553,8 @@ void LFOCurveEditor::paintLoopRegion(juce::Graphics& g) {
         return;
 
     auto content = getContentBounds();
-    float loopStartX = content.getX() + modInfo_->loopStart * content.getWidth();
-    float loopEndX = content.getX() + modInfo_->loopEnd * content.getWidth();
+    float loopStartX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopStart)));
+    float loopEndX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopEnd)));
 
     // Shade areas outside the loop region
     g.setColour(juce::Colour(0x30000000));
@@ -492,8 +600,14 @@ void LFOCurveEditor::notifyWaveformChanged() {
             cpd.phase = static_cast<float>(p.x);
             cpd.value = static_cast<float>(p.y);
             cpd.tension = static_cast<float>(p.tension);
+            cpd.curveType = curveTypeToInt(p.curveType);
             modInfo_->curvePoints.push_back(cpd);
         }
+        DBG("[HardCorner] LFOCurveEditor::notifyWaveformChanged modId="
+            << static_cast<int>(modInfo_->id) << " name=" << modInfo_->name
+            << " points=" << static_cast<int>(modInfo_->curvePoints.size()) << " editorTypes=["
+            << formatCurvePointTypes(points_) << "] modTypes=["
+            << formatModCurvePointTypes(modInfo_->curvePoints) << "]");
     }
 
     if (onWaveformChanged) {

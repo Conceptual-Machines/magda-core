@@ -148,22 +148,21 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
         // Just start at the first point - no extra wrap segment needed
         if (!points.empty()) {
             auto [firstX, firstY] = getEffectivePosition(points.front());
-            int firstPixelX = xToPixel(firstX);
-            int firstPixelY = yToPixel(firstY);
-            curvePath.startNewSubPath(static_cast<float>(firstPixelX),
-                                      static_cast<float>(firstPixelY));
+            float firstPixelX = static_cast<float>(xToPixelF(firstX));
+            float firstPixelY = static_cast<float>(yToPixelF(firstY));
+            curvePath.startNewSubPath(firstPixelX, firstPixelY);
             pathStarted = true;
         }
     } else {
         // For non-looping (automation): Extend from left edge at first point's value
         if (!points.empty()) {
             auto [firstX, firstY] = getEffectivePosition(points.front());
-            int firstPixelX = xToPixel(firstX);
-            int firstPixelY = yToPixel(firstY);
+            float firstPixelX = static_cast<float>(xToPixelF(firstX));
+            float firstPixelY = static_cast<float>(yToPixelF(firstY));
 
-            if (firstPixelX > 0) {
-                curvePath.startNewSubPath(0.0f, static_cast<float>(firstPixelY));
-                curvePath.lineTo(static_cast<float>(firstPixelX), static_cast<float>(firstPixelY));
+            if (firstPixelX > 0.0f) {
+                curvePath.startNewSubPath(0.0f, firstPixelY);
+                curvePath.lineTo(firstPixelX, firstPixelY);
                 pathStarted = true;
             }
         }
@@ -173,11 +172,11 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
     for (size_t i = 0; i < points.size(); ++i) {
         const auto& p = points[i];
         auto [x, y] = getEffectivePosition(p);
-        int pixelX = xToPixel(x);
-        int pixelY = yToPixel(y);
+        float pixelX = static_cast<float>(xToPixelF(x));
+        float pixelY = static_cast<float>(yToPixelF(y));
 
         if (!pathStarted) {
-            curvePath.startNewSubPath(static_cast<float>(pixelX), static_cast<float>(pixelY));
+            curvePath.startNewSubPath(pixelX, pixelY);
             pathStarted = true;
         } else if (i > 0) {
             const auto& prevP = points[i - 1];
@@ -202,22 +201,27 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
         if (!points.empty()) {
             auto [lastX, lastY] = getEffectivePosition(points.back());
             juce::ignoreUnused(lastX);
-            int lastPixelY = yToPixel(lastY);
-            int width = getWidth();
-            curvePath.lineTo(static_cast<float>(width), static_cast<float>(lastPixelY));
+            float lastPixelY = static_cast<float>(yToPixelF(lastY));
+            float width = static_cast<float>(getWidth());
+            curvePath.lineTo(width, lastPixelY);
         }
     }
 
     // Draw the curve
     g.setColour(curveColour_);
-    g.strokePath(curvePath, juce::PathStrokeType(2.0f));
+    g.strokePath(curvePath, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved,
+                                                 juce::PathStrokeType::rounded));
 
     // Optional: fill under curve
+    // Use yToPixelF(0) so that subclasses with a vertical edge inset (LFO)
+    // get the fill baseline at the padded y=0 position, while the base/
+    // automation editor continues to use content.getBottom() (same result
+    // because the base yToPixelF(0) == content.getBottom()).
     juce::Path fillPath = curvePath;
     auto content = getContentBounds();
-    fillPath.lineTo(static_cast<float>(content.getRight()),
-                    static_cast<float>(content.getBottom()));
-    fillPath.lineTo(static_cast<float>(content.getX()), static_cast<float>(content.getBottom()));
+    float fillBaseY = static_cast<float>(yToPixelF(0.0));
+    fillPath.lineTo(static_cast<float>(content.getRight()), fillBaseY);
+    fillPath.lineTo(static_cast<float>(content.getX()), fillBaseY);
     fillPath.closeSubPath();
     g.setColour(curveColour_.withAlpha(0.13f));
     g.fillPath(fillPath);
@@ -227,21 +231,26 @@ void CurveEditorBase::renderCurveSegment(juce::Path& path, const CurvePoint& p1,
                                          const CurvePoint& p2, double effectiveTension) {
     auto [x1, y1] = getEffectivePosition(p1);
     auto [x2, y2] = getEffectivePosition(p2);
-    int pixelX1 = xToPixel(x1);
-    int pixelY1 = yToPixel(y1);
-    int pixelX2 = xToPixel(x2);
-    int pixelY2 = yToPixel(y2);
+
+    // Float-precision pixel coords for rendering (no int truncation)
+    float pixelX1 = static_cast<float>(xToPixelF(x1));
+    float pixelY1 = static_cast<float>(yToPixelF(y1));
+    float pixelX2 = static_cast<float>(xToPixelF(x2));
+    float pixelY2 = static_cast<float>(yToPixelF(y2));
 
     switch (p1.curveType) {
         case CurveType::Linear: {
             if (std::abs(effectiveTension) < 0.001) {
                 // Pure linear
-                path.lineTo(static_cast<float>(pixelX2), static_cast<float>(pixelY2));
+                path.lineTo(pixelX2, pixelY2);
             } else {
-                // Tension-based curve - draw as series of line segments
-                const int NUM_SEGMENTS = 16;
-                for (int seg = 1; seg <= NUM_SEGMENTS; ++seg) {
-                    double t = static_cast<double>(seg) / NUM_SEGMENTS;
+                // Tension-based curve: tessellate with float sample positions.
+                // Segment width drives density so very narrow segments don't
+                // waste samples, and wide ones get enough to look smooth.
+                float segW = std::abs(pixelX2 - pixelX1);
+                int numSegs = juce::jlimit(32, 128, static_cast<int>(segW / 3.0f));
+                for (int seg = 1; seg <= numSegs; ++seg) {
+                    double t = static_cast<double>(seg) / numSegs;
 
                     // Apply tension curve (tension can be -3 to +3 with Shift)
                     double curvedT;
@@ -254,32 +263,49 @@ void CurveEditorBase::renderCurveSegment(juce::Path& path, const CurvePoint& p1,
                     double segY = y1 + curvedT * (y2 - y1);
                     double segX = x1 + t * (x2 - x1);
 
-                    float segPixelX = static_cast<float>(xToPixel(segX));
-                    float segPixelY = static_cast<float>(yToPixel(segY));
-
-                    path.lineTo(segPixelX, segPixelY);
+                    path.lineTo(static_cast<float>(xToPixelF(segX)),
+                                static_cast<float>(yToPixelF(segY)));
                 }
             }
             break;
         }
 
         case CurveType::Bezier: {
-            // Calculate control points using effective positions
+            // Control points in float pixel space
             float cp1X = pixelX1 + static_cast<float>(p1.outHandle.x * getPixelsPerX());
             float cp1Y = pixelY1 - static_cast<float>(p1.outHandle.y * getPixelsPerY());
             float cp2X = pixelX2 + static_cast<float>(p2.inHandle.x * getPixelsPerX());
             float cp2Y = pixelY2 - static_cast<float>(p2.inHandle.y * getPixelsPerY());
 
-            path.cubicTo(cp1X, cp1Y, cp2X, cp2Y, static_cast<float>(pixelX2),
-                         static_cast<float>(pixelY2));
+            path.cubicTo(cp1X, cp1Y, cp2X, cp2Y, pixelX2, pixelY2);
             break;
         }
 
         case CurveType::Step:
             // Step: horizontal then vertical
-            path.lineTo(static_cast<float>(pixelX2), path.getCurrentPosition().y);
-            path.lineTo(static_cast<float>(pixelX2), static_cast<float>(pixelY2));
+            path.lineTo(pixelX2, path.getCurrentPosition().y);
+            path.lineTo(pixelX2, pixelY2);
             break;
+
+        case CurveType::HardCorner: {
+            double midX = (x1 + x2) * 0.5;
+            double midY = (y1 + y2) * 0.5;
+
+            if (std::abs(effectiveTension) > 0.001) {
+                constexpr double t = 0.5;
+                double curvedT;
+                if (effectiveTension > 0) {
+                    curvedT = std::pow(t, 1.0 + effectiveTension * 2.0);
+                } else {
+                    curvedT = 1.0 - std::pow(1.0 - t, 1.0 - effectiveTension * 2.0);
+                }
+                midY = y1 + curvedT * (y2 - y1);
+            }
+
+            path.lineTo(static_cast<float>(xToPixelF(midX)), static_cast<float>(yToPixelF(midY)));
+            path.lineTo(pixelX2, pixelY2);
+            break;
+        }
     }
 }
 
@@ -298,6 +324,15 @@ void CurveEditorBase::paintDrawingPreview(juce::Graphics& g) {
 
 void CurveEditorBase::mouseDown(const juce::MouseEvent& e) {
     grabKeyboardFocus();
+
+    // Right-click toggles the segment under the cursor between smooth bend and
+    // hard-corner bend. A segment is owned by its left point.
+    if (e.mods.isPopupMenu()) {
+        isRightClickPending_ = true;
+        toggleSegmentHardCorner(findSegmentOwnerAt(pixelToX(e.x)));
+        return;
+    }
+    isRightClickPending_ = false;
 
     if (e.mods.isLeftButtonDown()) {
         // Resolve effective draw mode from modifier keys:
@@ -404,6 +439,14 @@ void CurveEditorBase::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void CurveEditorBase::mouseUp(const juce::MouseEvent& e) {
+    // Right-click release must not reach the point-add path.  e.mods at
+    // mouseUp time no longer reflects the released button, so guard via the
+    // flag set in mouseDown.
+    if (isRightClickPending_) {
+        isRightClickPending_ = false;
+        return;
+    }
+
     if (activeDrawMode_ == CurveDrawMode::Select && !isDrawing_) {
         if (isLassoActive_) {
             // Finish lasso selection
@@ -533,6 +576,57 @@ double CurveEditorBase::pixelToY(int py) const {
 int CurveEditorBase::yToPixel(double y) const {
     auto content = getContentBounds();
     return content.getY() + static_cast<int>((1.0 - y) * content.getHeight());
+}
+
+// Default float-precision rendering helpers.
+// Subclasses override xToPixelF to match their xToPixel math without int truncation.
+double CurveEditorBase::xToPixelF(double x) const {
+    // Base fallback: same formula as a generic xToPixel would use.
+    // Subclasses (LFOCurveEditor, AutomationCurveEditor) override this.
+    auto content = getContentBounds();
+    return static_cast<double>(content.getX()) + x * getPixelsPerX();
+}
+
+double CurveEditorBase::yToPixelF(double y) const {
+    auto content = getContentBounds();
+    return static_cast<double>(content.getY()) +
+           (1.0 - y) * static_cast<double>(content.getHeight());
+}
+
+uint32_t CurveEditorBase::findSegmentOwnerAt(double x) const {
+    const auto& pts = getPoints();
+    for (size_t i = 0; i + 1 < pts.size(); ++i) {
+        if (x >= pts[i].x && x <= pts[i + 1].x)
+            return pts[i].id;
+    }
+
+    if (pts.size() >= 2)
+        return pts[pts.size() - 2].id;
+
+    return INVALID_CURVE_POINT_ID;
+}
+
+void CurveEditorBase::toggleSegmentHardCorner(uint32_t pointId) {
+    if (pointId == INVALID_CURVE_POINT_ID)
+        return;
+
+    CurveType currentType = CurveType::Linear;
+    for (const auto& point : getPoints()) {
+        if (point.id == pointId) {
+            currentType = point.curveType;
+            break;
+        }
+    }
+
+    CurveType newType =
+        currentType == CurveType::HardCorner ? CurveType::Linear : CurveType::HardCorner;
+    DBG("[HardCorner] right-click segment pointId=" << static_cast<int>(pointId)
+                                                    << " oldType=" << getCurveTypeName(currentType)
+                                                    << " newType=" << getCurveTypeName(newType));
+
+    onPointCurveTypeChanged(pointId, newType);
+    rebuildPointComponents();
+    repaint();
 }
 
 std::pair<double, double> CurveEditorBase::getEffectivePosition(const CurvePoint& p) const {
@@ -724,14 +818,13 @@ void CurveEditorBase::rebuildPointComponents() {
         pointComponents_.push_back(std::move(pc));
     }
 
-    // Create tension handles for each curve segment (between consecutive points)
-    // Only for Linear curve type - Bezier uses handles, Step has no curve
+    // Create tension handles for bendable curve segments.
+    // Bezier uses handles; Step has no bend control.
     for (size_t i = 0; i < points.size(); ++i) {
         const auto& point = points[i];
 
-        // Only create tension handle if this isn't the last point
-        // and the curve type is Linear
-        if (i < points.size() - 1 && point.curveType == CurveType::Linear) {
+        if (i < points.size() - 1 &&
+            (point.curveType == CurveType::Linear || point.curveType == CurveType::HardCorner)) {
             auto th = std::make_unique<CurveTensionHandle>(point.id);
             th->setTension(point.tension);
 
@@ -744,6 +837,8 @@ void CurveEditorBase::rebuildPointComponents() {
                 tensionPreviewPointId_ = INVALID_CURVE_POINT_ID;
                 onTensionChanged(pointId, tension);
             };
+
+            th->onRightClick = [this](uint32_t pointId) { toggleSegmentHardCorner(pointId); };
 
             th->onTensionDragPreview = [this](uint32_t pointId, double tension) {
                 // Store preview state
@@ -820,7 +915,7 @@ void CurveEditorBase::updatePointPositions() {
         const auto& p2 = points[i + 1];
 
         // Only position for Linear curves
-        if (p1.curveType == CurveType::Linear) {
+        if (p1.curveType == CurveType::Linear || p1.curveType == CurveType::HardCorner) {
             int segPixels = xToPixel(p2.x) - xToPixel(p1.x);
             bool hasRoom = segPixels >= MIN_SEGMENT_PIXELS;
             tensionHandles_[tensionIdx]->setVisible(hasRoom);
@@ -863,7 +958,7 @@ void CurveEditorBase::updateTensionHandlePositions() {
         const auto& p1 = points[i];
         const auto& p2 = points[i + 1];
 
-        if (p1.curveType == CurveType::Linear) {
+        if (p1.curveType == CurveType::Linear || p1.curveType == CurveType::HardCorner) {
             auto [x1, y1] = getEffectivePosition(p1);
             auto [x2, y2] = getEffectivePosition(p2);
 

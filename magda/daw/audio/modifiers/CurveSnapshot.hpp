@@ -22,6 +22,7 @@ struct CurveSnapshot {
         float phase = 0.0f;
         float value = 0.5f;
         float tension = 0.0f;
+        int curveType = 0;
     };
 
     std::array<Point, kMaxPoints> points{};
@@ -125,14 +126,30 @@ struct CurveSnapshot {
         t = std::clamp(t, 0.0f, 1.0f);
 
         float tension = p1->tension;
+        auto applyTension = [tension](float input) {
+            if (std::abs(tension) < 0.001f)
+                return input;
+            if (tension > 0)
+                return std::pow(input, 1.0f + tension * 2.0f);
+            return 1.0f - std::pow(1.0f - input, 1.0f - tension * 2.0f);
+        };
+
+        constexpr int kHardCornerCurveType = 3;
+        if (p1->curveType == kHardCornerCurveType) {
+            constexpr float cornerT = 0.5f;
+            const float cornerValue = p1->value + applyTension(cornerT) * (p2->value - p1->value);
+            if (t <= cornerT) {
+                const float u = t / cornerT;
+                return p1->value + u * (cornerValue - p1->value);
+            }
+            const float u = (t - cornerT) / (1.0f - cornerT);
+            return cornerValue + u * (p2->value - cornerValue);
+        }
+
         if (std::abs(tension) < 0.001f) {
             return p1->value + t * (p2->value - p1->value);
         } else {
-            float curvedT;
-            if (tension > 0)
-                curvedT = std::pow(t, 1.0f + tension * 2.0f);
-            else
-                curvedT = 1.0f - std::pow(1.0f - t, 1.0f - tension * 2.0f);
+            float curvedT = applyTension(t);
             return p1->value + curvedT * (p2->value - p1->value);
         }
     }
@@ -184,6 +201,7 @@ struct CurveSnapshotHolder {
             dst.phase = src.phase;
             dst.value = src.value;
             dst.tension = src.tension;
+            dst.curveType = src.curveType;
         }
 
         // Swap: audio thread will now read from the newly written buffer

@@ -42,6 +42,11 @@ void CurveTensionHandle::paint(juce::Graphics& g) {
 }
 
 void CurveTensionHandle::mouseDown(const juce::MouseEvent& e) {
+    if (e.mods.isPopupMenu()) {
+        if (onRightClick)
+            onRightClick(pointId_);
+        return;
+    }
     if (e.mods.isLeftButtonDown()) {
         isDragging_ = true;
         // Use parent-relative coordinates so moving the component doesn't affect drag calculation
@@ -59,9 +64,9 @@ void CurveTensionHandle::mouseDrag(const juce::MouseEvent& e) {
     // component-relative)
     int parentY = e.getEventRelativeTo(getParentComponent()).y;
 
-    // Dragging up bends curve outward (away from straight line)
-    // 50 pixels of drag = full range
-    // Normal: -1 to +1, Shift held: -3 to +3 for extreme squared curves
+    // Dragging up bends curve outward (away from straight line).
+    // The curve renderer/audio path supports the full -3..+3 range; using it
+    // directly makes the segment handle behave like TimeBend's full-height control.
     int deltaY = parentY - dragStartY_;
 
     // Invert direction when curve goes downward so "up" always means "outward"
@@ -71,9 +76,7 @@ void CurveTensionHandle::mouseDrag(const juce::MouseEvent& e) {
 
     double deltaTension = static_cast<double>(deltaY) / 50.0;
 
-    double minTension = e.mods.isShiftDown() ? -3.0 : -1.0;
-    double maxTension = e.mods.isShiftDown() ? 3.0 : 1.0;
-    double newTension = juce::jlimit(minTension, maxTension, dragStartTension_ + deltaTension);
+    double newTension = juce::jlimit(-3.0, 3.0, dragStartTension_ + deltaTension);
 
     if (newTension != tension_) {
         tension_ = newTension;

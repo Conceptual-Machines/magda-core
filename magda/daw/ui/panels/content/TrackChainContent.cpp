@@ -1286,6 +1286,8 @@ void TrackChainContent::initGlobalModsPanel() {
                 ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalModIndex_, ms);
     };
     globalModEditorPanel_->onCurveChanged = [this]() {
+        DBG("[HardCorner] TrackChainContent global onCurveChanged trackId="
+            << static_cast<int>(selectedTrackId_) << " modIndex=" << selectedGlobalModIndex_);
         if (globalModsPanel_)
             globalModsPanel_->repaintWaveforms();
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)

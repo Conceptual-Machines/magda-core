@@ -672,6 +672,7 @@ juce::var ProjectSerializer::serializeCurvePointData(const CurvePointData& data)
     SER(phase);
     SER(value);
     SER(tension);
+    SER(curveType);
     return juce::var(obj);
 }
 
@@ -684,6 +685,9 @@ bool ProjectSerializer::deserializeCurvePointData(const juce::var& json, CurvePo
     DESER(phase);
     DESER(value);
     DESER(tension);
+    // curveType defaults to 0 (Linear) when absent (old project files)
+    if (obj->hasProperty("curveType"))
+        DESER(curveType);
     return true;
 }
 

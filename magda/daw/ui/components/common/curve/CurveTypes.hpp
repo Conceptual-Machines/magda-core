@@ -7,7 +7,7 @@ namespace magda {
 /**
  * @brief Type of curve interpolation between points
  */
-enum class CurveType { Linear, Bezier, Step };
+enum class CurveType { Linear, Bezier, Step, HardCorner };
 
 /**
  * @brief Drawing/editing mode for curve editors
@@ -71,6 +71,8 @@ inline int curveTypeToInt(CurveType type) {
             return 1;
         case CurveType::Step:
             return 2;
+        case CurveType::HardCorner:
+            return 3;
     }
     return 0;
 }
@@ -83,6 +85,8 @@ inline CurveType intToCurveType(int value) {
             return CurveType::Bezier;
         case 2:
             return CurveType::Step;
+        case 3:
+            return CurveType::HardCorner;
         default:
             return CurveType::Linear;
     }
@@ -99,6 +103,8 @@ inline const char* getCurveTypeName(CurveType type) {
             return "Bezier";
         case CurveType::Step:
             return "Step";
+        case CurveType::HardCorner:
+            return "Hard Corner";
     }
     return "Unknown";
 }
