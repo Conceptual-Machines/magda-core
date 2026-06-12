@@ -147,7 +147,15 @@ void PolyStepSequencerPlugin::reset() {
 void PolyStepSequencerPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
     tracktion::copyPropertiesToCachedValues(v, numSteps, rate, direction, swing, gateLength, ramp,
                                             skew, rampCycles, hardAngle, quantize, quantizeSub,
-                                            midiThru, viewMode);
+                                            midiThru);
+
+    // viewMode is restored separately: the variadic helper does
+    // ValueType(juce::var), and juce::String(juce::var) is ambiguous under
+    // MSVC (var converts to int/double/String, String constructs from each).
+    if (auto* p = v.getPropertyPointer(viewMode.getPropertyID()))
+        viewMode = p->toString();
+    else
+        viewMode.resetToDefault();
 
     // Copy step children from the incoming tree into our state
     // (copyPropertiesToCachedValues only copies properties, not children)
