@@ -8,6 +8,7 @@ namespace te = tracktion;
 
 namespace daw::audio {
 class ArpeggiatorPlugin;
+class PolyStepSequencerPlugin;
 class StepSequencerPlugin;
 }  // namespace daw::audio
 
@@ -50,6 +51,26 @@ class ArpeggiatorProcessor : public AutomatablePluginProcessor {
 class StepSequencerProcessor : public AutomatablePluginProcessor {
   public:
     StepSequencerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+  protected:
+    void customiseParameterInfo(int index, ParameterInfo& info) const override;
+};
+
+/**
+ * @brief Processor for the Poly Step Sequencer plugin
+ *
+ * Exposes CachedValue-based parameters so macros can target them.
+ * Parameters:
+ * - 0: Rate (discrete 0-9)
+ * - 1: Direction (discrete 0-3)
+ * - 2: Swing (0..1)
+ * - 3: Gate (0.05..1)
+ * - 4: Timing Depth (-1..1, ramp curve depth)
+ * - 5: Timing Skew (-1..1, bipolar ramp curve skew)
+ */
+class PolyStepSequencerProcessor : public AutomatablePluginProcessor {
+  public:
+    PolyStepSequencerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 
   protected:
     void customiseParameterInfo(int index, ParameterInfo& info) const override;

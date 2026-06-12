@@ -74,6 +74,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FourOscUI.cpp
     custom_ui/ArpeggiatorUI.cpp
     custom_ui/StepSequencerUI.cpp
+    custom_ui/PolyStepSequencerUI.cpp
     custom_ui/LevelsUI.cpp
     custom_ui/OscilloscopeUI.cpp
     custom_ui/SpectrumAnalyzerUI.cpp
@@ -164,6 +165,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FourOscUI.hpp
     custom_ui/ArpeggiatorUI.hpp
     custom_ui/StepSequencerUI.hpp
+    custom_ui/PolyStepSequencerUI.hpp
     custom_ui/LevelsUI.hpp
     custom_ui/OscilloscopeUI.hpp
     custom_ui/SpectrumAnalyzerUI.hpp

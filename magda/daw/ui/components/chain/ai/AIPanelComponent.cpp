@@ -147,8 +147,9 @@ namespace {
 // from the persisted output and recolour it yellow. Kept here so the writer
 // (onGenerationFinished) and the restorer (setDevicePath) agree on the
 // exact bytes — the leading "\n\n" is part of the marker so split logic
-// works on the first occurrence with no ambiguity.
-constexpr const char* kDisclaimerMarker = "\n\nnote: starting point only";
+// works on the first occurrence with no ambiguity. Both the sound-design
+// and sequencer variants start with "\n\nnote: " so this prefix covers both.
+constexpr const char* kDisclaimerMarker = "\n\nnote: ";
 
 // Extract the value of a top-level JSON string field. The streamed content
 // has had its curly braces replaced with spaces (see appendStreamingToken),
@@ -198,30 +199,37 @@ void AIPanelComponent::setDevicePath(const ChainNodePath& path) {
 }
 
 void AIPanelComponent::restoreOutput(const juce::String& text) {
-    // Re-insert the persisted text section-by-section so the disclaimer keeps
-    // its yellow tint after a slot rebuild. setText would put everything in
-    // one section using the current textColourId — recolouring afterwards is
+    // Re-insert the persisted text section-by-section so each disclaimer line
+    // keeps its yellow tint after a slot rebuild. setText would put everything
+    // in one section using the current textColourId - recolouring afterwards is
     // not something juce::TextEditor supports per range, so we have to insert
-    // the prefix and the disclaimer separately.
+    // the surrounding text and each disclaimer line separately. Only the
+    // disclaimer line itself is yellow; text from later turns must not be.
     output_.setText({}, juce::dontSendNotification);
     if (text.isEmpty())
         return;
 
     output_.moveCaretToEnd();
-    const int markerIdx = text.indexOf(juce::String(kDisclaimerMarker));
-    if (markerIdx < 0) {
+    const juce::String marker(kDisclaimerMarker);
+    int pos = 0;
+    for (;;) {
+        const int markerIdx = text.indexOf(pos, marker);
+        if (markerIdx < 0)
+            break;
+        int lineEnd = text.indexOf(markerIdx + marker.length(), "\n");
+        if (lineEnd < 0)
+            lineEnd = text.length();
         output_.setColour(juce::TextEditor::textColourId,
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        output_.insertTextAtCaret(text);
-    } else {
-        output_.setColour(juce::TextEditor::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        output_.insertTextAtCaret(text.substring(0, markerIdx));
+        output_.insertTextAtCaret(text.substring(pos, markerIdx));
         output_.setColour(juce::TextEditor::textColourId, juce::Colours::yellow);
-        output_.insertTextAtCaret(text.substring(markerIdx));
-        output_.setColour(juce::TextEditor::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        output_.insertTextAtCaret(text.substring(markerIdx, lineEnd));
+        pos = lineEnd;
     }
+    output_.setColour(juce::TextEditor::textColourId,
+                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    if (pos < text.length())
+        output_.insertTextAtCaret(text.substring(pos));
     output_.moveCaretToEnd();
 }
 
@@ -356,6 +364,9 @@ void AIPanelComponent::submitPrompt() {
         return;
     }
 
+    // Capture the caveat before the agent is moved into the thread.
+    pendingCaveat_ = agent->getUserCaveat();
+
     setBusy(true);
 
     // Make sure streaming starts on its own row. insertTextAtCaret keeps any
@@ -460,20 +471,15 @@ void AIPanelComponent::onGenerationFinished(juce::String status, juce::String co
                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     output_.insertTextAtCaret(juce::String(juce::CharPointer_UTF8("\xe2\x86\x92 ")) + status);
 
-    // Remind the user the preset is a starting point — only for sound-design
-    // (4OSC) presets, and only on a successful apply (status messages from
-    // cancel / error / timeout shouldn't suggest tweaking something that was
-    // never written). Faust/coder devices get the "compiled" confirmation
-    // above instead, so the disclaimer would be noise there. Rendered in
-    // yellow; the marker matches kDisclaimerMarker so restoreOutput can
-    // recolour it after a slot rebuild.
-    if (succeeded && isSoundDesignSupported(pluginId_)) {
+    // Remind the user the result is a starting point. The caveat text comes
+    // from the agent via pendingCaveat_ (set in submitPrompt before the agent
+    // moves into the thread). Only shown on a successful apply — cancel/error
+    // status lines shouldn't suggest tweaking something that was never written.
+    // Rendered in yellow; the "\n\nnote: " prefix matches kDisclaimerMarker so
+    // restoreOutput can recolour it after a slot rebuild.
+    if (succeeded && pendingCaveat_.isNotEmpty()) {
         output_.setColour(juce::TextEditor::textColourId, juce::Colours::yellow);
-        // Wrap with CharPointer_UTF8 (matching the convention used for the
-        // arrow above) so the em-dash byte sequence isn't decoded as Latin-1
-        // by juce::String's const char* constructor and rendered as "â".
-        output_.insertTextAtCaret(juce::String(juce::CharPointer_UTF8(
-            "\n\nnote: starting point only \xe2\x80\x94 tweak by ear before saving.")));
+        output_.insertTextAtCaret("\n\n" + pendingCaveat_);
         output_.setColour(juce::TextEditor::textColourId,
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     }

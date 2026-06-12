@@ -95,6 +95,9 @@ class StepSequencerPlugin : public MidiDevicePlugin {
     /** Randomize all active steps with random notes, gates, accents, and glides. */
     void randomizePattern();
 
+    /** Reset all steps to defaults in one undo transaction. */
+    void clearPattern();
+
     /** Bulk-set the pattern from an external source (e.g. AI generation).
      *  If cueOnBar is true and transport is playing, the new pattern is queued
      *  and swapped in at the next cycle boundary (bar start). */
@@ -155,9 +158,9 @@ class StepSequencerPlugin : public MidiDevicePlugin {
     struct ParamSyncListener : public juce::ValueTree::Listener {
         StepSequencerPlugin& owner;
         explicit ParamSyncListener(StepSequencerPlugin& o) : owner(o) {}
-        void valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier& p) override {
-            owner.syncParamFromProperty(p);
-        }
+        void valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier& p) override;
+        void valueTreeChildAdded(juce::ValueTree&, juce::ValueTree& child) override;
+        void valueTreeChildRemoved(juce::ValueTree&, juce::ValueTree& child, int) override;
     };
     ParamSyncListener paramSyncListener_{*this};
 

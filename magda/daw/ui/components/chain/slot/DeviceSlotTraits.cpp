@@ -15,6 +15,7 @@ DeviceSlotTraits makeDeviceSlotTraits(const juce::String& pluginId) {
     traits.isChordEngine = kind == magda::InternalDeviceKind::MidiChordEngine;
     traits.isArpeggiator = kind == magda::InternalDeviceKind::Arpeggiator;
     traits.isStepSequencer = kind == magda::InternalDeviceKind::StepSequencer;
+    traits.isPolyStepSequencer = kind == magda::InternalDeviceKind::PolyStepSequencer;
     traits.isFaust = kind == magda::InternalDeviceKind::Faust;
     traits.isAnalysis = magda::isAnalysisDevice(pluginId);
     traits.hasAnalyzerPopout = kind == magda::InternalDeviceKind::Oscilloscope ||

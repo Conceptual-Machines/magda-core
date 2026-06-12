@@ -12,6 +12,7 @@ namespace magda::daw::audio {
 class ArpeggiatorPlugin;
 class MidiChordEnginePlugin;
 class OscilloscopePlugin;
+class PolyStepSequencerPlugin;
 class SpectrumAnalyzerPlugin;
 class StepSequencerPlugin;
 }  // namespace magda::daw::audio
@@ -33,6 +34,7 @@ class LevelsUI;
 class LinkableTextSlider;
 class OscilloscopeUI;
 class PhaserUI;
+class PolyStepSequencerUI;
 class SpectrumAnalyzerUI;
 class PitchShiftUI;
 class ReverbUI;
@@ -158,6 +160,9 @@ class DeviceCustomUIManager {
     daw::audio::StepSequencerPlugin* getStepSeqPlugin() const {
         return stepSeqPlugin_;
     }
+    daw::audio::PolyStepSequencerPlugin* getPolyStepSeqPlugin() const {
+        return polyStepSeqPlugin_;
+    }
     daw::audio::MidiChordEnginePlugin* getChordPlugin() const {
         return chordPlugin_;
     }
@@ -165,6 +170,9 @@ class DeviceCustomUIManager {
     // Allow timerCallback to write stepSeqPlugin_ after setNodePath resolution
     void setStepSeqPlugin(daw::audio::StepSequencerPlugin* p) {
         stepSeqPlugin_ = p;
+    }
+    void setPolyStepSeqPlugin(daw::audio::PolyStepSequencerPlugin* p) {
+        polyStepSeqPlugin_ = p;
     }
 
     // Tab index for FourOscUI persistence across rebuilds
@@ -194,6 +202,9 @@ class DeviceCustomUIManager {
     }
     StepSequencerUI* getStepSequencerUI() const {
         return stepSequencerUI_.get();
+    }
+    PolyStepSequencerUI* getPolyStepSequencerUI() const {
+        return polyStepSequencerUI_.get();
     }
 
   private:
@@ -225,6 +236,7 @@ class DeviceCustomUIManager {
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;
+    std::unique_ptr<PolyStepSequencerUI> polyStepSequencerUI_;
     std::unique_ptr<OscilloscopeUI> oscilloscopeUI_;
     std::unique_ptr<SpectrumAnalyzerUI> spectrumAnalyzerUI_;
     std::unique_ptr<LevelsUI> levelsUI_;
@@ -232,6 +244,7 @@ class DeviceCustomUIManager {
     // Plugin raw pointers for timer polling / setNodePath updates
     daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;
     daw::audio::StepSequencerPlugin* stepSeqPlugin_ = nullptr;
+    daw::audio::PolyStepSequencerPlugin* polyStepSeqPlugin_ = nullptr;
     daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DeviceCustomUIManager)

@@ -10,6 +10,7 @@
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/OscilloscopePlugin.hpp"
+#include "plugins/PolyStepSequencerPlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/SpectrumAnalyzerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
@@ -125,6 +126,10 @@ const InternalPluginSpec kSpecs[] = {
      "MIDI step sequencer for pattern-driven notes and rhythmic control.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
      matches<StepSequencerPlugin>, makeProcessor<StepSequencerProcessor>, true},
+    {InternalDeviceKind::PolyStepSequencer, PolyStepSequencerPlugin::xmlTypeName, "Poly Sequencer",
+     "MIDI", "Polyphonic MIDI step sequencer with multiple notes per step for chord patterns.",
+     InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
+     matches<PolyStepSequencerPlugin>, makeProcessor<PolyStepSequencerProcessor>, true},
     {InternalDeviceKind::Faust, FaustPlugin::xmlTypeName, "Faust", "Experimental",
      "Interpreted Faust device for loading and editing user DSP code.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0, matches<FaustPlugin>,
@@ -168,10 +173,11 @@ const InternalPluginSpec kSpecs[] = {
 };
 
 const InternalPluginSpec* const kSpecPtrs[] = {
-    &kSpecs[0],  &kSpecs[1],  &kSpecs[2],  &kSpecs[3],  &kSpecs[4],  &kSpecs[5],  &kSpecs[6],
-    &kSpecs[7],  &kSpecs[8],  &kSpecs[9],  &kSpecs[10], &kSpecs[11], &kSpecs[12], &kSpecs[13],
-    &kSpecs[14], &kSpecs[15], &kSpecs[16], &kSpecs[17], &kSpecs[18], &kSpecs[19], &kSpecs[20],
-    &kSpecs[21], &kSpecs[22], &kSpecs[23], &kSpecs[24], &kSpecs[25], &kSpecs[26], &kSpecs[27],
+    &kSpecs[0],  &kSpecs[1],  &kSpecs[2],  &kSpecs[3],  &kSpecs[4],  &kSpecs[5],
+    &kSpecs[6],  &kSpecs[7],  &kSpecs[8],  &kSpecs[9],  &kSpecs[10], &kSpecs[11],
+    &kSpecs[12], &kSpecs[13], &kSpecs[14], &kSpecs[15], &kSpecs[16], &kSpecs[17],
+    &kSpecs[18], &kSpecs[19], &kSpecs[20], &kSpecs[21], &kSpecs[22], &kSpecs[23],
+    &kSpecs[24], &kSpecs[25], &kSpecs[26], &kSpecs[27], &kSpecs[28],
 };
 
 bool typeMatchesAlias(const juce::String& type, const InternalPluginSpec& spec) {

@@ -844,6 +844,21 @@ void AIChatConsoleContent::RequestThread::run() {
 
             currentText += juce::String::charToString(0x25C6) + " " + formattedResponse + "\n\n";
             safeThis->chatHistory_.setText(currentText);
+
+            // Append the mixing-agent caveat in a dim secondary colour after the
+            // main response. Inserted after setText so it does not enter the plain
+            // text that gets stored in conversation history (display-only).
+            if (!mixAnalysis.empty() && error.empty()) {
+                safeThis->chatHistory_.moveCaretToEnd();
+                safeThis->chatHistory_.setColour(
+                    juce::TextEditor::textColourId,
+                    DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+                safeThis->chatHistory_.insertTextAtCaret(
+                    juce::String(magda::MixAnalysisAgent::getUserCaveat()) + "\n\n");
+                safeThis->chatHistory_.setColour(juce::TextEditor::textColourId,
+                                                 DarkTheme::getSecondaryTextColour());
+            }
+
             safeThis->chatHistory_.moveCaretToEnd();
             safeThis->inputBox_->setEnabled(true);
             safeThis->processing_ = false;
@@ -3229,7 +3244,7 @@ void AIChatConsoleContent::finishPresetGeneration(bool success, const juce::Stri
     juce::String body = juce::String::charToString(0x25C6) + " " + header + "\n";
     body << prettyPrintPreset(preset);
     body << "\n  " << applyFourOscPresetToFocusedDevice(preset);
-    body << "\n  starting point — tweak by ear, then save from the device header";
+    body << "\n  starting point - tweak by ear, then save from the device header";
     appendToChat(body);
 }
 

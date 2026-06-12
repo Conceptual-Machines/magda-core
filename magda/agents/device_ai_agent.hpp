@@ -48,6 +48,14 @@ class DeviceAIAgent {
     /// Best-effort cancel; safe to call from any thread.
     virtual void requestCancel() {}
 
+    /// Short yellow caveat shown below the status line after a successful
+    /// generation. Must start with "note: " so the panel's kDisclaimerMarker
+    /// ("\n\nnote: ") matches for re-colouring after slot rebuilds.
+    /// The panel prepends "\n\n"; do not include it here.
+    virtual juce::String getUserCaveat() const {
+        return "note: starting point only - tweak by ear before saving.";
+    }
+
   protected:
     std::atomic<bool> shouldStop_{false};
 };

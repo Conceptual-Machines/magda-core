@@ -93,7 +93,10 @@ class AIPanelComponent : public juce::Component {
     // /design slash command flow in AIChatConsoleContent.
     class GenerateThread;
     std::unique_ptr<GenerateThread> thread_;
-    std::unique_ptr<DeviceAIAgent> agent_;
+
+    // Caveat text captured from the agent before it is moved into the thread.
+    // Used by onGenerationFinished to insert the yellow disclaimer line.
+    juce::String pendingCaveat_;
 
     JUCE_DECLARE_WEAK_REFERENCEABLE(AIPanelComponent)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AIPanelComponent)

@@ -33,6 +33,18 @@ void StepSequencerProcessor::customiseParameterInfo(int index, ParameterInfo& in
 }
 
 // =============================================================================
+// PolyStepSequencerProcessor
+// =============================================================================
+
+PolyStepSequencerProcessor::PolyStepSequencerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
+
+void PolyStepSequencerProcessor::customiseParameterInfo(int index, ParameterInfo& info) const {
+    // Timing Depth (4) and Timing Skew (5) are bipolar
+    info.bipolarModulation = (index == 4 || index == 5);
+}
+
+// =============================================================================
 // DrumGridProcessor
 // =============================================================================
 

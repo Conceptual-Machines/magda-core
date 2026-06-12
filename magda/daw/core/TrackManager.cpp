@@ -1634,6 +1634,11 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             DBG("Cannot add instrument plugin to non-instrument track");
             return INVALID_DEVICE_ID;
         }
+        if (track->type == TrackType::Master &&
+            (device.deviceType == DeviceType::MIDI || isMidiGeneratorDevice(device.pluginId))) {
+            DBG("Cannot add MIDI generator to master track");
+            return INVALID_DEVICE_ID;
+        }
         DeviceInfo newDevice = device;
         newDevice.id = nextFxDeviceId_++;
         stampDefaultKitIfMissing(newDevice);
@@ -1655,6 +1660,11 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
              track->type == TrackType::Master) &&
             device.isInstrument) {
             DBG("Cannot add instrument plugin to non-instrument track");
+            return INVALID_DEVICE_ID;
+        }
+        if (track->type == TrackType::Master &&
+            (device.deviceType == DeviceType::MIDI || isMidiGeneratorDevice(device.pluginId))) {
+            DBG("Cannot add MIDI generator to master track");
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = device;
