@@ -18,6 +18,7 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
+#include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
@@ -39,6 +40,7 @@
 #include "custom_ui/OscilloscopeUI.hpp"
 #include "custom_ui/PhaserUI.hpp"
 #include "custom_ui/PitchShiftUI.hpp"
+#include "custom_ui/PolyStepSequencerUI.hpp"
 #include "custom_ui/ReverbUI.hpp"
 #include "custom_ui/SamplerUI.hpp"
 #include "custom_ui/SpectrumAnalyzerUI.hpp"
@@ -286,6 +288,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return arpeggiatorUI_.get();
     if (stepSequencerUI_)
         return stepSequencerUI_.get();
+    if (polyStepSequencerUI_)
+        return polyStepSequencerUI_.get();
     if (oscilloscopeUI_)
         return oscilloscopeUI_.get();
     if (spectrumAnalyzerUI_)
@@ -324,6 +328,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return arpeggiatorUI_->getLinkableSliders();
     if (stepSequencerUI_)
         return stepSequencerUI_->getLinkableSliders();
+    if (polyStepSequencerUI_)
+        return polyStepSequencerUI_->getLinkableSliders();
     return {};
 }
 
@@ -331,7 +337,7 @@ bool DeviceCustomUIManager::hasAnyUI() const {
     return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
            reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
            impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ ||
-           oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
+           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -357,6 +363,8 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 350;
     if (stepSequencerUI_)
         return 500;
+    if (polyStepSequencerUI_)
+        return 560;
     if (oscilloscopeUI_)
         return 500;
     if (spectrumAnalyzerUI_)
@@ -1311,6 +1319,21 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
                 if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
                     arpeggiatorUI_->setArpeggiator(arp);
                     arpPlugin_ = arp;
+                }
+            }
+        }
+    } else if (device.pluginId.containsIgnoreCase(
+                   daw::audio::PolyStepSequencerPlugin::xmlTypeName)) {
+        // NB: checked before the mono sequencer — "polystepsequencer" also
+        // contains "stepsequencer", so the order of these branches matters.
+        polyStepSequencerUI_ = std::make_unique<PolyStepSequencerUI>();
+        parent->addAndMakeVisible(*polyStepSequencerUI_);
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(devicePath_);
+                if (auto* seq = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get())) {
+                    polyStepSequencerUI_->setPlugin(seq);
+                    polyStepSeqPlugin_ = seq;
                 }
             }
         }

@@ -85,6 +85,23 @@ StepSequencerPlugin::~StepSequencerPlugin() {
     state.removeListener(&paramSyncListener_);
 }
 
+void StepSequencerPlugin::ParamSyncListener::valueTreePropertyChanged(juce::ValueTree&,
+                                                                      const juce::Identifier& p) {
+    owner.syncParamFromProperty(p);
+}
+
+void StepSequencerPlugin::ParamSyncListener::valueTreeChildAdded(juce::ValueTree&,
+                                                                 juce::ValueTree& child) {
+    if (child.hasType(SeqIDs::stepTree))
+        owner.loadStepsFromState();
+}
+
+void StepSequencerPlugin::ParamSyncListener::valueTreeChildRemoved(juce::ValueTree&,
+                                                                   juce::ValueTree& child, int) {
+    if (child.hasType(SeqIDs::stepTree))
+        owner.loadStepsFromState();
+}
+
 void StepSequencerPlugin::syncParamFromProperty(const juce::Identifier& property) {
     if (property == SeqIDs::rate && rateParam)
         rateParam->setParameterFromHost(static_cast<float>(rate.get()), juce::dontSendNotification);
@@ -233,6 +250,35 @@ void StepSequencerPlugin::randomizePattern() {
         step.tie = false;
     }
     saveStepsToState();
+}
+
+void StepSequencerPlugin::clearPattern() {
+    auto* um = getUndoManager();
+    if (um != nullptr)
+        um->beginNewTransaction();
+
+    steps_.fill(Step{});
+
+    // Remove existing step children via undo manager so the operation is undoable
+    for (int i = state.getNumChildren() - 1; i >= 0; --i) {
+        if (state.getChild(i).hasType(SeqIDs::stepTree))
+            state.removeChild(i, um);
+    }
+
+    // Write default steps back so the ValueTree reflects the cleared state
+    int count = juce::jlimit(1, MAX_STEPS, numSteps.get());
+    for (int i = 0; i < count; ++i) {
+        const auto& s = steps_[static_cast<size_t>(i)];
+        juce::ValueTree stepVT(SeqIDs::stepTree);
+        stepVT.setProperty(SeqIDs::stepIndex, i, nullptr);
+        stepVT.setProperty(SeqIDs::stepNote, s.noteNumber, nullptr);
+        stepVT.setProperty(SeqIDs::stepOctave, s.octaveShift, nullptr);
+        stepVT.setProperty(SeqIDs::stepGate, s.gate, nullptr);
+        stepVT.setProperty(SeqIDs::stepAccent, s.accent, nullptr);
+        stepVT.setProperty(SeqIDs::stepGlide, s.glide, nullptr);
+        stepVT.setProperty(SeqIDs::stepTie, s.tie, nullptr);
+        state.appendChild(stepVT, um);
+    }
 }
 
 void StepSequencerPlugin::setPattern(const std::vector<Step>& steps, bool cueOnBar) {

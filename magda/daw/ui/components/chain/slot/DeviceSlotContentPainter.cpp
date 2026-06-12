@@ -93,9 +93,10 @@ void paintMidiUtilityHeader(juce::Graphics& g, juce::Rectangle<int> headerArea,
     }
 
     g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-    const juce::String label = state.traits.isChordEngine   ? "MAGDA Chord Engine"
-                               : state.traits.isArpeggiator ? "MAGDA Arpeggiator"
-                                                            : "MAGDA Step Sequencer";
+    const juce::String label = state.traits.isChordEngine         ? "MAGDA Chord Engine"
+                               : state.traits.isArpeggiator       ? "MAGDA Arpeggiator"
+                               : state.traits.isPolyStepSequencer ? "MAGDA Poly Sequencer"
+                                                                  : "MAGDA Step Sequencer";
     g.drawText(label, textArea, juce::Justification::centredLeft);
 }
 
@@ -145,7 +146,8 @@ void paintDeviceSlotContent(juce::Graphics& g, juce::Rectangle<int> contentArea,
     if (drum_grid_slot::paintContentHeader(g, state.traits.isDrumGrid, state.bypassed, textArea))
         return;
 
-    if (state.traits.isChordEngine || state.traits.isArpeggiator || state.traits.isStepSequencer) {
+    if (state.traits.isChordEngine || state.traits.isArpeggiator || state.traits.isStepSequencer ||
+        state.traits.isPolyStepSequencer) {
         paintMidiUtilityHeader(g, headerArea, textArea, state);
     } else if (state.traits.isTracktionDevice && state.tracktionLogo != nullptr) {
         paintTracktionHeader(g, textArea, state);

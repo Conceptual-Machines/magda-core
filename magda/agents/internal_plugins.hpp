@@ -41,6 +41,7 @@ enum class InternalPlugin {
     Arpeggiator,
     MidiChordEngine,
     StepSequencer,
+    PolyStepSequencer,
     Faust,
     Mod,
     Flanger,
@@ -104,6 +105,8 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
          V::Magda},
         {"Step Sequencer", "stepsequencer", DeviceType::Effect, InternalPlugin::StepSequencer,
          V::Magda},
+        {"Poly Sequencer", "polystepsequencer", DeviceType::Effect,
+         InternalPlugin::PolyStepSequencer, V::Magda},
     };
     return kPlugins;
 }

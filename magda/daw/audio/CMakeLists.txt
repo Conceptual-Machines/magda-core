@@ -349,6 +349,7 @@ target_sources(magda_daw PRIVATE
     plugins/FaustParamInfo.cpp
     transport/StepClock.cpp
     plugins/StepSequencerPlugin.cpp
+    plugins/PolyStepSequencerPlugin.cpp
     # Controller routing (issue #1050 -- Phase C)
     controllers/ControllerParamWriter.cpp
     controllers/ControllerRouter.cpp
@@ -402,6 +403,7 @@ target_sources(magda_daw PRIVATE
     plugins/FaustParamInfo.hpp
     transport/StepClock.hpp
     plugins/StepSequencerPlugin.hpp
+    plugins/PolyStepSequencerPlugin.hpp
 )
 
 target_sources(magda_daw_app PRIVATE

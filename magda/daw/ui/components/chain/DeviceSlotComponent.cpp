@@ -443,8 +443,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     };
     addAndMakeVisible(*onButton_);
 
-    // Export as MIDI clip button (step sequencer only for now)
-    if (traits_.isStepSequencer) {
+    // Export as MIDI clip button
+    if (traits_.isStepSequencer || traits_.isPolyStepSequencer) {
         exportClipButton_ = std::make_unique<magda::SvgButton>("ExportClip", BinaryData::copy_svg,
                                                                BinaryData::copy_svgSize);
         applyHeaderIconStyle(*exportClipButton_, DarkTheme::getColour(DarkTheme::ACCENT_GREEN),
@@ -452,9 +452,15 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         exportClipButton_->setTooltip("Click to copy pattern, drag to timeline");
         exportClipButton_->addMouseListener(this, false);
         exportClipButton_->onClick = [this]() {
-            auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
-            if (stepSeqPlugin != nullptr)
-                copyStepSequencerPatternToClipboard(*stepSeqPlugin);
+            if (traits_.isPolyStepSequencer) {
+                auto* plugin = customUI_.getPolyStepSeqPlugin();
+                if (plugin != nullptr)
+                    copyPolyStepSequencerPatternToClipboard(*plugin);
+            } else {
+                auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
+                if (stepSeqPlugin != nullptr)
+                    copyStepSequencerPatternToClipboard(*stepSeqPlugin);
+            }
         };
         addAndMakeVisible(*exportClipButton_);
     }
@@ -841,7 +847,8 @@ void DeviceSlotComponent::timerCallback() {
         }
     }
 
-    if (traits_.isArpeggiator || traits_.isStepSequencer || traits_.isChordEngine) {
+    if (traits_.isArpeggiator || traits_.isStepSequencer || traits_.isPolyStepSequencer ||
+        traits_.isChordEngine) {
         refreshDeviceSlotMidiActivity(traits_, customUI_, midiNoteStrip_, lastMidiNote_,
                                       lastChordNotes_, lastChordCount_);
     } else {
@@ -1597,8 +1604,13 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
-    if (handleStepSequencerPatternExternalDrag(customUI_.getStepSeqPlugin(),
-                                               exportClipButton_.get(), this, e)) {
+    if (traits_.isPolyStepSequencer) {
+        if (handlePolyStepSequencerPatternExternalDrag(customUI_.getPolyStepSeqPlugin(),
+                                                       exportClipButton_.get(), this, e)) {
+            return;
+        }
+    } else if (handleStepSequencerPatternExternalDrag(customUI_.getStepSeqPlugin(),
+                                                      exportClipButton_.get(), this, e)) {
         return;
     }
 

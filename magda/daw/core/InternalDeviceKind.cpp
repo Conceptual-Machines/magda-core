@@ -14,6 +14,7 @@
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/MidiReceivePlugin.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
+#include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/SidechainMonitorPlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
@@ -82,6 +83,8 @@ const InternalDeviceMetadata kMetadata[] = {
      "MIDI arpeggiator for rhythmic note patterns and held-note motion."},
     {InternalDeviceKind::StepSequencer, "Step Sequencer", "", "MIDI",
      "MIDI step sequencer for pattern-driven notes and rhythmic control."},
+    {InternalDeviceKind::PolyStepSequencer, "Poly Sequencer", "", "MIDI",
+     "Polyphonic MIDI step sequencer with multiple notes per step for chord patterns."},
     {InternalDeviceKind::SidechainMonitor, "Sidechain Monitor", "", "Utility",
      "Internal monitor used to expose sidechain signal state."},
     {InternalDeviceKind::AudioSidechainMonitor, "Audio Sidechain Monitor", "", "Utility",
@@ -146,6 +149,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::MagdaSamplerPlugin;
     using daw::audio::MidiChordEnginePlugin;
     using daw::audio::OscilloscopePlugin;
+    using daw::audio::PolyStepSequencerPlugin;
     using daw::audio::SpectrumAnalyzerPlugin;
     using daw::audio::StepSequencerPlugin;
     using daw::audio::TrackMeasurementPlugin;
@@ -175,6 +179,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::MidiChordEngine, MidiChordEnginePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Arpeggiator, ArpeggiatorPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::StepSequencer, StepSequencerPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::PolyStepSequencer, PolyStepSequencerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Oscilloscope, OscilloscopePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::SpectrumAnalyzer, SpectrumAnalyzerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Levels, LevelsPlugin::xmlTypeName, nullptr},
@@ -221,6 +226,13 @@ bool isAnalysisDevice(const juce::String& pluginId) {
     const auto kind = classifyInternalDevice(pluginId);
     return kind == InternalDeviceKind::Oscilloscope ||
            kind == InternalDeviceKind::SpectrumAnalyzer || kind == InternalDeviceKind::Levels;
+}
+
+bool isMidiGeneratorDevice(const juce::String& pluginId) {
+    const auto kind = classifyInternalDevice(pluginId);
+    return kind == InternalDeviceKind::StepSequencer ||
+           kind == InternalDeviceKind::PolyStepSequencer ||
+           kind == InternalDeviceKind::Arpeggiator || kind == InternalDeviceKind::MidiChordEngine;
 }
 
 int postFxAnalysisDeviceOrder(const juce::String& pluginId) {

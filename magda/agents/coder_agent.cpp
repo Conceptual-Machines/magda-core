@@ -21,6 +21,10 @@ namespace {
 // applies it via FaustPlugin::loadDspSource on the message thread.
 class FaustCoderAgent : public CoderAgent {
   public:
+    juce::String getUserCaveat() const override {
+        return "note: generated code is a starting point - review and refine in the editor.";
+    }
+
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
                                   llm::Conversation& conversation,
                                   TokenCallback onToken = {}) override {

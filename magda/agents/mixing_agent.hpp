@@ -123,6 +123,14 @@ class MixAnalysisAgent {
     static juce::String buildUserMessage(const Input& input);
 
     static const char* getSystemPrompt();
+
+    /** Post-generation caveat shown to the user after a successful mixing agent
+     *  response. Display-only - never sent back to the LLM as conversation history.
+     *  Prefix "note: " matches the DeviceAIAgent caveat convention. */
+    static const char* getUserCaveat() {
+        return "note: suggestions are based on measured analysis - trust your ears for the final "
+               "call.";
+    }
 };
 
 }  // namespace magda

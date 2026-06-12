@@ -37,7 +37,8 @@ void placeCollapsedButton(juce::Rectangle<int>& area, juce::Component* component
 }
 
 bool isMidiUtility(const DeviceSlotTraits& traits) {
-    return traits.isChordEngine || traits.isArpeggiator || traits.isStepSequencer;
+    return traits.isChordEngine || traits.isArpeggiator || traits.isStepSequencer ||
+           traits.isPolyStepSequencer;
 }
 
 }  // namespace
@@ -61,7 +62,7 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
         placeLeft(headerArea, controls.macroButton, buttonSize);
         placeLeft(headerArea, controls.modButton, buttonSize);
         placeAIButton();
-    } else if (traits.isArpeggiator || traits.isStepSequencer) {
+    } else if (traits.isArpeggiator || traits.isStepSequencer || traits.isPolyStepSequencer) {
         placeLeft(headerArea, controls.macroButton, buttonSize);
         setVisibleIfPresent(controls.modButton, false);
         placeAIButton();
@@ -134,7 +135,8 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
 
     const bool showMod = drum_grid_slot::shouldShowModButton(traits.isDrumGrid, device.deviceType);
     const bool showMacro = drum_grid_slot::shouldShowMacroButton(
-        traits.isDrumGrid, device.deviceType, traits.isArpeggiator, traits.isStepSequencer);
+        traits.isDrumGrid, device.deviceType, traits.isArpeggiator,
+        traits.isStepSequencer || traits.isPolyStepSequencer);
     placeCollapsedButton(area, controls.macroButton, buttonSize);
     setVisibleIfPresent(controls.macroButton, showMacro);
 
@@ -168,7 +170,7 @@ void applyMidiOnlyDeviceHeaderVisibility(const DeviceSlotTraits& traits,
         return;
 
     setVisibleIfPresent(modButton, false);
-    if (!traits.isArpeggiator && !traits.isStepSequencer)
+    if (!traits.isArpeggiator && !traits.isStepSequencer && !traits.isPolyStepSequencer)
         setVisibleIfPresent(macroButton, false);
 }
 

@@ -45,6 +45,7 @@ enum class InternalDeviceKind {
     MidiChordEngine,
     Arpeggiator,
     StepSequencer,
+    PolyStepSequencer,
     SidechainMonitor,
     AudioSidechainMonitor,
     InstrumentMeterTap,
@@ -87,6 +88,15 @@ const InternalDeviceMetadata* getInternalDeviceMetadataForPluginId(const juce::S
  * at every creation site.
  */
 bool isAnalysisDevice(const juce::String& pluginId);
+
+/**
+ * @brief True if the pluginId is a MIDI generator/utility device.
+ *
+ * MIDI generators (step sequencer, poly sequencer, arpeggiator, chord engine)
+ * operate on MIDI tracks and make no sense on the master bus.
+ * Used to block these devices from being added to the master track.
+ */
+bool isMidiGeneratorDevice(const juce::String& pluginId);
 
 /**
  * @brief Stable display / chain order for known post-FX analysis devices.
