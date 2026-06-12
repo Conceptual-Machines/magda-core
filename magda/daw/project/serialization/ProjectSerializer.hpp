@@ -129,6 +129,9 @@ class ProjectSerializer {
     static juce::var serializeChainInfo(const ChainInfo& chain);
     static bool deserializeChainInfo(const juce::var& json, ChainInfo& outChain);
 
+    static juce::var serializeCurvePointData(const CurvePointData& data);
+    static bool deserializeCurvePointData(const juce::var& json, CurvePointData& data);
+
   private:
     // ========================================================================
     // Atomic deserialization helpers
@@ -207,9 +210,6 @@ class ProjectSerializer {
 
     static juce::var serializeSendInfo(const SendInfo& data);
     static bool deserializeSendInfo(const juce::var& json, SendInfo& data);
-
-    static juce::var serializeCurvePointData(const CurvePointData& data);
-    static bool deserializeCurvePointData(const juce::var& json, CurvePointData& data);
 
     static juce::var serializeMacroLink(const MacroLink& data);
     static bool deserializeMacroLink(const juce::var& json, MacroLink& data);

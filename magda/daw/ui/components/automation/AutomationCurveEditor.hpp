@@ -74,6 +74,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     }
     double pixelToX(int px) const override;
     int xToPixel(double x) const override;
+    double xToPixelF(double x) const override;
 
     // Snapping (uses base class snapXToGrid)
     std::function<double(double)> snapBeatToGrid;
@@ -107,6 +108,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     void onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                           const CurveHandleData& outHandle) override;
 
+    void onPointCurveTypeChanged(uint32_t pointId, CurveType newType) override;
     void onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) override;
     void onStepStamped(double gridStart, double gridEnd, double y, uint32_t prevPointId,
                        double prevValue) override;
@@ -124,7 +126,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     // Cached curve points (converted from AutomationPoints)
     mutable std::vector<CurvePoint> cachedPoints_;
     mutable bool pointsCacheDirty_ = true;
-    bool isRightClickPending_ = false;
+    // Note: right-click pending is tracked via CurveEditorBase::isRightClickPending_
 
     void updatePointsCache() const;
     void deleteSelectedPoints();

@@ -22,6 +22,11 @@ struct CurveSnapshot {
         float phase = 0.0f;
         float value = 0.5f;
         float tension = 0.0f;
+        int curveType = 0;
+        float inHandleX = 0.0f;
+        float inHandleY = 0.0f;
+        float outHandleX = 0.0f;
+        float outHandleY = 0.0f;
     };
 
     std::array<Point, kMaxPoints> points{};
@@ -125,14 +130,77 @@ struct CurveSnapshot {
         t = std::clamp(t, 0.0f, 1.0f);
 
         float tension = p1->tension;
+        auto applyTension = [tension](float input) {
+            if (std::abs(tension) < 0.001f)
+                return input;
+            if (tension > 0)
+                return std::pow(input, 1.0f + tension * 2.0f);
+            return 1.0f - std::pow(1.0f - input, 1.0f - tension * 2.0f);
+        };
+
+        auto getShaper = [&]() {
+            struct Shaper {
+                float t = 0.5f;
+                float value = 0.5f;
+                bool stored = false;
+            };
+
+            constexpr float kHandleEpsilon = 0.000001f;
+            const bool hasStoredShaper =
+                p2->phase > p1->phase && (std::abs(p1->outHandleX) > kHandleEpsilon ||
+                                          std::abs(p1->outHandleY) > kHandleEpsilon ||
+                                          std::abs(p2->inHandleX) > kHandleEpsilon ||
+                                          std::abs(p2->inHandleY) > kHandleEpsilon);
+
+            if (hasStoredShaper) {
+                const float shaperPhase =
+                    std::clamp(p1->phase + p1->outHandleX, p1->phase, p2->phase);
+                const float shaperT = (p2->phase - p1->phase > 0.0001f)
+                                          ? ((shaperPhase - p1->phase) / (p2->phase - p1->phase))
+                                          : 0.5f;
+                return Shaper{std::clamp(shaperT, 0.001f, 0.999f),
+                              std::clamp(p1->value + p1->outHandleY, 0.0f, 1.0f), true};
+            }
+
+            constexpr float cornerT = 0.5f;
+            return Shaper{cornerT, p1->value + applyTension(cornerT) * (p2->value - p1->value),
+                          false};
+        };
+
+        constexpr int kHardCornerCurveType = 3;
+        if (p1->curveType == kHardCornerCurveType) {
+            const auto shaper = getShaper();
+            if (t <= shaper.t) {
+                const float u = t / shaper.t;
+                return p1->value + u * (shaper.value - p1->value);
+            }
+            const float u = (t - shaper.t) / (1.0f - shaper.t);
+            return shaper.value + u * (p2->value - shaper.value);
+        }
+
+        const auto shaper = getShaper();
+        if (shaper.stored) {
+            float uLow = 0.0f;
+            float uHigh = 1.0f;
+            float u = t;
+            for (int i = 0; i < 10; ++i) {
+                u = (uLow + uHigh) * 0.5f;
+                const float oneMinusU = 1.0f - u;
+                const float x = 2.0f * oneMinusU * u * shaper.t + u * u;
+                if (x < t)
+                    uLow = u;
+                else
+                    uHigh = u;
+            }
+            const float oneMinusU = 1.0f - u;
+            return oneMinusU * oneMinusU * p1->value + 2.0f * oneMinusU * u * shaper.value +
+                   u * u * p2->value;
+        }
+
         if (std::abs(tension) < 0.001f) {
             return p1->value + t * (p2->value - p1->value);
         } else {
-            float curvedT;
-            if (tension > 0)
-                curvedT = std::pow(t, 1.0f + tension * 2.0f);
-            else
-                curvedT = 1.0f - std::pow(1.0f - t, 1.0f - tension * 2.0f);
+            float curvedT = applyTension(t);
             return p1->value + curvedT * (p2->value - p1->value);
         }
     }
@@ -184,6 +252,11 @@ struct CurveSnapshotHolder {
             dst.phase = src.phase;
             dst.value = src.value;
             dst.tension = src.tension;
+            dst.curveType = src.curveType;
+            dst.inHandleX = src.inHandleX;
+            dst.inHandleY = src.inHandleY;
+            dst.outHandleX = src.outHandleX;
+            dst.outHandleY = src.outHandleY;
         }
 
         // Swap: audio thread will now read from the newly written buffer

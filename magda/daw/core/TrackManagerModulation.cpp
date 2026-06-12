@@ -522,7 +522,20 @@ void TrackManager::setModCurvePreset(const ChainNodePath& path, int modIndex, Cu
     notifyDeviceModifiersChanged(path.trackId);
 }
 
+void TrackManager::setModCurveState(const ChainNodePath& path, int modIndex, CurvePreset preset,
+                                    const std::vector<CurvePointData>& points) {
+    auto node = resolveChainNode(path);
+    if (!indexInRange(node.mods, modIndex))
+        return;
+
+    auto& mod = (*node.mods)[modIndex];
+    mod.curvePreset = preset;
+    mod.curvePoints = points;
+    notifyDeviceModifiersChanged(path.trackId);
+}
+
 void TrackManager::notifyModCurveChanged(const ChainNodePath& path) {
+    DBG("[HardCorner] TrackManager::notifyModCurveChanged path=" << path.toString());
     notifyDeviceModifiersChanged(path.trackId);
 }
 

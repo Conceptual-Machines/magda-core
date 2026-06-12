@@ -4,49 +4,33 @@ namespace magda {
 
 CurveTensionHandle::CurveTensionHandle(uint32_t pointId) : pointId_(pointId) {
     setSize(HANDLE_SIZE, HANDLE_SIZE);
-    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    setMouseCursor(juce::MouseCursor::DraggingHandCursor);
 }
 
 void CurveTensionHandle::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat().reduced(1.0f);
+    auto bounds = getLocalBounds().toFloat().reduced(1.25f);
+    const auto accent = juce::Colour(0xFFFF8A2A);
 
-    // Background - diamond shape
-    juce::Path diamond;
-    float cx = bounds.getCentreX();
-    float cy = bounds.getCentreY();
-    float hw = bounds.getWidth() / 2.0f;
-    float hh = bounds.getHeight() / 2.0f;
+    g.setColour(juce::Colour(0xFF141414));
+    g.fillEllipse(bounds);
 
-    diamond.startNewSubPath(cx, cy - hh);  // Top
-    diamond.lineTo(cx + hw, cy);           // Right
-    diamond.lineTo(cx, cy + hh);           // Bottom
-    diamond.lineTo(cx - hw, cy);           // Left
-    diamond.closeSubPath();
-
-    // Fill color based on state
-    juce::Colour fillColour;
-    if (isDragging_) {
-        fillColour = juce::Colour(0xFFFFAA44);  // Orange when dragging
-    } else if (isHovered_) {
-        fillColour = juce::Colour(0xFFCCAA88);  // Light when hovered
-    } else {
-        fillColour = juce::Colour(0xFF888888);  // Gray normally
-    }
-
-    g.setColour(fillColour);
-    g.fillPath(diamond);
-
-    // Border
-    g.setColour(juce::Colour(0xFFCCCCCC));
-    g.strokePath(diamond, juce::PathStrokeType(1.0f));
+    g.setColour(isDragging_ ? accent
+                            : (isHovered_ ? juce::Colours::white : juce::Colour(0xFFE6E6E6)));
+    g.drawEllipse(bounds, isDragging_ || isHovered_ ? 1.4f : 1.1f);
 }
 
 void CurveTensionHandle::mouseDown(const juce::MouseEvent& e) {
+    if (e.mods.isPopupMenu()) {
+        if (onRightClick)
+            onRightClick(pointId_);
+        return;
+    }
     if (e.mods.isLeftButtonDown()) {
         isDragging_ = true;
-        // Use parent-relative coordinates so moving the component doesn't affect drag calculation
-        dragStartY_ = e.getEventRelativeTo(getParentComponent()).y;
         dragStartTension_ = tension_;
+        auto parentPos = e.getEventRelativeTo(getParentComponent()).position;
+        dragOffsetX_ = static_cast<double>(getBounds().getCentreX()) - parentPos.x;
+        dragOffsetY_ = static_cast<double>(getBounds().getCentreY()) - parentPos.y;
         repaint();
     }
 }
@@ -55,43 +39,28 @@ void CurveTensionHandle::mouseDrag(const juce::MouseEvent& e) {
     if (!isDragging_)
         return;
 
-    // Use parent-relative coordinates (component moves during drag, so can't use
-    // component-relative)
-    int parentY = e.getEventRelativeTo(getParentComponent()).y;
+    auto parentPos = e.getEventRelativeTo(getParentComponent()).position;
+    double shaperX = parentPos.x + dragOffsetX_;
+    double shaperY = parentPos.y + dragOffsetY_;
 
-    // Dragging up bends curve outward (away from straight line)
-    // 50 pixels of drag = full range
-    // Normal: -1 to +1, Shift held: -3 to +3 for extreme squared curves
-    int deltaY = parentY - dragStartY_;
+    if (onShaperDragPreview)
+        onShaperDragPreview(pointId_, shaperX, shaperY);
+    else if (onTensionDragPreview)
+        onTensionDragPreview(pointId_, dragStartTension_);
 
-    // Invert direction when curve goes downward so "up" always means "outward"
-    if (slopeGoesDown_) {
-        deltaY = -deltaY;
-    }
-
-    double deltaTension = static_cast<double>(deltaY) / 50.0;
-
-    double minTension = e.mods.isShiftDown() ? -3.0 : -1.0;
-    double maxTension = e.mods.isShiftDown() ? 3.0 : 1.0;
-    double newTension = juce::jlimit(minTension, maxTension, dragStartTension_ + deltaTension);
-
-    if (newTension != tension_) {
-        tension_ = newTension;
-
-        if (onTensionDragPreview) {
-            onTensionDragPreview(pointId_, tension_);
-        }
-
-        repaint();
-    }
+    repaint();
 }
 
 void CurveTensionHandle::mouseUp(const juce::MouseEvent& /*e*/) {
     if (isDragging_) {
         isDragging_ = false;
 
-        if (onTensionChanged) {
+        if (!onShaperChanged && onTensionChanged) {
             onTensionChanged(pointId_, tension_);
+        }
+        if (onShaperChanged) {
+            onShaperChanged(pointId_, static_cast<double>(getBounds().getCentreX()),
+                            static_cast<double>(getBounds().getCentreY()));
         }
 
         repaint();

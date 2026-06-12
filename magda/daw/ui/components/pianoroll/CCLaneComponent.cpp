@@ -34,6 +34,8 @@ MidiCurveType curveTypeToMidiCurveType(CurveType t) {
             return MidiCurveType::Linear;
         case CurveType::Bezier:
             return MidiCurveType::Bezier;
+        case CurveType::HardCorner:
+            return MidiCurveType::Linear;
     }
     return MidiCurveType::Step;
 }

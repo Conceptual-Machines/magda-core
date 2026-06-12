@@ -15,7 +15,8 @@ class CurveEditorBase;
 /**
  * @brief A single draggable point on an editable curve
  *
- * 8px circle normally, 10px when selected. Shows bezier handles when selected.
+ * Retrospect-style anchor point. Smooth anchors are circles; hard-angle
+ * anchors are squares. Shows bezier handles when selected.
  * Drag to move position.
  */
 class CurvePointComponent : public juce::Component {
@@ -71,9 +72,9 @@ class CurvePointComponent : public juce::Component {
     std::function<void(uint32_t, bool)> onPointHovered;  // id, isHovered
 
     // Size constants
-    static constexpr int POINT_SIZE = 6;
-    static constexpr int POINT_SIZE_SELECTED = 8;
-    static constexpr int HIT_SIZE = 16;
+    static constexpr int POINT_SIZE = 5;
+    static constexpr int POINT_SIZE_SELECTED = 6;
+    static constexpr int HIT_SIZE = 14;
 
   private:
     uint32_t pointId_;

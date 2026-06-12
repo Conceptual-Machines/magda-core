@@ -2,8 +2,98 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
+
+#include "core/TrackManager.hpp"
+#include "core/UndoManager.hpp"
 
 namespace magda {
+
+namespace {
+
+bool sameCurvePoints(const std::vector<CurvePointData>& a, const std::vector<CurvePointData>& b) {
+    if (a.size() != b.size())
+        return false;
+
+    constexpr float epsilon = 1.0e-6f;
+    for (size_t i = 0; i < a.size(); ++i) {
+        const auto& lhs = a[i];
+        const auto& rhs = b[i];
+        if (std::abs(lhs.phase - rhs.phase) > epsilon ||
+            std::abs(lhs.value - rhs.value) > epsilon ||
+            std::abs(lhs.tension - rhs.tension) > epsilon || lhs.curveType != rhs.curveType ||
+            std::abs(lhs.inHandleX - rhs.inHandleX) > epsilon ||
+            std::abs(lhs.inHandleY - rhs.inHandleY) > epsilon ||
+            std::abs(lhs.outHandleX - rhs.outHandleX) > epsilon ||
+            std::abs(lhs.outHandleY - rhs.outHandleY) > epsilon) {
+            return false;
+        }
+    }
+    return true;
+}
+
+class SetLFOCurveStateCommand : public UndoableCommand {
+  public:
+    SetLFOCurveStateCommand(ChainNodePath ownerPath, int modIndex, CurvePreset beforePreset,
+                            std::vector<CurvePointData> beforePoints, CurvePreset afterPreset,
+                            std::vector<CurvePointData> afterPoints, juce::String description)
+        : ownerPath_(std::move(ownerPath)),
+          modIndex_(modIndex),
+          beforePreset_(beforePreset),
+          beforePoints_(std::move(beforePoints)),
+          afterPreset_(afterPreset),
+          afterPoints_(std::move(afterPoints)),
+          description_(std::move(description)) {}
+
+    void execute() override {
+        TrackManager::getInstance().setModCurveState(ownerPath_, modIndex_, afterPreset_,
+                                                     afterPoints_);
+    }
+
+    void undo() override {
+        TrackManager::getInstance().setModCurveState(ownerPath_, modIndex_, beforePreset_,
+                                                     beforePoints_);
+    }
+
+    juce::String getDescription() const override {
+        return description_;
+    }
+
+  private:
+    ChainNodePath ownerPath_;
+    int modIndex_ = -1;
+    CurvePreset beforePreset_ = CurvePreset::Custom;
+    std::vector<CurvePointData> beforePoints_;
+    CurvePreset afterPreset_ = CurvePreset::Custom;
+    std::vector<CurvePointData> afterPoints_;
+    juce::String description_;
+};
+
+juce::String formatCurvePointTypes(const std::vector<CurvePoint>& points) {
+    juce::String result;
+    for (size_t i = 0; i < points.size(); ++i) {
+        if (i > 0)
+            result += ",";
+        result += juce::String(static_cast<int>(points[i].id));
+        result += ":";
+        result += juce::String(curveTypeToInt(points[i].curveType));
+    }
+    return result;
+}
+
+juce::String formatModCurvePointTypes(const std::vector<CurvePointData>& points) {
+    juce::String result;
+    for (size_t i = 0; i < points.size(); ++i) {
+        if (i > 0)
+            result += ",";
+        result += juce::String(static_cast<int>(i));
+        result += ":";
+        result += juce::String(points[i].curveType);
+    }
+    return result;
+}
+
+}  // namespace
 
 LFOCurveEditor::LFOCurveEditor() {
     setName("LFOCurveEditor");
@@ -20,6 +110,47 @@ LFOCurveEditor::~LFOCurveEditor() {
     stopTimer();
 }
 
+void LFOCurveEditor::setUndoTarget(const ChainNodePath& ownerPath, int modIndex) {
+    undoOwnerPath_ = ownerPath;
+    undoModIndex_ = modIndex;
+}
+
+std::vector<CurvePointData> LFOCurveEditor::snapshotCurvePoints() const {
+    std::vector<CurvePointData> points;
+    points.reserve(points_.size());
+
+    for (const auto& p : points_) {
+        CurvePointData cpd;
+        cpd.phase = static_cast<float>(p.x);
+        cpd.value = static_cast<float>(p.y);
+        cpd.tension = static_cast<float>(p.tension);
+        cpd.curveType = curveTypeToInt(p.curveType);
+        cpd.inHandleX = static_cast<float>(p.inHandle.x);
+        cpd.inHandleY = static_cast<float>(p.inHandle.y);
+        cpd.outHandleX = static_cast<float>(p.outHandle.x);
+        cpd.outHandleY = static_cast<float>(p.outHandle.y);
+        points.push_back(cpd);
+    }
+
+    return points;
+}
+
+void LFOCurveEditor::commitUndoableCurveEdit(const std::vector<CurvePointData>& beforePoints,
+                                             CurvePreset beforePreset,
+                                             const juce::String& description) {
+    if (!undoOwnerPath_.isValid() || undoModIndex_ < 0 || !modInfo_)
+        return;
+
+    auto afterPoints = snapshotCurvePoints();
+    const auto afterPreset = modInfo_->curvePreset;
+    if (beforePreset == afterPreset && sameCurvePoints(beforePoints, afterPoints))
+        return;
+
+    UndoManager::getInstance().executeCommand(std::make_unique<SetLFOCurveStateCommand>(
+        undoOwnerPath_, undoModIndex_, beforePreset, beforePoints, afterPreset,
+        std::move(afterPoints), description));
+}
+
 void LFOCurveEditor::syncFromModInfo() {
     if (!modInfo_)
         return;
@@ -30,6 +161,11 @@ void LFOCurveEditor::syncFromModInfo() {
         points_[i].x = static_cast<double>(modInfo_->curvePoints[i].phase);
         points_[i].y = static_cast<double>(modInfo_->curvePoints[i].value);
         points_[i].tension = static_cast<double>(modInfo_->curvePoints[i].tension);
+        points_[i].curveType = intToCurveType(modInfo_->curvePoints[i].curveType);
+        points_[i].inHandle.x = static_cast<double>(modInfo_->curvePoints[i].inHandleX);
+        points_[i].inHandle.y = static_cast<double>(modInfo_->curvePoints[i].inHandleY);
+        points_[i].outHandle.x = static_cast<double>(modInfo_->curvePoints[i].outHandleX);
+        points_[i].outHandle.y = static_cast<double>(modInfo_->curvePoints[i].outHandleY);
     }
 
     // Update point component positions
@@ -45,6 +181,32 @@ void LFOCurveEditor::syncFromModInfo() {
 }
 
 void LFOCurveEditor::setModInfo(ModInfo* mod) {
+    // Value-only refresh when the structure is unchanged. setModInfo is called
+    // in a feedback loop after every edit (edit -> notifyWaveformChanged ->
+    // panel refresh -> setModInfo with our own ModInfo). A full reload renumbers
+    // point IDs and destroys/recreates the point components, which kills an
+    // in-progress drag (the symptom: a point can be added but not moved). When
+    // the point count is unchanged, update values in place and keep the live
+    // components and IDs instead of rebuilding.
+    if (mod && mod == modInfo_ && !points_.empty() && mod->curvePoints.size() == points_.size()) {
+        for (size_t i = 0; i < points_.size(); ++i) {
+            points_[i].x = static_cast<double>(mod->curvePoints[i].phase);
+            points_[i].y = static_cast<double>(mod->curvePoints[i].value);
+            points_[i].tension = static_cast<double>(mod->curvePoints[i].tension);
+            points_[i].curveType = intToCurveType(mod->curvePoints[i].curveType);
+            points_[i].inHandle.x = static_cast<double>(mod->curvePoints[i].inHandleX);
+            points_[i].inHandle.y = static_cast<double>(mod->curvePoints[i].inHandleY);
+            points_[i].outHandle.x = static_cast<double>(mod->curvePoints[i].outHandleX);
+            points_[i].outHandle.y = static_cast<double>(mod->curvePoints[i].outHandleY);
+        }
+        points_.front().x = 0.0;
+        points_.back().x = 1.0;
+        updatePointPositions();
+        updateTensionHandlePositions();
+        repaint();
+        return;
+    }
+
     modInfo_ = mod;
 
     // Load curve points from ModInfo
@@ -61,7 +223,11 @@ void LFOCurveEditor::setModInfo(ModInfo* mod) {
             point.x = static_cast<double>(cp.phase);
             point.y = static_cast<double>(cp.value);
             point.tension = static_cast<double>(cp.tension);
-            point.curveType = CurveType::Linear;
+            point.curveType = intToCurveType(cp.curveType);
+            point.inHandle.x = static_cast<double>(cp.inHandleX);
+            point.inHandle.y = static_cast<double>(cp.inHandleY);
+            point.outHandle.x = static_cast<double>(cp.outHandleX);
+            point.outHandle.y = static_cast<double>(cp.outHandleY);
             points_.push_back(point);
         }
         // Sort by x position
@@ -104,21 +270,59 @@ void LFOCurveEditor::setModInfo(ModInfo* mod) {
 }
 
 double LFOCurveEditor::getPixelsPerX() const {
-    // X is phase 0-1, so pixels per X = content width
+    // X is phase 0-1. Usable width is inset by kEdgePadding on each side so
+    // extreme points are not flush against the content border.
     auto content = getContentBounds();
-    return content.getWidth() > 0 ? static_cast<double>(content.getWidth()) : 100.0;
+    double usable = content.getWidth() - 2.0 * kEdgePadding;
+    return usable > 0.0 ? usable : 100.0;
 }
 
 double LFOCurveEditor::pixelToX(int px) const {
     auto content = getContentBounds();
-    if (content.getWidth() <= 0)
+    double usable = content.getWidth() - 2.0 * kEdgePadding;
+    if (usable <= 0.0)
         return 0.0;
-    return static_cast<double>(px - content.getX()) / content.getWidth();
+    return static_cast<double>(px - content.getX() - kEdgePadding) / usable;
 }
 
 int LFOCurveEditor::xToPixel(double x) const {
     auto content = getContentBounds();
-    return content.getX() + static_cast<int>(x * content.getWidth());
+    double usable = content.getWidth() - 2.0 * kEdgePadding;
+    return content.getX() + kEdgePadding + static_cast<int>(x * usable);
+}
+
+double LFOCurveEditor::xToPixelF(double x) const {
+    auto content = getContentBounds();
+    double usable = content.getWidth() - 2.0 * kEdgePadding;
+    return static_cast<double>(content.getX() + kEdgePadding) + x * usable;
+}
+
+double LFOCurveEditor::getPixelsPerY() const {
+    // Y is value 0-1. Usable height is inset by kEdgePadding on each side so
+    // extreme points (top/bottom) are not flush against the content border.
+    auto content = getContentBounds();
+    double usable = content.getHeight() - 2.0 * kEdgePadding;
+    return usable > 0.0 ? usable : 100.0;
+}
+
+double LFOCurveEditor::pixelToY(int py) const {
+    auto content = getContentBounds();
+    double usable = content.getHeight() - 2.0 * kEdgePadding;
+    if (usable <= 0.0)
+        return 0.5;
+    return 1.0 - static_cast<double>(py - content.getY() - kEdgePadding) / usable;
+}
+
+int LFOCurveEditor::yToPixel(double y) const {
+    auto content = getContentBounds();
+    double usable = content.getHeight() - 2.0 * kEdgePadding;
+    return content.getY() + kEdgePadding + static_cast<int>((1.0 - y) * usable);
+}
+
+double LFOCurveEditor::yToPixelF(double y) const {
+    auto content = getContentBounds();
+    double usable = content.getHeight() - 2.0 * kEdgePadding;
+    return static_cast<double>(content.getY() + kEdgePadding) + (1.0 - y) * usable;
 }
 
 const std::vector<CurvePoint>& LFOCurveEditor::getPoints() const {
@@ -126,6 +330,9 @@ const std::vector<CurvePoint>& LFOCurveEditor::getPoints() const {
 }
 
 void LFOCurveEditor::onPointAdded(double x, double y, CurveType curveType) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
     // Clamp x to 0-1 range
     x = juce::jlimit(0.0, 1.0, x);
     y = juce::jlimit(0.0, 1.0, y);
@@ -145,6 +352,7 @@ void LFOCurveEditor::onPointAdded(double x, double y, CurveType curveType) {
     rebuildPointComponents();
     repaint();  // Force full repaint after structural change
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
 }
 
 void LFOCurveEditor::constrainPointPosition(uint32_t pointId, double& x, double& y) {
@@ -186,6 +394,9 @@ void LFOCurveEditor::constrainPointPosition(uint32_t pointId, double& x, double&
 }
 
 void LFOCurveEditor::onPointMoved(uint32_t pointId, double newX, double newY) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
     // Position is already constrained by constrainPointPosition
 
     for (auto& point : points_) {
@@ -203,12 +414,16 @@ void LFOCurveEditor::onPointMoved(uint32_t pointId, double newX, double newY) {
     rebuildPointComponents();
     repaint();  // Force full repaint after structural change
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
 }
 
 void LFOCurveEditor::onPointDeleted(uint32_t pointId) {
     // Don't delete if only 2 points remain
     if (points_.size() <= 2)
         return;
+
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
 
     points_.erase(std::remove_if(points_.begin(), points_.end(),
                                  [pointId](const CurvePoint& p) { return p.id == pointId; }),
@@ -221,6 +436,7 @@ void LFOCurveEditor::onPointDeleted(uint32_t pointId) {
     rebuildPointComponents();
     repaint();  // Force full repaint after structural change
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
 }
 
 void LFOCurveEditor::onPointSelected(uint32_t pointId) {
@@ -235,6 +451,9 @@ void LFOCurveEditor::onPointSelected(uint32_t pointId) {
 }
 
 void LFOCurveEditor::onTensionChanged(uint32_t pointId, double tension) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
     for (auto& point : points_) {
         if (point.id == pointId) {
             point.tension = tension;
@@ -244,10 +463,33 @@ void LFOCurveEditor::onTensionChanged(uint32_t pointId, double tension) {
 
     repaint();
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
+}
+
+void LFOCurveEditor::onPointCurveTypeChanged(uint32_t pointId, CurveType newType) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
+    for (auto& point : points_) {
+        if (point.id == pointId) {
+            DBG("[HardCorner] LFOCurveEditor::onPointCurveTypeChanged pointId="
+                << static_cast<int>(pointId) << " oldType=" << getCurveTypeName(point.curveType)
+                << " newType=" << getCurveTypeName(newType));
+            point.curveType = newType;
+            break;
+        }
+    }
+    // notifyWaveformChanged persists to ModInfo; the base class refreshes
+    // point/handle visuals after this returns.
+    notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
 }
 
 void LFOCurveEditor::onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                                       const CurveHandleData& outHandle) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
     for (auto& point : points_) {
         if (point.id == pointId) {
             point.inHandle = inHandle;
@@ -258,6 +500,48 @@ void LFOCurveEditor::onHandlesChanged(uint32_t pointId, const CurveHandleData& i
 
     repaint();
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
+}
+
+void LFOCurveEditor::onSegmentShaperChanged(uint32_t leftPointId,
+                                            const CurveHandleData& leftInHandle,
+                                            const CurveHandleData& leftOutHandle,
+                                            uint32_t rightPointId,
+                                            const CurveHandleData& rightInHandle,
+                                            const CurveHandleData& rightOutHandle, bool isPreview) {
+    std::vector<CurvePointData> beforePoints;
+    CurvePreset beforePreset = CurvePreset::Custom;
+    if (isPreview) {
+        if (!segmentShaperUndoActive_) {
+            segmentShaperUndoActive_ = true;
+            segmentShaperUndoBeforePoints_ = snapshotCurvePoints();
+            segmentShaperUndoBeforePreset_ = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+        }
+    } else if (segmentShaperUndoActive_) {
+        beforePoints = segmentShaperUndoBeforePoints_;
+        beforePreset = segmentShaperUndoBeforePreset_;
+        segmentShaperUndoActive_ = false;
+        segmentShaperUndoBeforePoints_.clear();
+    } else {
+        beforePoints = snapshotCurvePoints();
+        beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+    }
+
+    for (auto& point : points_) {
+        if (point.id == leftPointId) {
+            point.inHandle = leftInHandle;
+            point.outHandle = leftOutHandle;
+        } else if (point.id == rightPointId) {
+            point.inHandle = rightInHandle;
+            point.outHandle = rightOutHandle;
+        }
+    }
+
+    repaint();
+    notifyWaveformChanged();
+
+    if (!isPreview)
+        commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
 }
 
 void LFOCurveEditor::onPointDragPreview(uint32_t pointId, double newX, double newY) {
@@ -272,6 +556,10 @@ void LFOCurveEditor::onPointDragPreview(uint32_t pointId, double newX, double ne
         if (points_[i].id == pointId) {
             modInfo_->curvePoints[i].phase = static_cast<float>(newX);
             modInfo_->curvePoints[i].value = static_cast<float>(newY);
+            modInfo_->curvePoints[i].inHandleX = static_cast<float>(points_[i].inHandle.x);
+            modInfo_->curvePoints[i].inHandleY = static_cast<float>(points_[i].inHandle.y);
+            modInfo_->curvePoints[i].outHandleX = static_cast<float>(points_[i].outHandle.x);
+            modInfo_->curvePoints[i].outHandleY = static_cast<float>(points_[i].outHandle.y);
             found = true;
             break;
         }
@@ -302,6 +590,20 @@ void LFOCurveEditor::onTensionDragPreview(uint32_t pointId, double tension) {
 }
 
 bool LFOCurveEditor::keyPressed(const juce::KeyPress& key) {
+    if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0)) {
+        if (UndoManager::getInstance().undo())
+            setModInfo(modInfo_);
+        return true;
+    }
+
+    if (key ==
+        juce::KeyPress('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
+                       0)) {
+        if (UndoManager::getInstance().redo())
+            setModInfo(modInfo_);
+        return true;
+    }
+
     if (key == juce::KeyPress('c') || key == juce::KeyPress('C')) {
         showCrosshair_ = !showCrosshair_;
         repaint();
@@ -347,9 +649,9 @@ void LFOCurveEditor::timerCallback() {
 }
 
 juce::Rectangle<int> LFOCurveEditor::getIndicatorBounds() const {
-    auto content = getContentBounds();
-    int x = content.getX() + static_cast<int>(lastPhase_ * content.getWidth());
-    int y = content.getY() + static_cast<int>((1.0f - lastValue_) * content.getHeight());
+    // Use the padded x/y mapping so the indicator tracks the curve position correctly.
+    int x = static_cast<int>(xToPixelF(static_cast<double>(lastPhase_)));
+    int y = static_cast<int>(yToPixelF(static_cast<double>(lastValue_)));
 
     // Return a small region around the indicator dot
     constexpr int margin = 8;
@@ -372,8 +674,9 @@ void LFOCurveEditor::paintPhaseIndicator(juce::Graphics& g) {
     float phase = modInfo_->phase;
     float value = modInfo_->value;
 
-    int x = content.getX() + static_cast<int>(phase * content.getWidth());
-    int y = content.getY() + static_cast<int>((1.0f - value) * content.getHeight());
+    // Use padded x/y mapping so the indicator follows the curve correctly.
+    int x = static_cast<int>(xToPixelF(static_cast<double>(phase)));
+    int y = static_cast<int>(yToPixelF(static_cast<double>(value)));
 
     // Draw crosshair lines (toggle with 'C' key)
     if (showCrosshair_) {
@@ -416,19 +719,23 @@ void LFOCurveEditor::paintGrid(juce::Graphics& g) {
     float width = static_cast<float>(bounds.getWidth());
     float height = static_cast<float>(bounds.getHeight());
 
-    // Horizontal grid lines (value divisions)
+    // Horizontal grid lines (value divisions) - placed using the padded y mapping
+    // so they align with the curve and point positions.
     for (int i = 1; i < gridDivisionsY_; ++i) {
-        int y = bounds.getHeight() * i / gridDivisionsY_;
+        // Map grid fraction to data value: i/gridDivisionsY_ from top is value (1 - i/grid)
+        double value = 1.0 - static_cast<double>(i) / gridDivisionsY_;
+        int y = static_cast<int>(yToPixelF(value));
         // Center line is brighter
         bool isCenter = (i * 2 == gridDivisionsY_);
         g.setColour(juce::Colour(isCenter ? 0x20FFFFFF : 0x10FFFFFF));
         g.drawHorizontalLine(y, 0.0f, width);
     }
 
-    // Vertical grid lines (phase divisions)
+    // Vertical grid lines (phase divisions) — placed using the padded x mapping
+    // so they align with the curve and point positions.
     for (int i = 1; i < gridDivisionsX_; ++i) {
-        int x = bounds.getWidth() * i / gridDivisionsX_;
-        // Center line is brighter
+        double phase = static_cast<double>(i) / gridDivisionsX_;
+        int x = static_cast<int>(xToPixelF(phase));
         bool isCenter = (i * 2 == gridDivisionsX_);
         g.setColour(juce::Colour(isCenter ? 0x20FFFFFF : 0x10FFFFFF));
         g.drawVerticalLine(x, 0.0f, height);
@@ -445,8 +752,8 @@ void LFOCurveEditor::paintLoopRegion(juce::Graphics& g) {
         return;
 
     auto content = getContentBounds();
-    float loopStartX = content.getX() + modInfo_->loopStart * content.getWidth();
-    float loopEndX = content.getX() + modInfo_->loopEnd * content.getWidth();
+    float loopStartX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopStart)));
+    float loopEndX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopEnd)));
 
     // Shade areas outside the loop region
     g.setColour(juce::Colour(0x30000000));
@@ -492,8 +799,18 @@ void LFOCurveEditor::notifyWaveformChanged() {
             cpd.phase = static_cast<float>(p.x);
             cpd.value = static_cast<float>(p.y);
             cpd.tension = static_cast<float>(p.tension);
+            cpd.curveType = curveTypeToInt(p.curveType);
+            cpd.inHandleX = static_cast<float>(p.inHandle.x);
+            cpd.inHandleY = static_cast<float>(p.inHandle.y);
+            cpd.outHandleX = static_cast<float>(p.outHandle.x);
+            cpd.outHandleY = static_cast<float>(p.outHandle.y);
             modInfo_->curvePoints.push_back(cpd);
         }
+        DBG("[HardCorner] LFOCurveEditor::notifyWaveformChanged modId="
+            << static_cast<int>(modInfo_->id) << " name=" << modInfo_->name
+            << " points=" << static_cast<int>(modInfo_->curvePoints.size()) << " editorTypes=["
+            << formatCurvePointTypes(points_) << "] modTypes=["
+            << formatModCurvePointTypes(modInfo_->curvePoints) << "]");
     }
 
     if (onWaveformChanged) {
@@ -502,6 +819,9 @@ void LFOCurveEditor::notifyWaveformChanged() {
 }
 
 void LFOCurveEditor::loadPreset(CurvePreset preset) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
     points_.clear();
     nextPointId_ = 1;
 
@@ -580,6 +900,49 @@ void LFOCurveEditor::loadPreset(CurvePreset preset) {
     rebuildPointComponents();
     repaint();
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Load LFO Curve Preset");
+}
+
+void LFOCurveEditor::loadCurvePoints(const std::vector<CurvePointData>& points) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
+    points_.clear();
+    nextPointId_ = 1;
+
+    for (const auto& cp : points) {
+        CurvePoint point;
+        point.id = nextPointId_++;
+        point.x = juce::jlimit(0.0, 1.0, static_cast<double>(cp.phase));
+        point.y = juce::jlimit(0.0, 1.0, static_cast<double>(cp.value));
+        point.tension = static_cast<double>(cp.tension);
+        point.curveType = intToCurveType(cp.curveType);
+        point.inHandle.x = static_cast<double>(cp.inHandleX);
+        point.inHandle.y = static_cast<double>(cp.inHandleY);
+        point.outHandle.x = static_cast<double>(cp.outHandleX);
+        point.outHandle.y = static_cast<double>(cp.outHandleY);
+        points_.push_back(point);
+    }
+
+    std::sort(points_.begin(), points_.end(),
+              [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
+
+    if (points_.size() < 2) {
+        loadPreset(CurvePreset::Triangle);
+        return;
+    }
+
+    points_.front().x = 0.0;
+    points_.back().x = 1.0;
+
+    if (modInfo_) {
+        modInfo_->curvePreset = CurvePreset::Custom;
+    }
+
+    rebuildPointComponents();
+    repaint();
+    notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Load LFO Curve Preset");
 }
 
 }  // namespace magda
