@@ -2,10 +2,72 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
+
+#include "core/TrackManager.hpp"
+#include "core/UndoManager.hpp"
 
 namespace magda {
 
 namespace {
+
+bool sameCurvePoints(const std::vector<CurvePointData>& a, const std::vector<CurvePointData>& b) {
+    if (a.size() != b.size())
+        return false;
+
+    constexpr float epsilon = 1.0e-6f;
+    for (size_t i = 0; i < a.size(); ++i) {
+        const auto& lhs = a[i];
+        const auto& rhs = b[i];
+        if (std::abs(lhs.phase - rhs.phase) > epsilon ||
+            std::abs(lhs.value - rhs.value) > epsilon ||
+            std::abs(lhs.tension - rhs.tension) > epsilon || lhs.curveType != rhs.curveType ||
+            std::abs(lhs.inHandleX - rhs.inHandleX) > epsilon ||
+            std::abs(lhs.inHandleY - rhs.inHandleY) > epsilon ||
+            std::abs(lhs.outHandleX - rhs.outHandleX) > epsilon ||
+            std::abs(lhs.outHandleY - rhs.outHandleY) > epsilon) {
+            return false;
+        }
+    }
+    return true;
+}
+
+class SetLFOCurveStateCommand : public UndoableCommand {
+  public:
+    SetLFOCurveStateCommand(ChainNodePath ownerPath, int modIndex, CurvePreset beforePreset,
+                            std::vector<CurvePointData> beforePoints, CurvePreset afterPreset,
+                            std::vector<CurvePointData> afterPoints, juce::String description)
+        : ownerPath_(std::move(ownerPath)),
+          modIndex_(modIndex),
+          beforePreset_(beforePreset),
+          beforePoints_(std::move(beforePoints)),
+          afterPreset_(afterPreset),
+          afterPoints_(std::move(afterPoints)),
+          description_(std::move(description)) {}
+
+    void execute() override {
+        TrackManager::getInstance().setModCurveState(ownerPath_, modIndex_, afterPreset_,
+                                                     afterPoints_);
+    }
+
+    void undo() override {
+        TrackManager::getInstance().setModCurveState(ownerPath_, modIndex_, beforePreset_,
+                                                     beforePoints_);
+    }
+
+    juce::String getDescription() const override {
+        return description_;
+    }
+
+  private:
+    ChainNodePath ownerPath_;
+    int modIndex_ = -1;
+    CurvePreset beforePreset_ = CurvePreset::Custom;
+    std::vector<CurvePointData> beforePoints_;
+    CurvePreset afterPreset_ = CurvePreset::Custom;
+    std::vector<CurvePointData> afterPoints_;
+    juce::String description_;
+};
 
 juce::String formatCurvePointTypes(const std::vector<CurvePoint>& points) {
     juce::String result;
@@ -46,6 +108,47 @@ LFOCurveEditor::LFOCurveEditor() {
 
 LFOCurveEditor::~LFOCurveEditor() {
     stopTimer();
+}
+
+void LFOCurveEditor::setUndoTarget(const ChainNodePath& ownerPath, int modIndex) {
+    undoOwnerPath_ = ownerPath;
+    undoModIndex_ = modIndex;
+}
+
+std::vector<CurvePointData> LFOCurveEditor::snapshotCurvePoints() const {
+    std::vector<CurvePointData> points;
+    points.reserve(points_.size());
+
+    for (const auto& p : points_) {
+        CurvePointData cpd;
+        cpd.phase = static_cast<float>(p.x);
+        cpd.value = static_cast<float>(p.y);
+        cpd.tension = static_cast<float>(p.tension);
+        cpd.curveType = curveTypeToInt(p.curveType);
+        cpd.inHandleX = static_cast<float>(p.inHandle.x);
+        cpd.inHandleY = static_cast<float>(p.inHandle.y);
+        cpd.outHandleX = static_cast<float>(p.outHandle.x);
+        cpd.outHandleY = static_cast<float>(p.outHandle.y);
+        points.push_back(cpd);
+    }
+
+    return points;
+}
+
+void LFOCurveEditor::commitUndoableCurveEdit(const std::vector<CurvePointData>& beforePoints,
+                                             CurvePreset beforePreset,
+                                             const juce::String& description) {
+    if (!undoOwnerPath_.isValid() || undoModIndex_ < 0 || !modInfo_)
+        return;
+
+    auto afterPoints = snapshotCurvePoints();
+    const auto afterPreset = modInfo_->curvePreset;
+    if (beforePreset == afterPreset && sameCurvePoints(beforePoints, afterPoints))
+        return;
+
+    UndoManager::getInstance().executeCommand(std::make_unique<SetLFOCurveStateCommand>(
+        undoOwnerPath_, undoModIndex_, beforePreset, beforePoints, afterPreset,
+        std::move(afterPoints), description));
 }
 
 void LFOCurveEditor::syncFromModInfo() {
@@ -99,6 +202,7 @@ void LFOCurveEditor::setModInfo(ModInfo* mod) {
         points_.front().x = 0.0;
         points_.back().x = 1.0;
         updatePointPositions();
+        updateTensionHandlePositions();
         repaint();
         return;
     }
@@ -226,6 +330,9 @@ const std::vector<CurvePoint>& LFOCurveEditor::getPoints() const {
 }
 
 void LFOCurveEditor::onPointAdded(double x, double y, CurveType curveType) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
     // Clamp x to 0-1 range
     x = juce::jlimit(0.0, 1.0, x);
     y = juce::jlimit(0.0, 1.0, y);
@@ -245,6 +352,7 @@ void LFOCurveEditor::onPointAdded(double x, double y, CurveType curveType) {
     rebuildPointComponents();
     repaint();  // Force full repaint after structural change
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
 }
 
 void LFOCurveEditor::constrainPointPosition(uint32_t pointId, double& x, double& y) {
@@ -286,6 +394,9 @@ void LFOCurveEditor::constrainPointPosition(uint32_t pointId, double& x, double&
 }
 
 void LFOCurveEditor::onPointMoved(uint32_t pointId, double newX, double newY) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
     // Position is already constrained by constrainPointPosition
 
     for (auto& point : points_) {
@@ -303,12 +414,16 @@ void LFOCurveEditor::onPointMoved(uint32_t pointId, double newX, double newY) {
     rebuildPointComponents();
     repaint();  // Force full repaint after structural change
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
 }
 
 void LFOCurveEditor::onPointDeleted(uint32_t pointId) {
     // Don't delete if only 2 points remain
     if (points_.size() <= 2)
         return;
+
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
 
     points_.erase(std::remove_if(points_.begin(), points_.end(),
                                  [pointId](const CurvePoint& p) { return p.id == pointId; }),
@@ -321,6 +436,7 @@ void LFOCurveEditor::onPointDeleted(uint32_t pointId) {
     rebuildPointComponents();
     repaint();  // Force full repaint after structural change
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
 }
 
 void LFOCurveEditor::onPointSelected(uint32_t pointId) {
@@ -335,6 +451,9 @@ void LFOCurveEditor::onPointSelected(uint32_t pointId) {
 }
 
 void LFOCurveEditor::onTensionChanged(uint32_t pointId, double tension) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
     for (auto& point : points_) {
         if (point.id == pointId) {
             point.tension = tension;
@@ -344,9 +463,13 @@ void LFOCurveEditor::onTensionChanged(uint32_t pointId, double tension) {
 
     repaint();
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
 }
 
 void LFOCurveEditor::onPointCurveTypeChanged(uint32_t pointId, CurveType newType) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
     for (auto& point : points_) {
         if (point.id == pointId) {
             DBG("[HardCorner] LFOCurveEditor::onPointCurveTypeChanged pointId="
@@ -356,13 +479,17 @@ void LFOCurveEditor::onPointCurveTypeChanged(uint32_t pointId, CurveType newType
             break;
         }
     }
-    // notifyWaveformChanged persists to ModInfo; rebuildPointComponents is
-    // called by the base class showCurveTypeMenuForPoint after this returns.
+    // notifyWaveformChanged persists to ModInfo; the base class refreshes
+    // point/handle visuals after this returns.
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
 }
 
 void LFOCurveEditor::onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                                       const CurveHandleData& outHandle) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
     for (auto& point : points_) {
         if (point.id == pointId) {
             point.inHandle = inHandle;
@@ -373,6 +500,48 @@ void LFOCurveEditor::onHandlesChanged(uint32_t pointId, const CurveHandleData& i
 
     repaint();
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
+}
+
+void LFOCurveEditor::onSegmentShaperChanged(uint32_t leftPointId,
+                                            const CurveHandleData& leftInHandle,
+                                            const CurveHandleData& leftOutHandle,
+                                            uint32_t rightPointId,
+                                            const CurveHandleData& rightInHandle,
+                                            const CurveHandleData& rightOutHandle, bool isPreview) {
+    std::vector<CurvePointData> beforePoints;
+    CurvePreset beforePreset = CurvePreset::Custom;
+    if (isPreview) {
+        if (!segmentShaperUndoActive_) {
+            segmentShaperUndoActive_ = true;
+            segmentShaperUndoBeforePoints_ = snapshotCurvePoints();
+            segmentShaperUndoBeforePreset_ = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+        }
+    } else if (segmentShaperUndoActive_) {
+        beforePoints = segmentShaperUndoBeforePoints_;
+        beforePreset = segmentShaperUndoBeforePreset_;
+        segmentShaperUndoActive_ = false;
+        segmentShaperUndoBeforePoints_.clear();
+    } else {
+        beforePoints = snapshotCurvePoints();
+        beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+    }
+
+    for (auto& point : points_) {
+        if (point.id == leftPointId) {
+            point.inHandle = leftInHandle;
+            point.outHandle = leftOutHandle;
+        } else if (point.id == rightPointId) {
+            point.inHandle = rightInHandle;
+            point.outHandle = rightOutHandle;
+        }
+    }
+
+    repaint();
+    notifyWaveformChanged();
+
+    if (!isPreview)
+        commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
 }
 
 void LFOCurveEditor::onPointDragPreview(uint32_t pointId, double newX, double newY) {
@@ -421,6 +590,20 @@ void LFOCurveEditor::onTensionDragPreview(uint32_t pointId, double tension) {
 }
 
 bool LFOCurveEditor::keyPressed(const juce::KeyPress& key) {
+    if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0)) {
+        if (UndoManager::getInstance().undo())
+            setModInfo(modInfo_);
+        return true;
+    }
+
+    if (key ==
+        juce::KeyPress('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
+                       0)) {
+        if (UndoManager::getInstance().redo())
+            setModInfo(modInfo_);
+        return true;
+    }
+
     if (key == juce::KeyPress('c') || key == juce::KeyPress('C')) {
         showCrosshair_ = !showCrosshair_;
         repaint();
@@ -636,6 +819,9 @@ void LFOCurveEditor::notifyWaveformChanged() {
 }
 
 void LFOCurveEditor::loadPreset(CurvePreset preset) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
     points_.clear();
     nextPointId_ = 1;
 
@@ -714,9 +900,13 @@ void LFOCurveEditor::loadPreset(CurvePreset preset) {
     rebuildPointComponents();
     repaint();
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Load LFO Curve Preset");
 }
 
 void LFOCurveEditor::loadCurvePoints(const std::vector<CurvePointData>& points) {
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
     points_.clear();
     nextPointId_ = 1;
 
@@ -752,6 +942,7 @@ void LFOCurveEditor::loadCurvePoints(const std::vector<CurvePointData>& points) 
     rebuildPointComponents();
     repaint();
     notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Load LFO Curve Preset");
 }
 
 }  // namespace magda

@@ -206,6 +206,14 @@ class CurveEditorBase : public juce::Component {
     virtual void onTensionChanged(uint32_t pointId, double tension) = 0;
     virtual void onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                                   const CurveHandleData& outHandle) = 0;
+    virtual void onSegmentShaperChanged(uint32_t leftPointId, const CurveHandleData& leftInHandle,
+                                        const CurveHandleData& leftOutHandle, uint32_t rightPointId,
+                                        const CurveHandleData& rightInHandle,
+                                        const CurveHandleData& rightOutHandle, bool isPreview) {
+        juce::ignoreUnused(isPreview);
+        onHandlesChanged(leftPointId, leftInHandle, leftOutHandle);
+        onHandlesChanged(rightPointId, rightInHandle, rightOutHandle);
+    }
 
     // Called when the user changes a segment's curve type.
     // Subclasses that support curve-type persistence override this.

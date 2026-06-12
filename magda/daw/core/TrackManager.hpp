@@ -591,6 +591,8 @@ class TrackManager {
     void setModSyncDivision(const ChainNodePath& path, int modIndex, SyncDivision division);
     void setModTriggerMode(const ChainNodePath& path, int modIndex, LFOTriggerMode mode);
     void setModCurvePreset(const ChainNodePath& path, int modIndex, CurvePreset preset);
+    void setModCurveState(const ChainNodePath& path, int modIndex, CurvePreset preset,
+                          const std::vector<CurvePointData>& points);
     void notifyModCurveChanged(const ChainNodePath& path);
     void setModAudioAttack(const ChainNodePath& path, int modIndex, float ms);
     void setModAudioRelease(const ChainNodePath& path, int modIndex, float ms);

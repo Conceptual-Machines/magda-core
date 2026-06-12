@@ -273,7 +273,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     curveEditor_.onDragPreview = [this]() {
         // Sync external editor during drag for fluid preview
         if (curveEditorWindow_ && curveEditorWindow_->isVisible()) {
-            curveEditorWindow_->getCurveEditor().repaint();
+            curveEditorWindow_->getCurveEditor().syncFromModInfo();
         }
         // Notify parent for fluid MiniWaveformDisplay update
         if (onCurveChanged) {
@@ -313,6 +313,8 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
                     }
                     repaint();
                 });
+
+            curveEditorWindow_->getCurveEditor().setUndoTarget(ownerDevicePath_, selectedModIndex_);
 
             // Wire up rate/sync callbacks from external editor
             curveEditorWindow_->onRateChanged = [this](float rate) {
@@ -361,6 +363,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
             // Re-sync curve data from ModInfo before showing
             curveEditorWindow_->getCurveEditor().setModInfo(
                 const_cast<magda::ModInfo*>(liveModPtr_ ? liveModPtr_ : &currentMod_));
+            curveEditorWindow_->getCurveEditor().setUndoTarget(ownerDevicePath_, selectedModIndex_);
             curveEditorWindow_->setVisible(true);
             curveEditorWindow_->toFront(true);
             curveEditorButton_->setActive(true);
@@ -610,6 +613,10 @@ void ModulatorEditorPanel::setOwnerPath(magda::TrackId trackId,
                                         const magda::ChainNodePath& devicePath) {
     ownerTrackId_ = trackId;
     ownerDevicePath_ = devicePath;
+    curveEditor_.setUndoTarget(ownerDevicePath_, selectedModIndex_);
+    if (curveEditorWindow_) {
+        curveEditorWindow_->getCurveEditor().setUndoTarget(ownerDevicePath_, selectedModIndex_);
+    }
     updateRateAutomationTarget();
 }
 
@@ -812,6 +819,10 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
 
 void ModulatorEditorPanel::setSelectedModIndex(int index) {
     selectedModIndex_ = index;
+    curveEditor_.setUndoTarget(ownerDevicePath_, selectedModIndex_);
+    if (curveEditorWindow_) {
+        curveEditorWindow_->getCurveEditor().setUndoTarget(ownerDevicePath_, selectedModIndex_);
+    }
     if (index < 0) {
         nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
         nameLabel_.setEditable(false, false, false);
@@ -856,6 +867,11 @@ void ModulatorEditorPanel::updateFromMod() {
         // Pass ModInfo to curve editor for loading/saving curve points
         auto* modInfo = const_cast<magda::ModInfo*>(liveModPtr_ ? liveModPtr_ : &currentMod_);
         curveEditor_.setModInfo(modInfo);
+        curveEditor_.setUndoTarget(ownerDevicePath_, selectedModIndex_);
+        if (curveEditorWindow_ && curveEditorWindow_->isVisible()) {
+            curveEditorWindow_->getCurveEditor().setModInfo(modInfo);
+            curveEditorWindow_->getCurveEditor().setUndoTarget(ownerDevicePath_, selectedModIndex_);
+        }
     } else {
         // LFO mode - show waveform shape
         waveformCombo_.setSelectedId(static_cast<int>(currentMod_.waveform) + 1,

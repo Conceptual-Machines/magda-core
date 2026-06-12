@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+#include "core/ChainNodePath.hpp"
 #include "core/ModInfo.hpp"
 #include "ui/components/common/curve/CurveEditorBase.hpp"
 
@@ -32,6 +33,7 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     ModInfo* getModInfo() const {
         return modInfo_;
     }
+    void setUndoTarget(const ChainNodePath& ownerPath, int modIndex);
 
     // Sync local points from modInfo (for external editor sync without rebuild)
     void syncFromModInfo();
@@ -124,6 +126,10 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     void onTensionChanged(uint32_t pointId, double tension) override;
     void onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                           const CurveHandleData& outHandle) override;
+    void onSegmentShaperChanged(uint32_t leftPointId, const CurveHandleData& leftInHandle,
+                                const CurveHandleData& leftOutHandle, uint32_t rightPointId,
+                                const CurveHandleData& rightInHandle,
+                                const CurveHandleData& rightOutHandle, bool isPreview) override;
     void onPointCurveTypeChanged(uint32_t pointId, CurveType newType) override;
 
     // Constrain edge points to x=0 and x=1
@@ -145,6 +151,11 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     juce::Rectangle<int> getIndicatorBounds() const;
 
     ModInfo* modInfo_ = nullptr;
+    ChainNodePath undoOwnerPath_;
+    int undoModIndex_ = -1;
+    bool segmentShaperUndoActive_ = false;
+    CurvePreset segmentShaperUndoBeforePreset_ = CurvePreset::Custom;
+    std::vector<CurvePointData> segmentShaperUndoBeforePoints_;
 
     // Local curve points for custom waveform
     mutable std::vector<CurvePoint> points_;
@@ -174,6 +185,9 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     bool showLoopRegion_ = false;
 
     void notifyWaveformChanged();
+    std::vector<CurvePointData> snapshotCurvePoints() const;
+    void commitUndoableCurveEdit(const std::vector<CurvePointData>& beforePoints,
+                                 CurvePreset beforePreset, const juce::String& description);
     void paintLoopRegion(juce::Graphics& g);
 };
 

@@ -627,8 +627,7 @@ void CurveEditorBase::updateSegmentShaperFromPixel(uint32_t pointId, double pixe
         p2In.y = sy - p2.y;
         p2In.linked = true;
 
-        onHandlesChanged(p1.id, p1.inHandle, p1Out);
-        onHandlesChanged(p2.id, p2In, p2.outHandle);
+        onSegmentShaperChanged(p1.id, p1.inHandle, p1Out, p2.id, p2In, p2.outHandle, isPreview);
 
         for (auto& handle : tensionHandles_) {
             if (handle->getPointId() == pointId) {
@@ -673,8 +672,15 @@ void CurveEditorBase::toggleSegmentHardCorner(uint32_t pointId) {
                                                     << " oldType=" << getCurveTypeName(currentType)
                                                     << " newType=" << getCurveTypeName(newType));
 
+    previewPointId_ = INVALID_CURVE_POINT_ID;
+    tensionPreviewPointId_ = INVALID_CURVE_POINT_ID;
+    shaperPreviewPointId_ = INVALID_CURVE_POINT_ID;
+    multiDragStartPositions_.clear();
+    multiPreviewPositions_.clear();
+
     onPointCurveTypeChanged(pointId, newType);
-    rebuildPointComponents();
+    updatePointPositions();
+    updateTensionHandlePositions();
     repaint();
 }
 
