@@ -79,7 +79,13 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
         }
         case ModType::Random: {
             juce::ValueTree randomState(te::IDs::RANDOM);
-            modifier = modList.insertModifier(randomState, -1, nullptr);
+            auto randomMod = modList.insertModifier(randomState, -1, nullptr);
+            if (!randomMod)
+                break;
+
+            if (auto* rnd = dynamic_cast<te::RandomModifier*>(randomMod.get()))
+                applyRandomProperties(rnd, modInfo);
+            modifier = randomMod;
             break;
         }
         case ModType::Follower: {
@@ -331,6 +337,8 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 // sidechain path.
             } else if (auto* adsr = dynamic_cast<te::ADSRModifier*>(modifier.get())) {
                 applyADSRProperties(adsr, modInfo);
+            } else if (auto* rnd = dynamic_cast<te::RandomModifier*>(modifier.get())) {
+                applyRandomProperties(rnd, modInfo);
             }
 
             for (const auto& link : modInfo.links) {

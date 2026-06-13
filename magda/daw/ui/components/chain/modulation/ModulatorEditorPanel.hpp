@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <functional>
 #include <memory>
 
@@ -275,6 +276,81 @@ class EnvelopeDisplay : public juce::Component, private juce::Timer {
 };
 
 /**
+ * @brief Scrolling history display for the Random modulator's live output.
+ *
+ * The random output has no deterministic waveform to draw, so we scroll a
+ * short ring buffer of recent output values left-to-right (oldest -> newest),
+ * fed from ModInfo::value (overlaid from te::RandomModifier on the audio
+ * thread) on each 30fps tick.
+ */
+class RandomDisplay : public juce::Component, private juce::Timer {
+  public:
+    RandomDisplay() {
+        history_.fill(0.0f);
+        startTimer(33);  // 30 FPS
+    }
+
+    ~RandomDisplay() override {
+        stopTimer();
+    }
+
+    void setModInfo(const magda::ModInfo* mod,
+                    std::function<const magda::ModInfo*()> getter = nullptr) {
+        mod_ = mod;
+        modGetter_ = std::move(getter);
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        const magda::ModInfo* mod = modGetter_ ? modGetter_() : mod_;
+        if (!mod)
+            return;
+
+        auto bounds = getLocalBounds().toFloat().reduced(2.0f);
+        const float w = bounds.getWidth();
+        const float h = bounds.getHeight();
+        const float x0 = bounds.getX();
+        const float bottom = bounds.getBottom();
+
+        // Plot the value history oldest -> newest, newest at the right edge.
+        juce::Path path;
+        const int n = static_cast<int>(history_.size());
+        for (int i = 0; i < n; ++i) {
+            const int idx = (writePos_ + i) % n;  // writePos_ is the oldest slot
+            const float v = juce::jlimit(0.0f, 1.0f, history_[static_cast<size_t>(idx)]);
+            const float x = x0 + (static_cast<float>(i) / static_cast<float>(n - 1)) * w;
+            const float y = bottom - v * h;
+            if (i == 0)
+                path.startNewSubPath(x, y);
+            else
+                path.lineTo(x, y);
+        }
+        g.setColour(juce::Colours::orange.withAlpha(0.7f));
+        g.strokePath(path, juce::PathStrokeType(1.5f));
+
+        // Current value dot on the right edge.
+        const float v = juce::jlimit(0.0f, 1.0f, mod->value);
+        g.setColour(juce::Colours::orange);
+        g.fillEllipse(bounds.getRight() - 4.0f, bottom - v * h - 3.0f, 6.0f, 6.0f);
+    }
+
+  private:
+    void timerCallback() override {
+        const magda::ModInfo* mod = modGetter_ ? modGetter_() : mod_;
+        if (mod) {
+            history_[static_cast<size_t>(writePos_)] = mod->value;
+            writePos_ = (writePos_ + 1) % static_cast<int>(history_.size());
+        }
+        repaint();
+    }
+
+    const magda::ModInfo* mod_ = nullptr;
+    std::function<const magda::ModInfo*()> modGetter_;
+    std::array<float, 96> history_{};
+    int writePos_ = 0;
+};
+
+/**
  * @brief Scrollable content component for the mod matrix
  *
  * Displays all parameter links for the selected mod.
@@ -378,6 +454,9 @@ class ModulatorEditorPanel : public juce::Component,
     // Fires when any ADSR envelope control changes; the passed ModInfo carries
     // the updated env* fields (the rest mirrors the current mod).
     std::function<void(const magda::ModInfo& mod)> onEnvelopeChanged;
+    // Fires when any Random control changes; the passed ModInfo carries the
+    // updated random* fields (the rest mirrors the current mod).
+    std::function<void(const magda::ModInfo& mod)> onRandomChanged;
     std::function<void(int modIndex, magda::ControlTarget target)> onModLinkDeleted;
     std::function<void(int modIndex, magda::ControlTarget target, bool bipolar)>
         onModLinkBipolarChanged;
@@ -475,6 +554,16 @@ class ModulatorEditorPanel : public juce::Component,
     bool isEnvelopeMode_ = false;
     // Helper: push the current env fields out via onEnvelopeChanged.
     void fireEnvelopeChanged();
+
+    // Random modulator controls (shown only when currentMod_.type == Random)
+    RandomDisplay randomDisplay_;
+    juce::ComboBox randomTypeCombo_;  // Random / Noise distribution
+    TextSlider randomShapeSlider_{TextSlider::Format::Decimal};
+    TextSlider randomSmoothSlider_{TextSlider::Format::Decimal};
+    TextSlider randomStepDepthSlider_{TextSlider::Format::Decimal};
+    bool isRandomMode_ = false;
+    // Helper: push the current random fields out via onRandomChanged.
+    void fireRandomChanged();
 
     void updateFromMod();
     void onNameLabelEdited();

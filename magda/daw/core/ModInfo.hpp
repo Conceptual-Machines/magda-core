@@ -283,6 +283,16 @@ struct ModInfo {
     // ADSR runtime state (not serialized)
     int envStage = 0;  // Current te::ADSRModifier::Stage ordinal, for the UI display
 
+    // Random modulator settings (type == Random; serialized).
+    // Defaults mirror te::RandomModifier's parameter defaults. Timing reuses
+    // the shared rate / tempoSync / syncDivision / triggerMode fields above,
+    // and modulation depth/bipolarity come from the per-link amount/bipolar
+    // (like the LFO path), so only the distribution shape lives here.
+    int randomType = 0;            // 0 = random (stepped), 1 = noise
+    float randomShape = 0.0f;      // 0..1, hold (0) -> ramp (1) within each step
+    float randomSmooth = 0.0f;     // 0..1, S-curve smoothing of the phase ramp
+    float randomStepDepth = 1.0f;  // 0..1, range of variation per step
+
     // Audio trigger runtime state (not serialized)
     float audioEnvLevel = 0.0f;  // Current smoothed envelope level
     bool audioGateOpen = false;  // Gate state for this mod

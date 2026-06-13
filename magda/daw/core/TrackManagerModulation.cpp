@@ -572,6 +572,18 @@ void TrackManager::setModEnvelope(const ChainNodePath& path, int modIndex, const
     notifyDeviceModifiersChanged(path.trackId);
 }
 
+void TrackManager::setModRandom(const ChainNodePath& path, int modIndex, const ModInfo& src) {
+    auto node = resolveChainNode(path);
+    if (!indexInRange(node.mods, modIndex))
+        return;
+    auto& mod = (*node.mods)[modIndex];
+    mod.randomType = juce::jlimit(0, 1, src.randomType);
+    mod.randomShape = juce::jlimit(0.0f, 1.0f, src.randomShape);
+    mod.randomSmooth = juce::jlimit(0.0f, 1.0f, src.randomSmooth);
+    mod.randomStepDepth = juce::jlimit(0.0f, 1.0f, src.randomStepDepth);
+    notifyDeviceModifiersChanged(path.trackId);
+}
+
 void TrackManager::removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))

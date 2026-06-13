@@ -248,6 +248,31 @@ inline void applyADSRProperties(te::ADSRModifier* adsr, const ModInfo& modInfo) 
         adsr->setGated(!modInfo.running);
 }
 
+inline void applyRandomProperties(te::RandomModifier* rnd, const ModInfo& modInfo) {
+    // Timing maps exactly like the LFO path: syncType picks free/transport/note,
+    // rateType picks Hz vs musical divisions, and the Hz rate doubles as a
+    // tempo multiplier in synced mode (held at 1.0 so the division alone sets
+    // the period).
+    rnd->syncTypeParam->setParameterFromHost(mapSyncType(modInfo), juce::dontSendNotification);
+    const float rateType = modInfo.tempoSync ? mapSyncDivision(modInfo.syncDivision)
+                                             : static_cast<float>(te::ModifierCommon::hertz);
+    rnd->rateTypeParam->setParameterFromHost(rateType, juce::dontSendNotification);
+    rnd->rateParam->setParameterFromHost(modInfo.tempoSync ? 1.0f : modInfo.rate,
+                                         juce::dontSendNotification);
+
+    // Distribution shape.
+    rnd->typeParam->setParameterFromHost(static_cast<float>(modInfo.randomType),
+                                         juce::dontSendNotification);
+    rnd->shapeParam->setParameterFromHost(modInfo.randomShape, juce::dontSendNotification);
+    rnd->smoothParam->setParameterFromHost(modInfo.randomSmooth, juce::dontSendNotification);
+    rnd->stepDepthParam->setParameterFromHost(modInfo.randomStepDepth, juce::dontSendNotification);
+
+    // Output depth and bipolarity are driven per-link by ModLink.amount /
+    // ModLink.bipolar (same convention as the LFO path), so keep TE's own
+    // depth/bipolar at unity defaults.
+    rnd->depthParam->setParameterFromHost(1.0f, juce::dontSendNotification);
+}
+
 /**
  * @brief Set the gate on whichever gated modifier type this is (LFO or ADSR).
  *
@@ -285,6 +310,11 @@ inline bool overlayModifierVisuals(ModInfo& magdaMod, te::Modifier* mod) {
     if (auto* adsr = dynamic_cast<te::ADSRModifier*>(mod)) {
         magdaMod.value = adsr->getCurrentValue();
         magdaMod.envStage = static_cast<int>(adsr->getCurrentStage());
+        return true;
+    }
+    if (auto* rnd = dynamic_cast<te::RandomModifier*>(mod)) {
+        magdaMod.value = rnd->getCurrentValue();
+        magdaMod.phase = rnd->getCurrentPhase();
         return true;
     }
     return false;

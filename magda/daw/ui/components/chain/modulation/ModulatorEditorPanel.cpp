@@ -606,6 +606,48 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     setupCurveSlider(envReleaseCurveSlider_, "R crv",
                      [this]() -> float& { return currentMod_.envReleaseCurve; });
 
+    // Random modulator controls (shown only when type == Random)
+    addChildComponent(randomDisplay_);
+
+    randomTypeCombo_.addItem("Random", 1);  // id = randomType + 1
+    randomTypeCombo_.addItem("Noise", 2);
+    randomTypeCombo_.setSelectedId(1, juce::dontSendNotification);
+    randomTypeCombo_.setColour(juce::ComboBox::backgroundColourId,
+                               DarkTheme::getColour(DarkTheme::SURFACE));
+    randomTypeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    randomTypeCombo_.setColour(juce::ComboBox::outlineColourId,
+                               DarkTheme::getColour(DarkTheme::BORDER));
+    randomTypeCombo_.setJustificationType(juce::Justification::centredLeft);
+    randomTypeCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    randomTypeCombo_.onChange = [this]() {
+        int id = randomTypeCombo_.getSelectedId();
+        if (id > 0) {
+            currentMod_.randomType = id - 1;
+            fireRandomChanged();
+        }
+    };
+    addChildComponent(randomTypeCombo_);
+
+    // Random 0..1 sliders fold their label into the value text (e.g. "Shp 0.50").
+    auto setupRandomSlider = [this](TextSlider& s, const juce::String& tag,
+                                    std::function<float&()> field) {
+        s.setRange(0.0, 1.0, 0.01);
+        s.setFont(FontManager::getInstance().getUIFont(9.0f));
+        s.setShowFillIndicator(false);
+        s.setValueFormatter([tag](double v) { return tag + " " + juce::String(v, 2); });
+        s.onValueChanged = [this, field](double value) {
+            field() = static_cast<float>(value);
+            fireRandomChanged();
+        };
+        addChildComponent(s);
+    };
+    setupRandomSlider(randomShapeSlider_, "Shp",
+                      [this]() -> float& { return currentMod_.randomShape; });
+    setupRandomSlider(randomSmoothSlider_, "Smo",
+                      [this]() -> float& { return currentMod_.randomSmooth; });
+    setupRandomSlider(randomStepDepthSlider_, "Stp",
+                      [this]() -> float& { return currentMod_.randomStepDepth; });
+
     // Advanced settings button
     advancedButton_ = std::make_unique<magda::SvgButton>("Advanced", BinaryData::settings_nobg_svg,
                                                          BinaryData::settings_nobg_svgSize);
@@ -909,9 +951,11 @@ void ModulatorEditorPanel::updateFromMod() {
     nameLabel_.setText(currentMod_.name, juce::dontSendNotification);
 
     isEnvelopeMode_ = (currentMod_.type == magda::ModType::Envelope);
+    isRandomMode_ = (currentMod_.type == magda::ModType::Random);
 
     // Check if this is a Custom (Curve) waveform (LFO only)
-    isCurveMode_ = (!isEnvelopeMode_ && currentMod_.waveform == magda::LFOWaveform::Custom);
+    isCurveMode_ =
+        (!isEnvelopeMode_ && !isRandomMode_ && currentMod_.waveform == magda::LFOWaveform::Custom);
 
     // ---- ADSR envelope controls ----
     envelopeDisplay_.setVisible(isEnvelopeMode_);
@@ -933,16 +977,30 @@ void ModulatorEditorPanel::updateFromMod() {
         envelopeDisplay_.setModInfo(liveModPtr_ ? liveModPtr_ : &currentMod_, liveModGetter_);
     }
 
-    // ---- LFO controls (hidden in envelope mode) ----
+    // ---- Random controls ----
+    randomDisplay_.setVisible(isRandomMode_);
+    randomTypeCombo_.setVisible(isRandomMode_);
+    randomShapeSlider_.setVisible(isRandomMode_);
+    randomSmoothSlider_.setVisible(isRandomMode_);
+    randomStepDepthSlider_.setVisible(isRandomMode_);
+    if (isRandomMode_) {
+        randomTypeCombo_.setSelectedId(currentMod_.randomType + 1, juce::dontSendNotification);
+        randomShapeSlider_.setValue(currentMod_.randomShape, juce::dontSendNotification);
+        randomSmoothSlider_.setValue(currentMod_.randomSmooth, juce::dontSendNotification);
+        randomStepDepthSlider_.setValue(currentMod_.randomStepDepth, juce::dontSendNotification);
+        randomDisplay_.setModInfo(liveModPtr_ ? liveModPtr_ : &currentMod_, liveModGetter_);
+    }
+
+    // ---- LFO controls (hidden in envelope/random mode) ----
     // Show/hide appropriate controls based on curve mode
-    waveformCombo_.setVisible(!isCurveMode_ && !isEnvelopeMode_);
+    waveformCombo_.setVisible(!isCurveMode_ && !isEnvelopeMode_ && !isRandomMode_);
 
     // In curve mode, show the curve editor, edit button, preset selector, and save button
     curveEditor_.setVisible(isCurveMode_);
     curveEditorButton_->setVisible(isCurveMode_);
     curvePresetCombo_.setVisible(isCurveMode_);
     savePresetButton_->setVisible(isCurveMode_);
-    waveformDisplay_.setVisible(!isCurveMode_ && !isEnvelopeMode_);
+    waveformDisplay_.setVisible(!isCurveMode_ && !isEnvelopeMode_ && !isRandomMode_);
     // Tempo-synced ADSR stage times are engine-supported but not yet exposed;
     // the envelope UI is ms-based for now, so hide the LFO sync toggle/rate.
     syncToggle_.setVisible(!isEnvelopeMode_);
@@ -983,9 +1041,9 @@ void ModulatorEditorPanel::updateFromMod() {
     advancedButton_->setEnabled(hasSidechainConfig);
 
     // Audio envelope sliders (only visible when trigger mode = Audio, LFO only —
-    // they smooth the follower input, not relevant to the ADSR generator)
-    bool isAudioTrigger =
-        (!isEnvelopeMode_ && currentMod_.triggerMode == magda::LFOTriggerMode::Audio);
+    // they smooth the follower input, not relevant to the ADSR/Random generators)
+    bool isAudioTrigger = (!isEnvelopeMode_ && !isRandomMode_ &&
+                           currentMod_.triggerMode == magda::LFOTriggerMode::Audio);
     audioAttackSlider_.setVisible(isAudioTrigger);
     audioReleaseSlider_.setVisible(isAudioTrigger);
     if (isAudioTrigger) {
@@ -1005,6 +1063,13 @@ void ModulatorEditorPanel::fireEnvelopeChanged() {
         onEnvelopeChanged(currentMod_);
     // Reflect the edit in the local display immediately.
     envelopeDisplay_.repaint();
+}
+
+void ModulatorEditorPanel::fireRandomChanged() {
+    if (selectedModIndex_ >= 0 && onRandomChanged)
+        onRandomChanged(currentMod_);
+    // Reflect the edit in the local display immediately.
+    randomDisplay_.repaint();
 }
 
 void ModulatorEditorPanel::onNameLabelEdited() {
@@ -1208,6 +1273,23 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
         return;
     }
 
+    // Random mode draws its own caption flow that mirrors the resized() layout.
+    if (isRandomMode_) {
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(8.0f));
+        bounds.removeFromTop(18 + 6);  // name + gap
+        bounds.removeFromTop(46 + 6);  // random display + gap
+        bounds.removeFromTop(18 + 4);  // type combo + gap
+        bounds.removeFromTop(18 + 4);  // shape/smooth row + gap
+        bounds.removeFromTop(18 + 8);  // step depth row + gap
+        bounds.removeFromTop(18 + 8);  // rate row + gap
+        g.drawText("Trigger", bounds.removeFromTop(12), juce::Justification::centredLeft);
+        bounds.removeFromTop(18);  // trigger row
+        bounds.removeFromTop(8);   // gap before Links
+        g.drawText("Links", bounds.removeFromTop(12), juce::Justification::centredLeft);
+        return;
+    }
+
     bounds.removeFromTop(18 + 6);  // Skip name label + gap
 
     // Skip the area below name - different for curve vs LFO mode
@@ -1314,6 +1396,60 @@ void ModulatorEditorPanel::resized() {
         bounds.removeFromTop(8);
 
         // Trigger row (shared with the LFO layout): [dropdown] [advanced]
+        bounds.removeFromTop(12);  // "Trigger" label (painted)
+        auto triggerRow = bounds.removeFromTop(18);
+        advancedButton_->setBounds(triggerRow.removeFromRight(20));
+        triggerRow.removeFromRight(4);
+        triggerModeCombo_.setBounds(triggerRow);
+
+        // Mod matrix takes the rest.
+        bounds.removeFromTop(8);
+        bounds.removeFromTop(12);  // "Links" label
+        if (bounds.getHeight() > 0) {
+            modMatrixViewport_.setBounds(bounds);
+            modMatrixContent_.setSize(
+                bounds.getWidth() - (modMatrixViewport_.isVerticalScrollBarShown() ? 8 : 0),
+                juce::jmax(bounds.getHeight(), static_cast<int>(currentMod_.links.size()) *
+                                                   ModMatrixContent::ROW_HEIGHT));
+        }
+        return;
+    }
+
+    if (isRandomMode_) {
+        constexpr int kGap = 4;
+        nameLabel_.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(6);
+
+        randomDisplay_.setBounds(bounds.removeFromTop(46));
+        bounds.removeFromTop(6);
+
+        // Distribution type combo.
+        randomTypeCombo_.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(kGap);
+
+        // Shape | Smooth two-column row.
+        {
+            auto row = bounds.removeFromTop(18);
+            const int half = (row.getWidth() - kGap) / 2;
+            randomShapeSlider_.setBounds(row.removeFromLeft(half));
+            row.removeFromLeft(kGap);
+            randomSmoothSlider_.setBounds(row);
+        }
+        bounds.removeFromTop(kGap);
+
+        // Step depth (full width).
+        randomStepDepthSlider_.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(8);
+
+        // Rate row: [Sync] [rate slider / division] (shared with the LFO layout).
+        auto rateRow = bounds.removeFromTop(18);
+        syncToggle_.setBounds(rateRow.removeFromLeft(32));
+        rateRow.removeFromLeft(4);
+        rateSlider_.setBounds(rateRow);
+        syncDivisionSlider_.setBounds(rateRow);
+        bounds.removeFromTop(8);
+
+        // Trigger row: [dropdown] [advanced].
         bounds.removeFromTop(12);  // "Trigger" label (painted)
         auto triggerRow = bounds.removeFromTop(18);
         advancedButton_->setBounds(triggerRow.removeFromRight(20));
