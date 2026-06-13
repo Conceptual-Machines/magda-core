@@ -503,6 +503,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @param trackId The track to check
      */
     void checkAudioSidechainMonitor(TrackId trackId);
+    void refreshAudioSidechainMonitors();
     void ensureAudioSidechainMonitor(TrackId sourceTrackId);
     void removeAudioSidechainMonitor(TrackId sourceTrackId);
 
@@ -669,11 +670,14 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Double-buffered: message thread writes to inactive buffer then atomically
     // swaps the pointer. Audio thread reads through the atomic pointer with no lock.
     struct PerTrackEntry {
-        static constexpr int kMaxLFOs = 64;
-        std::array<te::LFOModifier*, kMaxLFOs> lfos{};
-        std::array<bool, kMaxLFOs> isCrossTrack{};  // true = sidechain destination on another track
-        std::array<LFOTriggerMode, kMaxLFOs> trigMode{};  // trigger mode of corresponding MAGDA mod
+        static constexpr int kMaxMods = 64;
+        // Holds both LFO and ADSR modifiers (the audio-trigger gate API is
+        // shared); dynamic_cast at trigger/gate time picks the right call.
+        std::array<te::Modifier*, kMaxMods> mods{};
+        std::array<bool, kMaxMods> isCrossTrack{};  // true = sidechain destination on another track
+        std::array<LFOTriggerMode, kMaxMods> trigMode{};  // trigger mode of corresponding MAGDA mod
         int count = 0;
+        bool hasAudioTrigger = false;
     };
     static constexpr int kMaxCacheTracks = 512;
     struct SidechainCache {

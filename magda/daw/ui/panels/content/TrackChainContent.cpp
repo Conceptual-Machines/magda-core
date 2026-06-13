@@ -1285,6 +1285,11 @@ void TrackChainContent::initGlobalModsPanel() {
             magda::TrackManager::getInstance().setModAudioRelease(
                 ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalModIndex_, ms);
     };
+    globalModEditorPanel_->onEnvelopeChanged = [this](const magda::ModInfo& mod) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
+            magda::TrackManager::getInstance().setModEnvelope(
+                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalModIndex_, mod);
+    };
     globalModEditorPanel_->onCurveChanged = [this]() {
         DBG("[HardCorner] TrackChainContent global onCurveChanged trackId="
             << static_cast<int>(selectedTrackId_) << " modIndex=" << selectedGlobalModIndex_);

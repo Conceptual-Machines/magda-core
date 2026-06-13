@@ -270,6 +270,19 @@ struct ModInfo {
     float audioAttackMs = 1.0f;     // Envelope follower attack time (ms)
     float audioReleaseMs = 100.0f;  // Envelope follower release time (ms)
 
+    // ADSR envelope generator settings (type == Envelope; serialized).
+    // Defaults mirror te::ADSRModifier's parameter defaults.
+    float envAttackMs = 10.0f;    // Attack time (ms when !tempoSync)
+    float envDecayMs = 200.0f;    // Decay time (ms when !tempoSync)
+    float envSustain = 0.7f;      // Sustain level held while gated (0-1)
+    float envReleaseMs = 300.0f;  // Release time (ms when !tempoSync)
+    float envAttackCurve = 0.0f;  // -0.5 to 0.5, segment curvature (log..exp)
+    float envDecayCurve = 0.0f;
+    float envReleaseCurve = 0.0f;
+
+    // ADSR runtime state (not serialized)
+    int envStage = 0;  // Current te::ADSRModifier::Stage ordinal, for the UI display
+
     // Audio trigger runtime state (not serialized)
     float audioEnvLevel = 0.0f;  // Current smoothed envelope level
     bool audioGateOpen = false;  // Gate state for this mod

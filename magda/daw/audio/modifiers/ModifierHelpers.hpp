@@ -182,6 +182,115 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
 }
 
 /**
+ * @brief Map a trigger mode to TE's ADSR syncType (gate source).
+ *
+ * Unlike the LFO, tempo sync is a separate axis for the ADSR (it scales the
+ * stage durations, not the gate), so it does not fold into syncType here.
+ *   Free -> free (0): free-running, cycles A-D-R while the gate stays open.
+ *   Transport -> transport (1): gate follows playback.
+ *   MIDI / Audio -> note (2): gate driven by note-on/off (or the sidechain).
+ */
+inline float mapADSRSyncType(const ModInfo& modInfo) {
+    switch (modInfo.triggerMode) {
+        case LFOTriggerMode::Transport:
+            return static_cast<float>(te::ModifierCommon::transport);
+        case LFOTriggerMode::MIDI:
+        case LFOTriggerMode::Audio:
+            return static_cast<float>(te::ModifierCommon::note);
+        case LFOTriggerMode::Free:
+            break;
+    }
+    return static_cast<float>(te::ModifierCommon::free);
+}
+
+inline void applyADSRProperties(te::ADSRModifier* adsr, const ModInfo& modInfo) {
+    // TE's ADSR publishes immediately in triggerNoteOn() before its timer advances.
+    // An exact 0ms attack can therefore publish the pre-attack value for the first
+    // audio block. Keep MAGDA's model/UI at 0, but drive TE with an inaudibly small
+    // floor so "instant" attack reaches the peak on the normal timer path.
+    constexpr float kInstantAttackFloorMs = 0.1f;
+    adsr->attackParam->setParameterFromHost(juce::jmax(modInfo.envAttackMs, kInstantAttackFloorMs),
+                                            juce::dontSendNotification);
+    adsr->decayParam->setParameterFromHost(modInfo.envDecayMs, juce::dontSendNotification);
+    adsr->sustainParam->setParameterFromHost(modInfo.envSustain, juce::dontSendNotification);
+    adsr->releaseParam->setParameterFromHost(modInfo.envReleaseMs, juce::dontSendNotification);
+    adsr->attackCurveParam->setParameterFromHost(modInfo.envAttackCurve,
+                                                 juce::dontSendNotification);
+    adsr->decayCurveParam->setParameterFromHost(modInfo.envDecayCurve, juce::dontSendNotification);
+    adsr->releaseCurveParam->setParameterFromHost(modInfo.envReleaseCurve,
+                                                  juce::dontSendNotification);
+    adsr->depthParam->setParameterFromHost(1.0f, juce::dontSendNotification);
+
+    adsr->syncTypeParam->setParameterFromHost(mapADSRSyncType(modInfo), juce::dontSendNotification);
+    adsr->tempoSyncParam->setParameterFromHost(modInfo.tempoSync ? 1.0f : 0.0f,
+                                               juce::dontSendNotification);
+
+    // MAGDA carries a single musical division; apply it to every stage when
+    // tempo sync is on (TE falls back to the ms params when it is off).
+    const float division = mapSyncDivision(modInfo.syncDivision);
+    adsr->attackSyncParam->setParameterFromHost(division, juce::dontSendNotification);
+    adsr->decaySyncParam->setParameterFromHost(division, juce::dontSendNotification);
+    adsr->releaseSyncParam->setParameterFromHost(division, juce::dontSendNotification);
+
+    // Gate ownership by trigger mode:
+    //   - Free: hold the gate open so the engine free-cycles A-D-R.
+    //   - MIDI / Transport: gate from MAGDA's running state (TrackManager flips
+    //     it on note-on/off and transport play, then re-syncs).
+    //   - Audio: the audio-thread sidechain monitor owns the gate after creation
+    //     (triggerNoteOn on the level rise and setGated on the drop). Property
+    //     updates must not close it under an active hit.
+    adsr->setSkipNativeResync(modInfo.triggerMode == LFOTriggerMode::Audio);
+    adsr->setGateOnTriggerSource(modInfo.triggerMode == LFOTriggerMode::MIDI);
+    if (modInfo.triggerMode == LFOTriggerMode::Free)
+        adsr->setGated(false);
+    else if (modInfo.triggerMode == LFOTriggerMode::MIDI ||
+             modInfo.triggerMode == LFOTriggerMode::Transport)
+        adsr->setGated(!modInfo.running);
+}
+
+/**
+ * @brief Set the gate on whichever gated modifier type this is (LFO or ADSR).
+ *
+ * Both expose the same gate API; this lets the render/sidechain paths treat
+ * them uniformly without repeating the dynamic_cast ladder at every call site.
+ */
+inline void setModifierGated(te::Modifier* mod, bool gated) {
+    if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod))
+        lfo->setGated(gated);
+    else if (auto* adsr = dynamic_cast<te::ADSRModifier*>(mod))
+        adsr->setGated(gated);
+}
+
+/** @brief True if this gated modifier is driven externally (skips its own MIDI). */
+inline bool modifierSkipsNativeResync(te::Modifier* mod) {
+    if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod))
+        return lfo->getSkipNativeResync();
+    if (auto* adsr = dynamic_cast<te::ADSRModifier*>(mod))
+        return adsr->getSkipNativeResync();
+    return false;
+}
+
+/**
+ * @brief Overlay a TE modifier's live output onto a ModInfo for UI animation.
+ *
+ * Handles both LFO (value + phase) and ADSR (value + stage). Returns true if
+ * the modifier matched a known gated type.
+ */
+inline bool overlayModifierVisuals(ModInfo& magdaMod, te::Modifier* mod) {
+    if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod)) {
+        magdaMod.value = lfo->getCurrentValue();
+        magdaMod.phase = lfo->getCurrentPhase();
+        return true;
+    }
+    if (auto* adsr = dynamic_cast<te::ADSRModifier*>(mod)) {
+        magdaMod.value = adsr->getCurrentValue();
+        magdaMod.envStage = static_cast<int>(adsr->getCurrentStage());
+        return true;
+    }
+    return false;
+}
+
+/**
  * @brief Trigger note-on on an LFO, also resetting one-shot state if applicable.
  *
  * Use this instead of calling lfo->triggerNoteOn() directly so that one-shot

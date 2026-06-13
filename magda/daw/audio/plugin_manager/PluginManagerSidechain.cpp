@@ -12,6 +12,7 @@
 #include "../TrackController.hpp"
 #include "../TracktionHelpers.hpp"
 #include "PluginManager.hpp"
+#include "modifiers/ADSRDebugLog.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
@@ -26,6 +27,25 @@
 #include "transport/TransportStateManager.hpp"
 
 namespace magda {
+
+namespace {
+
+bool rackContainsInstrumentSource(const RackInfo& rack) {
+    for (const auto& chain : rack.chains) {
+        for (const auto& element : chain.elements) {
+            if (isDevice(element)) {
+                if (getDevice(element).isInstrument)
+                    return true;
+            } else if (isRack(element) && rackContainsInstrumentSource(getRack(element))) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+}  // namespace
 
 // =============================================================================
 // Sidechain Routing Sync
@@ -198,62 +218,150 @@ void PluginManager::removeSidechainMonitor(TrackId sourceTrackId) {
 // =============================================================================
 
 bool PluginManager::trackNeedsAudioSidechainMonitor(TrackId trackId) const {
-    // Check if any device sidechained from this track has an Audio-triggered mod.
-    // The sidechain routing type (MIDI vs Audio) is independent of the LFO trigger
-    // mode, so we check the mod's triggerMode rather than sidechain.type.
-    auto deviceHasAudioTrigger = [&](const DeviceInfo& device) {
-        if (!sidechain::deviceUsesSource(device, trackId))
-            return false;
-        for (const auto& mod : device.mods) {
-            if (mod.triggerMode == LFOTriggerMode::Audio)
-                return true;
-        }
+    if (trackId < 0 || trackId >= kMaxCacheTracks)
         return false;
-    };
 
-    for (const auto& track : TrackManager::getInstance().getTracks()) {
-        for (const auto& element : track.chain.fxChainElements) {
-            if (isDevice(element)) {
-                if (deviceHasAudioTrigger(getDevice(element)))
-                    return true;
-            } else if (isRack(element)) {
-                if (sidechain::rackHasAudioTriggeredModForSource(getRack(element), trackId))
-                    return true;
-            }
-        }
-    }
-    return false;
+    auto* cache = activeCache_.load(std::memory_order_acquire);
+    return cache && cache->entries[static_cast<size_t>(trackId)].hasAudioTrigger;
 }
 
 void PluginManager::checkAudioSidechainMonitor(TrackId trackId) {
-    if (trackNeedsAudioSidechainMonitor(trackId))
+    rebuildSidechainLFOCache();
+
+    const bool needed = trackNeedsAudioSidechainMonitor(trackId);
+    MAGDA_ADSR_AUDIO_LOG("check monitor sourceTrack="
+                         << trackId << " needed=" << static_cast<int>(needed) << " exists="
+                         << static_cast<int>(audioSidechainMonitors_.count(trackId) > 0));
+
+    if (needed)
         ensureAudioSidechainMonitor(trackId);
     else
         removeAudioSidechainMonitor(trackId);
+}
 
+void PluginManager::refreshAudioSidechainMonitors() {
     rebuildSidechainLFOCache();
+
+    for (const auto& track : TrackManager::getInstance().getTracks()) {
+        const bool needed = trackNeedsAudioSidechainMonitor(track.id);
+        MAGDA_ADSR_AUDIO_LOG("refresh monitor sourceTrack="
+                             << track.id << " needed=" << static_cast<int>(needed) << " exists="
+                             << static_cast<int>(audioSidechainMonitors_.count(track.id) > 0));
+
+        if (needed)
+            ensureAudioSidechainMonitor(track.id);
+        else
+            removeAudioSidechainMonitor(track.id);
+    }
 }
 
 void PluginManager::ensureAudioSidechainMonitor(TrackId sourceTrackId) {
-    if (audioSidechainMonitors_.count(sourceTrackId) > 0)
-        return;
-
     auto* teTrack = trackController_.getAudioTrack(sourceTrackId);
     if (!teTrack) {
         DBG("PluginManager::ensureAudioSidechainMonitor - track " << sourceTrackId
                                                                   << " has no TE AudioTrack");
+        MAGDA_ADSR_AUDIO_LOG(
+            "cannot create monitor; missing TE track sourceTrack=" << sourceTrackId);
         return;
+    }
+
+    auto computeInsertPos = [&]() {
+        auto frontInsertPos = [&]() {
+            int pos = 0;
+            for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+                auto* plugin = teTrack->pluginList[i];
+                if (dynamic_cast<te::AuxReturnPlugin*>(plugin) ||
+                    dynamic_cast<SidechainMonitorPlugin*>(plugin)) {
+                    pos = i + 1;
+                    continue;
+                }
+                break;
+            }
+            return pos;
+        };
+
+        auto pluginIndex = [&](te::Plugin* plugin) {
+            return plugin ? teTrack->pluginList.indexOf(plugin) : -1;
+        };
+
+        if (auto* trackInfo = TrackManager::getInstance().getTrack(sourceTrackId)) {
+            for (const auto& element : trackInfo->chain.fxChainElements) {
+                if (isDevice(element)) {
+                    const auto& device = getDevice(element);
+                    if (!device.isInstrument)
+                        continue;
+
+                    te::Plugin* sourcePlugin = instrumentRackManager_.getRackInstance(device.id);
+                    if (!sourcePlugin) {
+                        juce::ScopedLock lock(pluginLock_);
+                        auto it = findSyncedDevice(
+                            ChainNodePath::topLevelDevice(sourceTrackId, device.id));
+                        if (it != syncedDevices_.end())
+                            sourcePlugin = it->second.plugin.get();
+                    }
+
+                    const int idx = pluginIndex(sourcePlugin);
+                    if (idx >= 0)
+                        return idx + 1;
+                } else if (isRack(element)) {
+                    const auto& rack = getRack(element);
+                    if (!rackContainsInstrumentSource(rack))
+                        continue;
+
+                    const int idx = pluginIndex(rackSyncManager_.getRackInstance(rack.id));
+                    if (idx >= 0)
+                        return idx + 1;
+                }
+            }
+        }
+
+        return frontInsertPos();
+    };
+
+    if (audioSidechainMonitors_.count(sourceTrackId) > 0) {
+        int existingIndex = -1;
+        for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+            if (teTrack->pluginList[i] == audioSidechainMonitors_[sourceTrackId].get()) {
+                existingIndex = i;
+                break;
+            }
+        }
+
+        MAGDA_ADSR_AUDIO_LOG("monitor already exists sourceTrack="
+                             << sourceTrackId << " pluginIndex=" << existingIndex);
+
+        const int desiredIndex = computeInsertPos();
+        if (existingIndex == desiredIndex)
+            return;
+
+        if (auto* plugin = audioSidechainMonitors_[sourceTrackId].get())
+            plugin->deleteFromParent();
+        audioSidechainMonitors_.erase(sourceTrackId);
+        MAGDA_ADSR_AUDIO_LOG("removed monitor for trigger-tap reposition sourceTrack="
+                             << sourceTrackId << " oldIndex=" << existingIndex
+                             << " desiredIndex=" << desiredIndex);
     }
 
     // Check if an AudioSidechainMonitorPlugin already exists on the track
     for (int i = 0; i < teTrack->pluginList.size(); ++i) {
         if (dynamic_cast<AudioSidechainMonitorPlugin*>(teTrack->pluginList[i])) {
+            const int desiredIndex = computeInsertPos();
+            if (i != desiredIndex) {
+                teTrack->pluginList[i]->deleteFromParent();
+                MAGDA_ADSR_AUDIO_LOG(
+                    "removed existing monitor for trigger-tap reposition sourceTrack="
+                    << sourceTrackId << " oldIndex=" << i << " desiredIndex=" << desiredIndex);
+                break;
+            }
+
             DBG("PluginManager::ensureAudioSidechainMonitor - track "
                 << sourceTrackId << " found existing audio monitor plugin on TE track");
             audioSidechainMonitors_[sourceTrackId] = teTrack->pluginList[i];
             auto* mon = dynamic_cast<AudioSidechainMonitorPlugin*>(teTrack->pluginList[i]);
             mon->setSourceTrackId(sourceTrackId);
             mon->setPluginManager(this);
+            MAGDA_ADSR_AUDIO_LOG("using existing monitor sourceTrack=" << sourceTrackId
+                                                                       << " pluginIndex=" << i);
             return;
         }
     }
@@ -265,33 +373,24 @@ void PluginManager::ensureAudioSidechainMonitor(TrackId sourceTrackId) {
 
     DBG("PluginManager::ensureAudioSidechainMonitor - creating new audio monitor for track "
         << sourceTrackId);
+    MAGDA_ADSR_AUDIO_LOG("creating monitor sourceTrack=" << sourceTrackId);
     auto plugin = edit_.getPluginCache().createNewPlugin(pluginState);
     if (plugin) {
         if (auto* mon = dynamic_cast<AudioSidechainMonitorPlugin*>(plugin.get())) {
             mon->setSourceTrackId(sourceTrackId);
             mon->setPluginManager(this);
         }
-        // Insert near the end of the chain so it sees generated audio.
-        // TE's LevelMeterPlugin and VolumeAndPanPlugin are auto-added at the very end,
-        // so inserting at the last position before those is ideal.
-        int insertPos = teTrack->pluginList.size();
-        // Walk backwards past TE's built-in tail plugins
-        for (int i = teTrack->pluginList.size() - 1; i >= 0; --i) {
-            auto* p = teTrack->pluginList[i];
-            if (dynamic_cast<te::LevelMeterPlugin*>(p) ||
-                dynamic_cast<te::VolumeAndPanPlugin*>(p)) {
-                insertPos = i;
-            } else {
-                break;
-            }
-        }
+        int insertPos = computeInsertPos();
         teTrack->pluginList.insertPlugin(plugin, insertPos, nullptr);
         audioSidechainMonitors_[sourceTrackId] = plugin;
         DBG("PluginManager::ensureAudioSidechainMonitor - inserted audio monitor at position "
             << insertPos << " on track " << sourceTrackId);
+        MAGDA_ADSR_AUDIO_LOG("inserted monitor sourceTrack=" << sourceTrackId
+                                                             << " insertPos=" << insertPos);
     } else {
         DBG("PluginManager::ensureAudioSidechainMonitor - FAILED to create audio monitor for track "
             << sourceTrackId);
+        MAGDA_ADSR_AUDIO_LOG("failed creating monitor sourceTrack=" << sourceTrackId);
     }
 }
 

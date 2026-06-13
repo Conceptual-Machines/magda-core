@@ -1535,6 +1535,11 @@ void NodeComponent::initializeModsMacrosPanels() {
             onModAudioReleaseChangedInternal(selectedModIndex_, ms);
         }
     };
+    modulatorEditorPanel_->onEnvelopeChanged = [this](const magda::ModInfo& mod) {
+        if (selectedModIndex_ >= 0) {
+            onModEnvelopeChangedInternal(selectedModIndex_, mod);
+        }
+    };
     modulatorEditorPanel_->onCurveChanged = [this]() {
         DBG("[HardCorner] NodeComponent onCurveChanged selectedModIndex=" << selectedModIndex_);
         // Force repaint of waveform displays for immediate curve editor sync

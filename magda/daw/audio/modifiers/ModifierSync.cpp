@@ -87,9 +87,22 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
             modifier = modList.insertModifier(envState, -1, nullptr);
             break;
         }
-        case ModType::Envelope:
-            // TE has no dedicated envelope generator — currently unsupported.
+        case ModType::Envelope: {
+            juce::ValueTree adsrState(te::IDs::ADSR);
+            auto adsrMod = modList.insertModifier(adsrState, -1, nullptr);
+            if (!adsrMod)
+                break;
+
+            if (auto* adsr = dynamic_cast<te::ADSRModifier*>(adsrMod.get())) {
+                // applyADSRProperties updates parameters and the non-audio gate modes.
+                // Audio mode starts gated here, then the audio monitor owns the gate.
+                applyADSRProperties(adsr, modInfo);
+                if (modInfo.triggerMode == LFOTriggerMode::Audio)
+                    adsr->setGated(true);
+            }
+            modifier = adsrMod;
             break;
+        }
     }
 
     return modifier;
@@ -316,6 +329,8 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 // MIDI gate state is part of the MAGDA model and is applied
                 // above. Audio-trigger gate state remains owned by the audio
                 // sidechain path.
+            } else if (auto* adsr = dynamic_cast<te::ADSRModifier*>(modifier.get())) {
+                applyADSRProperties(adsr, modInfo);
             }
 
             for (const auto& link : modInfo.links) {

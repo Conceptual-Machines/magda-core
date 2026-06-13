@@ -359,6 +359,10 @@ void TrackManager::addMod(const ChainNodePath& path, int slotIndex, ModType type
     ModInfo newMod(slotIndex);
     newMod.type = type;
     newMod.waveform = waveform;
+    // An envelope defaults to note-triggered: free-running would just cycle
+    // the A-D-R shape, which is rarely what you want from an ADSR.
+    if (type == ModType::Envelope)
+        newMod.triggerMode = LFOTriggerMode::MIDI;
     if (waveform == LFOWaveform::Custom) {
         newMod.name = "Curve " + juce::String(slotIndex + 1);
     } else {
@@ -551,6 +555,21 @@ void TrackManager::setModAudioRelease(const ChainNodePath& path, int modIndex, f
     if (!indexInRange(node.mods, modIndex))
         return;
     (*node.mods)[modIndex].audioReleaseMs = juce::jlimit(1.0f, 2000.0f, ms);
+}
+
+void TrackManager::setModEnvelope(const ChainNodePath& path, int modIndex, const ModInfo& src) {
+    auto node = resolveChainNode(path);
+    if (!indexInRange(node.mods, modIndex))
+        return;
+    auto& mod = (*node.mods)[modIndex];
+    mod.envAttackMs = juce::jlimit(0.0f, 30000.0f, src.envAttackMs);
+    mod.envDecayMs = juce::jlimit(0.0f, 30000.0f, src.envDecayMs);
+    mod.envSustain = juce::jlimit(0.0f, 1.0f, src.envSustain);
+    mod.envReleaseMs = juce::jlimit(0.0f, 30000.0f, src.envReleaseMs);
+    mod.envAttackCurve = juce::jlimit(-0.5f, 0.5f, src.envAttackCurve);
+    mod.envDecayCurve = juce::jlimit(-0.5f, 0.5f, src.envDecayCurve);
+    mod.envReleaseCurve = juce::jlimit(-0.5f, 0.5f, src.envReleaseCurve);
+    notifyDeviceModifiersChanged(path.trackId);
 }
 
 void TrackManager::removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target) {
@@ -754,6 +773,33 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             mod.value = 0.0f;
             mod.triggered = false;
             return false;
+        }
+
+        if (mod.type == ModType::Envelope) {
+            // The ADSR is generated on the audio thread; here we only maintain
+            // `running` so applyADSRProperties can open/close the gate (note-on
+            // opens it, all-notes-off starts the release). Free mode keeps the
+            // gate open so the engine free-cycles A-D-R. The value/stage shown
+            // in the UI are overlaid from the live TE modifier, not simulated
+            // here, so there is no phase advance.
+            if (mod.triggerMode == LFOTriggerMode::Free) {
+                mod.running = true;
+            } else {
+                bool triggerRequested = computeTriggerRequest(mod, inputs);
+                if (shouldApplyTrigger(mod, triggerRequested)) {
+                    mod.triggered = true;
+                    mod.triggerCount++;
+                    mod.running = true;
+                } else {
+                    mod.triggered = false;
+                }
+                if (shouldStopRunning(mod, inputs))
+                    mod.running = false;
+                if (mod.triggerMode == LFOTriggerMode::Transport && inputs.transportPlaying &&
+                    !inputs.transportJustStopped)
+                    mod.running = true;
+            }
+            return mod.running != wasRunning;
         }
 
         if (mod.type == ModType::LFO) {

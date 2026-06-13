@@ -46,6 +46,12 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
             return;
         const float centerY = height * 0.5f;
 
+        // ADSR envelopes draw their shape instead of a periodic waveform.
+        if (mod_->type == magda::ModType::Envelope) {
+            paintEnvelope(g, bounds);
+            return;
+        }
+
         // Draw waveform path
         juce::Path waveformPath;
         const int numPoints = 50;  // Fewer points for mini display
@@ -79,6 +85,60 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
     }
 
   private:
+    // Compact ADSR shape with a dot at the current value (overlaid from the
+    // live TE modifier via mod_->value / mod_->envStage).
+    void paintEnvelope(juce::Graphics& g, juce::Rectangle<float> bounds) {
+        const float top = bounds.getY() + 1.0f;
+        const float bottom = bounds.getBottom() - 1.0f;
+        const float h = bottom - top;
+        const float w = bounds.getWidth();
+
+        constexpr float kSustainFrac = 0.22f;
+        const float timed = w * (1.0f - kSustainFrac);
+        const float a = juce::jmax(mod_->envAttackMs, 1.0f);
+        const float d = juce::jmax(mod_->envDecayMs, 1.0f);
+        const float r = juce::jmax(mod_->envReleaseMs, 1.0f);
+        const float sum = a + d + r;
+        const float xA = bounds.getX() + timed * (a / sum);
+        const float xD = xA + timed * (d / sum);
+        const float xS = xD + w * kSustainFrac;
+        const float xR = xS + timed * (r / sum);
+        const float sustainY = bottom - mod_->envSustain * h;
+
+        juce::Path path;
+        path.startNewSubPath(bounds.getX(), bottom);
+        path.lineTo(xA, top);
+        path.lineTo(xD, sustainY);
+        path.lineTo(xS, sustainY);
+        path.lineTo(xR, bottom);
+
+        g.setColour(juce::Colours::orange.withAlpha(0.5f));
+        g.strokePath(path, juce::PathStrokeType(1.0f));
+
+        if (mod_->envStage != 0) {
+            const float v = juce::jlimit(0.0f, 1.0f, mod_->value);
+            float dotX = bounds.getX();
+            switch (mod_->envStage) {
+                case 1:
+                    dotX = bounds.getX() + (xA - bounds.getX()) * v;
+                    break;
+                case 2:
+                    dotX = (xA + xD) * 0.5f;
+                    break;
+                case 3:
+                    dotX = (xD + xS) * 0.5f;
+                    break;
+                case 4:
+                    dotX = (xS + xR) * 0.5f;
+                    break;
+                default:
+                    break;
+            }
+            g.setColour(juce::Colours::orange);
+            g.fillEllipse(dotX - 2.0f, (bottom - v * h) - 2.0f, 4.0f, 4.0f);
+        }
+    }
+
     void timerCallback() override {
         if (getWidth() > 0 && getHeight() > 0)
             repaint();

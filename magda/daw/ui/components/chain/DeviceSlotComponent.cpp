@@ -1736,6 +1736,10 @@ void DeviceSlotComponent::onModAudioReleaseChangedInternal(int modIndex, float m
     magda::TrackManager::getInstance().setModAudioRelease(nodePath_, modIndex, ms);
 }
 
+void DeviceSlotComponent::onModEnvelopeChangedInternal(int modIndex, const magda::ModInfo& mod) {
+    magda::TrackManager::getInstance().setModEnvelope(nodePath_, modIndex, mod);
+}
+
 void DeviceSlotComponent::onModCurveChangedInternal(int /*modIndex*/) {
     DBG("[HardCorner] DeviceSlotComponent notifyModCurveChanged path=" << nodePath_.toString());
     // Curve points are already written directly to ModInfo by LFOCurveEditor.
