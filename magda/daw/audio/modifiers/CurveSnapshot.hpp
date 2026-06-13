@@ -119,6 +119,12 @@ struct CurveSnapshot {
             p2 = &points[0];
         }
 
+        // Step: the segment holds p1's value until the next point (sample &
+        // hold / rectangular steps).
+        constexpr int kStepCurveType = 2;
+        if (p1->curveType == kStepCurveType)
+            return p1->value;
+
         float phaseSpan;
         float localPhase;
         if (p2->phase < p1->phase) {

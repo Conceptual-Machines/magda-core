@@ -120,6 +120,11 @@ LFOCurveEditor::LFOCurveEditor() {
         }
         return y;
     };
+    // Step-stamp cell width = one X grid division (phase is 0-1). Without this
+    // the base skips the snap/size block and the step cell collapses.
+    getGridSpacingX = [this]() -> double {
+        return gridDivisionsX_ > 0 ? 1.0 / gridDivisionsX_ : 0.0;
+    };
 
     rebuildPointComponents();
     startTimer(33);  // 30 FPS animation for phase indicator
@@ -456,6 +461,96 @@ void LFOCurveEditor::onPointDeleted(uint32_t pointId) {
     repaint();  // Force full repaint after structural change
     notifyWaveformChanged();
     commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
+}
+
+void LFOCurveEditor::onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) {
+    if (pointIds.empty())
+        return;
+
+    // Keep at least 2 points. If the selection would delete more, only remove
+    // down to that floor (array order, so the rightmost survivors are kept).
+    const size_t deletable = points_.size() > 2 ? points_.size() - 2 : 0;
+    if (deletable == 0)
+        return;
+
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
+    size_t deleted = 0;
+    points_.erase(std::remove_if(points_.begin(), points_.end(),
+                                 [&](const CurvePoint& p) {
+                                     if (deleted >= deletable || pointIds.count(p.id) == 0)
+                                         return false;
+                                     ++deleted;
+                                     return true;
+                                 }),
+                  points_.end());
+
+    if (deleted == 0)
+        return;
+
+    selectedPointId_ = INVALID_CURVE_POINT_ID;
+    rebuildPointComponents();
+    repaint();
+    notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
+}
+
+void LFOCurveEditor::onStepStamped(double gridStart, double gridEnd, double y, uint32_t prevPointId,
+                                   double prevValue) {
+    constexpr double kEps = 1e-6;
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
+    auto insertSorted = [this](double x, double yy, CurveType type) {
+        CurvePoint p;
+        p.id = nextPointId_++;
+        p.x = juce::jlimit(0.0, 1.0, x);
+        p.y = juce::jlimit(0.0, 1.0, yy);
+        p.curveType = type;
+        auto pos =
+            std::lower_bound(points_.begin(), points_.end(), p,
+                             [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
+        points_.insert(pos, p);
+    };
+
+    // Left cliff: flip the preceding point to Step so the segment into the cell
+    // holds the baseline then jumps straight up to y.
+    if (prevPointId != INVALID_CURVE_POINT_ID) {
+        for (auto& p : points_)
+            if (p.id == prevPointId)
+                p.curveType = CurveType::Step;
+    }
+
+    // Cell's left edge at the click value (Step → flat top to gridEnd). If a
+    // point already sits there, retarget it instead of stacking a duplicate.
+    bool retargeted = false;
+    for (auto& p : points_) {
+        if (std::abs(p.x - gridStart) < kEps) {
+            p.y = juce::jlimit(0.0, 1.0, y);
+            p.curveType = CurveType::Step;
+            retargeted = true;
+            break;
+        }
+    }
+    if (!retargeted)
+        insertSorted(gridStart, y, CurveType::Step);
+
+    // Right cliff: recover to the baseline at the cell's end (skip if a point
+    // is already there). Linear so the segment leaving the cell flows normally.
+    bool hasEnd = false;
+    for (const auto& p : points_)
+        if (std::abs(p.x - gridEnd) < kEps) {
+            hasEnd = true;
+            break;
+        }
+    if (gridEnd > gridStart + kEps && !hasEnd)
+        insertSorted(gridEnd, prevValue, CurveType::Linear);
+
+    rebuildPointComponents();
+    repaint();
+    notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Stamp LFO Step");
 }
 
 void LFOCurveEditor::onPointSelected(uint32_t pointId) {

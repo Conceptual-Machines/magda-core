@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <memory>
+#include <set>
 #include <vector>
 
 #include "core/ChainNodePath.hpp"
@@ -136,6 +137,9 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     void onPointAdded(double x, double y, CurveType curveType) override;
     void onPointMoved(uint32_t pointId, double newX, double newY) override;
     void onPointDeleted(uint32_t pointId) override;
+    void onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) override;
+    void onStepStamped(double gridStart, double gridEnd, double y, uint32_t prevPointId,
+                       double prevValue) override;
     void onPointSelected(uint32_t pointId) override;
     void onTensionChanged(uint32_t pointId, double tension) override;
     void onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
