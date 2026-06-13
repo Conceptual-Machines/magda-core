@@ -53,6 +53,12 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
         return true;
     }
 
+    // Adding a point is a deliberate double-click; a single click on empty
+    // canvas just clears the selection (avoids stray points).
+    bool addsPointOnSingleClick() const override {
+        return false;
+    }
+
     // CurveEditorBase data access
     const std::vector<CurvePoint>& getPoints() const override;
 

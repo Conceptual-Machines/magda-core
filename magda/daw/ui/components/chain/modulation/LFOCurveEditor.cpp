@@ -102,6 +102,25 @@ LFOCurveEditor::LFOCurveEditor() {
     // Must be >= half of POINT_SIZE_SELECTED (8) so extreme points are fully grabbable.
     setPadding(8);
 
+    // Snap callbacks used by the base for adding points and dragging segment
+    // shaper handles (point drags also run through constrainPointPosition).
+    // Without these, only point drags snapped — new points and the hard-corner
+    // apex ignored the grid.
+    snapXToGrid = [this](double x) -> double {
+        if (snapX_ && gridDivisionsX_ > 1) {
+            const double step = 1.0 / gridDivisionsX_;
+            return juce::jlimit(0.0, 1.0, std::round(x / step) * step);
+        }
+        return x;
+    };
+    snapYToGrid = [this](double y) -> double {
+        if (snapY_ && gridDivisionsY_ > 1) {
+            const double step = 1.0 / gridDivisionsY_;
+            return juce::jlimit(0.0, 1.0, std::round(y / step) * step);
+        }
+        return y;
+    };
+
     rebuildPointComponents();
     startTimer(33);  // 30 FPS animation for phase indicator
 }
@@ -470,14 +489,23 @@ void LFOCurveEditor::onPointCurveTypeChanged(uint32_t pointId, CurveType newType
     const auto beforePoints = snapshotCurvePoints();
     const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
 
-    for (auto& point : points_) {
-        if (point.id == pointId) {
-            DBG("[HardCorner] LFOCurveEditor::onPointCurveTypeChanged pointId="
-                << static_cast<int>(pointId) << " oldType=" << getCurveTypeName(point.curveType)
-                << " newType=" << getCurveTypeName(newType));
-            point.curveType = newType;
-            break;
+    for (size_t i = 0; i < points_.size(); ++i) {
+        if (points_[i].id != pointId)
+            continue;
+        DBG("[HardCorner] LFOCurveEditor::onPointCurveTypeChanged pointId="
+            << static_cast<int>(pointId) << " oldType=" << getCurveTypeName(points_[i].curveType)
+            << " newType=" << getCurveTypeName(newType));
+        points_[i].curveType = newType;
+        // A hard corner starts from a clean apex at the segment midpoint. Drop
+        // any stale bezier handle offsets (p1.outHandle / p2.inHandle drive the
+        // segment shaper) so the shaper handle doesn't render off-curve as a
+        // stray floating circle. The apex stays draggable from there.
+        if (newType == CurveType::HardCorner) {
+            points_[i].outHandle = CurveHandleData{};
+            if (i + 1 < points_.size())
+                points_[i + 1].inHandle = CurveHandleData{};
         }
+        break;
     }
     // notifyWaveformChanged persists to ModInfo; the base class refreshes
     // point/handle visuals after this returns.

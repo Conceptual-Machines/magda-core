@@ -103,6 +103,13 @@ class CurveEditorBase : public juce::Component {
         return false;
     }
 
+    // When true, a single click on empty canvas adds a point (automation
+    // lanes). Override to false so adding requires a deliberate double-click
+    // and a single click just clears the selection (LFO curve editor).
+    virtual bool addsPointOnSingleClick() const {
+        return true;
+    }
+
     // Format a value label for a given normalized Y (0-1). Override in subclasses.
     virtual juce::String formatValueLabel(double y) const {
         return juce::String(juce::roundToInt(y * 100)) + "%";
