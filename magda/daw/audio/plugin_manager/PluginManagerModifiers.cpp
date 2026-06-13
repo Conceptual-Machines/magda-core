@@ -125,6 +125,12 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
         node.mods = &device.mods;
         node.macros = &device.macros;
 
+        // Per-device sidechain fact (drives the envelope follower's external
+        // input). The in-place property path must set this too, since a
+        // sidechain-source change keeps the same link fingerprint and so never
+        // triggers a full rebuild.
+        ctx.hasCrossTrackSidechain = device.sidechain.sourceTrackId != INVALID_TRACK_ID;
+
         auto& sd = sdIt->second;
         ModifierSyncState state{sd.modifiers, sd.curveSnapshots, sd.macroParams};
         ModifierSyncWalker::syncProperties(node, ctx, state);
@@ -145,6 +151,7 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
     trackNode.mods = &trackInfo->mods;
     trackNode.macros = &trackInfo->macros;
 
+    ctx.hasCrossTrackSidechain = false;  // track-level mods have no device sidechain
     ModifierSyncState trackState{trackModState.modifiers, trackModState.curveSnapshots,
                                  trackMacroMap};
     ModifierSyncWalker::syncProperties(trackNode, ctx, trackState);
@@ -420,6 +427,19 @@ void PluginManager::gateSidechainLFOs(TrackId sourceTrackId) {
     }
 }
 
+void PluginManager::pushSidechainAudioLevel(TrackId sourceTrackId, float level) {
+    if (sourceTrackId < 0 || sourceTrackId >= kMaxCacheTracks)
+        return;
+
+    auto* cache = activeCache_.load(std::memory_order_acquire);
+    auto& entry = cache->entries[static_cast<size_t>(sourceTrackId)];
+    for (int i = 0; i < entry.count; ++i) {
+        if (auto* ef =
+                dynamic_cast<te::EnvelopeFollowerModifier*>(entry.mods[static_cast<size_t>(i)]))
+            ef->setExternalInput(level);
+    }
+}
+
 void PluginManager::prepareForRendering() {
     renderingActive_.store(true, std::memory_order_release);
     rackSyncManager_.setRenderingActive(true);
@@ -565,9 +585,9 @@ void PluginManager::syncLFOValuesToVisuals() {
     // LFO keeps free-running in syncType=note mode, but the visual must
     // freeze on note release.
     auto overlayMod = [](ModInfo& magdaMod, te::Modifier::Ptr& mod) {
-        // The envelope value is always meaningful: the release stage plays out
-        // after the gate closes and idle reads 0, so overlay unconditionally.
-        if (magdaMod.type == ModType::Envelope) {
+        // The envelope value and the follower output are always meaningful, so
+        // overlay them unconditionally (no trigger/running gating).
+        if (magdaMod.type == ModType::Envelope || magdaMod.type == ModType::Follower) {
             overlayModifierVisuals(magdaMod, mod.get());
             return;
         }
@@ -632,9 +652,10 @@ void PluginManager::rebuildSidechainLFOCache() {
             continue;
 
         auto& entry = newCache[static_cast<size_t>(track.id)];
-        std::vector<te::Modifier*> lfos;  // gated modifiers: LFO + ADSR
+        std::vector<te::Modifier*> lfos;  // gated modifiers: LFO + ADSR (+ followers)
         std::vector<LFOTriggerMode> modes;
-        int selfTrackCount = 0;  // track how many are self-track (added first)
+        int selfTrackCount = 0;    // track how many are self-track (added first)
+        bool hasFollower = false;  // any envelope follower sidechained from here
 
         // Helper to collect gated modifiers from one MAGDA/TE modifier scope,
         // pairing each with the trigger mode from the MAGDA ModInfo. ModId-keyed
@@ -661,12 +682,20 @@ void PluginManager::rebuildSidechainLFOCache() {
                         << " links=" << static_cast<int>(modInfo.links.size()));
                     lfos.push_back(modIt->second.get());
                     modes.push_back(modInfo.triggerMode);
+                } else if (dynamic_cast<te::EnvelopeFollowerModifier*>(modIt->second.get())) {
+                    // Followers receive a per-block level push (not a trigger);
+                    // they only matter when collected for a cross-track source.
+                    lfos.push_back(modIt->second.get());
+                    modes.push_back(LFOTriggerMode::Free);
+                    hasFollower = true;
                 }
             }
         };
 
-        auto collectDeviceLFOs = [&](const DeviceInfo& device) {
-            auto it = findSyncedDevice(ChainNodePath::topLevelDevice(track.id, device.id));
+        // deviceTrackId is the track the device actually lives on — the source
+        // track for self-collection, the destination track for cross-track.
+        auto collectDeviceLFOs = [&](const DeviceInfo& device, TrackId deviceTrackId) {
+            auto it = findSyncedDevice(ChainNodePath::topLevelDevice(deviceTrackId, device.id));
             if (it != syncedDevices_.end())
                 collectGatedModifiers(device.mods, it->second.modifiers);
         };
@@ -701,7 +730,7 @@ void PluginManager::rebuildSidechainLFOCache() {
             if (device.sidechain.sourceTrackId != INVALID_TRACK_ID &&
                 device.sidechain.sourceTrackId != track.id)
                 continue;  // Has external sidechain — skip self-triggering
-            collectDeviceLFOs(device);
+            collectDeviceLFOs(device, track.id);
         }
 
         // Also collect from racks on this track. If any nested rack scope has
@@ -736,7 +765,7 @@ void PluginManager::rebuildSidechainLFOCache() {
                 // Only collect from devices whose sidechain source is this track
                 if (device.sidechain.sourceTrackId != track.id)
                     continue;
-                collectDeviceLFOs(device);
+                collectDeviceLFOs(device, otherTrack.id);
             }
             rackSyncManager_.collectLFOModifiersWithModesForSidechainSource(otherTrack.id, track.id,
                                                                             lfos, modes);
@@ -745,9 +774,12 @@ void PluginManager::rebuildSidechainLFOCache() {
         // Write to cache entry (capped at kMaxLFOs)
         // Self-track LFOs come first (indices 0..selfTrackCount-1),
         // cross-track LFOs follow (indices selfTrackCount..count-1).
-        entry.hasAudioTrigger = std::any_of(modes.begin(), modes.end(), [](LFOTriggerMode mode) {
-            return mode == LFOTriggerMode::Audio;
-        });
+        // A follower also needs the source's audio monitor running (it streams
+        // the level), so it counts toward "has audio trigger" for monitor setup.
+        entry.hasAudioTrigger =
+            hasFollower || std::any_of(modes.begin(), modes.end(), [](LFOTriggerMode mode) {
+                return mode == LFOTriggerMode::Audio;
+            });
         entry.count = std::min(static_cast<int>(lfos.size()), PerTrackEntry::kMaxMods);
         if (entry.count > 0) {
             MAGDA_ADSR_AUDIO_LOG("cache entry sourceTrack=" << track.id << " count=" << entry.count

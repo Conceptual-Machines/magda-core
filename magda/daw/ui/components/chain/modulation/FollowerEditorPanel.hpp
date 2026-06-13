@@ -54,6 +54,10 @@ class FollowerEditorPanel : public juce::Component {
     // Callbacks
     std::function<void(juce::String name)> onNameChanged;
     std::function<void(const magda::ModInfo& mod)> onFollowerChanged;
+    // Fires when the user clicks the audio-source button; the host opens the
+    // sidechain-source picker (Self / a track) which sets the host device's
+    // sidechain. "External" source drives the follower from that track's level.
+    std::function<void()> onSourceClicked;
     std::function<void(int modIndex, magda::ControlTarget target)> onModLinkDeleted;
     std::function<void(int modIndex, magda::ControlTarget target, bool bipolar)>
         onModLinkBipolarChanged;
@@ -80,6 +84,7 @@ class FollowerEditorPanel : public juce::Component {
 
     juce::Label nameLabel_;
     RandomDisplay followerDisplay_;  // generic live value-history scroller
+    juce::TextButton sourceButton_{"Audio Source"};
     TextSlider gainSlider_{TextSlider::Format::Decimal};
     TextSlider attackSlider_{TextSlider::Format::Decimal};
     TextSlider holdSlider_{TextSlider::Format::Decimal};

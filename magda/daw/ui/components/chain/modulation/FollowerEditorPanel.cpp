@@ -3,6 +3,7 @@
 #include "core/AutomationInfo.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -20,6 +21,19 @@ FollowerEditorPanel::FollowerEditorPanel() {
 
     // Live output display (reuses the generic value-history scroller)
     addAndMakeVisible(followerDisplay_);
+
+    // Audio source button (Self / external track) — opens the host picker.
+    // Use the shared small-button look (theme font, tighter corners) to match
+    // the rest of the modulation toolbar.
+    sourceButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    sourceButton_.setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    sourceButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    sourceButton_.onClick = [this]() {
+        if (onSourceClicked)
+            onSourceClicked();
+    };
+    addAndMakeVisible(sourceButton_);
 
     // Time sliders fold their label into the value text (e.g. "A 100 ms").
     auto setupTimeSlider = [this](TextSlider& s, const juce::String& tag, double def,
@@ -157,7 +171,8 @@ void FollowerEditorPanel::paint(juce::Graphics& g) {
     bounds.removeFromTop(46 + 6);  // display + gap
     bounds.removeFromTop(18 + 4);  // gain row + gap
     bounds.removeFromTop(18 + 4);  // attack/hold row + gap
-    bounds.removeFromTop(18 + 8);  // release row + gap
+    bounds.removeFromTop(18 + 6);  // release row + gap
+    bounds.removeFromTop(18 + 8);  // source button + gap
     g.drawText("Links", bounds.removeFromTop(12), juce::Justification::centredLeft);
 }
 
@@ -185,6 +200,9 @@ void FollowerEditorPanel::resized() {
     bounds.removeFromTop(kGap);
 
     releaseSlider_.setBounds(bounds.removeFromTop(18));
+    bounds.removeFromTop(6);
+
+    sourceButton_.setBounds(bounds.removeFromTop(18));
     bounds.removeFromTop(8);
 
     bounds.removeFromTop(12);  // "Links" label (painted)

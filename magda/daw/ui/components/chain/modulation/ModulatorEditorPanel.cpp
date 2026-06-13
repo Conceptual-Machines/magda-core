@@ -704,6 +704,11 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
         if (onFollowerChanged)
             onFollowerChanged(mod);
     };
+    followerEditorPanel_->onSourceClicked = [this]() {
+        // Reuse the host's sidechain-source picker (sets the device sidechain).
+        if (onAdvancedClicked)
+            onAdvancedClicked();
+    };
     followerEditorPanel_->onModLinkDeleted = [this](int idx, magda::ControlTarget target) {
         if (onModLinkDeleted)
             onModLinkDeleted(idx, target);

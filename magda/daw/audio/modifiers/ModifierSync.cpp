@@ -94,8 +94,13 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
             if (!efMod)
                 break;
 
-            if (auto* ef = dynamic_cast<te::EnvelopeFollowerModifier*>(efMod.get()))
+            if (auto* ef = dynamic_cast<te::EnvelopeFollowerModifier*>(efMod.get())) {
                 applyFollowerProperties(ef, modInfo);
+                // A cross-track sidechain source drives the follower from that
+                // source's level (pushed by the audio sidechain monitor); with
+                // no source it follows its own host scope audio.
+                ef->setUsesExternalInput(ctx.hasCrossTrackSidechain);
+            }
             modifier = efMod;
             break;
         }
@@ -347,6 +352,7 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 applyRandomProperties(rnd, modInfo);
             } else if (auto* ef = dynamic_cast<te::EnvelopeFollowerModifier*>(modifier.get())) {
                 applyFollowerProperties(ef, modInfo);
+                ef->setUsesExternalInput(ctx.hasCrossTrackSidechain);
             }
 
             for (const auto& link : modInfo.links) {

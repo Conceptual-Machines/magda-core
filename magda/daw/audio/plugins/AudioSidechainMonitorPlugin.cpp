@@ -62,6 +62,12 @@ void AudioSidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& f
     // Write peak to SidechainTriggerBus for UI metering
     SidechainTriggerBus::getInstance().setAudioPeakLevel(sourceTrackId_, peak);
 
+    // Stream the raw level to any envelope-follower modulators sidechained from
+    // this track (they apply their own attack/release). Separate from the gate
+    // logic below, which only drives note-triggered LFO/ADSR modifiers.
+    if (pluginManager_)
+        pluginManager_->pushSidechainAudioLevel(sourceTrackId_, peak);
+
     const float envBefore = envLevel_;
     const bool gateBefore = gateOpen_;
 

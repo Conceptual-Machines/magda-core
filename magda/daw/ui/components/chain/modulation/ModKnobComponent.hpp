@@ -53,9 +53,9 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
             return;
         }
 
-        // Random modulators draw a scrolling history of their output instead
-        // of a periodic waveform.
-        if (mod_->type == magda::ModType::Random) {
+        // Random and envelope-follower modulators draw a scrolling history of
+        // their output instead of a periodic waveform.
+        if (mod_->type == magda::ModType::Random || mod_->type == magda::ModType::Follower) {
             paintRandom(g, bounds);
             return;
         }
@@ -176,7 +176,8 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
     }
 
     void timerCallback() override {
-        if (mod_ && mod_->type == magda::ModType::Random) {
+        if (mod_ &&
+            (mod_->type == magda::ModType::Random || mod_->type == magda::ModType::Follower)) {
             randomHistory_[static_cast<size_t>(randomWritePos_)] = mod_->value;
             randomWritePos_ = (randomWritePos_ + 1) % static_cast<int>(randomHistory_.size());
         }
