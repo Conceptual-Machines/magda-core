@@ -35,6 +35,12 @@ struct CurveSnapshot {
     bool hasCustomPoints = false;
     bool oneShot = false;
 
+    // MSEG loop region. When useLoopRegion is set, the intro [0, loopStart)
+    // plays once, then [loopStart, loopEnd] repeats indefinitely.
+    bool useLoopRegion = false;
+    float loopStart = 0.0f;
+    float loopEnd = 1.0f;
+
     /**
      * @brief Generate a preset curve value (no custom points).
      *
@@ -229,6 +235,9 @@ struct CurveSnapshotHolder {
     std::atomic<float> previousPhase_{-1.0f};
     std::atomic<bool> oneShotCompleted_{false};
     std::atomic<int> evalLogCount_{0};  // throttle DBG spam in evaluateCallback
+    // Last remapped (looped) phase, published for the UI phase indicator so the
+    // dot follows the loop region instead of TE's raw 0..1 sweep.
+    std::atomic<float> lastEffectivePhase_{0.0f};
 
     /**
      * @brief Message thread: copy curve data from ModInfo into the inactive
@@ -243,6 +252,9 @@ struct CurveSnapshotHolder {
         back->preset = modInfo.curvePreset;
         back->hasCustomPoints = !modInfo.curvePoints.empty();
         back->oneShot = modInfo.oneShot;
+        back->useLoopRegion = modInfo.useLoopRegion;
+        back->loopStart = modInfo.loopStart;
+        back->loopEnd = modInfo.loopEnd;
         back->count =
             std::min(static_cast<int>(modInfo.curvePoints.size()), CurveSnapshot::kMaxPoints);
 
@@ -293,7 +305,14 @@ struct CurveSnapshotHolder {
             return 0.0f;
         const CurveSnapshot* snap = holder->active.load(std::memory_order_acquire);
 
-        if (snap->oneShot) {
+        const float loopLen = snap->loopEnd - snap->loopStart;
+        const bool looping = snap->useLoopRegion && loopLen > 1.0e-4f;
+
+        // Both one-shot completion tracking and MSEG looping integrate the
+        // incoming phase into a cumulative position. Looping additionally
+        // remaps that position so the [loopStart, loopEnd] region repeats once
+        // the intro (0 -> loopStart) has played through.
+        if (snap->oneShot || looping) {
             // Consume pending reset from resetOneShot() on this thread,
             // so cumulativePhase_/previousPhase_ are only written by one thread.
             bool wasReset = holder->pendingReset_.exchange(false, std::memory_order_acquire);
@@ -304,16 +323,17 @@ struct CurveSnapshotHolder {
                 holder->evalLogCount_.store(0, std::memory_order_relaxed);
             }
 
-            bool alreadyCompleted = holder->oneShotCompleted_.load(std::memory_order_relaxed);
-            if (alreadyCompleted) {
-                float ev = snap->endValue();
-                return ev;
-            }
+            // A one-shot without a sustain loop holds its end value once it has
+            // played through. With a loop, the region sustains instead.
+            if (snap->oneShot && !looping &&
+                holder->oneShotCompleted_.load(std::memory_order_relaxed))
+                return snap->endValue();
 
-            // Accumulate phase delta to detect when one full cycle has elapsed.
+            // Accumulate phase delta to advance the cumulative position.
             float prev = holder->previousPhase_.load(std::memory_order_relaxed);
             holder->previousPhase_.store(phase, std::memory_order_relaxed);
 
+            float cum = holder->cumulativePhase_.load(std::memory_order_relaxed);
             if (prev >= 0.0f) {
                 float delta = phase - prev;
                 // Normal forward movement: delta is small positive.
@@ -321,13 +341,25 @@ struct CurveSnapshotHolder {
                 if (delta < -0.5f)
                     delta += 1.0f;
                 if (delta > 0.0f) {
-                    float cum = holder->cumulativePhase_.load(std::memory_order_relaxed) + delta;
+                    cum += delta;
+                    // Keep the cumulative position bounded inside the loop so a
+                    // long-running LFO never loses float precision.
+                    if (looping && cum >= snap->loopEnd)
+                        cum = snap->loopStart + std::fmod(cum - snap->loopStart, loopLen);
                     holder->cumulativePhase_.store(cum, std::memory_order_relaxed);
-                    if (cum >= 1.0f) {
+                    if (snap->oneShot && !looping && cum >= 1.0f) {
                         holder->oneShotCompleted_.store(true, std::memory_order_relaxed);
                         return snap->endValue();
                     }
                 }
+            }
+
+            if (looping) {
+                const float eff = (cum < snap->loopStart)
+                                      ? cum  // intro segment, plays once
+                                      : snap->loopStart + std::fmod(cum - snap->loopStart, loopLen);
+                holder->lastEffectivePhase_.store(eff, std::memory_order_relaxed);
+                return snap->evaluate(eff);
             }
         }
 

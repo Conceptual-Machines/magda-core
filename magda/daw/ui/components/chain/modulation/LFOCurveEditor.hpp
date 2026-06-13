@@ -102,6 +102,14 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
         return snapY_;
     }
 
+    // Snap loop-region markers to the X grid divisions while dragging.
+    void setSnapLoop(bool snap) {
+        snapLoop_ = snap;
+    }
+    bool getSnapLoop() const {
+        return snapLoop_;
+    }
+
     // Show/hide loop region markers
     void setShowLoopRegion(bool show) {
         showLoopRegion_ = show;
@@ -145,6 +153,11 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     // Handle C key for crosshair toggle
     bool keyPressed(const juce::KeyPress& key) override;
 
+    // Intercept loop-region marker drags before the base class point editing.
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+
   private:
     void timerCallback() override;
     void paintPhaseIndicator(juce::Graphics& g);
@@ -180,9 +193,14 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     // Snap settings
     bool snapX_ = false;
     bool snapY_ = false;
+    bool snapLoop_ = true;  // loop markers snap to the X grid by default
 
-    // Loop region display
+    // Loop region display + drag state (0 = none, 1 = start marker, 2 = end)
     bool showLoopRegion_ = false;
+    int draggingLoopMarker_ = 0;
+    // Hit-test the loop markers at a pixel position (grabbed via the handles in
+    // the top strip so the rest of the curve stays free for points); 0/1/2.
+    int loopMarkerAtPixel(int px, int py) const;
 
     void notifyWaveformChanged();
     std::vector<CurvePointData> snapshotCurvePoints() const;

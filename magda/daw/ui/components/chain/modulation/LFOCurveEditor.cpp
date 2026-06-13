@@ -790,6 +790,67 @@ void LFOCurveEditor::paintLoopRegion(juce::Graphics& g) {
     g.fillPath(endMarker);
 }
 
+int LFOCurveEditor::loopMarkerAtPixel(int px, int py) const {
+    if (!showLoopRegion_ || !modInfo_ || !modInfo_->useLoopRegion)
+        return 0;
+
+    auto content = getContentBounds();
+    // Only grab via the handles in the top strip so points elsewhere on the
+    // curve stay editable even near the loop boundaries.
+    constexpr int kTopStrip = 12;
+    if (py > content.getY() + kTopStrip)
+        return 0;
+
+    const int startX = static_cast<int>(std::round(xToPixelF(modInfo_->loopStart)));
+    const int endX = static_cast<int>(std::round(xToPixelF(modInfo_->loopEnd)));
+    constexpr int kHitTol = 6;
+    const int dStart = std::abs(px - startX);
+    const int dEnd = std::abs(px - endX);
+    if (dStart <= kHitTol && dStart <= dEnd)
+        return 1;
+    if (dEnd <= kHitTol)
+        return 2;
+    return 0;
+}
+
+void LFOCurveEditor::mouseDown(const juce::MouseEvent& e) {
+    if (int marker = loopMarkerAtPixel(e.x, e.y)) {
+        draggingLoopMarker_ = marker;
+        return;  // consume — don't let the base add/select a curve point
+    }
+    CurveEditorBase::mouseDown(e);
+}
+
+void LFOCurveEditor::mouseDrag(const juce::MouseEvent& e) {
+    if (draggingLoopMarker_ != 0 && modInfo_) {
+        constexpr float kMinGap = 0.02f;
+        float phase = static_cast<float>(juce::jlimit(0.0, 1.0, pixelToX(e.x)));
+        if (snapLoop_ && gridDivisionsX_ > 1) {
+            const double step = 1.0 / gridDivisionsX_;
+            phase = static_cast<float>(juce::jlimit(0.0, 1.0, std::round(phase / step) * step));
+        }
+        if (draggingLoopMarker_ == 1)
+            modInfo_->loopStart = juce::jlimit(0.0f, modInfo_->loopEnd - kMinGap, phase);
+        else
+            modInfo_->loopEnd = juce::jlimit(modInfo_->loopStart + kMinGap, 1.0f, phase);
+        repaint();
+        if (onDragPreview)
+            onDragPreview();
+        return;
+    }
+    CurveEditorBase::mouseDrag(e);
+}
+
+void LFOCurveEditor::mouseUp(const juce::MouseEvent& e) {
+    if (draggingLoopMarker_ != 0) {
+        draggingLoopMarker_ = 0;
+        // loopStart/loopEnd already live on modInfo_; persist + resync.
+        notifyWaveformChanged();
+        return;
+    }
+    CurveEditorBase::mouseUp(e);
+}
+
 void LFOCurveEditor::notifyWaveformChanged() {
     // Save curve points to ModInfo
     if (modInfo_) {

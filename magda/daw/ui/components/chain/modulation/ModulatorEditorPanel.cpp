@@ -353,6 +353,12 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
                 if (onCurveChanged)
                     onCurveChanged();
             };
+            curveEditorWindow_->onLoopRegionChanged = [this](bool /*useLoopRegion*/) {
+                // useLoopRegion is already written to ModInfo by the MSEG
+                // toggle; resync so CurveSnapshotHolder picks it up.
+                if (onCurveChanged)
+                    onCurveChanged();
+            };
             curveEditorWindow_->onWindowClosed = [this]() { curveEditorButton_->setActive(false); };
 
             curveEditorButton_->setActive(true);
@@ -1010,6 +1016,9 @@ void ModulatorEditorPanel::updateFromMod() {
         auto* modInfo = const_cast<magda::ModInfo*>(liveModPtr_ ? liveModPtr_ : &currentMod_);
         curveEditor_.setModInfo(modInfo);
         curveEditor_.setUndoTarget(ownerDevicePath_, selectedModIndex_);
+        // Mirror the loop region in the inline preview so it's visible without
+        // opening the external editor.
+        curveEditor_.setShowLoopRegion(currentMod_.useLoopRegion);
         if (curveEditorWindow_ && curveEditorWindow_->isVisible()) {
             curveEditorWindow_->getCurveEditor().setModInfo(modInfo);
             curveEditorWindow_->getCurveEditor().setUndoTarget(ownerDevicePath_, selectedModIndex_);

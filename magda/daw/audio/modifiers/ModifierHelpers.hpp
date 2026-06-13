@@ -305,6 +305,14 @@ inline bool overlayModifierVisuals(ModInfo& magdaMod, te::Modifier* mod) {
     if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod)) {
         magdaMod.value = lfo->getCurrentValue();
         magdaMod.phase = lfo->getCurrentPhase();
+        // For a looping custom curve the dot must follow the remapped (looped)
+        // position published by the curve callback, not TE's raw 0..1 sweep.
+        if (auto* holder = static_cast<CurveSnapshotHolder*>(
+                lfo->customWaveUserData.load(std::memory_order_acquire))) {
+            const CurveSnapshot* snap = holder->active.load(std::memory_order_acquire);
+            if (snap->useLoopRegion && (snap->loopEnd - snap->loopStart) > 1.0e-4f)
+                magdaMod.phase = holder->lastEffectivePhase_.load(std::memory_order_acquire);
+        }
         return true;
     }
     if (auto* adsr = dynamic_cast<te::ADSRModifier*>(mod)) {

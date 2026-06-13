@@ -266,6 +266,24 @@ void LFOCurveEditorContent::setupControls() {
     snapYToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     snapYToggle_.onClick = [this]() { curveEditor_.setSnapY(snapYToggle_.getToggleState()); };
     addAndMakeVisible(snapYToggle_);
+
+    // Loop-marker snap toggle (snaps loop points to the X grid)
+    loopSnapToggle_.setButtonText("Lp");
+    loopSnapToggle_.setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE));
+    loopSnapToggle_.setColour(juce::TextButton::buttonOnColourId,
+                              DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    loopSnapToggle_.setColour(juce::TextButton::textColourOffId,
+                              DarkTheme::getSecondaryTextColour());
+    loopSnapToggle_.setColour(juce::TextButton::textColourOnId,
+                              DarkTheme::getColour(DarkTheme::BACKGROUND));
+    loopSnapToggle_.setClickingTogglesState(true);
+    loopSnapToggle_.setToggleState(curveEditor_.getSnapLoop(), juce::dontSendNotification);
+    loopSnapToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    loopSnapToggle_.onClick = [this]() {
+        curveEditor_.setSnapLoop(loopSnapToggle_.getToggleState());
+    };
+    addAndMakeVisible(loopSnapToggle_);
 }
 
 void LFOCurveEditorContent::updateControlsFromModInfo() {
@@ -503,6 +521,8 @@ void LFOCurveEditorContent::resized() {
     snapXToggle_.setBounds(footer.removeFromLeft(snapWidth));
     footer.removeFromLeft(4);
     snapYToggle_.setBounds(footer.removeFromLeft(snapWidth));
+    footer.removeFromLeft(4);
+    loopSnapToggle_.setBounds(footer.removeFromLeft(snapWidth));
 
     // Curve editor takes remaining space (between header and footer)
     // Only expand horizontally, not vertically (to avoid overlapping header/footer)
