@@ -769,6 +769,10 @@ void RackComponent::onModAudioReleaseChangedInternal(int modIndex, float ms) {
     magda::TrackManager::getInstance().setModAudioRelease(rackPath_, modIndex, ms);
 }
 
+void RackComponent::onModEnvelopeChangedInternal(int modIndex, const magda::ModInfo& mod) {
+    magda::TrackManager::getInstance().setModEnvelope(rackPath_, modIndex, mod);
+}
+
 void RackComponent::onModCurveChangedInternal(int /*modIndex*/) {
     DBG("[HardCorner] RackComponent notifyModCurveChanged path=" << rackPath_.toString());
     // Curve points are already written directly to ModInfo by LFOCurveEditor.

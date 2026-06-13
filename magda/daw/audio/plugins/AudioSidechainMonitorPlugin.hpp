@@ -14,8 +14,9 @@ class PluginManager;
  * @brief Audio-thread plugin that detects audio peaks on a source track and
  *        triggers sidechain LFOs directly — no message-thread round-trip.
  *
- * Inserted near the END of the source track's plugin chain (after instruments
- * and effects) so it sees the track's generated audio. Transparent passthrough.
+ * Inserted at the start of the source track's plugin chain so trigger detection
+ * happens before instruments/effects that may be opened by the envelope itself.
+ * Transparent passthrough.
  *
  * Performs envelope-following and threshold detection in applyToBuffer(), then
  * calls PluginManager::triggerSidechainNoteOn() / gateSidechainLFOs() on the
@@ -97,6 +98,7 @@ class AudioSidechainMonitorPlugin : public te::Plugin {
     float releaseCoeff_ = 1.0f;
 
     int heartbeatCount_ = 0;
+    bool lastBlockHadCandidate_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSidechainMonitorPlugin)
 };

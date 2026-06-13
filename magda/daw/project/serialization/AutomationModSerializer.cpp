@@ -461,6 +461,15 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
     SER(audioReleaseMs);
     SER(curvePreset);
 
+    // ADSR envelope generator (type == Envelope)
+    SER(envAttackMs);
+    SER(envDecayMs);
+    SER(envSustain);
+    SER(envReleaseMs);
+    SER(envAttackCurve);
+    SER(envDecayCurve);
+    SER(envReleaseCurve);
+
     // Curve points
     juce::Array<juce::var> curvePointsArray;
     for (const auto& point : mod.curvePoints) {
@@ -509,6 +518,24 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
     DESER(audioAttackMs);
     DESER(audioReleaseMs);
     DESER(curvePreset);
+
+    // ADSR envelope generator (type == Envelope). Guarded so projects and
+    // mods saved without these fields keep ModInfo's defaults instead of
+    // reading 0 from a missing property.
+    if (obj->hasProperty("envAttackMs"))
+        DESER(envAttackMs);
+    if (obj->hasProperty("envDecayMs"))
+        DESER(envDecayMs);
+    if (obj->hasProperty("envSustain"))
+        DESER(envSustain);
+    if (obj->hasProperty("envReleaseMs"))
+        DESER(envReleaseMs);
+    if (obj->hasProperty("envAttackCurve"))
+        DESER(envAttackCurve);
+    if (obj->hasProperty("envDecayCurve"))
+        DESER(envDecayCurve);
+    if (obj->hasProperty("envReleaseCurve"))
+        DESER(envReleaseCurve);
 
     // Curve points
     auto curvePointsVar = obj->getProperty("curvePoints");

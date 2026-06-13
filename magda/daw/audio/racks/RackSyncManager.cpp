@@ -1356,8 +1356,7 @@ void RackSyncManager::collectLFOModifiers(TrackId trackId,
     }
 }
 
-void RackSyncManager::collectLFOModifiersWithModes(TrackId trackId,
-                                                   std::vector<te::LFOModifier*>& out,
+void RackSyncManager::collectLFOModifiersWithModes(TrackId trackId, std::vector<te::Modifier*>& out,
                                                    std::vector<LFOTriggerMode>& modes) const {
     auto& tm = TrackManager::getInstance();
 
@@ -1370,8 +1369,9 @@ void RackSyncManager::collectLFOModifiersWithModes(TrackId trackId,
             auto it = teMods.find(modInfo.id);
             if (it == teMods.end() || !it->second)
                 continue;
-            if (auto* lfo = dynamic_cast<te::LFOModifier*>(it->second.get())) {
-                out.push_back(lfo);
+            if (dynamic_cast<te::LFOModifier*>(it->second.get()) ||
+                dynamic_cast<te::ADSRModifier*>(it->second.get())) {
+                out.push_back(it->second.get());
                 modes.push_back(modInfo.triggerMode);
                 ++n;
             }
@@ -1425,7 +1425,7 @@ void RackSyncManager::collectLFOModifiersWithModes(TrackId trackId,
 }
 
 void RackSyncManager::collectLFOModifiersWithModesForSidechainSource(
-    TrackId destinationTrackId, TrackId sourceTrackId, std::vector<te::LFOModifier*>& out,
+    TrackId destinationTrackId, TrackId sourceTrackId, std::vector<te::Modifier*>& out,
     std::vector<LFOTriggerMode>& modes) const {
     auto& tm = TrackManager::getInstance();
 
@@ -1438,8 +1438,9 @@ void RackSyncManager::collectLFOModifiersWithModesForSidechainSource(
             auto it = teMods.find(modInfo.id);
             if (it == teMods.end() || !it->second)
                 continue;
-            if (auto* lfo = dynamic_cast<te::LFOModifier*>(it->second.get())) {
-                out.push_back(lfo);
+            if (dynamic_cast<te::LFOModifier*>(it->second.get()) ||
+                dynamic_cast<te::ADSRModifier*>(it->second.get())) {
+                out.push_back(it->second.get());
                 modes.push_back(modInfo.triggerMode);
                 ++n;
             }
@@ -1536,13 +1537,18 @@ void RackSyncManager::syncLFOValuesToVisuals() {
             // note-on, doesn't gate on note-off), but the local sim
             // correctly clamps value=0 after note release. Without this
             // gate the visual would keep animating forever once triggered.
+            // Envelopes overlay unconditionally: the release stage plays out
+            // after the gate closes and idle reads 0, so the value is always
+            // meaningful (unlike a free-running LFO that must freeze on note
+            // release in the visual).
+            if (magdaMod.type == ModType::Envelope) {
+                overlayModifierVisuals(magdaMod, it->second.get());
+                continue;
+            }
             const bool running = (magdaMod.triggerMode == LFOTriggerMode::Free) || magdaMod.running;
             if (!running)
                 continue;
-            if (auto* lfo = dynamic_cast<te::LFOModifier*>(it->second.get())) {
-                magdaMod.value = lfo->getCurrentValue();
-                magdaMod.phase = lfo->getCurrentPhase();
-            }
+            overlayModifierVisuals(magdaMod, it->second.get());
         }
     };
     for (auto& entry : syncedRacks_) {
@@ -1587,8 +1593,7 @@ void RackSyncManager::syncLFOValuesToVisuals() {
 void RackSyncManager::ungateAllLFOs() {
     auto ungate = [](const std::map<ModId, te::Modifier::Ptr>& mods) {
         for (const auto& [_modId, modifier] : mods)
-            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get()))
-                lfo->setGated(false);
+            setModifierGated(modifier.get(), false);
     };
     for (auto& [rackId, synced] : syncedRacks_) {
         ungate(synced.innerModifiers);
@@ -1605,9 +1610,8 @@ void RackSyncManager::ungateAllLFOs() {
 void RackSyncManager::regateTriggeredLFOs() {
     auto regate = [](const std::map<ModId, te::Modifier::Ptr>& mods) {
         for (const auto& [_modId, modifier] : mods)
-            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get()))
-                if (lfo->getSkipNativeResync())
-                    lfo->setGated(true);
+            if (modifierSkipsNativeResync(modifier.get()))
+                setModifierGated(modifier.get(), true);
     };
     for (auto& [rackId, synced] : syncedRacks_) {
         regate(synced.innerModifiers);

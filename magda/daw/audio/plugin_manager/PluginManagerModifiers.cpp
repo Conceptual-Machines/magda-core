@@ -13,6 +13,7 @@
 #include "../TrackController.hpp"
 #include "../TracktionHelpers.hpp"
 #include "PluginManager.hpp"
+#include "modifiers/ADSRDebugLog.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
@@ -309,16 +310,55 @@ void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId,
 
     auto* cache = activeCache_.load(std::memory_order_acquire);
     auto& entry = cache->entries[static_cast<size_t>(sourceTrackId)];
+    MAGDA_ADSR_AUDIO_LOG("trigger dispatch sourceTrack="
+                         << sourceTrackId << " cacheCount=" << entry.count << " modeFilter="
+                         << (modeFilter.has_value() ? juce::String(static_cast<int>(*modeFilter))
+                                                    : juce::String("none")));
+
     for (int i = 0; i < entry.count; ++i) {
         // Filter by trigger mode if specified
-        if (modeFilter.has_value() && entry.trigMode[static_cast<size_t>(i)] != modeFilter.value())
+        if (modeFilter.has_value() &&
+            entry.trigMode[static_cast<size_t>(i)] != modeFilter.value()) {
+            MAGDA_ADSR_AUDIO_LOG("trigger skip sourceTrack="
+                                 << sourceTrackId << " idx=" << i << " cachedMode="
+                                 << static_cast<int>(entry.trigMode[static_cast<size_t>(i)]));
             continue;
+        }
 
-        auto* lfo = entry.lfos[static_cast<size_t>(i)];
+        auto* mod = entry.mods[static_cast<size_t>(i)];
         bool crossTrack = entry.isCrossTrack[static_cast<size_t>(i)];
         // Cross-track: force value=0 for transient gap.
         // Self-track: resync phase but preserve value (no zero gap needed).
-        triggerLFONoteOnWithReset(lfo, crossTrack);
+        if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod)) {
+            MAGDA_ADSR_AUDIO_LOG(
+                "trigger LFO sourceTrack="
+                << sourceTrackId << " idx=" << i << " crossTrack=" << static_cast<int>(crossTrack)
+                << " mode=" << static_cast<int>(entry.trigMode[static_cast<size_t>(i)])
+                << " gatedBefore=" << static_cast<int>(lfo->isGated())
+                << " syncType=" << juce::roundToInt(lfo->syncTypeParam->getCurrentValue()));
+            triggerLFONoteOnWithReset(lfo, crossTrack);
+            MAGDA_ADSR_AUDIO_LOG("trigger LFO done sourceTrack="
+                                 << sourceTrackId << " idx=" << i
+                                 << " gatedAfter=" << static_cast<int>(lfo->isGated()));
+        } else if (auto* adsr = dynamic_cast<te::ADSRModifier*>(mod)) {
+            MAGDA_ADSR_AUDIO_LOG(
+                "trigger ADSR sourceTrack="
+                << sourceTrackId << " idx=" << i << " crossTrack=" << static_cast<int>(crossTrack)
+                << " mode=" << static_cast<int>(entry.trigMode[static_cast<size_t>(i)])
+                << " gatedBefore=" << static_cast<int>(adsr->isGated())
+                << " syncType=" << juce::roundToInt(adsr->syncTypeParam->getCurrentValue())
+                << " stageBefore=" << static_cast<int>(adsr->getCurrentStage())
+                << " valueBefore=" << adsr->getCurrentValue());
+            adsr->triggerNoteOn(crossTrack);
+            MAGDA_ADSR_AUDIO_LOG("trigger ADSR done sourceTrack="
+                                 << sourceTrackId << " idx=" << i
+                                 << " gatedAfter=" << static_cast<int>(adsr->isGated())
+                                 << " stageAfter=" << static_cast<int>(adsr->getCurrentStage())
+                                 << " valueAfter=" << adsr->getCurrentValue());
+        } else {
+            MAGDA_ADSR_AUDIO_LOG("trigger unknown modifier sourceTrack=" << sourceTrackId
+                                                                         << " idx=" << i);
+        }
     }
 }
 
@@ -334,16 +374,48 @@ void PluginManager::gateSidechainLFOs(TrackId sourceTrackId) {
 
     auto* cache = activeCache_.load(std::memory_order_acquire);
     auto& entry = cache->entries[static_cast<size_t>(sourceTrackId)];
+    MAGDA_ADSR_AUDIO_LOG("gate dispatch sourceTrack=" << sourceTrackId
+                                                      << " cacheCount=" << entry.count);
     for (int i = 0; i < entry.count; ++i) {
+        auto* mod = entry.mods[static_cast<size_t>(i)];
+
+        // ADSR closes its gate on the level drop so the envelope releases, for
+        // self- and cross-track alike (it is a one-shot envelope, not a loop).
+        if (auto* adsr = dynamic_cast<te::ADSRModifier*>(mod)) {
+            const int syncType = juce::roundToInt(adsr->syncTypeParam->getCurrentValue());
+            MAGDA_ADSR_AUDIO_LOG("gate ADSR sourceTrack="
+                                 << sourceTrackId << " idx=" << i << " mode="
+                                 << static_cast<int>(entry.trigMode[static_cast<size_t>(i)])
+                                 << " syncType=" << syncType
+                                 << " gatedBefore=" << static_cast<int>(adsr->isGated())
+                                 << " stageBefore=" << static_cast<int>(adsr->getCurrentStage())
+                                 << " valueBefore=" << adsr->getCurrentValue());
+            if (syncType == 2)
+                adsr->setGated(true);
+            MAGDA_ADSR_AUDIO_LOG("gate ADSR done sourceTrack="
+                                 << sourceTrackId << " idx=" << i
+                                 << " gatedAfter=" << static_cast<int>(adsr->isGated())
+                                 << " stageAfter=" << static_cast<int>(adsr->getCurrentStage())
+                                 << " valueAfter=" << adsr->getCurrentValue());
+            continue;
+        }
+
         // Only gate cross-track (sidechain destination) LFOs.
         // Self-track LFOs should free-run and just reset phase on noteOn.
         if (!entry.isCrossTrack[static_cast<size_t>(i)])
             continue;
-        auto* lfo = entry.lfos[static_cast<size_t>(i)];
+        auto* lfo = dynamic_cast<te::LFOModifier*>(mod);
         // Only gate note-triggered LFOs (syncType == 2)
-        if (juce::roundToInt(lfo->syncTypeParam->getCurrentValue()) == 2) {
+        if (lfo && juce::roundToInt(lfo->syncTypeParam->getCurrentValue()) == 2) {
             DBG("[SC-GATE] gating LFO srcTrack=" << sourceTrackId << " idx=" << i);
+            MAGDA_ADSR_AUDIO_LOG("gate LFO sourceTrack="
+                                 << sourceTrackId << " idx=" << i << " gatedBefore="
+                                 << static_cast<int>(lfo->isGated()) << " syncType="
+                                 << juce::roundToInt(lfo->syncTypeParam->getCurrentValue()));
             lfo->setGated(true);
+            MAGDA_ADSR_AUDIO_LOG("gate LFO done sourceTrack=" << sourceTrackId << " idx=" << i
+                                                              << " gatedAfter="
+                                                              << static_cast<int>(lfo->isGated()));
         }
     }
 }
@@ -394,6 +466,8 @@ void PluginManager::prepareForRendering() {
                         << devicePath.getDeviceId() << " wasGated=" << (int)wasGated
                         << " syncType=" << juce::roundToInt(lfo->syncTypeParam->getCurrentValue())
                         << " curValue=" << lfo->getCurrentValue());
+                } else {
+                    setModifierGated(mod.get(), false);
                 }
             }
         }
@@ -407,6 +481,8 @@ void PluginManager::prepareForRendering() {
                     << trackId << " wasGated=" << (int)wasGated
                     << " syncType=" << juce::roundToInt(lfo->syncTypeParam->getCurrentValue())
                     << " curValue=" << lfo->getCurrentValue());
+            } else {
+                setModifierGated(mod.get(), false);
             }
         }
     }
@@ -463,21 +539,17 @@ void PluginManager::resetSidechainState() {
         juce::ScopedLock lock(pluginLock_);
         for (auto& [deviceId, sd] : syncedDevices_) {
             for (auto& [_modId, mod] : sd.modifiers) {
-                if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
-                    if (lfo->getSkipNativeResync())
-                        lfo->setGated(true);
-                }
+                if (modifierSkipsNativeResync(mod.get()))
+                    setModifierGated(mod.get(), true);
             }
         }
     }
 
-    // 3. Re-gate triggered LFOs on track-level modifiers
+    // 3. Re-gate triggered modifiers on track-level modifiers
     for (auto& [trackId, tms] : trackModStates_) {
         for (auto& [_modId, mod] : tms.modifiers) {
-            if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
-                if (lfo->getSkipNativeResync())
-                    lfo->setGated(true);
-            }
+            if (modifierSkipsNativeResync(mod.get()))
+                setModifierGated(mod.get(), true);
         }
     }
 
@@ -493,13 +565,16 @@ void PluginManager::syncLFOValuesToVisuals() {
     // LFO keeps free-running in syncType=note mode, but the visual must
     // freeze on note release.
     auto overlayMod = [](ModInfo& magdaMod, te::Modifier::Ptr& mod) {
+        // The envelope value is always meaningful: the release stage plays out
+        // after the gate closes and idle reads 0, so overlay unconditionally.
+        if (magdaMod.type == ModType::Envelope) {
+            overlayModifierVisuals(magdaMod, mod.get());
+            return;
+        }
         const bool running = (magdaMod.triggerMode == LFOTriggerMode::Free) || magdaMod.running;
         if (!running)
             return;
-        if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
-            magdaMod.value = lfo->getCurrentValue();
-            magdaMod.phase = lfo->getCurrentPhase();
-        }
+        overlayModifierVisuals(magdaMod, mod.get());
     };
 
     // Track-level mods.
@@ -557,34 +632,63 @@ void PluginManager::rebuildSidechainLFOCache() {
             continue;
 
         auto& entry = newCache[static_cast<size_t>(track.id)];
-        std::vector<te::LFOModifier*> lfos;
+        std::vector<te::Modifier*> lfos;  // gated modifiers: LFO + ADSR
         std::vector<LFOTriggerMode> modes;
         int selfTrackCount = 0;  // track how many are self-track (added first)
 
-        // Helper to collect LFOs from a device's synced modifiers, pairing
-        // each with the trigger mode from the MAGDA ModInfo. ModId-keyed
-        // lookup post-step-2 (the prior positional walk silently misaligned
-        // when an enabled-but-linkless mod sat between two enabled+linked
-        // ones, since the MAGDA-side filter advanced past it but the TE-side
-        // index didn't).
-        auto collectDeviceLFOs = [&](const DeviceInfo& device) {
-            auto it = findSyncedDevice(ChainNodePath::topLevelDevice(track.id, device.id));
-            if (it == syncedDevices_.end())
-                return;
-            for (const auto& modInfo : device.mods) {
+        // Helper to collect gated modifiers from one MAGDA/TE modifier scope,
+        // pairing each with the trigger mode from the MAGDA ModInfo. ModId-keyed
+        // lookup avoids positional mismatches when enabled-but-linkless mods sit
+        // between enabled+linked ones.
+        auto collectGatedModifiers = [&](const std::vector<ModInfo>& magdaMods,
+                                         const std::map<ModId, te::Modifier::Ptr>& teMods) {
+            for (const auto& modInfo : magdaMods) {
                 const bool hasEnabledLinks =
                     std::any_of(modInfo.links.begin(), modInfo.links.end(),
                                 [](const ModLink& link) { return link.enabled; });
                 if (!modInfo.enabled || !hasEnabledLinks)
                     continue;
-                auto modIt = it->second.modifiers.find(modInfo.id);
-                if (modIt == it->second.modifiers.end() || !modIt->second)
+                auto modIt = teMods.find(modInfo.id);
+                if (modIt == teMods.end() || !modIt->second)
                     continue;
-                if (auto* lfo = dynamic_cast<te::LFOModifier*>(modIt->second.get())) {
-                    lfos.push_back(lfo);
+                if (dynamic_cast<te::LFOModifier*>(modIt->second.get()) ||
+                    dynamic_cast<te::ADSRModifier*>(modIt->second.get())) {
+                    MAGDA_ADSR_AUDIO_LOG(
+                        "cache collect sourceTrack="
+                        << track.id << " modId=" << static_cast<int>(modInfo.id) << " type="
+                        << (dynamic_cast<te::ADSRModifier*>(modIt->second.get()) ? "ADSR" : "LFO")
+                        << " mode=" << static_cast<int>(modInfo.triggerMode)
+                        << " links=" << static_cast<int>(modInfo.links.size()));
+                    lfos.push_back(modIt->second.get());
                     modes.push_back(modInfo.triggerMode);
                 }
             }
+        };
+
+        auto collectDeviceLFOs = [&](const DeviceInfo& device) {
+            auto it = findSyncedDevice(ChainNodePath::topLevelDevice(track.id, device.id));
+            if (it != syncedDevices_.end())
+                collectGatedModifiers(device.mods, it->second.modifiers);
+        };
+
+        auto elementsContainSourceOtherThanSelf =
+            [&](auto&& self, const std::vector<ChainElement>& elements) -> bool {
+            for (const auto& element : elements) {
+                if (isDevice(element)) {
+                    const auto sourceTrackId = getDevice(element).sidechain.sourceTrackId;
+                    if (sourceTrackId != INVALID_TRACK_ID && sourceTrackId != track.id)
+                        return true;
+                } else if (isRack(element)) {
+                    const auto& rack = getRack(element);
+                    if (rack.sidechain.sourceTrackId != INVALID_TRACK_ID &&
+                        rack.sidechain.sourceTrackId != track.id)
+                        return true;
+                    for (const auto& chain : rack.chains)
+                        if (self(self, chain.elements))
+                            return true;
+                }
+            }
+            return false;
         };
 
         // 1. Self-track LFOs: collect from syncedDevices_ modifiers for this track's devices
@@ -594,7 +698,8 @@ void PluginManager::rebuildSidechainLFOCache() {
             if (!isDevice(element))
                 continue;
             const auto& device = getDevice(element);
-            if (device.sidechain.sourceTrackId != INVALID_TRACK_ID)
+            if (device.sidechain.sourceTrackId != INVALID_TRACK_ID &&
+                device.sidechain.sourceTrackId != track.id)
                 continue;  // Has external sidechain — skip self-triggering
             collectDeviceLFOs(device);
         }
@@ -602,8 +707,13 @@ void PluginManager::rebuildSidechainLFOCache() {
         // Also collect from racks on this track. If any nested rack scope has
         // an external sidechain source, the rack manager will collect matching
         // LFOs in the source-track pass below.
-        if (!sidechain::elementsContainExternalSource(track.chain.fxChainElements))
+        if (!elementsContainSourceOtherThanSelf(elementsContainSourceOtherThanSelf,
+                                                track.chain.fxChainElements))
             rackSyncManager_.collectLFOModifiersWithModes(track.id, lfos, modes);
+
+        auto trackModsIt = trackModStates_.find(track.id);
+        if (trackModsIt != trackModStates_.end())
+            collectGatedModifiers(track.mods, trackModsIt->second.modifiers);
 
         selfTrackCount = static_cast<int>(lfos.size());
 
@@ -635,13 +745,29 @@ void PluginManager::rebuildSidechainLFOCache() {
         // Write to cache entry (capped at kMaxLFOs)
         // Self-track LFOs come first (indices 0..selfTrackCount-1),
         // cross-track LFOs follow (indices selfTrackCount..count-1).
-        entry.count = std::min(static_cast<int>(lfos.size()), PerTrackEntry::kMaxLFOs);
+        entry.hasAudioTrigger = std::any_of(modes.begin(), modes.end(), [](LFOTriggerMode mode) {
+            return mode == LFOTriggerMode::Audio;
+        });
+        entry.count = std::min(static_cast<int>(lfos.size()), PerTrackEntry::kMaxMods);
+        if (entry.count > 0) {
+            MAGDA_ADSR_AUDIO_LOG("cache entry sourceTrack=" << track.id << " count=" << entry.count
+                                                            << " selfCount=" << selfTrackCount
+                                                            << " totalCollected="
+                                                            << static_cast<int>(lfos.size()));
+        }
         for (int i = 0; i < entry.count; ++i) {
-            entry.lfos[static_cast<size_t>(i)] = lfos[static_cast<size_t>(i)];
+            entry.mods[static_cast<size_t>(i)] = lfos[static_cast<size_t>(i)];
             entry.isCrossTrack[static_cast<size_t>(i)] = (i >= selfTrackCount);
             entry.trigMode[static_cast<size_t>(i)] = (static_cast<size_t>(i) < modes.size())
                                                          ? modes[static_cast<size_t>(i)]
                                                          : LFOTriggerMode::Free;
+            MAGDA_ADSR_AUDIO_LOG(
+                "cache slot sourceTrack="
+                << track.id << " idx=" << i << " type="
+                << (dynamic_cast<te::ADSRModifier*>(entry.mods[static_cast<size_t>(i)]) ? "ADSR"
+                                                                                        : "LFO")
+                << " crossTrack=" << static_cast<int>(entry.isCrossTrack[static_cast<size_t>(i)])
+                << " mode=" << static_cast<int>(entry.trigMode[static_cast<size_t>(i)]));
         }
     }
 

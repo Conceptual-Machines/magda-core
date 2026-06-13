@@ -548,6 +548,64 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     };
     addChildComponent(audioReleaseSlider_);
 
+    // ADSR envelope controls (shown only when type == Envelope)
+    addChildComponent(envelopeDisplay_);
+
+    // Time sliders fold their label into the value text (e.g. "A 10 ms") so
+    // they don't need separate label components or hand-painted captions.
+    auto setupEnvTimeSlider = [this](TextSlider& s, const juce::String& tag, double def,
+                                     std::function<float&()> field) {
+        s.setRange(0.0, 30000.0, 1.0);
+        s.setSkewForCentre(500.0);
+        s.setValue(def, juce::dontSendNotification);
+        s.setFont(FontManager::getInstance().getUIFont(9.0f));
+        s.setShowFillIndicator(false);
+        s.setValueFormatter(
+            [tag](double v) { return tag + " " + juce::String(juce::roundToInt(v)) + " ms"; });
+        s.onValueChanged = [this, field](double value) {
+            field() = static_cast<float>(value);
+            fireEnvelopeChanged();
+        };
+        addChildComponent(s);
+    };
+    setupEnvTimeSlider(envAttackSlider_, "A", 10.0,
+                       [this]() -> float& { return currentMod_.envAttackMs; });
+    setupEnvTimeSlider(envDecaySlider_, "D", 200.0,
+                       [this]() -> float& { return currentMod_.envDecayMs; });
+    setupEnvTimeSlider(envReleaseSlider_, "R", 300.0,
+                       [this]() -> float& { return currentMod_.envReleaseMs; });
+
+    envSustainSlider_.setRange(0.0, 1.0, 0.01);
+    envSustainSlider_.setValue(0.7, juce::dontSendNotification);
+    envSustainSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    envSustainSlider_.setShowFillIndicator(false);
+    envSustainSlider_.setValueFormatter([](double v) { return "S " + juce::String(v, 2); });
+    envSustainSlider_.onValueChanged = [this](double value) {
+        currentMod_.envSustain = static_cast<float>(value);
+        fireEnvelopeChanged();
+    };
+    addChildComponent(envSustainSlider_);
+
+    auto setupCurveSlider = [this](TextSlider& s, const juce::String& tag,
+                                   std::function<float&()> field) {
+        s.setRange(-0.5, 0.5, 0.01);
+        s.setValue(0.0, juce::dontSendNotification);
+        s.setFont(FontManager::getInstance().getUIFont(9.0f));
+        s.setShowFillIndicator(false);
+        s.setValueFormatter([tag](double v) { return tag + " " + juce::String(v, 2); });
+        s.onValueChanged = [this, field](double value) {
+            field() = static_cast<float>(value);
+            fireEnvelopeChanged();
+        };
+        addChildComponent(s);
+    };
+    setupCurveSlider(envAttackCurveSlider_, "A crv",
+                     [this]() -> float& { return currentMod_.envAttackCurve; });
+    setupCurveSlider(envDecayCurveSlider_, "D crv",
+                     [this]() -> float& { return currentMod_.envDecayCurve; });
+    setupCurveSlider(envReleaseCurveSlider_, "R crv",
+                     [this]() -> float& { return currentMod_.envReleaseCurve; });
+
     // Advanced settings button
     advancedButton_ = std::make_unique<magda::SvgButton>("Advanced", BinaryData::settings_nobg_svg,
                                                          BinaryData::settings_nobg_svgSize);
@@ -850,18 +908,44 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
 void ModulatorEditorPanel::updateFromMod() {
     nameLabel_.setText(currentMod_.name, juce::dontSendNotification);
 
-    // Check if this is a Custom (Curve) waveform
-    isCurveMode_ = (currentMod_.waveform == magda::LFOWaveform::Custom);
+    isEnvelopeMode_ = (currentMod_.type == magda::ModType::Envelope);
 
+    // Check if this is a Custom (Curve) waveform (LFO only)
+    isCurveMode_ = (!isEnvelopeMode_ && currentMod_.waveform == magda::LFOWaveform::Custom);
+
+    // ---- ADSR envelope controls ----
+    envelopeDisplay_.setVisible(isEnvelopeMode_);
+    envAttackSlider_.setVisible(isEnvelopeMode_);
+    envDecaySlider_.setVisible(isEnvelopeMode_);
+    envSustainSlider_.setVisible(isEnvelopeMode_);
+    envReleaseSlider_.setVisible(isEnvelopeMode_);
+    envAttackCurveSlider_.setVisible(isEnvelopeMode_);
+    envDecayCurveSlider_.setVisible(isEnvelopeMode_);
+    envReleaseCurveSlider_.setVisible(isEnvelopeMode_);
+    if (isEnvelopeMode_) {
+        envAttackSlider_.setValue(currentMod_.envAttackMs, juce::dontSendNotification);
+        envDecaySlider_.setValue(currentMod_.envDecayMs, juce::dontSendNotification);
+        envSustainSlider_.setValue(currentMod_.envSustain, juce::dontSendNotification);
+        envReleaseSlider_.setValue(currentMod_.envReleaseMs, juce::dontSendNotification);
+        envAttackCurveSlider_.setValue(currentMod_.envAttackCurve, juce::dontSendNotification);
+        envDecayCurveSlider_.setValue(currentMod_.envDecayCurve, juce::dontSendNotification);
+        envReleaseCurveSlider_.setValue(currentMod_.envReleaseCurve, juce::dontSendNotification);
+        envelopeDisplay_.setModInfo(liveModPtr_ ? liveModPtr_ : &currentMod_, liveModGetter_);
+    }
+
+    // ---- LFO controls (hidden in envelope mode) ----
     // Show/hide appropriate controls based on curve mode
-    waveformCombo_.setVisible(!isCurveMode_);
+    waveformCombo_.setVisible(!isCurveMode_ && !isEnvelopeMode_);
 
     // In curve mode, show the curve editor, edit button, preset selector, and save button
     curveEditor_.setVisible(isCurveMode_);
     curveEditorButton_->setVisible(isCurveMode_);
     curvePresetCombo_.setVisible(isCurveMode_);
     savePresetButton_->setVisible(isCurveMode_);
-    waveformDisplay_.setVisible(!isCurveMode_);
+    waveformDisplay_.setVisible(!isCurveMode_ && !isEnvelopeMode_);
+    // Tempo-synced ADSR stage times are engine-supported but not yet exposed;
+    // the envelope UI is ms-based for now, so hide the LFO sync toggle/rate.
+    syncToggle_.setVisible(!isEnvelopeMode_);
 
     if (isCurveMode_) {
         // Pass ModInfo to curve editor for loading/saving curve points
@@ -885,9 +969,9 @@ void ModulatorEditorPanel::updateFromMod() {
                                  juce::dontSendNotification);
     rateSlider_.setValue(currentMod_.rate, juce::dontSendNotification);
 
-    // Show/hide rate vs division based on sync state
-    rateSlider_.setVisible(!currentMod_.tempoSync);
-    syncDivisionSlider_.setVisible(currentMod_.tempoSync);
+    // Show/hide rate vs division based on sync state (LFO only)
+    rateSlider_.setVisible(!isEnvelopeMode_ && !currentMod_.tempoSync);
+    syncDivisionSlider_.setVisible(!isEnvelopeMode_ && currentMod_.tempoSync);
 
     // Trigger mode
     triggerModeCombo_.setSelectedId(static_cast<int>(currentMod_.triggerMode) + 1,
@@ -898,8 +982,10 @@ void ModulatorEditorPanel::updateFromMod() {
                                currentMod_.triggerMode == magda::LFOTriggerMode::Audio);
     advancedButton_->setEnabled(hasSidechainConfig);
 
-    // Audio envelope sliders (only visible when trigger mode = Audio)
-    bool isAudioTrigger = (currentMod_.triggerMode == magda::LFOTriggerMode::Audio);
+    // Audio envelope sliders (only visible when trigger mode = Audio, LFO only —
+    // they smooth the follower input, not relevant to the ADSR generator)
+    bool isAudioTrigger =
+        (!isEnvelopeMode_ && currentMod_.triggerMode == magda::LFOTriggerMode::Audio);
     audioAttackSlider_.setVisible(isAudioTrigger);
     audioReleaseSlider_.setVisible(isAudioTrigger);
     if (isAudioTrigger) {
@@ -912,6 +998,13 @@ void ModulatorEditorPanel::updateFromMod() {
 
     // Update layout since curve/LFO mode affects component positions
     resized();
+}
+
+void ModulatorEditorPanel::fireEnvelopeChanged() {
+    if (selectedModIndex_ >= 0 && onEnvelopeChanged)
+        onEnvelopeChanged(currentMod_);
+    // Reflect the edit in the local display immediately.
+    envelopeDisplay_.repaint();
 }
 
 void ModulatorEditorPanel::onNameLabelEdited() {
@@ -1098,6 +1191,23 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
 
     // Section headers
     auto bounds = getLocalBounds().reduced(6);
+
+    // Envelope mode draws its own caption flow that mirrors the resized() layout.
+    if (isEnvelopeMode_) {
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(8.0f));
+        bounds.removeFromTop(18 + 6);  // name + gap
+        bounds.removeFromTop(56 + 6);  // envelope display + gap
+        bounds.removeFromTop(18 + 4);  // attack/decay row + gap
+        bounds.removeFromTop(18 + 4);  // sustain/release row + gap
+        bounds.removeFromTop(18 + 8);  // curve row + gap
+        g.drawText("Trigger", bounds.removeFromTop(12), juce::Justification::centredLeft);
+        bounds.removeFromTop(18);  // trigger row
+        bounds.removeFromTop(8);   // gap before Links
+        g.drawText("Links", bounds.removeFromTop(12), juce::Justification::centredLeft);
+        return;
+    }
+
     bounds.removeFromTop(18 + 6);  // Skip name label + gap
 
     // Skip the area below name - different for curve vs LFO mode
@@ -1171,6 +1281,57 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
 
 void ModulatorEditorPanel::resized() {
     auto bounds = getLocalBounds().reduced(6);
+
+    if (isEnvelopeMode_) {
+        constexpr int kGap = 4;
+        nameLabel_.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(6);
+
+        envelopeDisplay_.setBounds(bounds.removeFromTop(56));
+        bounds.removeFromTop(6);
+
+        auto twoCols = [](juce::Rectangle<int> row, TextSlider& a, TextSlider& b) {
+            constexpr int kGap = 4;
+            const int half = (row.getWidth() - kGap) / 2;
+            a.setBounds(row.removeFromLeft(half));
+            row.removeFromLeft(kGap);
+            b.setBounds(row);
+        };
+
+        twoCols(bounds.removeFromTop(18), envAttackSlider_, envDecaySlider_);
+        bounds.removeFromTop(kGap);
+        twoCols(bounds.removeFromTop(18), envSustainSlider_, envReleaseSlider_);
+        bounds.removeFromTop(kGap);
+
+        // Three curve sliders share a row.
+        auto curveRow = bounds.removeFromTop(18);
+        const int third = (curveRow.getWidth() - 2 * kGap) / 3;
+        envAttackCurveSlider_.setBounds(curveRow.removeFromLeft(third));
+        curveRow.removeFromLeft(kGap);
+        envDecayCurveSlider_.setBounds(curveRow.removeFromLeft(third));
+        curveRow.removeFromLeft(kGap);
+        envReleaseCurveSlider_.setBounds(curveRow);
+        bounds.removeFromTop(8);
+
+        // Trigger row (shared with the LFO layout): [dropdown] [advanced]
+        bounds.removeFromTop(12);  // "Trigger" label (painted)
+        auto triggerRow = bounds.removeFromTop(18);
+        advancedButton_->setBounds(triggerRow.removeFromRight(20));
+        triggerRow.removeFromRight(4);
+        triggerModeCombo_.setBounds(triggerRow);
+
+        // Mod matrix takes the rest.
+        bounds.removeFromTop(8);
+        bounds.removeFromTop(12);  // "Links" label
+        if (bounds.getHeight() > 0) {
+            modMatrixViewport_.setBounds(bounds);
+            modMatrixContent_.setSize(
+                bounds.getWidth() - (modMatrixViewport_.isVerticalScrollBarShown() ? 8 : 0),
+                juce::jmax(bounds.getHeight(), static_cast<int>(currentMod_.links.size()) *
+                                                   ModMatrixContent::ROW_HEIGHT));
+        }
+        return;
+    }
 
     // Name label at top with curve edit button on right (in curve mode)
     auto headerRow = bounds.removeFromTop(18);

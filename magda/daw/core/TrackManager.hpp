@@ -596,6 +596,9 @@ class TrackManager {
     void notifyModCurveChanged(const ChainNodePath& path);
     void setModAudioAttack(const ChainNodePath& path, int modIndex, float ms);
     void setModAudioRelease(const ChainNodePath& path, int modIndex, float ms);
+    // Copies the ADSR envelope fields (attack/decay/sustain/release + per-segment
+    // curves) from `src` into the stored mod and re-syncs the TE modifier.
+    void setModEnvelope(const ChainNodePath& path, int modIndex, const ModInfo& src);
     void removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target);
     void clearAllModLinks(const ChainNodePath& path, int modIndex);
     void setModEnabled(const ChainNodePath& path, int modIndex, bool enabled);

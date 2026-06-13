@@ -10,6 +10,7 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
+#include "modifiers/ADSRDebugLog.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -93,6 +94,7 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     // Start timer for metering updates (30 FPS for smooth UI)
     startTimerHz(30);
 
+    MAGDA_ADSR_AUDIO_LOG("AudioBridge initialized");
     DBG("AudioBridge initialized");
 }
 
@@ -308,6 +310,8 @@ void AudioBridge::trackDevicesChanged(TrackId trackId) {
 }
 
 void AudioBridge::deviceModifiersChanged(TrackId trackId) {
+    MAGDA_ADSR_AUDIO_LOG("deviceModifiersChanged trackId=" << trackId);
+
     // Skip the modifier resync when this notify is the playback engine
     // echoing a baked curve value (e.g. LFO rate) back into MAGDA state.
     // TE already drove the modifier param on the audio thread; resyncing

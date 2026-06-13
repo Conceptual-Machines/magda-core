@@ -198,11 +198,13 @@ class RackSyncManager {
      * Used by PluginManager::rebuildSidechainLFOCache() to populate the cache.
      */
     void collectLFOModifiers(TrackId trackId, std::vector<te::LFOModifier*>& out) const;
-    void collectLFOModifiersWithModes(TrackId trackId, std::vector<te::LFOModifier*>& out,
+    // Collect gated modifiers (LFO + ADSR) paired with their trigger modes for
+    // the sidechain trigger cache.
+    void collectLFOModifiersWithModes(TrackId trackId, std::vector<te::Modifier*>& out,
                                       std::vector<LFOTriggerMode>& modes) const;
     void collectLFOModifiersWithModesForSidechainSource(TrackId destinationTrackId,
                                                         TrackId sourceTrackId,
-                                                        std::vector<te::LFOModifier*>& out,
+                                                        std::vector<te::Modifier*>& out,
                                                         std::vector<LFOTriggerMode>& modes) const;
 
     /**
