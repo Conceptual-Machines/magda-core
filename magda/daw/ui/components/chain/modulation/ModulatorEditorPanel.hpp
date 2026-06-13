@@ -20,6 +20,8 @@
 
 namespace magda::daw::ui {
 
+class FollowerEditorPanel;
+
 /**
  * @brief Animated waveform display component
  */
@@ -457,6 +459,9 @@ class ModulatorEditorPanel : public juce::Component,
     // Fires when any Random control changes; the passed ModInfo carries the
     // updated random* fields (the rest mirrors the current mod).
     std::function<void(const magda::ModInfo& mod)> onRandomChanged;
+    // Fires when any envelope follower control changes. The follower has its own
+    // editor (FollowerEditorPanel) embedded here; this just forwards its change.
+    std::function<void(const magda::ModInfo& mod)> onFollowerChanged;
     std::function<void(int modIndex, magda::ControlTarget target)> onModLinkDeleted;
     std::function<void(int modIndex, magda::ControlTarget target, bool bipolar)>
         onModLinkBipolarChanged;
@@ -573,6 +578,14 @@ class ModulatorEditorPanel : public juce::Component,
     // Mod matrix
     juce::Viewport modMatrixViewport_;
     ModMatrixContent modMatrixContent_;
+
+    // The envelope follower is different enough (continuous audio tracking, no
+    // waveform/rate/trigger/MIDI) that it gets its own editor, embedded here
+    // and shown on top in follower mode. updateFromMod()/resized() delegate to
+    // it and hide the generator controls.
+    bool isFollowerMode_ = false;
+    std::unique_ptr<FollowerEditorPanel> followerEditorPanel_;
+    void setGeneratorControlsVisible(bool visible);
     std::function<juce::String(magda::DeviceId, int)> paramNameResolver_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ModulatorEditorPanel)

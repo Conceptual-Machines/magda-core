@@ -584,6 +584,18 @@ void TrackManager::setModRandom(const ChainNodePath& path, int modIndex, const M
     notifyDeviceModifiersChanged(path.trackId);
 }
 
+void TrackManager::setModFollower(const ChainNodePath& path, int modIndex, const ModInfo& src) {
+    auto node = resolveChainNode(path);
+    if (!indexInRange(node.mods, modIndex))
+        return;
+    auto& mod = (*node.mods)[modIndex];
+    mod.followerGainDb = juce::jlimit(-20.0f, 20.0f, src.followerGainDb);
+    mod.followerAttackMs = juce::jlimit(1.0f, 5000.0f, src.followerAttackMs);
+    mod.followerHoldMs = juce::jlimit(0.0f, 5000.0f, src.followerHoldMs);
+    mod.followerReleaseMs = juce::jlimit(1.0f, 5000.0f, src.followerReleaseMs);
+    notifyDeviceModifiersChanged(path.trackId);
+}
+
 void TrackManager::removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))

@@ -293,6 +293,15 @@ struct ModInfo {
     float randomSmooth = 0.0f;     // 0..1, S-curve smoothing of the phase ramp
     float randomStepDepth = 1.0f;  // 0..1, range of variation per step
 
+    // Envelope follower settings (type == Follower; serialized). Defaults
+    // mirror te::EnvelopeFollowerModifier's parameter defaults. The follower
+    // tracks the amplitude of its host scope's (post-FX) audio; modulation
+    // depth comes from the per-link amount (like the other modulators).
+    float followerGainDb = 0.0f;       // Input gain before detection (dB)
+    float followerAttackMs = 100.0f;   // Envelope attack time (ms)
+    float followerHoldMs = 0.0f;       // Envelope hold time (ms)
+    float followerReleaseMs = 500.0f;  // Envelope release time (ms)
+
     // Audio trigger runtime state (not serialized)
     float audioEnvLevel = 0.0f;  // Current smoothed envelope level
     bool audioGateOpen = false;  // Gate state for this mod

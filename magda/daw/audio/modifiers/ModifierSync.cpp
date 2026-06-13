@@ -90,7 +90,13 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
         }
         case ModType::Follower: {
             juce::ValueTree envState(te::IDs::ENVELOPEFOLLOWER);
-            modifier = modList.insertModifier(envState, -1, nullptr);
+            auto efMod = modList.insertModifier(envState, -1, nullptr);
+            if (!efMod)
+                break;
+
+            if (auto* ef = dynamic_cast<te::EnvelopeFollowerModifier*>(efMod.get()))
+                applyFollowerProperties(ef, modInfo);
+            modifier = efMod;
             break;
         }
         case ModType::Envelope: {
@@ -339,6 +345,8 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 applyADSRProperties(adsr, modInfo);
             } else if (auto* rnd = dynamic_cast<te::RandomModifier*>(modifier.get())) {
                 applyRandomProperties(rnd, modInfo);
+            } else if (auto* ef = dynamic_cast<te::EnvelopeFollowerModifier*>(modifier.get())) {
+                applyFollowerProperties(ef, modInfo);
             }
 
             for (const auto& link : modInfo.links) {

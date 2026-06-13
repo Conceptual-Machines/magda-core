@@ -7,6 +7,7 @@
 #include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
+#include "modulation/FollowerEditorPanel.hpp"
 #include "ui/components/chain/params/ParamLinkResolver.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
@@ -690,6 +691,39 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
             onModLinkAmountChanged(selectedModIndex_, target, amount);
         }
     };
+
+    // Embedded envelope-follower editor (its own class — no LFO/trigger/MIDI).
+    // Shown on top in follower mode; forwards its edits + link ops up to our
+    // own callbacks so the host wiring is unchanged apart from onFollowerChanged.
+    followerEditorPanel_ = std::make_unique<FollowerEditorPanel>();
+    followerEditorPanel_->onNameChanged = [this](juce::String name) {
+        if (onNameChanged)
+            onNameChanged(std::move(name));
+    };
+    followerEditorPanel_->onFollowerChanged = [this](const magda::ModInfo& mod) {
+        if (onFollowerChanged)
+            onFollowerChanged(mod);
+    };
+    followerEditorPanel_->onModLinkDeleted = [this](int idx, magda::ControlTarget target) {
+        if (onModLinkDeleted)
+            onModLinkDeleted(idx, target);
+    };
+    followerEditorPanel_->onModLinkBipolarChanged = [this](int idx, magda::ControlTarget target,
+                                                           bool bipolar) {
+        if (onModLinkBipolarChanged)
+            onModLinkBipolarChanged(idx, target, bipolar);
+    };
+    followerEditorPanel_->onModLinkEnabledChanged = [this](int idx, magda::ControlTarget target,
+                                                           bool enabled) {
+        if (onModLinkEnabledChanged)
+            onModLinkEnabledChanged(idx, target, enabled);
+    };
+    followerEditorPanel_->onModLinkAmountChanged = [this](int idx, magda::ControlTarget target,
+                                                          float amount) {
+        if (onModLinkAmountChanged)
+            onModLinkAmountChanged(idx, target, amount);
+    };
+    addChildComponent(*followerEditorPanel_);
 }
 
 ModulatorEditorPanel::~ModulatorEditorPanel() {
@@ -953,7 +987,56 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
     }
 }
 
+void ModulatorEditorPanel::setGeneratorControlsVisible(bool v) {
+    nameLabel_.setVisible(v);
+    waveformCombo_.setVisible(v);
+    waveformDisplay_.setVisible(v);
+    curveEditor_.setVisible(v);
+    curveEditorButton_->setVisible(v);
+    curvePresetCombo_.setVisible(v);
+    savePresetButton_->setVisible(v);
+    syncToggle_.setVisible(v);
+    rateSlider_.setVisible(v);
+    syncDivisionSlider_.setVisible(v);
+    triggerModeCombo_.setVisible(v);
+    advancedButton_->setVisible(v);
+    audioAttackSlider_.setVisible(v);
+    audioReleaseSlider_.setVisible(v);
+    envelopeDisplay_.setVisible(v);
+    envAttackSlider_.setVisible(v);
+    envDecaySlider_.setVisible(v);
+    envSustainSlider_.setVisible(v);
+    envReleaseSlider_.setVisible(v);
+    envAttackCurveSlider_.setVisible(v);
+    envDecayCurveSlider_.setVisible(v);
+    envReleaseCurveSlider_.setVisible(v);
+    randomDisplay_.setVisible(v);
+    randomTypeCombo_.setVisible(v);
+    randomShapeSlider_.setVisible(v);
+    randomSmoothSlider_.setVisible(v);
+    randomStepDepthSlider_.setVisible(v);
+    modMatrixViewport_.setVisible(v);
+}
+
 void ModulatorEditorPanel::updateFromMod() {
+    // The envelope follower has its own editor; hand off to it and hide our
+    // own (generator) controls entirely.
+    isFollowerMode_ = (currentMod_.type == magda::ModType::Follower);
+    if (isFollowerMode_) {
+        setGeneratorControlsVisible(false);
+        followerEditorPanel_->setParamNameResolver(paramNameResolver_);
+        followerEditorPanel_->setSelectedModIndex(selectedModIndex_);
+        followerEditorPanel_->setModInfo(currentMod_, liveModPtr_, liveModGetter_);
+        followerEditorPanel_->setVisible(true);
+        followerEditorPanel_->toFront(false);
+        resized();
+        return;
+    }
+    followerEditorPanel_->setVisible(false);
+    // Re-show the generator controls (the per-mode logic below hides the ones
+    // that don't apply); leaving follower mode restores name + mod matrix.
+    setGeneratorControlsVisible(true);
+
     nameLabel_.setText(currentMod_.name, juce::dontSendNotification);
 
     isEnvelopeMode_ = (currentMod_.type == magda::ModType::Envelope);
@@ -1263,6 +1346,10 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(getLocalBounds());
 
+    // Follower mode: the embedded FollowerEditorPanel paints everything.
+    if (isFollowerMode_)
+        return;
+
     // Section headers
     auto bounds = getLocalBounds().reduced(6);
 
@@ -1372,6 +1459,11 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
 
 void ModulatorEditorPanel::resized() {
     auto bounds = getLocalBounds().reduced(6);
+
+    if (isFollowerMode_ && followerEditorPanel_) {
+        followerEditorPanel_->setBounds(getLocalBounds());
+        return;
+    }
 
     if (isEnvelopeMode_) {
         constexpr int kGap = 4;

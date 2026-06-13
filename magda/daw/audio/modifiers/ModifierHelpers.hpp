@@ -273,6 +273,19 @@ inline void applyRandomProperties(te::RandomModifier* rnd, const ModInfo& modInf
     rnd->depthParam->setParameterFromHost(1.0f, juce::dontSendNotification);
 }
 
+inline void applyFollowerProperties(te::EnvelopeFollowerModifier* ef, const ModInfo& modInfo) {
+    ef->gainDbParam->setParameterFromHost(modInfo.followerGainDb, juce::dontSendNotification);
+    ef->attackParam->setParameterFromHost(modInfo.followerAttackMs, juce::dontSendNotification);
+    ef->holdParam->setParameterFromHost(modInfo.followerHoldMs, juce::dontSendNotification);
+    ef->releaseParam->setParameterFromHost(modInfo.followerReleaseMs, juce::dontSendNotification);
+
+    // Output depth/offset are driven per-link via ModLink.amount (same
+    // convention as the other modulators), so keep TE's own depth at unity and
+    // no offset. Filters stay at their disabled defaults for now.
+    ef->depthParam->setParameterFromHost(1.0f, juce::dontSendNotification);
+    ef->offsetParam->setParameterFromHost(0.0f, juce::dontSendNotification);
+}
+
 /**
  * @brief Set the gate on whichever gated modifier type this is (LFO or ADSR).
  *
@@ -323,6 +336,10 @@ inline bool overlayModifierVisuals(ModInfo& magdaMod, te::Modifier* mod) {
     if (auto* rnd = dynamic_cast<te::RandomModifier*>(mod)) {
         magdaMod.value = rnd->getCurrentValue();
         magdaMod.phase = rnd->getCurrentPhase();
+        return true;
+    }
+    if (auto* ef = dynamic_cast<te::EnvelopeFollowerModifier*>(mod)) {
+        magdaMod.value = ef->getCurrentValue();
         return true;
     }
     return false;

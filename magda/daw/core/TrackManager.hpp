@@ -602,6 +602,9 @@ class TrackManager {
     // Copies the Random distribution fields (type/shape/smooth/stepDepth) from
     // `src` into the stored mod and re-syncs the TE modifier.
     void setModRandom(const ChainNodePath& path, int modIndex, const ModInfo& src);
+    // Copies the envelope follower fields (gain/attack/hold/release) from `src`
+    // into the stored mod and re-syncs the TE modifier.
+    void setModFollower(const ChainNodePath& path, int modIndex, const ModInfo& src);
     void removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target);
     void clearAllModLinks(const ChainNodePath& path, int modIndex);
     void setModEnabled(const ChainNodePath& path, int modIndex, bool enabled);

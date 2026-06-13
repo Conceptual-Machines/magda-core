@@ -1744,6 +1744,10 @@ void DeviceSlotComponent::onModRandomChangedInternal(int modIndex, const magda::
     magda::TrackManager::getInstance().setModRandom(nodePath_, modIndex, mod);
 }
 
+void DeviceSlotComponent::onModFollowerChangedInternal(int modIndex, const magda::ModInfo& mod) {
+    magda::TrackManager::getInstance().setModFollower(nodePath_, modIndex, mod);
+}
+
 void DeviceSlotComponent::onModCurveChangedInternal(int /*modIndex*/) {
     DBG("[HardCorner] DeviceSlotComponent notifyModCurveChanged path=" << nodePath_.toString());
     // Curve points are already written directly to ModInfo by LFOCurveEditor.

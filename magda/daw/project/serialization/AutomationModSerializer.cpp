@@ -476,6 +476,12 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
     SER(randomSmooth);
     SER(randomStepDepth);
 
+    // Envelope follower (type == Follower)
+    SER(followerGainDb);
+    SER(followerAttackMs);
+    SER(followerHoldMs);
+    SER(followerReleaseMs);
+
     // Curve points
     juce::Array<juce::var> curvePointsArray;
     for (const auto& point : mod.curvePoints) {
@@ -554,6 +560,16 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
         DESER(randomSmooth);
     if (obj->hasProperty("randomStepDepth"))
         DESER(randomStepDepth);
+
+    // Envelope follower (type == Follower).
+    if (obj->hasProperty("followerGainDb"))
+        DESER(followerGainDb);
+    if (obj->hasProperty("followerAttackMs"))
+        DESER(followerAttackMs);
+    if (obj->hasProperty("followerHoldMs"))
+        DESER(followerHoldMs);
+    if (obj->hasProperty("followerReleaseMs"))
+        DESER(followerReleaseMs);
 
     // Curve points
     auto curvePointsVar = obj->getProperty("curvePoints");
