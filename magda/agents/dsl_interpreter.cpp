@@ -1337,42 +1337,50 @@ bool Interpreter::executeSelect() {
 }
 
 bool Interpreter::executeSelectClips(Tokenizer& tok) {
-    // Parse: (clip.field op value)
+    // Parse: () for all clips, or (clip.field op value) for filtered clips.
     if (!tok.expect(TokenType::LPAREN)) {
         ctx_.setError("Expected '(' after 'clips.select'");
         return false;
     }
 
-    if (!tok.expect("clip")) {
-        ctx_.setError("Expected 'clip' in clips.select condition");
-        return false;
-    }
-    if (!tok.expect(TokenType::DOT)) {
-        ctx_.setError("Expected '.' after 'clip'");
-        return false;
-    }
-
-    Token field = tok.next();
-    if (field.type != TokenType::IDENTIFIER) {
-        ctx_.setError("Expected field name after 'clip.'");
-        return false;
-    }
-
-    Token op = tok.next();
-    if (op.type != TokenType::EQUALS_EQUALS && op.type != TokenType::NOT_EQUALS &&
-        op.type != TokenType::GREATER && op.type != TokenType::GREATER_EQUALS &&
-        op.type != TokenType::LESS && op.type != TokenType::LESS_EQUALS) {
-        ctx_.setError("Expected comparison operator in clips.select condition");
-        return false;
-    }
-
+    const bool selectAll = tok.peek().is(TokenType::RPAREN);
+    Token field;
+    Token op;
     std::string valueStr;
-    if (!parseValue(tok, valueStr))
-        return false;
 
-    if (!tok.expect(TokenType::RPAREN)) {
-        ctx_.setError("Expected ')' after clips.select condition");
-        return false;
+    if (selectAll) {
+        tok.next();  // consume ')'
+    } else {
+        if (!tok.expect("clip")) {
+            ctx_.setError("Expected 'clip' in clips.select condition");
+            return false;
+        }
+        if (!tok.expect(TokenType::DOT)) {
+            ctx_.setError("Expected '.' after 'clip'");
+            return false;
+        }
+
+        field = tok.next();
+        if (field.type != TokenType::IDENTIFIER) {
+            ctx_.setError("Expected field name after 'clip.'");
+            return false;
+        }
+
+        op = tok.next();
+        if (op.type != TokenType::EQUALS_EQUALS && op.type != TokenType::NOT_EQUALS &&
+            op.type != TokenType::GREATER && op.type != TokenType::GREATER_EQUALS &&
+            op.type != TokenType::LESS && op.type != TokenType::LESS_EQUALS) {
+            ctx_.setError("Expected comparison operator in clips.select condition");
+            return false;
+        }
+
+        if (!parseValue(tok, valueStr))
+            return false;
+
+        if (!tok.expect(TokenType::RPAREN)) {
+            ctx_.setError("Expected ')' after clips.select condition");
+            return false;
+        }
     }
 
     // Determine if this is a string or numeric field
@@ -1457,7 +1465,7 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
             auto* clip = cm.getClip(clipId);
             if (!clip)
                 continue;
-            if (matchClip(clip))
+            if (selectAll || matchClip(clip))
                 matched.insert(clipId);
         }
         return matched;

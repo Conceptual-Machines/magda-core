@@ -59,6 +59,12 @@ def render_action(a: dict) -> list[str]:
     if t == "solo_track":
         return [f'{_track_ref(a)}.track.set(solo=true)']
 
+    if t == "set_track_volume":
+        return [f'{_track_ref(a)}.track.set(volume_db={a["volume_db"]:g})']
+
+    if t == "set_track_pan":
+        return [f'{_track_ref(a)}.track.set(pan={a["pan"]:g})']
+
     if t == "set_track_color":
         return [f'{_track_ref(a)}.track.set(colour={q(a["colour"])})']
 
@@ -66,6 +72,30 @@ def render_action(a: dict) -> list[str]:
         anchor = a["ids"][0]
         ids = ",".join(str(i) for i in a["ids"])
         return [f'track(id={anchor}).track.group(name={q(a["name"])}, tracks={q(ids)})']
+
+    if t == "select_all_clips":
+        return [f'{_track_ref(a)}.clips.select()']
+
+    if t == "select_all_clips_rename":
+        return [f'{_track_ref(a)}.clips.select().clip.rename(name={q(a["new_name"])})']
+
+    if t == "select_clips_named":
+        return [f'{_track_ref(a)}.clips.select(clip.name == {q(a["clip_name"])})']
+
+    if t == "select_clips_type":
+        return [f'{_track_ref(a)}.clips.select(clip.type == {q(a["clip_type"])})']
+
+    if t == "select_clips_longer_than":
+        return [f'{_track_ref(a)}.clips.select(clip.length_bars > {a["bars"]:g})']
+
+    if t == "select_clips_shorter_than":
+        return [f'{_track_ref(a)}.clips.select(clip.length_bars < {a["bars"]:g})']
+
+    if t == "select_clips_starting_after":
+        return [f'{_track_ref(a)}.clips.select(clip.start_bar >= {a["bar"]:g})']
+
+    if t == "select_clips_starting_before":
+        return [f'{_track_ref(a)}.clips.select(clip.start_bar <= {a["bar"]:g})']
 
     raise ValueError(f"unknown action type: {t!r}")
 

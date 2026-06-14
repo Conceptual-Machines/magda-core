@@ -695,6 +695,12 @@ void AIChatConsoleContent::RequestThread::run() {
             if (!safeThis)
                 return;
 
+            DBG("AIChatConsole: finalize begin dslLen=" +
+                juce::String(static_cast<int>(dsl.size())) +
+                " musicIR=" + juce::String(static_cast<int>(musicIR.size())) +
+                " autoIR=" + juce::String(static_cast<int>(autoIR.size())) +
+                " errorLen=" + juce::String(static_cast<int>(error.size())));
+
             // Execution runs synchronously on the message thread; a multi-track
             // fan-out can take a beat. Show the busy cursor so there's feedback
             // even while the thread is occupied (a spinner couldn't animate).
@@ -721,6 +727,7 @@ void AIChatConsoleContent::RequestThread::run() {
                 // Execute DSL from command agent
                 int commandClipId = -1;
                 if (!dsl.empty()) {
+                    DBG("AIChatConsole: executing DSL: " + juce::String(dsl));
                     magda::dsl::Interpreter interpreter(*safeThis->magdaApi_);
                     if (interpreter.execute(dsl.c_str())) {
                         auto results = interpreter.getResults().toStdString();
@@ -729,6 +736,7 @@ void AIChatConsoleContent::RequestThread::run() {
                     } else {
                         response = "Error: " + std::string(interpreter.getError());
                     }
+                    DBG("AIChatConsole: DSL execute complete");
                 }
 
                 // Execute IR from music agent
@@ -850,6 +858,7 @@ void AIChatConsoleContent::RequestThread::run() {
             safeThis->restoreSendIcon();
             safeThis->inputBox_->grabKeyboardFocus();
             juce::MouseCursor::hideWaitCursor();
+            DBG("AIChatConsole: finalize complete");
         });
 }
 
@@ -1173,16 +1182,24 @@ AIChatConsoleContent::~AIChatConsoleContent() {
 
     // Stop the background thread with a timeout
     if (requestThread_) {
+        DBG("AIChatConsole: destructor stopping request thread running=" +
+            juce::String(requestThread_->isThreadRunning() ? "yes" : "no"));
         requestThread_->signalThreadShouldExit();
         if (!requestThread_->stopThread(5000))
             DBG("AIChatConsole: Warning - request thread did not stop within timeout");
+        else
+            DBG("AIChatConsole: request thread stopped");
         requestThread_.reset();
     }
 
     if (controllerThread_) {
+        DBG("AIChatConsole: destructor stopping controller thread running=" +
+            juce::String(controllerThread_->isThreadRunning() ? "yes" : "no"));
         controllerThread_->signalThreadShouldExit();
         if (!controllerThread_->stopThread(5000))
             DBG("AIChatConsole: Warning - controller thread did not stop within timeout");
+        else
+            DBG("AIChatConsole: controller thread stopped");
         controllerThread_.reset();
     }
 }
@@ -1209,6 +1226,19 @@ juce::String AIChatConsoleContent::resolveAliases(const juce::String& text) {
 
 juce::String AIChatConsoleContent::rewriteSlashCommand(const juce::String& text) {
     auto trimmed = text.trimStart();
+
+    // /command <request> — force the structural command agent and bias it
+    // toward the selection/filter/chained-edit surface. This is the UI entry
+    // point for the lightweight command-model POC grammar work.
+    if (trimmed.startsWithIgnoreCase("/command ")) {
+        auto request = trimmed.substring(9).trim();
+        return "[COMMAND: DAW_EDIT] The user wants a structural DAW edit. "
+               "You MUST respond with MAGDA DSL only. Prefer exact DSL operations for track "
+               "selection, clip selection, filtered clip selection, track volume/pan/mute/solo, "
+               "and chained edits such as selecting clips then renaming them. "
+               "User request: " +
+               request;
+    }
 
     // /groove <request> — constrain LLM to groove/swing template operations only
     if (trimmed.startsWithIgnoreCase("/groove ")) {
@@ -2541,6 +2571,32 @@ void AIChatConsoleContent::buildSlashCommands() {
         return true;
     };
     slashRegistry_->add(std::move(controller));
+
+    // /command — route a natural-language structural edit to the command agent.
+    // The handler returns false so sendMessage echoes once, rewrites the prompt
+    // in rewriteSlashCommand(), and continues through the normal AI execution
+    // path.
+    SlashCommand command;
+    command.name = "command";
+    command.description = "Run a structural DAW edit with the command agent";
+    command.usage = "/command <edit request>";
+    command.details =
+        "Force the command agent for project edits such as selecting tracks/clips, filtering\n"
+        "clips by name/type/length/start, setting track volume or pan, adding FX, and chaining\n"
+        "selection into a follow-up edit.";
+    command.examples = {
+        {"Selection",
+         {"select all clips on track 1", "select all clips named Intro on the Bass track",
+          "select all clips longer than 2 bars on track 3"}},
+        {"Mix",
+         {"set track 2 volume to -6 dB", "pan the guitars left", "mute all tracks named Scratch"}},
+        {"Chaining",
+         {"select all clips on track 1 and rename them Verse {i}",
+          "select all clips named Loop on Drums and rename them Drum Loop {i}"}},
+    };
+    command.handler = [](const juce::String&, const std::map<juce::String, juce::String>&,
+                         const juce::String&) { return false; };
+    slashRegistry_->add(std::move(command));
 
     // /groove — rewrite the prompt to constrain the LLM to groove ops, then
     // fall through to the normal AI path. The handler returns false so the

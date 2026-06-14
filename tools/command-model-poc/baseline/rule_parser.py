@@ -87,6 +87,107 @@ def _m_group(text):
     return [{"type": "group_tracks", "ids": ids, "name": _clean_name(m.group(1))}]
 
 
+def _m_select_all_clips(text):
+    if not re.search(r"\b(select|highlight)\b", text, re.I):
+        return None
+    if not re.search(r"\b(all|every)\s+clips?\b", text, re.I):
+        return None
+    m = re.search(r"\b(?:on|in)\s+(?:the )?([\w ]+?)(?:\s+track)?$", text, re.I)
+    if not m:
+        return None
+    name = _clean_name(_NOISE.sub("", m.group(1)))
+    if not name:
+        return None
+    return [{"type": "select_all_clips", "name": name}]
+
+
+def _m_select_all_clips_rename(text):
+    if not re.search(r"\b(rename|call)\b", text, re.I):
+        return None
+    if not re.search(r"\b(all|every)\s+clips?\b", text, re.I):
+        return None
+    patterns = [
+        r"\bselect\s+all\s+clips\s+(?:on|in)\s+(?:the )?([\w ]+?)(?:\s+track)?\s+(?:and\s+)?rename\s+them\s+to\s+([\w {}]+)$",
+        r"\brename\s+every\s+clip\s+(?:on|in)\s+(?:the )?([\w ]+?)(?:\s+track)?\s+to\s+([\w {}]+)$",
+        r"\bselect\s+all\s+clips\s+(?:on|in)\s+(?:the )?([\w ]+?)(?:\s+track)?\s+then\s+call\s+them\s+([\w {}]+)$",
+        r"\bhighlight\s+all\s+clips\s+(?:on|in)\s+(?:the )?([\w ]+?)(?:\s+track)?\s+and\s+rename\s+to\s+([\w {}]+)$",
+    ]
+    m = None
+    for pat in patterns:
+        m = re.search(pat, text, re.I)
+        if m:
+            break
+    if not m:
+        return None
+    track = _clean_name(_NOISE.sub("", m.group(1)))
+    new_name = _clean_name(m.group(2))
+    if not new_name:
+        return None
+    return [{"type": "select_all_clips_rename", "name": track, "new_name": new_name}]
+
+
+def _track_after_on_in_from(text):
+    m = re.search(r"\b(?:on|in|from)\s+(?:the )?([\w ]+?)(?:\s+track)?$", text, re.I)
+    return _clean_name(_NOISE.sub("", m.group(1))) if m else ""
+
+
+def _m_select_clips_named(text):
+    if not re.search(r"\b(select|highlight|grab)\b", text, re.I):
+        return None
+    m = re.search(r"\b(?:clips?|regions?)\s+(?:named|called)\s+([\w ]+?)\s+\b(?:on|in|from)\b", text, re.I)
+    if not m:
+        m = re.search(r"\bgrab\s+(?:the )?([\w ]+?)\s+clips?\s+\bfrom\b", text, re.I)
+    if not m:
+        return None
+    name = _track_after_on_in_from(text)
+    clip_name = _clean_name(m.group(1))
+    if not name or not clip_name:
+        return None
+    return [{"type": "select_clips_named", "name": name, "clip_name": clip_name}]
+
+
+def _m_select_clips_type(text):
+    if not re.search(r"\b(select|highlight|grab)\b", text, re.I):
+        return None
+    m = re.search(r"\b(audio|midi)\s+(?:clips?|regions?|items?)\b", text, re.I)
+    if not m:
+        return None
+    name = _track_after_on_in_from(text)
+    if not name:
+        return None
+    return [{"type": "select_clips_type", "name": name, "clip_type": m.group(1).lower()}]
+
+
+def _m_select_clips_length(text):
+    if not re.search(r"\b(select|highlight)\b", text, re.I):
+        return None
+    m = re.search(r"\b(longer than|over|shorter than|under)\s+(\d+(?:\.\d+)?)\s+bars?\b", text, re.I)
+    if not m:
+        return None
+    name = _track_after_on_in_from(text)
+    if not name:
+        return None
+    op = m.group(1).lower()
+    intent = "select_clips_longer_than" if op in ("longer than", "over") else "select_clips_shorter_than"
+    return [{"type": intent, "name": name, "bars": float(m.group(2))}]
+
+
+def _m_select_clips_start(text):
+    if not re.search(r"\b(select|highlight)\b", text, re.I):
+        return None
+    m = re.search(r"\b(?:after|starting after|from)\s+bar\s+(\d+(?:\.\d+)?)\b", text, re.I)
+    intent = "select_clips_starting_after"
+    if not m:
+        m = re.search(r"\b(?:before|starting before|up to)\s+bar\s+(\d+(?:\.\d+)?)\b", text, re.I)
+        intent = "select_clips_starting_before"
+    if not m:
+        return None
+    name = _track_after_on_in_from(text)
+    if not name:
+        return None
+    return [{"type": intent, "name": name, "bar": float(m.group(1))}]
+
+
 def _m_create_with_plugins(text):
     if not re.search(r"\b(create|make|add|new)\b", text, re.I):
         return None
@@ -154,6 +255,60 @@ def _m_solo(text):
     return [{"type": "solo_track", "name": _clean_name(_NOISE.sub("", m.group(1)))}]
 
 
+def _m_volume(text):
+    if not re.search(r"\b(vol|volume|db|dB)\b", text, re.I):
+        return None
+    val = re.search(r"([+-]?\d+(?:\.\d+)?)\s*dB\b", text, re.I)
+    if not val:
+        return None
+    db = float(val.group(1))
+    patterns = [
+        r"\bset\s+([\w ]+?)\s+volume\s+to\s+[+-]?\d+(?:\.\d+)?\s*dB\b",
+        r"\bturn\s+(?:the )?([\w ]+?)(?:\s+track)?\s+to\s+[+-]?\d+(?:\.\d+)?\s*dB\b",
+        r"\bmake\s+([\w ]+?)\s+[+-]?\d+(?:\.\d+)?\s*dB\b",
+        r"\bset\s+volume\s+of\s+([\w ]+?)\s+to\s+[+-]?\d+(?:\.\d+)?\s*dB\b",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.I)
+        if m:
+            name = _clean_name(_NOISE.sub("", m.group(1)))
+            return [{"type": "set_track_volume", "name": name, "volume_db": db}]
+    return None
+
+
+def _m_pan(text):
+    pan_words = {
+        "hard left": -1.0,
+        "slightly left": -0.25,
+        "left": -0.5,
+        "center": 0.0,
+        "centre": 0.0,
+        "middle": 0.0,
+        "slightly right": 0.25,
+        "hard right": 1.0,
+        "right": 0.5,
+    }
+    phrase = None
+    for p in sorted(pan_words, key=len, reverse=True):
+        if re.search(r"\b" + re.escape(p) + r"\b", text, re.I):
+            phrase = p
+            break
+    if phrase is None:
+        return None
+    patterns = [
+        r"^set\s+([\w ]+?)\s+pan\s+to\s+" + re.escape(phrase) + r"$",
+        r"^move\s+(?:the )?([\w ]+?)(?:\s+track)?\s+" + re.escape(phrase) + r"$",
+        r"^put\s+([\w ]+?)\s+" + re.escape(phrase) + r"\s+in\s+the\s+stereo\s+field$",
+        r"^pan\s+([\w ]+?)\s+" + re.escape(phrase) + r"$",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.I)
+        if m:
+            name = _clean_name(_NOISE.sub("", m.group(1)))
+            return [{"type": "set_track_pan", "name": name, "pan": pan_words[phrase]}]
+    return None
+
+
 def _m_color(text):
     cw = None
     for c in vocab.COLORS:
@@ -176,8 +331,17 @@ def _m_color(text):
 
 # priority order: most specific first
 _MATCHERS = [
+    _m_select_all_clips_rename,
     _m_rename,
     _m_group,
+    _m_select_clips_named,
+    _m_select_clips_type,
+    _m_select_clips_length,
+    _m_select_clips_start,
+    _m_select_all_clips_rename,
+    _m_select_all_clips,
+    _m_volume,
+    _m_pan,
     _m_color,
     _m_create_with_plugins,
     _m_add_plugin,

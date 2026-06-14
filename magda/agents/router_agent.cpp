@@ -1,15 +1,59 @@
 #include "router_agent.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <string>
+
 #include "../daw/core/Config.hpp"
 #include "llm_client_factory.hpp"
 
 namespace magda {
 
+namespace {
+
+std::string lowerCopy(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+bool hasAny(const std::string& text, std::initializer_list<const char*> needles) {
+    for (auto* needle : needles)
+        if (text.find(needle) != std::string::npos)
+            return true;
+    return false;
+}
+
+std::string classifyFast(const std::string& message) {
+    const auto t = lowerCopy(message);
+
+    const bool command =
+        hasAny(t, {"[command:", "create", "make", "add track", "delete",   "rename",   "select",
+                   "highlight", "mute",   "solo", "volume",    "pan",      "clip",     "clips",
+                   "track",     "tracks", "fx",   "plugin",    "quantize", "transpose"});
+    const bool music =
+        hasAny(t, {"chord", "progression", "melody", "bass line", "bassline", "drum pattern",
+                   "beat", "notes", "arpeggio", "harmonize", "write", "generate"});
+    const bool automation = hasAny(t, {"automate", "automation", "lfo", "sweep", "curve", "ramp",
+                                       "fade in", "fade out", "tremolo"});
+
+    if (automation)
+        return "AUTOMATION";
+    if (command && music)
+        return "BOTH";
+    if (music)
+        return "MUSIC";
+    return "COMMAND";
+}
+
+}  // namespace
+
 const char* RouterAgent::getSystemPrompt() {
     return R"PROMPT(You are a router for a DAW AI assistant. Classify the user's request into one or more agents.
 
-COMMAND — Modifying or creating project elements: create/delete/rename tracks, add/move/duplicate/delete clips, add FX (reverb, EQ, compressor), set volume/pan/mute/solo, quantize/transpose notes, set tempo.
-Examples: "create a bass track", "delete track 2", "add reverb to vocals", "mute the drums", "quantize to 1/16", "add a 4 bar clip on track 1", "set volume to -6 dB"
+COMMAND — Modifying or creating project elements: create/delete/rename/select tracks, add/move/duplicate/delete/select/rename clips, filter tracks or clips by name/type/length/start, add FX (reverb, EQ, compressor), set volume/pan/mute/solo, quantize/transpose notes, set tempo.
+Examples: "create a bass track", "delete track 2", "add reverb to vocals", "mute the drums", "quantize to 1/16", "add a 4 bar clip on track 1", "set volume to -6 dB", "select all clips on track 1", "select all clips and rename them Verse"
 
 MUSIC — Generating musical content: suggest/generate chord progressions, suggest chords, harmonize melodies, generate chord loops.
 Examples: "suggest chords in D minor", "give me a jazz ii-V-I", "generate a blues progression", "harmonize this melody"
@@ -33,12 +77,23 @@ RouterAgent::ClassifyResult RouterAgent::classify(const std::string& message) {
     }
 
     auto agentConfig = Config::getInstance().getAgentLLMConfig(role::ROUTER);
+    if (agentConfig.provider == provider::FAST_INFERENCE) {
+        auto start = std::chrono::steady_clock::now();
+        result.intent = classifyFast(message);
+        result.wallSeconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        DBG("MAGDA Router fast: " + juce::String::fromUTF8(message.c_str()) + " -> " +
+            juce::String::fromUTF8(result.intent.c_str()));
+        return result;
+    }
 
-    if (agentConfig.provider != provider::LLAMA_LOCAL) {
+    if (!isLocalLLMProvider(agentConfig.provider)) {
         auto providerConfig = toLLMProviderConfig(agentConfig);
-        if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
-            result.error = "Router API key not configured";
-            result.hasError = true;
+        if (!hasUsableLLMAuth(agentConfig, providerConfig)) {
+            result.intent = classifyFast(message);
+            DBG("MAGDA Router fast fallback: missing auth for " +
+                juce::String(agentConfig.provider) + " -> " +
+                juce::String::fromUTF8(result.intent.c_str()));
             return result;
         }
     }

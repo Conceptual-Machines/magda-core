@@ -32,6 +32,20 @@ TRACK_NAMES = [
 INSTRUMENTS = ["serum", "vital", "surge xt", "diva", "massive"]
 EFFECTS = ["ott", "pro-q 3", "pro-c 2", "reverb", "delay", "eq", "compressor", "1176", "valhalla"]
 COLOR_WORDS = list(vocab.COLORS.keys())
+VOLUME_DB_VALUES = [-18, -12, -9, -6, -3, 0, 3, 6]
+CLIP_NAMES = ["Intro", "Verse", "Chorus", "Bridge", "Drop", "Fill", "Loop", "Take 1"]
+CLIP_TYPES = ["midi", "audio"]
+CLIP_BAR_VALUES = [1, 2, 4, 8, 16]
+PAN_VALUES = [
+    ("hard left", -1.0),
+    ("left", -0.5),
+    ("slightly left", -0.25),
+    ("center", 0.0),
+    ("centre", 0.0),
+    ("slightly right", 0.25),
+    ("right", 0.5),
+    ("hard right", 1.0),
+]
 
 
 def _plugin_phrase_and_token(name: str):
@@ -120,6 +134,36 @@ def gen_solo_track(r: random.Random):
     return r.choice(templates), [{"type": "solo_track", "name": name}]
 
 
+def gen_set_volume(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    db = r.choice(VOLUME_DB_VALUES)
+    templates = [
+        f"set {name} volume to {db} dB",
+        f"turn the {name.lower()} track to {db} dB",
+        f"make {name} {db} dB",
+        f"set volume of {name} to {db} dB",
+        f"level {name} at {db} dB",
+        f"bring the {name.lower()} track to {db} dB",
+        f"adjust {name} volume to {db} dB",
+    ]
+    return r.choice(templates), [{"type": "set_track_volume", "name": name, "volume_db": db}]
+
+
+def gen_set_pan(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    phrase, pan = r.choice(PAN_VALUES)
+    templates = [
+        f"pan {name} {phrase}",
+        f"set {name} pan to {phrase}",
+        f"move the {name.lower()} track {phrase}",
+        f"put {name} {phrase} in the stereo field",
+        f"place {name.lower()} {phrase}",
+        f"send the {name.lower()} track {phrase}",
+        f"set pan of {name} to {phrase}",
+    ]
+    return r.choice(templates), [{"type": "set_track_pan", "name": name, "pan": pan}]
+
+
 def gen_set_color(r: random.Random):
     name = r.choice(TRACK_NAMES)
     cw = r.choice(COLOR_WORDS)
@@ -147,16 +191,121 @@ def gen_group_tracks(r: random.Random):
     return r.choice(templates), [{"type": "group_tracks", "ids": ids, "name": group}]
 
 
+def gen_select_all_clips(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    templates = [
+        f"select all clips on {name}",
+        f"select every clip on the {name.lower()} track",
+        f"select all clips in {name}",
+        f"highlight all clips on the {name.lower()} track",
+        f"select all regions on {name}",
+        f"select every region in the {name.lower()} track",
+        f"grab all clips from {name}",
+        f"select all items on the {name.lower()} track",
+    ]
+    return r.choice(templates), [{"type": "select_all_clips", "name": name}]
+
+
+def gen_select_all_clips_rename(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    new_name = r.choice(CLIP_NAMES + ["Clip {i}", "Part {i}", "Section {i}"])
+    templates = [
+        f"select all clips on {name} and rename them to {new_name}",
+        f"rename every clip on the {name.lower()} track to {new_name}",
+        f"select all clips in {name} then call them {new_name}",
+        f"highlight all clips on the {name.lower()} track and rename to {new_name}",
+    ]
+    return r.choice(templates), [{"type": "select_all_clips_rename", "name": name, "new_name": new_name}]
+
+
+def gen_select_clips_named(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    clip = r.choice(CLIP_NAMES)
+    templates = [
+        f"select clips named {clip} on {name}",
+        f"select the clip called {clip} on the {name.lower()} track",
+        f"highlight clips named {clip} in {name}",
+        f"grab the {clip} clips from the {name.lower()} track",
+    ]
+    return r.choice(templates), [{"type": "select_clips_named", "name": name, "clip_name": clip}]
+
+
+def gen_select_clips_type(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    clip_type = r.choice(CLIP_TYPES)
+    templates = [
+        f"select {clip_type} clips on {name}",
+        f"select all {clip_type} clips in the {name.lower()} track",
+        f"highlight {clip_type} regions on {name}",
+        f"grab {clip_type} clips from the {name.lower()} track",
+    ]
+    return r.choice(templates), [{"type": "select_clips_type", "name": name, "clip_type": clip_type}]
+
+
+def gen_select_clips_longer_than(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    bars = r.choice(CLIP_BAR_VALUES)
+    templates = [
+        f"select clips longer than {bars} bars on {name}",
+        f"select all clips over {bars} bars in the {name.lower()} track",
+        f"highlight regions longer than {bars} bars on {name}",
+    ]
+    return r.choice(templates), [{"type": "select_clips_longer_than", "name": name, "bars": bars}]
+
+
+def gen_select_clips_shorter_than(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    bars = r.choice(CLIP_BAR_VALUES)
+    templates = [
+        f"select clips shorter than {bars} bars on {name}",
+        f"select all clips under {bars} bars in the {name.lower()} track",
+        f"highlight regions shorter than {bars} bars on {name}",
+    ]
+    return r.choice(templates), [{"type": "select_clips_shorter_than", "name": name, "bars": bars}]
+
+
+def gen_select_clips_starting_after(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    bar = r.choice(CLIP_BAR_VALUES)
+    templates = [
+        f"select clips after bar {bar} on {name}",
+        f"select clips starting after bar {bar} in the {name.lower()} track",
+        f"highlight regions from bar {bar} onward on {name}",
+    ]
+    return r.choice(templates), [{"type": "select_clips_starting_after", "name": name, "bar": bar}]
+
+
+def gen_select_clips_starting_before(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    bar = r.choice(CLIP_BAR_VALUES)
+    templates = [
+        f"select clips before bar {bar} on {name}",
+        f"select clips starting before bar {bar} in the {name.lower()} track",
+        f"highlight regions up to bar {bar} on {name}",
+    ]
+    return r.choice(templates), [{"type": "select_clips_starting_before", "name": name, "bar": bar}]
+
+
 GENERATORS = [
-    (gen_create_track, 0.18),
-    (gen_create_with_plugins, 0.16),
-    (gen_add_plugin, 0.18),
-    (gen_rename_track, 0.10),
-    (gen_delete_track, 0.08),
-    (gen_mute_track, 0.08),
-    (gen_solo_track, 0.06),
-    (gen_set_color, 0.08),
-    (gen_group_tracks, 0.08),
+    (gen_create_track, 0.14),
+    (gen_create_with_plugins, 0.12),
+    (gen_add_plugin, 0.14),
+    (gen_rename_track, 0.08),
+    (gen_delete_track, 0.06),
+    (gen_mute_track, 0.06),
+    (gen_solo_track, 0.05),
+    (gen_set_volume, 0.06),
+    (gen_set_pan, 0.06),
+    (gen_set_color, 0.06),
+    (gen_group_tracks, 0.05),
+    (gen_select_all_clips, 0.04),
+    (gen_select_all_clips_rename, 0.03),
+    (gen_select_clips_named, 0.03),
+    (gen_select_clips_type, 0.03),
+    (gen_select_clips_longer_than, 0.03),
+    (gen_select_clips_shorter_than, 0.03),
+    (gen_select_clips_starting_after, 0.03),
+    (gen_select_clips_starting_before, 0.03),
 ]
 
 

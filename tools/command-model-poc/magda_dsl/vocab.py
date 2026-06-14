@@ -25,8 +25,18 @@ SUPPORTED_COMMANDS = [
     "delete_track",      # ....delete()
     "mute_track",        # ....track.set(mute=true)
     "solo_track",        # ....track.set(solo=true)
+    "set_track_volume",  # ....track.set(volume_db=..)
+    "set_track_pan",     # ....track.set(pan=..)
     "set_track_color",   # ....track.set(colour="#..")
     "group_tracks",      # ....track.group(name=.., tracks="1,2,3")
+    "select_all_clips",  # ....clips.select()
+    "select_clips_named",           # ....clips.select(clip.name == "Intro")
+    "select_clips_type",            # ....clips.select(clip.type == "midi")
+    "select_clips_longer_than",     # ....clips.select(clip.length_bars > N)
+    "select_clips_shorter_than",    # ....clips.select(clip.length_bars < N)
+    "select_clips_starting_after",  # ....clips.select(clip.start_bar >= N)
+    "select_clips_starting_before", # ....clips.select(clip.start_bar <= N)
+    "select_all_clips_rename",      # ....clips.select().clip.rename(name=..)
 ]
 
 # In the spec but NOT expressible in the shipping DSL grammar today.

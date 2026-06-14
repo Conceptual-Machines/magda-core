@@ -850,54 +850,23 @@ class AISettingsDialog::ConfigPage : public juce::Component {
     LocalPage* localPage = nullptr;
 
     ConfigPage() {
-        // Mode selector: Local / Cloud / Hybrid
-        modeLabel_.setText("Mode", juce::dontSendNotification);
-        styleLabel(modeLabel_);
-        addAndMakeVisible(modeLabel_);
+        auto setupAgentRow = [this](juce::Label& label, juce::ComboBox& combo,
+                                    const juce::String& text, bool allowFastInference) {
+            label.setText(text, juce::dontSendNotification);
+            styleLabel(label);
+            addAndMakeVisible(label);
+            populateAgentTargetCombo(combo, {}, allowFastInference);
+            styleCombo(combo);
+            addAndMakeVisible(combo);
+        };
+        setupAgentRow(routerAgentLabel_, routerAgentCombo_, "Router", true);
+        setupAgentRow(commandAgentLabel_, commandAgentCombo_, "Command", true);
+        setupAgentRow(musicAgentLabel_, musicAgentCombo_, "Music", false);
+        setupAgentRow(controllerAgentLabel_, controllerAgentCombo_, "Controller", false);
 
-        modeCombo_.addItem("Local", 1);
-        modeCombo_.addItem("Cloud", 2);
-        modeCombo_.addItem("Hybrid", 3);
-        styleCombo(modeCombo_);
-        modeCombo_.onChange = [this]() { updateModeUI(); };
-        addAndMakeVisible(modeCombo_);
-
-        // Provider selector (cloud/hybrid)
-        providerLabel_.setText("Provider", juce::dontSendNotification);
-        styleLabel(providerLabel_);
-        addAndMakeVisible(providerLabel_);
-        styleCombo(providerCombo_);
-        addAndMakeVisible(providerCombo_);
-
-        // Optimize selector (cloud/hybrid)
-        optimizeLabel_.setText("Optimize", juce::dontSendNotification);
-        styleLabel(optimizeLabel_);
-        addAndMakeVisible(optimizeLabel_);
-        styleCombo(optimizeCombo_);
-        addAndMakeVisible(optimizeCombo_);
-
-        // Local source selector: embedded GGUF vs OpenAI-compatible server.
-        localSourceLabel_.setText("Source", juce::dontSendNotification);
-        styleLabel(localSourceLabel_);
-        addAndMakeVisible(localSourceLabel_);
-
-        localSourceCombo_.addItem("Embedded", 1);
-        localSourceCombo_.addItem("Local server", 2);
-        localSourceCombo_.setSelectedId(1, juce::dontSendNotification);
-        styleCombo(localSourceCombo_);
-        localSourceCombo_.onChange = [this]() { updateModeUI(); };
-        addAndMakeVisible(localSourceCombo_);
-
-        // Local model name label (embedded GGUF source)
-        modelNameLabel_.setText("No model loaded", juce::dontSendNotification);
-        styleLabel(modelNameLabel_);
-        modelNameLabel_.setColour(juce::Label::textColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_DIM));
-        addAndMakeVisible(modelNameLabel_);
-
-        // Local-server model picker (shown when Source = Local server). Lives
-        // here so the model is chosen right where the source is selected.
-        serverModelLabel_.setText("Model", juce::dontSendNotification);
+        // Shared model id for any agent mapped to the OpenAI-compatible local
+        // server target.
+        serverModelLabel_.setText("Local server", juce::dontSendNotification);
         styleLabel(serverModelLabel_);
         addAndMakeVisible(serverModelLabel_);
 
@@ -914,8 +883,10 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                                      DarkTheme::getColour(DarkTheme::TEXT_DIM));
         addAndMakeVisible(serverStatusLabel_);
 
-        modeCombo_.setSelectedId(1, juce::dontSendNotification);
-        updateModeUI();
+        routerAgentCombo_.setSelectedId(1, juce::dontSendNotification);
+        commandAgentCombo_.setSelectedId(1, juce::dontSendNotification);
+        musicAgentCombo_.setSelectedId(1, juce::dontSendNotification);
+        controllerAgentCombo_.setSelectedId(1, juce::dontSendNotification);
 
         // MCP Tools section
         mcpSectionLabel_.setText("MCP Tools", juce::dontSendNotification);
@@ -937,6 +908,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         faustMcpHint_.setColour(juce::Label::textColourId,
                                 DarkTheme::getColour(DarkTheme::TEXT_DIM));
         addAndMakeVisible(faustMcpHint_);
+
+        refreshAgentTargetCombos();
     }
 
     void resized() override {
@@ -944,45 +917,25 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         const int rowH = 28;
         const int labelW = 80;
 
-        // Mode row
-        auto row = bounds.removeFromTop(rowH);
-        modeLabel_.setBounds(row.removeFromLeft(labelW));
-        modeCombo_.setBounds(row.reduced(0, 2));
+        auto placeAgentRow = [&](juce::Label& label, juce::ComboBox& combo) {
+            auto r = bounds.removeFromTop(rowH);
+            label.setBounds(r.removeFromLeft(labelW));
+            combo.setBounds(r.reduced(0, 2));
+            bounds.removeFromTop(2);
+        };
+        placeAgentRow(routerAgentLabel_, routerAgentCombo_);
+        placeAgentRow(commandAgentLabel_, commandAgentCombo_);
+        placeAgentRow(musicAgentLabel_, musicAgentCombo_);
+        placeAgentRow(controllerAgentLabel_, controllerAgentCombo_);
+
         bounds.removeFromTop(8);
-
-        int mode = modeCombo_.getSelectedId();
-
-        if (mode == 1) {
-            // Local: source selector, then either the embedded GGUF summary or
-            // the local-server model picker.
-            row = bounds.removeFromTop(rowH);
-            localSourceLabel_.setBounds(row.removeFromLeft(labelW));
-            localSourceCombo_.setBounds(row.reduced(0, 2));
-            bounds.removeFromTop(4);
-
-            if (localSourceCombo_.getSelectedId() == 2) {
-                // Model + Refresh row
-                row = bounds.removeFromTop(rowH);
-                serverModelLabel_.setBounds(row.removeFromLeft(labelW));
-                serverRefreshBtn_.setBounds(row.removeFromRight(70).reduced(2, 2));
-                row.removeFromRight(4);
-                serverModelCombo_.setBounds(row.reduced(0, 2));
-                bounds.removeFromTop(2);
-                serverStatusLabel_.setBounds(bounds.removeFromTop(18).withTrimmedLeft(labelW));
-            } else {
-                modelNameLabel_.setBounds(bounds.removeFromTop(rowH).withTrimmedLeft(labelW));
-            }
-        } else {
-            // Cloud/Hybrid: provider + optimize
-            row = bounds.removeFromTop(rowH);
-            providerLabel_.setBounds(row.removeFromLeft(labelW));
-            providerCombo_.setBounds(row.reduced(0, 2));
-            bounds.removeFromTop(4);
-
-            row = bounds.removeFromTop(rowH);
-            optimizeLabel_.setBounds(row.removeFromLeft(labelW));
-            optimizeCombo_.setBounds(row.reduced(0, 2));
-        }
+        auto row = bounds.removeFromTop(rowH);
+        serverModelLabel_.setBounds(row.removeFromLeft(labelW));
+        serverRefreshBtn_.setBounds(row.removeFromRight(70).reduced(2, 2));
+        row.removeFromRight(4);
+        serverModelCombo_.setBounds(row.reduced(0, 2));
+        bounds.removeFromTop(2);
+        serverStatusLabel_.setBounds(bounds.removeFromTop(18).withTrimmedLeft(labelW));
 
         // MCP Tools section
         bounds.removeFromTop(16);
@@ -992,42 +945,14 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         faustMcpHint_.setBounds(bounds.removeFromTop(18).withTrimmedLeft(24));
     }
 
-    void refreshProviderCombos() {
-        providerCombo_.clear();
-        int nextId = 1;
-        if (cloudPage) {
-            for (const auto& pid : cloudPage->getConfiguredProviders()) {
-                auto* info = findProviderInfo(pid);
-                if (info)
-                    providerCombo_.addItem(info->displayName, nextId++);
-            }
-        }
-        // Re-select saved provider
-        if (savedProviderDisplay_.isNotEmpty()) {
-            for (int i = 0; i < providerCombo_.getNumItems(); ++i) {
-                if (providerCombo_.getItemText(i) == savedProviderDisplay_) {
-                    providerCombo_.setSelectedId(providerCombo_.getItemId(i),
-                                                 juce::dontSendNotification);
-                    return;
-                }
-            }
-        }
-        if (providerCombo_.getNumItems() > 0)
-            providerCombo_.setSelectedId(providerCombo_.getItemId(0), juce::dontSendNotification);
-    }
-
     // Called when the Config tab becomes visible: re-pull provider combos from
     // the Cloud page and refresh the local-server summary from the Local page's
     // live selection.
     void refreshOnShow() {
-        refreshProviderCombos();
-        if (modeCombo_.getSelectedId() == 1)
-            updateLocalModelLabel();
+        refreshAgentTargetCombos();
     }
 
     void load(Config& config) {
-        auto presetId = config.getAIPreset();
-
         // MCP toggle
         auto mcpServers = config.getMCPServers();
         bool faustMcpEnabled = false;
@@ -1037,60 +962,17 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         }
         faustMcpToggle_.setToggleState(faustMcpEnabled, juce::dontSendNotification);
 
-        // Determine mode from preset
-        if (presetId.starts_with("local") || presetId == magda::preset::LOCAL_EMBEDDED) {
-            modeCombo_.setSelectedId(1, juce::dontSendNotification);
-            localSourceCombo_.setSelectedId(presetId == magda::preset::LOCAL_SERVER ? 2 : 1,
-                                            juce::dontSendNotification);
-        } else if (presetId.starts_with("hybrid")) {
-            modeCombo_.setSelectedId(3, juce::dontSendNotification);
-            if (presetId == magda::preset::HYBRID_SPEED)
-                savedOptimize_ = "Speed";
-            else
-                savedOptimize_ = "Quality";
-        } else {
-            modeCombo_.setSelectedId(2, juce::dontSendNotification);
-            // Infer optimize from whether command uses cloud
-            auto cmdCfg = config.getAgentLLMConfig(magda::role::COMMAND);
-            auto musicCfg = config.getAgentLLMConfig(magda::role::MUSIC);
-            if (cmdCfg.provider == musicCfg.provider && cmdCfg.model == musicCfg.model)
-                savedOptimize_ = "Quality";
-            else
-                savedOptimize_ = "Cost";
-        }
-
-        // Determine provider from music agent config
-        auto musicCfg = config.getAgentLLMConfig(magda::role::MUSIC);
-        if (musicCfg.provider == magda::provider::ANTHROPIC)
-            savedProviderDisplay_ = "Anthropic";
-        else if (musicCfg.provider == magda::provider::GEMINI)
-            savedProviderDisplay_ = "Gemini";
-        else if (musicCfg.provider == magda::provider::DEEPSEEK)
-            savedProviderDisplay_ = "DeepSeek";
-        else if (musicCfg.provider == magda::provider::OPENROUTER)
-            savedProviderDisplay_ = "OpenRouter";
-        else if (musicCfg.provider == magda::provider::OPENAI_CHAT ||
-                 musicCfg.provider == magda::provider::OPENAI_RESPONSES)
-            savedProviderDisplay_ = "OpenAI";
+        routerTargetProvider_ = config.getAgentLLMConfig(magda::role::ROUTER).provider;
+        commandTargetProvider_ = config.getAgentLLMConfig(magda::role::COMMAND).provider;
+        musicTargetProvider_ = config.getAgentLLMConfig(magda::role::MUSIC).provider;
+        controllerTargetProvider_ = config.getAgentLLMConfig(magda::role::CONTROLLER).provider;
 
         // Seed the local-server model combo from saved config.
         serverModelCombo_.clear(juce::dontSendNotification);
         serverModelCombo_.setText(juce::String(config.getLocalServerModel()),
                                   juce::dontSendNotification);
 
-        updateLocalModelLabel();
-        updateModeUI();
-    }
-
-    // Embedded-GGUF summary (the local-server source uses the model combo, not
-    // this label).
-    void updateLocalModelLabel() {
-        auto modelPath = Config::getInstance().getLocalModelPath();
-        if (!modelPath.empty())
-            modelNameLabel_.setText(juce::File(juce::String(modelPath)).getFileName(),
-                                    juce::dontSendNotification);
-        else
-            modelNameLabel_.setText("No model configured", juce::dontSendNotification);
+        refreshAgentTargetCombos();
     }
 
     // Probe GET /v1/models for the configured local server and fill the model
@@ -1162,177 +1044,167 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         }
         config.setMCPServers(mcpServers);
 
-        int mode = modeCombo_.getSelectedId();
-        auto presetId = providerDisplayToPresetId(providerCombo_.getText());
-        auto optimize = optimizeCombo_.getText();
+        config.setAIPreset(magda::preset::CUSTOM);
+        config.setLocalServerModel(serverModelCombo_.getText().trim().toStdString());
 
-        if (mode == 1) {
-            // Local: embedded GGUF or OpenAI-compatible server.
-            const std::string localPresetId = (localSourceCombo_.getSelectedId() == 2)
-                                                  ? magda::preset::LOCAL_SERVER
-                                                  : magda::preset::LOCAL_EMBEDDED;
-            config.setAIPreset(localPresetId);
-            auto* preset = magda::findPreset(localPresetId);
-            if (preset)
-                for (const auto& [role, cfg] : preset->agents)
-                    config.setAgentLLMConfig(role, cfg);
-            // Persist the chosen local-server model (this tab owns it).
-            if (localSourceCombo_.getSelectedId() == 2)
-                config.setLocalServerModel(serverModelCombo_.getText().trim().toStdString());
-        } else if (mode == 2) {
-            // Cloud
-            config.setAIPreset(presetId);
-
-            auto* preset = magda::findPreset(presetId);
-            if (preset) {
-                for (const auto& [role, presetCfg] : preset->agents) {
-                    auto cfg = presetCfg;
-                    cfg.apiKey = "";
-                    config.setAgentLLMConfig(role, cfg);
-                }
-            }
-
-            // Cost optimization: use cheaper model for router only
-            // (command needs the full model for CFG/Responses API)
-            if (optimize == "Cost") {
-                auto routerCfg = config.getAgentLLMConfig(magda::role::ROUTER);
-                applyCheaperModel(routerCfg, presetId);
-                config.setAgentLLMConfig(magda::role::ROUTER, routerCfg);
-            }
-        } else {
-            // Hybrid
-            std::string hybridPresetId =
-                optimize == "Speed" ? magda::preset::HYBRID_SPEED : magda::preset::HYBRID_QUALITY;
-            config.setAIPreset(hybridPresetId);
-
-            // Router is always local
-            Config::AgentLLMConfig localCfg;
-            localCfg.provider = magda::provider::LLAMA_LOCAL;
-            config.setAgentLLMConfig(magda::role::ROUTER, localCfg);
-
-            // Music always uses cloud
-            auto musicCfg = makeCloudConfig(magda::role::MUSIC, presetId);
-            config.setAgentLLMConfig(magda::role::MUSIC, musicCfg);
-
-            // Command: cloud for speed, local for cost
-            if (optimize == "Speed") {
-                auto cmdCfg = makeCloudConfig(magda::role::COMMAND, presetId);
-                config.setAgentLLMConfig(magda::role::COMMAND, cmdCfg);
-            } else {
-                Config::AgentLLMConfig cmdLocal;
-                cmdLocal.provider = magda::provider::LLAMA_LOCAL;
-                config.setAgentLLMConfig(magda::role::COMMAND, cmdLocal);
-            }
-        }
+        auto setRoleConfig = [&](const std::string& role, const juce::ComboBox& combo) {
+            config.setAgentLLMConfig(role, makeConfigForTarget(role, combo));
+        };
+        setRoleConfig(magda::role::ROUTER, routerAgentCombo_);
+        setRoleConfig(magda::role::COMMAND, commandAgentCombo_);
+        setRoleConfig(magda::role::MUSIC, musicAgentCombo_);
+        setRoleConfig(magda::role::CONTROLLER, controllerAgentCombo_);
     }
 
   private:
-    void updateModeUI() {
-        int mode = modeCombo_.getSelectedId();
-        bool isLocal = (mode == 1);
-        bool isCloud = (mode == 2);
-        bool isHybrid = (mode == 3);
+    enum TargetItemId {
+        TargetQwen = 1,
+        TargetLocalServer = 2,
+        TargetFastInference = 3,
+        TargetProviderBase = 100,
+    };
 
-        const bool isServer = isLocal && localSourceCombo_.getSelectedId() == 2;
-        localSourceLabel_.setVisible(isLocal);
-        localSourceCombo_.setVisible(isLocal);
-        // Embedded source → GGUF summary label; server source → model picker.
-        modelNameLabel_.setVisible(isLocal && !isServer);
-        serverModelLabel_.setVisible(isServer);
-        serverModelCombo_.setVisible(isServer);
-        serverRefreshBtn_.setVisible(isServer);
-        serverStatusLabel_.setVisible(isServer);
-        if (isLocal && !isServer)
-            updateLocalModelLabel();
-        if (isServer && serverModelCombo_.getNumItems() == 0)
-            refreshServerModels();  // auto-discover on entering server source
-        providerLabel_.setVisible(!isLocal);
-        providerCombo_.setVisible(!isLocal);
-        optimizeLabel_.setVisible(!isLocal);
-        optimizeCombo_.setVisible(!isLocal);
-
-        // Update optimize options based on mode
-        optimizeCombo_.clear();
-        if (isCloud) {
-            optimizeCombo_.addItem("Quality", 1);
-            optimizeCombo_.addItem("Cost", 2);
-        } else if (isHybrid) {
-            optimizeCombo_.addItem("Speed", 1);
-            optimizeCombo_.addItem("Cost", 2);
-        }
-
-        // Restore saved optimize selection
-        if (!isLocal) {
-            refreshProviderCombos();
-            bool found = false;
-            for (int i = 0; i < optimizeCombo_.getNumItems(); ++i) {
-                if (optimizeCombo_.getItemText(i) == savedOptimize_) {
-                    optimizeCombo_.setSelectedId(optimizeCombo_.getItemId(i),
-                                                 juce::dontSendNotification);
-                    found = true;
-                    break;
-                }
-            }
-            if (!found)
-                optimizeCombo_.setSelectedId(1, juce::dontSendNotification);
-        }
-
+    void refreshAgentTargetCombos() {
+        populateAgentTargetCombo(routerAgentCombo_, routerTargetProvider_, true);
+        populateAgentTargetCombo(commandAgentCombo_, commandTargetProvider_, true);
+        populateAgentTargetCombo(musicAgentCombo_, musicTargetProvider_, false);
+        populateAgentTargetCombo(controllerAgentCombo_, controllerTargetProvider_, false);
         resized();
     }
 
-    static std::string providerDisplayToPresetId(const juce::String& display) {
-        if (display == "Anthropic")
-            return magda::preset::CLOUD_ANTHROPIC;
-        if (display == "Gemini")
-            return magda::preset::CLOUD_GEMINI;
-        if (display == "DeepSeek")
-            return magda::preset::CLOUD_DEEPSEEK;
-        if (display == "OpenRouter")
-            return magda::preset::CLOUD_OPENROUTER;
-        return magda::preset::CLOUD_OPENAI;
-    }
+    void populateAgentTargetCombo(juce::ComboBox& combo, const std::string& providerToSelect,
+                                  bool allowFastInference) {
+        auto prior = combo.getText();
+        combo.clear(juce::dontSendNotification);
+        combo.addItem("MAGDA Qwen 7B", TargetQwen);
+        combo.addItem("Local server", TargetLocalServer);
+        if (allowFastInference)
+            combo.addItem("Fast inference", TargetFastInference);
 
-    static Config::AgentLLMConfig makeCloudConfig(const std::string& role,
-                                                  const std::string& presetId) {
-        if (auto* preset = magda::findPreset(presetId)) {
-            auto it = preset->agents.find(role);
-            if (it != preset->agents.end()) {
-                auto cfg = it->second;
-                cfg.apiKey = "";
-                return cfg;
+        int id = TargetProviderBase;
+        bool providerWasAdded = false;
+        if (cloudPage) {
+            for (const auto& pid : cloudPage->getConfiguredProviders()) {
+                auto* info = findProviderInfo(pid);
+                if (!info)
+                    continue;
+                combo.addItem(info->displayName, id++);
+                if (pid == providerToSelect)
+                    providerWasAdded = true;
             }
         }
-        // Fallback — should not happen with valid preset IDs
-        return Config::AgentLLMConfig{};
+
+        if (!providerToSelect.empty() && !isBuiltinTarget(providerToSelect) && !providerWasAdded) {
+            combo.addItem(providerToDisplay(providerToSelect), id++);
+        }
+
+        auto selectedId = targetIdForProvider(combo, providerToSelect);
+        if (selectedId == TargetFastInference && !allowFastInference)
+            selectedId = TargetQwen;
+        if (selectedId > 0)
+            combo.setSelectedId(selectedId, juce::dontSendNotification);
+        else if (prior.isNotEmpty())
+            combo.setText(prior, juce::dontSendNotification);
+        else
+            combo.setSelectedId(TargetQwen, juce::dontSendNotification);
     }
 
-    static void applyCheaperModel(Config::AgentLLMConfig& cfg, const std::string& presetId) {
-        if (presetId == magda::preset::CLOUD_OPENAI)
-            cfg.model = magda::model::GPT_4_1_MINI;
-        else if (presetId == magda::preset::CLOUD_ANTHROPIC)
-            cfg.model = magda::model::CLAUDE_HAIKU;
-        else if (presetId == magda::preset::CLOUD_GEMINI)
-            cfg.model = magda::model::GEMINI_FLASH;
-        else if (presetId == magda::preset::CLOUD_DEEPSEEK)
-            cfg.model = magda::model::DEEPSEEK_CHAT;
-        // openrouter: keep default
+    static bool isBuiltinTarget(const std::string& provider) {
+        return provider == magda::provider::LLAMA_LOCAL ||
+               provider == magda::provider::LOCAL_SERVER ||
+               provider == magda::provider::FAST_INFERENCE;
     }
 
-    juce::Label modeLabel_;
-    juce::ComboBox modeCombo_;
-    juce::Label providerLabel_;
-    juce::ComboBox providerCombo_;
-    juce::Label optimizeLabel_;
-    juce::ComboBox optimizeCombo_;
-    juce::Label localSourceLabel_;
-    juce::ComboBox localSourceCombo_;
-    juce::Label modelNameLabel_;
-    // Local-server model picker (Source = Local server)
+    static int targetIdForProvider(const juce::ComboBox& combo, const std::string& provider) {
+        if (provider == magda::provider::LOCAL_SERVER)
+            return TargetLocalServer;
+        if (provider == magda::provider::FAST_INFERENCE)
+            return TargetFastInference;
+        if (provider.empty() || provider == magda::provider::LLAMA_LOCAL)
+            return TargetQwen;
+
+        const auto display = providerToDisplay(provider);
+        for (int i = 0; i < combo.getNumItems(); ++i) {
+            if (combo.getItemText(i) == display)
+                return combo.getItemId(i);
+        }
+        return 0;
+    }
+
+    static juce::String providerToDisplay(const std::string& provider) {
+        if (provider == magda::provider::ANTHROPIC)
+            return "Anthropic";
+        if (provider == magda::provider::GEMINI)
+            return "Gemini";
+        if (provider == magda::provider::DEEPSEEK)
+            return "DeepSeek";
+        if (provider == magda::provider::OPENROUTER)
+            return "OpenRouter";
+        return "OpenAI";
+    }
+
+    static std::string providerForDisplay(const juce::String& display) {
+        if (display == "Anthropic")
+            return magda::provider::ANTHROPIC;
+        if (display == "Gemini")
+            return magda::provider::GEMINI;
+        if (display == "DeepSeek")
+            return magda::provider::DEEPSEEK;
+        if (display == "OpenRouter")
+            return magda::provider::OPENROUTER;
+        return magda::provider::OPENAI_RESPONSES;
+    }
+
+    static Config::AgentLLMConfig makeConfigForTarget(const std::string& role,
+                                                      const juce::ComboBox& combo) {
+        Config::AgentLLMConfig cfg;
+        const int selectedId = combo.getSelectedId();
+        if (selectedId == TargetLocalServer) {
+            cfg.provider = magda::provider::LOCAL_SERVER;
+            return cfg;
+        }
+        if (selectedId == TargetFastInference) {
+            cfg.provider = magda::provider::FAST_INFERENCE;
+            return cfg;
+        }
+        if (selectedId == TargetQwen) {
+            cfg.provider = magda::provider::LLAMA_LOCAL;
+            return cfg;
+        }
+
+        const auto provider = providerForDisplay(combo.getText());
+        cfg.provider =
+            (role == magda::role::ROUTER && provider == magda::provider::OPENAI_RESPONSES)
+                ? magda::provider::OPENAI_CHAT
+                : provider;
+
+        if (cfg.provider == magda::provider::OPENAI_CHAT)
+            cfg.model = magda::model::GPT_4_1;
+        else if (cfg.provider == magda::provider::OPENAI_RESPONSES)
+            cfg.model = role == magda::role::MUSIC ? magda::model::GPT_5_5 : magda::model::GPT_5;
+        else if (cfg.provider == magda::provider::ANTHROPIC)
+            cfg.model = role == magda::role::MUSIC ? magda::model::CLAUDE_OPUS
+                                                   : magda::model::CLAUDE_SONNET;
+        else if (cfg.provider == magda::provider::GEMINI)
+            cfg.model =
+                role == magda::role::MUSIC ? magda::model::GEMINI_PRO : magda::model::GEMINI_FLASH;
+        else if (cfg.provider == magda::provider::DEEPSEEK)
+            cfg.model = role == magda::role::MUSIC ? magda::model::DEEPSEEK_REASONER
+                                                   : magda::model::DEEPSEEK_CHAT;
+        else if (cfg.provider == magda::provider::OPENROUTER)
+            cfg.model = magda::model::LLAMA_70B;
+        return cfg;
+    }
+
+    juce::Label routerAgentLabel_, commandAgentLabel_, musicAgentLabel_, controllerAgentLabel_;
+    juce::ComboBox routerAgentCombo_, commandAgentCombo_, musicAgentCombo_, controllerAgentCombo_;
     juce::Label serverModelLabel_, serverStatusLabel_;
     juce::ComboBox serverModelCombo_;
     juce::TextButton serverRefreshBtn_;
-    juce::String savedProviderDisplay_;
-    juce::String savedOptimize_ = "Quality";
+    std::string routerTargetProvider_ = magda::provider::LLAMA_LOCAL;
+    std::string commandTargetProvider_ = magda::provider::LLAMA_LOCAL;
+    std::string musicTargetProvider_ = magda::provider::LLAMA_LOCAL;
+    std::string controllerTargetProvider_ = magda::provider::LLAMA_LOCAL;
 
     // MCP Tools
     juce::Label mcpSectionLabel_;

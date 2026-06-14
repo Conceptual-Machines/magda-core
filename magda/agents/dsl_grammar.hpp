@@ -53,7 +53,7 @@ method: "." method_call
 method_call: "clip" "." "new" "(" params? ")"
            | "clip" "." "rename" "(" params? ")"
            | "clip" "." "delete" "(" params? ")"
-           | "clips" "." "select" "(" clip_condition ")"
+           | "clips" "." "select" "(" clip_condition? ")"
            | "track" "." "set" "(" params? ")"
            | "track" "." "group" "(" params? ")"
            | "track" "." "move" "(" params? ")"
@@ -132,6 +132,7 @@ METHOD CHAINING:
 - .clip.rename(name="Clip {i}") - Rename selected clips with auto-numbering: Clip 1, Clip 2, etc.
 - .clip.delete(index=0) - Delete clip at index on track
 - .select() - Select track in the UI
+- .clips.select() - Select all clips in the current track/filter context
 - .clips.select(clip.length_bars >= 2) - Select clips matching predicate (numeric fields: length_bars, start_bar, length, start, start_beats, id, track_id; string fields: name, type; ops: ==, !=, >, >=, <, <=; string fields support == and != only)
 
 FILTER OPERATIONS (bulk):
@@ -172,6 +173,7 @@ EXAMPLES:
   track(id=4).track.group(name="Vocals", tracks="4,5").track.set(colour="#44c7ff")
 - "rename selected clips to FOO" -> track(id=1).clip.rename(name="FOO")   // omit index to rename selected clips
 - "select track 1" -> track(id=1).select()
+- "select all clips on track 1" -> track(id=1).clips.select()
 - "select all clips longer than 2 bars on track 1" -> track(id=1).clips.select(clip.length_bars > 2)
 - "select all clips shorter than or equal to 1 bar on track 2" -> track(id=2).clips.select(clip.length_bars <= 1)
 - "select the clip named Intro" -> track(id=1).clips.select(clip.name == "Intro")

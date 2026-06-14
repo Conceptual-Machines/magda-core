@@ -85,7 +85,11 @@ Current baseline (no model): **en = 100% / 100% / 100%**, **ja/ru/zh = 0%**
 
 Expressible in the shipping DSL today (modelled in v0): `create_track`,
 `add_plugin`, `rename_track`, `delete_track`, `mute_track`, `solo_track`,
-`set_track_color`, `group_tracks`.
+`set_track_volume`, `set_track_pan`, `set_track_color`, `group_tracks`,
+`select_all_clips`, `select_clips_named`, `select_clips_type`,
+`select_clips_longer_than`, `select_clips_shorter_than`,
+`select_clips_starting_after`, `select_clips_starting_before`,
+`select_all_clips_rename`.
 
 In the spec but **NOT** in the current DSL grammar (excluded from v0; each needs
 a grammar + interpreter addition before it can be modelled) - see
@@ -112,25 +116,31 @@ The full loop. Training runs on Colab; everything else is local.
 
 ```bash
 # 1. freeze data (local) -- train + held-out val, leakage-guarded vs test
-python3 -m dataset.generate --n 3000 --val 400
+python3 -m dataset.generate --n 12000 --val 1500
 
 # 2. lock the prompt contract (local) -- chat records w/ the system prompt
 #    that BOTH training and C++ inference use (model/format.py: SYSTEM_PROMPT)
 python3 -m model.format            # -> data/{train,val}.chat.jsonl
 
-# 3. train (Colab) -- model/train_colab.py: unsloth LoRA on Qwen2.5-0.5B-Instruct,
-#    save_pretrained_gguf -> command-model.gguf  (download it)
+# 3. train (Colab) -- open model/train_colab.ipynb in a GPU runtime.
+#    It exports /content/drive/MyDrive/magda-command-model/command-model.gguf.
 
-# 4. score the model on the SAME fixed test set (local M1, real latency)
+# 4. copy the exported GGUF into the app-visible artifact path
+mkdir -p model/artifacts
+cp "/path/to/Google Drive/My Drive/magda-command-model/command-model.gguf" model/artifacts/command-model.gguf
+
+# 5. score the model on the SAME fixed test set (local M1, real latency)
 pip install llama-cpp-python
-python3 -m eval.run --model command-model.gguf          # head-to-head vs baseline
-python3 -m eval.run --model command-model.gguf --show-fails
+python3 -m eval.run --model model/artifacts/command-model.gguf
+python3 -m eval.run --model model/artifacts/command-model.gguf --show-fails
 ```
 
 `SYSTEM_PROMPT` in `model/format.py` is the inference contract: the C++ command
 backend must send the identical string. It is deliberately short (fine-tuned
-weights carry the mapping) for latency. Final artifact: the `.gguf` dropped into
-`LlamaLocalClient`. No standing GPU infra; the M1 is the latency test bed.
+weights carry the mapping) for latency. Final artifact:
+`model/artifacts/command-model.gguf`. The app's `FAST_INFERENCE` command backend
+loads that GGUF through `LlamaModelManager` / llama.cpp. No standing GPU infra;
+the M1 is the latency test bed.
 
 ## Roadmap
 

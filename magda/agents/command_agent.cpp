@@ -3,18 +3,32 @@
 #include "../daw/core/Config.hpp"
 #include "dsl_grammar.hpp"
 #include "dsl_interpreter.hpp"
+#include "llama_model_manager.hpp"
 #include "llm_client_factory.hpp"
 #include "llm_presets.hpp"
 
 namespace magda {
 
-const char* CommandAgent::getSystemPrompt() {
-    return dsl::getToolDescription();
-}
+namespace {
+
+constexpr const char* kCommandModelPrompt =
+    "You convert a music-production request into MAGDA DSL. "
+    "Output only DSL, one statement per line, no prose.\n"
+    "Grammar: track(name=\"X\", new=true) creates a track; "
+    ".fx.add(name=\"eq\") adds an internal FX, .fx.add(name=\"<serum>\") a third-party plugin by "
+    "alias token; "
+    ".track.set(name=, colour=\"#rrggbb\", volume_db=-3, pan=0.5, mute=true, solo=true) edits a "
+    "track; "
+    ".track.group(name=\"G\", tracks=\"1,2,3\") groups tracks by id; "
+    ".delete() deletes; .clips.select() selects all clips on a track; "
+    ".clips.select(clip.length_bars > 2), .clips.select(clip.name == \"Intro\"), "
+    "and .clips.select(clip.type == \"midi\") select matching clips; "
+    "filter(tracks, track.name == \"X\").<method> applies in bulk. "
+    "Reference an existing track with track(id=N) or track(name=\"X\").";
 
 /** Strip markdown code fences and surrounding prose from LLM output.
     Cloud providers (Anthropic, Gemini) often wrap DSL in ```blocks. */
-static std::string extractDSL(const juce::String& raw) {
+std::string extractDSL(const juce::String& raw) {
     auto text = raw.trim();
 
     // Strip ```dsl ... ``` or ``` ... ``` fences
@@ -32,6 +46,78 @@ static std::string extractDSL(const juce::String& raw) {
     }
 
     return text.toStdString();
+}
+
+juce::String extractUserRequestForCommandModel(const std::string& message) {
+    auto text = juce::String::fromUTF8(message.c_str());
+    auto lower = text.toLowerCase();
+    auto marker = lower.lastIndexOf("user request:");
+    if (marker >= 0)
+        return text.substring(marker + 13).trim();
+    return text.trim();
+}
+
+juce::File findCommandModelGGUF() {
+    const auto cwd = juce::File::getCurrentWorkingDirectory();
+    juce::Array<juce::File> candidates;
+    candidates.add(cwd.getChildFile("tools/command-model-poc/model/artifacts/command-model.gguf"));
+    candidates.add(cwd.getChildFile("tools/command-model-poc/command-model.gguf"));
+    candidates.add(cwd.getChildFile("command-model.gguf"));
+
+    for (const auto& f : candidates)
+        if (f.existsAsFile())
+            return f;
+    return candidates.getFirst();
+}
+
+CommandAgent::GenerateResult runFastCommandModel(const std::string& message) {
+    CommandAgent::GenerateResult result;
+
+    const auto modelFile = findCommandModelGGUF();
+    if (!modelFile.existsAsFile()) {
+        result.error =
+            "Fast command inference GGUF not found: " + modelFile.getFullPathName().toStdString();
+        result.hasError = true;
+        return result;
+    }
+
+    auto& manager = LlamaModelManager::getInstance();
+    const auto modelPath = modelFile.getFullPathName().toStdString();
+    if (!manager.isLoaded() || manager.getLoadedModelPath() != modelPath) {
+        LlamaModelManager::Config cfg;
+        cfg.modelPath = modelPath;
+        cfg.contextSize = 1024;
+        cfg.gpuLayers = -1;
+        if (!manager.loadModel(cfg)) {
+            result.error = "Failed to load fast command inference GGUF: " + modelPath;
+            result.hasError = true;
+            return result;
+        }
+    }
+
+    LlamaModelManager::InferenceRequest req;
+    req.systemPrompt = kCommandModelPrompt;
+    req.userMessage = extractUserRequestForCommandModel(message).toStdString();
+    req.temperature = 0.0f;
+    req.maxTokens = 192;
+
+    auto response = manager.infer(req);
+    if (!response.success) {
+        result.error = response.error.empty() ? "Fast command inference failed." : response.error;
+        result.hasError = true;
+        return result;
+    }
+
+    result.dslOutput = extractDSL(juce::String(response.text));
+    DBG("MAGDA CommandAgent fast GGUF (" + juce::String(response.wallSeconds, 2) +
+        "s): " + juce::String(result.dslOutput));
+    return result;
+}
+
+}  // namespace
+
+const char* CommandAgent::getSystemPrompt() {
+    return dsl::getToolDescription();
 }
 
 /** Check if provider supports CFG grammar (OpenAI Responses API, GPT-5+ only). */
@@ -75,10 +161,12 @@ CommandAgent::GenerateResult CommandAgent::generate(const std::string& message) 
     }
 
     auto agentConfig = Config::getInstance().getAgentLLMConfig(role::COMMAND);
+    if (agentConfig.provider == provider::FAST_INFERENCE)
+        return runFastCommandModel(message);
 
-    if (agentConfig.provider != provider::LLAMA_LOCAL) {
+    if (!isLocalLLMProvider(agentConfig.provider)) {
         auto providerConfig = toLLMProviderConfig(agentConfig);
-        if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
+        if (!hasUsableLLMAuth(agentConfig, providerConfig)) {
             result.error = "Command agent API key not configured.";
             result.hasError = true;
             return result;
@@ -118,10 +206,12 @@ CommandAgent::GenerateResult CommandAgent::generateStreaming(const std::string& 
     }
 
     auto agentConfig = Config::getInstance().getAgentLLMConfig(role::COMMAND);
+    if (agentConfig.provider == provider::FAST_INFERENCE)
+        return runFastCommandModel(message);
 
-    if (agentConfig.provider != provider::LLAMA_LOCAL) {
+    if (!isLocalLLMProvider(agentConfig.provider)) {
         auto providerConfig = toLLMProviderConfig(agentConfig);
-        if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
+        if (!hasUsableLLMAuth(agentConfig, providerConfig)) {
             result.error = "Command agent API key not configured.";
             result.hasError = true;
             return result;

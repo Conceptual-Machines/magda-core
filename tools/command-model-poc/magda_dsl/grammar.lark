@@ -41,7 +41,7 @@ method: "." method_call
 method_call: "clip" "." "new" "(" params? ")"
            | "clip" "." "rename" "(" params? ")"
            | "clip" "." "delete" "(" params? ")"
-           | "clips" "." "select" "(" clip_condition ")"
+           | "clips" "." "select" "(" clip_condition? ")"
            | "track" "." "set" "(" params? ")"
            | "track" "." "group" "(" params? ")"
            | "track" "." "move" "(" params? ")"

@@ -39,11 +39,11 @@ DSP, creative decisions.
    streams cleanly on FPGA.
 
 4. **Values are generic spans, not understood.** Names, plugins, colours, ids,
-   and (future) numbers are tagged as spans; the model is blind to their
-   content. Numbers will collapse to a `<NUM>` token (like `<UNK>` for names);
-   the ARM parses "-6 dB" -> `volume_db=-6`. The parameter identity comes from
-   the INTENT, so a single generic VALUE slot suffices for single-value commands.
-   Only MULTI-value utterances need role-typed value slots.
+   pan words, and numeric values are tagged as spans; the model is blind to
+   their content. The ARM parses "-6 dB" -> `volume_db=-6`, or "hard right" ->
+   `pan=1`. The parameter identity comes from the INTENT, so a single generic
+   VALUE slot suffices for single-value commands. Only MULTI-value utterances
+   need role-typed value slots.
 
 ## What's built and working
 
@@ -51,9 +51,9 @@ Pipeline (all local, M1):
 - `magda_dsl/` - grammar (mirrored from dsl_grammar.hpp), canonical renderer,
   vocab (plugins/colours), lark validator. All gold DSL parses under the real CFG.
 - `dataset/generate.py` - template synthetic data, leakage-guarded train/val
-  split (train 3000 / val 400 / test 45, zero overlap).
+  split (train 12000 / val 1500 / test 72, zero overlap).
 - `dataset/tagging.py` - (input, actions) -> (intent, BIO tags); round-trip
-  reconstruct -> render == gold = **97.3%** (the ~2.7% is cosmetic name casing,
+  reconstruct -> render == gold = **95.5%** (the ~4.5% is cosmetic name casing,
   e.g. "FX" vs "Fx").
 - `baseline/rule_parser.py` - Phase-1 no-model floor: 100% on the English test set
   (but it's hand-fit regex; doesn't generalize - that's the point of the model).
@@ -63,13 +63,13 @@ Pipeline (all local, M1):
 
 | metric | value |
 |---|---|
-| params | **39,639** |
-| size @ 4-bit weights | **~19 KB** |
-| val end-to-end exact | 98.5% |
-| **held-out test exact** | **95.6%** (syntax 100%, command 97.8%) |
-| latency | 3.8 ms (CPU/M1 PyTorch; FPGA will be ~us, deterministic) |
+| params | **43,782** |
+| size @ 4-bit weights | **~21.4 KB** |
+| val end-to-end exact | 96.7% |
+| **held-out test exact** | **100.0%** (syntax 100%, command 100%) |
+| latency | 2.09 ms (CPU/M1 PyTorch; FPGA will be ~us, deterministic) |
 
-19 KB is trivially on-chip on the KV260 (MB of BRAM/URAM) - streaming from DRAM
+21.4 KB is trivially on-chip on the KV260 (MB of BRAM/URAM) - streaming from DRAM
 never enters the picture. This validates the FPGA thesis in software before the
 board ships.
 
@@ -79,9 +79,12 @@ Architecture (`model/net.py`): embedding -> 3 dilated 1D-conv blocks (QuantConv1
 attention. OOV-name augmentation (`unk_aug`) forces tagging by context so unseen
 track names generalize.
 
-Two known misses on test (model tagging slips, not architecture): "delete the
-bass track" tagged `the` as name; "make the pads track purple" missed `purple`.
-Both close with tuning (more epochs, lower `unk_aug`).
+The fixed English test set currently has no misses after the volume/pan,
+clip-selection, and select-then-rename refresh. Remaining risk is generalisation
+outside the template distribution, especially more free-form numeric,
+stereo-field, clip-selection, and chained-operation phrasing. Numbered rename
+templates like `{i}` need tokenizer support before they should be fixed-eval
+targets.
 
 ## Hardware decision
 
@@ -109,9 +112,10 @@ teacher / accuracy ceiling:
 
 ## Next steps
 
-1. **Tune** the intent+slots model: more epochs, sweep `unk_aug` 0.15-0.2, close
-   the 2 misses. Push weights toward ternary (`--wbits 2`/1.58) and watch the
-   accuracy/size trade in `eval.run`.
+1. **Tune** the intent+slots model beyond the template set: more epochs, sweep
+   `unk_aug` 0.15-0.2, and add harder free-form held-out phrasing. Push weights
+   toward ternary (`--wbits 2`/1.58) and watch the accuracy/size trade in
+   `eval.run`.
 2. **Expand the instruction set** - cheap on the model side (a few output
    classes). Real cost is: (a) extend the DSL grammar/interpreter for the gaps
    (`duplicate_track`, `remove_plugin`, `route_track`) so they're executable;
@@ -127,10 +131,10 @@ teacher / accuracy ceiling:
 ```bash
 cd tools/command-model-poc
 pip install -r requirements.txt          # lark; + torch, brevitas for the model
-python3 -m eval.make_testset             # fixed test set (45, en)
-python3 -m dataset.generate --n 3000 --val 400   # frozen splits
-python3 -m dataset.tagging --demo        # see tags + 97.3% round-trip
-python3 -m model.train_intent_slots --epochs 25  # -> model/artifacts/ (~19KB)
-python3 -m eval.run --torch-model        # 95.6% test exact
+python3 -m eval.make_testset             # fixed test set (72, en)
+python3 -m dataset.generate --n 12000 --val 1500 # frozen splits
+python3 -m dataset.tagging --demo        # see tags + 95.5% round-trip
+python3 -m model.train_intent_slots --epochs 25  # -> model/artifacts/ (~21.4KB)
+python3 -m eval.run --torch-model        # 100.0% test exact
 python3 -m eval.run                      # rule baseline for comparison
 ```

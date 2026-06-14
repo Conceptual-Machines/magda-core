@@ -34,6 +34,14 @@
 {"lang": "en", "input": "solo Drums", "output": "track(name=\"Drums\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Drums"}]}
 {"lang": "en", "input": "solo the lead track", "output": "track(name=\"Lead\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Lead"}]}
 {"lang": "en", "input": "isolate Bass", "output": "track(name=\"Bass\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Bass"}]}
+{"lang": "en", "input": "set Bass volume to -6 dB", "output": "track(name=\"Bass\").track.set(volume_db=-6)", "actions": [{"type": "set_track_volume", "name": "Bass", "volume_db": -6}]}
+{"lang": "en", "input": "turn the drums track to -3 dB", "output": "track(name=\"Drums\").track.set(volume_db=-3)", "actions": [{"type": "set_track_volume", "name": "Drums", "volume_db": -3}]}
+{"lang": "en", "input": "make Vocals 0 dB", "output": "track(name=\"Vocals\").track.set(volume_db=0)", "actions": [{"type": "set_track_volume", "name": "Vocals", "volume_db": 0}]}
+{"lang": "en", "input": "set volume of Pads to -12 dB", "output": "track(name=\"Pads\").track.set(volume_db=-12)", "actions": [{"type": "set_track_volume", "name": "Pads", "volume_db": -12}]}
+{"lang": "en", "input": "pan Bass left", "output": "track(name=\"Bass\").track.set(pan=-0.5)", "actions": [{"type": "set_track_pan", "name": "Bass", "pan": -0.5}]}
+{"lang": "en", "input": "set Drums pan to center", "output": "track(name=\"Drums\").track.set(pan=0)", "actions": [{"type": "set_track_pan", "name": "Drums", "pan": 0.0}]}
+{"lang": "en", "input": "move the vocals track hard right", "output": "track(name=\"Vocals\").track.set(pan=1)", "actions": [{"type": "set_track_pan", "name": "Vocals", "pan": 1.0}]}
+{"lang": "en", "input": "put Pads slightly left in the stereo field", "output": "track(name=\"Pads\").track.set(pan=-0.25)", "actions": [{"type": "set_track_pan", "name": "Pads", "pan": -0.25}]}
 {"lang": "en", "input": "make Drums red", "output": "track(name=\"Drums\").track.set(colour=\"#ff5a36\")", "actions": [{"type": "set_track_color", "name": "Drums", "colour": "#ff5a36"}]}
 {"lang": "en", "input": "color the bass track blue", "output": "track(name=\"Bass\").track.set(colour=\"#44c7ff\")", "actions": [{"type": "set_track_color", "name": "Bass", "colour": "#44c7ff"}]}
 {"lang": "en", "input": "set Vocals colour to green", "output": "track(name=\"Vocals\").track.set(colour=\"#3ddc84\")", "actions": [{"type": "set_track_color", "name": "Vocals", "colour": "#3ddc84"}]}
@@ -43,3 +51,22 @@
 {"lang": "en", "input": "group tracks 4 and 5 into Vocals", "output": "track(id=4).track.group(name=\"Vocals\", tracks=\"4,5\")", "actions": [{"type": "group_tracks", "ids": [4, 5], "name": "Vocals"}]}
 {"lang": "en", "input": "put tracks 1, 2 and 3 in a group called Rhythm", "output": "track(id=1).track.group(name=\"Rhythm\", tracks=\"1,2,3\")", "actions": [{"type": "group_tracks", "ids": [1, 2, 3], "name": "Rhythm"}]}
 {"lang": "en", "input": "group tracks 2, 3 and 4 as Bass Bus", "output": "track(id=2).track.group(name=\"Bass Bus\", tracks=\"2,3,4\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4], "name": "Bass Bus"}]}
+{"lang": "en", "input": "select all clips on Bass", "output": "track(name=\"Bass\").clips.select()", "actions": [{"type": "select_all_clips", "name": "Bass"}]}
+{"lang": "en", "input": "select every clip on the drums track", "output": "track(name=\"Drums\").clips.select()", "actions": [{"type": "select_all_clips", "name": "Drums"}]}
+{"lang": "en", "input": "select all clips in Vocals", "output": "track(name=\"Vocals\").clips.select()", "actions": [{"type": "select_all_clips", "name": "Vocals"}]}
+{"lang": "en", "input": "highlight all clips on the pads track", "output": "track(name=\"Pads\").clips.select()", "actions": [{"type": "select_all_clips", "name": "Pads"}]}
+{"lang": "en", "input": "select all clips on Bass and rename them to Bass Clip", "output": "track(name=\"Bass\").clips.select().clip.rename(name=\"Bass Clip\")", "actions": [{"type": "select_all_clips_rename", "name": "Bass", "new_name": "Bass Clip"}]}
+{"lang": "en", "input": "rename every clip on the drums track to Drum Clip", "output": "track(name=\"Drums\").clips.select().clip.rename(name=\"Drum Clip\")", "actions": [{"type": "select_all_clips_rename", "name": "Drums", "new_name": "Drum Clip"}]}
+{"lang": "en", "input": "select all clips in Vocals then call them Vocal Take", "output": "track(name=\"Vocals\").clips.select().clip.rename(name=\"Vocal Take\")", "actions": [{"type": "select_all_clips_rename", "name": "Vocals", "new_name": "Vocal Take"}]}
+{"lang": "en", "input": "select clips named Intro on Bass", "output": "track(name=\"Bass\").clips.select(clip.name == \"Intro\")", "actions": [{"type": "select_clips_named", "name": "Bass", "clip_name": "Intro"}]}
+{"lang": "en", "input": "select the clip called Chorus on the drums track", "output": "track(name=\"Drums\").clips.select(clip.name == \"Chorus\")", "actions": [{"type": "select_clips_named", "name": "Drums", "clip_name": "Chorus"}]}
+{"lang": "en", "input": "select midi clips on Pads", "output": "track(name=\"Pads\").clips.select(clip.type == \"midi\")", "actions": [{"type": "select_clips_type", "name": "Pads", "clip_type": "midi"}]}
+{"lang": "en", "input": "highlight audio regions on Vocals", "output": "track(name=\"Vocals\").clips.select(clip.type == \"audio\")", "actions": [{"type": "select_clips_type", "name": "Vocals", "clip_type": "audio"}]}
+{"lang": "en", "input": "select clips longer than 4 bars on Bass", "output": "track(name=\"Bass\").clips.select(clip.length_bars > 4)", "actions": [{"type": "select_clips_longer_than", "name": "Bass", "bars": 4}]}
+{"lang": "en", "input": "select all clips over 8 bars in the drums track", "output": "track(name=\"Drums\").clips.select(clip.length_bars > 8)", "actions": [{"type": "select_clips_longer_than", "name": "Drums", "bars": 8}]}
+{"lang": "en", "input": "select clips shorter than 2 bars on Vocals", "output": "track(name=\"Vocals\").clips.select(clip.length_bars < 2)", "actions": [{"type": "select_clips_shorter_than", "name": "Vocals", "bars": 2}]}
+{"lang": "en", "input": "select all clips under 1 bar in the pads track", "output": "track(name=\"Pads\").clips.select(clip.length_bars < 1)", "actions": [{"type": "select_clips_shorter_than", "name": "Pads", "bars": 1}]}
+{"lang": "en", "input": "select clips after bar 8 on Bass", "output": "track(name=\"Bass\").clips.select(clip.start_bar >= 8)", "actions": [{"type": "select_clips_starting_after", "name": "Bass", "bar": 8}]}
+{"lang": "en", "input": "select clips starting after bar 4 in the drums track", "output": "track(name=\"Drums\").clips.select(clip.start_bar >= 4)", "actions": [{"type": "select_clips_starting_after", "name": "Drums", "bar": 4}]}
+{"lang": "en", "input": "select clips before bar 16 on Vocals", "output": "track(name=\"Vocals\").clips.select(clip.start_bar <= 16)", "actions": [{"type": "select_clips_starting_before", "name": "Vocals", "bar": 16}]}
+{"lang": "en", "input": "highlight regions up to bar 8 on Pads", "output": "track(name=\"Pads\").clips.select(clip.start_bar <= 8)", "actions": [{"type": "select_clips_starting_before", "name": "Pads", "bar": 8}]}

@@ -24,6 +24,18 @@ inline llm::Provider providerFromString(const std::string& s) {
     return llm::Provider::OpenAIChat;
 }
 
+inline bool isLocalLLMProvider(const std::string& s) {
+    return s == provider::LLAMA_LOCAL || s == provider::LOCAL_SERVER ||
+           s == provider::FAST_INFERENCE;
+}
+
+inline bool hasUsableLLMAuth(const Config::AgentLLMConfig& config,
+                             const llm::ProviderConfig& providerConfig) {
+    if (isLocalLLMProvider(config.provider))
+        return true;
+    return providerConfig.apiKey.trim().isNotEmpty();
+}
+
 /** Default base URL for a provider string. */
 inline juce::String defaultBaseUrl(const std::string& providerStr) {
     if (providerStr == provider::DEEPSEEK)

@@ -37,6 +37,12 @@ RoutingDecision resolveConsoleIntent(ViewMode view, const RoutingContext& ctx,
     const ViewAgentSurface& surface = consoleSurfaceForView(view);
     const bool explicitEscape = ctx.hasExplicitAlias || ctx.hasExplicitCommand;
 
+    // Explicit slash command rewrites are an instruction to use the command
+    // surface directly. Do not spend time or risk a cloud/local router call.
+    if (ctx.hasExplicitCommand)
+        return {
+            .intent = ConsoleIntent::Command, .usedRouter = false, .source = "explicit command"};
+
     // 1. An attached relational capture (#1403) hard-scopes to the mixing agent
     //    from any view, unless the user typed an explicit escape hatch.
     if (ctx.mixCaptureAttached && !explicitEscape)

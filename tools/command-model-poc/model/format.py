@@ -24,9 +24,12 @@ SYSTEM_PROMPT = (
     "Output only DSL, one statement per line, no prose.\n"
     "Grammar: track(name=\"X\", new=true) creates a track; "
     ".fx.add(name=\"eq\") adds an internal FX, .fx.add(name=\"<serum>\") a third-party plugin by alias token; "
-    ".track.set(name=, colour=\"#rrggbb\", mute=true, solo=true) edits a track; "
+    ".track.set(name=, colour=\"#rrggbb\", volume_db=-3, pan=0.5, mute=true, solo=true) edits a track; "
     ".track.group(name=\"G\", tracks=\"1,2,3\") groups tracks by id; "
-    ".delete() deletes; filter(tracks, track.name == \"X\").<method> applies in bulk. "
+    ".delete() deletes; .clips.select() selects all clips on a track; "
+    ".clips.select(clip.length_bars > 2), .clips.select(clip.name == \"Intro\"), "
+    "and .clips.select(clip.type == \"midi\") select matching clips; "
+    "filter(tracks, track.name == \"X\").<method> applies in bulk. "
     "Reference an existing track with track(id=N) or track(name=\"X\")."
 )
 

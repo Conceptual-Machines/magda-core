@@ -20,6 +20,8 @@ inline constexpr const char* LLAMA_LOCAL = "llama_local";
 // Generic local / OpenAI-compatible HTTP server (LM Studio, Ollama, GPUStack,
 // llama.cpp server, ...). Configured by base URL; routed through OpenAI-Chat.
 inline constexpr const char* LOCAL_SERVER = "local_server";
+// MAGDA's compact in-process inference path for small task-specific models.
+inline constexpr const char* FAST_INFERENCE = "fast_inference";
 }  // namespace provider
 
 // Default base URL for the generic local server (Ollama's default port).
@@ -36,6 +38,7 @@ inline constexpr const char* CLOUD_DEEPSEEK = "cloud_deepseek";
 inline constexpr const char* CLOUD_OPENROUTER = "cloud_openrouter";
 inline constexpr const char* HYBRID_SPEED = "hybrid_speed";
 inline constexpr const char* HYBRID_QUALITY = "hybrid_quality";
+inline constexpr const char* CUSTOM = "custom";
 }  // namespace preset
 
 // --- Model IDs ---

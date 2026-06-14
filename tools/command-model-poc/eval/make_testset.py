@@ -77,6 +77,18 @@ CASES = [
     ("solo the lead track", [{"type": "solo_track", "name": "Lead"}]),
     ("isolate Bass", [{"type": "solo_track", "name": "Bass"}]),
 
+    # --- set_track_volume ---
+    ("set Bass volume to -6 dB", [{"type": "set_track_volume", "name": "Bass", "volume_db": -6}]),
+    ("turn the drums track to -3 dB", [{"type": "set_track_volume", "name": "Drums", "volume_db": -3}]),
+    ("make Vocals 0 dB", [{"type": "set_track_volume", "name": "Vocals", "volume_db": 0}]),
+    ("set volume of Pads to -12 dB", [{"type": "set_track_volume", "name": "Pads", "volume_db": -12}]),
+
+    # --- set_track_pan ---
+    ("pan Bass left", [{"type": "set_track_pan", "name": "Bass", "pan": -0.5}]),
+    ("set Drums pan to center", [{"type": "set_track_pan", "name": "Drums", "pan": 0.0}]),
+    ("move the vocals track hard right", [{"type": "set_track_pan", "name": "Vocals", "pan": 1.0}]),
+    ("put Pads slightly left in the stereo field", [{"type": "set_track_pan", "name": "Pads", "pan": -0.25}]),
+
     # --- set_track_color ---
     ("make Drums red", [{"type": "set_track_color", "name": "Drums", "colour": C["red"]}]),
     ("color the bass track blue", [{"type": "set_track_color", "name": "Bass", "colour": C["blue"]}]),
@@ -90,6 +102,46 @@ CASES = [
     ("put tracks 1, 2 and 3 in a group called Rhythm",
      [{"type": "group_tracks", "ids": [1, 2, 3], "name": "Rhythm"}]),
     ("group tracks 2, 3 and 4 as Bass Bus", [{"type": "group_tracks", "ids": [2, 3, 4], "name": "Bass Bus"}]),
+
+    # --- select_all_clips ---
+    ("select all clips on Bass", [{"type": "select_all_clips", "name": "Bass"}]),
+    ("select every clip on the drums track", [{"type": "select_all_clips", "name": "Drums"}]),
+    ("select all clips in Vocals", [{"type": "select_all_clips", "name": "Vocals"}]),
+    ("highlight all clips on the pads track", [{"type": "select_all_clips", "name": "Pads"}]),
+
+    # --- chained clip selection + rename ---
+    ("select all clips on Bass and rename them to Bass Clip",
+     [{"type": "select_all_clips_rename", "name": "Bass", "new_name": "Bass Clip"}]),
+    ("rename every clip on the drums track to Drum Clip",
+     [{"type": "select_all_clips_rename", "name": "Drums", "new_name": "Drum Clip"}]),
+    ("select all clips in Vocals then call them Vocal Take",
+     [{"type": "select_all_clips_rename", "name": "Vocals", "new_name": "Vocal Take"}]),
+
+    # --- clip predicate selection ---
+    ("select clips named Intro on Bass",
+     [{"type": "select_clips_named", "name": "Bass", "clip_name": "Intro"}]),
+    ("select the clip called Chorus on the drums track",
+     [{"type": "select_clips_named", "name": "Drums", "clip_name": "Chorus"}]),
+    ("select midi clips on Pads",
+     [{"type": "select_clips_type", "name": "Pads", "clip_type": "midi"}]),
+    ("highlight audio regions on Vocals",
+     [{"type": "select_clips_type", "name": "Vocals", "clip_type": "audio"}]),
+    ("select clips longer than 4 bars on Bass",
+     [{"type": "select_clips_longer_than", "name": "Bass", "bars": 4}]),
+    ("select all clips over 8 bars in the drums track",
+     [{"type": "select_clips_longer_than", "name": "Drums", "bars": 8}]),
+    ("select clips shorter than 2 bars on Vocals",
+     [{"type": "select_clips_shorter_than", "name": "Vocals", "bars": 2}]),
+    ("select all clips under 1 bar in the pads track",
+     [{"type": "select_clips_shorter_than", "name": "Pads", "bars": 1}]),
+    ("select clips after bar 8 on Bass",
+     [{"type": "select_clips_starting_after", "name": "Bass", "bar": 8}]),
+    ("select clips starting after bar 4 in the drums track",
+     [{"type": "select_clips_starting_after", "name": "Drums", "bar": 4}]),
+    ("select clips before bar 16 on Vocals",
+     [{"type": "select_clips_starting_before", "name": "Vocals", "bar": 16}]),
+    ("highlight regions up to bar 8 on Pads",
+     [{"type": "select_clips_starting_before", "name": "Pads", "bar": 8}]),
 ]
 
 

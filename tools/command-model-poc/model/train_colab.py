@@ -9,7 +9,7 @@
 #
 # Inputs : Drive  My Drive/magda-command-model/{train,val}.chat.jsonl
 #          (staged from data/*.chat.jsonl via Google Drive for Desktop)
-# Output : command-model.gguf  saved back to the same Drive folder (auto-syncs to Mac)
+# Output : My Drive/magda-command-model/command-model.gguf
 
 # %% [markdown]
 # ## 1. Install
@@ -101,18 +101,25 @@ SYSTEM = train_rows[0]["messages"][0]["content"]
 for req in ["create a bass track with serum and ott", "mute Drums", "把贝斯轨道设为蓝色"]:
     msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": req}]
     ids = tokenizer.apply_chat_template(msgs, tokenize=True, add_generation_prompt=True, return_tensors="pt").to("cuda")
-    out = model.generate(input_ids=ids, max_new_tokens=128, temperature=0.0)
+    out = model.generate(input_ids=ids, max_new_tokens=128, do_sample=False)
     print(req, "->", tokenizer.decode(out[0][ids.shape[1]:], skip_special_tokens=True))
 
 # %% [markdown]
 # ## 7. Export GGUF for llama.cpp -> Drive (auto-syncs to Mac)
 # Then back home:
-#   python -m eval.run --model "~/.../My Drive/magda-command-model/command-model...gguf"
+#   mkdir -p tools/command-model-poc/model/artifacts
+#   cp "/path/to/Google Drive/My Drive/magda-command-model/command-model.gguf" tools/command-model-poc/model/artifacts/command-model.gguf
+#   cd tools/command-model-poc
+#   python3 -m eval.run --model model/artifacts/command-model.gguf
 # %%
-import glob, shutil
+import glob, os, shutil
 
 model.save_pretrained_gguf("command-model", tokenizer, quantization_method="q4_k_m")
 
-for f in glob.glob("command-model/*.gguf") + glob.glob("*.gguf"):
-    dst = shutil.copy(f, DRIVE_DIR)
-    print("synced to Drive ->", dst)
+ggufs = glob.glob("command-model/*.gguf") + glob.glob("*.gguf")
+if not ggufs:
+    raise RuntimeError("GGUF export produced no .gguf files")
+
+dst = os.path.join(DRIVE_DIR, "command-model.gguf")
+shutil.copy(ggufs[0], dst)
+print("synced to Drive ->", dst)
