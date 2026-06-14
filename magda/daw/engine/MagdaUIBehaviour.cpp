@@ -93,6 +93,8 @@ std::unique_ptr<juce::Component> MagdaUIBehaviour::createPluginWindow(
 // PluginEditorWindow Implementation
 // =============================================================================
 
+juce::ApplicationCommandManager* PluginEditorWindow::appCommandManager = nullptr;
+
 PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
                                        tracktion::PluginWindowState& state)
     : daw::ui::FloatingHostWindow(plugin.getName()), plugin_(plugin), state_(state) {
@@ -151,6 +153,16 @@ PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
     } else {
         DBG("PluginEditorWindow: Failed to create editor for: " << plugin.getName());
     }
+
+    // This is a separate top-level window, so it's outside MainWindow's key
+    // listener chain — without this, clicking into a plugin editor leaves the
+    // app's shortcuts (Space = play/stop, etc.) dead until the user clicks back
+    // on the main window. Route keys the plugin editor doesn't consume through
+    // the app command manager's mappings, same as MainWindow does for itself.
+    // The manager is injected by the UI layer (this engine library can't depend
+    // on it directly).
+    if (appCommandManager != nullptr)
+        addKeyListener(appCommandManager->getKeyMappings());
 }
 
 PluginEditorWindow::~PluginEditorWindow() {
