@@ -320,7 +320,9 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
         return;
 
     // Modifier properties changed (rate, waveform, sync, trigger mode) - resync only modifiers
+    MAGDA_ADSR_AUDIO_LOG("follower-bridge resync-start trackId=" << trackId);
     pluginManager_.resyncDeviceModifiers(trackId);
+    MAGDA_ADSR_AUDIO_LOG("follower-bridge resync-done trackId=" << trackId);
 
     // Mod-rate lanes are mode-aware: tempoSync flips swap the bake target
     // between TE's `rate` (Hz) and `rateType` (sync division). Force a rebake
@@ -339,9 +341,11 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
     // Re-check sidechain monitors on this track and all other tracks
     // (a sidechain source change on this track may affect the source track's monitor)
     sidechainRouting_.refreshAllSourceMonitors();
+    MAGDA_ADSR_AUDIO_LOG("follower-bridge monitor-refresh-done trackId=" << trackId);
 
     // Re-check MIDI routing in case trigger mode changed to/from MIDI
     updateMidiRoutingForSelection();
+    MAGDA_ADSR_AUDIO_LOG("follower-bridge midi-refresh-done trackId=" << trackId);
 }
 
 void AudioBridge::audioSidechainTriggered(TrackId /*sourceTrackId*/) {

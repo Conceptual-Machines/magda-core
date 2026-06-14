@@ -481,6 +481,10 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
     SER(followerAttackMs);
     SER(followerHoldMs);
     SER(followerReleaseMs);
+    SER(followerHpEnabled);
+    SER(followerHpFreq);
+    SER(followerLpEnabled);
+    SER(followerLpFreq);
 
     // Curve points
     juce::Array<juce::var> curvePointsArray;
@@ -570,6 +574,14 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
         DESER(followerHoldMs);
     if (obj->hasProperty("followerReleaseMs"))
         DESER(followerReleaseMs);
+    if (obj->hasProperty("followerHpEnabled"))
+        DESER(followerHpEnabled);
+    if (obj->hasProperty("followerHpFreq"))
+        DESER(followerHpFreq);
+    if (obj->hasProperty("followerLpEnabled"))
+        DESER(followerLpEnabled);
+    if (obj->hasProperty("followerLpFreq"))
+        DESER(followerLpFreq);
 
     // Curve points
     auto curvePointsVar = obj->getProperty("curvePoints");

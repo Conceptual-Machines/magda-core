@@ -5,6 +5,7 @@
 #include "../audio/plugins/AudioSidechainMonitorPlugin.hpp"
 #include "../audio/plugins/DrumGridPlugin.hpp"
 #include "../audio/plugins/FaustPlugin.hpp"
+#include "../audio/plugins/FollowerSourceTapPlugin.hpp"
 #include "../audio/plugins/InstrumentMeterTapPlugin.hpp"
 #include "../audio/plugins/LevelsPlugin.hpp"
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
@@ -102,6 +103,10 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == AudioSidechainMonitorPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating AudioSidechainMonitorPlugin");
             return new AudioSidechainMonitorPlugin(info);
+        }
+        if (type == FollowerSourceTapPlugin::xmlTypeName) {
+            DBG("MagdaEngineBehaviour::createCustomPlugin - creating FollowerSourceTapPlugin");
+            return new FollowerSourceTapPlugin(info);
         }
         if (type == daw::audio::FaustPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating FaustPlugin");

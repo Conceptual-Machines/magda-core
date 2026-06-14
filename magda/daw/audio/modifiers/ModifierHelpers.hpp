@@ -274,7 +274,11 @@ inline void applyRandomProperties(te::RandomModifier* rnd, const ModInfo& modInf
 }
 
 inline void applyFollowerProperties(te::EnvelopeFollowerModifier* ef, const ModInfo& modInfo) {
-    ef->gainDbParam->setParameterFromHost(modInfo.followerGainDb, juce::dontSendNotification);
+    // MAGDA followers are externally fed by FollowerSourceTapPlugin. Input gain
+    // must happen before source HP/LP and peak detection, so PluginManager's
+    // follower source cache applies modInfo.followerGainDb. Keep TE's own gain
+    // at unity to avoid a second post-detection gain stage.
+    ef->gainDbParam->setParameterFromHost(0.0f, juce::dontSendNotification);
     ef->attackParam->setParameterFromHost(modInfo.followerAttackMs, juce::dontSendNotification);
     ef->holdParam->setParameterFromHost(modInfo.followerHoldMs, juce::dontSendNotification);
     ef->releaseParam->setParameterFromHost(modInfo.followerReleaseMs, juce::dontSendNotification);
