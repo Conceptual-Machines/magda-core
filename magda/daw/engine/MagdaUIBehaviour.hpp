@@ -65,6 +65,8 @@ class PluginEditorWindow final : public daw::ui::FloatingHostWindow {
 
     void closeButtonPressed() override;
     void moved() override;
+    // Forwards unconsumed keys to the app command manager (transport shortcuts).
+    bool keyPressed(const juce::KeyPress& key) override;
 
   private:
     tracktion::Plugin& plugin_;

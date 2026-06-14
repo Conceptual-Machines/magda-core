@@ -2284,16 +2284,21 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
         if (rightId == INVALID_CLIP_ID)
             continue;
         // Split the remainder at D's end: rightId keeps [dStart,dEnd] (fully
-        // under D), tailId = the surviving [dEnd,cEnd].
+        // under D), tailId = the surviving [dEnd,cEnd]. This split can only fail
+        // when dEnd >= cEnd (the tail is zero-length within float tolerance),
+        // since rightId spans exactly [dStart,cEnd] and the branch guarantees
+        // dEnd < cEnd. So a failed split means rightId IS the whole covered
+        // remainder with no real tail to keep — deleting it drops nothing.
         const ClipId tailId = splitClipAtBeat(rightId, dEndB, bpm);
         deleteClip(rightId);
 
         // splitClipAtBeat appends " L"/" R" suffixes; restore the original name
-        // on both surviving halves so the carve-out is invisible.
+        // on the surviving halves so the carve-out is invisible.
         if (auto* left = getClip(id))
             left->name = originalName;
-        if (auto* tail = getClip(tailId))
-            tail->name = originalName;
+        if (tailId != INVALID_CLIP_ID)
+            if (auto* tail = getClip(tailId))
+                tail->name = originalName;
     }
 
     for (auto id : toDelete) {
