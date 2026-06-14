@@ -16,6 +16,7 @@
     "file.close_project": "Закрыть проект",
     "file.save_project": "Сохранить",
     "file.save_project_as": "Сохранить как...",
+    "file.collect_files": "Собрать файлы...",
     "file.export_audio": "Экспорт аудио...",
     "file.export_midi": "Экспорт MIDI...",
     "file.quit": "Выход",
@@ -65,8 +66,7 @@
     "window.bring_to_front": "Все окна на передний план",
     "help.manual": "Мануал",
     "help.check_updates": "Проверить наличие обновлений...",
-    "help.about": "О приложении MAGDA",
-    "file.collect_files": "Собрать файлы..."
+    "help.about": "О приложении MAGDA"
   },
   "transport": {
     "count_in.off": "Выкл.",
@@ -276,6 +276,13 @@
     "error.midi_write_failed": "Не удалось записать MIDI-файл.",
     "error.cannot_create_file": "Не удалось создать выходной файл:"
   },
+  "collect": {
+    "title": "Собрать файлы",
+    "progress.title": "Сбор файлов...",
+    "progress.copying": "Копирование используемого аудио в проект...",
+    "alert.cancelled": "Сбор был отменён. Некоторые файлы могли быть не скопированы.",
+    "alert.no_edit": "Сначала откройте или создайте проект."
+  },
   "common": {
     "master": "Мастер",
     "master_output": "Выход мастера"
@@ -407,12 +414,5 @@
     "upload_copy_failed": "Не удалось скопировать профиль в папку контроллеров.",
     "upload_create_dir_failed": "Не удалось создать папку контроллеров:\n{0}",
     "upload_success": "Импортирован профиль «{0}»."
-  },
-  "collect": {
-    "title": "Собрать файлы",
-    "progress.title": "Сбор файлов...",
-    "progress.copying": "Копирование используемого аудио в проект...",
-    "alert.cancelled": "Сбор был отменён. Некоторые файлы могли быть не скопированы.",
-    "alert.no_edit": "Сначала откройте или создайте проект."
   }
 }

@@ -16,6 +16,7 @@
     "file.close_project": "关闭工程",
     "file.save_project": "保存工程",
     "file.save_project_as": "工程另存为…",
+    "file.collect_files": "收集文件…",
     "file.export_audio": "导出音频…",
     "file.export_midi": "导出MIDI…",
     "file.quit": "退出",
@@ -65,8 +66,7 @@
     "window.bring_to_front": "全部前置",
     "help.manual": "在线手册",
     "help.check_updates": "检查更新…",
-    "help.about": "关于 MAGDA",
-    "file.collect_files": "收集文件…"
+    "help.about": "关于 MAGDA"
   },
   "transport": {
     "count_in.off": "关",
@@ -276,6 +276,13 @@
     "error.midi_write_failed": "写入MIDI文件失败",
     "error.cannot_create_file": "无法创建输出文件："
   },
+  "collect": {
+    "title": "收集文件",
+    "progress.title": "正在收集文件…",
+    "progress.copying": "正在将引用的音频复制到工程中…",
+    "alert.cancelled": "收集已取消。部分文件可能未被复制。",
+    "alert.no_edit": "请先打开或创建一个工程。"
+  },
   "common": {
     "master": "总线",
     "master_output": "总线输出"
@@ -407,12 +414,5 @@
     "upload_copy_failed": "无法将配置文件复制到你的控制器文件夹。",
     "upload_create_dir_failed": "无法创建控制器文件夹：\n{0}",
     "upload_success": "已导入配置文件「{0}」。"
-  },
-  "collect": {
-    "title": "收集文件",
-    "progress.title": "正在收集文件…",
-    "progress.copying": "正在将引用的音频复制到工程中…",
-    "alert.cancelled": "收集已取消。部分文件可能未被复制。",
-    "alert.no_edit": "请先打开或创建一个工程。"
   }
 }

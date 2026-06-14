@@ -16,6 +16,7 @@
     "file.close_project": "プロジェクトを閉じる",
     "file.save_project": "プロジェクトを保存",
     "file.save_project_as": "名前を付けてプロジェクトを保存…",
+    "file.collect_files": "ファイルを収集…",
     "file.export_audio": "オーディオをエクスポート…",
     "file.export_midi": "MIDIをエクスポート…",
     "file.quit": "終了",
@@ -65,8 +66,7 @@
     "window.bring_to_front": "全てを最前面に表示",
     "help.manual": "オンラインマニュアル",
     "help.check_updates": "更新を確認…",
-    "help.about": "MAGDAについて",
-    "file.collect_files": "ファイルを収集…"
+    "help.about": "MAGDAについて"
   },
   "transport": {
     "count_in.off": "Off",
@@ -276,6 +276,13 @@
     "error.midi_write_failed": "MIDI ファイルの書き込みに失敗しました。",
     "error.cannot_create_file": "ファイルを作成できませんでした："
   },
+  "collect": {
+    "title": "ファイルを収集",
+    "progress.title": "ファイルを収集中…",
+    "progress.copying": "参照されているオーディオをプロジェクトにコピーしています…",
+    "alert.cancelled": "収集はキャンセルされました。一部のファイルがコピーされていない可能性があります。",
+    "alert.no_edit": "先にプロジェクトを開くか作成してください。"
+  },
   "common": {
     "master": "マスター",
     "master_output": "マスター出力"
@@ -407,12 +414,5 @@
     "upload_copy_failed": "プロファイルをコントローラーフォルダーにコピーできませんでした。",
     "upload_create_dir_failed": "コントローラーフォルダを作成できませんでした:\n{0}",
     "upload_success": "インポートされたプロファイル \"{0}\"。"
-  },
-  "collect": {
-    "title": "ファイルを収集",
-    "progress.title": "ファイルを収集中…",
-    "progress.copying": "参照されているオーディオをプロジェクトにコピーしています…",
-    "alert.cancelled": "収集はキャンセルされました。一部のファイルがコピーされていない可能性があります。",
-    "alert.no_edit": "先にプロジェクトを開くか作成してください。"
   }
 }
