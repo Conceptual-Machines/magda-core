@@ -65,7 +65,8 @@
     "window.bring_to_front": "全部前置",
     "help.manual": "在线手册",
     "help.check_updates": "检查更新…",
-    "help.about": "关于 MAGDA"
+    "help.about": "关于 MAGDA",
+    "file.collect_files": "收集文件…"
   },
   "transport": {
     "count_in.off": "关",
@@ -175,7 +176,6 @@
     "save_project": "保存工程",
     "save_project_as": "工程另存为",
     "close_project": "关闭工程",
-    "import_audio": "导入音频",
     "export_audio": "导出音频",
     "audio_settings": "音频/MIDI设置",
     "ai_settings": "AI 设置",
@@ -198,10 +198,7 @@
     "error.file_not_found": "找不到工程文件：",
     "error.close_failed": "关闭工程失败：",
     "error.save_failed": "保存工程失败：",
-    "error.no_audio_track": "未找到音频轨道，请先创建音频轨道。",
-    "error.import_failed": "未导入有效的音频文件。选定的文件可能不支持或已损坏。",
     "error.export_no_edit": "无法导出：未读取到编辑",
-    "success.import": "音频文件已成功导入",
     "updates.title": "检查更新",
     "updates.up_to_date": "您正在运行最新版本的MAGDA。",
     "updates.available_body_prefix": "有新版本的MAGDA可用：",
@@ -481,5 +478,12 @@
     "upload_copy_failed": "无法将配置文件复制到你的控制器文件夹。",
     "upload_create_dir_failed": "无法创建控制器文件夹：\n{0}",
     "upload_success": "已导入配置文件「{0}」。"
+  },
+  "collect": {
+    "title": "收集文件",
+    "progress.title": "正在收集文件…",
+    "progress.copying": "正在将引用的音频复制到工程中…",
+    "alert.cancelled": "收集已取消。部分文件可能未被复制。",
+    "alert.no_edit": "请先打开或创建一个工程。"
   }
 }

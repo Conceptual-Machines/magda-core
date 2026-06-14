@@ -65,7 +65,8 @@
     "window.bring_to_front": "全てを最前面に表示",
     "help.manual": "オンラインマニュアル",
     "help.check_updates": "更新を確認…",
-    "help.about": "MAGDAについて"
+    "help.about": "MAGDAについて",
+    "file.collect_files": "ファイルを収集…"
   },
   "transport": {
     "count_in.off": "Off",
@@ -175,7 +176,6 @@
     "save_project": "プロジェクトを保存",
     "save_project_as": "名前を付けてプロジェクトを保存",
     "close_project": "プロジェクトを閉じる",
-    "import_audio": "オーディオのインポート",
     "export_audio": "オーディオのエクスポート",
     "audio_settings": "オーディオ／MIDIの設定",
     "ai_settings": "AIの設定",
@@ -198,10 +198,7 @@
     "error.file_not_found": "プロジェクトファイルが見つかりません:",
     "error.close_failed": "プロジェクトを終了できませんでした:",
     "error.save_failed": "プロジェクトを保存できませんでした:",
-    "error.no_audio_track": "オーディオトラックが見つかりません。まずオーディオトラックを作成してください。",
-    "error.import_failed": "有効なオーディオファイルをインポートできませんでした。選択したファイルはサポートされていないか破損している可能性があります。",
     "error.export_no_edit": "エクスポートできません: プロジェクトが読み込まれていません",
-    "success.import": "オーディオファイルが正常にインポートされました",
     "updates.title": "更新の確認",
     "updates.up_to_date": "最新バージョンのMAGDAを使用しています。",
     "updates.available_body_prefix": "MAGDAの新しいバージョンが利用できます.",
@@ -481,5 +478,12 @@
     "upload_copy_failed": "プロファイルをコントローラーフォルダーにコピーできませんでした。",
     "upload_create_dir_failed": "コントローラーフォルダを作成できませんでした:\n{0}",
     "upload_success": "インポートされたプロファイル \"{0}\"。"
+  },
+  "collect": {
+    "title": "ファイルを収集",
+    "progress.title": "ファイルを収集中…",
+    "progress.copying": "参照されているオーディオをプロジェクトにコピーしています…",
+    "alert.cancelled": "収集はキャンセルされました。一部のファイルがコピーされていない可能性があります。",
+    "alert.no_edit": "先にプロジェクトを開くか作成してください。"
   }
 }
