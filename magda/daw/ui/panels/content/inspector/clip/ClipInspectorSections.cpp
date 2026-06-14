@@ -382,7 +382,10 @@ void ClipInspector::initClipPropertiesSection() {
     // the footer view switcher so the inspector matches the rest of the app.
     clipViewIcon_ = std::make_unique<magda::SvgButton>("View", BinaryData::iconarrangementboldm_svg,
                                                        BinaryData::iconarrangementboldm_svgSize);
-    clipViewIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    // The bold view icons fill with "currentColor" (JUCE renders that black), so
+    // recolor from black rather than the #B3B3B3 the audio icon uses — otherwise
+    // the recolor misses and this icon renders black while the audio one is grey.
+    clipViewIcon_->setOriginalColor(juce::Colour(0xFF000000));
     clipViewIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     clipViewIcon_->setIconPadding(1.0f);
     clipViewIcon_->setInterceptsMouseClicks(false, false);

@@ -238,7 +238,8 @@ void ClipInspector::updateFromSelectedClip() {
                                          BinaryData::iconaudioboldm_svgSize);
             clipTypeIcon_->setTooltip("Audio clip");
         } else {
-            clipTypeIcon_->updateSvgData(BinaryData::midi_clip_svg, BinaryData::midi_clip_svgSize);
+            clipTypeIcon_->updateSvgData(BinaryData::iconmidiboldm_svg,
+                                         BinaryData::iconmidiboldm_svgSize);
             clipTypeIcon_->setTooltip("MIDI clip");
         }
 
