@@ -1,5 +1,6 @@
 #include "modulation/FollowerEditorPanel.hpp"
 
+#include "audio/modifiers/ADSRDebugLog.hpp"
 #include "core/AutomationInfo.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -47,6 +48,11 @@ FollowerEditorPanel::FollowerEditorPanel() {
             [tag](double v) { return tag + " " + juce::String(juce::roundToInt(v)) + " ms"; });
         s.onValueChanged = [this, field](double value) {
             field() = static_cast<float>(value);
+            MAGDA_ADSR_AUDIO_LOG("follower-ui time-change modIndex="
+                                 << selectedModIndex_ << " gainDb=" << currentMod_.followerGainDb
+                                 << " attack=" << currentMod_.followerAttackMs
+                                 << " hold=" << currentMod_.followerHoldMs
+                                 << " release=" << currentMod_.followerReleaseMs);
             fireFollowerChanged();
         };
         addAndMakeVisible(s);
@@ -65,9 +71,66 @@ FollowerEditorPanel::FollowerEditorPanel() {
     gainSlider_.setValueFormatter([](double v) { return "Gain " + juce::String(v, 1) + " dB"; });
     gainSlider_.onValueChanged = [this](double value) {
         currentMod_.followerGainDb = static_cast<float>(value);
+        MAGDA_ADSR_AUDIO_LOG("follower-ui gain-change modIndex=" << selectedModIndex_ << " gainDb="
+                                                                 << currentMod_.followerGainDb);
         fireFollowerChanged();
     };
     addAndMakeVisible(gainSlider_);
+
+    // Band-limit detection: a toggle + cutoff slider per band. Filtering the raw
+    // source before peak detection lets the follower track just the bass or just
+    // the highs of its source.
+    auto setupBandToggle = [this](juce::TextButton& b, std::function<bool&()> field,
+                                  TextSlider& freq) {
+        b.setClickingTogglesState(true);
+        b.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+        b.setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        b.setColour(juce::TextButton::buttonOnColourId,
+                    DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        b.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        b.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+        b.onClick = [this, &b, field, &freq]() {
+            field() = b.getToggleState();
+            freq.setEnabled(b.getToggleState());
+            MAGDA_ADSR_AUDIO_LOG("follower-ui band-toggle modIndex="
+                                 << selectedModIndex_
+                                 << " hpOn=" << static_cast<int>(currentMod_.followerHpEnabled)
+                                 << " hpHz=" << currentMod_.followerHpFreq
+                                 << " lpOn=" << static_cast<int>(currentMod_.followerLpEnabled)
+                                 << " lpHz=" << currentMod_.followerLpFreq);
+            fireFollowerChanged();
+        };
+        addAndMakeVisible(b);
+    };
+    auto setupFreqSlider = [this](TextSlider& s, double def, std::function<float&()> field) {
+        s.setRange(20.0, 20000.0, 1.0);
+        s.setSkewForCentre(1000.0);
+        s.setValue(def, juce::dontSendNotification);
+        s.setFont(FontManager::getInstance().getUIFont(9.0f));
+        s.setShowFillIndicator(false);
+        s.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)) + " Hz"; });
+        s.onValueChanged = [this, field](double value) {
+            field() = static_cast<float>(value);
+            MAGDA_ADSR_AUDIO_LOG("follower-ui freq-change modIndex="
+                                 << selectedModIndex_
+                                 << " hpOn=" << static_cast<int>(currentMod_.followerHpEnabled)
+                                 << " hpHz=" << currentMod_.followerHpFreq
+                                 << " lpOn=" << static_cast<int>(currentMod_.followerLpEnabled)
+                                 << " lpHz=" << currentMod_.followerLpFreq);
+            fireFollowerChanged();
+        };
+        addAndMakeVisible(s);
+    };
+    setupBandToggle(
+        hpEnableButton_, [this]() -> bool& { return currentMod_.followerHpEnabled; },
+        hpFreqSlider_);
+    setupFreqSlider(hpFreqSlider_, 200.0,
+                    [this]() -> float& { return currentMod_.followerHpFreq; });
+    setupBandToggle(
+        lpEnableButton_, [this]() -> bool& { return currentMod_.followerLpEnabled; },
+        lpFreqSlider_);
+    setupFreqSlider(lpFreqSlider_, 2000.0,
+                    [this]() -> float& { return currentMod_.followerLpFreq; });
 
     // Mod matrix (links)
     modMatrixViewport_.setViewedComponent(&modMatrixContent_, false);
@@ -107,6 +170,12 @@ void FollowerEditorPanel::updateFromMod() {
     attackSlider_.setValue(currentMod_.followerAttackMs, juce::dontSendNotification);
     holdSlider_.setValue(currentMod_.followerHoldMs, juce::dontSendNotification);
     releaseSlider_.setValue(currentMod_.followerReleaseMs, juce::dontSendNotification);
+    hpEnableButton_.setToggleState(currentMod_.followerHpEnabled, juce::dontSendNotification);
+    hpFreqSlider_.setValue(currentMod_.followerHpFreq, juce::dontSendNotification);
+    hpFreqSlider_.setEnabled(currentMod_.followerHpEnabled);
+    lpEnableButton_.setToggleState(currentMod_.followerLpEnabled, juce::dontSendNotification);
+    lpFreqSlider_.setValue(currentMod_.followerLpFreq, juce::dontSendNotification);
+    lpFreqSlider_.setEnabled(currentMod_.followerLpEnabled);
     updateModMatrix();
     resized();
 }
@@ -152,8 +221,19 @@ void FollowerEditorPanel::onNameLabelEdited() {
 }
 
 void FollowerEditorPanel::fireFollowerChanged() {
-    if (selectedModIndex_ >= 0 && onFollowerChanged)
+    if (selectedModIndex_ >= 0 && onFollowerChanged) {
+        MAGDA_ADSR_AUDIO_LOG("follower-ui fire-change modIndex="
+                             << selectedModIndex_ << " gainDb=" << currentMod_.followerGainDb
+                             << " hpOn=" << static_cast<int>(currentMod_.followerHpEnabled)
+                             << " hpHz=" << currentMod_.followerHpFreq
+                             << " lpOn=" << static_cast<int>(currentMod_.followerLpEnabled)
+                             << " lpHz=" << currentMod_.followerLpFreq);
         onFollowerChanged(currentMod_);
+    } else {
+        MAGDA_ADSR_AUDIO_LOG("follower-ui drop-change modIndex="
+                             << selectedModIndex_
+                             << " hasCallback=" << static_cast<int>(onFollowerChanged != nullptr));
+    }
     followerDisplay_.repaint();
 }
 
@@ -171,7 +251,9 @@ void FollowerEditorPanel::paint(juce::Graphics& g) {
     bounds.removeFromTop(46 + 6);  // display + gap
     bounds.removeFromTop(18 + 4);  // gain row + gap
     bounds.removeFromTop(18 + 4);  // attack/hold row + gap
-    bounds.removeFromTop(18 + 6);  // release row + gap
+    bounds.removeFromTop(18 + 4);  // release row + gap
+    bounds.removeFromTop(18 + 4);  // HP row + gap
+    bounds.removeFromTop(18 + 6);  // LP row + gap
     bounds.removeFromTop(18 + 8);  // source button + gap
     g.drawText("Links", bounds.removeFromTop(12), juce::Justification::centredLeft);
 }
@@ -200,6 +282,23 @@ void FollowerEditorPanel::resized() {
     bounds.removeFromTop(kGap);
 
     releaseSlider_.setBounds(bounds.removeFromTop(18));
+    bounds.removeFromTop(kGap);
+
+    // HP / LP band-limit rows: toggle on the left, cutoff slider filling the rest.
+    constexpr int kToggleW = 30;
+    {
+        auto row = bounds.removeFromTop(18);
+        hpEnableButton_.setBounds(row.removeFromLeft(kToggleW));
+        row.removeFromLeft(kGap);
+        hpFreqSlider_.setBounds(row);
+    }
+    bounds.removeFromTop(kGap);
+    {
+        auto row = bounds.removeFromTop(18);
+        lpEnableButton_.setBounds(row.removeFromLeft(kToggleW));
+        row.removeFromLeft(kGap);
+        lpFreqSlider_.setBounds(row);
+    }
     bounds.removeFromTop(6);
 
     sourceButton_.setBounds(bounds.removeFromTop(18));

@@ -593,6 +593,10 @@ void TrackManager::setModFollower(const ChainNodePath& path, int modIndex, const
     mod.followerAttackMs = juce::jlimit(1.0f, 5000.0f, src.followerAttackMs);
     mod.followerHoldMs = juce::jlimit(0.0f, 5000.0f, src.followerHoldMs);
     mod.followerReleaseMs = juce::jlimit(1.0f, 5000.0f, src.followerReleaseMs);
+    mod.followerHpEnabled = src.followerHpEnabled;
+    mod.followerHpFreq = juce::jlimit(20.0f, 20000.0f, src.followerHpFreq);
+    mod.followerLpEnabled = src.followerLpEnabled;
+    mod.followerLpFreq = juce::jlimit(20.0f, 20000.0f, src.followerLpFreq);
     notifyDeviceModifiersChanged(path.trackId);
 }
 

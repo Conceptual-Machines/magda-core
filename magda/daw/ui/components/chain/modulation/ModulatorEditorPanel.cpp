@@ -964,6 +964,8 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
 
 void ModulatorEditorPanel::setSelectedModIndex(int index) {
     selectedModIndex_ = index;
+    if (followerEditorPanel_)
+        followerEditorPanel_->setSelectedModIndex(selectedModIndex_);
     curveEditor_.setUndoTarget(ownerDevicePath_, selectedModIndex_);
     if (curveEditorWindow_) {
         curveEditorWindow_->getCurveEditor().setUndoTarget(ownerDevicePath_, selectedModIndex_);

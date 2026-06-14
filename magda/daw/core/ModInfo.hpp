@@ -302,6 +302,15 @@ struct ModInfo {
     float followerHoldMs = 0.0f;       // Envelope hold time (ms)
     float followerReleaseMs = 500.0f;  // Envelope release time (ms)
 
+    // Band-limit detection: filter the raw source audio BEFORE peak detection so
+    // the follower can track just part of the spectrum (e.g. only the bass).
+    // Applied by the post-FX FollowerSourceTapPlugin, not TE's own post-rectify
+    // filters (which can't see frequency content of a detected level).
+    bool followerHpEnabled = false;  // High-pass the source before detection
+    float followerHpFreq = 200.0f;   // High-pass cutoff (Hz)
+    bool followerLpEnabled = false;  // Low-pass the source before detection
+    float followerLpFreq = 2000.0f;  // Low-pass cutoff (Hz)
+
     // Audio trigger runtime state (not serialized)
     float audioEnvLevel = 0.0f;  // Current smoothed envelope level
     bool audioGateOpen = false;  // Gate state for this mod

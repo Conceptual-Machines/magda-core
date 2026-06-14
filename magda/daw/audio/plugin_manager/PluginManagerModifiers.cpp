@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <set>
 #include <unordered_set>
 #include <vector>
@@ -161,6 +162,31 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
     if (!trackInfo || !teTrack)
         return;
+
+    // This is the full teardown path: it destroys and recreates every TE modifier
+    // on the track. The audio thread (FollowerSourceTapPlugin) dereferences this
+    // track's envelope followers from the sidechain cache every block, so freeing
+    // one mid-resync during playback is a use-after-free. Keep the followers about
+    // to be torn down alive for one teardown-generation: release the previous
+    // generation now (its pointers were dropped from the cache at the last rebuild,
+    // so the audio thread has long since moved on) and stash the current ones,
+    // which the rebuild at the end of this resync will replace in the cache.
+    std::vector<te::Modifier::Ptr> releaseAfterSync = std::move(deferredFollowers_);
+    deferredFollowers_.clear();
+    auto stashFollowers = [this](const std::map<ModId, te::Modifier::Ptr>& mods) {
+        for (const auto& [id, m] : mods)
+            if (dynamic_cast<te::EnvelopeFollowerModifier*>(m.get()))
+                deferredFollowers_.push_back(m);
+    };
+    for (const auto& el : trackInfo->chain.fxChainElements) {
+        if (!isDevice(el))
+            continue;
+        auto it = findSyncedDevice(ChainNodePath::topLevelDevice(trackId, getDevice(el).id));
+        if (it != syncedDevices_.end())
+            stashFollowers(it->second.modifiers);
+    }
+    if (auto tmIt = trackModStates_.find(trackId); tmIt != trackModStates_.end())
+        stashFollowers(tmIt->second.modifiers);
 
     // Visit every plugin where stale modifier/macro assignments may need
     // scrubbing on rebuild — TE plugins on the track itself, instrument-rack
@@ -427,16 +453,103 @@ void PluginManager::gateSidechainLFOs(TrackId sourceTrackId) {
     }
 }
 
-void PluginManager::pushSidechainAudioLevel(TrackId sourceTrackId, float level) {
-    if (sourceTrackId < 0 || sourceTrackId >= kMaxCacheTracks)
+void PluginManager::pushFollowerSourceBuffer(TrackId sourceTrackId, const float* mono,
+                                             int numSamples, double sampleRate) {
+    if (sourceTrackId < 0 || sourceTrackId >= kMaxCacheTracks || mono == nullptr ||
+        numSamples <= 0) {
+        static std::atomic<int> invalidLogThrottle{0};
+        if ((invalidLogThrottle.fetch_add(1, std::memory_order_relaxed) % 200) == 0) {
+            MAGDA_ADSR_AUDIO_LOG("follower-push invalid sourceTrack="
+                                 << sourceTrackId
+                                 << " hasMono=" << static_cast<int>(mono != nullptr)
+                                 << " numSamples=" << numSamples);
+        }
         return;
+    }
 
     auto* cache = activeCache_.load(std::memory_order_acquire);
     auto& entry = cache->entries[static_cast<size_t>(sourceTrackId)];
-    for (int i = 0; i < entry.count; ++i) {
-        if (auto* ef =
-                dynamic_cast<te::EnvelopeFollowerModifier*>(entry.mods[static_cast<size_t>(i)]))
-            ef->setExternalInput(level);
+    if (entry.followerCount <= 0) {
+        static std::atomic<int> emptyLogThrottle{0};
+        if ((emptyLogThrottle.fetch_add(1, std::memory_order_relaxed) % 200) == 0) {
+            MAGDA_ADSR_AUDIO_LOG("follower-push no-followers sourceTrack="
+                                 << sourceTrackId << " hasFollowerSource="
+                                 << static_cast<int>(entry.hasFollowerSource)
+                                 << " count=" << entry.followerCount);
+        }
+        return;
+    }
+
+    // Per-follower detection: apply input gain and that follower's HP/LP filters
+    // (so each can track a different part of the spectrum), then take the peak
+    // and stream it to the follower's envelope DSP.
+    const int n = std::min(numSamples, static_cast<int>(followerScratch_.size()));
+    float rawPeak = 0.0f;
+    for (int s = 0; s < n; ++s)
+        rawPeak = std::max(rawPeak, std::abs(mono[s]));
+
+    static std::atomic<int> pushLogThrottle{0};
+    const bool logThisBlock = (pushLogThrottle.fetch_add(1, std::memory_order_relaxed) % 100) == 0;
+    if (logThisBlock) {
+        MAGDA_ADSR_AUDIO_LOG("follower-push block sourceTrack="
+                             << sourceTrackId << " followers=" << entry.followerCount << " samples="
+                             << n << " rawPeak=" << rawPeak << " sampleRate=" << sampleRate);
+    }
+
+    for (int i = 0; i < entry.followerCount; ++i) {
+        auto& slot = entry.followers[static_cast<size_t>(i)];
+        if (slot.mod == nullptr) {
+            if (logThisBlock)
+                MAGDA_ADSR_AUDIO_LOG("follower-push slot-null sourceTrack=" << sourceTrackId
+                                                                            << " slot=" << i);
+            continue;
+        }
+
+        float peak = 0.0f;
+        if (!slot.hpEnabled && !slot.lpEnabled) {
+            for (int s = 0; s < n; ++s)
+                peak = std::max(peak, std::abs(mono[s] * slot.gain));
+        } else {
+            float* work = followerScratch_.data();
+            if (slot.gain == 1.0f) {
+                std::copy(mono, mono + n, work);
+            } else {
+                for (int s = 0; s < n; ++s)
+                    work[s] = mono[s] * slot.gain;
+            }
+
+            if (slot.hpEnabled) {
+                if (slot.curHpFreq != slot.hpFreq) {
+                    slot.hp.coeffs = juce::IIRCoefficients::makeHighPass(
+                        sampleRate, juce::jlimit(20.0f, 20000.0f, slot.hpFreq));
+                    slot.curHpFreq = slot.hpFreq;
+                }
+                slot.hp.process(work, n);
+            }
+            if (slot.lpEnabled) {
+                if (slot.curLpFreq != slot.lpFreq) {
+                    slot.lp.coeffs = juce::IIRCoefficients::makeLowPass(
+                        sampleRate, juce::jlimit(20.0f, 20000.0f, slot.lpFreq));
+                    slot.curLpFreq = slot.lpFreq;
+                }
+                slot.lp.process(work, n);
+            }
+
+            peak = 0.0f;
+            for (int s = 0; s < n; ++s)
+                peak = std::max(peak, std::abs(work[s]));
+        }
+
+        const float outBefore = slot.mod->getCurrentValue();
+        slot.mod->setExternalInput(peak);
+        if (logThisBlock) {
+            MAGDA_ADSR_AUDIO_LOG("follower-push slot sourceTrack="
+                                 << sourceTrackId << " slot=" << i << " rawPeak=" << rawPeak
+                                 << " sentPeak=" << peak << " gain=" << slot.gain << " hpOn="
+                                 << static_cast<int>(slot.hpEnabled) << " hpHz=" << slot.hpFreq
+                                 << " lpOn=" << static_cast<int>(slot.lpEnabled)
+                                 << " lpHz=" << slot.lpFreq << " outBefore=" << outBefore);
+        }
     }
 }
 
@@ -652,10 +765,12 @@ void PluginManager::rebuildSidechainLFOCache() {
             continue;
 
         auto& entry = newCache[static_cast<size_t>(track.id)];
-        std::vector<te::Modifier*> lfos;  // gated modifiers: LFO + ADSR (+ followers)
+        std::vector<te::Modifier*> lfos;  // gated modifiers: LFO + ADSR
         std::vector<LFOTriggerMode> modes;
-        int selfTrackCount = 0;    // track how many are self-track (added first)
-        bool hasFollower = false;  // any envelope follower sidechained from here
+        int selfTrackCount = 0;  // track how many are self-track (added first)
+        // Envelope followers whose audio source is this track, paired with the
+        // MAGDA ModInfo that carries their detection gain and HP/LP config.
+        std::vector<std::pair<te::EnvelopeFollowerModifier*, const ModInfo*>> followerCollect;
 
         // Helper to collect gated modifiers from one MAGDA/TE modifier scope,
         // pairing each with the trigger mode from the MAGDA ModInfo. ModId-keyed
@@ -682,12 +797,12 @@ void PluginManager::rebuildSidechainLFOCache() {
                         << " links=" << static_cast<int>(modInfo.links.size()));
                     lfos.push_back(modIt->second.get());
                     modes.push_back(modInfo.triggerMode);
-                } else if (dynamic_cast<te::EnvelopeFollowerModifier*>(modIt->second.get())) {
-                    // Followers receive a per-block level push (not a trigger);
-                    // they only matter when collected for a cross-track source.
-                    lfos.push_back(modIt->second.get());
-                    modes.push_back(LFOTriggerMode::Free);
-                    hasFollower = true;
+                } else if (auto* ef =
+                               dynamic_cast<te::EnvelopeFollowerModifier*>(modIt->second.get())) {
+                    // Followers don't gate/trigger; they're fed a band-limited
+                    // post-FX level by the FollowerSourceTapPlugin. Collect them
+                    // separately with their MAGDA ModInfo (for detector config).
+                    followerCollect.emplace_back(ef, &modInfo);
                 }
             }
         };
@@ -774,12 +889,37 @@ void PluginManager::rebuildSidechainLFOCache() {
         // Write to cache entry (capped at kMaxLFOs)
         // Self-track LFOs come first (indices 0..selfTrackCount-1),
         // cross-track LFOs follow (indices selfTrackCount..count-1).
-        // A follower also needs the source's audio monitor running (it streams
-        // the level), so it counts toward "has audio trigger" for monitor setup.
-        entry.hasAudioTrigger =
-            hasFollower || std::any_of(modes.begin(), modes.end(), [](LFOTriggerMode mode) {
-                return mode == LFOTriggerMode::Audio;
-            });
+        entry.hasAudioTrigger = std::any_of(modes.begin(), modes.end(), [](LFOTriggerMode mode) {
+            return mode == LFOTriggerMode::Audio;
+        });
+
+        // Followers key off this track's post-FX audio (FollowerSourceTapPlugin),
+        // independent of the pre-FX trigger monitor above. Copy each follower's
+        // detector config; the IIRFilter state stays default (fresh) here.
+        entry.followerCount =
+            std::min(static_cast<int>(followerCollect.size()), PerTrackEntry::kMaxFollowers);
+        for (int i = 0; i < entry.followerCount; ++i) {
+            auto& slot = entry.followers[static_cast<size_t>(i)];
+            slot.mod = followerCollect[static_cast<size_t>(i)].first;
+            const ModInfo* mi = followerCollect[static_cast<size_t>(i)].second;
+            slot.hpEnabled = mi->followerHpEnabled;
+            slot.lpEnabled = mi->followerLpEnabled;
+            slot.gain = juce::Decibels::decibelsToGain(mi->followerGainDb);
+            slot.hpFreq = mi->followerHpFreq;
+            slot.lpFreq = mi->followerLpFreq;
+            MAGDA_ADSR_AUDIO_LOG(
+                "follower-cache slot sourceTrack="
+                << track.id << " slot=" << i << " modId=" << static_cast<int>(mi->id)
+                << " gainDb=" << mi->followerGainDb << " gain=" << slot.gain
+                << " hpOn=" << static_cast<int>(slot.hpEnabled) << " hpHz=" << slot.hpFreq
+                << " lpOn=" << static_cast<int>(slot.lpEnabled) << " lpHz=" << slot.lpFreq);
+        }
+        entry.hasFollowerSource = entry.followerCount > 0;
+        if (entry.hasFollowerSource) {
+            MAGDA_ADSR_AUDIO_LOG("follower-cache entry sourceTrack="
+                                 << track.id << " followerCount=" << entry.followerCount
+                                 << " audioTrigger=" << static_cast<int>(entry.hasAudioTrigger));
+        }
         entry.count = std::min(static_cast<int>(lfos.size()), PerTrackEntry::kMaxMods);
         if (entry.count > 0) {
             MAGDA_ADSR_AUDIO_LOG("cache entry sourceTrack=" << track.id << " count=" << entry.count

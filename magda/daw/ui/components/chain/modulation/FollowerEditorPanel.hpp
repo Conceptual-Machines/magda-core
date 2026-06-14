@@ -27,6 +27,8 @@ namespace magda::daw::ui {
  * |  Gain  [-..+ dB] |
  * |  Atk      Hold   |
  * |  Release         |
+ * |  HP [x] [freq]   |  <- band-limit detection (filter source pre-detection)
+ * |  LP [x] [freq]   |
  * |  Links...        |  <- mod matrix
  * +------------------+
  */
@@ -89,6 +91,13 @@ class FollowerEditorPanel : public juce::Component {
     TextSlider attackSlider_{TextSlider::Format::Decimal};
     TextSlider holdSlider_{TextSlider::Format::Decimal};
     TextSlider releaseSlider_{TextSlider::Format::Decimal};
+
+    // Band-limit detection: filter the source audio before peak detection so the
+    // follower tracks just part of the spectrum. Toggle + cutoff per band.
+    juce::TextButton hpEnableButton_{"HP"};
+    TextSlider hpFreqSlider_{TextSlider::Format::Decimal};
+    juce::TextButton lpEnableButton_{"LP"};
+    TextSlider lpFreqSlider_{TextSlider::Format::Decimal};
 
     juce::Viewport modMatrixViewport_;
     ModMatrixContent modMatrixContent_;
