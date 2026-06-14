@@ -14,6 +14,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
+#include "../common/Toast.hpp"
 #include "../tracks/TrackContentPanel.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
@@ -28,6 +29,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "transcription/TranscriptionService.hpp"
 
 namespace magda {
 
@@ -2754,6 +2756,16 @@ void ClipComponent::showContextMenu() {
                             juce::File(singleClip->audio().source.filePath).existsAsFile();
     }
     menu.addItem(21, "Edit in External Editor", canEditExternally);
+
+    // Transcribe to MIDI (audio clips only; needs the bundled model)
+    bool canTranscribe = false;
+    if (!isMultiSelection && canEdit) {
+        const auto* singleClip = getClipInfo();
+        canTranscribe = singleClip && singleClip->isAudio() &&
+                        juce::File(singleClip->audio().source.filePath).existsAsFile() &&
+                        magda::transcription::TranscriptionService::getInstance().isAvailable();
+    }
+    menu.addItem(22, "Transcribe to MIDI", canTranscribe);
     menu.addSeparator();
 
     // Join Clips (need 2+ adjacent clips on same track)
@@ -2997,6 +3009,19 @@ void ClipComponent::showContextMenu() {
                 if (!clipManager.editAudioClipSourceInExternalEditor(clipId_, error)) {
                     showExternalEditorFailedAlert(error);
                 }
+                break;
+            }
+
+            case 22: {  // Transcribe to MIDI
+                magda::daw::ui::Toast::showGlobal("Transcribing audio to MIDI...");
+                magda::transcription::TranscriptionService::getInstance().transcribeAudioClip(
+                    clipId_, [](magda::ClipId newClipId, juce::String err) {
+                        if (newClipId == magda::INVALID_CLIP_ID)
+                            magda::daw::ui::Toast::showGlobal(
+                                err.isNotEmpty() ? err : juce::String("Transcription failed"));
+                        else
+                            magda::daw::ui::Toast::showGlobal("Transcription complete");
+                    });
                 break;
             }
 
