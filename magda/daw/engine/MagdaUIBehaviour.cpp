@@ -136,13 +136,17 @@ PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
         }
         setResizable(isResizable, false);
 
-        // Set initial size from editor
-        int width = getContentComponent()->getWidth();
-        int height = getContentComponent()->getHeight();
-        if (width > 0 && height > 0) {
-            setSize(width, height);
-        } else {
-            setSize(400, 300);  // Default size
+        // setContentOwned(..., true) above already sized the window to fit the
+        // editor PLUS our non-native title bar (via childBoundsChanged). Do NOT
+        // setSize() with the editor's content dimensions here: setSize sets the
+        // whole window (title bar included), squeezing the editor down by the
+        // title-bar height on every open. A resizable plugin editor persists that
+        // shrunk size and reports it on the next createEditorIfNeeded(), so each
+        // open/close cycle shaved off another title-bar height -- the "ext UI
+        // window keeps shrinking on repeated clicks" bug. Only fall back to a
+        // default when the editor reports no size of its own.
+        if (getContentComponent()->getWidth() <= 0 || getContentComponent()->getHeight() <= 0) {
+            setSize(400, 300);  // Default size for editors with no intrinsic size
         }
 
         // Position window
