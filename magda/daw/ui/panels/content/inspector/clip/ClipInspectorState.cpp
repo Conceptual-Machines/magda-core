@@ -268,6 +268,14 @@ void ClipInspector::updateFromSelectedClip() {
             }
             clipBpmValue_.setVisible(true);
             clipBpmUnitLabel_.setVisible(true);
+            // Source BPM only drives playback in beat mode (autoTempo); in
+            // time-based mode the engine uses speedRatio and never reads it, so
+            // grey it out — the mirror of how the speed control is disabled in
+            // beat mode.
+            const bool sourceBpmActive = clip->autoTempo;
+            clipBpmValue_.setEnabled(sourceBpmActive);
+            clipBpmValue_.setAlpha(sourceBpmActive ? 1.0f : 0.4f);
+            clipBpmUnitLabel_.setAlpha(sourceBpmActive ? 1.0f : 0.4f);
             updateAudioSourceValueDisplays(*clip);
         } else {
             clipBpmValue_.setVisible(false);
