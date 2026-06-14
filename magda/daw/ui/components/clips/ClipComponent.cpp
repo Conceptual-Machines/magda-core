@@ -1167,6 +1167,22 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
+    // Lower half of the clip body is a time-selection zone, just like empty lane
+    // space: forward a plain click there to the panel so it draws an I-beam time
+    // selection instead of grabbing/moving the clip. Edges keep resize priority,
+    // and the clip-op modifiers (select/copy/blade/erase/context) are handled
+    // elsewhere, so only an unmodified click in the lower body is forwarded.
+    const bool plainLowerZoneClick =
+        parentPanel_ != nullptr && e.y >= getHeight() / 2 && !isOnLeftEdge(e.x) &&
+        !isOnRightEdge(e.x) && !e.mods.isAltDown() && !e.mods.isCommandDown() &&
+        !e.mods.isCtrlDown() && !e.mods.isShiftDown() && !e.mods.isPopupMenu();
+    if (plainLowerZoneClick) {
+        dragMode_ = DragMode::None;
+        forwardingToPanel_ = true;
+        parentPanel_->forwardLowerZoneMouseDown(e.getEventRelativeTo(parentPanel_));
+        return;
+    }
+
     // Shift+Ctrl-click acts as an eraser for the clip under the cursor. If the
     // clicked clip is part of a multi-selection, erase the selected group.
     if (isEraseClick) {
@@ -1476,6 +1492,13 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
 }
 
 void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
+    // Lower-zone time-selection gesture: keep driving the panel's selection.
+    if (forwardingToPanel_) {
+        if (parentPanel_)
+            parentPanel_->forwardLowerZoneMouseDrag(e.getEventRelativeTo(parentPanel_));
+        return;
+    }
+
     if (dragMode_ == DragMode::None || !parentPanel_) {
         return;
     }
@@ -1490,6 +1513,13 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
     if (trackInfoDrag && trackInfoDrag->frozen) {
         return;
     }
+
+    // Force the grid overlay to repaint cleanly for this drag tick. Moving the
+    // clip via setBounds only invalidates the clip's own region; the overlay
+    // sibling stacked above the viewport otherwise keeps stale grid lines over
+    // the area the clip just left (a trail, most visible with audio waveforms).
+    if (parentPanel_ && parentPanel_->onClipDragOverlayRepaint)
+        parentPanel_->onClipDragOverlayRepaint();
 
     // A pending Alt action resolves to copy-drag once a real drag starts
     // (a plain Alt release places the edit cursor in mouseUp instead)
@@ -1955,6 +1985,14 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void ClipComponent::mouseUp(const juce::MouseEvent& e) {
+    // Finish a forwarded lower-zone time-selection gesture on the panel.
+    if (forwardingToPanel_) {
+        forwardingToPanel_ = false;
+        if (parentPanel_)
+            parentPanel_->forwardLowerZoneMouseUp(e.getEventRelativeTo(parentPanel_));
+        return;
+    }
+
     // Handle right-click for context menu
     if (e.mods.isPopupMenu() && !(e.mods.isShiftDown() && e.mods.isCtrlDown())) {
         showContextMenu();
@@ -2416,8 +2454,13 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
     bool wasHoverFadeOut = hoverFadeOut_;
     bool wasHoverVolume = hoverVolumeHandle_;
 
+    bool wasHoverLowerZone = hoverLowerZone_;
+
     hoverLeftEdge_ = isOnLeftEdge(e.x);
     hoverRightEdge_ = isOnRightEdge(e.x);
+
+    // Lower half (away from the resize edges) is the time-selection zone.
+    hoverLowerZone_ = e.y >= getHeight() / 2 && !hoverLeftEdge_ && !hoverRightEdge_;
 
     // Check fade handle hover (selected audio clips only)
     if (isSelected_) {
@@ -2437,7 +2480,7 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
 
     if (hoverLeftEdge_ != wasHoverLeft || hoverRightEdge_ != wasHoverRight ||
         hoverFadeIn_ != wasHoverFadeIn || hoverFadeOut_ != wasHoverFadeOut ||
-        hoverVolumeHandle_ != wasHoverVolume) {
+        hoverVolumeHandle_ != wasHoverVolume || hoverLowerZone_ != wasHoverLowerZone) {
         repaint();
     }
 }
@@ -2455,6 +2498,7 @@ void ClipComponent::mouseExit(const juce::MouseEvent& /*e*/) {
     hoverFadeIn_ = false;
     hoverFadeOut_ = false;
     hoverVolumeHandle_ = false;
+    hoverLowerZone_ = false;
     updateCursor();
     repaint();
 }
@@ -2639,6 +2683,14 @@ void ClipComponent::updateCursor(const juce::ModifierKeys& mods) {
 
     if (isClipSelected && hoverVolumeHandle_) {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+        return;
+    }
+
+    // Lower half of the body is a time-selection zone (I-beam), regardless of
+    // selection state. Edge-resize and the selected-clip handles above keep
+    // priority since hoverLowerZone_ already excludes the edges.
+    if (hoverLowerZone_) {
+        setMouseCursor(juce::MouseCursor::IBeamCursor);
         return;
     }
 

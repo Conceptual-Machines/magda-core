@@ -163,6 +163,13 @@ class ClipComponent : public juce::Component,
     bool hoverLeftEdge_ = false;
     bool hoverRightEdge_ = false;
 
+    // Lower half of the clip body is a time-selection zone (I-beam), mirroring
+    // empty-lane behaviour. hoverLowerZone_ drives the cursor; while a lower-zone
+    // gesture is active its mouse events are forwarded to the parent panel so the
+    // panel's time-selection machinery runs instead of moving the clip.
+    bool hoverLowerZone_ = false;
+    bool forwardingToPanel_ = false;
+
     // Fade handle state
     bool hoverFadeIn_ = false;
     bool hoverFadeOut_ = false;

@@ -1995,6 +1995,13 @@ void MainView::setupSelectionCallbacks() {
         if (onBounceToNewTrackRequested)
             onBounceToNewTrackRequested(id);
     };
+    // Keep the transparent grid overlay clean while a clip is being dragged —
+    // the incremental repaint from the clip's setBounds doesn't reach this
+    // sibling, leaving a trail of grid lines over the vacated area.
+    trackContentPanel->onClipDragOverlayRepaint = [this]() {
+        if (gridOverlay)
+            gridOverlay->repaint();
+    };
 
     // Set up time selection callback from track content panel
     trackContentPanel->onTimeSelectionBeatsChanged = [this](double startBeats, double endBeats,

@@ -187,6 +187,12 @@ class TrackContentPanel : public juce::Component,
     std::function<void()> onRenderTimeSelectionRequested;  // Render time selection
     std::function<void(ClipId)> onBounceInPlaceRequested;  // Bounce MIDI clip in place
     std::function<void(ClipId)> onBounceToNewTrackRequested;  // Bounce clip to new track
+    // Fires while a clip is being dragged/resized. The transparent grid overlay
+    // is a sibling stacked above the track viewport; the incremental invalidation
+    // from a clip's setBounds doesn't reliably reach it, leaving a trail of grid
+    // lines over the vacated area (most visible with audio waveforms). MainView
+    // wires this to force a clean overlay repaint each drag tick.
+    std::function<void()> onClipDragOverlayRepaint;
     std::function<double(double)>
         snapTimeToGrid;  // Callback to snap time to grid (provided by MainView)
     std::function<double(double)>
@@ -197,6 +203,20 @@ class TrackContentPanel : public juce::Component,
     void startMultiClipDrag(ClipId anchorClipId, const juce::Point<int>& startPos);
     void updateMultiClipDrag(const juce::Point<int>& currentPos);
     void finishMultiClipDrag();
+
+    // Lower-zone time selection: a ClipComponent hands its lower-half gestures
+    // back to the panel so the existing time-selection machinery runs over the
+    // clip (the panel's own mouse handlers are private). Events must already be
+    // translated into this panel's coordinate space.
+    void forwardLowerZoneMouseDown(const juce::MouseEvent& panelEvent) {
+        mouseDown(panelEvent);
+    }
+    void forwardLowerZoneMouseDrag(const juce::MouseEvent& panelEvent) {
+        mouseDrag(panelEvent);
+    }
+    void forwardLowerZoneMouseUp(const juce::MouseEvent& panelEvent) {
+        mouseUp(panelEvent);
+    }
     bool duplicateSelectedArrangementClips(bool includeAutomation);
 
     // Ghost clip methods (for Alt+drag visual feedback)

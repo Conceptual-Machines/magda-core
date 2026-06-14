@@ -1277,7 +1277,8 @@ void RenderTimeSelectionCommand::undo() {
 // ============================================================================
 static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, double selStart,
                            double selEnd, bool ripple, double duration,
-                           std::vector<ClipId>& clipsToDelete, double tempo) {
+                           std::vector<ClipId>& clipsToDelete, std::vector<ClipId>& clipsToResync,
+                           double tempo) {
     if (!clip.loopEnabled)
         return false;
 
@@ -1300,15 +1301,18 @@ static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, doubl
         // Ripple: reduce length by duration, gap gets closed
         ClipOperations::setTimelinePlacement(*liveClip, liveClip->getTimelineStart(bpm),
                                              liveClip->getTimelineLength(bpm) - duration, bpm);
+        clipsToResync.push_back(clip.id);
     } else if (startsBeforeSel) {
         // Spans left boundary: trim right edge
         ClipOperations::setTimelinePlacement(*liveClip, liveClip->getTimelineStart(bpm),
                                              selStart - clipStart, bpm);
+        clipsToResync.push_back(clip.id);
     } else if (endsAfterSel) {
         // Spans right boundary: trim left edge, adjust phase
         double trimAmount = selEnd - clipStart;
         ClipOperations::setTimelinePlacement(*liveClip, ripple ? selStart : selEnd,
                                              clipLength - trimAmount, bpm);
+        clipsToResync.push_back(clip.id);
 
         // Adjust midiOffset (phase) for the trimmed portion
         if (clip.isMidi()) {
@@ -1358,6 +1362,11 @@ void RippleDeleteTimeSelectionCommand::execute() {
 
     // Collect clips to delete (fully inside selection)
     std::vector<ClipId> clipsToDelete;
+    // Clips trimmed or shifted in place. forceNotifyClipsChanged() only
+    // reconciles add/remove/move topology, so these need an explicit property
+    // notification or the engine keeps their original length/position even
+    // though the UI updates.
+    std::vector<ClipId> clipsToResync;
 
     // Process overlapping clips on affected tracks
     // We need to work on a copy of clip IDs since we'll be modifying clips
@@ -1375,7 +1384,7 @@ void RippleDeleteTimeSelectionCommand::execute() {
 
         // Looped clips: just adjust boundaries, don't split/delete notes
         if (trimLoopedClip(clipManager, clip, startTime_, endTime_, true, duration, clipsToDelete,
-                           tempo_))
+                           clipsToResync, tempo_))
             continue;
 
         bool startsBeforeSel = clipStart < startTime_;
@@ -1396,6 +1405,7 @@ void RippleDeleteTimeSelectionCommand::execute() {
                     if (tailClip) {
                         ClipOperations::setTimelinePlacement(*tailClip, startTime_,
                                                              tailClip->getTimelineLength(bpm), bpm);
+                        clipsToResync.push_back(tailId);
                     }
                 }
             }
@@ -1406,6 +1416,7 @@ void RippleDeleteTimeSelectionCommand::execute() {
             if (liveClip) {
                 ClipOperations::setTimelinePlacement(*liveClip, liveClip->getTimelineStart(bpm),
                                                      newLength, bpm);
+                clipsToResync.push_back(clip.id);
             }
         } else if (endsAfterSel) {
             // Clip spans right boundary only: split at endTime_, shift right portion left
@@ -1418,6 +1429,7 @@ void RippleDeleteTimeSelectionCommand::execute() {
                 if (tailClip) {
                     ClipOperations::setTimelinePlacement(*tailClip, startTime_,
                                                          tailClip->getTimelineLength(bpm), bpm);
+                    clipsToResync.push_back(tailId);
                 }
             }
         } else {
@@ -1442,10 +1454,12 @@ void RippleDeleteTimeSelectionCommand::execute() {
             ClipOperations::setTimelinePlacement(*liveClip,
                                                  liveClip->getTimelineStart(bpm) - duration,
                                                  liveClip->getTimelineLength(bpm), bpm);
+            clipsToResync.push_back(clip.id);
         }
     }
 
     clipManager.forceNotifyClipsChanged();
+    clipManager.forceNotifyMultipleClipPropertiesChanged(clipsToResync);
     executed_ = true;
 }
 
@@ -1467,6 +1481,14 @@ void RippleDeleteTimeSelectionCommand::undo() {
     }
 
     clipManager.forceNotifyClipsChanged();
+    // Topology sync alone leaves trimmed/shifted clips that kept their engine
+    // mapping at their post-delete placement; push every restored placement
+    // back to the engine (unchanged clips are cheap no-ops).
+    std::vector<ClipId> restoredIds;
+    restoredIds.reserve(snapshot_.size());
+    for (const auto& clip : snapshot_)
+        restoredIds.push_back(clip.id);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
     executed_ = false;
 }
 
@@ -1497,6 +1519,12 @@ void DeleteTimeSelectionCommand::execute() {
     };
 
     std::vector<ClipId> clipsToDelete;
+    // Clips whose placement is trimmed in place (not split/deleted). These need
+    // an explicit property notification so ClipSynchronizer pushes the new
+    // length/position to the engine — forceNotifyClipsChanged() below only
+    // reconciles add/remove/move topology, so a clean end-trim would otherwise
+    // update the UI but leave the engine clip playing its original length.
+    std::vector<ClipId> clipsToResync;
 
     auto allClips = clipManager.getArrangementClips();
     for (const auto& clip : allClips) {
@@ -1512,7 +1540,7 @@ void DeleteTimeSelectionCommand::execute() {
 
         // Looped clips: just adjust boundaries, don't split/delete notes
         if (trimLoopedClip(clipManager, clip, startTime_, endTime_, false, duration, clipsToDelete,
-                           tempo_))
+                           clipsToResync, tempo_))
             continue;
 
         bool startsBeforeSel = clipStart < startTime_;
@@ -1535,6 +1563,7 @@ void DeleteTimeSelectionCommand::execute() {
             if (liveClip) {
                 ClipOperations::setTimelinePlacement(*liveClip, liveClip->getTimelineStart(bpm),
                                                      newLength, bpm);
+                clipsToResync.push_back(clip.id);
             }
         } else if (endsAfterSel) {
             // Clip spans right boundary: split at endTime_, delete left portion
@@ -1555,6 +1584,7 @@ void DeleteTimeSelectionCommand::execute() {
     // No ripple shift — clips after selection stay where they are
 
     clipManager.forceNotifyClipsChanged();
+    clipManager.forceNotifyMultipleClipPropertiesChanged(clipsToResync);
     executed_ = true;
 }
 
@@ -1574,6 +1604,14 @@ void DeleteTimeSelectionCommand::undo() {
     }
 
     clipManager.forceNotifyClipsChanged();
+    // Re-trimmed/kept clips keep their engine mapping, so forceNotifyClipsChanged
+    // (topology only) won't restore their length/position. Push every restored
+    // clip's placement back to the engine; unchanged clips are cheap no-ops.
+    std::vector<ClipId> restoredIds;
+    restoredIds.reserve(snapshot_.size());
+    for (const auto& clip : snapshot_)
+        restoredIds.push_back(clip.id);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
     executed_ = false;
 }
 
