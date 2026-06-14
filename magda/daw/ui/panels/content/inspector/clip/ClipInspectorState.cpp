@@ -234,8 +234,8 @@ void ClipInspector::updateFromSelectedClip() {
         audioPropsLabel_.setVisible(isAudioClip);
 
         if (isAudioClip) {
-            clipTypeIcon_->updateSvgData(BinaryData::audio_clip_svg,
-                                         BinaryData::audio_clip_svgSize);
+            clipTypeIcon_->updateSvgData(BinaryData::iconaudioboldm_svg,
+                                         BinaryData::iconaudioboldm_svgSize);
             clipTypeIcon_->setTooltip("Audio clip");
         } else {
             clipTypeIcon_->updateSvgData(BinaryData::midi_clip_svg, BinaryData::midi_clip_svgSize);
@@ -244,11 +244,12 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Update view icon based on clip view
         if (clip->view == magda::ClipView::Session) {
-            clipViewIcon_->updateSvgData(BinaryData::Session_svg, BinaryData::Session_svgSize);
+            clipViewIcon_->updateSvgData(BinaryData::iconsessionboldm_svg,
+                                         BinaryData::iconsessionboldm_svgSize);
             clipViewIcon_->setTooltip("Session clip");
         } else {
-            clipViewIcon_->updateSvgData(BinaryData::Arrangement_svg,
-                                         BinaryData::Arrangement_svgSize);
+            clipViewIcon_->updateSvgData(BinaryData::iconarrangementboldm_svg,
+                                         BinaryData::iconarrangementboldm_svgSize);
             clipViewIcon_->setTooltip("Arrangement clip");
         }
 
