@@ -1056,6 +1056,68 @@ bool TrackContentPanel::isOnSelectionEdge(int x, int y, bool& isLeftEdge) const 
     return false;
 }
 
+bool TrackContentPanel::tryBeginTimeSelectionGrab(const juce::MouseEvent& event) {
+    if (!timelineController || !timelineController->getState().selection.isActive())
+        return false;
+
+    bool isLeftEdge = false;
+    if (isOnSelectionEdge(event.x, event.y, isLeftEdge)) {
+        // On the edge of the selection - prepare to resize (and trim clips).
+        const auto& selection = timelineController->getState().selection;
+        isMovingSelection = false;
+        isCreatingSelection = false;
+        currentDragType_ =
+            isLeftEdge ? DragType::ResizeSelectionLeft : DragType::ResizeSelectionRight;
+        moveDragStartTime = pixelToTime(event.x);
+        moveSelectionOriginalStart = selection.startTime;
+        moveSelectionOriginalEnd = selection.endTime;
+        moveSelectionOriginalTracks = selection.trackIndices;
+
+        // Capture all clips within the time selection for trimming
+        originalClipsInSelection_.clear();
+        const auto& clips = ClipManager::getInstance().getArrangementClips();
+        for (const auto& clip : clips) {
+            auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip.trackId);
+            if (it == visibleTrackIds_.end())
+                continue;
+
+            int trackIndex = static_cast<int>(std::distance(visibleTrackIds_.begin(), it));
+            if (!selection.includesTrack(trackIndex))
+                continue;
+
+            const double clipStart = clip.getTimelineStart(tempoBPM);
+            const double clipEnd = clip.getTimelineEnd(tempoBPM);
+            if (clipStart < selection.endTime && clipEnd > selection.startTime) {
+                ClipOriginalData data;
+                data.originalStartTime = clipStart;
+                data.originalLength = clip.getTimelineLength(tempoBPM);
+                data.originalTrackId = clip.trackId;
+                originalClipsInSelection_[clip.id] = data;
+            }
+        }
+        return true;
+    }
+
+    if (isOnExistingSelection(event.x, event.y)) {
+        // Inside the selection - prepare to move it (splitting the underlying
+        // clips at the selection boundaries on the first drag motion).
+        const auto& selection = timelineController->getState().selection;
+        isMovingSelection = true;
+        isCreatingSelection = false;
+        currentDragType_ = DragType::MoveSelection;
+        moveDragStartTime = pixelToTime(event.x);
+        moveSelectionOriginalStart = selection.startTime;
+        moveSelectionOriginalEnd = selection.endTime;
+        moveSelectionOriginalTracks = selection.trackIndices;
+
+        // Defer split to first drag motion (so click-without-drag doesn't split)
+        needsSplitOnFirstDrag_ = true;
+        return true;
+    }
+
+    return false;
+}
+
 void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
     // Grab keyboard focus so we can receive key events (like 'B' for blade)
     grabKeyboardFocus();
@@ -1209,6 +1271,14 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
         }
     }
 
+    // A click on an active time selection grabs it for move/resize in EITHER
+    // track zone (and over clips, via ClipComponent forwarding), so the selected
+    // portion can be dragged to trim and move it. Must run before the zone
+    // branches below, which would otherwise treat an upper-zone grab as a clip
+    // operation / marquee.
+    if (tryBeginTimeSelectionGrab(event))
+        return;
+
     // Select track based on click position - but ONLY in upper zone
     // (Lower zone is for timeline operations, shouldn't affect track selection)
     if (inUpperZone) {
@@ -1250,62 +1320,10 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
         // Explicitly preserve clip selection when clicking in lower zone
         // (User might be positioning edit cursor to split selected clips)
 
-        // LOWER ZONE: Time selection operations
-        bool isLeftEdge = false;
-        if (isOnSelectionEdge(event.x, event.y, isLeftEdge)) {
-            // Clicked on edge of existing time selection - prepare to resize it
-            const auto& selection = timelineController->getState().selection;
-            isMovingSelection = false;
-            isCreatingSelection = false;
-            currentDragType_ =
-                isLeftEdge ? DragType::ResizeSelectionLeft : DragType::ResizeSelectionRight;
-            moveDragStartTime = pixelToTime(event.x);
-            moveSelectionOriginalStart = selection.startTime;
-            moveSelectionOriginalEnd = selection.endTime;
-            moveSelectionOriginalTracks = selection.trackIndices;
-
-            // Capture all clips within the time selection for trimming
-            originalClipsInSelection_.clear();
-            const auto& clips = ClipManager::getInstance().getArrangementClips();
-            for (const auto& clip : clips) {
-                // Check if clip's track is in the selection
-                auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip.trackId);
-                if (it == visibleTrackIds_.end()) {
-                    continue;
-                }
-
-                int trackIndex = static_cast<int>(std::distance(visibleTrackIds_.begin(), it));
-                if (!selection.includesTrack(trackIndex)) {
-                    continue;
-                }
-
-                // Check if clip overlaps with selection time range
-                const double clipStart = clip.getTimelineStart(tempoBPM);
-                const double clipEnd = clip.getTimelineEnd(tempoBPM);
-                if (clipStart < selection.endTime && clipEnd > selection.startTime) {
-                    ClipOriginalData data;
-                    data.originalStartTime = clipStart;
-                    data.originalLength = clip.getTimelineLength(tempoBPM);
-                    data.originalTrackId = clip.trackId;
-                    originalClipsInSelection_[clip.id] = data;
-                }
-            }
-            return;
-        } else if (isOnExistingSelection(event.x, event.y)) {
-            // Clicked inside existing time selection - prepare to move it
-            const auto& selection = timelineController->getState().selection;
-            isMovingSelection = true;
-            isCreatingSelection = false;
-            currentDragType_ = DragType::MoveSelection;
-            moveDragStartTime = pixelToTime(event.x);
-            moveSelectionOriginalStart = selection.startTime;
-            moveSelectionOriginalEnd = selection.endTime;
-            moveSelectionOriginalTracks = selection.trackIndices;
-
-            // Defer split to first drag motion (so click-without-drag doesn't split)
-            needsSplitOnFirstDrag_ = true;
-            return;
-        } else {
+        // LOWER ZONE: Time selection operations. Grabbing an existing selection
+        // (edge resize or interior move) is handled earlier by
+        // tryBeginTimeSelectionGrab; here we only start a NEW selection.
+        {
             // Clicked outside time selection in lower zone - clear it and start new one
             if (timelineController && timelineController->getState().selection.isActive()) {
                 // Clear existing time selection
@@ -2140,6 +2158,22 @@ bool TrackContentPanel::isInUpperTrackZone(int y) const {
 }
 
 void TrackContentPanel::updateCursorForPosition(int x, int y, bool shiftHeld) {
+    // An active time selection takes priority, even over a clip: the clip is
+    // transparent to plain mouse events there (ClipComponent::hitTest), so the
+    // panel both drives the gesture and owns the cursor. Edge = resize/trim,
+    // interior = grab to move the selected portion.
+    {
+        bool isLeftEdge = false;
+        if (isOnSelectionEdge(x, y, isLeftEdge)) {
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            return;
+        }
+        if (isOnExistingSelection(x, y)) {
+            setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+            return;
+        }
+    }
+
     if (getClipComponentAt(x, y) != nullptr) {
         setMouseCursor(juce::MouseCursor::NormalCursor);
         return;

@@ -1078,7 +1078,30 @@ void ClipComponent::resized() {
 }
 
 bool ClipComponent::hitTest(int x, int y) {
-    return x >= 0 && x < getWidth() && y >= 0 && y < getHeight();
+    if (x < 0 || x >= getWidth() || y < 0 || y >= getHeight())
+        return false;
+
+    // Be transparent to a plain (unmodified, non-edge) click that lands on an
+    // active time selection covering this clip, so the gesture goes straight to
+    // the panel's time-selection machinery and the panel owns the drag. Routing
+    // it through this component instead breaks mid-drag: splitting at the
+    // selection boundaries rebuilds (destroys) every ClipComponent, killing the
+    // drag (you had to drag twice). Clip resize edges and modified clicks
+    // (copy/select/blade/erase/context menu) still hit the clip.
+    if (parentPanel_ != nullptr) {
+        const auto mods = juce::ModifierKeys::getCurrentModifiers();
+        if (!mods.isAnyModifierKeyDown() && !mods.isPopupMenu() && !isOnLeftEdge(x) &&
+            !isOnRightEdge(x)) {
+            const int panelX = getX() + x;
+            const int panelY = getY() + y;
+            if (parentPanel_->pointInTimeSelection(panelX, panelY) ||
+                parentPanel_->pointOnTimeSelectionEdge(panelX, panelY)) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 // ============================================================================
@@ -1169,9 +1192,10 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
 
     // Lower half of the clip body is a time-selection zone, just like empty lane
     // space: forward a plain click there to the panel so it draws an I-beam time
-    // selection instead of grabbing/moving the clip. Edges keep resize priority,
-    // and the clip-op modifiers (select/copy/blade/erase/context) are handled
-    // elsewhere, so only an unmodified click in the lower body is forwarded.
+    // selection instead of grabbing/moving the clip. (Grabbing an *existing*
+    // selection is handled earlier by hitTest making this component transparent,
+    // so the panel owns that drag directly.) Edges keep resize priority, and the
+    // clip-op modifiers (select/copy/blade/erase/context) are handled elsewhere.
     const bool plainLowerZoneClick =
         parentPanel_ != nullptr && e.y >= getHeight() / 2 && !isOnLeftEdge(e.x) &&
         !isOnRightEdge(e.x) && !e.mods.isAltDown() && !e.mods.isCommandDown() &&
@@ -2460,6 +2484,8 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
     hoverRightEdge_ = isOnRightEdge(e.x);
 
     // Lower half (away from the resize edges) is the time-selection zone.
+    // (When a time selection covers this point hitTest() makes the clip
+    // transparent, so the panel handles the grab/resize cursor there.)
     hoverLowerZone_ = e.y >= getHeight() / 2 && !hoverLeftEdge_ && !hoverRightEdge_;
 
     // Check fade handle hover (selected audio clips only)
