@@ -136,22 +136,40 @@ PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
         }
         setResizable(isResizable, false);
 
-        // setContentOwned(..., true) above already sized the window to fit the
-        // editor PLUS our non-native title bar (via childBoundsChanged). Do NOT
-        // setSize() with the editor's content dimensions here: setSize sets the
-        // whole window (title bar included), squeezing the editor down by the
-        // title-bar height on every open. A resizable plugin editor persists that
-        // shrunk size and reports it on the next createEditorIfNeeded(), so each
-        // open/close cycle shaved off another title-bar height -- the "ext UI
-        // window keeps shrinking on repeated clicks" bug. Only fall back to a
-        // default when the editor reports no size of its own.
-        if (getContentComponent()->getWidth() <= 0 || getContentComponent()->getHeight() <= 0) {
-            setSize(400, 300);  // Default size for editors with no intrinsic size
+        // Restore the user's last size/position for this plugin if we have it.
+        // lastWindowBounds lives on the PluginWindowState, which outlives the
+        // window, so a resize persists across close/reopen within the session.
+        // We saved getBounds() (the whole window, title bar included), so
+        // setBounds() round-trips exactly and does not shrink. Only honour a
+        // saved *size* for resizable editors — fixed-size editors must keep their
+        // intrinsic size; we still restore their position below.
+        if (isResizable && state.lastWindowBounds.has_value()) {
+            setBounds(*state.lastWindowBounds);
+        } else {
+            // No saved size. setContentOwned(..., true) above already sized the
+            // window to fit the editor PLUS our non-native title bar (via
+            // childBoundsChanged). Do NOT setSize() with the editor's content
+            // dimensions here: setSize sets the whole window (title bar included),
+            // squeezing the editor down by the title-bar height on every open. A
+            // resizable plugin editor persists that shrunk size and reports it on
+            // the next createEditorIfNeeded(), so each open/close cycle shaved off
+            // another title-bar height -- the "ext UI window keeps shrinking on
+            // repeated clicks" bug. Only fall back to a default when the editor
+            // reports no size of its own.
+            if (getContentComponent()->getWidth() <= 0 ||
+                getContentComponent()->getHeight() <= 0) {
+                setSize(400, 300);  // Default size for editors with no intrinsic size
+            }
+
+            // Position window (restores last position if known, else cascades)
+            auto pos = state.choosePositionForPluginWindow();
+            setTopLeftPosition(pos.x, pos.y);
         }
 
-        // Position window
-        auto pos = state.choosePositionForPluginWindow();
-        setTopLeftPosition(pos.x, pos.y);
+        // Seed the saved bounds and start tracking, so subsequent user moves and
+        // resizes are remembered for next time.
+        state.lastWindowBounds = getBounds();
+        trackingBounds_ = true;
 
         setVisible(true);
     } else {
@@ -196,7 +214,16 @@ void PluginEditorWindow::closeButtonPressed() {
 
 void PluginEditorWindow::moved() {
     // Save window position for next time
-    if (state_.lastWindowBounds.has_value()) {
+    if (trackingBounds_) {
+        state_.lastWindowBounds = getBounds();
+    }
+}
+
+void PluginEditorWindow::resized() {
+    // Keep DocumentWindow's title-bar + content layout.
+    daw::ui::FloatingHostWindow::resized();
+    // Save window size for next time
+    if (trackingBounds_) {
         state_.lastWindowBounds = getBounds();
     }
 }

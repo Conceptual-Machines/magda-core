@@ -65,12 +65,19 @@ class PluginEditorWindow final : public daw::ui::FloatingHostWindow {
 
     void closeButtonPressed() override;
     void moved() override;
+    void resized() override;
     // Forwards unconsumed keys to the app command manager (transport shortcuts).
     bool keyPressed(const juce::KeyPress& key) override;
 
   private:
     tracktion::Plugin& plugin_;
     tracktion::PluginWindowState& state_;
+
+    // Once the window is fully built and its size/position restored, moves and
+    // resizes are persisted into state_.lastWindowBounds so they survive reopen.
+    // Stays false during construction so the layout passes don't clobber the
+    // restored bounds before the user has touched anything.
+    bool trackingBounds_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditorWindow)
 };
