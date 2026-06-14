@@ -303,10 +303,6 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
             if (callbacks_.onSaveProjectAs)
                 callbacks_.onSaveProjectAs();
             break;
-        case ImportAudio:
-            if (callbacks_.onImportAudio)
-                callbacks_.onImportAudio();
-            break;
         case CollectFiles:
             if (callbacks_.onCollectFiles)
                 callbacks_.onCollectFiles();

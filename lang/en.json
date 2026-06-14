@@ -8,7 +8,6 @@
     "settings": "Settings",
     "window": "Window",
     "help": "Help",
-
     "file.new_project": "New Project",
     "file.open_project": "Open Project...",
     "file.open_recent": "Open Recent",
@@ -21,7 +20,6 @@
     "file.export_audio": "Export Audio...",
     "file.export_midi": "Export MIDI...",
     "file.quit": "Quit",
-
     "edit.undo": "Undo",
     "edit.redo": "Redo",
     "edit.cut": "Cut",
@@ -34,13 +32,11 @@
     "edit.render_clip": "Render Selected Clip(s)",
     "edit.render_time_selection": "Render Time Selection",
     "edit.select_all": "Select All",
-
     "settings.preferences": "Preferences...",
     "settings.ai": "AI Settings...",
     "settings.audio_midi": "Audio/MIDI Settings...",
     "settings.plugins": "Plugin Settings...",
     "settings.controllers": "Controllers...",
-
     "view.track_manager": "Track Manager...",
     "view.headers_right": "Headers on the Right",
     "view.zoom_in": "Zoom In",
@@ -49,7 +45,6 @@
     "view.zoom_loop": "Zoom Loop to Fit",
     "view.zoom_selection": "Zoom Selection to Fit",
     "view.fullscreen": "Enter Full Screen",
-
     "transport.play": "Play",
     "transport.pause": "Pause",
     "transport.stop": "Stop",
@@ -57,7 +52,6 @@
     "transport.loop": "Loop",
     "transport.go_to_start": "Go to Start",
     "transport.go_to_end": "Go to End",
-
     "track.add_track": "Add Track",
     "track.add_group": "Add Group Track",
     "track.add_aux": "Add Aux Track",
@@ -67,16 +61,13 @@
     "track.duplicate_content_only": "Duplicate Track Content Only",
     "track.mute": "Mute Track",
     "track.solo": "Solo Track",
-
     "window.minimize": "Minimize",
     "window.zoom": "Zoom",
     "window.bring_to_front": "Bring All to Front",
-
     "help.manual": "Online Manual",
     "help.check_updates": "Check for Updates...",
     "help.about": "About MAGDA"
   },
-
   "transport": {
     "count_in.off": "Off",
     "count_in.1_beat": "1 Beat",
@@ -90,14 +81,11 @@
     "cpu.peak": "peak",
     "cpu.xruns": "Xruns"
   },
-
   "tracks": {
     "mute": "M",
     "solo": "S",
     "record": "R",
-    "monitor": "I",
     "automation": "A",
-    "new_track": "New Track",
     "input_monitoring": "Input monitoring",
     "input_monitoring.off": "Off",
     "input_monitoring.in": "In",
@@ -121,7 +109,6 @@
     "hide_io_routing": "Hide I/O Routing",
     "remove_send_label": "Remove Send"
   },
-
   "panels": {
     "plugins": "Plugins",
     "samples": "Samples",
@@ -135,91 +122,34 @@
     "drum_grid": "Drum Grid",
     "properties": "Properties"
   },
-
   "inspector": {
-    "track_name": "Track Name",
     "routing": "Routing",
     "audio": "Audio",
-    "input": "Input",
-    "output": "Output",
     "sends": "Sends / Receives",
     "add_send": "+ Add Send",
-    "no_sends": "No sends",
-    "clips": "Clips",
-    "latency": "Latency"
+    "no_sends": "No sends"
   },
-
-  "automation": {
-    "snap_time": "Snap points to time grid",
-    "snap_value": "Snap values to parameter grid",
-    "bypass": "Automation on/off",
-    "delete_lane": "Delete automation lane"
-  },
-
-  "clip_properties": {
-    "audio_properties": "Audio Properties",
-    "position": "Position",
-    "loop": "Loop",
-    "start": "Start",
-    "end": "End",
-    "offset": "Offset",
-    "pitch": "Pitch",
-    "transpose": "Transpose",
-    "groove": "Groove",
-    "strength": "Strength",
-    "mix": "Mix",
-    "playback": "Playback",
-    "fades": "Fades",
-    "channels_l": "L",
-    "channels_r": "R",
-    "transient_detection": "Transient Detection",
-    "sensitivity": "Sensitivity",
-    "launch_mode": "Launch Mode",
-    "launch_quantize": "Launch Quantize",
-    "warp": "WARP",
-    "beat": "BEAT",
-    "auto_pitch": "AUTO-PITCH",
-    "analog": "ANALOG",
-    "reverse": "REVERSE",
-    "auto_detect": "AUTO-DETECT",
-    "auto_xfade": "AUTO-XFADE"
-  },
-
   "dialogs": {
     "open_project": "Open Project",
     "new_project": "New Project",
     "save_project": "Save Project",
     "save_project_as": "Save Project As",
     "close_project": "Close Project",
-    "import_audio": "Import Audio",
     "export_audio": "Export Audio",
-    "audio_settings": "Audio/MIDI Settings",
-    "ai_settings": "AI Settings",
     "plugin_settings": "Plugin Settings",
     "preferences": "Preferences",
     "about": "About MAGDA",
     "track_manager": "Track Manager",
     "chain_tree": "Chain Tree",
-
     "ok": "OK",
     "cancel": "Cancel",
     "apply": "Apply",
-    "browse": "Browse...",
-    "clear": "Clear",
-    "test": "Test",
-    "add": "Add",
-    "download": "Download Model",
-    "load": "Load Model",
-
     "loading_project": "Loading project...",
     "error.new_project": "Could not create new project.",
     "error.file_not_found": "Project file not found:",
     "error.close_failed": "Failed to close project:",
     "error.save_failed": "Failed to save project:",
-    "error.no_audio_track": "No audio track found. Please create an audio track first.",
-    "error.import_failed": "No valid audio files could be imported. The selected files may be unsupported or corrupt.",
     "error.export_no_edit": "Cannot export: no Edit loaded",
-    "success.import": "audio file(s) imported successfully",
     "updates.title": "Check for Updates",
     "updates.up_to_date": "You're running the latest version of MAGDA.",
     "updates.available_body_prefix": "A new version of MAGDA is available:",
@@ -228,19 +158,15 @@
     "updates.view_release": "View release",
     "updates.error_prefix": "Could not check for updates:"
   },
-
   "about": {
     "version_prefix": "Version "
   },
-
   "splash": {
     "version_prefix": "Version "
   },
-
   "chain_tree": {
     "label.click_hint": "Click an item to select it in the chain view"
   },
-
   "track_manager": {
     "column.track": "Track",
     "column.live": "Live",
@@ -248,7 +174,6 @@
     "column.mix": "Mix",
     "label.hint": "Click checkboxes to toggle track visibility per view mode"
   },
-
   "export_audio": {
     "label.format": "Format:",
     "label.sample_rate": "Sample Rate:",
@@ -266,7 +191,6 @@
     "bit_depth.32_float": "32-bit Float",
     "bit_depth.24_flac": "24-bit (FLAC)"
   },
-
   "export_midi": {
     "label.midi_format": "MIDI Format:",
     "label.export_range": "Export Range:",
@@ -278,7 +202,6 @@
     "button.export": "Export",
     "dialog.title": "Export MIDI"
   },
-
   "gain_staging": {
     "dialog.title": "Gain Staging",
     "description": "Play a representative section of the song, then stop. Each device's output gain is trimmed so the chain holds the target headroom.",
@@ -287,7 +210,6 @@
     "hint.use_ai": "Let an AI agent weigh limiters, saturators, and effect order instead of a flat target.",
     "button.start": "Start"
   },
-
   "plugin_settings": {
     "section.system_directories": "System Plugin Directories",
     "section.custom_directories": "Custom Plugin Directories",
@@ -320,19 +242,16 @@
     "status.excluded": "excluded",
     "status.none_scanned": "No plugins scanned yet"
   },
-
   "footer": {
     "tooltip.session": "Session",
     "tooltip.arrangement": "Arrangement",
     "tooltip.mix": "Mix"
   },
-
   "main_window": {
     "loading.initializing": "Initializing...",
     "loading.scanning_devices": "Scanning audio & MIDI devices...",
     "undo.render_clips": "Render Clips"
   },
-
   "export": {
     "progress.exporting_audio": "Exporting Audio...",
     "progress.preparing": "Preparing to export...",
@@ -357,7 +276,6 @@
     "error.midi_write_failed": "Failed to write MIDI file.",
     "error.cannot_create_file": "Could not create output file:"
   },
-
   "collect": {
     "title": "Collect Files",
     "progress.title": "Collecting Files...",
@@ -365,41 +283,26 @@
     "alert.cancelled": "Collect was cancelled. Some files may not have been copied.",
     "alert.no_edit": "Open or create a project first."
   },
-
   "common": {
-    "on": "On",
-    "off": "Off",
-    "yes": "Yes",
-    "no": "No",
-    "none": "None",
-    "default": "Default",
-    "volume": "Volume",
-    "pan": "Pan",
     "master": "Master",
     "master_output": "Master Output"
   },
-
   "preferences": {
     "language.header": "Language",
     "language.label": "UI Language",
     "language.restart_required": "Restart required for language change to fully apply.",
-
     "scale.label": "UI Scale",
     "scale.auto": "Auto (from display DPI)",
     "font_scale.label": "Font Size",
-
     "tab.general": "General",
-    "tab.ui": "UI",
     "tab.colours": "Colours",
     "tab.rendering": "Rendering",
     "tab.paths": "Paths",
     "tab.shortcuts": "Shortcuts",
-
     "section.zoom": "Zoom",
     "section.timeline": "Timeline",
     "section.transport": "Transport",
     "section.autosave": "Auto-Save",
-    "section.panels": "Panels",
     "section.layout": "Layout",
     "section.behavior": "Behavior",
     "section.scale": "Display Scale",
@@ -409,26 +312,20 @@
     "section.format": "Format",
     "section.file_naming": "File Naming",
     "section.keyboard_shortcuts": "Keyboard Shortcuts",
-
     "slider.zoom_in_sensitivity": "Zoom In Sensitivity",
     "slider.zoom_out_sensitivity": "Zoom Out Sensitivity",
     "slider.zoom_shift_sensitivity": "Shift+Zoom Sensitivity",
     "slider.default_length": "Default Length",
     "slider.default_view": "Default View",
     "slider.interval": "Interval",
-
     "toggle.enable_autosave": "Enable auto-save",
     "toggle.stop_updates_playhead": "Stop updates playhead",
-    "toggle.expand_left_panel": "Expand Left Panel (Browser)",
-    "toggle.expand_right_panel": "Expand Right Panel (Inspector)",
-    "toggle.expand_bottom_panel": "Expand Bottom Panel (Mixer)",
     "toggle.headers_on_right": "Headers on the Right",
     "toggle.autohide_arrangement_scrollbars": "Auto-Hide Arrangement Scrollbars",
     "toggle.confirm_track_delete": "Confirm before deleting tracks",
     "toggle.auto_monitor": "Auto-monitor selected track",
     "toggle.open_macros_on_select": "Open macros when selecting devices or racks",
     "toggle.show_tooltips": "Show tooltips",
-
     "button.add_colour": "+ Add Colour",
     "button.browse": "Browse...",
     "button.clear": "Clear",
@@ -436,13 +333,11 @@
     "button.reveal_finder": "Reveal in Finder",
     "button.reveal_explorer": "Show in Explorer",
     "button.reveal_files": "Open in file manager",
-
     "colours.colour": "Colour",
     "colours.hex_rgb": "Hex (RGB)",
     "colours.name": "Name",
     "colours.new_default_name": "New",
     "colours.default_name_prefix": "Colour",
-
     "label.new_clip_colour": "New clip colour",
     "label.render_output_folder": "Render Output Folder",
     "label.default_beside_source": "Default (beside source file)",
@@ -452,21 +347,12 @@
     "label.export_pattern": "Export Pattern",
     "label.bounce_pattern": "Bounce Pattern",
     "label.pattern_tokens_hint": "Tokens: <clip-name> <track-name> <project-name> <date-time>",
-
     "option.inherit_from_track": "Inherit from track",
     "option.cycle_palette": "Cycle through palette",
     "option.bit_depth_16": "16-bit",
     "option.bit_depth_24": "24-bit",
     "option.bit_depth_32_float": "32-bit float",
-
     "dialog.select_render_output_folder": "Select Render Output Folder",
-
-    "shortcut.add_track": "Add Track",
-    "shortcut.delete_track": "Delete Track",
-    "shortcut.duplicate_track": "Duplicate Track",
-    "shortcut.mute_track": "Mute Track",
-    "shortcut.solo_track": "Solo Track",
-
     "paths.section.data": "Data folder (logs, scripts, plugin caches)",
     "paths.section.presets": "Presets folder (Chains, Racks, Devices)",
     "paths.label.folder": "Folder:",
@@ -485,12 +371,10 @@
     "paths.migration.fail_title": "Migration failed",
     "paths.migration.fail_message": "Could not copy all files from\n{0}\nto\n{1}\n\nFiles in the old location are untouched. You can copy them manually and restart."
   },
-
   "controllers": {
     "title": "Controllers",
     "tab.profiles": "MIDI Profiles",
     "tab.scripts": "Lua Scripts",
-    "my_controllers": "My controllers",
     "add_profile": "+ Add profile",
     "upload_profile": "Upload profile…",
     "open_profiles_folder": "Open Profiles Folder",
@@ -499,8 +383,6 @@
     "remove_confirm_title": "Remove controller?",
     "remove_confirm_message": "Remove \"{0}\" and its bindings?",
     "no_profiles": "No profiles loaded.",
-    "no_controllers": "No controllers.",
-    "no_midi_inputs": "No MIDI inputs available.",
     "connected": "Connected",
     "not_connected": "Not connected",
     "disabled": "Disabled",
@@ -508,7 +390,6 @@
     "port.port_in": "Port In",
     "port.port_out": "Port Out",
     "scripts.active": "active",
-    "scripts.no_scripts": "No scripts in folder",
     "scripts.reload": "Reload",
     "scripts.open_folder": "Open Scripts Folder",
     "scripts.import": "Import script…",
