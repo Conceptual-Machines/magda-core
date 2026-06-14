@@ -470,6 +470,18 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
     SER(envDecayCurve);
     SER(envReleaseCurve);
 
+    // Random modulator (type == Random)
+    SER(randomType);
+    SER(randomShape);
+    SER(randomSmooth);
+    SER(randomStepDepth);
+
+    // Envelope follower (type == Follower)
+    SER(followerGainDb);
+    SER(followerAttackMs);
+    SER(followerHoldMs);
+    SER(followerReleaseMs);
+
     // Curve points
     juce::Array<juce::var> curvePointsArray;
     for (const auto& point : mod.curvePoints) {
@@ -536,6 +548,28 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
         DESER(envDecayCurve);
     if (obj->hasProperty("envReleaseCurve"))
         DESER(envReleaseCurve);
+
+    // Random modulator (type == Random). Guarded so mods saved without these
+    // fields keep ModInfo's defaults instead of reading 0 from a missing
+    // property.
+    if (obj->hasProperty("randomType"))
+        DESER(randomType);
+    if (obj->hasProperty("randomShape"))
+        DESER(randomShape);
+    if (obj->hasProperty("randomSmooth"))
+        DESER(randomSmooth);
+    if (obj->hasProperty("randomStepDepth"))
+        DESER(randomStepDepth);
+
+    // Envelope follower (type == Follower).
+    if (obj->hasProperty("followerGainDb"))
+        DESER(followerGainDb);
+    if (obj->hasProperty("followerAttackMs"))
+        DESER(followerAttackMs);
+    if (obj->hasProperty("followerHoldMs"))
+        DESER(followerHoldMs);
+    if (obj->hasProperty("followerReleaseMs"))
+        DESER(followerReleaseMs);
 
     // Curve points
     auto curvePointsVar = obj->getProperty("curvePoints");

@@ -79,12 +79,29 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
         }
         case ModType::Random: {
             juce::ValueTree randomState(te::IDs::RANDOM);
-            modifier = modList.insertModifier(randomState, -1, nullptr);
+            auto randomMod = modList.insertModifier(randomState, -1, nullptr);
+            if (!randomMod)
+                break;
+
+            if (auto* rnd = dynamic_cast<te::RandomModifier*>(randomMod.get()))
+                applyRandomProperties(rnd, modInfo);
+            modifier = randomMod;
             break;
         }
         case ModType::Follower: {
             juce::ValueTree envState(te::IDs::ENVELOPEFOLLOWER);
-            modifier = modList.insertModifier(envState, -1, nullptr);
+            auto efMod = modList.insertModifier(envState, -1, nullptr);
+            if (!efMod)
+                break;
+
+            if (auto* ef = dynamic_cast<te::EnvelopeFollowerModifier*>(efMod.get())) {
+                applyFollowerProperties(ef, modInfo);
+                // A cross-track sidechain source drives the follower from that
+                // source's level (pushed by the audio sidechain monitor); with
+                // no source it follows its own host scope audio.
+                ef->setUsesExternalInput(ctx.hasCrossTrackSidechain);
+            }
+            modifier = efMod;
             break;
         }
         case ModType::Envelope: {
@@ -331,6 +348,11 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 // sidechain path.
             } else if (auto* adsr = dynamic_cast<te::ADSRModifier*>(modifier.get())) {
                 applyADSRProperties(adsr, modInfo);
+            } else if (auto* rnd = dynamic_cast<te::RandomModifier*>(modifier.get())) {
+                applyRandomProperties(rnd, modInfo);
+            } else if (auto* ef = dynamic_cast<te::EnvelopeFollowerModifier*>(modifier.get())) {
+                applyFollowerProperties(ef, modInfo);
+                ef->setUsesExternalInput(ctx.hasCrossTrackSidechain);
             }
 
             for (const auto& link : modInfo.links) {

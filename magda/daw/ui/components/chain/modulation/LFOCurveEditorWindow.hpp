@@ -57,6 +57,7 @@ class LFOCurveEditorContent : public juce::Component {
     juce::ComboBox gridYCombo_;
     juce::TextButton snapXToggle_;
     juce::TextButton snapYToggle_;
+    juce::TextButton loopSnapToggle_;
 
     void setupControls();
     void updateControlsFromModInfo();

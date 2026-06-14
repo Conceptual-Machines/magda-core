@@ -44,6 +44,8 @@ void AddModButton::showAddMenu() {
     menu.addItem(1, "LFO");
     menu.addItem(2, "Curve");
     menu.addItem(3, "Envelope");
+    menu.addItem(4, "Random");
+    menu.addItem(5, "Follower");
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this), [this](int result) {
         if (!onAddMod)
@@ -57,6 +59,12 @@ void AddModButton::showAddMenu() {
         } else if (result == 3) {
             // ADSR envelope generator (waveform unused)
             onAddMod(magda::ModType::Envelope, magda::LFOWaveform::Sine);
+        } else if (result == 4) {
+            // Random modulator (waveform unused)
+            onAddMod(magda::ModType::Random, magda::LFOWaveform::Sine);
+        } else if (result == 5) {
+            // Envelope follower (waveform unused)
+            onAddMod(magda::ModType::Follower, magda::LFOWaveform::Sine);
         }
     });
 }

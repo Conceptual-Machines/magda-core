@@ -773,6 +773,14 @@ void RackComponent::onModEnvelopeChangedInternal(int modIndex, const magda::ModI
     magda::TrackManager::getInstance().setModEnvelope(rackPath_, modIndex, mod);
 }
 
+void RackComponent::onModRandomChangedInternal(int modIndex, const magda::ModInfo& mod) {
+    magda::TrackManager::getInstance().setModRandom(rackPath_, modIndex, mod);
+}
+
+void RackComponent::onModFollowerChangedInternal(int modIndex, const magda::ModInfo& mod) {
+    magda::TrackManager::getInstance().setModFollower(rackPath_, modIndex, mod);
+}
+
 void RackComponent::onModCurveChangedInternal(int /*modIndex*/) {
     DBG("[HardCorner] RackComponent notifyModCurveChanged path=" << rackPath_.toString());
     // Curve points are already written directly to ModInfo by LFOCurveEditor.

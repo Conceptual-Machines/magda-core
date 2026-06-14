@@ -387,6 +387,14 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     void gateSidechainLFOs(TrackId sourceTrackId);
 
     /**
+     * @brief Push a source track's current audio level to any envelope-follower
+     *        modulators sidechained from it (audio thread, called per block by
+     *        AudioSidechainMonitorPlugin). Followers apply their own
+     *        attack/release to this level via te::EnvelopeFollowerModifier.
+     */
+    void pushSidechainAudioLevel(TrackId sourceTrackId, float level);
+
+    /**
      * @brief Rebuild the sidechain LFO cache for all tracks
      *
      * Must be called on the message thread after sidechain config, modifier,

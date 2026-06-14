@@ -102,6 +102,30 @@ LFOCurveEditor::LFOCurveEditor() {
     // Must be >= half of POINT_SIZE_SELECTED (8) so extreme points are fully grabbable.
     setPadding(8);
 
+    // Snap callbacks used by the base for adding points and dragging segment
+    // shaper handles (point drags also run through constrainPointPosition).
+    // Without these, only point drags snapped — new points and the hard-corner
+    // apex ignored the grid.
+    snapXToGrid = [this](double x) -> double {
+        if (snapX_ && gridDivisionsX_ > 1) {
+            const double step = 1.0 / gridDivisionsX_;
+            return juce::jlimit(0.0, 1.0, std::round(x / step) * step);
+        }
+        return x;
+    };
+    snapYToGrid = [this](double y) -> double {
+        if (snapY_ && gridDivisionsY_ > 1) {
+            const double step = 1.0 / gridDivisionsY_;
+            return juce::jlimit(0.0, 1.0, std::round(y / step) * step);
+        }
+        return y;
+    };
+    // Step-stamp cell width = one X grid division (phase is 0-1). Without this
+    // the base skips the snap/size block and the step cell collapses.
+    getGridSpacingX = [this]() -> double {
+        return gridDivisionsX_ > 0 ? 1.0 / gridDivisionsX_ : 0.0;
+    };
+
     rebuildPointComponents();
     startTimer(33);  // 30 FPS animation for phase indicator
 }
@@ -439,6 +463,96 @@ void LFOCurveEditor::onPointDeleted(uint32_t pointId) {
     commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
 }
 
+void LFOCurveEditor::onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) {
+    if (pointIds.empty())
+        return;
+
+    // Keep at least 2 points. If the selection would delete more, only remove
+    // down to that floor (array order, so the rightmost survivors are kept).
+    const size_t deletable = points_.size() > 2 ? points_.size() - 2 : 0;
+    if (deletable == 0)
+        return;
+
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
+    size_t deleted = 0;
+    points_.erase(std::remove_if(points_.begin(), points_.end(),
+                                 [&](const CurvePoint& p) {
+                                     if (deleted >= deletable || pointIds.count(p.id) == 0)
+                                         return false;
+                                     ++deleted;
+                                     return true;
+                                 }),
+                  points_.end());
+
+    if (deleted == 0)
+        return;
+
+    selectedPointId_ = INVALID_CURVE_POINT_ID;
+    rebuildPointComponents();
+    repaint();
+    notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Edit LFO Curve");
+}
+
+void LFOCurveEditor::onStepStamped(double gridStart, double gridEnd, double y, uint32_t prevPointId,
+                                   double prevValue) {
+    constexpr double kEps = 1e-6;
+    const auto beforePoints = snapshotCurvePoints();
+    const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
+
+    auto insertSorted = [this](double x, double yy, CurveType type) {
+        CurvePoint p;
+        p.id = nextPointId_++;
+        p.x = juce::jlimit(0.0, 1.0, x);
+        p.y = juce::jlimit(0.0, 1.0, yy);
+        p.curveType = type;
+        auto pos =
+            std::lower_bound(points_.begin(), points_.end(), p,
+                             [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
+        points_.insert(pos, p);
+    };
+
+    // Left cliff: flip the preceding point to Step so the segment into the cell
+    // holds the baseline then jumps straight up to y.
+    if (prevPointId != INVALID_CURVE_POINT_ID) {
+        for (auto& p : points_)
+            if (p.id == prevPointId)
+                p.curveType = CurveType::Step;
+    }
+
+    // Cell's left edge at the click value (Step → flat top to gridEnd). If a
+    // point already sits there, retarget it instead of stacking a duplicate.
+    bool retargeted = false;
+    for (auto& p : points_) {
+        if (std::abs(p.x - gridStart) < kEps) {
+            p.y = juce::jlimit(0.0, 1.0, y);
+            p.curveType = CurveType::Step;
+            retargeted = true;
+            break;
+        }
+    }
+    if (!retargeted)
+        insertSorted(gridStart, y, CurveType::Step);
+
+    // Right cliff: recover to the baseline at the cell's end (skip if a point
+    // is already there). Linear so the segment leaving the cell flows normally.
+    bool hasEnd = false;
+    for (const auto& p : points_)
+        if (std::abs(p.x - gridEnd) < kEps) {
+            hasEnd = true;
+            break;
+        }
+    if (gridEnd > gridStart + kEps && !hasEnd)
+        insertSorted(gridEnd, prevValue, CurveType::Linear);
+
+    rebuildPointComponents();
+    repaint();
+    notifyWaveformChanged();
+    commitUndoableCurveEdit(beforePoints, beforePreset, "Stamp LFO Step");
+}
+
 void LFOCurveEditor::onPointSelected(uint32_t pointId) {
     selectedPointId_ = pointId;
 
@@ -470,14 +584,23 @@ void LFOCurveEditor::onPointCurveTypeChanged(uint32_t pointId, CurveType newType
     const auto beforePoints = snapshotCurvePoints();
     const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
 
-    for (auto& point : points_) {
-        if (point.id == pointId) {
-            DBG("[HardCorner] LFOCurveEditor::onPointCurveTypeChanged pointId="
-                << static_cast<int>(pointId) << " oldType=" << getCurveTypeName(point.curveType)
-                << " newType=" << getCurveTypeName(newType));
-            point.curveType = newType;
-            break;
+    for (size_t i = 0; i < points_.size(); ++i) {
+        if (points_[i].id != pointId)
+            continue;
+        DBG("[HardCorner] LFOCurveEditor::onPointCurveTypeChanged pointId="
+            << static_cast<int>(pointId) << " oldType=" << getCurveTypeName(points_[i].curveType)
+            << " newType=" << getCurveTypeName(newType));
+        points_[i].curveType = newType;
+        // A hard corner starts from a clean apex at the segment midpoint. Drop
+        // any stale bezier handle offsets (p1.outHandle / p2.inHandle drive the
+        // segment shaper) so the shaper handle doesn't render off-curve as a
+        // stray floating circle. The apex stays draggable from there.
+        if (newType == CurveType::HardCorner) {
+            points_[i].outHandle = CurveHandleData{};
+            if (i + 1 < points_.size())
+                points_[i + 1].inHandle = CurveHandleData{};
         }
+        break;
     }
     // notifyWaveformChanged persists to ModInfo; the base class refreshes
     // point/handle visuals after this returns.
@@ -788,6 +911,67 @@ void LFOCurveEditor::paintLoopRegion(juce::Graphics& g) {
                           static_cast<float>(content.getY()), loopEndX,
                           static_cast<float>(content.getY()) + markerSize);
     g.fillPath(endMarker);
+}
+
+int LFOCurveEditor::loopMarkerAtPixel(int px, int py) const {
+    if (!showLoopRegion_ || !modInfo_ || !modInfo_->useLoopRegion)
+        return 0;
+
+    auto content = getContentBounds();
+    // Only grab via the handles in the top strip so points elsewhere on the
+    // curve stay editable even near the loop boundaries.
+    constexpr int kTopStrip = 12;
+    if (py > content.getY() + kTopStrip)
+        return 0;
+
+    const int startX = static_cast<int>(std::round(xToPixelF(modInfo_->loopStart)));
+    const int endX = static_cast<int>(std::round(xToPixelF(modInfo_->loopEnd)));
+    constexpr int kHitTol = 6;
+    const int dStart = std::abs(px - startX);
+    const int dEnd = std::abs(px - endX);
+    if (dStart <= kHitTol && dStart <= dEnd)
+        return 1;
+    if (dEnd <= kHitTol)
+        return 2;
+    return 0;
+}
+
+void LFOCurveEditor::mouseDown(const juce::MouseEvent& e) {
+    if (int marker = loopMarkerAtPixel(e.x, e.y)) {
+        draggingLoopMarker_ = marker;
+        return;  // consume — don't let the base add/select a curve point
+    }
+    CurveEditorBase::mouseDown(e);
+}
+
+void LFOCurveEditor::mouseDrag(const juce::MouseEvent& e) {
+    if (draggingLoopMarker_ != 0 && modInfo_) {
+        constexpr float kMinGap = 0.02f;
+        float phase = static_cast<float>(juce::jlimit(0.0, 1.0, pixelToX(e.x)));
+        if (snapLoop_ && gridDivisionsX_ > 1) {
+            const double step = 1.0 / gridDivisionsX_;
+            phase = static_cast<float>(juce::jlimit(0.0, 1.0, std::round(phase / step) * step));
+        }
+        if (draggingLoopMarker_ == 1)
+            modInfo_->loopStart = juce::jlimit(0.0f, modInfo_->loopEnd - kMinGap, phase);
+        else
+            modInfo_->loopEnd = juce::jlimit(modInfo_->loopStart + kMinGap, 1.0f, phase);
+        repaint();
+        if (onDragPreview)
+            onDragPreview();
+        return;
+    }
+    CurveEditorBase::mouseDrag(e);
+}
+
+void LFOCurveEditor::mouseUp(const juce::MouseEvent& e) {
+    if (draggingLoopMarker_ != 0) {
+        draggingLoopMarker_ = 0;
+        // loopStart/loopEnd already live on modInfo_; persist + resync.
+        notifyWaveformChanged();
+        return;
+    }
+    CurveEditorBase::mouseUp(e);
 }
 
 void LFOCurveEditor::notifyWaveformChanged() {

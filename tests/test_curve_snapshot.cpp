@@ -366,6 +366,54 @@ TEST_CASE("CurveSnapshotHolder - one-shot with custom points", "[curve][oneshot]
     REQUIRE(held == Approx(expected));
 }
 
+// ============================================================================
+// MSEG loop region
+// ============================================================================
+
+TEST_CASE("CurveSnapshotHolder - MSEG loop region repeats after intro", "[curve][mseg]") {
+    CurveSnapshotHolder holder;
+
+    ModInfo mod;
+    mod.curvePreset = CurvePreset::RampUp;  // value == phase, easy to assert
+    mod.useLoopRegion = true;
+    mod.loopStart = 0.25f;
+    mod.loopEnd = 0.75f;
+    holder.update(mod);
+
+    // First call seeds previousPhase (no accumulation yet).
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.0f, &holder) == Approx(0.0f));
+    // Intro segment [0, loopStart) plays through linearly.
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.2f, &holder) == Approx(0.2f));
+    // Inside the loop region the cumulative position maps straight through.
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.4f, &holder) == Approx(0.4f));
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.7f, &holder) == Approx(0.7f));
+    // A phase wrap pushes cumulative past loopEnd; it folds back into the
+    // region (cum 1.0 -> 0.25 + fmod(0.75, 0.5) = 0.5).
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.0f, &holder) == Approx(0.5f));
+
+    // Once past the intro the output never escapes [loopStart, loopEnd].
+    for (float p : {0.2f, 0.4f, 0.6f, 0.8f, 0.0f, 0.3f}) {
+        float v = CurveSnapshotHolder::evaluateCallback(p, &holder);
+        REQUIRE(v >= 0.25f - 1.0e-4f);
+        REQUIRE(v <= 0.75f + 1.0e-4f);
+    }
+}
+
+TEST_CASE("CurveSnapshotHolder - loop disabled plays the full curve", "[curve][mseg]") {
+    CurveSnapshotHolder holder;
+
+    ModInfo mod;
+    mod.curvePreset = CurvePreset::RampUp;
+    mod.useLoopRegion = false;  // region present but inactive
+    mod.loopStart = 0.25f;
+    mod.loopEnd = 0.75f;
+    holder.update(mod);
+
+    // Without looping the raw phase passes straight through (no remap).
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.1f, &holder) == Approx(0.1f));
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.9f, &holder) == Approx(0.9f));
+}
+
 TEST_CASE("CurveSnapshotHolder - disabling oneShot resets completed state", "[curve][oneshot]") {
     CurveSnapshotHolder holder;
 

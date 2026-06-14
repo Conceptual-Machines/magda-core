@@ -1910,8 +1910,13 @@ void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack
 
     // Search all tracks for the target device
     for (auto& track : tracks_) {
-        if (updateElements(updateElements, track.chain.fxChainElements))
+        if (updateElements(updateElements, track.chain.fxChainElements)) {
+            // Re-sync the device's modifiers so an envelope follower picks up
+            // the new source (setUsesExternalInput) and the sidechain cache is
+            // rebuilt with it. Mirrors setRackSidechainSource.
+            notifyDeviceModifiersChanged(track.id);
             return;
+        }
     }
 }
 

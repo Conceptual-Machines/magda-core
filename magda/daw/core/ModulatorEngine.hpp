@@ -258,6 +258,11 @@ class ModulatorEngine {
             p2 = &points.front();
         }
 
+        // Step: hold p1's value until the next point (sample & hold / steps).
+        constexpr int kStepCurveType = 2;
+        if (p1->curveType == kStepCurveType)
+            return p1->value;
+
         // Calculate interpolation t value
         float phaseSpan;
         float localPhase;

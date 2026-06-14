@@ -442,7 +442,7 @@ void CurveEditorBase::mouseUp(const juce::MouseEvent& e) {
 
             lassoRect_ = {};
             repaint();
-        } else {
+        } else if (addsPointOnSingleClick()) {
             // No drag happened — single click adds a point
             double x = pixelToX(e.x);
             double y = pixelToY(e.y);
@@ -452,6 +452,12 @@ void CurveEditorBase::mouseUp(const juce::MouseEvent& e) {
             }
 
             onPointAdded(x, y, CurveType::Linear);
+        } else {
+            // No drag — a single click just clears the selection. Adding a
+            // point is a deliberate double-click (see mouseDoubleClick) so
+            // stray clicks don't litter the curve with points.
+            clearSelection();
+            repaint();
         }
         return;
     }
@@ -481,9 +487,23 @@ void CurveEditorBase::mouseUp(const juce::MouseEvent& e) {
 }
 
 void CurveEditorBase::mouseDoubleClick(const juce::MouseEvent& e) {
-    // Double-click on empty area is a no-op.
-    // Point deletion on double-click is handled by CurvePointComponent.
-    juce::ignoreUnused(e);
+    // Double-clicking empty canvas adds a point — a deliberate gesture so a
+    // stray single click doesn't. Double-click on an existing point is
+    // intercepted by CurvePointComponent for deletion, so only empty-area
+    // double-clicks reach here.
+    if (addsPointOnSingleClick() || e.mods.isPopupMenu() ||
+        activeDrawMode_ != CurveDrawMode::Select || isDrawing_)
+        return;
+
+    double x = pixelToX(e.x);
+    double y = pixelToY(e.y);
+    if (snapXToGrid)
+        x = snapXToGrid(x);
+    if (snapYToGrid)
+        y = snapYToGrid(y);
+    y = juce::jlimit(0.0, 1.0, y);
+
+    onPointAdded(x, y, CurveType::Linear);
 }
 
 void CurveEditorBase::modifierKeysChanged(const juce::ModifierKeys& modifiers) {

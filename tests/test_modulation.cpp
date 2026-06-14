@@ -480,6 +480,24 @@ TEST_CASE("TrackManager - Device mod operations", "[modulation][mod][integration
         REQUIRE(device->mods[0].rate == Catch::Approx(2.5f));
     }
 
+    SECTION("Set Random modulator distribution fields") {
+        trackManager.addMod(devicePath, 0, ModType::Random, LFOWaveform::Sine);
+
+        ModInfo src;
+        src.randomType = 1;  // noise
+        src.randomShape = 0.25f;
+        src.randomSmooth = 0.75f;
+        src.randomStepDepth = 0.5f;
+        trackManager.setModRandom(devicePath, 0, src);
+
+        auto* device = trackManager.getDeviceInChainByPath(devicePath);
+        REQUIRE(device->mods[0].type == ModType::Random);
+        REQUIRE(device->mods[0].randomType == 1);
+        REQUIRE(device->mods[0].randomShape == Catch::Approx(0.25f));
+        REQUIRE(device->mods[0].randomSmooth == Catch::Approx(0.75f));
+        REQUIRE(device->mods[0].randomStepDepth == Catch::Approx(0.5f));
+    }
+
     SECTION("Set device mod name") {
         trackManager.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
         trackManager.addMod(devicePath, 1, ModType::LFO, LFOWaveform::Sine);
