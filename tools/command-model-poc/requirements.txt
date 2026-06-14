@@ -1,0 +1,12 @@
+# core harness (dataset, validation, eval)
+lark>=1.1
+
+# intent+slots model (Brevitas QAT)
+torch>=2.2
+brevitas>=0.11
+
+# optional: scoring a generative GGUF teacher on the M1
+# llama-cpp-python>=0.2
+
+# optional: keep train_colab.py <-> .ipynb in sync
+# jupytext>=1.16

@@ -1,0 +1,400 @@
+{"lang": "en", "input": "create a vocals track with diva", "output": "track(name=\"Vocals\", new=true).fx.add(name=\"<diva>\")", "actions": [{"type": "create_track", "name": "Vocals", "plugins": ["<diva>"]}]}
+{"lang": "en", "input": "solo the pads track", "output": "track(name=\"Pads\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Pads"}]}
+{"lang": "en", "input": "rename track Keys to Snare", "output": "track(name=\"Keys\").track.set(name=\"Snare\")", "actions": [{"type": "rename_track", "name": "Keys", "new_name": "Snare"}]}
+{"lang": "en", "input": "create a brass track", "output": "track(name=\"Brass\", new=true)", "actions": [{"type": "create_track", "name": "Brass"}]}
+{"lang": "en", "input": "create a synth track with diva and pro-q 3", "output": "track(name=\"Synth\", new=true).fx.add(name=\"<diva>\")\ntrack(name=\"Synth\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "create_track", "name": "Synth", "plugins": ["<diva>", "<pro_q_3>"]}]}
+{"lang": "en", "input": "delete the fx track", "output": "track(name=\"FX\").delete()", "actions": [{"type": "delete_track", "name": "FX"}]}
+{"lang": "en", "input": "rename track Strings to Drums", "output": "track(name=\"Strings\").track.set(name=\"Drums\")", "actions": [{"type": "rename_track", "name": "Strings", "new_name": "Drums"}]}
+{"lang": "en", "input": "make a vocals track", "output": "track(name=\"Vocals\", new=true)", "actions": [{"type": "create_track", "name": "Vocals"}]}
+{"lang": "en", "input": "load vital on the synth track", "output": "track(name=\"Synth\").fx.add(name=\"<vital>\")", "actions": [{"type": "add_plugin", "name": "Synth", "plugin": "<vital>"}]}
+{"lang": "en", "input": "rename track Vox to Kick", "output": "track(name=\"Vox\").track.set(name=\"Kick\")", "actions": [{"type": "rename_track", "name": "Vox", "new_name": "Kick"}]}
+{"lang": "en", "input": "rename the top loop track to Snare", "output": "track(name=\"Top Loop\").track.set(name=\"Snare\")", "actions": [{"type": "rename_track", "name": "Top Loop", "new_name": "Snare"}]}
+{"lang": "en", "input": "create a choir track", "output": "track(name=\"Choir\", new=true)", "actions": [{"type": "create_track", "name": "Choir"}]}
+{"lang": "en", "input": "rename the sub track to Snare", "output": "track(name=\"Sub\").track.set(name=\"Snare\")", "actions": [{"type": "rename_track", "name": "Sub", "new_name": "Snare"}]}
+{"lang": "en", "input": "remove track Brass", "output": "track(name=\"Brass\").delete()", "actions": [{"type": "delete_track", "name": "Brass"}]}
+{"lang": "en", "input": "load ott on the guitar track", "output": "track(name=\"Guitar\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Guitar", "plugin": "<ott>"}]}
+{"lang": "en", "input": "new kick track with vital and delay", "output": "track(name=\"Kick\", new=true).fx.add(name=\"<vital>\")\ntrack(name=\"Kick\").fx.add(name=\"delay\")", "actions": [{"type": "create_track", "name": "Kick", "plugins": ["<vital>", "delay"]}]}
+{"lang": "en", "input": "add a compressor to Pluck", "output": "track(name=\"Pluck\").fx.add(name=\"compressor\")", "actions": [{"type": "add_plugin", "name": "Pluck", "plugin": "compressor"}]}
+{"lang": "en", "input": "make a lead track and add serum and pro-c 2", "output": "track(name=\"Lead\", new=true).fx.add(name=\"<serum>\")\ntrack(name=\"Lead\").fx.add(name=\"<pro_c_2>\")", "actions": [{"type": "create_track", "name": "Lead", "plugins": ["<serum>", "<pro_c_2>"]}]}
+{"lang": "en", "input": "new track called Perc", "output": "track(name=\"Perc\", new=true)", "actions": [{"type": "create_track", "name": "Perc"}]}
+{"lang": "en", "input": "create a vox track", "output": "track(name=\"Vox\", new=true)", "actions": [{"type": "create_track", "name": "Vox"}]}
+{"lang": "en", "input": "mute the fx track", "output": "track(name=\"FX\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "FX"}]}
+{"lang": "en", "input": "add a delay to Arp", "output": "track(name=\"Arp\").fx.add(name=\"delay\")", "actions": [{"type": "add_plugin", "name": "Arp", "plugin": "delay"}]}
+{"lang": "en", "input": "rename track Guitar to Lead", "output": "track(name=\"Guitar\").track.set(name=\"Lead\")", "actions": [{"type": "rename_track", "name": "Guitar", "new_name": "Lead"}]}
+{"lang": "en", "input": "put tracks 1, 2 and 3 in a group called Drums", "output": "track(id=1).track.group(name=\"Drums\", tracks=\"1,2,3\")", "actions": [{"type": "group_tracks", "ids": [1, 2, 3], "name": "Drums"}]}
+{"lang": "en", "input": "silence Top Loop", "output": "track(name=\"Top Loop\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Top Loop"}]}
+{"lang": "en", "input": "group tracks 3, 4 and 5 into Perc", "output": "track(id=3).track.group(name=\"Perc\", tracks=\"3,4,5\")", "actions": [{"type": "group_tracks", "ids": [3, 4, 5], "name": "Perc"}]}
+{"lang": "en", "input": "color code arp red", "output": "track(name=\"Arp\").track.set(colour=\"#ff5a36\")", "actions": [{"type": "set_track_color", "name": "Arp", "colour": "#ff5a36"}]}
+{"lang": "en", "input": "add a vital to Sub", "output": "track(name=\"Sub\").fx.add(name=\"<vital>\")", "actions": [{"type": "add_plugin", "name": "Sub", "plugin": "<vital>"}]}
+{"lang": "en", "input": "add a new sub bass track", "output": "track(name=\"Sub Bass\", new=true)", "actions": [{"type": "create_track", "name": "Sub Bass"}]}
+{"lang": "en", "input": "mute the strings track", "output": "track(name=\"Strings\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Strings"}]}
+{"lang": "en", "input": "color the perc track orange", "output": "track(name=\"Perc\").track.set(colour=\"#ff8c42\")", "actions": [{"type": "set_track_color", "name": "Perc", "colour": "#ff8c42"}]}
+{"lang": "en", "input": "put massive on Synth", "output": "track(name=\"Synth\").fx.add(name=\"<massive>\")", "actions": [{"type": "add_plugin", "name": "Synth", "plugin": "<massive>"}]}
+{"lang": "en", "input": "solo the synth track", "output": "track(name=\"Synth\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Synth"}]}
+{"lang": "en", "input": "silence Arp", "output": "track(name=\"Arp\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Arp"}]}
+{"lang": "en", "input": "make Hats yellow", "output": "track(name=\"Hats\").track.set(colour=\"#ffd23f\")", "actions": [{"type": "set_track_color", "name": "Hats", "colour": "#ffd23f"}]}
+{"lang": "en", "input": "add a new hats track", "output": "track(name=\"Hats\", new=true)", "actions": [{"type": "create_track", "name": "Hats"}]}
+{"lang": "en", "input": "add a new fx track", "output": "track(name=\"FX\", new=true)", "actions": [{"type": "create_track", "name": "FX"}]}
+{"lang": "en", "input": "new bass track with vital and eq", "output": "track(name=\"Bass\", new=true).fx.add(name=\"<vital>\")\ntrack(name=\"Bass\").fx.add(name=\"eq\")", "actions": [{"type": "create_track", "name": "Bass", "plugins": ["<vital>", "eq"]}]}
+{"lang": "en", "input": "change Vocals to Synth", "output": "track(name=\"Vocals\").track.set(name=\"Synth\")", "actions": [{"type": "rename_track", "name": "Vocals", "new_name": "Synth"}]}
+{"lang": "en", "input": "color code vox grey", "output": "track(name=\"Vox\").track.set(colour=\"#8a8a8a\")", "actions": [{"type": "set_track_color", "name": "Vox", "colour": "#8a8a8a"}]}
+{"lang": "en", "input": "add a vital to Strings", "output": "track(name=\"Strings\").fx.add(name=\"<vital>\")", "actions": [{"type": "add_plugin", "name": "Strings", "plugin": "<vital>"}]}
+{"lang": "en", "input": "delete the drums track", "output": "track(name=\"Drums\").delete()", "actions": [{"type": "delete_track", "name": "Drums"}]}
+{"lang": "en", "input": "new track called Snare", "output": "track(name=\"Snare\", new=true)", "actions": [{"type": "create_track", "name": "Snare"}]}
+{"lang": "en", "input": "create a track named Pluck", "output": "track(name=\"Pluck\", new=true)", "actions": [{"type": "create_track", "name": "Pluck"}]}
+{"lang": "en", "input": "create a track named Bass", "output": "track(name=\"Bass\", new=true)", "actions": [{"type": "create_track", "name": "Bass"}]}
+{"lang": "en", "input": "make a pads track", "output": "track(name=\"Pads\", new=true)", "actions": [{"type": "create_track", "name": "Pads"}]}
+{"lang": "en", "input": "change Lead to Hats", "output": "track(name=\"Lead\").track.set(name=\"Hats\")", "actions": [{"type": "rename_track", "name": "Lead", "new_name": "Hats"}]}
+{"lang": "en", "input": "load massive on the top loop track", "output": "track(name=\"Top Loop\").fx.add(name=\"<massive>\")", "actions": [{"type": "add_plugin", "name": "Top Loop", "plugin": "<massive>"}]}
+{"lang": "en", "input": "rename track Perc to Pads", "output": "track(name=\"Perc\").track.set(name=\"Pads\")", "actions": [{"type": "rename_track", "name": "Perc", "new_name": "Pads"}]}
+{"lang": "en", "input": "color code guitar pink", "output": "track(name=\"Guitar\").track.set(colour=\"#ff6ad5\")", "actions": [{"type": "set_track_color", "name": "Guitar", "colour": "#ff6ad5"}]}
+{"lang": "en", "input": "new vocals track with serum", "output": "track(name=\"Vocals\", new=true).fx.add(name=\"<serum>\")", "actions": [{"type": "create_track", "name": "Vocals", "plugins": ["<serum>"]}]}
+{"lang": "en", "input": "new choir track with vital and reverb", "output": "track(name=\"Choir\", new=true).fx.add(name=\"<vital>\")\ntrack(name=\"Choir\").fx.add(name=\"reverb\")", "actions": [{"type": "create_track", "name": "Choir", "plugins": ["<vital>", "reverb"]}]}
+{"lang": "en", "input": "add reverb to the choir track", "output": "track(name=\"Choir\").fx.add(name=\"reverb\")", "actions": [{"type": "add_plugin", "name": "Choir", "plugin": "reverb"}]}
+{"lang": "en", "input": "silence Sub Bass", "output": "track(name=\"Sub Bass\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Sub Bass"}]}
+{"lang": "en", "input": "set Choir colour to teal", "output": "track(name=\"Choir\").track.set(colour=\"#1abc9c\")", "actions": [{"type": "set_track_color", "name": "Choir", "colour": "#1abc9c"}]}
+{"lang": "en", "input": "set Arp colour to green", "output": "track(name=\"Arp\").track.set(colour=\"#3ddc84\")", "actions": [{"type": "set_track_color", "name": "Arp", "colour": "#3ddc84"}]}
+{"lang": "en", "input": "delete the sub track", "output": "track(name=\"Sub\").delete()", "actions": [{"type": "delete_track", "name": "Sub"}]}
+{"lang": "en", "input": "isolate Strings", "output": "track(name=\"Strings\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Strings"}]}
+{"lang": "en", "input": "isolate Snare", "output": "track(name=\"Snare\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Snare"}]}
+{"lang": "en", "input": "load serum on the bass track", "output": "track(name=\"Bass\").fx.add(name=\"<serum>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<serum>"}]}
+{"lang": "en", "input": "load compressor on the snare track", "output": "track(name=\"Snare\").fx.add(name=\"compressor\")", "actions": [{"type": "add_plugin", "name": "Snare", "plugin": "compressor"}]}
+{"lang": "en", "input": "add ott to the arp track", "output": "track(name=\"Arp\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Arp", "plugin": "<ott>"}]}
+{"lang": "en", "input": "make a hats track and add diva and reverb", "output": "track(name=\"Hats\", new=true).fx.add(name=\"<diva>\")\ntrack(name=\"Hats\").fx.add(name=\"reverb\")", "actions": [{"type": "create_track", "name": "Hats", "plugins": ["<diva>", "reverb"]}]}
+{"lang": "en", "input": "add ott to the top loop track", "output": "track(name=\"Top Loop\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Top Loop", "plugin": "<ott>"}]}
+{"lang": "en", "input": "solo the snare track", "output": "track(name=\"Snare\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Snare"}]}
+{"lang": "en", "input": "make Brass blue", "output": "track(name=\"Brass\").track.set(colour=\"#44c7ff\")", "actions": [{"type": "set_track_color", "name": "Brass", "colour": "#44c7ff"}]}
+{"lang": "en", "input": "solo the strings track", "output": "track(name=\"Strings\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Strings"}]}
+{"lang": "en", "input": "put compressor on Lead", "output": "track(name=\"Lead\").fx.add(name=\"compressor\")", "actions": [{"type": "add_plugin", "name": "Lead", "plugin": "compressor"}]}
+{"lang": "en", "input": "add a new guitar track", "output": "track(name=\"Guitar\", new=true)", "actions": [{"type": "create_track", "name": "Guitar"}]}
+{"lang": "en", "input": "change Sub to Perc", "output": "track(name=\"Sub\").track.set(name=\"Perc\")", "actions": [{"type": "rename_track", "name": "Sub", "new_name": "Perc"}]}
+{"lang": "en", "input": "group tracks 2 and 3 as Drums", "output": "track(id=2).track.group(name=\"Drums\", tracks=\"2,3\")", "actions": [{"type": "group_tracks", "ids": [2, 3], "name": "Drums"}]}
+{"lang": "en", "input": "solo Top Loop", "output": "track(name=\"Top Loop\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Top Loop"}]}
+{"lang": "en", "input": "rename track Vocals to Guitar", "output": "track(name=\"Vocals\").track.set(name=\"Guitar\")", "actions": [{"type": "rename_track", "name": "Vocals", "new_name": "Guitar"}]}
+{"lang": "en", "input": "solo Snare", "output": "track(name=\"Snare\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Snare"}]}
+{"lang": "en", "input": "make a sub bass track and add massive and eq", "output": "track(name=\"Sub Bass\", new=true).fx.add(name=\"<massive>\")\ntrack(name=\"Sub Bass\").fx.add(name=\"eq\")", "actions": [{"type": "create_track", "name": "Sub Bass", "plugins": ["<massive>", "eq"]}]}
+{"lang": "en", "input": "change Vocals to Drums", "output": "track(name=\"Vocals\").track.set(name=\"Drums\")", "actions": [{"type": "rename_track", "name": "Vocals", "new_name": "Drums"}]}
+{"lang": "en", "input": "add a eq to Guitar", "output": "track(name=\"Guitar\").fx.add(name=\"eq\")", "actions": [{"type": "add_plugin", "name": "Guitar", "plugin": "eq"}]}
+{"lang": "en", "input": "solo Keys", "output": "track(name=\"Keys\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Keys"}]}
+{"lang": "en", "input": "rename track Keys to Synth", "output": "track(name=\"Keys\").track.set(name=\"Synth\")", "actions": [{"type": "rename_track", "name": "Keys", "new_name": "Synth"}]}
+{"lang": "en", "input": "make Kick gray", "output": "track(name=\"Kick\").track.set(colour=\"#8a8a8a\")", "actions": [{"type": "set_track_color", "name": "Kick", "colour": "#8a8a8a"}]}
+{"lang": "en", "input": "mute Vocals", "output": "track(name=\"Vocals\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Vocals"}]}
+{"lang": "en", "input": "create a sub track", "output": "track(name=\"Sub\", new=true)", "actions": [{"type": "create_track", "name": "Sub"}]}
+{"lang": "en", "input": "change Pluck to Choir", "output": "track(name=\"Pluck\").track.set(name=\"Choir\")", "actions": [{"type": "rename_track", "name": "Pluck", "new_name": "Choir"}]}
+{"lang": "en", "input": "change Perc to Pads", "output": "track(name=\"Perc\").track.set(name=\"Pads\")", "actions": [{"type": "rename_track", "name": "Perc", "new_name": "Pads"}]}
+{"lang": "en", "input": "make a snare track", "output": "track(name=\"Snare\", new=true)", "actions": [{"type": "create_track", "name": "Snare"}]}
+{"lang": "en", "input": "create a track named Pads", "output": "track(name=\"Pads\", new=true)", "actions": [{"type": "create_track", "name": "Pads"}]}
+{"lang": "en", "input": "add 1176 to the bass track", "output": "track(name=\"Bass\").fx.add(name=\"<1176>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<1176>"}]}
+{"lang": "en", "input": "put reverb on Sub", "output": "track(name=\"Sub\").fx.add(name=\"reverb\")", "actions": [{"type": "add_plugin", "name": "Sub", "plugin": "reverb"}]}
+{"lang": "en", "input": "delete Guitar", "output": "track(name=\"Guitar\").delete()", "actions": [{"type": "delete_track", "name": "Guitar"}]}
+{"lang": "en", "input": "rename track Perc to Synth", "output": "track(name=\"Perc\").track.set(name=\"Synth\")", "actions": [{"type": "rename_track", "name": "Perc", "new_name": "Synth"}]}
+{"lang": "en", "input": "delete Reese Bass", "output": "track(name=\"Reese Bass\").delete()", "actions": [{"type": "delete_track", "name": "Reese Bass"}]}
+{"lang": "en", "input": "color the snare track pink", "output": "track(name=\"Snare\").track.set(colour=\"#ff6ad5\")", "actions": [{"type": "set_track_color", "name": "Snare", "colour": "#ff6ad5"}]}
+{"lang": "en", "input": "load pro-c 2 on the strings track", "output": "track(name=\"Strings\").fx.add(name=\"<pro_c_2>\")", "actions": [{"type": "add_plugin", "name": "Strings", "plugin": "<pro_c_2>"}]}
+{"lang": "en", "input": "new track called Hats", "output": "track(name=\"Hats\", new=true)", "actions": [{"type": "create_track", "name": "Hats"}]}
+{"lang": "en", "input": "make a vox track", "output": "track(name=\"Vox\", new=true)", "actions": [{"type": "create_track", "name": "Vox"}]}
+{"lang": "en", "input": "isolate Vocals", "output": "track(name=\"Vocals\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Vocals"}]}
+{"lang": "en", "input": "delete the arp track", "output": "track(name=\"Arp\").delete()", "actions": [{"type": "delete_track", "name": "Arp"}]}
+{"lang": "en", "input": "make a vocals track and add diva and pro-q 3", "output": "track(name=\"Vocals\", new=true).fx.add(name=\"<diva>\")\ntrack(name=\"Vocals\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "create_track", "name": "Vocals", "plugins": ["<diva>", "<pro_q_3>"]}]}
+{"lang": "en", "input": "color the kick track green", "output": "track(name=\"Kick\").track.set(colour=\"#3ddc84\")", "actions": [{"type": "set_track_color", "name": "Kick", "colour": "#3ddc84"}]}
+{"lang": "en", "input": "mute the keys track", "output": "track(name=\"Keys\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Keys"}]}
+{"lang": "en", "input": "create a snare track with surge xt and eq", "output": "track(name=\"Snare\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Snare\").fx.add(name=\"eq\")", "actions": [{"type": "create_track", "name": "Snare", "plugins": ["<surge_xt>", "eq"]}]}
+{"lang": "en", "input": "make a guitar track and add diva", "output": "track(name=\"Guitar\", new=true).fx.add(name=\"<diva>\")", "actions": [{"type": "create_track", "name": "Guitar", "plugins": ["<diva>"]}]}
+{"lang": "en", "input": "create a sub track with surge xt and pro-q 3", "output": "track(name=\"Sub\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Sub\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "create_track", "name": "Sub", "plugins": ["<surge_xt>", "<pro_q_3>"]}]}
+{"lang": "en", "input": "group tracks 1 and 2 into Drums", "output": "track(id=1).track.group(name=\"Drums\", tracks=\"1,2\")", "actions": [{"type": "group_tracks", "ids": [1, 2], "name": "Drums"}]}
+{"lang": "en", "input": "make a kick track and add surge xt", "output": "track(name=\"Kick\", new=true).fx.add(name=\"<surge_xt>\")", "actions": [{"type": "create_track", "name": "Kick", "plugins": ["<surge_xt>"]}]}
+{"lang": "en", "input": "color code vox teal", "output": "track(name=\"Vox\").track.set(colour=\"#1abc9c\")", "actions": [{"type": "set_track_color", "name": "Vox", "colour": "#1abc9c"}]}
+{"lang": "en", "input": "create a track named Keys", "output": "track(name=\"Keys\", new=true)", "actions": [{"type": "create_track", "name": "Keys"}]}
+{"lang": "en", "input": "load vital on the pluck track", "output": "track(name=\"Pluck\").fx.add(name=\"<vital>\")", "actions": [{"type": "add_plugin", "name": "Pluck", "plugin": "<vital>"}]}
+{"lang": "en", "input": "add a new choir track", "output": "track(name=\"Choir\", new=true)", "actions": [{"type": "create_track", "name": "Choir"}]}
+{"lang": "en", "input": "add massive to the lead track", "output": "track(name=\"Lead\").fx.add(name=\"<massive>\")", "actions": [{"type": "add_plugin", "name": "Lead", "plugin": "<massive>"}]}
+{"lang": "en", "input": "delete the reese bass track", "output": "track(name=\"Reese Bass\").delete()", "actions": [{"type": "delete_track", "name": "Reese Bass"}]}
+{"lang": "en", "input": "rename the hats track to Lead", "output": "track(name=\"Hats\").track.set(name=\"Lead\")", "actions": [{"type": "rename_track", "name": "Hats", "new_name": "Lead"}]}
+{"lang": "en", "input": "set Guitar colour to red", "output": "track(name=\"Guitar\").track.set(colour=\"#ff5a36\")", "actions": [{"type": "set_track_color", "name": "Guitar", "colour": "#ff5a36"}]}
+{"lang": "en", "input": "group tracks 3, 4 and 5 as Synths", "output": "track(id=3).track.group(name=\"Synths\", tracks=\"3,4,5\")", "actions": [{"type": "group_tracks", "ids": [3, 4, 5], "name": "Synths"}]}
+{"lang": "en", "input": "group tracks 3 and 4 as Drums", "output": "track(id=3).track.group(name=\"Drums\", tracks=\"3,4\")", "actions": [{"type": "group_tracks", "ids": [3, 4], "name": "Drums"}]}
+{"lang": "en", "input": "make a sub bass track and add surge xt and reverb", "output": "track(name=\"Sub Bass\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Sub Bass\").fx.add(name=\"reverb\")", "actions": [{"type": "create_track", "name": "Sub Bass", "plugins": ["<surge_xt>", "reverb"]}]}
+{"lang": "en", "input": "load surge xt on the vox track", "output": "track(name=\"Vox\").fx.add(name=\"<surge_xt>\")", "actions": [{"type": "add_plugin", "name": "Vox", "plugin": "<surge_xt>"}]}
+{"lang": "en", "input": "add massive to the bass track", "output": "track(name=\"Bass\").fx.add(name=\"<massive>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<massive>"}]}
+{"lang": "en", "input": "group tracks 4, 5, 6 and 7 into Bass Bus", "output": "track(id=4).track.group(name=\"Bass Bus\", tracks=\"4,5,6,7\")", "actions": [{"type": "group_tracks", "ids": [4, 5, 6, 7], "name": "Bass Bus"}]}
+{"lang": "en", "input": "new track called Top Loop", "output": "track(name=\"Top Loop\", new=true)", "actions": [{"type": "create_track", "name": "Top Loop"}]}
+{"lang": "en", "input": "remove track Synth", "output": "track(name=\"Synth\").delete()", "actions": [{"type": "delete_track", "name": "Synth"}]}
+{"lang": "en", "input": "group tracks 2, 3 and 4 into Bass Bus", "output": "track(id=2).track.group(name=\"Bass Bus\", tracks=\"2,3,4\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4], "name": "Bass Bus"}]}
+{"lang": "en", "input": "create a choir track with vital and eq", "output": "track(name=\"Choir\", new=true).fx.add(name=\"<vital>\")\ntrack(name=\"Choir\").fx.add(name=\"eq\")", "actions": [{"type": "create_track", "name": "Choir", "plugins": ["<vital>", "eq"]}]}
+{"lang": "en", "input": "solo Bass", "output": "track(name=\"Bass\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Bass"}]}
+{"lang": "en", "input": "remove track Reese Bass", "output": "track(name=\"Reese Bass\").delete()", "actions": [{"type": "delete_track", "name": "Reese Bass"}]}
+{"lang": "en", "input": "new track called Lead", "output": "track(name=\"Lead\", new=true)", "actions": [{"type": "create_track", "name": "Lead"}]}
+{"lang": "en", "input": "color the vox track teal", "output": "track(name=\"Vox\").track.set(colour=\"#1abc9c\")", "actions": [{"type": "set_track_color", "name": "Vox", "colour": "#1abc9c"}]}
+{"lang": "en", "input": "make a reese bass track and add diva and eq", "output": "track(name=\"Reese Bass\", new=true).fx.add(name=\"<diva>\")\ntrack(name=\"Reese Bass\").fx.add(name=\"eq\")", "actions": [{"type": "create_track", "name": "Reese Bass", "plugins": ["<diva>", "eq"]}]}
+{"lang": "en", "input": "group tracks 3, 4, 5 and 6 as Bass Bus", "output": "track(id=3).track.group(name=\"Bass Bus\", tracks=\"3,4,5,6\")", "actions": [{"type": "group_tracks", "ids": [3, 4, 5, 6], "name": "Bass Bus"}]}
+{"lang": "en", "input": "group tracks 2, 3 and 4 as Vocals", "output": "track(id=2).track.group(name=\"Vocals\", tracks=\"2,3,4\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4], "name": "Vocals"}]}
+{"lang": "en", "input": "create a strings track", "output": "track(name=\"Strings\", new=true)", "actions": [{"type": "create_track", "name": "Strings"}]}
+{"lang": "en", "input": "put eq on Keys", "output": "track(name=\"Keys\").fx.add(name=\"eq\")", "actions": [{"type": "add_plugin", "name": "Keys", "plugin": "eq"}]}
+{"lang": "en", "input": "create a bass track with serum and pro-q 3", "output": "track(name=\"Bass\", new=true).fx.add(name=\"<serum>\")\ntrack(name=\"Bass\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "create_track", "name": "Bass", "plugins": ["<serum>", "<pro_q_3>"]}]}
+{"lang": "en", "input": "add pro-q 3 to the drums track", "output": "track(name=\"Drums\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "add_plugin", "name": "Drums", "plugin": "<pro_q_3>"}]}
+{"lang": "en", "input": "create a top loop track with vital and valhalla", "output": "track(name=\"Top Loop\", new=true).fx.add(name=\"<vital>\")\ntrack(name=\"Top Loop\").fx.add(name=\"<valhalla_vintage_verb>\")", "actions": [{"type": "create_track", "name": "Top Loop", "plugins": ["<vital>", "<valhalla_vintage_verb>"]}]}
+{"lang": "en", "input": "delete Choir", "output": "track(name=\"Choir\").delete()", "actions": [{"type": "delete_track", "name": "Choir"}]}
+{"lang": "en", "input": "add a new sub track", "output": "track(name=\"Sub\", new=true)", "actions": [{"type": "create_track", "name": "Sub"}]}
+{"lang": "en", "input": "create a track named Choir", "output": "track(name=\"Choir\", new=true)", "actions": [{"type": "create_track", "name": "Choir"}]}
+{"lang": "en", "input": "change Bass to Choir", "output": "track(name=\"Bass\").track.set(name=\"Choir\")", "actions": [{"type": "rename_track", "name": "Bass", "new_name": "Choir"}]}
+{"lang": "en", "input": "isolate Choir", "output": "track(name=\"Choir\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Choir"}]}
+{"lang": "en", "input": "group tracks 2, 3, 4 and 5 as Drums", "output": "track(id=2).track.group(name=\"Drums\", tracks=\"2,3,4,5\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4, 5], "name": "Drums"}]}
+{"lang": "en", "input": "make a top loop track", "output": "track(name=\"Top Loop\", new=true)", "actions": [{"type": "create_track", "name": "Top Loop"}]}
+{"lang": "en", "input": "group tracks 4, 5 and 6 as Synths", "output": "track(id=4).track.group(name=\"Synths\", tracks=\"4,5,6\")", "actions": [{"type": "group_tracks", "ids": [4, 5, 6], "name": "Synths"}]}
+{"lang": "en", "input": "delete Top Loop", "output": "track(name=\"Top Loop\").delete()", "actions": [{"type": "delete_track", "name": "Top Loop"}]}
+{"lang": "en", "input": "remove track Perc", "output": "track(name=\"Perc\").delete()", "actions": [{"type": "delete_track", "name": "Perc"}]}
+{"lang": "en", "input": "create a track named Lead", "output": "track(name=\"Lead\", new=true)", "actions": [{"type": "create_track", "name": "Lead"}]}
+{"lang": "en", "input": "make Lead grey", "output": "track(name=\"Lead\").track.set(colour=\"#8a8a8a\")", "actions": [{"type": "set_track_color", "name": "Lead", "colour": "#8a8a8a"}]}
+{"lang": "en", "input": "mute the perc track", "output": "track(name=\"Perc\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Perc"}]}
+{"lang": "en", "input": "solo Reese Bass", "output": "track(name=\"Reese Bass\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Reese Bass"}]}
+{"lang": "en", "input": "mute Snare", "output": "track(name=\"Snare\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Snare"}]}
+{"lang": "en", "input": "mute the guitar track", "output": "track(name=\"Guitar\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Guitar"}]}
+{"lang": "en", "input": "set Lead colour to pink", "output": "track(name=\"Lead\").track.set(colour=\"#ff6ad5\")", "actions": [{"type": "set_track_color", "name": "Lead", "colour": "#ff6ad5"}]}
+{"lang": "en", "input": "silence Sub", "output": "track(name=\"Sub\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Sub"}]}
+{"lang": "en", "input": "delete Lead", "output": "track(name=\"Lead\").delete()", "actions": [{"type": "delete_track", "name": "Lead"}]}
+{"lang": "en", "input": "make a reese bass track", "output": "track(name=\"Reese Bass\", new=true)", "actions": [{"type": "create_track", "name": "Reese Bass"}]}
+{"lang": "en", "input": "delete the vocals track", "output": "track(name=\"Vocals\").delete()", "actions": [{"type": "delete_track", "name": "Vocals"}]}
+{"lang": "en", "input": "add massive to the perc track", "output": "track(name=\"Perc\").fx.add(name=\"<massive>\")", "actions": [{"type": "add_plugin", "name": "Perc", "plugin": "<massive>"}]}
+{"lang": "en", "input": "remove track Vox", "output": "track(name=\"Vox\").delete()", "actions": [{"type": "delete_track", "name": "Vox"}]}
+{"lang": "en", "input": "create a keys track with surge xt and 1176", "output": "track(name=\"Keys\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Keys\").fx.add(name=\"<1176>\")", "actions": [{"type": "create_track", "name": "Keys", "plugins": ["<surge_xt>", "<1176>"]}]}
+{"lang": "en", "input": "group tracks 2, 3, 4 and 5 as Vocals", "output": "track(id=2).track.group(name=\"Vocals\", tracks=\"2,3,4,5\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4, 5], "name": "Vocals"}]}
+{"lang": "en", "input": "group tracks 3 and 4 as Rhythm", "output": "track(id=3).track.group(name=\"Rhythm\", tracks=\"3,4\")", "actions": [{"type": "group_tracks", "ids": [3, 4], "name": "Rhythm"}]}
+{"lang": "en", "input": "solo the guitar track", "output": "track(name=\"Guitar\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Guitar"}]}
+{"lang": "en", "input": "add vital to the snare track", "output": "track(name=\"Snare\").fx.add(name=\"<vital>\")", "actions": [{"type": "add_plugin", "name": "Snare", "plugin": "<vital>"}]}
+{"lang": "en", "input": "put tracks 3 and 4 in a group called Drums", "output": "track(id=3).track.group(name=\"Drums\", tracks=\"3,4\")", "actions": [{"type": "group_tracks", "ids": [3, 4], "name": "Drums"}]}
+{"lang": "en", "input": "add a pro-c 2 to Perc", "output": "track(name=\"Perc\").fx.add(name=\"<pro_c_2>\")", "actions": [{"type": "add_plugin", "name": "Perc", "plugin": "<pro_c_2>"}]}
+{"lang": "en", "input": "new track called Bass", "output": "track(name=\"Bass\", new=true)", "actions": [{"type": "create_track", "name": "Bass"}]}
+{"lang": "en", "input": "remove track Strings", "output": "track(name=\"Strings\").delete()", "actions": [{"type": "delete_track", "name": "Strings"}]}
+{"lang": "en", "input": "mute the brass track", "output": "track(name=\"Brass\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Brass"}]}
+{"lang": "en", "input": "load valhalla on the pads track", "output": "track(name=\"Pads\").fx.add(name=\"<valhalla_vintage_verb>\")", "actions": [{"type": "add_plugin", "name": "Pads", "plugin": "<valhalla_vintage_verb>"}]}
+{"lang": "en", "input": "new track called Pluck", "output": "track(name=\"Pluck\", new=true)", "actions": [{"type": "create_track", "name": "Pluck"}]}
+{"lang": "en", "input": "create a snare track", "output": "track(name=\"Snare\", new=true)", "actions": [{"type": "create_track", "name": "Snare"}]}
+{"lang": "en", "input": "set Sub Bass colour to teal", "output": "track(name=\"Sub Bass\").track.set(colour=\"#1abc9c\")", "actions": [{"type": "set_track_color", "name": "Sub Bass", "colour": "#1abc9c"}]}
+{"lang": "en", "input": "create a track named Strings", "output": "track(name=\"Strings\", new=true)", "actions": [{"type": "create_track", "name": "Strings"}]}
+{"lang": "en", "input": "make a brass track", "output": "track(name=\"Brass\", new=true)", "actions": [{"type": "create_track", "name": "Brass"}]}
+{"lang": "en", "input": "make Reese Bass orange", "output": "track(name=\"Reese Bass\").track.set(colour=\"#ff8c42\")", "actions": [{"type": "set_track_color", "name": "Reese Bass", "colour": "#ff8c42"}]}
+{"lang": "en", "input": "isolate Sub Bass", "output": "track(name=\"Sub Bass\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Sub Bass"}]}
+{"lang": "en", "input": "put tracks 3 and 4 in a group called Rhythm", "output": "track(id=3).track.group(name=\"Rhythm\", tracks=\"3,4\")", "actions": [{"type": "group_tracks", "ids": [3, 4], "name": "Rhythm"}]}
+{"lang": "en", "input": "new arp track with diva", "output": "track(name=\"Arp\", new=true).fx.add(name=\"<diva>\")", "actions": [{"type": "create_track", "name": "Arp", "plugins": ["<diva>"]}]}
+{"lang": "en", "input": "put reverb on Synth", "output": "track(name=\"Synth\").fx.add(name=\"reverb\")", "actions": [{"type": "add_plugin", "name": "Synth", "plugin": "reverb"}]}
+{"lang": "en", "input": "silence Drums", "output": "track(name=\"Drums\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Drums"}]}
+{"lang": "en", "input": "put 1176 on Sub", "output": "track(name=\"Sub\").fx.add(name=\"<1176>\")", "actions": [{"type": "add_plugin", "name": "Sub", "plugin": "<1176>"}]}
+{"lang": "en", "input": "remove track Sub Bass", "output": "track(name=\"Sub Bass\").delete()", "actions": [{"type": "delete_track", "name": "Sub Bass"}]}
+{"lang": "en", "input": "add a new synth track", "output": "track(name=\"Synth\", new=true)", "actions": [{"type": "create_track", "name": "Synth"}]}
+{"lang": "en", "input": "make a reese bass track and add surge xt and reverb", "output": "track(name=\"Reese Bass\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Reese Bass\").fx.add(name=\"reverb\")", "actions": [{"type": "create_track", "name": "Reese Bass", "plugins": ["<surge_xt>", "reverb"]}]}
+{"lang": "en", "input": "add pro-q 3 to the vox track", "output": "track(name=\"Vox\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "add_plugin", "name": "Vox", "plugin": "<pro_q_3>"}]}
+{"lang": "en", "input": "create a kick track", "output": "track(name=\"Kick\", new=true)", "actions": [{"type": "create_track", "name": "Kick"}]}
+{"lang": "en", "input": "make a perc track and add massive and eq", "output": "track(name=\"Perc\", new=true).fx.add(name=\"<massive>\")\ntrack(name=\"Perc\").fx.add(name=\"eq\")", "actions": [{"type": "create_track", "name": "Perc", "plugins": ["<massive>", "eq"]}]}
+{"lang": "en", "input": "put diva on Synth", "output": "track(name=\"Synth\").fx.add(name=\"<diva>\")", "actions": [{"type": "add_plugin", "name": "Synth", "plugin": "<diva>"}]}
+{"lang": "en", "input": "make a hats track", "output": "track(name=\"Hats\", new=true)", "actions": [{"type": "create_track", "name": "Hats"}]}
+{"lang": "en", "input": "new fx track with vital", "output": "track(name=\"FX\", new=true).fx.add(name=\"<vital>\")", "actions": [{"type": "create_track", "name": "FX", "plugins": ["<vital>"]}]}
+{"lang": "en", "input": "color the strings track purple", "output": "track(name=\"Strings\").track.set(colour=\"#9b59b6\")", "actions": [{"type": "set_track_color", "name": "Strings", "colour": "#9b59b6"}]}
+{"lang": "en", "input": "add 1176 to the pluck track", "output": "track(name=\"Pluck\").fx.add(name=\"<1176>\")", "actions": [{"type": "add_plugin", "name": "Pluck", "plugin": "<1176>"}]}
+{"lang": "en", "input": "put ott on FX", "output": "track(name=\"FX\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "FX", "plugin": "<ott>"}]}
+{"lang": "en", "input": "delete Keys", "output": "track(name=\"Keys\").delete()", "actions": [{"type": "delete_track", "name": "Keys"}]}
+{"lang": "en", "input": "make a hats track and add diva and 1176", "output": "track(name=\"Hats\", new=true).fx.add(name=\"<diva>\")\ntrack(name=\"Hats\").fx.add(name=\"<1176>\")", "actions": [{"type": "create_track", "name": "Hats", "plugins": ["<diva>", "<1176>"]}]}
+{"lang": "en", "input": "group tracks 2 and 3 into Drums", "output": "track(id=2).track.group(name=\"Drums\", tracks=\"2,3\")", "actions": [{"type": "group_tracks", "ids": [2, 3], "name": "Drums"}]}
+{"lang": "en", "input": "silence Perc", "output": "track(name=\"Perc\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Perc"}]}
+{"lang": "en", "input": "add a pro-q 3 to Lead", "output": "track(name=\"Lead\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "add_plugin", "name": "Lead", "plugin": "<pro_q_3>"}]}
+{"lang": "en", "input": "group tracks 1 and 2 as Bass Bus", "output": "track(id=1).track.group(name=\"Bass Bus\", tracks=\"1,2\")", "actions": [{"type": "group_tracks", "ids": [1, 2], "name": "Bass Bus"}]}
+{"lang": "en", "input": "put tracks 4, 5, 6 and 7 in a group called Drums", "output": "track(id=4).track.group(name=\"Drums\", tracks=\"4,5,6,7\")", "actions": [{"type": "group_tracks", "ids": [4, 5, 6, 7], "name": "Drums"}]}
+{"lang": "en", "input": "mute Bass", "output": "track(name=\"Bass\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Bass"}]}
+{"lang": "en", "input": "new drums track with surge xt", "output": "track(name=\"Drums\", new=true).fx.add(name=\"<surge_xt>\")", "actions": [{"type": "create_track", "name": "Drums", "plugins": ["<surge_xt>"]}]}
+{"lang": "en", "input": "create a top loop track with diva", "output": "track(name=\"Top Loop\", new=true).fx.add(name=\"<diva>\")", "actions": [{"type": "create_track", "name": "Top Loop", "plugins": ["<diva>"]}]}
+{"lang": "en", "input": "create a track named Sub Bass", "output": "track(name=\"Sub Bass\", new=true)", "actions": [{"type": "create_track", "name": "Sub Bass"}]}
+{"lang": "en", "input": "group tracks 4 and 5 as Vocals", "output": "track(id=4).track.group(name=\"Vocals\", tracks=\"4,5\")", "actions": [{"type": "group_tracks", "ids": [4, 5], "name": "Vocals"}]}
+{"lang": "en", "input": "rename the guitar track to Reese Bass", "output": "track(name=\"Guitar\").track.set(name=\"Reese Bass\")", "actions": [{"type": "rename_track", "name": "Guitar", "new_name": "Reese Bass"}]}
+{"lang": "en", "input": "remove track Hats", "output": "track(name=\"Hats\").delete()", "actions": [{"type": "delete_track", "name": "Hats"}]}
+{"lang": "en", "input": "rename track Synth to Hats", "output": "track(name=\"Synth\").track.set(name=\"Hats\")", "actions": [{"type": "rename_track", "name": "Synth", "new_name": "Hats"}]}
+{"lang": "en", "input": "group tracks 3, 4, 5 and 6 as Drums", "output": "track(id=3).track.group(name=\"Drums\", tracks=\"3,4,5,6\")", "actions": [{"type": "group_tracks", "ids": [3, 4, 5, 6], "name": "Drums"}]}
+{"lang": "en", "input": "new vox track with diva and reverb", "output": "track(name=\"Vox\", new=true).fx.add(name=\"<diva>\")\ntrack(name=\"Vox\").fx.add(name=\"reverb\")", "actions": [{"type": "create_track", "name": "Vox", "plugins": ["<diva>", "reverb"]}]}
+{"lang": "en", "input": "add a diva to Arp", "output": "track(name=\"Arp\").fx.add(name=\"<diva>\")", "actions": [{"type": "add_plugin", "name": "Arp", "plugin": "<diva>"}]}
+{"lang": "en", "input": "add diva to the strings track", "output": "track(name=\"Strings\").fx.add(name=\"<diva>\")", "actions": [{"type": "add_plugin", "name": "Strings", "plugin": "<diva>"}]}
+{"lang": "en", "input": "create a snare track with surge xt", "output": "track(name=\"Snare\", new=true).fx.add(name=\"<surge_xt>\")", "actions": [{"type": "create_track", "name": "Snare", "plugins": ["<surge_xt>"]}]}
+{"lang": "en", "input": "make a hats track and add surge xt", "output": "track(name=\"Hats\", new=true).fx.add(name=\"<surge_xt>\")", "actions": [{"type": "create_track", "name": "Hats", "plugins": ["<surge_xt>"]}]}
+{"lang": "en", "input": "new track called Sub", "output": "track(name=\"Sub\", new=true)", "actions": [{"type": "create_track", "name": "Sub"}]}
+{"lang": "en", "input": "rename the hats track to Keys", "output": "track(name=\"Hats\").track.set(name=\"Keys\")", "actions": [{"type": "rename_track", "name": "Hats", "new_name": "Keys"}]}
+{"lang": "en", "input": "color the drums track gray", "output": "track(name=\"Drums\").track.set(colour=\"#8a8a8a\")", "actions": [{"type": "set_track_color", "name": "Drums", "colour": "#8a8a8a"}]}
+{"lang": "en", "input": "put tracks 2 and 3 in a group called Drums", "output": "track(id=2).track.group(name=\"Drums\", tracks=\"2,3\")", "actions": [{"type": "group_tracks", "ids": [2, 3], "name": "Drums"}]}
+{"lang": "en", "input": "create a drums track", "output": "track(name=\"Drums\", new=true)", "actions": [{"type": "create_track", "name": "Drums"}]}
+{"lang": "en", "input": "create a guitar track with surge xt", "output": "track(name=\"Guitar\", new=true).fx.add(name=\"<surge_xt>\")", "actions": [{"type": "create_track", "name": "Guitar", "plugins": ["<surge_xt>"]}]}
+{"lang": "en", "input": "put tracks 2, 3 and 4 in a group called Bass Bus", "output": "track(id=2).track.group(name=\"Bass Bus\", tracks=\"2,3,4\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4], "name": "Bass Bus"}]}
+{"lang": "en", "input": "group tracks 4, 5, 6 and 7 into Drums", "output": "track(id=4).track.group(name=\"Drums\", tracks=\"4,5,6,7\")", "actions": [{"type": "group_tracks", "ids": [4, 5, 6, 7], "name": "Drums"}]}
+{"lang": "en", "input": "group tracks 2, 3 and 4 as Drums", "output": "track(id=2).track.group(name=\"Drums\", tracks=\"2,3,4\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4], "name": "Drums"}]}
+{"lang": "en", "input": "put reverb on Pads", "output": "track(name=\"Pads\").fx.add(name=\"reverb\")", "actions": [{"type": "add_plugin", "name": "Pads", "plugin": "reverb"}]}
+{"lang": "en", "input": "add a valhalla to Sub Bass", "output": "track(name=\"Sub Bass\").fx.add(name=\"<valhalla_vintage_verb>\")", "actions": [{"type": "add_plugin", "name": "Sub Bass", "plugin": "<valhalla_vintage_verb>"}]}
+{"lang": "en", "input": "new track called Choir", "output": "track(name=\"Choir\", new=true)", "actions": [{"type": "create_track", "name": "Choir"}]}
+{"lang": "en", "input": "new synth track with diva and eq", "output": "track(name=\"Synth\", new=true).fx.add(name=\"<diva>\")\ntrack(name=\"Synth\").fx.add(name=\"eq\")", "actions": [{"type": "create_track", "name": "Synth", "plugins": ["<diva>", "eq"]}]}
+{"lang": "en", "input": "color the bass track purple", "output": "track(name=\"Bass\").track.set(colour=\"#9b59b6\")", "actions": [{"type": "set_track_color", "name": "Bass", "colour": "#9b59b6"}]}
+{"lang": "en", "input": "solo Strings", "output": "track(name=\"Strings\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Strings"}]}
+{"lang": "en", "input": "add vital to the guitar track", "output": "track(name=\"Guitar\").fx.add(name=\"<vital>\")", "actions": [{"type": "add_plugin", "name": "Guitar", "plugin": "<vital>"}]}
+{"lang": "en", "input": "make a lead track and add massive and delay", "output": "track(name=\"Lead\", new=true).fx.add(name=\"<massive>\")\ntrack(name=\"Lead\").fx.add(name=\"delay\")", "actions": [{"type": "create_track", "name": "Lead", "plugins": ["<massive>", "delay"]}]}
+{"lang": "en", "input": "put tracks 1, 2, 3 and 4 in a group called Vocals", "output": "track(id=1).track.group(name=\"Vocals\", tracks=\"1,2,3,4\")", "actions": [{"type": "group_tracks", "ids": [1, 2, 3, 4], "name": "Vocals"}]}
+{"lang": "en", "input": "mute the pluck track", "output": "track(name=\"Pluck\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Pluck"}]}
+{"lang": "en", "input": "create a sub track with serum and reverb", "output": "track(name=\"Sub\", new=true).fx.add(name=\"<serum>\")\ntrack(name=\"Sub\").fx.add(name=\"reverb\")", "actions": [{"type": "create_track", "name": "Sub", "plugins": ["<serum>", "reverb"]}]}
+{"lang": "en", "input": "add a 1176 to Guitar", "output": "track(name=\"Guitar\").fx.add(name=\"<1176>\")", "actions": [{"type": "add_plugin", "name": "Guitar", "plugin": "<1176>"}]}
+{"lang": "en", "input": "solo the brass track", "output": "track(name=\"Brass\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Brass"}]}
+{"lang": "en", "input": "rename the pluck track to Arp", "output": "track(name=\"Pluck\").track.set(name=\"Arp\")", "actions": [{"type": "rename_track", "name": "Pluck", "new_name": "Arp"}]}
+{"lang": "en", "input": "put vital on Sub", "output": "track(name=\"Sub\").fx.add(name=\"<vital>\")", "actions": [{"type": "add_plugin", "name": "Sub", "plugin": "<vital>"}]}
+{"lang": "en", "input": "add a diva to Kick", "output": "track(name=\"Kick\").fx.add(name=\"<diva>\")", "actions": [{"type": "add_plugin", "name": "Kick", "plugin": "<diva>"}]}
+{"lang": "en", "input": "new track called Drums", "output": "track(name=\"Drums\", new=true)", "actions": [{"type": "create_track", "name": "Drums"}]}
+{"lang": "en", "input": "rename the pluck track to Kick", "output": "track(name=\"Pluck\").track.set(name=\"Kick\")", "actions": [{"type": "rename_track", "name": "Pluck", "new_name": "Kick"}]}
+{"lang": "en", "input": "make Lead teal", "output": "track(name=\"Lead\").track.set(colour=\"#1abc9c\")", "actions": [{"type": "set_track_color", "name": "Lead", "colour": "#1abc9c"}]}
+{"lang": "en", "input": "make a brass track and add diva", "output": "track(name=\"Brass\", new=true).fx.add(name=\"<diva>\")", "actions": [{"type": "create_track", "name": "Brass", "plugins": ["<diva>"]}]}
+{"lang": "en", "input": "new track called Vocals", "output": "track(name=\"Vocals\", new=true)", "actions": [{"type": "create_track", "name": "Vocals"}]}
+{"lang": "en", "input": "add diva to the vox track", "output": "track(name=\"Vox\").fx.add(name=\"<diva>\")", "actions": [{"type": "add_plugin", "name": "Vox", "plugin": "<diva>"}]}
+{"lang": "en", "input": "mute the sub bass track", "output": "track(name=\"Sub Bass\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Sub Bass"}]}
+{"lang": "en", "input": "create a reese bass track with surge xt and delay", "output": "track(name=\"Reese Bass\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Reese Bass\").fx.add(name=\"delay\")", "actions": [{"type": "create_track", "name": "Reese Bass", "plugins": ["<surge_xt>", "delay"]}]}
+{"lang": "en", "input": "put diva on Kick", "output": "track(name=\"Kick\").fx.add(name=\"<diva>\")", "actions": [{"type": "add_plugin", "name": "Kick", "plugin": "<diva>"}]}
+{"lang": "en", "input": "new strings track with surge xt", "output": "track(name=\"Strings\", new=true).fx.add(name=\"<surge_xt>\")", "actions": [{"type": "create_track", "name": "Strings", "plugins": ["<surge_xt>"]}]}
+{"lang": "en", "input": "change Top Loop to Pads", "output": "track(name=\"Top Loop\").track.set(name=\"Pads\")", "actions": [{"type": "rename_track", "name": "Top Loop", "new_name": "Pads"}]}
+{"lang": "en", "input": "add vital to the drums track", "output": "track(name=\"Drums\").fx.add(name=\"<vital>\")", "actions": [{"type": "add_plugin", "name": "Drums", "plugin": "<vital>"}]}
+{"lang": "en", "input": "add a valhalla to Hats", "output": "track(name=\"Hats\").fx.add(name=\"<valhalla_vintage_verb>\")", "actions": [{"type": "add_plugin", "name": "Hats", "plugin": "<valhalla_vintage_verb>"}]}
+{"lang": "en", "input": "color the drums track teal", "output": "track(name=\"Drums\").track.set(colour=\"#1abc9c\")", "actions": [{"type": "set_track_color", "name": "Drums", "colour": "#1abc9c"}]}
+{"lang": "en", "input": "create a track named Snare", "output": "track(name=\"Snare\", new=true)", "actions": [{"type": "create_track", "name": "Snare"}]}
+{"lang": "en", "input": "group tracks 2, 3, 4 and 5 into Drums", "output": "track(id=2).track.group(name=\"Drums\", tracks=\"2,3,4,5\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4, 5], "name": "Drums"}]}
+{"lang": "en", "input": "load pro-c 2 on the kick track", "output": "track(name=\"Kick\").fx.add(name=\"<pro_c_2>\")", "actions": [{"type": "add_plugin", "name": "Kick", "plugin": "<pro_c_2>"}]}
+{"lang": "en", "input": "mute Vox", "output": "track(name=\"Vox\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Vox"}]}
+{"lang": "en", "input": "create a track named Sub", "output": "track(name=\"Sub\", new=true)", "actions": [{"type": "create_track", "name": "Sub"}]}
+{"lang": "en", "input": "load ott on the drums track", "output": "track(name=\"Drums\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Drums", "plugin": "<ott>"}]}
+{"lang": "en", "input": "add a new top loop track", "output": "track(name=\"Top Loop\", new=true)", "actions": [{"type": "create_track", "name": "Top Loop"}]}
+{"lang": "en", "input": "solo the pluck track", "output": "track(name=\"Pluck\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Pluck"}]}
+{"lang": "en", "input": "delete Kick", "output": "track(name=\"Kick\").delete()", "actions": [{"type": "delete_track", "name": "Kick"}]}
+{"lang": "en", "input": "new snare track with serum", "output": "track(name=\"Snare\", new=true).fx.add(name=\"<serum>\")", "actions": [{"type": "create_track", "name": "Snare", "plugins": ["<serum>"]}]}
+{"lang": "en", "input": "add a vital to Brass", "output": "track(name=\"Brass\").fx.add(name=\"<vital>\")", "actions": [{"type": "add_plugin", "name": "Brass", "plugin": "<vital>"}]}
+{"lang": "en", "input": "delete Vocals", "output": "track(name=\"Vocals\").delete()", "actions": [{"type": "delete_track", "name": "Vocals"}]}
+{"lang": "en", "input": "rename the top loop track to Kick", "output": "track(name=\"Top Loop\").track.set(name=\"Kick\")", "actions": [{"type": "rename_track", "name": "Top Loop", "new_name": "Kick"}]}
+{"lang": "en", "input": "delete the brass track", "output": "track(name=\"Brass\").delete()", "actions": [{"type": "delete_track", "name": "Brass"}]}
+{"lang": "en", "input": "make a fx track and add surge xt and ott", "output": "track(name=\"FX\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"FX\").fx.add(name=\"<ott>\")", "actions": [{"type": "create_track", "name": "FX", "plugins": ["<surge_xt>", "<ott>"]}]}
+{"lang": "en", "input": "delete Strings", "output": "track(name=\"Strings\").delete()", "actions": [{"type": "delete_track", "name": "Strings"}]}
+{"lang": "en", "input": "put pro-q 3 on Bass", "output": "track(name=\"Bass\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<pro_q_3>"}]}
+{"lang": "en", "input": "load pro-q 3 on the lead track", "output": "track(name=\"Lead\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "add_plugin", "name": "Lead", "plugin": "<pro_q_3>"}]}
+{"lang": "en", "input": "add surge xt to the kick track", "output": "track(name=\"Kick\").fx.add(name=\"<surge_xt>\")", "actions": [{"type": "add_plugin", "name": "Kick", "plugin": "<surge_xt>"}]}
+{"lang": "en", "input": "make a sub track", "output": "track(name=\"Sub\", new=true)", "actions": [{"type": "create_track", "name": "Sub"}]}
+{"lang": "en", "input": "mute Kick", "output": "track(name=\"Kick\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Kick"}]}
+{"lang": "en", "input": "put reverb on Kick", "output": "track(name=\"Kick\").fx.add(name=\"reverb\")", "actions": [{"type": "add_plugin", "name": "Kick", "plugin": "reverb"}]}
+{"lang": "en", "input": "group tracks 4 and 5 as Rhythm", "output": "track(id=4).track.group(name=\"Rhythm\", tracks=\"4,5\")", "actions": [{"type": "group_tracks", "ids": [4, 5], "name": "Rhythm"}]}
+{"lang": "en", "input": "create a drums track with diva and compressor", "output": "track(name=\"Drums\", new=true).fx.add(name=\"<diva>\")\ntrack(name=\"Drums\").fx.add(name=\"compressor\")", "actions": [{"type": "create_track", "name": "Drums", "plugins": ["<diva>", "compressor"]}]}
+{"lang": "en", "input": "color the sub track yellow", "output": "track(name=\"Sub\").track.set(colour=\"#ffd23f\")", "actions": [{"type": "set_track_color", "name": "Sub", "colour": "#ffd23f"}]}
+{"lang": "en", "input": "isolate Kick", "output": "track(name=\"Kick\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Kick"}]}
+{"lang": "en", "input": "create a strings track with massive and eq", "output": "track(name=\"Strings\", new=true).fx.add(name=\"<massive>\")\ntrack(name=\"Strings\").fx.add(name=\"eq\")", "actions": [{"type": "create_track", "name": "Strings", "plugins": ["<massive>", "eq"]}]}
+{"lang": "en", "input": "set Vox colour to red", "output": "track(name=\"Vox\").track.set(colour=\"#ff5a36\")", "actions": [{"type": "set_track_color", "name": "Vox", "colour": "#ff5a36"}]}
+{"lang": "en", "input": "change Top Loop to Sub Bass", "output": "track(name=\"Top Loop\").track.set(name=\"Sub Bass\")", "actions": [{"type": "rename_track", "name": "Top Loop", "new_name": "Sub Bass"}]}
+{"lang": "en", "input": "add a diva to FX", "output": "track(name=\"FX\").fx.add(name=\"<diva>\")", "actions": [{"type": "add_plugin", "name": "FX", "plugin": "<diva>"}]}
+{"lang": "en", "input": "add a pro-c 2 to Arp", "output": "track(name=\"Arp\").fx.add(name=\"<pro_c_2>\")", "actions": [{"type": "add_plugin", "name": "Arp", "plugin": "<pro_c_2>"}]}
+{"lang": "en", "input": "put tracks 2, 3 and 4 in a group called Rhythm", "output": "track(id=2).track.group(name=\"Rhythm\", tracks=\"2,3,4\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4], "name": "Rhythm"}]}
+{"lang": "en", "input": "mute Guitar", "output": "track(name=\"Guitar\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Guitar"}]}
+{"lang": "en", "input": "new track called Arp", "output": "track(name=\"Arp\", new=true)", "actions": [{"type": "create_track", "name": "Arp"}]}
+{"lang": "en", "input": "add reverb to the guitar track", "output": "track(name=\"Guitar\").fx.add(name=\"reverb\")", "actions": [{"type": "add_plugin", "name": "Guitar", "plugin": "reverb"}]}
+{"lang": "en", "input": "make Top Loop yellow", "output": "track(name=\"Top Loop\").track.set(colour=\"#ffd23f\")", "actions": [{"type": "set_track_color", "name": "Top Loop", "colour": "#ffd23f"}]}
+{"lang": "en", "input": "color the sub track orange", "output": "track(name=\"Sub\").track.set(colour=\"#ff8c42\")", "actions": [{"type": "set_track_color", "name": "Sub", "colour": "#ff8c42"}]}
+{"lang": "en", "input": "make a perc track", "output": "track(name=\"Perc\", new=true)", "actions": [{"type": "create_track", "name": "Perc"}]}
+{"lang": "en", "input": "rename the reese bass track to Kick", "output": "track(name=\"Reese Bass\").track.set(name=\"Kick\")", "actions": [{"type": "rename_track", "name": "Reese Bass", "new_name": "Kick"}]}
+{"lang": "en", "input": "color the reese bass track pink", "output": "track(name=\"Reese Bass\").track.set(colour=\"#ff6ad5\")", "actions": [{"type": "set_track_color", "name": "Reese Bass", "colour": "#ff6ad5"}]}
+{"lang": "en", "input": "create a perc track with vital and valhalla", "output": "track(name=\"Perc\", new=true).fx.add(name=\"<vital>\")\ntrack(name=\"Perc\").fx.add(name=\"<valhalla_vintage_verb>\")", "actions": [{"type": "create_track", "name": "Perc", "plugins": ["<vital>", "<valhalla_vintage_verb>"]}]}
+{"lang": "en", "input": "new drums track with vital and pro-c 2", "output": "track(name=\"Drums\", new=true).fx.add(name=\"<vital>\")\ntrack(name=\"Drums\").fx.add(name=\"<pro_c_2>\")", "actions": [{"type": "create_track", "name": "Drums", "plugins": ["<vital>", "<pro_c_2>"]}]}
+{"lang": "en", "input": "group tracks 3, 4, 5 and 6 as Rhythm", "output": "track(id=3).track.group(name=\"Rhythm\", tracks=\"3,4,5,6\")", "actions": [{"type": "group_tracks", "ids": [3, 4, 5, 6], "name": "Rhythm"}]}
+{"lang": "en", "input": "make Guitar grey", "output": "track(name=\"Guitar\").track.set(colour=\"#8a8a8a\")", "actions": [{"type": "set_track_color", "name": "Guitar", "colour": "#8a8a8a"}]}
+{"lang": "en", "input": "make a synth track and add diva", "output": "track(name=\"Synth\", new=true).fx.add(name=\"<diva>\")", "actions": [{"type": "create_track", "name": "Synth", "plugins": ["<diva>"]}]}
+{"lang": "en", "input": "create a arp track with massive and eq", "output": "track(name=\"Arp\", new=true).fx.add(name=\"<massive>\")\ntrack(name=\"Arp\").fx.add(name=\"eq\")", "actions": [{"type": "create_track", "name": "Arp", "plugins": ["<massive>", "eq"]}]}
+{"lang": "en", "input": "add delay to the kick track", "output": "track(name=\"Kick\").fx.add(name=\"delay\")", "actions": [{"type": "add_plugin", "name": "Kick", "plugin": "delay"}]}
+{"lang": "en", "input": "new keys track with surge xt and eq", "output": "track(name=\"Keys\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Keys\").fx.add(name=\"eq\")", "actions": [{"type": "create_track", "name": "Keys", "plugins": ["<surge_xt>", "eq"]}]}
+{"lang": "en", "input": "put serum on Arp", "output": "track(name=\"Arp\").fx.add(name=\"<serum>\")", "actions": [{"type": "add_plugin", "name": "Arp", "plugin": "<serum>"}]}
+{"lang": "en", "input": "add eq to the sub track", "output": "track(name=\"Sub\").fx.add(name=\"eq\")", "actions": [{"type": "add_plugin", "name": "Sub", "plugin": "eq"}]}
+{"lang": "en", "input": "load reverb on the pads track", "output": "track(name=\"Pads\").fx.add(name=\"reverb\")", "actions": [{"type": "add_plugin", "name": "Pads", "plugin": "reverb"}]}
+{"lang": "en", "input": "rename the brass track to Sub", "output": "track(name=\"Brass\").track.set(name=\"Sub\")", "actions": [{"type": "rename_track", "name": "Brass", "new_name": "Sub"}]}
+{"lang": "en", "input": "change Snare to Strings", "output": "track(name=\"Snare\").track.set(name=\"Strings\")", "actions": [{"type": "rename_track", "name": "Snare", "new_name": "Strings"}]}
+{"lang": "en", "input": "solo Kick", "output": "track(name=\"Kick\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Kick"}]}
+{"lang": "en", "input": "put eq on Lead", "output": "track(name=\"Lead\").fx.add(name=\"eq\")", "actions": [{"type": "add_plugin", "name": "Lead", "plugin": "eq"}]}
+{"lang": "en", "input": "set Reese Bass colour to purple", "output": "track(name=\"Reese Bass\").track.set(colour=\"#9b59b6\")", "actions": [{"type": "set_track_color", "name": "Reese Bass", "colour": "#9b59b6"}]}
+{"lang": "en", "input": "put tracks 3 and 4 in a group called Synths", "output": "track(id=3).track.group(name=\"Synths\", tracks=\"3,4\")", "actions": [{"type": "group_tracks", "ids": [3, 4], "name": "Synths"}]}
+{"lang": "en", "input": "change Sub to Keys", "output": "track(name=\"Sub\").track.set(name=\"Keys\")", "actions": [{"type": "rename_track", "name": "Sub", "new_name": "Keys"}]}
+{"lang": "en", "input": "add serum to the kick track", "output": "track(name=\"Kick\").fx.add(name=\"<serum>\")", "actions": [{"type": "add_plugin", "name": "Kick", "plugin": "<serum>"}]}
+{"lang": "en", "input": "create a kick track with serum", "output": "track(name=\"Kick\", new=true).fx.add(name=\"<serum>\")", "actions": [{"type": "create_track", "name": "Kick", "plugins": ["<serum>"]}]}
+{"lang": "en", "input": "change Keys to Vox", "output": "track(name=\"Keys\").track.set(name=\"Vox\")", "actions": [{"type": "rename_track", "name": "Keys", "new_name": "Vox"}]}
+{"lang": "en", "input": "load surge xt on the sub track", "output": "track(name=\"Sub\").fx.add(name=\"<surge_xt>\")", "actions": [{"type": "add_plugin", "name": "Sub", "plugin": "<surge_xt>"}]}
+{"lang": "en", "input": "create a top loop track", "output": "track(name=\"Top Loop\", new=true)", "actions": [{"type": "create_track", "name": "Top Loop"}]}
+{"lang": "en", "input": "put tracks 4, 5, 6 and 7 in a group called Perc", "output": "track(id=4).track.group(name=\"Perc\", tracks=\"4,5,6,7\")", "actions": [{"type": "group_tracks", "ids": [4, 5, 6, 7], "name": "Perc"}]}
+{"lang": "en", "input": "new track called Brass", "output": "track(name=\"Brass\", new=true)", "actions": [{"type": "create_track", "name": "Brass"}]}
+{"lang": "en", "input": "new drums track with serum and delay", "output": "track(name=\"Drums\", new=true).fx.add(name=\"<serum>\")\ntrack(name=\"Drums\").fx.add(name=\"delay\")", "actions": [{"type": "create_track", "name": "Drums", "plugins": ["<serum>", "delay"]}]}
+{"lang": "en", "input": "create a track named Top Loop", "output": "track(name=\"Top Loop\", new=true)", "actions": [{"type": "create_track", "name": "Top Loop"}]}
+{"lang": "en", "input": "delete Vox", "output": "track(name=\"Vox\").delete()", "actions": [{"type": "delete_track", "name": "Vox"}]}
+{"lang": "en", "input": "put tracks 2, 3 and 4 in a group called Drums", "output": "track(id=2).track.group(name=\"Drums\", tracks=\"2,3,4\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4], "name": "Drums"}]}
+{"lang": "en", "input": "add a new reese bass track", "output": "track(name=\"Reese Bass\", new=true)", "actions": [{"type": "create_track", "name": "Reese Bass"}]}
+{"lang": "en", "input": "set Snare colour to yellow", "output": "track(name=\"Snare\").track.set(colour=\"#ffd23f\")", "actions": [{"type": "set_track_color", "name": "Snare", "colour": "#ffd23f"}]}
+{"lang": "en", "input": "make a strings track and add surge xt", "output": "track(name=\"Strings\", new=true).fx.add(name=\"<surge_xt>\")", "actions": [{"type": "create_track", "name": "Strings", "plugins": ["<surge_xt>"]}]}
+{"lang": "en", "input": "color code top loop grey", "output": "track(name=\"Top Loop\").track.set(colour=\"#8a8a8a\")", "actions": [{"type": "set_track_color", "name": "Top Loop", "colour": "#8a8a8a"}]}
+{"lang": "en", "input": "add compressor to the keys track", "output": "track(name=\"Keys\").fx.add(name=\"compressor\")", "actions": [{"type": "add_plugin", "name": "Keys", "plugin": "compressor"}]}
+{"lang": "en", "input": "set Brass colour to green", "output": "track(name=\"Brass\").track.set(colour=\"#3ddc84\")", "actions": [{"type": "set_track_color", "name": "Brass", "colour": "#3ddc84"}]}
+{"lang": "en", "input": "rename track FX to Kick", "output": "track(name=\"FX\").track.set(name=\"Kick\")", "actions": [{"type": "rename_track", "name": "FX", "new_name": "Kick"}]}
+{"lang": "en", "input": "create a pads track", "output": "track(name=\"Pads\", new=true)", "actions": [{"type": "create_track", "name": "Pads"}]}
+{"lang": "en", "input": "remove track Kick", "output": "track(name=\"Kick\").delete()", "actions": [{"type": "delete_track", "name": "Kick"}]}
+{"lang": "en", "input": "group tracks 1, 2, 3 and 4 as Drums", "output": "track(id=1).track.group(name=\"Drums\", tracks=\"1,2,3,4\")", "actions": [{"type": "group_tracks", "ids": [1, 2, 3, 4], "name": "Drums"}]}
+{"lang": "en", "input": "make Arp green", "output": "track(name=\"Arp\").track.set(colour=\"#3ddc84\")", "actions": [{"type": "set_track_color", "name": "Arp", "colour": "#3ddc84"}]}
+{"lang": "en", "input": "make Choir purple", "output": "track(name=\"Choir\").track.set(colour=\"#9b59b6\")", "actions": [{"type": "set_track_color", "name": "Choir", "colour": "#9b59b6"}]}
+{"lang": "en", "input": "new snare track with serum and pro-q 3", "output": "track(name=\"Snare\", new=true).fx.add(name=\"<serum>\")\ntrack(name=\"Snare\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "create_track", "name": "Snare", "plugins": ["<serum>", "<pro_q_3>"]}]}
+{"lang": "en", "input": "delete the perc track", "output": "track(name=\"Perc\").delete()", "actions": [{"type": "delete_track", "name": "Perc"}]}
+{"lang": "en", "input": "make a pluck track and add diva and eq", "output": "track(name=\"Pluck\", new=true).fx.add(name=\"<diva>\")\ntrack(name=\"Pluck\").fx.add(name=\"eq\")", "actions": [{"type": "create_track", "name": "Pluck", "plugins": ["<diva>", "eq"]}]}
+{"lang": "en", "input": "put tracks 3 and 4 in a group called Vocals", "output": "track(id=3).track.group(name=\"Vocals\", tracks=\"3,4\")", "actions": [{"type": "group_tracks", "ids": [3, 4], "name": "Vocals"}]}
+{"lang": "en", "input": "add delay to the sub bass track", "output": "track(name=\"Sub Bass\").fx.add(name=\"delay\")", "actions": [{"type": "add_plugin", "name": "Sub Bass", "plugin": "delay"}]}
+{"lang": "en", "input": "solo the bass track", "output": "track(name=\"Bass\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Bass"}]}
+{"lang": "en", "input": "add a ott to Pads", "output": "track(name=\"Pads\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Pads", "plugin": "<ott>"}]}
+{"lang": "en", "input": "silence Synth", "output": "track(name=\"Synth\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Synth"}]}
+{"lang": "en", "input": "create a lead track with massive", "output": "track(name=\"Lead\", new=true).fx.add(name=\"<massive>\")", "actions": [{"type": "create_track", "name": "Lead", "plugins": ["<massive>"]}]}
+{"lang": "en", "input": "load diva on the keys track", "output": "track(name=\"Keys\").fx.add(name=\"<diva>\")", "actions": [{"type": "add_plugin", "name": "Keys", "plugin": "<diva>"}]}
+{"lang": "en", "input": "put pro-c 2 on Pads", "output": "track(name=\"Pads\").fx.add(name=\"<pro_c_2>\")", "actions": [{"type": "add_plugin", "name": "Pads", "plugin": "<pro_c_2>"}]}
+{"lang": "en", "input": "group tracks 3, 4, 5 and 6 into Synths", "output": "track(id=3).track.group(name=\"Synths\", tracks=\"3,4,5,6\")", "actions": [{"type": "group_tracks", "ids": [3, 4, 5, 6], "name": "Synths"}]}
+{"lang": "en", "input": "rename track Kick to Pluck", "output": "track(name=\"Kick\").track.set(name=\"Pluck\")", "actions": [{"type": "rename_track", "name": "Kick", "new_name": "Pluck"}]}
+{"lang": "en", "input": "group tracks 4 and 5 as Bass Bus", "output": "track(id=4).track.group(name=\"Bass Bus\", tracks=\"4,5\")", "actions": [{"type": "group_tracks", "ids": [4, 5], "name": "Bass Bus"}]}
+{"lang": "en", "input": "put tracks 4 and 5 in a group called Perc", "output": "track(id=4).track.group(name=\"Perc\", tracks=\"4,5\")", "actions": [{"type": "group_tracks", "ids": [4, 5], "name": "Perc"}]}
+{"lang": "en", "input": "solo the top loop track", "output": "track(name=\"Top Loop\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Top Loop"}]}
+{"lang": "en", "input": "add pro-q 3 to the strings track", "output": "track(name=\"Strings\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "add_plugin", "name": "Strings", "plugin": "<pro_q_3>"}]}
+{"lang": "en", "input": "load serum on the top loop track", "output": "track(name=\"Top Loop\").fx.add(name=\"<serum>\")", "actions": [{"type": "add_plugin", "name": "Top Loop", "plugin": "<serum>"}]}
+{"lang": "en", "input": "new reese bass track with diva", "output": "track(name=\"Reese Bass\", new=true).fx.add(name=\"<diva>\")", "actions": [{"type": "create_track", "name": "Reese Bass", "plugins": ["<diva>"]}]}
+{"lang": "en", "input": "put tracks 1 and 2 in a group called Vocals", "output": "track(id=1).track.group(name=\"Vocals\", tracks=\"1,2\")", "actions": [{"type": "group_tracks", "ids": [1, 2], "name": "Vocals"}]}
+{"lang": "en", "input": "new vocals track with diva", "output": "track(name=\"Vocals\", new=true).fx.add(name=\"<diva>\")", "actions": [{"type": "create_track", "name": "Vocals", "plugins": ["<diva>"]}]}
+{"lang": "en", "input": "rename the vocals track to Arp", "output": "track(name=\"Vocals\").track.set(name=\"Arp\")", "actions": [{"type": "rename_track", "name": "Vocals", "new_name": "Arp"}]}
+{"lang": "en", "input": "delete the choir track", "output": "track(name=\"Choir\").delete()", "actions": [{"type": "delete_track", "name": "Choir"}]}
+{"lang": "en", "input": "put massive on Reese Bass", "output": "track(name=\"Reese Bass\").fx.add(name=\"<massive>\")", "actions": [{"type": "add_plugin", "name": "Reese Bass", "plugin": "<massive>"}]}
+{"lang": "en", "input": "silence Hats", "output": "track(name=\"Hats\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Hats"}]}
+{"lang": "en", "input": "create a keys track with surge xt and eq", "output": "track(name=\"Keys\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Keys\").fx.add(name=\"eq\")", "actions": [{"type": "create_track", "name": "Keys", "plugins": ["<surge_xt>", "eq"]}]}
+{"lang": "en", "input": "create a pads track with vital", "output": "track(name=\"Pads\", new=true).fx.add(name=\"<vital>\")", "actions": [{"type": "create_track", "name": "Pads", "plugins": ["<vital>"]}]}
+{"lang": "en", "input": "new vocals track with vital", "output": "track(name=\"Vocals\", new=true).fx.add(name=\"<vital>\")", "actions": [{"type": "create_track", "name": "Vocals", "plugins": ["<vital>"]}]}
+{"lang": "en", "input": "make a reese bass track and add vital and pro-q 3", "output": "track(name=\"Reese Bass\", new=true).fx.add(name=\"<vital>\")\ntrack(name=\"Reese Bass\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "create_track", "name": "Reese Bass", "plugins": ["<vital>", "<pro_q_3>"]}]}
+{"lang": "en", "input": "make a strings track and add diva and compressor", "output": "track(name=\"Strings\", new=true).fx.add(name=\"<diva>\")\ntrack(name=\"Strings\").fx.add(name=\"compressor\")", "actions": [{"type": "create_track", "name": "Strings", "plugins": ["<diva>", "compressor"]}]}
+{"lang": "en", "input": "create a bass track with vital and compressor", "output": "track(name=\"Bass\", new=true).fx.add(name=\"<vital>\")\ntrack(name=\"Bass\").fx.add(name=\"compressor\")", "actions": [{"type": "create_track", "name": "Bass", "plugins": ["<vital>", "compressor"]}]}
+{"lang": "en", "input": "silence Brass", "output": "track(name=\"Brass\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Brass"}]}
+{"lang": "en", "input": "rename track Top Loop to Brass", "output": "track(name=\"Top Loop\").track.set(name=\"Brass\")", "actions": [{"type": "rename_track", "name": "Top Loop", "new_name": "Brass"}]}
+{"lang": "en", "input": "new pads track with diva and delay", "output": "track(name=\"Pads\", new=true).fx.add(name=\"<diva>\")\ntrack(name=\"Pads\").fx.add(name=\"delay\")", "actions": [{"type": "create_track", "name": "Pads", "plugins": ["<diva>", "delay"]}]}
+{"lang": "en", "input": "mute Brass", "output": "track(name=\"Brass\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Brass"}]}
+{"lang": "en", "input": "add a delay to Bass", "output": "track(name=\"Bass\").fx.add(name=\"delay\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "delay"}]}
+{"lang": "en", "input": "put valhalla on Vox", "output": "track(name=\"Vox\").fx.add(name=\"<valhalla_vintage_verb>\")", "actions": [{"type": "add_plugin", "name": "Vox", "plugin": "<valhalla_vintage_verb>"}]}
+{"lang": "en", "input": "color code pluck red", "output": "track(name=\"Pluck\").track.set(colour=\"#ff5a36\")", "actions": [{"type": "set_track_color", "name": "Pluck", "colour": "#ff5a36"}]}
+{"lang": "en", "input": "solo Pads", "output": "track(name=\"Pads\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Pads"}]}
+{"lang": "en", "input": "create a snare track with vital", "output": "track(name=\"Snare\", new=true).fx.add(name=\"<vital>\")", "actions": [{"type": "create_track", "name": "Snare", "plugins": ["<vital>"]}]}
+{"lang": "en", "input": "add a valhalla to Pads", "output": "track(name=\"Pads\").fx.add(name=\"<valhalla_vintage_verb>\")", "actions": [{"type": "add_plugin", "name": "Pads", "plugin": "<valhalla_vintage_verb>"}]}
+{"lang": "en", "input": "change Choir to Perc", "output": "track(name=\"Choir\").track.set(name=\"Perc\")", "actions": [{"type": "rename_track", "name": "Choir", "new_name": "Perc"}]}
+{"lang": "en", "input": "create a track named Arp", "output": "track(name=\"Arp\", new=true)", "actions": [{"type": "create_track", "name": "Arp"}]}
+{"lang": "en", "input": "put diva on Guitar", "output": "track(name=\"Guitar\").fx.add(name=\"<diva>\")", "actions": [{"type": "add_plugin", "name": "Guitar", "plugin": "<diva>"}]}
+{"lang": "en", "input": "load compressor on the pads track", "output": "track(name=\"Pads\").fx.add(name=\"compressor\")", "actions": [{"type": "add_plugin", "name": "Pads", "plugin": "compressor"}]}
+{"lang": "en", "input": "add serum to the drums track", "output": "track(name=\"Drums\").fx.add(name=\"<serum>\")", "actions": [{"type": "add_plugin", "name": "Drums", "plugin": "<serum>"}]}
+{"lang": "en", "input": "load eq on the brass track", "output": "track(name=\"Brass\").fx.add(name=\"eq\")", "actions": [{"type": "add_plugin", "name": "Brass", "plugin": "eq"}]}
+{"lang": "en", "input": "rename the pads track to Reese Bass", "output": "track(name=\"Pads\").track.set(name=\"Reese Bass\")", "actions": [{"type": "rename_track", "name": "Pads", "new_name": "Reese Bass"}]}
+{"lang": "en", "input": "mute Keys", "output": "track(name=\"Keys\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Keys"}]}
+{"lang": "en", "input": "group tracks 4, 5 and 6 as Bass Bus", "output": "track(id=4).track.group(name=\"Bass Bus\", tracks=\"4,5,6\")", "actions": [{"type": "group_tracks", "ids": [4, 5, 6], "name": "Bass Bus"}]}
+{"lang": "en", "input": "add a new lead track", "output": "track(name=\"Lead\", new=true)", "actions": [{"type": "create_track", "name": "Lead"}]}
+{"lang": "en", "input": "put compressor on Synth", "output": "track(name=\"Synth\").fx.add(name=\"compressor\")", "actions": [{"type": "add_plugin", "name": "Synth", "plugin": "compressor"}]}
+{"lang": "en", "input": "solo the vocals track", "output": "track(name=\"Vocals\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Vocals"}]}
+{"lang": "en", "input": "group tracks 2, 3, 4 and 5 into Rhythm", "output": "track(id=2).track.group(name=\"Rhythm\", tracks=\"2,3,4,5\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4, 5], "name": "Rhythm"}]}
+{"lang": "en", "input": "solo the hats track", "output": "track(name=\"Hats\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Hats"}]}
+{"lang": "en", "input": "mute the vox track", "output": "track(name=\"Vox\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Vox"}]}
+{"lang": "en", "input": "group tracks 2, 3, 4 and 5 as Rhythm", "output": "track(id=2).track.group(name=\"Rhythm\", tracks=\"2,3,4,5\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4, 5], "name": "Rhythm"}]}
+{"lang": "en", "input": "solo the reese bass track", "output": "track(name=\"Reese Bass\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Reese Bass"}]}
+{"lang": "en", "input": "new sub bass track with surge xt and compressor", "output": "track(name=\"Sub Bass\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Sub Bass\").fx.add(name=\"compressor\")", "actions": [{"type": "create_track", "name": "Sub Bass", "plugins": ["<surge_xt>", "compressor"]}]}
+{"lang": "en", "input": "new track called Sub Bass", "output": "track(name=\"Sub Bass\", new=true)", "actions": [{"type": "create_track", "name": "Sub Bass"}]}
+{"lang": "en", "input": "make a fx track", "output": "track(name=\"FX\", new=true)", "actions": [{"type": "create_track", "name": "FX"}]}
+{"lang": "en", "input": "isolate Top Loop", "output": "track(name=\"Top Loop\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Top Loop"}]}
+{"lang": "en", "input": "add a new bass track", "output": "track(name=\"Bass\", new=true)", "actions": [{"type": "create_track", "name": "Bass"}]}
+{"lang": "en", "input": "put tracks 3, 4, 5 and 6 in a group called Vocals", "output": "track(id=3).track.group(name=\"Vocals\", tracks=\"3,4,5,6\")", "actions": [{"type": "group_tracks", "ids": [3, 4, 5, 6], "name": "Vocals"}]}
+{"lang": "en", "input": "add a new vocals track", "output": "track(name=\"Vocals\", new=true)", "actions": [{"type": "create_track", "name": "Vocals"}]}
+{"lang": "en", "input": "make Synth yellow", "output": "track(name=\"Synth\").track.set(colour=\"#ffd23f\")", "actions": [{"type": "set_track_color", "name": "Synth", "colour": "#ffd23f"}]}

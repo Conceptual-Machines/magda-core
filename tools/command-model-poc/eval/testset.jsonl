@@ -1,0 +1,45 @@
+{"lang": "en", "input": "create a bass track", "output": "track(name=\"Bass\", new=true)", "actions": [{"type": "create_track", "name": "Bass"}]}
+{"lang": "en", "input": "add a new drums track", "output": "track(name=\"Drums\", new=true)", "actions": [{"type": "create_track", "name": "Drums"}]}
+{"lang": "en", "input": "make a lead track", "output": "track(name=\"Lead\", new=true)", "actions": [{"type": "create_track", "name": "Lead"}]}
+{"lang": "en", "input": "new track called Pads", "output": "track(name=\"Pads\", new=true)", "actions": [{"type": "create_track", "name": "Pads"}]}
+{"lang": "en", "input": "create a track named Reese Bass", "output": "track(name=\"Reese Bass\", new=true)", "actions": [{"type": "create_track", "name": "Reese Bass"}]}
+{"lang": "en", "input": "create a vocals track", "output": "track(name=\"Vocals\", new=true)", "actions": [{"type": "create_track", "name": "Vocals"}]}
+{"lang": "en", "input": "make a keys track", "output": "track(name=\"Keys\", new=true)", "actions": [{"type": "create_track", "name": "Keys"}]}
+{"lang": "en", "input": "add a new perc track", "output": "track(name=\"Perc\", new=true)", "actions": [{"type": "create_track", "name": "Perc"}]}
+{"lang": "en", "input": "create a bass track with serum and ott", "output": "track(name=\"Bass\", new=true).fx.add(name=\"<serum>\")\ntrack(name=\"Bass\").fx.add(name=\"<ott>\")", "actions": [{"type": "create_track", "name": "Bass", "plugins": ["<serum>", "<ott>"]}]}
+{"lang": "en", "input": "make a lead track with serum", "output": "track(name=\"Lead\", new=true).fx.add(name=\"<serum>\")", "actions": [{"type": "create_track", "name": "Lead", "plugins": ["<serum>"]}]}
+{"lang": "en", "input": "new pads track with vital and reverb", "output": "track(name=\"Pads\", new=true).fx.add(name=\"<vital>\")\ntrack(name=\"Pads\").fx.add(name=\"reverb\")", "actions": [{"type": "create_track", "name": "Pads", "plugins": ["<vital>", "reverb"]}]}
+{"lang": "en", "input": "create a vocals track with pro-q 3", "output": "track(name=\"Vocals\", new=true).fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "create_track", "name": "Vocals", "plugins": ["<pro_q_3>"]}]}
+{"lang": "en", "input": "create a drums track with surge xt and ott", "output": "track(name=\"Drums\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Drums\").fx.add(name=\"<ott>\")", "actions": [{"type": "create_track", "name": "Drums", "plugins": ["<surge_xt>", "<ott>"]}]}
+{"lang": "en", "input": "add serum to the bass track", "output": "track(name=\"Bass\").fx.add(name=\"<serum>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<serum>"}]}
+{"lang": "en", "input": "put ott on Drums", "output": "track(name=\"Drums\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Drums", "plugin": "<ott>"}]}
+{"lang": "en", "input": "add pro-q 3 to vocals", "output": "track(name=\"Vocals\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "add_plugin", "name": "Vocals", "plugin": "<pro_q_3>"}]}
+{"lang": "en", "input": "load vital on the lead track", "output": "track(name=\"Lead\").fx.add(name=\"<vital>\")", "actions": [{"type": "add_plugin", "name": "Lead", "plugin": "<vital>"}]}
+{"lang": "en", "input": "add an eq to the bass track", "output": "track(name=\"Bass\").fx.add(name=\"eq\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "eq"}]}
+{"lang": "en", "input": "add reverb to Pads", "output": "track(name=\"Pads\").fx.add(name=\"reverb\")", "actions": [{"type": "add_plugin", "name": "Pads", "plugin": "reverb"}]}
+{"lang": "en", "input": "add a compressor to the drums track", "output": "track(name=\"Drums\").fx.add(name=\"compressor\")", "actions": [{"type": "add_plugin", "name": "Drums", "plugin": "compressor"}]}
+{"lang": "en", "input": "put 1176 on the vocals track", "output": "track(name=\"Vocals\").fx.add(name=\"<1176>\")", "actions": [{"type": "add_plugin", "name": "Vocals", "plugin": "<1176>"}]}
+{"lang": "en", "input": "rename track Bass to Reese Bass", "output": "track(name=\"Bass\").track.set(name=\"Reese Bass\")", "actions": [{"type": "rename_track", "name": "Bass", "new_name": "Reese Bass"}]}
+{"lang": "en", "input": "rename the drums track to Acoustic Kit", "output": "track(name=\"Drums\").track.set(name=\"Acoustic Kit\")", "actions": [{"type": "rename_track", "name": "Drums", "new_name": "Acoustic Kit"}]}
+{"lang": "en", "input": "change Lead to Topline", "output": "track(name=\"Lead\").track.set(name=\"Topline\")", "actions": [{"type": "rename_track", "name": "Lead", "new_name": "Topline"}]}
+{"lang": "en", "input": "rename track Pads to Warm Pads", "output": "track(name=\"Pads\").track.set(name=\"Warm Pads\")", "actions": [{"type": "rename_track", "name": "Pads", "new_name": "Warm Pads"}]}
+{"lang": "en", "input": "delete the bass track", "output": "track(name=\"Bass\").delete()", "actions": [{"type": "delete_track", "name": "Bass"}]}
+{"lang": "en", "input": "remove track Drums", "output": "track(name=\"Drums\").delete()", "actions": [{"type": "delete_track", "name": "Drums"}]}
+{"lang": "en", "input": "delete Pads", "output": "track(name=\"Pads\").delete()", "actions": [{"type": "delete_track", "name": "Pads"}]}
+{"lang": "en", "input": "remove the vocals track", "output": "track(name=\"Vocals\").delete()", "actions": [{"type": "delete_track", "name": "Vocals"}]}
+{"lang": "en", "input": "mute Drums", "output": "track(name=\"Drums\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Drums"}]}
+{"lang": "en", "input": "mute the bass track", "output": "track(name=\"Bass\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Bass"}]}
+{"lang": "en", "input": "silence Pads", "output": "track(name=\"Pads\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Pads"}]}
+{"lang": "en", "input": "mute the vocals track", "output": "track(name=\"Vocals\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Vocals"}]}
+{"lang": "en", "input": "solo Drums", "output": "track(name=\"Drums\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Drums"}]}
+{"lang": "en", "input": "solo the lead track", "output": "track(name=\"Lead\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Lead"}]}
+{"lang": "en", "input": "isolate Bass", "output": "track(name=\"Bass\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Bass"}]}
+{"lang": "en", "input": "make Drums red", "output": "track(name=\"Drums\").track.set(colour=\"#ff5a36\")", "actions": [{"type": "set_track_color", "name": "Drums", "colour": "#ff5a36"}]}
+{"lang": "en", "input": "color the bass track blue", "output": "track(name=\"Bass\").track.set(colour=\"#44c7ff\")", "actions": [{"type": "set_track_color", "name": "Bass", "colour": "#44c7ff"}]}
+{"lang": "en", "input": "set Vocals colour to green", "output": "track(name=\"Vocals\").track.set(colour=\"#3ddc84\")", "actions": [{"type": "set_track_color", "name": "Vocals", "colour": "#3ddc84"}]}
+{"lang": "en", "input": "color code drums red", "output": "track(name=\"Drums\").track.set(colour=\"#ff5a36\")", "actions": [{"type": "set_track_color", "name": "Drums", "colour": "#ff5a36"}]}
+{"lang": "en", "input": "make the pads track purple", "output": "track(name=\"Pads\").track.set(colour=\"#9b59b6\")", "actions": [{"type": "set_track_color", "name": "Pads", "colour": "#9b59b6"}]}
+{"lang": "en", "input": "group tracks 1, 2 and 3 as Drums", "output": "track(id=1).track.group(name=\"Drums\", tracks=\"1,2,3\")", "actions": [{"type": "group_tracks", "ids": [1, 2, 3], "name": "Drums"}]}
+{"lang": "en", "input": "group tracks 4 and 5 into Vocals", "output": "track(id=4).track.group(name=\"Vocals\", tracks=\"4,5\")", "actions": [{"type": "group_tracks", "ids": [4, 5], "name": "Vocals"}]}
+{"lang": "en", "input": "put tracks 1, 2 and 3 in a group called Rhythm", "output": "track(id=1).track.group(name=\"Rhythm\", tracks=\"1,2,3\")", "actions": [{"type": "group_tracks", "ids": [1, 2, 3], "name": "Rhythm"}]}
+{"lang": "en", "input": "group tracks 2, 3 and 4 as Bass Bus", "output": "track(id=2).track.group(name=\"Bass Bus\", tracks=\"2,3,4\")", "actions": [{"type": "group_tracks", "ids": [2, 3, 4], "name": "Bass Bus"}]}
