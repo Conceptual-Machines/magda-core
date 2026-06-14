@@ -173,8 +173,11 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
 
     // ADSR parameters
     attackValue.referTo(state, te::IDs::attack, um, 0.001f);
+    // Time params use a logarithmic skew (0.4) so equal knob/macro movement
+    // gives perceptually-even change: most audible action is in the first few
+    // hundred ms, which a linear range crams into the bottom of the range.
     attackParam = addParam(
-        "attack", "Attack", {0.001f, 5.0f, 0.001f},
+        "attack", "Attack", {0.001f, 5.0f, 0.001f, 0.4f},
         [](float v) { return juce::String(v, 3) + " s"; },
         [](const juce::String& s) {
             return s.upToFirstOccurrenceOf(" ", false, false).getFloatValue();
@@ -183,7 +186,8 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
     static const juce::Identifier decayId("decay");
     decayValue.referTo(state, decayId, um, 0.1f);
     decayParam = addParam(
-        "decay", "Decay", {0.001f, 5.0f, 0.1f}, [](float v) { return juce::String(v, 3) + " s"; },
+        "decay", "Decay", {0.001f, 5.0f, 0.001f, 0.4f},
+        [](float v) { return juce::String(v, 3) + " s"; },
         [](const juce::String& s) {
             return s.upToFirstOccurrenceOf(" ", false, false).getFloatValue();
         });
@@ -194,7 +198,7 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
 
     releaseValue.referTo(state, te::IDs::release, um, 0.1f);
     releaseParam = addParam(
-        "release", "Release", {0.001f, 10.0f, 0.1f},
+        "release", "Release", {0.001f, 10.0f, 0.001f, 0.4f},
         [](float v) { return juce::String(v, 3) + " s"; },
         [](const juce::String& s) {
             return s.upToFirstOccurrenceOf(" ", false, false).getFloatValue();

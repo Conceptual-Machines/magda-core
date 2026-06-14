@@ -2196,8 +2196,8 @@ void zeroSamplerAdsrBase(daw::audio::MagdaSamplerPlugin& sampler) {
     sampler.releaseValue = releaseMin;
 }
 
-void addSamplerAdsrMacroLinks(DeviceInfo& drumGridDevice, TrackId trackId, DeviceId samplerDeviceId,
-                              te::Plugin& sampler) {
+void addSamplerAdsrMacroLinks(DeviceInfo& drumGridDevice, TrackId trackId, int chainIndex,
+                              DeviceId samplerDeviceId, te::Plugin& sampler) {
     if (samplerDeviceId == INVALID_DEVICE_ID)
         return;
 
@@ -2209,7 +2209,12 @@ void addSamplerAdsrMacroLinks(DeviceInfo& drumGridDevice, TrackId trackId, Devic
     const std::array<AdsrParam, 4> adsrParams = {
         {{0, "attack"}, {1, "decay"}, {2, "sustain"}, {3, "release"}}};
 
-    const auto samplerPath = ChainNodePath::topLevelDevice(trackId, samplerDeviceId);
+    // The pad sampler is a DrumGrid-internal device, registered in the audio
+    // sync under a nested chainDevice path (see syncDrumGridPadPlugins). Build
+    // the same path here so the macro link resolves; a topLevelDevice path
+    // would not be found and the modulation would never attach.
+    const auto samplerPath =
+        ChainNodePath::chainDevice(trackId, drumGridDevice.id, chainIndex, samplerDeviceId);
     for (const auto& adsrParam : adsrParams) {
         if (adsrParam.macroIndex < 0 ||
             adsrParam.macroIndex >= static_cast<int>(drumGridDevice.macros.size()))
@@ -2240,7 +2245,7 @@ void linkAssignedDrumGridSamplerAdsrMacros(DeviceInfo& drumGridDevice, TrackId t
             continue;
 
         zeroSamplerAdsrBase(*sampler);
-        addSamplerAdsrMacroLinks(drumGridDevice, trackId,
+        addSamplerAdsrMacroLinks(drumGridDevice, trackId, chain->index,
                                  drumGrid.getPluginDeviceId(chain->index, 0), *sampler);
     }
 }
