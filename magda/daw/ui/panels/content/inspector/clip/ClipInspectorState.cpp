@@ -6,6 +6,7 @@
 #include "../../../../utils/TimelineUtils.hpp"
 #include "../ClipInspector.hpp"
 #include "BinaryData.h"
+#include "core/AudioClipSourceDisplay.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
@@ -42,27 +43,25 @@ void ClipInspector::updateAudioSourceValueDisplays(const magda::ClipInfo& clip) 
     }
 
     const bool showAudioProps = !audioPropsCollapsed_ && clip.isAudio();
-    if (showAudioProps) {
-        double displayBPM = clip.audio().interpretation.bpm;
-        double projectBPM = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-        if (displayBPM <= 0.0 || (!clip.autoTempo && std::abs(displayBPM - projectBPM) < 0.1)) {
-            displayBPM = magda::AudioThumbnailManager::getInstance().getCachedBPM(
-                clip.audio().source.filePath);
-        }
+    if (!showAudioProps)
+        return;
 
-        if (displayBPM > 0.0) {
-            clipBpmValue_.setText(juce::String(displayBPM, 1), juce::dontSendNotification);
-        } else {
-            clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"),
-                                  juce::dontSendNotification);
-        }
+    // Shared with the audio-editor inspector so the two can't drift.
+    const double projectBPM =
+        timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
+    const double cachedBpm =
+        magda::AudioThumbnailManager::getInstance().getCachedBPM(clip.audio().source.filePath);
+    const auto display = magda::computeAudioClipSourceDisplay(
+        clip, projectBPM, getAudioFileDurationForInspector(clip), cachedBpm);
+
+    if (display.bpm > 0.0) {
+        clipBpmValue_.setText(juce::String(display.bpm, 1), juce::dontSendNotification);
+    } else {
+        clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"), juce::dontSendNotification);
     }
 
-    if (showAudioProps && clip.autoTempo && clipBeatsLengthValue_ &&
-        !clipBeatsLengthValue_->isDragging()) {
-        clipBeatsLengthValue_->setValue(clip.audio().interpretation.totalBeats > 0.0
-                                            ? clip.audio().interpretation.totalBeats
-                                            : 4.0,
+    if (clip.autoTempo && clipBeatsLengthValue_ && !clipBeatsLengthValue_->isDragging()) {
+        clipBeatsLengthValue_->setValue(display.totalBeats > 0.0 ? display.totalBeats : 4.0,
                                         juce::dontSendNotification);
     }
 }
