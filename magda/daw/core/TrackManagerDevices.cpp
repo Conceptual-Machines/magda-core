@@ -193,11 +193,11 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
         }
     }
     if (auto* chain = getChain(trackId, rackId, chainId)) {
-        DeviceInfo newDevice = device;
-        newDevice.id = nextFxDeviceId_++;
-        stampDefaultKitIfMissing(newDevice);
+        DeviceInfo newDevice = prepareNewDevice(device);
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
+        notifyDeviceAdded(ChainNodePath::chainDevice(trackId, rackId, chainId, newDevice.id),
+                          newDevice);
         return newDevice.id;
     }
     return INVALID_DEVICE_ID;
@@ -247,11 +247,10 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
         }
 
         // Add the device
-        DeviceInfo newDevice = device;
-        newDevice.id = nextFxDeviceId_++;
-        stampDefaultKitIfMissing(newDevice);
+        DeviceInfo newDevice = prepareNewDevice(device);
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(chainPath.trackId);
+        notifyDeviceAdded(chainPath.withDevice(newDevice.id), newDevice);
         return newDevice.id;
     }
 
@@ -301,9 +300,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
         }
 
         // Add the device at the specified index
-        DeviceInfo newDevice = device;
-        newDevice.id = nextFxDeviceId_++;
-        stampDefaultKitIfMissing(newDevice);
+        DeviceInfo newDevice = prepareNewDevice(device);
 
         // Clamp insert index to valid range
         int maxIndex = static_cast<int>(chain->elements.size());
@@ -311,6 +308,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
         chain->elements.insert(chain->elements.begin() + insertIndex, makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(chainPath.trackId);
+        notifyDeviceAdded(chainPath.withDevice(newDevice.id), newDevice);
         return newDevice.id;
     }
 

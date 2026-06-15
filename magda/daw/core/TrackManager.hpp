@@ -83,6 +83,14 @@ class TrackManagerListener {
         juce::ignoreUnused(devicePath);
     }
 
+    // Called once when a device is freshly added to any chain/track (the single
+    // hook every add path funnels through). Fired AFTER trackDevicesChanged, so
+    // the engine plugin already exists. Not fired during project load (which
+    // commits staged devices in bulk rather than through the add methods).
+    virtual void deviceAdded(const ChainNodePath& devicePath, const DeviceInfo& device) {
+        juce::ignoreUnused(devicePath, device);
+    }
+
     // Called when a device parameter value changes (for live parameter updates)
     virtual void deviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
                                         float newValue) {
@@ -353,6 +361,12 @@ class TrackManager {
     // with the right mapping. Project deserialization doesn't go through
     // addDevice* and isn't affected.
     static void stampDefaultKitIfMissing(DeviceInfo& dev);
+
+    // Single funnel for the common prep every addDevice* path does: assign a
+    // fresh DeviceId, stamp the default kit, and tag analysis devices. Returns
+    // the prepared copy; callers insert it into their target list, then fire
+    // notifyDeviceAdded. Centralised so the steps can't drift per call site.
+    DeviceInfo prepareNewDevice(const DeviceInfo& device);
 
     // Wrap a device in a new rack (device moves into the rack's first chain)
     RackId wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
@@ -737,6 +751,7 @@ class TrackManager {
      * update UI components).
      */
     void notifyTrackDevicesChanged(TrackId trackId);
+    void notifyDeviceAdded(const ChainNodePath& devicePath, const DeviceInfo& device);
     void notifyModulationNamesChanged(TrackId trackId);
     // Full header/track-list rebuild. Public so commands that change track
     // structure (e.g. creating a track together with a device) can force the

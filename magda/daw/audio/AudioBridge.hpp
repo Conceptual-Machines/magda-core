@@ -74,6 +74,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void trackPropertyChanged(int trackId) override;
     void trackSelectionChanged(TrackId trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
+    void deviceAdded(const ChainNodePath& devicePath, const DeviceInfo& device) override;
     void deviceModifiersChanged(TrackId trackId) override;
     void audioSidechainTriggered(TrackId sourceTrackId) override;
     void devicePropertyChanged(const ChainNodePath& devicePath) override;
