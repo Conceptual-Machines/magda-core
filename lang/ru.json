@@ -325,6 +325,7 @@
     "toggle.confirm_track_delete": "Подтверждение перед удалением дорожки",
     "toggle.auto_monitor": "Автомониторинг выбранной дорожки",
     "toggle.open_macros_on_select": "Открывать макросы при выборе устройств или рэков",
+    "toggle.open_plugin_window_on_drop": "Открывать окно плагина при добавлении в цепочку",
     "toggle.show_tooltips": "Показывать подсказки",
     "button.add_colour": "+ Добавить цвет",
     "button.browse": "Обзор...",

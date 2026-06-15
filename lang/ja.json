@@ -325,6 +325,7 @@
     "toggle.confirm_track_delete": "トラックを削除する前に確認する",
     "toggle.auto_monitor": "選択したトラックを自動でモニターする",
     "toggle.open_macros_on_select": "デバイスまたはラック選択時にマクロを開く",
+    "toggle.open_plugin_window_on_drop": "チェーンに追加時にプラグインウィンドウを開く",
     "toggle.show_tooltips": "ツールチップを表示",
     "button.add_colour": "+ 色を追加",
     "button.browse": "参照…",
