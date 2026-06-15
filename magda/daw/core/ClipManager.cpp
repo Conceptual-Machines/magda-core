@@ -328,9 +328,17 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
             savedClip.loopEnabled = true;
             savedClip.analogPitch = false;
             savedClip.speedRatio = 1.0;
-            if (savedClip.audio().interpretation.totalBeats > 0.0 &&
-                savedClip.loopLengthBeats <= 0.0) {
-                savedClip.loopLengthBeats = savedClip.audio().interpretation.totalBeats;
+            if (savedClip.audio().interpretation.totalBeats > 0.0) {
+                // A beat-mode clip's natural length is its musical length (the
+                // saved beat count), not the raw audio-file duration the caller
+                // derived the placement from. At a project tempo different from the
+                // sample's, file-duration-in-beats != the real beat count, so snap
+                // both the timeline placement and the loop length to the beat count
+                // and let autoTempo stretch the audio to fit.
+                const double beats = savedClip.audio().interpretation.totalBeats;
+                savedClip.setPlacementBeats(startBeats, beats);
+                if (savedClip.loopLengthBeats <= 0.0)
+                    savedClip.loopLengthBeats = beats;
             }
             savedClip.deriveTimesFromBeats(bpm);
         }
