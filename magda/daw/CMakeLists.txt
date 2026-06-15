@@ -350,6 +350,7 @@ add_subdirectory(interfaces)
 add_subdirectory(profiling)
 add_subdirectory(ui)
 add_subdirectory(media_db)
+add_subdirectory(transcription)
 
 # =============================================================================
 # Linking, compile defs, includes
@@ -605,6 +606,27 @@ else()
             "${MAGDA_DRUMKITS_SRC}"
             "$<TARGET_FILE_DIR:magda_daw_app>/drumkits"
         COMMENT "Copying stock drumkits alongside app executable"
+    )
+endif()
+
+# Copy resources/models/ (the bundled audio-to-MIDI model, basic_pitch.onnx)
+# into the app so TranscriptionService::findBundledModel resolves it at runtime.
+# Single small file (~230 KB); always staged regardless of MAGDA_HAVE_CLAP so
+# the dev-tree fallback and packaging stay uniform.
+set(MAGDA_MODELS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../resources/models")
+if(APPLE)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_MODELS_SRC}"
+            "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Resources/models"
+        COMMENT "Copying bundled models to app bundle Resources"
+    )
+else()
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_MODELS_SRC}"
+            "$<TARGET_FILE_DIR:magda_daw_app>/models"
+        COMMENT "Copying bundled models alongside app executable"
     )
 endif()
 
