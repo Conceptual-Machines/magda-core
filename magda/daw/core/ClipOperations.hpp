@@ -570,13 +570,40 @@ class ClipOperations {
      * @param newLength New clip length in seconds
      * @param bpm Current project tempo
      */
+    /**
+     * @brief Re-interpret an autoTempo (beat-mode) clip's source as ratio× the
+     * beats so the engine time-stretches the audio to the new length.
+     *
+     * autoTempo clips carry speedRatio == 1 and stretch via the source
+     * interpretation (bpm / totalBeats) instead, so a speedRatio change is a
+     * no-op for them. The source file's seconds are fixed, so only the
+     * source-BEAT fields scale (drag right = ratio > 1 = more beats = slower
+     * playback); the seconds-derived loop/offset values stay put because bpm
+     * scales with them.
+     */
+    static inline void applyAutoTempoStretch(ClipInfo& clip, double ratio) {
+        if (!clip.isAudio() || !(ratio > 0.0) || ratio == 1.0)
+            return;
+        auto& interp = clip.audio().interpretation;
+        if (interp.totalBeats > 0.0)
+            interp.totalBeats *= ratio;
+        if (interp.bpm > 0.0)
+            interp.bpm *= ratio;
+        clip.loopStartBeats *= ratio;
+        clip.loopLengthBeats *= ratio;
+        clip.offsetBeats *= ratio;
+    }
+
     static inline void stretchAbsolute(ClipInfo& clip, double newSpeedRatio, double newLength,
                                        double bpm = DEFAULT_BPM) {
         seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         const double currentStart = clip.getTimelineStart(bpm);
+        const double oldLengthBeats = clip.placement.lengthBeats;
         setTimelinePlacement(clip, currentStart, newLength, bpm);
         if (clip.autoTempo && isValidBpm(bpm)) {
             double newBeats = newLength * bpm / 60.0;
+            if (oldLengthBeats > 0.0)
+                applyAutoTempoStretch(clip, newBeats / oldLengthBeats);
             setAutoTempoPlacementLengthBeats(clip, newBeats, bpm);
         } else {
             clip.speedRatio = newSpeedRatio;
@@ -596,9 +623,12 @@ class ClipOperations {
                                                double newLength, double rightEdge,
                                                double bpm = DEFAULT_BPM) {
         seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
+        const double oldLengthBeats = clip.placement.lengthBeats;
         setTimelinePlacement(clip, rightEdge - newLength, newLength, bpm);
         if (clip.autoTempo && isValidBpm(bpm)) {
             double newBeats = newLength * bpm / 60.0;
+            if (oldLengthBeats > 0.0)
+                applyAutoTempoStretch(clip, newBeats / oldLengthBeats);
             setAutoTempoPlacementLengthBeats(clip, newBeats, bpm);
         } else {
             clip.speedRatio = newSpeedRatio;

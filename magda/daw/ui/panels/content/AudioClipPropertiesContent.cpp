@@ -9,6 +9,7 @@
 #include "BinaryData.h"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "core/AudioClipSourceDisplay.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
@@ -51,39 +52,13 @@ double getProjectBpmForProperties() {
     return magda::DEFAULT_BPM;
 }
 
-struct SourceDisplayValues {
-    double bpm = 0.0;
-    double totalBeats = 0.0;
-};
-
-SourceDisplayValues getSourceDisplayValues(const magda::ClipInfo& clip) {
-    SourceDisplayValues values;
-    if (!clip.isAudio())
-        return values;
-
-    const double projectBpm = getProjectBpmForProperties();
-    const double storedBpm = clip.audio().interpretation.bpm;
-    const bool storedBpmLooksDefaulted =
-        storedBpm <= 0.0 || (!clip.autoTempo && std::abs(storedBpm - projectBpm) < 0.1);
-
-    values.bpm = storedBpm;
-    if (storedBpmLooksDefaulted) {
-        auto& thumbs = magda::AudioThumbnailManager::getInstance();
-        const double cachedBpm = thumbs.getCachedBPM(clip.audio().source.filePath);
-        if (cachedBpm > 0.0) {
-            values.bpm = cachedBpm;
-        }
-    }
-
-    const double durationSeconds = getAudioFileDurationForProperties(clip);
-    if (values.bpm > 0.0 && durationSeconds > 0.0 &&
-        (storedBpmLooksDefaulted || clip.audio().interpretation.totalBeats <= 0.0)) {
-        values.totalBeats = durationSeconds * values.bpm / 60.0;
-    } else {
-        values.totalBeats = clip.audio().interpretation.totalBeats;
-    }
-
-    return values;
+// Resolve the shared inspector display model (values + which fields are live)
+// for this clip, so this panel and the right-panel clip inspector can't drift.
+magda::AudioClipSourceDisplay resolveSourceDisplay(const magda::ClipInfo& clip) {
+    const double cachedBpm =
+        magda::AudioThumbnailManager::getInstance().getCachedBPM(clip.audio().source.filePath);
+    return magda::computeAudioClipSourceDisplay(clip, getProjectBpmForProperties(),
+                                                getAudioFileDurationForProperties(clip), cachedBpm);
 }
 }  // namespace
 
@@ -605,7 +580,7 @@ void AudioClipPropertiesContent::updateFromClip() {
         stretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
         stretchModeCombo_->setSelectedId(clip->getEffectiveTimeStretchMode() + 1,
                                          juce::dontSendNotification);
-        const auto sourceDisplay = getSourceDisplayValues(*clip);
+        const auto sourceDisplay = resolveSourceDisplay(*clip);
         bpmValue_->setValue(sourceDisplay.bpm > 0.0 ? sourceDisplay.bpm : magda::DEFAULT_BPM,
                             juce::dontSendNotification);
         beatsValue_->setValue(sourceDisplay.totalBeats > 0.0 ? sourceDisplay.totalBeats : 4.0,
@@ -634,10 +609,13 @@ void AudioClipPropertiesContent::updateFromClip() {
 
     bool enabled = hasClip;
     bool isAutoTempo = hasClip && clip->autoTempo;
+    // Speed is live in time-based mode; Source BPM / Beats are live only in beat
+    // mode (autoTempo) — they're inert otherwise, so grey them out. Mirrors the
+    // right-panel clip inspector.
     stretchValue_->setEnabled(enabled && !isAutoTempo);
     stretchModeCombo_->setEnabled(enabled);
-    bpmValue_->setEnabled(enabled);
-    beatsValue_->setEnabled(enabled);
+    bpmValue_->setEnabled(enabled && isAutoTempo);
+    beatsValue_->setEnabled(enabled && isAutoTempo);
     pitchValue_->setEnabled(enabled);
     analogPitchToggle_->setEnabled(enabled && !isAutoTempo && !(hasClip && clip->warpEnabled));
     transientSensValue_->setEnabled(enabled);

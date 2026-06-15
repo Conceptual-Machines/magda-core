@@ -1359,6 +1359,13 @@ void WaveformEditorContent::refreshWarpMarkers() {
     if (bridge && editingClipId_ != magda::INVALID_CLIP_ID) {
         auto markers = bridge->getWarpMarkers(editingClipId_);
         gridComponent_->setWarpMarkers(markers);
+
+        // Warp markers live in TE's WarpTimeManager, not in ClipInfo, so editing
+        // them doesn't fire a clip-property change. The arrangement ClipComponent
+        // draws the warped waveform live (re-fetching markers each paint), so it
+        // just needs a repaint nudge -- otherwise the arrangement preview keeps
+        // showing the pre-edit warp until some other property change repaints it.
+        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(editingClipId_);
     }
 }
 

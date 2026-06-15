@@ -6,6 +6,7 @@
 #include "../../../../utils/TimelineUtils.hpp"
 #include "../ClipInspector.hpp"
 #include "BinaryData.h"
+#include "core/AudioClipSourceDisplay.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
@@ -42,27 +43,25 @@ void ClipInspector::updateAudioSourceValueDisplays(const magda::ClipInfo& clip) 
     }
 
     const bool showAudioProps = !audioPropsCollapsed_ && clip.isAudio();
-    if (showAudioProps) {
-        double displayBPM = clip.audio().interpretation.bpm;
-        double projectBPM = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-        if (displayBPM <= 0.0 || (!clip.autoTempo && std::abs(displayBPM - projectBPM) < 0.1)) {
-            displayBPM = magda::AudioThumbnailManager::getInstance().getCachedBPM(
-                clip.audio().source.filePath);
-        }
+    if (!showAudioProps)
+        return;
 
-        if (displayBPM > 0.0) {
-            clipBpmValue_.setText(juce::String(displayBPM, 1), juce::dontSendNotification);
-        } else {
-            clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"),
-                                  juce::dontSendNotification);
-        }
+    // Shared with the audio-editor inspector so the two can't drift.
+    const double projectBPM =
+        timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
+    const double cachedBpm =
+        magda::AudioThumbnailManager::getInstance().getCachedBPM(clip.audio().source.filePath);
+    const auto display = magda::computeAudioClipSourceDisplay(
+        clip, projectBPM, getAudioFileDurationForInspector(clip), cachedBpm);
+
+    if (display.bpm > 0.0) {
+        clipBpmValue_.setText(juce::String(display.bpm, 1), juce::dontSendNotification);
+    } else {
+        clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"), juce::dontSendNotification);
     }
 
-    if (showAudioProps && clip.autoTempo && clipBeatsLengthValue_ &&
-        !clipBeatsLengthValue_->isDragging()) {
-        clipBeatsLengthValue_->setValue(clip.audio().interpretation.totalBeats > 0.0
-                                            ? clip.audio().interpretation.totalBeats
-                                            : 4.0,
+    if (clip.autoTempo && clipBeatsLengthValue_ && !clipBeatsLengthValue_->isDragging()) {
+        clipBeatsLengthValue_->setValue(display.totalBeats > 0.0 ? display.totalBeats : 4.0,
                                         juce::dontSendNotification);
     }
 }
@@ -235,21 +234,23 @@ void ClipInspector::updateFromSelectedClip() {
         audioPropsLabel_.setVisible(isAudioClip);
 
         if (isAudioClip) {
-            clipTypeIcon_->updateSvgData(BinaryData::audio_clip_svg,
-                                         BinaryData::audio_clip_svgSize);
+            clipTypeIcon_->updateSvgData(BinaryData::iconaudioboldm_svg,
+                                         BinaryData::iconaudioboldm_svgSize);
             clipTypeIcon_->setTooltip("Audio clip");
         } else {
-            clipTypeIcon_->updateSvgData(BinaryData::midi_clip_svg, BinaryData::midi_clip_svgSize);
+            clipTypeIcon_->updateSvgData(BinaryData::iconmidiboldm_svg,
+                                         BinaryData::iconmidiboldm_svgSize);
             clipTypeIcon_->setTooltip("MIDI clip");
         }
 
         // Update view icon based on clip view
         if (clip->view == magda::ClipView::Session) {
-            clipViewIcon_->updateSvgData(BinaryData::Session_svg, BinaryData::Session_svgSize);
+            clipViewIcon_->updateSvgData(BinaryData::iconsessionboldm_svg,
+                                         BinaryData::iconsessionboldm_svgSize);
             clipViewIcon_->setTooltip("Session clip");
         } else {
-            clipViewIcon_->updateSvgData(BinaryData::Arrangement_svg,
-                                         BinaryData::Arrangement_svgSize);
+            clipViewIcon_->updateSvgData(BinaryData::iconarrangementboldm_svg,
+                                         BinaryData::iconarrangementboldm_svgSize);
             clipViewIcon_->setTooltip("Arrangement clip");
         }
 
@@ -268,6 +269,14 @@ void ClipInspector::updateFromSelectedClip() {
             }
             clipBpmValue_.setVisible(true);
             clipBpmUnitLabel_.setVisible(true);
+            // Source BPM only drives playback in beat mode (autoTempo); in
+            // time-based mode the engine uses speedRatio and never reads it, so
+            // grey it out — the mirror of how the speed control is disabled in
+            // beat mode.
+            const bool sourceBpmActive = clip->autoTempo;
+            clipBpmValue_.setEnabled(sourceBpmActive);
+            clipBpmValue_.setAlpha(sourceBpmActive ? 1.0f : 0.4f);
+            clipBpmUnitLabel_.setAlpha(sourceBpmActive ? 1.0f : 0.4f);
             updateAudioSourceValueDisplays(*clip);
         } else {
             clipBpmValue_.setVisible(false);

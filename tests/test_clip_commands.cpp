@@ -1176,3 +1176,63 @@ TEST_CASE("PasteClipCommand - paste multiple clips", "[clip][command][paste]") {
         REQUIRE(cm.getClip(id) != nullptr);
     }
 }
+
+// ============================================================================
+// resolveOverlaps - "C fully contains D" (regression for #1447)
+// ============================================================================
+
+// Duplicating a selection on top of the interior of a long clip used to delete
+// the whole right-hand portion of that clip (the remaining audio disappeared).
+// resolveOverlaps must instead split the long clip into a left and a right part
+// around the dropped clip, losing only the slice the new clip actually covers.
+TEST_CASE("resolveOverlaps - dropping a clip inside a longer one splits it, no data loss",
+          "[clip][overlap][regression]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(120.0);
+
+    auto& cm = ClipManager::getInstance();
+    TrackId trackC = createTrack("Long", TrackType::Audio);
+    TrackId trackS = createTrack("Source", TrackType::Audio);
+
+    // Long clip C spanning [0,16] beats (0..8 s at 120 BPM).
+    ClipId c = createAudio(trackC, 0.0, 8.0);
+    // Short source clip on another track, [0,4] beats (0..2 s).
+    ClipId s = createAudio(trackS, 0.0, 2.0);
+
+    // Duplicate the short clip into C's interior on C's track: D = [6,10] beats.
+    ClipId d = cm.duplicateClipAtBeats(s, 6.0, trackC, 120.0);
+    REQUIRE(d != INVALID_CLIP_ID);
+
+    // C survives on BOTH sides of D — three clips total on the track.
+    auto onC = cm.getClipsOnTrack(trackC);
+    REQUIRE(onC.size() == 3);
+
+    // Original keeps the left part [0,6].
+    auto* left = cm.getClip(c);
+    REQUIRE(left != nullptr);
+    REQUIRE(left->placement.startBeat == Catch::Approx(0.0));
+    REQUIRE(left->placement.lengthBeats == Catch::Approx(6.0));
+
+    // Duplicate occupies [6,10].
+    auto* dup = cm.getClip(d);
+    REQUIRE(dup != nullptr);
+    REQUIRE(dup->placement.startBeat == Catch::Approx(6.0));
+    REQUIRE(dup->placement.lengthBeats == Catch::Approx(4.0));
+
+    // The surviving right part [10,16] exists — this is what the bug deleted.
+    bool foundRight = false;
+    for (ClipId id : onC) {
+        if (id == c || id == d)
+            continue;
+        auto* right = cm.getClip(id);
+        REQUIRE(right != nullptr);
+        REQUIRE(right->placement.startBeat == Catch::Approx(10.0));
+        REQUIRE(right->placement.lengthBeats == Catch::Approx(6.0));
+        foundRight = true;
+    }
+    REQUIRE(foundRight);
+
+    proj.setTempo(originalTempo);
+}
