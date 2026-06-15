@@ -282,3 +282,21 @@ add_test(NAME external_plugin_state_restore_juce
 
 add_test(NAME section_scoped_device_ids_juce
          COMMAND magda_juce_tests "Section-Scoped Device IDs")
+
+# Both test executables link magda_daw, which links ONNX Runtime. On Windows the
+# loader only searches the exe's directory, the cwd, and PATH, so without a copy
+# next to the test exe it resolves whatever stray onnxruntime.dll happens to be
+# on the runner's PATH (a 1.17 system DLL on CI) instead of our pinned build.
+# The version mismatch makes the C++ API's GetApi() return null and the first
+# ORT call SIGSEGVs. Copy the pinned DLLs next to each test exe, mirroring the
+# app bundle step in magda/daw/CMakeLists.txt.
+if(MAGDA_HAVE_CLAP AND WIN32)
+    foreach(test_target magda_tests magda_juce_tests)
+        add_custom_command(TARGET ${test_target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll"
+                "${ONNXRUNTIME_LIB_DIR}/onnxruntime_providers_shared.dll"
+                "$<TARGET_FILE_DIR:${test_target}>"
+            COMMENT "Copying ONNX Runtime DLLs alongside ${test_target}")
+    endforeach()
+endif()
