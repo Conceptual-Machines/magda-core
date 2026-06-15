@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # Git submodules (JUCE, Tracktion Engine, etc.)
+  # Git submodules (JUCE, llama.cpp, etc.)
   - package-ecosystem: "gitsubmodule"
     directory: "/"
     schedule:
@@ -11,6 +11,10 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    ignore:
+      # Tracktion Engine is a fork we control and bump deliberately (it carries
+      # MAGDA patches), so Dependabot must never open PRs for it.
+      - dependency-name: "third_party/tracktion_engine"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
