@@ -325,6 +325,7 @@
     "toggle.confirm_track_delete": "Confirm before deleting tracks",
     "toggle.auto_monitor": "Auto-monitor selected track",
     "toggle.open_macros_on_select": "Open macros when selecting devices or racks",
+    "toggle.open_plugin_window_on_drop": "Open plugin window when added to a chain",
     "toggle.show_tooltips": "Show tooltips",
     "button.add_colour": "+ Add Colour",
     "button.browse": "Browse...",

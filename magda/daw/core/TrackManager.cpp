@@ -1634,13 +1634,10 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             DBG("Cannot add instrument plugin to non-instrument track");
             return INVALID_DEVICE_ID;
         }
-        DeviceInfo newDevice = device;
-        newDevice.id = nextFxDeviceId_++;
-        stampDefaultKitIfMissing(newDevice);
-        if (isAnalysisDevice(newDevice.pluginId))
-            newDevice.deviceType = DeviceType::Analysis;
+        DeviceInfo newDevice = prepareNewDevice(device);
         track->chain.fxChainElements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
+        notifyDeviceAdded(ChainNodePath::topLevelDevice(trackId, newDevice.id), newDevice);
         DBG("Added device: " << newDevice.name << " (id=" << newDevice.id << ") to track "
                              << trackId);
         return newDevice.id;
@@ -1657,11 +1654,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             DBG("Cannot add instrument plugin to non-instrument track");
             return INVALID_DEVICE_ID;
         }
-        DeviceInfo newDevice = device;
-        newDevice.id = nextFxDeviceId_++;
-        stampDefaultKitIfMissing(newDevice);
-        if (isAnalysisDevice(newDevice.pluginId))
-            newDevice.deviceType = DeviceType::Analysis;
+        DeviceInfo newDevice = prepareNewDevice(device);
 
         // Clamp insert index to valid range
         int maxIndex = static_cast<int>(track->chain.fxChainElements.size());
@@ -1671,6 +1664,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
         track->chain.fxChainElements.insert(track->chain.fxChainElements.begin() + insertIndex,
                                             makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
+        notifyDeviceAdded(ChainNodePath::topLevelDevice(trackId, newDevice.id), newDevice);
         DBG("Added device: " << newDevice.name << " (id=" << newDevice.id << ") to track "
                              << trackId << " at index " << insertIndex);
         return newDevice.id;
@@ -1728,6 +1722,7 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
     elements.insert(elements.begin() + insertIndex, PostFxChainElement{newDevice});
     enforcePostFxAnalysisDeviceOrder(elements);
     notifyTrackDevicesChanged(trackId);
+    notifyDeviceAdded(ChainNodePath::postFxDevice(trackId, newDevice.id), newDevice);
     DBG("Added post-fx device: " << newDevice.name << " (id=" << newDevice.id << ") to track "
                                  << trackId << " at index " << insertIndex);
     return newDevice.id;
@@ -1787,6 +1782,7 @@ DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInf
         newDevice.deviceType = DeviceType::Analysis;
     track->chain.mixerAnalysisElements.push_back(PostFxChainElement{newDevice});
     notifyTrackDevicesChanged(trackId);
+    notifyDeviceAdded(ChainNodePath::mixerAnalysisDevice(trackId, newDevice.id), newDevice);
     DBG("Added mixer-analysis device: " << newDevice.name << " (id=" << newDevice.id
                                         << ") to track " << trackId);
     return newDevice.id;
@@ -2697,6 +2693,23 @@ void TrackManager::notifyTrackDevicesChanged(TrackId trackId) {
         if (listeners_[i])
             listeners_[i]->trackDevicesChanged(trackId);
     }
+}
+
+void TrackManager::notifyDeviceAdded(const ChainNodePath& devicePath, const DeviceInfo& device) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->deviceAdded(devicePath, device);
+    }
+}
+
+DeviceInfo TrackManager::prepareNewDevice(const DeviceInfo& device) {
+    DeviceInfo newDevice = device;
+    newDevice.id = nextFxDeviceId_++;
+    stampDefaultKitIfMissing(newDevice);
+    if (isAnalysisDevice(newDevice.pluginId))
+        newDevice.deviceType = DeviceType::Analysis;
+    return newDevice;
 }
 
 void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {

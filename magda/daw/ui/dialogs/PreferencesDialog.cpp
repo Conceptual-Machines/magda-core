@@ -160,6 +160,8 @@ class GeneralPage : public juce::Component {
         setupToggle(*this, openMacrosOnSelectToggle,
                     tr("preferences.toggle.open_macros_on_select"));
         setupToggle(*this, showTooltipsToggle, tr("preferences.toggle.show_tooltips"));
+        setupToggle(*this, openPluginWindowOnDropToggle,
+                    tr("preferences.toggle.open_plugin_window_on_drop"));
 
         setupSectionHeader(*this, languageHeader, tr("preferences.language.header"));
         setupComboLabel(languageLabel, tr("preferences.language.label"));
@@ -244,6 +246,8 @@ class GeneralPage : public juce::Component {
         openMacrosOnSelectToggle.setToggleState(config.getOpenMacrosOnSelect(),
                                                 juce::dontSendNotification);
         showTooltipsToggle.setToggleState(config.getShowTooltips(), juce::dontSendNotification);
+        openPluginWindowOnDropToggle.setToggleState(config.getOpenPluginWindowOnDrop(),
+                                                    juce::dontSendNotification);
 
         languageCombo.clear(juce::dontSendNotification);
         availableLanguages_.clear();
@@ -288,6 +292,7 @@ class GeneralPage : public juce::Component {
         config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
         config.setOpenMacrosOnSelect(openMacrosOnSelectToggle.getToggleState());
         config.setShowTooltips(showTooltipsToggle.getToggleState());
+        config.setOpenPluginWindowOnDrop(openPluginWindowOnDropToggle.getToggleState());
 
         int selIdx = languageCombo.getSelectedId() - 1;
         if (selIdx >= 0 && selIdx < static_cast<int>(availableLanguages_.size())) {
@@ -325,7 +330,7 @@ class GeneralPage : public juce::Component {
 
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
-               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 4) + 12 + secGap + headerH + 4 +
+               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 5) + 12 + secGap + headerH + 4 +
                rowH + 18 + secGap + headerH + 4 + (rowH * 2) + 4 + padding;
     }
 
@@ -345,7 +350,7 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 4) + 12 + secGap +
+        return padding + headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 5) + 12 + secGap +
                headerH + 4 + rowH + 18 + secGap + headerH + 4 + (rowH * 2) + 4 + padding;
     }
 
@@ -401,6 +406,8 @@ class GeneralPage : public juce::Component {
         openMacrosOnSelectToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         showTooltipsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        openPluginWindowOnDropToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(secGap);
 
         // Language
@@ -476,6 +483,8 @@ class GeneralPage : public juce::Component {
         openMacrosOnSelectToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         showTooltipsToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        openPluginWindowOnDropToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(secGap);
 
         // Language
@@ -579,6 +588,7 @@ class GeneralPage : public juce::Component {
     juce::ToggleButton autoHideScrollbarsToggle;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, openMacrosOnSelectToggle;
     juce::ToggleButton showTooltipsToggle;
+    juce::ToggleButton openPluginWindowOnDropToggle;
     juce::Label languageLabel;
     juce::ComboBox languageCombo;
     juce::Label restartHint;

@@ -5,6 +5,7 @@
 
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipOperations.hpp"
+#include "../core/Config.hpp"
 #include "../core/ModulatorEngine.hpp"
 #include "../core/RackInfo.hpp"
 #include "../engine/PluginWindowManager.hpp"
@@ -305,6 +306,25 @@ void AudioBridge::trackDevicesChanged(TrackId trackId) {
     DBG("AudioBridge::trackDevicesChanged: trackId=" << trackId);
     // Devices on a track changed - resync that track's plugins
     syncTrackPlugins(trackId);
+}
+
+void AudioBridge::deviceAdded(const ChainNodePath& devicePath, const DeviceInfo& device) {
+    // Single place the "open the editor when a device is added" preference lives.
+    // The device declares whether it even has a floating window (external plugins
+    // do; internal MAGDA devices render inline), so this stays a pure policy check
+    // with no type-sniffing. trackDevicesChanged already ran and created the
+    // engine plugin; defer the open so the chain UI rebuild settles first.
+    if (!device.hasEditorWindow())
+        return;
+    if (!Config::getInstance().getOpenPluginWindowOnDrop())
+        return;
+
+    std::weak_ptr<int> alive = lifetimeToken_;
+    juce::MessageManager::callAsync([this, devicePath, alive]() {
+        if (alive.expired() || isShuttingDown_.load(std::memory_order_acquire))
+            return;
+        showPluginWindow(devicePath);
+    });
 }
 
 void AudioBridge::deviceModifiersChanged(TrackId trackId) {
