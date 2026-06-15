@@ -93,6 +93,8 @@ std::unique_ptr<juce::Component> MagdaUIBehaviour::createPluginWindow(
 // PluginEditorWindow Implementation
 // =============================================================================
 
+juce::ApplicationCommandManager* PluginEditorWindow::appCommandManager = nullptr;
+
 PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
                                        tracktion::PluginWindowState& state)
     : daw::ui::FloatingHostWindow(plugin.getName()), plugin_(plugin), state_(state) {
@@ -134,23 +136,60 @@ PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
         }
         setResizable(isResizable, false);
 
-        // Set initial size from editor
-        int width = getContentComponent()->getWidth();
-        int height = getContentComponent()->getHeight();
-        if (width > 0 && height > 0) {
-            setSize(width, height);
+        // Restore the user's last size/position for this plugin if we have it.
+        // lastWindowBounds lives on the PluginWindowState, which outlives the
+        // window, so a resize persists across close/reopen within the session.
+        // We saved getBounds() (the whole window, title bar included), so
+        // setBounds() round-trips exactly and does not shrink. Only honour a
+        // saved *size* for resizable editors — fixed-size editors must keep their
+        // intrinsic size; we still restore their position below.
+        if (isResizable && state.lastWindowBounds.has_value()) {
+            setBounds(*state.lastWindowBounds);
         } else {
-            setSize(400, 300);  // Default size
+            // No saved size. setContentOwned(..., true) above already sized the
+            // window to fit the editor PLUS our non-native title bar (via
+            // childBoundsChanged). Do NOT setSize() with the editor's content
+            // dimensions here: setSize sets the whole window (title bar included),
+            // squeezing the editor down by the title-bar height on every open. A
+            // resizable plugin editor persists that shrunk size and reports it on
+            // the next createEditorIfNeeded(), so each open/close cycle shaved off
+            // another title-bar height -- the "ext UI window keeps shrinking on
+            // repeated clicks" bug. Only fall back to a default when the editor
+            // reports no size of its own.
+            if (getContentComponent()->getWidth() <= 0 ||
+                getContentComponent()->getHeight() <= 0) {
+                setSize(400, 300);  // Default size for editors with no intrinsic size
+            }
+
+            // Position window (restores last position if known, else cascades)
+            auto pos = state.choosePositionForPluginWindow();
+            setTopLeftPosition(pos.x, pos.y);
         }
 
-        // Position window
-        auto pos = state.choosePositionForPluginWindow();
-        setTopLeftPosition(pos.x, pos.y);
+        // Seed the saved bounds and start tracking, so subsequent user moves and
+        // resizes are remembered for next time.
+        state.lastWindowBounds = getBounds();
+        trackingBounds_ = true;
 
         setVisible(true);
     } else {
         DBG("PluginEditorWindow: Failed to create editor for: " << plugin.getName());
     }
+
+    // Key routing for transport shortcuts is handled in keyPressed() (forwarded
+    // at event time), not via a persistent KeyListener — see that override.
+}
+
+bool PluginEditorWindow::keyPressed(const juce::KeyPress& key) {
+    // This is a separate top-level window, outside MainWindow's key chain, so
+    // without this the app's shortcuts (Space = play/stop, etc.) go dead while a
+    // plugin editor has focus. Forward keys the editor didn't consume to the app
+    // command manager at event time. Checking the injected pointer each press
+    // (and clearing it on shutdown) avoids holding a persistent KeyListener that
+    // could dangle once the command manager is destroyed.
+    if (appCommandManager != nullptr)
+        return appCommandManager->getKeyMappings()->keyPressed(key, this);
+    return false;
 }
 
 PluginEditorWindow::~PluginEditorWindow() {
@@ -175,7 +214,16 @@ void PluginEditorWindow::closeButtonPressed() {
 
 void PluginEditorWindow::moved() {
     // Save window position for next time
-    if (state_.lastWindowBounds.has_value()) {
+    if (trackingBounds_) {
+        state_.lastWindowBounds = getBounds();
+    }
+}
+
+void PluginEditorWindow::resized() {
+    // Keep DocumentWindow's title-bar + content layout.
+    daw::ui::FloatingHostWindow::resized();
+    // Save window size for next time
+    if (trackingBounds_) {
         state_.lastWindowBounds = getBounds();
     }
 }

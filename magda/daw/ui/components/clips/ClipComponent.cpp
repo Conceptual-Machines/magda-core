@@ -16,6 +16,7 @@
 #include "../../utils/SelectionPolicy.hpp"
 #include "../common/Toast.hpp"
 #include "../tracks/TrackContentPanel.hpp"
+#include "../waveform/WarpedWaveformRenderer.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/AppPaths.hpp"
@@ -464,49 +465,40 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
         }
     }
 
-    if (useWarpedDraw && !di.isLooped()) {
-        std::sort(warpMarkers.begin(), warpMarkers.end(),
-                  [](const auto& a, const auto& b) { return a.warpTime < b.warpTime; });
-
-        for (size_t i = 0; i + 1 < warpMarkers.size(); ++i) {
-            double srcStart = warpMarkers[i].sourceTime;
-            double srcEnd = warpMarkers[i + 1].sourceTime;
-            double warpStart = warpMarkers[i].warpTime;
-            double warpEnd = warpMarkers[i + 1].warpTime;
-
-            double dispStart = warpStart - displayOffset;
-            double dispEnd = warpEnd - displayOffset;
-            if (dispEnd <= 0.0 || dispStart >= clipDisplayLength)
-                continue;
-            if (dispStart < 0.0) {
-                double ratio = -dispStart / (dispEnd - dispStart);
-                srcStart += ratio * (srcEnd - srcStart);
-                dispStart = 0.0;
-            }
-            if (dispEnd > clipDisplayLength) {
-                double ratio = (clipDisplayLength - dispStart) / (dispEnd - dispStart);
-                srcEnd = srcStart + ratio * (srcEnd - srcStart);
-                dispEnd = clipDisplayLength;
-            }
-
-            int pixStart =
-                waveformArea.getX() + static_cast<int>(dispStart * pixelsPerSecond + 0.5);
-            int pixEnd = waveformArea.getX() + static_cast<int>(dispEnd * pixelsPerSecond + 0.5);
-            int segWidth = pixEnd - pixStart;
-            if (segWidth <= 0)
-                continue;
-
-            auto drawRect = juce::Rectangle<int>(pixStart, waveformArea.getY(), segWidth,
-                                                 waveformArea.getHeight());
-            double finalSrcStart = juce::jmax(0.0, srcStart);
-            double finalSrcEnd = fileDuration > 0.0 ? juce::jmin(srcEnd, fileDuration) : srcEnd;
-            if (finalSrcEnd > finalSrcStart &&
-                clipToVisible(drawRect, finalSrcStart, finalSrcEnd)) {
-                thumbnailManager.drawWaveform(g, drawRect, clip.audio().source.filePath,
-                                              finalSrcStart, finalSrcEnd, waveColour, gainLinear,
-                                              true, selected);
-            }
+    if (useWarpedDraw) {
+        // Warp takes priority over loop tiling, through the SAME shared renderer
+        // the warp editor uses -- so the arrangement and editor can never drift.
+        // Audio clips default to loopEnabled (autoTempo beat clips especially), so
+        // the old !isLooped() gate dropped every warped clip into the loop-tiling
+        // path below, which ignores warp markers entirely. Looped warp clips now
+        // tile the warped content; non-looped draw a single pass. The transform is
+        // tempo-aware (sourceToTimeline), matching the editor.
+        double minWarp = warpMarkers.front().warpTime;
+        double maxWarp = warpMarkers.front().warpTime;
+        for (const auto& m : warpMarkers) {
+            minWarp = std::min(minWarp, m.warpTime);
+            maxWarp = std::max(maxWarp, m.warpTime);
         }
+
+        daw::ui::WarpedWaveformSpec spec;
+        spec.clipArea = juce::Rectangle<int>(
+            waveformArea.getX(), waveformArea.getY(),
+            juce::jmin(waveformArea.getWidth(),
+                       static_cast<int>(clipDisplayLength * pixelsPerSecond + 0.5)),
+            waveformArea.getHeight());
+        spec.warpToPixelX = [&](double warpSeconds) {
+            return waveformArea.getX() +
+                   di.sourceToTimeline(warpSeconds - displayOffset) * pixelsPerSecond;
+        };
+        spec.fileDuration = fileDuration;
+        spec.colour = waveColour;
+        spec.verticalScale = gainLinear;
+        spec.useHighRes = true;
+        spec.thick = selected;
+        spec.looped = di.isLooped();
+        spec.cycleWarp = maxWarp - minWarp;
+        daw::ui::drawWarpedWaveform(g, thumbnailManager, clip.audio().source.filePath, warpMarkers,
+                                    spec);
     } else if (di.isLooped()) {
         double sourceDurationForBeats = clip.audio().source.durationSeconds;
         if (sourceDurationForBeats <= 0.0 && fileDuration > 0.0)
@@ -1080,7 +1072,30 @@ void ClipComponent::resized() {
 }
 
 bool ClipComponent::hitTest(int x, int y) {
-    return x >= 0 && x < getWidth() && y >= 0 && y < getHeight();
+    if (x < 0 || x >= getWidth() || y < 0 || y >= getHeight())
+        return false;
+
+    // Be transparent to a plain (unmodified, non-edge) click that lands on an
+    // active time selection covering this clip, so the gesture goes straight to
+    // the panel's time-selection machinery and the panel owns the drag. Routing
+    // it through this component instead breaks mid-drag: splitting at the
+    // selection boundaries rebuilds (destroys) every ClipComponent, killing the
+    // drag (you had to drag twice). Clip resize edges and modified clicks
+    // (copy/select/blade/erase/context menu) still hit the clip.
+    if (parentPanel_ != nullptr) {
+        const auto mods = juce::ModifierKeys::getCurrentModifiers();
+        if (!mods.isAnyModifierKeyDown() && !mods.isPopupMenu() && !isOnLeftEdge(x) &&
+            !isOnRightEdge(x)) {
+            const int panelX = getX() + x;
+            const int panelY = getY() + y;
+            if (parentPanel_->pointInTimeSelection(panelX, panelY) ||
+                parentPanel_->pointOnTimeSelectionEdge(panelX, panelY)) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 // ============================================================================
@@ -1166,6 +1181,23 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         ensureEditorOpen(clipId_);
         dragMode_ = DragMode::None;
         repaint();
+        return;
+    }
+
+    // Lower half of the clip body is a time-selection zone, just like empty lane
+    // space: forward a plain click there to the panel so it draws an I-beam time
+    // selection instead of grabbing/moving the clip. (Grabbing an *existing*
+    // selection is handled earlier by hitTest making this component transparent,
+    // so the panel owns that drag directly.) Edges keep resize priority, and the
+    // clip-op modifiers (select/copy/blade/erase/context) are handled elsewhere.
+    const bool plainLowerZoneClick =
+        parentPanel_ != nullptr && e.y >= getHeight() / 2 && !isOnLeftEdge(e.x) &&
+        !isOnRightEdge(e.x) && !e.mods.isAltDown() && !e.mods.isCommandDown() &&
+        !e.mods.isCtrlDown() && !e.mods.isShiftDown() && !e.mods.isPopupMenu();
+    if (plainLowerZoneClick) {
+        dragMode_ = DragMode::None;
+        forwardingToPanel_ = true;
+        parentPanel_->forwardLowerZoneMouseDown(e.getEventRelativeTo(parentPanel_));
         return;
     }
 
@@ -1478,6 +1510,13 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
 }
 
 void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
+    // Lower-zone time-selection gesture: keep driving the panel's selection.
+    if (forwardingToPanel_) {
+        if (parentPanel_)
+            parentPanel_->forwardLowerZoneMouseDrag(e.getEventRelativeTo(parentPanel_));
+        return;
+    }
+
     if (dragMode_ == DragMode::None || !parentPanel_) {
         return;
     }
@@ -1492,6 +1531,13 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
     if (trackInfoDrag && trackInfoDrag->frozen) {
         return;
     }
+
+    // Force the grid overlay to repaint cleanly for this drag tick. Moving the
+    // clip via setBounds only invalidates the clip's own region; the overlay
+    // sibling stacked above the viewport otherwise keeps stale grid lines over
+    // the area the clip just left (a trail, most visible with audio waveforms).
+    if (parentPanel_ && parentPanel_->onClipDragOverlayRepaint)
+        parentPanel_->onClipDragOverlayRepaint();
 
     // A pending Alt action resolves to copy-drag once a real drag starts
     // (a plain Alt release places the edit cursor in mouseUp instead)
@@ -1957,6 +2003,14 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void ClipComponent::mouseUp(const juce::MouseEvent& e) {
+    // Finish a forwarded lower-zone time-selection gesture on the panel.
+    if (forwardingToPanel_) {
+        forwardingToPanel_ = false;
+        if (parentPanel_)
+            parentPanel_->forwardLowerZoneMouseUp(e.getEventRelativeTo(parentPanel_));
+        return;
+    }
+
     // Handle right-click for context menu
     if (e.mods.isPopupMenu() && !(e.mods.isShiftDown() && e.mods.isCtrlDown())) {
         showContextMenu();
@@ -2418,8 +2472,15 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
     bool wasHoverFadeOut = hoverFadeOut_;
     bool wasHoverVolume = hoverVolumeHandle_;
 
+    bool wasHoverLowerZone = hoverLowerZone_;
+
     hoverLeftEdge_ = isOnLeftEdge(e.x);
     hoverRightEdge_ = isOnRightEdge(e.x);
+
+    // Lower half (away from the resize edges) is the time-selection zone.
+    // (When a time selection covers this point hitTest() makes the clip
+    // transparent, so the panel handles the grab/resize cursor there.)
+    hoverLowerZone_ = e.y >= getHeight() / 2 && !hoverLeftEdge_ && !hoverRightEdge_;
 
     // Check fade handle hover (selected audio clips only)
     if (isSelected_) {
@@ -2439,7 +2500,7 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
 
     if (hoverLeftEdge_ != wasHoverLeft || hoverRightEdge_ != wasHoverRight ||
         hoverFadeIn_ != wasHoverFadeIn || hoverFadeOut_ != wasHoverFadeOut ||
-        hoverVolumeHandle_ != wasHoverVolume) {
+        hoverVolumeHandle_ != wasHoverVolume || hoverLowerZone_ != wasHoverLowerZone) {
         repaint();
     }
 }
@@ -2457,6 +2518,7 @@ void ClipComponent::mouseExit(const juce::MouseEvent& /*e*/) {
     hoverFadeIn_ = false;
     hoverFadeOut_ = false;
     hoverVolumeHandle_ = false;
+    hoverLowerZone_ = false;
     updateCursor();
     repaint();
 }
@@ -2641,6 +2703,14 @@ void ClipComponent::updateCursor(const juce::ModifierKeys& mods) {
 
     if (isClipSelected && hoverVolumeHandle_) {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+        return;
+    }
+
+    // Lower half of the body is a time-selection zone (I-beam), regardless of
+    // selection state. Edge-resize and the selected-clip handles above keep
+    // priority since hoverLowerZone_ already excludes the edges.
+    if (hoverLowerZone_) {
+        setMouseCursor(juce::MouseCursor::IBeamCursor);
         return;
     }
 

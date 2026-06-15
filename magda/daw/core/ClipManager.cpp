@@ -328,9 +328,17 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
             savedClip.loopEnabled = true;
             savedClip.analogPitch = false;
             savedClip.speedRatio = 1.0;
-            if (savedClip.audio().interpretation.totalBeats > 0.0 &&
-                savedClip.loopLengthBeats <= 0.0) {
-                savedClip.loopLengthBeats = savedClip.audio().interpretation.totalBeats;
+            if (savedClip.audio().interpretation.totalBeats > 0.0) {
+                // A beat-mode clip's natural length is its musical length (the
+                // saved beat count), not the raw audio-file duration the caller
+                // derived the placement from. At a project tempo different from the
+                // sample's, file-duration-in-beats != the real beat count, so snap
+                // both the timeline placement and the loop length to the beat count
+                // and let autoTempo stretch the audio to fit.
+                const double beats = savedClip.audio().interpretation.totalBeats;
+                savedClip.setPlacementBeats(startBeats, beats);
+                if (savedClip.loopLengthBeats <= 0.0)
+                    savedClip.loopLengthBeats = beats;
             }
             savedClip.deriveTimesFromBeats(bpm);
         }
@@ -2235,6 +2243,11 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
     };
     std::vector<ResizeOp> toResize;
 
+    // C fully contains D: C must be split into a surviving left part
+    // [cStart,dStart] and right part [dEnd,cEnd], with only the middle slice
+    // under D removed.
+    std::vector<ClipId> toSplitAround;
+
     for (const auto& [cid, clip] : clips_) {
         if (clip.view != ClipView::Arrangement || clip.id == dominantClipId ||
             clip.trackId != trackId) {
@@ -2260,9 +2273,40 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
             // C overlaps from right → trim left edge to dEndB
             toResize.push_back({clip.id, cEndB - dEndB, true});
         } else if (cStartB < dStartB && cEndB > dEndB) {
-            // C fully contains D → keep left portion, trim right edge to dStartB
-            toResize.push_back({clip.id, dStartB - cStartB, false});
+            // C fully contains D → split into left + right, keeping both ends.
+            // Previously this only kept the left portion and silently dropped
+            // everything right of D's start, so duplicating a selection on top
+            // of a long sample made the remaining sample disappear (#1447).
+            toSplitAround.push_back(clip.id);
         }
+    }
+
+    for (auto id : toSplitAround) {
+        auto* original = getClip(id);
+        if (!original)
+            continue;
+        const auto originalName = original->name;
+
+        // Split at D's start: id keeps [cStart,dStart], rightId = [dStart,cEnd].
+        const ClipId rightId = splitClipAtBeat(id, dStartB, bpm);
+        if (rightId == INVALID_CLIP_ID)
+            continue;
+        // Split the remainder at D's end: rightId keeps [dStart,dEnd] (fully
+        // under D), tailId = the surviving [dEnd,cEnd]. This split can only fail
+        // when dEnd >= cEnd (the tail is zero-length within float tolerance),
+        // since rightId spans exactly [dStart,cEnd] and the branch guarantees
+        // dEnd < cEnd. So a failed split means rightId IS the whole covered
+        // remainder with no real tail to keep — deleting it drops nothing.
+        const ClipId tailId = splitClipAtBeat(rightId, dEndB, bpm);
+        deleteClip(rightId);
+
+        // splitClipAtBeat appends " L"/" R" suffixes; restore the original name
+        // on the surviving halves so the carve-out is invisible.
+        if (auto* left = getClip(id))
+            left->name = originalName;
+        if (tailId != INVALID_CLIP_ID)
+            if (auto* tail = getClip(tailId))
+                tail->name = originalName;
     }
 
     for (auto id : toDelete) {

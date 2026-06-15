@@ -37,6 +37,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/MagdaUIBehaviour.hpp"
 #include "engine/PlaybackPositionTimer.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
@@ -397,6 +398,11 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // Let the menu bar render its shortcut hints from these (live) mappings
     // instead of hardcoded per-platform strings (#1352).
     MenuManager::getInstance().setCommandManager(&commandManager);
+
+    // Plugin editor windows are separate top-level windows in the engine layer,
+    // outside this component's key chain. Inject the command manager so they can
+    // route unconsumed keys (Space = play/stop, etc.) back to the transport.
+    PluginEditorWindow::appCommandManager = &commandManager;
 
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
@@ -1054,6 +1060,9 @@ MainWindow::MainComponent::~MainComponent() {
     // Remove command manager key listener before destruction
     removeKeyListener(commandManager.getKeyMappings());
     commandManager.setFirstCommandTarget(nullptr);
+
+    // Stop plugin editor windows referencing this command manager once it's gone.
+    PluginEditorWindow::appCommandManager = nullptr;
 
     // Stop position timer before destroying
     DBG("    [5e] Stopping position timer...");

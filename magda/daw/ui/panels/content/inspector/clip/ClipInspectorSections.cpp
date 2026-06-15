@@ -367,9 +367,10 @@ void ClipInspector::initClipPropertiesSection() {
     clipFilePathLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(clipFilePathLabel_);
 
-    // Clip type icon (audio_clip for audio, midi_clip for MIDI)
-    clipTypeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::audio_clip_svg,
-                                                       BinaryData::audio_clip_svgSize);
+    // Clip type icon (audio for audio, midi_clip for MIDI). Audio uses the same
+    // bold icon as the media DB / browser so the file type reads consistently.
+    clipTypeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::iconaudioboldm_svg,
+                                                       BinaryData::iconaudioboldm_svgSize);
     clipTypeIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     clipTypeIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     clipTypeIcon_->setIconPadding(1.0f);
@@ -377,10 +378,14 @@ void ClipInspector::initClipPropertiesSection() {
     clipTypeIcon_->setTooltip("Audio clip");
     addChildComponent(*clipTypeIcon_);
 
-    // Clip view icon (Session or Arrangement)
-    clipViewIcon_ = std::make_unique<magda::SvgButton>("View", BinaryData::Arrangement_svg,
-                                                       BinaryData::Arrangement_svgSize);
-    clipViewIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    // Clip view icon (Session or Arrangement) — uses the bold view icons from
+    // the footer view switcher so the inspector matches the rest of the app.
+    clipViewIcon_ = std::make_unique<magda::SvgButton>("View", BinaryData::iconarrangementboldm_svg,
+                                                       BinaryData::iconarrangementboldm_svgSize);
+    // The bold view icons fill with "currentColor" (JUCE renders that black), so
+    // recolor from black rather than the #B3B3B3 the audio icon uses — otherwise
+    // the recolor misses and this icon renders black while the audio one is grey.
+    clipViewIcon_->setOriginalColor(juce::Colour(0xFF000000));
     clipViewIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     clipViewIcon_->setIconPadding(1.0f);
     clipViewIcon_->setInterceptsMouseClicks(false, false);
