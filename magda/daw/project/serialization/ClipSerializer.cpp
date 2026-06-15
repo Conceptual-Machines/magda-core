@@ -168,6 +168,21 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         if (clip.timeStretchMode != 0) {
             audioObj->setProperty("timeStretchMode", clip.timeStretchMode);
         }
+
+        // Loop-record takes (one source file per pass). Persist so the take
+        // alternates survive save/reload; the engine rebuilds them on sync.
+        if (!clip.audio().takes.empty()) {
+            juce::Array<juce::var> takesArray;
+            for (const auto& take : clip.audio().takes) {
+                auto* takeObj = new juce::DynamicObject();
+                takeObj->setProperty("filePath", take.filePath);
+                takeObj->setProperty("durationSeconds", take.durationSeconds);
+                takesArray.add(juce::var(takeObj));
+            }
+            audioObj->setProperty("takes", takesArray);
+            audioObj->setProperty("currentTakeIndex", clip.audio().currentTakeIndex);
+        }
+
         obj->setProperty("audio", juce::var(audioObj));
     }
 
@@ -410,6 +425,23 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
                     outClip.warpMarkers.push_back(wm);
                 }
             }
+        }
+
+        // Loop-record takes
+        auto takesVar = audioObj->getProperty("takes");
+        if (takesVar.isArray()) {
+            for (const auto& takeVar : *takesVar.getArray()) {
+                if (auto* takeObj = takeVar.getDynamicObject()) {
+                    AudioTake take;
+                    take.filePath = takeObj->getProperty("filePath").toString();
+                    take.durationSeconds = takeObj->getProperty("durationSeconds");
+                    outClip.audio().takes.push_back(take);
+                }
+            }
+            if (!outClip.audio().takes.empty())
+                outClip.audio().currentTakeIndex =
+                    juce::jlimit(0, static_cast<int>(outClip.audio().takes.size()) - 1,
+                                 static_cast<int>(audioObj->getProperty("currentTakeIndex")));
         }
     } else if (outClip.isAudio() && legacyAudioSourceObj != nullptr) {
         outClip.audio().source.filePath = legacyAudioSourceObj->getProperty("filePath").toString();

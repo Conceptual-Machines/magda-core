@@ -62,6 +62,11 @@ void showExternalEditorFailedAlert(const juce::String& message) {
 constexpr int MIDI_PREVIEW_MIN_NOTE = 21;   // A0
 constexpr int MIDI_PREVIEW_MAX_NOTE = 108;  // C8
 
+// Context-menu IDs for loop-record take selection (one per take), kept clear of
+// the fixed item IDs and the 100-range quantize grid.
+constexpr int kTakeMenuBaseId = 300;
+constexpr int kTakeMenuMaxItems = 64;
+
 juce::Path makeClippedRoundedRectPath(juce::Rectangle<int> bounds,
                                       juce::Rectangle<int> visibleBounds, float radius) {
     juce::Path path;
@@ -2819,6 +2824,21 @@ void ClipComponent::showContextMenu() {
     menu.addItem(16, "Slice at Grid to Drum Grid", canSliceAtGrid);
     menu.addSeparator();
 
+    // Loop-record takes: pick which captured pass plays back. Single audio clip
+    // with more than one take only. IDs 300+ (one per take).
+    {
+        const auto* takeClip = isMultiSelection ? nullptr : getClipInfo();
+        if (takeClip && takeClip->isAudio() && takeClip->audio().takes.size() > 1) {
+            juce::PopupMenu takesMenu;
+            const auto& takes = takeClip->audio().takes;
+            for (int i = 0; i < static_cast<int>(takes.size()); ++i)
+                takesMenu.addItem(kTakeMenuBaseId + i, "Take " + juce::String(i + 1), canEdit,
+                                  i == takeClip->audio().currentTakeIndex);
+            menu.addSubMenu("Takes", takesMenu, canEdit);
+            menu.addSeparator();
+        }
+    }
+
     bool canEditExternally = false;
     if (!isMultiSelection && canEdit) {
         const auto* singleClip = getClipInfo();
@@ -2994,6 +3014,21 @@ void ClipComponent::showContextMenu() {
                                                     &selectionManager](int result) {
         if (result == 0)
             return;  // Cancelled
+
+        // Loop-record take selection (IDs 300+): front the chosen pass as the
+        // clip source and re-sync. ClipSynchronizer detects the source change,
+        // rebuilds the TE clip, and re-attaches the take alternates.
+        if (result >= kTakeMenuBaseId && result < kTakeMenuBaseId + kTakeMenuMaxItems) {
+            const int takeIndex = result - kTakeMenuBaseId;
+            auto* c = clipManager.getClip(clipId_);
+            if (c && c->isAudio() && takeIndex >= 0 &&
+                takeIndex < static_cast<int>(c->audio().takes.size())) {
+                c->audio().currentTakeIndex = takeIndex;
+                c->audio().source.filePath = c->audio().takes[takeIndex].filePath;
+                clipManager.forceNotifyClipPropertyChanged(clipId_);
+            }
+            return;
+        }
 
         switch (result) {
             case 1: {  // Copy

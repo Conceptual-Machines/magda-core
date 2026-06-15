@@ -138,6 +138,45 @@ void TracktionEngineWrapper::recordingFinished(
             double startSeconds = audioClip->getPosition().getStart().inSeconds();
             double lengthSeconds = audioClip->getPosition().getLength().inSeconds();
 
+            // Loop recording: Tracktion split the continuous capture into one
+            // take (audio file) per loop pass and registered them on the clip.
+            // Harvest them before we drop TE's clip, so no pass is lost. Each
+            // take is a direct file reference (we record outside a TE project),
+            // so resolve via SourceFileReference. The active take is the last
+            // full pass; only the final pass can be partial (mid-pass stop).
+            std::vector<AudioTake> takes;
+            int activeTakeIndex = 0;
+            if (audioClip->hasAnyTakes()) {
+                auto takesTree = audioClip->state.getChildWithName(tracktion::IDs::TAKES);
+                for (int i = 0; i < takesTree.getNumChildren(); ++i) {
+                    auto takeChild = takesTree.getChild(i);
+                    tracktion::SourceFileReference sfr(audioClip->edit, takeChild,
+                                                       tracktion::IDs::source);
+                    juce::File takeFile = sfr.getFile();
+                    if (takeFile == juce::File())
+                        continue;
+                    AudioTake take;
+                    take.filePath = takeFile.getFullPathName();
+                    take.durationSeconds =
+                        tracktion::AudioFile(audioClip->edit.engine, takeFile).getLength();
+                    takes.push_back(take);
+                }
+
+                if (!takes.empty()) {
+                    double loopLen = 0.0;
+                    for (const auto& t : takes)
+                        loopLen = std::max(loopLen, t.durationSeconds);
+                    activeTakeIndex = static_cast<int>(takes.size()) - 1;
+                    if (takes.size() > 1 && takes[activeTakeIndex].durationSeconds < loopLen * 0.95)
+                        activeTakeIndex = static_cast<int>(takes.size()) - 2;
+
+                    // Front the active take as the clip's source + length.
+                    audioFilePath = takes[activeTakeIndex].filePath;
+                    if (takes[activeTakeIndex].durationSeconds > 0.0)
+                        lengthSeconds = takes[activeTakeIndex].durationSeconds;
+                }
+            }
+
             if (lengthSeconds <= 0.0 || audioFilePath.isEmpty() || trackId == INVALID_TRACK_ID) {
                 audioClip->removeFromParent();
                 continue;
@@ -158,6 +197,10 @@ void TracktionEngineWrapper::recordingFinished(
                 if (isValidBpm(projectBPM)) {
                     newClip->audio().interpretation.bpm = projectBPM;
                     newClip->audio().interpretation.totalBeats = lengthSeconds * projectBPM / 60.0;
+                }
+                if (!takes.empty()) {
+                    newClip->audio().takes = std::move(takes);
+                    newClip->audio().currentTakeIndex = activeTakeIndex;
                 }
             }
 

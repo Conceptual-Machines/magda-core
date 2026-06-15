@@ -131,9 +131,27 @@ struct AudioSourceInterpretation {
     std::string keyScale;
 };
 
+/**
+ * @brief One loop-record take: a single recorded pass over the loop range.
+ *
+ * Loop recording captures each pass as its own audio file (Tracktion splits the
+ * continuous recording at the loop boundaries). filePath is the on-disk source
+ * for that pass; durationSeconds is its audio length.
+ */
+struct AudioTake {
+    juce::String filePath;
+    double durationSeconds = 0.0;
+};
+
 struct AudioClipModel {
     AudioSourceFacts source;
     AudioSourceInterpretation interpretation;
+
+    // Loop-record takes, one per pass. Empty for ordinary single-source clips.
+    // When non-empty, source.filePath mirrors takes[currentTakeIndex].filePath
+    // (the active take that plays back).
+    std::vector<AudioTake> takes;
+    int currentTakeIndex = 0;
 };
 
 struct MidiClipModel {
