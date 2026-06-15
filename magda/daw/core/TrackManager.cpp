@@ -1782,6 +1782,7 @@ DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInf
         newDevice.deviceType = DeviceType::Analysis;
     track->chain.mixerAnalysisElements.push_back(PostFxChainElement{newDevice});
     notifyTrackDevicesChanged(trackId);
+    notifyDeviceAdded(ChainNodePath::mixerAnalysisDevice(trackId, newDevice.id), newDevice);
     DBG("Added mixer-analysis device: " << newDevice.name << " (id=" << newDevice.id
                                         << ") to track " << trackId);
     return newDevice.id;

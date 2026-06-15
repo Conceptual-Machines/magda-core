@@ -330,7 +330,7 @@ class GeneralPage : public juce::Component {
 
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
-               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 4) + 12 + secGap + headerH + 4 +
+               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 5) + 12 + secGap + headerH + 4 +
                rowH + 18 + secGap + headerH + 4 + (rowH * 2) + 4 + padding;
     }
 
@@ -350,7 +350,7 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 4) + 12 + secGap +
+        return padding + headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 5) + 12 + secGap +
                headerH + 4 + rowH + 18 + secGap + headerH + 4 + (rowH * 2) + 4 + padding;
     }
 

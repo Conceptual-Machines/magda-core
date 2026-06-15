@@ -884,6 +884,11 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Shutdown flag to prevent operations during cleanup
     std::atomic<bool> isShuttingDown_{false};
 
+    // Lifetime token for deferred (callAsync) work that captures `this`. A queued
+    // lambda holds a weak_ptr and bails if it expired (AudioBridge destroyed)
+    // before the message loop ran it.
+    std::shared_ptr<int> lifetimeToken_ = std::make_shared<int>(0);
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioBridge)
 };
 

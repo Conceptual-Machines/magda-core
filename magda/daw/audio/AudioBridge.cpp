@@ -319,7 +319,12 @@ void AudioBridge::deviceAdded(const ChainNodePath& devicePath, const DeviceInfo&
     if (!Config::getInstance().getOpenPluginWindowOnDrop())
         return;
 
-    juce::MessageManager::callAsync([this, devicePath]() { showPluginWindow(devicePath); });
+    std::weak_ptr<int> alive = lifetimeToken_;
+    juce::MessageManager::callAsync([this, devicePath, alive]() {
+        if (alive.expired() || isShuttingDown_.load(std::memory_order_acquire))
+            return;
+        showPluginWindow(devicePath);
+    });
 }
 
 void AudioBridge::deviceModifiersChanged(TrackId trackId) {

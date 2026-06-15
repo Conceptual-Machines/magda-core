@@ -362,10 +362,12 @@ class TrackManager {
     // addDevice* and isn't affected.
     static void stampDefaultKitIfMissing(DeviceInfo& dev);
 
-    // Single funnel for the common prep every addDevice* path does: assign a
-    // fresh DeviceId, stamp the default kit, and tag analysis devices. Returns
-    // the prepared copy; callers insert it into their target list, then fire
-    // notifyDeviceAdded. Centralised so the steps can't drift per call site.
+    // Common prep for the FX-chain and rack-chain add paths: assign a fresh
+    // DeviceId from nextFxDeviceId_, stamp the default kit, and tag analysis
+    // devices. Returns the prepared copy; callers insert it, then fire
+    // notifyDeviceAdded. Centralised so these steps can't drift per call site.
+    // Post-fx and mixer-analysis keep their own ID spaces (nextPostFxDeviceId_,
+    // nextMixerAnalysisDeviceId_) and so do their own prep.
     DeviceInfo prepareNewDevice(const DeviceInfo& device);
 
     // Wrap a device in a new rack (device moves into the rack's first chain)
