@@ -58,9 +58,7 @@ inline void drawWarpedWaveform(juce::Graphics& g, magda::AudioThumbnailManager& 
     const int areaH = spec.clipArea.getHeight();
 
     // Draw one pass of the marker set, shifted by warpShift (warp seconds).
-    // Returns the pass's leftmost mapped x so the tiler knows when it has run off
-    // the right edge.
-    auto drawPass = [&](double warpShift) -> double {
+    auto drawPass = [&](double warpShift) {
         for (size_t i = 0; i + 1 < markers.size(); ++i) {
             const double segX0 = spec.warpToPixelX(markers[i].warpTime + warpShift);
             const double segX1 = spec.warpToPixelX(markers[i + 1].warpTime + warpShift);
@@ -95,7 +93,6 @@ inline void drawWarpedWaveform(juce::Graphics& g, magda::AudioThumbnailManager& 
             thumbs.drawWaveform(g, juce::Rectangle<int>(px, areaY, pw, areaH), file, cs, ce,
                                 spec.colour, spec.verticalScale, spec.useHighRes, spec.thick);
         }
-        return spec.warpToPixelX(markers.front().warpTime + warpShift);
     };
 
     if (!spec.looped || spec.cycleWarp <= 0.0) {
@@ -103,26 +100,25 @@ inline void drawWarpedWaveform(juce::Graphics& g, magda::AudioThumbnailManager& 
         return;
     }
 
-    // Affine transform => compute the tile index range that overlaps the area
-    // directly instead of scanning from zero (cheap, and bounded).
-    const double xAt0 = spec.warpToPixelX(0.0);
-    const double xAt1 = spec.warpToPixelX(1.0);
-    const double pxPerWarp = xAt1 - xAt0;  // pixels per warp-second
-    const double cyclePx = pxPerWarp * spec.cycleWarp;
-    if (std::abs(cyclePx) < 1.0e-6) {
+    // Pixels occupied by one loop cycle. warpToPixelX is affine, so this is a
+    // constant. If a cycle is sub-pixel the repeats are invisible -- and tiling it
+    // would iterate once per (sub-pixel) cycle across the whole clip, blowing the
+    // count into the millions and freezing the message thread. A single pass is
+    // pixel-identical, so collapse to it. (Also handles a degenerate/0 transform.)
+    const double cyclePx = (spec.warpToPixelX(1.0) - spec.warpToPixelX(0.0)) * spec.cycleWarp;
+    if (cyclePx < 1.0) {
         drawPass(0.0);
         return;
     }
 
-    const double passX0 = spec.warpToPixelX(markers.front().warpTime);
-    const double passX1 = spec.warpToPixelX(markers.back().warpTime);
-    // First tile whose right edge is past leftX, last whose left edge is before rightX.
-    int kStart = (int)std::floor((leftX - passX1) / cyclePx) - 1;
-    int kEnd = (int)std::ceil((rightX - passX0) / cyclePx) + 1;
-    if (kEnd - kStart > 100000)  // pathological zoom guard
-        kEnd = kStart + 100000;
-
-    for (int k = kStart; k <= kEnd; ++k)
+    // Walk forward from the first cycle whose right edge has reached the left of
+    // the area until the cycle's left edge passes the right of the area. At >= 1px
+    // per cycle this is self-bounding -- at most one iteration per visible pixel,
+    // so no arbitrary cap is needed (or wanted).
+    const double frontWarp = markers.front().warpTime;
+    const double backWarp = markers.back().warpTime;
+    const int kStart = (int)std::floor((leftX - spec.warpToPixelX(backWarp)) / cyclePx);
+    for (int k = kStart; spec.warpToPixelX(frontWarp + k * spec.cycleWarp) <= rightX; ++k)
         drawPass(k * spec.cycleWarp);
 }
 
