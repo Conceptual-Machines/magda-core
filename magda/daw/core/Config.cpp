@@ -61,6 +61,7 @@ void Config::save() {
     root->setProperty("zoomOutSensitivityShift", zoomOutSensitivityShift);
 
     // Transport
+    root->setProperty("openPluginWindowOnDrop", openPluginWindowOnDrop);
     root->setProperty("transportShowBothFormats", transportShowBothFormats);
     root->setProperty("transportDefaultBarsBeats", transportDefaultBarsBeats);
 
@@ -372,6 +373,7 @@ void Config::load() {
     zoomInSensitivityShift = getDouble("zoomInSensitivityShift", zoomInSensitivityShift);
     zoomOutSensitivityShift = getDouble("zoomOutSensitivityShift", zoomOutSensitivityShift);
 
+    openPluginWindowOnDrop = getBool("openPluginWindowOnDrop", openPluginWindowOnDrop);
     transportShowBothFormats = getBool("transportShowBothFormats", transportShowBothFormats);
     transportDefaultBarsBeats = getBool("transportDefaultBarsBeats", transportDefaultBarsBeats);
 

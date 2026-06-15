@@ -3,15 +3,19 @@
 #include "DeviceSlotComponent.hpp"
 #include "NodeComponent.hpp"
 #include "RackComponent.hpp"
+#include "audio/AudioBridge.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "core/Config.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
+#include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
@@ -313,10 +317,39 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
             DBG("Dropped plugin: " + juce::String(device.name) + " into chain at index " +
                 juce::String(insertIndex));
             // This may destroy 'this' and owner_ — do not access any members after
-            magda::TrackManager::getInstance().addDeviceToChainByPath(chainPath, device,
-                                                                      insertIndex);
+            magda::DeviceId newDeviceId = magda::TrackManager::getInstance().addDeviceToChainByPath(
+                chainPath, device, insertIndex);
             if (shouldScrollToEnd && safeOwner != nullptr)
                 safeOwner->scrollToEndAsync();
+
+            // Optionally pop the device's editor open. Deferred: the add above
+            // rebuilds the chain UI, and the engine device/plugin must exist
+            // before its window can resolve. Resolved by DeviceId via the path
+            // helper, so this is independent of the (now-destroyed) slot UI.
+            DBG("[OpenOnDrop] newDeviceId="
+                << (int)newDeviceId
+                << " enabled=" << (int)magda::Config::getInstance().getOpenPluginWindowOnDrop());
+            if (newDeviceId != magda::INVALID_DEVICE_ID &&
+                magda::Config::getInstance().getOpenPluginWindowOnDrop()) {
+                auto devicePath = chainPath.withDevice(newDeviceId);
+                juce::MessageManager::callAsync([devicePath]() {
+                    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+                    if (!audioEngine) {
+                        DBG("[OpenOnDrop] no audio engine");
+                        return;
+                    }
+                    auto* bridge = audioEngine->getAudioBridge();
+                    if (!bridge) {
+                        DBG("[OpenOnDrop] no bridge");
+                        return;
+                    }
+                    auto plugin = bridge->getPlugin(devicePath);
+                    DBG("[OpenOnDrop] resolving devicePath deviceId="
+                        << (int)devicePath.getDeviceId()
+                        << " plugin=" << (plugin != nullptr ? "OK" : "NULL"));
+                    bridge->showPluginWindow(devicePath);
+                });
+            }
             return;
         }
 
