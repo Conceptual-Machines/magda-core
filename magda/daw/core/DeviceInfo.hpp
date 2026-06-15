@@ -203,6 +203,14 @@ struct DeviceInfo {
                 return "Unknown";
         }
     }
+
+    // Whether this device opens a separate floating editor window. External
+    // plugins (VST/AU) carry their own editor; internal MAGDA devices render
+    // their UI inline in the chain and have no floating window. The engine's
+    // plugin->hasEditor() is the final guard when the window is actually opened.
+    bool hasEditorWindow() const {
+        return format != PluginFormat::Internal;
+    }
 };
 
 }  // namespace magda

@@ -312,7 +312,9 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         if (validDrop) {
             DBG("Dropped plugin: " + juce::String(device.name) + " into chain at index " +
                 juce::String(insertIndex));
-            // This may destroy 'this' and owner_ — do not access any members after
+            // This may destroy 'this' and owner_ — do not access any members after.
+            // Opening the editor on drop (when the preference is on) is handled
+            // centrally by AudioBridge via TrackManager's deviceAdded hook.
             magda::TrackManager::getInstance().addDeviceToChainByPath(chainPath, device,
                                                                       insertIndex);
             if (shouldScrollToEnd && safeOwner != nullptr)

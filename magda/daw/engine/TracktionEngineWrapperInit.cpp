@@ -522,6 +522,11 @@ void TracktionEngineWrapper::shutdown() {
     if (pluginWindowManager_) {
         DBG("Closing all plugin windows...");
         pluginWindowManager_->closeAllWindows();
+        // Detach the bridge's raw pointer BEFORE freeing the manager so a queued
+        // open-window callback (e.g. open-on-drop) sees null instead of a
+        // dangling PluginWindowManager*.
+        if (audioBridge_)
+            audioBridge_->setPluginWindowManager(nullptr);
         pluginWindowManager_.reset();
     }
 

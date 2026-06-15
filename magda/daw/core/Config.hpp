@@ -99,6 +99,13 @@ class Config {
         transportShowBothFormats = show;
     }
 
+    bool getOpenPluginWindowOnDrop() const {
+        return openPluginWindowOnDrop;
+    }
+    void setOpenPluginWindowOnDrop(bool open) {
+        openPluginWindowOnDrop = open;
+    }
+
     bool getTransportDefaultBarsBeats() const {
         return transportDefaultBarsBeats;
     }
@@ -943,6 +950,9 @@ class Config {
 
     // Transport display settings
     bool transportShowBothFormats = false;  // Show both bars/beats and seconds
+
+    // Open a device's editor window automatically when it is dropped into a chain
+    bool openPluginWindowOnDrop = false;
     bool transportDefaultBarsBeats = true;  // Default to bars/beats (false = seconds)
 
     // Panel visibility settings
